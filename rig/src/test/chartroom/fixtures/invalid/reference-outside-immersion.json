@@ -1,0 +1,41 @@
+{
+  "$schema": "../../schema.json",
+  "format": "hydrostatic-table",
+  "version": 1,
+  "name": "Upright box",
+  "frame": {
+    "axes": "x-forward-y-port-z-up",
+    "originDescription": "Mid-length on the bottom centreline",
+    "knReferenceM": [0, 0, 0]
+  },
+  "body": {
+    "description": "Closed rectangular box: x from -2 to 2, y from -1 to 1, z from 0 to 2 m",
+    "buoyancyEnvelope": "closed-watertight"
+  },
+  "table": {
+    "interpolation": "linear",
+    "rows": [
+      {
+        "heelDeg": 0,
+        "trimDeg": 0,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4,
+            "buoyancyCenterM": [0, 0, 0.25]
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8,
+            "buoyancyCenterM": [0, 0, 0.5]
+          }
+        ]
+      }
+    ]
+  },
+  "referenceState": {
+    "heelDeg": 0,
+    "trimDeg": 0,
+    "waterplaneOffsetM": 2
+  }
+}

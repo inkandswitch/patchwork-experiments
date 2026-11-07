@@ -1,0 +1,1354 @@
+{
+  "format": "patchwork-rig",
+  "version": 2,
+  "name": "Laser / ILCA 7",
+  "frame": {
+    "axes": "x-forward-y-port-z-up",
+    "units": "m",
+    "originDescription": "The synthetic hull's frame: x from mid-LWL of the hull as built, y port, z up, the floated waterplane at z = 0.",
+    "glbToFrame": [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      0,
+      0,
+      -1.8793475e-16,
+      1
+    ],
+    "glbAxes": {
+      "bow": "+X",
+      "up": "+Y"
+    },
+    "design": {
+      "heelDeg": 0,
+      "trimDeg": 0,
+      "waterplaneZM": 0,
+      "sourceWaterplaneZM": 1.8793475e-16,
+      "displacementKg": 160,
+      "volumeM3": 0.156097561,
+      "rhoWaterKgM3": 1025
+    }
+  },
+  "source": {
+    "generator": "patchwork rig-design 0.1.0",
+    "rigDoc": null,
+    "rigHeads": null,
+    "hull": {
+      "kind": "synthetic",
+      "url": null,
+      "path": null,
+      "label": "synthetic hull from principal dimensions",
+      "heads": null,
+      "glbKey": null
+    },
+    "statics": "mesh"
+  },
+  "hull": {
+    "loaM": 4.23,
+    "beamM": 1.37,
+    "lwlM": 3.81,
+    "bwlM": 1.10871,
+    "tcM": 0.0887938145,
+    "xFwdM": 1.905,
+    "xAftM": -1.905,
+    "volumeM3": 0.156097561,
+    "wsaM2": 2.9184503,
+    "transomWetM2": 0,
+    "awM2": 2.80929942,
+    "lcbM": -0.113839974,
+    "lcfM": -0.0833630606,
+    "vcbM": -0.0316696459,
+    "cp": 0.551313685,
+    "cm": 0.754869173,
+    "cb": 0.416169706,
+    "zMetacentreM": 1.12650618,
+    "halfEntranceDeg": 28.0701311,
+    "stemheadM": [
+      2.157,
+      0,
+      0.28
+    ],
+    "sternM": [
+      -2.073,
+      0,
+      0.28
+    ],
+    "keelZM": -0.0887938145,
+    "lateral": {
+      "areaM2": 0.251327618,
+      "centroidM": [
+        -0.060890967,
+        0,
+        -0.0359575694
+      ]
+    },
+    "sideForce": {
+      "yv": 0.00525309302,
+      "nv": 0.000948610418,
+      "lwlM": 3.81,
+      "xMidM": -1.11022302e-16,
+      "atM": [
+        -0.060890967,
+        0,
+        -0.0359575694
+      ],
+      "source": "Clarke, Gedling & Hine (1983), 'The application of manoeuvring criteria in hull design using linear theory', Trans. RINA 125: Y'v = −π(T/L)²(1 + 0.40·Cb·B/T), N'v = −π(T/L)²(0.5 + 2.4·T/L), as reproduced in a Mathcad worksheet on ptcusercommunity.com (retrieved 2026-11-06); the paper was not checked. A regression on ships, applied to the canoe body: an extrapolation."
+    },
+    "dsyhs": {
+      "lwlM": 3.81,
+      "bwlM": 1.10871,
+      "tcM": 0.0887938145,
+      "volumeM3": 0.156097561,
+      "awM2": 2.80929942,
+      "cp": 0.551313685,
+      "cm": 0.754869173,
+      "lcbFppM": 2.01883997,
+      "lcfFppM": 1.98836306,
+      "lcbPct": -2.98792581,
+      "wsaM2": 2.9184503
+    },
+    "envelope": [
+      {
+        "param": "lcbLcf",
+        "label": "LCB_fpp / LCF_fpp",
+        "value": 1.01532764,
+        "min": 0.92,
+        "max": 1.002
+      }
+    ],
+    "prov": "synthetic"
+  },
+  "loading": {
+    "massKg": 160,
+    "cgM": [
+      -0.120824792,
+      0,
+      0.417394364
+    ],
+    "gyradiiM": [
+      0.724333256,
+      1.25795239,
+      1.07262666
+    ],
+    "gyradiiBasis": "estimated: each item a point mass, the mast and boom thin rods, the lightship with its own k_roll = 0.35·beam and k_pitch = k_yaw = 0.25·LOA (rules of thumb, to verify)",
+    "items": [
+      {
+        "id": "mast",
+        "name": "Mast, 5.70 m at 0.81 kg/m",
+        "kind": "rig",
+        "massKg": 4.629825,
+        "atM": [
+          0.852,
+          0,
+          3.13
+        ],
+        "estimated": true
+      },
+      {
+        "id": "boom",
+        "name": "Boom",
+        "kind": "rig",
+        "massKg": 1.335339,
+        "atM": [
+          -0.518,
+          0,
+          0.85
+        ],
+        "estimated": true
+      },
+      {
+        "id": "sail-main",
+        "name": "Sail: main",
+        "kind": "rig",
+        "massKg": 2.11800016,
+        "atM": [
+          -0.0634099636,
+          0,
+          2.56387035
+        ],
+        "estimated": true
+      },
+      {
+        "id": "keel-structure",
+        "name": "Board (structure)",
+        "kind": "appendage",
+        "massKg": 5.76580061,
+        "atM": [
+          0.26378,
+          0,
+          -0.421604771
+        ],
+        "estimated": true
+      },
+      {
+        "id": "rudder-structure",
+        "name": "Rudder (structure)",
+        "kind": "appendage",
+        "massKg": 1.61220093,
+        "atM": [
+          -2.20826,
+          0,
+          -0.2635
+        ],
+        "estimated": true
+      },
+      {
+        "id": "crew",
+        "name": "Crew, 1 × 80 kg (hiking)",
+        "kind": "crew",
+        "massKg": 80,
+        "atM": [
+          -0.882824792,
+          0,
+          0.53
+        ],
+        "estimated": false
+      },
+      {
+        "id": "lightship",
+        "name": "Lightship (hull, deck, fit-out): the remainder",
+        "kind": "lightship",
+        "massKg": 64.5388343,
+        "atM": [
+          0.778053557,
+          0,
+          0.095789366
+        ],
+        "estimated": true
+      }
+    ],
+    "crew": {
+      "count": 1,
+      "kgEach": 80,
+      "mode": "hiking",
+      "massKg": 80,
+      "armM": 1.10388741,
+      "armGiven": false,
+      "stations": [
+        {
+          "side": "windward",
+          "atM": [
+            -0.882824792,
+            1.10388741,
+            0.53
+          ]
+        }
+      ]
+    },
+    "righting": {
+      "source": "table",
+      "heelsDeg": [
+        0,
+        2.5,
+        5,
+        7.5,
+        10,
+        12.5,
+        15,
+        17.5,
+        20,
+        22.5,
+        25,
+        27.5,
+        30,
+        32.5,
+        35,
+        37.5,
+        40,
+        42.5,
+        45,
+        47.5,
+        50,
+        52.5,
+        55,
+        57.5,
+        60,
+        62.5,
+        65,
+        67.5,
+        70,
+        72.5,
+        75,
+        77.5,
+        80,
+        82.5,
+        85,
+        87.5,
+        90
+      ],
+      "boatNm": [
+        0.00016590484,
+        45.9774179,
+        86.5740628,
+        118.859677,
+        142.969804,
+        160.166846,
+        171.886618,
+        179.39812,
+        183.705834,
+        185.66471,
+        185.980794,
+        185.306974,
+        183.563629,
+        178.209147,
+        168.353017,
+        154.355545,
+        136.839227,
+        115.142839,
+        92.2557694,
+        67.5663403,
+        41.2920581,
+        13.7233362,
+        -14.8852253,
+        -44.3148589,
+        -74.3766345,
+        -104.907248,
+        -135.76046,
+        -166.992418,
+        -198.24571,
+        -229.408651,
+        -260.37717,
+        -291.054738,
+        -321.001616,
+        -350.662831,
+        -380.009223,
+        -408.725092,
+        -436.73532
+      ],
+      "crewNm": [
+        866.034995,
+        865.210721,
+        862.73947,
+        858.625945,
+        852.877977,
+        845.506507,
+        836.525568,
+        825.952254,
+        813.806694,
+        800.112006,
+        784.89426,
+        768.182422,
+        750.008306,
+        730.406506,
+        709.414336,
+        687.071756,
+        663.421295,
+        638.507975,
+        612.379218,
+        585.084762,
+        556.676564,
+        527.208701,
+        496.737266,
+        465.320263,
+        433.017497,
+        399.890458,
+        366.002204,
+        331.417244,
+        296.201413,
+        260.421745,
+        224.14635,
+        187.44428,
+        150.385399,
+        113.04025,
+        75.4799232,
+        37.7759159,
+        5.30293492e-14
+      ],
+      "wettedAreaM2": [
+        2.89319591,
+        2.87749218,
+        2.8081095,
+        2.71197907,
+        2.60994637,
+        2.51382464,
+        2.42794259,
+        2.35422432,
+        2.29246511,
+        2.24172152,
+        2.20287085,
+        2.17708957,
+        2.16695189,
+        2.1670926,
+        2.17086642,
+        2.17675127,
+        2.18396659,
+        2.18745024,
+        2.19546077,
+        2.20402866,
+        2.21169675,
+        2.21838022,
+        2.22461829,
+        2.23030989,
+        2.23552584,
+        2.24037894,
+        2.24503381,
+        2.24865795,
+        2.2522491,
+        2.25586776,
+        2.25954288,
+        2.26327583,
+        2.26968654,
+        2.27548521,
+        2.27963862,
+        2.28393251,
+        2.28839872
+      ]
+    },
+    "heelLimitDeg": 15
+  },
+  "appendages": [
+    {
+      "id": "keel",
+      "kind": "daggerboard",
+      "cornersM": {
+        "rootLE": [
+          0.407,
+          0,
+          -0.0816047711
+        ],
+        "rootTE": [
+          0.066,
+          0,
+          -0.0816047711
+        ],
+        "tipLE": [
+          0.407,
+          0,
+          -0.761604771
+        ],
+        "tipTE": [
+          0.066,
+          0,
+          -0.761604771
+        ]
+      },
+      "spanM": 0.68,
+      "rootChordM": 0.341,
+      "tipChordM": 0.341,
+      "sweepDeg": 0,
+      "sweepHalfDeg": 0,
+      "tc": 0.096774,
+      "taper": 1,
+      "areaM2": 0.23188,
+      "macM": 0.341,
+      "macFromRootM": 0.34,
+      "qcM": [
+        0.32175,
+        0,
+        -0.421604771
+      ],
+      "arGeom": 1.9941349,
+      "endPlateFactor": 2,
+      "arEff": 3.98826979,
+      "liftSlope": 3.8781192,
+      "stallDeg": 15,
+      "clMax": 1.01528923,
+      "volumeM3": 0.00524163692,
+      "volumeCentroidM": [
+        0.26378,
+        0,
+        -0.421604771
+      ],
+      "bulb": null,
+      "stock": null
+    },
+    {
+      "id": "rudder",
+      "kind": "kick-up",
+      "cornersM": {
+        "rootLE": [
+          -2.123,
+          0,
+          0
+        ],
+        "rootTE": [
+          -2.326,
+          0,
+          0
+        ],
+        "tipLE": [
+          -2.123,
+          0,
+          -0.527
+        ],
+        "tipTE": [
+          -2.326,
+          0,
+          -0.527
+        ]
+      },
+      "spanM": 0.527,
+      "rootChordM": 0.203,
+      "tipChordM": 0.203,
+      "sweepDeg": 0,
+      "sweepHalfDeg": 0,
+      "tc": 0.098522,
+      "taper": 1,
+      "areaM2": 0.106981,
+      "macM": 0.203,
+      "macFromRootM": 0.2635,
+      "qcM": [
+        -2.17375,
+        0,
+        -0.2635
+      ],
+      "arGeom": 2.59605911,
+      "endPlateFactor": 1,
+      "arEff": 2.59605911,
+      "liftSlope": 3.09098845,
+      "stallDeg": 15,
+      "clMax": 0.809218884,
+      "volumeM3": 0.00146563721,
+      "volumeCentroidM": [
+        -2.20826,
+        0,
+        -0.2635
+      ],
+      "bulb": null,
+      "stock": {
+        "axisM": [
+          [
+            -2.15345,
+            0,
+            -0.527
+          ],
+          [
+            -2.15345,
+            0,
+            0.28
+          ]
+        ],
+        "bearingM": [
+          -2.15345,
+          0,
+          0
+        ],
+        "deckM": [
+          -2.15345,
+          0,
+          0.28
+        ],
+        "balanceFrac": 0.15,
+        "maxDeg": 30
+      }
+    }
+  ],
+  "sails": [
+    {
+      "id": "main",
+      "kind": "main",
+      "model": {
+        "family": "main",
+        "alpha0": -4,
+        "clMax": 1.5,
+        "clBack": 0.7,
+        "cdp": 0.022,
+        "kv": 0.006,
+        "stall": 18,
+        "width": 22,
+        "cn90": 1.35,
+        "sheet": [
+          0,
+          85
+        ],
+        "wing": null,
+        "ease": {
+          "from": 25,
+          "to": 85,
+          "loss": 0.25,
+          "drag": 0.42
+        }
+      },
+      "polygonM": [
+        [
+          0.852,
+          0,
+          0.85
+        ],
+        [
+          0.852,
+          0,
+          5.98
+        ],
+        [
+          0.506274531,
+          0,
+          5.34047276
+        ],
+        [
+          0.161470625,
+          0,
+          4.70045331
+        ],
+        [
+          -0.182411719,
+          0,
+          4.05994164
+        ],
+        [
+          -0.5253725,
+          0,
+          3.41893775
+        ],
+        [
+          -0.867411719,
+          0,
+          2.77744164
+        ],
+        [
+          -1.20852937,
+          0,
+          2.13545331
+        ],
+        [
+          -1.54872547,
+          0,
+          1.49297276
+        ],
+        [
+          -1.888,
+          0,
+          0.85
+        ]
+      ],
+      "areaM2": 7.06000055,
+      "ceM": [
+        -0.0634099636,
+        0,
+        2.56387035
+      ],
+      "tackM": [
+        0.852,
+        0,
+        0.85
+      ],
+      "headM": [
+        0.852,
+        0,
+        5.98
+      ],
+      "clewM": [
+        -1.888,
+        0,
+        0.85
+      ],
+      "luffM": 5.13,
+      "footM": 2.74,
+      "ar": 7.45521189,
+      "liftSlope": 4.81977001,
+      "reefs": [],
+      "furl": 0,
+      "sheeting": {
+        "minDeg": 0,
+        "maxDeg": 85,
+        "wing": null,
+        "boom": {
+          "gooseneckM": [
+            0.852,
+            0,
+            0.85
+          ],
+          "endM": [
+            -1.888,
+            0,
+            0.85
+          ],
+          "lengthM": 2.74
+        },
+        "lead": null
+      },
+      "coeffs": {
+        "alphaDeg": [
+          -30,
+          -15,
+          0,
+          15,
+          30,
+          45,
+          60,
+          75,
+          90,
+          105,
+          120
+        ],
+        "cl": [
+          -0.773744903,
+          -0.652138278,
+          0.336270753,
+          1.29681912,
+          1.04516476,
+          0.860328423,
+          0.646491713,
+          0.34579056,
+          8.26636589e-17,
+          -0.34579056,
+          -0.646491713
+        ],
+        "cd": [
+          0.188815206,
+          0.024551706,
+          0.0226784681,
+          0.0334698578,
+          0.472549356,
+          0.882328423,
+          1.14175649,
+          1.31250794,
+          1.372,
+          1.31250794,
+          1.14175649
+        ]
+      }
+    }
+  ],
+  "sailModel": {
+    "rhoAirKgM3": 1.225,
+    "interaction": {
+      "kIntDeg": 4,
+      "upwash": [
+        30,
+        90
+      ],
+      "blanket": {
+        "max": 0.35,
+        "from": 90,
+        "to": 160
+      }
+    },
+    "flatMin": 0.5,
+    "spanFactor": 1.1,
+    "cnExp": 0.3
+  },
+  "sets": [
+    {
+      "id": "full",
+      "reef": -1,
+      "sails": [
+        "main"
+      ],
+      "areaM2": 7.06000055,
+      "ceM": [
+        -0.0634099636,
+        0,
+        2.56387035
+      ],
+      "heM": 6.578,
+      "are": 6.12890661,
+      "trimmed": null
+    }
+  ],
+  "rig": {
+    "type": "cat",
+    "I": 0,
+    "J": 0,
+    "P": 5.13,
+    "E": 2.74,
+    "BAS": 0.57,
+    "ISP": null,
+    "LP": null,
+    "rakeDeg": 0,
+    "mast": {
+      "stepM": [
+        0.852,
+        0,
+        0.28
+      ],
+      "partnersM": [
+        0.852,
+        0,
+        0.28
+      ],
+      "headM": [
+        0.852,
+        0,
+        5.98
+      ],
+      "heightM": 5.7,
+      "lengthM": 5.7,
+      "massKg": 4.629825,
+      "kgPerM": 0.81225,
+      "stepped": "deck",
+      "stayed": false,
+      "sectionM": 0.04135
+    },
+    "boom": {
+      "gooseneckM": [
+        0.852,
+        0,
+        0.85
+      ],
+      "endM": [
+        -1.888,
+        0,
+        0.85
+      ],
+      "lengthM": 2.74
+    },
+    "standing": [],
+    "spreaders": [],
+    "designer": {
+      "areaM2": 7.0281,
+      "ceM": [
+        -0.0613333333,
+        0,
+        2.56
+      ]
+    },
+    "actual": {
+      "areaM2": 7.06000055,
+      "ceM": [
+        -0.0634099636,
+        0,
+        2.56387035
+      ]
+    }
+  },
+  "resistance": {
+    "status": "computed",
+    "why": null,
+    "model": "ITTC57+DSYHS+Savitsky",
+    "rhoWaterKgM3": 1025,
+    "nuM2s": 0.00000118831,
+    "speedsMs": [
+      1.52813891,
+      3.05627782,
+      4.58441673,
+      6.11255564
+    ],
+    "fn": [
+      0.25,
+      0.5,
+      0.75,
+      1
+    ],
+    "heelsDeg": [
+      0,
+      20
+    ],
+    "hullN": [
+      [
+        15.7392267,
+        126.388394,
+        191.291602,
+        269.064848
+      ],
+      [
+        13.3574261,
+        149.977291,
+        191.291602,
+        269.064848
+      ]
+    ],
+    "frictionN": [
+      [
+        12.6256868,
+        44.4114208,
+        93.0279896,
+        157.436726
+      ],
+      [
+        10.0041433,
+        35.1900238,
+        73.7120566,
+        124.747239
+      ]
+    ],
+    "heelResiduaryN": [
+      [
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0.239742894,
+        32.8102943,
+        39.7611278,
+        39.7611278
+      ]
+    ],
+    "residuaryN": [
+      3.11353991,
+      81.9769732,
+      98.6356359,
+      98.6356359
+    ],
+    "planingN": [
+      null,
+      null,
+      191.291602,
+      269.064848
+    ],
+    "planingWeight": [
+      0,
+      0,
+      1,
+      1
+    ],
+    "appendagesN": [
+      5.74082589,
+      19.5234165,
+      40.1810448,
+      67.2110992
+    ],
+    "regime": [
+      "displacement",
+      "displacement",
+      "transition",
+      "planing"
+    ],
+    "induced": {
+      "draftM": 0.761604771,
+      "keelTaper": 1,
+      "rule": "§6.5.5"
+    },
+    "coefficients": {
+      "residuaryFn": [
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "residuaryA": [
+        [
+          -0.0005,
+          0.0023,
+          -0.0086,
+          -0.0015,
+          0.0061,
+          0.001,
+          0.0001,
+          0.0052
+        ],
+        [
+          -0.0003,
+          0.0059,
+          -0.0064,
+          0.007,
+          0.0014,
+          0.0013,
+          0.0005,
+          -0.002
+        ],
+        [
+          -0.0002,
+          -0.0156,
+          0.0031,
+          -0.0021,
+          -0.007,
+          0.0148,
+          0.001,
+          -0.0043
+        ],
+        [
+          -0.0009,
+          0.0016,
+          0.0337,
+          -0.0285,
+          -0.0367,
+          0.0218,
+          0.0015,
+          -0.0172
+        ],
+        [
+          -0.0026,
+          -0.0567,
+          0.0446,
+          -0.1091,
+          -0.0707,
+          0.0914,
+          0.0021,
+          -0.0078
+        ],
+        [
+          -0.0064,
+          -0.4034,
+          -0.125,
+          0.0273,
+          -0.1341,
+          0.3578,
+          0.0045,
+          0.1115
+        ],
+        [
+          -0.0218,
+          -0.5261,
+          -0.2945,
+          0.2485,
+          -0.2428,
+          0.6293,
+          0.0081,
+          0.2086
+        ],
+        [
+          -0.0388,
+          -0.5986,
+          -0.3038,
+          0.6033,
+          -0.043,
+          0.8332,
+          0.0106,
+          0.1336
+        ],
+        [
+          -0.0347,
+          -0.4764,
+          -0.2361,
+          0.8726,
+          0.4219,
+          0.899,
+          0.0096,
+          -0.2272
+        ],
+        [
+          -0.0361,
+          0.0037,
+          -0.296,
+          0.9661,
+          0.6123,
+          0.7534,
+          0.01,
+          -0.3352
+        ],
+        [
+          0.0008,
+          0.3728,
+          -0.3667,
+          1.3957,
+          1.0343,
+          0.323,
+          0.0072,
+          -0.4632
+        ],
+        [
+          0.0108,
+          -0.1238,
+          -0.2026,
+          1.1282,
+          1.1836,
+          0.4973,
+          0.0038,
+          -0.4477
+        ],
+        [
+          0.1023,
+          0.7726,
+          0.504,
+          1.7867,
+          2.1934,
+          -1.5479,
+          -0.0115,
+          -0.0977
+        ]
+      ],
+      "heelFn": [
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55
+      ],
+      "heelU": [
+        [
+          -0.0268,
+          -0.0014,
+          -0.0057,
+          0.0016,
+          -0.007,
+          -0.0017
+        ],
+        [
+          0.6628,
+          -0.0632,
+          -0.0699,
+          0.0069,
+          0.0459,
+          -0.0004
+        ],
+        [
+          1.6433,
+          -0.2144,
+          -0.164,
+          0.0199,
+          -0.054,
+          -0.0268
+        ],
+        [
+          -0.8659,
+          -0.0354,
+          0.2226,
+          0.0188,
+          -0.58,
+          -0.1133
+        ],
+        [
+          -3.2715,
+          0.1372,
+          0.5547,
+          0.0268,
+          -1.0064,
+          -0.2026
+        ],
+        [
+          -0.1976,
+          -0.148,
+          -0.6593,
+          0.1862,
+          -0.7489,
+          -0.1648
+        ],
+        [
+          1.5873,
+          -0.3749,
+          -0.7105,
+          0.2146,
+          -0.4818,
+          -0.1174
+        ]
+      ],
+      "teUpright": [
+        3.7455,
+        -3.6246,
+        0.0589,
+        -0.0296,
+        1.2306,
+        -0.7256
+      ]
+    },
+    "planing": {
+      "capability": 1,
+      "dL": 80.6261987,
+      "weightN": 1569.064,
+      "beamM": 1.10871,
+      "deadriseDeg": 5.02674389,
+      "deadriseFrom": "estimated from the hull's section 20% of LWL forward of its aft end",
+      "lcgFromAftM": 1.78417521,
+      "fnBlend": [
+        0.55,
+        0.75
+      ]
+    },
+    "fnMax": 0.75,
+    "formFactor": 0
+  },
+  "hardpoints": {
+    "mastStepM": [
+      0.852,
+      0,
+      0.28
+    ],
+    "mastPartnersM": [
+      0.852,
+      0,
+      0.28
+    ],
+    "mastheadM": [
+      0.852,
+      0,
+      5.98
+    ],
+    "stemheadM": [
+      2.157,
+      0,
+      0.28
+    ],
+    "forestayTackM": null,
+    "innerForestayTackM": null,
+    "backstayPlateM": null,
+    "chainplates": [],
+    "rudderStock": {
+      "axisM": [
+        [
+          -2.15345,
+          0,
+          -0.527
+        ],
+        [
+          -2.15345,
+          0,
+          0.28
+        ]
+      ],
+      "bearingM": [
+        -2.15345,
+        0,
+        0
+      ],
+      "deckM": [
+        -2.15345,
+        0,
+        0.28
+      ]
+    },
+    "mainsheet": {
+      "boomM": [
+        -1.751,
+        0,
+        0.85
+      ],
+      "travellerM": [
+        [
+          -1.751,
+          0.450217665,
+          0.28
+        ],
+        [
+          -1.751,
+          -0.450217665,
+          0.28
+        ]
+      ]
+    },
+    "jibLeads": [],
+    "halyardExits": [
+      {
+        "sail": "main",
+        "atM": [
+          0.852,
+          0,
+          5.98
+        ]
+      }
+    ],
+    "crewStations": [
+      {
+        "side": "windward",
+        "atM": [
+          -0.882824792,
+          1.10388741,
+          0.53
+        ],
+        "mode": "hiking"
+      }
+    ]
+  },
+  "loads": {
+    "basis": "RM30",
+    "rm30Nm": 933.571935,
+    "chainplateBaseM": null,
+    "chainplatesN": {},
+    "mastCompressionN": null,
+    "atAwsMs": 8.61653343,
+    "sheetN": {
+      "main": 408.72075
+    },
+    "halyardN": {
+      "main": null
+    },
+    "rudderTorqueNm": 18.1813374,
+    "rudderAtSpeedMs": 2.43723994,
+    "notes": "Static, no safety factor, no rig pretension. Chainplates: RM30 over the chainplate base (each is the windward one on its tack). Sheets: Harken's rule at the reef wind (the main's on its triangle × (1 + roach)); the staysail's isn't estimated. Halyards aren't estimated: no rule found to cite. Rudder: the larger of the torque at stall and stalled at maxDeg, at hull speed."
+  },
+  "predicted": {
+    "status": "not-computed",
+    "why": "the polar wasn't computed for this export",
+    "conditions": {
+      "twsMs": [
+        3.08666667,
+        4.11555556,
+        5.14444444,
+        6.17333333,
+        7.20222222,
+        8.23111111,
+        10.2888889
+      ],
+      "twaDeg": [
+        40,
+        45,
+        52,
+        60,
+        70,
+        75,
+        90,
+        110,
+        120,
+        135,
+        150,
+        165,
+        180
+      ],
+      "reference": {
+        "twsMs": 6.17333333,
+        "twaDeg": 45
+      }
+    },
+    "reference": {
+      "twsMs": 6.17333333,
+      "twsKn": 12,
+      "twaDeg": 45,
+      "ok": true,
+      "speedMs": 2.92666776,
+      "VMs": 2.92666776,
+      "heelDeg": 14.9998282,
+      "leewayDeg": 3.41872941,
+      "rudderDeg": 1.41568241,
+      "flat": 0.911905289,
+      "set": "full",
+      "reef": -1,
+      "sheetsDeg": {
+        "main": 11.0917246
+      },
+      "awsMs": 8.49861419,
+      "awaDeg": 30.9064185,
+      "fn": 0.478796093,
+      "regime": "displacement",
+      "planingWeight": 0,
+      "vmgMs": 2.06946662,
+      "residual": 4.87120792e-10,
+      "flags": [
+        {
+          "id": "dsyhs",
+          "text": "DSYHS residuary extrapolated: LCB_fpp / LCF_fpp 1.015 (fitted 0.92–1.002)."
+        }
+      ],
+      "hollow": false
+    },
+    "helm": {
+      "id": "weather",
+      "text": "weather helm 1.4°, within 0–5° weather",
+      "rudderDeg": 1.41568241
+    },
+    "points": [],
+    "beat": [],
+    "run": []
+  },
+  "lumpedSail": {
+    "tackM": [
+      0.852,
+      0,
+      0.85
+    ],
+    "luffM": 4.51018514,
+    "footM": 2.74622989,
+    "areaM2": 7.06000055,
+    "ceM": [
+      -0.0634099636,
+      0,
+      2.56387035
+    ],
+    "ceHeightFrac": 0.38
+  },
+  "warnings": [
+    "The given Tc (0.094 m) and the displacement don't agree with Cp 0.552 and Cm 0.757: the synthetic hull floats 6% shallower, at 0.088 m, so that it displaces what was given."
+  ],
+  "rules": "contract/v1/specification.md §6"
+}

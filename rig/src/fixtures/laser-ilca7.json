@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "title": "Laser / ILCA 7",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 4.23,
+      "lwl": 3.81,
+      "beam": 1.37,
+      "bwl": 1.10871,
+      "tc": 0.094318,
+      "draft": 0.787,
+      "freeboard": 0.28,
+      "displacementKg": 160,
+      "cp": 0.552,
+      "cm": 0.757,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "cat",
+    "mast": {
+      "aftOfStem": 1.305,
+      "rakeDeg": 0,
+      "stepped": "deck",
+      "kgPerM": null
+    },
+    "I": 0,
+    "P": 5.13,
+    "E": 2.74,
+    "BAS": 0.57,
+    "ISP": null,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0.004539,
+      "reefs": []
+    },
+    "headsail": null,
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "daggerboard",
+      "aftOfStem": 1.75,
+      "span": 0.68,
+      "rootChord": 0.341,
+      "tipChord": 0.341,
+      "sweepDeg": 0,
+      "tc": 0.096774,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "kick-up",
+      "aftOfStem": 4.28,
+      "span": 0.527,
+      "rootChord": 0.203,
+      "tipChord": 0.203,
+      "sweepDeg": 0,
+      "tc": 0.098522,
+      "maxDeg": 30,
+      "stockFrac": 0.15
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 0,
+      "at": "hull"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 1,
+      "kgEach": 80,
+      "mode": "hiking",
+      "arm": null
+    }
+  },
+  "conditions": {
+    "heelLimitDeg": 15
+  },
+  "prov": {
+    "hull.dims.freeboard": "estimated",
+    "rig.mast.aftOfStem": "estimated",
+    "rig.BAS": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.maxDeg": "estimated",
+    "appendages.rudder.stockFrac": "estimated"
+  },
+  "sources": [
+    {
+      "id": "wiki-laser",
+      "what": "LOA 4.23 m, LWL 3.81 m, beam 1.37 m, draft 0.787 m, hull weight 58.97 kg, sail 7.06 m²; RYA PN 1102 (table) / 1101 (text) / '1100 TBD' (infobox); D-PN 91.1",
+      "cite": "Wikipedia, \"Laser (dinghy)\" (dimensions cite sailboatdata.com; PN cites RYA Portsmouth Number List 2024)",
+      "url": "https://en.wikipedia.org/wiki/Laser_(dinghy)",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "note": "The article's own text gives LWL 3.96 m against the infobox's 3.81 m."
+    },
+    {
+      "id": "day-2017",
+      "what": "Table 2 'Level trim 160 kg': Cp 0.552, Cm 0.757, BWL/LWL 0.291, BWL/Tc 11.755; 160 kg all up with an 80 kg, 1.83 m sailor; VPP polar at 9 kn true (Figs 4 and 6)",
+      "cite": "Day, A.H. (2017), 'Performance prediction for sailing dinghies', Ocean Engineering 136, pp. 67–79; Table 2 p. 73 (PDF p7); Figs 4, 6 pp. 75–76",
+      "url": "https://github.com/lofilobzik/sail (data/laser.json, data/laser-polar-target.json; MIT)",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "note": "Read secondhand: lofilobzik/sail's transcription from the page images; the polar was read off the plots to about ±0.05 kn. The paper itself was not read here."
+    },
+    {
+      "id": "ilca-rules",
+      "what": "ILCA 7 MKI sail luff max 5130 mm, foot max 2740 mm (G.3.3, p36); daggerboard max 680 mm × 341 mm chord, 33 mm thick (E.3, p28); rudder chord 203 mm, 20 mm thick, trailing edge 527 mm (p28)",
+      "cite": "International Laser Class Association, Constitution and Class Rules (2019 Handbook)",
+      "url": "https://github.com/lofilobzik/sail (docs/INDEX.md and data/laser.json sources; MIT)",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "note": "Read secondhand through lofilobzik/sail's transcription; the rules PDF was not opened here. The rudder drawing is ambiguous about which edge each length is measured along."
+    },
+    {
+      "id": "lofilobzik-estimates",
+      "what": "Mast step 2.925 m and daggerboard slot 2.48 m forward of the transom (read off ILCA's hull-fittings diagram D.4.3, 'only a guide'); hull depth 0.375 m (an owner's measurement)",
+      "cite": "lofilobzik/sail data/laser.json sources block (inferences marked TUNING GUESS / INFERENCE there)",
+      "url": "https://github.com/lofilobzik/sail",
+      "retrieved": "2026-11-06",
+      "fetched": true
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give SA/D, D/L, BAS and the tall-rig and wing-keel variants",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-06",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval."
+    },
+    {
+      "id": "laser-reach-anecdotal",
+      "what": "Laser reaching speeds under GPS: a race report and forum anecdotes",
+      "cite": "afloat.ie, 'Impressive speeds from Lasers racing in Howth' (item 41737); sailingforums.com 'how fast is a laser'",
+      "url": "https://www.afloat.ie/sail/sailing-classes/laser/item/41737-impressive-speeds-from-lasers-racing-in-howth",
+      "retrieved": "2026-11-06",
+      "fetched": false,
+      "note": "afloat.ie returned HTTP 403; only the search engine's summary of it was read ('over 14 knots can readily be achieved' on reaches, gusty, wind strength not given). The speed target built on it is marked estimated."
+    }
+  ],
+  "published": {
+    "note": "Hull particulars from Day's Table 2 condition (160 kg all up). The roach is set so the main is the published 7.06 m² (the ILCA luff and foot alone give 7.028 m²).",
+    "figures": [
+      {
+        "id": "mainTriangleM2",
+        "label": "½·luff·foot from the ILCA maxima",
+        "value": 7.06,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "wiki-laser",
+        "work": "½·5.13·2.74 = 7.0281 m² against the published 7.06 m² (−0.45%)"
+      },
+      {
+        "id": "cp",
+        "label": "Cp of the floated synthetic hull",
+        "value": 0.552,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "day-2017",
+        "roundTrip": "an input of the synthetic hull (hull.dims), from the same Day Table 2 row: this checks the hull generator reproduces it, not the model against a source"
+      },
+      {
+        "id": "cm",
+        "label": "Cm of the floated synthetic hull",
+        "value": 0.757,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "day-2017",
+        "roundTrip": "an input of the synthetic hull (hull.dims), from the same Day Table 2 row: this checks the hull generator reproduces it, not the model against a source"
+      },
+      {
+        "id": "bwlM",
+        "label": "BWL as floated",
+        "value": 1.10871,
+        "unit": "m",
+        "tol": {
+          "rel": 0.02
+        },
+        "source": "day-2017",
+        "roundTrip": "an input of the synthetic hull (hull.dims), from the same Day Table 2 row: this checks the hull generator reproduces it, not the model against a source"
+      },
+      {
+        "id": "tcM",
+        "label": "Tc as floated",
+        "value": 0.094318,
+        "unit": "m",
+        "tol": {
+          "rel": 0.08
+        },
+        "source": "day-2017",
+        "work": "Day's row doesn't close on itself: LWL·BWL·Tc·Cp·Cm = 3.81·1.1087·0.0943·0.552·0.757 = 0.1665 m³ against 160 kg / 1025 = 0.1561 m³ (6.6% over). Floated at 160 kg with his Cp and Cm, the hull must come out about 6% shallower, hence ±8%",
+        "roundTrip": "Tc is an input too; the floated value differs only because Day's row doesn't close on its own displacement, so this checks the generator's closure, not the model"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft, board down",
+        "value": 0.787,
+        "unit": "m",
+        "tol": {
+          "abs": 0.03
+        },
+        "source": "wiki-laser",
+        "work": "Tc 0.094 + board 0.68 = 0.774 (the board's 680 mm is measured from the keel line)"
+      }
+    ],
+    "polar": {
+      "kind": "day-vpp",
+      "source": "day-2017",
+      "twsKn": 9,
+      "upwind": {
+        "twaDeg": [
+          40,
+          45,
+          50,
+          55,
+          60
+        ],
+        "speedKn": [
+          4.55,
+          4.91,
+          5.15,
+          5.41,
+          5.54
+        ]
+      },
+      "downwind": {
+        "twaDeg": [
+          150,
+          160,
+          170,
+          180
+        ],
+        "speedKn": [
+          4.41,
+          4.28,
+          4.23,
+          4.19
+        ]
+      },
+      "tol": {
+        "rel": 0.15
+      },
+      "note": "Day's own VPP, not measured speeds: a check that two VPPs agree, not that either is right. The PN (1102) is a relative handicap and gives no absolute speed, so it is recorded, not compared."
+    },
+    "planing": {
+      "twsKn": 16,
+      "twaDeg": 100,
+      "expect": "planing",
+      "note": "A Laser planes on a reach in a breeze; the regime must say so and carry the planing model's flags.",
+      "speedKn": 12,
+      "speedTol": {
+        "rel": 0.25
+      },
+      "speedSource": "laser-reach-anecdotal",
+      "speedEstimated": true,
+      "speedNote": "ESTIMATED target, no measured or published figure was fetched: a Laser race report (afloat.ie, Howth) is quoted in search results as GPS trackers showing 'over 14 knots can readily be achieved on reaches' in gusty wind of unstated strength, and dinghy sailors' forum reports put a broad reach at 65–100% of the true wind. 12 kn at 16 kn true, ±25% (9–15 kn), is a band to see drift in, not a validation."
+    },
+    "disagreements": [
+      {
+        "what": "LWL",
+        "values": [
+          {
+            "value": "3.81 m",
+            "source": "wiki-laser (infobox)"
+          },
+          {
+            "value": "3.96 m",
+            "source": "wiki-laser (text)"
+          }
+        ],
+        "used": "3.81 m (also Day's Table 2 basis)"
+      },
+      {
+        "what": "Portsmouth Number",
+        "values": [
+          {
+            "value": "1102",
+            "source": "wiki-laser (table)"
+          },
+          {
+            "value": "1101",
+            "source": "wiki-laser (text, 'clarification needed')"
+          },
+          {
+            "value": "1100 TBD",
+            "source": "wiki-laser (infobox)"
+          }
+        ],
+        "used": "none: PN is not compared"
+      },
+      {
+        "what": "Volume (Day Table 2 against itself)",
+        "values": [
+          {
+            "value": "LWL·BWL·Tc·Cp·Cm = 0.1665 m³",
+            "source": "day-2017"
+          },
+          {
+            "value": "160 kg / 1025 kg/m³ = 0.1561 m³",
+            "source": "day-2017"
+          }
+        ],
+        "used": "160 kg, Cp, Cm and BWL; Tc follows (0.089 m as floated against Day's 0.094)"
+      },
+      {
+        "what": "Sail area",
+        "values": [
+          {
+            "value": "7.06 m²",
+            "source": "wiki-laser"
+          },
+          {
+            "value": "7.028 m² (½·luff·foot)",
+            "source": "ilca-rules"
+          }
+        ],
+        "used": "7.06 m², by a 0.45% roach"
+      }
+    ],
+    "estimatedWhy": "Mast and daggerboard positions are lofilobzik's inferences from a diagram ILCA calls 'only a guide'; the boom height (BAS 0.57 m: gooseneck 945 mm above the butt, butt 0.375 m below deck) depends on a guessed butt depth; freeboard is a visual estimate; the rudder's span reading is ambiguous."
+  }
+}

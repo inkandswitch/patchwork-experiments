@@ -1,0 +1,121 @@
+[
+  {
+    "file": "valid/sloop-12m.json",
+    "stage": "valid",
+    "about": "the stock 12 m sloop (sailing's SLOOP as a rig) on its synthetic hull"
+  },
+  {
+    "file": "valid/catalina-30.json",
+    "stage": "valid",
+    "about": "Catalina 30, standard rig, on a synthetic hull from its published dimensions"
+  },
+  {
+    "file": "valid/j24.json",
+    "stage": "valid",
+    "about": "J/24 (fractional) in its ORC condition (1,271 kg + 340 kg crew)"
+  },
+  {
+    "file": "valid/laser-ilca7.json",
+    "stage": "valid",
+    "about": "Laser / ILCA 7, one 80 kg crew hiking; planes"
+  },
+  {
+    "file": "valid/cuvature-first-guess.json",
+    "stage": "valid",
+    "about": "camber's cuvature-kink at 12 m floated at 8 t, with the first guess's rig (linked hull, mesh statics)"
+  },
+  {
+    "file": "valid/minimal.json",
+    "stage": "valid",
+    "about": "the Laser with coarse tables and no polar: small enough to read"
+  },
+  {
+    "file": "invalid/missing-frame.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/unknown-field.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/unsupported-version.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/wrong-axes.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/unknown-flag.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/negative-area.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/non-rotation-frame.json",
+    "stage": "semantic",
+    "error": "frame-matrix"
+  },
+  {
+    "file": "invalid/mass-mismatch.json",
+    "stage": "semantic",
+    "error": "mass-sum"
+  },
+  {
+    "file": "invalid/cg-mismatch.json",
+    "stage": "semantic",
+    "error": "mass-sum"
+  },
+  {
+    "file": "invalid/sail-area-mismatch.json",
+    "stage": "semantic",
+    "error": "sail-area"
+  },
+  {
+    "file": "invalid/sail-off-centreplane.json",
+    "stage": "semantic",
+    "error": "sail-plane"
+  },
+  {
+    "file": "invalid/appendage-area-mismatch.json",
+    "stage": "semantic",
+    "error": "appendage-area"
+  },
+  {
+    "file": "invalid/ragged-resistance.json",
+    "stage": "semantic",
+    "error": "table-shape"
+  },
+  {
+    "file": "invalid/unsorted-righting.json",
+    "stage": "semantic",
+    "error": "table-shape"
+  },
+  {
+    "file": "invalid/unknown-sail.json",
+    "stage": "semantic",
+    "error": "unknown-sail"
+  },
+  {
+    "file": "invalid/unknown-chainplate.json",
+    "stage": "semantic",
+    "error": "unknown-hardpoint"
+  },
+  {
+    "file": "invalid/duplicate-sail.json",
+    "stage": "semantic",
+    "error": "duplicate-id"
+  },
+  {
+    "file": "invalid/beyond-with-speed.json",
+    "stage": "semantic",
+    "error": "predicted-speed"
+  },
+  {
+    "file": "invalid/hollow-without-flag.json",
+    "stage": "semantic",
+    "error": "predicted-speed"
+  }
+]

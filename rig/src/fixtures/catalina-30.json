@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "title": "Catalina 30 (standard rig)",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 9.119616,
+      "lwl": 7.62,
+      "beam": 3.300984,
+      "bwl": 2.95,
+      "tc": 0.5,
+      "draft": 1.6002,
+      "freeboard": 1.05,
+      "displacementKg": 4626.642174,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "masthead",
+    "mast": {
+      "aftOfStem": 3.5052,
+      "rakeDeg": 0,
+      "stepped": "deck",
+      "kgPerM": null
+    },
+    "I": 12.4968,
+    "P": 10.668,
+    "E": 3.5052,
+    "BAS": 1.4,
+    "ISP": null,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0.05,
+      "reefs": [
+        0.15,
+        0.3
+      ]
+    },
+    "headsail": {
+      "kind": "genoa",
+      "LP": 4.748845,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 4.38,
+      "span": 1.1,
+      "rootChord": 1.9,
+      "tipChord": 1.1,
+      "sweepDeg": 20,
+      "tc": 0.12,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 7.75,
+      "span": 1.1,
+      "rootChord": 0.6,
+      "tipChord": 0.42,
+      "sweepDeg": 8,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 1905.087954,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 80,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.BAS": "estimated",
+    "rig.forestayAftOfStem": "estimated",
+    "rig.mast.stepped": "estimated",
+    "rig.main.roach": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "appendages.rudder.kind": "estimated",
+    "loading.crew.count": "estimated"
+  },
+  "sources": [
+    {
+      "id": "gob-c30",
+      "what": "LOA, LWL, beam, draft, displacement, ballast, I, J, P, E; the genoa's LP (135.48%)",
+      "cite": "Good Old Boat sail data (Sailrite), \"Catalina 30 Standard\"",
+      "url": "https://goodoldboat.com/saildata/boat/catalina-30-standard/",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "quoted": "LOA 29.920 ft, LWL 25.000 ft, beam 10.830 ft, max draft 5.250 ft, displacement 10200 lb, ballast 4200 lb; I 41, J 11.50, P 35, E 11.50 ft; genoa 135.48% LP; mainsail 207.78 ft² (calculated)"
+    },
+    {
+      "id": "wiki-c30",
+      "what": "Ballast 4,250 lb; total sail area 437.00 ft² (main 201.25 + fore-triangle 235.75); hull speed 6.7 kn",
+      "cite": "Wikipedia, \"Catalina 30\" (infobox; cites sailboatdata.com and Sailing Joy)",
+      "url": "https://en.wikipedia.org/wiki/Catalina_30",
+      "retrieved": "2026-11-06",
+      "fetched": true
+    },
+    {
+      "id": "sbo-c30",
+      "what": "Catalina 30 Mark II specification sheet (gives P 35'6\" for the standard rig, per a search summary)",
+      "cite": "Catalina Yachts, Catalina 30 Mark II Specifications (PDF)",
+      "url": "https://sbo.sailboatowners.com/downloads/Catalina_30_28999654.pdf",
+      "retrieved": "2026-11-06",
+      "fetched": false,
+      "note": "Not fetched: TLS error on retrieval (step 1). The 35'6\" figure is unverified."
+    },
+    {
+      "id": "phrf-alamo",
+      "what": "PHRF base ratings: Catalina 30 184 s/mile, J-24 170 s/mile",
+      "cite": "PHRF of the Alamo rating list (Excel export, file dated 2020-02-19), regattanetwork.com upload 20438",
+      "url": "https://www.regattanetwork.com/clubmgmt/regatta_uploads/20438/PHRFoftheAlamo01072020.pdf",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "note": "Read from the PDF's decompressed text streams (rows 'J-24 170', 'Catalina 30 184'). PHRF is set by local committees and varies by region (180–186 elsewhere for the Catalina 30)."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give SA/D, D/L, BAS and the tall-rig and wing-keel variants",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-06",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval."
+    }
+  ],
+  "published": {
+    "note": "Ratios are not printed by the fetched sources: they are worked here by hand from GOB's inputs (shown in `work`) and compared with the tool's own path (sail plan, synthetic hull, ratios).",
+    "figures": [
+      {
+        "id": "saDesignerFt2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 437,
+        "unit": "ft²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "wiki-c30",
+        "work": "½·35·11.5 + ½·41·11.5 = 201.25 + 235.75 = 437.00 ft² (Wikipedia prints 437.00)"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D",
+        "value": 14.866,
+        "unit": "",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "gob-c30",
+        "work": "437.0 / (10,200/64)^(2/3) = 437.0/29.395 = 14.866"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 291.43,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "gob-c30",
+        "work": "(10,200/2240) / (0.01·25)³ = 4.5536/0.015625 = 291.43"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.41176,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "gob-c30",
+        "work": "4,200 / 10,200"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 6.7,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "wiki-c30",
+        "work": "1.34·√25 = 6.70"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft, keel down",
+        "value": 1.6002,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "gob-c30",
+        "work": "5.25 ft; the keel's span is estimated to reach it",
+        "roundTrip": "the keel's span is estimated so that the draft reaches the published 5.25 ft: a check of the foil geometry, not of the model"
+      }
+    ],
+    "polar": {
+      "kind": "phrf-relative",
+      "source": "phrf-alamo",
+      "reference": "j24.json published.polar (ORC one-design certificate)",
+      "phrfSecPerMile": 184,
+      "referencePhrfSecPerMile": 170,
+      "tol": {
+        "rel": 0.15
+      },
+      "note": "PHRF is a relative handicap with no absolute speed in it. The target is the J/24's ORC beat VMG slowed by the 14 s/mile PHRF difference: V = 3600 / (3600/V_J24 + 14). A weak, stated target: PHRF averages over courses and conditions, and both ratings assume a spinnaker, which the VPP doesn't model, so only beat VMG is compared.",
+      "knownGaps": {
+        "beatVmg16": {
+          "measuredRel": 0.165,
+          "ratchetRel": 0.02,
+          "measuredOn": "2026-11-06",
+          "why": "16.5% over the PHRF-relative target at 16 kn: she points too high (31°), as the J/24 does against ORC"
+        }
+      }
+    },
+    "disagreements": [
+      {
+        "what": "P (standard rig)",
+        "values": [
+          {
+            "value": "35.0 ft",
+            "source": "gob-c30"
+          },
+          {
+            "value": "35.5 ft (35'6\")",
+            "source": "sbo-c30",
+            "verified": false
+          }
+        ],
+        "used": "35.0 ft (GOB, fetched)",
+        "effect": "SA/D 14.866 vs 14.964"
+      },
+      {
+        "what": "Ballast",
+        "values": [
+          {
+            "value": "4,200 lb",
+            "source": "gob-c30"
+          },
+          {
+            "value": "4,250 lb",
+            "source": "wiki-c30"
+          }
+        ],
+        "used": "4,200 lb",
+        "effect": "ballast ratio 41.2% vs 41.7%"
+      }
+    ],
+    "estimatedWhy": "BWL, Tc, freeboard, BAS, roach, reefs and both foils' planforms are not in any fetched source. The keel is placed with its quarter chord near the LCB and spans to the published 5.25 ft draft; the rudder is a spade (unverified)."
+  }
+}

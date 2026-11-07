@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "title": "12 m sloop (stock)",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 12,
+      "lwl": 10.5,
+      "beam": 3.8,
+      "bwl": 3.04,
+      "tc": 0.6,
+      "draft": 1.9,
+      "freeboard": 1.2,
+      "displacementKg": 8000,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 4.8,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 10.729166666666668,
+    "P": 13,
+    "E": 4.5,
+    "BAS": 0.2,
+    "ISP": null,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0.12,
+      "reefs": [
+        0.15,
+        0.3
+      ]
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 4.8,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 4.65,
+      "span": 1.3,
+      "rootChord": 2.3,
+      "tipChord": 1.55,
+      "sweepDeg": 8,
+      "tc": 0.12,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 10.85,
+      "span": 1,
+      "rootChord": 0.7,
+      "tipChord": 0.5,
+      "sweepDeg": 5,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 2800,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 80,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "conditions": {
+    "aws": [
+      4.115555555555556,
+      6.173333333333334,
+      8.231111111111112,
+      10.28888888888889,
+      12.861111111111112
+    ],
+    "heelLimitDeg": 25,
+    "tws": [
+      3.086666666666667,
+      4.115555555555556,
+      5.144444444444445,
+      6.173333333333334,
+      7.202222222222223,
+      8.231111111111112,
+      10.28888888888889
+    ],
+    "twa": [
+      40,
+      45,
+      52,
+      60,
+      70,
+      75,
+      90,
+      110,
+      120,
+      135,
+      150,
+      165,
+      180
+    ],
+    "reference": {
+      "tws": 6.173333333333334,
+      "twa": 45
+    }
+  },
+  "prov": {
+    "hull.dims.lwl": "estimated",
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "rig.I": "estimated",
+    "rig.main.roach": "estimated",
+    "rig.headsail.LP": "estimated",
+    "loading.ballast.kg": "estimated",
+    "loading.crew.count": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.tc": "estimated"
+  },
+  "sources": [
+    {
+      "id": "sailing-sloop",
+      "what": "LOA, beam, draft, freeboard, displacement, P, E, mast position, BAS, keel and rudder areas, rudder position",
+      "cite": "sailing/src/hull-model.js SLOOP (patchwork-experiments), copied",
+      "retrieved": "2026-11-06",
+      "fetched": true
+    }
+  ],
+  "published": {
+    "note": "sailing's SLOOP (sailing/src/hull-model.js) read as a rig; see doc.js STOCK_SLOOP. The test checks this file equals STOCK_SLOOP.",
+    "figures": [
+      {
+        "id": "saDesignerM2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 55,
+        "unit": "m²",
+        "tol": {
+          "abs": 1e-9
+        },
+        "source": "sailing-sloop",
+        "work": "SLOOP's sail.area; I chosen to give it"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D",
+        "value": 13.98,
+        "unit": "",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "sailing-sloop",
+        "work": "55 / (8000/1025)^(2/3) = 55/3.9343 = 13.980"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 192.6,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "sailing-sloop",
+        "work": "(8000/1016.047)/(0.01·10.5/0.3048)³ = 7.87365/0.040881 = 192.60 (LWL estimated)"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.35,
+        "unit": "",
+        "tol": {
+          "abs": 0.001
+        },
+        "source": "sailing-sloop",
+        "work": "2800/8000 (the ballast is estimated)"
+      }
+    ],
+    "disagreements": [],
+    "estimatedWhy": "See doc.js STOCK_SLOOP: SLOOP doesn't state LWL, BWL, Tc, the ballast, roach, LP, crew, or the planforms."
+  }
+}

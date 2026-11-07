@@ -1,0 +1,71 @@
+// Scratch oracle (read-only use of camber): build each camber example's GLB at
+// 12 m with the Patchwork wrapper's own buildHullGlb (default params, scaled to
+// length), and record camber's own hydrostatics() for the same hull, in metres.
+// Run: /Users/pvh/dev/camber/node_modules/.bin/tsx camber-hydro.mts <outDir>
+import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { parseHullState } from "/Users/pvh/dev/camber/src/core/json";
+import { assemble } from "/Users/pvh/dev/camber/src/core/runtime";
+import { computeHullSampling } from "/Users/pvh/dev/camber/src/core/mesh";
+import { hydrostatics } from "/Users/pvh/dev/camber/src/core/hydro";
+import { HYDRO_NS, HYDRO_GIRTH } from "/Users/pvh/dev/camber/src/core/sweep";
+import { loa } from "/Users/pvh/dev/camber/src/core/model";
+import { buildHullGlb } from "/Users/pvh/dev/camber/patchwork/src/scene/build";
+
+const out = process.argv[2];
+mkdirSync(out, { recursive: true });
+const dir = "/Users/pvh/dev/camber/examples";
+const L = 12;
+const rows: Record<string, unknown> = {
+  _provenance: {
+    tool: "camber core hydrostatics() at HYDRO_NS=240, HYDRO_GIRTH=10 (camber main dee7de9), via scratch camber-hydro.mts run with camber's tsx",
+    glb: "camber/patchwork buildHullGlb, params size=length, lengthMeters=12, sections=64, girth=6, origin=waterline, rake on, outline/stations/dwl off",
+    frame: "lcbM / lcfM are camber model x times scale, which is the GLB X (rake 0 in every example)",
+    generated: new Date().toISOString(),
+  },
+};
+for (const f of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
+  const name = f.replace(/\.json$/, "");
+  const state = parseHullState(readFileSync(join(dir, f), "utf8"));
+  const params = { size: "length", lengthMeters: L, outline: false, stations: false, dwl: false, sections: 64, girth: 6 } as const;
+  const r = buildHullGlb(state, params as never);
+  writeFileSync(join(out, `${name}.glb`), r.glb);
+  const model = assemble(state);
+  const s = L / (loa(model) || 1);
+  const h = hydrostatics(model, computeHullSampling(model, HYDRO_NS, HYDRO_GIRTH));
+  const docLoa = loa(model);
+  rows[name] = {
+    unit: model.unit,
+    loaDocUnits: docLoa,
+    scale: s,
+    waterlineDocUnits: model.waterline,
+    deckTrim: model.deckTrim,
+    glbBytes: r.glb.byteLength,
+    triangles: r.triangles,
+    hydro:
+      h && h.validWaterplane
+        ? {
+            lwl: h.lwl * s,
+            bwl: h.bwl * s,
+            draft: h.draft * s,
+            volM3: h.vol * s ** 3,
+            wsaM2: h.wettedArea * s ** 2,
+            awM2: h.waterplaneArea * s ** 2,
+            amM2: h.midshipArea * s ** 2,
+            amaxM2: h.maxSectionArea * s ** 2,
+            lcbM: h.lcb * s,
+            lcfM: h.lcf * s,
+            cpOnAmax: h.vol / (h.maxSectionArea * h.lwl),
+            kmt: h.kmt * s,
+            bmt: h.bmt * s,
+            cp: h.cp,
+            cm: h.cm,
+            cb: h.cb,
+            halfEntranceDeg: h.halfEntrance,
+          }
+        : null,
+    validWaterplane: !!h?.validWaterplane,
+  };
+}
+writeFileSync(join(out, "camber-hydro.json"), JSON.stringify(rows, null, 2));
+console.log(JSON.stringify(rows, null, 1));
