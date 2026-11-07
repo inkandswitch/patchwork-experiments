@@ -1,0 +1,236 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rig examples</title>
+<!-- Driven by probes/publish-examples.mjs. The BUILT rig plugins (rig/dist)
+     and camber's BUILT plugins (served at /camber/ from camber/patchwork/dist)
+     in a stub registry, on an in-memory repo, as rig-probe.html. Each example
+     is made the way a person makes it: a new rig doc (the datatype's init),
+     then the tool mounted on it and its own controls used ("New from…", the
+     Link field, the Helm helper). The camber render is made as the scene host
+     makes one (scene/src/datatype.js newRenderDoc, scene/src/build.js runBuild:
+     camber's scene:source with the stored params, the GLB as a `file` doc,
+     builtFrom recorded). A dev tool: no package imports another. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #host { height: 100vh; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origError = console.error;
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(f, ms, what) {
+  const t0 = performance.now();
+  for (;;) {
+    const v = f();
+    if (v) return v;
+    if (performance.now() - t0 > ms) throw new Error(`timed out after ${ms} ms waiting for ${what}`);
+    await sleep(60);
+  }
+}
+
+// ── copies of the scene host's own helpers (scene/src/staleness.js, build.js), so the render doc is the one it writes
+function stableStringify(value) {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (ArrayBuffer.isView(value)) return stableStringify(Array.from(value));
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+const paramsKey = (params) => stableStringify(params ?? {});
+async function hashBytes(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return `sha256:${Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+const validBounds = (b) => {
+  const ok = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(Number(n)));
+  return b && ok(b.min) && ok(b.max) ? { min: b.min.map(Number), max: b.max.map(Number) } : null;
+};
+function glbFileDoc(title, glb) {
+  const base = String(title || "render").replace(/\.[a-z0-9]{2,4}$/i, "") || "render";
+  return { "@patchwork": { type: "file" }, name: `${base}.glb`, extension: "glb", mimeType: "model/gltf-binary", content: glb };
+}
+/** scene/src/staleness.js withDefaults + coerce, enough for camber's specs: the defaults, then the stored values */
+const defaults = (specs) => Object.fromEntries((specs ?? []).map((s) => [s.key, s.default]));
+
+/** A doc as plain JSON for the trip to node: bytes as { $bytes: base64 }. */
+function toWire(doc) {
+  return JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+}
+
+try {
+  for (const url of ["../dist/index.js", "/camber/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo; // the tool's late-bound repo (globalThis.repo, as in a Patchwork host)
+  const host = document.getElementById("host");
+  const RigDatatype = await getRegistry("patchwork:datatype").get("rig-design").load();
+  const RigTool = (await getRegistry("patchwork:tool").load("rig-design")).module;
+  const camberSpec = getRegistry("scene:source").get("camber-hull-surface");
+  const camberSource = (await getRegistry("scene:source").load("camber-hull-surface")).module;
+
+  let mounted = null;
+  const $ = (s) => host.querySelector(s);
+  const $$ = (s) => [...host.querySelectorAll(s)];
+  const made = new Set();
+
+  /** A new rig doc as Patchwork makes one: the type, then the datatype's init. The tool mounted on it. */
+  function mountNew() {
+    mounted?.cleanup();
+    host.innerHTML = "";
+    const d = { "@patchwork": { type: "rig-design" } };
+    RigDatatype.init(d);
+    const handle = repo.add(d);
+    made.add(handle.url);
+    mounted = { handle, cleanup: RigTool(handle, host) };
+    return handle;
+  }
+  function readouts() {
+    const out = {};
+    for (const el of $$("[data-readout]")) {
+      const v = el.dataset.value;
+      const band = el.querySelector(".band");
+      out[el.dataset.readout] = { v: v === "" ? null : Number(v), prov: el.dataset.prov, text: el.querySelector("dd")?.textContent.replace(/\s+/g, " ").trim() ?? "", band: band?.textContent ?? null, out: !!band?.hasAttribute("data-out") };
+    }
+    return out;
+  }
+  const finite = (r, id) => Number.isFinite(r[id]?.v);
+  const building = () => /Building/.test(document.querySelector('[data-group="stability"] .section-note')?.textContent ?? "");
+  /** the readouts once the statics table and the reference point are in */
+  async function settled(ms = 60_000) {
+    await sleep(300);
+    await until(() => { const r = readouts(); return finite(r, "refHelm") && finite(r, "gzMax") && finite(r, "lead") && !building(); }, ms, "the readouts (statics table and reference point)");
+    await sleep(300);
+    return readouts();
+  }
+  const status = () => ({ text: $(".helper-status")?.textContent ?? "", tone: $(".helper-status")?.dataset.tone ?? "" });
+  function pick(value) {
+    const s = $('[data-act="new-from"]');
+    if (![...s.options].some((o) => o.value === value)) throw new Error(`New from… has no ${value}`);
+    s.value = value;
+    s.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  /** what the published example will open to: the numbers a designer reads first */
+  function summary(r) {
+    const v = (id) => (finite(r, id) ? r[id].v : null);
+    return {
+      helmDeg: v("refHelm"), helm: r.refHelm?.band ?? null, helmOut: !!r.refHelm?.out,
+      lead: v("lead"), leadBand: r.lead?.band ?? null, leadOut: !!r.lead?.out,
+      refSpeedKn: v("refSpeed") != null ? v("refSpeed") / 0.514444 : null, refHeelDeg: v("refHeel"),
+      saD: v("saD"), dL: v("dL"), displacementKg: v("displacement"), gzMax: v("gzMax"),
+      warnings: $$(".rig-warnings li").map((li) => li.textContent),
+    };
+  }
+
+  const P = (window.__p = {
+    errors,
+    /** "New from…" a published boat, then titled. */
+    async fixture(id, title) {
+      const h = mountNew();
+      pick(`fixture:${id}`);
+      await sleep(100);
+      if (title) h.change((d) => RigDatatype.setTitle(d, title));
+      const r = await settled();
+      return { url: h.url, status: status(), readouts: summary(r) };
+    },
+    /**
+     * A camber hull doc (built in node, camber's stored form), its render at
+     * `params` (as the scene host seeds and builds one) and the render's GLB.
+     */
+    async camber(hullDoc, sizeParams) {
+      const hull = repo.add(hullDoc);
+      made.add(hull.url);
+      const stored = { ...defaults(camberSpec.params), ...sizeParams };
+      // newRenderDoc({ title: the source's title, parent, providerId, params: defaultParams(...) }), the size param set
+      const render = repo.add({
+        "@patchwork": { type: "scene-render" }, title: hullDoc.title, parent: hull.url, providerId: camberSpec.id,
+        params: stored, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false,
+      });
+      made.add(render.url);
+      // runBuild: the provider, the GLB as a file doc, the render repointed with builtFrom
+      const fingerprint = camberSource.fingerprint ? String(camberSource.fingerprint(hull.doc())) : null;
+      const deps = camberSource.dependencies?.(hull.doc()) ?? [];
+      if (deps.length) throw new Error(`camber's render lists dependencies (${deps.join(", ")}): this script records none`);
+      const result = await camberSource.build({ doc: hull.doc(), handle: hull, url: hull.url, params: stored, repo });
+      if (result?.kind !== "glb") throw new Error(`camber's build returned ${result?.kind}`);
+      const glb = result.glb instanceof Uint8Array ? result.glb : new Uint8Array(result.glb);
+      const file = repo.add(glbFileDoc(render.doc().title, glb));
+      made.add(file.url);
+      const bounds = validBounds(result.meta?.bounds);
+      const glbHash = await hashBytes(glb);
+      render.change((d) => {
+        d.glbUrl = file.url;
+        // heads: the published hull's, filled in by the publisher (these are the in-memory repo's)
+        d.builtFrom = { heads: hull.heads(), fingerprint, paramsKey: paramsKey(stored), deps: {}, glbHash, providerVersion: camberSpec.version };
+        d.bounds = bounds;
+        d.builtAt = Date.now();
+        d.status = "idle";
+        d.error = null;
+      });
+      return { hullUrl: hull.url, renderUrl: render.url, fileUrl: file.url, bytes: glb.byteLength, bounds, notes: result.meta?.notes ?? null };
+    },
+    /**
+     * A new rig doc linked to a render through the Link field, titled, then
+     * "New from… First guess from this hull"; if that lands out of the lead
+     * or the helm band, the Helm helper at its default target.
+     */
+    async rigOn(renderUrl, title) {
+      const h = mountNew();
+      h.change((d) => RigDatatype.setTitle(d, title));
+      const input = $(".hull-link input");
+      input.value = renderUrl;
+      $('.hull-link [data-act="link"]').click();
+      await until(() => /^Hull:/.test($('[data-chip="hull"]')?.textContent ?? ""), 30_000, "the linked render to be read");
+      const before = summary(await settled());
+      pick("first-guess");
+      const firstStatus = status();
+      if (firstStatus.tone === "error") throw new Error(firstStatus.text);
+      const r1 = await settled();
+      const first = summary(r1);
+      const leadOut = first.leadOut, helmOut = first.helmOut;
+      let helper = null;
+      if (leadOut || helmOut) {
+        const form = $('form[data-helper="helm"]');
+        const target = form.querySelector("input").value;
+        const mastBefore = h.doc().rig.mast.aftOfStem, tackBefore = h.doc().rig.forestayAftOfStem;
+        form.requestSubmit();
+        await sleep(100);
+        const st = status();
+        if (st.tone === "error") throw new Error(`the Helm helper: ${st.text}`);
+        helper = { why: [leadOut && "lead out of band", helmOut && "helm out of band"].filter(Boolean).join(", "), target: Number(target), status: st.text, mast: [mastBefore, h.doc().rig.mast.aftOfStem], tack: [tackBefore, h.doc().rig.forestayAftOfStem] };
+      }
+      const after = helper ? summary(await settled()) : first;
+      return { url: h.url, linkStatus: $(".link-status")?.textContent ?? null, chip: $('[data-chip="hull"]')?.textContent ?? null, before, firstGuess: { status: firstStatus.text, ...first }, helper, final: after };
+    },
+    /** every doc made, as plain JSON (bytes base64) */
+    snapshot() {
+      return Object.fromEntries([...made].map((u) => [u, toWire(repo.handles.get(u).doc())]));
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`fatal: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>
