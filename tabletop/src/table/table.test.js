@@ -957,7 +957,9 @@ describe("drawing to your hand", () => {
     t.w.tick(1 / 60, 30);
     t.w.flush();
     expect(t.xa.looks().get("top")).toEqual({ sourceUrl: "automerge:face-top", name: "Face of top" });
-    expect(t.xb.looks().has("top")).toBe(false);
+    // face up in A's hand: to B, the privacy face (privacy.js), never its face or its name
+    expect(t.xb.looks().get("top")?.name).toBeUndefined();
+    expect(t.xb.looks().get("top")?.sourceUrl ?? null).not.toMatch(/face-/);
     // and nothing on the wire says which card it was
     expect(JSON.stringify(t.w.sent)).not.toMatch(/face-|Face of|top/);
     t.w.done();

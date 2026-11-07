@@ -7,8 +7,15 @@
 // It is built only from the scene's extension contract (scene/STAGE.md): the
 // hand, keys, menu, frame and notices it relies on are other extensions it
 // `requires`; its own UI is a seat picker over the table (an overlay), deck
-// trouble as HUD lines, and Shuffle, Draw and Roll as verbs on the use prompt
-// (and the menu). Nothing here assumes a sidebar or toolbar exists.
+// trouble as HUD lines, Shuffle, Draw and Roll as verbs on the use prompt
+// (and the menu), and each seat as a station on the use prompt for whoever
+// walks up to it in first person (Sit as …, Stand up: seat-verbs.js).
+// Nothing here assumes a sidebar or toolbar exists.
+//
+// What a hidden card looks like to this viewer is one of three (privacy.js):
+// its back face down, its face when this viewer may see it, and the privacy
+// face (one generic picture, made once per scene) when it's face up but not
+// for them.
 //
 // What someone does at the table (shuffled, sat down, drew, rolled) is told
 // to everyone else with api.send, as counts and seat ids only, never which
@@ -20,11 +27,13 @@
 // module has createResolver({ repo, handle, viewer, onChange }) and, to be
 // laid out when dropped, placement(doc) and bind(handle, ids).
 
-import { HIDDEN, SEATS, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
+import { HIDDEN, SEATS, docUrl, faceUpIn, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
 import { PLAIN_DECK, plainResolver } from "./plain-deck.js";
 import { CARD_TAGS, nearestSlot, worldSlots, yawOfMatrix } from "./slots.js";
 import { DIE, MAX_FACE, ROLL_SECONDS, faceUp, facesOf, pivotOf, rollPlan, scaleOf, upIn } from "./dice.js";
 import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
+import { cardBounds, cardState, privacyFile, privacyKey, rememberAsset } from "./privacy.js";
+import { CONFIRM_MS, seatLookedAt, seatVerb } from "./seat-verbs.js";
 
 
 const el = (tag, props = {}, ...children) => {
@@ -396,6 +405,11 @@ export default {
         const who = someone(by?.viewer ?? (seat?.player !== viewer ? seat?.player : null));
         const race = since == null || Date.now() - since < RACE_MS;
         api.notify(race ? `${who} sat in ${seat?.name || sid} first; you're watching` : `${who} took ${seat?.name || sid} while you were away; you're watching`);
+        // sat down from first person and lost the race for it: back on your feet there
+        if (race && since != null && walkedUp?.sid === sid && walkedUp.at === since) {
+          walkedUp = null;
+          standAt(sid);
+        }
       }
       drawSeats();
     }
@@ -660,7 +674,17 @@ export default {
       return true;
     }
 
-    /** What each hidden card looks like to this viewer: every deck speaks for its own cards. */
+    /**
+     * What each hidden card looks like to this viewer (privacy.js cardState):
+     * its face where its deck gives this viewer one (every deck speaks for
+     * its own cards); else, face up, the privacy face when the zone rule
+     * keeps it from this viewer, or it's theirs and the deck says it's dealt
+     * (its keys on their way); else its back (no look). A deck not dealt yet
+     * (resolver.dealt() false: a secure deck waiting for its players) shows
+     * every card's back. A deck that hasn't loaded yet says nothing, so its
+     * cards keep their backs until it does; one that can't be read (a
+     * problem) is private face up.
+     */
     function lens(snapshot) {
       looks = new Map();
       if (!decks.size) return;
@@ -675,15 +699,91 @@ export default {
         visibleTo: visibility(snapshot, seats),
         nameOf: (player) => Object.values(seats).find((s) => s?.player === player)?.name ?? "someone",
       };
+      const faces = new Map();
       for (const [url, deck] of decks) {
         if (!deck.resolver) continue;
         deck.resolver.update(ctx);
-        for (const [id, look] of deck.resolver.looks()) if (hiddenBy(objects[id]) === url) looks.set(id, look);
+        for (const [id, look] of deck.resolver.looks()) if (hiddenBy(objects[id]) === url) faces.set(id, look);
       }
+      const mine = ctx.visibleTo(viewer);
+      const dealt = new Map(); // deck url → true | false | null (cardState)
+      for (const [url, deck] of decks) {
+        // (a deck that can't be read: nothing it holds will ever show here, so it's withheld)
+        if (deck.problem) dealt.set(url, true);
+        else if (deck.resolver) {
+          let d = null;
+          try {
+            d = typeof deck.resolver.dealt === "function" ? deck.resolver.dealt() : null;
+          } catch {}
+          dealt.set(url, typeof d === "boolean" ? d : null);
+        }
+      }
+      for (const [id, o] of Object.entries(objects)) {
+        const by = hiddenBy(o);
+        if (!by) continue;
+        const face = faces.get(id);
+        // a deck that hasn't loaded yet says nothing: its cards keep their backs
+        const known = dealt.has(by);
+        const state = cardState({ face: !!face, faceUp: known && faceUpIn(snapshot, id), withheld: !mine.has(id), dealt: dealt.get(by) ?? null });
+        if (state === "face") looks.set(id, face);
+        else if (state === "private") {
+          const url = privacyFor(snapshot, o);
+          if (url) looks.set(id, { sourceUrl: url });
+        }
+      }
+    }
+
+    // ── the privacy face: one file per card size, made once per scene ──
+    // The first view that needs it makes it (privacy.js), as the stage's
+    // ctx.file would (that's for drops and parts; an extension has no
+    // ctx.file): a file doc, remembered at doc.assets[key] if that key is
+    // still empty. So a table set up before this existed gets one the first
+    // time anyone sees a card they mayn't, and nothing is ever written per
+    // card. Two views making it at once each make a file doc, and the merge
+    // keeps one in `assets`: the other is a spare file nothing names, both
+    // drawn alike, and every view uses the one kept from then on. (One more
+    // way to lose the key: a scene from before `assets` existed, where this
+    // and a peer's ctx.file each make the map at once and the peer's wins;
+    // then this view writes its key again, once.) Until it's there, a private
+    // card shows its back.
+    const privacy = new Map(); // key → { url: string | null, writes: number }
+    function privacyFor(snapshot, o) {
+      const bounds = cardBounds(o);
+      const key = privacyKey(bounds);
+      // (the doc as it is now: one this view just wrote may be newer than the snapshot)
+      const known = (api.scene?.() ?? snapshot)?.d?.assets?.[key]?.url ?? snapshot?.d?.assets?.[key]?.url;
+      if (typeof known === "string" && known) return known;
+      let p = privacy.get(key);
+      if (!p) privacy.set(key, (p = makePrivacy(key, bounds)));
+      if (p.url && p.writes < 2) {
+        // made here, but the key isn't in `assets` (lost to a peer making the map): once more
+        p.writes++;
+        queueMicrotask(() => !dead && rememberPrivacy(key, p.url, bounds));
+      }
+      return p.url;
+    }
+    function makePrivacy(key, bounds) {
+      const p = { url: null, writes: 0 };
+      if (typeof repo?.create2 !== "function") return p;
+      (async () => {
+        const f = privacyFile(bounds);
+        const h = await repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
+        if (dead || typeof h?.url !== "string") return;
+        p.url = h.url;
+        p.writes = 1;
+        rememberPrivacy(key, h.url, bounds);
+        refresh();
+      })().catch((err) => console.warn("[tabletop] couldn't make the privacy face", err));
+      return p;
+    }
+    function rememberPrivacy(key, url, bounds) {
+      api.change((d) => rememberAsset(d, key, url, bounds));
     }
 
     /** Sit in a seat (null: watch): claim it, let go of the last one, then write it down. */
     function sit(seatId) {
+      // (sat from first person: seatVerbRun says so again once this has sat)
+      walkedUp = null;
       const before = seatsOf(api.scene());
       if (seatId && !before[seatId]) return drawSeats();
       if (seatId && stateOf(seatId, before).state !== "mine-elsewhere") {
@@ -750,6 +850,116 @@ export default {
       const mine = seatOf(seatsOf(api.scene()), viewer);
       const cam = mine ? seatsOf(api.scene())[mine]?.camera : null;
       if (cam) seatView(cam);
+    }
+
+    // ── a seat as a station: walk up to it and sit ──
+    // In first person, a look at a seat's place (its tray, its bench:
+    // seat-verbs.js) within reach offers "Sit as <name>" (F), which sits
+    // you exactly as the picker does (the same claim, notices and refusals;
+    // an away seat asks first, by a second F rather than a dialog, since the
+    // pointer is locked) and then hands the view over: whatever you walk with
+    // (a running extension's `firstPerson`, sailing's crew) is asked to
+    // leave first person, and the seat's view takes over as it ends
+    // (backInSeat). Sitting there, a look at your own place offers "Stand
+    // up" when there's something to walk with: it's asked to put you on your
+    // feet at the seat (firstPerson.enter), the seat staying yours, as
+    // getting up any other way does; Esc, or F at it, sits you back down.
+    //
+    // `firstPerson`, on the instance of whatever walks (api.collect):
+    //   enter({ seat, eye, target, frame }) → boolean: first person, standing
+    //     at the seat (eye: where the seated eye is, world, as drawn; target:
+    //     the point its view looks at; frame: the object the seat's camera is
+    //     in, or null); false if it can't
+    //   leave(): end first person (the seat's view then takes the camera)
+    let aimed = null; // { target, sid, verb }: what the seat verb's state last said, for its run
+    let walkedUp = null; // { sid, at }: the seat this view sat in from first person, and its claim's time (held.at); cleared by any other sit
+    let confirming = null; // { sid, until }: an away seat's first F
+    const drawnIn = (snap) => (id) => api.worldOf?.(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
+    const walkers = () =>
+      (api.collect?.("firstPerson") ?? []).map((r) => r?.value).filter((v) => v && typeof v === "object" && typeof v.enter === "function" && typeof v.leave === "function");
+
+    function seatVerbState(target, ctx) {
+      aimed = null;
+      const snap = ctx?.scene ?? scene;
+      const local = ctx?.local ?? api.local?.get?.();
+      // the prompt's alone: it says where the eye is
+      if (!snap || !Array.isArray(ctx?.from) || local?.activities?.current !== "play") return null;
+      const seats = seatsOf(snap);
+      const sid = seatLookedAt({ snap, target, point: ctx.hit?.point ?? null, from: ctx.from, seats, drawn: drawnIn(snap) });
+      if (!sid) return null;
+      const st = stateOf(sid, seats);
+      const who = st.state === "taken" ? contactName(st.by?.viewer) : st.state === "away" ? contactName(st.seat?.player) : null;
+      const v = seatVerb({
+        name: seats[sid]?.name || sid,
+        state: st.state,
+        who,
+        immersive: !!local?.immersive,
+        canStand: Array.isArray(seats[sid]?.camera?.position) && walkers().length > 0,
+        confirming: confirming?.sid === sid && Date.now() < confirming.until,
+      });
+      if (!v) return null;
+      aimed = { target, sid, verb: v.verb };
+      const { verb, ...shown } = v;
+      return shown;
+    }
+
+    function seatVerbRun(target) {
+      // (the prompt asks state just before it runs a verb)
+      const a = aimed?.target === target ? aimed : null;
+      if (!a) return;
+      if (a.verb === "stand") return standUp(a.sid);
+      const { by, seat, state } = stateOf(a.sid);
+      if (state === "taken") return api.notify(`${someone(by?.viewer)} is sitting there.`);
+      if (state === "away" && !(confirming?.sid === a.sid && Date.now() < confirming.until)) {
+        confirming = { sid: a.sid, until: Date.now() + CONFIRM_MS };
+        return api.notify(`${contactName(seat?.player) ?? "Whoever sat there"} is away. Press F again to take their seat; you'll see their hand.`);
+      }
+      confirming = null;
+      sit(a.sid);
+      if (seatOf(seatsOf(api.scene()), viewer) !== a.sid) return; // refused, or lost the race: told already
+      // (this sitting's claim, so a later one from the picker is never taken for it)
+      walkedUp = { sid: a.sid, at: held?.sid === a.sid ? held.at : null };
+      handOff();
+    }
+
+    /** Out of first person, so the seat's view (waiting for it: seatView) takes over. */
+    function handOff() {
+      if (!api.local?.get?.()?.immersive) return;
+      const ws = walkers();
+      if (!ws.length) return api.notify("Leave first person (Esc) to take your seat.");
+      for (const w of ws) {
+        try {
+          w.leave();
+        } catch (err) {
+          console.warn("[tabletop] firstPerson.leave failed", err);
+        }
+      }
+    }
+
+    /** Up from your seat into first person, standing there; the seat stays yours. */
+    function standUp(sid) {
+      if (standAt(sid)) api.notify(`You got up from ${seatsOf(api.scene())[sid]?.name || sid}; it's still yours.`);
+    }
+    /** First person, standing at seat `sid` (firstPerson.enter); false (the seat's view kept) if nothing walks or it can't. */
+    function standAt(sid) {
+      const snap = api.scene();
+      const cam = seatsOf(snap)[sid]?.camera;
+      const w = walkers()[0];
+      if (!w || !Array.isArray(cam?.position)) return false;
+      const m = cam.in ? drawnIn(snap)(cam.in) : null;
+      if (cam.in && !m) return false;
+      const at = (p) => (m ? apply(m, p) : [...p]).map(Number);
+      const spot = { seat: sid, eye: at(cam.position), target: at(cam.target ?? [0, 0, 0]), frame: cam.in ?? null };
+      const was = riding;
+      stopRiding();
+      let ok = false;
+      try {
+        ok = w.enter(spot) !== false;
+      } catch (err) {
+        console.warn("[tabletop] firstPerson.enter failed", err);
+      }
+      if (!ok && was) seatView(cam);
+      return ok;
     }
 
     return {
@@ -840,6 +1050,17 @@ export default {
           show: ["use", "menu"],
           state: (id, ctx) => rollState(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.()),
           run: roll,
+        },
+        {
+          // a seat as a station (seat-verbs.js): "Sit as Player 1" in first
+          // person, "Stand up" from your seat; the use prompt's alone (it needs
+          // the eye), so F elsewhere stays the hand's Flip
+          id: "seat",
+          name: "Sit down",
+          key: "f",
+          show: ["use"],
+          state: seatVerbState,
+          run: seatVerbRun,
         },
       ],
       // a hidden card carried into your own zone turns face up for you

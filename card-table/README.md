@@ -60,7 +60,18 @@ in one fixed group: the quadratic residues of RFC 3526's 2048-bit safe prime.
   table's own rule (tabletop/README, "Tables"): a card in your seat's
   zone, or face up outside every zone. There are no requests: nobody can ask
   for a card they can't see, and every reveal follows something visible at
-  the table.
+  the table. ("Face up" is the table's too: the card's +Y against the up of
+  the frame it lies in, so a table aboard a heeling ship deals the same keys
+  on every peer whatever she does.)
+- **What you can't see.** A card whose face your client can't show you yet
+  (another seat's hand, or its keys still on their way) is drawn by tabletop
+  as its back face down and, face up, as a privacy face: one generic picture
+  (a frosted card with a padlock) the table makes once, sized from the card's
+  public bounds. It comes from the scene alone, never from this deck: nothing
+  secret, not even which card, goes into it. The one thing the resolver adds
+  is `dealt()`: whether the deck is playing and its first shuffle is done,
+  read from the doc's public phase and epochs. Until then every card shows
+  its back, since none is anyone's yet.
 
 Cards are encoded as squares, so they and everything they encrypt to are
 quadratic residues: nothing about a card's residuosity or order survives

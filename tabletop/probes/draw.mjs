@@ -9,7 +9,8 @@
 // clients have shuffled and dealt, A hovers the deck and presses D:
 // - the use prompt over the deck offers "Draw to my hand";
 // - the deck's top card travels (A holds its pose) and lands in Player 1's hand;
-// - A sees its face, B doesn't;
+// - A sees its face, B doesn't: B sees it, and all of A's hand, as the
+//   privacy face (face up, but not B's to see), never the back;
 // - B is told "Ana drew a card", and A "You drew a card".
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -80,10 +81,17 @@ try {
   check("…face up, and the next card is the top of the pile now", (await P(`transform(${JSON.stringify(top)})`)).rotation[2] === 0 && (await P("pile()"))[0] !== top, await P(`transform(${JSON.stringify(top)})`));
   check("A sees its face", await until(`faces('a').includes(${JSON.stringify(top)})`, 15_000), { faces: (await P("faces('a')")).length, before: facesA0.length });
   check("B doesn't", !(await P("faces('b')")).includes(top) && (await P("faces('b')")).length === facesB0.length, { faces: (await P("faces('b')")).length, before: facesB0.length });
+  // face up in A's hand, not B's to see: the privacy face, not the back (tabletop/src/table/privacy.js)
+  check("…B sees the privacy face there, as for all of A's hand", await until(`privates('b').includes(${JSON.stringify(top)}) && ${JSON.stringify(before.p1)}.every((id) => __p.privates('b').includes(id))`, 15_000), { privates: await P("privates('b')"), hand: before.p1, top });
+  check("…and A sees none of its own hand that way", (await P("privates('a')")).filter((id) => [...before.p1, top].includes(id)).length === 0, await P("privates('a')"));
   check("A is told it drew", (await P("notices('a')")).includes("You drew a card"), await P("notices('a')"));
   check("B is told Ana drew", await until("notices('b').includes('Ana drew a card')", 3000), await P("notices('b')"));
   await sleep(300);
   await shot("after");
+  // up close in B's view, over A's hand: the privacy faces, framed and locked (not backs)
+  await js(`(() => { const v = document.querySelectorAll(".scene-stage")[1].__sceneDebug.viewport; v.setCamera({ position: [0.05, 0.28, 0.2], target: [0.05, 0, 0.5] }); v.invalidate?.(); return true; })()`);
+  await sleep(600);
+  await shot("privacy-closeup");
   // a second draw: the next top card, into the last free slot
   {
     const next = (await P("pile()"))[0];

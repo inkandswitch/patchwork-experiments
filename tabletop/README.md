@@ -121,8 +121,50 @@ itself — its public look, a card back — except:
 
 - inside a **private zone** (its origin is), it's shown as what it really is
   only to whoever sits in that seat, whichever way up it is;
-- otherwise, **face up** (its own +Y points up in the world), it's shown as
-  what it is to everyone.
+- otherwise, **face up**, it's shown as what it is to everyone.
+
+Face up (`faceUpIn`) means its own +Y points the way the up of the frame it
+lies in does: its parent's +Y, the world's at the root. So a card on a table
+aboard a ship is face up or down as it lies on the table, whatever she does
+(heeling, pitching, even upside down in a knockdown), and it's judged from
+the doc, not the pose drawn this frame, so every peer agrees and nothing
+flickers as she moves.
+
+**Three looks** (`src/table/privacy.js`). To each viewer a hidden card is one
+of:
+
+| | shown as |
+|---|---|
+| face down (and not in your own hand) | its **back** (the object's own look) |
+| any card, while its deck isn't dealt yet (a secure deck waiting for its players: `dealt()` false) | its **back**: nothing is anyone's yet, and the HUD says what it waits for |
+| one you may see, whose face your client knows | its **face** |
+| face up, but not for you: in another seat's hand, or yours to see and its face not here yet once the deck is dealt (a secure deck's keys still on their way), or a deck nothing installed can read | the **privacy face** |
+
+(A deck whose resolver has no `dealt()` is taken at its word only for what
+the zone rule keeps from you: a face-up card of yours with no face yet shows
+its back, as before.)
+
+The privacy face is one generic picture for every card of a size: a dark
+card with a mid-grey frosted, reeded field and a big pale padlock, on both
+sides (so a private card being turned over never shows a bare underside),
+the padlock turned to read from across the table, since a hand's cards face
+their own seat. Its grey is no suit's and no back's, so an opponent's hand
+laid face up in its tray reads as "kept from you", not "face down" or a
+white card, and says nothing about which cards they are. Its look carries no
+name. It's a GLB the scene keeps as a `file` doc at
+`doc.assets["tabletop/private-card@2:<bounds>"]` (the version bumps when the
+art changes; a scene keeps the old file under the old key, unused)
+(bounds in tenths of a mm: the cards' hint, which every card of a deck shares,
+its back's; a Lost Cities card's when there's none), made by the first view
+that needs one, so tables published before it existed get it the first time
+someone sees a card they mayn't. That's the only write it makes: never
+anything per card. Two views needing it at once each make a file doc and
+write the key only if it's still empty; the merge keeps one, and the other
+file is a spare nothing names (the stage's `ctx.file` rule). Until it's
+there, a private card shows its back. A deck still loading shows backs
+throughout. A plain deck behaves the same (its faces are seen only by the
+zone rule; the HUD still says anyone can read it), and a secure deck's
+secrets never reach the privacy face (card-table/README).
 
 So drawing a card is moving it from the deck into your zone (D, or carry
 it there), playing it is
@@ -134,7 +176,9 @@ arrives, so you see what you drew, and back over if you carry it out again
 and is never written back.
 
 **The seat picker**, at the top right of the table: pick your seat (or
-watch; a seat with a `camera` moves your view there). A seat camera `in` an
+watch; a seat with a `camera` moves your view there).
+
+ A seat camera `in` an
 object is put through that object as it's drawn now, and then rides it
 (the stage's `camera.ride`), so a table aboard a ship stays in front of you
 as she swings and bobs (her roll and pitch aren't followed: the view keeps
@@ -170,6 +214,47 @@ So:
 Claims decide who may take a seat, never who sees what: card visibility (and
 card-table's key delivery) reads only the doc's player, the same on every
 peer. `probes/seats.mjs` checks this in headless Chrome with two views.
+
+**A seat as a station** (`src/table/seat-verbs.js`). Walking in first person
+(`local.immersive`: aboard a ship, say), look at a seat's place within 2 m —
+its tray, the table just past the tray's edge, or its bench (under where the
+seat's camera puts its player's eye, across the camera's frame) — and the use
+prompt offers **Sit as Player 1** (F). It sits you exactly as the picker
+does: the same claim, notices and messages; a present player's seat greyed
+out ("Ana is sitting there"); an away player's seat asking first, by a second
+F within 5 s rather than a dialog, as the pointer is locked ("Ana is away.
+Press F again to take their seat; you'll see their hand."); a race lost to
+the merge told as ever, and you're put back on your feet. Your own seat, if
+you got up from it, offers **Back to your seat**. Only a tray, something
+locked (the table, the board) or the thing a seat's camera rides (the table,
+the ship whose bench it is) counts as a seat's place, never a loose piece, so
+F over a card is still the hand's Flip; and only the use prompt offers it
+(it needs the eye), never the key map or the menu. Then the view is handed
+over: whatever walks is asked to leave first person, and the seat's view
+takes the camera as it does. Seated (not walking), a look at your own place
+offers **Stand up** (F) when something here walks: you're put on your feet
+at the seat in first person and the seat stays yours, as getting up any
+other way does (Esc, or F at it, sits you back down; Watching in the picker
+gives it up). Where nothing walks, there's no Stand up: the picker is the
+way.
+
+What walks is whatever running extension has a `firstPerson` field (the
+stage's `api.collect`; sailing's crew is the one there is), a late-bound
+hand-off that is nothing when it isn't there:
+
+```js
+firstPerson: {
+  // first person, standing at seat `seat`: eye is where its player's eye is
+  // (world, as drawn), target what its view looks at, frame the object its
+  // camera is in (or null). false if it can't (the seat's view is kept).
+  enter({ seat, eye, target, frame }) → boolean,
+  // end first person: the seat's view, waiting for it, takes the camera
+  leave(),
+}
+```
+
+With nothing to leave first person by, sitting down says "Leave first
+person (Esc) to take your seat."
 
 **Shuffle** (`S` over a card: the scene's use prompt shows it, with the
 hand's Flip, under the pointer; or *Shuffle pile* in its right-click menu)
@@ -269,6 +354,8 @@ createResolver({ repo, handle /* the deck doc */, viewer, onChange }) → {
   looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
                       //   (only the deck's own objects are taken from it)
   status(),           // → a line for the HUD (the scene's notices), or null
+  dealt?(),           // → whether any card can be shown to anyone yet (optional; false: the
+                      //   table shows backs, not privacy faces). Public data only.
   shuffle(ids),       // shuffle these objects' cards among themselves → how many (0: nothing to do)
   dispose(),
 }
@@ -463,15 +550,17 @@ are none.
 | `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), set down on something (`placeLayout`), and writing it into a scene doc |
 | `src/table/template.js` | the Lost Cities and Santorini templates: the game's table in an empty scene, its art by `ctx.file` |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file`, and the file for a key |
-| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, Draw, Roll, telling the others, laying out a dropped deck, drawing face up |
-| `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
+| `src/table/extension.js` | the scene extension: decks and the three looks, the seat picker and seats as stations, Shuffle, Draw, Roll, telling the others, laying out a dropped deck, drawing face up |
+| `src/table/visibility.js` | who may see what: zones, seats, face up in the card's frame (pure) |
+| `src/table/privacy.js` | the three looks of a hidden card, and the privacy face's art and assets key (pure) |
+| `src/table/seat-verbs.js` | a seat as a station: which seat a look is at, and the verb it offers (pure) |
 | `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
 | `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, die, card table (their art, and putting one in), and Lost Cities as a part |
 | `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
 | `src/table/dice.js` | dice: which side is up, and a roll worked out from its seed (pure) |
 | `src/table/slots.js` | card slots: which connectors take a card, in the world (the hand's rule, copied; pure) |
 | `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome: a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |
-| `probes/draw.mjs`, `probes/draw-probe.html` | two players at a secure Lost Cities table (card-table's built plugins too): A hovers the deck and presses D; the card lands in A's hand, A sees its face, B doesn't, B is told |
+| `probes/draw.mjs`, `probes/draw-probe.html` | two players at a secure Lost Cities table (card-table's built plugins too): A hovers the deck and presses D; the card lands in A's hand, A sees its face, B sees it and A's whole hand as the privacy face (and a close-up shot of it), B is told |
 | `probes/table.mjs`, `probes/table-probe.html` | two players at a plain-deck Lost Cities table (card-table's built plugins loaded for a dropped secure deck): the use prompt over the pile (Flip, Shuffle) and S telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, R as the gizmo's Rotate, a dropped deck stacking at the point and squaring onto a discard slot; back in play with the hand, R rolling the die to the same face in both views |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, play, seats and the secure deck reaching play, and publish the table it made |
 | `src/test/fakes.js` | a stand-in stage for tests: shared doc, presence, claims, sends, poses, loops; and a drop context for templates (`fakeDrop`) (copied from sailing's) |

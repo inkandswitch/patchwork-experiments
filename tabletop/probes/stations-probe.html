@@ -1,0 +1,211 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop stations probe</title>
+<!-- Driven by probes/stations.mjs. The BUILT scene tool with the BUILT
+     tabletop and card-table plugins on a Lost Cities table from the template,
+     two views A (Ana) and B (Ben), with real presence between them (either
+     view can be cut off). Plus a stand-in for something that walks in first
+     person (sailing's crew, aboard): a scene:extension, running in play, whose
+     instance has the `firstPerson` contribution tabletop hands over to
+     ({ enter(spot) → boolean, leave() }). start(w, eye, target) puts a view in
+     first person: an immersive arm (no pointer lock, which headless Chrome
+     won't give, so the use prompt reads the hovered object, as it does in
+     first person unlocked), the camera held at that eye; Esc leaves. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 700px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => {
+      if (p.cut || p.other.cut) return;
+      for (const fn of p.other.eph) fn({ message, senderId: "peer" });
+    }, 5),
+    eph,
+    cut: false,
+  };
+  return p;
+}
+
+// ── the stand-in walker: one per view, found by its viewer ──
+const walkers = {}; // viewer → { start, stop, walking, entered: [], left: 0 }
+const walker = {
+  type: "scene:extension",
+  id: "probe-walker",
+  name: "Probe walker",
+  always: true,
+  activities: ["play"],
+  async load() {
+    return {
+      create(api) {
+        const w = { walking: false, entered: [], left: 0, eye: null };
+        let release = null, disarm = null;
+        function start(eye, target) {
+          if (!w.walking) {
+            release = api.camera.hold();
+            disarm = api.arm({
+              key(ev) { if (ev.key !== "Escape") return false; stop(); return true; },
+              disarmed() { if (w.walking) stop(); },
+            }, { immersive: true });
+            w.walking = true;
+          }
+          w.eye = eye;
+          api.camera.set({ position: eye, target });
+          return true;
+        }
+        function stop() {
+          if (!w.walking) return;
+          w.walking = false;
+          const d = disarm, r = release;
+          disarm = release = null;
+          d?.();
+          r?.();
+        }
+        w.start = start;
+        w.stop = stop;
+        walkers[api.viewer] = w;
+        return {
+          firstPerson: {
+            // on your feet at the seat: above its eye, a step back from what it looks at
+            enter(spot) {
+              w.entered.push(JSON.parse(JSON.stringify(spot)));
+              const [ex, ey, ez] = spot.eye, [tx, , tz] = spot.target;
+              const d = Math.hypot(ex - tx, ez - tz) || 1;
+              return start([ex + ((ex - tx) / d) * 0.3, ey + 0.4, ez + ((ez - tz) / d) * 0.3], spot.target);
+            },
+            leave() { w.left++; stop(); },
+          },
+          dispose() { stop(); },
+        };
+      },
+    };
+  },
+};
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  getRegistry("scene:extension").register(walker);
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const peers = { a: A, b: B };
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  const viewerOf = { a: ana.url, b: ben.url };
+  const dbg = { a: null, b: null };
+  const open = (w) => { if (!dbg[w]) { Tool(peers[w], hosts[w]); dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug; } return true; };
+  open("a");
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const confirms = [];
+  window.confirm = (q) => (confirms.push(q), false);
+  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const objects = () => scene.doc().objects ?? {};
+  const seats = () => scene.doc().traits?.["tabletop.seats"] ?? {};
+  const r4 = (v) => +(+v).toFixed(4);
+
+  window.__p = {
+    errors, viewers: viewerOf,
+    open,
+    cut(w) { peers[w].cut = true; return true; },
+    uncut(w) { peers[w].cut = false; return true; },
+    templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
+    seats,
+    claim: (sid) => scene.doc().claims?.[`tabletop.seat:${sid}`] ?? null,
+    session: (w) => dbg[w].presence.session,
+    picker: (w) => select(w)?.options.length ?? 0,
+    options: (w) => (select(w) ? [...select(w).options].map((o) => [o.value, o.textContent]) : null),
+    picked: (w) => select(w)?.value ?? null,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    confirms: () => [...confirms],
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    immersive: (w) => !!dbg[w]?.local.get().immersive,
+    phase: () => { const u = Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean); return u ? repo.handles.get(u)?.doc()?.phase ?? null : null; },
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    /** the stand-in walker in view w */
+    walk(w, eye, target) { return walkers[viewerOf[w]].start(eye, target); },
+    stopWalking(w) { walkers[viewerOf[w]].stop(); return true; },
+    walking: (w) => !!walkers[viewerOf[w]]?.walking,
+    walker: (w) => { const k = walkers[viewerOf[w]]; return k ? { walking: k.walking, entered: k.entered, left: k.left, eye: k.eye } : null; },
+    tray: (seat) => Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat) ?? null,
+    handCards(seat) {
+      const s = dbg.a.scene();
+      const tray = this.tray(seat);
+      const z = objects()[tray].traits["tabletop.zone"];
+      return Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]).filter((id) => { const m = s.world(id); const p = s.toLocal(tray, [m[12], m[13], m[14]]); return p.every((v, k) => v >= z.min[k] && v <= z.max[k]); });
+    },
+    /** a seat's camera in the world (its `in` applied) */
+    seatCam(sid) {
+      const c = seats()[sid]?.camera;
+      if (!c) return null;
+      const s = dbg.a.scene();
+      const m = c.in ? s.world(c.in) : null;
+      const ap = (p) => (m ? [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]] : p).map(r4);
+      return { position: ap(c.position), target: ap(c.target ?? [0, 0, 0]), in: c.in ?? null };
+    },
+    camera: (w) => { const c = dbg[w].viewport.getCamera(); return { position: c.position.map(r4), target: c.target?.map(r4) }; },
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim() + (e.hasAttribute("data-disabled") ? " [disabled]" : "")),
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p = m && v.project([m[12], m[13], m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

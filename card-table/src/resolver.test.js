@@ -53,12 +53,16 @@ describe("the scene resolver", () => {
     me.update(ctx);
     expect(changes).toBe(0);
     await until(() => me.status() === "Waiting for YOU to shuffle Deck.");
+    // not dealt yet: nothing is anyone's (the table shows backs, not privacy faces)
+    expect(me.dealt()).toBe(false);
     you.update(ctx);
     await until(() => me.looks().size === 2 && you.looks().size === 2);
     expect([...me.looks().keys()].sort()).toEqual(["o0", "o2"]);
     expect([...you.looks().keys()].sort()).toEqual(["o1", "o2"]);
     expect(me.looks().get("o2")).toEqual(you.looks().get("o2"));
     expect(me.status()).toBeNull();
+    expect(me.dealt()).toBe(true);
+    expect(you.dealt()).toBe(true);
     // shuffle my hand card with the deck card o3: still one card for me, and it's one of the two
     const mine = me.looks().get("o0").name;
     expect(me.shuffle(["o0", "o3"])).toBe(2);

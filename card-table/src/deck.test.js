@@ -109,12 +109,13 @@ describe("a secure deck", () => {
   }
 
   it("deals: each in turn, mix then rekey; every card shuffled once, nothing in the clear", async () => {
-    const { handle } = await dealt();
+    const { handle, alice } = await dealt();
     const d = handle.doc();
     expect(d.phase).toBe("playing");
     expect(d.op).toBeNull();
     expect(d.participants.map((p) => p.id)).toEqual(["alice", "bob", "carol"]);
     expect(Object.values(d.epochs)).toEqual(Array(N).fill(1));
+    expect(alice.dealt()).toBe(true);
     const plain = new Set(ids.map((_, i) => encodeCard(i).toString(16)));
     for (const c of d.cards) expect(plain.has(c)).toBe(false);
   }, 30000);
@@ -214,6 +215,7 @@ describe("a secure deck", () => {
     const alice = createParticipant({ handle, playerId: "alice", secret: newSecret() });
     await alice.step({ players: ["alice"], openSeats: ["Player 2"], visibleTo: () => [] });
     expect(handle.doc().phase).toBe("waiting");
+    expect(alice.dealt()).toBe(false);
     expect(alice.status({ players: ["alice"], openSeats: ["Player 2"] })).toBe("Test deck is shuffled once someone sits as Player 2.");
     expect(alice.status({ players: ["alice", "bob"], nameOf: (id) => id.toUpperCase() })).toBe("Waiting for BOB to shuffle Test deck.");
   });

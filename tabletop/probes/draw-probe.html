@@ -87,6 +87,8 @@ try {
   }, 20);
   const select = (w) => hosts[w].querySelector(".tabletop-seat");
   const objects = () => scene.doc().objects;
+  /** the privacy faces' files (doc.assets, tabletop/private-card@…) */
+  const privateUrls = () => new Set(Object.entries(scene.doc().assets ?? {}).filter(([k]) => k.startsWith("tabletop/private-card@")).map(([, a]) => a?.url));
   const hiddenIds = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
   const zoneOf = (id) => {
     const s = dbg.a.scene();
@@ -121,8 +123,10 @@ try {
       return hiddenIds().filter((id) => { const m = s.world(id); return Math.hypot(m[12] - 0.3, m[14]) < 0.01; }).sort((p, q) => s.world(q)[13] - s.world(p)[13]);
     },
     transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
-    /** the hidden cards a view sees the face of */
-    faces: (w) => [...(dbg[w].looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    /** the hidden cards a view sees the face of (not the privacy face: a card face up that isn't theirs) */
+    faces: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !p.has(L.get(id)?.sourceUrl)); },
+    /** the hidden cards a view sees as the privacy face (tabletop/src/table/privacy.js) */
+    privates: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => p.has(L.get(id)?.sourceUrl)); },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     /** give a view the keyboard, as clicking into it would (without a click, which the hand would take as a pick-up) */
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },

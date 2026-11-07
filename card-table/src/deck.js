@@ -361,5 +361,14 @@ export function createParticipant({ handle, playerId, secret }) {
     return null;
   }
 
-  return { step, reveal, status, shuffle: shuffleSlots, get playerId() { return playerId; } };
+  /**
+   * Whether the deck is dealt: its players fixed and its first shuffle done,
+   * so some card can be shown to someone. Public (the phase and epochs).
+   */
+  const dealt = () => {
+    const d = doc();
+    return d?.phase === "playing" && Object.values(d.epochs ?? {}).some((n) => Number(n) > 0);
+  };
+
+  return { step, reveal, status, dealt, shuffle: shuffleSlots, get playerId() { return playerId; } };
 }

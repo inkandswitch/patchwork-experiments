@@ -5,7 +5,8 @@
 // hands back the faces it can decrypt.
 //
 // A resolver: update(ctx) on every scene change, looks() → Map objectId →
-// face ({ sourceUrl, name }), status() → string | null, shuffle(ids),
+// face ({ sourceUrl, name }), status() → string | null, dealt() → boolean,
+// shuffle(ids),
 // dispose(). The module also says how to lay a deck out when it is dropped
 // on a scene: placement(doc) and bind(handle, ids).
 
@@ -83,6 +84,13 @@ export function createResolver({ repo, handle, viewer, onChange, secret }) {
     },
     looks: () => looks,
     status: () => line,
+    /**
+     * Whether the deck has been dealt: shuffled for its players, so a card
+     * may be shown to someone. Before that (phase "waiting") no card is
+     * anyone's, and the table shows backs. Public: it reads the doc's phase,
+     * nothing secret.
+     */
+    dealt: () => participant.dealt(),
     /** Shuffle these objects' cards among themselves; how many it will shuffle (0: nothing to do). */
     shuffle: (ids) => participant.shuffle(ids),
     dispose() {
