@@ -21,7 +21,7 @@ export const PlainDeckDatatype = {
  * The resolver for a plain deck: whatever this viewer may see, looked up;
  * shuffling permutes the entries. (A resolver: update(ctx) on every scene
  * change, looks() → Map id → { sourceUrl, name }, status() → string | null,
- * shuffle(ids) → how many, dispose().)
+ * dealt() → boolean (optional), shuffle(ids) → how many, dispose().)
  */
 export function plainResolver({ handle, viewer, onChange }) {
   let ctx = null;
@@ -43,6 +43,8 @@ export function plainResolver({ handle, viewer, onChange }) {
     },
     looks: () => current,
     status: () => null,
+    // (nothing to deal: every entry is there from the start)
+    dealt: () => true,
     shuffle(ids, random = Math.random) {
       const listed = [...new Set(ids)].filter((id) => handle.doc()?.objects?.[id]);
       if (listed.length < 2) return 0;

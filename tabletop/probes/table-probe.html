@@ -92,6 +92,8 @@ try {
   }, 20);
   const select = (w) => hosts[w].querySelector(".tabletop-seat");
   const objects = () => scene.doc().objects;
+  /** the privacy faces' files (doc.assets, tabletop/private-card@…) */
+  const privateUrls = () => new Set(Object.entries(scene.doc().assets ?? {}).filter(([k]) => k.startsWith("tabletop/private-card@")).map(([, a]) => a?.url));
   const hiddenIds = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
   const zoneObj = (seat) => Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat) ?? null;
   const zoneOf = (id) => {
@@ -138,7 +140,10 @@ try {
     shown: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m && [...m].map(r6); },
     /** what each hidden card in a hand shows in view w: id → face name/url */
     handLooks(w) { const out = {}; const L = dbg[w].looks(); for (const id of hiddenIds()) { const z = zoneOf(id); if (!z) continue; const f = L?.get?.(id); out[id] = f ? `${z}:${f.name ?? ''}:${String(f.sourceUrl).slice(-6)}` : `${z}:-`; } return out; },
-    faces: (w) => [...(dbg[w].looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    /** the hidden cards a view sees the face of (not the privacy face: a card face up that isn't theirs) */
+    faces: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !p.has(L.get(id)?.sourceUrl)); },
+    /** the hidden cards a view sees as the privacy face (tabletop/src/table/privacy.js) */
+    privates: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => p.has(L.get(id)?.sourceUrl)); },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     selected: (w) => dbg[w].local.get().selected ?? null,
     loaded: (id, w = "a") => !!dbg[w].viewport.contentOf(id)?.loaded,

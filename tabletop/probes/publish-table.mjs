@@ -188,7 +188,9 @@ async function fromTemplate(gameId) {
     const keys = await P("expectedKeys()");
     const laid = await until(`doc().count > 0 && ${JSON.stringify(keys)}.every((k) => __p.doc().assets?.[k]?.url)`, 30_000);
     const d = await P("doc()");
-    check("doc.assets has a file under its versioned key for every kind", laid && Object.keys(d.assets).length === keys.length, { want: keys.length, have: Object.keys(d.assets ?? {}).length, missing: keys.filter((k) => !d.assets?.[k]) });
+    // (and perhaps the privacy face's, once a view saw a hand that isn't its own: tabletop/src/table/privacy.js)
+    const art = Object.keys(d.assets ?? {}).filter((k) => !k.startsWith("tabletop/private-card@"));
+    check("doc.assets has a file under its versioned key for every kind", laid && art.length === keys.length, { want: keys.length, have: art.length, missing: keys.filter((k) => !d.assets?.[k]) });
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
     // play is on offer only where the table extension has a trait to run on
     // (seats, zones, hidden cards); Santorini has none, so its doc doesn't

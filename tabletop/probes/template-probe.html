@@ -94,6 +94,8 @@ try {
   }, 20);
   const select = (w) => hosts[w].querySelector(".tabletop-seat");
   const objects = () => scene.doc().objects ?? {};
+  /** the privacy faces' files (doc.assets, tabletop/private-card@…) */
+  const privateUrls = () => new Set(Object.entries(scene.doc().assets ?? {}).filter(([k]) => k.startsWith("tabletop/private-card@")).map(([, a]) => a?.url));
   const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
   const game = {};
@@ -121,7 +123,10 @@ try {
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
-    faces: (w) => [...(dbg[w]?.looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    /** the hidden cards a view sees the face of (not the privacy face: a card face up that isn't theirs) */
+    faces: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !p.has(L.get(id)?.sourceUrl)); },
+    /** the hidden cards a view sees as the privacy face (tabletop/src/table/privacy.js) */
+    privates: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => p.has(L.get(id)?.sourceUrl)); },
     /** what a view is still loading, and what failed to load */
     loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
     /** the table's docs as they are now, to publish: the scene, its deck and its files */

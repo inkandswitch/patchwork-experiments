@@ -227,6 +227,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       abort: new AbortController(),
       camera: null,
       rides: [],
+      collected: null, // { [field]: value }: what api.collect finds on the other extensions
     };
     views.set(session, view);
     gone.delete(session);
@@ -344,6 +345,8 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       worldOf,
       ops,
       content: (id) => content[id] ?? null,
+      // the other extensions' fields (STAGE.md api.collect): what a test puts in view.collected, as one extension's
+      collect: (name) => (view.collected?.[name] === undefined ? [] : [{ id: "other", value: view.collected[name] }]),
       loop(fn) {
         view.loops.push(fn);
         return () => {

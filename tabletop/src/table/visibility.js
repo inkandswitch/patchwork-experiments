@@ -7,7 +7,8 @@
 //   - it is in a private zone (an object with trait tabletop.zone: { seat,
 //     min, max }, a box in that object's own frame): only whoever sits in
 //     that seat sees it, whichever way up it is;
-//   - otherwise, it is face up (its own +Y points up in the world): everyone does.
+//   - otherwise, it is face up (faceUpIn: its own +Y points the way its
+//     parent's does, the world's at the root): everyone does.
 // Anything else stays hidden. The seats are the scene's trait tabletop.seats:
 // { [seatId]: { name, player, camera? } }.
 
@@ -49,11 +50,35 @@ export function seatAt(scene, regions, world) {
   return null;
 }
 
-/** Does the object's own +Y point up in the world? */
-export function isFaceUp(scene, id) {
-  // column-major: the Y axis's world y component
-  return scene.world(id)[5] > 1e-6;
+/** The object an object is attached to (the snapshot's `parents`, else its doc `parent` if that's there), or null. */
+export function parentOf(scene, id) {
+  if (scene?.parents?.get) return scene.parents.get(id) ?? null;
+  const p = scene?.objects?.[id]?.parent;
+  return typeof p === "string" && p !== id && scene.objects[p] ? p : null;
 }
+
+/**
+ * Is it face up: does its own +Y point the way the up of the frame it lies
+ * in does (its parent's +Y; the world's at the root)? Judged in that frame,
+ * not against the world's up, so a card on a table aboard a ship that heels,
+ * rolls or is upside down in a capsize is face up or down as it lies on the
+ * table, and from the doc (scene.world), not the pose drawn this frame, so
+ * every peer agrees and nothing flickers as she moves. At the root it is
+ * the world's up, as it always was. Pure.
+ */
+export function faceUpIn(scene, id) {
+  const m = scene.world(id);
+  const p = parentOf(scene, id);
+  const up = p ? scene.world(p) : null;
+  // column-major: the Y axis is m[4..6]
+  const y = [m[4], m[5], m[6]];
+  const u = up ? [up[4], up[5], up[6]] : [0, 1, 0];
+  const dot = y[0] * u[0] + y[1] * u[1] + y[2] * u[2];
+  return dot / ((Math.hypot(...y) || 1) * (Math.hypot(...u) || 1)) > 1e-6;
+}
+
+/** Does the object's own +Y point up in the frame it lies in (faceUpIn)? */
+export const isFaceUp = faceUpIn;
 
 /** The seat this viewer sits in: the first whose `player` is them. */
 export function seatOf(seats, viewer) {
@@ -77,7 +102,7 @@ export function visibility(scene, seats = seatsOf(scene)) {
   const where = new Map(); // id → { owner, faceUp }
   for (const id of Object.keys(scene?.objects ?? {})) {
     const m = scene.world(id);
-    where.set(id, { owner: seatAt(scene, regions, [m[12], m[13], m[14]]), faceUp: m[5] > 1e-6 });
+    where.set(id, { owner: seatAt(scene, regions, [m[12], m[13], m[14]]), faceUp: faceUpIn(scene, id) });
   }
   const cache = new Map();
   return (player) => {
