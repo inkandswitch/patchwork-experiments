@@ -23,6 +23,8 @@ import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
 import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
 import { peerCss } from "../peers.js";
+import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
+import { landings } from "./landing.js";
 
 /** The filter field appears once there are this many objects. */
 export const SEARCH_FROM = 8;
@@ -53,21 +55,10 @@ function shortHeads(heads) {
   return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
 }
 
-/**
- * What a row is as a document outside the scene: its render doc (the way the
- * sidebar's own drags look, so a slicer or a flow field's body slot can take
- * it; see README "Consuming a render"), or for a passthrough object its GLB
- * file. null for a group or an object with neither.
- * @returns {{ url: string, name?: string, type?: string } | null}
- */
-export function rowDocument(o) {
-  if (!o || isGroup(o)) return null;
-  const url = o.renderUrl ?? o.sourceUrl ?? null;
-  if (typeof url !== "string" || !url.startsWith("automerge:")) return null;
-  return o.renderUrl ? { url, name: o.name, type: "scene-render" } : { url, name: o.name };
-}
+/** What a row is as a document outside the scene (../transfer.js). */
+export { rowDocument };
 
-/** A row-drag payload, or null if there is none (or it isn't ours). */
+/** A row-drag payload `{ scene, id, ids }`, or null if there is none (or it isn't ours). */
 export function readRowDrag(dt) {
   let raw = "";
   try {
@@ -75,13 +66,7 @@ export function readRowDrag(dt) {
   } catch {
     return null;
   }
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw);
-    return v && typeof v.id === "string" ? { scene: typeof v.scene === "string" ? v.scene : null, id: v.id } : null;
-  } catch {
-    return null;
-  }
+  return readRowPayload(raw);
 }
 
 // ─── peers ─────────────────────────────────────────────────────────────────
@@ -311,6 +296,32 @@ export default {
       }
     }
 
+    /**
+     * Another scene's row dropped at a place in this tree: copied here (with
+     * what's attached under it, or filed in it, ../transfer.js). The tree
+     * says only where it goes in the tree; it's put down as the view would
+     * (./landing.js): onto an object row, on that object, snapped to the
+     * nearest of its connectors that takes it; at the top or in a group,
+     * where the view is looking, under nothing. (Its old place in the world
+     * means nothing here.)
+     */
+    async function copyRows(drag, place, free = false) {
+      const snap = api.scene();
+      const into = place.parent && snap.objects[place.parent] ? place.parent : null;
+      const intoGroup = !!into && isGroup(snap.objects[into]);
+      const land = landings(api);
+      const where = (tags) => {
+        if (into && !intoGroup) return land.on(into, tags, free);
+        const l = land.ahead(tags);
+        // the tree said at the top, or in that group: under nothing, whatever's in front
+        return { ...l, parent: null, parentWorld: null, yaw: l.snapped ? l.yaw : null, snapped: false, group: intoGroup ? into : null };
+      };
+      const made = await copyObjects(api, drag, { land: where, before: place.before ?? null });
+      if (!made || api.signal.aborted) return;
+      pendingReveal = made[0];
+      flushReveal();
+    }
+
     function flushReveal() {
       if (pendingReveal != null && reveal(pendingReveal)) pendingReveal = null;
     }
@@ -446,7 +457,8 @@ export default {
           e.stopPropagation();
           const drag = readRowDrag(dt);
           if (!drag) return;
-          if (drag.scene !== api.url) return api.notify("That row belongs to another scene.", "error");
+          // another scene's row: a copy of it (and what's under it) goes here in the tree, put down as the view would
+          if (drag.scene !== api.url) return void copyRows(drag, place, e.altKey);
           if (!m.objects[drag.id]) return api.notify("That object is no longer in this scene.", "error");
           // Released on its own row: a click that wobbled, whichever band it hit.
           if (drag.id === target.id) return select(drag.id);
@@ -485,18 +497,34 @@ export default {
         main.addEventListener("dragstart", (e) => {
           const dt = e.dataTransfer;
           if (!dt) return;
-          dt.setData(ROW_MIME, JSON.stringify({ scene: api.url, id }));
-          // Outside this scene the row is its geometry (rowDocument): a slicer
-          // or a flow field's body slot can take it. This scene, and others,
-          // ignore these types on a row drag (scene.add refuses ROW_MIME).
-          const item = rowDocument(api.scene().objects[id]);
+          const ids = [id];
+          // In its type list, which scene it's from and how big it is: another
+          // scene's view shows a ring that size while it's dragged over
+          // (only types are readable then). STAGE.md, "Copying objects".
+          const snap = api.scene();
+          const order = api.doc()?.order ?? [];
+          const solid = subtreeOf(snap.objects, ids, order).ids.filter((x) => !isGroup(snap.objects[x]));
+          const measure = { box: (x) => api.box?.(x) ?? null, worldOf: (x) => api.worldOf?.(x) ?? snap.world?.(x) ?? null };
+          const reach = solid.length ? reachOf(solid, measure) : null;
+          // how far its origin is above its base, so it lands on its base (in the payload: read at the drop)
+          const lift = solid.length ? liftOf(snap.objects, ids, order, measure) : null;
+          dt.setData(ROW_MIME, rowPayload(api.url, ids, Number.isFinite(lift) ? { lift } : {}));
+          for (const [t, v] of Object.entries(summaryTypes(api.url, reach))) dt.setData(t, v);
+          startDrag({ scene: api.url, ids, radius: reach, lift, tags: Array.isArray(snap.objects[id]?.tags) ? [...snap.objects[id].tags] : [], name: api.nameOf(id) || "" });
+          // Outside a scene the row is its geometry (rowDocument): a slicer
+          // or a flow field's body slot can take it. Scenes ignore these
+          // types on a row drag (scene.add refuses ROW_MIME; scene.transfer
+          // copies the row itself).
+          const item = rowDocument(snap.objects[id]);
           if (item) {
             dt.setData(DND_MIME, JSON.stringify({ source: "scene", items: [item] }));
             dt.setData(URLS_MIME, JSON.stringify([item.url]));
             dt.setData("text/plain", item.url);
-            dt.effectAllowed = "copyMove";
-          } else dt.effectAllowed = "move";
+          }
+          // move inside this tree; copy into another scene
+          dt.effectAllowed = "copyMove";
         });
+        main.addEventListener("dragend", () => endDrag({ scene: api.url }));
         const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
         row = { li, twisty, vis, sw, name, count, pill, fixedMark, remove, main, group, label: null };
         rows.set(id, row);

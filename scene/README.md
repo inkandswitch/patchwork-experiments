@@ -91,11 +91,41 @@ detaching rewrite the object's transform to keep its world pose). A row
 released where it already sits writes nothing, and a reorder among siblings
 changes only `order` (spliced, so a collaborator's concurrent add survives the
 merge). A group can't be dropped into itself or anything inside it, or among
-an object's attachments, and a row dragged in from another scene's outline is
-refused. Dragged out of the scene, a row is its geometry: it carries the
-object's render doc (a passthrough object, its GLB file) in the sidebar's drag
-formats, so it can be dropped on a slicer or a flow field's body slot; scenes
-themselves never add a dragged row.
+an object's attachments. Dragged out of the scene, a row is its geometry: it
+carries the object's render doc (a passthrough object, its GLB file) in the
+sidebar's drag formats, so it can be dropped on a slicer or a flow field's
+body slot; scenes never add a dragged row as a document.
+
+**Between scenes.** A row dragged into *another* scene is copied there, with
+everything attached under it (a mast's boom and sail) or, for a group,
+everything filed in it. Into that scene's view it lands where the pointer
+hits, the way a part from the bin does: on an object it goes under that
+object and snaps to a connector whose tags take it (Alt places freely), and
+a ring the size of the object shows where while you drag. Into its outline
+the tree says only where it goes in the tree; it's put down as the view
+would: dropped among an object's attachments, on that object at the nearest
+connector that takes it; at the top or in a group, where the view is
+looking. Unless it snaps to a connector, a copy lands on its base, not its
+origin (a crate whose origin is its middle sits on the floor). **Copy** (⌘C /
+Ctrl+C with something selected, or the right-click menu) puts the same thing
+on the clipboard, and **Paste** (⌘V / Ctrl+V, or the menu) copies it in:
+into another scene where the view is looking (under the object there only
+if it snaps to one of its connectors), each repeat beside the last; into
+its own scene as a duplicate beside the original, each repeat one more
+width along. (The menu's Copy writes what ⌘C writes where the browser lets
+a menu click copy; where it doesn't, only the link, and the copy can be
+pasted only into scenes on the same page.) A copy keeps its names, colours,
+tags, behaviours and their settings, and the relative transforms of what's
+under it; it shares GLB files (they never change) and the source scene's
+`assets` entries for them, but gets render docs of its own (same source,
+same params, same build), so tuning a camber hull in one scene leaves the
+other alone. A behaviour's link to another object follows the copy when
+that object came too (a lever and its door), and is cleared, with a notice,
+when it didn't; a link to a scene's entry (a private zone's seat) is kept
+only where the new scene has that entry. Runtime state (claims, and
+whatever an extension marks as runtime: a ship's motion) stays behind. If
+what you copied needs something the scene lacks (a ship needs a sea), a
+notice says what to add. See STAGE.md, "Copying objects".
 
 - **Outline**: visibility, colour, remove; click to select, double-click to frame.
   An object fixed at a version shows a small "◷ fixed" tag (display only).
@@ -703,7 +733,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |

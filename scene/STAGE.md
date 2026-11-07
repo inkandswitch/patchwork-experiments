@@ -239,6 +239,88 @@ stage knows none of them.
   `{ part }`, so a part can be dragged into another scene open beside this
   one. The maths is `src/parts/parts-place.js`.
 
+**Copying objects** between scenes, or within one (`src/transfer.js`; the
+view's side is `scene.transfer`, editing only).
+
+- **The row payload.** An outline row's drag carries
+  `application/x-scene-object` = `{ scene, id, ids }`: the scene's URL (ids
+  are only unique within a scene, and two scenes beside each other share one
+  drag session) and the object ids, `id` being the first. In its type list it
+  also says, since only types are readable during dragover (and come back
+  lower-cased): which scene it's from, `application/x-scene-object-from;<doc
+  id, lower-cased>`, and how far it reaches from its origin in plan,
+  `application/x-scene-object-size;r=<scene units>`. Beside them it carries the
+  object's document (`text/x-patchwork-dnd`, `text/x-patchwork-urls`,
+  `text/plain`: its render doc, or its GLB file) for tools that aren't scenes,
+  as before. The payload may also say `lift`: how far the copy's reference
+  point (one top object's origin; several, the lowest) is above its lowest
+  point, measured where it's drawn in its own scene (readable at the drop,
+  which is when it's needed). ⌘C writes the same payload to the clipboard,
+  with that link as `text/plain`, and `copy`: which Copy it was (repeated
+  pastes are counted by it). The menu's Copy writes the same through a copy
+  event of its own (`execCommand("copy")` from the click); where the browser
+  won't run one, it writes only the link, and the payload reaches only
+  scenes on the same page (Paste there reads it from the page).
+- **In its own scene** a row drag is the outline's (reorder, reparent; never a
+  copy) and the view ignores it. Paste in its own scene is a duplicate: beside
+  the original (moved by its width in world x, the nth paste of one Copy n
+  widths), on the same parent, in the same group. The original's place is
+  read from the doc, its parent's too, so a pose being drawn (a simulation's
+  hull, a carried piece) doesn't skew the duplicate.
+- **In another scene** (dropped in the view, dropped in the outline, or
+  pasted) it's a copy:
+  - **What:** the named objects, everything attached under them, and for a
+    group everything filed in it, at any depth; new ids, with their
+    attachments and group membership among themselves kept.
+  - **Where:** the top-level ones move together. In the view (or pasted, at
+    the middle of the view) they land by the parts bin's rule: under the
+    object hit, snapped to a connector whose tags take a lone object's tags
+    (Alt, or Snap off: freely), turned to the connector's or that object's
+    heading; on the ground they keep the heading they had. Tilt, scale and
+    every transform below the top come as they were. Pasted, they go under
+    the object at the middle of the view only when they snap to one of its
+    connectors; else on the surface there, under nothing, and each repeat of
+    one Copy steps sideways by the copy's width onto whatever is under that
+    spot. In the outline the tree says only where in the tree (parent,
+    group, `before`); they're put down as the view would: among an object's
+    attachments, on that object at the nearest connector that takes a lone
+    object's tags, however far (else at its origin, on its top), and at the
+    top or in a group where the view is looking, under nothing. Where they
+    were in their own scene's world means nothing here. Unless snapped, the
+    landing point is raised by the payload's `lift` (without one, a lift from
+    the objects' `hint.bounds` through the doc's transforms), so the copy
+    rests on its base: a crate whose origin is its middle sits on the floor.
+    A connector is made for an origin at the base, so a snapped copy isn't
+    raised.
+  - **Every field but runtime state.** Not copied: `claims` (the stage's), and
+    any trait key an extension marks as runtime in `describes` (below). Pose
+    holds and presence were never in the doc.
+  - **Files are shared, renders aren't.** A passthrough object keeps its
+    `sourceUrl` (a GLB file doc is immutable), and the source scene's
+    `assets` entries naming copied files are copied under the same key,
+    unless this scene has that key already. A built object gets a new render
+    doc through `addObject` (`opts.render`), for the same source and provider,
+    with the source render's `params` and, as the source is the same, its
+    build (`glbUrl`, `builtFrom`, `builtAt`, `bounds`), so nothing rebuilds
+    until someone changes it here, and tuning one scene's copy never
+    changes the other's.
+  - **References in traits** are fixed by their field kinds (`describes`,
+    below). An `object` field naming something copied with it is set to that
+    copy's new id (in the same scene too: a duplicated lever works its own
+    duplicated door). Naming something not copied, it's kept in the same
+    scene and cleared in another, with a notice ("This lever's target was
+    left behind: choose one in the inspector."). An `entry` field is kept in
+    the same scene, or where this scene's trait `of` has that key; else
+    cleared, and `of` counts as a need (below) when the scene lacks the trait
+    ("This private zone needs seats…"), or a notice names the missing entry.
+    A field with `copy: "drop"` is left behind (a document that knows its
+    objects by id, such as a deck: the copy has a new id it doesn't know).
+    `url` and other fields are copied as they are.
+  - **What a trait needs.** When a copied trait's description `needs` a scene
+    trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
+    to the scene."). Nothing adds a scene trait for you.
+  - The first copied root is selected.
+
 **Describing traits.** `describes` says what an extension's traits are, so a
 surface can write them without a script (the inspector's Behaviours and "Add
 behaviour…"). It is metadata like the rest: plain data that survives
@@ -272,6 +354,18 @@ describes: {
 - `entries`: the trait's value is a map of entries, id → `{ …fields }` (the
   seats). Each entry has the `fields`; adding one writes `init` plus their
   defaults under `api.newId(prefix)`.
+- `runtime`: what of the trait is about now rather than about the object,
+  so a copy leaves it behind (see "Copying objects"): `true` for the whole
+  trait, or a list of its keys (`runtime: ["motion"]`). A field spec may say
+  `runtime: true` too. Any extension that writes play state into a trait
+  must declare it here, or copies carry it. (When that play state also moved
+  the object, as a shot-down target's fallen transform, leaving the state
+  behind leaves the object moved: such an extension must put it back first,
+  or keep the state so its own reset can.)
+- A field spec's `copy: "drop"`: a copy leaves that field behind (see
+  "Copying objects", "References in traits").
+- `needs`: scene trait keys an object with this trait doesn't work without
+  (a ship's `["sailing.sea"]`). Copying it into a scene without one says so.
 - `init`: what a new trait starts as, before its fields' defaults are
   filled in. Keys nothing describes (a target's `down`, play state) are never
   shown and never touched.
@@ -490,7 +584,7 @@ that extension.
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`) |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |

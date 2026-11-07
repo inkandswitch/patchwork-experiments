@@ -228,6 +228,30 @@ function contestedText(s) {
  * "contested", "pinned", "out-of-date") is what code branches on.
  * @param {object} o  the object  @param {object} s  what the render manager or GLB queue last said
  */
+/** What addObject settles itself, which its `fields` never override. */
+const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims"]);
+
+/**
+ * A new render doc started from another's (a copied object's): its params,
+ * when it was by the same provider, and the build it had (GLB, record,
+ * bounds) when it was of the same source too, so a copy shows at once and
+ * rebuilds only when something changes. Pure; fresh copies throughout.
+ */
+export function seededRenderDoc(fresh, seed) {
+  if (!seed || typeof seed !== "object" || seed.providerId !== fresh.providerId) return fresh;
+  const copy = (v) => JSON.parse(JSON.stringify(v));
+  const out = { ...fresh };
+  if (seed.params && typeof seed.params === "object") out.params = copy(seed.params);
+  if (seed.pinned === true) out.pinned = true;
+  if (seed.parent === fresh.parent && typeof seed.glbUrl === "string" && seed.builtFrom && typeof seed.builtFrom === "object") {
+    out.glbUrl = seed.glbUrl;
+    out.builtFrom = copy(seed.builtFrom);
+    out.builtAt = Number.isFinite(seed.builtAt) ? seed.builtAt : null;
+    out.bounds = seed.bounds ? copy(seed.bounds) : null;
+  }
+  return out;
+}
+
 export function statusOf(o, s) {
   if (!o || isGroup(o) || !s) return null;
   if (s.passthrough) {
@@ -1312,10 +1336,14 @@ export default function Stage(handle, element) {
    * UI): through `providerId` (else the best match), as a render doc, or
    * straight through for a passthrough provider.
    * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
-   * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads? }} [opts]
+   * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
    *   parent: attach to that object (and join its group, unless `group` says);
    *   group: file in that group; before: its place in the order; heads (or
-   *   heads in the URL itself): add it fixed at that version of its source (`at`)
+   *   heads in the URL itself): add it fixed at that version of its source (`at`);
+   *   fields: more of the object, written in the same change (a copy's traits,
+   *   tags, colour…; never the fields above, nor `claims`); render: a render
+   *   doc to start the new one from (a copy's: its params, and its build when
+   *   it was of this source by this provider; transfer.js renderSeed)
    * @returns {Promise<string>} the new object's id; rejects with a sentence to show
    */
   async function addObject(input, opts = {}) {
@@ -1342,12 +1370,14 @@ export default function Stage(handle, element) {
     }
     const name = opts.name || (await titleOf(sourceDoc, info.datatype));
     // A passthrough provider's source already is a GLB: no render doc, no copy (v3 §6).
-    const renderHandle = provider.passthrough ? null : await repo.create2(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }));
+    const renderHandle = provider.passthrough ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
     if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
     const id = newId("o");
     const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
     const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
+    // fresh copies: automerge won't take a value that is already in a document
+    const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
     handle.change((d) => {
       if (!d.objects) d.objects = {};
       if (!d.order) d.order = [];
@@ -1368,6 +1398,8 @@ export default function Stage(handle, element) {
         wireframe: false,
         transform: { position: [...transform.position], rotation: [...transform.rotation], scale: transform.scale },
       };
+      // the rest of a copied object: its traits, tags, colour… (never what's settled above)
+      if (fields) for (const [k, v] of Object.entries(fields)) if (!ADD_OWNS.has(k) && v !== undefined) d.objects[id][k] = v;
       // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
       if (hint) d.objects[id].hint = hint;
       // A URL with heads names a version: show that one. (A passthrough

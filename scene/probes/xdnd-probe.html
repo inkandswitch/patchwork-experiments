@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene cross-scene probe</title>
+<!-- Driven by probes/xdnd-run.mjs: two scene views side by side, A and B, of
+     two different docs in one in-memory repo, both the BUILT tool (dist/).
+     The runner drags A's outline rows into B (a real HTML5 drag over CDP)
+     and copies and pastes between them (STAGE.md, "Copying objects").
+
+       ?mode=main  A: a passthrough GLB crate (with an assets entry), a group
+                   of two, a mast with its boom and sail under it, and a
+                   built STL (a render doc with params); B: a deck whose GLB
+                   has a connector tagged "mast".
+       ?mode=sail  sailing's BUILT plugins (../../sailing/dist, loaded at
+                   runtime) registered too; A and B start empty. `&patch=1`
+                   registers them with `runtime: ["motion"]` and
+                   `needs: ["sailing.sea"]` on sailing.ship's describes (what
+                   sailing doesn't say yet). -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #1d1d1d; overflow: hidden; }
+  body { display: flex; gap: 12px; padding: 6px; box-sizing: border-box; }
+  .host { width: 890px; height: 780px; flex: none; position: relative; outline: 1px solid #555; }
+</style>
+<div id="a" class="host"></div><div id="b" class="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { encodeGLB } from "../src/glb.js";
+
+const q = new URLSearchParams(location.search);
+const MODE = q.get("mode") ?? "main";
+const PATCH = q.get("patch") === "1";
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+
+const box = (w, h, d, color, at = [0, 0, 0]) => {
+  const [x, y, z] = at, a = w / 2, c = d / 2;
+  const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+  const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+  return { positions: f.flat().flatMap((i) => v[i]), color };
+};
+// an ASCII STL box, 40 × 20 × 30 cm with Z up (the render's params say cm, z)
+function stlBox(w, d, h) {
+  const v = [[0,0,0],[w,0,0],[w,d,0],[0,d,0],[0,0,h],[w,0,h],[w,d,h],[0,d,h]];
+  const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+  return `solid bracket\n${f.map((t) => ` facet normal 0 0 0\n  outer loop\n${t.map((i) => `   vertex ${v[i].join(" ")}`).join("\n")}\n  endloop\n endfacet`).join("\n")}\nendsolid bracket\n`;
+}
+const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
+const obj = (name, file, extra = {}) => ({ name, sourceUrl: file.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: T([0, 0, 0]), ...extra });
+const fileDoc = (name, glb) => ({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(glb) });
+const sceneDoc = (title, objects = {}, order = [], extra = {}) => ({
+  "@patchwork": { type: "scene" }, title, objects, order, dimensions: {}, traits: {}, assets: {},
+  view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } }, ...extra,
+});
+
+try {
+  const urls = ["../dist/index.js", ...(MODE === "sail" ? ["../../sailing/dist/index.js"] : [])];
+  for (const url of urls) {
+    const { plugins } = await import(url);
+    for (const p of plugins) {
+      let reg = p;
+      if (PATCH && p.type === "scene:extension" && p.describes?.["sailing.ship"]) {
+        reg = { ...p, describes: { ...p.describes, "sailing.ship": { ...p.describes["sailing.ship"], runtime: ["motion"], needs: ["sailing.sea"] } } };
+      }
+      getRegistry(p.type).register(reg);
+    }
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const MAST_STEP = [0, 0.3, -0.5];
+  let A, B;
+  const files = {};
+  if (MODE === "main") {
+    files.crate = repo.add(fileDoc("crate.glb", { meshes: [box(0.4, 0.4, 0.4, "#a0703c")] }));
+    files.member = repo.add(fileDoc("member.glb", { meshes: [box(0.3, 0.5, 0.3, "#4c7fd0")] }));
+    files.mast = repo.add(fileDoc("mast.glb", { meshes: [box(0.08, 2, 0.08, "#e8e2d0")] }));
+    files.boom = repo.add(fileDoc("boom.glb", { meshes: [box(0.06, 0.06, 1.2, "#c8c2b0", [0, 0, 0.6])] }));
+    files.sail = repo.add(fileDoc("sail.glb", { meshes: [box(0.02, 1.4, 1.0, "#f4f0ea", [0, 0, 0.5])] }));
+    // a barrel whose origin is its middle (most dropped GLBs), raised in A to stand on the floor
+    files.barrel = repo.add(fileDoc("barrel.glb", { meshes: [box(0.4, 0.6, 0.4, "#5a8a6a", [0, -0.3, 0])] }));
+    files.deck = repo.add(fileDoc("deck.glb", { meshes: [box(1.2, 0.3, 3, "#7a6a50")], extras: { connectors: [{ position: MAST_STEP, tags: ["mast"] }], snapRadius: 1.5 } }));
+    files.stl = repo.add({ "@patchwork": { type: "file" }, name: "bracket.stl", extension: "stl", mimeType: "model/stl", content: stlBox(40, 20, 30) });
+    const stlRender = repo.add({ "@patchwork": { type: "scene-render" }, title: "Bracket", parent: files.stl.url, providerId: "file-stl", params: { unit: "cm", up: "z" }, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false });
+    files.stlRender = stlRender;
+    A = repo.add(sceneDoc("Scene A", {
+      crate: obj("Crate", files.crate, {
+        transform: T([-1.6, 0, 1.2], [0, 0.6, 0], 1.5), color: "#d08a3c", tags: ["cargo"], traits: { "probe.cargo": { weight: 12 } },
+        hint: { bounds: { min: [-0.2, 0, -0.2], max: [0.2, 0.4, 0.2] } }, locked: true, infoUrl: "https://example.com/crate",
+        claims: { use: { viewer: "viewer:someone", session: "s-1" } },
+      }),
+      g1: { kind: "group", name: "Pair", visible: true, group: null },
+      left: obj("Left", files.member, { group: "g1", transform: T([0.8, 0, 1.4], [0, 0.3, 0]) }),
+      right: obj("Right", files.member, { group: "g1", transform: T([1.6, 0, 1.0], [0, -0.4, 0], 0.8) }),
+      mast: obj("Mast", files.mast, { transform: T([1.4, 0, -1.2], [0, 0.5, 0]), tags: ["mast"] }),
+      boom: obj("Boom", files.boom, { parent: "mast", transform: T([0, 0.5, 0.04], [0, 0.2, 0]) }),
+      sail: obj("Sail", files.sail, { parent: "boom", transform: T([0, 0.05, 0.05], [0, 0, 0], 1) }),
+      barrel: obj("Barrel", files.barrel, { transform: T([0, 0.3, -2.2]) }),
+      bracket: { name: "Bracket", sourceUrl: files.stl.url, providerId: "file-stl", renderUrl: stlRender.url, parent: null, group: null, visible: true, color: "#6aa84f", opacity: 1, wireframe: false, transform: T([-1.4, 0, -1.3], [0, 0.9, 0], 2) },
+    }, ["crate", "g1", "left", "right", "mast", "boom", "sail", "barrel", "bracket"], {
+      assets: { "probe/crate@1": { url: files.crate.url, name: "crate.glb" }, "probe/unused@1": { url: files.deck.url, name: "unused.glb" } },
+    }));
+    B = repo.add(sceneDoc("Scene B", {
+      deck: obj("Deck", files.deck, { transform: T([0.6, 0, 0.2], [0, Math.PI / 2, 0]) }),
+    }, ["deck"], { assets: {} }));
+  } else {
+    A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));
+    B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));
+  }
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  const handles = { a: A, b: B };
+  const dbg = {};
+  for (const w of ["a", "b"]) {
+    hosts[w].repo = repo;
+    hosts[w].viewerId = `viewer:${w}`;
+    Tool(handles[w], hosts[w]);
+    dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug;
+  }
+  const rect = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height, top: r.top, left: r.left }; };
+  const pageOf = (w, p) => { const vp = dbg[w].viewport; const s = vp.project(p); const r = vp.canvas.getBoundingClientRect(); return s && { x: r.left + s.x, y: r.top + s.y }; };
+  const apply = (m, p) => [m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12], m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13], m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]];
+  window.__p = {
+    MODE, PATCH, errors, files: Object.fromEntries(Object.entries(files).map(([k, h]) => [k, h.url])), MAST_STEP,
+    url: (w) => handles[w].url,
+    doc: (w) => JSON.parse(JSON.stringify(handles[w].doc())),
+    docOf: async (url) => JSON.parse(JSON.stringify((await repo.find(url)).doc())),
+    hasDoc: (url) => repo.handles.has(url),
+    change: (w, fn) => handles[w].change(fn),
+    dbg,
+    loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
+    allLoaded: (w) => Object.entries(handles[w].doc().objects).filter(([, o]) => o.kind !== "group").every(([id]) => dbg[w].viewport.contentOf(id)?.loaded),
+    world: (w, id) => { const m = dbg[w].scene().world(id); return m ? [...m] : null; },
+    toLocal: (w, id, p) => dbg[w].scene().toLocal(id, p),
+    /** page point of a point in an object's frame (or the world, id null) */
+    at: (w, id, p) => pageOf(w, id ? apply(dbg[w].viewport.worldOf(id), p) : p),
+    pickAt: (w, x, y) => { const r = dbg[w].viewport.canvas.getBoundingClientRect(); const h = dbg[w].viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id ?? null, point: h.point }; },
+    box: (w, id) => { const b = dbg[w].viewport.objectBox?.(id) ?? null; return b && !b.isEmpty?.() ? { min: b.min.toArray(), max: b.max.toArray() } : null; },
+    canvas: (w) => { const r = dbg[w].viewport.canvas.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+    /** an outline row's name button (the grab handle), scrolled into view */
+    row: (w, id) => { const li = hosts[w].querySelector(`li.object-row[data-id="${id}"]`); if (!li) return null; li.scrollIntoView({ block: "nearest" }); return { main: rect(li.querySelector(".row-main")), li: rect(li) }; },
+    rows: (w) => [...hosts[w].querySelectorAll("li.object-row")].map((li) => li.dataset.id),
+    ring: (w) => dbg[w].host.instanceOf("scene.transfer")?.debug?.ring() ?? null,
+    toasts: (w) => [...hosts[w].querySelectorAll(".toast")].map((e) => e.textContent.trim()),
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    select: (w, id) => dbg[w].local.swap((m) => ({ ...m, selected: id })),
+    focusIn: (w) => { const r = hosts[w].querySelector(".scene-stage"); return !!document.activeElement && r.contains(document.activeElement); },
+    active: () => { const a = document.activeElement; return a ? `${a.tagName}.${a.className}` : null; },
+    part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rect(e); },
+    menuItems: () => [...document.querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rect(e) })),
+    byName: (w, n) => Object.entries(handles[w].doc().objects).filter(([, o]) => o.name === n).map(([id]) => id),
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

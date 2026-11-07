@@ -104,6 +104,7 @@ describe("the scene package's own extensions", () => {
       "scene.units",
       "scene.legends",
       "scene.add",
+      "scene.transfer",
       "scene.parts",
       "scene.activity",
     ]);

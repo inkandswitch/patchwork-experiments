@@ -301,6 +301,17 @@ export const plugins = [
       return (await import("./parts/add.js")).default;
     },
   },
+  // objects from another scene, or from this one: an outline row dragged
+  // into this view, Copy and Paste (STAGE.md, "Copying objects")
+  {
+    type: "scene:extension",
+    id: "scene.transfer",
+    name: "Copy and paste",
+    activities: ["edit"],
+    async load() {
+      return (await import("./parts/transfer.js")).default;
+    },
+  },
   // the parts bin: every scene:part, to drag into the view or click to put
   // where you're looking. Its panel comes last in the sidebar (Objects,
   // Inspector, Dimensions, Parts), and only when some package offers a part.

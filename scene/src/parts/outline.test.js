@@ -344,7 +344,7 @@ describe("scene.outline: dragging rows", () => {
     const e = new Event("dragstart", { bubbles: true });
     e.dataTransfer = { setData: (t, v) => (data[t] = v) };
     row("a").querySelector(".row-main").dispatchEvent(e);
-    expect(readRowDrag({ getData: (t) => data[t] })).toEqual({ scene: s.handle.url, id: "a" });
+    expect(readRowDrag({ getData: (t) => data[t] })).toEqual({ scene: s.handle.url, id: "a", ids: ["a"] });
   });
 
   it("a dragged row carries its render doc (or GLB file) for other tools; a group carries only the row", async () => {
@@ -364,7 +364,7 @@ describe("scene.outline: dragging rows", () => {
       return { data, allowed: e.dataTransfer.effectAllowed };
     };
     const a = drag("a");
-    expect(readRowDrag({ getData: (t) => a.data[t] })).toEqual({ scene: s.handle.url, id: "a" });
+    expect(readRowDrag({ getData: (t) => a.data[t] })).toEqual({ scene: s.handle.url, id: "a", ids: ["a"] });
     expect(JSON.parse(a.data["text/x-patchwork-urls"])).toEqual([R]);
     expect(a.data["text/plain"]).toBe(R);
     expect(JSON.parse(a.data["text/x-patchwork-dnd"]).items[0]).toMatchObject({ url: R, type: "scene-render", name: "a" });
@@ -372,9 +372,11 @@ describe("scene.outline: dragging rows", () => {
     const p = drag("p");
     expect(p.data["text/plain"]).toBe(F);
     expect(JSON.parse(p.data["text/x-patchwork-dnd"]).items[0].type).toBeUndefined();
+    // a group carries only the row, and which scene it's from (to copy into another scene)
     const g = drag("g");
-    expect(Object.keys(g.data)).toEqual([ROW_MIME]);
-    expect(g.allowed).toBe("move");
+    expect(Object.keys(g.data).filter((t) => !t.startsWith("application/x-scene-object-"))).toEqual([ROW_MIME]);
+    expect(Object.keys(g.data).some((t) => t.startsWith("application/x-scene-object-from;"))).toBe(true);
+    expect(g.allowed).toBe("copyMove");
   });
 
   it("an object fixed at a version shows a ◷ fixed tag (display only)", async () => {
@@ -417,11 +419,44 @@ describe("scene.outline: dragging rows", () => {
     expect(s.doc().order.indexOf("z")).toBeLessThan(s.doc().order.indexOf("k"));
   });
 
-  it("refuses a row from another scene, or one that's gone, and writes nothing", async () => {
+  it("copies a row from another scene into the place it's dropped in the tree, put down where the view is looking (not where it was in its own scene)", async () => {
+    await mount({ objects: { g1: grp("G") }, order: ["g1"] });
+    const other = s.repo.add({ objects: { m: leafAt("Mast", { x: 3 }), b: leafAt("Boom", { parent: "m", x: 1 }) }, order: ["m", "b"], traits: {}, assets: {} });
+    const api = s.api("scene.outline");
+    api.pick = () => ({ id: null, point: [7, 0, -2] });
+    atRow("g1", 0.5, rowDrag("m", other.url));
+    await pass();
+    await pass();
+    const objs = Object.values(s.doc().objects).filter((o) => o.kind !== "group");
+    const mast = objs.find((o) => o.name === "Mast");
+    const boom = objs.find((o) => o.name === "Boom");
+    expect(mast).toMatchObject({ group: "g1", parent: null, transform: { position: [7, 0, -2] } });
+    const mastId = Object.keys(s.doc().objects).find((k) => s.doc().objects[k] === mast);
+    expect(boom).toMatchObject({ parent: mastId, transform: { position: [1, 0, 0] } });
+    expect(s.local.get().selected).toBe(mastId);
+    // the source is untouched
+    expect(Object.keys(other.doc().objects)).toEqual(["m", "b"]);
+  });
+
+  it("another scene's row dropped among an object's attachments: under it, at the nearest of its connectors that takes it, however far", async () => {
+    await mount({ objects: { deck: leafAt("Deck", { x: 10 }), cleat: leafAt("Cleat", { parent: "deck" }) }, order: ["deck", "cleat"] });
+    const other = s.repo.add({ objects: { m: { ...leafAt("Mast", { x: -40 }), tags: ["mast"] } }, order: ["m"], traits: {}, assets: {} });
+    const api = s.api("scene.outline");
+    api.content = (id) => (id === "deck" ? { extras: { connectors: [{ position: [0, 1, 5], yaw: null, tags: ["mast"] }, { position: [0, 1, -1], tags: ["cleat"] }], snapRadius: 0.1 } } : null);
+    atRow("cleat", 0.2, rowDrag("m", other.url));
+    await pass();
+    await pass();
+    const mast = Object.values(s.doc().objects).find((o) => o.name === "Mast");
+    expect(mast.parent).toBe("deck");
+    mast.transform.position.forEach((v, i) => expect(v).toBeCloseTo([0, 1, 5][i], 6));
+  });
+
+  it("refuses a row from a scene it can't open, or one that's gone, and writes nothing", async () => {
     await mount({ objects: { g1: grp("G"), o5: leafAt("o5") }, order: ["g1", "o5"] });
     const heads = s.handle.heads();
-    atRow("g1", 0.5, rowDrag("o5", "automerge:someOtherScene"));
-    expect(notices()).toMatch(/another scene/);
+    atRow("g1", 0.5, rowDrag("o5", "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u"));
+    await pass();
+    expect(notices()).toMatch(/Couldn't open that scene/);
     atRow("g1", 0.5, rowDrag("gone"));
     expect(notices()).toMatch(/no longer in this scene/);
     expect(s.handle.heads()).toEqual(heads);
@@ -546,6 +581,6 @@ describe("outline helpers", () => {
   it("readRowDrag reads only our payload", () => {
     expect(readRowDrag({ getData: () => "" })).toBeNull();
     expect(readRowDrag({ getData: () => "{bad" })).toBeNull();
-    expect(readRowDrag({ getData: () => JSON.stringify({ id: "a" }) })).toEqual({ scene: null, id: "a" });
+    expect(readRowDrag({ getData: () => JSON.stringify({ id: "a" }) })).toEqual({ scene: null, id: "a", ids: ["a"] });
   });
 });

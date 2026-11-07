@@ -4,8 +4,10 @@
 //     anywhere in the stage. Files become file docs first, named after the
 //     file. A "Drop to add" hint shows while an acceptable drag is over the
 //     port.
-//     The outline's own row drags (ROW_MIME) are never ours.
-//   - Paste an automerge URL anywhere in the stage outside a text field.
+//     Outline row drags (ROW_MIME) are never ours: a row from another scene
+//     is copied in by scene.transfer, one from this scene is the outline's.
+//   - Paste an automerge URL anywhere in the stage outside a text field
+//     (scene.transfer hears pastes first, and takes a copied object's).
 //   - Each URL goes first to api.drop (an extension that lays out that
 //     datatype its own way, e.g. a deck as its cards); otherwise to the scene
 //     providers that can show it: none says so, one is used, several ask
