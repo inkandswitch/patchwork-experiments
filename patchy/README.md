@@ -27,14 +27,15 @@ else.
 ## What it needs from the shell
 
 - **Scratch backings in `@inkandswitch/patchwork-providers`**
-  (`DocHandleDescriptor.scratchUrl`, `getScratchRepo`, `repo:scratch-lease`).
-  A layered doc is computed, never saved or synced, so it lives in the realm's
-  scratch repo and goes back to the view as the answer's `scratchUrl`, beside
-  whatever `cloneUrl` a draft gave. Without it the provider still answers, but
-  views show the documents unpatched (it warns once).
-- **A `document-provider` slot around the document area** (threepane), inside
-  the draft overlay, where the provider component is mounted. Without it the
-  provider is never mounted.
+  (`DocHandleDescriptor.scratchUrl`, `getScratchRepo`, `repo:scratch-lease`),
+  from 0.5.5. A layered doc is computed, never saved or synced, so it lives in
+  the realm's scratch repo and goes back to the view as the answer's
+  `scratchUrl`, beside whatever `cloneUrl` a draft gave. On an older shell the
+  provider still answers, but views show the documents unpatched (it warns
+  once).
+- **A `document-provider` slot around the document area** (threepane, in base
+  since b0297aa), inside the draft overlay, where the provider component is
+  mounted. Without it the provider is never mounted.
 
 ## Lifetimes
 

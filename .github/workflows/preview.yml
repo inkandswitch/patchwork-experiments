@@ -1,0 +1,321 @@
+name: patchwork preview
+
+# A Patchwork to try a PR in: the patchwork.inkandswitch.com shell with its
+# published base packages, plus the experiments this PR touches, built by
+# Netlify's deploy preview of the tools bundle. Deployed to an alias on the
+# tools bundle's Netlify site and linked from a comment on the PR.
+#
+# Only the touched experiments are loaded. Loading every experiment at once
+# would hand the reviewer fifty half-finished tools (some of them themes and
+# title-bar plugins that change everything else) when they came to look at one.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+env:
+  SHELL_REPO: inkandswitch/patchwork.inkandswitch.com
+  NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+  NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+  ALIAS: patchwork-preview-${{ github.event.number }}
+  MARKER: "<!-- patchwork-preview -->"
+
+jobs:
+  # The top-level folders this PR changes that are tools — a package.json at
+  # the top, as scripts/bundle.mjs has it. A PR from a fork gets no secrets to
+  # deploy with, so it gets no preview either.
+  tools:
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      list: ${{ steps.tools.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          tools=$(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename' |
+              cut -d/ -f1 | sort -u |
+              while read -r dir; do
+                case "$dir" in scripts | libraries | static-dist | node_modules | .*) continue ;; esac
+                if [ -f "$dir/package.json" ]; then echo "$dir"; fi
+              done |
+              jq -Rsc 'split("\n") | map(select(length > 0))'
+          )
+          echo "list=$tools" >> "$GITHUB_OUTPUT"
+          echo "tools touched: $tools"
+
+  preview:
+    needs: tools
+    if: needs.tools.outputs.list != '[]'
+    runs-on: ubuntu-latest
+    # A newer push makes this run's wait pointless; let it go.
+    concurrency:
+      group: patchwork-preview-${{ github.event.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      TOOLS: ${{ needs.tools.outputs.list }}
+    defaults:
+      run:
+        working-directory: shell
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PATCHWORK_CROW_TOKEN }}
+          script: |
+            const marker = process.env.MARKER
+            const notice = `${marker}\n> [!NOTE]\n> _(caw caw rebuilding)_`
+            const {owner, repo} = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number, per_page: 100})
+            const existing = comments.find(c => c.body.startsWith(marker))
+            if (existing) {
+              const rest = existing.body
+                .slice(marker.length)
+                .replace(/^\s*> \[!NOTE\]\n> _\(caw caw rebuilding\)_/, "")
+                .trimStart()
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id,
+                body: `${notice}\n\n${rest}`,
+              })
+            } else {
+              await github.rest.issues.createComment({owner, repo, issue_number, body: notice})
+            }
+
+      - uses: actions/checkout@v4
+        with:
+          path: experiments
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SHELL_REPO }}
+          path: shell
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: shell/pnpm-lock.yaml
+
+      # Netlify builds this PR's tools bundle on its own, and that usually
+      # finishes after this job starts. Wait for the deploy built from exactly
+      # this head commit, then use its permalink (https://<deploy id>--<site>…),
+      # which never moves. The `deploy-preview-N` alias moves with every push,
+      # so it could still be serving the previous commit's tools.
+      - name: wait for this commit's tools bundle
+        id: bundle
+        env:
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          api() { curl -sf -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$@"; }
+          site=$(api "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID" | jq -r .name)
+          for attempt in $(seq 1 100); do
+            deploy=$(api "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/deploys?per_page=50" |
+              jq -c --arg sha "$SHA" \
+                '[.[] | select(.commit_ref == $sha and .context == "deploy-preview")] | first // empty') ||
+              deploy=""  # a blip from the API: just ask again next time round
+            state="not started"
+            [ -n "$deploy" ] && state=$(echo "$deploy" | jq -r '.state')
+            echo "attempt $attempt: tools bundle for ${SHA:0:7} is $state"
+            if [ "$state" = "ready" ]; then
+              id=$(echo "$deploy" | jq -r .id)
+              echo "url=https://$id--$site.netlify.app/modules.json" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$state" = "error" ]; then
+              echo "::error::Netlify's build of the tools bundle for ${SHA:0:7} failed: $(echo "$deploy" | jq -r '.error_message // "no message"')"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::gave up waiting 25 minutes for Netlify to build the tools bundle for ${SHA:0:7}"
+          exit 1
+
+      - run: pnpm install --frozen-lockfile
+
+      # The shell's own /modules.json is the published patchwork-pkg-base, so
+      # that's the system. /experiments.json, written next, is this PR's tools.
+      - name: build shell
+        env:
+          PATCHWORK_SYSTEM_PACKAGE_LIST_URL: /modules.json,/experiments.json
+        run: pnpm build
+
+      # The bundle has every experiment that built. Keep the ones this PR
+      # touches, each made absolute so it loads from this commit's bundle.
+      # bundle.mjs leaves out a tool that failed to build, so a touched tool
+      # missing from it didn't build.
+      - name: write experiments.json
+        id: manifest
+        env:
+          PACKAGE_LIST_URL: ${{ steps.bundle.outputs.url }}
+        run: |
+          set -euo pipefail
+          base="${PACKAGE_LIST_URL%modules.json}"
+          curl -sfL "$PACKAGE_LIST_URL" > "$RUNNER_TEMP/bundle.json"
+          tool='ltrimstr("./tools/") | split("/")[0]'
+          jq --arg base "$base" --argjson tools "$TOOLS" \
+            ".modules |= map(select(($tool) as \$t | any(\$tools[]; . == \$t)) | \$base + ltrimstr(\"./\"))" \
+            "$RUNNER_TEMP/bundle.json" > dist/experiments.json
+          jq . dist/experiments.json
+          built=$(jq -c "[.modules[] | $tool]" "$RUNNER_TEMP/bundle.json")
+          included=$(jq -nc --argjson t "$TOOLS" --argjson b "$built" '$t - ($t - $b)')
+          missing=$(jq -nc --argjson t "$TOOLS" --argjson b "$built" '$t - $b')
+          echo "included=$included" >> "$GITHUB_OUTPUT"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          if [ "$included" = "[]" ]; then
+            echo "::error::none of this PR's tools ($TOOLS) built in the tools bundle"
+            exit 1
+          fi
+          if [ "$missing" != "[]" ]; then
+            echo "::warning::not in the tools bundle, so not in the preview (did they build?): $missing"
+          fi
+
+      - name: free the alias
+        run: ../experiments/.github/scripts/netlify-purge-alias.sh
+
+      - name: deploy
+        id: deploy
+        run: |
+          set -o pipefail
+          out=$(pnpm --package=netlify-cli dlx netlify deploy \
+            --dir=dist \
+            --no-build \
+            --alias="$ALIAS" \
+            --message="patchwork-experiments#${{ github.event.number }} @ ${{ github.event.pull_request.head.sha }}" \
+            --json)
+          echo "$out" | jq .
+          echo "url=$(echo "$out" | jq -er .deploy_url)" >> "$GITHUB_OUTPUT"
+
+      - name: verify the deploy serves this PR's tools
+        env:
+          SHELL_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          html=$(curl -sfL "$SHELL_URL")
+          found=""
+          for asset in $(echo "$html" | grep -oE '/assets/[A-Za-z0-9_.-]+\.js' | sort -u); do
+            # not grep -q: quitting early can kill curl, and pipefail calls that a miss
+            if curl -sfL "$SHELL_URL$asset" | grep -F "/experiments.json" > /dev/null; then
+              found="$asset"
+              break
+            fi
+          done
+          if [ -z "$found" ]; then
+            echo "::error::deployed shell at $SHELL_URL doesn't load /experiments.json"
+            exit 1
+          fi
+          echo "ok: $found loads /experiments.json"
+          modules=$(curl -sfL "$SHELL_URL/experiments.json" | jq -r '.modules[]')
+          if [ -z "$modules" ]; then
+            echo "::error::$SHELL_URL/experiments.json has no modules"
+            exit 1
+          fi
+          for module in $modules; do
+            curl -sf -o /dev/null "$module" || {
+              echo "::error::$module isn't there"
+              exit 1
+            }
+            echo "ok: $module"
+          done
+
+      - uses: actions/github-script@v7
+        env:
+          SHELL_URL: ${{ steps.deploy.outputs.url }}
+          INCLUDED: ${{ steps.manifest.outputs.included }}
+          MISSING: ${{ steps.manifest.outputs.missing }}
+        with:
+          github-token: ${{ secrets.PATCHWORK_CROW_TOKEN }}
+          script: |
+            const marker = process.env.MARKER
+            const sha = context.payload.pull_request.head.sha.slice(0, 7)
+            const names = list => JSON.parse(list).map(t => `\`${t}\``).join(", ")
+            const missing = JSON.parse(process.env.MISSING)
+            const body = [
+              marker,
+              `### ✅ Patchwork glance ready`,
+              ``,
+              `## ${process.env.SHELL_URL}`,
+              ``,
+              `Patchwork from \`${process.env.SHELL_REPO}\` with its published base packages, plus ${names(process.env.INCLUDED)} from this PR at \`${sha}\`.`,
+              ...(missing.length
+                ? [``, `> [!WARNING]`, `> Not in the preview, because they didn't build in the tools bundle: ${names(process.env.MISSING)}`]
+                : []),
+              ``,
+              `[build-info.json](${process.env.SHELL_URL}/build-info.json) · [experiments.json](${process.env.SHELL_URL}/experiments.json)`,
+            ].join("\n")
+            const {owner, repo} = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number, per_page: 100})
+            const existing = comments.find(c => c.body.startsWith(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body})
+            } else {
+              await github.rest.issues.createComment({owner, repo, issue_number, body})
+            }
+
+      # Otherwise "rebuilding" sits on the PR forever.
+      - if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PATCHWORK_CROW_TOKEN }}
+          script: |
+            const marker = process.env.MARKER
+            const sha = context.payload.pull_request.head.sha.slice(0, 7)
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const body = `${marker}\n### ❌ Patchwork preview failed\n\nFor \`${sha}\` — see [the run](${run}).`
+            const {owner, repo} = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number, per_page: 100})
+            const existing = comments.find(c => c.body.startsWith(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({owner, repo, comment_id: existing.id, body})
+            } else {
+              await github.rest.issues.createComment({owner, repo, issue_number, body})
+            }
+
+  teardown:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: .github/scripts/netlify-purge-alias.sh
+
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PATCHWORK_CROW_TOKEN }}
+          script: |
+            const marker = process.env.MARKER
+            const {owner, repo} = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number, per_page: 100})
+            const existing = comments.find(c => c.body.startsWith(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id,
+                body: `${marker}\n### 🪡 Patchwork preview\n\nTorn down.`,
+              })
+            }
