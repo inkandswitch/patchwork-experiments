@@ -1,0 +1,260 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>rvyc probe</title>
+<!-- Driven by probes/publish-rvyc.mjs. The BUILT scene tool (scene/dist)
+     with the BUILT sailing (sailing/dist) and terrain (terrain/dist)
+     plugins in a stub registry, on an in-memory repo, on an EMPTY scene.
+     build() makes the scene the way a person would: the start screen's
+     "Cadboro Bay (RVYC)" (the template fetches the data, which this page
+     answers from the recording probes/fetch-cadboro.mjs made, served under
+     /terrain-cache/, so nothing reaches the network). Nothing here imports
+     another package's source: each package's built dist is loaded as its
+     plugins.
+
+     ?replay=1: a viewer WITHOUT the terrain plugin opening the snapshot the
+     first page made (served under /snap/snapshot.json): what someone whose
+     Patchwork doesn't have the terrain tools sees. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  #a { width: 100vw; height: 100vh; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { replayFetch } from "./recorded-fetch.js";
+import { decodeTerrain } from "../src/terrain-sample.js";
+import { KNOWN } from "./known-places.js";
+import { localFrame } from "../src/tmerc.js";
+
+const REPLAY = new URLSearchParams(location.search).has("replay");
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+
+/** A doc as JSON, its bytes as { $bytes: base64 }, so it can leave the page. */
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+const revive = (doc) => JSON.parse(JSON.stringify(doc), (k, v) => {
+  if (v && typeof v === "object" && typeof v.$bytes === "string") {
+    const s = atob(v.$bytes);
+    const b = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+    return b;
+  }
+  return v;
+});
+
+// every automerge url a doc mentions, anywhere in it (keys too: a render's builtFrom.deps)
+function urlsIn(doc, out = new Set()) {
+  const walk = (v) => {
+    if (typeof v === "string") { if (/^automerge:[1-9A-HJ-NP-Za-km-z]+$/.test(v)) out.add(v); return; }
+    if (!v || typeof v !== "object" || v instanceof Uint8Array) return;
+    for (const [k, x] of Object.entries(v)) { walk(k); walk(x); }
+  };
+  walk(doc);
+  return out;
+}
+
+try {
+  const urls = REPLAY ? ["../../scene/dist/index.js", "../../sailing/dist/index.js"] : ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../dist/index.js"];
+  for (const url of urls) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  // the network, answered from the recording (anything else fails loudly)
+  const fetched = [];
+  if (!REPLAY) {
+    const index = await (await fetch("/terrain-cache/index.json")).json();
+    const realFetch = globalThis.fetch.bind(globalThis);
+    const replay = replayFetch({ index, load: async (f) => new Uint8Array(await (await realFetch(`/terrain-cache/${f}`)).arrayBuffer()), seen: fetched });
+    globalThis.fetch = (input, init) => {
+      const u = String(typeof input === "string" ? input : input.url);
+      return /^https?:\/\//.test(u) && !u.startsWith(location.origin) ? replay(input, init) : realFetch(input, init);
+    };
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const me = repo.add({ "@patchwork": { type: "contact" }, name: "Pat" });
+  let scene;
+  if (REPLAY) {
+    const snap = await (await fetch("/snap/snapshot.json")).json();
+    for (const [u, d] of Object.entries(snap.docs)) repo.add(revive(d), u);
+    scene = repo.handles.get(snap.scene);
+  } else {
+    scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  }
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  host.viewerId = me.url;
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const objects = () => scene.doc().objects ?? {};
+  const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  const terrainId = () => Object.entries(objects()).find(([, o]) => o.providerId === "terrain-mesh")?.[0] ?? null;
+  const told = [];
+  setInterval(() => { for (const n of dbg.local.get().notices ?? []) if (!told.includes(n)) told.push(n); }, 20);
+
+  const P = (window.__p = {
+    errors, fetched,
+    get dbg() { return dbg; },
+    templates: () => [...host.querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    notices: () => told.map((n) => n.text ?? String(n)),
+    /** Cadboro Bay (RVYC) from the start screen → the ids, or { error } */
+    async build() {
+      const button = host.querySelector('[data-template="terrain.cadboro-bay"]');
+      if (!button) return { error: "no Cadboro Bay on the start screen", templates: P.templates() };
+      button.click();
+      for (let i = 0; i < 1200 && !(terrainId() && withTrait("sailing.ship")); i++) await sleep(100);
+      if (!terrainId()) return { error: "no terrain", notices: P.notices() };
+      return { terrain: terrainId(), hull: withTrait("sailing.ship"), sail: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor") };
+    },
+    ids: () => ({ terrain: terrainId(), hull: withTrait("sailing.ship"), sail: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor") }),
+    shape() {
+      const d = scene.doc();
+      const t = objects()[terrainId()];
+      const terrainDoc = t ? repo.handles.get(t.sourceUrl)?.doc() : null;
+      const render = t?.renderUrl ? repo.handles.get(t.renderUrl)?.doc() : null;
+      return {
+        title: d.title,
+        activity: d.view?.activity ?? null,
+        home: d.view?.home ?? null,
+        sea: d.traits?.["sailing.sea"] ?? null,
+        terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"] } : null,
+        terrainDoc: terrainDoc ? { title: terrainDoc.title, type: terrainDoc["@patchwork"]?.type, origin: terrainDoc.origin, grid: terrainDoc.grid, data: !!terrainDoc.data, sources: (terrainDoc.sources ?? []).map((s) => s.id), sourceUrls: (terrainDoc.sources ?? []).map((s) => s.url ?? null), requests: (terrainDoc.sources ?? []).reduce((a, s) => a + (s.requests?.length ?? 0), 0), osmDate: terrainDoc.osmDate ?? null, matchesChecked: terrainDoc.data?.summary?.matchesChecked ?? null, attribution: terrainDoc.attribution } : null,
+        featuresFile: terrainDoc?.data?.features?.url ? (({ licence, attribution }) => ({ licence, attribution }))(repo.handles.get(terrainDoc.data.features.url)?.doc() ?? {}) : null,
+        render: render ? { status: render.status, error: render.error, glbUrl: render.glbUrl, builtFrom: render.builtFrom ? { fingerprint: render.builtFrom.fingerprint, deps: render.builtFrom.deps, providerVersion: render.builtFrom.providerVersion } : null } : null,
+        hull: withTrait("sailing.ship") ? objects()[withTrait("sailing.ship")].transform : null,
+        sail: objects()[withTrait("sailing.sail")]?.traits?.["sailing.sail"] ?? null,
+        anchor: objects()[withTrait("sailing.anchor")]?.traits?.["sailing.anchor"] ?? null,
+      };
+    },
+    activity: () => dbg.local.get().activities?.current ?? null,
+    status: (id) => dbg.local.get().status?.[id] ?? null,
+    loaded() {
+      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
+      return { total: all.length, loaded: all.filter((id) => dbg.viewport.contentOf(id)?.loaded).length };
+    },
+    /** what the terrain's GLB says, read the way sailing will: content(id).extras.terrain through the copyable sampler */
+    terrain() {
+      const id = terrainId();
+      const c = dbg.viewport.contentOf(id);
+      if (!c?.loaded) return { loaded: false };
+      const t = decodeTerrain(c.extras.terrain);
+      const hull = withTrait("sailing.ship");
+      const m = hull ? dbg.viewport.worldOf(hull) : null;
+      const at = m ? [m[12], m[13], m[14]] : [0, 0, 0];
+      const swing = [];
+      for (let k = 0; k < 24; k++) for (const r of [10, 20, 30]) swing.push(t.depthAt(at[0] + r * Math.cos((k * Math.PI) / 12), at[2] + r * Math.sin((k * Math.PI) / 12)));
+      const frame = localFrame(c.extras.terrain.origin);
+      const known = KNOWN.map((k) => {
+        const [x, z] = frame.toLocal(k.lat, k.lon);
+        const h = t.heightAt(x, z);
+        return { name: k.name, land: k.land, h: +h.toFixed(2), ok: (h > 0) === k.land };
+      });
+      return {
+        loaded: true,
+        grid: t.grid,
+        depthUnderHull: t.depthAt(at[0], at[2]),
+        depthAtMooring: t.depthAt(0, 0),
+        shallowestInSwing: Math.min(...swing),
+        hullAt: at,
+        places: c.extras.terrain.places,
+        known,
+        datum: c.extras.terrain.datum,
+        box: c.box ? { min: c.box.min.toArray?.() ?? c.box.min, max: c.box.max.toArray?.() ?? c.box.max } : null,
+        legend: !!c.legend || !!c.extras?.legend,
+        sources: c.extras.terrain.sources.map((s) => s.id),
+        qualityUnderHull: t.qualityAt(at[0], at[2]),
+        quality: c.extras.terrain.quality?.counts ?? null,
+        rocks: t.rocks.length,
+        // the two rocks 350 m north-east of the mooring (OSM way/305923266, way/305923267): the highest node within a cell of each
+        offClub: [[277.6, -229.3], [256.6, -228]].map(([x, z]) => {
+          const g = t.grid, i0 = Math.round((x - g.x0) / g.cell), j0 = Math.round((z - g.z0) / g.cell);
+          let top = -Infinity;
+          for (let j = j0 - 1; j <= j0 + 1; j++) for (let i = i0 - 1; i <= i0 + 1; i++) top = Math.max(top, t.node(i, j));
+          return +top.toFixed(2);
+        }),
+        credit: (() => {
+          const el = host.querySelector(".terrain-credit");
+          return { text: el?.textContent ?? "", link: el?.querySelector("a")?.href ?? null, shown: !!el && !el.hidden && el.getBoundingClientRect().width > 0 };
+        })(),
+      };
+    },
+    /** this viewer to the editor, at the doc's home view */
+    async editAtHome() {
+      dbg.local.swap((l) => ({ ...l, activity: "edit" }));
+      await sleep(400);
+      const h = scene.doc().view.home;
+      dbg.viewport.setCamera({ position: h.position, target: h.target });
+      await sleep(600);
+      return dbg.local.get().activities?.current;
+    },
+    async play() {
+      dbg.local.swap((l) => ({ ...l, activity: "play" }));
+      await sleep(600);
+      return dbg.local.get().activities?.current;
+    },
+    /** the Terrain tool on the scene's Terrain doc, over the whole page: what its map and panels say */
+    async terrainTool() {
+      const t = objects()[terrainId()];
+      const h = repo.handles.get(t.sourceUrl);
+      const Terrain = (await getRegistry("patchwork:tool").load("terrain")).module;
+      const box = document.createElement("div");
+      box.style.cssText = "position:fixed;inset:0;z-index:10;background:white";
+      document.body.append(box);
+      box.repo = repo;
+      P.closeTool = Terrain(h, box);
+      for (let i = 0; i < 200 && !box.querySelector(".legend")?.textContent; i++) await sleep(100);
+      return { legend: box.querySelector(".legend")?.textContent ?? "", status: box.querySelector(".status")?.textContent ?? "", sources: box.querySelectorAll(".sources li").length, empty: box.querySelector(".empty")?.hidden === false ? box.querySelector(".empty").textContent : null };
+    },
+    closeTerrainTool() { P.closeTool?.(); document.querySelector("body > div[style*='z-index:10']")?.remove(); return true; },
+    setCamera(position, target) { dbg.viewport.setCamera({ position, target }); return true; },
+    /** every doc the scene reaches, portable */
+    snapshot() {
+      const seen = new Set([scene.url]);
+      const queue = [scene.url];
+      while (queue.length) {
+        const u = queue.shift();
+        const d = repo.handles.get(u)?.doc();
+        if (!d) continue;
+        for (const v of urlsIn(d)) if (!seen.has(v) && repo.handles.has(v)) { seen.add(v); queue.push(v); }
+      }
+      return { scene: scene.url, docs: Object.fromEntries([...seen].map((u) => [u, portable(repo.handles.get(u).doc())])) };
+    },
+    /** post the snapshot to the probe's server (too big to hand back through CDP comfortably) */
+    async postSnapshot() {
+      const s = P.snapshot();
+      const body = JSON.stringify(s);
+      await fetch("/report", { method: "POST", body });
+      return { docs: Object.keys(s.docs).length, bytes: body.length };
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

@@ -1,0 +1,29 @@
+/* terrain.credit: the data's credit, small, at the bottom of the view, in the
+   middle (the corners are the legends', the activity switch's and the grid caption's). */
+
+.scene-stage .stage-overlay > .terrain-credit:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  max-width: min(36rem, calc(100% - 12px));
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #333;
+  font: 10px/1.4 system-ui, sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.scene-stage .stage-overlay > .terrain-credit[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .stage-overlay > .terrain-credit a:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: inherit;
+  pointer-events: auto;
+}
