@@ -11,7 +11,8 @@
 // body's, or back, goes through here.
 
 import { conjQ, eulerFromQuat, headingOf, invert, matrixOf, matrixOfPose, mulQ, multiply, poseOfMatrix, quatFromEuler, quatOfAxes, rotateQ, apply } from "./frames.js";
-import { SHIP, parentOf } from "./traits.js";
+import { SHIP, parentOf, partsOf } from "./traits.js";
+import { rigContract, rigFrame } from "./rig-contract.js";
 
 /** The body frame where the hull's own is (sailing's sloop). */
 export const IDENTITY = Object.freeze({ position: Object.freeze([0, 0, 0]), rotation: Object.freeze([0, 0, 0]) });
@@ -65,15 +66,17 @@ export function glbFrame(content) {
 }
 
 /**
- * Where a ship's body frame sits in her hull object's frame: what her GLB
- * says (glbFrame), with the trait's `frame` position and rotation, each
- * where it gives one, over it.
+ * Where a ship's body frame sits in her hull object's frame: what her rig's
+ * contract says (rig-contract.js rigFrame: the rig aid's frame for this
+ * hull), else what her GLB says (glbFrame), with the trait's `frame`
+ * position and rotation, each where it gives one, over it.
  * @param {{ frame?: { position?, rotation? } } | null | undefined} trait  sailing.ship
  * @param {{ extras?: object | null, box?: { min, max } | null } | null | undefined} content  the hull's (api.content(id))
+ * @param {object | null} [contract]  her rig's extras.rig, read (rigContract)
  * @returns {{ position: number[], rotation: number[] }}
  */
-export function frameOf(trait, content) {
-  const glb = glbFrame(content);
+export function frameOf(trait, content, contract = null) {
+  const glb = contract ? rigFrame(contract) : glbFrame(content);
   const f = trait?.frame;
   const position = isVec3(f?.position) ? f.position.map(Number) : null;
   const rotation = isVec3(f?.rotation) ? f.rotation.map(Number) : null;
@@ -146,8 +149,25 @@ export function placeIn(scene, id, root = null) {
   return root == null ? (m ?? matrixOf(null)) : null;
 }
 
-/** A ship's frame (frameOf) from the stage: her trait and her GLB's extras. */
-export const shipFrame = (api, id) => frameOf(api.scene?.()?.objects?.[id]?.traits?.[SHIP], api.content?.(id));
+const sails = new WeakMap();
+
+/**
+ * The rig aid's contract on a ship's rig (her sail station's GLB's
+ * extras.rig, read: rigContract), or null. Her parts are found once per
+ * snapshot.
+ */
+export function rigContractOf(api, id) {
+  const sc = api.scene?.();
+  if (!sc || typeof sc !== "object") return null;
+  let byShip = sails.get(sc);
+  if (!byShip) sails.set(sc, (byShip = new Map()));
+  if (!byShip.has(id)) byShip.set(id, partsOf(sc, id).sail);
+  const sail = byShip.get(id);
+  return sail ? rigContract(api.content?.(sail)?.extras?.rig) : null;
+}
+
+/** A ship's frame (frameOf) from the stage: her trait, her rig's contract and her GLB's extras. */
+export const shipFrame = (api, id) => frameOf(api.scene?.()?.objects?.[id]?.traits?.[SHIP], api.content?.(id), rigContractOf(api, id));
 
 /**
  * A ship's box in her body frame, in metres (her hull's box through her
