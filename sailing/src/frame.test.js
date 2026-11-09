@@ -111,7 +111,7 @@ async function sloop({ turned: isTurned = false, yaw = headTo(45 - 90) } = {}) {
     // her model's +X is her bow: the hull object turns a quarter less, so her body heads where the stock one's does
     doc.objects[hull].transform.rotation = [0, yaw + Math.PI / 2, 0];
     // and each part aboard is put on her again, at its stand on her, as the bin would (squared to her frame)
-    const part = { Mast: "mast", Wheel: "wheel", Windlass: "windlass", Ladder: "ladder" };
+    const part = { Mast: "mast", Wheel: "wheel", Windlass: "windlass", Ladder: "ladder", Mainsheet: "mainsheet" };
     for (const o of Object.values(doc.objects)) {
       if (o.parent !== hull) continue;
       o.transform = placement(doc, { parent: hull, transform: { position: quarter(STAND[part[o.name]]) } }, part[o.name], turned).transform;
@@ -132,7 +132,8 @@ function play(api) {
   return ctx;
 }
 
-describe("sailing a hull drawn bow along +X", () => {
+// two sloops sailed a while each: seconds, and more with the suite running beside it
+describe("sailing a hull drawn bow along +X", { timeout: 60_000 }, () => {
   let w;
   afterEach(() => w?.done());
 

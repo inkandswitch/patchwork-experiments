@@ -345,8 +345,15 @@ const COCKPIT = { z0: 1.95, z1: 5.15, half: 0.8, floor: 0.72 };
 const CABIN = { z0: -1.3, z1: 1.95, half: 0.95, top: 1.72 };
 const WHEEL_Z = 4.25;
 const WHEEL_AXLE = 1.62;
-const WINDLASS_Z = -4.35;
+const WINDLASS_Z = -3.8;
 const LADDER_Z = 0.4;
+// the mainsheet's traveller, across the cockpit's sole aft in the well,
+// just forward of the boom's end (the gooseneck plus BOOM_LENGTH, z 3.45):
+// whoever stands between it and the wheel (0.35 m aft of it: walker.standOff)
+// trims the sail. Aft of a card table between the benches (z 2.47–3.23 for
+// tabletop's table at the well's middle, long side across her), which buried
+// it at its first place (2.85); the look down to it from there clears the table.
+const MAINSHEET_Z = 3.3;
 const STEMHEAD = [0, sheerAt(HULL.bow) + 0.08, HULL.bow - 0.22];
 
 const mastStep = [0, deckAt(0, MAST_Z), MAST_Z];
@@ -360,6 +367,7 @@ export const FIT = Object.freeze({
   windlass: { position: [0, deckAt(0, WINDLASS_Z), WINDLASS_Z], rotation: [0, 0, 0] },
   ladder: { position: [halfBreadthAt(LADDER_Z), sheerAt(LADDER_Z), LADDER_Z], rotation: [0, 0, 0] },
   anchor: { position: [0, STEMHEAD[1] - 0.04, STEMHEAD[2] + 0.02], rotation: [0, 0, 0] },
+  mainsheet: { position: [0, COCKPIT.floor, MAINSHEET_Z], rotation: [0, 0, 0] },
 });
 
 /**
@@ -373,11 +381,12 @@ export const STAND = Object.freeze({
   wheel: [0, COCKPIT.floor, WHEEL_Z],
   windlass: FIT.windlass.position,
   ladder: FIT.ladder.position,
+  mainsheet: FIT.mainsheet.position,
 });
 export const LIFT = Object.freeze({ wheel: WHEEL_AXLE - COCKPIT.floor });
 
 /** The connector tag each part's stand takes (parts.js gives the parts the same). */
-export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder" });
+export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet" });
 
 /**
  * How near (in plan, metres) a part must be put to a stand to go to it, the
@@ -819,27 +828,56 @@ function wheelMeshes() {
 }
 
 function windlassMeshes() {
+  // a compact drum, 0.43 m across at its base: on her narrowing foredeck a body (r 0.25) still
+  // passes it on either side, inside the lifelines, to the bow (DESIGN.md, "As built")
+  const k0 = 0.72;
+  const rad = (pts) => pts.map(([r, y]) => [r * k0, y]);
   const drum = new Shape();
-  lathe(drum, [[0.17, 0.08], [0.15, 0.2], [0.13, 0.32], [0.15, 0.44], [0.19, 0.5], [0.19, 0.5], [0.24, 0.52], [0.25, 0.62], [0.25, 0.62], [0.2, 0.66], [0, 0.68]], 24);
+  lathe(drum, rad([[0.17, 0.08], [0.15, 0.2], [0.13, 0.32], [0.15, 0.44], [0.19, 0.5], [0.19, 0.5], [0.24, 0.52], [0.25, 0.62], [0.25, 0.62], [0.2, 0.66], [0, 0.68]]), 24);
   // whelps: ribs down the drum the rode grips on
   for (let k = 0; k < 8; k++) {
     const a = (k / 8) * Math.PI * 2;
-    const c = Math.cos(a);
-    const s = -Math.sin(a);
-    rod(drum, [c * 0.15, 0.1, s * 0.15], [c * 0.16, 0.48, s * 0.16], 0.022, { r2: 0.028, sides: 5 });
+    const c = Math.cos(a) * k0;
+    const s = -Math.sin(a) * k0;
+    rod(drum, [c * 0.15, 0.1, s * 0.15], [c * 0.16, 0.48, s * 0.16], 0.02, { r2: 0.024, sides: 5 });
   }
   const base = new Shape();
-  lathe(base, [[0, 0], [0.3, 0], [0.3, 0.05], [0.3, 0.05], [0.24, 0.07], [0.18, 0.1], [0, 0.1]], 24);
-  ellipsoid(base, [0, 0.68, 0], [0.07, 0.04, 0.07], 6, 12);
+  lathe(base, rad([[0, 0], [0.3, 0], [0.3, 0.05], [0.3, 0.05], [0.24, 0.07], [0.18, 0.1], [0, 0.1]]), 24);
+  ellipsoid(base, [0, 0.68, 0], [0.06, 0.04, 0.06], 6, 12);
   const bars = new Shape();
   for (let k = 0; k < 4; k++) {
     const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
     const dir = [Math.cos(a), 0, -Math.sin(a)];
-    rod(bars, [dir[0] * 0.2, 0.57, dir[2] * 0.2], [dir[0] * 0.62, 0.6, dir[2] * 0.62], 0.024, { r2: 0.028, sides: 6, caps: true });
+    // the handles, 0.29 m out (0.2 m across her at 45°): inside the base's reach
+    rod(bars, [dir[0] * 0.14, 0.57, dir[2] * 0.14], [dir[0] * 0.29, 0.6, dir[2] * 0.29], 0.022, { r2: 0.026, sides: 6, caps: true });
   }
   return [{
     name: "Windlass",
     primitives: [prim(drum, PAINT.wood, { roughness: 0.6 }), prim(base, PAINT.bronze, { roughness: 0.3, metallic: 0.85 }), prim(bars, PAINT.spar, { roughness: 0.5 })],
+  }];
+}
+
+/**
+ * The mainsheet: a traveller across the cockpit's sole (a track, its end
+ * stops, a car) and the sheet's fiddle block with its cam cleat standing on
+ * the car, its origin on the sole under the car. Low: you step over the
+ * track, and stand aft of the block to work it.
+ */
+function mainsheetMeshes() {
+  const steel = new Shape();
+  box(steel, [-0.36, 0, -0.025], [0.36, 0.03, 0.025]);
+  for (const x of [-0.36, 0.36]) box(steel, [x - 0.025, 0, -0.035], [x + 0.025, 0.06, 0.035]);
+  box(steel, [-0.06, 0.03, -0.04], [0.06, 0.065, 0.04]);
+  rod(steel, [0, 0.065, 0], [0, 0.13, 0], 0.012, { sides: 6 });
+  const block = new Shape();
+  ellipsoid(block, [0, 0.21, 0], [0.035, 0.085, 0.05], 8, 12);
+  torus(block, 0.045, 0.012, 16, 6, [0, 0.21, 0]);
+  // the cam cleat on the block's after side, where the hand is
+  const cleat = new Shape();
+  box(cleat, [-0.03, 0.17, 0.05], [0.03, 0.2, 0.1]);
+  return [{
+    name: "Mainsheet",
+    primitives: [prim(steel, "#cfd3d6", { roughness: 0.3, metallic: 0.8 }), prim(block, PAINT.spar, { roughness: 0.5 }), prim(cleat, "#2b2f33", { roughness: 0.6 })],
   }];
 }
 
@@ -1003,6 +1041,7 @@ const PARTS = {
   wheel: { name: "Wheel", meshes: wheelMeshes },
   windlass: { name: "Windlass", meshes: windlassMeshes },
   ladder: { name: "Ladder", meshes: ladderMeshes },
+  mainsheet: { name: "Mainsheet", meshes: mainsheetMeshes },
   anchor: { name: "Anchor", meshes: anchorMeshes },
   redBuoy: { name: "Red buoy", meshes: () => buoyMeshes("red") },
   greenBuoy: { name: "Green buoy", meshes: () => buoyMeshes("green") },

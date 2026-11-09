@@ -29,8 +29,12 @@
 //     bear away onto a reach; over 1 m/s within 90 s; then 3–6 again for A
 //     (still seated), and the name tags stay on their trays;
 //  9. Enter boards: over the deck the prompt shows only Flip, and S and D
-//     walk; Esc puts A back in the seat view;
-// 10. screens of both views at anchor and under way.
+//     walk; with the table in her cockpit the mainsheet is in reach from its
+//     stand spot and offers F; Esc puts A back in the seat view;
+// 10. seated, F at A's own tray (tabletop's "Stand up") puts A on her deck
+//     through sailing's firstPerson.enter: walking, beside the table and
+//     facing it, the seat still A's; Esc puts A back in the seat view;
+// 11. screens of both views at anchor and under way.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -304,7 +308,7 @@ try {
   // ── 8: under way ──
   if (!QUICK) {
     // B leaves the table and gets her under way with the keys, in the template's own breeze:
-    // Enter; F held at the windlass, then at the mast; F at the wheel; A and D to bear away onto a reach
+    // Enter; F held at the windlass, then R at the mast; F at the wheel; A and D to bear away onto a reach
     report.numbers.breeze = await P("wind()");
     await P("focus('b')");
     await b.key("Enter");
@@ -321,8 +325,8 @@ try {
     await sleep(2000);
     const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/);
     let raised = false;
-    if (atMast) { await b.keyDown("f"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("f"); }
-    check("8: B raises the sail, holding F at the mast", atMast && raised, await P("shape().sail"));
+    if (atMast) { await b.keyDown("r"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("r"); }
+    check("8: B raises the sail, holding R at the mast", atMast && raised, await P("shape().sail"));
     const atWheel = await face("b", ids.wheel, [wh[0], wh[1] - 0.6, wh[2] + 0.75], -0.45, /Take the helm/);
     if (atWheel) await b.key("f");
     check("8: B takes the helm with F", atWheel && (await until(`me('b').station === ${J(ids.wheel)}`, 3000)), await P("me('b')"));
@@ -387,6 +391,12 @@ try {
     const notes = (await P("notices('a')")).slice(told0);
     const hand1 = (await P("where()")).p1.length;
     check("9: S and D walk, and neither shuffles nor draws", moved > 0.05 && !notes.some((n) => /Shuffl|drew/.test(n)) && hand1 === hand0, { moved: +moved.toFixed(3), notes, hand: [hand0, hand1] });
+    // the mainsheet, aft of the table: its stand spot's clear, and from it the look down to the block isn't the table's
+    if (ids.mainsheet) {
+      const ms = await P(`hullLocal(${J(ids.mainsheet)})`);
+      const atSheet = await face("a", ids.mainsheet, [ms[0], ms[1], ms[2] + 0.35], -1.2, /Take the mainsheet/);
+      check("9: with the table in her cockpit, the mainsheet is in reach from its stand spot and offers F (Take the mainsheet)", atSheet, { ms, prompt: await P("prompt('a')"), hovered: await P("hovered('a')"), me: await P("me('a')") });
+    } else check("9: she has a mainsheet", false, ids);
     await b.key("Escape");
     await sleep(200);
     if (await P("immersive('a')")) await b.key("Escape");
@@ -396,6 +406,40 @@ try {
     const cam = await P("cam('a')");
     check("9: …and A is back in the seat view", Math.hypot(...cam.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam.position, seat: seat.position });
     await shot("back-in-seat");
+  }
+
+  // ── 10: Stand up (tabletop's seat verb, through sailing's firstPerson.enter) ──
+  {
+    await P("focus('a')");
+    const offered = await hover(ids.hand1, /Stand up/);
+    check("10: seated, a look at A's own tray offers Stand up (F)", offered, { prompt: await P("prompt('a')"), hovered: await P("hovered('a')") });
+    const told0 = (await P("notices('a')")).length;
+    if (offered) await b.key("f");
+    const up = await until("me('a').playing && __p.immersive('a')", 5000);
+    await sleep(600);
+    const me = await P("me('a')");
+    const wk = await P("walker('a')");
+    const tbl = await P(`hullLocal(${J(ids.table)})`);
+    const plan = me?.position ? Math.hypot(me.position[0] - tbl[0], me.position[2] - tbl[2]) : null;
+    check("10: F stands A up in first person: walking on her deck (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5, { me, wk, tbl, plan });
+    // facing the table: the camera looks toward it, across the deck
+    const cam = await P("cam('a')");
+    const tw = (await P(`worldOf(${J(ids.table)}, 'a')`)).slice(12, 15);
+    const look = [cam.target[0] - cam.position[0], cam.target[2] - cam.position[2]];
+    const to = [tw[0] - cam.position[0], tw[2] - cam.position[2]];
+    const cos = (look[0] * to[0] + look[1] * to[1]) / (Math.hypot(...look) * Math.hypot(...to) || 1);
+    check("10: …facing the table", cos > 0.7, { cos: +cos.toFixed(3) });
+    const notes = (await P("notices('a')")).slice(told0);
+    check("10: …told the seat's still A's, and it is", notes.some((n) => /still yours/.test(n)) && (await P("seats()")).p1?.player === viewers.a, { notes, seats: await P("seats()") });
+    await shot("stood-up");
+    await b.key("Escape");
+    await sleep(200);
+    if (await P("immersive('a')")) await b.key("Escape");
+    check("10: Esc stops walking", await until("me('a').playing === false && !__p.immersive('a')", 4000), { me: await P("me('a')") });
+    await sleep(600);
+    const seat = await P("seatView('p1', 'a')");
+    const cam2 = await P("cam('a')");
+    check("10: …and A is back in the seat view", Math.hypot(...cam2.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam2.position, seat: seat.position });
   }
 
   check("nothing failed to load", (await P("loading('a')")).errors === 0 && (await P("loading('b')")).errors === 0, { a: await P("loading('a')"), b: await P("loading('b')") });

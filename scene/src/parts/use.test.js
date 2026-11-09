@@ -3,7 +3,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { plugins } from "../index.js";
 import keys from "./keys.js";
-import use, { heldSessions, lookChain, useEntries } from "./use.js";
+import use, { heldEntries, heldSessions, lookChain, useEntries } from "./use.js";
 
 // the real metadata, so these run the way a game would bring them in
 const meta = (id) => {
@@ -40,6 +40,8 @@ function game(log, sessions) {
               return s;
             },
           },
+          // a second verb on the capstan, for while the first is held
+          { id: "pawl", name: "Drop the pawl", key: "p", state: (t) => (t === "capstan" ? {} : null), run: (t) => log.push(["pawl", t]) },
           {
             // only within arm's reach of the barrel (at the origin)
             id: "grab",
@@ -92,6 +94,19 @@ describe("scene.use, the pure side", () => {
   it("shows at most three", () => {
     const many = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
     expect(useEntries([{ id: "x", value: many }], ["barrel"], { scene, local: {} }).entries).toHaveLength(3);
+  });
+
+  it("while something's held: the held verbs first, as pressed (even where they no longer apply), then the target's others now", () => {
+    const collected = [{ id: "t.game", value: game([], []).create({ arm: () => {} }).commands }];
+    const ctx = { scene, local: {}, from: [0, 0, 5], hit: { id: "barrel" } };
+    const flat = collected[0].value;
+    const wind = { ext: "t.game", command: flat.find((c) => c.id === "wind"), state: { label: "Winding" } };
+    const out = heldEntries(collected, "capstan", [wind], ctx);
+    expect(out.target).toBe("capstan");
+    expect(out.entries.map((e) => [e.command.id, e.state.label ?? null])).toEqual([["wind", "Winding"], ["pawl", null]]);
+    // its target gone: only what was held
+    const gone = heldEntries(collected, "capstan", [wind], { ...ctx, scene: { ...scene, objects: {} } });
+    expect(gone.entries.map((e) => e.command.id)).toEqual(["wind"]);
   });
 
   it("held sessions: tick, end, cancel, and a failure stays its own", () => {
@@ -248,7 +263,7 @@ describe("scene.use", () => {
     it("shows hold, lasts while the key is down, and ends on its release", async () => {
       await mount();
       await hover("capstan");
-      expect(verbs()).toEqual(["holdEWind the capstan"]);
+      expect(verbs()).toEqual(["holdEWind the capstan", "PDrop the pawl"]);
       down("e");
       expect(sessions).toHaveLength(1);
       expect(prompt().querySelector(".use-verb").hasAttribute("data-held")).toBe(true);
@@ -259,6 +274,43 @@ describe("scene.use", () => {
       expect(sessions[0].end).toHaveBeenCalledTimes(1);
       expect(sessions[0].cancel).not.toHaveBeenCalled();
       expect(prompt().querySelector(".use-verb").hasAttribute("data-held")).toBe(false);
+    });
+
+    it("keeps its target until release: looking away, the prompt stays on it, its repeat and the target's other keys are its; then it follows the look", async () => {
+      await mount();
+      await hover("capstan");
+      down("e");
+      expect(sessions).toHaveLength(1);
+      // the look moves on to the helm while E is down
+      await hover("helm");
+      expect(verbs()).toEqual(["holdEWind the capstan", "PDrop the pawl"]);
+      expect(prompt().querySelector(".use-verb").hasAttribute("data-held")).toBe(true);
+      down("e", { repeat: true });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].end).not.toHaveBeenCalled();
+      // the held target's other verb, by its key: on the capstan, not on what's looked at
+      s.key("p");
+      expect(log.at(-1)).toEqual(["pawl", "capstan"]);
+      // F isn't the capstan's: on to the key map
+      s.key("f");
+      expect(log.some((l) => l[0] === "helm")).toBe(false);
+      up("e");
+      expect(sessions[0].end).toHaveBeenCalledTimes(1);
+      expect(verbs()).toEqual(["FTake the helm"]);
+      s.key("f");
+      expect(log.at(-1)).toEqual(["helm", "helm", undefined]);
+    });
+
+    it("looking at nothing mid-hold, the held verb stays shown (held) on its target until release", async () => {
+      await mount();
+      await hover("capstan");
+      down("e");
+      await hover(null);
+      expect(prompt().hidden).toBe(false);
+      expect(verbs()[0]).toBe("holdEWind the capstan");
+      expect(prompt().querySelector(".use-verb").hasAttribute("data-held")).toBe(true);
+      up("e");
+      expect(prompt().hidden).toBe(true);
     });
 
     it("cancels when the window loses focus", async () => {

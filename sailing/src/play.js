@@ -65,6 +65,8 @@ export default {
       carryable: (id) => carryableAboard(api.scene(), id),
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
+      // what walks, for tabletop's seats (api.collect("firstPerson"): stand up at a seat, sit back down)
+      firstPerson: ctx.crew.firstPerson,
       receive(type, data, from) {
         for (const p of parts) p.receive?.(type, data, from);
       },

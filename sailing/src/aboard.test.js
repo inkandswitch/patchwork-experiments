@@ -1,11 +1,13 @@
 // Two people aboard one sloop, through play.js's whole join (sea, sim, crew,
 // stations, HUD) on the package's fake stage (test/fakes.js), with the
-// hull's deck as a box the rays see where it's drawn.
+// hull's deck as a box: what the rays see where it's drawn, and what her
+// navmesh is baked from.
 import { describe, it, expect, afterEach } from "vitest";
 import play from "./play.js";
 import { layOutShip, headTo } from "./layout.js";
 import { apply, invert, unrotateM as unrotate, rotateM as rotate } from "./frames.js";
-import { fakeNode, fakeWorld } from "./test/fakes.js";
+import { fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
+import { boxTriangles } from "./navmesh.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
 const DECK = { min: [-1.8, -1.9, -6], max: [1.8, 1.25, 6] };
@@ -60,7 +62,7 @@ async function sloop() {
   doc.objects[ids.windlass].traits["sailing.anchor"].down = false;
   doc.objects[ids.rig].traits["sailing.sail"].raised = 1; // the template leaves it down
   const content = {
-    [hull]: { loaded: true, box: doc.objects[hull].hint.bounds, extras: { ship: DIMS }, root: fakeNode() },
+    [hull]: { loaded: true, box: doc.objects[hull].hint.bounds, extras: { ship: DIMS }, root: meshNode(boxTriangles(DECK.min, DECK.max)) },
     [ids.rig]: { loaded: true, box: null, extras: {}, root: fakeNode({ Sail: fakeNode() }) },
   };
   return { doc, ids, content };

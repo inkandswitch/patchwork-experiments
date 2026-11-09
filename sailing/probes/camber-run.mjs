@@ -3,6 +3,9 @@
 //
 //   (in scene/ and sailing/) pnpm build; (in camber/patchwork) npm run build
 //   node probes/camber-run.mjs [--camber ~/dev/camber] [--example cuvature-kink-with-unmodified-pchip.json]
+//
+// It also checks her navmesh statically (C1–C7 and C9; C8 is the sloop's
+// rails), as the crew baked it from her GLB and the parts on her.
 //                              [--scale 12] [--shots <dir>] [--show] [--swiftshader]
 //
 // Mounts the BUILT scene tool with the BUILT sailing plugins and camber's
@@ -26,6 +29,7 @@ import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
+import { staticChecks } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
@@ -278,11 +282,53 @@ try {
     const aim = await P(`aimAt('${wheel}')`);
     if (aim) { await b.move(aim.x, aim.y); await sleep(200); }
     const verbs = await P("verbs()");
-    check("at the wheel, the use prompt offers the helm", !!aim && verbs.some((v) => v.command === "helm" && !v.disabled), { aim, verbs, hovered: await P("hovered()"), me: await P("me()") });
+    check("at the wheel, the use prompt offers the helm", !!aim && verbs.some((v) => v.command === "helm" && !v.disabled), { aim, verbs, hovered: await P("hovered()"), me: await P("me()"), asked: r3([wIn[0], wIn[1] - 0.6, wIn[2] + 0.9]) });
     await press("f");
     await sleep(300);
     check("F takes the helm: standing at the wheel", (await P("me()"))?.station === wheel, await P("me()"));
     await shot("5-at-the-helm");
+
+    // reach is to what you look at: 3 m aft of the mast, the boom over her deck works the sail
+    // though its gooseneck is out of reach (stepping off the helm: place leaves it)
+    {
+      const spot = `[${mastIn[0]}, ${mastIn[1] + 1}, ${mastIn[2] + 3}]`;
+      await P(`place('${hull}', ${spot}, 0, 0.3)`);
+      await sleep(600);
+      const bh = bodyOfHull(await P(`worldOf('${hull}')`));
+      const mr = await P(`worldOf('${rig}')`);
+      const eyeB = (await P("me()"))?.eye ?? [0, 0, 0];
+      // the boom's point nearest the eye (it runs along the rig's +Z from the gooseneck, swung as she sails)
+      const ax = [mr[8], mr[9], mr[10]];
+      const t = Math.max(0.5, Math.min(4.9, dot(sub(eyeB, [mr[12], mr[13], mr[14]]), ax)));
+      const boom = [mr[12] + t * ax[0], mr[13] + t * ax[1], mr[14] + t * ax[2]];
+      const d = sub(boom, eyeB);
+      const [dx, dy, dz] = [dot(d, bh.stbd), dot(d, bh.up), dot(d, bh.aft)];
+      await P(`place('${hull}', ${spot}, ${Math.atan2(-dx, -dz)}, ${Math.atan2(dy, Math.hypot(dx, dz))})`);
+      await sleep(400);
+      // she rolls under way, and the boom is thin: aim again, a few times, until the pointer's on it
+      let aimB = null, verbsB = [], hoveredB = null;
+      for (let k = 0; k < 6; k++) {
+        aimB = await P(`aimNearest('${rig}')`);
+        if (!aimB) break;
+        await b.move(aimB.x, aimB.y);
+        await sleep(120);
+        verbsB = await P("verbs()");
+        hoveredB = await P("hovered()");
+        if (verbsB.some((v) => v.command === "sail")) break;
+      }
+      const eye2 = (await P("me()"))?.eye ?? [0, 0, 0];
+      const mr2 = await P(`worldOf('${rig}')`);
+      const goose = Math.hypot(eye2[0] - mr2[12], eye2[1] - mr2[13], eye2[2] - mr2[14]);
+      report.measured.boomReach = { aimB, verbsB, hovered: hoveredB, rig, gooseneck: n2(goose), t: n2(t) };
+      check("3 m aft of the mast, the boom over her deck is in reach (its gooseneck isn't): the sail's verbs are offered", !!aimB && aimB.distance < 2.5 && goose > 2.5 && verbsB.some((v) => v.command === "sail" && !v.disabled), report.measured.boomReach);
+    }
+
+    // her navmesh: baked from camber's GLB (bow +X, drawn a metre long, scaled to twelve) and the
+    // parts dragged onto her, through her frame, as the crew gathers them: the static checks
+    const nav = await staticChecks(js, "x", hull, "camber");
+    report.measured.navmesh = { cells: nav.cells, triangles: nav.triangles, links: nav.links, at: nav.at, bakeMs: nav.bakeMs, why: nav.why };
+    check("her navmesh is baked, with a link for spawn, each station and the ladder", nav.cells > 500 && ["spawn", "station", "ladder"].every((k) => nav.links?.some((l) => l.startsWith(k))), report.measured.navmesh);
+    for (const [name, c] of Object.entries(nav.checks ?? {})) check(`her navmesh, from camber's GLB and the parts on her: ${name}`, c.ok, c.detail);
   }
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

@@ -408,3 +408,21 @@ export function fakeDrop(doc, { file = true, content } = {}) {
   }
   return { ctx, calls };
 }
+
+/**
+ * A three.js-shaped mesh node for api.content(id).root: triangles (9 numbers
+ * each) as a non-indexed position attribute, at rest (identity transform),
+ * with children (an array, as three's are).
+ */
+export function meshNode(triangles, children = []) {
+  const array = Float32Array.from(triangles);
+  return {
+    isMesh: true,
+    visible: true,
+    geometry: { attributes: { position: { array, itemSize: 3, count: array.length / 3 } }, index: null },
+    position: { x: 0, y: 0, z: 0 },
+    quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 },
+    children,
+  };
+}

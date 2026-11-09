@@ -134,8 +134,14 @@
   color: var(--sail-ink-muted);
 }
 .scene-stage .sail-hud .sail-hint [data-k="keys"]:empty:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .sail-hud .sail-hint [data-k="guide"]:empty:where(:not(.about-embed *), .about-embed .scene-tool *),
 .scene-stage .sail-hud .sail-hint [data-k="advice"]:empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: none;
+}
+/* where her stations are, under the keys: smaller and quieter */
+.scene-stage .sail-hud .sail-hint [data-k="guide"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--sail-ink-muted);
+  font-size: 12px;
 }
 .scene-stage .sail-hud .sail-hint [data-k="advice"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: var(--sail-wind);

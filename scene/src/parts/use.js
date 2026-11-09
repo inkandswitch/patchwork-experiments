@@ -24,6 +24,14 @@
 // focus, the target goes, or this part stops. `hold: true` on a command only
 // changes how it's shown ("hold F").
 //
+// A held verb keeps its target until its key comes up. While anything is
+// held the prompt stays on that target, whatever the look has moved to: it
+// shows the held verb (marked held, as it was when pressed, even once it no
+// longer applies from here) and that target's other verbs, and their keys
+// run on it, so a second key (ease while hauling) works the same thing. The
+// held key's auto-repeat is the prompt's, never re-aimed at what you look at
+// now. Once the last key is up the prompt follows the look again.
+//
 // Keys reach this before the key map only if it runs first: a game lists
 // "scene.use" before "scene.keys" in `requires` (else the key map may run a
 // verb that needs no reach on the hovered object, and drop its session).
@@ -57,6 +65,28 @@ export function lookChain(id, parents) {
  * @returns {{ target: string, entries: { ext, command, state }[] } | null}
  */
 export function useEntries(collected, chain, ctx, max = MAX_VERBS) {
+  return entriesFor(collected, chain, ctx, max);
+}
+
+/**
+ * The verbs while something is held: on the held verbs' target, whatever the
+ * look is on. The held ones first, as they were when pressed (each kept
+ * where it no longer applies from here: you've stepped back), then the
+ * target's other verbs as they apply now. Pure (given the collected commands).
+ * @param {{ id, value }[]} collected
+ * @param {string} target  the held verbs' target
+ * @param {{ ext, command, state }[]} heldEntries  heldSessions().entries(target)
+ * @param {{ scene, local, from, hit }} ctx  the look now
+ * @returns {{ target: string, entries: { ext, command, state }[] }}
+ */
+export function heldEntries(collected, target, heldEntries, ctx, max = MAX_VERBS) {
+  const live = ctx.scene?.objects?.[target] ? (entriesFor(collected, [target], ctx, Infinity)?.entries ?? []) : [];
+  const same = (a, b) => a.ext === b.ext && a.command.id === b.command.id;
+  const rest = live.filter((e) => !heldEntries.some((h) => same(h, e)));
+  return { target, entries: [...heldEntries, ...rest].slice(0, max) };
+}
+
+function entriesFor(collected, chain, ctx, max) {
   const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
   if (!flat.length) return null;
   for (const target of chain) {
@@ -75,7 +105,7 @@ const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "func
  * Each session's failure is its own.
  */
 export function heldSessions() {
-  const open = new Map(); // code → { session, target, ext, command }
+  const open = new Map(); // code → { session, target, ext, command, entry }
   const call = (session, name, ...args) => {
     try {
       session?.[name]?.(...args);
@@ -97,9 +127,15 @@ export function heldSessions() {
     has: (code) => open.has(code),
     /** is this extension's command held? */
     holding: (ext, command) => [...open.values()].some((h) => h.ext === ext && h.command === command),
-    open(code, session, { target = null, ext = null, command = null } = {}) {
+    /** the target of the first held verb (what the prompt stays on), or undefined when nothing's held */
+    get target() {
+      return open.values().next().value?.target;
+    },
+    /** the prompt's entries of the verbs held on `target`, as they were when pressed, first held first */
+    entries: (target) => [...open.values()].filter((h) => h.target === target && h.entry).map((h) => h.entry),
+    open(code, session, { target = null, ext = null, command = null, entry = null } = {}) {
       close(code, "end"); // a press whose release we never heard
-      open.set(code, { session, target, ext, command });
+      open.set(code, { session, target, ext, command, entry });
     },
     tick(dt) {
       for (const h of [...open.values()]) call(h.session, "update", dt);
@@ -169,7 +205,12 @@ function create(api) {
     const local = api.local.get();
     const scene = api.scene();
     const seen = editing(local) ? null : look(local);
-    if (seen) {
+    const pinned = held.target;
+    if (pinned !== undefined && !editing(local)) {
+      // a held verb keeps its target: the prompt stays on it until the key's up
+      const ctx = { scene, local, from: seen?.from ?? eye(), hit: seen?.hit ?? null };
+      current = { ...heldEntries(api.collect("commands"), pinned, held.entries(pinned), ctx), ctx };
+    } else if (seen) {
       const ctx = { scene, local, from: seen.from, hit: seen.hit };
       const found = useEntries(api.collect("commands"), lookChain(seen.hit.id, scene.parents), ctx);
       current = found ? { ...found, ctx } : null;
@@ -244,6 +285,8 @@ function create(api) {
 
   function onKey(ev) {
     if (ev.ctrl || ev.meta || typeof ev.key !== "string") return false;
+    // the held key's own repeat: still the held verb's, on its target
+    if (ev.repeat && held.has(codeOf(ev))) return true;
     refresh();
     if (!current) return false;
     const entry = current.entries.find(({ command }) => keyMatches(command, ev.key));
@@ -262,7 +305,7 @@ function create(api) {
       return true;
     }
     if (isSession(out)) {
-      held.open(codeOf(ev), out, { target: current.target, ext: entry.ext, command: entry.command.id });
+      held.open(codeOf(ev), out, { target: current.target, ext: entry.ext, command: entry.command.id, entry: { ...entry, state } });
       wantLoop();
       render(locked(api.local.get()));
     }
@@ -278,7 +321,8 @@ function create(api) {
     if (away) held.cancel(code);
     else held.end(code);
     wantLoop();
-    render(locked(api.local.get()));
+    // the last key up: the prompt follows the look again
+    refresh();
     return true;
   }
 

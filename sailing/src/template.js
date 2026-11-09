@@ -18,6 +18,6 @@ export default {
 export const atAnchor = {
   async create(ctx) {
     await layOutShip(ctx, { anchored: true, wind: ANCHORAGE_AIR });
-    ctx.notify?.("A sloop at anchor off the islet, in a moderate breeze. Click the sea (or press Enter) to come aboard; raise the sail and weigh the anchor to get under way.", "info");
+    ctx.notify?.("A sloop at anchor off the islet, in a moderate breeze. Click the sea (or press Enter) to come aboard; raise the sail (take the helm or the mainsheet in the cockpit with F, then hold R; or hold R at the mast) and weigh the anchor at the windlass (hold F) to get under way.", "info");
   },
 };

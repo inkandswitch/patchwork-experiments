@@ -21,9 +21,25 @@
 </style>
 <div id="a"></div><div id="b"></div>
 <script type="module">
+// ?seed=N (default 1): Math.random seeded (mulberry32), so the template's sea and wind, and
+// whatever else draws on it, are the same every run; real time and frame rates still vary
+{
+  let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+// ?lock=1: pointer lock granted (headless Chrome refuses it), so the use prompt's centre ray runs
+if (new URLSearchParams(location.search).has("lock")) await import("./lock-shim.js");
 
+// invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
+globalThis.__SAILING_ASSERT__ = true;
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -205,6 +221,39 @@ try {
         }
       }
       return null;
+    },
+    /** A screen point on `id` (or under it) near a world point: spiralling out from where it projects. */
+    aimNear(id, w, at) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const parents = dbg[w].scene().parents;
+      const under = (h) => { for (let x = h, n = 0; x != null && n < 32; x = parents.get(x), n++) if (x === id) return true; return false; };
+      const p = v.project(at);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 4.4 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit && under(hit.id)) return { x: r.left + x, y: r.top + y, id: hit.id, distance: hit.distance ?? null };
+      }
+      const c = v.pick(p.x, p.y);
+      return { miss: true, at: { x: p.x, y: p.y, w: r.width, h: r.height }, centre: c && { id: c.id, distance: c.distance ?? null } };
+    },
+    /** The nearest point of `id` (or anything under it) in view: a grid of picks over the whole canvas. */
+    aimNearest(id, w, step = 8) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const parents = dbg[w].scene().parents;
+      const under = (h) => { for (let x = h, n = 0; x != null && n < 32; x = parents.get(x), n++) if (x === id) return true; return false; };
+      let best = null, n = 0;
+      for (let y = 4; y < r.height - 4; y += step) for (let x = 4; x < r.width - 4; x += step) {
+        const hit = v.pick(x, y);
+        if (!hit || !under(hit.id)) continue;
+        n++;
+        if (!best || hit.distance < best.distance) best = { x: r.left + x, y: r.top + y, id: hit.id, distance: hit.distance };
+      }
+      return best ? { ...best, pixels: n } : null;
     },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
   });

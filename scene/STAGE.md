@@ -768,6 +768,12 @@ A **command**:
   frame, `end()` when the key is let go, `cancel()` when the window or the
   view loses focus, the target leaves the doc, or the prompt stops.
   `api.run` discards what `run` returns, so elsewhere a held verb is a press.
+  A held verb keeps its target until its key is up: while anything is held
+  the prompt stays on that target wherever the look goes, showing the held
+  verb (marked held, as it was when pressed, even once it no longer applies
+  from where you are) and that target's other verbs, whose keys run on it;
+  the held key's auto-repeat is the prompt's. Once the last key is up the
+  prompt follows the look again.
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;

@@ -14,15 +14,24 @@ export const ANCHOR = "sailing.anchor";
 /** The anchor itself (the hook), drawn lying on the bottom while its windlass says it's down. */
 export const HOOK = "sailing.hook";
 export const LADDER = "sailing.ladder";
+/** Where the sail is worked from the cockpit: a traveller and its block, under the boom's end. */
+export const MAINSHEET = "sailing.mainsheet";
 export const FLOAT = "sailing.float";
 
 /** The stations' traits, and what each is called on a ship (ctx.sim.stationsOf). */
-export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR });
+export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET });
 
 /** The scene-wide claim of the view that simulates the sea and its ships. */
 export const SIM = "sim";
 /** A station's claim: who is working it. */
 export const STATION = "station";
+/**
+ * Who stands at the mast working the halyard: a claim on the sail station,
+ * apart from its "station" claim (which whoever is hauling on the sail's
+ * values holds, only while a key is down), so someone at the mast doesn't
+ * stop the helmsman trimming the sheet.
+ */
+export const HALYARD = "halyard";
 
 /** The extension that publishes the sea's clock in presence (edit.js runs as another id and reads it there). */
 export const PLAY_ID = "sailing";
@@ -32,6 +41,7 @@ export const DEFAULTS = Object.freeze({
   [HELM]: Object.freeze({ angle: 0 }),
   [SAIL]: Object.freeze({ raised: 1, sheet: 0.5 }),
   [ANCHOR]: Object.freeze({ down: true, rode: 0 }),
+  [MAINSHEET]: Object.freeze({}),
 });
 
 /** Metres of chain let out when the anchor goes down. */
@@ -116,7 +126,7 @@ export const shipsOf = (scene) => (scene?.ids ?? []).filter((id) => scene.object
 export function stationKind(o) {
   const t = o?.traits;
   if (!t) return null;
-  return [HELM, SAIL, ANCHOR].find((k) => t[k]) ?? null;
+  return [HELM, SAIL, ANCHOR, MAINSHEET].find((k) => t[k]) ?? null;
 }
 
 /** A station's live value: its defaults, its trait's fields, and its holder's input over them. */
@@ -128,10 +138,10 @@ export function stationValue(kind, fields, input) {
  * A ship's parts, from a snapshot: its stations (the first of each kind
  * attached under it at any depth), its ladder and its anchor's hook, each
  * found by its trait. null where it has none.
- * @returns {{ helm, sail, anchor, ladder, hook }}
+ * @returns {{ helm, sail, anchor, mainsheet, ladder, hook }}
  */
 export function partsOf(scene, ship) {
-  const out = { helm: null, sail: null, anchor: null, ladder: null, hook: null };
+  const out = { helm: null, sail: null, anchor: null, mainsheet: null, ladder: null, hook: null };
   for (const id of scene?.ids ?? []) {
     const o = scene.objects[id];
     if (!o?.traits || id === ship || !isUnder(scene, id, ship)) continue;

@@ -1,35 +1,36 @@
-// People aboard (DESIGN.md, "Play"): coming aboard, walking a moving deck,
-// going over the side and swimming, standing at a station, and everyone
-// else drawn where they stand.
+// People aboard (DESIGN.md, "Play" and "Walking: a navmesh in the ship's
+// frame"): coming aboard, walking a moving deck, going over the side and
+// swimming, standing at a station, and everyone else drawn where they stand.
 //
-// Your body lives in the frame of the ship you stand on: its feet are local
-// to her body frame (bow −Z, through her frame: body.js), so the deck
-// carries you as it rolls and sails, and "aft of the wheel" is aft whichever
-// way her model was drawn. Each frame the
-// body goes out to the world through the ship's displayed matrix, takes one
-// step of the walker there (the stage's rays see the hull as drawn, gravity
-// is world −Y, the velocity is the deck's), and comes back. Off the deck you
-// swim, in the world, at the ocean's height.
+// Where you can stand is baked once per hull (navmesh.js) from what's drawn:
+// her GLB and the parts attached under her, in her body frame. Walking is
+// walker.js over that mesh: its state is a cell and a place in it, so it
+// can't name a place off the mesh, and your world pose is derived from her
+// drawn matrix each frame and never fed back. This file is the stage side:
+// it gathers her triangles from api.content (the input adapter), keeps her
+// mesh baked as her parts change, steps the walker, and puts the camera at
+// the eye. Off the deck you swim, in the world, at the ocean's height.
 //
 // State lives where the contract says:
 // - presence: `crew` = { on, position, yaw, pitch, station } at ~18 Hz, the
 //   position local to `on` (world when it's null);
-// - this closure: your body, the keys held, the station you're at.
+// - this closure: the walker's state, the keys held, the station you're at.
 //
 // The frame maths and the avatars' easing are pure and exported (tested in
 // crew.test.js); createCrew is the stage-side part.
 
-import { BODY, DECK, SWIM, look, lookDir, step, swim } from "./walk.js";
-import { apply, headingOf, invert, onHeading, rotateM, unrotateM } from "./frames.js";
-import { QUARTER, isUnder, sailingThing, shipOf } from "./traits.js";
-import { bodyBoxOf, bodyOf } from "./body.js";
+import { DECK, SWIM, easeEye, look, lookDir } from "./walk.js";
+import { bake, sweptAbout } from "./navmesh.js";
+import * as walker from "./walker.js";
+import { apply, headingOf, invert, matrixOf, multiply, onHeading, rotateM, unrotateM } from "./frames.js";
+import { HELM, HOOK, QUARTER, SAIL, isUnder, partsOf, sailingThing, shipOf } from "./traits.js";
+import { bodyBoxOf, bodyOf, frameMatrix, placeIn, shipFrame } from "./body.js";
+
+export { behind, ladderTop } from "./walker.js";
 
 const FOV = 60; // vertical: about 90° across at 16:9; wider puts more heaving sea in the corners of your eye
 const SEND_MS = 55; // presence, about 18 Hz
 const EASE = 12; // how fast an avatar closes on its latest record (1/s)
-const BEHIND = 0.6; // how far aft of a station you stand (m)
-const INBOARD = 0.5; // from the ladder's hook to where you stand on deck
-const SUNK = 1.5; // feet this far under the surface are in the water, deck or no deck
 const STILL = Object.freeze({ forward: 0, strafe: 0 });
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
 
@@ -41,35 +42,7 @@ const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .abo
   text-shadow: 0 1px 1px rgb(0 0 0 / 0.4);
 }`;
 
-// ─── on a moving deck (pure) ────────────────────────────────────────────────
-
-/**
- * One step on a moving deck. The body is in the frame's terms (feet and
- * velocity local, yaw relative to the bow); it goes out to the world through
- * `m`, steps there, and comes back, so a body standing still stays where it
- * stood on the deck however the frame moves. Standing, it has no speed up or
- * down the deck, so a roll can't throw it.
- * @param {{ feet: number[], vel: number[], onGround: boolean, yaw: number }} body
- * @param {object} input  the walker's
- * @param {number[]} m  the frame's displayed world matrix, this frame
- * @param {number} dt
- * @param {object} world  the walker's rays, in the world
- * @returns {{ feet: number[], vel: number[], onGround: boolean, world: number[] }}  world: the feet in the world
- */
-export function deckStep(body, input, m, dt, world, spec = DECK) {
-  const vel = rotateM(m, body.vel);
-  if (body.onGround) vel[1] = 0;
-  const s = step({ feet: apply(m, body.feet), vel, onGround: body.onGround }, input, body.yaw + headingOf(m), dt, world, spec);
-  return { feet: apply(invert(m), s.feet), vel: unrotateM(m, s.vel), onGround: s.onGround, world: s.feet };
-}
-
-/**
- * In the water: fallen below the surface, or well under it however you got
- * there, and with no deck under your feet (a cockpit's sole can lie lower
- * than a crest passing the hull).
- */
-export const overboard = (feet, onGround, surface, deckBelow = false) =>
-  feet[1] < surface - SUNK || (!deckBelow && ((!onGround && feet[1] < surface) || feet[1] < surface - 0.6));
+// ─── frames (pure) ──────────────────────────────────────────────────────────
 
 /** A body in one frame (`from`, a matrix) moved into another (`to`), the same in the world: stepping across onto another deck. */
 export function reframe(body, from, to) {
@@ -80,12 +53,6 @@ export function reframe(body, from, to) {
     yaw: body.yaw + headingOf(from) - headingOf(to),
   };
 }
-
-/** Where you stand to work a station: just aft of it, in the ship's frame. */
-export const behind = ([x, y, z], by = BEHIND) => [x, y, z + by];
-
-/** Where you come aboard by a ladder hooked over the side at `at` (local): inboard of it, on deck. */
-export const ladderTop = ([x, y, z], by = INBOARD) => [x - Math.sign(x || 1) * by, y, z];
 
 /** The shorter way round from angle a to b. */
 const turnTo = (a, b) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a));
@@ -152,6 +119,160 @@ export function hueOf(key) {
 const okRecord = (r) => !!r && Array.isArray(r.position) && r.position.length === 3 && r.position.every(Number.isFinite);
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
+// ─── what she's made of, for the bake (the input adapter) ──────────────────
+
+/**
+ * The objects whose geometry is baked into a ship's navmesh: herself, and
+ * everything attached under her that's hers (a sailing trait or tag) or
+ * locked furniture (a card table), but not what moves: the sail station's
+ * subtree (the boom and sail swing) and the anchor (it hangs, and lies on
+ * the bottom), nor unlocked loose pieces (cards, dice), nor anything hidden.
+ * The wheel (the helm) turns about its axle, so it's `swept`.
+ * @returns {Array<{ id: string, swept: boolean }>}  in id order
+ */
+export function bakedObjects(scene, ship) {
+  const out = [];
+  const moving = (id) => {
+    for (let at = id, n = 0; at != null && at !== ship && n < 64; at = scene.parents?.get?.(at) ?? null, n++) {
+      const t = scene.objects?.[at]?.traits;
+      if (t?.[SAIL] || t?.[HOOK]) return true;
+    }
+    return false;
+  };
+  for (const id of [...(scene?.ids ?? Object.keys(scene?.objects ?? {}))].sort()) {
+    const o = scene.objects?.[id];
+    if (!o || o.kind === "group" || o.visible === false) continue;
+    if (id !== ship) {
+      if (!isUnder(scene, id, ship) || moving(id)) continue;
+      if (!sailingThing(o) && !o.locked) continue;
+    }
+    out.push({ id, swept: !!o.traits?.[HELM] });
+  }
+  return out;
+}
+
+/** A node's own matrix (three.js position, quaternion, scale; any scale). */
+function nodeMatrix(node) {
+  const p = node.position ?? {};
+  const q = node.quaternion ?? null;
+  const s = node.scale ?? {};
+  const [x, y, z, w] = q ? [q.x ?? 0, q.y ?? 0, q.z ?? 0, q.w ?? 1] : [0, 0, 0, 1];
+  const [sx, sy, sz] = [s.x ?? 1, s.y ?? 1, s.z ?? 1];
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y + z * w) * sx, 2 * (x * z - y * w) * sx, 0,
+    2 * (x * y - z * w) * sy, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z + x * w) * sy, 0,
+    2 * (x * z + y * w) * sz, 2 * (y * z - x * w) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
+    p.x ?? 0, p.y ?? 0, p.z ?? 0, 1,
+  ];
+}
+
+const ID = matrixOf(null);
+
+/**
+ * The triangles of a content root (api.content(id).root, a three.js node:
+ * read, never changed), in the object's own frame, at the GLB's rest pose
+ * (each node's own transform, from the root down). Hidden nodes are left out.
+ */
+export function trianglesOf(root) {
+  const out = [];
+  const visit = (node, parent, depth) => {
+    if (!node || depth > 64 || node.visible === false) return;
+    const m = multiply(parent, nodeMatrix(node));
+    const pos = node.isMesh ? node.geometry?.attributes?.position : null;
+    if (pos) {
+      const get = (i) => (typeof pos.getX === "function" ? [pos.getX(i), pos.getY(i), pos.getZ(i)] : [pos.array[i * (pos.itemSize ?? 3)], pos.array[i * (pos.itemSize ?? 3) + 1], pos.array[i * (pos.itemSize ?? 3) + 2]]);
+      const index = node.geometry.index;
+      const count = index ? (index.count ?? index.array.length) : (pos.count ?? pos.array.length / (pos.itemSize ?? 3));
+      const at = index ? (k) => (typeof index.getX === "function" ? index.getX(k) : index.array[k]) : (k) => k;
+      for (let k = 0; k + 2 < count; k += 3) for (let j = 0; j < 3; j++) out.push(...apply(m, get(at(k + j))));
+    }
+    const kids = Array.isArray(node.children) ? node.children : [];
+    for (const ch of kids) visit(ch, m, depth + 1);
+  };
+  visit(root, ID, 0);
+  return out;
+}
+
+/** body ← hull object: her frame undone, at her scale (metres, as bodyOf is). */
+function bodyFromHull(api, ship) {
+  const k = Number(api.scene?.()?.objects?.[ship]?.transform?.scale) || 1;
+  const S = matrixOf({ scale: k });
+  return multiply(S, invert(frameMatrix(shipFrame(api, ship))));
+}
+
+const fnv = (str) => {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619);
+    h2 = Math.imul(h2 ^ c, 2246822519);
+  }
+  return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36)).padStart(14, "0");
+};
+const r6 = (v) => Math.round(v * 1e6) / 1e6;
+
+/**
+ * The bake key for a ship: a hash of her frame and, for each baked object,
+ * its id, file, transform relative to her, its traits' keys, and whether its
+ * model has loaded. Null while her own model hasn't (nothing to stand on yet).
+ */
+export function navKey(api, ship) {
+  const scene = api.scene?.();
+  if (!scene?.objects?.[ship] || !api.content?.(ship)?.loaded) return null;
+  const parts = bakedObjects(scene, ship).map(({ id, swept }) => {
+    const o = scene.objects[id];
+    const m = id === ship ? ID : (placeIn(scene, id, ship) ?? ID);
+    return [id, o.sourceUrl ?? null, o.renderUrl ?? null, m.map(r6), !!api.content?.(id)?.loaded, swept, Object.keys(o.traits ?? {}).sort()];
+  });
+  return fnv(JSON.stringify([shipFrame(api, ship), scene.objects[ship]?.transform?.scale ?? 1, parts]));
+}
+
+/**
+ * What a ship's bake is made from: her triangles in her body frame, and the
+ * seeds (her spawn, a stand spot aft of each station, her ladder). Null while
+ * her own model hasn't loaded.
+ * @returns {{ key: string, triangles: number[], seeds: object[] } | null}
+ */
+export function navInput(api, ship) {
+  const key = navKey(api, ship);
+  if (!key) return null;
+  const scene = api.scene();
+  const toBody = bodyFromHull(api, ship);
+  const triangles = [];
+  for (const { id, swept } of bakedObjects(scene, ship)) {
+    const root = api.content?.(id)?.root;
+    if (!root) continue;
+    let tris = trianglesOf(root);
+    if (swept) tris = sweptAbout(tris, 2);
+    const m = multiply(toBody, id === ship ? ID : (placeIn(scene, id, ship) ?? ID));
+    for (let k = 0; k < tris.length; k += 3) triangles.push(...apply(m, [tris[k], tris[k + 1], tris[k + 2]]));
+  }
+  const at = (id) => {
+    const m = placeIn(scene, id, ship);
+    return m ? apply(toBody, [m[12], m[13], m[14]]) : null;
+  };
+  const parts = partsOf(scene, ship);
+  const stations = ["helm", "sail", "anchor", "mainsheet"].filter((k) => parts[k]).map((k) => ({ id: parts[k], at: at(parts[k]), by: walker.standOff(k) })).filter((s) => s.at);
+  const ladder = parts.ladder && at(parts.ladder) ? { id: parts.ladder, at: at(parts.ladder) } : null;
+  const seeds = walker.seedsOf({ stations, helm: parts.helm, ladder, box: bodyBoxOf(api, ship) });
+  return { key, triangles, seeds };
+}
+
+/** The boom, where it's drawn this frame, as a capsule in her body frame: a moving obstacle that only blocks. */
+function boomOf(api, ship, M) {
+  const rig = partsOf(api.scene(), ship).sail;
+  const w = rig ? api.worldOf?.(rig) : null;
+  if (!w || !M) return [];
+  const local = multiply(invert(M), w);
+  const len = Math.max(0, Number(api.content?.(rig)?.box?.max?.[2]) || 0);
+  if (len <= 0) return [];
+  return [{ a: apply(local, [0, 0, 0]), b: apply(local, [0, 0, len]), r: 0.07 }];
+}
+
+/** Baked meshes by key, shared by every crew in the page (a mesh is never changed once baked). */
+const MESHES = new Map();
+
 // ─── the crew ───────────────────────────────────────────────────────────────
 
 /**
@@ -167,87 +288,116 @@ export function createCrew(api, ctx) {
   // Pointer lock can be refused (a sandboxed frame, a headless browser). Then
   // play goes on without it: drag to look.
   let free = false;
-  let placed = false; // has the body been put anywhere yet
   let disarm = null;
   let releaseCamera = null;
   let orbitFov = null; // the camera's field of view before coming aboard
-  let station = null; // { id, handlers, spot, disarm }
+  let station = null; // { id, handlers, disarm }
   let lastSent = 0;
   let eye = null; // world, while playing
-  const body = { on: null, feet: [0, 0, 0], vel: [0, 0, 0], onGround: false, yaw: 0, pitch: 0 };
+  let eyeLag = 0; // the drawn eye's lag behind the true eye along her up, easing a STEP (easeEye): the camera only
+  let w = null; // the walker's state (walker.js); null until you're put anywhere
+  const person = { yaw: 0, pitch: 0 }; // yaw: to her bow aboard, the world's in the water
+  let warned = false;
   const keys = new Set();
 
   const clock = () => ctx.sea?.clock?.() ?? 0;
   /** A ship's body frame as drawn (bow −Z), which a body aboard lives in; null when she's gone. */
   const frameOfShip = (id) => bodyOf(api, id);
-  const surfaceAt = (t) => (x, z) => ctx.sea?.ocean?.heightAt?.(x, z, t) ?? 0;
 
-  // the walker's world: the stage's rays, which see the hull as drawn this frame
-  const rays = {
-    down: (from, max) => api.raycast(from, [0, -1, 0], { far: max })?.distance ?? null,
-    ahead: (from, dir, max) => {
-      const h = api.raycast(from, dir, { far: max });
-      return h ? { distance: h.distance, normal: h.normal } : null;
+  // ─── her navmesh, baked as her parts change ─────────────────────────────
+
+  // per ship: { key, mesh, input, want, timer }. The first mesh is baked when
+  // first asked for; a later change of key rebakes off the frame loop (a
+  // timeout), the old mesh in use until the new one lands. Meshes are cached
+  // by key.
+  const navs = new Map();
+  let version = 1; // bumped when the doc or what's shown changes: keys to look at again
+  function bakeFor(ship) {
+    const input = navInput(api, ship);
+    if (!input) return null;
+    const hit = MESHES.get(input.key);
+    if (hit) return hit;
+    const made = { mesh: bake(input, DECK), input };
+    MESHES.set(input.key, made);
+    while (MESHES.size > 6) MESHES.delete(MESHES.keys().next().value);
+    return made;
+  }
+  function meshOf(ship) {
+    if (ship == null) return null;
+    let n = navs.get(ship);
+    if (!n) navs.set(ship, (n = { key: null, mesh: null, input: null, want: null, timer: null, seen: -1 }));
+    if (n.seen !== version || !n.mesh) {
+      n.want = navKey(api, ship);
+      n.seen = version;
+    }
+    if (!n.want) return n.mesh;
+    if (!n.mesh) {
+      const made = bakeFor(ship);
+      if (made) Object.assign(n, { key: made.input.key, mesh: made.mesh, input: made.input });
+    } else if (n.want !== n.key && !n.timer) {
+      n.timer = setTimeout(() => {
+        n.timer = null;
+        const made = bakeFor(ship);
+        if (made) Object.assign(n, { key: made.input.key, mesh: made.mesh, input: made.input });
+      }, 0);
+    }
+    return n.mesh;
+  }
+
+  // the walker's world: her mesh and her drawn frame, the sea, the boom (where it's drawn: once a frame)
+  let frameNo = 0;
+  let boomsAt = -1;
+  const booms = new Map();
+  const env = {
+    mesh: meshOf,
+    frame: frameOfShip,
+    ships: () => ctx.sim?.ships?.() ?? [],
+    surface: (x, z) => ctx.sea?.ocean?.heightAt?.(x, z, clock()) ?? 0,
+    blockers(ship) {
+      if (boomsAt !== frameNo) (booms.clear(), (boomsAt = frameNo));
+      if (!booms.has(ship)) booms.set(ship, boomOf(api, ship, frameOfShip(ship)));
+      return booms.get(ship);
     },
   };
 
   // ─── putting the body somewhere ─────────────────────────────────────────
 
-  /** The deck under a local point (cast down from a little above it), local; the point itself if nothing's there. */
-  function groundAt(m, local, skipId = null) {
-    const from = apply(m, [local[0], local[1] + 1.2, local[2]]);
-    const s = api.scene();
-    const skip = skipId ? (id) => isUnder(s, id, skipId) : null;
-    const hit = api.raycast(from, rotateM(m, [0, -1, 0]), { far: 4, skip });
-    return hit?.point ? apply(invert(m), hit.point) : [...local];
-  }
-
   const localOf = (m, id) => {
-    const w = api.worldOf(id);
-    return w ? apply(invert(m), [w[12], w[13], w[14]]) : null;
+    const at = api.worldOf(id);
+    return at ? apply(invert(m), [at[12], at[13], at[14]]) : null;
   };
 
-  /** Just aft of a station, on whatever is there. */
-  function standSpot(stationId, m) {
-    const at = localOf(m, stationId);
-    return at ? groundAt(m, behind(at), stationId) : null;
+  /** In the water at a world point, facing a world yaw. */
+  function inWater(at, yawW = person.yaw) {
+    w = walker.swimmingAt(env, [at[0], at[2]]);
+    person.yaw = yawW;
   }
 
-  /** Somewhere to stand on a ship: at the helm, else aft on the centreline. */
-  function deckSpot(ship, m) {
-    const helm = ctx.sim?.stationsOf?.(ship)?.helm;
-    const at = helm ? standSpot(helm, m) : null;
-    if (at) return at;
-    const box = bodyBoxOf(api, ship); // metres, as m is
-    const z = box ? box.max[2] - 1.2 : 0;
-    const x = box ? (box.min[0] + box.max[0]) / 2 : 0;
-    return groundAt(m, [x, 3, z]);
-  }
-
-  function setBody(on, feet, yaw = 0, pitch = 0) {
-    Object.assign(body, { on, feet: [...feet], vel: [0, 0, 0], onGround: on != null, yaw, pitch });
-    placed = true;
-  }
-
-  function inWater(feetW, velW, yawW) {
-    const y = surfaceAt(clock())(feetW[0], feetW[2]) - SWIM.depth;
-    setBody(null, [feetW[0], y, feetW[2]], yawW, body.pitch);
-    body.vel = [velW[0] * 0.3, 0, velW[2] * 0.3];
-  }
-
-  /** On the first ship's deck, by the wheel; in the water if there's no ship. */
+  /** On the first ship's deck, by the wheel (or as soon as her mesh is baked); in the water if there's no ship. */
   function spawn() {
     const ship = ctx.sim?.ships?.()[0] ?? null;
-    const m = ship ? frameOfShip(ship) : null;
-    if (m) {
+    if (ship && frameOfShip(ship)) {
       // beside the wheel, a little to one side or the other, so two who come aboard together aren't one
-      const at = deckSpot(ship, m);
       const side = [0, -0.45, 0.45][hueOf(api.session ?? "") % 3];
-      return setBody(ship, side ? groundAt(m, [at[0] + side, at[1], at[2]]) : at, 0, -0.1);
+      w = walker.spawnOn(env, ship, [side, 0, 0]);
+      if (w.mode === "boarding") {
+        w.offset = [side, 0, 0];
+        w.from = api.camera.get()?.position ?? null; // where you swim if she goes, or her model never comes
+      }
+      person.yaw = 0;
+      person.pitch = -0.1;
+      return;
     }
-    const c = api.camera.get()?.position ?? [0, 0, 0];
-    inWater(c, [0, 0, 0], 0);
+    inWater(api.camera.get()?.position ?? [0, 0, 0], 0);
   }
+
+  /** Where the feet are, as me() and presence say it: local to the ship you're on, else the world. */
+  function feetNow() {
+    if (!w) return [0, 0, 0];
+    if (w.mode === "swimming") return [w.p[0], env.surface(w.p[0], w.p[1]) - SWIM.depth, w.p[1]];
+    return walker.localFeet(w) ?? (w.at ? [...w.at] : [0, 0, 0]);
+  }
+  const onShip = () => (!w || w.mode === "swimming" ? null : (w.ship ?? null));
 
   // ─── each frame ─────────────────────────────────────────────────────────
 
@@ -261,50 +411,36 @@ export function createCrew(api, ctx) {
     };
   }
 
-  /** Standing on another ship's deck now: into her frame (a walk or a jump across). The new frame, or null. */
-  function stepAcross(m, feetW) {
-    if (!body.onGround || station) return null;
-    const hit = api.raycast([feetW[0], feetW[1] + 0.3, feetW[2]], [0, -1, 0], { far: 0.6 });
-    const ship = hit?.id ? shipOf(api.scene(), hit.id) : null;
-    const to = ship && ship !== body.on ? frameOfShip(ship) : null;
-    if (!to) return null;
-    Object.assign(body, reframe(body, m, to), { on: ship });
-    return to;
+  /** Invariant I after a step: thrown while walker.asserting() (tests, the probe pages); else logged once and put right by projection. */
+  function checked() {
+    const bad = walker.checkWalker(w, env);
+    if (!bad.length) return;
+    if (walker.asserting()) throw new Error(`walker invariant: ${bad.join("; ")} (${w?.mode})`);
+    if (!warned) console.warn("[sailing] the walker left its mesh; put back", bad);
+    warned = true;
+    const feet = feetNow();
+    w = onShip() ? walker.place(env, w.ship, feet) : walker.swimmingAt(env, [feet[0], feet[2]]);
   }
 
   function walk(dt) {
-    const t = clock();
-    const surface = surfaceAt(t);
-    const input = wanted();
-    let m = body.on ? frameOfShip(body.on) : null;
-    if (body.on && !m) inWater(eye ? [eye[0], 0, eye[2]] : body.feet, [0, 0, 0], body.yaw); // the ship went
-    if (body.on) {
-      if (station?.spot) {
-        body.feet = [station.spot[0], body.feet[1], station.spot[2]];
-        body.vel = [0, 0, 0];
+    // (boarding: B1 lands her spawn beside the wheel at w.offset, or G1 / the wait running out swims)
+    const before = w;
+    const r = walker.step(w, wanted(), person.yaw, dt, env);
+    w = r.state;
+    person.yaw = r.yaw;
+    checked();
+    const moving = (s) => s?.mode === "walking" || s?.mode === "airborne";
+    eyeLag = moving(before) && moving(w) && before.ship === w.ship ? easeEye(eyeLag, r.lift, dt) : 0;
+    const pose = walker.worldPose(w, env);
+    if (pose) {
+      eye = pose.eye;
+      if (eyeLag) {
+        const up = rotateM(env.frame(w.ship), [0, 1, 0]);
+        eye = [eye[0] + up[0] * eyeLag, eye[1] + up[1] * eyeLag, eye[2] + up[2] * eyeLag];
       }
-      const next = deckStep(body, input, m, dt, rays);
-      const w = next.world;
-      const sea = surface(w[0], w[2]);
-      // under a passing crest: in the water only if there's no deck under you
-      const wet = !station && overboard(w, next.onGround, sea);
-      if (wet && overboard(w, next.onGround, sea, !!api.raycast([w[0], w[1] + 0.1, w[2]], [0, -1, 0], { far: DECK.ledge + 1 }))) {
-        inWater(w, rotateM(m, next.vel), body.yaw + headingOf(m));
-        m = null;
-      } else {
-        Object.assign(body, { feet: next.feet, vel: next.vel, onGround: next.onGround });
-        m = stepAcross(m, w) ?? m;
-      }
-    } else {
-      const s = swim(body, input, body.yaw, dt, { surface, ahead: rays.ahead });
-      body.feet = s.feet;
-      body.vel = s.vel;
+      const d = lookDir(person.yaw + pose.heading, person.pitch);
+      api.camera.set({ position: eye, target: [eye[0] + d[0], eye[1] + d[1], eye[2] + d[2]], fov: FOV, near: 0.05, far: 5000 });
     }
-    const feetW = m ? apply(m, body.feet) : body.feet;
-    const yawW = body.yaw + (m ? headingOf(m) : 0);
-    eye = [feetW[0], feetW[1] + BODY.eye, feetW[2]];
-    const d = lookDir(yawW, body.pitch);
-    api.camera.set({ position: eye, target: [eye[0] + d[0], eye[1] + d[1], eye[2] + d[2]], fov: FOV, near: 0.05, far: 5000 });
     if (station) {
       try {
         station.handlers.tick?.(dt);
@@ -317,9 +453,9 @@ export function createCrew(api, ctx) {
 
   function publish(now = false) {
     const ms = performance.now();
-    if (!playing || (!now && ms - lastSent < SEND_MS)) return;
+    if (!playing || !w || w.mode === "boarding" || (!now && ms - lastSent < SEND_MS)) return;
     lastSent = ms;
-    api.presence.set("crew", { on: body.on, position: body.feet.map(r3), yaw: r3(body.yaw), pitch: r3(body.pitch), station: station?.id ?? null });
+    api.presence.set("crew", { on: onShip(), position: feetNow().map(r3), yaw: r3(person.yaw), pitch: r3(person.pitch), station: station?.id ?? null });
   }
 
   // Before coming aboard the camera is the orbit's, and it goes where the
@@ -364,9 +500,9 @@ export function createCrew(api, ctx) {
   // ─── input ──────────────────────────────────────────────────────────────
 
   function turn(dx, dy) {
-    const l = look(body.yaw, body.pitch, dx, dy);
-    body.yaw = l.yaw;
-    body.pitch = l.pitch;
+    const l = look(person.yaw, person.pitch, dx, dy);
+    person.yaw = l.yaw;
+    person.pitch = l.pitch;
   }
 
   // a bare session: a press while playing is nothing, never an orbit
@@ -447,7 +583,7 @@ export function createCrew(api, ctx) {
     playing = true;
     paused = false;
     free = false;
-    if (!placed || (body.on && !frameOfShip(body.on))) spawn();
+    if (!w || (onShip() && !frameOfShip(w.ship))) spawn();
     orbitFov = api.camera.get()?.fov ?? null; // given back on leaving: first person sees wider
     releaseCamera = api.camera.hold();
     // immersive: the editor's decorations stand aside while aboard
@@ -455,7 +591,7 @@ export function createCrew(api, ctx) {
     publish(true);
   }
 
-  function stop() {
+  function stop({ keepCamera = false } = {}) {
     if (!playing) return;
     leave();
     playing = false;
@@ -468,10 +604,12 @@ export function createCrew(api, ctx) {
     releaseCamera?.();
     releaseCamera = null;
     eye = null;
-    // back off the quarter of the ship you were on
-    const m = body.on ? frameOfShip(body.on) : null;
+    // back off the quarter of the ship you were on (unless a seat's view takes over: firstPerson.leave)
+    const m = onShip() ? frameOfShip(w.ship) : null;
     const fov = orbitFov != null ? { fov: orbitFov } : {};
-    if (m) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target), ...fov });
+    if (keepCamera) {
+      // the view that asked takes the camera
+    } else if (m) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target), ...fov });
     else api.camera.set(fov);
     followAt = null;
     api.presence.set("crew", undefined);
@@ -489,15 +627,19 @@ export function createCrew(api, ctx) {
   function take(id, handlers = {}) {
     if (!playing) start();
     leave();
+    // S1: at the station's stand spot (its link in her mesh), facing forward
     const ship = shipOf(api.scene(), id);
     const m = ship ? frameOfShip(ship) : null;
-    let spot = null;
-    if (m) {
-      spot = standSpot(id, m);
-      if (spot) setBody(ship, spot, 0, -0.2);
+    const at = m ? localOf(m, id) : null;
+    const kind = ship ? Object.entries(partsOf(api.scene(), ship)).find(([, v]) => v === id)?.[0] : null;
+    const r = ship ? walker.takeStation(env, ship, id, at ? walker.behind(at, walker.standOff(kind)) : null) : null;
+    if (r) {
+      w = r.state;
+      person.yaw = r.yaw;
+      person.pitch = -0.2;
     }
     keys.clear();
-    const s = { id, handlers, spot, disarm: null };
+    const s = { id, handlers, disarm: null };
     station = s;
     s.disarm = api.arm(
       {
@@ -527,28 +669,70 @@ export function createCrew(api, ctx) {
     publish(true);
   }
 
-  /** Step away from the station you're at. */
+  /** Step away from the station you're at (S2: walking where you stood). */
   function leave() {
     const s = station;
     if (!s) return;
     station = null;
+    w = walker.leaveStation(w);
     s.disarm?.();
     left(s);
   }
 
-  /** Climb aboard by a ship's ladder (from the water): on deck at its top, facing inboard. */
+  /** Climb aboard by a ship's ladder (from the water, L1 then L2): on deck at its top, facing inboard. */
   function board(shipId) {
     const m = frameOfShip(shipId);
-    if (!m) return false;
+    if (!m || !env.mesh(shipId)) return false;
     if (!playing) start();
     leave();
-    const ladder = ctx.sim?.stationsOf?.(shipId)?.ladder;
-    const at = ladder ? localOf(m, ladder) : null;
-    if (at) setBody(shipId, groundAt(m, ladderTop(at), ladder), at[0] >= 0 ? Math.PI / 2 : -Math.PI / 2);
-    else setBody(shipId, deckSpot(shipId, m), 0);
+    const up = walker.climb(env, shipId);
+    if (up) {
+      const r = walker.step(up, STILL, person.yaw, 0, env);
+      w = r.state;
+      person.yaw = r.yaw;
+    } else {
+      w = walker.spawnOn(env, shipId);
+      person.yaw = 0;
+    }
+    checked();
     publish(true);
     return true;
   }
+
+  // ─── tabletop's seats (firstPerson, a late-bound hand-off: tabletop/README.md) ───
+
+  const firstPerson = {
+    /**
+     * First person, standing at a seat: walking at the projection (P1) of
+     * the seat's eye, dropped by a seated eye's height, on the ship its
+     * frame is aboard; facing what its view looks at. false if it can't.
+     */
+    enter({ eye, target, frame } = {}) {
+      const ship = frame ? shipOf(api.scene(), frame) : null;
+      const m = ship ? frameOfShip(ship) : null;
+      if (!m || !Array.isArray(eye) || !env.mesh(ship)) return false;
+      const local = apply(invert(m), eye);
+      const next = walker.place(env, ship, [local[0], local[1] - walker.WALKER.seatedEye, local[2]]);
+      if (!next || next.mode === "boarding") return false;
+      if (!playing) start();
+      leave();
+      w = next;
+      if (Array.isArray(target)) {
+        const t = apply(invert(m), target);
+        const d = [t[0] - local[0], t[1] - local[1], t[2] - local[2]];
+        if (w.mode !== "swimming") person.yaw = Math.atan2(-d[0], -d[2]);
+        else person.yaw = Math.atan2(-d[0], -d[2]) + headingOf(m);
+        person.pitch = Math.max(-1.2, Math.min(1.2, Math.atan2(d[1], Math.hypot(d[0], d[2]))));
+      }
+      checked();
+      publish(true);
+      return true;
+    },
+    /** End first person, the walker left where it was: the seat's view takes the camera. */
+    leave() {
+      stop({ keepCamera: true });
+    },
+  };
 
   // ─── everyone else ──────────────────────────────────────────────────────
 
@@ -656,38 +840,56 @@ export function createCrew(api, ctx) {
         playing,
         paused,
         free,
-        on: body.on,
-        position: [...body.feet],
-        yaw: body.yaw,
-        pitch: body.pitch,
+        on: onShip(),
+        position: feetNow(),
+        yaw: person.yaw,
+        pitch: person.pitch,
         eye: playing ? eye && [...eye] : (api.camera.get()?.position ?? null),
         station: station?.id ?? null,
-        swimming: playing && placed && body.on == null,
+        swimming: playing && w?.mode === "swimming",
+        mode: w?.mode ?? null,
         hint: station?.handlers.hint?.() ?? null,
       };
     },
     take,
     leave,
     board,
+    firstPerson,
+    /** For probes and the checks: a ship's navmesh and what it was baked from ({ mesh, input }), and the walker's state. */
+    nav: (ship) => {
+      const mesh = meshOf(ship);
+      const n = navs.get(ship);
+      return mesh ? { mesh, input: n?.input ?? null } : null;
+    },
+    walker: () => w,
     /** One frame (play.js runs it after the ships have moved): walk or follow the ship, and draw everyone else. */
     tick(dt) {
+      frameNo++;
       const d = Math.min(dt, 0.05);
       if (playing) walk(d);
       else follow();
       drawPeers(d);
     },
     /** Put the body somewhere: `position` local to ship `on`, else in the world (a respawn; probes). */
-    place(on, position, yaw = body.yaw, pitch = body.pitch) {
+    place(on, position, yaw = person.yaw, pitch = person.pitch) {
       leave();
-      if (on == null) inWater(position, [0, 0, 0], yaw);
-      else setBody(on, position, yaw, pitch);
-      body.pitch = pitch;
+      if (on == null) inWater(position, yaw);
+      else {
+        // P1: projected onto her mesh (over the water: swimming there)
+        w = walker.place(env, on, position);
+        const m = frameOfShip(on);
+        person.yaw = w.mode === "swimming" && m ? yaw + headingOf(m) : yaw;
+      }
+      person.pitch = pitch;
+      if (w.mode !== "boarding") checked();
     },
     update(s) {
+      version++;
       if (station && !s.objects?.[station.id]) leave();
     },
     dispose() {
       stop();
+      for (const n of navs.values()) clearTimeout(n.timer);
       riding?.off?.();
       riding = null;
       for (const a of avatars.values()) a.mat.dispose();
