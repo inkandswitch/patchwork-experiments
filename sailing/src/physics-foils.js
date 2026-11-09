@@ -76,3 +76,105 @@ export function sailCD(alpha, cl, aspect) {
   const flogging = 0.12 * (1 - smoothstep(0, 10 * DEG, alpha));
   return 0.04 + flogging + (cl * cl) / (Math.PI * aspect * 0.85) + 1.15 * s * s * smoothstep(10 * DEG, 50 * DEG, alpha);
 }
+
+// ─── foils from a planform (the rig contract's §6.4) ────────────────────
+// Only a ship whose rig carries the contract (spec.rig) flies these; the
+// functions above stay what every other ship flies.
+
+/**
+ * A planform's effective aspect ratio at heel (§6.4): the hull is an end
+ * plate (k = 2) that works less as she heels, AR_geom·(1 + (k − 1)·cos²φ).
+ */
+export function planformAspect(arGeom, endPlate, cosHeel) {
+  return arGeom * (1 + (endPlate - 1) * cosHeel * cosHeel);
+}
+
+/** Helmbold's lift slope (per radian) with the half-chord sweep: `secHalf2` is 1 + tan²Λ½. */
+export function planformSlope(aspect, secHalf2 = 1) {
+  return aspect > 0 ? (2 * Math.PI * aspect) / (2 + Math.sqrt(aspect * aspect * secHalf2 + 4)) : 0;
+}
+
+/**
+ * A planform foil's lift at α (0..π, as foilCL's): the contract's
+ * a·α / (1 + (a·α/CLmax)⁸)^⅛ with CLmax = a·stall up to its stall, so
+ * wherever the aid's predictions are (unstalled) it is §6.4 exactly; past
+ * the stall it goes over 10° to a flat plate's, as foilCL does, because a
+ * sim also meets a foil sideways or backwards. Not above what it had at the
+ * stall, though: a stubby keel's attached lift is less than a plate's, and
+ * stalling mustn't add to it (§6.4: past the stall CL saturates).
+ */
+export function planformCL(alpha, slope, stall = STALL) {
+  const a = alpha > HALF_PI ? Math.PI - alpha : alpha;
+  const lin = slope * a;
+  const clMax = slope * stall;
+  const attached = clMax > 0 ? lin / Math.pow(1 + Math.pow(lin / clMax, 8), 0.125) : 0;
+  if (a <= stall) return attached;
+  const atStall = clMax / 1.0905077326652577; // 2^⅛: the curve's value at the stall
+  const plate = Math.min(atStall, 0.8 * Math.sin(2 * a));
+  const w = smoothstep(stall, stall + 10 * DEG, a);
+  return attached * (1 - w) + plate * w;
+}
+
+/**
+ * A planform foil's drag: its section's skin friction `cd0` (the contract's
+ * appendage friction, 2·C_f·(1 + 2t/c + 60(t/c)⁴), at its chord's Reynolds
+ * number) and its own induced drag at its effective aspect ratio; a flat
+ * plate's once stalled; backwards costs more, as foilCD's.
+ */
+export function planformCD(alpha, cl, aspect, cd0, stall = STALL) {
+  const a = alpha > HALF_PI ? Math.PI - alpha : alpha;
+  if (alpha > HALF_PI) cd0 *= 4;
+  const attached = cd0 + (aspect > 0 ? (cl * cl) / (Math.PI * aspect) : 0);
+  if (a <= stall) return attached;
+  const plate = cd0 + 1.2 * Math.sin(a) * Math.sin(a);
+  const w = smoothstep(stall, stall + 10 * DEG, a);
+  return attached * (1 - w) + plate * w;
+}
+
+/** ITTC '57's skin friction coefficient at a Reynolds number (held at 1e5 below it). */
+export function ittc57(re) {
+  const lg = Math.log10(re > 1e5 ? re : 1e5) - 2;
+  return 0.075 / (lg * lg);
+}
+
+// ─── sails from the rig contract (§6.2) ─────────────────────────────────
+// Only a ship whose rig contract states its sails (spec.rig.sails) flies
+// these; sailCL and sailCD above stay what every other ship flies.
+
+/** An angle in degrees, into (−180°, 180°]. */
+export function wrap180(a) {
+  const r = ((((a + 180) % 360) + 360) % 360) - 180;
+  return r === -180 ? 180 : r;
+}
+
+/** The attached curve's saturation, x/(1 + x⁴)^¼: linear at small x, 1 at large. */
+const sat = (x) => x / Math.pow(1 + x * x * x * x, 0.25);
+
+/**
+ * One sail's CL and CDv (§6.2), into out[0] and out[1]: `k` its family's
+ * constants (`sails[].model`: alpha0, clMax, clBack, cdp, kv, stall, width,
+ * cn90, ease; degrees), `slope` its lift slope per radian (Helmbold on
+ * 2·luff²/area), `alphaDeg` the angle of attack, `sheetDeg` its sheeting
+ * angle (the easing terms read |δ|), `cnExp` the separated normal force's
+ * exponent (`sailModel.cnExp`). Unflattened, before any interaction (§6.3).
+ * @param {Float64Array | number[]} out
+ */
+export function rigSailCoeffs(out, k, slope, alphaDeg, sheetDeg, cnExp = 0.3) {
+  const al = wrap180(alphaDeg);
+  const sh = Math.abs(sheetDeg);
+  const e = k.ease;
+  const es = e ? smoothstep(e.from, e.to, sh) : 0;
+  const loss = e ? 1 - e.loss * es : 1;
+  const clMax = k.clMax * loss, clBack = k.clBack * loss;
+  const d = (al - k.alpha0) * DEG;
+  const cla = d >= 0 ? clMax * sat((slope * d) / clMax) : -clBack * sat((slope * -d) / clBack);
+  const a = al * DEG;
+  const s = Math.abs(Math.sin(a));
+  const cn = k.cn90 * Math.pow(s, cnExp);
+  const cls = cn * Math.cos(a) * (a < 0 ? -1 : 1);
+  const cds = cn * s;
+  const sig = smoothstep(k.stall, k.stall + k.width, Math.abs(al - k.alpha0));
+  out[0] = (1 - sig) * cla + sig * cls;
+  out[1] = k.cdp + (k.kv * cla * cla + (e ? e.drag * es : 0)) * (1 - sig) + sig * cds;
+  return out;
+}
