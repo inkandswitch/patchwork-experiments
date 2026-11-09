@@ -20,7 +20,7 @@
 // metadata does, so the hand snaps it to the same stand the bin does.
 
 import { FIT, LIFT, STAND, TAGS, partGLB } from "./ship.js";
-import { ANCHOR, FLOAT, HELM, HOOK, LADDER, SAIL, SEA, SHIP } from "./traits.js";
+import { ANCHOR, FLOAT, HELM, HOOK, LADDER, MAINSHEET, SAIL, SEA, SHIP } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, multiply, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
@@ -49,18 +49,23 @@ export const PIECES = Object.freeze({
     { kind: "anchor", name: "Anchor", traits: { [HOOK]: {} }, at: sub(FIT.anchor.position, FIT.windlass.position) },
   ],
   ladder: [{ kind: "ladder", name: "Ladder", traits: { [LADDER]: {} } }],
+  // the sheet led to the cockpit: a station to stand at and trim (and hoist) the ship's sail from
+  mainsheet: [{ kind: "mainsheet", name: "Mainsheet", traits: { [MAINSHEET]: {} } }],
   redBuoy: [{ kind: "redBuoy", name: "Red buoy", traits: { [FLOAT]: {} } }],
   greenBuoy: [{ kind: "greenBuoy", name: "Green buoy", traits: { [FLOAT]: {} } }],
   islet: [{ kind: "islet", name: "Islet" }],
 });
 
 /** What goes aboard the sloop, each at the stand her hull has for it (ship.js STAND: her connectors). */
-export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder"]);
+export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mainsheet"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
 
-/** The key of a kind's GLB in the scene's files (doc.assets). Bump its version when its drawing changes. */
-export const fileKey = (kind) => `sailing/${kind}@1`;
+/** Each kind's drawing's version, where it isn't 1: the hull's 2 has a stand for the mainsheet. */
+const VERSIONS = Object.freeze({ hull: 2 });
+
+/** The key of a kind's GLB in the scene's files (doc.assets). Bump its version (VERSIONS) when its drawing changes. */
+export const fileKey = (kind) => `sailing/${kind}@${VERSIONS[kind] ?? 1}`;
 
 /** A kind's GLB, as ctx.file makes it: its bytes, and the hint an importer would write. */
 export function makeFile(kind) {
@@ -272,6 +277,7 @@ export const mast = part("mast");
 export const wheel = part("wheel");
 export const windlass = part("windlass");
 export const ladder = part("ladder");
+export const mainsheet = part("mainsheet");
 export const redBuoy = part("redBuoy");
 export const greenBuoy = part("greenBuoy");
 export const islet = part("islet");

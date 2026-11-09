@@ -507,8 +507,8 @@ export function createSim(api, ctx) {
       return streamed[id] ?? null;
     },
     stationsOf(id) {
-      const { helm, sail, anchor, ladder } = parts(api.scene(), id);
-      return { helm, sail, anchor, ladder };
+      const { helm, sail, anchor, mainsheet, ladder } = parts(api.scene(), id);
+      return { helm, sail, anchor, mainsheet, ladder };
     },
     value: (id) => value(id),
     input(id, partial) {

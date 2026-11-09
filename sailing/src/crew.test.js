@@ -1,10 +1,19 @@
-// People aboard: the frame maths (pure), riding a moving deck, and the crew
-// against a stand-in for the stage's api (arms, the camera, presence, rays).
-import { describe, it, expect, vi } from "vitest";
-import { behind, boardsOn, createCrew, deckStep, ease, ladderTop, overboard, placeOf, reframe } from "./crew.js";
+// People aboard: the frame maths (pure), the input adapter (what's baked into
+// her navmesh), and the crew against a stand-in for the stage's api (arms,
+// the camera, presence, her content as triangles). Walking itself is
+// walker.test.js's; here, that the crew drives it: invariant I is asserted
+// after every step (__SAILING_ASSERT__).
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, reframe, trianglesOf } from "./crew.js";
+import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
 import { carryableAboard, shipOf } from "./traits.js";
+import { boxTriangles } from "./navmesh.js";
 import { BODY, DECK, SWIM } from "./walk.js";
+import { meshNode } from "./test/fakes.js";
+
+beforeAll(() => (globalThis.__SAILING_ASSERT__ = true));
+afterAll(() => delete globalThis.__SAILING_ASSERT__);
 
 // ─── matrices ───────────────────────────────────────────────────────────────
 
@@ -77,17 +86,6 @@ describe("frames", () => {
     expect(shipOf(scene, "buoy")).toBe(null);
   });
 
-  it("overboard: fallen into the water, or well under it", () => {
-    expect(overboard([0, -0.1, 0], false, 0)).toBe(true);
-    expect(overboard([0, 0.7, 0], true, 0.3)).toBe(false);
-    expect(overboard([0, -0.1, 0], true, 0)).toBe(false); // a cockpit sole a wave's crest above
-    expect(overboard([0, -1, 0], true, 0)).toBe(true);
-    // in the air over the cockpit, a crest outside higher than your feet: still aboard
-    expect(overboard([0, -0.1, 0], false, 0, true)).toBe(false);
-    // but sunk, deck or no deck
-    expect(overboard([0, -2, 0], true, 0, true)).toBe(true);
-  });
-
   it("stepping across onto another deck: the same place in the world, in the new ship's frame", () => {
     const a = matrix([0, 0, 0], [0, 0.3, 0]);
     const b = matrix([5, 0.2, -3], [0, -1.1, 0.05]);
@@ -96,98 +94,6 @@ describe("frames", () => {
     expect(close(apply(b, r.feet), apply(a, body.feet))).toBe(true);
     expect(close(rotate(b, r.vel), rotate(a, body.vel))).toBe(true);
     expect(r.yaw + headingOf(b)).toBeCloseTo(body.yaw + headingOf(a));
-  });
-});
-
-// ─── riding a deck ──────────────────────────────────────────────────────────
-
-/** Boxes in a frame's local space, answered as the stage's rays would be in the world. */
-function deckIn(boxesLocal, mOf) {
-  const hitBox = (o, d, b, max) => {
-    let t0 = 0;
-    let t1 = max;
-    let n = null;
-    for (let i = 0; i < 3; i++) {
-      if (Math.abs(d[i]) < 1e-12) {
-        if (o[i] < b.min[i] || o[i] > b.max[i]) return null;
-        continue;
-      }
-      let a = (b.min[i] - o[i]) / d[i];
-      let c = (b.max[i] - o[i]) / d[i];
-      const side = -Math.sign(d[i]);
-      if (a > c) [a, c] = [c, a];
-      if (a > t0) {
-        t0 = a;
-        n = [0, 0, 0];
-        n[i] = side;
-      }
-      t1 = Math.min(t1, c);
-      if (t0 > t1) return null;
-    }
-    return { distance: t0, normal: n };
-  };
-  const cast = (o, d, max) => {
-    const m = mOf();
-    const lo = apply(invert(m), o);
-    const ld = unrotate(m, d);
-    const h = boxesLocal.map((b) => hitBox(lo, ld, b, max)).filter(Boolean).sort((a, b) => a.distance - b.distance)[0];
-    if (!h) return null;
-    const p = apply(m, lo.map((v, i) => v + ld[i] * h.distance));
-    return { distance: h.distance, normal: h.normal ? rotate(m, h.normal) : null, point: p };
-  };
-  return {
-    down: (o, max) => cast(o, [0, -1, 0], max)?.distance ?? null,
-    ahead: (o, d, max) => cast(o, d, max),
-    cast,
-  };
-}
-
-const DECKBOX = { min: [-2, 0, -6], max: [2, 1.2, 6] };
-const STILL = { forward: 0, strafe: 0 };
-
-describe("riding a moving deck", () => {
-  it("a body standing still stays where it stood while the ship sails, heaves and rolls", () => {
-    let t = 0;
-    // sailing at 3 m/s and speeding up, heaving, rolling ±9°, pitching, turning
-    const mOf = () => matrix([3 * t + 0.4 * t * t, 0.4 * Math.sin(1.3 * t), -t], [0.06 * Math.sin(0.9 * t), 0.5 + 0.1 * t, 0.16 * Math.sin(1.7 * t)]);
-    const world = deckIn([DECKBOX], mOf);
-    let body = { feet: [0.5, 1.2, 1], vel: [0, 0, 0], onGround: true, yaw: 0 };
-    for (let i = 0; i < 600; i++) {
-      t += 1 / 60;
-      body = { ...body, ...deckStep(body, STILL, mOf(), 1 / 60, world) };
-    }
-    expect(body.onGround).toBe(true);
-    expect(body.feet[0]).toBeCloseTo(0.5, 2);
-    expect(body.feet[1]).toBeCloseTo(1.2, 2);
-    expect(body.feet[2]).toBeCloseTo(1, 2);
-  });
-
-  it("forward is toward the bow whichever way the ship heads, and the walk is the deck's", () => {
-    let t = 0;
-    const mOf = () => matrix([5 * t, 0, 0], [0, 2.2, 0]);
-    const world = deckIn([DECKBOX], mOf);
-    let body = { feet: [0, 1.2, 4], vel: [0, 0, 0], onGround: true, yaw: 0 };
-    for (let i = 0; i < 60; i++) {
-      t += 1 / 60;
-      body = { ...body, ...deckStep(body, { forward: 1, strafe: 0 }, mOf(), 1 / 60, world) };
-    }
-    expect(Math.abs(body.feet[0])).toBeLessThan(1e-6);
-    expect(body.feet[2]).toBeLessThan(4 - 0.8 * DECK.walk);
-    expect(body.feet[2]).toBeGreaterThan(4 - DECK.walk);
-  });
-
-  it("keeps to the deck at its edge, rolling", () => {
-    let t = 0;
-    const mOf = () => matrix([0, 0, 0], [0, 0, 0.12 * Math.sin(2 * t)]);
-    const world = deckIn([DECKBOX], mOf);
-    let body = { feet: [0, 1.2, 0], vel: [0, 0, 0], onGround: true, yaw: 0 };
-    for (let i = 0; i < 300; i++) {
-      t += 1 / 60;
-      body = { ...body, ...deckStep(body, { forward: 0, strafe: 1 }, mOf(), 1 / 60, world) };
-    }
-    expect(body.onGround).toBe(true);
-    expect(body.feet[0]).toBeLessThan(2);
-    expect(body.feet[0]).toBeGreaterThan(1.3);
   });
 });
 
@@ -265,8 +171,10 @@ const THREE = {
   },
 };
 
-// The ship: a hull box with a wheel on it (at z 3, axle 1.6 m up) and a ladder over the starboard side.
+// The ship: a hull box, its deck 1.2 up, with a rail 0.62 high along each side (so you don't walk
+// off her), a wheel on it (at z 3, axle 1.6 m up) and a ladder over the starboard side.
 const HULL = { min: [-2, -1, -6], max: [2, 1.2, 6] };
+const HULL_TRIS = [...boxTriangles(HULL.min, HULL.max), ...boxTriangles([1.9, 1.2, -6], [1.95, 1.82, 6]), ...boxTriangles([-1.95, 1.2, -6], [-1.9, 1.82, 6])];
 const WHEEL_AT = [0, 1.6, 3];
 const LADDER_AT = [2, 1.2, 0.4];
 
@@ -282,13 +190,19 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     return out;
   };
   const worlds = { hull: () => ship.m, wheel: () => local(WHEEL_AT)(ship.m), ladder: () => local(LADDER_AT)(ship.m) };
-  const deck = deckIn([HULL], () => ship.m);
   const scene = {
-    objects: { hull: { traits: { "sailing.ship": {} } }, wheel: { traits: { "sailing.helm": { angle: 0 } } }, ladder: {} },
+    ids: ["hull", "wheel", "ladder"],
+    objects: {
+      hull: { traits: { "sailing.ship": {} } },
+      wheel: { traits: { "sailing.helm": { angle: 0 } }, transform: { position: WHEEL_AT } },
+      ladder: { traits: { "sailing.ladder": {} }, transform: { position: LADDER_AT } },
+    },
     parents: new Map([["wheel", "hull"], ["ladder", "hull"]]),
   };
+  const contents = { hull: { loaded: true, box: { min: [-2, -1, -6], max: [2, 1.82, 6] }, extras: {}, root: meshNode(HULL_TRIS) } };
   const s = {
     ship,
+    contents,
     arms: [],
     loops: [],
     presence: {},
@@ -313,12 +227,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     listen: (t, type, fn, o) => t.addEventListener(type, fn, o),
     scene: () => scene,
     worldOf: (id) => worlds[id]?.() ?? null,
-    content: () => null,
-    raycast: (o, d, { far = Infinity, skip } = {}) => {
-      if (skip?.("hull")) return null;
-      const h = deck.cast(o, d, far);
-      return h ? { id: "hull", ...h } : null;
-    },
+    content: (id) => contents[id] ?? null,
     camera: {
       touched: () => touched,
       get: () => ({ ...s.cam }),
@@ -373,7 +282,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   return s;
 }
 
-describe("the crew", () => {
+describe("the crew", { timeout: 60_000 }, () => {
   it("before coming aboard, nothing is held and a click comes aboard: an arm with the lock, the camera held", () => {
     const s = stage();
     const crew = s.make();
@@ -700,6 +609,146 @@ describe("the crew", () => {
     expect(close(s.cam.target, [10, 2.5, 5])).toBe(true);
     s.frames(3);
     expect(s.sets.length).toBe(1); // once; then it only follows
+  });
+});
+
+describe("what's baked into her navmesh (the input adapter)", { timeout: 60_000 }, () => {
+  const scene = {
+    ids: ["hull", "mast", "rig", "boom2", "wheel", "windlass", "anchor", "table", "card", "dice", "hidden", "buoy"],
+    objects: {
+      hull: { traits: { "sailing.ship": {} } },
+      mast: { tags: ["sailing.mast"] },
+      rig: { traits: { "sailing.sail": {} } },
+      boom2: {}, // something hung under the rig: it swings with it
+      wheel: { traits: { "sailing.helm": {} } },
+      windlass: { traits: { "sailing.anchor": {} } },
+      anchor: { traits: { "sailing.hook": {} } },
+      table: { locked: true },
+      card: { tags: ["card"] },
+      dice: {},
+      hidden: { tags: ["sailing.mast"], visible: false },
+      buoy: { traits: { "sailing.float": {} } },
+    },
+    parents: new Map([["mast", "hull"], ["rig", "mast"], ["boom2", "rig"], ["wheel", "hull"], ["windlass", "hull"], ["anchor", "windlass"], ["table", "hull"], ["card", "table"], ["dice", "hull"], ["hidden", "hull"]]),
+  };
+
+  it("her own things and locked furniture; not the sail's subtree, the anchor, loose pieces, hidden things, or what's not aboard", () => {
+    expect(bakedObjects(scene, "hull")).toEqual([
+      { id: "hull", swept: false },
+      { id: "mast", swept: false },
+      { id: "table", swept: false },
+      { id: "wheel", swept: true },
+      { id: "windlass", swept: false },
+    ]);
+  });
+
+  it("a content root's triangles at its rest pose, its nodes' transforms composed", () => {
+    const child = meshNode([0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    child.position = { x: 0, y: 2, z: 0 };
+    const root = { position: { x: 10, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 }, children: [child, { ...meshNode([5, 5, 5, 6, 5, 5, 5, 5, 6]), visible: false }] };
+    expect(trianglesOf(root)).toEqual([10, 4, 0, 12, 4, 0, 10, 4, 2]);
+  });
+
+  it("the bake key changes when a part of hers moves or loads, and not when a loose card does", () => {
+    const s = stage();
+    const k0 = navKey(s.api, "hull");
+    expect(k0).toBeTruthy();
+    const scene2 = s.api.scene();
+    scene2.objects.card = { tags: ["card"], transform: { position: [0, 1.2, 1] } };
+    scene2.ids.push("card");
+    scene2.parents.set("card", "hull");
+    expect(navKey(s.api, "hull")).toBe(k0);
+    scene2.objects.card.transform.position = [0.5, 1.2, 1];
+    expect(navKey(s.api, "hull")).toBe(k0);
+    scene2.objects.wheel.transform = { position: [0, 1.6, 2.5] };
+    expect(navKey(s.api, "hull")).not.toBe(k0);
+    s.contents.hull = { ...s.contents.hull, loaded: false };
+    expect(navKey(s.api, "hull")).toBe(null); // nothing to stand on until her model's in
+  });
+
+  it("her input: her triangles in her body frame, and seeds aft of each station and at her ladder", () => {
+    const s = stage();
+    const input = navInput(s.api, "hull");
+    expect(input.triangles.length).toBe(HULL_TRIS.length);
+    expect(input.seeds.map((x) => [x.kind, x.id])).toEqual([["spawn", null], ["station", "wheel"], ["ladder", "ladder"]]);
+    expect(input.seeds[0].at).toEqual(behind(WHEEL_AT));
+    expect(input.seeds[2].at).toEqual(ladderTop(LADDER_AT));
+  });
+});
+
+describe("the crew's walker", { timeout: 60_000 }, () => {
+  it("a part moved under you rebakes off the frame loop; until it lands the old mesh is used, then you're projected onto the new one", async () => {
+    const s = stage();
+    const crew = s.make();
+    crew.start();
+    s.frames(2);
+    const before = crew.nav("hull").mesh;
+    // a box set down where you stand (a locked crate): her parts changed
+    s.api.scene().objects.crate = { locked: true, transform: { position: [0, 1.2, 3.6] } };
+    s.api.scene().ids.push("crate");
+    s.api.scene().parents.set("crate", "hull");
+    s.contents.crate = { loaded: true, box: null, extras: {}, root: meshNode(boxTriangles([-0.4, 0, -0.4], [0.4, 1.5, 0.4])) };
+    crew.update(s.api.scene());
+    s.frames(1);
+    expect(crew.nav("hull").mesh).toBe(before); // not yet
+    await new Promise((r) => setTimeout(r, 0));
+    s.frames(1);
+    expect(crew.nav("hull").mesh).not.toBe(before);
+    const p = crew.me().position;
+    expect(Math.max(Math.abs(p[0]), Math.abs(p[2] - 3.6))).toBeGreaterThan(0.4 + DECK.radius);
+    expect(p[1]).toBeCloseTo(1.2, 5);
+  });
+
+  it("a mainsheet aboard: its stand spot (aft of it) is a seed of her bake, and taking it stands you there; leaving, you walk from there", () => {
+    const s = stage();
+    const sc = s.api.scene();
+    sc.objects.sheet = { traits: { "sailing.mainsheet": {} }, transform: { position: [0, 1.2, 0] } };
+    sc.ids.push("sheet");
+    sc.parents.set("sheet", "hull");
+    expect(navInput(s.api, "hull").seeds.map((x) => [x.kind, x.id])).toEqual([["spawn", null], ["station", "wheel"], ["station", "sheet"], ["ladder", "ladder"]]);
+    const crew = s.make();
+    crew.start();
+    s.frames(2);
+    const leave = crew.take("sheet", {});
+    s.frames(1);
+    expect(crew.me().station).toBe("sheet");
+    expect(crew.walker().mode).toBe("station");
+    const p = crew.me().position;
+    expect(p[0]).toBeCloseTo(0, 1);
+    expect(p[1]).toBeCloseTo(1.2, 5);
+    expect(p[2]).toBeCloseTo(behind([0, 1.2, 0], standOff("mainsheet"))[2], 1); // 0.35 aft: its block at your feet
+    expect(crew.me().yaw).toBe(0); // facing forward, over it
+    // W does nothing while you're at it
+    s.key("KeyW");
+    s.frames(10);
+    expect(crew.me().position).toEqual(p);
+    leave();
+    expect(crew.me().station).toBe(null);
+    expect(crew.walker().mode).toBe("walking");
+    expect(crew.me().position).toEqual(p);
+  });
+
+  it("25: firstPerson.enter: on your feet at the projection of the seat's eye, facing what its view looks at; leave hands the camera back", () => {
+    const s = stage({ shipAt: [10, 0, 0], yaw: 0.5 });
+    const crew = s.make();
+    const seatEye = apply(s.ship.m, [1, 1.2 + 1.15, -2]); // a seated eye over her deck, in the world
+    const target = apply(s.ship.m, [1, 1.2, -4]); // looking forward along her
+    expect(crew.firstPerson.enter({ seat: "s1", eye: seatEye, target, frame: "hull" })).toBe(true);
+    s.frames(1);
+    const me = crew.me();
+    expect(me).toMatchObject({ playing: true, on: "hull", swimming: false });
+    expect(me.position[0]).toBeCloseTo(1, 1);
+    expect(me.position[1]).toBeCloseTo(1.2, 5);
+    expect(me.position[2]).toBeCloseTo(-2, 1);
+    expect(me.yaw).toBeCloseTo(0, 5); // forward, to her bow
+    expect(me.pitch).toBeLessThan(0);
+    const sets = s.sets.length;
+    crew.firstPerson.leave();
+    expect(crew.me().playing).toBe(false);
+    expect(s.sets.length).toBe(sets); // the seat's view takes the camera, not her quarter
+    expect(crew.me().position).toEqual(me.position); // and the walker is where it was
+    // a seat not aboard a ship: no
+    expect(crew.firstPerson.enter({ seat: "s2", eye: [0, 1, 0], target: [0, 1, -1], frame: null })).toBe(false);
   });
 });
 

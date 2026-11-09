@@ -183,9 +183,9 @@ describe("the sloop", () => {
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
     expect(hull.traits).toEqual({ [SHIP]: {} });
     const aboard = Object.values(doc.objects).filter((o) => o.parent === id).map((o) => o.name).sort();
-    expect(aboard).toEqual(["Ladder", "Mast", "Wheel", "Windlass"]);
+    expect(aboard).toEqual(["Ladder", "Mainsheet", "Mast", "Wheel", "Windlass"]);
     const p = partsOf(fakeWorld(doc).scene(), id);
-    for (const k of ["helm", "sail", "anchor", "ladder", "hook"]) expect(p[k]).not.toBeNull();
+    for (const k of ["helm", "sail", "anchor", "mainsheet", "ladder", "hook"]) expect(p[k]).not.toBeNull();
   });
 
   it("brings her sea when the scene has none, and leaves one that's there alone", async () => {

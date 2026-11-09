@@ -267,7 +267,7 @@ describe("createSim on a stage", () => {
     expect(writes).toBeGreaterThanOrEqual(2);
     expect(writes).toBeLessThanOrEqual(4);
     expect(doc.objects[ids.hull].traits[SHIP].motion.velocity).toHaveLength(3);
-  });
+  }, 30_000); // 25 s of her at 60 Hz: about 4.5 s alone, more beside the rest of the suite
 
   it("the station holder's input reaches the physics: hard to starboard turns her to starboard", async () => {
     const headingAfter = async (angle) => {
@@ -429,7 +429,8 @@ describe("createSim on a stage", () => {
     w = fakeWorld(doc, { content });
     const a = play(w.join("A"));
     const ladder = Object.keys(doc.objects).find((id) => doc.objects[id].name === "Ladder");
-    expect(a.sim.stationsOf(ids.hull)).toEqual({ helm: ids.wheel, sail: ids.rig, anchor: ids.windlass, ladder });
+    const mainsheet = Object.keys(doc.objects).find((id) => doc.objects[id].name === "Mainsheet");
+    expect(a.sim.stationsOf(ids.hull)).toEqual({ helm: ids.wheel, sail: ids.rig, anchor: ids.windlass, mainsheet, ladder });
     expect(a.sim.ships()).toEqual([ids.hull]);
   });
 

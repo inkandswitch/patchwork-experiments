@@ -1,7 +1,7 @@
 // Sailing, crewed by two people in headless Chrome.
 //
 //   (in scene/ and sailing/) pnpm build
-//   node probes/sailing-run.mjs [--shots <dir>] [--show] [--swiftshader]
+//   node probes/sailing-run.mjs [--shots <dir>] [--show] [--swiftshader] [--seed N]
 //
 // It renders on the machine's GPU: under SwiftShader two views of the ocean
 // shader run at a few frames a second, too few to see whether the hull moves
@@ -12,13 +12,25 @@
 // "Ship at sea" on the start screen and B joins. Then the two crew her:
 // - who simulates (the "sim" claim), and the other following;
 // - the hull floating and rocking on the waves, played back smoothly;
+// - at anchor, from the cockpit, the boom over B's head is in reach though
+//   its gooseneck isn't, and offers to raise the sail;
 // - B weighs the anchor at the windlass (hold F, through the use prompt);
-//   she lay with her sail down, so she falls off the wind; B raises the
-//   sail looking at the mast;
-// - B takes the helm, A finds it taken, B bears away onto a beam reach and
-//   she picks up speed; B lets go and A can take it;
-// - A lowers the sail and she slows;
+//   she lay with her sail down, so she falls off the wind; looking at the
+//   mast B is offered the halyard (F, locking in there) and hold R, and
+//   hoists a little from there;
+// - from the wheel, the mast is out of reach and says which station to take
+//   (you're in the cockpit already); B takes the helm and raises the sail
+//   from it (hold R) with the wheel over to bear away, A finds the helm taken,
+//   B bears away onto a beam reach and she picks up speed; B lets go and A
+//   can take it;
+// - at the mainsheet in the cockpit B hauls in (hold Q), takes it (F) and
+//   eases (E) from there;
+// - B lowers the sail (hold R) and she slows;
 // - B stands on the moving deck, and A draws B there;
+// - her navmesh, as B's view baked it from her GLBs, passes C1–C9; B walks
+//   the cockpit's edges with real keys (both sides of the well, its aft end,
+//   out onto the side deck and back, a jump at the aft end): every frame the
+//   walker's invariant holds and the feet are on her surfaces;
 // - B goes over the side, swims, and climbs the ladder back aboard;
 // - the doc hears of the hull now and then, not every frame;
 // - A, the simulator, leaves, and B carries on from where she was.
@@ -30,6 +42,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
+import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
@@ -38,14 +51,16 @@ const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? pro
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
 
-const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: "/sailing/probes/sailing-probe.html", width: 1616, height: 530, show: process.argv.includes("--show"), gpu: !process.argv.includes("--swiftshader"), timeout: 900_000 });
+// the page seeds Math.random (the template's sea and wind): runs repeat, but for real time
+const SEED = Number(arg("--seed") ?? 1);
+const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: `/sailing/probes/sailing-probe.html?seed=${SEED}`, width: 1616, height: 530, show: process.argv.includes("--show"), gpu: !process.argv.includes("--swiftshader"), timeout: 900_000 });
 // every page call has a deadline, so a hang says where it was
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(expr, ms, 60);
 const list = checklist();
 const { check } = list;
-const report = { checks: list.checks, details: list.details, shots: [], measured: {} };
+const report = { checks: list.checks, details: list.details, shots: [], measured: { seed: SEED } };
 const EXPECTED = /KHR_parallel_shader_compile|pointer lock refused|GPU stall due to ReadPixels/;
 const errorsNow = async () => (await P("errors")).filter((e) => !EXPECTED.test(e));
 const shot = async (name, w, clip) => {
@@ -71,7 +86,7 @@ const headingOf = (m) => Math.atan2(m[8], m[10]); // yaw of the bow (−Z)
 const compassOf = (m) => Math.atan2(-m[8], m[10]);
 
 // keys, sent to whichever view has focus
-const KEY = { q: ["q", "KeyQ", 81], e: ["e", "KeyE", 69], f: ["f", "KeyF", 70], d: ["d", "KeyD", 68], a: ["a", "KeyA", 65], w: ["w", "KeyW", 87], s: ["s", "KeyS", 83], Escape: ["Escape", "Escape", 27], Enter: ["Enter", "Enter", 13] };
+const KEY = { " ": [" ", "Space", 32], r: ["r", "KeyR", 82], q: ["q", "KeyQ", 81], e: ["e", "KeyE", 69], f: ["f", "KeyF", 70], d: ["d", "KeyD", 68], a: ["a", "KeyA", 65], w: ["w", "KeyW", 87], s: ["s", "KeyS", 83], Escape: ["Escape", "Escape", 27], Enter: ["Enter", "Enter", 13] };
 const keyDown = (k) => b.send("Input.dispatchKeyEvent", { type: "keyDown", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2], ...(k.length === 1 ? { text: k } : {}) });
 const keyUp = (k) => b.send("Input.dispatchKeyEvent", { type: "keyUp", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2] });
 async function press(k, ms = 60) { await keyDown(k); await sleep(ms); await keyUp(k); await sleep(60); }
@@ -95,7 +110,8 @@ async function steer(ids, sim, want, { ms = 150_000, speed = 2, settle = 6 } = {
       const rd = await P(`read('${ids.hull}', 'b')`);
       const angle = (await P(`value('${ids.wheel}', 'b')`)).angle;
       const err = wrap(want - compassOf(m)); // + : turn to starboard
-      const goal = (rd?.speed ?? 0) < 0.3 ? -Math.sign(err) : Math.max(-1, Math.min(1, err * 1.5));
+      // going astern the rudder works backwards; stopped it does little either way, so steer as if moving
+      const goal = (rd?.speed ?? 0) < -0.2 ? -Math.sign(err) : Math.max(-1, Math.min(1, err * 1.5));
       await hold(Math.abs(goal - angle) < 0.08 ? null : goal > angle ? "d" : "a");
       const sea = (await P(`clock('${sim}')`)) - sea0;
       trace.push([n2(sea), n2(rd?.speed ?? 0), n2(err), n2(angle)]);
@@ -118,6 +134,17 @@ async function pointAt(id, w) {
   await sleep(120);
   return at;
 }
+/** Point at `id` near a world point (the boom's after end, say). */
+async function pointNear(id, w, at) {
+  const p = await P(`aimNear('${id}', '${w}', ${JSON.stringify(at)})`);
+  if (!p || p.miss) {
+    report.measured.missed = [...(report.measured.missed ?? []), { id, at, why: p }];
+    return null;
+  }
+  await b.move(p.x, p.y);
+  await sleep(120);
+  return p;
+}
 /** Focus a view: a tap on its canvas (a tap while playing is nothing; not playing, it comes aboard). */
 async function focus(w, where) {
   const c = where ?? (await P(`canvasCentre('${w}')`));
@@ -139,7 +166,7 @@ try {
   const allLoaded = await until("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 10 && a.loaded === a.total && b.loaded === b.total; })()", 40_000);
   check("every part loads in both views", allLoaded, { a: await P("loaded('a')"), b: await P("loaded('b')") });
   await until("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
-  const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast") }; })()`);
+  const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
   // where a part is on her (the hull's frame): up its chain of parents (the sail hangs from the mast), none of them turned
@@ -225,6 +252,41 @@ try {
   check("a click in B's view comes aboard: B plays (the lock refused, it plays on without)", await until("window.__p.me('b')?.playing === true && window.__p.me('b')?.on != null", 3000), await P("me('b')"));
   await until("window.__p.me('b')?.free === true", 2000);
   check("refused the lock, B's HUD says drag to look", /Drag to look/.test((await P("text('[data-k=\"hint\"]', 'b')"))[0] ?? ""), await P("text('.sail-hint', 'b')"));
+  const guide = (await P("text('[data-k=\"guide\"]', 'b')"))[0] ?? "";
+  check("walking her deck, B's HUD names her stations: the wheel, the mainsheet, the mast, the windlass", /Wheel/.test(guide) && /Mainsheet/.test(guide) && /Mast/.test(guide) && /Windlass/.test(guide), guide);
+  // at anchor, sail down: from the cockpit's forward end, the boom over B's head is in reach though its
+  // gooseneck isn't (reach is to the point looked at): it offers to raise the sail
+  {
+    // the cockpit's forward end: 3.85 m aft of the gooseneck, on the sole (the mainsheet's height)
+    const ms0 = await local(ids.mainsheet);
+    const fwdEnd = (await local(rig))[2] + 3.85;
+    // look at the point of the boom (the rig's +Z from the gooseneck) nearest the eye, and point at
+    // it; afresh each try, as the boom swings at anchor with the sail down
+    let aimC = null;
+    let verbsC = [];
+    let mR, eye, boomAt, yaw, pitch;
+    await P(`place('b', '${hull}', [0, ${ms0[1]}, ${fwdEnd}], 0, 0)`);
+    await sleep(500);
+    for (let i = 0; i < 5 && !verbsC.some((v) => v.command === "sail"); i++) {
+      const mH = await P(`worldOf('${hull}', 'b')`);
+      mR = await P(`worldOf('${rig}', 'b')`);
+      eye = (await P("me('b')")).eye;
+      const ax = [mR[8], mR[9], mR[10]];
+      const t = Math.max(0.5, Math.min(4.9, (eye[0] - mR[12]) * ax[0] + (eye[1] - mR[13]) * ax[1] + (eye[2] - mR[14]) * ax[2]));
+      boomAt = [mR[12] + t * ax[0], mR[13] + t * ax[1], mR[14] + t * ax[2]];
+      const d = boomAt.map((v, k) => v - eye[k]);
+      yaw = Math.atan2(-d[0], -d[2]) - headingOf(mH);
+      pitch = Math.atan2(d[1], Math.hypot(d[0], d[2]));
+      await P(`place('b', '${hull}', [0, ${ms0[1]}, ${fwdEnd}], ${yaw}, ${pitch})`);
+      await sleep(300);
+      aimC = await P(`aimNearest('${rig}', 'b')`);
+      if (aimC) { await b.move(aimC.x + 1, aimC.y); await b.move(aimC.x, aimC.y); await sleep(250); }
+      verbsC = await P("verbs('b')");
+    }
+    report.measured.boomLook = { hovered: await P("hovered('b')"), verbs: verbsC };
+    const gooseC = Math.hypot(eye[0] - mR[12], eye[1] - mR[13], eye[2] - mR[14]);
+    check("at anchor, from the cockpit, the boom over B's head is in reach (its gooseneck isn't): hold R Raise sail", !!aimC && aimC.distance < 2.5 && gooseC > 2.5 && verbsC.some((v) => v.command === "sail" && /Raise/.test(v.name) && !v.disabled), { aimC, verbsC, gooseneck: n2(gooseC), boomAt: r3(boomAt), eye: r3(eye), yaw: n2(yaw), pitch: n2(pitch), me: await P("me('b')"), missed: report.measured.missed });
+  }
   // stand just aft of the windlass, looking down at it
   const wl = await local(windlass);
   await P(`place('b', '${hull}', [${wl[0]}, ${wl[1]}, ${wl[2] + 0.9}], 0, -0.75)`);
@@ -252,7 +314,7 @@ try {
   const awa1 = (await P(`read('${hull}', 'b')`)).apparentWind.angle;
   check("anchor up with the sail down, she falls off the wind rather than lying head to it", fell, { awa0: n2(awa0), awa1: n2(awa1) });
   // the tack she fell off on: +1 starboard (the wind on her port side), −1 port
-  const side = awa1 < 0 ? 1 : -1;
+  let side = awa1 < 0 ? 1 : -1;
   report.measured.tack = side > 0 ? "starboard" : "port";
   // B raises the sail: looking at the mast offers the sail's verbs
   const mastAt = await local(ids.mast);
@@ -261,16 +323,40 @@ try {
   await sleep(500);
   const aimM = await pointAt(ids.mast, "b");
   const verbsM = await P("verbs('b')");
-  check("looking at the mast, B's prompt offers to raise the sail (hold F)", !!aimM && verbsM.some((v) => v.command === "sail" && /Raise/.test(v.name)), { aimM, verbsM });
-  await keyDown("f");
-  await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 10000);
-  await keyUp("f");
+  check("looking at the mast, B's prompt offers to work the halyard (F) and to raise the sail (hold R); no sheet at the mast", !!aimM && verbsM.some((v) => v.command === "halyard" && !v.disabled) && verbsM.some((v) => v.command === "sail" && /Raise/.test(v.name)) && !verbsM.some((v) => v.command === "haul"), { aimM, verbsM });
+  // F locks in at the mast: hold R raises it a little, F leaves (re-aimed if the roll took the
+  // pointer off the mast before the key landed)
+  await focus("b", aimM);
+  await press("f");
   await sleep(300);
-  check("holding F there raises it: the doc says raised 1", (await P("doc()")).objects[rig].traits["sailing.sail"].raised > 0.95, (await P("doc()")).objects[rig].traits["sailing.sail"]);
+  for (let i = 0; i < 3 && (await P("me('b')")).station !== rig; i++) {
+    const again = await pointAt(ids.mast, "b");
+    if (again) await focus("b", again);
+    await press("f");
+    await sleep(400);
+  }
+  const atHalyard = await P("me('b')");
+  check("F at the mast locks B in there (the sail's stand spot), the hint saying hold R", atHalyard.station === rig && /hold R raise sail/.test(atHalyard.hint ?? ""), atHalyard);
+  // (a little: a sail part way up, aft of her keel's centre, rounds her back up into the wind she's falling off)
+  await keyDown("r");
+  await sleep(350);
+  await keyUp("r");
+  await sleep(300);
+  const hoisted = (await P("doc()")).objects[rig].traits["sailing.sail"].raised;
+  check("holding R there hoists it: the doc has it part way up", hoisted > 0.05 && hoisted < 0.5, { hoisted });
+  await press("f");
+  await sleep(300);
+  check("F leaves the mast: walking again, the halyard's claim gone", (await P("me('b')")).station == null && !(await P("doc()")).objects[rig].claims?.halyard, await P("me('b')"));
 
   // ─── the helm ────────────────────────────────────────────────────────────
   if (section("anchor")) throw new Done();
   const wh = await local(wheel);
+  // from the wheel, the mast is out of reach: it says where to go
+  await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, 0.15)`);
+  await sleep(500);
+  const aimFar = await pointAt(ids.mast, "b");
+  const verbsFar = await P("verbs('b')");
+  check("from the wheel, looking at the mast: 'Sail · work it at the wheel or the mainsheet (F)', greyed (you're in the cockpit already)", !!aimFar && verbsFar.some((v) => v.command === "far" && v.disabled && v.name === "Sail · work it at the wheel or the mainsheet (F)"), { aimFar, verbsFar });
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
   await sleep(500);
   const aimH = await pointAt(wheel, "b");
@@ -281,6 +367,28 @@ try {
   const helmClaim = (await P("doc()")).objects[wheel].claims?.station ?? null;
   check("F takes the helm: B stands at it, and the doc's station claim names B", bAtHelm.station === wheel && helmClaim?.session === sess.b, { bAtHelm, helmClaim });
   check("B's HUD says how to steer", /steer/.test((await P("text('[data-k=\"hint\"]', 'b')"))[0] ?? ""), await P("text('[data-k=\"hint\"]', 'b')"));
+  // the halyard's led aft: at the wheel, R held raises the sail the rest of the way. As a
+  // helmsman does, with the wheel over to bear away while it goes up: hoisted with her bow
+  // near the wind and the helm left amidships, the sail rounds her up into irons
+  check("at the helm, the hint offers the halyard (hold R)", /hold R raise sail/.test((await P("me('b')")).hint ?? ""), await P("me('b')"));
+  // and first let her fall off well clear of the wind (a sloop with one sail can't bear away by the
+  // rudder alone once she's stopped head to wind: there's no jib to back)
+  report.measured.offTheWind = { ok: await until(`Math.abs(window.__p.read('${hull}', 'b')?.apparentWind?.angle ?? 0) > 0.9`, 90_000), awa: n2((await P(`read('${hull}', 'b')`)).apparentWind.angle) };
+  // the tack she's on now: she may have come round through the wind while she lay there
+  side = (await P(`read('${hull}', 'b')`)).apparentWind.angle < 0 ? 1 : -1;
+  report.measured.tack = side > 0 ? "starboard" : "port";
+  const windH = (await P("doc()")).traits["sailing.sea"].wind;
+  const away = wrap(((windH.from + side * 90) * Math.PI) / 180 - compassOf(await P(`worldOf('${hull}', 'b')`))) > 0 ? "d" : "a";
+  report.measured.hoistBearingAway = { key: away, heading: n2(compassOf(await P(`worldOf('${hull}', 'b')`))), awa: n2((await P(`read('${hull}', 'b')`)).apparentWind.angle) };
+  await keyDown(away);
+  await sleep(1800); // the wheel hard over (0.6 of its travel a second)
+  await keyDown("r");
+  await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 10000);
+  await keyUp("r");
+  await keyUp(away);
+  report.measured.hoistBearingAway.after = { heading: n2(compassOf(await P(`worldOf('${hull}', 'b')`))), awa: n2((await P(`read('${hull}', 'b')`)).apparentWind.angle), speed: n2((await P(`read('${hull}', 'b')`)).speed) };
+  await sleep(300);
+  check("holding R at the helm raises the sail: the doc says raised 1", (await P("doc()")).objects[rig].traits["sailing.sail"].raised > 0.95, (await P("doc()")).objects[rig].traits["sailing.sail"]);
   await shot("helm", "b");
 
   // A comes aboard too, and finds the helm taken
@@ -358,23 +466,49 @@ try {
   await press("f"); // and leaves it
   await sleep(300);
 
-  // B hauls in the sheet at the mast (hold Q): she heels more
+  // B hauls in the sheet at the mainsheet, in the cockpit (hold Q): she heels more
   const mast = await local(ids.mast);
   const rg = await local(rig);
   const atMast = `[0.4, ${mast[1] + 0.3}, ${rg[2] + 1.3}]`;
-  await P(`place('b', '${hull}', ${atMast}, 0, -0.25)`);
+  const ms = await local(ids.mainsheet);
+  await P(`place('b', '${hull}', [0, ${ms[1]}, ${ms[2] + 0.35}], 0, -1.2)`); // its stand spot, between it and the wheel
   await sleep(500);
-  const aimQ = await pointAt(rig, "b");
+  let aimQ = await pointAt(ids.mainsheet, "b");
   const verbsQ = await P("verbs('b')");
-  check("at the mast, B's prompt offers the sail (hold F) and the sheet (hold Q, E)", !!aimQ && ["sail", "haul", "ease"].every((c) => verbsQ.some((v) => v.command === c)), { aimQ, verbsQ });
+  check("at the mainsheet, B's prompt offers to take it (F) and the sheet (hold Q, E)", !!aimQ && ["mainsheet", "haul", "ease"].every((c) => verbsQ.some((v) => v.command === c && !v.disabled)), { aimQ, verbsQ });
   const sheet0 = (await P(`value('${rig}', 'b')`)).sheet;
-  await focus("b", aimQ);
-  await keyDown("q");
-  await sleep(800);
-  await keyUp("q");
+  // (re-aimed before each try: she rolls the block out from under a pointer that stays put)
+  let sheet1 = sheet0;
+  for (let i = 0; i < 3 && !(sheet1 < sheet0 - 0.1); i++) {
+    if (i) aimQ = (await pointAt(ids.mainsheet, "b")) ?? aimQ;
+    await focus("b", aimQ);
+    await keyDown("q");
+    await sleep(800);
+    await keyUp("q");
+    await sleep(300);
+    sheet1 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
+  }
+  check("holding Q there hauls the sheet in: the doc has it tighter", sheet1 < sheet0 - 0.1, { sheet0, sheet1 });
+  // F locks in at the mainsheet: Q / E trim, hold R hoists; F leaves
+  await press("f");
   await sleep(300);
-  const sheet1 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
-  check("holding Q hauls the sheet in: the doc has it tighter", sheet1 < sheet0 - 0.1, { sheet0, sheet1 });
+  for (let i = 0; i < 3 && (await P("me('b')")).station !== ids.mainsheet; i++) {
+    const again = await pointAt(ids.mainsheet, "b");
+    if (again) await focus("b", again);
+    await press("f");
+    await sleep(400);
+  }
+  const atSheet = await P("me('b')");
+  check("F takes the mainsheet: B stands at it, the hint saying Q / E and hold R", atSheet.station === ids.mainsheet && /Q \/ E sheet/.test(atSheet.hint ?? "") && /hold R/.test(atSheet.hint ?? "") && Math.abs(atSheet.position[1] - ms[1]) < 0.05, atSheet);
+  await keyDown("e");
+  await sleep(500);
+  await keyUp("e");
+  await sleep(300);
+  const sheet2 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
+  check("there, E eases it: the doc has it further out", sheet2 > sheet1 + 0.05, { sheet1, sheet2 });
+  await press("f");
+  await sleep(300);
+  check("F leaves the mainsheet: its claim goes", (await P("me('b')")).station == null && !(await P("doc()")).objects[ids.mainsheet].claims?.station, await P("me('b')"));
   await sleep(6000);
 
   // a view from off the quarter, A not aboard: Esc stops A's play
@@ -417,27 +551,68 @@ try {
   check("W walks B along the deck (in the ship's frame)", s2.on === hull && Math.hypot(s2.position[0] - s1.me.position[0], s2.position[2] - s1.me.position[2]) > 0.5, { from: r3(s1.me.position), to: r3(s2.position) });
 
 
-  // ─── lowering the sail ───────────────────────────────────────────────────
+  // ─── her navmesh, and the cockpit's edges walked with real keys ───────────
   if (section("deck")) throw new Done();
+  const nav = await staticChecks(js, "b", hull, "sloop");
+  report.measured.navmesh = { cells: nav.cells, triangles: nav.triangles, links: nav.links, bakeMs: nav.bakeMs };
+  for (const [name, c] of Object.entries(nav.checks ?? {})) check(`her navmesh, baked in B's view from her GLBs: ${name}`, c.ok, c.detail);
+  check("and it bakes the same twice", nav.cells > 1000 && nav.again === nav.cells, { cells: nav.cells, again: nav.again });
+  // from the helm, under way (heeled, pitching): a fixed sequence of keys, about 6 s
+  await P(`place('b', '${hull}', [0, 0.72, 4.85], 0, -0.1)`);
+  await sleep(300);
+  await focus("b");
+  await watchWalk(js, "b", hull);
+  const legs = [];
+  const hold = async (keys, ms) => {
+    for (const k of keys) await keyDown(k);
+    await sleep(ms);
+    for (const k of [...keys].reverse()) await keyUp(k);
+    await sleep(120);
+    legs.push([keys.join("+"), r3((await P("me('b')")).position)]);
+  };
+  // (the aft deck right behind the helm is cut by the backstay's foot, so the aft end is taken off the centreline)
+  await hold(["d"], 200); // a step to starboard on the sole
+  await hold(["s"], 500); // up the well's aft end onto the aft deck
+  await hold(["a"], 300); // along it, to where the backstay stops you
+  await hold(["w"], 400); // back down into the well
+  await hold(["a"], 1100); // across the sole, up its port side onto the side deck, to the lifeline
+  await hold(["s"], 350); // aft along it, clear of the wheel (beside it, the well's edge is too narrow to step down)
+  await hold(["d"], 500); // back down into the well
+  await hold(["d"], 900); // across, up its starboard side onto the side deck
+  await hold(["a"], 450); // back down into the well
+  await hold(["s", " "], 600); // a jump at its aft end
+  await hold(["w"], 300); // and back
+  await sleep(300);
+  const walked = await walkReport(js, "b");
+  report.measured.walk = { ...walked, legs, me: await P("me('b')"), errors: (await errorsNow()).slice(0, 5) };
+  await shot("navmesh-walk", "b");
+  check("walking the cockpit's edges with real keys: the walker's invariant held every frame", walked.frames > 60 && walked.asserts.length === 0, { frames: walked.frames, asserts: walked.asserts.slice(0, 3), modes: walked.modes });
+  check("and the feet were on her surfaces every frame (the sole, the deck: within 2 cm), or over them mid-jump", walked.off.length === 0, { off: walked.off, worst: walked.worst });
+  check("the walk went where it meant to: the sole, both side decks, the aft deck, and into the air", ["sole", "port", "starboard", "aft deck", "air"].every((k) => walked.visited[k] > 0), walked.visited);
+
+  // ─── lowering the sail ───────────────────────────────────────────────────
+  if (section("navmesh")) throw new Done();
   const sp0 = (await P(`read('${hull}', 'b')`)).speed;
   // B at the gooseneck, looking at the boom
   await P(`place('b', '${hull}', ${atMast}, 0, -0.25)`);
   await sleep(500);
   const aimS = await pointAt(rig, "b");
   const verbsS = await P("verbs('b')");
-  check("the sail's verb says what it'll do: Lower sail", !!aimS && verbsS.some((v) => v.command === "sail" && /Lower/.test(v.name)), { aimS, verbsS });
+  check("the sail's verb says what it'll do: Lower sail (hold R)", !!aimS && verbsS.some((v) => v.command === "sail" && /Lower/.test(v.name)), { aimS, verbsS });
   await focus("b", aimS);
-  await keyDown("f");
+  await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised < 0.05`, 8000);
   await sleep(300);
-  await keyUp("f");
+  await keyUp("r");
   await sleep(400);
   const sailDoc = (await P("doc()")).objects[rig].traits["sailing.sail"];
-  check("holding F lowers it: the doc says raised 0", sailDoc.raised < 0.05, sailDoc);
+  check("holding R lowers it: the doc says raised 0", sailDoc.raised < 0.05, sailDoc);
   const slowing = [];
   for (let i = 0; i < 6; i++) { await sleep(4000); slowing.push(n2((await P(`read('${hull}', 'b')`)).speed)); }
   // (an 8 t sloop carries her way: in calm water she'd be at about half speed after 24 s; each wave surges her a little)
-  check("with the sail down she carries her way, and slows", slowing.at(-1) < sp0 * 0.7 && mean(slowing.slice(-2)) < mean(slowing.slice(0, 2)) - 0.3, { before: n2(sp0), every4s: slowing });
+  // slowing: the least-squares trend over the samples, not two pairs of them, so one wave's surge can't decide it
+  const trend = (() => { const n = slowing.length, mx = (n - 1) / 2, my = mean(slowing); let a = 0, q = 0; slowing.forEach((v, i) => { a += (i - mx) * (v - my); q += (i - mx) ** 2; }); return a / q / 4; })(); // m/s per second
+  check("with the sail down she carries her way, and slows", slowing.at(-1) < sp0 * 0.7 && slowing.at(-1) > 0.3 && trend < -0.01, { before: n2(sp0), every4s: slowing, trend: +trend.toFixed(3) });
 
   // ─── over the side, and back by the ladder ───────────────────────────────
   if (section("lower")) throw new Done();
@@ -479,9 +654,9 @@ try {
   await sleep(400);
   const aimS2 = await pointAt(rig, "b");
   await focus("b", aimS2);
-  await keyDown("f");
+  await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 8000);
-  await keyUp("f");
+  await keyUp("r");
   await P(`watchDoc('${hull}')`);
   const wall0 = Date.now();
   await sleep(25_000);
@@ -496,7 +671,10 @@ try {
   await sleep(1000);
   await P(`close('${SIM}')`);
   const across = await sampling;
-  const stepsH = across.slice(1).map((f, i) => Math.hypot(f[1] - across[i][1], f[3] - across[i][3]));
+  // each frame's step past what her speed carries her in that frame's time: a long frame (the page
+  // busy as the other view closes) is a stall, not a jump
+  const stepsH = across.slice(1).map((f, i) => Math.max(0, Math.hypot(f[1] - across[i][1], f[3] - across[i][3]) - (Math.abs(before.speed) * Math.max(0, f[0] - across[i][0])) / 1000));
+  const longest = Math.max(...across.slice(1).map((f, i) => f[0] - across[i][0]));
   const took = await until(`window.__p.simulating('${FOL}')`, 8000);
   const claim2 = (await P("doc()")).claims?.sim;
   const p0 = await P(`worldOf('${hull}', '${FOL}')`);
@@ -505,7 +683,7 @@ try {
   const after = await P(`read('${hull}', '${FOL}')`);
   const moved = Math.hypot(p1[12] - p0[12], p1[14] - p0[14]);
   check("the simulator closes: the other view claims sim", took && claim2?.session === sess[FOL], { claim2, sess });
-  check("and she carries on from where she was: no jump in the drawn hull, the same way on, still moving", Math.max(...stepsH) < 0.5 && Math.abs(after.speed - before.speed) < 1 && moved > Math.min(0.3, 0.4 * 3 * Math.abs(before.speed)), { maxStep: n2(Math.max(...stepsH)), before: n2(before.speed), after: n2(after.speed), movedIn3s: n2(moved) });
+  check("and she carries on from where she was: no jump in the drawn hull, the same way on, still moving", Math.max(...stepsH) < 0.5 && Math.abs(after.speed - before.speed) < 1 && moved > Math.min(0.3, 0.4 * 3 * Math.abs(before.speed)), { maxStep: n2(Math.max(...stepsH)), longestFrameMs: Math.round(longest), before: n2(before.speed), after: n2(after.speed), movedIn3s: n2(moved) });
 
   check("no errors in either console", (await errorsNow()).length === 0, await errorsNow());
 } catch (err) {

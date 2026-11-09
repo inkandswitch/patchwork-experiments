@@ -54,15 +54,59 @@ export const inIrons = (read, sail) =>
 const IRONS = "In irons, going astern: lower the sail and let her fall off, then raise it";
 
 /**
+ * Luffing: the sail up but her bow near the wind (apparent wind within 40°
+ * of it) and hardly moving, not yet going astern: the moment to bear away,
+ * before she's in irons. Anchored, she's meant to lie so.
+ */
+export const luffing = (read, sail, anchor) =>
+  !!read?.apparentWind && anchor?.down !== true && Math.abs(Number(read.speed)) < 0.5 && Number(read.speed) >= -0.15 && Math.abs(read.apparentWind.angle) < (40 * Math.PI) / 180 && (Number(sail?.raised ?? 1) || 0) > 0.5;
+
+const LUFFING = "Head to wind: bear away (A / D at the helm) until the sail fills";
+
+const list = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
+
+/**
+ * One line naming where her stations are and what each works, for someone
+ * walking her deck: "Wheel: steer, sheet, hoist · Mainsheet (cockpit): sheet,
+ * hoist · Mast: hoist · Windlass: anchor". From ctx.sim.stationsOf (ids, or
+ * anything truthy where she has one). Pure; "" when she has none.
+ */
+export function stationGuide(st) {
+  if (!st) return "";
+  const out = [];
+  if (st.helm) out.push(st.sail ? "Wheel: steer, sheet, hoist" : "Wheel: steer");
+  if (st.mainsheet && st.sail) out.push("Mainsheet (cockpit): sheet, hoist");
+  if (st.sail) out.push(!st.helm && !st.mainsheet ? "Mast: hoist, sheet" : "Mast: hoist");
+  if (st.anchor) out.push("Windlass: anchor");
+  return out.join(" · ");
+}
+
+/**
+ * With her sail down and her anchor up: where to raise it, from her
+ * stations. At the wheel and the mainsheet you take the station first (F)
+ * and then hold R: the quick hold R is only on the mast and the sail
+ * (stations.js). Pure; "" otherwise.
+ */
+export function sailDownNudge(st, sail, anchor) {
+  if (!st?.sail || !sail || (Number(sail.raised ?? 1) || 0) > 0.5) return "";
+  if (st.anchor && anchor?.down !== false) return "";
+  const posts = [st.helm && "the helm", st.mainsheet && "the mainsheet"].filter(Boolean);
+  if (!posts.length) return "Sail down: hold R at the mast to raise it";
+  return `Sail down: take ${list(posts)} (F) and hold R, or hold R at the mast`;
+}
+
+/**
  * What the HUD shows, from what it reads. Pure.
- * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, anchor?: { down? } | null, seated?: boolean }} o
+ * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, anchor?: { down? } | null, stations?: object | null, seated?: boolean }} o
  *   me: ctx.crew.me(); read: ctx.sim.read(ship); speed: her speed to show (m/s), else speedOver(read);
- *   wind: the true wind at the ship [vx, vz]; seated: the view rides something
+ *   wind: the true wind at the ship [vx, vz]; stations: ctx.sim.stationsOf(ship), for
+ *   the line saying where they are (`guide`, walking her deck) and where to raise a
+ *   lowered sail (`advice`, under way); seated: the view rides something
  *   (a seat at a table aboard her: crew.js seatedView), where the keys mean
  *   that thing's verbs, so the walking keys aren't offered and a click on the
  *   view doesn't come aboard (Enter or the button does)
  */
-export function hudModel({ me, read = null, speed = null, wind = null, sail = null, anchor = null, seated = false }) {
+export function hudModel({ me, read = null, speed = null, wind = null, sail = null, anchor = null, stations = null, seated = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
   const pct = (v, d) => `${Math.round((Number.isFinite(Number(v)) ? Number(v) : d) * 100)}%`;
   const c = read ? compass(read.heading) : null;
@@ -81,7 +125,9 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
     seated: state === "lobby" && !!seated,
     hint,
     keys,
-    advice: state === "aboard" && inIrons(read, sail) ? IRONS : "",
+    advice: state !== "aboard" ? "" : inIrons(read, sail) ? IRONS : luffing(read, sail, anchor) ? LUFFING : sailDownNudge(stations, sail, anchor),
+    // walking her deck (not at a station, not in the water): where her stations are
+    guide: state === "aboard" && !me.station && !me.swimming ? stationGuide(stations) : "",
     panel: !!read,
     speed: read ? (kn < -0.05 ? `astern ${(-kn).toFixed(1)} kn` : `${Math.abs(kn).toFixed(1)} kn`) : "",
     heading: c ? `${String(c.deg).padStart(3, "0")}° ${c.point}` : "",
@@ -153,7 +199,8 @@ export function createHud(api, ctx) {
   const hint = el("div", { "data-k": "hint", role: "status" });
   const keys = el("div", { "data-k": "keys" });
   const advice = el("div", { "data-k": "advice" });
-  const hints = el("div", { class: "sail-hint" }, button, hint, keys, advice);
+  const guide = el("div", { "data-k": "guide" });
+  const hints = el("div", { class: "sail-hint" }, button, hint, keys, guide, advice);
   root.append(el("div", { class: "sail-crosshair" }), panel, hints);
   overlay.append(root);
 
@@ -191,6 +238,7 @@ export function createHud(api, ctx) {
       wind,
       sail: st?.sail ? ctx.sim.value(st.sail) : null,
       anchor: st?.anchor ? ctx.sim.value(st.anchor) : null,
+      stations: st,
       seated: seatedView(api),
     });
     put("state", model.state, (v) => root.setAttribute("data-state", v));
@@ -201,6 +249,7 @@ export function createHud(api, ctx) {
     put("hint", model.hint, (v) => ((lobby ? button : hint).textContent = v));
     put("keys", model.keys, text(keys));
     put("advice", model.advice, text(advice));
+    put("guide", model.guide, (v) => ((guide.textContent = v), (guide.hidden = !v)));
     put("panel", model.panel, (v) => (panel.hidden = !v));
     for (const k of ["speed", "heading", "wind", "sail", "anchor"]) {
       put(k, model[k], (v) => {

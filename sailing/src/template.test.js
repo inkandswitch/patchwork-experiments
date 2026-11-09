@@ -36,9 +36,9 @@ describe("the Ship at sea template", () => {
     }
     // one per kind, under its versioned key
     expect(Object.keys(doc.assets).sort()).toEqual(
-      ["anchor", "greenBuoy", "hull", "islet", "ladder", "mast", "redBuoy", "rig", "wheel", "windlass"].map((k) => `sailing/${k}@1`),
+      ["anchor", "greenBuoy", "hull", "islet", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "windlass"].map((k) => `sailing/${k}@${k === "hull" ? 2 : 1}`),
     );
-    expect(calls.created).toHaveLength(10);
+    expect(calls.created).toHaveLength(11);
     const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) {
@@ -54,7 +54,7 @@ describe("the Ship at sea template", () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc, { file: false });
     await template.create(ctx);
-    expect(calls.created).toHaveLength(10);
+    expect(calls.created).toHaveLength(11);
     expect(doc.assets).toBeUndefined();
     const urls = new Set(calls.created.map((_, i) => `automerge:file${i + 1}`));
     for (const o of Object.values(doc.objects)) if (o.kind !== "group") expect(urls.has(o.sourceUrl)).toBe(true);
@@ -73,8 +73,8 @@ describe("the Ship at sea template", () => {
 
     const ids = Object.fromEntries(Object.entries(doc.objects).map(([id, o]) => [o.name, id]));
     const byName = Object.fromEntries(Object.values(doc.objects).map((o) => [o.name, o]));
-    const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder"];
-    for (const name of ["Mast", "Wheel", "Windlass", "Ladder"]) expect(byName[name].parent).toBe(hullId);
+    const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder", "Mainsheet"];
+    for (const name of ["Mast", "Wheel", "Windlass", "Ladder", "Mainsheet"]) expect(byName[name].parent).toBe(hullId);
     // the sail goes where the mast goes, the anchor where the windlass does
     expect(byName["Boom and sail"].parent).toBe(ids.Mast);
     expect(byName.Anchor.parent).toBe(ids.Windlass);

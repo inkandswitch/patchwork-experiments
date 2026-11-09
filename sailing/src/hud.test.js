@@ -1,6 +1,6 @@
 // The HUD: its model (pure) and the DOM it keeps, against a stand-in api.
 import { describe, it, expect, vi } from "vitest";
-import { compass, createHud, hudModel, inIrons, knots, speedOver, windFrom } from "./hud.js";
+import { compass, createHud, hudModel, inIrons, knots, luffing, sailDownNudge, speedOver, stationGuide, windFrom } from "./hud.js";
 
 describe("the HUD's model", () => {
   it("knots and the compass", () => {
@@ -75,6 +75,47 @@ describe("the HUD's model", () => {
     expect(inIrons({ ...irons, speed: 1 }, { raised: 1 })).toBe(false);
     expect(hudModel({ me: { playing: true }, read: irons, sail: { raised: 1 } }).advice).toMatch(/In irons/);
     expect(hudModel({ me: { playing: false }, read: irons, sail: { raised: 1 } }).advice).toBe("");
+    // the moment before: sail up, head to wind, stopped but not yet going astern: bear away
+    const stopped = { ...irons, speed: 0.1 };
+    expect(luffing(stopped, { raised: 1 }, { down: false })).toBe(true);
+    expect(inIrons(stopped, { raised: 1 })).toBe(false);
+    expect(hudModel({ me: { playing: true }, read: stopped, sail: { raised: 1 }, anchor: { down: false } }).advice).toMatch(/^Head to wind: bear away/);
+    expect(luffing(stopped, { raised: 1 }, { down: true })).toBe(false); // at anchor she lies head to wind
+    expect(luffing(stopped, { raised: 0 }, { down: false })).toBe(false);
+    expect(luffing({ ...stopped, speed: 2 }, { raised: 1 }, { down: false })).toBe(false); // close-hauled and moving: sailing
+    expect(luffing({ ...stopped, apparentWind: { ...irons.apparentWind, angle: 1.2 } }, { raised: 1 }, { down: false })).toBe(false);
+  });
+
+  const SLOOP = { helm: "wheel", sail: "rig", anchor: "windlass", mainsheet: "sheet", ladder: "ladder" };
+
+  it("walking her deck, a line says where her stations are and what each works", () => {
+    expect(stationGuide(SLOOP)).toBe("Wheel: steer, sheet, hoist · Mainsheet (cockpit): sheet, hoist · Mast: hoist · Windlass: anchor");
+    // no mainsheet (an older doc, a hull rigged from the bin without one)
+    expect(stationGuide({ ...SLOOP, mainsheet: null })).toBe("Wheel: steer, sheet, hoist · Mast: hoist · Windlass: anchor");
+    // nowhere else to trim: the mast
+    expect(stationGuide({ sail: "rig" })).toBe("Mast: hoist, sheet");
+    expect(stationGuide({ helm: "wheel" })).toBe("Wheel: steer");
+    expect(stationGuide({})).toBe("");
+    expect(stationGuide(null)).toBe("");
+    const aboard = (me) => hudModel({ me: { playing: true, ...me }, stations: SLOOP }).guide;
+    expect(aboard({})).toMatch(/^Wheel: /);
+    expect(aboard({ station: "wheel" })).toBe(""); // at a station its own hint says it
+    expect(aboard({ swimming: true })).toBe("");
+    expect(hudModel({ me: { playing: false }, stations: SLOOP }).guide).toBe("");
+    expect(hudModel({ me: { playing: true, paused: true }, stations: SLOOP }).guide).toBe("");
+  });
+
+  it("the sail down with her anchor up: where to raise it", () => {
+    expect(sailDownNudge(SLOOP, { raised: 0 }, { down: false })).toBe("Sail down: take the helm or the mainsheet (F) and hold R, or hold R at the mast");
+    expect(sailDownNudge({ ...SLOOP, mainsheet: null }, { raised: 0 }, { down: false })).toBe("Sail down: take the helm (F) and hold R, or hold R at the mast");
+    expect(sailDownNudge({ sail: "rig" }, { raised: 0.2 }, null)).toBe("Sail down: hold R at the mast to raise it");
+    expect(sailDownNudge(SLOOP, { raised: 0 }, { down: true })).toBe(""); // at anchor: lowered on purpose
+    expect(sailDownNudge(SLOOP, { raised: 1 }, { down: false })).toBe("");
+    expect(sailDownNudge({ ...SLOOP, sail: null }, { raised: 0 }, { down: false })).toBe("");
+    // in irons says its own
+    const irons = { speed: -0.5, heading: 0, apparentWind: { speed: 8, angle: 0.1 } };
+    expect(hudModel({ me: { playing: true }, read: irons, sail: { raised: 1 }, anchor: { down: false }, stations: SLOOP }).advice).toMatch(/In irons/);
+    expect(hudModel({ me: { playing: true }, sail: { raised: 0 }, anchor: { down: false }, stations: SLOOP }).advice).toMatch(/^Sail down/);
   });
 });
 
@@ -125,9 +166,12 @@ describe("the HUD", () => {
     expect(s.root.querySelector('[data-k="wind"]').textContent).toBe("10 kn S");
     expect(s.root.querySelector('[data-k="sail"]').textContent).toBe("50% · sheet 50%");
     expect(s.root.querySelector('[data-k="anchor"]').textContent).toBe("Down");
+    expect(s.root.querySelector('[data-k="guide"]').textContent).toBe("Mast: hoist, sheet · Windlass: anchor");
+    expect(s.root.querySelector('[data-k="guide"]').hidden).toBe(false);
     me.current = { playing: true, on: "hull", station: "wheel", hint: "A / D steer · F leave" };
     s.tick();
     expect(s.root.querySelector('[data-k="hint"]').textContent).toBe("A / D steer · F leave");
+    expect(s.root.querySelector('[data-k="guide"]').hidden).toBe(true);
     me.current = { playing: true, paused: true };
     s.tick();
     expect(s.root.dataset.state).toBe("paused");

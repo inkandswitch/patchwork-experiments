@@ -18,7 +18,7 @@
 // A sea, a ship or a station by hand comes from the inspector's "Add
 // behaviour…", which reads `describes`.
 
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
 // ship can be rigged without a script. Who's at a station and who simulates
@@ -44,6 +44,10 @@ const DESCRIBES = {
       { key: "frame", label: "Ship frame in the model ({ position, rotation }, radians)", kind: "json" },
       { key: "spec", label: "Spec overrides", kind: "json" },
     ],
+    // her way as last saved is about now, not about her: a copy starts at rest (STAGE.md, "Copying objects")
+    runtime: ["motion"],
+    // and she sails only on a sea
+    needs: ["sailing.sea"],
   },
   "sailing.helm": {
     name: "Helm",
@@ -68,6 +72,11 @@ const DESCRIBES = {
       { key: "down", label: "Down", kind: "boolean", default: true },
       { key: "rode", label: "Rode out (m)", kind: "number", default: 0, min: 0, step: 0.5 },
     ],
+  },
+  "sailing.mainsheet": {
+    name: "Mainsheet",
+    on: "object",
+    blurb: "A station in the cockpit for the ship's sail: stand at it to trim the sheet (Q / E) and hoist or lower the sail (hold R)",
   },
   "sailing.hook": {
     name: "Anchor (the hook)",
@@ -115,11 +124,12 @@ export const plugins = [
   },
   // the parts bin's (scene:part): what each is made of is parts.js
   ...[
-    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast and sail, wheel, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast and sail, wheel, mainsheet, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
     { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail. On a ship it drives her: where you put it is where the sail pulls", tags: ["sailing.mast"], traits: ["sailing.sail"] },
     { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
     { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },
     { id: "ladder", name: "Ladder", icon: "Ladder", description: "A way back aboard from the water, hung over the side", tags: ["sailing.ladder"], traits: ["sailing.ladder"] },
+    { id: "mainsheet", name: "Mainsheet", icon: "Sailboat", description: "A traveller and block for the cockpit, under the boom's end: stand at it to trim and hoist the sail", tags: ["sailing.mainsheet"], traits: ["sailing.mainsheet"] },
     { id: "redBuoy", name: "Red buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "greenBuoy", name: "Green buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "islet", name: "Islet", icon: "Mountain", description: "A rock with a little grass, to sail round" },

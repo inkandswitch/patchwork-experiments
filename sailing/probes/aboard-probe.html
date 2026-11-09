@@ -28,6 +28,8 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 
+// invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
+globalThis.__SAILING_ASSERT__ = true;
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -163,7 +165,7 @@ try {
         hull, table, board,
         hand1: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p1")?.[0],
         hand2: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p2")?.[0],
-        rig: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor"), wheel: withTrait("sailing.helm"), mast: byName("Mast"),
+        rig: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor"), wheel: withTrait("sailing.helm"), mast: byName("Mast"), mainsheet: withTrait("sailing.mainsheet"),
       });
       return { ...ids };
     },
@@ -196,7 +198,14 @@ try {
     immersive: (w) => !!dbg[w]?.local.get().immersive,
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
-    faces: (w) => [...(dbg[w]?.looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    // a face is a look that isn't tabletop's privacy art (doc.assets "tabletop/private-card@…"), which a view
+    // shows for a face-up card kept from it
+    faces(w) {
+      const looks = dbg[w]?.looks();
+      const assets = scene.doc().assets ?? {};
+      const privacy = new Set(Object.keys(assets).filter((k) => k.startsWith("tabletop/private-card@")).map((k) => assets[k].url));
+      return [...(looks?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !privacy.has(looks.get(id)?.sourceUrl));
+    },
     claims: (w) => dbg[w].claims().map((c) => c.kind),
     simulating: (w) => !!ctx(w)?.sim.simulating(),
     loaded(w) {
@@ -243,6 +252,7 @@ try {
     /** the name tags a view shows: text and page px */
     tags: (w) => [...hosts[w].querySelectorAll(".label.tabletop-seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
     me: (w) => ctx(w)?.crew.me() ?? null,
+    walker: (w) => { const s = ctx(w)?.crew.walker?.(); return s ? { mode: s.mode, ship: s.ship ?? null } : null; },
     /** what the sailing HUD says in a view: its state, the way-in button, the keys line, and where its panel is */
     hud(w) {
       const h = hosts[w].querySelector(".sail-hud");

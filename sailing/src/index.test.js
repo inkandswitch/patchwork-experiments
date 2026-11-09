@@ -4,14 +4,14 @@ import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 
 const byId = (id) => plugins.find((p) => p.id === id);
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
   it("are two scene extensions, parts for the bin and two templates, and nothing else", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
       ["scene:extension", "sailing"],
       ["scene:extension", "sailing.edit"],
-      ...["sloop", "mast", "wheel", "windlass", "ladder", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
+      ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
       ["scene:template", "ship-at-sea"],
       ["scene:template", "ship-at-anchor"],
     ]);
@@ -29,6 +29,7 @@ describe("sailing's plugins", () => {
     expect(byId("sailing.wheel").tags).toEqual(["sailing.helm"]);
     expect(byId("sailing.windlass").tags).toEqual(["sailing.windlass"]);
     expect(byId("sailing.ladder").tags).toEqual(["sailing.ladder"]);
+    expect(byId("sailing.mainsheet").tags).toEqual(["sailing.mainsheet"]);
     expect(byId("sailing.sloop").traits).toContain("sailing.ship");
   });
 
@@ -72,6 +73,15 @@ describe("sailing's plugins", () => {
     expect(fields("sailing.ship").frame.kind).toBe("json");
     expect(fields("sailing.ship").frame.default).toBeUndefined();
     expect(fields("sailing.ship").bow).toBeUndefined();
+  });
+
+  it("a ship's way as last saved is runtime (a copy starts at rest), and she needs a sea", () => {
+    const ship = byId("sailing").describes["sailing.ship"];
+    expect(ship.runtime).toEqual(["motion"]);
+    expect(ship.needs).toEqual(["sailing.sea"]);
+    // the mainsheet's a station with nothing to set: who works it is a claim
+    expect(byId("sailing").describes["sailing.mainsheet"]).toMatchObject({ name: "Mainsheet", on: "object" });
+    expect(byId("sailing").describes["sailing.mainsheet"].fields).toBeUndefined();
   });
 
   it("offers the template with an icon and a description", () => {

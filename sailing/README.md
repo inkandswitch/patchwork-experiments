@@ -37,8 +37,8 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   list a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
   gets a sea if it had none). The rest are her parts on their own: **Mast
-  and sail**, **Wheel**, **Windlass and anchor**, **Ladder**, to drag onto
-  a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
+  and sail**, **Wheel**, **Mainsheet**, **Windlass and anchor**, **Ladder**,
+  to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
   a hull that's a ship, a part lines up with her bow and attaches under her
   (on the sloop, each snaps to its place); a click instead of a drag puts it
   where you're looking.
@@ -50,6 +50,7 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
     overrides);
   - attached under the hull: **Helm** on the wheel, **Sail** on the
     boom-and-sail (its `Sail` node is lowered and bellied in play),
+    **Mainsheet** on whatever the sheet is worked at in the cockpit,
     **Anchor** on the windlass, **Anchor (the hook)** on the anchor itself,
     **Ladder** on the ladder;
   - **Float** on anything that should bob where it's moored.
@@ -70,8 +71,9 @@ A hull drawn elsewhere (camber's, or any model) sails once she has a rig:
    `{ "rotation": [0, -1.5708, 0] }` turns a model whose bow is +X, and a
    `position` says where her middle is on her waterline. Her waterline is
    her model's y = 0.
-3. Drag **Mast and sail**, **Wheel**, **Windlass and anchor** and
-   **Ladder** from the parts onto her deck (locked or not), and place them
+3. Drag **Mast and sail**, **Wheel**, **Mainsheet** (into her cockpit,
+   under the boom's end), **Windlass and anchor** and **Ladder** from the
+   parts onto her deck (locked or not), and place them
    with the gizmo. Each squares itself to her bow.
 4. Give the scene a sea if it hasn't one (the sloop part brings one; else
    **Sea** on the scene), and play.
@@ -88,24 +90,41 @@ off her quarter. Where pointer lock is refused, drag to look.
 | Where | Keys |
 |---|---|
 | On deck | WASD walk · Shift run · Space jump · mouse look · F use what you look at |
-| At the wheel (F) | A / D steer · Q / E haul in / ease out the sheet · F leave |
-| At the mast or the boom | hold F raise or lower the sail · hold Q haul in · hold E ease out |
+| At the wheel (F) | A / D steer · Q / E haul in / ease out the sheet · hold R raise or lower the sail · F leave |
+| At the mainsheet, aft in the cockpit just forward of the wheel (F) | Q / E haul in / ease out · hold R raise or lower the sail · F leave |
+| At the mast (F) | hold R raise or lower the sail · F leave |
+| Looking at the mainsheet | hold Q haul in · hold E ease out |
+| Looking at the mast or the boom | hold R raise or lower the sail |
 | At the windlass | hold F raise the anchor (it says how much chain is out) · F drop it |
 | In the water | WASD swim · F at the ladder to climb aboard |
+
+The sheet and the halyard are led aft: the wheel and the mainsheet work
+both, so a helmsman can sail her alone. The mast is no place to trim from:
+only a ship with neither a wheel nor a mainsheet trims there (and from the
+boom). Within reach means within 2.5 m of the point you look at, so the boom
+over the cockpit is in reach though the mast isn't. A station further off
+(up to 12 m) still answers, greyed, with where to go: *Sail · walk to the
+cockpit*; or, standing in the cockpit already, which station to take: *Sail
+· work it at the wheel or the mainsheet (F)*. Hold R raises the sail without
+taking a station only at the mast (or looking at the boom); at the wheel and
+the mainsheet, take the station with F first. Walking her deck, the hint line names her stations and what each
+works; with her sail down and her anchor up, it says where to raise it.
 
 The panel bottom left reads her speed over the ground, her heading, the
 true wind (and on the dial, the apparent wind as an arrow and the true wind
 as a hollow mark), the sail and the anchor. Head to wind with the sail up
 she goes astern ("in irons"): lower the sail and let her fall off, then
 raise it. That is slow (a minute or two: with one sail there's no jib to
-back), so don't let her round up, and drop the anchor only where you mean
-to stay.
+back), so don't let her round up: raise the sail at the helm with the wheel
+over to bear away, and when the hint says *Head to wind* (sail up, her bow
+near the wind, hardly moving) bear away before she starts going astern.
+Drop the anchor only where you mean to stay.
 
 ## Working on it
 
 ```sh
 pnpm install
-pnpm test          # vitest: the physics, the sea, the parts on a fake stage
+pnpm test          # vitest: the physics, the sea, her navmesh (C1–C9) and the walker (its cases and a property test), the parts on a fake stage
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
