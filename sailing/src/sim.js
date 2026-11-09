@@ -23,6 +23,7 @@ import { mergeSpec } from "./hull-model.js";
 import { apply, eulerFromQuat, invert, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
 import { IDENTITY, bodyBox, frameMatrix, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
 import { ANCHOR, SHIP, SIM, STATION, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
+import { rigContract, rigKey, rigSpecParts } from "./rig-contract.js";
 
 /** How often the simulator writes the ships to the doc (ms), if they've moved. */
 export const SAVE_EVERY_MS = 10000;
@@ -61,13 +62,28 @@ const SLOOP_BOX = Object.freeze({ min: [-1.9, -1.9, -6], max: [1.9, 1.2, 6] });
  *   the rig's scale; a rig that states none leaves the sloop's, scaled to
  *   her hull;
  * - the trait's spec overrides win over all of it.
+ * A rig whose GLB carries the rig aid's contract (`rig.contract`, its
+ * extras.rig: rig-contract.js) is a different path, ahead of her hull's
+ * facts and her box: her waterline, beam, draft and freeboard, her mass,
+ * her centre of gravity's height, her lumped sail, keel and rudder are the
+ * contract's, in her body frame, and `spec.rig` carries the whole contract
+ * there for the physics that reads it (DESIGN.md, "The rig contract").
+ * `hullUrl` (the hull object's sourceUrl) is checked against the hull the
+ * rig was designed on (spec.rig.warnings). `hullMesh` is her hull's own
+ * triangles in its GLB's coordinates (hullTriangles): a contract designed on
+ * that hull floats her on it (rig-contract.js drawnHull).
  * @param {{ box?: { min, max } | null, extras?: object | null } | null} content
  * @param {object} [overrides]
  * @param {number} [scale]
- * @param {{ frame?: { position, rotation }, rig?: { matrix: number[], sail?: object | null } | null }} [o]
+ * @param {{ frame?: { position, rotation }, rig?: { matrix: number[], sail?: object | null, contract?: object | null } | null, hullUrl?: string | null, hullMesh?: Float64Array | null }} [o]
  */
-export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig = null } = {}) {
+export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig = null, hullUrl = null, hullMesh = null } = {}) {
   const k = scale > 0 ? scale : 1;
+  const contract = rigContract(rig?.contract);
+  if (contract) {
+    const { box, own } = rigSpecParts(contract, k, { matrix: rig.matrix ?? null, hullUrl, mesh: hullMesh });
+    return mergeSpec(specFromBox(box, own), overrides);
+  }
   const dims = content?.extras?.ship;
   const box = bodyBox(content?.box ?? null, frame);
   let hull = box;
@@ -84,6 +100,41 @@ export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig =
   return mergeSpec(specFromBox({ min: hull.min.map((v) => v * k), max: hull.max.map((v) => v * k) }, own), overrides);
 }
 
+const triangles = new WeakMap();
+
+/**
+ * A loaded model's triangles (9 numbers each) in its root's own frame (its
+ * GLB's coordinates, whatever the stage or looks.js has done to the root),
+ * read once per root; null while it has no meshes (not loaded yet).
+ * Duck-typed on three.js's Object3D (traverse, matrixWorld.elements,
+ * geometry.attributes.position, geometry.index), so it needs no import.
+ * @param {object | null | undefined} root  api.content(id).root
+ */
+export function hullTriangles(root) {
+  if (!root || typeof root.traverse !== "function") return null;
+  if (triangles.has(root)) return triangles.get(root);
+  root.updateMatrixWorld?.(true);
+  const toRoot = invert(Array.from(root.matrixWorld?.elements ?? IDENTITY_M));
+  const out = [];
+  root.traverse((o) => {
+    const pos = o.isMesh ? o.geometry?.attributes?.position : null;
+    if (!pos?.array || pos.itemSize !== 3) return;
+    const m = multiply(toRoot, Array.from(o.matrixWorld?.elements ?? IDENTITY_M));
+    const a = pos.array;
+    const idx = o.geometry.index?.array ?? null;
+    const n = idx ? idx.length - (idx.length % 3) : pos.count - (pos.count % 3);
+    for (let i = 0; i < n; i++) {
+      const v = 3 * (idx ? idx[i] : i);
+      out.push(...apply(m, [a[v], a[v + 1], a[v + 2]]));
+    }
+  });
+  if (out.length < 9) return null; // not loaded yet: asked again next frame
+  const tri = Float64Array.from(out);
+  triangles.set(root, tri);
+  return tri;
+}
+const IDENTITY_M = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
 /**
  * The sail a rig sets, in the body frame at the hull's scale `k`: its plan
  * (extras.sail.plan, in the rig's frame) where the rig is placed, at its
@@ -97,6 +148,12 @@ export function sailOf({ matrix, sail }, frame, k = 1) {
   const s = scaleOf(matrix) * k;
   return { tack, luff: plan.luff * s, foot: plan.foot * s, area: plan.area * s * s };
 }
+
+/**
+ * What a ship's physics is keyed on: her spec, with a rig contract (too big
+ * to stringify every frame) by name.
+ */
+export const specKey = (spec) => JSON.stringify(spec.rig ? { ...spec, rig: rigKey(spec.rig) } : spec);
 
 /** The bow's fairlead in the body frame, where the rode leaves (as physics.js puts it). */
 export function bowOf(spec) {
@@ -129,19 +186,29 @@ export function anchorReaches(at, state, spec, rode) {
  * The physics' controls from the stations' live values (null where a ship
  * has no such station: no helm leaves the rudder amidships, no sail station
  * means no sail set, no windlass no anchor), and where the anchor lies.
- * @param {{ helm?: object | null, sail?: object | null, anchor?: object | null }} v
+ * A jib's value (`v.jib`: sheet, backed, furl; no station gives one yet, so
+ * a rig contract's jib is trimmed with the main) adds the physics' jibSheet,
+ * jibBacked and furl, each only when it is given.
+ * @param {{ helm?: object | null, sail?: object | null, anchor?: object | null, jib?: object | null }} v
  * @param {number[] | null} at
  * @param {{ freeboard: number }} spec
  */
 export function controlsOf(v, at, spec) {
   const n = (x, d) => (Number.isFinite(Number(x)) ? Number(x) : d);
   const down = !!v.anchor?.down && isVec3(at);
-  return {
+  const out = {
     rudder: v.helm ? clamp(n(v.helm.angle, 0), -1, 1) : 0,
     sail: v.sail ? clamp(n(v.sail.raised, 1), 0, 1) : 0,
     sheet: v.sail ? clamp(n(v.sail.sheet, 0.5), 0, 1) : 0.5,
     anchor: down ? { at, rode: effectiveRode(n(v.anchor.rode, 0), at, spec) } : null,
   };
+  const j = v.jib;
+  if (j) {
+    if (Number.isFinite(Number(j.sheet))) out.jibSheet = clamp(Number(j.sheet), 0, 1);
+    if (j.backed != null) out.jibBacked = !!j.backed;
+    if (Number.isFinite(Number(j.furl))) out.furl = clamp(Number(j.furl), 0, 1);
+  }
+  return out;
 }
 
 /**
@@ -370,9 +437,13 @@ export function createSim(api, ctx) {
       const motion = o.traits[SHIP]?.motion;
       const frame = shipFrame(api, id);
       const p = parts(sc, id);
-      const rig = p.sail ? { matrix: placeIn(sc, p.sail, id), sail: api.content(p.sail)?.extras?.sail } : null;
-      const spec = specFor(api.content(id), o.traits[SHIP]?.spec, doc.scale, { frame, rig });
-      const key = JSON.stringify(spec);
+      const rigExtras = p.sail ? api.content(p.sail)?.extras : null;
+      const rig = p.sail ? { matrix: placeIn(sc, p.sail, id), sail: rigExtras?.sail, contract: rigExtras?.rig ?? null } : null;
+      const content = api.content(id);
+      // a contract boat floats on her own drawn hull, once it's loaded
+      const hullMesh = rig?.contract ? hullTriangles(content?.root) : null;
+      const spec = specFor(content, o.traits[SHIP]?.spec, doc.scale, { frame, rig, hullUrl: o.sourceUrl ?? null, hullMesh });
+      const key = specKey(spec);
       let s = ships.get(id);
       if (!s) ships.set(id, (s = track(id, o, t, null)));
       if (JSON.stringify(s.frame) !== JSON.stringify(frame)) {
@@ -385,6 +456,8 @@ export function createSim(api, ctx) {
       if (s.key !== key) {
         s.model = createShip(spec);
         s.key = key;
+        // what her rig's contract can't vouch for, said once per spec
+        for (const w of spec.rig?.warnings ?? []) console.warn(`sailing: ${w}`);
       }
       if (movedByEditor(doc, motion, s.seen)) {
         // someone moved it (the editor): start again from there, at rest, and drop the anchor again

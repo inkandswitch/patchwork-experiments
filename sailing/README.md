@@ -82,6 +82,20 @@ Where you put the mast is where the sail pulls: forward and she bears away,
 aft and she rounds up. Her weight is her model's stated displacement, else
 the sloop's scaled to her size.
 
+A rig built by the **Rig** tool (the `rig/` package) carries its design as
+`extras.rig`. Put on her as her sail station, it states her frame, her
+waterline, weight, centre of gravity, keel, rudder and sail for her, in
+place of her model's guesses; a rig designed on a different hull says so
+in the console. Her keel and rudder are the ones it drew, her weight sits
+where it put it, and a dinghy's crew hike to windward. She floats on her
+own hull (her drawn model, when the rig was designed on it), meets the
+water's resistance the rig worked out for her, and a dinghy that can plane
+climbs onto the plane past her hull speed. She flies its main and jib, each
+its own sail where the rig drew it, a reef lowering the main's head; the
+physics can back the jib to get her out of irons, though no station
+works the jib yet (for now it's trimmed with the main; DESIGN.md, "The rig
+contract").
+
 ## Controls
 
 Click the view (or press Enter) to come aboard; Esc goes back to the view
