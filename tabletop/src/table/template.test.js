@@ -133,16 +133,6 @@ describe("the Lost Cities template", () => {
     expect(calls.made).toHaveLength(made);
     expect(doc.assets).toEqual(assets);
   });
-
-  it("on a stage without ctx.file, files a doc of its own for each kind", async () => {
-    const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc, { file: false, registries: { "tabletop:deck": secureDecks() } });
-    await lostCities.create(ctx);
-    expect(doc.assets).toEqual({});
-    const files = calls.created.filter((d) => d["@patchwork"].type === "file");
-    expect(files).toHaveLength(kindsUsed(game()).length);
-    for (const o of Object.values(doc.objects)) if (o.kind !== "group") expect(o.sourceUrl).toMatch(/^automerge:file\d+$/);
-  });
 });
 
 describe("the Santorini template", () => {

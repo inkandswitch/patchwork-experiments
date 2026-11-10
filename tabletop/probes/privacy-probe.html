@@ -1,15 +1,12 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>tabletop privacy probe</title>
-<!-- Driven by probes/privacy.mjs. The BUILT scene tool (scene/dist) with a
-     BUILT tabletop (?tabletop=<url of its dist/index.js>, ../dist/index.js by
-     default) and the BUILT card-table plugins, in a stub registry, on an
+<!-- Driven by probes/privacy.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT tabletop and card-table plugins, in a stub registry, on an
      in-memory repo, two views A (Ana) and B (Ben) of one doc, each view's
      broadcasts reaching only the other, a few ms late.
      ?mode=
        template  an empty scene; A picks the Lost Cities template, B opens it after
-       seed      the docs in window.__seed ({ scene, docs }, as snapshot() gives
-                 them), each under its own url; A and B open the scene
        plain     a Lost Cities table with a plain deck (the game page's setup, secure: false)
      A's writes to a deck can be held back (slow('a', ms)): a slow network
      between A and everyone, for watching a key delivery happen. -->
@@ -34,7 +31,6 @@ import { tableLayout, writeTable } from "../src/setup.js";
 
 const q = new URLSearchParams(location.search);
 const MODE = q.get("mode") || "template";
-const TABLETOP = q.get("tabletop") || "../dist/index.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -89,10 +85,9 @@ const portable = (doc) =>
     }
     return v;
   }));
-const revive = (doc) => JSON.parse(JSON.stringify(doc), (k, v) => (v && typeof v === "object" && typeof v.$bytes === "string" ? Uint8Array.from(atob(v.$bytes), (c) => c.charCodeAt(0)) : v));
 
 try {
-  for (const url of ["../../scene/dist/index.js", TABLETOP, "../../card-table/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -103,10 +98,6 @@ try {
   let scene;
   if (MODE === "template") {
     scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
-  } else if (MODE === "seed") {
-    await new Promise((r) => { const t = setInterval(() => { if (window.__seed) { clearInterval(t); r(); } }, 20); });
-    for (const [url, doc] of Object.entries(window.__seed.docs)) repo.add(revive(doc), url);
-    scene = repo.handles.get(window.__seed.scene);
   } else {
     const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
     game.change((d) => fill(d));
@@ -255,11 +246,6 @@ try {
       return null;
     },
     loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
-    /** the table's docs as they are now: the scene, its deck and its files */
-    snapshot() {
-      const urls = [scene.url, deckUrl(), ...Object.values(scene.doc().assets ?? {}).map((a) => a.url)].filter(Boolean);
-      return { scene: scene.url, deck: deckUrl(), docs: Object.fromEntries(urls.map((u) => [u, portable(repo.handles.get(u).doc())])) };
-    },
   };
   window.__ready = true;
 } catch (err) {

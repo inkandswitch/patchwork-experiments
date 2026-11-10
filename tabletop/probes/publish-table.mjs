@@ -1,18 +1,19 @@
-// Publish a Lost Cities table to a real sync server, and print its Patchwork
-// URLs. Two ways, the two ways a table is made:
+// Publish a game table to a real sync server, and print its Patchwork URLs.
+// Two ways, the two ways a table is made:
 //
 //   node probes/publish-table.mjs [--sync wss://…] [--settle 8000] [--dry-run]
-//   node probes/publish-table.mjs --template lost-cities [--sync …] [--dry-run] [--show] [--shots <dir>]
+//   node probes/publish-table.mjs --template lost-cities|santorini [--sync …] [--dry-run] [--show] [--shots <dir>]
 //
 // Makes NEW docs on every run (no dedupe).
 //
-// The game page (default): as the package's own UI would. A tabletop-game
-// doc filled by the Lost Cities game (games/lost-cities.js fill, as "Start
-// from" does), every piece's GLB drawn into a file doc (pieces.js
-// ensurePieceGLBs, as the game page does while open), then "Set up a table"
-// (tool.js setUpTable): tableLayout with the game's GLBs, a doc per deck,
-// writeTable onto a skeleton scene doc, the scene doc, and the table listed
-// on the game.
+// The game page (default): the Lost Cities game, as the package's own UI
+// would make it. A tabletop-game doc filled by the Lost Cities game
+// (games/lost-cities.js fill, as "Start from" does), every piece's GLB drawn
+// into a file doc (pieces.js ensurePieceGLBs, as the game page does while
+// open), then "Set up a table" (tool.js setUpTable): tableLayout with the
+// game's GLBs, a doc per deck, writeTable onto a skeleton scene doc with
+// every map a scene has, the scene doc, and the table listed on the game
+// (its only one: the game is new).
 //
 // --template <game>: the scene's start screen. Needs scene/, tabletop/ and
 // card-table/ built. In headless Chrome, the BUILT scene tool with the BUILT
@@ -137,6 +138,8 @@ const hidden = objects.filter(([, o]) => o.traits?.["tabletop.hidden"]);
 for (const [id, o] of hidden) if (!Object.values(deckUrls).includes(o.traits["tabletop.hidden"].by)) problems.push(`${id} is hidden by a deck that wasn't made`);
 const deckTypes = Object.values(decks).map((dk) => dk["@patchwork"].type);
 if (!hidden.length) problems.push("no cards in a deck");
+// the new game lists the one table made here, and nothing older
+if (JSON.stringify(game.doc().tables) !== JSON.stringify([scene.url])) problems.push(`the game lists tables ${JSON.stringify(game.doc().tables)}, not just ${scene.url}`);
 if (problems.length) {
   for (const p of problems) console.error(`  ${p}`);
   process.exit(1);
@@ -152,7 +155,7 @@ if (DRY) {
 
 await verify(made, (url, got) => {
   if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
-  if (url === game.url && got.tables?.[0] !== scene.url) return "came back without its table";
+  if (url === game.url && JSON.stringify(got.tables) !== JSON.stringify([scene.url])) return `came back listing tables ${JSON.stringify(got.tables)}, not just its own`;
   if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
   return null;
 });
