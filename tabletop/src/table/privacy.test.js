@@ -6,7 +6,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { HIDDEN, SEATS, ZONE, faceUpIn } from "./visibility.js";
 import Extension from "./extension.js";
-import { DEFAULT_CARD, PRIVACY_VERSION, cardBounds, cardState, privacyFile, privacyKey, privacyPiece, rememberAsset } from "./privacy.js";
+import { DECAL, DEFAULT_CARD, PRIVACY_VERSION, cardBounds, cardState, cutRects, privacyFile, privacyKey, privacyPiece, rememberAsset } from "./privacy.js";
 import { pieceMeshes, meshesBounds } from "../shapes.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
@@ -81,6 +81,45 @@ describe("three looks", () => {
       const flip = (p) => span(p).map((y) => +(2 * mid - y).toFixed(9)).reverse();
       expect(under.map((p) => span(p).map((y) => +y.toFixed(9))).sort()).toEqual(top.map(flip).sort());
     }
+  });
+
+  it("the privacy face is two levels a side, its decals tiling the field without one lying on another", () => {
+    const { parts } = privacyPiece(BOUNDS);
+    const mid = (BOUNDS.min[1] + BOUNDS.max[1]) / 2;
+    expect(parts.every((p) => p.shape === "box")).toBe(true);
+    const [core, ...decals] = parts;
+    expect(core.name).toBe("card");
+    const coreTop = core.at[1] + core.size[1];
+    const rectOf = (p) => [p.at[0] - p.size[0] / 2, p.at[2] - p.size[2] / 2, p.at[0] + p.size[0] / 2, p.at[2] + p.size[2] / 2];
+    for (const side of ["top", "under"]) {
+      const ds = decals.filter((p) => (p.at[1] > mid) === (side === "top"));
+      // one level: every decal's outer face at the card's face, DECAL proud of the core's
+      const outer = new Set(ds.map((p) => +(side === "top" ? p.at[1] + p.size[1] : p.at[1]).toFixed(9)));
+      expect([...outer]).toEqual([+(side === "top" ? BOUNDS.max[1] : BOUNDS.min[1]).toFixed(9)]);
+      expect(BOUNDS.max[1] - coreTop).toBeCloseTo(DECAL, 9);
+      // no two overlap in plan
+      const rs = ds.map(rectOf);
+      for (let i = 0; i < rs.length; i++) {
+        for (let j = i + 1; j < rs.length; j++) {
+          const ox = Math.min(rs[i][2], rs[j][2]) - Math.max(rs[i][0], rs[j][0]);
+          const oz = Math.min(rs[i][3], rs[j][3]) - Math.max(rs[i][1], rs[j][1]);
+          expect(ox > 1e-9 && oz > 1e-9, `${ds[i].name} ${i} over ${ds[j].name} ${j}`).toBe(false);
+        }
+      }
+      // and together they cover the field exactly
+      const w = BOUNDS.max[0] - BOUNDS.min[0];
+      const l = BOUNDS.max[2] - BOUNDS.min[2];
+      const m = Math.min(w, l) * 0.07;
+      const area = rs.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0);
+      expect(area).toBeCloseTo((w - 2 * m) * (l - 2 * m), 10);
+    }
+  });
+
+  it("cutRects tiles a rectangle less its holes", () => {
+    expect(cutRects([0, 0, 4, 4], [])).toEqual([[0, 0, 4, 4]]);
+    const r = cutRects([0, 0, 4, 4], [[1, 1, 3, 3], [2, 2, 5, 5]]);
+    expect(r.reduce((a, q) => a + (q[2] - q[0]) * (q[3] - q[1]), 0)).toBe(16 - 4 - 4 + 1);
+    expect(cutRects([0, 0, 1, 1], [[-1, -1, 2, 2]])).toEqual([]);
   });
 
   it("the privacy face fills the card's bounds, and is one file for every card that size", () => {
