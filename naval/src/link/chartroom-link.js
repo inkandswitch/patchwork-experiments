@@ -19,7 +19,11 @@
 //     marineGeometry(doc, opts) → a Chartroom marine-geometry v1 (or a promise of one) }
 //
 // The table is in metres in the producer's own frame (x forward, y port,
-// z up); rigToTable (naval/hull-form.js) lines it up with the floated mesh by
+// z up). It is the hull's statics engine (naval/hull-form.js floatHull):
+// every upright figure it carries is read from it, and the mesh gives only
+// what a table has no field for. Its frame is the mesh's when the GLB names
+// the same hull (hull-link.js sameHull: the GLB's fingerprint ends in the
+// one fingerprint(doc) gives here); otherwise it is slid onto the mesh by
 // its LCB, so its origin doesn't matter. It is validated (validateTable)
 // before anything reads it: a reading outside its coverage is unavailable,
 // never extrapolated.
@@ -32,14 +36,20 @@ export const TABLE_FORMAT = "hydrostatic-table/1";
 export const GEOMETRY_FORMAT = "marine-geometry/1";
 
 /**
- * What the screen asks a producer for: heels 0–180° (the rig aid's own, so
- * large-angle stability reaches past AVS), at a resolution the design notes
- * measured at ~50 ms for camber (96 sections × 6 girth steps, 32 immersion
- * steps). Trims are the producer's choice (its design trim among them).
+ * What is asked of a producer: heels 0–180° (the rig aid's own, so
+ * large-angle stability reaches past AVS) and 32 immersion steps per
+ * attitude. Trims are the producer's choice (its design trim among them),
+ * and so is the hull's resolution: the table is the hull's statics engine
+ * (naval/hull-form.js), so its upright figures must be the ones the hull's
+ * own tool shows. Measured on camber's kinked example at 12 m: at camber's
+ * own default (240 sections × 10 girth steps) ∇ is 23.103 m³, exactly its
+ * editor's hydrostatics(); at the 96 × 6 this used to ask for, 22.905 m³
+ * (−0.9%), and 23.184 m³ at 480 × 20. The default costs ~0.3 s here, once
+ * per read of the hull, against ~0.1 s at 96 × 6.
  * The keys are camber's HydrostaticExportOptions; a producer ignores what
  * it doesn't know.
  */
-export const TABLE_OPTIONS = Object.freeze({ heelDeg: DEFAULT_HEELS, numSections: 96, girthSteps: 6, immersionSteps: 32 });
+export const TABLE_OPTIONS = Object.freeze({ heelDeg: DEFAULT_HEELS, immersionSteps: 32 });
 
 function list(registry) {
   try {

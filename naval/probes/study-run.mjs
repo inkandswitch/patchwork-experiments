@@ -15,9 +15,13 @@
 // no page errors. Screenshots desktop light and dark and 390 px.
 // When camber registers a chartroom:source, says whether the hull's statics
 // came from it, and then adds the same hull again as a GLB file (no
-// provider: its table is built from the mesh) and checks the two agree: the
-// agreement check between camber's table and naval's own, at probe time
-// because no package imports another.
+// provider: the mesh is its only engine) and checks the two agree: the
+// agreement check between camber's own hydrostatics and naval's mesh-hydro,
+// at probe time because no package imports another. With the table, every
+// upright figure it carries (∇, Aw, LCB, LCF, KMt, and Cb/Cp/Cw over the
+// mesh's lengths) is camber's; what a table has no field for (LOA, LWL,
+// BWL, Tc, the wetted surface, Cm, the half angle of entrance) is read off
+// the same mesh at the same waterplane either way, so it must be identical.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -40,8 +44,31 @@ const fixture = (id) => {
 };
 
 const W = 1400, H = 1000;
-/** KN from camber's table (96 sections × 6 girth steps) and from the mesh table must agree to this fraction of LWL. */
-const KN_TOL_FRAC = 0.0025; // measured on the kinked example at 12 m: 0.1% at worst (10 mm at 60°)
+// The agreement tolerances, each about twice what was measured on the kinked example at 12 m (camber's table at
+// its own default resolution, 240 sections × 10 girth steps, against naval's mesh-hydro on the GLB camber builds
+// with its default params; table − mesh):
+//   ∇ −0.37% (−0.087 m³, −89 kg of 23.7 t), Aw −1.05%, KMt +0.33% (+10 mm), D/L −0.37%;
+//   Cb −0.0018, Cp −0.0028, Cw −0.0083; LCB +0.36% of LWL, LCF +0.60% of LWL;
+//   KN −0.4 mm at 30°, −3.1 mm at 60°, −0.5 mm at 90° (0.03% of LWL at worst).
+// (At the 96 × 6 the table used to be asked for, ∇ was −1.23% and KMt +0.93%: chartroom-link.js TABLE_OPTIONS.)
+// The two integrate differently discretised surfaces (camber's station sweep, naval's triangles); neither is the other's oracle.
+/** [row, tolerance, kind]: "rel" a fraction of the mesh's value, "abs" in the figure's own unit (LCB and LCF: a fraction of LWL). */
+const AGREE = [
+  ["volume", 0.01, "rel"],
+  ["displacement", 0.01, "rel"],
+  ["aw", 0.02, "rel"],
+  ["kmt", 0.01, "rel"],
+  ["dL", 0.01, "rel"],
+  ["cb", 0.005, "abs"],
+  ["cp", 0.006, "abs"],
+  ["cw", 0.016, "abs"],
+  ["lcb", 0.008, "abs"],
+  ["lcf", 0.012, "abs"],
+];
+/** What a hydrostatic table has no field for: read off the same mesh at the same waterplane, so identical. */
+const SAME = ["loa", "lwl", "bwl", "tc", "wsa", "cm", "halfEntrance"];
+/** KN from camber's table and from the mesh table must agree to this fraction of LWL. */
+const KN_TOL_FRAC = 0.0006; // measured: 0.03% at worst (3.1 mm at 60°), each at its own engine's ∇
 const b = await browser({
   root: PKG, port: 4830, cdp: 9830, page: `/probes/study-probe.html${withCamber ? "?camber" : ""}`, width: W, height: H,
   show: process.argv.includes("--show"), timeout: 300_000,
@@ -115,10 +142,10 @@ try {
   check("at 390 px nothing runs past the tool's right edge (the table scrolls in its own box)", ox.scrollWidth <= ox.clientWidth + 1 && ox.wide.length === 0, ox);
   await shot("study-narrow-light", 390, 844);
   await view(W, H);
-  // ── agreement: camber's own Chartroom table against the table built from the same hull's mesh.
-  // The same triangles reach the study twice: as the camber doc (statics from camber's chartroom:source) and as
-  // a GLB file (no provider to ask, so naval/statics.js buildTable). Everything read off the floated mesh is
-  // the same by construction; what the two tables can differ in is KN.
+  // ── agreement: camber's own hydrostatics against naval's mesh-hydro, on the same hull.
+  // The same triangles reach the study twice: as the camber doc (its chartroom:source's table is the statics
+  // engine: one engine per hull source) and as a GLB file (no provider to ask, so the mesh is the engine and
+  // naval/statics.js buildTable makes its table).
   if (withCamber && report.measured.chartroomUsed) {
     const fileUrl = await P(`glbFileOf(${J(hullUrl)})`, 120_000);
     await P(`addSubject(${J(fileUrl)})`);
@@ -126,15 +153,20 @@ try {
     const ex2 = both ? await P("exported()") : null;
     const cell = (id, i) => ex2?.groups.flatMap((g) => g.rows).find((r) => r.id === id)?.cells[i]?.figure ?? null;
     const reads = ex2?.subjects.map((x) => x.read?.hull?.table ?? null) ?? [];
-    const rows = ["volume", "lwl", "kmt", "kn30", "kn60", "kn90"].map((id) => {
+    const row = (id) => {
       const [a, m] = [cell(id, n - 1), cell(id, n)];
-      return { id, chartroom: a?.value ?? null, mesh: m?.value ?? null, diffM: a?.value != null && m?.value != null ? +(a.value - m.value).toPrecision(3) : null, whyChartroom: a?.why ?? null, whyMesh: m?.why ?? null };
-    });
-    report.measured.agreement = { tables: reads.slice(n - 1), lwlM: cell("lwl", n)?.value ?? null, rows };
+      const diff = a?.value != null && m?.value != null ? a.value - m.value : null;
+      return { id, chartroom: a?.value ?? null, mesh: m?.value ?? null, diff: diff == null ? null : +diff.toPrecision(3), rel: diff == null || !m.value ? null : +(diff / m.value).toPrecision(3), method: a?.method ?? null, whyChartroom: a?.why ?? null, whyMesh: m?.why ?? null };
+    };
+    const same = SAME.map(row), upright = AGREE.map(([id]) => row(id)), kn = ["kn30", "kn60", "kn90"].map(row);
     const lwl = cell("lwl", n)?.value ?? NaN;
-    check("agreement set up: the camber doc's statics are its chartroom:source's, the GLB file's are built from the mesh", !!both && reads[n - 1] === "chartroom" && reads[n] === null, report.measured.agreement);
-    check("…the same hull floats the same either way (∇, LWL, KMt: read off the same mesh)", rows.slice(0, 3).every((r) => r.diffM != null && Math.abs(r.diffM) <= 1e-6 * Math.max(1, Math.abs(r.mesh))), rows.slice(0, 3));
-    check(`…and camber's table and the mesh table agree on KN at 30°, 60° and 90° to ${KN_TOL_FRAC * 100}% of LWL`, rows.slice(3).every((r) => r.diffM != null && Math.abs(r.diffM) <= KN_TOL_FRAC * lwl), rows.slice(3));
+    report.measured.agreement = { tables: reads.slice(n - 1), fingerprint: ex2?.subjects[n - 1]?.read?.hull?.fingerprint ?? null, lwlM: lwl, same, upright, kn };
+    check("agreement set up: the camber doc's statics are its chartroom:source's, the GLB file's are built from the mesh", !!both && reads[n - 1] === "chartroom" && reads[n] === null, { tables: reads.slice(n - 1) });
+    check("…the camber hull's ∇, Aw and KMt say they are its own table's; its LWL, BWL, Tc and wetted surface that they are off the mesh", ["volume", "aw", "kmt"].every((id) => /the hull's own Chartroom table/.test(cell(id, n - 1)?.method ?? "")) && ["lwl", "bwl", "tc", "wsa"].every((id) => /off the mesh/.test(cell(id, n - 1)?.method ?? "")) && ["volume", "aw", "kmt", "lwl"].every((id) => !/table|off the mesh/.test(cell(id, n)?.method ?? "")), [...upright, ...same].map((r) => `${r.id}: ${r.method}`));
+    check("…what a table has no field for is the same mesh at the same waterplane either way (LOA, LWL, BWL, Tc, WSA, Cm, half entrance): identical", same.every((r) => r.diff != null && Math.abs(r.diff) <= 1e-9 * Math.max(1, Math.abs(r.mesh))), same);
+    check(`…camber's own upright figures agree with the mesh's: ${AGREE.map(([id, tol, kind]) => `${id} ±${kind === "rel" ? `${tol * 100}%` : tol}`).join(", ")}`, upright.every((r, i) => r.diff != null && Math.abs(AGREE[i][2] === "rel" ? r.rel : r.diff) <= AGREE[i][1]), upright);
+    check("…and they are camber's, not the mesh's again: ∇ differs by more than round-off", Math.abs(upright[0].rel ?? 0) > 1e-6, upright[0]);
+    check(`…and camber's table and the mesh table agree on KN at 30°, 60° and 90° to ${KN_TOL_FRAC * 100}% of LWL`, kn.every((r) => r.diff != null && Math.abs(r.diff) <= KN_TOL_FRAC * lwl), kn);
   }
   check("no errors on the page", (await P("errors")).length === 0, await P("errors"));
 } catch (err) {

@@ -34,7 +34,7 @@ import { DEFAULT_FRAME } from "../naval/hull-frame.js";
 import { figure, gradeParams, combineProvenance, worstEnvelope } from "./figures.js";
 
 /** Bump when the same docs would screen to different figures. */
-export const METHOD_VERSION = 1;
+export const METHOD_VERSION = 2; // 2: a hull with its own Chartroom table takes its upright figures from that table (hull-form.js tableUpright)
 
 /** The Froude numbers the resistance figures are read at. */
 export const RESIST_FN = [0.25, 0.35, 0.45];
@@ -46,6 +46,8 @@ export const DSYHS_FN = { min: 0.15, max: 0.75 };
 const fin = (v) => typeof v === "number" && Number.isFinite(v);
 const CITE = {
   mesh: "naval/src/naval/mesh-hydro.js uprightHydrostatics: the immersed mesh integrated exactly (Chartroom hydrostatic-table v1 definitions)",
+  table: "naval/src/naval/hull-form.js tableUpright: the table read at the floated waterplane, upright at its reference trim (Chartroom hydrostatic-table v1 §4, §5)",
+  meshUnderTable: "naval/src/naval/mesh-hydro.js uprightHydrostatics: the hull's mesh, cut at the waterplane its hydrostatic table floats it at",
   synthetic: "naval/src/naval/synthetic-hull.js: a hull fitted to the principal dimensions (Cp, Cm, LCB fitted; shape assumed)",
   ratios: "naval/src/naval/ratios.js; Larsson, Eliasson & Orych, Principles of Yacht Design (5th ed.), ch. 3",
   kmt: "KMt = KB + I_T/∇ at the waterline floated; GMt = KMt − KG > 0 is the upright limit on KG (as camber's stability.ts limitingKgCurve)",
@@ -100,29 +102,59 @@ export function screenSubject(job) {
   const dispProv = given ? (isEstimated(d, ["loading", "displacement", "kg"]) ? "estimated" : "given") : synthetic ? dimProv("displacementKg") : "measured";
   const floated = given ? "floated at the stated displacement" : synthetic ? "at the stated displacement" : "floated at its design waterline";
 
+  // One statics engine per hull (hull-form.js): a hull floated by its own table reads from it every upright
+  // figure it carries, and each figure says where it came from: `part` adds the source to a figure's method
+  // and cite. On the mesh engine (and a synthetic hull) it adds nothing.
+  const own = h.engine === "chartroom";
+  const src = (key) => (own ? h.from[key] : "mesh");
+  /** A figure made of others: the mesh's when all of them are, else mixed. */
+  const mixOf = (...keys) => (keys.every((k) => src(k) === "mesh") ? "mesh" : "mixed");
+  const NO_FIELD = "off the mesh: a hydrostatic table has no field for it";
+  const NOT_HERE = "off the mesh: the hull's table doesn't supply it here";
+  const NO_REF = "off the mesh at its design waterline: the table states no reference waterplane";
+  const pick = (how, k) => (typeof how === "string" ? how : how?.[k]);
+  /**
+   * @param {string} from "table" | "mesh" | "mixed" | "given"
+   * @param {string|{ mesh?: string, mixed?: string }} [how] for "mesh": why the table didn't give it; for "mixed": what is mixed
+   */
+  const part = (id, from, f, how) => {
+    let tag = "", cite = shape.cite;
+    if (own && from === "table") [tag, cite] = [` (${tableFrom})`, `${tableFrom}; ${CITE.table}`];
+    else if (own && from === "mixed") [tag, cite] = [` (${pick(how, "mixed") ?? "the table's ∇ over the mesh's lengths and sections"})`, `${tableFrom}; ${CITE.table}; ${CITE.meshUnderTable}`];
+    else if (own && from === "given") [tag, cite] = ["", `the stated displacement; the waterplane it floats at is ${tableFrom}'s`];
+    else if (own) [tag, cite] = [` (${pick(how, "mesh") ?? NOT_HERE})`, CITE.meshUnderTable];
+    put(id, { ...shape, ...f, method: `${f.method}${tag}`, cite: f.cite ? `${f.cite}; ${cite}` : cite });
+  };
+
   // ── particulars
   const mid = (h.xAft + h.xFwd) / 2;
-  put("loa", { value: form.loa, unit: "length", ...shape, method: "Length overall, the hull's drawn extent", provenance: synthetic ? dimProv("loa") : "measured" });
-  put("lwl", { value: h.lwl, unit: "length", ...shape, method: `Waterline length, ${floated}`, provenance: synthetic ? dimProv("lwl") : combineProvenance("measured", dispProv) });
-  put("bwl", { value: h.bwl, unit: "length", ...shape, method: `Waterline beam, ${floated}`, provenance: synthetic ? dimProv("bwl") : combineProvenance("measured", dispProv) });
-  put("tc", { value: h.tc, unit: "length", ...shape, method: `Canoe-body draft Tc, ${floated}`, provenance: synthetic ? dimProv("tc") : combineProvenance("measured", dispProv) });
-  put("volume", { value: form.float.volumeM3, unit: "volume", ...shape, method: `Displaced volume ∇, ${floated} (ρ ${RHO_SEA} kg/m³)`, provenance: dispProv });
-  put("displacement", { value: form.float.massKg, unit: "mass", ...shape, method: `Displacement Δ, ${floated} (ρ ${RHO_SEA} kg/m³)`, provenance: dispProv });
+  const overLwl = "the table's centre, as a fraction of the mesh's waterline";
+  const overMesh = "the table's ∇ over the mesh's lengths and sections";
+  const atPlane = "∇ over the mesh's lengths and sections, cut at the table's waterplane";
+  const volHow = { mixed: src("volumeM3") === "given" ? atPlane : overMesh, mesh: NO_REF };
+  part("loa", "mesh", { value: form.loa, unit: "length", method: "Length overall, the hull's drawn extent", provenance: synthetic ? dimProv("loa") : "measured" }, NO_FIELD);
+  part("lwl", src("lwl"), { value: h.lwl, unit: "length", method: `Waterline length, ${floated}`, provenance: synthetic ? dimProv("lwl") : combineProvenance("measured", dispProv) }, NO_FIELD);
+  part("bwl", src("bwl"), { value: h.bwl, unit: "length", method: `Waterline beam, ${floated}`, provenance: synthetic ? dimProv("bwl") : combineProvenance("measured", dispProv) }, NO_FIELD);
+  part("tc", src("tc"), { value: h.tc, unit: "length", method: `Canoe-body draft Tc, ${floated}`, provenance: synthetic ? dimProv("tc") : combineProvenance("measured", dispProv) }, NO_FIELD);
+  part("volume", src("volumeM3"), { value: form.float.volumeM3, unit: "volume", method: `Displaced volume ∇, ${floated} (ρ ${RHO_SEA} kg/m³)`, provenance: dispProv }, NO_REF);
+  part("displacement", src("volumeM3"), { value: form.float.massKg, unit: "mass", method: `Displacement Δ, ${floated} (ρ ${RHO_SEA} kg/m³)`, provenance: dispProv }, NO_REF);
   const hp = combineProvenance(shape.provenance, dispProv);
-  put("wsa", { value: h.wsaCanoeM2, unit: "area", ...shape, method: "Wetted surface of the canoe body (the immersed transom left out)", provenance: hp });
-  put("aw", { value: h.awM2, unit: "area", ...shape, method: "Waterplane area Aw", provenance: hp });
-  put("lcb", { value: (h.lcb - mid) / h.lwl, unit: "percent", ...shape, method: "LCB, % of LWL from mid-LWL (+ forward)", provenance: hp });
-  put("lcf", { value: fin(h.lcf) ? (h.lcf - mid) / h.lwl : null, unit: "percent", ...shape, method: "LCF, % of LWL from mid-LWL (+ forward)", provenance: hp, why: "no waterplane centroid" });
-  put("cb", { value: h.cb, unit: "ratio", ...shape, method: "Block coefficient Cb = ∇/(LWL·BWL·Tc)", provenance: hp, why: "not computed" });
-  put("cp", { value: h.cp, unit: "ratio", ...shape, method: "Prismatic coefficient Cp = ∇/(Ax·LWL), Ax the largest section", provenance: hp, why: "not computed" });
-  put("cm", { value: h.cm, unit: "ratio", ...shape, method: "Midship coefficient Cm = Ax/(BWL·Tc)", provenance: hp, why: "not computed" });
-  put("cw", { value: h.cw, unit: "ratio", ...shape, method: "Waterplane coefficient Cw = Aw/(LWL·BWL)", provenance: hp, why: "not computed" });
-  put("halfEntrance", { value: h.halfEntranceDeg, unit: "angle", ...shape, method: "Half angle of entrance, at 10% of LWL from the bow", provenance: hp, why: "no section there" });
-  put("dL", { value: dLOf(form.float.massKg, h.lwl), unit: "ratio", method: "D/L = Δ (long tons) / (0.01·LWL ft)³", cite: CITE.ratios, provenance: hp });
-  put("slenderness", { value: h.lwl / Math.cbrt(form.float.volumeM3), unit: "ratio", method: "Slenderness LWL/∇^⅓", cite: CITE.ratios, provenance: hp });
+  part("wsa", src("wsaCanoeM2"), { value: h.wsaCanoeM2, unit: "area", method: "Wetted surface of the canoe body (the immersed transom left out)", provenance: hp }, { mixed: "the table's wetted area less the mesh's immersed transom", mesh: "off the mesh: the hull's table states no wetted area" });
+  part("aw", src("awM2"), { value: h.awM2, unit: "area", method: "Waterplane area Aw", provenance: hp });
+  part("lcb", src("lcb") === "table" ? "mixed" : "mesh", { value: (h.lcb - mid) / h.lwl, unit: "percent", method: "LCB, % of LWL from mid-LWL (+ forward)", provenance: hp }, { mixed: overLwl, mesh: "off the mesh: the table is slid onto the mesh by its LCB (nothing says the two share an origin)" });
+  part("lcf", src("lcf") === "table" ? "mixed" : "mesh", { value: fin(h.lcf) ? (h.lcf - mid) / h.lwl : null, unit: "percent", method: "LCF, % of LWL from mid-LWL (+ forward)", provenance: hp, why: "no waterplane centroid" }, { mixed: overLwl });
+  part("cb", src("cb"), { value: h.cb, unit: "ratio", method: "Block coefficient Cb = ∇/(LWL·BWL·Tc)", provenance: hp, why: "not computed" }, volHow);
+  part("cp", src("cp"), { value: h.cp, unit: "ratio", method: "Prismatic coefficient Cp = ∇/(Ax·LWL), Ax the largest section", provenance: hp, why: "not computed" }, volHow);
+  part("cm", src("cm"), { value: h.cm, unit: "ratio", method: "Midship coefficient Cm = Ax/(BWL·Tc)", provenance: hp, why: "not computed" }, NO_FIELD);
+  part("cw", src("cw"), { value: h.cw, unit: "ratio", method: "Waterplane coefficient Cw = Aw/(LWL·BWL)", provenance: hp, why: "not computed" }, { mixed: "the table's Aw over the mesh's waterline" });
+  part("halfEntrance", src("halfEntranceDeg"), { value: h.halfEntranceDeg, unit: "angle", method: "Half angle of entrance, at 10% of LWL from the bow", provenance: hp, why: "no section there" }, NO_FIELD);
+  const ratioFrom = mixOf("volumeM3");
+  const ratioHow = { mixed: src("volumeM3") === "given" ? "the stated ∇ over the mesh's LWL, cut at the table's waterplane" : "the table's ∇ over the mesh's LWL", mesh: NO_REF };
+  part("dL", ratioFrom, { value: dLOf(form.float.massKg, h.lwl), unit: "ratio", method: "D/L = Δ (long tons) / (0.01·LWL ft)³", cite: CITE.ratios, provenance: hp }, ratioHow);
+  part("slenderness", ratioFrom, { value: h.lwl / Math.cbrt(form.float.volumeM3), unit: "ratio", method: "Slenderness LWL/∇^⅓", cite: CITE.ratios, provenance: hp }, ratioHow);
 
   // ── stability: KMt (limiting KG), KN off the table
-  put("kmt", { value: h.kmt, unit: "length", ...shape, method: `KMt upright, above the hull's lowest point: the limiting KG for GMt > 0 (${floated})`, cite: `${shape.cite}; ${CITE.kmt}`, provenance: hp, why: "no waterplane second moment" });
+  part("kmt", src("kmt"), { value: h.kmt, unit: "length", method: `KMt upright, above ${own ? "the table's K reference" : "the hull's lowest point"}: the limiting KG for GMt > 0 (${floated})`, cite: CITE.kmt, provenance: hp, why: "no waterplane second moment" }, { mixed: "the table's KB with the mesh's BMt" });
   const map = rigToTable(statics.table, form);
   for (const heel of KN_HEELS) {
     let value = null, why = null;

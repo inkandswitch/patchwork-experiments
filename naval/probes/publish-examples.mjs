@@ -12,8 +12,9 @@
 //    writes it (normalize(fixtureDoc(...)): its prov and sources kept, the
 //    validation-only `published` block left out, as the tool leaves it).
 // 3. "Camber hull with a rig": a camber-hull doc from camber's example
-//    cuvature-kink-with-unmodified-pchip.json, at REAL SIZE (12 m LOA, in
-//    metres, scaled by camber's own setUnit/setLoa) in camber's stored form
+//    narrow-transom.json, at REAL SIZE (10 m LOA, in metres, scaled by
+//    camber's own setUnit/setLoa) with its design waterline set 2.2 m below
+//    the deck datum by camber's own setWaterline, in camber's stored form
 //    (probes/camber-hull-doc.mts, camber's own datatype and docFormat); and a
 //    Rig doc linked to that hull doc itself (never a scene render: real size
 //    only) through the tool's Link field, then "New from… First guess from
@@ -21,6 +22,29 @@
 //    the Helm helper (its default target, 3° weather) moves the rig, and the
 //    script says what it did. No render doc is published: a scene makes its
 //    own when the hull is put in one.
+//
+//    Why this hull, at this waterline. Every example in camber/examples (and
+//    its editor's default hull) was screened at real size through the tool's
+//    own analysis, statics from camber's own table. Five are drawn with the
+//    waterline at the deck and state no floating hull; the rest float heavy
+//    as drawn (D/L 355–650), and every one but this has Cp 0.66–0.76 at any
+//    waterline, outside what the resistance method was fitted to (DSYHS: Cp
+//    0.52–0.60). narrow-transom is the one with a yacht's prismatic (Cp
+//    0.56–0.58). At the waterline it is drawn with (1.5 m of 10) it floats
+//    at 12.1 t, D/L 599, five DSYHS parameters of eight out; with the
+//    waterline at 2.2 m it is a light, long-ended sloop (LWL 6.39 m of
+//    9.92 m): 2.28 t, D/L 244, Cp 0.558, LCB −4.7% of LWL, one DSYHS
+//    parameter just outside (Cm 0.575 for 0.646: "near"), and the rig ends
+//    at helm 3° with a lead of 8.4%, inside its 5–9% band. Only the waterline
+//    was moved: the geometry is camber's example, untouched. (Still no
+//    production yacht: the lowest freeboard is 1.5 m, and she is tender, at
+//    the 25° heel limit at the reference point. A waterline 0.05 m either
+//    way loses the lead band or the "near" grade.)
+//    The example this replaced, cuvature-kink-with-unmodified-pchip at 12 m,
+//    floats at 23.7 t (D/L 647, Cp 0.74, LCB −8.8%), far outside every
+//    method's range, and its rig ended with a lead of 20%. It is left out of
+//    what is published: as a second hull example it would only show the
+//    warnings. probes/study-run.mjs still screens it, as its agreement case.
 //
 // Everything is made in headless Chrome with the BUILT rig and camber plugins
 // on an in-memory repo (probes/publish-examples.html; camber's dist served at
@@ -62,8 +86,10 @@ const SETTLE = Number(args.settle ?? 8000);
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CAMBER = resolve(typeof args.camber === "string" ? args.camber.replace(/^~(?=\/)/, homedir()) : join(homedir(), "dev/camber"));
-const EXAMPLE = "cuvature-kink-with-unmodified-pchip.json";
-const LENGTH_M = 12;
+const EXAMPLE = "narrow-transom.json";
+const LENGTH_M = 10;
+/** The design waterline, m below camber's deck datum (the example is drawn with 1.5 m at this length: see the header). */
+const WATERLINE_M = 2.2;
 const TSX = join(CAMBER, "node_modules/.bin/tsx");
 for (const p of [join(PKG, "dist/index.js"), join(CAMBER, "patchwork/dist/index.js"), join(CAMBER, "examples", EXAMPLE), TSX]) if (!existsSync(p)) throw new Error(`no ${p}: build (or install) it first`);
 
@@ -71,11 +97,11 @@ const FIXTURES = [
   { id: "catalina-30", title: "Catalina 30" },
   { id: "laser-ilca7", title: "Laser (ILCA 7)" },
 ];
-const HULL_TITLE = "Kinked-curvature hull (camber example)";
+const HULL_TITLE = "Narrow-transom hull, 10 m (camber example)";
 const RIG_TITLE = "Camber hull with a rig";
 
 // ─── the camber hull doc, from camber's own source ─────────────────────────
-const hullDoc = JSON.parse(execFileSync(TSX, [join(PKG, "probes/camber-hull-doc.mts"), CAMBER, EXAMPLE, HULL_TITLE, String(LENGTH_M)], { encoding: "utf8", maxBuffer: 64 << 20 }));
+const hullDoc = JSON.parse(execFileSync(TSX, [join(PKG, "probes/camber-hull-doc.mts"), CAMBER, EXAMPLE, HULL_TITLE, String(LENGTH_M), String(WATERLINE_M)], { encoding: "utf8", maxBuffer: 64 << 20 }));
 
 // ─── make it all in the browser, with the tools ────────────────────────────
 const { browser, checklist, sleep } = await import("./cdp.mjs");
@@ -103,16 +129,19 @@ try {
     check(`${f.title}: made from "New from…", its readouts render`, r.status.tone !== "error" && Number.isFinite(r.readouts.saD) && Number.isFinite(r.readouts.helmDeg), r);
   }
   const hull = await P(`camber(${J(hullDoc)})`, 180_000);
-  // camber's LOA runs from its plan's first control point (the transom) to its last (the bow); this hull's
-  // transom is raked and sits inside that, so the mesh is a little shorter than the LOA
+  // camber's LOA runs from its plan's first control point (the transom) to its last (the bow); the drawn hull is
+  // trimmed at its transom, so the mesh is a little shorter than the LOA
   const span = hull.bounds ? hull.bounds.max[0] - hull.bounds.min[0] : NaN;
-  report.hull = { unit: hullDoc.unit, bounds: hull.bounds, meshLengthM: n3(span), glbBytes: hull.bytes };
+  report.hull = { unit: hullDoc.unit, waterlineM: hullDoc.waterline, bounds: hull.bounds, meshLengthM: n3(span), glbBytes: hull.bytes };
   check(`the hull doc is at real size: camber's scene:source with its DEFAULT params (document size) builds it ${LENGTH_M} m long (the bow at x ≈ ${LENGTH_M} m, the mesh over 90% of it)`, hullDoc.unit === "m" && hull.params.size === "document" && Math.abs(hull.bounds?.max[0] - LENGTH_M) < 0.1 && span > 0.9 * LENGTH_M, report.hull);
   const rig = await P(`rigOn(${J(hull.hullUrl)}, ${J(RIG_TITLE)})`, 300_000);
   report.examples[RIG_TITLE] = rig;
   check("the rig reads the linked hull itself, built at its own size", /^Hull: built by /.test(rig.chip ?? "") && /own size/.test(rig.chip ?? ""), { chip: rig.chip, status: rig.linkStatus });
   check("the first guess applied", !!rig.firstGuess.status && Number.isFinite(rig.firstGuess.helmDeg), rig.firstGuess);
+  check("the hull's statics are camber's own (its chartroom:source), not the mesh's", /statics from/.test(rig.chip ?? ""), { chip: rig.chip });
   check("it opens within the helm band (0–5° weather)", !rig.final.helmOut, rig.final);
+  check("it opens within the lead band", !rig.final.leadOut && Number.isFinite(rig.final.lead), rig.final);
+  check("the hull is a plausible sloop's: D/L 150–300", rig.final.dL >= 150 && rig.final.dL <= 300, { dL: rig.final.dL, displacementKg: rig.final.displacementKg });
   snap = await P("snapshot()", 120_000);
   roles = { fixtures: Object.fromEntries(FIXTURES.map((f) => [f.id, fixtures[f.id].url])), hull: hull.hullUrl, rig: rig.url };
   // every doc made is complete on its own: the rig docs are exactly what normalize() gives back
@@ -130,7 +159,7 @@ console.log(JSON.stringify(report, null, 2));
 const ex = report.examples[RIG_TITLE];
 if (ex?.final) {
   const f = ex.firstGuess, z = ex.final;
-  console.log(`\n${RIG_TITLE}, at 12 kn true, 45°:`);
+  console.log(`\n${RIG_TITLE}: ${EXAMPLE} at ${LENGTH_M} m, waterline ${WATERLINE_M} m below the deck datum: ${Math.round(z.displacementKg)} kg, D/L ${n3(z.dL)}, SA/D ${n3(z.saD)}; at 12 kn true, 45°:`);
   console.log(`  first guess: helm ${n3(f.helmDeg)}° (${f.helm}); lead ${n3(100 * f.lead)}% (${f.leadBand}); ${n3(f.refSpeedKn)} kn`);
   if (ex.helper) console.log(`  out of band (${ex.helper.why}): the Helm helper at ${ex.helper.target}°: ${ex.helper.status}`);
   else console.log("  in band: no helper run");
