@@ -12,7 +12,7 @@
 
 import { conjQ, eulerFromQuat, headingOf, invert, matrixOf, matrixOfPose, mulQ, multiply, poseOfMatrix, quatFromEuler, quatOfAxes, rotateQ, apply } from "./frames.js";
 import { SHIP, parentOf, partsOf } from "./traits.js";
-import { rigContract, rigFrame } from "./rig-contract.js";
+import { contractOn, docOf, rigFrame } from "./rig-contract.js";
 
 /** The body frame where the hull's own is (sailing's sloop). */
 export const IDENTITY = Object.freeze({ position: Object.freeze([0, 0, 0]), rotation: Object.freeze([0, 0, 0]) });
@@ -163,7 +163,22 @@ export function rigContractOf(api, id) {
   if (!byShip) sails.set(sc, (byShip = new Map()));
   if (!byShip.has(id)) byShip.set(id, partsOf(sc, id).sail);
   const sail = byShip.get(id);
-  return sail ? rigContract(api.content?.(sail)?.extras?.rig) : null;
+  return sail ? contractOn(api.content?.(sail)?.extras?.rig, hullKeyOf(api, id)) : null;
+}
+
+/**
+ * The scene's file key for a ship's hull (the doc.assets key whose file is
+ * her hull object's sourceUrl: "sailing/hull@2"), or null: a hull imported
+ * on its own, or a doc older than the scene's files. A rig contract that
+ * names the hull it describes is taken only on that hull's family
+ * (rig-contract.js contractOn).
+ */
+export function hullKeyOf(api, id) {
+  const url = docOf(api.scene?.()?.objects?.[id]?.sourceUrl);
+  const assets = url ? api.doc?.()?.assets : null;
+  if (!assets || typeof assets !== "object") return null;
+  for (const key in assets) if (docOf(assets[key]?.url) === url) return key;
+  return null;
 }
 
 /** A ship's frame (frameOf) from the stage: her trait, her rig's contract and her GLB's extras. */

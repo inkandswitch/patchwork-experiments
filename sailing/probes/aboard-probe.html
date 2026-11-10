@@ -166,6 +166,7 @@ try {
         hand1: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p1")?.[0],
         hand2: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p2")?.[0],
         rig: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor"), wheel: withTrait("sailing.helm"), mast: byName("Mast"), mainsheet: withTrait("sailing.mainsheet"),
+        jib: withTrait("sailing.jib"), winch: byName("Port jib winch"),
       });
       return { ...ids };
     },
@@ -261,12 +262,16 @@ try {
       const panel = h.querySelector(".sail-panel");
       const r = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
       const host = hosts[w].getBoundingClientRect();
-      return { state: h.dataset.state, seated: h.hasAttribute("data-seated"), button: btn && !btn.hidden ? btn.textContent : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
+      return { state: h.dataset.state, seated: h.hasAttribute("data-seated"), button: btn && !btn.hidden ? btn.textContent : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", advice: h.querySelector('[data-k="advice"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
     },
     /** a fitting's position in the hull's frame, as the doc has it */
     hullLocal(id) { const s = dbg.a.scene(); return s.toLocal(ids.hull, s.world(id).slice(12, 15)).map((v) => +v.toFixed(3)); },
     /** a station's live value (the simulating view's) */
     live: (id, k) => Number(ctx("a")?.sim.value(id)?.[k]),
+    /** the jib's side held (its doc trait): "port" | "starboard" | null */
+    jibHeld: () => objects()[ids.jib]?.traits?.["sailing.jib"]?.held ?? null,
+    /** the jib's doc trait: { sheet, held, furl } */
+    jib: () => objects()[ids.jib]?.traits?.["sailing.jib"] ?? null,
     /** put a view's body somewhere aboard: local to ship `on` */
     place: (w, on, position, yaw, pitch) => ctx(w).crew.place(on, position, yaw, pitch),
     read: (w) => ctx(w)?.sim.read(ids.hull) ?? null,

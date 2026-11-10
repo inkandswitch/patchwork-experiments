@@ -11,6 +11,7 @@ import { carryableAboard, shipOf } from "./traits.js";
 import { boxTriangles } from "./navmesh.js";
 import { BODY, DECK, SWIM } from "./walk.js";
 import { meshNode } from "./test/fakes.js";
+import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
 beforeAll(() => (globalThis.__SAILING_ASSERT__ = true));
 afterAll(() => delete globalThis.__SAILING_ASSERT__);
@@ -440,6 +441,13 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.key("KeyW")).toBe(false); // not walking while you're at it
     s.frames(10);
     expect(handlers.tick).toHaveBeenCalledTimes(10);
+    expect(handlers.tick).toHaveBeenLastCalledWith(1 / 60);
+    // its verbs run in sea time, as far as the ships step a frame (MAX_SUBSTEPS·SUBSTEP, 0.25 s), not the
+    // walker's 0.05 s: at SwiftShader's 2–3 frames a second the jib still unrolls in its 4 s of sea time
+    s.frames(1, 0.2);
+    expect(handlers.tick).toHaveBeenLastCalledWith(0.2);
+    s.frames(1, 0.43);
+    expect(handlers.tick).toHaveBeenLastCalledWith(MAX_SUBSTEPS * SUBSTEP);
     expect(crew.me().position[2]).toBeCloseTo(3.6);
     expect(s.presence.crew.station).toBe("wheel");
     // F (the station's) leaves

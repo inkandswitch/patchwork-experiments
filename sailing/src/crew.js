@@ -23,8 +23,9 @@ import { DECK, SWIM, easeEye, look, lookDir } from "./walk.js";
 import { bake, sweptAbout } from "./navmesh.js";
 import * as walker from "./walker.js";
 import { apply, headingOf, invert, matrixOf, multiply, onHeading, rotateM, unrotateM } from "./frames.js";
-import { HELM, HOOK, QUARTER, SAIL, isUnder, partsOf, sailingThing, shipOf } from "./traits.js";
+import { HELM, HOOK, JIB, QUARTER, SAIL, WINCH, isUnder, partsOf, sailingThing, shipOf } from "./traits.js";
 import { bodyBoxOf, bodyOf, frameMatrix, placeIn, shipFrame } from "./body.js";
+import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
 export { behind, ladderTop } from "./walker.js";
 
@@ -135,7 +136,7 @@ export function bakedObjects(scene, ship) {
   const moving = (id) => {
     for (let at = id, n = 0; at != null && at !== ship && n < 64; at = scene.parents?.get?.(at) ?? null, n++) {
       const t = scene.objects?.[at]?.traits;
-      if (t?.[SAIL] || t?.[HOOK]) return true;
+      if (t?.[SAIL] || t?.[JIB] || t?.[HOOK]) return true;
     }
     return false;
   };
@@ -254,9 +255,26 @@ export function navInput(api, ship) {
   };
   const parts = partsOf(scene, ship);
   const stations = ["helm", "sail", "anchor", "mainsheet"].filter((k) => parts[k]).map((k) => ({ id: parts[k], at: at(parts[k]), by: walker.standOff(k) })).filter((s) => s.at);
+  // a winch's stand is its trait's (in its own frame), facing it
+  for (const id of parts.winches) {
+    const m = placeIn(scene, id, ship);
+    const stand = scene.objects[id]?.traits?.[WINCH]?.stand;
+    if (!m || !Array.isArray(stand)) continue;
+    const toW = multiply(toBody, m);
+    stations.push(walker.facing(id, apply(toW, [0, 0, 0]), apply(toW, stand)));
+  }
   const ladder = parts.ladder && at(parts.ladder) ? { id: parts.ladder, at: at(parts.ladder) } : null;
   const seeds = walker.seedsOf({ stations, helm: parts.helm, ladder, box: bodyBoxOf(api, ship) });
   return { key, triangles, seeds };
+}
+
+/**
+ * The look (yaw to her bow, as the crew's, and pitch up) from an eye to a
+ * world point, `heading` hers: the inverse of walk.js lookDir. Pure.
+ */
+export function aimOf(eye, at, heading) {
+  const dx = at[0] - eye[0], dy = at[1] - eye[1], dz = at[2] - eye[2];
+  return { yaw: Math.atan2(-dx, -dz) - heading, pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
 }
 
 /** The boom, where it's drawn this frame, as a capsule in her body frame: a moving obstacle that only blocks. */
@@ -422,7 +440,7 @@ export function createCrew(api, ctx) {
     w = onShip() ? walker.place(env, w.ship, feet) : walker.swimmingAt(env, [feet[0], feet[2]]);
   }
 
-  function walk(dt) {
+  function walk(dt, sea = dt) {
     // (boarding: B1 lands her spawn beside the wheel at w.offset, or G1 / the wait running out swims)
     const before = w;
     const r = walker.step(w, wanted(), person.yaw, dt, env);
@@ -443,7 +461,7 @@ export function createCrew(api, ctx) {
     }
     if (station) {
       try {
-        station.handlers.tick?.(dt);
+        station.handlers.tick?.(sea);
       } catch (err) {
         console.warn("[sailing] a station's tick failed", err);
       }
@@ -621,7 +639,8 @@ export function createCrew(api, ctx) {
    * Stand at a station: an arm over walking that hears keys first. You're
    * put just aft of it, facing forward; the mouse still turns your head.
    * @param {string} id
-   * @param {{ key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string }} handlers
+   * @param {{ key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
+ *   look: a world point to turn the eye to on arriving (else forward)
    * @returns {() => void} leave
    */
   function take(id, handlers = {}) {
@@ -637,6 +656,14 @@ export function createCrew(api, ctx) {
       w = r.state;
       person.yaw = r.yaw;
       person.pitch = -0.2;
+      // a station that says what its worker watches (a winch: the jib's luff) turns the eye to it
+      const aim = handlers.look?.();
+      const pose = aim ? walker.worldPose(w, env) : null;
+      if (pose) {
+        const v = aimOf(pose.eye, aim, pose.heading);
+        person.yaw = v.yaw;
+        person.pitch = v.pitch;
+      }
     }
     keys.clear();
     const s = { id, handlers, disarm: null };
@@ -866,7 +893,9 @@ export function createCrew(api, ctx) {
     tick(dt) {
       frameNo++;
       const d = Math.min(dt, 0.05);
-      if (playing) walk(d);
+      // the walker's step is capped for its own sake; the station's verbs (the wheel, a sheet, the
+      // furler, the halyard, the windlass) run in sea time, as far as the ships step this frame
+      if (playing) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
       else follow();
       drawPeers(d);
     },

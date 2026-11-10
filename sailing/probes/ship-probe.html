@@ -5,7 +5,11 @@
      src/ship.js, loads the bytes with three's GLTFLoader (borrowed from the
      scene package's node_modules: this page is a dev probe, not part of any
      build), puts them together the way the template does (FIT, in the hull's
-     frame) and shows them from a named view. ?water=0 hides the sea. -->
+     frame) and shows them from a named view. ?water=0 hides the sea.
+     ?trim=beat|luff|stall|backed|reef|run dresses her sails with the real
+     looks.js on a stub stage (a read made the way physics.js makes one, for
+     that wind and those sheets), so the cloth, sheets, telltales and vane
+     are the ones play draws. -->
 <script type="importmap">
 { "imports": {
   "three": "/scene/node_modules/three/build/three.module.js",
@@ -16,7 +20,10 @@
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { FIT, partGLB } from "../src/ship.js";
+import { FIT, jibFit, partGLB } from "../src/ship.js";
+import { parseGLB } from "../src/glb.js";
+import { createLooks } from "../src/looks.js";
+import { trimModelOf } from "../src/trim.js";
 
 const q = new URLSearchParams(location.search);
 const W = innerWidth, H = innerHeight;
@@ -69,8 +76,86 @@ for (const [kind, at] of [["redBuoy", [-14, 0, -48]], ["greenBuoy", [18, 0, -70]
   o.position.set(...at);
   scene.add(o);
 }
+// the jib under the mast at its tack, its Y the luff; the jib's winches either side of the cockpit
+{
+  const jib = await load("jib");
+  shadows(jib);
+  const f = jibFit();
+  const inner = new THREE.Group();
+  inner.add(jib);
+  inner.position.set(...f.position);
+  inner.rotation.set(...f.rotation);
+  ship.add(inner);
+  jib.rotation.y = Number(q.get("jib") ?? 0.3);
+  for (const side of [-1, 1]) {
+    const w = await load("winch");
+    shadows(w);
+    w.position.set(side * Math.abs(FIT.winch.position[0]), FIT.winch.position[1], FIT.winch.position[2]);
+    ship.add(w);
+  }
+}
 parts.rig.rotation.y = Number(q.get("boom") ?? 0.35);
 parts.wheel.rotation.z = Number(q.get("helm") ?? 0);
+
+// ?trim=: the sails dressed by looks.js for a wind and sheets (a read as physics.js gives it: a sail its sheet
+// doesn't hold lies at its zero-lift angle, alpha0, off its air; one it holds stands at its sheet)
+if (q.get("trim")) {
+  const DEG = Math.PI / 180;
+  const extrasOf = (kind) => parseGLB(partGLB(kind).bytes).json.scenes[0].extras;
+  const rigX = extrasOf("rig"), jibX = extrasOf("jib");
+  const models = Object.fromEntries(rigX.rig.sails.map((x) => [x.id, trimModelOf(x)]));
+  const SC = {
+    beat: { a: 35, main: 15, jib: 15 },
+    luff: { a: 35, main: 50, jib: 50 },
+    stall: { a: 35, main: 5, jib: 7 },
+    backed: { a: 12, main: 40, jib: -15 },
+    reef: { a: 45, main: 20, jib: 20, raised: 0.7, furl: 0.4 },
+    run: { a: 160, main: 80, jib: -40 },
+  }[q.get("trim")];
+  const V = 7, qd = 0.5 * 1.225 * V * V;
+  const sgn = SC.a > 0 ? -1 : 1; // the leeward side: wind from starboard, the sails to port
+  const sailRead = (id, L) => {
+    const k = models[id], beta = Math.abs(SC.a);
+    const base = { id, main: id === "main", from: SC.a * DEG, area: 20, q: qd };
+    if (L < 0) return { ...base, angle: -sgn * -L * DEG, limit: -L * DEG, sheet: L, alpha: beta - L }; // backed or winged: to windward
+    const as = beta - L;
+    if (as < k.alpha0) return { ...base, angle: sgn * (beta - k.alpha0) * DEG, limit: L * DEG, sheet: beta - k.alpha0, alpha: k.alpha0 };
+    return { ...base, angle: sgn * L * DEG, limit: L * DEG, sheet: L, alpha: as };
+  };
+  const sails = [sailRead("main", SC.main), sailRead("jib", SC.jib)];
+  const read = { boom: sails[0].angle, jib: sails[1].angle, velocity: [0, 0, 0], spin: [0, 0, 0], sails };
+  parts.rig.rotation.y = read.boom;
+  const jibObj = ship.children.find((c) => c.isGroup && c.children[0]?.getObjectByName?.("Jib"))?.children[0];
+  jibObj.rotation.y = read.jib;
+  const winches = ship.children.filter((c) => c.getObjectByName?.("Jib winch"));
+  scene.updateMatrixWorld(true);
+  const objs = { ship, rig: parts.rig, jib: jibObj, wp: winches.find((w) => w.position.x < 0), ws: winches.find((w) => w.position.x > 0) };
+  const objects = {
+    ship: { traits: { "sailing.ship": { burgee: true } }, sourceUrl: "automerge:hull" },
+    rig: { traits: { "sailing.sail": {} } },
+    jib: { traits: { "sailing.jib": {} } },
+    wp: { traits: { "sailing.winch": { side: "port" } } },
+    ws: { traits: { "sailing.winch": { side: "starboard" } } },
+  };
+  const sc = { objects, ids: Object.keys(objects), parents: new Map(["rig", "jib", "wp", "ws"].map((id) => [id, "ship"])) };
+  const content = { rig: { root: parts.rig, extras: rigX }, jib: { root: jibObj, extras: jibX } };
+  const api = {
+    THREE,
+    scene: () => sc,
+    doc: () => ({ assets: { "sailing/hull@3": { url: "automerge:hull" } } }),
+    content: (id) => content[id] ?? null,
+    worldOf: (id) => (objs[id] ? (objs[id].updateMatrixWorld(true), objs[id].matrixWorld.elements) : null),
+    world: () => scene,
+  };
+  const tw = [-V * Math.sin(SC.a * DEG), V * Math.cos(SC.a * DEG)];
+  const ctx = {
+    sea: { ocean: null, wind: { at: (x, z, t, out = [0, 0]) => ((out[0] = tw[0]), (out[1] = tw[1]), out) }, clock: () => Number(q.get("t") ?? 1.3) },
+    sim: { ships: () => ["ship"], stationsOf: () => ({ sail: "rig", jib: "jib", winches: ["wp", "ws"] }), read: () => read, value: (id) => (id === "rig" ? { raised: SC.raised ?? 1 } : { furl: SC.furl ?? 0 }), sailModels: () => models },
+  };
+  const looks = createLooks(api, ctx);
+  looks.tick();
+  window.trimRead = { read, scenario: SC };
+}
 
 // views, in the ship's frame
 const VIEWS = {

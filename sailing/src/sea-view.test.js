@@ -2,7 +2,7 @@
 // and createSeaView and the editor's sea on a fake stage (test/fakes.js).
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
-import { ATMOSPHERE, MAX_STEP_S, RESYNC_S, createClock, createSeaView, follow, seaClock, seaParams, seaTime, slew } from "./sea-view.js";
+import { ATMOSPHERE, MAX_STEP_S, RESYNC_S, WATER_REACH, createClock, createSeaView, follow, seaClock, seaParams, seaTime, slew, waterExtent } from "./sea-view.js";
 import { floatPose } from "./looks.js";
 import { FLOAT, SEA } from "./traits.js";
 import edit from "./edit.js";
@@ -75,6 +75,23 @@ describe("the sea from the doc", () => {
     expect(seaParams(undefined)).toEqual({ wind: { speed: 7, from: 45 }, seed: 1, scale: 1 });
     expect(seaParams({ wind: { speed: 12 }, seed: 9 })).toEqual({ wind: { speed: 12, from: 45 }, seed: 9, scale: 1 });
     expect(seaParams({ wind: { speed: -3, from: "x" }, scale: -1 })).toEqual({ wind: { speed: 0, from: 45 }, seed: 1, scale: 0 });
+  });
+});
+
+describe("the water's extent (what the stage's near plane mustn't cut)", () => {
+  it("holds every crest and trough: the sum of the amplitudes bounds the surface, for calm to a gale", () => {
+    for (const speed of [0, 4, 8, 14, 22]) {
+      const ocean = createOcean({ wind: { speed, from: 30 }, seed: 3 });
+      const { min, max } = waterExtent(ocean);
+      expect(min).toEqual([-WATER_REACH, -max[1], -WATER_REACH]);
+      let hi = 0;
+      for (let i = 0; i < 400; i++) {
+        const h = ocean.heightAt((i * 7.31) % 200 - 100, (i * 13.7) % 200 - 100, i * 0.37);
+        hi = Math.max(hi, Math.abs(h));
+      }
+      expect(hi).toBeLessThan(max[1]);
+    }
+    expect(waterExtent(null).max[1]).toBe(0.5);
   });
 });
 

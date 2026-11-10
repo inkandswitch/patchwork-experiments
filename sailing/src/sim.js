@@ -20,10 +20,11 @@
 
 import { createShip, specFromBox, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 import { mergeSpec } from "./hull-model.js";
-import { apply, eulerFromQuat, invert, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
-import { IDENTITY, bodyBox, frameMatrix, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
-import { ANCHOR, SHIP, SIM, STATION, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
-import { rigContract, rigKey, rigSpecParts } from "./rig-contract.js";
+import { apply, eulerFromQuat, invert, matrixOf, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
+import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
+import { trimModelOf } from "./trim.js";
+import { ANCHOR, DEFAULTS as STATION_DEFAULTS, SHIP, SIM, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
+import { contractOn, rigKey, rigSpecParts } from "./rig-contract.js";
 
 /** How often the simulator writes the ships to the doc (ms), if they've moved. */
 export const SAVE_EVERY_MS = 10000;
@@ -69,19 +70,28 @@ const SLOOP_BOX = Object.freeze({ min: [-1.9, -1.9, -6], max: [1.9, 1.2, 6] });
  * contract's, in her body frame, and `spec.rig` carries the whole contract
  * there for the physics that reads it (DESIGN.md, "The rig contract").
  * `hullUrl` (the hull object's sourceUrl) is checked against the hull the
- * rig was designed on (spec.rig.warnings). `hullMesh` is her hull's own
- * triangles in its GLB's coordinates (hullTriangles): a contract designed on
- * that hull floats her on it (rig-contract.js drawnHull).
+ * rig was designed on (spec.rig.warnings). `hullKey` is the scene's file key
+ * for that hull (body.js hullKeyOf): a contract that names the hull family
+ * it describes (the stock sloop's, "sailing/hull") is taken only on that
+ * family's hulls, and on any other the rig is a plain one (rig-contract.js
+ * contractOn). `hullMesh` is her hull's own triangles in its GLB's
+ * coordinates (hullTriangles): a contract designed on that hull floats her
+ * on it (rig-contract.js drawnHull). A rig whose GLB isn't drawn where its
+ * contract's frame is (the stock rig: its origin at the gooseneck) says where
+ * it belongs (`rig.sail.at`, in her hull's frame), and is checked against
+ * that instead of the identity.
  * @param {{ box?: { min, max } | null, extras?: object | null } | null} content
  * @param {object} [overrides]
  * @param {number} [scale]
- * @param {{ frame?: { position, rotation }, rig?: { matrix: number[], sail?: object | null, contract?: object | null } | null, hullUrl?: string | null, hullMesh?: Float64Array | null }} [o]
+ * @param {{ frame?: { position, rotation }, rig?: { matrix: number[], sail?: object | null, contract?: object | null } | null, hullUrl?: string | null, hullKey?: string | null, hullMesh?: Float64Array | null }} [o]
  */
-export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig = null, hullUrl = null, hullMesh = null } = {}) {
+export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig = null, hullUrl = null, hullKey = null, hullMesh = null } = {}) {
   const k = scale > 0 ? scale : 1;
-  const contract = rigContract(rig?.contract);
+  const contract = contractOn(rig?.contract, hullKey);
   if (contract) {
-    const { box, own } = rigSpecParts(contract, k, { matrix: rig.matrix ?? null, hullUrl, mesh: hullMesh });
+    const at = rig.sail?.at;
+    const matrix = rig.matrix && at ? multiply(rig.matrix, invert(matrixOf({ position: at.position, rotation: at.rotation, scale: 1 }))) : (rig.matrix ?? null);
+    const { box, own } = rigSpecParts(contract, k, { matrix, hullUrl, hullKey, mesh: hullMesh });
     return mergeSpec(specFromBox(box, own), overrides);
   }
   const dims = content?.extras?.ship;
@@ -186,9 +196,10 @@ export function anchorReaches(at, state, spec, rode) {
  * The physics' controls from the stations' live values (null where a ship
  * has no such station: no helm leaves the rudder amidships, no sail station
  * means no sail set, no windlass no anchor), and where the anchor lies.
- * A jib's value (`v.jib`: sheet, backed, furl; no station gives one yet, so
- * a rig contract's jib is trimmed with the main) adds the physics' jibSheet,
- * jibBacked and furl, each only when it is given.
+ * A jib's value (`v.jib`, the Jib piece's sailing.jib: sheet, held, furl)
+ * adds the physics' jibSheet, jibHeld (held "port" −1, "starboard" +1) and
+ * furl, each only when it is given; a ship with no Jib piece flies a rig
+ * contract's jib trimmed with the main, rolled away as the main comes down.
  * @param {{ helm?: object | null, sail?: object | null, anchor?: object | null, jib?: object | null }} v
  * @param {number[] | null} at
  * @param {{ freeboard: number }} spec
@@ -205,7 +216,8 @@ export function controlsOf(v, at, spec) {
   const j = v.jib;
   if (j) {
     if (Number.isFinite(Number(j.sheet))) out.jibSheet = clamp(Number(j.sheet), 0, 1);
-    if (j.backed != null) out.jibBacked = !!j.backed;
+    const held = heldSign(j.held);
+    if (held) out.jibHeld = held;
     if (Number.isFinite(Number(j.furl))) out.furl = clamp(Number(j.furl), 0, 1);
   }
   return out;
@@ -304,6 +316,28 @@ export function transformOf(state, scale = 1) {
 /** A ship's motion as the doc keeps it (sailing.ship.motion). */
 export const motionOf = (state) => ({ velocity: state.velocity.map((v) => round(v, 1e3)), spin: state.spin.map((v) => round(v, 1e4)) });
 
+// published()'s sails per physics' read().sails array (which it fills in place): the same objects, refilled
+const sailsMemo = new WeakMap();
+function publishedSails(sails, r) {
+  let out = sailsMemo.get(sails);
+  if (!out) sailsMemo.set(sails, (out = []));
+  out.length = sails.length;
+  for (let i = 0; i < sails.length; i++) {
+    const x = sails[i];
+    const o = out[i] ?? (out[i] = {});
+    o.id = x.id;
+    o.main = x.main;
+    o.angle = r(x.angle);
+    o.limit = r(x.limit);
+    o.from = r(x.from);
+    o.alpha = r(x.alpha);
+    o.sheet = r(x.sheet);
+    o.area = r(x.area);
+    o.q = r(x.q);
+  }
+  return out;
+}
+
 /** What a sailor reads off a ship, as it goes out in presence: numbers rounded, plus the motion a successor starts from. */
 export function published(diag, state) {
   const r = (v) => round(v, 1e4);
@@ -317,6 +351,10 @@ export function published(diag, state) {
     boom: r(diag.boom),
     sailForce: Math.round(diag.sailForce),
     submerged: r(diag.submerged),
+    // a contract's jib (its chord, + to starboard), so a follower sees it where the simulator does
+    ...(Number.isFinite(diag.jib) ? { jib: r(diag.jib) } : null),
+    // and each of its sails as flown, so a follower's HUD and looks read the trim the simulator's do (trim.js)
+    ...(Array.isArray(diag.sails) ? { sails: publishedSails(diag.sails, r) } : null),
     ...motionOf(state),
   };
 }
@@ -339,6 +377,7 @@ export function createSim(api, ctx) {
   let publishedAt = -Infinity;
 
   let memo = { scene: null, map: new Map() };
+  const modelMemo = new WeakMap(); // a rig GLB's extras → its sails' trim thresholds
   /** A ship's parts, from a snapshot (traits.js partsOf), once per snapshot. */
   function parts(sc, ship) {
     if (memo.scene !== sc) memo = { scene: sc, map: new Map() };
@@ -359,6 +398,18 @@ export function createSim(api, ctx) {
     const o = sc?.objects?.[id];
     const kind = stationKind(o);
     return kind ? stationValue(kind, o.traits[kind], liveInput(id)) : null;
+  }
+
+  /** One field of a station's live value (value(id)[key]) without building the value: for reading every frame. */
+  function field(id, key, sc = api.scene()) {
+    const o = sc?.objects?.[id];
+    const kind = stationKind(o);
+    if (!kind) return undefined;
+    const input = liveInput(id);
+    if (input && input[key] !== undefined) return input[key];
+    const fields = o.traits[kind];
+    if (fields && fields[key] !== undefined) return fields[key];
+    return STATION_DEFAULTS[kind]?.[key];
   }
 
   function setInputs(next) {
@@ -440,9 +491,10 @@ export function createSim(api, ctx) {
       const rigExtras = p.sail ? api.content(p.sail)?.extras : null;
       const rig = p.sail ? { matrix: placeIn(sc, p.sail, id), sail: rigExtras?.sail, contract: rigExtras?.rig ?? null } : null;
       const content = api.content(id);
-      // a contract boat floats on her own drawn hull, once it's loaded
-      const hullMesh = rig?.contract ? hullTriangles(content?.root) : null;
-      const spec = specFor(content, o.traits[SHIP]?.spec, doc.scale, { frame, rig, hullUrl: o.sourceUrl ?? null, hullMesh });
+      const hullKey = hullKeyOf(api, id);
+      // a contract boat floats on her own drawn hull, once it's loaded (if the rig was designed on it)
+      const hullMesh = contractOn(rig?.contract, hullKey)?.source?.hull?.kind === "linked" ? hullTriangles(content?.root) : null;
+      const spec = specFor(content, o.traits[SHIP]?.spec, doc.scale, { frame, rig, hullUrl: o.sourceUrl ?? null, hullKey, hullMesh });
       const key = specKey(spec);
       let s = ships.get(id);
       if (!s) ships.set(id, (s = track(id, o, t, null)));
@@ -467,7 +519,7 @@ export function createSim(api, ctx) {
       }
       s.seen = { transform: doc, motion: motionKey(motion) };
 
-      const v = { helm: p.helm && value(p.helm, sc), sail: p.sail && value(p.sail, sc), anchor: p.anchor && value(p.anchor, sc) };
+      const v = { helm: p.helm && value(p.helm, sc), sail: p.sail && value(p.sail, sc), anchor: p.anchor && value(p.anchor, sc), jib: p.jib && value(p.jib, sc) };
       anchorSpot(s, p.anchor, v.anchor, sc, spec);
       const controls = controlsOf(v, s.at, spec);
       const [from, dt] = catchUp(s.state, t);
@@ -481,6 +533,8 @@ export function createSim(api, ctx) {
       hold(id, transformOf(hull, doc.scale));
       // the boom swung about the mast from where the rig was put
       if (p.sail) hold(p.sail, rigTransform(plainTransform(sc.objects[p.sail].transform), s.read.boom));
+      // the jib swung about its luff from where it was put, when her physics flies one
+      if (p.jib && Number.isFinite(s.read.jib)) hold(p.jib, jibTransform(plainTransform(sc.objects[p.jib].transform), s.read.jib));
       // the wheel is its helmsman's to hold (stations.js), so it turns as their key does; else ours
       const at = p.helm && api.claimedBy(p.helm, STATION);
       if (p.helm && (!at || at.mine)) hold(p.helm, wheelTransform(plainTransform(sc.objects[p.helm].transform), controls.rudder));
@@ -579,11 +633,26 @@ export function createSim(api, ctx) {
       if (release) return ships.get(id)?.read ?? null;
       return streamed[id] ?? null;
     },
+    /**
+     * Each of a ship's contract sails' trim thresholds by id (trim.js
+     * trimModelOf), from her rig's GLB as this view has it loaded (so a
+     * follower has them too); {} with no contract.
+     */
+    sailModels(id) {
+      const rig = parts(api.scene(), id).sail;
+      const extras = rig ? api.content(rig)?.extras : null;
+      const sails = extras?.rig?.sails;
+      if (!Array.isArray(sails)) return {};
+      let m = modelMemo.get(extras);
+      if (!m) modelMemo.set(extras, (m = Object.fromEntries(sails.map((x) => [x.id, trimModelOf(x)]))));
+      return m;
+    },
     stationsOf(id) {
-      const { helm, sail, anchor, mainsheet, ladder } = parts(api.scene(), id);
-      return { helm, sail, anchor, mainsheet, ladder };
+      const { helm, sail, anchor, mainsheet, jib, ladder, winches } = parts(api.scene(), id);
+      return { helm, sail, anchor, mainsheet, jib, ladder, winches };
     },
     value: (id) => value(id),
+    field: (id, key) => field(id, key),
     input(id, partial) {
       if (partial == null) {
         if (!(id in inputs)) return;

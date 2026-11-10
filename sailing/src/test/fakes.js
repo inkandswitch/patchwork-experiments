@@ -126,7 +126,46 @@ export function fakeThree() {
     removeFromParent() {}
   }
   const clone = (u) => Object.fromEntries(Object.entries(u).map(([k, v]) => [k, { value: v.value }]));
+  // the scene graph looks.js draws its lines with
+  class Object3D {
+    constructor() {
+      this.children = [];
+      this.position = new Vector3();
+      this.scale = new Vector3(1, 1, 1);
+      this.visible = true;
+      this.userData = {};
+    }
+    add(...o) {
+      this.children.push(...o);
+    }
+    remove(o) {
+      const i = this.children.indexOf(o);
+      if (i >= 0) this.children.splice(i, 1);
+    }
+  }
+  class Group extends Object3D {}
+  class Line extends Object3D {
+    constructor(geometry, material) {
+      super();
+      this.geometry = geometry;
+      this.material = material;
+    }
+  }
+  class LineSegments extends Line {}
+  class LineBasicMaterial {
+    constructor(o) {
+      Object.assign(this, o);
+    }
+    dispose() {
+      this.disposed = true;
+    }
+  }
   return {
+    Object3D,
+    Group,
+    Line,
+    LineSegments,
+    LineBasicMaterial,
     Vector2,
     Vector3,
     Vector4,

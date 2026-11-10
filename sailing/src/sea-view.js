@@ -154,6 +154,7 @@ export function drawSea(api) {
       ocean = wind = null;
       surface?.dispose();
       surface = null;
+      api.extent?.(null);
       api.invalidate();
       return;
     }
@@ -162,6 +163,7 @@ export function drawSea(api) {
     if (k === key) return;
     key = k;
     ocean = createOcean(p);
+    api.extent?.(waterExtent(ocean));
     wind = createWind({ ...p.wind, seed: p.seed });
     if (surface) surface.setSea(ocean);
     else {
@@ -190,8 +192,24 @@ export function drawSea(api) {
     dispose() {
       surface?.dispose();
       surface = null;
+      if (key !== null) api.extent?.(null);
     },
   };
+}
+
+/** How far the water reaches across (m): past the fog, where it's drawn to. */
+export const WATER_REACH = 20_000;
+
+/**
+ * The water as the stage's near plane must not cut it (api.extent): a slab
+ * WATER_REACH across, as high and deep as every wave's amplitude together (no
+ * crest or trough can pass that), and 0.5 m more. The surface is drawn in a
+ * world group the stage doesn't measure, its waves in the shader. Pure.
+ */
+export function waterExtent(ocean) {
+  let h = 0.5;
+  for (const c of ocean?.components ?? []) h += Math.abs(c.amp) || 0;
+  return { min: [-WATER_REACH, -h, -WATER_REACH], max: [WATER_REACH, h, WATER_REACH] };
 }
 
 /**

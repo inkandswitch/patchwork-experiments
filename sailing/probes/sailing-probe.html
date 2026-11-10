@@ -145,7 +145,7 @@ try {
     /** the avatars sailing draws in a view: their world positions */
     avatars(w) {
       const out = [];
-      for (const g of dbg[w].viewport.layers.get("sailing") ?? []) for (const c of g.children) if (c.isGroup && c.visible) out.push(c.position.toArray());
+      for (const g of dbg[w].viewport.layers.get("sailing") ?? []) for (const c of g.children) if (c.isGroup && c.visible && c.children.some((k) => k.isMesh)) out.push(c.position.toArray()); // an avatar has a body; the trim lines' group (looks.js) has only lines
       return out;
     },
     labels: (w) => [...hosts[w].querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),

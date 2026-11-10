@@ -125,17 +125,25 @@ export const standOff = (kind) => (kind === "mainsheet" ? 0.35 : BEHIND);
 export const ladderTop = ([x, y, z], by = INBOARD) => [x - Math.sign(x || 1) * by, y, z];
 
 /**
+ * A station whose stand spot it says itself (a winch's trait's `stand`), in
+ * her body frame: you stand at `stand` facing `at` (yaw as the crew's: the
+ * way you face, atan2(−dx, −dz)).
+ */
+export const facing = (id, at, stand) => ({ id, at, stand, yaw: Math.atan2(-(at[0] - stand[0]), -(at[2] - stand[2])) });
+
+/**
  * The bake's seeds for a ship, from where her stations and her ladder are
  * (her body frame): her spawn (aft of the helm, else aft on her centreline
- * from her box), a stand spot aft of each station, and her ladder's top with
- * the hook it hangs from. Each is dropped onto what's under it by the bake.
- * @param {{ stations?: Array<{ id, at: number[], by?: number }>, helm?: string | null, ladder?: { id, at: number[] } | null, box?: { min, max } | null }} o
+ * from her box), a stand spot for each station (its own `stand`, facing it
+ * by `yaw`; else aft of it, facing forward), and her ladder's top with the
+ * hook it hangs from. Each is dropped onto what's under it by the bake.
+ * @param {{ stations?: Array<{ id, at: number[], by?: number, stand?: number[], yaw?: number }>, helm?: string | null, ladder?: { id, at: number[] } | null, box?: { min, max } | null }} o
  */
 export function seedsOf({ stations = [], helm = null, ladder = null, box = null } = {}) {
   const wheel = stations.find((s) => s.id === helm) ?? null;
   const spawnAt = wheel ? behind(wheel.at) : box ? [(box.min[0] + box.max[0]) / 2, box.max[1], box.max[2] - 1.2] : [0, 3, 0];
   const out = [{ kind: "spawn", id: null, at: spawnAt, yaw: 0 }];
-  for (const s of stations) out.push({ kind: "station", id: s.id, at: behind(s.at, s.by ?? BEHIND), yaw: 0 });
+  for (const s of stations) out.push({ kind: "station", id: s.id, at: s.stand ? [...s.stand] : behind(s.at, s.by ?? BEHIND), yaw: s.stand ? (s.yaw ?? 0) : 0 });
   if (ladder) out.push({ kind: "ladder", id: ladder.id, at: ladderTop(ladder.at), hook: [...ladder.at], yaw: ladder.at[0] >= 0 ? Math.PI / 2 : -Math.PI / 2 });
   return out;
 }

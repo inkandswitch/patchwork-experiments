@@ -6,8 +6,12 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { bake, boxTriangles, pointOf } from "./navmesh.js";
 import { checkAgainst, indexTriangles, rebaker, shuffleTriangles, staticChecks } from "./navcheck.js";
 import { DECK } from "./walk.js";
-import { FIT, deckAt, halfBreadthAt } from "./ship.js";
-import { partTriangles, sloopSeeds, sloopTriangles } from "./test/sloop.js";
+import { FIT, deckAt, halfBreadthAt, rigDrawing } from "./ship.js";
+import { stockJib, stockMain } from "./stock-rig.js";
+import KEPT from "./stock-rig-12m.js";
+
+const DEG = Math.PI / 180;
+import { WINCHES, partTriangles, sloopSeeds, sloopTriangles } from "./test/sloop.js";
 
 let triangles;
 let seeds;
@@ -40,7 +44,69 @@ describe("the sloop's navmesh", () => {
     expect(triangles.length / 9).toBeGreaterThan(10_000);
     expect(bakeMs).toBeLessThan(500);
   });
-  it("C1: spawn, the helm's, the mainsheet's, the mast's and the windlass's stand spots and the ladder's top are on kept cells, where asked", check("C1"));
+  it("C1: spawn, the helm's, the mainsheet's, the mast's, the windlass's and the jib winches' stand spots and the ladder's top are on kept cells, where asked", check("C1"));
+  it("each jib winch's stand spot is on the side deck across the well from it (tailing from the high side), facing it, its drum within 3 m (the sheet's tail comes across the well)", () => {
+    for (const w of WINCHES) {
+      const link = mesh.links.find((l) => l.kind === "station" && l.id === w.id);
+      const [x, y, z] = pointOf(mesh, link.at.cell, link.at.u, link.at.v);
+      expect(Math.abs(y - deckAt(x, z))).toBeLessThan(0.05); // on her deck
+      expect(Math.sign(x)).toBe(-w.side); // on the far side
+      expect(Math.abs(x)).toBeGreaterThan(0.85); // outboard of the far coaming
+      expect(Math.abs(x)).toBeLessThan(halfBreadthAt(z)); // inside her rail
+      // facing it: the way you face is toward the drum, across the well
+      expect(Math.sign(-Math.sin(link.yaw))).toBe(w.side);
+      // the drum's top (0.2 up) from an eye 1.6 over the deck: across the well, past REACH (2.5) but not by much
+      expect(Math.hypot(w.at[0] - x, w.at[1] + 0.2 - (y + 1.6), w.at[2] - z)).toBeLessThan(3);
+    }
+  });
+  it("from the working winch's stand, the eye sees the jib's luff past the main and the mast: the ray to its luff (¼ and ½ up; ¾ close-hauled) misses the main's cloth, flat or bellied to leeward as it draws, and the mast, close-hauled and on a beam reach", () => {
+    const d = rigDrawing();
+    const main = stockMain(d, KEPT.models.main), jib = stockJib(d, KEPT.models.jib);
+    const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+    const cross = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    /** Does the segment p→q cross triangle abc (Möller–Trumbore)? */
+    const crosses = (p, q, a, b, c) => {
+      const dd = sub(q, p), e1 = sub(b, a), e2 = sub(c, a), h = cross(dd, e2), det = dot(e1, h);
+      if (Math.abs(det) < 1e-12) return false;
+      const sv = sub(p, a), u = dot(sv, h) / det, qq = cross(sv, e1), v = dot(dd, qq) / det, t = dot(e2, qq) / det;
+      return u >= 0 && v >= 0 && u + v <= 1 && t > 0 && t < 1;
+    };
+    /** p swung θ (+ to starboard) about the unit axis k through o. */
+    const swing = (p, o, k, th) => {
+      const r = sub(p, o), c = Math.cos(th), sn = Math.sin(th), kr = cross(k, r), kd = dot(k, r);
+      return [0, 1, 2].map((i) => o[i] + r[i] * c + kr[i] * sn + k[i] * kd * (1 - c));
+    };
+    const luff = sub(jib.head, jib.tack), ll = Math.hypot(...luff), jAxis = luff.map((v) => v / ll);
+    const camber = 0.085 * main.foot; // the cloth's camber at its deepest, on its longest chord
+    // [boom, jib] to port (starboard tack: the port winch works), deg: as she sails them, measured at 7 m/s
+    const POSES = { "close-hauled": [[12, 10], [25.5, 21.4]], "beam reach": [[42.5, 38.8]] };
+    let rays = 0;
+    for (const [name, poses] of Object.entries(POSES)) {
+      for (const [bm, jb] of poses) {
+        const port = WINCHES.find((w) => w.side < 0);
+        const link = mesh.links.find((l) => l.kind === "station" && l.id === port.id);
+        const feet = pointOf(mesh, link.at.cell, link.at.u, link.at.v);
+        const eye = [feet[0], feet[1] + DECK.eye, feet[2]];
+        // bellied to leeward (−x, swung to port); its whole outline moved by its deepest camber, a bound
+        for (const off of [0, -camber]) {
+          const poly = main.polygon.map((p) => swing([main.tack[0] + off, p[1], p[2]], main.tack, [0, 1, 0], -bm * DEG));
+          const ce = swing([main.tack[0] + off, main.ce[1], main.ce[2]], main.tack, [0, 1, 0], -bm * DEG);
+          for (const h of name === "close-hauled" ? [0.25, 0.5, 0.75] : [0.25, 0.5]) {
+            const on = [0, 1, 2].map((i) => jib.tack[i] + luff[i] * h);
+            const target = swing([on[0], on[1], on[2] + 0.3], on, jAxis, -jb * DEG); // a telltale 0.3 aft on the luff
+            const hid = poly.some((p, i) => crosses(eye, target, ce, p, poly[(i + 1) % poly.length]));
+            expect(hid, `${name} boom ${bm}° jib ${jb}°, ${h} up, camber ${off}`).toBe(false);
+            // the mast (upright at its step, its section's radius and 5 cm to spare): where the ray passes it, it's clear
+            const k = (d.mast.step[2] - eye[2]) / (target[2] - eye[2]);
+            expect(Math.abs(eye[0] + k * (target[0] - eye[0]) - d.mast.step[0]), `${name} ${h} up: the mast`).toBeGreaterThan(d.mast.section / 2 + 0.05);
+            rays++;
+          }
+        }
+      }
+    }
+    expect(rays).toBe(2 * 2 * 3 + 2 * 2);
+  });
   it("C2: every kept cell, and every link, is reachable on foot from spawn", check("C2"));
   it("C3: nothing dropped that you could walk or jump to", check("C3"));
   it("C4: every side of every cell has exactly one record; B1, B3, B4, B5", check("C4"));
@@ -84,7 +150,7 @@ describe("the sloop's navmesh", () => {
     }
   });
 
-  it("cells on her plain deck lie within 2 cm of ship.js's analytic deck; on the sole (but over the mainsheet's traveller) and the benches, within 2 mm", () => {
+  it("cells on her plain deck (clear of the jib's winches) lie within 2 cm of ship.js's analytic deck; on the sole (but over the mainsheet's traveller) and the benches, within 2 mm", () => {
     const n = { deck: 0, sole: 0, bench: 0 };
     for (let a = 0; a < mesh.count; a++) {
       const [x, y, z] = pointOf(mesh, a, 0.5, 0.5);
@@ -100,7 +166,9 @@ describe("the sloop's navmesh", () => {
       // plain deck: clear of the cabin and its hatches, the well and its coamings, and the toe rail
       const cabin = ax < 1.0 && z > -1.4 && z < 2.05;
       const coaming = ax > 0.74 && ax < 0.9 && z > 1.9 && z < 4.2;
-      if (cabin || inWell || coaming || ax > halfBreadthAt(z) - 0.12) continue;
+      // a jib winch's base (0.085 m round) stands on the side deck: a cell over its edge isn't plain deck
+      const winch = Math.hypot(ax - Math.abs(FIT.winch.position[0]), z - FIT.winch.position[2]) < 0.085 + 0.12;
+      if (cabin || inWell || coaming || winch || ax > halfBreadthAt(z) - 0.12) continue;
       n.deck++;
       expect(Math.abs(y - deckAt(x, z)), `${x.toFixed(2)}, ${z.toFixed(2)}`).toBeLessThan(0.02);
     }

@@ -3,7 +3,7 @@
 // y = 0) with its origin where it pivots.
 import { describe, it, expect } from "vitest";
 import { parseGLB } from "./glb.js";
-import { FIT, HULL, KINDS, deckAt, halfBreadthAt, partGLB, partMeshes, sheerAt } from "./ship.js";
+import { COCKPIT, FIT, HULL, KINDS, deckAt, halfBreadthAt, partGLB, partMeshes, sheerAt } from "./ship.js";
 import { SLOOP } from "./hull-model.js";
 
 /** The union of a GLB's POSITION accessors' min/max (glTF requires them). */
@@ -152,7 +152,8 @@ describe("the parts, with their origins where they pivot", () => {
 
   it("the windlass stands on the foredeck from its base", () => {
     const c = bounds("windlass");
-    expect(c.min[1]).toBeCloseTo(0, 3);
+    // its foot 5 mm down into the deck, so it doesn't fight the deck's face
+    expect(c.min[1]).toBeCloseTo(-0.005, 4);
     expect(FIT.windlass.position[2]).toBeLessThan(-3.5);
   });
 
@@ -177,5 +178,88 @@ describe("the parts, with their origins where they pivot", () => {
       expect(b.min[1]).toBeLessThan(0);
       expect(b.max[1]).toBeGreaterThan(1);
     }
+  });
+});
+
+// Shadows bias along the vertex normal, without flipping it for a face seen
+// from behind (three's shadowmap_vertex), so a face wound inside out shades
+// itself grey and banded however it's lit. Each face of every part must look
+// out: a ray along its normal gets out of the part where one the other way
+// doesn't (or both or neither do, a face between two others); never the
+// reverse. The cloth is a one-sided sheet seen from both sides (looks.js
+// takes it from shadow-receiving), and the islet's ground an open skirt
+// whose rays mostly escape both ways: it is checked by its mean normal.
+describe("every face looks out", () => {
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const trianglesOf = (p) => {
+    const P = p.positions;
+    const I = p.indices ?? Array.from({ length: P.length / 3 }, (_, k) => k);
+    const out = [];
+    for (let t = 0; t < I.length; t += 3) out.push([I[t], I[t + 1], I[t + 2]].map((k) => [P[3 * k], P[3 * k + 1], P[3 * k + 2]]));
+    return out;
+  };
+  /** Does the ray from o along d cross any of the triangles (Möller–Trumbore)? */
+  const blocked = (o, d, tris) => {
+    for (const [a, b, c] of tris) {
+      const e1 = sub(b, a), e2 = sub(c, a), p = cross(d, e2), det = dot(e1, p);
+      if (Math.abs(det) < 1e-12) continue;
+      const s = sub(o, a), u = dot(s, p) / det;
+      if (u < 0 || u > 1) continue;
+      const q = cross(s, e1), v = dot(d, q) / det;
+      if (v < 0 || u + v > 1) continue;
+      if (dot(e2, q) / det > 1e-6) return true;
+    }
+    return false;
+  };
+  const SHEETS = new Set(["Sail", "Jib"]);
+
+  it.each(KINDS)("%s: no face points into the part", (kind) => {
+    const meshes = partMeshes(kind);
+    const all = meshes.flatMap((m) => m.primitives.flatMap(trianglesOf));
+    const inward = [];
+    meshes.forEach((m) =>
+      m.primitives.forEach((p, i) => {
+        if (SHEETS.has(m.name) && i === 0) return;
+        if (kind === "islet" && i === 0) return;
+        for (const t of trianglesOf(p)) {
+          const f = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+          const l = Math.hypot(...f);
+          if (l < 1e-10) continue;
+          const n = f.map((v) => v / l);
+          const c = [0, 1, 2].map((k) => (t[0][k] + t[1][k] + t[2][k]) / 3);
+          const out = !blocked(c.map((v, k) => v + n[k] * 1e-4), n, all);
+          const back = !blocked(c.map((v, k) => v - n[k] * 1e-4), n.map((v) => -v), all);
+          if (back && !out) inward.push(`${m.name} ${i} at ${c.map((v) => v.toFixed(2))}`);
+        }
+      }),
+    );
+    expect(inward).toEqual([]);
+  });
+
+  it("the islet's ground faces up, on the whole", () => {
+    const n = partMeshes("islet")[0].primitives[0].normals;
+    let y = 0;
+    for (let i = 1; i < n.length; i += 3) y += n[i];
+    expect(y / (n.length / 3)).toBeGreaterThan(0.5);
+  });
+
+  it("the cockpit's walls face into the cockpit (rays can't tell: it's open above)", () => {
+    const { half, z0, z1, floor } = COCKPIT;
+    let seen = 0;
+    for (const p of partMeshes("hull")[0].primitives) {
+      for (const t of trianglesOf(p)) {
+        const c = [0, 1, 2].map((k) => (t[0][k] + t[1][k] + t[2][k]) / 3);
+        const n = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+        if (Math.hypot(...n) < 1e-10 || c[1] < floor + 1e-3 || c[1] > deckAt(c[0], c[2])) continue;
+        const onSide = t.every((v) => Math.abs(Math.abs(v[0]) - half) < 1e-6) && c[2] > z0 && c[2] < z1;
+        const onEnd = t.every((v) => Math.abs(v[2] - z0) < 1e-6 || Math.abs(v[2] - z1) < 1e-6) && t.every((v) => v[2] === t[0][2]) && Math.abs(c[0]) < half;
+        if (onSide) expect(Math.sign(n[0])).toBe(-Math.sign(c[0]));
+        if (onEnd) expect(Math.sign(n[2])).toBe(Math.abs(t[0][2] - z0) < 1e-6 ? 1 : -1);
+        if (onSide || onEnd) seen++;
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
   });
 });

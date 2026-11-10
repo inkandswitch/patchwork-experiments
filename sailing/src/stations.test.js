@@ -6,7 +6,7 @@
 // tag, or standing under the gooseneck (an older doc); and each station you
 // lock in to, with which of the sail's keys work there.
 import { describe, it, expect, vi } from "vitest";
-import { FAR, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
+import { FAR, FURL_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
 
 describe("reach", () => {
   it("is within 2.5 m of the eye", () => {
@@ -159,14 +159,20 @@ function stage({ mainsheet = true, helm = true, old = false } = {}) {
       // a card table in her cockpit, and a board on it: aboard, but no part of her rig
       table: {},
       board: {},
+      // the jib under the mast, and its winches by the cockpit (the starboard one under the port, as the part puts them)
+      jib: { traits: { "sailing.jib": { sheet: 0.5, held: null, furl: 0 } } },
+      winchP: { traits: { "sailing.winch": { sail: "jib", side: "port", stand: [0.73, -0.51, 0] } } },
+      winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard", stand: [-0.73, -0.51, 0] } } },
     },
     // the boom and sail hang from the mast, as the sloop's parts put them
-    parents: new Map([["wheel", "hull"], ["rig", old ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"]]),
+    parents: new Map([["wheel", "hull"], ["rig", old ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"], ["jib", "mast"], ["winchP", "hull"], ["winchS", "winchP"]]),
   };
   const s = {
     scene,
     claims: {}, // id → { mine, onLost }
-    values: { wheel: { angle: 0.2 }, rig: { raised: 1, sheet: 0.5 }, windlass: { down: true, rode: 25 } },
+    values: { wheel: { angle: 0.2 }, rig: { raised: 1, sheet: 0.5 }, windlass: { down: true, rode: 25 }, jib: { sheet: 0.5, held: null, furl: 0 } },
+    // what her physics reads: on starboard tack (the wind from starboard), the jib drawing to port
+    read: { jib: -0.2, apparentWind: { angle: 0.5 }, sails: [{ id: "jib", main: false, angle: -0.2, limit: 0.2, from: 0.5, alpha: 28.648 - 11.459, sheet: 11.459, area: 30, q: 20 }] },
     inputs: [],
     commits: [],
     me: { playing: true, swimming: false, station: null },
@@ -174,7 +180,7 @@ function stage({ mainsheet = true, helm = true, old = false } = {}) {
     holds: {}, // id → transform
     released: [], // [id, opts]
   };
-  const worlds = { hull: at(0, 0, 0), wheel: at(0, 1.6, 4), rig: at(0, 2.8, -1.5), sheet: at(0, 0.72, 3.3), windlass: at(0, 1.5, -3.8), ladder: at(1.8, 1.2, 0.4), mast: at(0, 1.4, -1.6), table: at(0, 0.7, -0.6), board: at(0, 1.4, -0.6) };
+  const worlds = { hull: at(0, 0, 0), wheel: at(0, 1.6, 4), rig: at(0, 2.8, -1.5), sheet: at(0, 0.72, 3.3), windlass: at(0, 1.5, -3.8), ladder: at(1.8, 1.2, 0.4), mast: at(0, 1.4, -1.6), table: at(0, 0.7, -0.6), board: at(0, 1.4, -0.6), jib: at(0, 1.74, -6.12), winchP: at(-0.95, 1.23, 2.25), winchS: at(0.95, 1.23, 2.25) };
   s.worlds = worlds;
   // claims by id, each kind apart ("station" under the bare id, as the tests read it)
   const slot = (id, kind) => (kind === "station" ? id : `${id}:${kind}`);
@@ -203,7 +209,9 @@ function stage({ mainsheet = true, helm = true, old = false } = {}) {
       value: (id) => s.values[id],
       input: (id, f) => s.inputs.push([id, f]),
       commit: (id, f) => s.commits.push([id, f]),
-      stationsOf: () => ({ helm: helm ? "wheel" : null, sail: "rig", anchor: "windlass", mainsheet: mainsheet ? "sheet" : null, ladder: "ladder" }),
+      stationsOf: () => ({ helm: helm ? "wheel" : null, sail: "rig", anchor: "windlass", mainsheet: mainsheet ? "sheet" : null, jib: "jib", ladder: "ladder", winches: ["winchP", "winchS"] }),
+      read: () => s.read,
+      sailModels: () => ({ jib: { alpha0: -5, stall: 20, width: 30, wingFrom: 140 } }),
     },
     crew: {
       me: () => s.me,
@@ -584,18 +592,230 @@ describe("the commands", () => {
   });
 
   it("every command the prompt can show for one look fits in its three", () => {
-    const s = stage({ mainsheet: false, helm: false });
-    s.me.playing = true;
-    for (const target of ["wheel", "rig", "mast", "sheet", "windlass", "ladder", "hull", "table"]) {
-      for (const d of [0.5, 1.5, 2.4, 3, 6, 20]) {
-        for (const from of [[0, 2.6, -0.5], [0, 2.3, 2.6], [0, 0, 100]]) {
-          for (const v of [{ raised: 1, sheet: 0.5 }, { raised: 0, sheet: 0.5 }]) {
-            s.values.rig = v;
-            expect(s.offered(target, s.at(target, d, from)).length, `${target} ${d} ${from}`).toBeLessThanOrEqual(3);
+    for (const o of [{ mainsheet: false, helm: false }, {}]) {
+      const s = stage(o);
+      s.me.playing = true;
+      for (const target of ["wheel", "rig", "mast", "sheet", "windlass", "ladder", "hull", "table", "jib", "winchP", "winchS"]) {
+        for (const d of [0.5, 1.5, 2.4, 3, 6, 20]) {
+          for (const from of [[0, 2.6, -0.5], [0, 2.3, 2.6], [0, 0, 100]]) {
+            for (const v of [{ raised: 1, sheet: 0.5 }, { raised: 0, sheet: 0.5 }]) {
+              for (const jib of [{ sheet: 0.5, held: null, furl: 0 }, { sheet: 0.5, held: "port", furl: 1 }]) {
+                s.values.rig = v;
+                s.values.jib = jib;
+                expect(s.offered(target, s.at(target, d, from)).length, `${target} ${d} ${from}`).toBeLessThanOrEqual(3);
+              }
+            }
           }
         }
       }
     }
+  });
+
+  // ─── the jib and its winches ───
+
+  it("a winch in reach: F takes its jib sheet, Q / E trim it held; the lazy winch's Q says where the jib is", () => {
+    const s = stage();
+    // the jib's to port (the wind from starboard): the port winch is the working one
+    expect(s.offered("winchP", s.at("winchP", 1.2))).toEqual([
+      ["winch", "Take the port jib sheet", false],
+      ["jibHaul", null, false],
+      ["jibEase", null, false],
+    ]);
+    expect(s.offered("winchS", s.at("winchS", 1.2))).toEqual([
+      ["winch", "Take the starboard jib sheet", false],
+      ["jibHaul", "Lazy sheet: the jib's to port", true],
+    ]);
+    expect(s.offered("winchP", s.at("winchP", 3))).toEqual([["far", "Jib winch · walk to the cockpit", true]]);
+    const session = s.cmd("jibHaul").run("winchP");
+    session.update(1);
+    session.end();
+    expect(s.commits.at(-1)).toEqual(["jib", { sheet: 0.25 }]);
+    expect(s.claims.jib).toBe(undefined);
+    expect(s.cmd("jibEase").run("winchS")).toBe(undefined); // the lazy sheet does nothing
+  });
+
+  it("locked in at the working winch: Q / E trim, B makes the jib fast here (or lets it fly), hold R furls, each one change under the jib's claim; F leaves", () => {
+    const s = stage();
+    s.cmd("winch").run("winchP");
+    expect(s.taken.id).toBe("winchP");
+    expect(s.claims.winchP?.mine).toBe(true);
+    const h = s.taken.handlers;
+    // this side (port) is leeward: B makes it fast here, ready to heave to
+    expect(h.hint()).toBe("Q / E jib sheet 50% · B hold jib here · hold R furl jib · F leave · jib drawing");
+    expect(h.key({ code: "KeyQ", key: "q" })).toBe(true);
+    expect(s.claims.jib?.mine).toBe(true);
+    h.tick(1);
+    h.keyup({ code: "KeyQ", key: "q" });
+    expect(s.commits.at(-1)).toEqual(["jib", { sheet: 0.25 }]);
+    expect(s.claims.jib).toBe(undefined);
+    expect(h.key({ code: "KeyE", key: "e" })).toBe(true);
+    h.tick(1);
+    h.keyup({ code: "KeyE", key: "e" });
+    expect(s.commits.at(-1)).toEqual(["jib", { sheet: 0.75 }]);
+    expect(h.key({ code: "KeyB", key: "b" })).toBe(true);
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "port" }]);
+    expect(s.claims.jib).toBe(undefined); // the press's claim is let go at once
+    s.values.jib = { ...s.values.jib, held: "port" };
+    expect(h.hint()).toMatch(/ · B let jib fly · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: null }]);
+    s.values.jib = { ...s.values.jib, held: null };
+    expect(h.key({ code: "KeyR", key: "r" })).toBe(true);
+    h.tick(2);
+    h.keyup({ code: "KeyR", key: "r" });
+    expect(s.commits.at(-1)).toEqual(["jib", { furl: 2 * FURL_RATE }]);
+    s.values.jib = { ...s.values.jib, furl: 1 };
+    expect(h.hint()).toMatch(/hold R unfurl jib/);
+    h.key({ code: "KeyR", key: "r" });
+    h.tick(1);
+    h.keyup({ code: "KeyR", key: "r" });
+    expect(s.commits.at(-1)).toEqual(["jib", { furl: 1 - FURL_RATE }]);
+    expect(h.key({ code: "KeyW", key: "w" })).toBe(false);
+    h.key({ code: "KeyF", key: "f" });
+    expect(s.taken).toBe(null);
+    expect(s.claims.winchP).toBe(undefined);
+  });
+
+  it("locked in at the lazy winch: Q / E do nothing; B backs the jib (this side is windward), and lets it fly again", () => {
+    const s = stage();
+    s.cmd("winch").run("winchS");
+    const h = s.taken.handlers;
+    expect(h.hint()).toBe("lazy sheet: the jib's to port · B back jib · hold R furl jib · F leave · jib drawing");
+    const n = [s.inputs.length, s.commits.length];
+    expect(h.key({ code: "KeyQ", key: "q" })).toBe(true);
+    h.tick(1);
+    h.keyup({ code: "KeyQ", key: "q" });
+    expect([s.inputs.length, s.commits.length]).toEqual(n);
+    expect(s.claims.jib).toBe(undefined);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "starboard" }]);
+    s.values.jib = { ...s.values.jib, held: "starboard" };
+    // backed: the clew's on this side now, so this is the working winch
+    s.read = { ...s.read, jib: 0.12 };
+    expect(h.hint()).toMatch(/^Q \/ E jib sheet 50% · B let jib fly · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: null }]);
+  });
+
+  it("claims: a second person can't take a held winch; a second trimmer's key does nothing while the jib's claim is someone else's", () => {
+    const s = stage();
+    s.claims.winchP = { mine: false };
+    expect(s.cmd("winch").state("winchP", s.at("winchP", 1))).toEqual({ disabled: true, label: "Someone's at the port winch" });
+    s.cmd("winch").run("winchP");
+    expect(s.taken).toBe(null);
+    // at the other winch, while someone at the port one hauls on the jib
+    s.claims.jib = { mine: false };
+    expect(s.cmd("jibHaul").state("winchP", s.at("winchP", 1))).toEqual({ disabled: true, label: "Someone's trimming the jib" });
+    expect(s.cmd("jibHaul").run("winchP")).toBe(undefined);
+    s.cmd("winch").run("winchS");
+    const h = s.taken.handlers;
+    expect(h.hint()).toMatch(/ · F leave · someone's trimming the jib$/);
+    const n = s.commits.length;
+    h.key({ code: "KeyB", key: "b" });
+    h.key({ code: "KeyR", key: "r" });
+    h.tick(1);
+    h.keyup({ code: "KeyR", key: "r" });
+    expect(s.commits.length).toBe(n);
+    // the helm's B too
+    s.leave();
+    s.cmd("helm").run("wheel");
+    s.taken.handlers.key({ code: "KeyB", key: "b" });
+    expect(s.commits.length).toBe(n);
+  });
+
+  it("the helm: B backs the jib to windward, and lets it fly; the main's keys and the jib's don't share a claim", () => {
+    const s = stage();
+    s.cmd("helm").run("wheel");
+    const h = s.taken.handlers;
+    expect(h.hint()).toMatch(/^A \/ D steer · Q \/ E sheet 50% · hold R lower sail · B back jib, bow to port · F leave · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "starboard" }]); // the wind's from starboard
+    s.values.jib = { ...s.values.jib, held: "starboard" };
+    expect(h.hint()).toMatch(/ · B let jib fly · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: null }]);
+    // on port tack it backs to port
+    s.values.jib = { ...s.values.jib, held: null };
+    s.read = { ...s.read, apparentWind: { angle: -0.3 }, sails: s.read.sails.map((x) => ({ ...x, from: -0.3 })) };
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "port" }]);
+    // someone trimming the jib at a winch doesn't stop the helmsman trimming the main
+    s.claims.jib = { mine: false };
+    h.key({ code: "KeyQ", key: "q" });
+    expect(s.claims.rig?.mine).toBe(true);
+    h.keyup({ code: "KeyQ", key: "q" });
+  });
+
+  it("the helm, dead ahead (the jib's air within its alpha0, where either side backs it): B backs it opposite the wheel, so her bow goes the way it's over; amidships, to windward; further off, the wind decides", () => {
+    const s = stage();
+    const air = (a) => (s.read = { ...s.read, apparentWind: { angle: a }, sails: s.read.sails.map((x) => ({ ...x, from: a })) });
+    air(0.01); // a hair on her starboard bow: a coin toss
+    s.values.wheel = { angle: 0 };
+    s.cmd("helm").run("wheel");
+    const h = s.taken.handlers;
+    // amidships: windward, as anywhere else
+    expect(h.hint()).toMatch(/ · B back jib, bow to port · /);
+    // the wheel to port (A held 1 s): held to starboard, her bow to port
+    h.key({ code: "KeyA", key: "a" });
+    h.tick(1);
+    h.keyup({ code: "KeyA", key: "a" });
+    expect(h.hint()).toMatch(/ · B back jib, bow to port · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "starboard" }]);
+    s.values.jib = { ...s.values.jib, held: null };
+    // the wheel to starboard, even with the wind a hair on her starboard bow: held to port, her bow to starboard
+    h.key({ code: "KeyD", key: "d" });
+    h.tick(2);
+    h.keyup({ code: "KeyD", key: "d" });
+    expect(h.hint()).toMatch(/ · B back jib, bow to starboard · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "port" }]);
+    // the band's edge is the jib's own alpha0 (5°), by its own air, not the apparent wind
+    s.values.jib = { ...s.values.jib, held: null };
+    air(4.9 * (Math.PI / 180));
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "port" }]);
+    s.values.jib = { ...s.values.jib, held: null };
+    // past it only windward backs it: the wind decides whatever the wheel says, and the hint says so
+    air(5.1 * (Math.PI / 180));
+    expect(h.hint()).toMatch(/ · B back jib, bow to port · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "starboard" }]);
+    // her jib's air decides, where it and the apparent wind disagree
+    s.values.jib = { ...s.values.jib, held: null };
+    s.read = { ...s.read, apparentWind: { angle: -0.3 }, sails: s.read.sails.map((x) => ({ ...x, from: 0.3 })) };
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "starboard" }]);
+  });
+
+  it("the helm, the jib furled (as at anchor): B unrolls it backed, at FURL_RATE under the jib's claim, and lets the claim go once it's out", () => {
+    const s = stage();
+    s.values.jib = { sheet: 0.5, held: null, furl: 1 };
+    s.read = { ...s.read, apparentWind: { angle: -0.02 }, sails: s.read.sails.map((x) => ({ ...x, from: -0.02 })) };
+    s.cmd("helm").run("wheel");
+    const h = s.taken.handlers;
+    h.key({ code: "KeyD", key: "d" });
+    h.tick(1);
+    h.keyup({ code: "KeyD", key: "d" });
+    expect(h.hint()).toMatch(/ · B unroll jib backed, bow to starboard · /);
+    h.key({ code: "KeyB", key: "b" });
+    expect(s.commits.at(-1)).toEqual(["jib", { held: "port" }]);
+    s.values.jib = { ...s.values.jib, held: "port" };
+    expect(s.claims.jib?.mine).toBe(true); // the unroll's
+    h.tick(1);
+    expect(s.inputs.at(-1)).toEqual(["jib", { furl: 1 - FURL_RATE }]);
+    for (let i = 0; i < 4; i++) h.tick(1);
+    expect(s.commits.at(-1)).toEqual(["jib", { furl: 0 }]);
+    expect(s.claims.jib).toBe(undefined);
+    s.values.jib = { ...s.values.jib, furl: 0 };
+    expect(h.hint()).toMatch(/ · B let jib fly · /);
+    // a furled jib let fly (B with it held) only lets it fly: no unroll
+    s.values.jib = { sheet: 0.5, held: "port", furl: 1 };
+    const n = s.inputs.length;
+    h.key({ code: "KeyB", key: "b" });
+    h.tick(1);
+    expect(s.commits.at(-1)).toEqual(["jib", { held: null }]);
+    expect(s.inputs.slice(n).some(([id, f]) => id === "jib" && f)).toBe(false);
   });
 
   it("the sheet: Q hauls in and E eases out; both at once share one claim, gone when the last lets go", () => {

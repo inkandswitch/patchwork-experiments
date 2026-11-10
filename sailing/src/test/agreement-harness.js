@@ -1,4 +1,4 @@
-// Sailing's physics held to the rig aid's predictions (agreement.test.js).
+// Sailing's physics held to the rig aid's predictions (agreement.slow.test.js).
 // Pure, deterministic, no clock: a contract (extras.rig, patchwork-rig v1)
 // becomes a ship through specFor's contract path, and each of the aid's
 // predicted points becomes a state of that ship, at which ship.wrench()

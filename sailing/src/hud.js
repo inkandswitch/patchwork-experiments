@@ -16,6 +16,7 @@
 import css from "./hud.css?inline";
 import { bodyOf } from "./body.js";
 import { seatedView } from "./crew.js";
+import { trimOf } from "./trim.js";
 
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -62,6 +63,12 @@ export const luffing = (read, sail, anchor) =>
   !!read?.apparentWind && anchor?.down !== true && Math.abs(Number(read.speed)) < 0.5 && Number(read.speed) >= -0.15 && Math.abs(read.apparentWind.angle) < (40 * Math.PI) / 180 && (Number(sail?.raised ?? 1) || 0) > 0.5;
 
 const LUFFING = "Head to wind: bear away (A / D at the helm) until the sail fills";
+// on a ship whose physics flies her main and jib apart (a rig contract's): stopped head to wind
+// her rudder hardly bites, and backing the jib turns her in seconds (DESIGN.md, "Leaving the
+// anchor"): B at the helm (B unrolls it if it's furled); it backs to windward, and dead ahead,
+// where either side backs it, the wheel picks the side; B's hint names the way her bow will go
+const IRONS_JIB = "In irons: back the jib (B at the helm; dead ahead, the wheel picks the way)";
+const LUFFING_JIB = "Head to wind: back the jib (B at the helm; dead ahead, the wheel picks the way)";
 
 const list = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}`);
 
@@ -77,6 +84,7 @@ export function stationGuide(st) {
   if (st.helm) out.push(st.sail ? "Wheel: steer, sheet, hoist" : "Wheel: steer");
   if (st.mainsheet && st.sail) out.push("Mainsheet (cockpit): sheet, hoist");
   if (st.sail) out.push(!st.helm && !st.mainsheet ? "Mast: hoist, sheet" : "Mast: hoist");
+  if (st.winches?.length && st.jib) out.push("Winches: jib sheet, furl");
   if (st.anchor) out.push("Windlass: anchor");
   return out.join(" · ");
 }
@@ -87,17 +95,70 @@ export function stationGuide(st) {
  * and then hold R: the quick hold R is only on the mast and the sail
  * (stations.js). Pure; "" otherwise.
  */
-export function sailDownNudge(st, sail, anchor) {
-  if (!st?.sail || !sail || (Number(sail.raised ?? 1) || 0) > 0.5) return "";
-  if (st.anchor && anchor?.down !== false) return "";
+export function sailDownNudge(st, sail, anchor, jib = null) {
+  if (st?.anchor && anchor?.down !== false) return "";
+  // the jib rolled away, with winches to unroll it at
+  const furled = !!st?.jib && st.winches?.length > 0 && !!jib && (Number(jib.furl) || 0) > 0.5 ? "jib furled: hold R at a winch" : "";
+  if (!st?.sail || !sail || (Number(sail.raised ?? 1) || 0) > 0.5) return furled ? furled[0].toUpperCase() + furled.slice(1) : "";
   const posts = [st.helm && "the helm", st.mainsheet && "the mainsheet"].filter(Boolean);
-  if (!posts.length) return "Sail down: hold R at the mast to raise it";
-  return `Sail down: take ${list(posts)} (F) and hold R, or hold R at the mast`;
+  const main = !posts.length ? "Sail down: hold R at the mast to raise it" : `Sail down: take ${list(posts)} (F) and hold R, or hold R at the mast`;
+  return furled ? `${main} · ${furled}` : main;
+}
+
+const ROW_TRIM = {};
+
+/** A main hoisted this far or more reads as hoisted: a halyard stopping short of the block isn't a reef. */
+export const HOISTED = 0.95;
+
+/**
+ * One sail's row, from its trim (trim.js) and its station's values: the
+ * state word (`state`, which the row's data-trim colours) and the rest. No
+ * angles: the word says which side of the working band the sail is
+ * ("luffing", "soft" under-trimmed, "drawing", "stalled" over-trimmed),
+ * and a stalled sail its sheet can't ease further reads "eased out ·
+ * stalled" in the neutral colour (state "eased"): only the course can help.
+ * The main: "drawing · sheet 40%", "soft · sheet 60%", "reefed 30% ·
+ * drawing", "down". The jib: "drawing · sheet 30%", "backed · port",
+ * "unrolling · backed port" (rolling out while held), "wing · sheet 50%",
+ * "furled 40% · luffing", "furled"; no sheet without a Jib piece (`v`
+ * null: it's trimmed with the main). Pure.
+ * @param {object} s  the sail, as read().sails gives it
+ * @param {{ alpha0, stall, width, wingFrom }} k  its thresholds (trim.js trimModelOf)
+ * @param {{ raised?, sheet?, held?, furl? } | null} v  its station's values: the sail station's for the main, the jib's for the jib (null: no Jib piece)
+ * @returns {{ state: string, text: string }}
+ */
+export function sailRow(s, k, v = {}) {
+  const t = trimOf(s, k, ROW_TRIM);
+  const piece = v != null;
+  v = v ?? {};
+  const pct = (x, d) => `${Math.round((Number.isFinite(Number(x)) ? Number(x) : d) * 100)}%`;
+  const state = t.atStop ? "eased" : t.state;
+  const word = t.atStop ? "eased out · stalled" : t.state;
+  const sheet = `sheet ${pct(v.sheet, 0.5)}`;
+  if (s.main) {
+    const raised = Number.isFinite(Number(v.raised)) ? Number(v.raised) : 1;
+    if (t.state === "down" || raised <= 0) return { state: "down", text: "down" };
+    if (raised < HOISTED) return { state, text: `reefed ${pct(1 - raised, 0)} · ${word}` };
+    return { state, text: `${word} · ${sheet}` };
+  }
+  const furl = Number(v.furl) || 0;
+  if (t.state === "down" || furl >= 1) return { state: "down", text: "furled" };
+  const held = v.held === "port" || v.held === "starboard" ? v.held : null;
+  // made fast on a side and rolling out: what the crew chose, whatever the clew is doing on its way there
+  if (held && furl > 0) return { state: "backed", text: `unrolling · backed ${held}` };
+  const side = held ?? ((Number(s.angle) || 0) < 0 ? "port" : "starboard");
+  const rest = t.state === "backed" ? side : piece ? sheet : "";
+  if (furl > 0) return { state, text: `furled ${pct(furl, 0)} · ${word}` };
+  return { state, text: rest ? `${word} · ${rest}` : word };
 }
 
 /**
  * What the HUD shows, from what it reads. Pure.
- * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, anchor?: { down? } | null, stations?: object | null, seated?: boolean }} o
+ * On a ship whose physics flies her sails apart (read.sails: a rig
+ * contract's), the panel's "Sail" row is a row per sail, `main` and `jib`
+ * (sailRow; `models` their thresholds by sail id, `jib` the jib's values),
+ * and the advice head to wind is the jib's.
+ * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, jib?: { sheet?, held?, furl? } | null, models?: object | null, anchor?: { down? } | null, stations?: object | null, seated?: boolean }} o
  *   me: ctx.crew.me(); read: ctx.sim.read(ship); speed: her speed to show (m/s), else speedOver(read);
  *   wind: the true wind at the ship [vx, vz]; stations: ctx.sim.stationsOf(ship), for
  *   the line saying where they are (`guide`, walking her deck) and where to raise a
@@ -106,7 +167,7 @@ export function sailDownNudge(st, sail, anchor) {
  *   that thing's verbs, so the walking keys aren't offered and a click on the
  *   view doesn't come aboard (Enter or the button does)
  */
-export function hudModel({ me, read = null, speed = null, wind = null, sail = null, anchor = null, stations = null, seated = false }) {
+export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null, seated = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
   const pct = (v, d) => `${Math.round((Number.isFinite(Number(v)) ? Number(v) : d) * 100)}%`;
   const c = read ? compass(read.heading) : null;
@@ -120,19 +181,33 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   else hint = me.free ? `Drag to look · ${WALK_KEYS}` : WALK_KEYS;
   const kn = read ? knots(speed ?? speedOver(read)) : 0;
   const from = wind ? windFrom(wind) : null;
+  // a row per sail where her physics flies them apart
+  const sails = Array.isArray(read?.sails) ? read.sails : null;
+  const rowOf = (pick, v) => {
+    const s = sails?.find(pick);
+    return s && models?.[s.id] ? sailRow(s, models[s.id], v) : null;
+  };
+  const main = rowOf((x) => x.main, sail ?? {});
+  const jibRow = rowOf((x) => !x.main, jib ?? null);
+  // the jib's advice only where B at the helm has a jib to back: a Jib piece, and her physics flying a headsail
+  const backs = !!stations?.jib && !!sails?.some((x) => !x.main);
   return {
     state,
     seated: state === "lobby" && !!seated,
     hint,
     keys,
-    advice: state !== "aboard" ? "" : inIrons(read, sail) ? IRONS : luffing(read, sail, anchor) ? LUFFING : sailDownNudge(stations, sail, anchor),
+    advice: state !== "aboard" ? "" : inIrons(read, sail) ? (backs ? IRONS_JIB : IRONS) : luffing(read, sail, anchor) ? (backs ? LUFFING_JIB : LUFFING) : sailDownNudge(stations, sail, anchor, jib),
     // walking her deck (not at a station, not in the water): where her stations are
     guide: state === "aboard" && !me.station && !me.swimming ? stationGuide(stations) : "",
     panel: !!read,
     speed: read ? (kn < -0.05 ? `astern ${(-kn).toFixed(1)} kn` : `${Math.abs(kn).toFixed(1)} kn`) : "",
     heading: c ? `${String(c.deg).padStart(3, "0")}° ${c.point}` : "",
     wind: wind ? `${Math.round(knots(Math.hypot(wind[0], wind[1])))} kn ${compass(from).point}` : "",
-    sail: sail ? `${pct(sail.raised, 1)} · sheet ${pct(sail.sheet, 0.5)}` : "",
+    sail: sail && !main ? `${pct(sail.raised, 1)} · sheet ${pct(sail.sheet, 0.5)}` : "",
+    main: main?.text ?? "",
+    mainTrim: main?.state ?? "",
+    jib: jibRow?.text ?? "",
+    jibTrim: jibRow?.state ?? "",
     anchor: anchor ? (anchor.down === false ? "Up" : "Down") : "",
     // the dial: the apparent wind's arrow round the boat (+ from starboard, so clockwise), north round the rim
     windAngle: read?.apparentWind ? deg(read.apparentWind.angle) : null,
@@ -185,7 +260,7 @@ export function createHud(api, ctx) {
 
   const rows = {};
   const read = el("dl", { class: "sail-read" });
-  for (const [k, label] of [["speed", "Speed"], ["heading", "Heading"], ["wind", "True wind"], ["sail", "Sail"], ["anchor", "Anchor"]]) {
+  for (const [k, label] of [["speed", "Speed"], ["heading", "Heading"], ["wind", "True wind"], ["sail", "Sail"], ["main", "Main"], ["jib", "Jib"], ["anchor", "Anchor"]]) {
     const dt = el("dt", {}, label);
     const dd = el("dd", { "data-k": k });
     rows[k] = { dt, dd };
@@ -237,6 +312,8 @@ export function createHud(api, ctx) {
       speed: speedOf(ship, read, dt),
       wind,
       sail: st?.sail ? ctx.sim.value(st.sail) : null,
+      jib: st?.jib ? ctx.sim.value(st.jib) : null,
+      models: ship ? (ctx.sim.sailModels?.(ship) ?? null) : null,
       anchor: st?.anchor ? ctx.sim.value(st.anchor) : null,
       stations: st,
       seated: seatedView(api),
@@ -251,12 +328,14 @@ export function createHud(api, ctx) {
     put("advice", model.advice, text(advice));
     put("guide", model.guide, (v) => ((guide.textContent = v), (guide.hidden = !v)));
     put("panel", model.panel, (v) => (panel.hidden = !v));
-    for (const k of ["speed", "heading", "wind", "sail", "anchor"]) {
+    for (const k of ["speed", "heading", "wind", "sail", "main", "jib", "anchor"]) {
       put(k, model[k], (v) => {
         rows[k].dd.textContent = v;
         rows[k].dt.hidden = rows[k].dd.hidden = !v;
       });
     }
+    // each sail's row coloured by its state (hud.css)
+    for (const k of ["main", "jib"]) put(`${k}Trim`, model[`${k}Trim`], (v) => (v ? rows[k].dd.setAttribute("data-trim", v) : rows[k].dd.removeAttribute("data-trim")));
     for (const [k, g] of [["windAngle", windG], ["trueAngle", trueG]]) {
       put(k, model[k], (v) => {
         g.style.display = v == null ? "none" : "";

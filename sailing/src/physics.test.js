@@ -38,80 +38,7 @@ function swell({ amp, length, toward = 0 }) {
   };
 }
 
-/** A steady wind of `speed` m/s from `from` degrees (as sailors say it). */
-function steady(speed, from = 0) {
-  const a = from * DEG;
-  return { at: () => [-Math.sin(a) * speed, Math.cos(a) * speed] };
-}
-
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-
-/** A helmsman holding a compass course: steer toward it, easing off as the bow swings. */
-const helmsman = (course) => (d, s) => clamp(2 * wrap(course - d.heading) + 4 * s.spin[1], -1, 1);
-
-/**
- * Sail for `seconds`. `helm` (diagnostics, state) → rudder steers when
- * given; `each(d, s, t)` sees every frame.
- */
-function sail(ship, { state, env, controls = {}, seconds, helm, dt = 1 / 30, each }) {
-  let s = state;
-  const c = { ...controls };
-  const n = Math.round(seconds / dt);
-  for (let i = 0; i < n; i++) {
-    if (helm || each) {
-      const d = ship.read(s, c, env);
-      if (each) each(d, s, i * dt);
-      if (helm) c.rudder = helm(d, s);
-    }
-    s = ship.step(s, c, env, dt);
-  }
-  return s;
-}
-
-/**
- * Steady speed (mean over the last `over` seconds) holding a true wind
- * angle, wind from the north; `off` is how far the helmsman strayed from
- * the course meanwhile.
- */
-function sailAt(ship, { twa, wind = 8, sheet, seconds = 50, over = 10 }) {
-  const course = twa * DEG;
-  let sum = 0, n = 0, off = 0;
-  sail(ship, {
-    state: ship.rest({ yaw: -course }),
-    env: { water: calm, wind: steady(wind, 0) },
-    controls: { sail: 1, sheet },
-    seconds,
-    helm: helmsman(course),
-    each(d, s, t) {
-      if (t >= seconds - over) {
-        sum += d.speed;
-        n++;
-        off = Math.max(off, Math.abs(wrap(d.heading - course)));
-      }
-    },
-  });
-  return { speed: sum / n, off };
-}
-
-const speedAt = (ship, opts) => sailAt(ship, opts).speed;
-
-/** The best speed over a few sheet settings, refined around the best: the boat, not the trim. */
-function bestSpeed(ship, opts) {
-  const tried = new Map();
-  const at = (sheet) => {
-    const k = Math.round(sheet * 100);
-    if (!tried.has(k)) tried.set(k, sailAt(ship, { ...opts, sheet: k / 100 }));
-    return tried.get(k).speed;
-  };
-  let best = 0;
-  for (const sheet of [0, 0.25, 0.5, 0.75, 1]) if (at(sheet) > at(best)) best = sheet;
-  for (const d of [-0.12, 0.12]) {
-    const s = clamp(best + d, 0, 1);
-    if (at(s) > at(best)) best = s;
-  }
-  return { speed: at(best), sheet: best, off: tried.get(Math.round(best * 100)).off };
-}
+import { bestSpeed, clamp, helmsman, sail, sailAt, speedAt, steady, wrap } from "./test/sail-runs.js";
 
 describe("the hull", () => {
   it("floats its mass with its waterline at y = 0", () => {
@@ -405,47 +332,7 @@ describe("under sail, 8 m/s of wind from the north", () => {
   });
 });
 
-describe("the polar", () => {
-  it("zero head to wind, a peak between 70° and 120°, slower running", { timeout: 60000 }, () => {
-    const ship = createShip();
-    const polar = [];
-    for (let twa = 30; twa <= 180; twa += 15) polar.push({ twa, ...bestSpeed(ship, { twa, seconds: 45 }) });
-    const head = speedAt(ship, { twa: 0, sheet: 0, seconds: 45 });
-    console.log(
-      "polar, 8 m/s true wind\n" +
-        `   0°  ${head.toFixed(2)} m/s\n` +
-        polar
-          .map((p) => `${String(p.twa).padStart(4)}°  ${p.speed.toFixed(2)} m/s  sheet ${p.sheet.toFixed(2)}  ${"#".repeat(Math.round(p.speed * 10))}`)
-          .join("\n"),
-    );
-    const peak = polar.reduce((a, b) => (b.speed > a.speed ? b : a));
-    expect(head).toBeLessThan(0.2); // no headway: it drifts back
-    expect(head).toBeGreaterThan(-0.5); // slowly: about half a knot astern, as a boat in irons does
-    // no traveller: she can't point much above 45°, so beating at 30° makes less ground to windward
-    const vmg = (twa) => polar.find((p) => p.twa === twa).speed * Math.cos(twa * DEG);
-    expect(vmg(30)).toBeLessThan(vmg(45) * 0.95);
-    expect(peak.twa).toBeGreaterThanOrEqual(70);
-    expect(peak.twa).toBeLessThanOrEqual(120);
-    expect(peak.speed).toBeGreaterThan(3);
-    // rising from close-hauled to the peak, then not climbing again
-    expect(polar[0].speed).toBeLessThan(peak.speed * 0.9);
-    expect(polar.at(-1).speed).toBeLessThan(peak.speed);
-    for (const p of polar) {
-      expect(p.off).toBeLessThan(5 * DEG); // the helmsman held the course: it's the boat at this angle
-      expect(p.speed).toBeGreaterThan(0.5);
-      expect(p.speed).toBeLessThan(ship.hullSpeed * 1.1);
-    }
-  });
-
-  it("never much past hull speed, even in 15 m/s of wind", { timeout: 60000 }, () => {
-    const ship = createShip();
-    let fastest = 0;
-    for (const twa of [60, 90, 120, 150]) fastest = Math.max(fastest, bestSpeed(ship, { twa, wind: 15, seconds: 40 }).speed);
-    expect(ship.hullSpeed).toBeCloseTo(4.33, 1);
-    expect(fastest).toBeGreaterThan(ship.hullSpeed * 0.9);
-    expect(fastest).toBeLessThan(ship.hullSpeed * 1.25);
-  });
-});
+// (the polar, a minute of sailing at each of a dozen angles: physics.slow.test.js)
 
 describe("in waves", () => {
   const ship = createShip();

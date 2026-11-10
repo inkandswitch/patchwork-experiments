@@ -19,8 +19,8 @@
 // A part that fits a stand carries its tag (ship.js TAGS), as the bin's
 // metadata does, so the hand snaps it to the same stand the bin does.
 
-import { FIT, LIFT, STAND, TAGS, partGLB } from "./ship.js";
-import { ANCHOR, FLOAT, HELM, HOOK, LADDER, MAINSHEET, SAIL, SEA, SHIP } from "./traits.js";
+import { FIT, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
+import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, WINCH } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, multiply, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
@@ -35,13 +35,19 @@ const tidy = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
 
 /**
  * What each part is made of: its pieces, the first the part itself, the
- * rest under it at `at` (in its frame). Their traits are the ones the
- * template sails with: the sail up, the wheel amidships, the anchor up.
+ * rest under it at `at` (in its frame), turned by `rotation` (Euler XYZ)
+ * where given. Their traits are the ones the template sails with: the sail
+ * up, the jib out and tending itself, the wheel amidships, the anchor up. A
+ * piece with a `side` is one of a pair across her (the jib's winches): the
+ * first on the side the part is put, the other its mirror across her
+ * centreline (`across`, objectsFor).
  */
 export const PIECES = Object.freeze({
   mast: [
     { kind: "mast", name: "Mast" },
     { kind: "rig", name: "Boom and sail", traits: { [SAIL]: { raised: 1, sheet: 0.5 } }, at: sub(FIT.rig.position, FIT.mast.position) },
+    // the jib on her forestay, its origin the tack, its Y the luff (ship.js jibDrawing)
+    { kind: "jib", name: "Jib", traits: { [JIB]: { sheet: 0.5, held: null, furl: 0 } }, at: sub(jibFit().position, FIT.mast.position), rotation: jibFit().rotation },
   ],
   wheel: [{ kind: "wheel", name: "Wheel", traits: { [HELM]: { angle: 0 } } }],
   windlass: [
@@ -51,18 +57,33 @@ export const PIECES = Object.freeze({
   ladder: [{ kind: "ladder", name: "Ladder", traits: { [LADDER]: {} } }],
   // the sheet led to the cockpit: a station to stand at and trim (and hoist) the ship's sail from
   mainsheet: [{ kind: "mainsheet", name: "Mainsheet", traits: { [MAINSHEET]: {} } }],
+  // the jib's sheets' winches, port and starboard, on her side decks by the cockpit
+  winches: [
+    { kind: "winch", name: "Port jib winch", side: -1 },
+    { kind: "winch", name: "Starboard jib winch", side: 1, mirror: true },
+  ],
   redBuoy: [{ kind: "redBuoy", name: "Red buoy", traits: { [FLOAT]: {} } }],
   greenBuoy: [{ kind: "greenBuoy", name: "Green buoy", traits: { [FLOAT]: {} } }],
   islet: [{ kind: "islet", name: "Islet" }],
 });
 
 /** What goes aboard the sloop, each at the stand her hull has for it (ship.js STAND: her connectors). */
-export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mainsheet"]);
+export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mainsheet", "winches"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
 
-/** Each kind's drawing's version, where it isn't 1: the hull's 2 has a stand for the mainsheet. */
-const VERSIONS = Object.freeze({ hull: 2 });
+/**
+ * Each kind's drawing's version, where it isn't 1: the hull's 2 has a stand
+ * for the mainsheet, its 3 one for the jib's winches; the rig's 2 carries
+ * her rig contract (extras.rig: stock-rig.js), so a doc that already has
+ * `rig@1` keeps sailing as it did; the mast's 2 has no jib rolled on its
+ * forestay (the jib is its own piece). Then every face wound to look out and
+ * no face lying on another's (shadows and depth fought there): the hull's 4,
+ * the mast's 3, and 2 for the winch, windlass, mainsheet, wheel, anchor and
+ * islet. The rig's 3 and the jib's 2 mark their cloth as taking no shadows
+ * (a one-sided sheet: mesh extras receiveShadow false).
+ */
+const VERSIONS = Object.freeze({ hull: 4, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 });
 
 /** The key of a kind's GLB in the scene's files (doc.assets). Bump its version (VERSIONS) when its drawing changes. */
 export const fileKey = (kind) => `sailing/${kind}@${VERSIONS[kind] ?? 1}`;
@@ -128,10 +149,12 @@ export function partObject({ name, url, transform, parent = null, group = null, 
  * @param {{ parent: string | null, transform }} place  where the part goes
  * @param {{ [kind]: { url, hint } }} files
  * @param {(prefix: string) => string} newId
- * @param {{ group?: string | null, locked?: boolean, settings?: { [traitKey]: object } }} [o]
- *   settings: trait fields to set over the pieces' own (the sail lowered, the anchor down)
+ * @param {{ group?: string | null, locked?: boolean, settings?: { [traitKey]: object }, across?: number }} [o]
+ *   settings: trait fields to set over the pieces' own (the sail lowered, the anchor down);
+ *   across: where across her (her body's x) the part is put, for a pair's
+ *   mirror piece (2·across the other way) and which side each is on
  */
-export function objectsFor(part, place, files, newId, { group = null, locked = false, settings = null } = {}) {
+export function objectsFor(part, place, files, newId, { group = null, locked = false, settings = null, across = FIT.winch.position[0] } = {}) {
   const [first, ...rest] = PIECES[part];
   const root = newId("o");
   const tags = TAGS[first.kind] ? [TAGS[first.kind]] : undefined;
@@ -141,9 +164,15 @@ export function objectsFor(part, place, files, newId, { group = null, locked = f
     for (const [k, v] of Object.entries(traits)) out[k] = settings[k] ? { ...v, ...settings[k] } : v;
     return out;
   };
-  const out = [[root, partObject({ name: first.name, ...files[first.kind], transform: place.transform, parent: place.parent, group, locked, traits: traitsOf(first.traits), tags })]];
+  // a pair across her: put to starboard, the first is the starboard one
+  const flip = across > 0 ? -1 : 1;
+  const sided = (p) => (p.side ? { name: p.side * flip < 0 ? "Port jib winch" : "Starboard jib winch", traits: { [WINCH]: winchTrait(p.side * flip) } } : { name: p.name, traits: p.traits });
+  const top = sided(first);
+  const out = [[root, partObject({ name: top.name, ...files[first.kind], transform: place.transform, parent: place.parent, group, locked, traits: traitsOf(top.traits), tags })]];
   for (const p of rest) {
-    out.push([newId("o"), partObject({ name: p.name, ...files[p.kind], transform: { position: p.at, rotation: [0, 0, 0] }, parent: root, traits: traitsOf(p.traits) })]);
+    const at = p.mirror ? [tidy([-2 * across])[0], 0, 0] : p.at;
+    const { name, traits } = sided(p);
+    out.push([newId("o"), partObject({ name, ...files[p.kind], transform: { position: at, rotation: p.rotation ?? [0, 0, 0] }, parent: root, traits: traitsOf(traits) })]);
   }
   return out;
 }
@@ -193,11 +222,9 @@ export function placement(scene, at, part, content = null) {
   // her body's rotation, seen from the parent: the hull's frame undone, then hers
   let q = mulQ(poseOfMatrix(invert(under)).quaternion, quatFromEuler(frame.rotation));
   const kind = PIECES[part][0].kind;
-  if (kind === "ladder") {
-    const inBody = apply(invert(frameMatrix(frame)), apply(under, t.position));
-    if (inBody[0] < 0) q = mulQ(q, [0, 1, 0, 0]);
-  }
-  return { parent, transform: standing(kind, t.position, q, t.scale ?? 1) };
+  const inBody = apply(invert(frameMatrix(frame)), apply(under, t.position));
+  if (kind === "ladder" && inBody[0] < 0) q = mulQ(q, [0, 1, 0, 0]);
+  return { parent, transform: standing(kind, t.position, q, t.scale ?? 1), body: inBody };
 }
 
 /**
@@ -212,7 +239,9 @@ export function part(name) {
       const scene = ctx.scene?.() ?? ctx.doc?.() ?? {};
       const ship = at?.parent ? shipAbove(scene, at.parent) : null;
       const place = placement(scene, at, name, ship ? (ctx.content?.(ship) ?? null) : null);
-      const objects = objectsFor(name, place, files, ctx.newId);
+      // a pair across her (the winches) mirrors the first across her centreline
+      const across = Array.isArray(place.body) && Math.abs(place.body[0]) > 0.05 ? place.body[0] : undefined;
+      const objects = objectsFor(name, place, files, ctx.newId, { across });
       let put = false;
       ctx.change((d) => {
         if (place.parent && !d.objects?.[place.parent]) return;
@@ -243,7 +272,7 @@ export function sloopObjects({ position, yaw }, files, newId, ship = {}, { setti
   const hull = newId("o");
   const out = [[hull, partObject({ name: "Sloop", ...files.hull, transform: { position: [position[0], 0, position[2]], rotation: [0, yaw, 0] }, traits: { [SHIP]: ship } })]];
   const square = [0, 0, 0, 1];
-  for (const p of ABOARD) out.push(...objectsFor(p, { parent: hull, transform: standing(PIECES[p][0].kind, STAND[p], square) }, files, newId, { settings }));
+  for (const p of ABOARD) out.push(...objectsFor(p, { parent: hull, transform: standing(PIECES[p][0].kind, STAND[p], square) }, files, newId, { settings, across: STAND[p][0] }));
   return out;
 }
 
@@ -278,6 +307,7 @@ export const wheel = part("wheel");
 export const windlass = part("windlass");
 export const ladder = part("ladder");
 export const mainsheet = part("mainsheet");
+export const winches = part("winches");
 export const redBuoy = part("redBuoy");
 export const greenBuoy = part("greenBuoy");
 export const islet = part("islet");
