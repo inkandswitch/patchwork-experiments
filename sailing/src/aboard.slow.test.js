@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import play from "./play.js";
 import { layOutShip, headTo } from "./layout.js";
 import { apply, invert, unrotateM as unrotate, rotateM as rotate } from "./frames.js";
-import { fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
+import { fakeDrop, fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
 import { boxTriangles } from "./navmesh.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
@@ -50,10 +50,9 @@ function rays(worldOf, hull) {
 }
 
 async function sloop() {
-  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {} };
-  let n = 0;
+  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
   const hull = await layOutShip(
-    { repo: { create2: async () => ({ url: `automerge:f${++n}` }) }, change: (fn) => fn(doc), newId: (p) => `${p}${++n}` },
+    fakeDrop(doc).ctx,
     { wind: { speed: 7, from: 45 }, seed: 3 },
   );
   doc.objects[hull].transform.rotation = [0, headTo(-45), 0];

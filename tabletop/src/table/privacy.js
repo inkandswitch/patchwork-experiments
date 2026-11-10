@@ -21,8 +21,9 @@
 //
 // The privacy face is a GLB the scene keeps once, as a `file` doc at
 // doc.assets[privacyKey(size)] (the scene's files, scene/STAGE.md "Parts"),
-// made on demand by the first view that needs one (extension.js), so tables
-// published before this existed get it too. It's sized to the card (its
+// made on demand by the first view that needs one (extension.js): setting a
+// table up never writes it, and a table nobody has seen a card at never has
+// one. It's sized to the card (its
 // hint's bounds, which every card of a deck shares: its back's), so a scene
 // with two sizes of card has two.
 
@@ -193,8 +194,7 @@ export function privacyFile(bounds = DEFAULT_CARD) {
  * peers at once: the merge keeps one, and the other's file doc is a spare.
  */
 export function rememberAsset(d, key, url, bounds) {
-  // made with the doc (the scene's datatype); a scene from before `assets` gets it here
-  if (!d.assets) d.assets = {};
+  // (`assets` is made with the doc: the scene's datatype)
   if (!d.assets[key]?.url) d.assets[key] = { url, hint: { bounds: { min: [...bounds.min], max: [...bounds.max] } } };
 }
 

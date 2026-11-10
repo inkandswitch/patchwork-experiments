@@ -140,7 +140,7 @@ const rSlice = await render("Flow past the hull", flow, "flow-field-slice",
 // A Camber hull: camber's own default design (5 m, written by camber/patchwork's
 // seedDoc, saved here as JSON), rendered at 1.6 m, with a flow linked to its render.
 // camber-hull-surface's ParamSpec defaults (camber/patchwork/src/scene/params.ts):
-const CAMBER_DEFAULTS = { sections: 96, girth: 6, size: "document", lengthMeters: 10, rake: true, origin: "waterline", transom: true, outline: true, stations: true, stationCount: 10, dwl: true }
+const CAMBER_DEFAULTS = { sections: 96, girth: 6, size: "document", lengthMeters: 10, rake: true, origin: "waterline", transom: true, deck: true, outline: true, stations: true, stationCount: 10, dwl: true }
 const camber = await make({ "@patchwork": { type: "camber-hull" }, ...JSON.parse(readFileSync(resolve(here, "showcase/camber-hull.json"), "utf8")), title: "Camber hull" })
 const rCamber = await render("Camber hull", camber, "camber-hull-surface", { ...CAMBER_DEFAULTS, size: "length", lengthMeters: 1.6 })
 const camberFlow = await make({
@@ -208,6 +208,7 @@ const sceneDoc = {
   order,
   dimensions: dims,
   traits: {},
+  assets: {},
   view: {
     ...DEFAULT_VIEW,
     units: "mm",
@@ -217,7 +218,7 @@ const sceneDoc = {
 
 // ─── checks: the stage opens this as it is ───────────────────────────────────
 const problems = []
-for (const k of ["traits", "view", "dimensions"]) if (sceneDoc[k] == null) problems.push(`no ${k} map (every scene is made with one)`)
+for (const k of ["traits", "view", "dimensions", "assets"]) if (sceneDoc[k] == null) problems.push(`no ${k} map (every scene is made with one)`)
 const groups = resolveGroups(objects)
 for (const [id, o] of Object.entries(objects)) {
   if (isGroup(o) && ("transform" in o || "parent" in o)) problems.push(`group ${id} has a transform or parent`)

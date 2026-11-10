@@ -1508,9 +1508,6 @@ export default function Stage(handle, element) {
       if (dead) throw new Error("The scene was closed.");
       const hint = f.hint ? JSON.parse(JSON.stringify(f.hint)) : null;
       handle.change((d) => {
-        // made with the doc (datatype.js); a scene from before `assets` makes it here, and if
-        // two peers race at that, one's key is lost and that kind gets one more file next time
-        if (!d.assets) d.assets = {};
         if (!d.assets[key]?.url) d.assets[key] = hint ? { url: file.url, hint } : { url: file.url };
       });
       return known() ?? { url: file.url, hint };

@@ -46,6 +46,7 @@ const scene = await repo.create2({
   order: [],
   dimensions: {},
   traits: {},
+  assets: {},
   view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
 });
 
@@ -68,7 +69,6 @@ const ctx = {
     const { name, bytes, extension, mimeType, hint = null } = make();
     const file = await repo.create2({ "@patchwork": { type: "file" }, name, extension, mimeType, content: bytes });
     scene.change((d) => {
-      if (!d.assets) d.assets = {};
       if (!d.assets[key]) d.assets[key] = { url: file.url, hint };
     });
     return scene.doc().assets[key];
@@ -85,7 +85,13 @@ if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringif
 if ("kits" in (d.view ?? {})) problems.push("view still has kits");
 for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.url) problems.push(`no GLB for ${kind}`);
 const blocks = Object.entries(d.objects).filter(([, o]) => o.kind !== "group");
-for (const [id, o] of blocks) if (!glbs.includes(o.sourceUrl)) problems.push(`${id} (${o.name}) shows a GLB that isn't the level's`);
+for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.hint?.bounds) problems.push(`the ${kind} GLB has no hint`);
+if (Object.keys(d.traits?.["arena.level"] ?? {}).join() !== "look") problems.push(`the level trait holds ${JSON.stringify(d.traits?.["arena.level"])}, not just its look`);
+for (const [id, o] of blocks) {
+  if (!glbs.includes(o.sourceUrl)) problems.push(`${id} (${o.name}) shows a GLB that isn't the level's`);
+  if (!o.hint?.bounds) problems.push(`${id} (${o.name}) has no hint`);
+  if (o.traits?.["arena.target"]?.down) problems.push(`${id} (${o.name}) starts knocked down`);
+}
 const targets = blocks.filter(([, o]) => o.traits?.["arena.target"]).length;
 const spawns = blocks.filter(([, o]) => o.traits?.["arena.spawn"]).length;
 if (!targets || !spawns) problems.push(`${targets} targets and ${spawns} spawn points`);

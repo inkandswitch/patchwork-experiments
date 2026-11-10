@@ -1,6 +1,7 @@
 // The scene's own GLB files, for the parts (parts.js) and the templates
-// (template.js): a piece drawn to a GLB as ctx.file's make() wants it, and
-// the file for a key. One module, so the two can't drift apart.
+// (template.js): a piece drawn to a GLB as ctx.file's make() wants it. One
+// module, so the two can't drift apart. The file for a key is the stage's
+// ctx.file (the scene's one doc per key, doc.assets; scene/STAGE.md "Parts").
 
 import { pieceGLB } from "../pieces.js";
 
@@ -18,17 +19,4 @@ export function glbFile(piece) {
     mimeType: "model/gltf-binary",
     ...(b ? { hint: { bounds: b } } : {}),
   };
-}
-
-/**
- * The scene's file for `key`: { url, hint }. Through ctx.file (the scene's
- * one doc per key, doc.assets); on a stage without it, a file doc of its
- * own. (Only templates can meet such a stage: they predate ctx.file, while
- * parts came with it, scene 259ae893.)
- */
-export async function fileFor(ctx, key, make) {
-  if (typeof ctx.file === "function") return ctx.file(key, make);
-  const f = make();
-  const doc = await ctx.repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
-  return { url: doc.url, hint: f.hint ?? null };
 }

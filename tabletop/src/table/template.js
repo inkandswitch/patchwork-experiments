@@ -24,7 +24,7 @@
 // there for play to run) in the editor, with the hand.
 
 import { glbKey } from "../pieces.js";
-import { fileFor, glbFile } from "./files.js";
+import { glbFile } from "./files.js";
 import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";
 import { deckProviderFor } from "./extension.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
@@ -67,7 +67,7 @@ export async function layOutTable(ctx, gameId, game, { rng = Math.random, parent
   const files = {};
   for (const kind of kindsUsed(g)) {
     const piece = g.pieces[kind];
-    files[kind] = await fileFor(ctx, gameFileKey(gameId, kind, piece), () => glbFile(piece));
+    files[kind] = await ctx.file(gameFileKey(gameId, kind, piece), () => glbFile(piece));
   }
 
   // a secure deck only where something can run it

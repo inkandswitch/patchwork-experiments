@@ -545,12 +545,11 @@ describe("the stage, mounted", () => {
     expect(h.doc().assets["t/buoy@1"]).toEqual({ url: a.url, hint: a.hint });
     const file = await repo.find(a.url);
     expect(file.doc()).toMatchObject({ "@patchwork": { type: "file" }, name: "buoy.glb", extension: "glb", mimeType: "model/gltf-binary" });
-    // another key is another file; a scene written without assets gets the map
-    h.change((d) => delete d.assets);
+    // another key is another file
     const other = await ctx.file("t/mast@1", async () => ({ name: "mast.glb", bytes: new Uint8Array([1]), extension: "glb", mimeType: "model/gltf-binary" }));
     expect(other.url).not.toBe(a.url);
     expect(other.hint).toBe(null);
-    expect(h.doc().assets).toEqual({ "t/mast@1": { url: other.url } });
+    expect(h.doc().assets["t/mast@1"]).toEqual({ url: other.url });
     await expect(ctx.file("", make)).rejects.toThrow();
   });
 

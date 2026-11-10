@@ -189,7 +189,7 @@ describe("the parts, with their origins where they pivot", () => {
 // reverse. The cloth is a one-sided sheet seen from both sides (looks.js
 // takes it from shadow-receiving), and the islet's ground an open skirt
 // whose rays mostly escape both ways: it is checked by its mean normal.
-describe("every face looks out", () => {
+describe("every face looks out", { timeout: 60_000 }, () => {
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

@@ -701,8 +701,6 @@ export async function copyObjects(api, payload, target) {
   const assets = same ? {} : assetsFor(source.assets, urls, api.doc()?.assets);
   if (Object.keys(assets).length) {
     api.change((d) => {
-      // made with the doc; a scene from before `assets` makes it here (as ctx.file does)
-      if (!d.assets) d.assets = {};
       for (const [k, a] of Object.entries(assets)) if (!d.assets[k]) d.assets[k] = a;
     });
   }

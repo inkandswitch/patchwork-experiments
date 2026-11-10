@@ -737,16 +737,12 @@ export default {
     // The first view that needs it makes it (privacy.js), as the stage's
     // ctx.file would (that's for drops and parts; an extension has no
     // ctx.file): a file doc, remembered at doc.assets[key] if that key is
-    // still empty. So a table set up before this existed gets one the first
-    // time anyone sees a card they mayn't, and nothing is ever written per
-    // card. Two views making it at once each make a file doc, and the merge
-    // keeps one in `assets`: the other is a spare file nothing names, both
-    // drawn alike, and every view uses the one kept from then on. (One more
-    // way to lose the key: a scene from before `assets` existed, where this
-    // and a peer's ctx.file each make the map at once and the peer's wins;
-    // then this view writes its key again, once.) Until it's there, a private
-    // card shows its back.
-    const privacy = new Map(); // key → { url: string | null, writes: number }
+    // still empty. Nothing is ever written per card. Two views making it at
+    // once each make a file doc and each write the key into the one `assets`
+    // map the doc was made with; the merge keeps one, the other is a spare
+    // file nothing names, both drawn alike, and every view uses the one kept
+    // from then on. Until it's there, a private card shows its back.
+    const privacy = new Map(); // key → { url: string | null }
     function privacyFor(snapshot, o) {
       const bounds = cardBounds(o);
       const key = privacyKey(bounds);
@@ -755,29 +751,20 @@ export default {
       if (typeof known === "string" && known) return known;
       let p = privacy.get(key);
       if (!p) privacy.set(key, (p = makePrivacy(key, bounds)));
-      if (p.url && p.writes < 2) {
-        // made here, but the key isn't in `assets` (lost to a peer making the map): once more
-        p.writes++;
-        queueMicrotask(() => !dead && rememberPrivacy(key, p.url, bounds));
-      }
       return p.url;
     }
     function makePrivacy(key, bounds) {
-      const p = { url: null, writes: 0 };
+      const p = { url: null };
       if (typeof repo?.create2 !== "function") return p;
       (async () => {
         const f = privacyFile(bounds);
         const h = await repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
         if (dead || typeof h?.url !== "string") return;
         p.url = h.url;
-        p.writes = 1;
-        rememberPrivacy(key, h.url, bounds);
+        api.change((d) => rememberAsset(d, key, h.url, bounds));
         refresh();
       })().catch((err) => console.warn("[tabletop] couldn't make the privacy face", err));
       return p;
-    }
-    function rememberPrivacy(key, url, bounds) {
-      api.change((d) => rememberAsset(d, key, url, bounds));
     }
 
     /** Sit in a seat (null: watch): claim it, let go of the last one, then write it down. */

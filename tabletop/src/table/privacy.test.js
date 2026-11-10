@@ -138,7 +138,7 @@ describe("three looks", () => {
   });
 
   it("two peers remembering it at once: the merge keeps one, whole", () => {
-    const base = Automerge.from({ objects: {}, traits: {} }); // a table from before `assets`
+    const base = Automerge.from({ objects: {}, assets: {}, traits: {} });
     const key = privacyKey(BOUNDS);
     const a = Automerge.change(Automerge.clone(base), (d) => rememberAsset(d, key, "automerge:fileA", BOUNDS));
     const b = Automerge.change(Automerge.clone(base), (d) => rememberAsset(d, key, "automerge:fileB", BOUNDS));
@@ -155,7 +155,7 @@ describe("three looks", () => {
 
 // A Lost Cities-ish table: Alice in p1, Bob in p2, a plain deck that knows every card
 const FACES = ["mineUp", "mineDown", "theirsUp", "theirsDown", "tableUp", "tableDown"];
-function tableDoc({ assets } = {}) {
+function tableDoc({ assets = {} } = {}) {
   return {
     objects: {
       hand1: { name: "Hand 1", transform: T([0, 0, 0.5]), traits: zone("p1"), locked: true },
@@ -168,7 +168,7 @@ function tableDoc({ assets } = {}) {
       tableDown: card([0.3, 0.001, 0], DOWN),
     },
     traits: { [SEATS]: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } },
-    ...(assets ? { assets } : {}),
+    assets,
   };
 }
 async function table({ doc = tableDoc(), deck = "plain-deck", resolver, hang = false } = {}) {
@@ -333,10 +333,10 @@ describe("the lens: what each viewer sees", () => {
 });
 
 describe("the privacy face's file: once per scene, shared, nothing per card", () => {
-  it("a table published before it existed (no assets at all) gets one, from the first view that needs it", async () => {
+  it("a table is set up without one, and gets it from the first view that needs it", async () => {
     const t = await table();
     const before = structuredClone(t.w.doc.objects);
-    expect(t.w.doc.assets).toBeUndefined();
+    expect(t.w.doc.assets).toEqual({});
     await t.join("A", "alice");
     expect(t.privateFiles()).toBe(1);
     const key = privacyKey(BOUNDS);
@@ -380,7 +380,7 @@ describe("the privacy face's file: once per scene, shared, nothing per card", ()
     const t = await table({ doc });
     await t.join("A", "alice");
     expect(t.privateFiles()).toBe(0);
-    expect(t.w.doc.assets).toBeUndefined();
+    expect(t.w.doc.assets).toEqual({});
     t.w.done();
   });
 

@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { plugins } from "./index.js";
 import { KINDS, sampleArena } from "./level.js";
-import { ART, kindKey } from "./layout.js";
+import { kindKey } from "./layout.js";
 import edit from "./edit.js";
 import template from "./template.js";
 
@@ -176,16 +176,6 @@ describe("the arena's parts", () => {
     f.ctx.file = async (key, make) => (delete doc.objects.deck, file(key, make));
     expect(await (await load("arena.target")).create(f.ctx, { ...AT, parent: "deck" })).toBe(null);
     expect(f.calls.notices.at(-1).text).toMatch(/gone/);
-  });
-
-  it("a level from before the scene kept files has its GLBs moved into them, not drawn again", async () => {
-    doc.traits["arena.level"] = { kinds: { [`target@${ART}`]: "automerge:oldTarget", "crate@1": "automerge:oldCrate" } };
-    const id = await (await load("arena.target")).create(f.ctx, AT);
-    expect(doc.objects[id].sourceUrl).toBe("automerge:oldTarget");
-    expect(doc.assets[kindKey("target")]).toMatchObject({ url: "automerge:oldTarget", hint: { bounds: { min: expect.any(Array) } } });
-    expect(f.calls.created).toHaveLength(0);
-    // older art stays where it was, and nothing else of the level is touched
-    expect(doc.traits["arena.level"]).toEqual({ kinds: { "crate@1": "automerge:oldCrate" } });
   });
 });
 

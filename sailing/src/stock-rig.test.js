@@ -600,7 +600,7 @@ describe("head to wind (DESIGN.md, \"Leaving the anchor\"): no stable irons; bac
 
 describe("on a stage: the stock sloop the templates lay out sails her contract; an old doc doesn't", () => {
   async function laidOut({ rigExtras }) {
-    const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {} };
+    const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
     const { ctx } = fakeDrop(doc);
     const id = await layOutShip(ctx, { wind: { speed: 7, from: 45 }, seed: 3 });
     const rig = Object.keys(doc.objects).find((k) => doc.objects[k].name === "Boom and sail");

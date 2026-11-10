@@ -32,7 +32,7 @@
 // square to the deck, not plumb).
 
 import { DEFAULT_FACES, DIE } from "./dice.js";
-import { fileFor, glbFile } from "./files.js";
+import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
 import { layOutTable } from "./template.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
@@ -193,7 +193,7 @@ export function partObject(kind, { url, hint }, { transform = IDENTITY, parent =
 export function part(kind, { square = false } = {}) {
   return {
     async create(ctx, at) {
-      const file = await fileFor(ctx, partKey(kind), () => makeFile(kind));
+      const file = await ctx.file(partKey(kind), () => makeFile(kind));
       const id = ctx.newId("o");
       const parent = at?.parent ?? null;
       const transform = square && parent ? squared(at?.transform) : (at?.transform ?? IDENTITY);

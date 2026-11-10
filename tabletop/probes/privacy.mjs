@@ -3,7 +3,7 @@
 // (privacy.js) when it's face up but not theirs.
 //
 //   (in scene/, tabletop/ and card-table/) pnpm build
-//   node probes/privacy.mjs --part secure|old|plain [--old <dir of an old tabletop dist>] [--shots <dir>] [--show]
+//   node probes/privacy.mjs --part secure|plain [--shots <dir>] [--show]
 //
 // privacy-probe.html, two views A (Ana) and B (Ben) of one doc, real mouse
 // and keys over CDP.
@@ -13,10 +13,6 @@
 //   privacy file. A flips a card of its hand face down with F: it's the back
 //   to both. B draws with D while A's writes to the deck are held back: the
 //   new card is the privacy face to B until A's key reaches it, then its face.
-// - old: a table made by an OLD tabletop build (--old: its dist, e.g. HEAD's,
-//   built elsewhere; served under /old/) from the template, as it would have
-//   been published. Opened with this build and sat at, it gets privacy faces,
-//   and doc.assets gains exactly one entry; no object changes.
 // - plain: a Lost Cities table with a plain deck: the plain-deck HUD warning;
 //   the pile is backs to both; A draws two: faces to A, privacy to B; A flips
 //   one face down: the back to B; the pile's top flipped face up: its face to both.
@@ -32,13 +28,11 @@ const ROOT = resolve(PKG, "..");
 for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const PART = arg("--part") ?? "secure";
-const OLD = arg("--old") ? resolve(arg("--old")) : null;
-if (PART === "old" && !(OLD && existsSync(join(OLD, "index.js")))) throw new Error("--part old needs --old <dir with an old tabletop's dist/index.js>");
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-privacy"));
-const MODE = { secure: "template", old: "template", plain: "plain" }[PART];
-const TT = PART === "old" ? "&tabletop=/old/index.js" : "";
+const MODE = { secure: "template", plain: "plain" }[PART];
+if (!MODE) throw new Error(`--part ${PART}: secure or plain`);
 
-const b = await browser({ root: ROOT, port: 4774, cdp: 9774, page: `/tabletop/probes/privacy-probe.html?mode=${MODE}${TT}`, width: 1416, height: 530, show: process.argv.includes("--show"), timeout: 300_000, mounts: OLD ? { "/old/": OLD } : {} });
+const b = await browser({ root: ROOT, port: 4774, cdp: 9774, page: `/tabletop/probes/privacy-probe.html?mode=${MODE}`, width: 1416, height: 530, show: process.argv.includes("--show"), timeout: 300_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
@@ -187,38 +181,6 @@ try {
     const seq2 = (await P(`log(${J(top2)})`)).filter((e) => e.w === "b");
     report.fastDraw = { card: top2, b: seq2 };
     check("…with no back in its hand: the privacy face, then its face", !seq2.slice(seq2.findIndex((e) => e.s !== "back")).some((e) => e.s === "back") && seq2.at(-1).s === "face", seq2);
-  }
-
-  if (PART === "old") {
-    // ── a table as the OLD build made and published it (nobody seated) ──
-    check("the old build's start screen offers Lost Cities", await until("templates('a').includes('tabletop.lost-cities')", 15_000), await P("templates('a')"));
-    await P("start('a', 'tabletop.lost-cities')");
-    check("the old build lays the table out", await until("pile().length > 0 && Object.keys(__p.assets()).length >= 3", 30_000));
-    await sleep(1500);
-    const oldKeys = Object.keys(await P("assets()")).sort();
-    check("the old build's table has no privacy file", !oldKeys.some((k) => k.startsWith("tabletop/private-card@")), oldKeys);
-    const before = await P("objects()");
-    const snapshot = await P("snapshot()");
-    await shot("made-by-old");
-    mark("old table made", { assets: oldKeys });
-
-    // ── opened with this build ──
-    await b.send("Page.navigate", { url: "http://127.0.0.1:4774/tabletop/probes/privacy-probe.html?mode=seed" });
-    await b.waitFor("location.search.includes('seed') && document.readyState !== 'loading'", 10_000);
-    await js(`window.__seed = ${J(snapshot)}; true`);
-    check("this build opens the old table", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
-    await seatBoth({ secure: true });
-    await threeStates("");
-    await sleep(1500);
-    const keys = Object.keys(await P("assets()")).sort();
-    const added = keys.filter((k) => !oldKeys.includes(k));
-    check("doc.assets gained exactly one entry, the privacy face's", added.length === 1 && added[0].startsWith("tabletop/private-card@2:") && oldKeys.every((k) => keys.includes(k)), { oldKeys, keys, added });
-    const after = await P("objects()");
-    const changed = Object.keys({ ...before, ...after }).filter((id) => J(before[id]) !== J(after[id]));
-    check("no object was written (nothing per card)", changed.length === 0, changed.slice(0, 5).map((id) => ({ id, before: before[id], after: after[id] })));
-    report.old = { oldKeys, added, filesMade: await P("filesMade()") };
-    await shot("seated");
-    await closeups("closeup");
   }
 
   if (PART === "plain") {

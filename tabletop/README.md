@@ -152,12 +152,12 @@ their own seat. Its grey is no suit's and no back's, so an opponent's hand
 laid face up in its tray reads as "kept from you", not "face down" or a
 white card, and says nothing about which cards they are. Its look carries no
 name. It's a GLB the scene keeps as a `file` doc at
-`doc.assets["tabletop/private-card@2:<bounds>"]` (the version bumps when the
+`doc.assets["tabletop/private-card@3:<bounds>"]` (the version bumps when the
 art changes; a scene keeps the old file under the old key, unused)
 (bounds in tenths of a mm: the cards' hint, which every card of a deck shares,
 its back's; a Lost Cities card's when there's none), made by the first view
-that needs one, so tables published before it existed get it the first time
-someone sees a card they mayn't. That's the only write it makes: never
+that needs one: setting a table up never writes it, so it comes the first
+time someone sees a card they mayn't. That's the only write it makes: never
 anything per card. Two views needing it at once each make a file doc and
 write the key only if it's still empty; the merge keeps one, and the other
 file is a spare nothing names (the stage's `ctx.file` rule). Until it's
@@ -549,7 +549,7 @@ are none.
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
 | `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), set down on something (`placeLayout`), and writing it into a scene doc |
 | `src/table/template.js` | the Lost Cities and Santorini templates: the game's table in an empty scene, its art by `ctx.file` |
-| `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file`, and the file for a key |
+| `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
 | `src/table/extension.js` | the scene extension: decks and the three looks, the seat picker and seats as stations, Shuffle, Draw, Roll, telling the others, laying out a dropped deck, drawing face up |
 | `src/table/visibility.js` | who may see what: zones, seats, face up in the card's frame (pure) |
 | `src/table/privacy.js` | the three looks of a hidden card, and the privacy face's art and assets key (pure) |

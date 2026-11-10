@@ -410,11 +410,9 @@ is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
-a fallback. `init` makes `assets` too, as do tabletop and the TTS importer;
-a scene made before `assets` existed gets it from its first `ctx.file`. Two
-peers doing that at once each make a map, the merge keeps one, and the other
-peer's key is lost: that kind gets one more file doc on its next drop, and
-nothing already in the scene changes.
+a fallback. `init` makes `assets` too, as do tabletop and the TTS importer, and
+nothing else ever does: a scene without one is from before `assets` and is
+republished, not patched.
 
 ## The input chain
 

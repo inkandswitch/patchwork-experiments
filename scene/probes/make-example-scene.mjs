@@ -121,6 +121,7 @@ const doc = {
   order,
   dimensions: {},
   traits: {},
+  assets: {},
   view: { units: "m", grid: true, axes: true, bounds: false },
 }
 

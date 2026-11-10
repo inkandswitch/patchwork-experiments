@@ -404,9 +404,9 @@ export function fakeWorld(doc, { content = {} } = {}) {
  * doc.assets[key]) and notify. What it made is in `calls`.
  *   const { ctx, calls } = fakeDrop(doc);
  * @param {object} doc
- * @param {{ file?: boolean, content?: { [id]: object } }} [o]  file: false leaves ctx.file out (a stage older than parts)
+ * @param {{ content?: { [id]: object } }} [o]
  */
-export function fakeDrop(doc, { file = true, content } = {}) {
+export function fakeDrop(doc, { content } = {}) {
   const calls = { created: [], notices: [], made: [] };
   let n = 0;
   const repo = {
@@ -432,9 +432,7 @@ export function fakeDrop(doc, { file = true, content } = {}) {
     newId: (prefix) => `${prefix}${++n}`,
     notify: (text, kind) => calls.notices.push({ text, kind }),
     ...(content ? { content: (id) => content[id] ?? null } : {}),
-  };
-  if (file) {
-    ctx.file = async (key, make) => {
+    file: async (key, make) => {
       const have = doc.assets?.[key];
       if (have?.url) return { url: have.url, hint: have.hint ?? null };
       const f = await make();
@@ -443,8 +441,8 @@ export function fakeDrop(doc, { file = true, content } = {}) {
       if (!doc.assets) doc.assets = {};
       doc.assets[key] = { url: made.url, ...(f.hint ? { hint: f.hint } : {}) };
       return { url: made.url, hint: f.hint ?? null };
-    };
-  }
+    },
+  };
   return { ctx, calls };
 }
 

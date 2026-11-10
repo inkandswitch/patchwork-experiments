@@ -36,28 +36,9 @@ export function kindBounds(kind) {
   return { min, max };
 }
 
-/**
- * A kind's GLB doc ({ url, hint }): the scene's own, drawn the first time it's
- * needed. A level from before the scene kept files (its trait's `kinds`,
- * "<kind>@<ART>" → url) has this art's already: that one is moved into the
- * scene's files, not drawn again.
- */
+/** A kind's GLB doc ({ url, hint }): the scene's own, drawn the first time it's needed. */
 export function kindFile(ctx, kind) {
-  const key = kindKey(kind);
-  const old = `${kind}@${ART}`;
-  const url = ctx.doc?.()?.traits?.[LEVEL]?.kinds?.[old];
-  if (typeof url === "string" && !ctx.doc().assets?.[key]?.url) {
-    ctx.change((d) => {
-      if (!d.assets) d.assets = {};
-      if (!d.assets[key]?.url) d.assets[key] = { url, hint: { bounds: kindBounds(kind) } };
-      const kinds = d.traits?.[LEVEL]?.kinds;
-      if (kinds) {
-        delete kinds[old];
-        if (!Object.keys(kinds).length) delete d.traits[LEVEL].kinds;
-      }
-    });
-  }
-  return ctx.file(key, () => ({
+  return ctx.file(kindKey(kind), () => ({
     name: `${KINDS[kind].name}.glb`,
     bytes: kindGLB(kind),
     extension: "glb",

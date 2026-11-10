@@ -126,6 +126,8 @@ export function fakeRepo() {
  *   content: what api.content(id) answers; registries: what api.registry(type) answers
  */
 export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {} } = {}) {
+  // a scene as its datatype makes it: `assets` comes with the doc (scene/STAGE.md, "Shared maps")
+  if (!doc.assets) doc.assets = {};
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
   const views = new Map(); // session → view
@@ -430,10 +432,9 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
  * sailing/src/test/fakes.js, with the registry and the log added.
  *   const { ctx, calls } = fakeDrop(doc, { registries: { "tabletop:deck": reg } });
  * @param {object} doc
- * @param {{ file?: boolean, content?: { [id]: object }, registries?: { [type]: object } }} [o]
- *   file: false leaves ctx.file out (a stage older than parts)
+ * @param {{ content?: { [id]: object }, registries?: { [type]: object } }} [o]
  */
-export function fakeDrop(doc, { file = true, content, registries = {} } = {}) {
+export function fakeDrop(doc, { content, registries = {} } = {}) {
   const calls = { created: [], notices: [], made: [], changes: 0, log: [] };
   let n = 0;
   const repo = {
@@ -465,20 +466,17 @@ export function fakeDrop(doc, { file = true, content, registries = {} } = {}) {
     registry: async (type) => registries[type] ?? null,
     notify: (text, kind) => calls.notices.push({ text, kind }),
     ...(content ? { content: (id) => content[id] ?? null } : {}),
-  };
-  if (file) {
-    ctx.file = async (key, make) => {
-      const have = doc.assets?.[key];
+    async file(key, make) {
+      const have = doc.assets[key];
       if (have?.url) return { url: have.url, hint: have.hint ?? null };
       const f = await make();
       calls.made.push({ key, ...f });
       const made = await repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
       // the stage writes assets in a change of its own (not the template's)
-      if (!doc.assets) doc.assets = {};
       doc.assets[key] = { url: made.url, ...(f.hint ? { hint: f.hint } : {}) };
       return { url: made.url, hint: f.hint ?? null };
-    };
-  }
+    },
+  };
   return { ctx, calls };
 }
 
