@@ -54,9 +54,9 @@ export const object = (extra = {}) => ({
 });
 
 /**
- * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], parts?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string }} o
+ * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], parts?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string, packageSettleMs?: number }} o
  */
-export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId } = {}) {
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0 } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
@@ -74,6 +74,8 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
   const element = document.createElement("div");
   element.repo = repo;
   if (viewerId) element.viewerId = viewerId;
+  // (no waiting for the registry to go quiet before packages are offered, unless a test asks)
+  element.packageSettleMs = packageSettleMs;
   document.body.append(element);
   const cleanup = Stage(handle, element);
   const root = element.querySelector(".scene-stage");

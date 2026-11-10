@@ -105,6 +105,23 @@ describe("the tabletop-game tool", () => {
     expect(scene).toMatchObject({ title: "Santorini table 1", assets: {}, dimensions: {}, view: { tool: "hand" } });
     expect(scene.view).not.toHaveProperty("activity");
     await until(() => element.querySelector(".tables a")?.textContent === "Santorini table 1");
+    // made with the packages list the stage fills in; with no scene package
+    // registered here, it says only that it's a scene
+    expect(scene.packages).toEqual([]);
+    expect(scene["@patchwork"]).toEqual({ type: "scene" });
+    // with the scene package registered (at the heads the module watcher
+    // loaded), the next table carries it, bare, as its suggested import
+    const SCENE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
+    const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
+    getRegistry("patchwork:datatype").register({ type: "patchwork:datatype", id: "scene", importUrl: `${SCENE}#${"H".repeat(48)}` });
+    button(element, "Set up a table").click();
+    await until(() => opened.length === 2);
+    expect((await repo.find(opened[1].url)).doc()["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE });
+    // a dev server's copy is nobody else's to load: left off
+    getRegistry("patchwork:datatype").register({ type: "patchwork:datatype", id: "scene", importUrl: "http://localhost:5173/" });
+    button(element, "Set up a table").click();
+    await until(() => opened.length === 3);
+    expect((await repo.find(opened[2].url)).doc()["@patchwork"]).toEqual({ type: "scene" });
 
     cleanup();
     expect(element.children).toHaveLength(0);

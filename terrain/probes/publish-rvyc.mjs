@@ -43,6 +43,14 @@
 //    and the terrain's render is checked fresh there (fingerprint, heads).
 
 import { join, resolve, dirname } from "node:path";
+import { packageProblems, withPackages } from "./scene-packages.mjs";
+
+// The published scene names the scene package as its suggested import and
+// lists the packages its contents come from (scene/STAGE.md, "Packages"):
+// the scene, the terrain's and the sloop's. In a real shell the stage works
+// these out from the registry; the probe page has none that says where its
+// plugins come from, so they're stated here.
+const PACKAGES = ["scene", "terrain", "sailing"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -226,8 +234,13 @@ async function publish(snap) {
     for (const o of Object.values(d.objects ?? {})) delete o.claims;
     return d;
   };
-  const docs = Object.fromEntries(Object.entries(snap.docs).filter(([, d]) => d["@patchwork"]?.type !== "contact").map(([u, d]) => [u, u === snap.scene ? unclaimed(d) : d]));
+  const docs = Object.fromEntries(Object.entries(snap.docs).filter(([, d]) => d["@patchwork"]?.type !== "contact").map(([u, d]) => [u, u === snap.scene ? withPackages(unclaimed(d), PACKAGES) : d]));
   const urls = Object.keys(docs);
+  const stamped = packageProblems(docs[snap.scene], PACKAGES);
+  if (stamped.length) {
+    for (const p of stamped) console.error(`  ${p}`);
+    return b.stop(1);
+  }
   if (DRY) {
     console.log(`dry run: ${urls.length} docs to publish (${urls.map((u) => docs[u]["@patchwork"]?.type).join(", ")}; nothing published)`);
     return b.stop(0);
@@ -273,7 +286,8 @@ async function publish(snap) {
       const want = docs[from];
       let problem = !got || !Object.keys(got).length ? "empty" : null;
       if (!problem && url === sceneUrl) {
-        if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
+        if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
+        else if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
         else if (!Object.values(got.objects ?? {}).some((o) => o.traits?.["sailing.ship"])) problem = "came back without the sloop";
         else if (!Object.values(got.objects ?? {}).some((o) => o.providerId === "terrain-mesh" && madeUrls.includes(o.sourceUrl) && madeUrls.includes(o.renderUrl))) problem = "came back without the terrain";
         else if (got.claims) problem = "came back with claims";

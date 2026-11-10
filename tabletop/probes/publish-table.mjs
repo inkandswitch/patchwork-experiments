@@ -48,6 +48,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { fill } from "../src/games/lost-cities.js";
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
+import { packageProblems, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
+
+// A published table names the scene package as its suggested import and
+// lists the packages its contents come from (scene/STAGE.md, "Packages"):
+// the scene, the table's own, and the secure deck's. In the browser the
+// stage works these out from the registry; here they're stated.
+const PACKAGES = ["scene", "tabletop", "card-table"];
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -117,7 +124,7 @@ const decks = layout.decks;
 // the decks first, so the scene never names one that isn't there
 const deckUrls = {};
 for (const [deckId, deck] of Object.entries(decks)) deckUrls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
-const table = { "@patchwork": { type: "scene" }, title, objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+const table = { "@patchwork": scenePatchwork(), title, objects: {}, order: [], dimensions: {}, assets: {}, packages: scenePackages(PACKAGES), traits: {}, view: {} };
 writeTable(table, layout, deckUrls);
 const scene = await repo.create2(table);
 game.change((d) => {
@@ -132,6 +139,7 @@ const problems = [];
 if (drawn !== glbs.length || glbs.some((u) => !u)) problems.push(`${drawn} of ${glbs.length} piece GLBs drawn`);
 if (s.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(s.view?.activity)}, not "play"`);
 if ("kits" in (s.view ?? {})) problems.push("view still has kits");
+problems.push(...packageProblems(s, PACKAGES));
 const objects = Object.entries(s.objects).filter(([, o]) => o.kind !== "group");
 for (const [id, o] of objects) if (!glbs.includes(o.sourceUrl)) problems.push(`${id} (${o.name}) shows a GLB that isn't the game's`);
 const hidden = objects.filter(([, o]) => o.traits?.["tabletop.hidden"]);
@@ -154,6 +162,7 @@ if (DRY) {
 }
 
 await verify(made, (url, got) => {
+  if (url === scene.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
   if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
   if (url === game.url && JSON.stringify(got.tables) !== JSON.stringify([scene.url])) return `came back listing tables ${JSON.stringify(got.tables)}, not just its own`;
   if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
@@ -226,8 +235,14 @@ async function fromTemplate(gameId) {
   }
   console.log(JSON.stringify(report, null, 2));
   if (list.failed || !snapshot) return done(1);
-  const docs = snapshot.docs;
+  // the page had no registry to say where its packages come from: stated here
+  const docs = { ...snapshot.docs, [snapshot.scene]: withPackages(snapshot.docs[snapshot.scene], PACKAGES) };
   const count = Object.keys(docs).length;
+  const stamped = packageProblems(docs[snapshot.scene], PACKAGES);
+  if (stamped.length) {
+    for (const p of stamped) console.error(`  ${p}`);
+    return done(1);
+  }
   if (DRY) {
     console.log(`dry run: ${count} docs (nothing published)`);
     return done(0);
@@ -250,6 +265,7 @@ async function fromTemplate(gameId) {
   const made = [table.url, ...renamed.values()];
   const glbs = files.map((u) => renamed.get(u));
   await verify(made, (url, got) => {
+    if (url === table.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
     if (url === table.url && got.view?.activity !== docs[snapshot.scene].view?.activity) return `came back with view.activity ${JSON.stringify(got.view?.activity)}`;
     if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
     return null;

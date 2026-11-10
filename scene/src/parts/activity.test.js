@@ -77,7 +77,7 @@ describe("scene.activity", () => {
 });
 
 describe("the scene package's own extensions", () => {
-  it("edit runs the editor in its order; play keeps only the key map, notices and the switcher; none offers play", async () => {
+  it("edit runs the editor in its order; play keeps only the key map, notices, the packages prompt and the switcher; none offers play", async () => {
     const { plugins } = await import("../index.js");
     const { activeSet, availableActivities } = await import("../stage/activation.js");
     const metas = plugins.filter((p) => p.type === "scene:extension");
@@ -86,6 +86,7 @@ describe("the scene package's own extensions", () => {
       "scene.toolbar",
       "scene.sidebar",
       "scene.notices",
+      "scene.packages",
       "scene.keys",
       "scene.menu",
       "scene.frame",
@@ -108,7 +109,7 @@ describe("the scene package's own extensions", () => {
       "scene.parts",
       "scene.activity",
     ]);
-    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["scene.notices", "scene.keys", "scene.activity"]);
+    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["scene.notices", "scene.packages", "scene.keys", "scene.activity"]);
     expect(availableActivities(metas, doc)).toEqual(["edit"]);
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
   });
@@ -119,7 +120,7 @@ describe("the scene package's own extensions", () => {
     const game = { id: "t.game", traits: ["t.level"], activities: ["play"], requires: ["scene.use", "scene.keys"] };
     const metas = [game, ...plugins.filter((p) => p.type === "scene:extension")];
     const doc = { objects: {}, traits: { "t.level": {} } };
-    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys", "scene.notices", "scene.activity"]);
+    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys", "scene.notices", "scene.packages", "scene.activity"]);
     expect(activeSet({ metas, doc, activity: "edit" }).map((r) => r.id)).not.toContain("scene.use");
     // installing it offers play nowhere it isn't already
     expect(availableActivities(metas, doc)).toEqual(["edit", "play"]);

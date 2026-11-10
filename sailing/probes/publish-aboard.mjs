@@ -28,6 +28,14 @@
 // (probes/aboard-run.mjs plays it: at anchor, under way, first person.)
 
 import { join, resolve, dirname } from "node:path";
+import { packageProblems, withPackages } from "./scene-packages.mjs";
+
+// The published scene names the scene package as its suggested import and
+// lists the packages its contents come from (scene/STAGE.md, "Packages"):
+// the scene, the ship's, the table's and the secure deck's. In a real shell
+// the stage works these out from the registry; the probe page has none that
+// says where its plugins come from, so they're stated here.
+const PACKAGES = ["scene", "sailing", "tabletop", "card-table"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
@@ -107,8 +115,13 @@ else await publish(snapshot);
 
 // ─── publish the scene as it was before anyone sat ──────────────────────────
 async function publish(snap) {
-  const docs = snap.docs;
+  const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES) };
   const count = Object.keys(docs).length;
+  const stamped = packageProblems(docs[snap.scene], PACKAGES);
+  if (stamped.length) {
+    for (const p of stamped) console.error(`  ${p}`);
+    return b.stop(1);
+  }
   if (DRY) {
     console.log(`dry run: ${count} docs (the scene, its deck and ${count - 2} files; nothing published)`);
     return b.stop(0);
@@ -152,7 +165,8 @@ async function publish(snap) {
       if (!problem && url === scene.url) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
         const under = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.hidden"]).length;
-        if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
+        if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
+        else if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
         else if (!hull) problem = "came back without the ship";
         else if (under !== 60) problem = `came back with ${under} cards`;
         else if (got.claims) problem = "came back with claims";

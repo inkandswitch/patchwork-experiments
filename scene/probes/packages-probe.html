@@ -1,0 +1,98 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene packages probe</title>
+<!-- Driven by probes/packages-run.mjs: the BUILT scene tool (dist/) opening a
+     scene whose doc.packages lists two packages this viewer doesn't have
+     (STAGE.md, "Packages"): one that is served (probes/packages-probe-package.js:
+     an extension for the scene's trait "probe.sea", the scene:source
+     "probe-box" one object is built by, and a part) and one that isn't (its
+     load fails). A third package IS registered here, at heads, for a trait
+     the scene has, and isn't listed: the stage lists it. `?fresh` clears
+     localStorage first; without it, what was accepted is remembered. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@inkandswitch/patchwork-filesystem": "./filesystem-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #a { width: 1100px; height: 700px; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { imported, servePackage } from "@inkandswitch/patchwork-filesystem";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { newRenderDoc } from "../src/datatype.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+
+const PKG = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
+const BROKEN = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
+const LOCAL = "automerge:4cD6LbnDAzvNj9WDNDA4ew21R85H";
+
+try {
+  if (new URLSearchParams(location.search).has("fresh")) { try { localStorage.clear(); } catch {} }
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  // a package this viewer has, registered as the module watcher does: at the heads it loaded
+  getRegistry("scene:extension").register({ type: "scene:extension", id: "probe.local", name: "Local", traits: ["probe.local"], load: async () => ({ create: () => ({}) }) }, `${LOCAL}#${"H".repeat(48)}`);
+
+  const repo = new FakeRepo();
+  // the package folders, as pushwork lays them out (the prompt reads each one's package.json for its name)
+  const folder = (url, name) => {
+    const pj = repo.add({ "@patchwork": { type: "file" }, name: "package.json", content: JSON.stringify({ name }) });
+    repo.add({ title: name, docs: [{ name: "package.json", type: "file", url: pj.url }] }, url);
+  };
+  folder(PKG, "@probe/sea-and-boxes");
+  folder(BROKEN, "@probe/broken");
+  servePackage(PKG, new URL("./packages-probe-package.js", location.href).href);
+
+  const source = repo.add({ "@patchwork": { type: "probe-box" }, title: "A box", size: 1.2 });
+  const render = repo.add(newRenderDoc({ title: "A box", parent: source.url, providerId: "probe-box", params: {} }));
+  const scene = repo.add({
+    "@patchwork": { type: "scene" }, title: "Packages probe",
+    objects: { box: { name: "Box", sourceUrl: source.url, providerId: "probe-box", renderUrl: render.url, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } },
+    order: ["box"], dimensions: {}, traits: { "probe.sea": {}, "probe.local": {} }, assets: {},
+    packages: [{ url: PKG }, { url: BROKEN }],
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3, 2.5, 3.5], target: [0, 0.5, 0] } },
+  });
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+  window.__p = {
+    dbg, errors, PKG, BROKEN, LOCAL,
+    packages: () => dbg.local.get().packages,
+    card: () => {
+      const c = host.querySelector(".packages-card");
+      return c && { count: host.querySelectorAll(".packages-card").length, hidden: c.hidden, title: c.querySelector(".packages-title")?.textContent ?? null,
+        rows: [...c.querySelectorAll(".package")].map((li) => ({ url: li.dataset.url, state: li.dataset.state, name: li.querySelector(".package-name")?.textContent ?? null, shown: li.querySelector(".package-url")?.textContent, error: li.querySelector(".package-error")?.textContent ?? null })),
+        warning: c.querySelector(".packages-warning")?.textContent ?? null, actions: [...c.querySelectorAll("[data-action]")].map((b) => b.textContent), rect: rectOf(c) };
+    },
+    button: (action) => rectOf(host.querySelector(`.packages-card [data-action="${action}"]`)),
+    imported: () => [...imported],
+    registered: () => ["scene:extension", "scene:source", "scene:part"].flatMap((t) => getRegistry(t).filter((p) => p.id.startsWith("probe")).map((p) => ({ type: t, id: p.id, importUrl: p.importUrl ?? null }))),
+    running: () => dbg.local.get().running.map((r) => r.id),
+    status: (id) => dbg.local.get().status?.[id]?.state ?? null,
+    loaded: (id) => !!dbg.viewport.contentOf(id)?.loaded,
+    sea: () => ({ started: window.__seaStarted ?? 0, shown: !!host.querySelector(".probe-sea"), built: window.__boxBuilt ?? 0 }),
+    listed: () => (scene.doc().packages ?? []).map((e) => e.url),
+    accepted: () => { try { return JSON.parse(localStorage.getItem("scene-packages:accepted") ?? "[]"); } catch { return null; } },
+    inspect: () => dbg.packages.inspect(),
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

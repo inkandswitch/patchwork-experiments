@@ -61,6 +61,7 @@ this view and by the stage.
 | `activity` | stage (on joining, and after a template), activity surfaces | what this viewer chose to do: `"edit"`, `"play"`, …; null until the stage has the doc. Not persisted. See "Activities" |
 | `activities` | stage | `{ current, available }`: the activity that runs and the ones this scene offers. **Read the activity here**: `current` is `activity` when it's available, else `"edit"` |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
+| `packages` | stage | `{ ask, loading, failed }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`). See "Packages" |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
 | `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? "move"` |
 
@@ -412,7 +413,141 @@ and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
 a fallback. `init` makes `assets` too, as do tabletop and the TTS importer, and
 nothing else ever does: a scene without one is from before `assets` and is
-republished, not patched.
+republished, not patched. The same goes for the `packages` list (see
+"Packages"): made by `init` and by those two, appended to by the stage,
+never created by it.
+
+## Packages
+
+A scene's contents come from many packages (a sea from sailing, a table from
+tabletop, a terrain's provider). The doc says which, and the stage loads the
+ones a viewer doesn't have, so a scene's URL is enough to share it. The rules
+are `src/packages.js` (pure); when they're applied is
+`src/stage/packages.js`; the prompt is the `scene.packages` part.
+
+**The list.** `doc.packages` is a list of `{ url }`, made with the doc by the
+scene datatype's `init`, like `assets`. A `url` is a **package URL**: a
+package's folder (`automerge:<id>`, bare) or where it's served
+(`https://…`). An entry is an object so that a version (`heads`) can be
+pinned beside the URL later; nothing reads one now. Readers go through
+`listedPackages(doc)`: each package once, in the order first listed.
+
+**The URL rule** (`packageUrl`): the one form a package is listed and
+compared in, or null when it names nothing another viewer could load.
+- `automerge:<id>`, with or without heads, is `automerge:<id>`. (The module
+  watcher registers a package at the heads it loaded, `automerge:<id>#<heads>`;
+  that is the same package.)
+- `https:` on a public host is itself, without its fragment.
+- Everything else is null: `http:` (a dev server, or code anyone on the way
+  could swap), `https:` on localhost, a `.local` or bare machine name or a
+  private address, a URL with credentials, `blob:`, `data:`, `javascript:`,
+  a relative path.
+
+A null URL is never written to the list, and an entry that reads as null
+isn't there: it is never offered and never loaded.
+
+**What the doc calls for** (`neededPlugins(doc)`): everything in it that is
+answered by looking in the plugin registry.
+
+| In the doc | Looked up as |
+|---|---|
+| an object's `providerId` (and the provider its render doc names) | the `scene:source` with that id |
+| a trait key on the scene or on an object | every `scene:extension` whose `traits` include it |
+| `view.activity`, unless `"edit"` | every `scene:extension` that offers it with a reason of its own |
+| `view.tool` of the form `"<ext>:<name>"` | the `scene:extension` with that id |
+
+With each extension come the ones it `requires`, at any depth. A part or a
+template leaves no mark of its own (what it makes is objects and traits,
+found above), so the stage notes it when one is run in this view. Nothing
+else in a scene doc names a plugin: general extensions (the editor's own)
+run for whoever has them, whatever the doc says.
+
+**Reconcile: the list is true by construction.** After every doc change and
+every registry change the stage adds `{ url }` for each package that
+- a registered plugin answering one of those needs (or a part or template
+  run here) was registered from (its `importUrl`),
+- the URL rule gives a URL for, and
+- the list doesn't name.
+
+So whoever adds content has its plugin (they couldn't have added it
+otherwise), and their stage names its package: a scene can't call for a
+plugin whose package its list doesn't name, short of a doc written by hand
+or made with a plugin from a dev server. Only someone who has a plugin can
+say where it comes from; a viewer without it adds nothing. This includes the
+scene package itself (its `file-glb` shows most objects): it can't help load
+itself, but no rule is needed to leave it out, and the list is then the whole
+of what the scene is made of.
+
+- **Appends only.** Nothing is removed (a trait taken away leaves its
+  package listed), the list is never rewritten, and it is never made: a
+  scene without one is from before `packages` and is republished, not
+  patched (see "Shared maps").
+- **Concurrent adds.** Two peers who both have a package may both add it
+  before either hears the other; the merge keeps both entries. Readers read
+  each package once, each peer then finds it listed and writes nothing
+  more, so there is at most one entry per peer per package, once.
+- A read-only view (a scene at a version) is never written.
+
+**The scene package as the suggested import.** `@patchwork.suggestedImportUrl`
+is what Patchwork offers a viewer who has no tool for a doc; for a scene it
+is the scene package, bare (no `frozenImportUrl`: versions aren't pinned
+yet). Every scene doc carries it:
+- one made through the host (the sidebar's New) gets it from the scene
+  datatype's `importUrl` (`createDocOfDatatype2`);
+- one written whole by another tool (tabletop's tables, the TTS importer)
+  gets it from the registry's `scene` datatype, by the URL rule
+  (`src/scene-package.js` in each);
+- a publish script states it (`probes/scene-packages.mjs`: the scene
+  package's `pushwork url`), and checks it;
+- and the reconcile pass writes it on any scene that names nothing loadable
+  there (no field, or a dev server's URL), when the scene package here can
+  be shared. One that names something loadable is never replaced.
+
+**Loading.** The listed packages none of whose plugins is registered here
+(`missingPackages`) are this viewer's to load.
+- **One prompt.** They're published as `local.packages` and shown by
+  `scene.packages` as one card over the view: "This scene uses 2 packages
+  you don't have.", each by its own name (its `package.json`'s, read from
+  its folder; never asked of an `https:` host) and its URL, with **Load**
+  and **Not now**.
+- **Load** loads each as the module watcher would, on this thread:
+  `importPackage` (`@inkandswitch/patchwork-filesystem`) at the folder's
+  current heads, then `registerPlugins(plugins, url)`
+  (`@inkandswitch/patchwork-plugins`) with the bare URL. The registry
+  changing is what starts things: the host starts the extensions the doc
+  calls for, the render manager builds the objects whose provider was
+  missing, and the parts bin, the start screen and the inspector list what
+  arrived.
+- **Each on its own.** One that fails is shown on the card with why, with
+  **Try again** and **Dismiss**, and doesn't hold up the others. A failure
+  isn't retried unasked.
+- **Not now** asks nothing more in this view. Opening the scene again asks
+  again.
+- **Remembered.** A package that loaded on a click is remembered in
+  `localStorage` (`scene-packages:accepted`, a JSON list of package URLs),
+  and loads without asking in the next scene that lists it.
+- **Session only.** Nothing is written to the viewer's module settings or
+  account: what a scene brings is gone on reload, and comes back when the
+  scene is opened (asked about, or remembered).
+- **Not at once.** Nothing is offered or loaded until the registry has been
+  quiet for a second: the shell may still be registering the viewer's own
+  packages as the scene opens. A package that arrives meanwhile is never
+  asked about.
+
+**Security.** A package is code, and loading one runs it with everything
+this page can do, as the viewer. The list is doc data, so anyone who can
+edit a scene can put a URL in it. Hence:
+- nothing is ever loaded without a click on Load for that URL, or a
+  remembered one (same URL, this browser);
+- only URLs the doc lists are loaded, and only by the URL rule (`api.packages.load`
+  takes no URL of its own: it chooses among what's asked about);
+- the card always shows the URL: a package's name is its own claim.
+
+**What it doesn't cover.** The documents objects are made *from* (an
+implicit surface, a deck) are opened by their own tools, which usually come
+in the same package as their provider; where they don't, Patchwork's own
+suggested import for that doc applies. Two viewers who have one plugin from
+different URLs (a fork) each list theirs, and a third is offered both.
 
 ## The input chain
 
@@ -571,6 +706,7 @@ that extension.
 | `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its `Date.now`), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
 | `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
 | `notify(text, kind?)` | |
+| `packages` | `{ load(urls?) → Promise, dismiss(urls?) }`: the viewer's answer to the packages prompt (see "Packages"). `load` is a yes: it loads what's asked about or failed (all, or those of `urls` among them) and remembers what loads. `dismiss` asks no more in this view |
 
 **Content**
 

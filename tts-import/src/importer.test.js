@@ -23,6 +23,20 @@ async function importFixture(opts = {}) {
 }
 
 describe("runImport on the tiny fixture", () => {
+  it("makes the scene with its packages list, and the scene package as its suggested import when that can be shared", async () => {
+    const SCENE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
+    // registered at the heads the module watcher loaded: the doc carries it bare
+    const pinned = await importFixture({ sceneImportUrl: async () => `${SCENE}#${"H".repeat(48)}` });
+    expect(pinned.doc(pinned.sceneUrl)["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: SCENE });
+    expect(pinned.doc(pinned.sceneUrl).packages).toEqual([]);
+    // a dev server's copy, or no scene package registered (the default asks the registry, which has none here): left off
+    for (const opts of [{ sceneImportUrl: async () => "http://localhost:5173/" }, { sceneImportUrl: () => null }, {}]) {
+      const out = await importFixture(opts);
+      expect(out.doc(out.sceneUrl)["@patchwork"]).toEqual({ type: "scene" });
+      expect(out.doc(out.sceneUrl).packages).toEqual([]);
+    }
+  });
+
   it("finds the save and the cached assets (through the cloud-3 rewrite), and reports what's missing", async () => {
     const { report, phases } = await importFixture();
     expect(report.mod).toMatchObject({ saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", objects: 17 });

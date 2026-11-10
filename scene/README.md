@@ -37,10 +37,11 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (24) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `scene:extension` | `scene.*` (25) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
-All but two of the editor's parts take part only in the `"edit"` activity;
-the key map (`scene.keys`) and notices serve every activity. `scene.activity`
+All but three of the editor's parts take part only in the `"edit"` activity;
+the key map (`scene.keys`), notices and the packages prompt (`scene.packages`:
+STAGE.md, "Packages") serve every activity. `scene.activity`
 (the switcher: Play | Edit at the bottom left, shown only when a scene offers
 more than editing) runs in every scene.
 
@@ -593,6 +594,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
           home?: { position, target, fov? } },             // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
   assets: { [key: string]: { url: AutomergeUrl, hint?: Object["hint"] } },  // the scene's own file docs (ctx.file: STAGE.md, "Parts")
+  packages: { url: string }[],      // the packages its contents come from (STAGE.md, "Packages")
   materialRules?: MaterialRule[]
 }
 Object = {
@@ -642,7 +644,17 @@ MaterialRule = {
   older one (groups with transforms, `view.defaultGizmo` or
   `view.defaultMode`, a top-level `camera`), and extensions read only their
   traits: such a scene is replaced, not read. `traits`, `view`,
-  `dimensions` and `assets` are made with the doc (STAGE.md, "Shared maps").
+  `dimensions`, `assets` and `packages` are made with the doc (STAGE.md,
+  "Shared maps").
+- `packages` lists the packages the scene's contents come from, as package
+  URLs (`automerge:<id>`, bare, or `https://…`). The stage keeps it true: it
+  adds the package of every registered plugin the doc calls for (a
+  provider, a trait's extension, a part that was used), and offers a viewer
+  the listed ones they don't have, in one prompt (STAGE.md, "Packages").
+  `@patchwork.suggestedImportUrl` is the scene package itself, so a viewer
+  with nothing installed is offered the scene tool, which offers the rest.
+  A doc written whole (a publish script, another tool) writes both:
+  `probes/scene-packages.mjs` does it for node scripts.
 - `hint` is written by importers: `bounds` (metres, in the GLB's own frame)
   is drawn as a placeholder until the GLB loads and decides load order (bigger
   first, the selected object before everything).
@@ -743,6 +755,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/groups.js` | groups: inherited visibility / opacity, remove / ungroup plans, the outline's rows and filter |
 | `src/material-rules.js` | `materialRules`: checking and matching |
 | `src/deps.js` | watches a provider's dependency docs (subscribe, retry, heads) |
+| `src/packages.js`, `src/stage/packages.js`, `src/parts/packages.js` | a scene's packages (STAGE.md, "Packages"): the rules (which URLs can be listed, what a doc calls for, what's missing; pure), the stage's side (reconcile, loading), and the prompt |
 | `src/build.js` | one build: provider → GLB file doc → repoint render doc |
 | `src/controls-tool.js`, `src/param-form.js` | the `scene-render-controls` tool |
 | `src/glb.js` | the GLB encoder (kit: copy me) |
@@ -896,6 +909,27 @@ missing or has no content.
 ```
 node probes/publish-example-scene.mjs --geom <site>/frontend/public [--scene probes/solander-scene.example.json] [--sync wss://…]
 ```
+
+### Packages probe
+
+```
+pnpm build
+node probes/packages-run.mjs          # ports 4840 / 9840
+```
+
+`packages-probe.html` mounts the built tool on a scene whose `packages`
+lists two packages nothing on the page has registered: one served
+(`packages-probe-package.js`: an extension for a trait the scene has, the
+provider one object is built by, a part) through a stand-in for the host's
+`importPackage` (`filesystem-stub.js`), and one that isn't. A third package
+is registered on the page, at heads, for a trait the scene has, and isn't
+listed. `packages-run.mjs` checks, with real clicks: one prompt naming both,
+nothing imported before a yes, and the registered package listed (bare);
+Not now loads and remembers nothing, and the next open asks again; Load
+imports the served package at its heads, registers it under its bare URL,
+its extension starts and its provider builds the object, while the other's
+failure is on the card; opened again, the remembered one loads unasked and
+only the other is asked about.
 
 ### Drag probe
 

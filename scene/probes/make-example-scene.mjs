@@ -17,6 +17,7 @@
 // which shows 135 objects where the recorded run showed 74.
 import { readdirSync, writeFileSync, mkdirSync } from "node:fs"
 import { dirname, resolve } from "node:path"
+import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs"
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -114,17 +115,25 @@ for (const set of SETS) {
   }
 }
 
+// every object is a GLB file (file-glb): the scene package is all it needs
+const PACKAGES = ["scene"]
 const doc = {
-  "@patchwork": { type: "scene" },
+  "@patchwork": scenePatchwork(),
   title: "Solander 38",
   objects,
   order,
   dimensions: {},
   traits: {},
   assets: {},
+  packages: scenePackages(PACKAGES),
   view: { units: "m", grid: true, axes: true, bounds: false },
 }
 
+const problems = packageProblems(doc, PACKAGES)
+if (problems.length) {
+  for (const p of problems) console.error(`  ${p}`)
+  process.exit(1)
+}
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, JSON.stringify(doc, null, 2))
 

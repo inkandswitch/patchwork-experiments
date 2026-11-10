@@ -17,6 +17,7 @@
 
 import template from "../src/template.js";
 import { fileKey } from "../src/parts.js";
+import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -30,14 +31,19 @@ const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductio
 if (!DRY) console.log(`connected to ${SYNC}`);
 
 // ─── an empty scene, as SceneDatatype.init writes it (scene/src/datatype.js) ──
+// with the scene package as its suggested import, and the packages its
+// contents come from listed (scene/STAGE.md, "Packages"): in the browser the
+// stage works these out from the registry; here they're stated
+const PACKAGES = ["scene", "sailing"];
 const scene = await repo.create2({
-  "@patchwork": { type: "scene" },
+  "@patchwork": scenePatchwork(),
   title: "Ship at sea",
   objects: {},
   order: [],
   dimensions: {},
   traits: {},
   assets: {},
+  packages: scenePackages(PACKAGES),
   view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
 });
 
@@ -112,6 +118,7 @@ for (const [k, a] of Object.entries(assets)) {
   else if (JSON.stringify(Object.keys(a).sort()) !== '["hint","url"]') problems.push(`doc.assets[${k}] has ${Object.keys(a)}`);
 }
 const glbs = Object.values(assets).map((a) => a.url);
+problems.push(...packageProblems(d, PACKAGES));
 if (new Set(glbs).size !== glbs.length) problems.push("two asset keys share a file");
 for (const o of objects) if (o.providerId === "file-glb" && !glbs.includes(o.sourceUrl)) problems.push(`${o.name}'s sourceUrl ${o.sourceUrl} is not one of the scene's assets`);
 if (problems.length) {
@@ -135,6 +142,7 @@ for (const url of made) {
   try {
     const got = (await within(30000, checker.find(url))).doc();
     if (!got || !Object.keys(got).length) missing.push(`${url} (empty)`);
+    else if (url === scene.url && packageProblems(got, PACKAGES).length) missing.push(`${url} (came back wrong: ${packageProblems(got, PACKAGES).join("; ")})`);
     else if (url === scene.url && !got.traits?.["sailing.sea"]) missing.push(`${url} (came back without its sea)`);
     else if (url === scene.url && Object.keys(got.assets ?? {}).length !== keys.length) missing.push(`${url} (came back without its assets)`);
     else if (url !== scene.url && !(got.content?.byteLength > 0)) missing.push(`${url} (a GLB doc with no bytes)`);

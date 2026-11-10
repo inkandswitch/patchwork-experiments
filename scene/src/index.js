@@ -123,6 +123,16 @@ export const plugins = [
       return (await import("./parts/notices.js")).default;
     },
   },
+  // the packages this scene lists and this viewer doesn't have: one prompt to
+  // load them, in every activity (STAGE.md, "Packages")
+  {
+    type: "scene:extension",
+    id: "scene.packages",
+    name: "Packages",
+    async load() {
+      return (await import("./parts/packages.js")).default;
+    },
+  },
   {
     // the use prompt ("[F] Raise the anchor"): the first-person menu, in
     // play only. Not general: it runs only when a game requires it (listed

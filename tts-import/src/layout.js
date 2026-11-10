@@ -29,6 +29,7 @@
 import { convertPosition, convertTransform, readTransform, ttsUp } from "./convert.js";
 import { CARD, kindKey, kindOf } from "./kinds.js";
 import { walk } from "./tts.js";
+import { scenePatchwork } from "./scene-package.js";
 
 const r = (v, p = 5) => +Number(v).toFixed(p);
 
@@ -280,9 +281,11 @@ export function tableKind(p, extent) {
  * @returns {{ scene: object, stats: { tableY: number, skipped: number } }}
  * @param {{ unit: number, infoUrl?: string, infoToolId?: string, title?: string,
  *           secretUrls?: Map<string, string>, pdfUrls?: Map<string, string>,
- *           table?: { key: string, extent } }} o
+ *           table?: { key: string, extent }, sceneImportUrl?: string | null }} o
+ *   sceneImportUrl: the scene package's importUrl as registered; what of it
+ *   can be shared goes on the doc as @patchwork.suggestedImportUrl
  */
-export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, title = p.title, secretUrls = new Map(), pdfUrls = new Map(), table = null }) {
+export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, title = p.title, secretUrls = new Map(), pdfUrls = new Map(), table = null, sceneImportUrl = null }) {
   const tableY = tableHeight(p, built, unit);
   const objects = {};
   const order = [];
@@ -357,12 +360,15 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
   const span = Math.max(ext.hx, ext.hz) * unit;
   const centre = convertPosition([ext.cx, tableY, ext.cz], { unit, tableY });
   const scene = {
-    "@patchwork": { type: "scene" },
+    // a scene, and where the scene package comes from for a viewer who doesn't have it
+    "@patchwork": scenePatchwork(sceneImportUrl),
     title,
     objects,
     order,
     dimensions: {},
     assets: {},
+    // the packages its contents come from: the stage fills it in (scene/STAGE.md, "Packages")
+    packages: [],
     // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
     traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
     view: {

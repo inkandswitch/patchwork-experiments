@@ -1,0 +1,93 @@
+/* scene.packages: the prompt for the packages a scene lists and this viewer
+   doesn't have, a card at the top of the view (STAGE.md, "Packages"). It
+   sits above the other overlays, so a game's full-size HUD never covers it. */
+
+.scene-stage > .viewport > .stage-overlay.packages-layer {
+  z-index: 3;
+}
+
+.scene-stage .packages-layer > .packages-card:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: var(--studio-space-md, 1rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(420px, calc(100% - 24px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--studio-radius-md, 8px);
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
+  box-shadow: var(--scene-shadow);
+  font-family: var(--scene-family);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.scene-stage .packages-layer > .packages-card[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .packages-card > .packages-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+}
+
+.scene-stage .packages-card > .packages-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 9.5em;
+  overflow-y: auto;
+}
+
+.scene-stage .packages-list > .package:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+}
+
+.scene-stage .package > .package-url:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-family: var(--scene-family-code);
+  font-size: 11px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .package > .package-error:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--scene-danger-text);
+}
+
+.scene-stage .package[data-state="loading"] > .package-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-stage .packages-card > .packages-warning:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 12px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .packages-card > .packages-actions:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.scene-stage .packages-actions > .button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 12px;
+  padding: 3px 12px;
+}
+
+.scene-stage .packages-actions > .button.primary:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+}

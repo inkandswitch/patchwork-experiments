@@ -21,6 +21,7 @@
 import template from "../src/template.js";
 import { kindKey } from "../src/layout.js";
 import { KINDS } from "../src/level.js";
+import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -39,14 +40,19 @@ if (DRY) {
 }
 
 // ─── an empty scene, as SceneDatatype.init writes it (scene/src/datatype.js) ──
+// with the scene package as its suggested import, and the packages its
+// contents come from listed (scene/STAGE.md, "Packages"): in the browser the
+// stage works these out from the registry; here they're stated
+const PACKAGES = ["scene", "arena"];
 const scene = await repo.create2({
-  "@patchwork": { type: "scene" },
+  "@patchwork": scenePatchwork(),
   title: "Arena level",
   objects: {},
   order: [],
   dimensions: {},
   traits: {},
   assets: {},
+  packages: scenePackages(PACKAGES),
   view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
 });
 
@@ -83,6 +89,7 @@ const glbs = Object.values(assets).map((a) => a.url);
 const problems = [];
 if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(d.view?.activity)}, not "play"`);
 if ("kits" in (d.view ?? {})) problems.push("view still has kits");
+problems.push(...packageProblems(d, PACKAGES));
 for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.url) problems.push(`no GLB for ${kind}`);
 const blocks = Object.entries(d.objects).filter(([, o]) => o.kind !== "group");
 for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.hint?.bounds) problems.push(`the ${kind} GLB has no hint`);
@@ -117,6 +124,7 @@ for (const url of made) {
   try {
     const got = (await within(30000, checker.find(url))).doc();
     if (!got || !Object.keys(got).length) missing.push(`${url} (empty)`);
+    else if (url === scene.url && packageProblems(got, PACKAGES).length) missing.push(`${url} (came back wrong: ${packageProblems(got, PACKAGES).join("; ")})`);
     else if (url === scene.url && got.view?.activity !== "play") missing.push(`${url} (came back without view.activity "play")`);
     else if (url !== scene.url && !(got.content?.byteLength > 0)) missing.push(`${url} (a GLB doc with no bytes)`);
   } catch (err) {

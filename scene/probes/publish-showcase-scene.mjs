@@ -21,6 +21,10 @@
 // every doc is written to --out as { scene, docs: { url: doc } } (content
 // bytes as strings), default <tmpdir>/showcase-doc.json.
 //
+// The scene names the scene package as its suggested import and lists the
+// packages its objects' providers come from (PACKAGES below; STAGE.md,
+// "Packages"), each by its `pushwork url`, read now (probes/scene-packages.mjs).
+//
 // Docs of other packages' datatypes are written by shape (see each package's
 // datatype.js); this script imports their sources only for example text and
 // param defaults, at runtime, from this checkout.
@@ -33,6 +37,7 @@ import { defaultParams } from "../src/staleness.js"
 import { isGroup, resolveGroups } from "../src/groups.js"
 import { resolveParents, worldMatrix } from "../src/hierarchy.js"
 import { applyMatrix } from "../src/transform.js"
+import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, "../..")
@@ -201,14 +206,18 @@ const dims = {
   plinthHeight: { a: anchor("plinth", [0.159, 0, 0.159]), b: anchor("plinth", [0.149, 0.32, 0.149]), label: null },
 }
 
+// The packages its providers come from: file-glb (scene), implicit-mesh,
+// openscad-model, flow-field-*, camber-hull-surface.
+const PACKAGES = ["scene", "implicit", "openscad", "flow-field", "../camber/patchwork"]
 const sceneDoc = {
-  "@patchwork": { type: "scene" },
+  "@patchwork": scenePatchwork(),
   title: "Geometry showcase",
   objects,
   order,
   dimensions: dims,
   traits: {},
   assets: {},
+  packages: scenePackages(PACKAGES),
   view: {
     ...DEFAULT_VIEW,
     units: "mm",
@@ -219,6 +228,7 @@ const sceneDoc = {
 // ─── checks: the stage opens this as it is ───────────────────────────────────
 const problems = []
 for (const k of ["traits", "view", "dimensions", "assets"]) if (sceneDoc[k] == null) problems.push(`no ${k} map (every scene is made with one)`)
+problems.push(...packageProblems(sceneDoc, PACKAGES))
 const groups = resolveGroups(objects)
 for (const [id, o] of Object.entries(objects)) {
   if (isGroup(o) && ("transform" in o || "parent" in o)) problems.push(`group ${id} has a transform or parent`)
@@ -254,6 +264,7 @@ for (const url of made) {
   try {
     const d = (await within(30000, checker.find(url))).doc()
     if (!d || !Object.keys(d).length) missing.push(`${url} (empty)`)
+    else if (url === scene) for (const p of packageProblems(d, PACKAGES)) missing.push(`${url} (came back wrong: ${p})`)
   } catch (err) {
     missing.push(`${url} (${err?.message ?? err})`)
   }

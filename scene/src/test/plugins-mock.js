@@ -7,12 +7,18 @@ const registries = new Map();
 
 function makeRegistry() {
   const plugins = new Map();
+  const listeners = new Set();
+  const changed = () => {
+    for (const l of [...listeners]) l();
+  };
   return {
-    register(p) {
-      plugins.set(p.id, { ...p });
+    /** as the real one: the importUrl is kept on the plugin, unless it has its own */
+    register(p, importUrl) {
+      plugins.set(p.id, { ...p, ...(importUrl && !p.importUrl ? { importUrl } : {}) });
+      changed();
     },
     unregister(id) {
-      plugins.delete(id);
+      if (plugins.delete(id)) changed();
     },
     has: (id) => plugins.has(id),
     get: (id) => plugins.get(id),
@@ -23,13 +29,24 @@ function makeRegistry() {
       if (!p.module) p.module = await p.load();
       return p;
     },
-    on: () => () => {},
+    on(event, fn) {
+      if (event !== "changed") return () => {};
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   };
 }
 
 export function getRegistry(type) {
   if (!registries.has(type)) registries.set(type, makeRegistry());
   return registries.get(type);
+}
+
+export const getAllRegistries = () => registries;
+
+/** As the real one: each plugin into its type's registry, from this importUrl. */
+export function registerPlugins(plugins, importUrl) {
+  for (const p of plugins) getRegistry(p.type).register(p, importUrl);
 }
 
 /** Forget every registered plugin (between tests). */

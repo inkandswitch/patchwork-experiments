@@ -13,6 +13,9 @@ export const SceneDatatype = {
     doc.traits = {};
     // the scene's own file docs, by key (ctx.file: STAGE.md, "Parts")
     doc.assets = {};
+    // the packages its contents come from, as { url } (STAGE.md, "Packages"):
+    // the stage adds to it, and offers a viewer the ones they don't have
+    doc.packages = [];
     doc.view = { ...DEFAULT_VIEW };
   },
   getTitle(doc) {

@@ -12,6 +12,7 @@ import { AssetIndex, cacheName, urlVariants, extensionOf } from "./cache.js";
 import { readSave, countNames, collectAssets } from "./tts.js";
 import { kindAssets, kindKey, shortHash } from "./kinds.js";
 import { plan as makePlan, secretsDocs, sceneDoc, tableExtent, tableKind } from "./layout.js";
+import { sceneImportUrl as registeredSceneImportUrl } from "./scene-package.js";
 import { buildKind } from "./build.js";
 import { parseOBJ } from "./obj.js";
 import { sniff } from "./sniff.js";
@@ -63,9 +64,10 @@ async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
  * Run an import. Returns { sceneUrl, report }. Never throws for a missing
  * asset — only for no save at all, or a repo that won't take documents.
  *
- * @param {{ sources: ReturnType<typeof source>[], repo, images, fetch?, settings?, onProgress?, infoUrl?, infoToolId?, now? }} o
+ * @param {{ sources: ReturnType<typeof source>[], repo, images, fetch?, settings?, onProgress?, infoUrl?, infoToolId?, now?, sceneImportUrl? }} o
+ *   sceneImportUrl: () → the scene package's importUrl (default: the registry's), for the scene doc's suggestedImportUrl
  */
-export async function runImport({ sources, repo, images, fetch: fetchFn = null, settings = {}, onProgress = () => {}, infoUrl = null, infoToolId = null, now = () => Date.now() }) {
+export async function runImport({ sources, repo, images, fetch: fetchFn = null, settings = {}, onProgress = () => {}, infoUrl = null, infoToolId = null, now = () => Date.now(), sceneImportUrl = registeredSceneImportUrl }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const unit = Number(s.metresPerUnit) > 0 ? Number(s.metresPerUnit) : DEFAULT_METRES_PER_UNIT;
   const progress = (phase, done = 0, total = 0) => onProgress({ phase, done, total });
@@ -251,7 +253,7 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
   for (const { key, doc } of secretsDocs(p, built)) secretUrls.set(key, (await repo.create2(doc)).url);
   const pdfUrls = new Map();
   for (const a of assets.values()) if (a.role === "pdf" && a.fileUrl) pdfUrls.set(a.url, a.fileUrl);
-  const { scene, stats } = sceneDoc(p, built, { unit, infoUrl, infoToolId, title: `${save.saveName}`, secretUrls, pdfUrls, table: { key: tableKey, extent } });
+  const { scene, stats } = sceneDoc(p, built, { unit, infoUrl, infoToolId, title: `${save.saveName}`, secretUrls, pdfUrls, table: { key: tableKey, extent }, sceneImportUrl: await sceneImportUrl() });
   const sceneHandle = await repo.create2(scene);
 
   // ─── the report ──────────────────────────────────────────────────────────

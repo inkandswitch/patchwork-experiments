@@ -36,6 +36,7 @@ import { createRouter } from "./router.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
+import { createPackages } from "./packages.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
@@ -392,6 +393,8 @@ export default function Stage(handle, element) {
     activity: null,
     activities: Object.freeze({ current: DEFAULT_ACTIVITY, available: Object.freeze([DEFAULT_ACTIVITY]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
+    // the listed packages this viewer doesn't have (STAGE.md, "Packages")
+    packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]) }),
   });
 
   // Another tab of this viewer changed its prefs for this scene: take theirs,
@@ -477,6 +480,23 @@ export default function Stage(handle, element) {
     if (!p?.module) return null;
     return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module };
   }
+
+  // ─── the scene's packages ─────────────────────────────────────────────────
+
+  // The doc lists the packages its contents come from, and the ones this
+  // viewer doesn't have are offered (STAGE.md, "Packages"). The render
+  // manager reports the provider each render doc names (objState), so one a
+  // render doc asks for is listed even when the object's own field differs.
+  const packages = createPackages({
+    repo,
+    handle,
+    plugins,
+    local,
+    providerIds: () => [...objState.values()].map((s) => s?.providerId),
+    // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
+    ...(element.packageSettleMs != null ? { settleMs: element.packageSettleMs } : {}),
+  });
+  cleanups.push(() => packages.dispose());
 
   // ─── derived structure, once per doc snapshot ─────────────────────────────
 
@@ -574,6 +594,8 @@ export default function Stage(handle, element) {
     loadProvider,
     onState: (id, s) => {
       const before = objState.get(id)?.bounds;
+      // the provider its render doc names is one the scene calls for (packages)
+      if (objState.get(id)?.providerId !== s.providerId) packages.check();
       objState.set(id, s);
       // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
       if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
@@ -1584,6 +1606,7 @@ export default function Stage(handle, element) {
       return null;
     }
     if (dead) return null;
+    packages.used("scene:part", partId);
     const id = typeof made === "string" && doc().objects?.[made] ? made : null;
     if (id) local.swap((m) => (m.selected === id ? m : { ...m, selected: id }));
     return id;
@@ -1618,6 +1641,7 @@ export default function Stage(handle, element) {
       return false;
     }
     if (dead) return false;
+    packages.used("scene:template", templateId);
     const start = doc().view?.activity;
     if (typeof start === "string") local.swap((m) => (m.activity === start ? m : { ...m, activity: start }));
     return true;
@@ -1722,6 +1746,8 @@ export default function Stage(handle, element) {
         if (live()) presence.send(id, type, data);
       },
       notify: (text, kind) => notify(text, kind, id),
+      /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
+      packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
       // content
       nameOf,
@@ -2070,6 +2096,7 @@ export default function Stage(handle, element) {
     // hold whose parent the doc changed is shown (or not) again
     for (const id of [...presence.remoteHolds().keys()]) applyRemoteHold(id);
     recheckClaims();
+    packages.check();
     requestFlush();
     perf.sync.add(now() - t0);
   }
@@ -2091,6 +2118,7 @@ export default function Stage(handle, element) {
     perf,
     queue,
     manager,
+    packages,
     root,
     scene,
     looks: () => looks,
