@@ -1,0 +1,259 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --ns-bg: var(--editor-fill, white);
+    --ns-fg: var(--editor-line, black);
+    --ns-muted: var(--editor-line-offset-50, color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 50%));
+    --ns-border: var(--editor-fill-offset-20, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%));
+    --ns-panel: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --ns-input: var(--editor-fill, white);
+    --ns-accent-fill: var(--studio-primary-fill, var(--studio-primary, #35f7ca));
+    --ns-accent-line: var(--studio-primary-line, var(--editor-line, black));
+    --ns-near: var(--studio-warning, #b98a00);
+    --ns-near-soft: color-mix(in oklch, var(--studio-warning, #d9a400), var(--editor-fill, white) 82%);
+    --ns-far: var(--studio-danger-text, var(--studio-danger, crimson));
+    --ns-far-soft: color-mix(in oklch, var(--studio-danger, crimson), var(--editor-fill, white) 85%);
+    --ns-inside: color-mix(in oklch, var(--studio-link, #3d6fd9), var(--editor-line, black) 10%);
+    --ns-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+/* Composition */
+.naval-study .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+/* Block */
+.naval-study {
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: var(--studio-space-md, 1rem);
+  background: var(--ns-bg);
+  color: var(--ns-fg);
+  font-family: var(--ns-family);
+  font-size: 14px;
+}
+.naval-study *,
+.naval-study *::before,
+.naval-study *::after {
+  box-sizing: border-box;
+}
+.naval-study[data-dropping] {
+  outline: 2px dashed var(--ns-accent-fill);
+  outline-offset: -4px;
+}
+.naval-study button,
+.naval-study input[type="text"] {
+  padding: 3px 8px;
+  border: 1px solid var(--ns-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ns-input);
+  color: var(--ns-fg);
+  font: inherit;
+}
+.naval-study button {
+  cursor: pointer;
+}
+.naval-study button:hover {
+  border-color: var(--ns-accent-fill);
+}
+
+.naval-study .study-bar {
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+}
+.naval-study .study-title {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.naval-study .chip {
+  padding: 2px 10px;
+  border: 1px solid var(--ns-border);
+  border-radius: var(--studio-radius-round, 9999px);
+  color: var(--ns-muted);
+  font-size: 12px;
+}
+.naval-study .units button {
+  min-width: 2.5em;
+}
+.naval-study .units button[aria-pressed="true"] {
+  background: var(--ns-accent-fill);
+  color: var(--ns-accent-line);
+  border-color: var(--ns-accent-fill);
+}
+
+.naval-study .study-add {
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+}
+.naval-study .study-add input {
+  flex: 1 1 18em;
+  min-width: 0;
+  font-family: var(--editor-family-code, ui-monospace, monospace);
+  font-size: 12px;
+}
+.naval-study .add-status {
+  flex-basis: 100%;
+  min-height: 1.2em;
+  color: var(--ns-muted);
+  font-size: 12px;
+}
+.naval-study .add-status[data-tone="error"],
+.naval-study [data-tone="error"] {
+  color: var(--ns-far);
+}
+
+.naval-study .study-subjects {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.naval-study .subject {
+  padding: 6px 8px;
+  border: 1px solid var(--ns-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ns-panel);
+}
+.naval-study .subject + .subject {
+  margin-top: 4px;
+}
+.naval-study .subject .what,
+.naval-study .subject .heads,
+.naval-study .subject .status {
+  color: var(--ns-muted);
+  font-size: 12px;
+}
+.naval-study .subject .status {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+.naval-study .subject .baseline {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.naval-study .empty {
+  color: var(--ns-muted);
+}
+.naval-study .study-warnings {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+  padding-left: 1.2em;
+  color: var(--ns-near);
+  font-size: 13px;
+}
+.naval-study .study-warnings:empty {
+  display: none;
+}
+
+/* The comparison: scrolls in its own box at narrow widths */
+.naval-study .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.naval-study table.compare {
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.naval-study .compare th,
+.naval-study .compare td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ns-border);
+  text-align: left;
+  vertical-align: top;
+}
+.naval-study .compare thead th {
+  position: sticky;
+  top: 0;
+  background: var(--ns-bg);
+  white-space: nowrap;
+}
+.naval-study .compare thead th[data-baseline] {
+  border-bottom: 2px solid var(--ns-accent-fill);
+}
+.naval-study .compare .base-tag {
+  color: var(--ns-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.naval-study .compare tr.group th {
+  padding-top: 12px;
+  background: var(--ns-panel);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.naval-study .compare tbody th[scope="row"] {
+  font-weight: 400;
+  min-width: 10em;
+}
+.naval-study .compare td.cell {
+  min-width: 9em;
+  white-space: nowrap;
+  cursor: help;
+}
+.naval-study .compare td.missing {
+  color: var(--ns-muted);
+}
+.naval-study .compare td[data-envelope="near"] {
+  background: var(--ns-near-soft);
+}
+.naval-study .compare td[data-envelope="far"] {
+  background: var(--ns-far-soft);
+}
+.naval-study .badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: var(--studio-radius-round, 9999px);
+  font-size: 10px;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
+.naval-study .badge[data-envelope="inside"] {
+  color: var(--ns-inside);
+  opacity: 0.7;
+}
+.naval-study .badge[data-envelope="near"] {
+  color: var(--ns-near);
+}
+.naval-study .badge[data-envelope="far"] {
+  color: var(--ns-far);
+  font-weight: 600;
+}
+.naval-study .prov {
+  margin-left: 4px;
+  color: var(--ns-muted);
+  font-size: 11px;
+}
+.naval-study .delta {
+  color: var(--ns-muted);
+  font-size: 12px;
+}
+
+.naval-study .study-cant {
+  margin-top: var(--studio-space-md, 1rem);
+  padding: 8px 12px;
+  border: 1px solid var(--ns-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ns-panel);
+  font-size: 13px;
+}
+.naval-study .study-cant h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+.naval-study .study-cant ul {
+  margin: 0 0 6px;
+  padding-left: 1.2em;
+}
+.naval-study .cant-always {
+  color: var(--ns-muted);
+}

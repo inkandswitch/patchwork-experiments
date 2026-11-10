@@ -210,9 +210,9 @@ hull object's frame, and `body.js` is the one place that converts:
 
 ## The rig contract
 
-The rig aid (`rig/`, a separate package) designs a rig on a hull and
+The rig aid (in `naval/`, a separate package) designs a rig on a hull and
 states it as `extras.rig` on the rig GLB it builds: patchwork-rig v1, whose
-specification (`rig/contract/v1/specification.md`) is the authority,
+specification (`naval/contract/v1/specification.md`) is the authority,
 §6 most of all (how a consumer composes forces from it). Sailing reads the
 JSON; it imports nothing of the rig package's. Everything that follows is
 gated on a contract being present: a ship without one sails as before. The
@@ -524,7 +524,7 @@ her keeps every visual on the physics' geometry by construction: the cloth
 the physics flies is the cloth you see.
 
 The contract is the 12 m fixture (`src/stock-rig-12m.js`, a runtime copy
-of the parts of `rig/contract/v1/fixtures/valid/sloop-12m.json` it keeps;
+of the parts of `naval/contract/v1/fixtures/valid/sloop-12m.json` it keeps;
 `test/rig-contract/` keeps the test copy) with these parts.
 
 *Kept verbatim* (her principal dimensions are the fixture's: LOA 12, beam
@@ -1204,8 +1204,8 @@ stop, which now signals the group (`killChrome`): `arena-run.mjs`,
 `cdp.mjs`, `ocean-cdp.mjs` and `ship-shots.mjs`, scene's `cdp.mjs`,
 `solander-run.mjs` (profile removed now too) and `drag-run.mjs`,
 tabletop's `cdp.mjs`, and `tts-import/import-run.mjs`; every other driver
-starts Chrome through its package's `cdp.mjs`. `rig/probes/cdp.mjs` also
-launches Chrome and is left alone (rig/ isn't this work's to edit), as is
+starts Chrome through its package's `cdp.mjs`. `naval/probes/cdp.mjs` (then `rig/`) also
+launches Chrome and is left alone (it wasn’t this work’s to edit), as is
 terrain/.
 - The watchdog is `/bin/sh` (detached, unref'd, its argv the node pid,
   Chrome's pid and the profile): it polls `kill -0` each second, and
