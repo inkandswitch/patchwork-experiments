@@ -22,7 +22,7 @@ export const APPENDAGE_IDS = ["keel", "rudder"];
 export const ITEM_KINDS = ["lightship", "ballast", "rig", "appendage", "crew"];
 export const CREW_MODES = ["none", "sitting", "rail", "hiking", "trapeze"];
 export const HULL_KINDS = ["linked", "synthetic"];
-export const LINK_PATHS = ["render", "file", "source"];
+export const LINK_PATHS = ["file", "source"];
 export const STATICS_FROM = ["chartroom-table", "mesh", "gm"];
 export const REGIMES = ["displacement", "transition", "planing", "beyond"];
 /** §6.7. A consumer's agreement test skips any point that carries one. */
@@ -70,7 +70,7 @@ export const STAY_IDS = ["forestay", "backstay", "inner-forestay", "cap-shroud-p
  * @property {string} generator
  * @property {string|null} rigDoc
  * @property {string[]|null} rigHeads
- * @property {{ kind: "linked"|"synthetic", url: string|null, path: "render"|"file"|"source"|null, label: string, heads: string[]|null, glbKey: string|null }} hull
+ * @property {{ kind: "linked"|"synthetic", url: string|null, path: "file"|"source"|null, label: string, heads: string[]|null, glbKey: string|null }} hull
  * @property {"chartroom-table"|"mesh"|"gm"} statics
  */
 

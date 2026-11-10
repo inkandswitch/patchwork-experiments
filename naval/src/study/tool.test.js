@@ -79,8 +79,16 @@ describe("naval study view", () => {
     const cells = [...element.querySelectorAll('tr[data-row="lwl"] td.cell')];
     expect(cells).toHaveLength(2);
     expect(cells[0].querySelector(".v").textContent).toMatch(/^7\.6\d m$/);
-    expect(cells[0].querySelector(".badge").dataset.envelope).toBe("inside");
+    // a particular: nothing grades it, and its badge says so rather than "in range"
+    expect(cells[0].querySelector(".badge").dataset.envelope).toBe("ungraded");
+    expect(cells[0].querySelector(".badge").textContent).toBe("not graded");
     expect(cells[0].title).toMatch(/Source:/);
+    // the lead shows where it sits on its design band (the Catalina's model lead is above its 5–9%)
+    const lead = element.querySelector('tr[data-row="lead"] td.cell');
+    expect(lead.querySelector(".band").dataset.band).toBe("above");
+    expect(lead.querySelector(".band").textContent).toBe("above band");
+    expect(lead.querySelector(".badge").textContent).toBe("not graded");
+    expect(lead.title).toMatch(/Design band: lead 5–9% of LWL/);
     expect(cells[0].querySelector(".delta")).toBeNull(); // the baseline
     expect(cells[1].querySelector(".delta").textContent).toMatch(/^Δ [−+]/);
     // DSYHS extrapolation shows: a near/far badge on resistance, listed in the panel
@@ -102,7 +110,8 @@ describe("naval study view", () => {
     expect(h.doc().subjects[0].design.heads).toEqual(["cat1-h"]);
     // pinning changes what the subject reads: it is screened again, at those heads
     await until(() => element.querySelectorAll('.subject[data-state="ready"]').length === 2);
-    expect(element.querySelector('.subject[data-subject="s1"] .heads').textContent).toMatch(/pinned cat1-h/);
+    expect(element.querySelector('.subject[data-subject="s1"] .heads').textContent).toBe("pinned design cat1-h");
+    expect(h.doc().subjects[0]).toMatchObject({ hull: null, design: { heads: ["cat1-h"], hullHeads: null } }); // a synthetic hull: nothing more to pin
     let report = null;
     element.addEventListener("naval-study-export", (e) => (report = e.detail));
     element.querySelector('[data-act="export"]').click();
@@ -146,6 +155,19 @@ describe("naval study view", () => {
     // an edit of the hull alone screens the subject again
     emit(HULL);
     await until(() => builds === 2);
+    // the study holds no copy of the link: only the design
+    expect(h.doc().subjects[0]).toMatchObject({ hull: null, design: { url: DESIGN, heads: null } });
+    expect(element.querySelector(".study-warnings").textContent).toBe("");
+    // pinning pins both documents the figures were read from: the design and the hull it links
+    element.querySelector('.subject[data-subject="s1"] [data-act="pin"]').click();
+    expect(h.doc().subjects[0]).toMatchObject({ hull: null, design: { heads: ["h"], hullHeads: ["h"] } });
+    expect(element.querySelector('.subject[data-subject="s1"] .heads').textContent).toBe("pinned design h, hull h");
+    // and following again clears both
+    await until(() => element.querySelector('.subject[data-subject="s1"] [data-act="follow"]'));
+    element.querySelector('.subject[data-subject="s1"] [data-act="follow"]').click();
+    expect(h.doc().subjects[0].design).toMatchObject({ heads: null, hullHeads: null });
+    expect(element.querySelector('.subject[data-subject="s1"] .heads').textContent).toBe("latest");
+    await until(() => listeners[HULL].size === 1 && /built by Camber hull/.test(status()));
     // and nothing is left listening once the subject goes
     element.querySelector('.subject[data-subject="s1"] [data-act="remove"]').click();
     expect(listeners[DESIGN].size + listeners[HULL].size).toBe(0);

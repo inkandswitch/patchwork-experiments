@@ -16,6 +16,15 @@
 // A design with no linked hull stands on its synthetic hull (from its
 // principal dimensions): those figures are "estimated".
 //
+// Envelopes. A figure is graded only where its method states a fitted
+// range: the resistance (DSYHS's hull parameters and Froude range,
+// Savitsky's when it planes) and the VPP's points (the same hull
+// parameters, and "far" on a flagged point). Everything else (the
+// particulars, KMt, KN, the stability curve's readings, the ratios, the
+// lead) is "ungraded": geometry and definitions have no fitted range, and
+// nothing here checks a mesh's convergence or a table's resolution. The
+// lead carries its design band instead, where one is quoted.
+//
 // Every figure is a pure function of (the docs at their heads,
 // METHOD_VERSION); nothing derived is stored anywhere.
 
@@ -34,7 +43,7 @@ import { DEFAULT_FRAME } from "../naval/hull-frame.js";
 import { figure, gradeParams, combineProvenance, worstEnvelope } from "./figures.js";
 
 /** Bump when the same docs would screen to different figures. */
-export const METHOD_VERSION = 2; // 2: a hull with its own Chartroom table takes its upright figures from that table (hull-form.js tableUpright)
+export const METHOD_VERSION = 3; // 2: a hull with its own Chartroom table takes its upright figures from that table (hull-form.js tableUpright); 3: a figure nothing grades is "ungraded", not "inside", and the lead carries its design band
 
 /** The Froude numbers the resistance figures are read at. */
 export const RESIST_FN = [0.25, 0.35, 0.45];
@@ -268,7 +277,17 @@ function designFigures(n, put, { hp, tableFrom, hullParams }) {
 
   // balance
   const lead = rowOf(n, "lead");
-  put("lead", { value: a.balance.lead, unit: "percent", method: `Lead of the designer's CE over the CLR, % of LWL (${a.balance.clrMethod})`, cite: LE_SOURCE, provenance: combineProvenance(hp, provFromRow(lead?.prov)), why: "no CE or CLR" });
+  const lb = a.balance.leadBand;
+  put("lead", {
+    value: a.balance.lead,
+    unit: "percent",
+    method: `Lead of the designer's CE over the CLR, % of LWL (${a.balance.clrMethod})`,
+    cite: LE_SOURCE,
+    provenance: combineProvenance(hp, provFromRow(lead?.prov)),
+    why: "no CE or CLR",
+    band: lb.range ? { min: lb.range[0] / 100, max: lb.range[1] / 100, label: `lead ${lb.range[0]}–${lb.range[1]}% of LWL for this keel and rig (a rule of thumb, secondhand)` } : null,
+    note: lb.range ? undefined : `${lb.label[0].toUpperCase()}${lb.label.slice(1)}.`,
+  });
 
   // the VPP: the reference point and the VMGs at its true wind
   const hullGrade = gradeParams(hullParams);

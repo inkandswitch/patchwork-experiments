@@ -18,10 +18,10 @@
 //    (probes/camber-hull-doc.mts, camber's own datatype and docFormat); and a
 //    Rig doc linked to that hull doc itself (never a scene render: real size
 //    only) through the tool's Link field, then "New from… First guess from
-//    this hull". If the first guess lands out of the lead or the helm band,
-//    the Helm helper (its default target, 3° weather) moves the rig, and the
-//    script says what it did. No render doc is published: a scene makes its
-//    own when the hull is put in one.
+//    this hull", and nothing more: the first guess places the mast for the
+//    middle of the lead band (src/firstguess.js), and the script checks the
+//    helm it then reads is in its band too. No render doc is published: a
+//    scene makes its own when the hull is put in one.
 //
 //    Why this hull, at this waterline. Every example in camber/examples (and
 //    its editor's default hull) was screened at real size through the tool's
@@ -34,17 +34,17 @@
 //    at 12.1 t, D/L 599, five DSYHS parameters of eight out; with the
 //    waterline at 2.2 m it is a light, long-ended sloop (LWL 6.39 m of
 //    9.92 m): 2.28 t, D/L 244, Cp 0.558, LCB −4.7% of LWL, one DSYHS
-//    parameter just outside (Cm 0.575 for 0.646: "near"), and the rig ends
-//    at helm 3° with a lead of 8.4%, inside its 5–9% band. Only the waterline
-//    was moved: the geometry is camber's example, untouched. (Still no
-//    production yacht: the lowest freeboard is 1.5 m, and she is tender, at
-//    the 25° heel limit at the reference point. A waterline 0.05 m either
-//    way loses the lead band or the "near" grade.)
-//    The example this replaced, cuvature-kink-with-unmodified-pchip at 12 m,
-//    floats at 23.7 t (D/L 647, Cp 0.74, LCB −8.8%), far outside every
-//    method's range, and its rig ended with a lead of 20%. It is left out of
-//    what is published: as a second hull example it would only show the
-//    warnings. probes/study-run.mjs still screens it, as its agreement case.
+//    parameter just outside (Cm 0.575 for 0.646: "near"), and the first
+//    guess stands with a lead of 7.0% (the middle of its 5–9% band, the
+//    forestay's tack 2.6 m aft of her long stem) and 3.3° of weather helm.
+//    Only the waterline was moved: the geometry is camber's example,
+//    untouched. (Still no production yacht: the lowest freeboard is 1.5 m,
+//    and she is tender, at the 25° heel limit at the reference point.)
+//    cuvature-kink-with-unmodified-pchip at 12 m floats at 23.7 t (D/L 647,
+//    Cp 0.74, LCB −8.8%), far outside every method's range, and the first
+//    guess refuses it (too heavy to rig by the rules). It is left out of
+//    what is published. probes/study-run.mjs still screens it, as its
+//    agreement case.
 //
 // Everything is made in headless Chrome with the BUILT rig and camber plugins
 // on an in-memory repo (probes/publish-examples.html; camber's dist served at
@@ -139,9 +139,9 @@ try {
   check("the rig reads the linked hull itself, built at its own size", /^Hull: built by /.test(rig.chip ?? "") && /own size/.test(rig.chip ?? ""), { chip: rig.chip, status: rig.linkStatus });
   check("the first guess applied", !!rig.firstGuess.status && Number.isFinite(rig.firstGuess.helmDeg), rig.firstGuess);
   check("the hull's statics are camber's own (its chartroom:source), not the mesh's", /statics from/.test(rig.chip ?? ""), { chip: rig.chip });
-  check("it opens within the helm band (0–5° weather)", !rig.final.helmOut, rig.final);
-  check("it opens within the lead band", !rig.final.leadOut && Number.isFinite(rig.final.lead), rig.final);
-  check("the hull is a plausible sloop's: D/L 150–300", rig.final.dL >= 150 && rig.final.dL <= 300, { dL: rig.final.dL, displacementKg: rig.final.displacementKg });
+  check("the first guess's lead is in its band (the mast is placed for it)", !rig.firstGuess.leadOut && Number.isFinite(rig.firstGuess.lead), rig.firstGuess);
+  check("it opens within the helm band (0–5° weather)", !rig.firstGuess.helmOut, rig.firstGuess);
+  check("the hull is a plausible sloop's: D/L 150–300", rig.firstGuess.dL >= 150 && rig.firstGuess.dL <= 300, { dL: rig.firstGuess.dL, displacementKg: rig.firstGuess.displacementKg });
   snap = await P("snapshot()", 120_000);
   roles = { fixtures: Object.fromEntries(FIXTURES.map((f) => [f.id, fixtures[f.id].url])), hull: hull.hullUrl, rig: rig.url };
   // every doc made is complete on its own: the rig docs are exactly what normalize() gives back
@@ -157,13 +157,11 @@ try {
 }
 console.log(JSON.stringify(report, null, 2));
 const ex = report.examples[RIG_TITLE];
-if (ex?.final) {
-  const f = ex.firstGuess, z = ex.final;
-  console.log(`\n${RIG_TITLE}: ${EXAMPLE} at ${LENGTH_M} m, waterline ${WATERLINE_M} m below the deck datum: ${Math.round(z.displacementKg)} kg, D/L ${n3(z.dL)}, SA/D ${n3(z.saD)}; at 12 kn true, 45°:`);
-  console.log(`  first guess: helm ${n3(f.helmDeg)}° (${f.helm}); lead ${n3(100 * f.lead)}% (${f.leadBand}); ${n3(f.refSpeedKn)} kn`);
-  if (ex.helper) console.log(`  out of band (${ex.helper.why}): the Helm helper at ${ex.helper.target}°: ${ex.helper.status}`);
-  else console.log("  in band: no helper run");
-  console.log(`  published:   helm ${n3(z.helmDeg)}° (${z.helm}); lead ${n3(100 * z.lead)}% (${z.leadBand}); ${n3(z.refSpeedKn)} kn`);
+if (ex?.firstGuess) {
+  const f = ex.firstGuess;
+  console.log(`\n${RIG_TITLE}: ${EXAMPLE} at ${LENGTH_M} m, waterline ${WATERLINE_M} m below the deck datum: ${Math.round(f.displacementKg)} kg, D/L ${n3(f.dL)}, SA/D ${n3(f.saD)}; at 12 kn true, 45°:`);
+  console.log(`  ${f.status}`);
+  console.log(`  the first guess, as published: helm ${n3(f.helmDeg)}° (${f.helm}); lead ${n3(100 * f.lead)}% (${f.leadBand}); ${n3(f.refSpeedKn)} kn`);
 }
 if (list.failed || !snap) b.stop(1);
 else await publish(snap, roles);

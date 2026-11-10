@@ -92,6 +92,7 @@ export const ROW_IDS = Object.freeze(CATALOGUE.flatMap((g) => g.rows.map((r) => 
 
 /** What no screen here can tell you, whatever the subject: said every time, so its absence never reads as "fine". */
 export const NOT_SCREENED = Object.freeze([
+  "Mesh and table convergence: hydrostatic and stability figures are read off the hull's mesh and table as built, and none is checked against a finer one (their badge says “not graded”, not “in range”).",
   "Added resistance and motions in waves (no seakeeping model yet).",
   "Stability criteria (ISO 12217-2 STIX, AVS by design category): not yet assessed.",
   "Structure and scantlings (ISO 12215-5): not assessed.",
@@ -139,7 +140,9 @@ export function compare(columns, baselineId) {
     for (const g of groups)
       for (const row of g.rows) {
         const f = row.cells[i].figure;
-        if (!f || (f.envelope === "inside" && f.value !== null)) continue;
+        // listed: a figure the screen couldn't give, or one graded outside its method's range.
+        // An ungraded figure isn't (NOT_SCREENED says, once, what nothing grades).
+        if (!f || ((f.envelope === "inside" || f.envelope === "ungraded") && f.value !== null)) continue;
         cantTell.push({
           subjectId: c.id,
           subject: c.label,

@@ -190,12 +190,15 @@ describe("what the contract carries is what the aid computed", () => {
 
 describe("hardpoints and loads", () => {
   for (const id of ["sloop-12m", "catalina-30", "cuvature-first-guess"])
-    it(`${id}: forestay at the stemhead, chainplates on the sheer, the jib's lead track spans its leads over the furl range`, () => {
-      const { contract: c, n } = buildCase(id);
+    it(`${id}: forestay tack its doc's distance aft of the stemhead, chainplates on the sheer, the jib's lead track spans its leads over the furl range`, () => {
+      const { contract: c, n, doc } = buildCase(id);
       const geo = n.analysis.geo;
       const hp = c.hardpoints;
-      expect(hp.forestayTackM).toEqual(hp.stemheadM); // forestayAftOfStem 0 on these
+      // at the stemhead on the published boats (forestayAftOfStem 0); the first guess sets the tack aft of it, for the lead
+      const aft = doc.rig.forestayAftOfStem;
+      expect(aft > 0).toBe(id === "cuvature-first-guess");
       expect(hp.stemheadM).toEqual([n.form.stem[0], 0, n.form.stem[1]]);
+      expect(hp.forestayTackM).toEqual([n.form.stem[0] - aft, 0, n.form.stem[1]]);
       for (const cp of hp.chainplates) {
         expect(cp.atM[2]).toBeCloseTo(geo.sheerAt(cp.atM[0]), 12);
         expect(Math.abs(cp.atM[1])).toBeCloseTo(CHAINPLATE_FRAC * geo.halfBreadthAt(cp.atM[0]), 12);

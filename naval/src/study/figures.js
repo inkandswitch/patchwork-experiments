@@ -1,16 +1,22 @@
 // The Figure: the only thing the study shows as a number. Pure (no DOM).
 //
-//   Figure = { value: number|null, unit, method, cite, envelope, provenance, why?, note?, outOfRange? }
+//   Figure = { value: number|null, unit, method, cite, envelope, provenance, why?, note?, outOfRange?, band? }
 //
 //   value       SI (a fraction for "percent"); null when the screen can't say, and `why` says why
 //   unit        a dimension of naval/units.js DISPLAY ("length", "area", …): the reader's system picks the unit
 //   method      what computed it, in a few words
 //   cite        where the method comes from (a paper, a standard, a module of this package)
-//   envelope    "inside" | "near" | "far": where the inputs sit against the method's fitted range
+//   envelope    "inside" | "near" | "far": where the inputs sit against the method's fitted range;
+//               "ungraded": nothing was graded (the method states no fitted range, or the screen has
+//               no check for it: a mesh's convergence, a table's resolution). The default, so a
+//               figure says "inside" only where a range was checked
 //   provenance  "given" (stated in a doc) | "measured" (read off the geometry) | "estimated" (an estimate went in)
 //   why         (null values only) why the screen can't say
 //   note        (numbers only) what else the hover should say: a flag on the point, a caveat
 //   outOfRange  [{ label, value, min, max }]: the parameters outside the range, for the hover
+//   band        { min, max, label }: a design band for the value itself (a rule of thumb for where a
+//               design usually sits, in the figure's own unit), where one is quoted. Not the envelope:
+//               the envelope says whether the method can be trusted, the band whether the design is usual
 //
 // Invariants, held by construction:
 // - figure() refuses anything that isn't one (an unknown unit, envelope or
@@ -20,14 +26,18 @@
 // - formatFigure() is the only formatter the study's view uses, and it
 //   throws on anything that isn't a Figure: a bare number can't be shown,
 //   and a figure outside its envelope can't be shown without its badge
-//   (the badge is part of what it returns).
+//   (the badge is part of what it returns), nor one outside its design
+//   band without saying so (bandState is the one rule, and part of what
+//   it returns).
 // - gradeRange() is the one envelope rule (below), and combining is "worst
-//   wins", so a figure is never shown better graded than its worst input.
+//   wins" over inside < ungraded < near < far, so a figure is never shown
+//   better graded than its worst input, and one made with an ungraded input
+//   never reads "inside".
 
 import { DISPLAY, formatQuantity } from "../naval/units.js";
 
 export const UNITS = Object.freeze(Object.keys(DISPLAY.metric));
-export const ENVELOPES = Object.freeze(["inside", "near", "far"]);
+export const ENVELOPES = Object.freeze(["inside", "ungraded", "near", "far"]);
 export const PROVENANCES = Object.freeze(["given", "measured", "estimated"]);
 
 /**
@@ -54,7 +64,8 @@ function problems(x) {
   if (!ENVELOPES.includes(x.envelope)) out.push(`unknown envelope ${JSON.stringify(x.envelope)}`);
   if (!PROVENANCES.includes(x.provenance)) out.push(`unknown provenance ${JSON.stringify(x.provenance)}`);
   if (x.outOfRange != null && !Array.isArray(x.outOfRange)) out.push("outOfRange must be a list");
-  if (x.envelope === "inside" && Array.isArray(x.outOfRange) && x.outOfRange.length) out.push("inside its envelope but with parameters out of range");
+  if ((x.envelope === "inside" || x.envelope === "ungraded") && Array.isArray(x.outOfRange) && x.outOfRange.length) out.push(`${x.envelope} but with parameters out of range`);
+  if (x.band != null && !(typeof x.band === "object" && fin(x.band.min) && fin(x.band.max) && x.band.min < x.band.max && str(x.band.label) && x.band.label)) out.push("band must be { min < max, label }");
   return out;
 }
 
@@ -63,15 +74,16 @@ export const isFigure = (x) => problems(x).length === 0;
 
 /**
  * Make a Figure; throws on anything that isn't one.
- * @param {{ value: number|null, unit: string, method: string, cite: string, envelope?: string, provenance: string, why?: string, note?: string, outOfRange?: object[] }} f
- *   why: given with a value that may be missing, it is kept only if the value is (so a call can always pass it)
+ * @param {{ value: number|null, unit: string, method: string, cite: string, envelope?: string, provenance: string, why?: string, note?: string, outOfRange?: object[], band?: { min: number, max: number, label: string }|null }} f
+ *   envelope: "ungraded" unless a range was checked; why: given with a value that may be missing, it is kept only if the value is (so a call can always pass it)
  */
-export function figure({ value, unit, method, cite, envelope = "inside", provenance, why, note, outOfRange }) {
+export function figure({ value, unit, method, cite, envelope = "ungraded", provenance, why, note, outOfRange, band }) {
   const f = { value: fin(value) ? value : null, unit, method, cite, envelope, provenance };
   // `why` is the reason a value may be missing: kept only when it is
   if (f.value === null) f.why = why || (value == null ? null : `not a number (${String(value)})`);
   if (note) f.note = String(note);
   if (Array.isArray(outOfRange) && outOfRange.length) f.outOfRange = outOfRange.map((o) => ({ label: String(o.label), value: fin(o.value) ? o.value : null, min: o.min, max: o.max }));
+  if (band) f.band = Object.freeze({ min: band.min, max: band.max, label: band.label });
   const p = problems(f);
   if (p.length) throw new TypeError(`not a Figure: ${p.join("; ")}`);
   return Object.freeze(f);
@@ -84,8 +96,8 @@ export function reviveFigure(x) {
   return Object.freeze({ ...x });
 }
 
-const RANK = { inside: 0, near: 1, far: 2 };
-/** The worst of some envelope levels ("inside" for none). */
+const RANK = { inside: 0, ungraded: 1, near: 2, far: 3 };
+/** The worst of some envelope levels ("inside" for none: a grading with nothing out of range). */
 export const worstEnvelope = (...levels) => levels.flat().reduce((w, l) => (RANK[l] > RANK[w] ? l : w), "inside");
 
 const PRANK = { given: 0, measured: 1, estimated: 2 };
@@ -123,13 +135,25 @@ export function gradeParams(params) {
 
 const PROV_MARK = { given: "", measured: "", estimated: "est." };
 
+/** Where a figure's value sits on its design band: "within" (closed), "below", "above"; null with no band or no value. */
+export function bandState(f) {
+  if (!f.band || f.value === null) return null;
+  return f.value < f.band.min ? "below" : f.value > f.band.max ? "above" : "within";
+}
+const ENVELOPE_LINE = {
+  inside: "Envelope: inside its method's fitted range.",
+  near: "Envelope: near (just outside its method's fitted range).",
+  far: "Envelope: far (well outside its method's fitted range, or the point is flagged).",
+  ungraded: "Envelope: not graded (no fitted range is stated for this method, and the screen doesn't grade the mesh's or the table's resolution).",
+};
+
 /**
  * A Figure as text, with its badge and its hover. The study view formats
  * nothing else. Throws on anything that isn't a Figure.
  * @param {object} f a Figure
  * @param {"metric"|"imperial"} [system]
  * @param {{ digits?: number, signed?: boolean }} [opts] signed: a difference (+/−)
- * @returns {{ text: string, badge: "inside"|"near"|"far", provenance: string, mark: string, title: string }}
+ * @returns {{ text: string, badge: "inside"|"ungraded"|"near"|"far", band: "within"|"below"|"above"|null, provenance: string, mark: string, title: string }}
  */
 export function formatFigure(f, system = "metric", opts = {}) {
   const p = problems(f);
@@ -140,11 +164,13 @@ export function formatFigure(f, system = "metric", opts = {}) {
   const zero = digits !== "" && !/[1-9]/.test(digits);
   text = text.replace(/^-/, zero ? "" : "−");
   if (opts.signed && f.value !== null && f.value > 0 && !zero) text = `+${text}`;
-  const lines = [`${f.method}.`, `Source: ${f.cite || "—"}`, `Envelope: ${f.envelope}${f.envelope === "inside" ? "" : " its method's fitted range"}.`, `Provenance: ${f.provenance}.`];
+  const lines = [`${f.method}.`, `Source: ${f.cite || "—"}`, ENVELOPE_LINE[f.envelope], `Provenance: ${f.provenance}.`];
+  const band = bandState(f);
+  if (f.band) lines.push(`Design band: ${f.band.label}${band ? ` (${band})` : ""}.`);
   for (const o of f.outOfRange ?? []) lines.push(`  ${o.label} ${fin(o.value) ? +o.value.toPrecision(4) : "unknown"} (fitted ${o.min}–${o.max})`);
   if (f.why) lines.push(`Not screened: ${f.why}`);
   if (f.note) lines.push(f.note);
-  return { text, badge: f.envelope, provenance: f.provenance, mark: PROV_MARK[f.provenance], title: lines.join("\n") };
+  return { text, badge: f.envelope, band, provenance: f.provenance, mark: PROV_MARK[f.provenance], title: lines.join("\n") };
 }
 
 /**

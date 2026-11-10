@@ -28,7 +28,8 @@ export function subjectFor(doc, url) {
   if (type === STUDY_TYPE) return { ok: false, error: "a study can't be a subject of a study" };
   if (type === DESIGN_TYPE) {
     const d = normalize(doc);
-    return { ok: true, subject: { label: d.title || "Rig", hull: d.hull.link ? { url: d.hull.link.url, heads: null } : null, design: { url, heads: null } } };
+    // its hull is the one it links, read from it at every screen (doc.js): not copied here
+    return { ok: true, subject: { label: d.title || "Rig", hull: null, design: { url, heads: null } } };
   }
   return { ok: true, subject: { label: String(doc.title || doc.name || type || "hull"), hull: { url, heads: null }, design: null } };
 }
@@ -79,8 +80,12 @@ export async function resolveSubject(subject, { repo, getRegistry } = {}) {
     design = normalize(raw);
     used.design = { url: subject.design.url, heads: subject.design.heads ?? headsOf(h) };
   }
-  // the subject's hull wins over the design's link: a design can be screened on another hull
-  const hullRef = subject.hull ?? (design?.hull.link ? { url: design.hull.link.url, heads: null } : null);
+  // the subject's own hull wins over the design's link (a design can be screened on another hull);
+  // with none of its own, the hull is the design's link, at the heads the pin recorded for it
+  const implied = !subject.hull && design?.hull.link ? design.hull.link.url : null;
+  if (implied && subject.design.heads && !subject.design.hullHeads)
+    return fail("this subject is pinned, but the hull its design links isn't: follow the latest, then pin it again");
+  const hullRef = subject.hull ?? (implied ? { url: implied, heads: subject.design.hullHeads ?? null } : null);
   if (design && subject.hull) {
     if (design.hull.link && design.hull.link.url !== subject.hull.url) warnings.push("The design is linked to another hull: it is screened on this subject's hull.");
     design.hull.link = { url: subject.hull.url, frame: design.hull.link?.frame ?? { ...DEFAULT_FRAME } };

@@ -221,8 +221,22 @@
   color: var(--ns-inside);
   opacity: 0.7;
 }
+.naval-study .badge[data-envelope="ungraded"] {
+  color: var(--ns-muted);
+  border-style: dashed;
+}
 .naval-study .badge[data-envelope="near"] {
   color: var(--ns-near);
+}
+.naval-study .band {
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--ns-muted);
+}
+.naval-study .band[data-band="below"],
+.naval-study .band[data-band="above"] {
+  color: var(--ns-near);
+  font-weight: 600;
 }
 .naval-study .badge[data-envelope="far"] {
   color: var(--ns-far);

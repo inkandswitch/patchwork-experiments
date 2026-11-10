@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { compare, CATALOGUE, ROW_IDS, NOT_SCREENED } from "./compare.js";
 import { screenSubject } from "./screen.js";
 import { figure, isFigure, UNITS, worstEnvelope, combineProvenance } from "./figures.js";
-import { normalizeStudy, addSubject, removeSubject, setBaseline, setHeads, nextSubjectId, newStudy } from "./doc.js";
+import { normalizeStudy, normalizeSubject, addSubject, removeSubject, setBaseline, pinSubject, followSubject, isPinned, nextSubjectId, newStudy } from "./doc.js";
 import { subjectFor, resolveSubject } from "./subjects.js";
 import { FIXTURES, fixtureDoc } from "../fixtures/index.js";
 import { meshFromGlb } from "../link/hull-link.js";
@@ -99,7 +99,7 @@ describe("compare: two designs and a hull, every cell", () => {
     for (const [i, col] of cols.entries())
       for (const row of c.groups.flatMap((g) => g.rows)) {
         const f = row.cells[i].figure;
-        if (f && (f.envelope !== "inside" || f.value === null)) want.push(`${col.id}/${row.id}`);
+        if (f && (f.envelope === "near" || f.envelope === "far" || f.value === null)) want.push(`${col.id}/${row.id}`);
       }
     expect(c.cantTell.map((x) => `${x.subjectId}/${x.rowId}`)).toEqual(want);
     expect(want.length).toBeGreaterThan(0); // the DSYHS extrapolations at least
@@ -127,7 +127,7 @@ describe("the study doc", () => {
     });
     expect(s.subjects.map((x) => x.id)).toEqual(["s1", "s3", "s4"]);
     expect(s.baseline).toBe("s1"); // a dangling baseline falls to the first
-    expect(s.subjects[1]).toEqual({ id: "s3", label: "s3", hull: null, design: { url: "automerge:d", heads: ["h1", "h2"] } });
+    expect(s.subjects[1]).toEqual({ id: "s3", label: "s3", hull: null, design: { url: "automerge:d", heads: ["h1", "h2"], hullHeads: null } });
     expect(s.subjects[2].hull.heads).toBeNull();
   });
 
@@ -145,15 +145,63 @@ describe("the study doc", () => {
     expect(addSubject(d, { label: "C", hull: H("c") })).toBe("s2");
     removeSubject(d, "s1");
     expect(addSubject(d, { label: "D", hull: H("d") })).toBe("s3");
-    setHeads(d, "s3", "hull", ["x"]);
-    expect(d.subjects.find((s) => s.id === "s3").hull.heads).toEqual(["x"]);
-    setHeads(d, "s3", "hull", null);
-    expect(d.subjects.find((s) => s.id === "s3").hull.heads).toBeNull();
-    setHeads(d, "s3", "design", ["y"]); // it has none: nothing to pin
-    expect(d.subjects.find((s) => s.id === "s3").design).toBeNull();
     expect(() => addSubject(d, { label: "E" })).toThrow();
     expect(JSON.stringify(d)).not.toMatch(/undefined/);
     expect(normalizeStudy(d)).toEqual(d);
+  });
+});
+
+describe("pinning: a subject is pinned whole or not at all, over the three shapes a subject has", () => {
+  const H = (u, heads = null) => ({ url: `automerge:${u}`, heads });
+  const make = () => {
+    const d = newStudy();
+    addSubject(d, { label: "hull", hull: H("a") }); // s1: a hull alone
+    addSubject(d, { label: "design", design: H("d") }); // s2: a design, its hull the one it links
+    addSubject(d, { label: "both", hull: H("b"), design: H("e") }); // s3: a design on the subject's own hull
+    return d;
+  };
+  const sub = (d, id) => d.subjects.find((s) => s.id === id);
+
+  it("pinSubject writes every ref the subject reads, or nothing", () => {
+    const d = make();
+    expect(d.subjects.map(isPinned)).toEqual([false, false, false]);
+    // a hull alone: its heads
+    expect(pinSubject(d, "s1", { hull: ["h1"] })).toBe(true);
+    expect(sub(d, "s1")).toMatchObject({ hull: { heads: ["h1"] }, design: null });
+    expect(pinSubject(make(), "s1", { design: ["x"] })).toBe(false); // no heads for the hull it names
+    // a design with the hull it links: the design's heads, and that hull's beside them
+    expect(pinSubject(d, "s2", { design: ["d1"], hull: ["h2"] })).toBe(true);
+    expect(sub(d, "s2")).toEqual({ id: "s2", label: "design", hull: null, design: { url: "automerge:d", heads: ["d1"], hullHeads: ["h2"] } });
+    // a design that links no hull (its synthetic one): nothing more to pin
+    const e = make();
+    expect(pinSubject(e, "s2", { design: ["d1"] })).toBe(true);
+    expect(sub(e, "s2").design).toEqual({ url: "automerge:d", heads: ["d1"], hullHeads: null });
+    // a design on the subject's own hull: both, and no hullHeads (the hull is named)
+    expect(pinSubject(d, "s3", { design: ["d2"], hull: ["h3"] })).toBe(true);
+    expect(sub(d, "s3")).toMatchObject({ hull: { heads: ["h3"] }, design: { heads: ["d2"], hullHeads: null } });
+    // one of the two missing: refused, and nothing written
+    const f = make();
+    expect(pinSubject(f, "s3", { design: ["d2"] })).toBe(false);
+    expect(pinSubject(f, "s3", { hull: ["h3"] })).toBe(false);
+    expect(pinSubject(f, "nope", { hull: ["h"] })).toBe(false);
+    expect(f).toEqual(make());
+    expect(d.subjects.map(isPinned)).toEqual([true, true, true]);
+    expect(normalizeStudy(d)).toEqual(d);
+    expect(JSON.stringify(d)).not.toMatch(/undefined/);
+    // and following again clears all of it
+    for (const s of d.subjects) followSubject(d, s.id);
+    expect(d).toEqual(make());
+  });
+
+  it("normalizeSubject never leaves a subject half pinned", () => {
+    const n = (s) => normalizeSubject({ id: "s1", label: "x", ...s });
+    // one of two refs pinned: neither is
+    expect(n({ hull: H("b", ["h"]), design: H("e") })).toMatchObject({ hull: { heads: null }, design: { heads: null, hullHeads: null } });
+    expect(n({ hull: H("b"), design: H("e", ["d"]) })).toMatchObject({ hull: { heads: null }, design: { heads: null, hullHeads: null } });
+    // hullHeads only on a pinned design with no hull of the subject's own
+    expect(n({ design: { ...H("e"), hullHeads: ["h"] } }).design).toEqual({ url: "automerge:e", heads: null, hullHeads: null });
+    expect(n({ hull: H("b", ["h"]), design: { ...H("e", ["d"]), hullHeads: ["z"] } }).design.hullHeads).toBeNull();
+    expect(n({ design: { ...H("e", ["d"]), hullHeads: ["h"] } }).design).toEqual({ url: "automerge:e", heads: ["d"], hullHeads: ["h"] });
   });
 });
 
@@ -175,9 +223,9 @@ describe("subjects: what a dropped doc becomes, and a subject resolved at real s
     getRegistry("scene:source").register({ id: "camber-hull-surface", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async ({ params }) => (expect(params).toEqual({ size: "document" }), { glb: GLB }) }) });
   });
 
-  it("subjectFor: a hull, a design (with its linked hull), and refusals", () => {
+  it("subjectFor: a hull, a design (its hull never copied: it is the one the design links), and refusals", () => {
     expect(subjectFor(docs[U.hull], U.hull)).toEqual({ ok: true, subject: { label: "Narrow transom", hull: { url: U.hull, heads: null }, design: null } });
-    expect(subjectFor(docs[U.rig], U.rig)).toEqual({ ok: true, subject: { label: "Sloop on NT", hull: { url: U.hull, heads: null }, design: { url: U.rig, heads: null } } });
+    expect(subjectFor(docs[U.rig], U.rig)).toEqual({ ok: true, subject: { label: "Sloop on NT", hull: null, design: { url: U.rig, heads: null } } });
     expect(subjectFor(docs[U.render], U.render).error).toMatch(/stretched to 15 m by the scene, not a hull: link the hull itself/);
     expect(subjectFor(docs[U.study], U.study).ok).toBe(false);
     expect(subjectFor(undefined, U.hull).ok).toBe(false);
@@ -203,6 +251,40 @@ describe("subjects: what a dropped doc becomes, and a subject resolved at real s
     expect(r.used.hull.heads).toEqual(["live"]);
     expect(r.job.doc.hull.link.url).toBe(other);
     expect(r.warnings.join(" ")).toMatch(/linked to another hull/);
+  });
+
+  it("a design alone is screened on the hull it links, read from the design each time: re-linked, it follows, with no warning", async () => {
+    const subject = normalizeSubject({ id: "s1", label: "x", ...subjectFor(docs[U.rig], U.rig).subject });
+    const a = await resolveSubject(subject, { repo, getRegistry });
+    expect(a.ok).toBe(true);
+    expect(a.used.hull.url).toBe(U.hull);
+    expect(a.live.map((h) => h.url)).toEqual([U.rig, U.hull]);
+    expect(a.warnings).toEqual([]);
+    const other = "automerge:hu33333333333333333333333";
+    docs[other] = { "@patchwork": { type: "camber-hull" }, title: "Another" };
+    const was = docs[U.rig];
+    docs[U.rig] = { ...was, hull: { ...was.hull, link: { ...was.hull.link, url: other } } };
+    try {
+      const b = await resolveSubject(subject, { repo, getRegistry });
+      expect(b.used.hull.url).toBe(other);
+      expect(b.job.doc.hull.link.url).toBe(other);
+      expect(b.live.map((h) => h.url)).toEqual([U.rig, other]);
+      expect(b.warnings).toEqual([]);
+    } finally {
+      docs[U.rig] = was;
+    }
+  });
+
+  it("a pinned design's linked hull is read at the heads pinned for it; a pin that lacks them is refused, for good", async () => {
+    const pinned = { id: "s1", label: "x", hull: null, design: { url: U.rig, heads: ["d0"], hullHeads: ["h0"] } };
+    const r = await resolveSubject(pinned, { repo, getRegistry });
+    expect(r.ok).toBe(true);
+    expect(views).toEqual([[U.rig, ["d0"]], [U.hull, ["h0"]]]);
+    expect(r.live).toEqual([]);
+    expect(r.used).toMatchObject({ hull: { url: U.hull, heads: ["h0"] }, design: { url: U.rig, heads: ["d0"] } });
+    const half = await resolveSubject({ ...pinned, design: { ...pinned.design, hullHeads: null } }, { repo, getRegistry });
+    expect(half).toMatchObject({ ok: false, transient: false });
+    expect(half.error).toMatch(/pinned, but the hull its design links isn't/);
   });
 
   it("the hull's chartroom:source table rides along, and the job carries it to the worker", async () => {

@@ -33,7 +33,6 @@ import { validateTable, DEFAULT_HEELS } from "../naval/statics.js";
 
 export const CHARTROOM_SOURCE = "chartroom:source";
 export const TABLE_FORMAT = "hydrostatic-table/1";
-export const GEOMETRY_FORMAT = "marine-geometry/1";
 
 /**
  * What is asked of a producer: heels 0–180° (the rig aid's own, so
@@ -45,7 +44,12 @@ export const GEOMETRY_FORMAT = "marine-geometry/1";
  * own default (240 sections × 10 girth steps) ∇ is 23.103 m³, exactly its
  * editor's hydrostatics(); at the 96 × 6 this used to ask for, 22.905 m³
  * (−0.9%), and 23.184 m³ at 480 × 20. The default costs ~0.3 s here, once
- * per read of the hull, against ~0.1 s at 96 × 6.
+ * per read of the hull, against ~0.1 s at 96 × 6. That time is spent on the
+ * thread that asks, which in the Rig tool and the study is the main thread:
+ * the provider's module comes from the host's registry, which this
+ * package's worker can't reach, and camber's hydrostaticTable() is
+ * synchronous. A provider that returns a promise from its own worker
+ * (allowed above) would take it off; nothing here can.
  * The keys are camber's HydrostaticExportOptions; a producer ignores what
  * it doesn't know.
  */

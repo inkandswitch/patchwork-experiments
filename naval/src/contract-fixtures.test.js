@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { validate, errorText } from "../contract/v1/validate.js";
 import { CASES, INVALID, buildCase, fixtureJson } from "./test/contract-cases.js";
+import * as T from "../contract/v1/types.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../contract/v1");
 const dir = (p) => resolve(ROOT, p);
@@ -39,6 +40,40 @@ function differs(a, b, rel = 1e-6, path = "$") {
   }
   return a === b ? null : `${path}: ${JSON.stringify(a)?.slice(0, 80)} vs ${JSON.stringify(b)?.slice(0, 80)}`;
 }
+
+describe("contract/v1: types.js's shared constants are the schema's own enums", () => {
+  const schema = read("schema.json");
+  const at = (path) => path.split("/").reduce((o, k) => o?.[k], schema);
+  const P = "properties";
+  // every constant types.js exports as a list, against each place the schema states it
+  const pairs = {
+    RIG_TYPES: [`${P}/rig/${P}/type`],
+    SAIL_IDS: [`$defs/sail/${P}/id`, `${P}/sets/items/${P}/sails/items`, `${P}/hardpoints/${P}/halyardExits/items/${P}/sail`],
+    SAIL_MODELS: [`$defs/sail/${P}/model/${P}/family`],
+    APPENDAGE_IDS: [`$defs/appendage/${P}/id`],
+    ITEM_KINDS: [`${P}/loading/${P}/items/items/${P}/kind`],
+    CREW_MODES: [`${P}/loading/${P}/crew/${P}/mode`, `${P}/hardpoints/${P}/crewStations/items/${P}/mode`],
+    HULL_KINDS: [`${P}/source/${P}/hull/${P}/kind`],
+    STATICS_FROM: [`${P}/source/${P}/statics`],
+    REGIMES: [`$defs/point/${P}/regime`, `${P}/resistance/${P}/regime/items`],
+    FLAG_IDS: [`$defs/flag/${P}/id`],
+    STAY_IDS: [`${P}/rig/${P}/standing/items/${P}/id`],
+  };
+  it("covers every list types.js exports", () => {
+    const lists = Object.entries(T).filter(([, v]) => Array.isArray(v)).map(([k]) => k);
+    expect(lists.sort()).toEqual([...Object.keys(pairs), "LINK_PATHS"].sort());
+  });
+  for (const [name, paths] of Object.entries(pairs))
+    for (const path of paths) it(`${name} = ${path}`, () => expect(at(path)?.enum).toEqual(T[name]));
+  it("LINK_PATHS = source.hull.path, which also takes null (a synthetic hull); a scene render is not a path", () => {
+    expect(at(`${P}/source/${P}/hull/${P}/path`).enum).toEqual([...T.LINK_PATHS, null]);
+    expect(T.LINK_PATHS).toEqual(["file", "source"]);
+  });
+  it("the constants are the schema's", () => {
+    expect([at(`${P}/format`).const, at(`${P}/version`).const, at(`${P}/frame/${P}/axes`).const]).toEqual([T.FORMAT, T.VERSION, T.AXES]);
+    expect(schema.$id).toBe("https://patchwork.inkandswitch.com/naval/contract/v1/schema.json");
+  });
+});
 
 if (WRITE) {
   describe("writing contract/v1 fixtures", () => {
