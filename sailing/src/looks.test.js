@@ -2,7 +2,7 @@
 // and how far it's raised. The pure maths, then createLooks on a fake stage.
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
-import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness } from "./looks.js";
+import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";
 import { composeMatrix, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
@@ -59,6 +59,64 @@ describe("the sail", () => {
     expect(mid).toBeGreaterThan(FLAT);
     expect(mid).toBeLessThan(1);
     expect(fullness(null)).toBe(1);
+  });
+});
+
+describe("the sheets' rope", () => {
+  const S = LOOK.rope.sides, R = LOOK.rope.radius;
+  const at = (a, k) => [a[3 * k], a[3 * k + 1], a[3 * k + 2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  // a straight run, a sagging sheet, a hairpin, one turning back on its own axis, and one with two points on top of each other
+  const lines = {
+    straight: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]],
+    sag: Array.from({ length: 16 }, (_, i) => [i / 5, -4 * 0.3 * (i / 15) * (1 - i / 15), 0.1 * i]),
+    vertical: [[0, 0, 0], [0, 1, 0], [0, 2, 0]],
+    hairpin: [[0, 0, 0], [1, 0, 0], [1.2, 0.1, 0], [1, 0.2, 0], [0, 0.2, 0]],
+    doubled: [[0, 0, 0], [1, 0, 0], [1, 0, 0], [2, 1, 0]],
+  };
+
+  for (const [name, line] of Object.entries(lines)) {
+    it(`${name}: each ring is radius out from its point, square to the line there, its normals the unit way out, and every triangle faces out`, () => {
+      const n = line.length;
+      const pts = Float64Array.from(line.flat());
+      const pos = new Float64Array(3 * n * S), nrm = new Float64Array(3 * n * S);
+      ropeTube(pos, nrm, pts, n, R, S);
+      expect([...pos, ...nrm].every(Number.isFinite)).toBe(true);
+      for (let i = 0; i < n; i++) {
+        const c = line[i];
+        const t = sub(line[Math.min(n - 1, i + 1)], line[Math.max(0, i - 1)]);
+        const tl = Math.hypot(...t);
+        for (let j = 0; j < S; j++) {
+          const v = at(pos, i * S + j), u = at(nrm, i * S + j);
+          expect(Math.hypot(...u)).toBeCloseTo(1, 9);
+          const r = sub(v, c);
+          for (let k = 0; k < 3; k++) expect(r[k]).toBeCloseTo(R * u[k], 9);
+          if (tl > 1e-9) expect(Math.abs(dot(u, t) / tl)).toBeLessThan(1e-9);
+        }
+      }
+      // every triangle's normal points away from the line: along the mean of its corners' outward normals
+      const I = ropeIndex(n, S);
+      expect(I.length).toBe(6 * S * (n - 1));
+      expect(Math.max(...I)).toBe(n * S - 1);
+      for (let f = 0; f < I.length; f += 3) {
+        const [a, b, c] = [I[f], I[f + 1], I[f + 2]];
+        const ring = Math.floor(Math.min(a, b, c) / S);
+        if (Math.hypot(...sub(line[ring + 1], line[ring])) < 1e-9) continue; // a doubled point's run: no length, so no outside
+        const face = cross(sub(at(pos, b), at(pos, a)), sub(at(pos, c), at(pos, a)));
+        const out = [0, 1, 2].map((k) => nrm[3 * a + k] + nrm[3 * b + k] + nrm[3 * c + k]);
+        expect(dot(face, out)).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  it("a line not drawn yet (every point at the origin) is a finite ring of radius round it", () => {
+    const n = 16;
+    const pos = new Float64Array(3 * n * S), nrm = new Float64Array(3 * n * S);
+    ropeTube(pos, nrm, new Float64Array(3 * n), n, R, S);
+    expect([...pos, ...nrm].every(Number.isFinite)).toBe(true);
+    for (let v = 0; v < n * S; v++) expect(Math.hypot(...at(pos, v))).toBeCloseTo(R, 12);
   });
 });
 
@@ -262,8 +320,22 @@ describe("the trim dressing: the drawn cloth and lines are the pure functions of
     expect(mid(lazy)[1]).toBeLessThan(-0.05);
     // and on to its winch's drum
     expect(w[3 * 16]).toBeCloseTo(-0.95, 6);
+    // each sheet wears its rope: ropeTube of the line it's on, exactly
+    const ropes = [mainsheet, port, stbd].map((l) => {
+      expect(l.children).toHaveLength(1);
+      const rope = l.children[0];
+      const a = l.geometry.attributes.position.array;
+      const n = a.length / 3;
+      const want = ropeTube(new Float32Array(3 * n * LOOK.rope.sides), new Float32Array(3 * n * LOOK.rope.sides), a, n, LOOK.rope.radius, LOOK.rope.sides);
+      expect([...rope.geometry.attributes.position.array]).toEqual([...want]);
+      expect(rope.geometry.attributes.position.needsUpdate).toBe(true);
+      expect(rope.geometry.index).toEqual(ropeIndex(n, LOOK.rope.sides));
+      return rope;
+    });
     looks.dispose();
     expect(st.world.children.length).toBe(0);
+    for (const r of ropes) expect(r.geometry.disposed).toBe(true);
+    expect(ropes[0].material.disposed).toBe(true);
   });
 
   it("reefed, the cloth comes down and the bunt swells; furled, the jib's hidden and its roll is 0.08; dispose puts every geometry back", () => {

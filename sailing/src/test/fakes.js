@@ -160,12 +160,14 @@ export function fakeThree() {
       this.disposed = true;
     }
   }
+  class MeshStandardMaterial extends LineBasicMaterial {}
   return {
     Object3D,
     Group,
     Line,
     LineSegments,
     LineBasicMaterial,
+    MeshStandardMaterial,
     Vector2,
     Vector3,
     Vector4,
