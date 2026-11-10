@@ -1,6 +1,7 @@
 // The lateral plane, the masses and the stability of a design, composed from
 // the doc, the sail plan and the floated hull. Pure (no DOM): numbers.js turns
-// it into readouts, profile.js draws it, and later the contract carries it.
+// it into readouts, profile.js draws it, and the contract (contract.js)
+// carries it.
 
 import { qty } from "./naval/units.js";
 import { appendagesOf } from "./naval/foils.js";

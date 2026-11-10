@@ -1,44 +1,52 @@
 // Sail forces from an angle-of-attack model, one per sail kind, so the VPP
-// (which trims each sail to its best α) and the sim (which knows its boom
-// and sheets, so its α) can use the same curves. Pure, no DOM.
+// (which trims each sail to its best δ) and sailing's sim (which knows its
+// boom and sheets, so its α) use the same curves. Pure, no DOM.
 //
-// What this module states (the contract's §6 repeats it):
+// What this module states (the contract's §6.2–6.3 repeat it, and
+// contract/v1/reference/compose.js is the same rules against the contract
+// alone):
 //
 // Angles. β is the apparent wind angle off the bow in the heeled sail plane;
 // δ the sail's sheeting angle, its chord off the centreline (the boom for a
-// main, tack to clew for a headsail); α = β − δ the angle of attack. A sail
-// sheeted past the wind (α below its zero-lift angle) is backed.
+// main, tack to clew for a headsail; negative is goose-winged, to windward);
+// α = wrap₁₈₀(β − δ) the angle of attack. A sail sheeted past the wind (α
+// below its zero-lift angle α0) is backed.
 //
-// Coefficients on the sail's own area, as a function of α (and, for a main,
-// of δ, see "easing"):
-//   attached   CL_a = CLmax·tanh(a·(α − α0)/CLmax)            α ≥ α0
-//              CL_a = −CLback·tanh(a·(α0 − α)/CLback)          α < α0 (backed)
-//              a = Helmbold's slope for the sail's aspect ratio (foils.js)
-//   separated  CN = cn90·0.505/(0.222 + 0.283/|sin α|)  (Hoerner's flat-plate
-//              normal force, scaled to cn90 at 90°); CL_s = CN·cos α,
+// Coefficients on the sail's own area, as a function of α and δ, with the
+// kind's constants (SAIL_KINDS) and S(x; lo, hi) the smoothstep:
+//   easing     L = 1 − ease.loss·S(|δ|; ease.from, ease.to)   (a main eased
+//              past 25° twists off: 0.25 by 85°; a headsail loses none)
+//   attached   CL_a = clMax·L·sat(a·(α − α0)/(clMax·L))        α ≥ α0
+//              CL_a = −clBack·L·sat(a·(α0 − α)/(clBack·L))     α < α0 (backed)
+//              sat(x) = x/(1 + x⁴)^¼; a = Helmbold's slope (foils.js) for
+//              the sail's AR = 2·luff²/area (the deck's mirror)
+//   separated  CN = cn90·|sin α|^0.3 (a cambered plate holds most of its
+//              normal force from about 35°); CL_s = sign(α)·CN·cos α,
 //              CD_s = CN·|sin α|
-//   blend      σ = smoothstep(|α − α0|; αs, αs + w)
+//   blend      σ = S(|α − α0|; stall, stall + width)
 //              CL  = (1 − σ)·CL_a + σ·CL_s
-//              CDv = cdp + kv·CL_a²·(1 − σ) + σ·CD_s      (viscous and separation)
+//              CDv = cdp + (kv·CL_a² + ease.drag·S(|δ|; ease.from, ease.to))·(1 − σ) + σ·CD_s
 // Rig level, ORC-style: the sails' coefficients are summed on their areas,
 //   CL = Σ CL_i·A_i/A, CDv = Σ CDv_i·A_i/A, and the induced drag is the rig's,
-//   CD = CDv + CL²/(π·ARe),  ARe = h_e²/A,  h_e = 1.1·(mast height above the
-//   DWL) close-hauled (the plan's figure; ORC's effective span is similar).
-// Interaction. A headsail's upwash backwinds the main close-hauled: the main
-//   sees α − ε, ε = k_int·CL_jib·(1 − smoothstep(β; 30°, 90°)), k_int 4° per
-//   unit CL. Downwind the main blankets a headsail: the headsail's dynamic
-//   pressure is × (1 − 0.7·smoothstep(β; 100°, 170°)).
-// Easing. A main eased past δ = 25° loses lift (the leech twists off once
-//   the vang, not the sheet, holds the boom): CLmax and CLback × (1 − 0.25·
-//   smoothstep(δ; 25°, 85°)). Calibrated, see below.
+//   CD = CDv + CL²/(π·ARe),  ARe = h_e²/A,  h_e = 1.1·(masthead height above
+//   the DWL) (SPAN_FACTOR; ORC's effective span is similar).
+// Interaction (INTERACTION). A headsail's upwash backwinds the main
+//   close-hauled: the main sees α − ε, ε = 4°·CL_jib·(1 − S(β; 30°, 90°)),
+//   CL_jib the headsails' area-weighted CL. Downwind the main blankets a
+//   headsail to leeward: its coefficients × (1 − 0.35·S(β; 90°, 160°)); a
+//   headsail goose-winged to windward (from β ≥ 140°) gets × 0.75 instead.
 // Depowering. flat ∈ [0.5, 1] scales CL (and so the induced drag by flat²);
-//   a reef lowers the main's head (sailplan.js), taking area and CE height.
+//   a reef lowers the main's head (sailplan.js), taking area, luff and CE
+//   height.
 // Heel. The sail plane is heeled by φ: β_e = atan(tan β·cos φ), AWS_e² =
 //   AWS²·(cos²β + sin²β·cos²φ). Drive Fx = q·A·(CL sin β_e − CD cos β_e) along
 //   the boat; the heeling force Fh = q·A·(CL cos β_e + CD sin β_e) is
 //   perpendicular to the mast, its horizontal part Fh·cos φ, at the CE.
 // Sheeting limits: a main's boom 0 … 85°; a jib 7 … 30° (its lead on the
-//   rail, no pole); a staysail 9 … 28°.
+//   rail, no pole), or −90 … −30° goose-winged; a staysail 9 … 28°.
+// Trim. Each sail is trimmed to the δ that maximises the drive, CL·sin β −
+//   (CDv + CL²/(π·ARe))·cos β, headsails first (the main's α reads their
+//   CL), at every whole degree of β (trimmedTable).
 //
 // Calibration (sails.test.js): trimmed to its best α at each AWA, a main
 // and a jib set together reproduce the ORC "low" sets' CL and CDv within the

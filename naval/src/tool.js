@@ -640,7 +640,7 @@ export default function RigTool(handle, element) {
       });
       const r = g.report;
       say(
-        `First guess: ${r.type === "cat" ? "a cat rig" : `a ${r.type} sloop`}, SA/D ${r.saD}, draft ${len(r.draftOverallM)}, keel over the LCB; lead ${(100 * r.lead).toFixed(1)}%${r.helm ? `, ${r.helm}` : ""}. Every value is a rule of thumb, marked est.`,
+        `First guess: ${r.type === "cat" ? "a cat rig" : `a ${r.type} sloop`}, SA/D ${r.saD}, draft ${len(r.draftOverallM)}, keel over the LCB; ${r.targetLead == null ? `lead ${(100 * r.lead).toFixed(1)}%` : `the mast placed for a lead of ${(100 * r.lead).toFixed(1)}%${r.tackAftOfStemM > 5e-4 ? `, the forestay's tack ${len(r.tackAftOfStemM)} aft of the stem` : ""}`}${r.helm ? `; ${r.helm}` : ""}. Every value is a rule of thumb, marked est.`,
       );
       return;
     }

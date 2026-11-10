@@ -2,7 +2,7 @@
 // worked out: the hull's DSYHS particulars and the planing bottom, the foils
 // as the VPP reads them, the righting curve, the sail sets with their
 // trimmed coefficient tables, and the conditions. The VPP (vpp.js), the
-// worker and (later) the contract all read this one object, so what the
+// worker and the contract (../contract.js) all read this one object, so what the
 // tool shows, what the polar says and what the contract carries agree.
 // Structured-cloneable: no functions, no typed arrays. A sail set's trimmed
 // coefficient table is derived from it on demand (sails.js tableOf).

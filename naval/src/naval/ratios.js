@@ -10,7 +10,7 @@
 //
 // Bands are rules of thumb, not limits, and are labelled so. Where a band is
 // a regression's validity range (DSYHS), it says so: outside it the
-// resistance model in a later step extrapolates.
+// resistance model (resistance.js) extrapolates.
 
 import { FT, LONG_TON, RHO_SEA, KNOT } from "./units.js";
 
@@ -30,9 +30,6 @@ export const ballastRatio = (ballastKg, massKg) => (ballastKg >= 0 && massKg > 0
 
 /** Hull speed, m/s: 1.34·√(LWL ft) knots. */
 export const hullSpeed = (lwlM) => (lwlM > 0 ? 1.34 * Math.sqrt(lwlM / FT) * KNOT : NaN);
-
-/** Froude number V/√(g·L). */
-export const froude = (speedMs, lwlM) => (lwlM > 0 ? speedMs / Math.sqrt(G * lwlM) : NaN);
 
 const ratio = (a, b) => (a > 0 && b > 0 ? a / b : NaN);
 

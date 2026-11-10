@@ -125,11 +125,14 @@ other field is allowed.
 `generator`; `rigDoc` and `rigHeads` (the rig doc's URL and heads at the
 build, when known); `hull`: `kind` (`linked` or `synthetic`), `url` (the
 linked doc), `path` (`file`, a GLB file doc; `source`, the hull's own doc,
-built by its scene:source with its default params, so at its own size),
-`label`, `heads` (the linked doc's heads), `glbKey` (null). The aid links
-the hull itself, at real size, and refuses a scene render; `render` and a
-non-null `glbKey` stay in the v1 schema only for contracts written before
-that, and the aid writes neither. `statics`: where the heeled
+built by its scene:source with its default params, so at its own size;
+null for a synthetic hull), `label`, `heads` (the linked doc's heads),
+`glbKey`. The aid links the hull itself, at real size, and refuses a scene
+render, so there is no other path. The aid writes `glbKey` null. A
+producer that draws its own synthetic hull may name that hull's file there
+(sailing's stock sloop: the scene file key's family, "sailing/hull"), and
+a consumer then takes the contract only on a hull of that family.
+`statics`: where the heeled
 hydrostatics came from: `chartroom-table` (the linked hull's own Chartroom
 hydrostatic table), `mesh` (a table the aid built from the floated mesh)
 or `gm` (upright GM only, approximate). A consumer that also has the hull
@@ -606,30 +609,39 @@ other than `dsyhs`: the DSYHS caveat is the hull's, stated once. A
 consumer's agreement test skips hollow points; a point flagged only
 `planing-range` is still an equilibrium of these rules.
 
-### 6.8 The lumped sail (today's sailing)
+### 6.8 The lumped sail
 
-Until sailing flies the sets above, it flies one foil (`lumpedSail`, and
-the GLB's `extras.sail.plan`, §8): area A = the actual sails' total, its CE
+The whole plan as one foil (`lumpedSail`, and the GLB's
+`extras.sail.plan`, §8), for a consumer's single-sail quantities. Sailing
+flies the sets above, each sail its own foil (§6.2–6.3), and reads the
+lumped sail only for where the mast's windage is and where it reads the
+wind; a rig GLB read without its contract is flown as this one foil.
+Area A = the actual sails' total, its CE
 at `ceHeightFrac` (0.38, sailing's CE_HEIGHT) up its luff from the tack and
 a third of its foot aft of it. The contract chooses it so that CE is the
 actual sails' combined CE, and so that the foot is three times the sails'
 area-weighted swing arm (each sail's CE aft of its own pivot: the
 gooseneck for the main, the tack for a headsail), since the sim swings
 that CE about the tack with the boom. The tack is at the boom's height
-(luff ≥ 1 m, foot ≥ 0.3 m). It is a stop-gap: none of §6.1–6.7 applies to
-it, and the agreement test doesn't use it.
+(luff ≥ 1 m, foot ≥ 0.3 m). None of §6.1–6.7 applies to it, and the
+agreement test doesn't use it.
 
 
 ## 7. Who reads what
 
 - **Sailing's physics**: `frame` (to put the rig on the hull and convert to
   its own frame), `loading` (mass, CG, gyradii, crew and the righting
-  curve), `appendages`, `sails`, `sailModel`, `sets`, `hull.sideForce`,
-  `hull.dsyhs`, `resistance`, and `rules`; `predicted` for its agreement
-  test. Today it reads only the lumped `extras.sail.plan` (§6.8).
-- **Fit-out**: `hardpoints`, `loads`, `rig.standing` and `rig.spreaders`,
-  `sails` (clews, reefs, furl, sheeting), `loading.crew.stations`,
-  `appendages[].stock`. From them it decides the helm type (stock position
+  curve), `appendages`, `sails`, `sailModel`, `sets`, `hull` (its
+  particulars, to float her on the hull the contract describes when her
+  drawn hull isn't it, and `hull.sideForce`), `resistance`, `lumpedSail`
+  (§6.8), and `source.hull` (to warn when the rig is on another
+  hull, §3.2); `predicted` in its agreement test only. It reads
+  `extras.rig` off the rig GLB (`sailing/src/rig-contract.js`); a rig GLB
+  without one sails sailing's plain path on `extras.sail.plan` (§8).
+- **Fit-out** (nothing reads these yet, but for `loading.crew.stations`,
+  which sailing does): `hardpoints`, `loads`, `rig.standing` and
+  `rig.spreaders`, `sails` (clews, reefs, furl, sheeting),
+  `loading.crew.stations`, `appendages[].stock`. From them it decides the helm type (stock position
   and torque), sizes winches and tracks (loads, lead track spans), bounds
   the cockpit (partners, stock, traveller) and places the crew.
 

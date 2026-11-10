@@ -16,10 +16,11 @@
 // - The foils' hydrodynamic centre: keel and rudder quarter-chord points
 //   weighted by lift slope × area, the rudder's slope reduced by the keel's
 //   downwash (1 − dε/dα). The canoe body is left out: its side force and
-//   Munk moment come with the resistance and VPP step.
+//   Munk moment are the VPP's (design.js hullDerivatives).
 //
 // None of these is the helm. The helm (the rudder angle that balances yaw)
-// needs the sail and hull forces, and comes with the VPP.
+// needs the sail and hull forces: it is the VPP's (vpp.js), read at the
+// reference point (numbers.js).
 
 import { combineCE } from "./sailplan.js";
 

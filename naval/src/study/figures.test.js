@@ -21,6 +21,7 @@ import {
   UNITS,
   NEAR_FRACTION,
   FAR_COUNT,
+  bandState,
 } from "./figures.js";
 import { screenSubject, dsyhsParamsOf, savitskyParams, RESIST_FN, DSYHS_FN, METHOD_VERSION } from "./screen.js";
 import { CATALOGUE } from "./compare.js";
@@ -29,6 +30,8 @@ import { meshFromGlb } from "../link/hull-link.js";
 import { envelope as dsyhsEnvelope, envelopeGrade, dsyhsHull } from "../naval/resistance.js";
 import { buildTable } from "../naval/statics.js";
 import { toHullFrame } from "../naval/hull-frame.js";
+import { computeNumbers } from "../numbers.js";
+import { normalize } from "../doc.js";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const CAMBER = ["cuvature-kink-with-unmodified-pchip", "flat-bottom", "narrow-transom", "hull-default"];
@@ -70,9 +73,10 @@ describe("gradeRange: the one envelope rule, at its documented boundaries", () =
   it("gradeParams: every combination of three parameters' grades (27 cases): worst wins, three out is far", () => {
     const param = { inside: 2, near: -1, far: -5 }; // in [0, 4]
     let n = 0;
-    for (const a of ENVELOPES)
-      for (const b of ENVELOPES)
-        for (const c of ENVELOPES) {
+    const GRADES = Object.keys(param); // what a range can grade a parameter (never "ungraded": that is no grading)
+    for (const a of GRADES)
+      for (const b of GRADES)
+        for (const c of GRADES) {
           const levels = [a, b, c];
           const g = gradeParams(levels.map((l, i) => ({ label: `p${i}`, value: param[l], min: 0, max: 4 })));
           const out = levels.filter((l) => l !== "inside").length;
@@ -83,7 +87,8 @@ describe("gradeRange: the one envelope rule, at its documented boundaries", () =
     expect(n).toBe(27);
   });
 
-  it("worstEnvelope and combineProvenance: every pair (orders inside < near < far, given < measured < estimated)", () => {
+  it("worstEnvelope and combineProvenance: every pair (orders inside < ungraded < near < far, given < measured < estimated)", () => {
+    expect(ENVELOPES).toEqual(["inside", "ungraded", "near", "far"]);
     for (const [i, a] of ENVELOPES.entries()) for (const [j, b] of ENVELOPES.entries()) expect(worstEnvelope(a, b)).toBe(ENVELOPES[Math.max(i, j)]);
     for (const [i, a] of PROVENANCES.entries()) for (const [j, b] of PROVENANCES.entries()) expect(combineProvenance(a, b)).toBe(PROVENANCES[Math.max(i, j)]);
     expect(worstEnvelope()).toBe("inside");
@@ -105,7 +110,29 @@ describe("figure(): only Figures are made", () => {
     ["no cite", { cite: undefined }],
     ["a null without a why", { value: null }],
     ["inside with parameters out of range", { outOfRange: [{ label: "x", value: 9, min: 0, max: 1 }] }],
+    ["ungraded with parameters out of range", { envelope: "ungraded", outOfRange: [{ label: "x", value: 9, min: 0, max: 1 }] }],
+    ["a band with no label", { band: { min: 0, max: 1 } }],
+    ["a band that isn't a range", { band: { min: 1, max: 1, label: "b" } }],
   ];
+  it("a figure is ungraded unless it says a range was checked", () => {
+    const { envelope, ...rest } = base;
+    expect(figure(rest).envelope).toBe("ungraded");
+    expect(figure(base).envelope).toBe("inside");
+    expect(formatFigure(figure(rest))).toMatchObject({ badge: "ungraded", band: null });
+    expect(formatFigure(figure(rest)).title).toMatch(/Envelope: not graded/);
+    // the Δ of an ungraded figure and an inside one doesn't read "inside"
+    expect(deltaFigure(figure(rest), figure(base)).envelope).toBe("ungraded");
+  });
+  it("a design band: within (its ends included), below, above; none without a band or a value", () => {
+    const band = { min: 1, max: 2, label: "1–2 m" };
+    const state = (value, b = band) => bandState(figure({ ...base, value, band: b, why: "x" }));
+    expect([0.99, 1, 1.5, 2, 2.01].map((v) => state(v))).toEqual(["below", "within", "within", "within", "above"]);
+    expect(state(null)).toBeNull();
+    expect(state(1.5, null)).toBeNull();
+    const f = formatFigure(figure({ ...base, value: 2.5, band }));
+    expect(f.band).toBe("above");
+    expect(f.title).toMatch(/Design band: 1–2 m \(above\)\./);
+  });
   for (const [what, patch] of bad) it(`refuses ${what}`, () => expect(() => figure({ ...base, ...patch })).toThrow(TypeError));
   it("a non-finite value is null, with its why (given or made)", () => {
     expect(figure({ ...base, value: Number.NaN, why: "no section" })).toMatchObject({ value: null, why: "no section" });
@@ -204,6 +231,37 @@ describe("the screen over every fixture subject", () => {
     }
   });
 
+  it("only what a fitted range grades is graded: the resistance and the VPP's points; every other figure is ungraded", () => {
+    const graded = new Set(["r25", "rw25", "r35", "rw35", "r45", "rw45", "refSpeed", "refHeel", "refHelm", "beatVmg", "runVmg"]);
+    for (const s of subjects.filter((x) => x.result.ok))
+      for (const [id, f] of Object.entries(s.result.figures)) {
+        if (graded.has(id)) expect(f.envelope, `${s.name} ${id}`).not.toBe("ungraded");
+        else expect(f.envelope, `${s.name} ${id}`).toBe("ungraded");
+      }
+  });
+
+  it("the lead carries its design band where one is quoted, and its place on it is the balance's own", () => {
+    const seen = [];
+    for (const s of subjects.filter((x) => x.result.ok && x.kind === "design")) {
+      const f = s.result.figures.lead;
+      const b = computeNumbers(normalize(s.job.doc), { linked: s.job.linked ?? null }).analysis.balance.leadBand;
+      if (!b.range) {
+        expect(f.band, s.name).toBeUndefined();
+        expect(f.note, s.name).toMatch(/No band quoted/);
+        seen.push(`${s.name}: none`);
+        continue;
+      }
+      expect(f.band, s.name).toMatchObject({ min: b.range[0] / 100, max: b.range[1] / 100 });
+      expect(bandState(f) !== "within", s.name).toBe(!!b.out);
+      seen.push(`${s.name}: ${(100 * f.value).toFixed(1)}% ${bandState(f)} ${b.range.join("–")}%`);
+    }
+    console.log(`lead against its design band:\n  ${seen.join("\n  ")}`);
+    // both cases occur in the fixture set: a design in its band, and one out of it
+    expect(seen.some((x) => / within /.test(x))).toBe(true);
+    expect(seen.some((x) => / (above|below) /.test(x))).toBe(true);
+    expect(seen.some((x) => /none$/.test(x))).toBe(true);
+  });
+
   it("is deterministic: the same subject screens to the same figures", () => {
     for (const s of subjects.slice(0, 2)) expect(JSON.stringify(screenSubject(s.job))).toBe(JSON.stringify(s.result));
   });
@@ -243,7 +301,7 @@ describe("the screen over every fixture subject", () => {
   it("figures inside their envelope carry no out-of-range parameters; near or far ones name at least one", () => {
     for (const s of subjects.filter((x) => x.result.ok))
       for (const [id, f] of Object.entries(s.result.figures)) {
-        if (f.envelope === "inside") expect(f.outOfRange, `${s.name} ${id}`).toBeUndefined();
+        if (f.envelope === "inside" || f.envelope === "ungraded") expect(f.outOfRange, `${s.name} ${id}`).toBeUndefined();
         else if (!/^ref|Vmg$/.test(id)) expect(f.outOfRange?.length, `${s.name} ${id}`).toBeGreaterThan(0);
       }
   });

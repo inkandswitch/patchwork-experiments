@@ -1,8 +1,9 @@
 // The Naval study view: drop hulls (camber hulls, GLB files) and rig designs
 // in, and read them side by side: particulars, stability, resistance,
-// balance and performance, every figure with its envelope badge, its
-// provenance and (on hover) its method and source, and its difference from
-// the baseline. A "What the screen can't tell you" panel lists every figure
+// balance and performance, every figure with its envelope badge ("not
+// graded" where nothing grades it), its design band where one is quoted,
+// its provenance and (on hover) its method and source, and its difference
+// from the baseline. A "What the screen can't tell you" panel lists every figure
 // outside its method's range or unavailable, and what no screen here does.
 //
 // Each subject is resolved on the main thread (study/subjects.js: its docs
@@ -10,12 +11,14 @@
 // (study/screen.js through statics-job.js), one runner per subject, so a
 // newer screen of a subject supersedes an older one still running. A
 // followed subject (heads null) is screened again when its docs change;
-// a pinned one never changes. Nothing derived is written to the doc.
+// a pinned one never changes: "Pin this version" pins every document the
+// figures on screen were read from (the design, and the hull it was
+// screened on), or nothing. Nothing derived is written to the doc.
 //
 // Numbers reach the page only through formatFigure (study/figures.js).
 
 import css from "./report.css?inline";
-import { normalizeStudy, addSubject, removeSubject, setBaseline, setHeads, STUDY_VERSION } from "./doc.js";
+import { normalizeStudy, addSubject, removeSubject, setBaseline, pinSubject, followSubject, isPinned, STUDY_VERSION } from "./doc.js";
 import { subjectFor, resolveSubject } from "./subjects.js";
 import { compare } from "./compare.js";
 import { formatFigure, reviveFigure } from "./figures.js";
@@ -43,7 +46,8 @@ const writeUnits = (u) => {
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const BADGE_TEXT = { inside: "in range", near: "near", far: "far" };
+const BADGE_TEXT = { inside: "in range", ungraded: "not graded", near: "near", far: "far" };
+const BAND_TEXT = { within: "in band", below: "below band", above: "above band" };
 const shortHeads = (h) => (Array.isArray(h) && h.length ? h.map((x) => String(x).slice(0, 7)).join(",") : "");
 
 export default function NavalStudyTool(handle, element) {
@@ -196,26 +200,16 @@ export default function NavalStudyTool(handle, element) {
     $(".study-add input").value = "";
   }
 
-  async function pin(id, on) {
-    const sub = normalizeStudy(handle.doc()).subjects.find((x) => x.id === id);
-    if (!sub) return;
-    if (!on) return handle.change((d) => (setHeads(d, id, "hull", null), setHeads(d, id, "design", null)));
-    const repo = findRepo();
-    const heads = {};
-    for (const which of ["hull", "design"]) {
-      if (!sub[which]) continue;
-      try {
-        const h = await repo.find(sub[which].url);
-        heads[which] = h.heads?.() ?? null;
-      } catch {
-        heads[which] = null;
-      }
-    }
-    if (dead) return;
-    if (Object.values(heads).some((h) => !Array.isArray(h) || !h.length)) return say("Can't pin: this host doesn't give the documents' versions.", "error");
-    handle.change((d) => {
-      for (const [which, h] of Object.entries(heads)) setHeads(d, id, which, [...h].map(String));
-    });
+  /** Pin the versions the figures on screen were read from (every document the subject reads), or follow again. */
+  function pin(id, on) {
+    if (!on) return handle.change((d) => followSubject(d, id));
+    const s = subjects.get(id);
+    if (s?.state !== "ready" || !s.used) return say("Can't pin yet: this subject hasn't been screened.", "error");
+    const heads = { design: s.used.design?.heads ?? null, hull: s.used.hull?.heads ?? null };
+    if ((s.used.design && !heads.design?.length) || (s.used.hull && !heads.hull?.length)) return say("Can't pin: this host doesn't give the documents' versions.", "error");
+    let ok = false;
+    handle.change((d) => (ok = pinSubject(d, id, heads)));
+    if (!ok) say("Can't pin: this host doesn't give the documents' versions.", "error");
   }
 
   // ── drawing
@@ -224,7 +218,7 @@ export default function NavalStudyTool(handle, element) {
     const f = formatFigure(cell.figure, units);
     const d = cell.delta ? formatFigure(cell.delta, units, { signed: true }) : null;
     return `<td class="cell" data-subject="${esc(col.id)}" data-envelope="${f.badge}" data-provenance="${f.provenance}" title="${esc(f.title)}">
-      <span class="v">${esc(f.text)}</span><span class="badge" data-envelope="${f.badge}">${BADGE_TEXT[f.badge]}</span>${f.mark ? `<span class="prov">${esc(f.mark)}</span>` : ""}
+      <span class="v">${esc(f.text)}</span><span class="badge" data-envelope="${f.badge}">${BADGE_TEXT[f.badge]}</span>${f.band ? `<span class="band" data-band="${f.band}">${BAND_TEXT[f.band]}</span>` : ""}${f.mark ? `<span class="prov">${esc(f.mark)}</span>` : ""}
       ${d ? `<div class="delta" data-envelope="${d.badge}" title="${esc(d.title)}">Δ ${esc(d.text)}</div>` : ""}</td>`;
   }
 
@@ -241,13 +235,15 @@ export default function NavalStudyTool(handle, element) {
       ? doc.subjects
           .map((sub) => {
             const s = subjects.get(sub.id);
-            const pinned = !!(sub.hull?.heads || sub.design?.heads);
-            const what = [sub.design ? "rig design" : null, sub.hull ? "hull" : "synthetic hull"].filter(Boolean).join(" on ");
+            const pinned = isPinned(sub);
+            // a design alone stands on whatever hull it links (the status chip names the one that was read)
+            const what = sub.design ? (sub.hull ? "rig design, on the hull named here" : "rig design") : "hull";
+            const at = [sub.design?.heads && `design ${shortHeads(sub.design.heads)}`, (sub.hull?.heads ?? sub.design?.hullHeads) && `hull ${shortHeads(sub.hull?.heads ?? sub.design.hullHeads)}`].filter(Boolean).join(", ");
             const status = s?.state === "error" ? `<span class="status" data-tone="error">${esc(s.error)}</span>` : s?.state === "pending" ? `<span class="status">screening…</span>` : `<span class="status">${esc(s?.chip ?? "")}</span>`;
             return `<li class="subject cluster" data-subject="${esc(sub.id)}" data-state="${esc(s?.state ?? "pending")}">
               <label class="baseline" title="Every other subject's Δ is against the baseline"><input type="radio" name="baseline" value="${esc(sub.id)}" ${doc.baseline === sub.id ? "checked" : ""}> baseline</label>
               <strong class="label">${esc(sub.label)}</strong><span class="what">${esc(what)}</span>
-              <span class="heads" title="${pinned ? "Pinned: this subject reads its documents at these versions" : "Following the latest versions"}">${pinned ? `pinned ${esc(shortHeads(sub.design?.heads ?? sub.hull?.heads))}` : "latest"}</span>
+              <span class="heads" title="${pinned ? "Pinned: every document this subject reads is at these versions" : "Following the latest versions"}">${pinned ? `pinned ${esc(at)}` : "latest"}</span>
               <button type="button" data-act="${pinned ? "follow" : "pin"}">${pinned ? "Follow latest" : "Pin this version"}</button>
               <button type="button" data-act="remove" aria-label="Remove ${esc(sub.label)}">Remove</button>
               ${status}</li>`;
@@ -280,7 +276,7 @@ export default function NavalStudyTool(handle, element) {
     // what the screen can't tell you
     $(".cant-figures").innerHTML = c.cantTell.length
       ? c.cantTell.map((x) => `<li data-envelope="${esc(x.envelope)}"><span class="badge" data-envelope="${esc(x.envelope === "unavailable" ? "far" : x.envelope)}">${esc(x.envelope === "unavailable" ? "n/a" : BADGE_TEXT[x.envelope])}</span> <strong>${esc(x.subject)}</strong>, ${esc(x.row)}: ${esc(x.reason)}</li>`).join("")
-      : `<li class="none">Every screened figure is inside its method's fitted range.</li>`;
+      : `<li class="none">No figure is unavailable or graded outside its method's fitted range.</li>`;
     $(".cant-always").innerHTML = c.notScreened.map((t) => `<li>${esc(t)}</li>`).join("");
   }
 

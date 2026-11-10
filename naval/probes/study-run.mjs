@@ -11,7 +11,8 @@
 // kinked-curvature example as a hull doc at real size (12 m, made in node by
 // camber-hull-doc.mts with camber's own commands) built by camber's own
 // scene:source. Checks the particulars and the compare columns render, with
-// envelope badges, Δ against the baseline, the can't-tell panel, an Export;
+// envelope badges ("not graded" where nothing grades a figure), the lead's
+// design band, Δ against the baseline, the can't-tell panel, an Export;
 // no page errors. Screenshots desktop light and dark and 390 px.
 // When camber registers a chartroom:source, says whether the hull's statics
 // came from it, and then adds the same hull again as a GLB file (no
@@ -113,7 +114,8 @@ try {
   const pick = (id) => t.rows[id]?.map((c) => `${c.text} [${c.badge}${c.prov ? `, ${c.prov}` : ""}]${c.delta ? ` ${c.delta}` : ""}`);
   report.measured.sample = Object.fromEntries(["loa", "lwl", "displacement", "cp", "kmt", "kn60", "r35", "gzMax", "avs", "lead", "refSpeed", "beatVmg"].map((id) => [id, pick(id)]));
   check("the compare head names every subject, the first as the baseline", t.head.length === n + 1 && /baseline/.test(t.head[1]) && /Catalina/.test(t.head[1]) && /J\/24/.test(t.head[2]), t.head);
-  check("particulars render for every subject, each with an envelope badge", ["loa", "lwl", "bwl", "tc", "volume", "displacement", "cp", "cm"].every((id) => t.rows[id]?.length === n && t.rows[id].every((c) => !c.missing && /\d/.test(c.text) && ["inside", "near", "far"].includes(c.badge))), report.measured.sample);
+  check("particulars render for every subject, each badged “not graded” (nothing grades a mesh's or a table's resolution), never “in range”", ["loa", "lwl", "bwl", "tc", "volume", "displacement", "cp", "cm"].every((id) => t.rows[id]?.length === n && t.rows[id].every((c) => !c.missing && /\d/.test(c.text) && c.badge === "ungraded" && c.badgeText === "not graded")), report.measured.sample);
+  check("the lead shows its place on its design band: the Catalina's and the J/24's are above theirs (and say so), not “in range”", t.rows.lead.slice(0, 2).every((c) => c.band === "above" && c.bandText === "above band" && c.badge === "ungraded" && /Design band: lead \d+–\d+% of LWL/.test(c.title)), t.rows.lead.map((c) => `${c.text} [${c.badgeText}${c.bandText ? `, ${c.bandText}` : ""}]`));
   check("every number on the page carries a badge and a hover naming its method and source", Object.values(t.rows).flat().filter((c) => !c.missing).every((c) => c.badge && /Source:/.test(c.title) && /Envelope:/.test(c.title)), null);
   check("Δ against the baseline under every other column, none under the baseline", Object.values(t.rows).every((cells) => !cells[0].delta) && t.rows.lwl.slice(1).every((c) => /^Δ [−+]?\d/.test(c.delta ?? "")), t.rows.lwl);
   check("the groups: particulars, stability, resistance, balance, performance", J(t.groups) === J(["particulars", "stability", "resistance", "balance", "performance"]), t.groups);

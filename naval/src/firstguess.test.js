@@ -1,14 +1,16 @@
 // The first guess and the 1-D helpers. The first guess is rules of thumb, so
 // the tests check that each rule is applied as stated (hand values), that
-// the result is a whole, sound boat on camber's hulls and the fixtures'
-// hulls, and print how its proportions compare with the real boats (the
-// rules were read off those boats, so that is a consistency check, not a
-// validation). The helpers are checked against the model they solve with.
+// the mast solve is what its header derives (the lead affine in the mast's
+// position, the answer inside the bracket or a refusal) on every hull there
+// is a fixture for, that the result is a whole, sound boat, and print how
+// its proportions compare with the real boats (the rules were read off those
+// boats, so that is a consistency check, not a validation). The helpers are
+// checked against the model they solve with.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { firstGuess, pForArea, RULES, targetLead, FIRST_GUESS_KEYS } from "./firstguess.js";
+import { firstGuess, pForArea, RULES, targetLead, targetBand, mastForBand, FIRST_GUESS_KEYS } from "./firstguess.js";
 import { solve1d, mastForHelm, mastForLead, scaleToSAD } from "./helpers.js";
 import { normalize, defaultDoc, setPath } from "./doc.js";
 import { computeNumbers } from "./numbers.js";
@@ -43,6 +45,31 @@ describe("the rules, by hand", () => {
     expect(targetLead("fractional", "fin")).toBeCloseTo(0.05, 12);
     expect(targetLead("cutter", "fin")).toBeCloseTo(0.07, 12);
     expect(targetLead("cat", "daggerboard")).toBeNull();
+    expect(targetBand("masthead", "fin-bulb")).toEqual([0.05, 0.09]);
+    expect(targetBand("cutter", "fin")).toEqual([0.05, 0.09]);
+    expect(targetBand("fractional", "long")).toEqual([0.1, 0.14]);
+    expect(targetBand("masthead", "none")).toBeNull();
+  });
+
+  it("the mast for a band: every case of where the target falls against the bracket", () => {
+    // lead(m) = 0.27 − (m − 4)/10 on a 10 m waterline; band 5–9%, target 7% at m = 6
+    const q = { lead0: 0.27, m0: 4, lwl: 10, band: [0.05, 0.09] };
+    const at = (lo, hi) => mastForBand({ ...q, lo, hi });
+    // inside the bracket: the target exactly
+    expect(at(4, 8)).toEqual({ ok: true, m: 6, lead: expect.closeTo(0.07, 12), clamped: false });
+    // the bracket ends short of the target but inside the band (m 5.8…6.2): clamped, still in band
+    expect(at(4, 5.9)).toEqual({ ok: true, m: 5.9, lead: expect.closeTo(0.08, 12), clamped: true });
+    expect(at(6.1, 8)).toEqual({ ok: true, m: 6.1, lead: expect.closeTo(0.06, 12), clamped: true });
+    // the band is m 5.8…6.2: a bracket ending just inside it is ok, just outside it is not
+    expect(at(4, 5.81).ok).toBe(true);
+    expect(at(4, 5.79).ok).toBe(false);
+    expect(at(6.19, 8).ok).toBe(true);
+    expect(at(6.21, 8).ok).toBe(false);
+    // the bracket ends before the band begins: the nearest position, and not ok
+    expect(at(4, 5.5)).toEqual({ ok: false, m: 5.5, lead: expect.closeTo(0.12, 12), clamped: true });
+    expect(at(7, 8)).toEqual({ ok: false, m: 7, lead: expect.closeTo(-0.03, 12), clamped: true });
+    // an empty bracket (J + E longer than the hull): nothing to place
+    expect(at(5, 4.9)).toEqual({ ok: false, m: null, lead: null });
   });
 
   it("every rule says what it is based on and that it is to verify", () => {
@@ -64,6 +91,44 @@ describe("the rules, by hand", () => {
   });
 });
 
+/** The mast solve, as its header states it: the model reads the target lead, and the rig fits the hull. */
+function expectBalanced(g, n) {
+  const r = g.report;
+  const rig = g.doc.rig;
+  const [lo, hi] = r.mastRangeM;
+  // the model's own lead is the target: the mast is rounded to 0.1 mm, a lead of 1e-4/LWL
+  expect(r.targetLead).toBe(targetLead(rig.type, g.doc.appendages.keel.kind));
+  expect(r.mastClamped).toBe(false);
+  expect(Math.abs(n.analysis.balance.lead - r.targetLead)).toBeLessThan(2e-4 / n.form.hydro.lwl + 1e-9);
+  expect(r.lead).toBe(n.analysis.balance.lead);
+  // inside the bracket: the tack at or aft of the stem, the boom's end at or forward of the stern
+  expect(lo).toBeCloseTo(jOf(rig), 3);
+  expect(hi).toBeCloseTo(n.form.loa - rig.E, 3);
+  expect(rig.forestayAftOfStem).toBeGreaterThanOrEqual(0);
+  expect(rig.mast.aftOfStem).toBeGreaterThanOrEqual(lo - 1e-4);
+  expect(rig.mast.aftOfStem + rig.E).toBeLessThanOrEqual(n.form.loa + 1e-4);
+  expect(r.tackAftOfStemM).toBe(rig.forestayAftOfStem);
+}
+
+describe("the mast solve's premise: the lead is affine in the rig's position, slope −1/LWL", () => {
+  it("on a camber hull and a synthetic one, the model's lead at three positions is the line through the first", () => {
+    for (const [doc, ctx] of [
+      [firstGuess(linkedDoc(), { linked: camber("narrow-transom") }).doc, { linked: camber("narrow-transom") }],
+      [firstGuess(normalize(fixtureDoc(FIXTURES.find((f) => f.id === "catalina-30").fixture))).doc, {}],
+    ]) {
+      const n0 = computeNumbers(doc, ctx);
+      const lwl = n0.form.hydro.lwl;
+      for (const dx of [-1.25, 0.5, 2]) {
+        const moved = apply(doc, [
+          [["rig", "mast", "aftOfStem"], doc.rig.mast.aftOfStem + dx],
+          [["rig", "forestayAftOfStem"], doc.rig.forestayAftOfStem + dx],
+        ]);
+        expect(computeNumbers(moved, ctx).analysis.balance.lead).toBeCloseTo(n0.analysis.balance.lead - dx / lwl, 10);
+      }
+    }
+  });
+});
+
 describe("a first guess on camber's hulls (12 m, floated at a given 8 t)", () => {
   for (const name of ["cuvature-kink-with-unmodified-pchip", "flat-bottom", "narrow-transom", "hull-default"])
     it(name, () => {
@@ -80,6 +145,7 @@ describe("a first guess on camber's hulls (12 m, floated at a given 8 t)", () =>
       expect(Math.abs(n.ratios.saDDesigner - 17)).toBeLessThan(0.5);
       expect(n.ratios.saDDesigner).toBeCloseTo(17, 3); // solved, not approximated
       expect(jOf(g.doc.rig)).toBeCloseTo(RULES.mast.jOverLwl * h.lwl, 3);
+      expectBalanced(g, n);
       expect(g.doc.rig.P / g.doc.rig.E).toBeCloseTo(3, 3);
       expect(g.doc.rig.BAS / g.doc.rig.P).toBeCloseTo(0.12, 3);
       expect(n.ratios.ballast).toBeCloseTo(0.38, 3);
@@ -98,7 +164,7 @@ describe("a first guess on camber's hulls (12 m, floated at a given 8 t)", () =>
       console.log(
         `${name}: ${r.type}, P ${g.doc.rig.P.toFixed(2)} E ${g.doc.rig.E.toFixed(2)} I ${g.doc.rig.I.toFixed(2)} J ${jOf(g.doc.rig).toFixed(2)}, SA ${n.plan.designer.areaM2.toFixed(1)} m², SA/D ${n.ratios.saDDesigner.toFixed(3)}; ` +
           `keel ${keel.kind} ${keel.span.toFixed(2)} × ${keel.rootChord.toFixed(2)}/${keel.tipChord.toFixed(2)} m (AR ${keel.arGeom.toFixed(2)}), draft ${r.draftOverallM.toFixed(2)} m (rule ${r.draftRuleM.toFixed(2)}), Tc ${h.tc.toFixed(2)}; ` +
-          `lead ${(100 * r.lead).toFixed(1)}% (${r.leadBand}); ${r.helm} — the plan wanted weather helm here: see the report`,
+          `mast ${g.doc.rig.mast.aftOfStem.toFixed(2)} m aft of the stem (tack ${r.tackAftOfStemM.toFixed(2)}, bracket ${r.mastRangeM.map((v) => v.toFixed(2)).join("–")}); lead ${(100 * r.lead).toFixed(2)}% (${r.leadBand}); ${r.helm}`,
       );
     });
 });
@@ -112,11 +178,15 @@ describe("a first guess on the fixtures' hulls, against the real boats (the rule
       expect(g.ok, `${id}: ${g.why}`).toBe(true);
       const nr = computeNumbers(real);
       const ng = computeNumbers(g.doc);
+      // a sloop's mast is solved for the lead; a cat's has no band and goes by its rule
+      if (g.doc.rig.type === "cat") expect(g.report).toMatchObject({ targetLead: null, mastRangeM: null, tackAftOfStemM: 0 });
+      else expectBalanced(g, ng);
+      const lead = (n) => `${(100 * n.analysis.balance.lead).toFixed(1)}%`;
       const k = (d) => d.appendages.keel;
       const row = (what, a, b) => `${what} ${a.toFixed(2)}/${b.toFixed(2)}`;
       lines.push(
         `  ${real.title.padEnd(26)} guess/real: ${g.doc.rig.type}/${real.rig.type}; ${row("P", g.doc.rig.P, real.rig.P)}; ${row("E", g.doc.rig.E, real.rig.E)}; ${row("mast", g.doc.rig.mast.aftOfStem, real.rig.mast.aftOfStem)}; ${row("SA/D", ng.ratios.saDDesigner, nr.ratios.saDDesigner)}; ` +
-          `${row("draft", readout(ng, "draftOverall"), readout(nr, "draftOverall"))}; ${row("keel LE", k(g.doc).aftOfStem, k(real).aftOfStem)}; helm ${ng.helm.text} / ${nr.helm.text}`,
+          `${row("draft", readout(ng, "draftOverall"), readout(nr, "draftOverall"))}; ${row("keel LE", k(g.doc).aftOfStem, k(real).aftOfStem)}; lead ${lead(ng)}/${lead(nr)}; helm ${ng.helm.text} / ${nr.helm.text}`,
       );
     }
     console.log(`\nFirst guess vs the published boats (m):\n${lines.join("\n")}`);
@@ -144,7 +214,9 @@ describe("a first guess on the fixtures' hulls, against the real boats (the rule
       expect(g.ok).toBe(true);
       expect(g.doc.rig.type).toBe(type);
       expect(buildSailPlan(g.doc.rig).warnings).toEqual([]);
-      expect(computeNumbers(g.doc).ratios.saDDesigner).toBeCloseTo(17, 3);
+      const n = computeNumbers(g.doc);
+      expect(n.ratios.saDDesigner).toBeCloseTo(17, 3);
+      expectBalanced(g, n);
       if (type === "cutter") expect(g.doc.rig.staysail).toBeTruthy();
     }
   });
@@ -154,6 +226,21 @@ describe("a first guess on the fixtures' hulls, against the real boats (the rule
     const g = firstGuess(d, { linked: { status: "loading" } });
     expect(g.ok).toBe(false);
     expect(g.why).toMatch(/isn't read yet/);
+  });
+
+  it("says so, and guesses nothing, when no mast position balances the hull or the rig doesn't fit it", () => {
+    // narrow-transom at 12 m floated at 16 t: SA/D 17's boom leaves the mast 4.39–5.64 m, and the keel
+    // (over the LCB) is too far aft of that for the band: the nearest position still reads 10.8%
+    const a = firstGuess(linkedDoc(16000), { linked: camber("narrow-transom") });
+    expect(a.ok).toBe(false);
+    expect(a.why).toMatch(/^no mast position balances this hull: .* 5\.0%–9\.0% band nowhere from 4\.39 m .* to 5\.64 m aft of the stem .*; the nearest, at 5\.64 m, gives 10\.8%$/);
+    expect(a.doc).toBeUndefined();
+    // cuvature-kink at 12 m at 24 t (it floats at 23.7 t as drawn): J and the boom together are longer than the hull
+    const b = firstGuess(linkedDoc(24000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
+    expect(b.ok).toBe(false);
+    expect(b.why).toMatch(/^this hull is too heavy to rig by the rules: at 24\.0 t, SA\/D 17 is \d+ m², whose J 4\.64 m and boom 7\.33 m are together longer than her 11\.24 m overall$/);
+    expect(b.doc).toBeUndefined();
+    console.log(`refusals:\n  ${a.why}\n  ${b.why}`);
   });
 
   it("replaces only the design: the hull, its link, the conditions and the title stay", () => {

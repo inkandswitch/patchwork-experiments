@@ -4,15 +4,32 @@
 // rule is in RULES with its basis; each is a starting point, marked "to
 // verify", and everything the guess writes is marked estimated in the doc.
 //
-// Two of the rules are solved, not just applied, through the tool's own
-// model (computeNumbers): P (with E, I and J tied to it) so the designer's
-// SA/D is the target exactly, and the mast's position so the lead is the
-// middle of its band. Nothing else is optimised; the 1-D helpers
-// (helpers.js) are the next step and the designer's call.
+// Two of the rules are solved, not just applied:
+//
+// - P (with E and I tied to it, J by its rule), in closed form, so the
+//   designer's SA/D is the target exactly.
+// - The mast's position, so the lead is the middle of its band (sloops and
+//   cutters; no band is quoted for a cat, whose mast goes by its rule). The
+//   rig is upright and moves as one piece: the forestay's tack goes aft of
+//   the stem with the mast, so J, the sail plan and its area stay. The keel
+//   doesn't move with the rig, so the CLR stays and the designer's CE moves
+//   exactly as far as the mast does:
+//       lead(m) = lead(m₀) − (m − m₀) / LWL
+//   strictly falling and affine in the mast's distance m aft of the stem.
+//   lead(m₀) is read once from the tool's own model (computeNumbers) with
+//   the tack at the stem (m₀ = J), and the answer is the one m that gives
+//   the target, clamped to the bracket [J, LOA − E]: the tack at or aft of
+//   the stem (J fits on the hull) and the boom's end at or forward of the
+//   stern (which also keeps the mast on the hull). If the clamped position
+//   is still outside the band, no position in the bracket is inside it
+//   (the lead is monotone), and the result says so instead of a guess.
+//
+// Nothing else is optimised; the 1-D helpers (helpers.js) are the next
+// step and the designer's call.
 
 import { normalize } from "./doc.js";
 import { computeNumbers } from "./numbers.js";
-import { leadBand } from "./naval/balance.js";
+import { LEAD_BANDS, keelFamily } from "./naval/balance.js";
 import { BULB_CP } from "./naval/foils.js";
 import { RHO_SEA } from "./naval/units.js";
 
@@ -62,7 +79,7 @@ export const RULES = {
   keelAt: {
     boardAtLwl: 0.42,
     basis:
-      "A keelboat's keel with its quarter chord (on the MAC) over the LCB, so its ballast trims her level; the mass model keeps G over the LCB too. A dinghy's board with its quarter chord 42% of the LWL aft of the waterline's forward end (Laser). Neither is placed for the lead or the helm: those are the helpers', and the first guess reports both",
+      "A keelboat's keel with its quarter chord (on the MAC) over the LCB, so its ballast trims her level; the mass model keeps G over the LCB too. A dinghy's board with its quarter chord 42% of the LWL aft of the waterline's forward end (Laser). The keel is not moved for the lead: the rig is (the mast rule). The helm is the helpers', and the first guess reports it",
     verify: VERIFY,
   },
 
@@ -89,7 +106,7 @@ export const RULES = {
     jOverLwl: 0.46,
     catAtLoa: 0.31,
     basis:
-      "Sloops and cutters: the forestay at the stem and J = 0.46·LWL, which places the mast (Catalina 30 0.46, J/24 0.48, stock 0.46; the plan's 0.3·LWL would put it 1–1.5 m forward of all three). Cat: 0.31·LOA aft of the stem (Laser 1.305/4.23)",
+      "Sloops and cutters: J = 0.46·LWL (Catalina 30 0.46, J/24 0.48, stock 0.46; the plan's 0.3·LWL is shorter than all three), and the mast where the lead over the extended-keel CLR is the middle of its band (a cutter uses the masthead's), the forestay's tack as far aft of the stem as that takes, never forward of it, and the boom's end never aft of the stern. Cat: 0.31·LOA aft of the stem (Laser 1.305/4.23); no lead band is quoted for a cat",
     verify: VERIFY,
   },
   headsail: { lpOverJ: 1.05, basis: "A 105% jib; a cutter's staysail I2 0.8·I, J2 0.5·J, LP2 0.45·J (as the tool's cutter choice)", verify: VERIFY },
@@ -98,11 +115,31 @@ export const RULES = {
   crew: { basis: "Keelboat: LOA/3 crew (2–8) of 80 kg sitting; dinghy: one 80 kg crew hiking (two over 250 kg displacement)", verify: VERIFY },
 };
 
-/** The lead the first guess aims at: its band's middle (a cutter uses the masthead band). */
+/** The lead band the first guess aims into, as fractions of LWL [lo, hi] (a cutter uses the masthead's); null where none is quoted. */
+export function targetBand(rigType, keelKind) {
+  const fam = keelFamily(keelKind);
+  const b = fam ? LEAD_BANDS[fam][rigType === "cutter" ? "masthead" : rigType] : null;
+  return b ? [b[0] / 100, b[1] / 100] : null;
+}
+
+/** The lead the first guess aims at: its band's middle. */
 export function targetLead(rigType, keelKind) {
-  const t = rigType === "cutter" ? "masthead" : rigType;
-  const b = leadBand(t, keelKind, NaN).range;
-  return b ? (b[0] + b[1]) / 200 : null;
+  const b = targetBand(rigType, keelKind);
+  return b ? (b[0] + b[1]) / 2 : null;
+}
+
+/**
+ * The mast position that gives a target lead, for a rig that moves as one
+ * piece over a fixed keel: lead(m) = lead0 − (m − m0)/lwl, clamped to [lo, hi].
+ * @returns {{ ok: true, m: number, lead: number, clamped: boolean } | { ok: false, m: number|null, lead: number|null }}
+ *   ok when the lead at m is inside the band; when not, no m in [lo, hi] is (the lead is monotone in m)
+ */
+export function mastForBand({ lead0, m0, lwl, band, lo, hi }) {
+  if (!(hi >= lo)) return { ok: false, m: null, lead: null };
+  const want = m0 + (lead0 - (band[0] + band[1]) / 2) * lwl;
+  const m = Math.min(hi, Math.max(lo, want));
+  const lead = lead0 - (m - m0) / lwl;
+  return { ok: lead >= band[0] && lead <= band[1], m, lead, clamped: m !== want };
 }
 
 /** P for a designer's area: ½·P·E + ½·I·J with E = P/r and I = c·P (c 0 for a cat). */
@@ -140,7 +177,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
   const area = saD * Math.pow(vol, 2 / 3);
   const depthAt = (x) => Math.max(0, -(geo.bottomAt(x) ?? 0));
 
-  // ── the rig: the mast by the J rule (cat: by LOA), P solved for the area
+  // ── the rig: J by its rule, P solved for the area; the mast starts with the tack at the stem (cat: by LOA)
   const r = cat ? RULES.pOverE.cat : RULES.pOverE.keelboat;
   const bas = RULES.basOverP.value;
   const c = cat ? 0 : type === "fractional" ? RULES.iOverP.fractional * (1 + bas) : bas + RULES.iOverP.masthead;
@@ -149,7 +186,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
   const P = pForArea(area, { r, c, J });
   const BAS = bas * P;
   const I = cat ? 0 : type === "fractional" ? RULES.iOverP.fractional * (BAS + P) : BAS + RULES.iOverP.masthead * P;
-  const rig = {
+  const rig0 = {
     type,
     mast: { aftOfStem: round(mastX), rakeDeg: 0, stepped: dinghy ? "deck" : "keel", kgPerM: null },
     I: round(I),
@@ -226,7 +263,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
   }
 
   const crewCount = dinghy ? (massKg > 250 ? 2 : 1) : Math.min(8, Math.max(2, Math.round(loa / 3)));
-  const candidate = (keel) =>
+  const candidate = (keel, rig) =>
     normalize({
       ...doc,
       rig,
@@ -239,10 +276,31 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
     });
 
   // ── the keel: its quarter chord over the LCB (keelboat), a dinghy's board by its rule
-  const lead = targetLead(type, dinghy ? "daggerboard" : "fin");
   const keel = keelAt(dinghy ? h.xFwd - RULES.keelAt.boardAtLwl * lwl : h.lcb);
   const bulb = keel.bulb;
-  const out = candidate(keel);
+
+  // ── the mast: where the lead is its band's middle (see the header); a cat's stays by its rule
+  const band = targetBand(type, keel.kind);
+  let rig = rig0, mast = null;
+  if (band) {
+    const lead0 = computeNumbers(candidate(keel, rig0), { linked: ctx.linked }).analysis.balance.lead;
+    const lo = J, hi = loa - rig0.E;
+    mast = { ...mastForBand({ lead0, m0: mastX, lwl, band, lo, hi }), lo, hi };
+    if (!mast.ok) {
+      const pct = (v) => `${(100 * v).toFixed(1)}%`;
+      const bandText = `${pct(band[0])}–${pct(band[1])}`;
+      const m = (v) => `${v.toFixed(2)} m`;
+      return {
+        ok: false,
+        why:
+          mast.m == null
+            ? `this hull is too heavy to rig by the rules: at ${(massKg / 1000).toFixed(1)} t, SA/D ${saD} is ${area.toFixed(0)} m², whose J ${m(J)} and boom ${m(rig0.E)} are together longer than her ${m(loa)} overall`
+            : `no mast position balances this hull: with the keel over the LCB, the lead is in its ${bandText} band nowhere from ${m(lo)} (the forestay's tack at the stem) to ${m(hi)} aft of the stem (the boom's end at the stern); the nearest, at ${m(mast.m)}, gives ${pct(mast.lead)}`,
+      };
+    }
+    rig = { ...rig0, mast: { ...rig0.mast, aftOfStem: round(mast.m) }, forestayAftOfStem: round(mast.m - J) };
+  }
+  const out = candidate(keel, rig);
   const n1 = computeNumbers(out, { linked: ctx.linked, statics: ctx.statics });
   const xq = n1.analysis.app.keel ? n1.analysis.app.keel.qc[0] : NaN;
 
@@ -273,7 +331,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
     ok: true,
     doc: out,
     estimated,
-    report: { type, dinghy, saD, areaM2: area, draftRuleM: draft, keelAreaM2: keelArea, targetLead: lead, lead: n1.analysis.balance.lead, leadBand: n1.analysis.balance.leadBand.label, helmDeg: n1.reference?.ok ? n1.reference.rudder : null, helm: n1.helm?.text ?? null, draftOverallM: -Math.min(...n1.analysis.app.foils.map((f) => f.bottomZ)), keelQcFromLcbM: xq - h.lcb, keelQcFromLcbFrac: (xq - h.lcb) / lwl },
+    report: { type, dinghy, saD, areaM2: area, draftRuleM: draft, keelAreaM2: keelArea, targetLead: band ? (band[0] + band[1]) / 2 : null, mastRangeM: mast ? [mast.lo, mast.hi] : null, mastClamped: mast?.clamped ?? false, tackAftOfStemM: rig.forestayAftOfStem, lead: n1.analysis.balance.lead, leadBand: n1.analysis.balance.leadBand.label, helmDeg: n1.reference?.ok ? n1.reference.rudder : null, helm: n1.helm?.text ?? null, draftOverallM: -Math.min(...n1.analysis.app.foils.map((f) => f.bottomZ)), keelQcFromLcbM: xq - h.lcb, keelQcFromLcbFrac: (xq - h.lcb) / lwl },
   };
 }
 

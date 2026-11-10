@@ -7,7 +7,7 @@
      in a stub registry, on an in-memory repo, as rig-probe.html. Each example
      is made the way a person makes it: a new rig doc (the datatype's init),
      then the tool mounted on it and its own controls used ("New from…", the
-     Link field, the Helm helper). The rig links the camber hull doc itself
+     Link field). The rig links the camber hull doc itself
      (real size only); camber's scene:source builds it once here with its
      default params, only to check its size. A dev tool: no package imports
      another. -->
@@ -152,8 +152,7 @@ try {
     },
     /**
      * A new rig doc linked to a hull doc through the Link field, titled, then
-     * "New from… First guess from this hull"; if that lands out of the lead
-     * or the helm band, the Helm helper at its default target.
+     * "New from… First guess from this hull", as it lands.
      */
     async rigOn(hullUrl, title) {
       const h = mountNew();
@@ -166,22 +165,8 @@ try {
       pick("first-guess");
       const firstStatus = status();
       if (firstStatus.tone === "error") throw new Error(firstStatus.text);
-      const r1 = await settled();
-      const first = summary(r1);
-      const leadOut = first.leadOut, helmOut = first.helmOut;
-      let helper = null;
-      if (leadOut || helmOut) {
-        const form = $('form[data-helper="helm"]');
-        const target = form.querySelector("input").value;
-        const mastBefore = h.doc().rig.mast.aftOfStem, tackBefore = h.doc().rig.forestayAftOfStem;
-        form.requestSubmit();
-        await sleep(100);
-        const st = status();
-        if (st.tone === "error") throw new Error(`the Helm helper: ${st.text}`);
-        helper = { why: [leadOut && "lead out of band", helmOut && "helm out of band"].filter(Boolean).join(", "), target: Number(target), status: st.text, mast: [mastBefore, h.doc().rig.mast.aftOfStem], tack: [tackBefore, h.doc().rig.forestayAftOfStem] };
-      }
-      const after = helper ? summary(await settled()) : first;
-      return { url: h.url, linkStatus: $(".link-status")?.textContent ?? null, chip: $('[data-chip="hull"]')?.textContent ?? null, before, firstGuess: { status: firstStatus.text, ...first }, helper, final: after };
+      const first = summary(await settled());
+      return { url: h.url, linkStatus: $(".link-status")?.textContent ?? null, chip: $('[data-chip="hull"]')?.textContent ?? null, before, firstGuess: { status: firstStatus.text, ...first } };
     },
     /** every doc made, as plain JSON (bytes base64) */
     snapshot() {

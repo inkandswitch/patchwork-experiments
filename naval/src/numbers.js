@@ -1,7 +1,8 @@
 // The numbers the tool shows, composed from the doc: the sail plan laid on
 // the hull, the ratios, the hull as floated and its statics, each with its
-// band and its provenance. Pure (no DOM), so the panels, the tests and (later)
-// the contract read the same figures.
+// band and its provenance. Pure (no DOM), so the panels, the tests, the
+// contract (contract.js) and the study's screen (study/screen.js) read the
+// same figures.
 //
 // The hull: a linked hull's mesh (the tool acquires it and passes it in as
 // ctx.linked), or, with no link, a synthetic mesh from the principal

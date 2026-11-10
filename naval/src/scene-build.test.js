@@ -73,8 +73,8 @@ describe("the rig GLB", () => {
     });
 
   for (const id of ["sloop-12m", "cuvature-first-guess"])
-    it(`${id}: at the identity on its hull, the forestay meets the stemhead, the chainplates sit on the sheer, the keel's root on the bottom`, () => {
-      const { glb, contract: c, hull, X } = rigFor(id);
+    it(`${id}: at the identity on its hull, the forestay's tack is its doc's distance aft of the stemhead, the chainplates sit on the sheer, the keel's root on the bottom`, () => {
+      const { glb, contract: c, hull, X, doc } = rigFor(id);
       const rows = [];
       // the stemhead on the hull's own mesh: its foremost vertices, the highest of them
       let maxX = -Infinity;
@@ -84,7 +84,13 @@ describe("the rig GLB", () => {
       const lines = nodeVerts(glb, "Rigging");
       const tack = X.point(c.rig.standing.find((s) => s.id === "forestay").fromM);
       expect(lines.some((v) => near(v, tack) < 1e-5)).toBe(true);
-      rows.push(["forestay tack to stemhead", near(tack, stem)]);
+      // the tack: at the stemhead's height, the doc's forestayAftOfStem aft of it (0 on the stock sloop;
+      // the first guess sets it where the lead is in its band). Both hulls' bows are +X in their glTF.
+      const aft = doc.rig.forestayAftOfStem;
+      expect(aft).toBeGreaterThanOrEqual(0);
+      if (id === "sloop-12m") expect(aft).toBe(0);
+      else expect(aft).toBeGreaterThan(1);
+      rows.push([`forestay tack, ${aft.toFixed(2)} m aft of the stemhead`, near([tack[0] + aft, tack[1], tack[2]], stem)]);
       // chainplates: on the sheer (the highest vertex at that station), inside the hull's breadth there
       for (const cp of c.hardpoints.chainplates) {
         const p = X.point(cp.atM);

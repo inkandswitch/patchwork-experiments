@@ -1,5 +1,5 @@
-// Keel and rudder: from a planform to the numbers balance, stability and
-// (later) the VPP and the contract need. Pure, no DOM.
+// Keel and rudder: from a planform to the numbers balance, stability, the
+// VPP (design.js, vpp.js) and the contract need. Pure, no DOM.
 //
 // Frame: the rig frame seen from starboard, points [x, z] (x forward, z up,
 // metres, the floated waterplane at z = 0). A foil hangs straight down from

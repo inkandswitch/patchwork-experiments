@@ -163,6 +163,3 @@ export function createStaticsRunner({ name = NAME, spawnWorker = spawn } = {}) {
 
   return { run, dispose };
 }
-
-/** The same runner, by what it does. */
-export const createJobRunner = createStaticsRunner;
