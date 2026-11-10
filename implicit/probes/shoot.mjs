@@ -7,7 +7,8 @@
 // waitExpr defaults to "window.__probeCleanup"; beforeShotExpr runs (awaited)
 // right before the capture, e.g. to switch themes.
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,9 +20,12 @@ const chrome = spawn(
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ["--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`,
    `--window-size=${w},${h}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"],
-  { stdio: "ignore" },
+  { stdio: "ignore", detached: true },
 );
-const bail = (msg, code = 1) => { console.error(msg); chrome.kill(); process.exit(code); };
+const done = (code) => { killChrome(chrome); try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); };
+const bail = (msg, code = 1) => { console.error(msg); done(code); };
+// Chrome dies with this process however it ends (chrome-guard.mjs)
+guardChrome(chrome, { profile, stop: done });
 setTimeout(() => bail("TIMEOUT", 2), 90_000);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,5 +69,4 @@ const shot = await send("Page.captureScreenshot", { format: "png" });
 writeFileSync(out, Buffer.from(shot.result.data, "base64"));
 console.log(JSON.stringify({ out, logs: logs.slice(-20) }, null, 2));
 ws.close();
-chrome.kill();
-process.exit(0);
+done(0);

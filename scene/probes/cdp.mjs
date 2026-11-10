@@ -6,6 +6,7 @@
 //   await b.js("1 + 1"); await b.drag([x0, y0], [x1, y1]); await b.key("g");
 //   await b.shot("/path/to.png"); b.stop(code);
 import { spawn } from "node:child_process";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
@@ -47,12 +48,10 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   const chrome = spawn(
     CHROME,
     [show ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${cdp}`, `--window-size=${width},${height}`, "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"].filter(Boolean),
-    { stdio: "ignore" },
+    { stdio: "ignore", detached: true },
   );
   const stop = (code) => {
-    try {
-      chrome.kill();
-    } catch {}
+    killChrome(chrome);
     server.close();
     setTimeout(() => {
       try {
@@ -61,6 +60,8 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       process.exit(code);
     }, 300);
   };
+  // Chrome dies with this process however it ends (chrome-guard.mjs)
+  guardChrome(chrome, { profile, stop });
   const timer = setTimeout(() => {
     console.error("TIMEOUT");
     stop(2);

@@ -11,6 +11,7 @@
 // fire on whatever element really is there, at the rows' real heights.
 // Prints a JSON report; exits non-zero if any check fails.
 import { spawn } from "node:child_process";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,16 +42,18 @@ const chrome = spawn(
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   [args.show ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
    "--window-size=1400,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean),
-  { stdio: "ignore" },
+  { stdio: "ignore", detached: true },
 );
 let finished = false;
 const stop = (code) => {
   if (finished) return;
   finished = true;
-  try { chrome.kill(); } catch {}
+  killChrome(chrome);
   server.close();
   setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); }, 300);
 };
+// Chrome dies with this process however it ends (chrome-guard.mjs)
+guardChrome(chrome, { profile, stop });
 const watchdog = setTimeout(() => { console.error("TIMEOUT"); stop(2); }, 120_000);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

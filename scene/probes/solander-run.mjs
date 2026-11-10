@@ -10,8 +10,9 @@
 // --site   also screenshot https://solander38.com/anatomy for comparison
 // Network is throttled over CDP (default 50 Mbit/s, 20 ms) to stand in for broadband.
 import { spawn } from "node:child_process";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,8 +56,10 @@ const chromeArgs = [
   ...(typeof args.flags === "string" ? args.flags.split(/\s+/).filter(Boolean) : []),
   "about:blank",
 ];
-const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", chromeArgs, { stdio: "ignore" });
-const done = (code) => { try { chrome.kill(); } catch {} server.close(); process.exit(code); };
+const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", chromeArgs, { stdio: "ignore", detached: true });
+const done = (code) => { killChrome(chrome); server.close(); try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); };
+// Chrome dies with this process however it ends (chrome-guard.mjs)
+guardChrome(chrome, { profile, stop: done });
 setTimeout(() => { console.error("TIMEOUT"); done(2); }, Number(args.timeout ?? 600_000));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

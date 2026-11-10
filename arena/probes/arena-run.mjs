@@ -18,6 +18,7 @@
 // and makes the scene a level, played and walked on.
 // Prints a JSON report; exits non-zero if any check fails.
 import { spawn } from "node:child_process";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, resolve, dirname, sep } from "node:path";
@@ -45,8 +46,10 @@ await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "arena-probe-"));
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   [SHOW ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
-   "--window-size=1400,700", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean), { stdio: "ignore" });
-const stop = (code) => { try { chrome.kill(); } catch {} server.close(); setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); }, 300); };
+   "--window-size=1400,700", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean), { stdio: "ignore", detached: true });
+const stop = (code) => { killChrome(chrome); server.close(); setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); }, 300); };
+// Chrome dies with this process however it ends (chrome-guard.mjs)
+guardChrome(chrome, { profile, stop });
 setTimeout(() => { console.error("TIMEOUT"); console.log(JSON.stringify(report, null, 2)); stop(2); }, 360_000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let target;
