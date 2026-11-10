@@ -4,7 +4,7 @@
 // camber's SOURCE (a dev-time borrow, like the probes' use of camber's
 // build: no package imports another):
 //
-//   <camber>/node_modules/.bin/tsx probes/camber-hull-doc.mts <camber> <example.json> <title> [<loa m>]
+//   <camber>/node_modules/.bin/tsx probes/camber-hull-doc.mts <camber> <example.json> <title> [<loa m> [<waterline m>]]
 //
 // The doc is CamberHullDatatype.init (a title and upstream's default design),
 // its hull keys then replaced by the example's stored form: storedFormOf, the
@@ -14,15 +14,21 @@
 // overall by camber's own commands, as a designer does in camber
 // (setUnit m with rescale, then setLoa): the doc is the boat at real size, so
 // anything reading it at camber's default "document size" gets a real boat.
-// No weight book, as for any design without an estimate.
+// With a waterline too, the design waterline is then put that far below the
+// deck datum, again by camber's own command (setWaterline: the Waterline
+// field in camber's editor). Nothing else of the hull is touched: its
+// geometry is the example's. No weight book, as for any design without an
+// estimate.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const [camber, example, title, loaArg] = process.argv.slice(2);
-if (!camber || !example || !title) throw new Error("usage: camber-hull-doc.mts <camber> <example.json> <title> [<loa m>]");
+const [camber, example, title, loaArg, wlArg] = process.argv.slice(2);
+if (!camber || !example || !title) throw new Error("usage: camber-hull-doc.mts <camber> <example.json> <title> [<loa m> [<waterline m>]]");
 const loaM = loaArg == null ? null : Number(loaArg);
 if (loaM != null && !(loaM > 0)) throw new Error(`a length overall must be a positive number of metres, not ${loaArg}`);
+const waterlineM = wlArg == null ? null : Number(wlArg);
+if (waterlineM != null && !(waterlineM >= 0)) throw new Error(`a waterline must be a depth below the deck datum in metres (0 or more), not ${wlArg}`);
 const src = (p: string) => import(join(camber, "patchwork/src", p));
 const { CamberHullDatatype } = await src("datatype.ts");
 const { partsOfDoc, readParts, storedFormOf } = await src("docFormat.ts");
@@ -41,12 +47,13 @@ let hull = storedFormOf(parts) ?? parts.hull;
 
 if (loaM != null) {
   let state = read.state.hull;
-  for (const cmd of [{ type: "setUnit", unit: "m", rescale: true }, { type: "setLoa", length: loaM }]) {
+  for (const cmd of [{ type: "setUnit", unit: "m", rescale: true }, { type: "setLoa", length: loaM }, ...(waterlineM != null ? [{ type: "setWaterline", depth: waterlineM }] : [])]) {
     const out = interpretHullCommand(assemble(state), cmd);
     if (rejected(out)) throw new Error(`camber refused ${cmd.type}: ${out.rejected}`);
     state = out.state;
   }
   if (state.unit !== "m" || Math.abs(loa(state) - loaM) > 1e-9 * loaM) throw new Error(`the hull isn't ${loaM} m in metres: ${loa(state)} ${state.unit}`);
+  if (waterlineM != null && state.waterline !== waterlineM) throw new Error(`the design waterline isn't ${waterlineM} m below the deck datum: ${state.waterline}`);
   hull = JSON.parse(buildJson(state));
 }
 

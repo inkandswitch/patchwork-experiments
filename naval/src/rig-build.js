@@ -11,8 +11,7 @@
 
 import { normalize } from "./doc.js";
 import { computeNumbers } from "./numbers.js";
-import { validateTable, buildTable } from "./naval/statics.js";
-import { rigToTable } from "./naval/hull-form.js";
+import { buildTable } from "./naval/statics.js";
 import { formatText } from "./naval/units.js";
 import { polar as runPolar } from "./naval/vpp.js";
 import { buildContract } from "./contract.js";
@@ -29,10 +28,15 @@ export function staticsJobFor(form) {
   };
 }
 
-/** A linked hull's own Chartroom table, when it checks out and lines up with the floated hull; else null. */
+/**
+ * A linked hull's own Chartroom table, when it is the engine the hull was
+ * floated by (floatHull: it validated and covers the floated state); else
+ * null. One statics engine per hull: a table the upright figures couldn't
+ * use isn't used for GZ either.
+ */
 export function ownTableFor(doc, linked, form) {
   const own = doc.hull.link && linked?.mesh?.table;
-  return own && validateTable(own).ok && rigToTable(own, form).available ? own : null;
+  return own && form?.chartroom?.table === own ? own : null;
 }
 
 /** The statics for a floated hull: { status: "ready", table, source }. */

@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { acquireHull, findChartroomTable, hullPathChip, matchProviders, meshFromGlb } from "./hull-link.js";
+import { acquireHull, findChartroomTable, glbFingerprint, hullPathChip, matchProviders, meshFromGlb, sameHull } from "./hull-link.js";
 import { CHARTROOM_SOURCE } from "./chartroom-link.js";
 import { glbTriangles } from "./glb-read.js";
 import { toHullFrame, glbToFrameMatrix } from "../naval/hull-frame.js";
@@ -220,6 +220,84 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
     expect(calls).toHaveLength(1);
     expect(calls[0].heelDeg.at(-1)).toBe(180);
     expect(hullPathChip(r)).toBe("built by Camber hull (its default params, at its own size; statics from Camber)");
+  });
+
+  // The GLB and the table are the same hull when the fingerprints they state agree. camber writes the one hash
+  // two ways: the GLB's extras.camber.fingerprint is its scene provider's "camber-hull-surface/6:<hash>", the
+  // chartroom module's fingerprint(doc) the bare "<hash>". Every case of (GLB's, table's):
+  const PRINTS = [
+    ["camber-hull-surface/6:0123456789abcdef", "0123456789abcdef", "same"], // camber's two spellings
+    ["0123456789abcdef", "0123456789abcdef", "same"], // equal
+    ["a:b:0123456789abcdef", "0123456789abcdef", "same"], // the hash is whatever follows the last colon
+    ["camber-hull-surface/6:0123456789abcdef", "fedcba9876543210", "different"],
+    ["camber-hull-surface/6:x0123456789abcdef", "0123456789abcdef", "different"], // a suffix that isn't the whole hash
+    ["0123456789abcdef", "camber-hull-surface/6:0123456789abcdef", "different"], // the other way round is not a match
+    ["camber-hull-surface/6:0123456789abcdef", ":0123456789abcdef", "different"],
+    [null, "0123456789abcdef", "unknown"],
+    ["camber-hull-surface/6:0123456789abcdef", null, "unknown"],
+    [null, null, "unknown"],
+    ["", "", "unknown"],
+    [undefined, 7, "unknown"],
+  ];
+  for (const [glb, own, verdict] of PRINTS)
+    it(`sameHull(${JSON.stringify(glb)}, ${JSON.stringify(own)}) is ${verdict}`, () => {
+      expect(sameHull(glb, own)).toBe(verdict);
+    });
+
+  it("a GLB's fingerprint is read from its producer's block of the scene extras, or is null", () => {
+    expect(glbFingerprint({ scenes: [{ extras: { camber: { unit: "m", fingerprint: "camber-hull-surface/6:abc" }, ship: { length: 9 } } }] })).toBe("camber-hull-surface/6:abc");
+    expect(glbFingerprint({ scene: 1, scenes: [{ extras: { a: { fingerprint: "no" } } }, { extras: { other: { fingerprint: "yes" } } }] })).toBe("yes");
+    for (const json of [{}, { scenes: [{}] }, { scenes: [{ extras: { camber: { fingerprint: 3 } } }] }, { scenes: [{ extras: { camber: { fingerprint: "" } } }] }, { scenes: [{ extras: "x" }] }]) expect(glbFingerprint(json)).toBeNull();
+  });
+
+  /** The fixture GLB with extras.camber.fingerprint set, as camber's build() writes it (build version 6 on). */
+  const stamped = (print) => {
+    const view = new DataView(GLB.buffer, GLB.byteOffset, GLB.byteLength);
+    const jsonLen = view.getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(GLB.subarray(20, 20 + jsonLen)));
+    json.scenes[json.scene ?? 0].extras.camber.fingerprint = print;
+    let text = new TextEncoder().encode(JSON.stringify(json));
+    const pad = (4 - (text.length % 4)) % 4;
+    const rest = GLB.subarray(20 + jsonLen);
+    const out = new Uint8Array(20 + text.length + pad + rest.length);
+    out.set(GLB.subarray(0, 20));
+    out.set(text, 20);
+    out.fill(0x20, 20 + text.length, 20 + text.length + pad);
+    out.set(rest, 20 + text.length + pad);
+    const o = new DataView(out.buffer);
+    o.setUint32(8, out.length, true);
+    o.setUint32(12, text.length + pad, true);
+    return out;
+  };
+  const stampedSource = (print) => ({ ...camberSource(), load: async () => ({ build: async () => ({ glb: stamped(print) }) }) });
+
+  it("the GLB names the table's hull (camber's two spellings of one hash): the table rides, in the mesh's own frame", async () => {
+    getRegistry("scene:source").register(stampedSource("camber-hull-surface/6:fp:Narrow transom"));
+    getRegistry(CHARTROOM_SOURCE).register(fakeChartroom(upright));
+    const r = await acquireHull({ url: urls.hull, repo, getRegistry });
+    expect(r.mesh.fingerprint).toBe("camber-hull-surface/6:fp:Narrow transom");
+    expect(r.table).toMatchObject({ source: "chartroom", fingerprint: "fp:Narrow transom", frame: "shared" });
+    expect(r.mesh).toMatchObject({ table: upright, tableFrame: "shared", tableName: "Camber" });
+  });
+
+  it("a GLB that states no fingerprint: the table rides, to be slid onto the mesh by its LCB", async () => {
+    getRegistry("scene:source").register(camberSource());
+    getRegistry(CHARTROOM_SOURCE).register(fakeChartroom(upright));
+    const r = await acquireHull({ url: urls.hull, repo, getRegistry });
+    expect(r.mesh.fingerprint).toBeNull();
+    expect(r.table).toMatchObject({ source: "chartroom", frame: "aligned" });
+    expect(r.mesh).toMatchObject({ table: upright, tableFrame: "aligned" });
+  });
+
+  it("a table for another hull than the GLB's isn't used, and the note says so: the mesh path stays", async () => {
+    getRegistry("scene:source").register(stampedSource("camber-hull-surface/6:another-hull"));
+    getRegistry(CHARTROOM_SOURCE).register(fakeChartroom(upright));
+    const r = await acquireHull({ url: urls.hull, repo, getRegistry });
+    expect(r).toMatchObject({ ok: true, path: "source", table: { source: null } });
+    expect(r.table.note).toMatch(/its table is for another hull than its GLB \(fingerprint fp:Narrow transom, the GLB's camber-hull-surface\/6:another-hull\)/);
+    expect(r.mesh.table).toBeNull();
+    expect(r.mesh.tableFrame).toBeUndefined();
+    expect(hullPathChip(r)).toBe("built by Camber hull (its default params, at its own size)");
   });
 
   it("a chartroom:source whose table doesn't check out is passed over, said, and the mesh path stays", async () => {

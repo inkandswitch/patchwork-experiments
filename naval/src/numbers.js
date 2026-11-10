@@ -14,7 +14,7 @@ import { buildSailPlan, hasForetriangle } from "./naval/sailplan.js";
 import { computeRatios, bandOf, BANDS } from "./naval/ratios.js";
 import { displacementOf, isEstimated, pathKey, OPTIONAL_DIMS } from "./doc.js";
 import { floatHull, syntheticForm, datumOf, MODEL_LOA_M, modelWarning } from "./naval/hull-form.js";
-import { toHullFrame, frameLabel } from "./naval/hull-frame.js";
+import { toHullFrame, frameLabel, DEFAULT_FRAME } from "./naval/hull-frame.js";
 import { analyse } from "./analysis.js";
 import { LE_SOURCE } from "./naval/balance.js";
 import { RHO_AIR, C_HEEL, CH_BETA } from "./naval/stability.js";
@@ -137,8 +137,17 @@ export function hullFormFor(doc, linked) {
   if (link) {
     if (linked?.status !== "ready" || !linked.mesh) return { form: null, state: linked?.status === "error" ? "error" : linked?.status === "pending" ? "pending" : "loading", error: linked?.error };
     const key = `L|${meshId(linked.mesh)}|${link.frame.bow}|${link.frame.up}|${given ?? "design"}`;
+    // the hull's own table is its statics engine (hull-form.js); it shares the mesh's x only in the frame its GLB was built in
+    const shared = linked.mesh.tableFrame === "shared" && link.frame.bow === DEFAULT_FRAME.bow && link.frame.up === DEFAULT_FRAME.up;
     const form = memo(key, () =>
-      floatHull(toHullFrame(linked.mesh.triangles, link.frame), { massKg: given, kind: "mesh", label: linked.chip || "linked hull" }),
+      floatHull(toHullFrame(linked.mesh.triangles, link.frame), {
+        massKg: given,
+        kind: "mesh",
+        label: linked.chip || "linked hull",
+        table: linked.mesh.table ?? null,
+        tableFrame: shared ? "shared" : "aligned",
+        tableName: linked.mesh.tableName ?? linked.tableSource ?? "",
+      }),
     );
     return { form, state: "linked" };
   }
@@ -354,7 +363,7 @@ function glanceOf(doc, a, { design, reference: r, helm, grade }) {
   return out;
 }
 
-/** "Hull as floated": the mesh's own figures at the stated displacement. */
+/** "Hull as floated": the hull's figures at the stated displacement, each from its statics engine (the hull's own table, else its mesh: hull-form.js). */
 function hullSection(doc, form, linkedOk, stemX, disp) {
   const h = form.hydro;
   const est = estimatedDims(doc);
@@ -362,9 +371,14 @@ function hullSection(doc, form, linkedOk, stemX, disp) {
     ? { prov: "mesh" }
     : { prov: "synthetic", from: est.length ? est.map((k) => FIELD_LABELS[`hull.dims.${k}`] ?? k) : undefined };
   const rows = [];
+  // one statics engine per hull (hull-form.js): a row read from the hull's own table says so
+  const TABLE_NOTE = { table: "From the hull's own hydrostatic table.", mixed: "The hull's own hydrostatic table, over the mesh's lengths and sections." };
+  const KEY = { floatVolume: "volumeM3", wsa: "wsaCanoeM2", aw: "awM2", lcbAft: "lcb", lcbPct: "lcb", lcfAft: "lcf", kb: "kb", bmt: "bmt", kmt: "kmt", cp: "cp", cb: "cb", cw: "cw" };
   const row = (id, label, value, dim, extra = {}) => {
     if (value == null || !Number.isFinite(value)) return;
-    rows.push({ id, label, value, dim, ...prov, ...extra });
+    const tableNote = h.engine === "chartroom" ? TABLE_NOTE[h.from[KEY[id]]] : null;
+    const note = [extra.note, tableNote].filter(Boolean).join(" ");
+    rows.push({ id, label, value, dim, ...prov, ...extra, ...(note ? { note } : {}) });
   };
   row("hullLoa", "LOA, mesh", form.loa, "length");
   row("hullBeam", "Beam, mesh", form.beam, "length");
@@ -378,7 +392,7 @@ function hullSection(doc, form, linkedOk, stemX, disp) {
   row("lcbAft", "LCB aft of stem", stemX - h.lcb, "length");
   row("lcbPct", "LCB from mid-LWL (+ forward)", (h.lcb - (h.xAft + h.xFwd) / 2) / h.lwl, "percent");
   row("lcfAft", "LCF aft of stem", h.lcf != null ? stemX - h.lcf : null, "length");
-  row("kb", "KB", h.kb, "length", { note: "K is the canoe body's lowest point." });
+  row("kb", "KB", h.kb, "length", { note: h.engine === "chartroom" ? "K is the table's K reference." : "K is the canoe body's lowest point." });
   row("bmt", "BMt", h.bmt, "length");
   row("kmt", "KMt", h.kmt, "length");
   row("cp", "Cp (on the largest section)", h.cp, "ratio");

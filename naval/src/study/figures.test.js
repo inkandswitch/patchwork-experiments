@@ -27,6 +27,8 @@ import { CATALOGUE } from "./compare.js";
 import { FIXTURES, fixtureDoc } from "../fixtures/index.js";
 import { meshFromGlb } from "../link/hull-link.js";
 import { envelope as dsyhsEnvelope, envelopeGrade, dsyhsHull } from "../naval/resistance.js";
+import { buildTable } from "../naval/statics.js";
+import { toHullFrame } from "../naval/hull-frame.js";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const CAMBER = ["cuvature-kink-with-unmodified-pchip", "flat-bottom", "narrow-transom", "hull-default"];
@@ -254,6 +256,73 @@ describe("the screen over every fixture subject", () => {
     expect(gradeParams(savitskyParams({ cv: 0.49, tau: 15, lambda: 4 })).envelope).toBe("far");
     expect(gradeParams(savitskyParams({ cv: 1, tau: 1.9, lambda: 4.1 })).envelope).toBe("near");
     expect(gradeParams(savitskyParams({ cv: 0.9, tau: 1.9, lambda: 4.1 })).envelope).toBe("far"); // three out
+  });
+});
+
+// One statics engine per hull: a hull that brings its own Chartroom table (a camber hull's chartroom:source)
+// has every upright figure the table carries read from it, and each Figure's method and source say which
+// engine gave it. The table here is built from the hull's own mesh, with the wetted area left out as camber's
+// exporter leaves it out, so the values must equal the mesh path's and only the sources differ.
+describe("a hull with its own Chartroom table: every particular names its engine", () => {
+  const PARTICULARS = ["loa", "lwl", "bwl", "tc", "volume", "displacement", "wsa", "aw", "lcb", "lcf", "cb", "cp", "cm", "cw", "halfEntrance", "dL", "slenderness", "kmt"];
+  // what a hydrostatic table carries (table), what it has no field for (no-field), what this one leaves out
+  // (not-here), and what is a table figure over a mesh one (mixed): all 18 particulars
+  const SOURCE = {
+    table: ["volume", "displacement", "aw", "kmt"],
+    "no-field": ["loa", "lwl", "bwl", "tc", "cm", "halfEntrance"],
+    "not-here": ["wsa"],
+    mixed: ["lcb", "lcf", "cb", "cp", "cw", "dL", "slenderness"],
+  };
+  const TAG = { table: /\(the hull's own Chartroom table \(Camber\)\)$/, "no-field": /\(off the mesh: a hydrostatic table has no field for it\)$/, "not-here": /\(off the mesh: the hull's table states no wetted area\)$/, mixed: /\((the table's|∇ over) .*(mesh|waterline).*\)$/ };
+  let own, plain, slid;
+  beforeAll(async () => {
+    const glb = new Uint8Array(readFileSync(here("../test/fixtures/camber/narrow-transom.glb")));
+    const mesh = async (extra) => Object.assign(await meshFromGlb(glb), extra);
+    const m0 = await mesh({});
+    const job = (m, tableSource) => ({ doc: null, linked: { status: "ready", mesh: m, chip: "narrow-transom", tableSource } });
+    plain = screenSubject(job(m0, null));
+    // the floated volume an exact sample at every heel, as the mesh path's own table has it, so KN is the same reading
+    const table = buildTable(toHullFrame(m0.triangles, { bow: "+X", up: "+Y" }), { heels: [0, 30, 60, 90], steps: 12, volumes: [plain.figures.volume.value], reference: { heelDeg: 0, trimDeg: 0, waterplaneOffsetM: 0 } });
+    for (const r of table.table.rows) for (const x of r.samples) delete x.wettedAreaM2;
+    own = screenSubject(job(await mesh({ table, tableFrame: "shared", tableName: "Camber" }), "Camber"));
+    slid = screenSubject(job(await mesh({ table, tableFrame: "aligned", tableName: "Camber" }), "Camber"));
+  }, 120_000);
+
+  it("the catalogue of sources covers every particular exactly once", () => {
+    expect(Object.values(SOURCE).flat().sort()).toEqual([...PARTICULARS].sort());
+  });
+
+  it("with the table: the screen says its statics are the hull's own, and each particular's method ends in its source", () => {
+    expect(own.ok && own.tableSource).toBe("chartroom");
+    for (const [kind, ids] of Object.entries(SOURCE))
+      for (const id of ids) {
+        const f = own.figures[id];
+        expect(f.method, `${id} (${kind})`).toMatch(TAG[kind]);
+        expect(f.provenance, id).toBe("measured");
+        if (kind === "table" || kind === "mixed") expect(f.cite, id).toMatch(/the hull's own Chartroom table \(Camber\); naval\/src\/naval\/hull-form\.js tableUpright/);
+        else expect(f.cite, id).toMatch(/mesh-hydro\.js uprightHydrostatics: the hull's mesh, cut at the waterplane its hydrostatic table floats it at$/);
+      }
+  });
+
+  it("without one: the mesh is the engine, and no particular mentions a table in its method", () => {
+    expect(plain.ok && plain.tableSource).toBe("mesh");
+    for (const id of PARTICULARS) expect(plain.figures[id].method, id).not.toMatch(/table|off the mesh/);
+  });
+
+  it("the same hull through both engines reads the same, figure for figure (the table was built from this mesh)", () => {
+    for (const id of Object.keys(plain.figures)) {
+      const [a, b] = [plain.figures[id], own.figures[id]];
+      expect(b.value === null, id).toBe(a.value === null);
+      if (a.value !== null) expect(Math.abs(b.value - a.value), id).toBeLessThan(1e-6 * Math.max(1, Math.abs(a.value)));
+      expect(b.envelope, id).toBe(a.envelope);
+    }
+  });
+
+  it("a table nothing ties to the mesh's frame is slid onto its LCB: LCB is then the mesh's, and says so", () => {
+    expect(slid.tableSource).toBe("chartroom");
+    expect(slid.figures.lcb.method).toMatch(/\(off the mesh: the table is slid onto the mesh by its LCB/);
+    expect(slid.figures.lcf.method).toMatch(TAG.mixed);
+    expect(slid.figures.volume.method).toMatch(TAG.table);
   });
 });
 
