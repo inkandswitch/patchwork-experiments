@@ -29,7 +29,10 @@
 import { glbFile, round } from "./files.js";
 
 /** Bump when the drawing changes: new art gets a new key, and scenes keep the old one's file. */
-export const PRIVACY_VERSION = 2;
+export const PRIVACY_VERSION = 3;
+
+/** How far the privacy face's decals stand proud of its core: 0.2 mm, the least that never fights from a seat. */
+export const DECAL = 0.0002;
 
 /** A card's size when it has no hint to say (Lost Cities': lost-cities.js CARD), centred, lying on y = 0. */
 export const DEFAULT_CARD = Object.freeze({ min: Object.freeze([-0.028, 0, -0.0435]), max: Object.freeze([0.028, 0.0012, 0.0435]) });
@@ -66,6 +69,32 @@ const REED = "#8f9aa4";
 const LOCK = "#f1f3f5";
 const KEYHOLE = "#2b3036";
 
+/** Rectangles [x0, z0, x1, z1] that tile `rect` less every one of `holes` (cells of their edges, merged along X). Pure. */
+export function cutRects(rect, holes) {
+  const [x0, z0, x1, z1] = rect;
+  const xs = new Set([x0, x1]);
+  const zs = new Set([z0, z1]);
+  for (const h of holes) {
+    for (const x of [h[0], h[2]]) if (x > x0 && x < x1) xs.add(x);
+    for (const z of [h[1], h[3]]) if (z > z0 && z < z1) zs.add(z);
+  }
+  const X = [...xs].sort((a, b) => a - b);
+  const Z = [...zs].sort((a, b) => a - b);
+  const out = [];
+  for (let j = 0; j + 1 < Z.length; j++) {
+    const zm = (Z[j] + Z[j + 1]) / 2;
+    let run = null;
+    for (let i = 0; i + 1 < X.length; i++) {
+      const xm = (X[i] + X[i + 1]) / 2;
+      const hidden = holes.some((h) => xm > h[0] && xm < h[2] && zm > h[1] && zm < h[3]);
+      if (hidden) run = null;
+      else if (run) run[2] = X[i + 1];
+      else out.push((run = [X[i], Z[j], X[i + 1], Z[j + 1]]));
+    }
+  }
+  return out;
+}
+
 /**
  * The privacy face as a piece (pieces.js parts), filling `bounds` exactly:
  * a slate card, a frosted field inset on each side with reeded stripes like
@@ -73,6 +102,13 @@ const KEYHOLE = "#2b3036";
  * sides alike (the underside the top mirrored through the card's middle), so
  * a private card being turned over, or tipped past upright in someone's
  * hand, never shows a bare side before its look changes. Pure.
+ *
+ * Two levels a side, never more: the core, and one layer of decals DECAL
+ * proud of it (0.2 mm) that tile the field without overlapping. The frost
+ * and reeds are cut round the padlock, the padlock round its keyhole; no
+ * decal lies on another, so no two faces are nearer each other than DECAL,
+ * which the depth buffer resolves from across the table (stacked 0.07 mm
+ * apart they fought).
  */
 export function privacyPiece(bounds = DEFAULT_CARD) {
   const [x0, y0, z0] = bounds.min;
@@ -86,24 +122,16 @@ export function privacyPiece(bounds = DEFAULT_CARD) {
   const m = s * 0.07; // the frame round the field
   const fw = w - 2 * m;
   const fl = l - 2 * m;
-  // layers up the card, as fractions of its thickness: the core in the
-  // middle, then each side's frost, reeds, padlock and keyhole, the top's
-  // keyhole reaching y1 and the bottom's y0
-  const at = (k) => y0 + t * k;
-  /** a part on the top (+Y) between fractions k0 and k1, and its mirror image on the bottom */
-  const both = (k0, k1, part) => [
-    { ...part, ...(part.shape === "box" ? { size: [part.size[0], t * (k1 - k0), part.size[2]], at: [part.at[0], at(k0), part.at[2]] } : {}) },
-    { ...part, ...(part.shape === "box" ? { size: [part.size[0], t * (k1 - k0), part.size[2]], at: [part.at[0], at(1 - k1), part.at[2]] } : {}) },
-  ];
-  const keyhole = (k0, k1, x, z) => ({ shape: "lathe", profile: [[0, at(k0)], [s * 0.06, at(k0)], [s * 0.06, at(k1)], [0, at(k1)]], segments: 20, at: [x, 0, z], color: KEYHOLE, name: "keyhole" });
-  const parts = [
-    { shape: "box", size: [w, t * 0.3, l], at: [cx, at(0.35), cz], color: FRAME, name: "card" },
-    ...both(0.65, 0.72, { shape: "box", size: [fw, 0, fl], at: [cx, 0, cz], color: FROST, name: "frost" }),
-  ];
-  // reeds across the field: privacy glass, nothing to read through it
-  const n = 9;
-  const pitch = fw / n;
-  for (let i = 0; i < n; i += 2) parts.push(...both(0.72, 0.78, { shape: "box", size: [pitch * 0.9, 0, fl], at: [cx - fw / 2 + pitch * (i + 0.5), 0, cz], color: REED, name: "reed" }));
+  const d = Math.min(DECAL, t / 3); // a decal's height above the core
+  const sink = d / 2; // and how far it reaches down into it, so its underside lies on nothing
+  const parts = [{ shape: "box", size: [w, t - 2 * d, l], at: [cx, y0 + d, cz], color: FRAME, name: "card" }];
+  /** a decal over rect [x0, z0, x1, z1], on the top and mirrored on the bottom */
+  const decal = ([a, b, c, e], color, name) => {
+    const size = [c - a, d + sink, e - b];
+    const at = (y) => [(a + c) / 2, y, (b + e) / 2];
+    parts.push({ shape: "box", size, at: at(y1 - d - sink), color, name }, { shape: "box", size, at: at(y0), color, name });
+  };
+
   // the padlock: a body, its shackle, a keyhole. Its top is towards +Z, so
   // it reads the right way up from across the table: a hand's cards face its
   // seat, and the privacy face is what everyone but that seat sees
@@ -114,16 +142,41 @@ export function privacyPiece(bounds = DEFAULT_CARD) {
   const bar = s * 0.1;
   const sh = s * 0.28; // the shackle's reach above the body
   const top = bz - down * (bl / 2); // the body's top edge
-  const lock = (size, x, z, name) => both(0.78, 0.9, { shape: "box", size: [size[0], 0, size[1]], at: [x, 0, z], color: LOCK, name });
-  parts.push(
-    ...lock([bw, bl], cx, bz, "lock"),
-    ...lock([bar, sh], cx - bw * 0.3, top - down * (sh / 2), "shackle"),
-    ...lock([bar, sh], cx + bw * 0.3, top - down * (sh / 2), "shackle"),
-    ...lock([bw * 0.6 + bar, bar], cx, top - down * (sh - bar / 2), "shackle"),
-    keyhole(0.9, 1, cx, bz - down * s * 0.03),
-    keyhole(0, 0.1, cx, bz - down * s * 0.03),
-    ...both(0.9, 0.97, { shape: "box", size: [s * 0.045, 0, s * 0.11], at: [cx, 0, bz + down * s * 0.06], color: KEYHOLE, name: "keyhole" }),
-  );
+  const rect = (x, z, sx, sz) => [x - sx / 2, z - sz / 2, x + sx / 2, z + sz / 2];
+  // the keyhole: a round head (an octagon of two crossed bars) and its slot below
+  const kz = bz - down * s * 0.03;
+  const keyhole = [rect(cx, kz, s * 0.12, s * 0.08), rect(cx, kz, s * 0.08, s * 0.12), rect(cx, bz + down * s * 0.06, s * 0.045, s * 0.11)];
+  const body = rect(cx, bz, bw, bl);
+  // the shackle: two legs up from the body, and the bar across their tops (the legs stop under it)
+  const legs = [-1, 1].map((k) => rect(cx + k * bw * 0.3, top - down * ((sh - bar) / 2), bar, sh - bar));
+  const crown = rect(cx, top - down * (sh - bar / 2), bw * 0.6 + bar, bar);
+  // the padlock's own box in the field: the frost and reeds stop at it
+  const lockBox = [cx - bw / 2, Math.min(body[1], crown[1]), cx + bw / 2, Math.max(body[3], crown[3])];
+
+  // reeds across the field: privacy glass, nothing to read through it; frost between them
+  const n = 9;
+  const pitch = fw / n;
+  const fx0 = cx - fw / 2;
+  const fz = [cz - fl / 2, cz + fl / 2];
+  const stripes = [];
+  for (let i = 0; i < n; i++) {
+    if (i % 2) continue;
+    const a = fx0 + pitch * (i + 0.05);
+    const b = fx0 + pitch * (i + 0.95);
+    stripes.push([a, b, REED, "reed"]);
+  }
+  // frost: from the field's edge to the first reed, between reeds, and on to the far edge
+  const edges = [fx0, ...stripes.flatMap(([a, b]) => [a, b]), fx0 + fw];
+  for (let k = 0; k + 1 < edges.length; k += 2) if (edges[k + 1] > edges[k]) stripes.push([edges[k], edges[k + 1], FROST, "frost"]);
+  for (const [a, b, color, name] of stripes) for (const r of cutRects([a, fz[0], b, fz[1]], [lockBox])) decal(r, color, name);
+  // inside the padlock's box: frost round the shackle, the lock's pieces, the keyhole
+  for (const r of cutRects(lockBox, [body, ...legs, crown])) decal(r, FROST, "frost");
+  for (const r of cutRects(body, keyhole)) decal(r, LOCK, "lock");
+  for (const r of [...legs, crown]) decal(r, LOCK, "shackle");
+  // the keyhole's crossed bars overlap: cut each by those before it
+  keyhole.forEach((k, i) => {
+    for (const r of cutRects(k, keyhole.slice(0, i))) decal(r, KEYHOLE, "keyhole");
+  });
   return { name: "Private card", parts };
 }
 
