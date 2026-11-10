@@ -97,8 +97,8 @@ export function authoredMaterials(parser, root = null) {
 const snapshotColor = (c) => (c?.isColor ? c.clone() : null);
 
 /**
- * Every distinct material under root, prepared for display: double-sided on
- * meshes, GLTFLoader's default marked `useThemeColor` (matte), and the GLB's
+ * Every distinct material under root, prepared for display: double-sided and
+ * dithered on meshes, GLTFLoader's default marked `useThemeColor` (matte), and the GLB's
  * own values kept in userData.gltf so rules can be re-applied from scratch.
  * @returns {object[]} the distinct materials
  */
@@ -111,6 +111,8 @@ export function prepareMaterials(root, parser) {
       if (o.isMesh) {
         m.side = DoubleSide;
         m.userData.onMesh = true;
+        // smooth shading bands in 8 bits; dithering costs a few instructions
+        m.dithering = true;
       }
       if (seen.has(m)) continue;
       seen.add(m);

@@ -15,9 +15,13 @@ import {
   intersectLimits,
   lighting,
   nearestScreenVertex,
+  ladderRadius,
+  lightBasis,
   reseatTarget,
   resetOrbitMotion,
-  sunFrame,
+  SHADOW_CAP,
+  shadowFocus,
+  shadowFrame,
   toBox3,
 } from "./viewport.js";
 
@@ -217,12 +221,67 @@ describe("re-seating the orbit", () => {
 });
 
 describe("depth range", () => {
-  it("keeps near halfway to the scene, no closer than dist / 2000; a holder's planes win", () => {
+  it("near is half the clearance to the nearest geometry; far reaches past the scene; a holder's planes win", () => {
     expect(depthRange({ dist: 10, radius: 1, clear: 4 })).toEqual({ near: 2, far: 1000 });
-    expect(depthRange({ dist: 10, radius: 1, clear: 0 }).near).toBeCloseTo(0.005);
+    // touching: a tenth of a millimetre at least
+    expect(depthRange({ dist: 10, radius: 1, clear: 0 }).near).toBe(1e-4);
+    // inside something that couldn't be measured: dist / 200
+    expect(depthRange({ dist: 10, radius: 1, clear: 0, known: false }).near).toBeCloseTo(0.05);
     expect(depthRange({ dist: 1, radius: 100, clear: 0 }).far).toBe(2001);
     expect(depthRange({ dist: 10, radius: 1, clear: 4, held: { near: 0.1 } })).toEqual({ near: 0.1, far: 1000 });
     expect(depthRange({ dist: 10, radius: 1, clear: 4, held: { far: 50 } })).toEqual({ near: 2, far: 50 });
+  });
+
+  it("a camera inside a big scene's box but 0.4 m from the nearest object gets a near of centimetres", () => {
+    const vp = headless();
+    // a 90 m spread: the old single box swallowed the camera and gave dist / 2000
+    cube(vp, "far-a", [-40, 0, -40], 2);
+    cube(vp, "far-b", [40, 5, 40], 2);
+    cube(vp, "near", [0, 0, 0], 1);
+    vp.setCamera({ position: [0, 0, 0.9], target: [0, 0, -1] });
+    vp.camera.updateMatrixWorld();
+    const { clear, known } = vp.nearestClear(vp.camera.position);
+    expect(known).toBe(true);
+    // the cube's face is at z = 0.5; its box with room for a lifted piece at 0.55
+    expect(clear).toBeGreaterThan(0.3);
+    expect(clear).toBeLessThanOrEqual(0.4 + 1e-9);
+    vp.render = Viewport.prototype.render; // no renderer: drive the planes directly
+    const { near } = depthRange({ dist: vp.focusDistance(), radius: vp.sceneRadius, clear, known });
+    expect(near).toBeGreaterThan(0.03);
+    expect(near).toBeLessThanOrEqual(0.2);
+  });
+
+  it("inside an object's box, the distance is to its triangles, not its box", () => {
+    const vp = headless();
+    // a 10 m box (a hull) with the camera 0.4 m inside its +x wall
+    const entry = vp.ensureObject("hull");
+    const mesh = new Mesh(new BoxGeometry(10, 10, 10), new MeshBasicMaterial());
+    entry.content = mesh;
+    entry.box = new Box3().setFromObject(mesh);
+    entry.body.add(mesh);
+    vp.applyDisplay("hull", { transform: { position: [0, 0, 0] } });
+    const at = new Vector3(4.6, 0, 0);
+    const { clear, known } = vp.nearestClear(at);
+    expect(known).toBe(true);
+    expect(clear).toBeCloseTo(0.4, 6);
+    // turned and scaled: the distance is in world metres
+    vp.applyDisplay("hull", { transform: { position: [0, 0, 0], rotation: [0, 0.3, 0], scale: 2 } });
+    expect(vp.nearestClear(new Vector3(9.6, 0, 0)).clear).toBeCloseTo(10 - 9.6 * Math.cos(0.3), 6);
+    // a mesh that moves its own vertices (frustumCulled off) is measured as it is now
+    mesh.frustumCulled = false;
+    mesh.geometry.attributes.position.array.forEach((v, i, a) => (a[i] = v * 0.5));
+    expect(vp.nearestClear(new Vector3(9.6, 0, 0)).clear).toBeCloseTo(9.6 * Math.cos(0.3) - 5, 6);
+  });
+
+  it("can't measure inside a box that's still loading or an extent: not known", () => {
+    const vp = headless();
+    vp.setHint("h", { min: [-5, -5, -5], max: [5, 5, 5] });
+    expect(vp.nearestClear(new Vector3(0, 0, 0)).known).toBe(false);
+    expect(vp.nearestClear(new Vector3(0, 0, 20)).clear).toBeGreaterThan(14);
+    const vp2 = headless();
+    vp2.setExtent("grid", { min: [-10, -1, -10], max: [10, 1, 10] });
+    expect(vp2.nearestClear(new Vector3(0, 0, 0)).known).toBe(false);
+    expect(vp2.nearestClear(new Vector3(0, 3, 0))).toEqual({ clear: 2, known: true });
   });
 });
 
@@ -685,15 +744,121 @@ describe("atmosphere", () => {
     expect(vp.objects.get("a").content.castShadow).toBe(false);
   });
 
-  it("the sun's shadow map covers the scene's box", () => {
-    const f = sunFrame({ min: [-2, 0, -2], max: [2, 2, 2] }, [0, 1, 0], 1024);
-    expect(f.target).toEqual([0, 1, 0]);
-    expect(f.radius).toBeCloseTo(3);
-    expect(f.position).toEqual([0, 7, 0]);
-    // the whole sphere lies between near and far
-    expect(f.near).toBeLessThanOrEqual(2 * f.radius - f.radius);
+  it("the light's axes are three's lookAt axes, also for a sun straight overhead", () => {
+    for (const d of [[0.6, 0.64, 0.48], [0, 1, 0], [-0.3, 0.2, -0.932737905308882]]) {
+      const n = Math.hypot(...d);
+      const dir = d.map((v) => v / n);
+      const cam = new PerspectiveCamera();
+      cam.position.set(...dir.map((v) => v * 10));
+      cam.lookAt(0, 0, 0);
+      cam.updateMatrixWorld();
+      const e = cam.matrixWorld.elements;
+      const { x, y } = lightBasis(dir);
+      expect(r6(x)).toEqual(r6([e[0], e[1], e[2]]));
+      expect(r6(y)).toEqual(r6([e[4], e[5], e[6]]));
+    }
+  });
+
+  it("the shadow frame fits what's near the focus, nearest first, not the whole scene", () => {
+    const boat = { min: [-2, 0, -6], max: [2, 15, 6] };
+    const buoyNear = { min: [10, 0, 0], max: [11, 2, 1] };
+    const buoyFar = { min: [38, 0, 0], max: [39, 2, 1] };
+    const buoyOther = { min: [-46, 0, 0], max: [-45, 2, 1] };
+    const islet = { min: [60, 0, 100], max: [180, 30, 220] };
+    const terrain = { min: [-4000, -50, -4000], max: [4000, 300, 4000] };
+    // the islet is out of reach, the terrain is a backdrop: the boat alone sets it
+    const f = shadowFocus([islet, terrain, boat], [0, 2, 0]);
+    expect(f.center).toEqual([0, 7.5, 0]);
+    expect(f.radius).toBeCloseTo(0.5 * Math.hypot(4, 15, 12));
+    // a buoy that fits joins; one that would push it past the cap doesn't
+    const near = shadowFocus([buoyOther, buoyFar, boat, buoyNear], [0, 2, 0]);
+    expect(near.center[0]).toBeCloseTo(4.5);
+    expect(near.radius).toBeLessThanOrEqual(SHADOW_CAP);
+    const g = shadowFocus([buoyOther, buoyFar, boat, buoyNear], [0, 2, 0], { cap: 32 });
+    expect(g.center[0]).toBeCloseTo(18.5);
+    expect(g.radius).toBeLessThanOrEqual(32);
+    expect(shadowFocus([buoyOther, buoyFar, boat, buoyNear], [0, 2, 0], { cap: 100 }).center[0]).toBeCloseTo(-3.5);
+    // looking at the islet from close: wider than the cap on its own, so the cap sphere about the focus
+    expect(shadowFocus([boat, islet], [120, 10, 160])).toEqual({ center: [120, 10, 160], radius: SHADOW_CAP });
+    expect(shadowFocus([islet], [0, 0, 0])).toEqual({ center: [0, 0, 0], radius: SHADOW_CAP });
+    expect(shadowFocus([], [0, 0, 0])).toBeNull();
+    // the cap is a step of the ladder: a capped frame's texel holds still too
+    expect(ladderRadius(SHADOW_CAP)).toBe(SHADOW_CAP);
+  });
+
+  it("the radius ladder holds the texel still across small changes", () => {
+    expect(ladderRadius(10)).toBeGreaterThanOrEqual(10);
+    expect(ladderRadius(10)).toBeLessThan(10 * 1.19);
+    expect(ladderRadius(9.9)).toBe(ladderRadius(10.0));
+    expect(ladderRadius(8)).toBe(8);
+  });
+
+  it("the frame's centre lands on whole texels along the light's axes, its biases are a texel and a half in metres", () => {
+    const dir = [0.45, 1, 0.6].map((v, _, a) => v / Math.hypot(...a));
+    const { x, y } = lightBasis(dir);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const f = shadowFrame({ center: [1.234, 5.678, -3.21], radius: 16 }, dir, 2048);
+    expect(f.texel).toBeCloseTo(32 / 2048);
+    for (const axis of [x, y, dir]) {
+      const k = dot(f.target, axis) / f.texel;
+      expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-6);
+    }
+    // never more than half a texel per axis from where it was asked for
+    const off = f.target.map((v, i) => v - [1.234, 5.678, -3.21][i]);
+    for (const axis of [x, y, dir]) expect(Math.abs(dot(off, axis))).toBeLessThanOrEqual(f.texel / 2 + 1e-9);
+    // the light stands 2r out along the sun; the sphere lies between near and far
+    expect(r6(f.position)).toEqual(r6(f.target.map((v, i) => v + dir[i] * 32)));
+    expect(f.near).toBeLessThanOrEqual(f.radius);
     expect(f.far).toBeGreaterThanOrEqual(3 * f.radius);
-    expect(f.normalBias).toBeCloseTo((6 / 1024) * 1.5);
+    expect(f.normalBias).toBeCloseTo(1.5 * f.texel);
+    // the depth bias is one texel of depth in three's normalised units
+    expect(-f.bias * (f.far - f.near)).toBeCloseTo(f.texel);
+  });
+
+  it("a frame that moves less than a texel stays put; one that moves moves by whole texels (no crawl)", () => {
+    const dir = [0.45, 1, 0.6].map((v, _, a) => v / Math.hypot(...a));
+    const a = shadowFrame({ center: [0, 0, 0], radius: 16 }, dir);
+    const b = shadowFrame({ center: [0.003, 0.002, -0.001], radius: 16 }, dir);
+    expect(b.target).toEqual(a.target);
+    const { x, y } = lightBasis(dir);
+    const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+    for (let i = 1; i <= 20; i++) {
+      const c = shadowFrame({ center: [i * 0.0137, 0, i * -0.009], radius: 16 }, dir);
+      for (const axis of [x, y]) {
+        const k = (dot(c.target, axis) - dot(a.target, axis)) / a.texel;
+        expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it("the viewport refits only when the frame lands somewhere new, and redraws the map then", () => {
+    const vp = headless();
+    cube(vp, "a", [0, 0, 0], 2);
+    vp.renderer = { shadowMap: { enabled: false, autoUpdate: true, needsUpdate: false }, setClearColor() {} };
+    vp.setAtmosphere({ sun: { direction: [0.45, 1, 0.6], shadows: true } });
+    vp.updateDepth();
+    vp.renderer.shadowMap.needsUpdate = false;
+    vp.fitSun();
+    expect(vp.renderer.shadowMap.needsUpdate).toBe(true);
+    const first = vp.keyLight.position.toArray();
+    vp.renderer.shadowMap.needsUpdate = false;
+    vp.fitSun();
+    expect(vp.renderer.shadowMap.needsUpdate).toBe(false);
+    // the orbit's target moves a hair: same frame
+    vp.controls.target.set(0.001, 0, 0);
+    vp.fitSun();
+    expect(vp.renderer.shadowMap.needsUpdate).toBe(false);
+    expect(vp.keyLight.position.toArray()).toEqual(first);
+    expect(vp.keyLight.shadow.camera.right).toBe(ladderRadius(Math.sqrt(3)));
+    // a one-sided sheet opts out of receiving
+    const sheet = new Mesh(new BoxGeometry(1, 1, 0), new MeshBasicMaterial());
+    sheet.userData.receiveShadow = false;
+    vp.objects.get("a").content.add(sheet);
+    vp.setShadows(false);
+    vp.setShadows(true);
+    expect(sheet.castShadow).toBe(true);
+    expect(sheet.receiveShadow).toBe(false);
+    vp.renderer = null;
   });
 });
 

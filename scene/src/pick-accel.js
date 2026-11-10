@@ -52,3 +52,19 @@ export function installLazyBVH() {
   installed = true;
   Mesh.prototype.raycast = lazyBVHRaycast;
 }
+
+/**
+ * A BVH for measuring distances (Viewport's nearest geometry), whatever the
+ * mesh's size: built now if it has none. false if it can't have one.
+ */
+export function ensureBVH(g) {
+  if (g?.boundsTree) return true;
+  if (!g || g.userData?.noBVH) return false;
+  try {
+    g.boundsTree = new MeshBVH(g, { indirect: true });
+    return true;
+  } catch {
+    g.userData.noBVH = true;
+    return false;
+  }
+}

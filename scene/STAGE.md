@@ -828,8 +828,15 @@ atmosphere() → null | {
 - The **sun** replaces the key light, and dims the headlight to a third
   (outdoors there's no lamp on the camera, and a full one fills the shadows
   in). A sky tints the sky/ground light with its top and bottom. With
-  `shadows`, every object casts and takes them, from one shadow map fitted
-  to the objects' box and redrawn only when something moves.
+  `shadows`, every object casts and takes them (a mesh whose node extras
+  say `receiveShadow: false` only casts: a one-sided sheet can't be biased
+  right from both sides), from one shadow map fitted to what's being looked
+  at: the objects within 50 m of the orbit's target (or the held camera),
+  nearest first, as many as fit in 16 m of radius (a box wider than that on
+  its own is a backdrop: it takes shadows in the frame but doesn't size it). The frame's centre sits on whole shadow texels and its radius on a
+  ladder of quarter octaves, so its shadows don't crawl as things move; its
+  biases are a texel or so in metres. The map is redrawn only when something
+  moves or the frame does.
 
 ---
 
@@ -867,7 +874,15 @@ taken out. It keeps the following:
 - **Labels:** `labels.sync(owner, items)`.
 - **Poses:** `setPose(id, transform | null)`, `worldOf(id)`.
 - **Atmosphere:** `setAtmosphere(merged | null)` (sky, fog, sun; the
-  pure parts are `cleanAtmosphere`, `lighting` and `sunFrame`).
+  pure parts are `cleanAtmosphere`, `lighting`, `shadowFocus`,
+  `ladderRadius`, `lightBasis` and `shadowFrame`).
+- **Depth:** near sits halfway to the nearest geometry (`nearestClear`: each
+  object's box, and for one the camera is inside, its triangles by BVH), so
+  a camera aboard a ship among an anchorage's objects still gets centimetres,
+  not a fraction of a millimetre; `depthRange` is the pure part. World
+  layers aren't measured: an extension that draws there near the camera
+  (a sea's surface) says so with `api.extent(box)`, and a camera inside an
+  extent gets dist / 200.
 - **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn, { first? })`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 

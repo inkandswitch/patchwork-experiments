@@ -29,6 +29,7 @@ import {
   ShaderMaterial,
   Sphere,
   SRGBColorSpace,
+  Triangle,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -37,7 +38,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { applyMaterialRules, prepareGLB } from "../gltf-content.js";
 import { rulesKey, sanitizeRules } from "../material-rules.js";
-import { buildBVH, installLazyBVH, wantsBVH } from "../pick-accel.js";
+import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
 import { defaultSnapRadius } from "../hand.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
 import { createRides } from "./ride.js";
@@ -214,23 +215,122 @@ export function lighting(atm) {
   };
 }
 
+// ─── the sun's shadow frame (pure) ───────────────────────────────────────────
+
 /**
- * Where a shadow-casting sun stands so its shadow map just covers the
- * scene's box: on the box's bounding sphere's centre, `direction` (unit,
- * toward the sun) twice its radius out, an orthographic frustum the sphere's
- * size, and a normal bias of about a texel and a half.
- * @param {{ min: number[], max: number[] }} box  @param {number[]} direction  @param {number} mapSize
+ * How far from what's looked at an object may be and still set the shadow
+ * frame, and the frame's largest radius (m: a step of ladderRadius, so a
+ * capped frame's texel is 2 · 16 / 2048, 1.6 cm; a 12 m sloop alone, mast
+ * and keel and all, is about 11 m round, 1.1 cm). At 32 m the sloop and the
+ * buoys near her shared 3 cm texels.
  */
-export function sunFrame(box, direction, mapSize = 2048) {
-  const c = [0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2);
-  const r = Math.max(0.5 * Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]), 0.05);
+export const SHADOW_REACH = 50;
+export const SHADOW_CAP = 16;
+
+/**
+ * The sun's shadow camera's right and up axes, exactly as three builds them
+ * (Matrix4.lookAt from the light toward its target, world up +y), for a unit
+ * `direction` toward the sun. The texel grid lies along these.
+ * @returns {{ x: number[], y: number[] }}
+ */
+export function lightBasis(direction) {
+  let [zx, zy, zz] = direction;
+  // three's lookAt nudges a direction parallel to up the same way
+  let xx = zz, xz = -zx; // up (0,1,0) × z
+  if (Math.hypot(xx, xz) === 0) {
+    zz += 0.0001;
+    const n = Math.hypot(zx, zy, zz);
+    zx /= n;
+    zy /= n;
+    zz /= n;
+    xx = zz;
+    xz = -zx;
+  }
+  const xl = Math.hypot(xx, xz);
+  const x = [xx / xl, 0, xz / xl];
+  // y = z × x
+  const y = [zy * x[2] - zz * x[1], zz * x[0] - zx * x[2], zx * x[1] - zy * x[0]];
+  return { x, y };
+}
+
+/**
+ * The sphere the sun's shadow map covers: what's within `reach` of `focus`
+ * (what the orbit looks at, or the held camera), nearest first, as long as
+ * the union stays within `cap` (so a ship's own shadows get the texels, and
+ * a buoy across the water joins only if it fits). A box bigger than `cap`
+ * on its own (terrain, a sea, an islet) is a backdrop: it takes shadows
+ * inside the frame but doesn't size it. Nothing that fits: the `cap` sphere
+ * about the focus. No boxes at all: null.
+ * @param {{ min: number[], max: number[] }[]} boxes  world boxes
+ * @param {number[]} focus
+ * @returns {{ center: number[], radius: number } | null}
+ */
+export function shadowFocus(boxes, focus, { reach = SHADOW_REACH, cap = SHADOW_CAP } = {}) {
+  if (!boxes?.length) return null;
+  const near = [];
+  for (const b of boxes) {
+    let d2 = 0;
+    for (let i = 0; i < 3; i++) {
+      const v = focus[i] < b.min[i] ? b.min[i] - focus[i] : focus[i] > b.max[i] ? focus[i] - b.max[i] : 0;
+      d2 += v * v;
+    }
+    if (d2 <= reach * reach) near.push([d2, b]);
+  }
+  near.sort((p, q) => p[0] - q[0]);
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  const nlo = [0, 0, 0];
+  const nhi = [0, 0, 0];
+  for (const [, b] of near) {
+    for (let i = 0; i < 3; i++) {
+      nlo[i] = Math.min(lo[i], b.min[i]);
+      nhi[i] = Math.max(hi[i], b.max[i]);
+    }
+    if (0.5 * Math.hypot(nhi[0] - nlo[0], nhi[1] - nlo[1], nhi[2] - nlo[2]) > cap) continue;
+    for (let i = 0; i < 3; i++) {
+      lo[i] = nlo[i];
+      hi[i] = nhi[i];
+    }
+  }
+  if (lo[0] > hi[0]) return { center: [...focus], radius: cap };
+  const radius = Math.max(0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), 0.05);
+  return { center: [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2), radius };
+}
+
+/** A radius rounded up onto a ladder of quarter octaves (19% apart), so the texel size holds still while what's covered changes a little. */
+export function ladderRadius(r) {
+  return 2 ** (Math.ceil(Math.log2(Math.max(r, 0.05)) * 4 - 1e-9) / 4);
+}
+
+/**
+ * Where a shadow-casting sun stands to cover `sphere`: its centre moved to
+ * whole texels along the light's right and up axes (and depth), so a frame
+ * that moves only ever moves by whole texels and the shadows' edges don't
+ * crawl; the light `direction` (unit, toward the sun) twice the radius out;
+ * an orthographic frustum the sphere's size; a depth bias of one texel and a
+ * normal bias of a texel and a half, both in world units turned into three's.
+ * @param {{ center: number[], radius: number }} sphere  @param {number[]} direction  @param {number} mapSize
+ */
+export function shadowFrame(sphere, direction, mapSize = 2048) {
+  const r = sphere.radius;
+  const texel = (2 * r) / mapSize;
+  const { x, y } = lightBasis(direction);
+  const c = sphere.center;
+  // the centre in whole texels along each axis, and back: the same texels, the same point
+  const k = [x, y, direction].map((a) => Math.round((a[0] * c[0] + a[1] * c[1] + a[2] * c[2]) / texel));
+  const target = [0, 1, 2].map((i) => texel * (k[0] * x[i] + k[1] * y[i] + k[2] * direction[i]));
+  const near = r * 0.5;
+  const far = r * 3.5;
   return {
-    target: c,
-    position: c.map((v, i) => v + direction[i] * 2 * r),
+    target,
+    position: target.map((v, i) => v + direction[i] * 2 * r),
     radius: r,
-    near: r * 0.5,
-    far: r * 3.5,
-    normalBias: ((2 * r) / mapSize) * 1.5,
+    texel,
+    near,
+    far,
+    // three's depth for an orthographic shadow is (z - near) / (far - near)
+    bias: -texel / (far - near),
+    normalBias: texel * 1.5,
   };
 }
 
@@ -260,6 +360,8 @@ void main() {
   c += sunOn * sunColor * (smoothstep(0.9993, 0.9997, s) * 1.5 + pow(s, 16.0) * 0.3);
   gl_FragColor = vec4(c, 1.0);
   #include <colorspace_fragment>
+  // a gradient over a whole screen bands in 8 bits: half a level of noise either way
+  gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
 }`;
 
 // ─── pure helpers (tested without WebGL) ────────────────────────────────────
@@ -333,15 +435,17 @@ export function resetOrbitMotion(controls) {
 }
 
 /**
- * The near and far planes. Depth precision goes with near / distance, and a
- * card's layers are 0.1 mm apart, so near sits halfway to the nearest of the
- * scene (`clear`, the camera's distance to the depth box), but never closer
- * than dist / 2000 (the camera among the objects). Far reaches well past
- * the scene. A camera holder's own planes, where it gave them, win.
- * @param {{ dist: number, radius: number, clear: number, held?: { near?: number, far?: number } | null }} o
+ * The near and far planes. Depth precision goes with near / distance (a
+ * 24-bit buffer resolves about z² / (near · 2²⁴)), and a card's layers are
+ * 0.2 mm apart, so near sits halfway to the nearest geometry (`clear`: a
+ * lower bound on the camera's distance to any object, see nearestClear).
+ * When that couldn't be told (the camera inside something it can't measure)
+ * near is dist / 200. Far reaches well past the scene. A camera holder's own
+ * planes, where it gave them, win.
+ * @param {{ dist: number, radius: number, clear: number, known?: boolean, held?: { near?: number, far?: number } | null }} o
  */
-export function depthRange({ dist, radius, clear, held = null }) {
-  const near = Math.max(dist / 2000, clear / 2, 1e-5);
+export function depthRange({ dist, radius, clear, known = true, held = null }) {
+  const near = known ? Math.max(clear / 2, 1e-4) : Math.max(dist / 200, 1e-4);
   const far = Math.max(dist * 100, dist + radius * 20, 10);
   return { near: held?.near ?? near, far: held?.far ?? far };
 }
@@ -573,13 +677,117 @@ export function nearestScreenVertex(array, { count, stride = 3, offset = 0 }, mv
 
 const SHADOW_MAP = 2048;
 
-/** Let every mesh under root cast and receive the sun's shadows (or not). */
+/**
+ * Let every mesh under root cast and receive the sun's shadows (or not). A
+ * mesh whose userData (a GLB node's extras) says receiveShadow: false only
+ * casts: a one-sided sheet (a sail) can't be biased right from both sides.
+ */
 function castShadows(root, on) {
   root.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = on;
-    o.receiveShadow = on;
+    o.receiveShadow = on && o.userData?.receiveShadow !== false;
   });
+}
+
+// ─── how near the nearest geometry is ───────────────────────────────────────
+
+/** Meshes up to this many triangles are measured triangle by triangle when they move their own vertices. */
+const BRUTE_MAX = 4_000;
+const _inv = new Matrix4();
+const _inst = new Matrix4();
+const _mw = new Matrix4();
+const _lp = new Vector3();
+const _wb = new Box3();
+const _tri = new Triangle();
+const _ta = new Vector3();
+const _tb = new Vector3();
+const _tc = new Vector3();
+const _cp = new Vector3();
+const _hit = {};
+const _walk = [];
+
+/** The smallest stretch a matrix gives any direction (its columns' shortest, for a TRS matrix). */
+function minScale(m) {
+  const e = m.elements;
+  return Math.min(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10]));
+}
+
+/** The nearest of a geometry's triangles to local point p, one by one. */
+function bruteClosest(g, p) {
+  const pos = g.attributes.position;
+  const idx = g.index;
+  const n = idx ? idx.count : pos.count;
+  let best = Infinity;
+  for (let i = 0; i + 2 < n; i += 3) {
+    const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+    _tri.set(_ta.fromBufferAttribute(pos, a), _tb.fromBufferAttribute(pos, b), _tc.fromBufferAttribute(pos, c));
+    _tri.closestPointToPoint(p, _cp);
+    const d = _cp.distanceToSquared(p);
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
+
+/**
+ * A lower bound on how far world point p is from a geometry drawn with world
+ * matrix m: its box's distance when p is outside it, else its nearest
+ * triangle's (by BVH, or one by one for a mesh that moves its own vertices,
+ * whose box and BVH are stale). null: it can't tell (skinned, morphing, or
+ * too big to measure by hand).
+ */
+function geometryClear(g, m, p, mesh, best = Infinity) {
+  if (!g?.attributes?.position) return Infinity;
+  const moving = mesh.frustumCulled === false;
+  if (mesh.isSkinnedMesh || g.morphAttributes?.position?.length) {
+    if (!g.boundingBox) g.computeBoundingBox();
+    _wb.copy(g.boundingBox).applyMatrix4(m);
+    const d = _wb.expandByVector(_wb.getSize(_ta).multiplyScalar(0.5)).distanceToPoint(p);
+    return d > 0 ? d : null;
+  }
+  if (!moving) {
+    if (!g.boundingBox) g.computeBoundingBox();
+    const d = _wb.copy(g.boundingBox).applyMatrix4(m).distanceToPoint(p);
+    if (d > 0) return d;
+  }
+  const s = minScale(m);
+  if (!(s > 0)) return null;
+  _lp.copy(p).applyMatrix4(_inv.copy(m).invert());
+  if (!moving && ensureBVH(g)) {
+    // nothing within `best` (scaled into its frame) is as good as Infinity
+    const hit = g.boundsTree.closestPointToPoint(_lp, _hit, 0, Number.isFinite(best) ? best / s : Infinity);
+    return hit ? hit.distance * s : Infinity;
+  }
+  if (triangleCount(g) <= BRUTE_MAX) return bruteClosest(g, _lp) * s;
+  return null;
+}
+
+/** A lower bound on how far p is from what's drawn under root, or `best` if that's nearer (null: it can't tell). */
+function contentClear(root, p, best) {
+  root.updateWorldMatrix(true, true);
+  _walk.length = 0;
+  _walk.push(root);
+  let clear = best;
+  while (_walk.length) {
+    const o = _walk.pop();
+    if (!o.visible) continue;
+    if (o.isMesh && o.geometry) {
+      if (o.isInstancedMesh) {
+        for (let i = 0; i < o.count; i++) {
+          o.getMatrixAt(i, _inst);
+          const d = geometryClear(o.geometry, _mw.multiplyMatrices(o.matrixWorld, _inst), p, o, clear);
+          if (d == null) return null;
+          if (d < clear) clear = d;
+        }
+      } else {
+        const d = geometryClear(o.geometry, o.matrixWorld, p, o, clear);
+        if (d == null) return null;
+        if (d < clear) clear = d;
+      }
+    }
+    for (const c of o.children) _walk.push(c);
+  }
+  return clear;
 }
 
 /** The object id a node belongs to: the nearest ancestor (or itself) that carries one. */
@@ -862,10 +1070,27 @@ export class Viewport {
     return this.camera.position.distanceTo(this.controls.target);
   }
 
-  /** The depth box: what the near plane must not cut. Recomputed only when content, display or an extent changed. */
+  /**
+   * The depth box: what the near plane must not cut. Recomputed only when
+   * content, display or an extent changed, with each object's own world box
+   * (nearestClear measures from those) and, with shadows, a redraw of the map.
+   */
   updateDepth() {
     this.depthDirty = false;
-    const box = this.sceneBox();
+    const box = new Box3();
+    /** [entry, its world box with room for a piece lifted off it] per shown object */
+    this.nearList = [];
+    /** the objects' world boxes, as { min, max }, for the shadow frame */
+    this.fitBoxes = [];
+    for (const [id, e] of this.objects) {
+      if (e.kind === "group") continue;
+      const b = this.objectBox(id);
+      if (!b) continue;
+      box.union(b);
+      this.fitBoxes.push({ min: b.min.toArray(), max: b.max.toArray() });
+      const r = b.getBoundingSphere(new Sphere()).radius;
+      this.nearList.push([e, b.expandByScalar(Math.max(0.05, r * 0.05))]);
+    }
     // room around the objects for a piece lifted off them (a carried card floats)
     const radius = box.isEmpty() ? 0 : box.getBoundingSphere(new Sphere()).radius;
     const depth = box.isEmpty() ? new Box3() : box.clone().expandByScalar(Math.max(0.05, radius * 0.05));
@@ -876,7 +1101,37 @@ export class Viewport {
     }
     this.depthBox = depth.isEmpty() ? null : depth;
     this.sceneRadius = all.isEmpty() ? 1 : Math.max(all.getBoundingSphere(new Sphere()).radius, 1e-4);
-    if (this.shadows) this.fitSun(box);
+    if (this.shadows && this.renderer) this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  /**
+   * How near the nearest geometry is to world point p: { clear, known }.
+   * clear is a lower bound: the nearest object box's distance, and for a box
+   * p is inside, the distance to that object's triangles (its BVH, built on
+   * the way). known is false when p is inside something that can't be
+   * measured (a skinned mesh, a box still loading, an extent).
+   */
+  nearestClear(p) {
+    if (this.depthDirty) this.updateDepth();
+    let clear = Infinity;
+    for (const b of this.extents.values()) {
+      const d = b.distanceToPoint(p);
+      if (d === 0) return { clear: 0, known: false };
+      if (d < clear) clear = d;
+    }
+    const inside = [];
+    for (const [entry, b] of this.nearList ?? []) {
+      const d = b.distanceToPoint(p);
+      if (d > 0) clear = Math.min(clear, d);
+      else inside.push(entry);
+    }
+    for (const entry of inside) {
+      if (!entry.content) return { clear: 0, known: false };
+      const d = contentClear(entry.content, p, clear);
+      if (d == null) return { clear: 0, known: false };
+      clear = d;
+    }
+    return Number.isFinite(clear) ? { clear, known: true } : { clear: 0, known: false };
   }
 
   render() {
@@ -884,8 +1139,10 @@ export class Viewport {
     const tStart = performance.now();
     const r = this.renderer;
     if (this.depthDirty) this.updateDepth();
-    const clear = this.depthBox ? this.depthBox.distanceToPoint(this.camera.position) : 0;
-    const { near, far } = depthRange({ dist: this.focusDistance(), radius: this.sceneRadius, clear, held: this.holds > 0 ? this.heldDepth : null });
+    const held = this.holds > 0 ? this.heldDepth : null;
+    const { clear, known } = held?.near != null ? { clear: 0, known: false } : this.nearestClear(this.camera.position);
+    const { near, far } = depthRange({ dist: this.focusDistance(), radius: this.sceneRadius, clear, known, held });
+    if (this.shadows) this.fitSun();
     if (this.camera.near !== near || this.camera.far !== far) {
       this.camera.near = near;
       this.camera.far = far;
@@ -966,6 +1223,8 @@ export class Viewport {
     } else this.scene.fog = new Fog(next.fog.color, next.fog.near, next.fog.far);
     this.setSky(next?.sky ?? null, next?.sun ?? null);
     this.setShadows(l.key.shadows);
+    // a new sun direction needs a new frame
+    this.sunKey = null;
     this.renderer?.setClearColor(this.clearColor(), 1);
     // the sun's shadow frame is fitted with the depth box
     this.contentChanged();
@@ -1019,23 +1278,41 @@ export class Viewport {
     if (this.shadows === on) return;
     this.shadows = on;
     this.keyLight.castShadow = on;
-    if (on) {
-      this.keyLight.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
-      this.keyLight.shadow.bias = -0.0004;
-    }
+    this.sunKey = null;
+    if (on) this.keyLight.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
     if (this.renderer) {
       this.renderer.shadowMap.enabled = on;
-      // drawn again only when something moves (fitSun), not every frame
+      // drawn again only when something moves or the frame does, not every frame
       this.renderer.shadowMap.autoUpdate = false;
       this.renderer.shadowMap.needsUpdate = true;
     }
     for (const e of this.objects.values()) if (e.content) castShadows(e.content, on);
   }
 
-  /** Stand the sun where its shadow map covers `box` (the objects'); called with the depth box. */
-  fitSun(box) {
-    if (!this.atmosphere?.sun || box.isEmpty()) return;
-    const f = sunFrame({ min: box.min.toArray(), max: box.max.toArray() }, this.atmosphere.sun.direction, SHADOW_MAP);
+  /** What the shadow frame is fitted about: the orbit's target, or the held camera. */
+  shadowFocusPoint() {
+    return this.holds > 0 || !this.controls ? this.camera.position.toArray() : this.controls.target.toArray();
+  }
+
+  /**
+   * Stand the sun where its shadow map covers what's being looked at
+   * (shadowFocus about shadowFocusPoint, its radius on the ladder, its
+   * centre on whole texels: shadowFrame). The frame changes, and the map is
+   * redrawn for it, only when that lands somewhere new; a radius is kept
+   * until what's needed outgrows it or shrinks under 60% of it.
+   */
+  fitSun() {
+    if (!this.atmosphere?.sun) return;
+    if (this.depthDirty) this.updateDepth();
+    const need = shadowFocus(this.fitBoxes ?? [], this.shadowFocusPoint());
+    if (!need) return;
+    const kept = this.sunFrame?.radius;
+    const radius = kept && need.radius <= kept && need.radius > kept * 0.6 ? kept : Math.min(ladderRadius(need.radius), Math.max(SHADOW_CAP, need.radius));
+    const f = shadowFrame({ center: need.center, radius }, this.atmosphere.sun.direction, SHADOW_MAP);
+    const key = `${f.radius}|${f.target.map((v) => Math.round(v / f.texel)).join(",")}`;
+    if (key === this.sunKey) return;
+    this.sunKey = key;
+    this.sunFrame = f;
     this.keyLight.position.set(...f.position);
     this.keyLight.target.position.set(...f.target);
     this.keyLight.target.updateMatrixWorld();
@@ -1045,6 +1322,7 @@ export class Viewport {
     cam.near = f.near;
     cam.far = f.far;
     cam.updateProjectionMatrix();
+    this.keyLight.shadow.bias = f.bias;
     this.keyLight.shadow.normalBias = f.normalBias;
     if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
   }
