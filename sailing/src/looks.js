@@ -3,7 +3,8 @@
 // "Trim feedback" §4): whatever floats bobs and tilts on the waves where
 // it's moored, and each ship's sails are drawn as her physics flies them:
 // the cloth (cloth.js) bellied, twisted, flogging, reefed or furled by its
-// trim (trim.js), the mainsheet and the jib's sheets slack or taut, the
+// trim (trim.js), the mainsheet and the jib's sheets slack or taut (a rope
+// with a body round each line, which stays a pixel wide when that's thinner), the
 // telltales streaming or not, the masthead's vane and an optional burgee.
 // Every one is a function of the physics' read and the stations' values:
 // there's no state here that could disagree with the forces. A rig with no
@@ -89,10 +90,68 @@ export const LOOK = Object.freeze({
   vaneAbove: 0.12,
   burgeeAbove: 2.5,
   winchTop: [0, 0.19, 0],
-  colors: { sheet: 0xe2d8b8, telltale: 0xc0392b, vane: 0x1d2226, burgee: 0xc0392b },
+  // the sheets' rope: twice a real 12–14 mm sheet so it reads at a boat's length; a warm red shows against the sea, the sky, the sails and the teak
+  rope: { radius: 0.015, sides: 6 },
+  colors: { sheet: 0xc4452f, telltale: 0xc0392b, vane: 0x1d2226, burgee: 0xc0392b },
 });
 
 const DOWN = Object.freeze([0, -1, 0]);
+
+/** A rope's triangles: `sides` quads round each of its n − 1 lengths, wound to face out of it (ropeTube's rings). */
+export function ropeIndex(n, sides) {
+  const out = [];
+  for (let i = 0; i + 1 < n; i++)
+    for (let j = 0; j < sides; j++) {
+      const a = i * sides + j, b = i * sides + ((j + 1) % sides), c = a + sides, d = b + sides;
+      out.push(a, b, c, b, d, c);
+    }
+  return out;
+}
+
+/**
+ * A rope of `radius` round the polyline pts (n points, xyz): a ring of `sides`
+ * vertices at each point, square to the line there, into pos and its outward
+ * normals into nrm. The rings are carried along the line without twisting
+ * (each one's start is the last one's, made square to the new tangent), so it
+ * reads as a rope however the line bends. Where the line has no length (not
+ * drawn yet) it keeps the last tangent: never NaN.
+ */
+export function ropeTube(pos, nrm, pts, n, radius, sides) {
+  let tx = 1, ty = 0, tz = 0; // the tangent
+  let ux = 0, uy = 0, uz = 0; // the ring's start, square to it
+  for (let i = 0; i < n; i++) {
+    const p = 3 * Math.max(0, i - 1), q = 3 * Math.min(n - 1, i + 1);
+    const dx = pts[q] - pts[p], dy = pts[q + 1] - pts[p + 1], dz = pts[q + 2] - pts[p + 2];
+    const l = Math.hypot(dx, dy, dz);
+    if (l > 1e-9) (tx = dx / l), (ty = dy / l), (tz = dz / l);
+    // the last ring's start made square to this tangent; a fresh one off the axis least along it when that fails
+    let k = ux * tx + uy * ty + uz * tz;
+    let vx = ux - k * tx, vy = uy - k * ty, vz = uz - k * tz;
+    let m = Math.hypot(vx, vy, vz);
+    if (m < 1e-6) {
+      const ax = Math.abs(tx), ay = Math.abs(ty), az = Math.abs(tz);
+      const ex = ax <= ay && ax <= az ? 1 : 0, ey = ex ? 0 : ay <= az ? 1 : 0, ez = ex || ey ? 0 : 1;
+      k = ex * tx + ey * ty + ez * tz;
+      (vx = ex - k * tx), (vy = ey - k * ty), (vz = ez - k * tz);
+      m = Math.hypot(vx, vy, vz);
+    }
+    (ux = vx / m), (uy = vy / m), (uz = vz / m);
+    // w = t × u: a quarter turn on from u
+    const wx = ty * uz - tz * uy, wy = tz * ux - tx * uz, wz = tx * uy - ty * ux;
+    for (let j = 0; j < sides; j++) {
+      const a = (2 * Math.PI * j) / sides, c = Math.cos(a), s = Math.sin(a);
+      const nx = c * ux + s * wx, ny = c * uy + s * wy, nz = c * uz + s * wz;
+      const o = 3 * (i * sides + j);
+      nrm[o] = nx;
+      nrm[o + 1] = ny;
+      nrm[o + 2] = nz;
+      pos[o] = pts[3 * i] + radius * nx;
+      pos[o + 1] = pts[3 * i + 1] + radius * ny;
+      pos[o + 2] = pts[3 * i + 2] + radius * nz;
+    }
+  }
+  return pos;
+}
 
 /** a·b for column-major 4×4s, into out. */
 function mul4(out, a, b) {
@@ -164,6 +223,7 @@ export function createLooks(api, ctx) {
         telltale: new THREE.LineBasicMaterial({ color: LOOK.colors.telltale }),
         vane: new THREE.LineBasicMaterial({ color: LOOK.colors.vane }),
         burgee: new THREE.LineBasicMaterial({ color: LOOK.colors.burgee }),
+        rope: THREE.MeshStandardMaterial ? new THREE.MeshStandardMaterial({ color: LOOK.colors.sheet, roughness: 0.8 }) : null,
       }
     : null;
 
@@ -186,6 +246,34 @@ export function createLooks(api, ctx) {
     line.raycast = () => {};
     parent.add?.(line);
     return { line, geometry, attr, array, parent };
+  }
+
+  /** A sheet: a line of n points with a rope round it (a child of the line, so it shows and goes with it). */
+  function sheetOf(n, parent) {
+    const l = lineOf(n, materials?.sheet, parent);
+    if (!l || !materials?.rope || !THREE.Mesh) return l;
+    const { sides } = LOOK.rope;
+    const geometry = new THREE.BufferGeometry();
+    const pos = new THREE.BufferAttribute(new Float32Array(3 * n * sides), 3);
+    const nrm = new THREE.BufferAttribute(new Float32Array(3 * n * sides), 3);
+    geometry.setAttribute("position", pos);
+    geometry.setAttribute("normal", nrm);
+    geometry.setIndex(ropeIndex(n, sides));
+    const mesh = new THREE.Mesh(geometry, materials.rope);
+    mesh.frustumCulled = false;
+    mesh.userData = { ...(mesh.userData ?? {}), noPick: true };
+    mesh.raycast = () => {};
+    l.line.add?.(mesh);
+    l.rope = { mesh, geometry, pos, nrm, n };
+    return l;
+  }
+
+  /** A sheet's line has moved: its rope follows. */
+  function laid(l) {
+    l.attr.needsUpdate = true;
+    if (!l.rope) return;
+    ropeTube(l.rope.pos.array, l.rope.nrm.array, l.array, l.rope.n, LOOK.rope.radius, LOOK.rope.sides);
+    l.rope.pos.needsUpdate = l.rope.nrm.needsUpdate = true;
   }
 
   /** Everything one ship's dressing needs, made once (null parts where she has no such thing). */
@@ -254,10 +342,10 @@ export function createLooks(api, ctx) {
         rec.group = new THREE.Group();
         rec.group.userData = { ...(rec.group.userData ?? {}), noPick: true };
         world.add(rec.group);
-        if (G.main?.traveller && st.sail) rec.mainsheet = lineOf(LOOK.sheetPoints, materials?.sheet, rec.group);
+        if (G.main?.traveller && st.sail) rec.mainsheet = sheetOf(LOOK.sheetPoints, rec.group);
         if (G.jib?.leads && st.jib) {
-          rec.jibPort = lineOf(LOOK.sheetPoints + 1, materials?.sheet, rec.group);
-          rec.jibStbd = lineOf(LOOK.sheetPoints + 1, materials?.sheet, rec.group);
+          rec.jibPort = sheetOf(LOOK.sheetPoints + 1, rec.group);
+          rec.jibStbd = sheetOf(LOOK.sheetPoints + 1, rec.group);
         }
         if (rec.masthead) rec.vane = lineOf(6, materials?.vane, rec.group, true);
         if (rec.burgeeAt) rec.burgeeLine = lineOf(4, materials?.burgee, rec.group, true);
@@ -299,6 +387,7 @@ export function createLooks(api, ctx) {
     for (const l of rec.lines) {
       l.parent.remove?.(l.line);
       l.geometry.dispose?.();
+      l.rope?.geometry.dispose?.();
     }
     if (rec.group) world?.remove?.(rec.group);
   }
@@ -556,7 +645,7 @@ export function createLooks(api, ctx) {
         apply4(rec.a, 0, rigW, bl[0], bl[1], bl[2]);
         apply4(rec.b, 0, hull, rec.traveller[0], rec.traveller[1], rec.traveller[2]);
         sheetCurve(rec.mainsheet.array, 0, rec.a, rec.b, rec.mainSlack ?? 0, DOWN, LOOK.sheetPoints, Math.min(rec.a[1], rec.b[1]) - LOOK.slackBelow);
-        rec.mainsheet.attr.needsUpdate = true;
+        laid(rec.mainsheet);
       }
     }
     // the jib's sheets: the clew as drawn → each lead (slack or taut) → its winch (on the drum)
@@ -581,7 +670,7 @@ export function createLooks(api, ctx) {
           const o = 3 * LOOK.sheetPoints;
           if (ww) apply4(line.array, o, ww, LOOK.winchTop[0], LOOK.winchTop[1], LOOK.winchTop[2]);
           else (line.array[o] = rec.b[0]), (line.array[o + 1] = rec.b[1]), (line.array[o + 2] = rec.b[2]);
-          line.attr.needsUpdate = true;
+          laid(line);
         }
       }
     }
@@ -656,7 +745,7 @@ export function createLooks(api, ctx) {
       for (const r of rigs) teardown(r);
       rigs = [];
       scene = null;
-      for (const m of Object.values(materials ?? {})) m.dispose?.();
+      for (const m of Object.values(materials ?? {})) m?.dispose?.();
       moved.clear();
       plain.clear();
     },
