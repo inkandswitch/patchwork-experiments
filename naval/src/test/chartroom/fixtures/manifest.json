@@ -1,0 +1,72 @@
+[
+  {
+    "file": "invalid/unknown-field.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/unsupported-version.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/negative-volume.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/positive-volume-null-center.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/zero-volume-nonnull-center.json",
+    "stage": "structural"
+  },
+  {
+    "file": "invalid/duplicate-attitude.json",
+    "stage": "semantic",
+    "error": "duplicate-attitude"
+  },
+  {
+    "file": "invalid/unsorted-rows.json",
+    "stage": "semantic",
+    "error": "row-order"
+  },
+  {
+    "file": "invalid/incomplete-grid.json",
+    "stage": "semantic",
+    "error": "complete-grid"
+  },
+  {
+    "file": "invalid/duplicate-offset.json",
+    "stage": "semantic",
+    "error": "offset-order"
+  },
+  {
+    "file": "invalid/decreasing-volume.json",
+    "stage": "semantic",
+    "error": "volume-order"
+  },
+  {
+    "file": "invalid/reference-outside-attitude.json",
+    "stage": "semantic",
+    "error": "reference-domain"
+  },
+  {
+    "file": "invalid/reference-outside-immersion.json",
+    "stage": "semantic",
+    "error": "reference-domain"
+  },
+  {
+    "file": "invalid/waterplane-off-plane.json",
+    "stage": "semantic",
+    "error": "waterplane-centroid"
+  },
+  {
+    "file": "invalid/indefinite-moments.json",
+    "stage": "semantic",
+    "error": "waterplane-moments"
+  },
+  {
+    "file": "invalid/duplicate-marker-id.json",
+    "stage": "semantic",
+    "error": "marker-ids"
+  }
+]

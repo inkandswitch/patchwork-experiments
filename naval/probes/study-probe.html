@@ -1,0 +1,140 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>naval study probe</title>
+<!-- Driven by probes/study-run.mjs. The BUILT naval plugins (naval/dist) and,
+     when served, camber's BUILT plugins (/camber/, from camber/patchwork/dist:
+     its scene:source builds a hull's GLB here, and its chartroom:source, once
+     it registers one, gives the hull's own table), in a stub registry, on an
+     in-memory repo. The runner adds subjects through the study's own Add
+     field and reads the comparison off the page. A dev tool: no package
+     imports another. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #host { height: 100vh; }
+  :root[data-dark] {
+    --editor-fill: #1a1a19; --editor-line: #f0efec; --studio-link: #6ea0ff; color-scheme: dark;
+  }
+  :root[data-dark] body { background: #1a1a19; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo, FakeHandle } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origError = console.error;
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// the probe's repo opens a doc at pinned heads as the doc it holds (it keeps no history)
+FakeHandle.prototype.view = function () { return this; };
+
+try {
+  const withCamber = new URLSearchParams(location.search).has("camber");
+  for (const url of ["../dist/index.js", ...(withCamber ? ["/camber/index.js"] : [])]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const host = document.getElementById("host");
+  const StudyDatatype = await getRegistry("patchwork:datatype").get("naval-study").load();
+  const StudyTool = (await getRegistry("patchwork:tool").load("naval-study")).module;
+  const RigDatatype = await getRegistry("patchwork:datatype").get("rig-design").load();
+  let mounted = null;
+  const $ = (s) => host.querySelector(s);
+  const $$ = (s) => [...host.querySelectorAll(s)];
+
+  window.__p = {
+    errors,
+    chartroomSources: () => getRegistry("chartroom:source").filter(() => true).map((p) => p.id),
+    /** a doc in the repo (a fixture design, a camber hull made in node) */
+    add(doc) { return repo.add(doc).url; },
+    /** a rig doc: the datatype's init, then the fixture's doc part */
+    rig(docPart) {
+      const d = { "@patchwork": { type: "rig-design" } };
+      RigDatatype.init(d);
+      Object.assign(d, docPart);
+      return repo.add(d).url;
+    },
+    /**
+     * The same hull as a GLB `file` doc: what its scene:source builds with its
+     * DEFAULT params (as the study's source path does), so the study reads the
+     * same triangles with no chartroom:source to ask and builds its own table.
+     */
+    async glbFileOf(url) {
+      const h = await repo.find(url);
+      const doc = h.doc();
+      const sources = getRegistry("scene:source");
+      const type = doc?.["@patchwork"]?.type;
+      const spec = sources.filter((p) => Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(type))[0];
+      if (!spec) throw new Error(`no scene:source for ${type}`);
+      const src = (await sources.load(spec.id)).module;
+      const params = Object.fromEntries((spec.params ?? []).map((x) => [x.key, x.default]));
+      const r = await src.build({ doc, handle: h, url, params, repo });
+      if (r?.kind !== "glb") throw new Error(`the build returned ${r?.kind}`);
+      const glb = r.glb instanceof Uint8Array ? r.glb : new Uint8Array(r.glb);
+      return repo.add({ "@patchwork": { type: "file" }, name: "Kinked hull, mesh only.glb", extension: "glb", mimeType: "model/gltf-binary", content: glb }).url;
+    },
+    mount() {
+      mounted?.cleanup();
+      host.innerHTML = "";
+      const d = { "@patchwork": { type: "naval-study" } };
+      StudyDatatype.init(d);
+      d.title = "Probe study";
+      const handle = repo.add(d);
+      mounted = { handle, cleanup: StudyTool(handle, host) };
+      return handle.url;
+    },
+    /** through the study's own Add field */
+    async addSubject(url) {
+      $(".study-add input").value = url;
+      $(".study-add button[type=submit]").click();
+      for (let i = 0; i < 200 && /Reading/.test($(".add-status").textContent); i++) await new Promise((r) => setTimeout(r, 25));
+      return { status: $(".add-status").textContent, tone: $(".add-status").dataset.tone ?? "" };
+    },
+    states: () => $$(".subject").map((li) => ({ id: li.dataset.subject, state: li.dataset.state, status: li.querySelector(".status")?.textContent ?? "" })),
+    study: () => mounted.handle.doc(),
+    table() {
+      const head = $$(".compare thead th").map((th) => th.textContent.trim());
+      const rows = {};
+      for (const tr of $$(".compare tbody tr[data-row]")) {
+        rows[tr.dataset.row] = [...tr.querySelectorAll("td")].map((td) => ({
+          text: td.querySelector(".v")?.textContent ?? "",
+          badge: td.querySelector(".badge")?.dataset.envelope ?? null,
+          badgeText: td.querySelector(".badge")?.textContent ?? null,
+          prov: td.dataset.provenance ?? null,
+          delta: td.querySelector(".delta")?.textContent ?? null,
+          title: td.title,
+          missing: td.classList.contains("missing"),
+        }));
+      }
+      return { head, groups: $$(".compare tbody").map((b) => b.dataset.group), rows };
+    },
+    cant: () => ({ figures: $$(".cant-figures li").map((li) => li.textContent.trim()), always: $$(".cant-always li").map((li) => li.textContent.trim()) }),
+    warnings: () => $$(".study-warnings li").map((li) => li.textContent),
+    setTheme(dark) { if (dark) document.documentElement.setAttribute("data-dark", ""); else document.documentElement.removeAttribute("data-dark"); },
+    overflowX() {
+      const root = $(".naval-study");
+      const box = root.getBoundingClientRect();
+      const wide = [...root.querySelectorAll("*")].filter((el) => !el.closest(".table-scroll") && el.getBoundingClientRect().right > box.right + 1).map((el) => el.className || el.tagName).slice(0, 10);
+      return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, wide };
+    },
+    exported() {
+      let got = null;
+      host.addEventListener("naval-study-export", (e) => (got = e.detail), { once: true });
+      $('[data-act="export"]').click();
+      return got;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`fatal: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

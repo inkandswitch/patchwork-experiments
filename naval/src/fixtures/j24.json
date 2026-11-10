@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "title": "J/24",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 7.318,
+      "lwl": 6.096,
+      "beam": 2.692,
+      "bwl": 2.3,
+      "tc": 0.27,
+      "draft": 1.225,
+      "freeboard": 0.75,
+      "displacementKg": 1406.136347,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 2.9,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 8.125,
+    "P": 8.538,
+    "E": 2.97,
+    "BAS": 1.08,
+    "ISP": 8.21,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0.23512,
+      "reefs": [
+        0.15
+      ]
+    },
+    "headsail": {
+      "kind": "genoa",
+      "LP": 4.35,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 3.5,
+      "span": 0.982,
+      "rootChord": 1.45,
+      "tipChord": 0.95,
+      "sweepDeg": 20,
+      "tc": 0.12,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "transom-hung",
+      "aftOfStem": 7.318,
+      "span": 1.05,
+      "rootChord": 0.5,
+      "tipChord": 0.36,
+      "sweepDeg": 5,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 430.912752,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 85,
+      "mode": "rail",
+      "arm": null
+    }
+  },
+  "conditions": {
+    "heelLimitDeg": 25
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.forestayAftOfStem": "estimated",
+    "rig.mast.stepped": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "loading.crew.count": "estimated",
+    "loading.crew.kgEach": "estimated"
+  },
+  "sources": [
+    {
+      "id": "orc-j24",
+      "what": "Rig (P, E, IG, J, ISP, BAS), LOA, beam, draft, measured displacement, sail areas, wetted area, RM, limit of positive stability, rated boat velocities",
+      "cite": "ORC International One Design Certificate 2021, J 24 (sample certificate marked TEST), VPP ver. 2021 1.00",
+      "url": "https://data.orc.org/public/od/2021/j24.od.html?nav=1",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "quoted": "LOA 7.318, max beam 2.692, draft 1.225, displacement 1 271 kg; P 8.538, E 2.970, IG 8.125, J 2.900, ISP 8.210, BAS 1.080; mainsail 15.66 m² measured (16.03 rated), headsail luffed 18.78 m² (HLP 4.35); wetted area 10.43; RM measured 27.0 kg·m; limit of positive stability 103.4°; crew 300–400 kg"
+    },
+    {
+      "id": "gob-j24",
+      "what": "LOA, LWL, beam, draft, displacement, ballast, I, J, P, E",
+      "cite": "Good Old Boat sail data (Sailrite), \"International J/24\"",
+      "url": "https://goodoldboat.com/saildata/boat/international-j24/",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "quoted": "LOA 24.000 ft, LWL 20.000 ft, beam 8.900 ft, max draft 4.000 ft, displacement 3100 lb, ballast 950 lb; I 26.25, J 9.50, P 28, E 9.75 ft"
+    },
+    {
+      "id": "wiki-j24",
+      "what": "Mainsail 12.68 m² (136.5 ft²), jib/genoa 11.58 m² (124.6 ft²), PHRF 174, hull speed 6.0 kn",
+      "cite": "Wikipedia, \"J/24\" (infobox, no per-figure citations)",
+      "url": "https://en.wikipedia.org/wiki/J/24",
+      "retrieved": "2026-11-06",
+      "fetched": true
+    },
+    {
+      "id": "phrf-alamo",
+      "what": "PHRF base ratings: Catalina 30 184 s/mile, J-24 170 s/mile",
+      "cite": "PHRF of the Alamo rating list (Excel export, file dated 2020-02-19), regattanetwork.com upload 20438",
+      "url": "https://www.regattanetwork.com/clubmgmt/regatta_uploads/20438/PHRFoftheAlamo01072020.pdf",
+      "retrieved": "2026-11-06",
+      "fetched": true,
+      "note": "Read from the PDF's decompressed text streams (rows 'J-24 170', 'Catalina 30 184'). PHRF is set by local committees and varies by region (180–186 elsewhere for the Catalina 30)."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give SA/D, D/L, BAS and the tall-rig and wing-keel variants",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-06",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval."
+    }
+  ],
+  "published": {
+    "note": "The rig is the ORC certificate's measured one; LWL, displacement and ballast are GOB's. Roach is worked from ORC's measured main, 15.66 m², over ½·P·E.",
+    "figures": [
+      {
+        "id": "saDesignerM2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 24.46015,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "orc-j24",
+        "work": "½·8.538·2.970 + ½·8.125·2.900 = 12.67893 + 11.78125 = 24.46018"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 15.66,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-j24",
+        "work": "ORC measured mainsail area"
+      },
+      {
+        "id": "headsailM2",
+        "label": "Genoa, LP 4.35",
+        "value": 18.78,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.06
+        },
+        "source": "orc-j24",
+        "work": "ORC 'headsail luffed' 18.78 m²; ours is ½·LP·luff, a triangle with no roach"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D, ORC rig on GOB's displacement",
+        "value": 19.811776,
+        "unit": "",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "gob-j24",
+        "work": "24.4602 / (1406.14/1025)^(2/3) = 24.4602/1.23464 = 19.81. GOB's own I/J/P/E give 261.19 ft² = 24.265 m² and 19.65"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 173,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "gob-j24",
+        "work": "(3,100/2240)/(0.01·20)³ = 1.38393/0.008 = 172.99"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.30645,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "gob-j24",
+        "work": "950 / 3,100"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft, keel down",
+        "value": 1.225,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "orc-j24",
+        "roundTrip": "the keel's span is estimated so that the draft reaches ORC's 1.225 m: a check of the foil geometry, not of the model"
+      },
+      {
+        "id": "wettedM2",
+        "label": "Wetted area (ORC condition)",
+        "value": 10.43,
+        "unit": "m²",
+        "tol": null,
+        "source": "orc-j24",
+        "condition": "orc",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the certificate doesn't say whether its 10.43 m² includes the keel and rudder; ours is shown both ways",
+        "work": "ours: canoe body (synthetic, BWL and Tc estimated), and that + 2 × each foil's planform"
+      },
+      {
+        "id": "rm1KgM",
+        "label": "Righting moment at 1°, no crew (ORC condition)",
+        "value": 27,
+        "unit": "kg·m",
+        "tol": {
+          "rel": 0.25
+        },
+        "source": "orc-j24",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "knownGap": {
+          "measured": 36.889,
+          "ratchet": {
+            "rel": 0.03
+          },
+          "measuredOn": "2026-11-06",
+          "why": "ours is 36.9 kg·m (+36.6%): GM 1.81 m from the synthetic hull and the mass roll-up against ORC's implied 1.22 m (27 kg·m / (1 271 kg · sin 1°)). BWL (2.30 m) and the lightship's VCG are both estimates, and BM goes as BWL³",
+          "toClose": "At the same VCG, BWL ≈ 2.05 m (−11%) gives RM1 24.7 and 2.10 m about 27 kg·m (measured: BWL 2.15 → 29.3, 2.05 → 24.7, 2.00 → 22.6 kg·m). At BWL 2.30 m, G would have to rise about 0.59 m (to ~0.72 m above the DWL), which a keelboat's mass can't do; so BWL is the likelier wrong input"
+        },
+        "work": "ORC 'RM measured' at 1 271 kg; ours from the synthetic hull and the mass roll-up"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Limit of positive stability, no crew (ORC condition)",
+        "value": 103.4,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "orc-j24",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "work": "ORC's LPS; ours the angle of vanishing stability from the table built on the synthetic hull"
+      }
+    ],
+    "conditions": {
+      "orc": {
+        "what": "ORC's measured displacement 1 271 kg plus a crew of 4 × 85 kg (340 kg, estimated; the certificate gives 300–400 kg)",
+        "displacementKg": 1611,
+        "crew": {
+          "count": 4,
+          "kgEach": 85,
+          "mode": "rail"
+        }
+      },
+      "orc-lightship": {
+        "what": "ORC's measured displacement, no crew",
+        "displacementKg": 1271,
+        "crew": {
+          "count": 0,
+          "kgEach": 85,
+          "mode": "none"
+        }
+      }
+    },
+    "polar": {
+      "kind": "orc",
+      "source": "orc-j24",
+      "condition": "orc",
+      "twsKn": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20
+      ],
+      "rows": {
+        "52": [
+          4.63,
+          5.43,
+          5.85,
+          6.07,
+          6.17,
+          6.21,
+          6.18
+        ],
+        "60": [
+          4.93,
+          5.67,
+          6.01,
+          6.24,
+          6.4,
+          6.48,
+          6.5
+        ],
+        "75": [
+          5.16,
+          5.81,
+          6.14,
+          6.44,
+          6.74,
+          6.93,
+          7.06
+        ],
+        "90": [
+          5.12,
+          5.81,
+          6.23,
+          6.62,
+          6.86,
+          7.19,
+          7.66
+        ],
+        "110": [
+          4.97,
+          5.84,
+          6.3,
+          6.79,
+          7.28,
+          7.77,
+          8.57
+        ],
+        "120": [
+          4.83,
+          5.74,
+          6.21,
+          6.67,
+          7.16,
+          7.74,
+          9.36
+        ],
+        "135": [
+          4.36,
+          5.28,
+          5.95,
+          6.35,
+          6.8,
+          7.28,
+          8.63
+        ],
+        "150": [
+          3.68,
+          4.64,
+          5.45,
+          6,
+          6.37,
+          6.79,
+          7.74
+        ],
+        "beatAngle": [
+          43.1,
+          42,
+          40.7,
+          39.4,
+          39,
+          39,
+          40.9
+        ],
+        "beatVmg": [
+          3.04,
+          3.63,
+          4.05,
+          4.3,
+          4.38,
+          4.39,
+          4.27
+        ],
+        "runVmg": [
+          3.19,
+          4.02,
+          4.75,
+          5.43,
+          5.93,
+          6.28,
+          7.07
+        ],
+        "gybeAngle": [
+          148,
+          152,
+          154,
+          174,
+          180,
+          180,
+          180
+        ]
+      },
+      "compare": {
+        "twsKn": [
+          8,
+          12,
+          16
+        ],
+        "twaDeg": [
+          52,
+          60,
+          75,
+          90
+        ],
+        "beat": true
+      },
+      "tol": {
+        "rel": 0.08
+      },
+      "note": "ORC rates downwind with the symmetric spinnaker (35.34 m²); the VPP has none, so 110–150° and run VMG are printed, not compared.",
+      "knownGaps": {
+        "beatAngle": {
+          "measuredDeltaDeg": {
+            "8": 0,
+            "12": -7.8,
+            "16": -9
+          },
+          "ratchetDeg": 1.5,
+          "measuredOn": "2026-11-06",
+          "why": "she points higher than ORC at 12 and 16 kn: the VPP has no heel-induced hull side force, no keel residuary, and the sails' coefficients are generic"
+        }
+      }
+    },
+    "disagreements": [
+      {
+        "what": "I",
+        "values": [
+          {
+            "value": "IG 8.125 m",
+            "source": "orc-j24"
+          },
+          {
+            "value": "26.25 ft = 8.001 m",
+            "source": "gob-j24"
+          }
+        ],
+        "used": "8.125 m (ORC, measured)",
+        "effect": "foretriangle 1.5% larger"
+      },
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "1 271 kg measured (no crew)",
+            "source": "orc-j24"
+          },
+          {
+            "value": "3,100 lb = 1 406 kg",
+            "source": "gob-j24"
+          }
+        ],
+        "used": "1 406 kg in the doc (the designer's figure for ratios); the ORC comparison sails at 1 271 + 340 kg crew"
+      },
+      {
+        "what": "PHRF",
+        "values": [
+          {
+            "value": "170",
+            "source": "phrf-alamo"
+          },
+          {
+            "value": "174",
+            "source": "wiki-j24"
+          }
+        ],
+        "used": "170 (the Alamo list, the same list as the Catalina 30's 184)"
+      }
+    ],
+    "estimatedWhy": "BWL, Tc, freeboard and both foils' planforms are not in any fetched source. The rudder is transom-hung (the J/24's, from general knowledge; its planform is estimated). The keel spans to ORC's 1.225 m draft."
+  }
+}

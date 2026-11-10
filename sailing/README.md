@@ -82,7 +82,7 @@ Where you put the mast is where the sail pulls: forward and she bears away,
 aft and she rounds up. Her weight is her model's stated displacement, else
 the sloop's scaled to her size.
 
-A rig built by the **Rig** tool (the `rig/` package) carries its design as
+A rig built by the **Rig** tool (in the `naval/` package) carries its design as
 `extras.rig`. Put on her as her sail station, it states her frame, her
 waterline, weight, centre of gravity, keel, rudder and sail for her, in
 place of her model's guesses; a rig designed on a different hull says so
