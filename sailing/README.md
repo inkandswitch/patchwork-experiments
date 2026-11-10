@@ -37,8 +37,8 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   list a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
   gets a sea if it had none). The rest are her parts on their own: **Mast
-  and sail**, **Wheel**, **Mainsheet**, **Windlass and anchor**, **Ladder**,
-  to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
+  and sail**, **Wheel**, **Mainsheet**, **Jib winches**, **Windlass and
+  anchor**, **Ladder**, to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
   a hull that's a ship, a part lines up with her bow and attaches under her
   (on the sloop, each snaps to its place); a click instead of a drag puts it
   where you're looking.
@@ -50,6 +50,8 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
     overrides);
   - attached under the hull: **Helm** on the wheel, **Sail** on the
     boom-and-sail (its `Sail` node is lowered and bellied in play),
+    **Jib** on the jib (it swings about its luff) and **Jib winch** on
+    each winch its sheets are led to,
     **Mainsheet** on whatever the sheet is worked at in the cockpit,
     **Anchor** on the windlass, **Anchor (the hook)** on the anchor itself,
     **Ladder** on the ladder;
@@ -98,10 +100,9 @@ DESIGN.md, "The rig contract").
 
 The stock sloop carries such a contract too, drawn from her own lines and
 rig (DESIGN.md, "Trim feedback"): a "Mast and sail" filed as
-`sailing/rig@2` on the stock hull sails her separate main and jib. A scene
-made before keeps its `rig@1` and sails as it always did, and the stock rig
-on any other hull (camber's) is the plain one: its contract describes the
-stock hull only.
+`sailing/rig@3` on the stock hull sails her separate main and jib. A rig
+whose file carries no contract is a plain one, and so is the stock rig on
+any other hull (camber's): its contract describes the stock hull only.
 
 ## Controls
 

@@ -91,6 +91,11 @@
   display: none;
 }
 
+/* why the command before it is disabled */
+.scene-stage .inspector .command-reason:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+}
+
 /* status line: build notes, load stats, errors */
 .scene-stage .inspector .status-line:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;

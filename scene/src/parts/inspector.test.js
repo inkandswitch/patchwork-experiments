@@ -5,7 +5,7 @@ import { FakeRepo } from "../test/fake-repo.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector from "./inspector.js";
-import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
+import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 
@@ -298,6 +298,54 @@ describe("scene.inspector: the panel", () => {
     expect(button("Off").disabled).toBe(true);
     await select("b");
     expect(button("Poke")).toBeUndefined();
+  });
+
+  // label present/absent × enabled/disabled × title (the reason) present/absent: all eight
+  it("a command's button is named by its state's label, and a disabled one says why", async () => {
+    const cases = [];
+    for (const label of [undefined, "Done"]) for (const disabled of [false, true]) for (const title of [undefined, "Because"]) cases.push({ label, disabled, title });
+    const state = (c) => Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined && v !== false));
+    const ext = {
+      meta: { id: "t.states" },
+      module: { create: () => ({ commands: cases.map((c, i) => ({ id: `c${i}`, name: `Name ${i}`, show: ["inspector"], state: (t) => (t ? state(c) : null), run() {} })) }) },
+    };
+    await mount({ objects: { a: object({ name: "A" }) }, extensions: [ext] });
+    await select("a");
+    cases.forEach((c, i) => {
+      const b = $(`.commands button[data-command="c${i}"]`);
+      expect(b.textContent).toBe(c.label ?? `Name ${i}`);
+      expect(b.disabled).toBe(c.disabled);
+      expect(b.title).toBe(c.title ?? "");
+      const after = b.nextElementSibling;
+      const reason = after?.classList.contains("command-reason") ? after.textContent : null;
+      expect(reason).toBe(c.disabled && c.title ? c.title : null);
+    });
+    expect(body().querySelectorAll(".command-reason").length).toBe(2);
+  });
+
+  it("the buttons follow a state's label and reason as they change", async () => {
+    let st = { label: "Shape hull" };
+    const ext = { meta: { id: "t.shape" }, module: { create: () => ({ commands: [{ id: "shape", name: "Shape hull", show: ["inspector"], state: (t) => (t ? st : null), run() {} }] }) } };
+    await mount({ objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions: [ext] });
+    await select("a");
+    const shape = () => $('.commands button[data-command="shape"]');
+    expect(shape().textContent).toBe("Shape hull");
+    st = { label: "Done shaping" };
+    await select("b");
+    expect(shape().textContent).toBe("Done shaping");
+    st = { disabled: true, title: "Follow latest to shape" };
+    await select("a");
+    expect(shape().textContent).toBe("Shape hull");
+    expect($(".command-reason").textContent).toBe("Follow latest to shape");
+    st = {};
+    await select("b");
+    expect($(".command-reason")).toBeNull();
+  });
+
+  it("commandsKey changes with a state's label", () => {
+    const entry = (state) => [{ ext: "x", command: { id: "a", name: "A" }, state }];
+    expect(commandsKey(entry({}))).not.toBe(commandsKey(entry({ label: "B" })));
+    expect(commandsKey(entry({ label: "B" }))).toBe(commandsKey(entry({ label: "B" })));
   });
 
   it("a lens's name is shown read-only, never written back", async () => {

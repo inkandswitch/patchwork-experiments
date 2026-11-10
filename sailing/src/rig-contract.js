@@ -1,7 +1,7 @@
 // The rig aid's contract (`extras.rig`, patchwork-rig v1), read into
 // sailing's body frame (DESIGN.md, "The rig contract"). Pure.
 //
-// The contract (rig/contract/v1/specification.md, copied in no part: this
+// The contract (naval/contract/v1/specification.md, copied in no part: this
 // package reads the JSON it states) is in its own frame: x forward, y port,
 // z up, metres, the design waterplane at z = 0, upright. Sailing's body
 // frame is x starboard, y up, z aft, about the same origin, so a contract

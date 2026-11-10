@@ -185,6 +185,7 @@ export function commandsKey(list) {
       ext,
       command.id,
       command.name ?? "",
+      state.label ?? null,
       state.title ?? "",
       !!state.disabled,
       state.checked ?? null,

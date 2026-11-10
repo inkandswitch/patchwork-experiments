@@ -876,6 +876,8 @@ A **command**:
 - `label` is the verb's name for this target, over `name` ("Lower sail" where
   `name` says "Raise sail"; "Someone's at the helm"). Every surface that shows
   a command's name shows it.
+- `title` is the tooltip. On a `disabled` command it's the reason ("Follow
+  latest to shape"), and the inspector writes it out after the button.
 - A command without `state` applies only to the null target, the scene.
 - A **target** is an object or group id, a ref, or null (the scene). See
   "Targets and refs" below.

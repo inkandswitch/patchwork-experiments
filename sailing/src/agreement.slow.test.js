@@ -1,6 +1,6 @@
 // Sailing's physics against the rig aid's predictions (DESIGN.md, "The rig
 // contract"). For each of the rig package's valid contract fixtures
-// (copied into test/rig-contract/ from rig/contract/v1/fixtures/valid, with
+// (copied into test/rig-contract/ from naval/contract/v1/fixtures/valid, with
 // its reference consumer of §6, compose.js):
 //
 // 1. the fixture is what it says: the contract's own §6 balances at every

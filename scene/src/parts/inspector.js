@@ -615,18 +615,22 @@ function create(api) {
     if (key === view.commandsKey) return;
     view.commandsKey = key;
     const target = view.id;
-    const buttons = list.map(({ ext, command, state }) => {
+    // a disabled command's title is why it can't be used: written out after
+    // the control, since a disabled button's tooltip is easy to never see
+    const reasonOf = (state) => (state.disabled && state.title ? el("span", { class: "hint command-reason" }, String(state.title)) : null);
+    const buttons = list.flatMap(({ ext, command, state }) => {
       const title = state.title ?? "";
+      const reason = reasonOf(state);
       if (Array.isArray(state.choices)) {
         const sel = el("select", { class: "command-choice", "aria-label": command.name ?? command.id, title, disabled: !!state.disabled, dataset: { ext, command: command.id } });
         state.choices.forEach((c, i) => sel.append(el("option", { value: String(i) }, c?.label ?? String(c?.value ?? ""))));
         const at = state.choices.findIndex((c) => c?.value === state.value);
         if (at >= 0) sel.value = String(at);
         sel.addEventListener("change", () => api.run({ ext, command: command.id, target, value: state.choices[Number(sel.value)]?.value }));
-        return el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel);
+        return [el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel), reason];
       }
       const toggle = state.checked != null;
-      return el(
+      const button = el(
         "button",
         {
           type: "button",
@@ -637,9 +641,11 @@ function create(api) {
           dataset: { ext, command: command.id },
           onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : { ext, command: command.id, target }),
         },
-        command.name ?? command.id,
+        // the verb's name for this target (STAGE.md "A command"), as the menu, toolbar and use prompt show it
+        String(state.label ?? command.name ?? command.id),
       );
-    });
+      return [button, reason];
+    }).filter(Boolean);
     view.commands.replaceChildren(...buttons);
     view.commands.hidden = !buttons.length;
   }

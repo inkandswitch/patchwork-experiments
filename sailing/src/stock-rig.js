@@ -9,7 +9,7 @@
 // model and each sail family's constants, the loading (but for where the
 // rig's items are) and the rules are kept as they are (stock-rig-12m.js).
 // Everything the rig decides is computed here from where she draws it, by
-// the specification's own rules (rig/contract/v1/specification.md), each a
+// the specification's own rules (naval/contract/v1/specification.md), each a
 // named function a test can re-derive:
 // - the main swings about the rig object's own Y axis: its tack is the
 //   gooseneck (the rig object's origin) and its head straight up from it,

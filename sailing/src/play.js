@@ -9,8 +9,9 @@
 //   hud.js       crosshair, wind, speed, heading, hints              (createHud)
 //
 // They meet through one context object, `ctx`, which each fills in as it's
-// made (ctx.sea, ctx.sim, ctx.crew), and they import nothing of each other:
-// what they share of the doc is in traits.js, of the maths in frames.js.
+// made (ctx.sea, ctx.sim, ctx.crew), and they import nothing of each other
+// (but for hud.js, which takes crew.js's seatedView): what they share of the
+// doc is in traits.js, of the maths in frames.js.
 //
 // One loop runs them, in the order a frame needs: the sea's clock first (the
 // time the ships are stepped to and the waves drawn at), then the ships,
