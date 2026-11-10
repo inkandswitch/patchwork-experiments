@@ -93,8 +93,15 @@ water's resistance the rig worked out for her, and a dinghy that can plane
 climbs onto the plane past her hull speed. She flies its main and jib, each
 its own sail where the rig drew it, a reef lowering the main's head; the
 physics can back the jib to get her out of irons, though no station
-works the jib yet (for now it's trimmed with the main; DESIGN.md, "The rig
-contract").
+works a contract boat's own jib (for now it's trimmed with the main;
+DESIGN.md, "The rig contract").
+
+The stock sloop carries such a contract too, drawn from her own lines and
+rig (DESIGN.md, "Trim feedback"): a "Mast and sail" filed as
+`sailing/rig@2` on the stock hull sails her separate main and jib. A scene
+made before keeps its `rig@1` and sails as it always did, and the stock rig
+on any other hull (camber's) is the plain one: its contract describes the
+stock hull only.
 
 ## Controls
 
@@ -104,9 +111,11 @@ off her quarter. Where pointer lock is refused, drag to look.
 | Where | Keys |
 |---|---|
 | On deck | WASD walk · Shift run · Space jump · mouse look · F use what you look at |
-| At the wheel (F) | A / D steer · Q / E haul in / ease out the sheet · hold R raise or lower the sail · F leave |
+| At the wheel (F) | A / D steer · Q / E haul in / ease out the sheet · hold R raise or lower the sail · B back the jib to windward (head to wind: opposite the wheel, so her bow goes the way it's over; furled, it unrolls backed) / let it fly · F leave |
 | At the mainsheet, aft in the cockpit just forward of the wheel (F) | Q / E haul in / ease out · hold R raise or lower the sail · F leave |
 | At the mast (F) | hold R raise or lower the sail · F leave |
+| At a jib winch, either side of the cockpit's forward end (F) | Q / E haul in / ease out the jib sheet (from the winch on the jib's side; the other is the lazy sheet) · B make the jib fast on this side / let it fly · hold R furl or unfurl the jib · F leave |
+| Looking at a jib winch | hold Q haul in · hold E ease out (the working winch only) |
 | Looking at the mainsheet | hold Q haul in · hold E ease out |
 | Looking at the mast or the boom | hold R raise or lower the sail |
 | At the windlass | hold F raise the anchor (it says how much chain is out) · F drop it |
@@ -124,24 +133,90 @@ taking a station only at the mast (or looking at the boom); at the wheel and
 the mainsheet, take the station with F first. Walking her deck, the hint line names her stations and what each
 works; with her sail down and her anchor up, it says where to raise it.
 
+The jib tends itself (it crosses when she tacks) until someone makes it
+fast on one side (B): held on the windward side it is backed, and pushes
+her bow away from the wind; tack with it held and it stays put, so she
+heaves to. Two people can't trim one sheet: whoever's key is down on the
+jib holds it, and someone else's key does nothing meanwhile.
+
 The panel bottom left reads her speed over the ground, her heading, the
 true wind (and on the dial, the apparent wind as an arrow and the true wind
-as a hollow mark), the sail and the anchor. Head to wind with the sail up
-she goes astern ("in irons"): lower the sail and let her fall off, then
-raise it. That is slow (a minute or two: with one sail there's no jib to
-back), so don't let her round up: raise the sail at the helm with the wheel
-over to bear away, and when the hint says *Head to wind* (sail up, her bow
-near the wind, hardly moving) bear away before she starts going astern.
-Drop the anchor only where you mean to stay.
+as a hollow mark), her sails and the anchor. On the stock sloop (her rig
+carries its contract) that is a row per sail, coloured by how it's
+trimmed: *Main drawing · sheet 40%*, *Jib soft · sheet 60%*, *luffing*,
+*stalled*, *eased out · stalled*, *backed · port*, *unrolling · backed
+starboard*, *wing*, *reefed 30%*, *furled 40%*; a rig without a contract
+shows one *Sail* row.
+
+**Reading the sails.** Each sail is in one of four bands, the same on the
+cloth, the telltales and the panel:
+
+- *luffing* (amber): eased too far. The front of the sail bubbles back to
+  windward, and the windward telltales on the jib's luff stand up and
+  spin. Eased right past the wind, the whole sail flogs and its sheet hangs
+  in a curve.
+- *soft* (pale green): nearly there. The sail is full but the windward
+  telltales are lifting. Trim in a little.
+- *drawing* (green): right. Both of the jib's telltales stream straight
+  aft, the main's leech telltales stream off its battens, and the sheets
+  are straight lines.
+- *stalled* (red): trimmed too hard. The leeward telltales curl forward,
+  the main's leech ones curl round behind it, and the leech closes. Ease.
+  *eased out · stalled* (plain) means the sheet is already all the way
+  out: bear away or head up, the sheet can't help.
+
+To trim, ease until the windward telltales lift, then trim in until they
+stream. The masthead arrow shows the apparent wind; turn on the burgee
+(`sailing.ship.burgee`) to see the true wind as well.
+
+**Working the jib.** Walk to either jib winch at the forward end of the
+cockpit and press F. You stand on the side deck across the well from it,
+on the high side, looking up at the jib's luff, and you're locked in until F. Q trims the
+sheet in, E eases it. Only the winch on the jib's side works the sheet; at
+the other one the hint says where the jib is. B makes the jib fast on this
+winch's side, which backs it if that's to windward, and B again lets it
+fly. Hold R to furl or unfurl it. One person trims the jib at a time: while
+someone holds it, your keys do nothing and the hint says so. At the wheel,
+tacking takes the jib across with her unless it's made fast. B there backs
+it to windward (unrolling it first if it's rolled up) to swing her bow off
+the wind.
+
+Leaving the anchor (or stopped head to wind, or in irons, going astern),
+her rudder hardly bites. Do what a crew does: raise the main while she's
+anchored (she lies head to wind), weigh, take the wheel and press B. The
+jib (unrolled first, if it was rolled away at anchor) is backed to
+windward and pushes her bow away from the wind, off in under ten seconds
+in the anchorage's breeze; press B again to let it fly and sail off. Dead
+ahead, where either side would do, turn the wheel the way you want her bow
+to go first and B backs it on the other side. The hint names the way she'll
+go (*B back jib, bow to port*). Left alone she drifts astern and falls off
+by herself, in about a minute; turn the wheel against her sternway and
+it's quicker. On a one-sail rig, lower the sail and let her fall off, then
+raise it, which is slow. Drop the anchor only where you mean to stay.
 
 ## Working on it
 
 ```sh
 pnpm install
-pnpm test          # vitest: the physics, the sea, her navmesh (C1–C9) and the walker (its cases and a property test), the parts on a fake stage
+pnpm test          # the fast tier (~6 s): the physics, the sea, her navmesh (C1–C9), the walker's cases, the stations, the parts on a fake stage
+pnpm test:slow     # the slow tier (~5 s alone, longer beside other work): *.slow.test.js
+pnpm test:all      # both
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
 node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)
 node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
+node probes/ship-shots.mjs <dir> "quarter?trim=luff"   # her parts rendered; ?trim= dresses the sails with looks.js (beat, luff, stall, backed, reef, run)
 ```
+
+Tests come in two tiers. `pnpm test` runs every `src/**/*.test.js` except
+`*.slow.test.js`, and should stay well under a minute: run it, or just the
+files you touched (`npx vitest run src/stations.test.js`), while you work.
+`pnpm test:slow` (vitest.slow.config.ts) runs only the `*.slow.test.js`
+files: the long physics settles (the polar, 45 s on a seeded sea), the full
+agreement sweep over the rig contract fixtures, the stage cases that sail her
+for many simulated seconds, the two-crew aboard case and the walker's random
+property test. Run it once before you finish a change to the physics, the
+simulator or the walker. A new test that sails her for more than a second or
+so of wall time belongs in a `.slow.test.js` file; its shared setup goes in
+`src/test/` (sim-stage.js, sail-runs.js, frame-hulls.js).

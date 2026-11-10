@@ -22,6 +22,7 @@ import { buildHull, mergeSpec, SLOOP, specFromBox } from "./hull-model.js";
 import { liftSlope, foilCL, foilCD, sailCL, sailCD, planformAspect, planformSlope, planformCL, planformCD, ittc57, rigSailCoeffs, wrap180 } from "./physics-foils.js";
 import { contractResistance } from "./resistance.js";
 import { rigSails, swungCE } from "./rig-sails.js";
+import { heldEitherSide } from "./trim.js";
 
 export { SLOOP, specFromBox };
 
@@ -87,11 +88,13 @@ const ADDED_INERTIA = [0.8, 0.5, 0.3];
  * `jib`, only for a ship whose rig contract has a headsail, where its clew
  * is (the chord tack to clew, radians, + to starboard; missing: where the
  * wind and its sheet put it).
- * @typedef {{ rudder?: number, sail?: number, sheet?: number, anchor?: null | { at: number[], rode: number }, jibSheet?: number, jibBacked?: boolean, furl?: number, flat?: number }} ShipControls
+ * @typedef {{ rudder?: number, sail?: number, sheet?: number, anchor?: null | { at: number[], rode: number }, jibSheet?: number, jibBacked?: boolean, jibHeld?: -1 | 1, furl?: number, flat?: number }} ShipControls
  * A rig contract's sails also read `jibSheet` (0..1, hard in at the least
  * sheeting angle to eased at the most; missing: the headsail trimmed to the
  * main's sheet angle, within its own range), `jibBacked` (held to
- * windward), `furl` (0..1 of LP rolled away; missing: the contract's furl,
+ * windward), `jibHeld` (−1 port, +1 starboard: its clew made fast on that
+ * side, drawing there while it's leeward and backed while it's windward;
+ * wins over jibBacked), `furl` (0..1 of LP rolled away; missing: the contract's furl,
  * or more as the main comes down, 1 − sail) and `flat` (§6.3's flattening,
  * flatMin..1; missing: 1). `sail` is the main's hoist: lowered, it is reefed
  * by 1 − sail of its luff.
@@ -190,6 +193,12 @@ export function createShip(input) {
       at: rel(a.qcM),
       root: rel(quarter(c.rootLE, c.rootTE)),
       tip: rel(quarter(c.tipLE, c.tipTE)),
+      // its MAC's chord, leading to trailing edge (body axes, m): going astern its trailing edge leads
+      chord: (() => {
+        const d = [0, 1, 2].map((i) => c.rootTE[i] - c.rootLE[i] + c.tipTE[i] - c.tipLE[i]);
+        const n = Math.hypot(...d) || 1;
+        return d.map((v) => (v / n) * a.macM);
+      })(),
       area: a.areaM2,
       arGeom: a.arGeom,
       endPlate: a.endPlateFactor ?? 1,
@@ -212,8 +221,10 @@ export function createShip(input) {
   // add up to Y_h, and a turn's sway along her damps it. Slow, where that is
   // less than SWAY_LINEAR over her lateral area at rest, that stands. It is
   // moved to act at mid-LWL, as §6.4's does, and the Munk moment
-  // N_h = q·LWL³·|N'v|·sin λ·cos φ turns her bow to windward. Both fade as
-  // she leaves the water (subRatio).
+  // N_h = ½ρ·LWL³·|N'v|·u·v (§6.4's q·sin λ·cos φ for small leeway) turns
+  // her broadside to her flow: her bow to windward going ahead, and the same
+  // with the flow reversed, so going astern (in irons) it turns her off the
+  // wind, not back into it. Both fade as she leaves the water (subRatio).
   const cres = rig ? contractResistance(rig) : null;
   const sideF = rig?.hull?.sideForce ?? null;
   const yhPerV = sideF ? 0.5 * RHO * sideF.lwlM * sideF.lwlM * Math.abs(sideF.yv) : 0; // N per (m/s of sway) per (m/s of her speed)
@@ -260,12 +271,31 @@ export function createShip(input) {
   const sAir = new Float64Array(2 * sailN); // each sail's air across and along her (body x, z)
   const sArm = new Float64Array(3 * sailN); // its CE from the centre of gravity (world)
   const sArea = new Float64Array(sailN), sSlope = new Float64Array(sailN), sCl = new Float64Array(sailN), sCd = new Float64Array(sailN);
+  // what read().sails reports, per sail (trim.js reads it): where the sheet
+  // lets it go (rad), its air's angle (rad, + from starboard), its sheeting
+  // angle δ_s, its upwash ε and its α (deg), and its air's dynamic pressure (Pa)
+  const sLimit = new Float64Array(sailN), sFrom = new Float64Array(sailN), sSheet = new Float64Array(sailN);
+  const sUp = new Float64Array(sailN), sAlpha = new Float64Array(sailN), sQ = new Float64Array(sailN);
   const ceAt = [0, 0, 0];
   const coef = new Float64Array(2);
   let jibAt = NaN; // the headsails' chord (radians, + to starboard); NaN: not yet known (where the wind and the sheet put it)
   let jibGoal = 0;
   /** A headsail's chord when the jib's is `a`: the jib's own, another's held within its range. */
   const headAngle = (S, a) => (S === head0 ? a : a >= 0 ? Math.min(a, S.max) : Math.max(a, -S.max));
+  /**
+   * Where a sail its sheet doesn't hold lies, for its air going `free` (rad,
+   * + to starboard): at its zero-lift angle with its upwash `eps` (deg; the
+   * main's from the headsails, §6.3), α = β_e − δ − ε = alpha0, so
+   * alpha0 + ε further out than along its air (P1). Never past the
+   * centreline: head to wind with ε > −alpha0 it lies amidships.
+   */
+  /** The main's upwash ε (deg) in the air sAir gives sail i, from the headsails' lift (their CL·area summed, and area). */
+  const upwashOf = (i, aJib, clJib) => {
+    const ux = sAir[2 * i], uz = sAir[2 * i + 1];
+    const be = ux * ux + uz * uz < 1e-12 ? 0 : Math.abs(Math.atan2(-ux, uz)) / DEG;
+    return rs.kInt * (aJib > 0 ? clJib / aJib : 0) * (1 - smooth(be, rs.upwash[0], rs.upwash[1]));
+  };
+  const lies = (free, S, eps = 0) => Math.sign(free) * Math.max(0, Math.abs(free) - ((S.model?.alpha0 ?? 0) + eps) * DEG);
 
   // working state: the centre of gravity's position and velocity, the
   // orientation and its rotation matrix, the spin
@@ -434,7 +464,11 @@ export function createShip(input) {
         if (uz > 0 && slope > 0) downwash = (ux >= 0 ? 1 : -1) * (foilCl / slope) * (slope / (Math.PI * aspect)) * wet;
       }
       const fx = foil[0], fz = foil[1];
-      apply(r0 * fx + r2 * fz, r3 * fx + r5 * fz, r6 * fx + r8 * fz, ax, ay, az);
+      // flowing from astern its trailing edge leads, and its centre of pressure goes with the leading
+      // edge: from the quarter chord broadside to the three-quarter chord dead astern (ahead: as it was)
+      const back = uz < 0 && s2 > 1e-12 ? (0.5 * -uz) / Math.sqrt(s2) : 0;
+      const cx = back * f.chord[0], cy = back * f.chord[1], cz = back * f.chord[2];
+      apply(r0 * fx + r2 * fz, r3 * fx + r5 * fz, r6 * fx + r8 * fz, ax + r0 * cx + r1 * cy + r2 * cz, ay + r3 * cx + r4 * cy + r5 * cz, az + r6 * cx + r7 * cy + r8 * cz);
       sideLift += foilLiftX;
       sideLiftY += foilLiftX * by;
     }
@@ -481,64 +515,97 @@ export function createShip(input) {
       sampleSail(i, g.ce, S.main ? (boomKnown ? boomAt : 0) : jibKnown ? headAngle(S, jibAt) : 0, t, wind, px, pz, vx, vy, vz, w0, w1, w2);
     }
 
-    // where the sheets would put the boom and the jib
-    if (M) {
-      const i = rs.sails.indexOf(M);
-      const ux = sAir[2 * i], uz = sAir[2 * i + 1];
-      const free = ux * ux + uz * uz > 1e-4 ? Math.atan2(ux, uz) : 0;
-      boomGoal = free >= 0 ? Math.min(free, mainLimit) : Math.max(free, -mainLimit);
-      if (!Number.isFinite(boomAt)) boomAt = boomGoal;
-    }
-    diag.boom = M ? boomAt : 0;
+    // where the sheets would put the boom and the jib. A sail its sheet
+    // doesn't hold (eased past where its air puts it) lies at its family's
+    // zero-lift angle, alpha0 further out than along its air (P1): it
+    // flogs, and drives her not at all
+    let jibLimit = 0;
+    let jibSide = 0; // the side the jib is backed on, made fast there: the side its air is from, for its coefficients
     if (head0) {
       const i = rs.sails.indexOf(head0);
       const ux = sAir[2 * i], uz = sAir[2 * i + 1];
       const calm = ux * ux + uz * uz <= 1e-4;
-      const free = calm ? 0 : Math.atan2(ux, uz);
+      const free = calm ? 0 : lies(Math.atan2(ux, uz), head0);
       const from = calm ? 0 : Math.atan2(-ux, uz); // + from starboard
-      if (controls.jibBacked) {
+      const W = head0.wing;
+      const k = Number.isFinite(js) ? js : 0;
+      // held to windward at its sheet's angle (on the family's travel: rig-sails.js backMax), goose-winged from wing.fromBeta
+      const backedAt = () => (W && Math.abs(from) >= W.from * DEG ? W.lo + (W.hi - W.lo) * k : head0.min + (head0.backMax - head0.min) * k);
+      const lim = Number.isFinite(js) ? head0.min + (head0.max - head0.min) * js : clamp(mainLimit, head0.min, head0.max);
+      // made fast on one side (P2: the station's `held`), whatever the wind does. A sheet only
+      // pulls: on the side its air puts it (leeward), the sheet stops it going further out than
+      // its angle and no more, so it draws, or (eased past its air) luffs at free. On the other
+      // side (windward) its air presses it against the sheet: backed. Within its zero-lift angle
+      // of dead ahead its air can't say which side is which (heldEitherSide): backed on whichever
+      // side it's held, as B at the helm counts on
+      const held = controls.jibHeld === 1 || controls.jibHeld === -1 ? controls.jibHeld : 0;
+      if (held) {
+        const lee = !calm && Math.sign(free) === held && !heldEitherSide(from, head0.model?.alpha0 ?? 0);
+        jibLimit = lee ? lim : backedAt();
+        jibGoal = held * (lee ? Math.min(Math.abs(free), lim) : jibLimit);
+        // backed there, its cloth bellies away from that side, so that's the side its air is from
+        // (by its sign the same, but for the band at dead ahead where its sign can't say)
+        if (!lee) jibSide = held;
+      } else if (controls.jibBacked) {
         const side = Math.abs(from) < BACKED_DEADBAND && Number.isFinite(jibAt) && jibAt !== 0 ? Math.sign(jibAt) : from >= 0 ? 1 : -1;
-        const W = head0.wing;
-        const k = Number.isFinite(js) ? js : 0;
-        jibGoal = side * (W && Math.abs(from) >= W.from * DEG ? W.lo + (W.hi - W.lo) * k : head0.min + (head0.max - head0.min) * k);
+        jibLimit = backedAt();
+        jibGoal = side * jibLimit;
       } else {
-        const lim = Number.isFinite(js) ? head0.min + (head0.max - head0.min) * js : clamp(mainLimit, head0.min, head0.max);
+        jibLimit = lim;
         jibGoal = free >= 0 ? Math.min(free, lim) : Math.max(free, -lim);
       }
       if (!Number.isFinite(jibAt)) jibAt = jibGoal;
     }
-    for (let i = 0; i < sailN; i++) {
-      const S = rs.sails[i];
-      if (S.main ? !boomKnown : !jibKnown) sampleSail(i, S.shape(S.main ? 1 - raised : Number.isFinite(furlIn) ? furlIn : Math.max(S.furl, 1 - raised)).ce, S.main ? boomAt : headAngle(S, jibAt), t, wind, px, pz, vx, vy, vz, w0, w1, w2);
+    if (!jibKnown) {
+      for (let i = 0; i < sailN; i++) {
+        const S = rs.sails[i];
+        if (!S.main) sampleSail(i, S.shape(Number.isFinite(furlIn) ? furlIn : Math.max(S.furl, 1 - raised)).ce, headAngle(S, jibAt), t, wind, px, pz, vx, vy, vz, w0, w1, w2);
+      }
     }
 
-    // each sail's coefficients, the headsails first
+    // each sail's coefficients, the headsails first: the main's upwash
+    // reads their lift, and where the main lies free reads its upwash
     const up = rs.upwash, bl = rs.blanket;
     let A = 0, aJib = 0, clJib = 0;
     for (let n = 0; n < sailOrder.length; n++) {
       const i = sailOrder[n];
       const S = rs.sails[i];
+      if (S === M) {
+        // where the sheet would put the boom: a free main lies at its zero-lift angle, its upwash counted (P1)
+        const ux = sAir[2 * i], uz = sAir[2 * i + 1];
+        const free = ux * ux + uz * uz > 1e-4 ? lies(Math.atan2(ux, uz), M, upwashOf(i, aJib, clJib)) : 0;
+        boomGoal = free >= 0 ? Math.min(free, mainLimit) : Math.max(free, -mainLimit);
+        if (!boomKnown) {
+          boomAt = boomGoal;
+          sampleSail(i, S.shape(1 - raised).ce, boomAt, t, wind, px, pz, vx, vy, vz, w0, w1, w2);
+        }
+      }
       sCl[i] = sCd[i] = 0;
+      const ux = sAir[2 * i], uz = sAir[2 * i + 1];
+      const v2 = ux * ux + uz * uz;
+      const from = v2 < 1e-12 ? 0 : Math.atan2(-ux, uz);
+      const side = S === head0 && jibSide ? jibSide : from >= 0 ? 1 : -1;
+      const be = (side * from) / DEG; // |from|, but for a jib backed at dead ahead (jibSide), a little less than 0
+      const dS = (-side * (S.main ? boomAt : headAngle(S, jibAt))) / DEG; // + to leeward
+      sLimit[i] = S.main ? mainLimit : S === head0 ? jibLimit : Math.min(jibLimit, S.max);
+      sFrom[i] = from;
+      sSheet[i] = dS;
+      sQ[i] = 0.5 * rs.rho * v2;
+      sUp[i] = S.main ? upwashOf(i, aJib, clJib) : 0;
+      sAlpha[i] = be - dS - sUp[i];
       const area = sArea[i];
       if (!(area > 0)) continue;
       A += area;
       if (!S.main) aJib += area;
-      const ux = sAir[2 * i], uz = sAir[2 * i + 1];
-      if (ux * ux + uz * uz < 1e-12) continue;
-      const from = Math.atan2(-ux, uz);
-      const side = from >= 0 ? 1 : -1;
-      const be = Math.abs(from) / DEG;
-      const dS = (-side * (S.main ? boomAt : headAngle(S, jibAt))) / DEG; // + to leeward
-      let alpha = be - dS;
-      let q = 1;
-      if (S.main) alpha -= rs.kInt * (aJib > 0 ? clJib / aJib : 0) * (1 - smooth(be, up[0], up[1]));
-      else if (dS < 0) q = S.wing && be >= S.wing.from ? S.wing.q : 1;
-      else q = 1 - bl.max * smooth(be, bl.from, bl.to);
+      if (v2 < 1e-12) continue;
+      const alpha = sAlpha[i];
+      const q = S.main ? 1 : dS < 0 ? (S.wing && be >= S.wing.from ? S.wing.q : 1) : 1 - bl.max * smooth(be, bl.from, bl.to);
       rigSailCoeffs(coef, S.model, sSlope[i], alpha, dS, rs.cnExp);
       sCl[i] = coef[0] * q;
       sCd[i] = coef[1] * q;
       if (!S.main && dS >= 0) clJib += sCl[i] * area;
     }
+    diag.boom = M ? boomAt : 0;
 
     // the rig's lift and induced drag, and each sail's force at its CE
     diag.sailForce = 0;
@@ -555,8 +622,8 @@ export function createShip(input) {
       const v2 = ux * ux + uz * uz;
       if (v2 < 1e-12) continue;
       const from = Math.atan2(-ux, uz);
-      const side = from >= 0 ? 1 : -1;
-      const be = Math.abs(from);
+      const side = rs.sails[i] === head0 && jibSide ? jibSide : from >= 0 ? 1 : -1;
+      const be = side * from;
       const cl = flat * sCl[i];
       const cd = sCd[i] + (are > 0 ? (cl * CL) / (Math.PI * are) : 0);
       const q = 0.5 * rs.rho * v2 * area;
@@ -782,7 +849,7 @@ export function createShip(input) {
         // the lift's lean, along body z, at mid-LWL and the side force's height
         const fz = hb > 1e-9 ? (kl * latU * hs * (hu < 0 ? -1 : 1)) / hb : 0;
         const tx = Math.abs(latU) > 1e-12 ? (latUY / latU) * fz : 0;
-        const ty = -k * latUZ - (midAt - latZ / lat) * k * lat * hs + nhPerV * hv * hs * subRatio + CG[0] * fz;
+        const ty = -k * latUZ - (midAt - latZ / lat) * k * lat * hs + nhPerV * -hu * hs * subRatio + CG[0] * fz;
         const tz = k * latUY;
         F[0] += r0 * fx + r2 * fz;
         F[1] += r3 * fx + r5 * fz;
@@ -1082,6 +1149,36 @@ export function createShip(input) {
     return out;
   }
 
+  /**
+   * Each of a contract's sails as forces() last flew it (read().sails;
+   * trim.js reads the trim off it): its chord now and where the wind and
+   * sheet put it (rad, + to starboard), the sheet's angle (rad, ≥ 0), its
+   * air's angle (rad, + from starboard) and β_e, its sheeting angle δ_s (+
+   * to leeward), upwash ε and α (deg), CL and CD (blanket or wing applied,
+   * before flattening), area (m², after reef or furl) and q (Pa).
+   */
+  // read().sails: one array of one object per sail, filled in place on each read (no allocation)
+  const sailsOut = [];
+  function sailsRead() {
+    for (let i = 0; i < sailN; i++) {
+      const S = rs.sails[i];
+      const o = sailsOut[i] ?? (sailsOut[i] = { id: S.id, main: S.main });
+      o.angle = S.main ? boomAt : headAngle(S, jibAt);
+      o.goal = S.main ? boomGoal : headAngle(S, jibGoal);
+      o.limit = sLimit[i];
+      o.from = sFrom[i];
+      o.beta = Math.abs(sFrom[i]) / DEG;
+      o.sheet = sSheet[i];
+      o.upwash = sUp[i];
+      o.alpha = sAlpha[i];
+      o.cl = sCl[i];
+      o.cd = sCd[i];
+      o.area = sArea[i];
+      o.q = sQ[i];
+    }
+    return sailsOut;
+  }
+
   return {
     spec,
     /** her moments of inertia about her centre of gravity (kg·m², body axes: pitch, yaw, roll), without added mass */
@@ -1203,6 +1300,7 @@ export function createShip(input) {
         ...(crew ? { crew: crewAt } : null),
         ...(head0 ? { jib: jibAt } : null),
         ...(cres ? { planing: diag.planing } : null),
+        ...(rs ? { sails: sailsRead() } : null),
       };
     },
   };

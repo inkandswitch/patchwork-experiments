@@ -18,7 +18,7 @@
 // A sea, a ship or a station by hand comes from the inspector's "Add
 // behaviour…", which reads `describes`.
 
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
 // ship can be rigged without a script. Who's at a station and who simulates
@@ -63,6 +63,21 @@ const DESCRIBES = {
       { key: "raised", label: "Raised", kind: "number", default: 1, min: 0, max: 1, step: 0.01 },
       { key: "sheet", label: "Sheet (0 in, 1 out)", kind: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
     ],
+  },
+  "sailing.jib": {
+    name: "Jib",
+    on: "object",
+    blurb: "The ship's jib, on her forestay: swings about its own Y axis (the luff) as its sheet and the wind put it. Worked from its winches: trim the sheet, make it fast on one side (backed when that side is windward) and furl it",
+    fields: [
+      { key: "sheet", label: "Sheet (0 in, 1 out)", kind: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
+      { key: "held", label: "Made fast on", kind: "enum", options: [{ value: "", label: "Tends itself" }, { value: "port", label: "Port" }, { value: "starboard", label: "Starboard" }], default: null },
+      { key: "furl", label: "Furled (0 out, 1 rolled away)", kind: "number", default: 0, min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  "sailing.winch": {
+    name: "Jib winch",
+    on: "object",
+    blurb: "A winch the jib's sheet is led to: stand at it to trim the sheet (Q / E, from the winch on the jib's side), back the jib or let it fly (B) and furl it (hold R)",
   },
   "sailing.anchor": {
     name: "Anchor",
@@ -124,12 +139,13 @@ export const plugins = [
   },
   // the parts bin's (scene:part): what each is made of is parts.js
   ...[
-    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast and sail, wheel, mainsheet, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
-    { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail. On a ship it drives her: where you put it is where the sail pulls", tags: ["sailing.mast"], traits: ["sailing.sail"] },
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
+    { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail, and a jib on its forestay. On a ship it drives her: where you put it is where the sails pull", tags: ["sailing.mast"], traits: ["sailing.sail", "sailing.jib"] },
     { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
     { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },
     { id: "ladder", name: "Ladder", icon: "Ladder", description: "A way back aboard from the water, hung over the side", tags: ["sailing.ladder"], traits: ["sailing.ladder"] },
     { id: "mainsheet", name: "Mainsheet", icon: "Sailboat", description: "A traveller and block for the cockpit, under the boom's end: stand at it to trim and hoist the sail", tags: ["sailing.mainsheet"], traits: ["sailing.mainsheet"] },
+    { id: "winches", name: "Jib winches", icon: "Sailboat", description: "A winch either side of the cockpit for the jib's sheets: stand at one to trim the jib, back it and furl it", tags: ["sailing.winch"], traits: ["sailing.winch"] },
     { id: "redBuoy", name: "Red buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "greenBuoy", name: "Green buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "islet", name: "Islet", icon: "Mountain", description: "A rock with a little grass, to sail round" },

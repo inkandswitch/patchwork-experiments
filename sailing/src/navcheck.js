@@ -5,7 +5,7 @@
 //   feet?), so a fault in the bake's rasteriser shows up as a disagreement;
 // - the static checks C1–C9 over a whole baked hull: every cell, every side,
 //   every link.
-// Used by the unit tests, the property test (walker.property.test.js), the
+// Used by the unit tests, the property test (walker.property.slow.test.js), the
 // sloop's static checks (sloop-navmesh.test.js) and the camber probe.
 
 import { DIRS, NONE, OPEN, OVERBOARD, STEP, WALL, apexOf, bake, cellRange, columnAt, pointOf, sideBase, surfaceAt } from "./navmesh.js";

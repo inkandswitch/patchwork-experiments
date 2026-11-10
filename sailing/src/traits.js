@@ -17,9 +17,18 @@ export const LADDER = "sailing.ladder";
 /** Where the sail is worked from the cockpit: a traveller and its block, under the boom's end. */
 export const MAINSHEET = "sailing.mainsheet";
 export const FLOAT = "sailing.float";
+/**
+ * The jib: its lasting settings (`sheet` 0 hard in .. 1 eased, `held` null
+ * or the side its clew is made fast on, "port" | "starboard", `furl` 0..1 of
+ * it rolled away). The piece swings about its own Y (the luff) as the boom
+ * does about the mast.
+ */
+export const JIB = "sailing.jib";
+/** A winch the jib's sheet is led to: `{ sail: "jib", side: "port" | "starboard", stand: [x, y, z] }`, stand in its own frame. */
+export const WINCH = "sailing.winch";
 
 /** The stations' traits, and what each is called on a ship (ctx.sim.stationsOf). */
-export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET });
+export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET, jib: JIB });
 
 /** The scene-wide claim of the view that simulates the sea and its ships. */
 export const SIM = "sim";
@@ -42,7 +51,14 @@ export const DEFAULTS = Object.freeze({
   [SAIL]: Object.freeze({ raised: 1, sheet: 0.5 }),
   [ANCHOR]: Object.freeze({ down: true, rode: 0 }),
   [MAINSHEET]: Object.freeze({}),
+  [JIB]: Object.freeze({ sheet: 0.5, held: null, furl: 0 }),
+  [WINCH]: Object.freeze({}),
 });
+
+/** A jib's `held` side as the physics' jibHeld: −1 port, +1 starboard; 0 when it tends itself. */
+export const heldSign = (held) => (held === "port" ? -1 : held === "starboard" ? 1 : 0);
+/** −1 / +1 as a side's name. */
+export const sideName = (s) => (s < 0 ? "port" : "starboard");
 
 /** Metres of chain let out when the anchor goes down. */
 export const RODE = 25;
@@ -72,6 +88,9 @@ export const wheelTransform = (t, angle) => turnedAbout(t, 2, -angle * WHEEL_TUR
 
 /** The boom-and-sail's transform for a boom angle (radians, + to starboard): swung about its own Y (the mast) from where it was put. */
 export const rigTransform = (t, boom) => turnedAbout(t, 1, boom);
+
+/** The jib's transform for its chord's angle (radians, + to starboard): swung about its own Y (the luff, tack to head) from where it was put. */
+export const jibTransform = (t, jib) => turnedAbout(t, 1, jib);
 
 /** Off a ship's starboard quarter, looking at her deck, in her frame: the template's home view, and where the orbit opens in play. */
 export const QUARTER = Object.freeze({ position: Object.freeze([12, 6.5, 16]), target: Object.freeze([0, 2.5, 0]) });
@@ -123,10 +142,14 @@ export function carryableAboard(scene, id) {
 export const shipsOf = (scene) => (scene?.ids ?? []).filter((id) => scene.objects[id]?.traits?.[SHIP] && !parentOf(scene, id));
 
 /** The trait key that makes an object a station, or null. */
+/** The station traits, in the order stationKind tests them. */
+const STATION_KINDS = Object.freeze([HELM, SAIL, ANCHOR, MAINSHEET, JIB, WINCH]);
+
 export function stationKind(o) {
   const t = o?.traits;
   if (!t) return null;
-  return [HELM, SAIL, ANCHOR, MAINSHEET].find((k) => t[k]) ?? null;
+  for (let i = 0; i < STATION_KINDS.length; i++) if (t[STATION_KINDS[i]]) return STATION_KINDS[i];
+  return null;
 }
 
 /** A station's live value: its defaults, its trait's fields, and its holder's input over them. */
@@ -137,17 +160,19 @@ export function stationValue(kind, fields, input) {
 /**
  * A ship's parts, from a snapshot: its stations (the first of each kind
  * attached under it at any depth), its ladder and its anchor's hook, each
- * found by its trait. null where it has none.
- * @returns {{ helm, sail, anchor, mainsheet, ladder, hook }}
+ * found by its trait, null where it has none; and her jib's winches, every
+ * one, in the scene's order.
+ * @returns {{ helm, sail, anchor, mainsheet, jib, ladder, hook, winches: string[] }}
  */
 export function partsOf(scene, ship) {
-  const out = { helm: null, sail: null, anchor: null, mainsheet: null, ladder: null, hook: null };
+  const out = { helm: null, sail: null, anchor: null, mainsheet: null, jib: null, ladder: null, hook: null, winches: [] };
   for (const id of scene?.ids ?? []) {
     const o = scene.objects[id];
     if (!o?.traits || id === ship || !isUnder(scene, id, ship)) continue;
     for (const [k, trait] of Object.entries(STATIONS)) if (!out[k] && o.traits[trait]) out[k] = id;
     if (!out.ladder && o.traits[LADDER]) out.ladder = id;
     if (!out.hook && o.traits[HOOK]) out.hook = id;
+    if (o.traits[WINCH]) out.winches.push(id);
   }
   return out;
 }

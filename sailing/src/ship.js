@@ -13,6 +13,9 @@
 
 import { computeBounds, computeNormals, encodeGLB } from "./glb.js";
 import { SLOOP } from "./hull-model.js";
+import { stockContract, stockJib } from "./stock-rig.js";
+import KEPT from "./stock-rig-12m.js";
+import { NEUTRAL, battenCount, battenVertices, clothCount, clothOf, clothVertices } from "./cloth.js";
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -321,7 +324,7 @@ function torus(shape, R, r, segs = 48, sides = 8, at = [0, 0, 0]) {
     const a = (row / segs) * Math.PI * 2;
     const b = (k / sides) * Math.PI * 2;
     const rr = R + Math.cos(b) * r;
-    return [at[0] + Math.cos(a) * rr, at[1] + Math.sin(a) * rr, at[2] + Math.sin(b) * r];
+    return [at[0] + Math.cos(a) * rr, at[1] + Math.sin(a) * rr, at[2] - Math.sin(b) * r];
   }, { wrap: true, wrapRows: true });
 }
 
@@ -341,7 +344,7 @@ const MAST_HEIGHT = 14;
 // the gooseneck, above the deck at the mast: high enough that the boom
 // swings clear over a head standing in the cockpit (sole 0.72, eye 1.6 up)
 const BOOM_HEIGHT = 1.45;
-const COCKPIT = { z0: 1.95, z1: 5.15, half: 0.8, floor: 0.72 };
+export const COCKPIT = { z0: 1.95, z1: 5.15, half: 0.8, floor: 0.72 };
 const CABIN = { z0: -1.3, z1: 1.95, half: 0.95, top: 1.72 };
 const WHEEL_Z = 4.25;
 const WHEEL_AXLE = 1.62;
@@ -354,6 +357,20 @@ const LADDER_Z = 0.4;
 // tabletop's table at the well's middle, long side across her), which buried
 // it at its first place (2.85); the look down to it from there clears the table.
 const MAINSHEET_Z = 3.3;
+// the jib's winches: on the side deck either side, just outboard of the
+// coamings at the cockpit's forward end, aft of the jib's leads (z 1.60,
+// 0.95 out at furl 0: stock-rig.js) so the sheet runs straight aft to them.
+// Forward of a card table in the well (z 2.47–3.23) and the mainsheet's
+// stand (z 3.65). You tail its sheet from the high side: you stand on the
+// side deck across the well from it (WINCH_STAND_X out from the centreline,
+// outboard of the far coaming), as a jib trimmer sits to windward. When it's
+// the working winch (to leeward) the main hides the jib's luff from anywhere
+// on its own side on a reach, even at the rail, and from the sole the mast
+// stands in front of it; from the windward deck the eye sees the luff past
+// both, close-hauled to a beam reach (sloop-navmesh.test.js: the eye's ray).
+const WINCH_Z = COCKPIT.z0 + 0.3;
+const WINCH_X = COCKPIT.half + 0.15;
+const WINCH_STAND_X = 1.3;
 const STEMHEAD = [0, sheerAt(HULL.bow) + 0.08, HULL.bow - 0.22];
 
 const mastStep = [0, deckAt(0, MAST_Z), MAST_Z];
@@ -368,6 +385,8 @@ export const FIT = Object.freeze({
   ladder: { position: [halfBreadthAt(LADDER_Z), sheerAt(LADDER_Z), LADDER_Z], rotation: [0, 0, 0] },
   anchor: { position: [0, STEMHEAD[1] - 0.04, STEMHEAD[2] + 0.02], rotation: [0, 0, 0] },
   mainsheet: { position: [0, COCKPIT.floor, MAINSHEET_Z], rotation: [0, 0, 0] },
+  // the port winch (the part); the starboard one is its mirror
+  winch: { position: [-WINCH_X, deckAt(-WINCH_X, WINCH_Z), WINCH_Z], rotation: [0, 0, 0] },
 });
 
 /**
@@ -382,11 +401,20 @@ export const STAND = Object.freeze({
   windlass: FIT.windlass.position,
   ladder: FIT.ladder.position,
   mainsheet: FIT.mainsheet.position,
+  winches: FIT.winch.position,
 });
 export const LIFT = Object.freeze({ wheel: WHEEL_AXLE - COCKPIT.floor });
 
 /** The connector tag each part's stand takes (parts.js gives the parts the same). */
-export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet" });
+export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet", winch: "sailing.winch", winches: "sailing.winch" });
+
+/**
+ * A jib winch's sailing.winch trait on one side (−1 port, +1 starboard):
+ * where you stand to work it, in its own frame (squared to her body): across
+ * the well, WINCH_STAND_X out on the other side, on the side deck (tailing
+ * from the high side when it's the working winch).
+ */
+export const winchTrait = (side) => ({ sail: "jib", side: side < 0 ? "port" : "starboard", stand: [-side * (WINCH_X + WINCH_STAND_X), Math.round((deckAt(WINCH_STAND_X, WINCH_Z) - FIT.winch.position[1]) * 1e6) / 1e6, 0] });
 
 /**
  * How near (in plan, metres) a part must be put to a stand to go to it, the
@@ -410,6 +438,29 @@ const SAIL = {
   clew: [0, 0.14, 4.75],
   head: [0, mastStep[1] + MAST_HEIGHT - 0.35 - gooseneck[1], 0.1],
 };
+
+// The cabin trunk in plan: a superellipse (|x/W|^5 + |z/L|^5 = 1), narrower
+// forward; its walls lean in 0.07 m to the roof, crowned 0.05 m.
+const CABIN_ZC = (CABIN.z0 + CABIN.z1) / 2;
+const CABIN_L = (CABIN.z1 - CABIN.z0) / 2;
+const cabinHalf = (z) => CABIN.half * lerp(0.74, 1, smoothstep(CABIN.z0, CABIN.z1, z)) * Math.pow(Math.max(0, 1 - Math.abs((z - CABIN_ZC) / CABIN_L) ** 5), 1 / 5);
+
+/**
+ * The top of what's drawn at (x, z), in the hull's frame: the cabin's roof
+ * (crowned) within its walls' tops, the cockpit's sole in the well, else the
+ * deck. Where a sheet lead is put down (stock-rig.js, §3.9's lead rule).
+ */
+export function deckSurfaceAt(x, z) {
+  const L = CABIN_L - 0.07;
+  const dz = Math.abs(z - CABIN_ZC) / L;
+  const half = cabinHalf(z) - 0.07;
+  if (dz < 1 && half > 0 && Math.abs(x) < half) {
+    const q = Math.min(1, Math.pow(Math.abs(x / half) ** 5 + dz ** 5, 1 / 5));
+    return CABIN.top + 0.05 * (1 - q * q);
+  }
+  if (z > COCKPIT.z0 && z < COCKPIT.z1 && Math.abs(x) < COCKPIT.half) return COCKPIT.floor;
+  return deckAt(x, z);
+}
 
 // ─── The hull ─────────────────────────────────────────────────────────────
 
@@ -494,7 +545,7 @@ function hullMeshes() {
   for (let j = cols.length - 2; j >= 1; j--) outline.push([cols[j], deckAt(cols[j], zT), zT]);
   const transom = new Shape();
   const cy = outline.reduce((a, p) => a + p[1], 0) / outline.length;
-  transom.fan([0, cy, zT], outline.reverse());
+  transom.fan([0, cy, zT], outline);
   prims.push(prim(transom, PAINT.topsides, { roughness: 0.3 }));
 
   // keel and rudder, painted as the bottom is
@@ -545,18 +596,22 @@ function deckMeshes(zs) {
   // the cockpit well: white sides, a teak sole and benches either side
   const well = new Shape();
   const wz = zs.filter((z) => z >= COCKPIT.z0 - 1e-9 && z <= COCKPIT.z1 + 1e-9);
+  // every face toward the cockpit: a mirrored side (or end) is wound the other way round
   for (const side of [-1, 1]) {
     const x = side * COCKPIT.half;
-    well.grid(wz.length, 2, (i, r) => [x, r === 0 ? deckAt(x, wz[i]) : COCKPIT.floor, wz[i]]);
+    well.grid(wz.length, 2, (i, r) => [x, (r === 0) === side > 0 ? deckAt(x, wz[i]) : COCKPIT.floor, wz[i]]);
   }
   const xs = [-0.8, -0.4, 0, 0.4, 0.8];
-  for (const z of [COCKPIT.z0, COCKPIT.z1]) well.grid(xs.length, 2, (j, r) => [xs[j], r === 0 ? deckAt(xs[j], z) : COCKPIT.floor, z]);
+  for (const z of [COCKPIT.z0, COCKPIT.z1]) well.grid(xs.length, 2, (j, r) => [xs[j], (r === 0) === (z === COCKPIT.z0) ? deckAt(xs[j], z) : COCKPIT.floor, z]);
   prims.push(prim(well, PAINT.gelcoat, { roughness: 0.5 }));
   const sole = new Shape();
   box(sole, [-COCKPIT.half, COCKPIT.floor - 0.02, COCKPIT.z0], [COCKPIT.half, COCKPIT.floor, COCKPIT.z1]);
+  // the benches reach 2 mm into the well's walls and 1 cm down into the sole: no face of
+  // theirs lies on another's (coplanar faces fight for the depth buffer), the hidden ones behind
+  const SINK = 0.002;
   for (const side of [-1, 1]) {
-    const [x0, x1] = side < 0 ? [-COCKPIT.half, -COCKPIT.half + 0.42] : [COCKPIT.half - 0.42, COCKPIT.half];
-    box(sole, [x0, COCKPIT.floor, COCKPIT.z0], [x1, COCKPIT.floor + 0.36, 3.75]);
+    const [x0, x1] = side < 0 ? [-COCKPIT.half - SINK, -COCKPIT.half + 0.42] : [COCKPIT.half - 0.42, COCKPIT.half + SINK];
+    box(sole, [x0, COCKPIT.floor - 0.01, COCKPIT.z0 - SINK], [x1, COCKPIT.floor + 0.36, 3.75]);
   }
   prims.push(prim(sole, PAINT.teak, { roughness: 0.85 }));
   // coamings: low teak walls round the cockpit's sides, a backrest for the benches
@@ -564,20 +619,23 @@ function deckMeshes(zs) {
   for (const side of [-1, 1]) {
     const x = side * (COCKPIT.half + 0.02);
     const cz = wz.filter((z) => z <= 4.1);
-    coaming.grid(cz.length, 3, (i, r) => {
+    // its inner face 3 mm proud of the well's wall (not on it), and each side wound for itself
+    const xi = x - side * 0.023;
+    const xo = x + side * 0.02;
+    coaming.grid(cz.length, 4, (i, c) => {
       const z = cz[i];
       const h = 0.2 * smoothstep(4.1, 3.5, z);
-      return r === 0 ? [x - side * 0.02, deckAt(x, z) - 0.02, z] : r === 1 ? [x - side * 0.02, deckAt(x, z) + h, z] : [x + side * 0.02, deckAt(x, z) + h, z];
+      // up its inner face, over its top, down its outer face into the deck
+      const r = side > 0 ? 3 - c : c;
+      return r === 0 ? [xi, deckAt(x, z) - 0.02, z] : r === 1 ? [xi, deckAt(x, z) + h, z] : r === 2 ? [xo, deckAt(x, z) + h, z] : [xo, deckAt(xo, z) - 0.02, z];
     });
   }
   prims.push(prim(coaming, PAINT.teakDark, { roughness: 0.7 }));
 
   // the cabin trunk: a rounded box, its sides leaning in, its top crowned
   const K = 56;
-  const zc = (CABIN.z0 + CABIN.z1) / 2;
-  const L = (CABIN.z1 - CABIN.z0) / 2;
-  // in plan a superellipse (|x/W|^5 + |z/L|^5 = 1), narrower forward
-  const cabinHalf = (z) => CABIN.half * lerp(0.74, 1, smoothstep(CABIN.z0, CABIN.z1, z)) * Math.pow(Math.max(0, 1 - Math.abs((z - zc) / L) ** 5), 1 / 5);
+  const zc = CABIN_ZC;
+  const L = CABIN_L;
   const plan = Array.from({ length: K }, (_, k) => {
     const a = (k / K) * Math.PI * 2;
     const c = Math.cos(a);
@@ -590,12 +648,13 @@ function deckMeshes(zs) {
     return [x, z];
   };
   const walls = new Shape();
+  // wound so its faces point out of the trunk (row 0 the top), and the roof's up (row 0 the middle)
   walls.grid(2, K, (r, k) => {
-    const [x, z] = r === 0 ? plan[k] : inset(plan[k], 0.07);
-    return [x, r === 0 ? 1.0 : CABIN.top, z];
+    const [x, z] = r === 1 ? plan[k] : inset(plan[k], 0.07);
+    return [x, r === 1 ? 1.0 : CABIN.top, z];
   }, { wrap: true });
   const roof = new Shape();
-  const rings = [0, 0.3, 0.55, 0.75, 0.9, 1];
+  const rings = [1, 0.9, 0.75, 0.55, 0.3, 0];
   roof.grid(rings.length, K, (r, k) => {
     const [x, z] = inset(plan[k], 0.07);
     const q = 1 - rings[r];
@@ -606,7 +665,8 @@ function deckMeshes(zs) {
 
   // portlights along the cabin's sides, on its leaning wall
   const ports = new Shape();
-  const onWall = (side, y, z) => [side * (cabinHalf(z) - ((y - 1.0) / (CABIN.top - 1.0)) * 0.07 + 0.01), y, z];
+  // 12 mm proud of the leaning wall (6 mm fought it from afar), each side wound outward
+  const onWall = (side, y, z) => [side * (cabinHalf(z) - ((y - 1.0) / (CABIN.top - 1.0)) * 0.07 + 0.016), y, z];
   for (const side of [-1, 1]) {
     for (const z0 of [-0.7, 0.2, 1.05]) {
       const pts = Array.from({ length: 16 }, (_, k) => {
@@ -614,7 +674,7 @@ function deckMeshes(zs) {
         const z = z0 + Math.sign(Math.cos(a)) * Math.pow(Math.abs(Math.cos(a)), 0.5) * 0.28;
         return onWall(side, 1.47 + Math.sin(a) * 0.075, z);
       });
-      ports.fan(onWall(side, 1.47, z0), pts);
+      ports.fan(onWall(side, 1.47, z0), side < 0 ? pts : pts.reverse());
     }
   }
   prims.push(prim(ports, PAINT.glass, { roughness: 0.15, metallic: 0.2 }));
@@ -622,15 +682,17 @@ function deckMeshes(zs) {
   // the companionway: washboards in the cabin's aft end, and its sliding hatch
   const hatch = new Shape();
   box(hatch, [-0.27, COCKPIT.floor, CABIN.z1 - 0.12], [0.27, CABIN.top - 0.04, CABIN.z1 + 0.015]);
-  box(hatch, [-0.32, CABIN.top + 0.02, 1.15], [0.32, CABIN.top + 0.1, CABIN.z1 + 0.02]);
-  box(hatch, [-0.35, CABIN.top + 0.02, -0.75], [0.35, CABIN.top + 0.1, -0.15]);
+  // the hatches' boxes start inside the crowned roof, not along it
+  box(hatch, [-0.32, CABIN.top - 0.01, 1.15], [0.32, CABIN.top + 0.1, CABIN.z1 + 0.02]);
+  box(hatch, [-0.35, CABIN.top - 0.01, -0.75], [0.35, CABIN.top + 0.1, -0.15]);
   prims.push(prim(hatch, PAINT.teakDark, { roughness: 0.7 }));
 
   // a toe rail along the sheer, both sides
   const rail = new Shape();
   for (const side of [-1, 1]) {
     const prof = [[0.005, 0], [0.005, 0.055], [-0.04, 0.055], [-0.04, 0.0]];
-    rail.grid(zs.length, prof.length, (i, r) => {
+    rail.grid(zs.length, prof.length, (i, c) => {
+      const r = side > 0 ? c : prof.length - 1 - c;
       const b = halfBreadthAt(zs[i]);
       const s = sheerAt(zs[i]);
       const shrink = Math.min(1, b / 0.3);
@@ -689,24 +751,45 @@ function deckMeshes(zs) {
 
 // ─── The rig ──────────────────────────────────────────────────────────────
 
+// The standing rigging and spreaders as drawn: mastMeshes draws them, and
+// rigDrawing states them (the stock rig contract, stock-rig.js), so the two
+// can't disagree. In the mast's frame (origin at its step) unless named
+// "OnHull" (the hull's frame).
+const SPREADER_Y = 7.5;
+const SPREADER_TIPS = [-1, 1].map((s) => [s * 0.92, SPREADER_Y + 0.04, 0.16]);
+const CAP_TOP = [0, MAST_HEIGHT - 0.2, 0];
+const LOWER_TOP = [0, SPREADER_Y - 0.1, 0];
+const FORESTAY_TOP = [0, MAST_HEIGHT - 0.1, -0.08];
+const BACKSTAY_TOP = [0, MAST_HEIGHT, 0.2];
+/** A shroud's chainplate on the sheer, `dz` along her from abreast the mast (hull frame). */
+const chainOnHull = (side, dz) => {
+  const z = MAST_Z + 0.25 + dz;
+  const x = side * (halfBreadthAt(z) - 0.06);
+  return [x, sheerAt(z) + 0.05, z];
+};
+/** The forestay's foot at the stemhead, and the backstay's plate on the transom (hull frame). */
+const STEM_PLATE = [STEMHEAD[0], STEMHEAD[1], STEMHEAD[2] + 0.1];
+const STERN_PLATE = [0, sheerAt(HULL.stern) + 0.05, HULL.stern - 0.08];
+
 function mastMeshes() {
   const top = MAST_HEIGHT;
   // the mast: an oval section, tapering above the spreaders
   const mast = new Shape();
   const ys = [0, 0.4, 3, 6, 7.5, 9, 11, 12.5, 13.5, top];
+  // wound outward (as lathe() is: -sin round the ring)
   mast.grid(ys.length, 16, (r, k) => {
     const y = ys[r];
     const taper = 1 - 0.45 * smoothstep(7.5, top, y);
     const a = (k / 16) * Math.PI * 2;
-    return [Math.cos(a) * 0.065 * taper, y, Math.sin(a) * 0.095 * taper];
+    return [Math.cos(a) * 0.065 * taper, y, -Math.sin(a) * 0.095 * taper];
   }, { wrap: true });
   mast.fan([0, top + 0.03, 0], Array.from({ length: 16 }, (_, k) => {
     const a = (k / 16) * Math.PI * 2;
-    return [Math.cos(a) * 0.065 * 0.55, top, Math.sin(a) * 0.095 * 0.55];
-  }).reverse());
+    return [Math.cos(a) * 0.065 * 0.55, top, -Math.sin(a) * 0.095 * 0.55];
+  }));
   // spreaders, swept a little aft
-  const spreaderY = 7.5;
-  const tips = [-1, 1].map((s) => [s * 0.92, spreaderY + 0.04, 0.16]);
+  const spreaderY = SPREADER_Y;
+  const tips = SPREADER_TIPS;
   for (const t of tips) rod(mast, [0, spreaderY, 0], t, 0.035, { r2: 0.02, caps: true });
   // the masthead's crane, where the backstay and halyard sit
   box(mast, [-0.04, top - 0.05, -0.12], [0.04, top + 0.02, 0.22]);
@@ -716,65 +799,90 @@ function mastMeshes() {
   const [, baseY, baseZ] = mastStep;
   const onHull = (x, y, z) => [x, y - baseY, z - baseZ];
   const wires = new Shape();
-  const chain = (side, dz) => {
-    const z = MAST_Z + 0.25 + dz;
-    const x = side * (halfBreadthAt(z) - 0.06);
-    return onHull(x, sheerAt(z) + 0.05, z);
-  };
+  const chain = (side, dz) => onHull(...chainOnHull(side, dz));
   for (const [side, tip] of [[-1, tips[0]], [1, tips[1]]]) {
-    tube(wires, [[0, top - 0.2, 0], tip, chain(side, 0)], 0.008, 4);
-    rod(wires, [0, spreaderY - 0.1, 0], chain(side, -0.45), 0.008, { sides: 4 });
-    rod(wires, [0, spreaderY - 0.1, 0], chain(side, 0.45), 0.008, { sides: 4 });
+    tube(wires, [[...CAP_TOP], tip, chain(side, 0)], 0.008, 4);
+    rod(wires, [...LOWER_TOP], chain(side, -0.45), 0.008, { sides: 4 });
+    rod(wires, [...LOWER_TOP], chain(side, 0.45), 0.008, { sides: 4 });
   }
-  const stem = onHull(STEMHEAD[0], STEMHEAD[1], STEMHEAD[2] + 0.1);
-  const stern = onHull(0, sheerAt(HULL.stern) + 0.05, HULL.stern - 0.08);
-  rod(wires, [0, top - 0.1, -0.08], stem, 0.009, { sides: 4 });
-  rod(wires, [0, top, 0.2], stern, 0.009, { sides: 4 });
+  const stem = onHull(...STEM_PLATE);
+  const stern = onHull(...STERN_PLATE);
+  rod(wires, [...FORESTAY_TOP], stem, 0.009, { sides: 4 });
+  rod(wires, [...BACKSTAY_TOP], stern, 0.009, { sides: 4 });
   parts.push(prim(wires, PAINT.wire, { roughness: 0.5, metallic: 0.6 }));
 
-  // a jib rolled up on the forestay, in its blue cover
-  const furl = new Shape();
-  const fa = [0, top - 0.1, -0.08];
-  const along = (t) => [lerp(fa[0], stem[0], t), lerp(fa[1], stem[1], t), lerp(fa[2], stem[2], t)];
-  const path = [0.04, 0.1, 0.3, 0.55, 0.8, 0.95].map(along);
-  const radii = [0.02, 0.045, 0.065, 0.07, 0.06, 0.035];
-  const d = norm(sub(stem, fa));
-  const u = norm(cross(d, [1, 0, 0]));
-  const w = cross(d, u);
-  furl.grid(path.length, 10, (r, k) => {
-    const th = (k / 10) * Math.PI * 2;
-    const p = path[r];
-    const rr = radii[r];
-    return [p[0] + (u[0] * Math.cos(th) + w[0] * Math.sin(th)) * rr, p[1] + (u[1] * Math.cos(th) + w[1] * Math.sin(th)) * rr, p[2] + (u[2] * Math.cos(th) + w[2] * Math.sin(th)) * rr];
-  }, { wrap: true });
-  parts.push(prim(furl, PAINT.cover, { roughness: 0.85 }));
+  // (the jib is its own piece now, under the mast: jibMeshes)
   return [{ name: "Mast", primitives: parts }];
 }
 
-/** The mainsail: luff up the mast, foot along the boom, a roach to the leech and a camber to starboard. */
-function sailShape() {
-  const rows = 26;
-  const cols = 12;
+const SAIL_ROWS = 26;
+
+/**
+ * The mainsail's row at height h (0 the foot, 1 the head), in the rig's
+ * (y, z): its point on the luff, and on the leech with the roach. The
+ * drawn cloth's rows and its outline (rigDrawing) are both these.
+ */
+function sailRow(h) {
   const { tack, clew, head } = SAIL;
   const leech = [head[1] - clew[1], head[2] - clew[2]];
   const ll = Math.hypot(leech[0], leech[1]);
   const out = [-leech[1] / ll, leech[0] / ll]; // across the leech, up and aft, in (y, z)
-  const shape = new Shape();
-  shape.grid(rows + 1, cols + 1, (r, c) => {
-    const h = r / rows;
-    const lu = [lerp(tack[1], head[1], h), lerp(tack[2], head[2], h)];
-    const roach = 0.55 * Math.pow(Math.sin(Math.PI * h), 0.9) * (1 - h * 0.3);
-    const le = [lerp(clew[1], head[1], h) + out[0] * roach, lerp(clew[2], head[2], h) + out[1] * roach];
-    const t = c / cols;
-    const chord = Math.hypot(le[0] - lu[0], le[1] - lu[1]);
-    // deepest at 40% of the chord; flat along the boom, full up the middle, twisted off at the top
-    const shapeAt = (t * Math.pow(1 - t, 1.5)) / 0.186;
-    const depth = 0.085 * chord * shapeAt * smoothstep(0, 0.14, h);
-    const twist = 0.35 * h * t * t;
-    return [depth + twist, lerp(lu[0], le[0], t), lerp(lu[1], le[1], t)];
+  const lu = [lerp(tack[1], head[1], h), lerp(tack[2], head[2], h)];
+  const roach = 0.55 * Math.pow(Math.sin(Math.PI * h), 0.9) * (1 - h * 0.3);
+  const le = [lerp(clew[1], head[1], h) + out[0] * roach, lerp(clew[2], head[2], h) + out[1] * roach];
+  return { lu, le };
+}
+
+/**
+ * The mainsail's cloth (cloth.js; the rig GLB's extras.sail.cloth.main):
+ * rows from the luff up the mast to the leech with its roach, cambered to
+ * starboard at neutral, flat along the boom, twisted off at the head, and
+ * four battens in pockets.
+ */
+export function mainCloth() {
+  return clothOf({
+    kind: "main",
+    rows: SAIL_ROWS,
+    cols: 12,
+    rowAt: (h) => {
+      const { lu, le } = sailRow(h);
+      return { lu: [0, lu[0], lu[1]], le: [0, le[0], le[1]] };
+    },
+    foot: 0.14,
+    battens: { rows: [6, 11, 16, 21], from: 6, width: 0.05, off: 0.012 },
+    // reefed on the contract's luff (stock-rig.js stockMain): from the gooseneck (the rig's origin) straight up its Y to the head's height
+    reef: { tack: [0, 0, 0], head: [0, SAIL.head[1], 0] },
   });
+}
+
+/** A cloth's grid as a Shape: its vertices at neutral trim (clothVertices: the dressing's own function). */
+function clothShape(cloth) {
+  const pos = clothVertices(new Float64Array(clothCount(cloth) * 3), cloth, NEUTRAL, 0);
+  const shape = new Shape();
+  const W = cloth.cols + 1;
+  shape.grid(cloth.rows + 1, W, (r, c) => {
+    const o = 3 * (r * W + c);
+    return [pos[o], pos[o + 1], pos[o + 2]];
+  });
+  return { shape, pos };
+}
+
+/** The battens as ribbons on the neutral cloth (cloth.js battenVertices). */
+function battenShape(cloth, pos) {
+  const v = battenVertices(new Float64Array(battenCount(cloth) * 3), pos, cloth);
+  const shape = new Shape();
+  const n = cloth.cols + 1 - cloth.battens.from;
+  for (let b = 0; b < cloth.battens.rows.length; b++) {
+    shape.grid(n, 2, (k, j) => {
+      const o = 3 * (b * n * 2 + k * 2 + j);
+      return [v[o], v[o + 1], v[o + 2]];
+    });
+  }
   return shape;
 }
+
+/** The bunt of a reefed main along the boom, at the least radius (looks.js swells it with the reef and lifts it onto the boom). */
+export const BUNT_R = 0.02;
 
 function rigMeshes() {
   const parts = [];
@@ -785,28 +893,102 @@ function rigMeshes() {
   const fittings = new Shape();
   box(fittings, [-0.05, -0.06, -0.1], [0.05, 0.06, 0.04]);
   parts.push(prim(fittings, PAINT.bronze, { roughness: 0.35, metallic: 0.8 }));
-  // the sail is its own mesh (node "Sail"), so a view can lower it to the boom
-  const cloth = [prim(sailShape(), PAINT.sail, { roughness: 0.9 })];
+  // the sail is its own mesh (node "Sail"), so a view can rewrite its cloth
+  const cloth = mainCloth();
+  const { shape, pos } = clothShape(cloth);
   // battens: four stiff strips in pockets, darker against the cloth
-  const battens = new Shape();
-  const sail = sailShape();
-  const cols = 13;
-  for (const r of [6, 11, 16, 21]) {
-    const pts = [];
-    for (let c = 6; c < cols; c++) {
-      const ix = r * cols + c;
-      pts.push([sail.p[ix * 3] + 0.012, sail.p[ix * 3 + 1], sail.p[ix * 3 + 2]]);
-    }
-    tube(battens, pts, 0.018, 4);
-  }
-  cloth.push(prim(battens, "#d8d2c3", { roughness: 0.8 }));
+  const sail = [prim(shape, PAINT.sail, { roughness: 0.9 }), prim(battenShape(cloth, pos), "#d8d2c3", { roughness: 0.8 })];
+  // the bunt: the reefed cloth furled along the boom (hidden till it's reefed)
+  const bunt = new Shape();
+  tube(bunt, [[0, 0, SAIL.tack[2] + 0.1], [0, 0, SAIL.clew[2] - 0.1]], BUNT_R, 8);
   return [
     { name: "Boom and sail", primitives: parts },
-    { name: "Sail", primitives: cloth },
+    // a one-sided sheet seen from both sides casts but takes no shadows (the stage's
+    // normal bias can't be right for both sides: STAGE.md, "Atmosphere")
+    { name: "Sail", primitives: sail, extras: { receiveShadow: false } },
+    { name: "Bunt", primitives: [prim(bunt, PAINT.sail, { roughness: 0.9 })] },
+  ];
+}
+
+// ─── The jib ──────────────────────────────────────────────────────────────
+
+const JIB_ROWS = 20;
+const JIB_COLS = 10;
+/** The roll on the luff at furl 0 (the foil's own section; looks.js swells it as the jib rolls away). */
+export const JIB_FOIL_R = 0.02;
+
+/**
+ * The jib as drawn, in the hull's frame, and the Jib piece's frame: the
+ * contract's own jib (stock-rig.js stockJib: a 100% blade on her
+ * forestay), its tack the piece's origin, its local +Y up the luff (tack to
+ * head), +Z square to the luff aft in the centreplane, +X to starboard: so
+ * turning the piece about its own Y swings the jib about its luff, as
+ * rig-sails.js swungCE does (+ to starboard). `rotation` is that frame's
+ * Euler XYZ in the hull's; `local(p)` a hull-frame point in the piece's.
+ */
+export function jibDrawing() {
+  const j = stockJib(rigDrawing(), KEPT.models.jib);
+  const u = norm(sub(j.head, j.tack));
+  const w = [0, -u[2], u[1]]; // square to u in the centreplane, aft (u up, so its z is u_y > 0)
+  const local = (p) => {
+    const d = sub(p, j.tack);
+    return [d[0], d[1] * u[1] + d[2] * u[2], d[1] * w[1] + d[2] * w[2]];
+  };
+  return { tack: [...j.tack], head: [...j.head], clew: [...j.clew], rotation: [Math.atan2(u[2], u[1]), 0, 0], local };
+}
+
+/** The Jib piece's place in the hull's frame: at its tack, turned so its Y is the luff. */
+export const jibFit = () => {
+  const d = jibDrawing();
+  return { position: d.tack, rotation: d.rotation };
+};
+
+/**
+ * The jib's cloth (cloth.js; the Jib GLB's extras.sail.cloth), in the
+ * piece's frame: rows parallel to its foot, from the luff (tack to head)
+ * to the leech (clew to head), cambered to starboard at neutral, deepest
+ * at 40% of the chord.
+ */
+export function jibCloth() {
+  const d = jibDrawing();
+  const H = d.local(d.head), C = d.local(d.clew);
+  return clothOf({
+    kind: "jib",
+    rows: JIB_ROWS,
+    cols: JIB_COLS,
+    rowAt: (h) => ({ lu: [0, H[1] * h, H[2] * h], le: [0, lerp(C[1], H[1], h), lerp(C[2], H[2], h)] }),
+    twist: 0.2,
+  });
+}
+
+function jibMeshes() {
+  const d = jibDrawing();
+  const H = d.local(d.head);
+  // the luff's foil (the furler), its roll at furl 0: looks.js swells it as the jib is rolled away
+  const roll = new Shape();
+  const path = [0.01, 0.04, 0.5, 0.96, 0.99].map((t) => [0, H[1] * t, H[2] * t]);
+  tube(roll, path, JIB_FOIL_R, 8);
+  return [
+    { name: "Jib", primitives: [prim(clothShape(jibCloth()).shape, PAINT.sail, { roughness: 0.9 })], extras: { receiveShadow: false } },
+    { name: "Roll", primitives: [prim(roll, PAINT.cover, { roughness: 0.85 })] },
   ];
 }
 
 // ─── Fittings ─────────────────────────────────────────────────────────────
+
+/**
+ * A jib sheet winch, standing on her side deck: a base, a drum with its
+ * self-tailing jaws on top, its origin at its foot. The port and starboard
+ * ones are the same drawing.
+ */
+function winchMeshes() {
+  const metal = new Shape();
+  // its foot 5 mm down into the deck, not on it (a face on the deck fights it)
+  lathe(metal, [[0, -0.005], [0.085, -0.005], [0.085, 0.02], [0.065, 0.025], [0.06, 0.05], [0.055, 0.15], [0.07, 0.16], [0.07, 0.19], [0.05, 0.2], [0, 0.2]], 20);
+  const socket = new Shape();
+  lathe(socket, [[0, 0.2], [0.018, 0.2], [0.018, 0.215], [0, 0.215]], 8);
+  return [{ name: "Jib winch", primitives: [prim(metal, "#c9cdd1", { roughness: 0.25, metallic: 0.85 }), prim(socket, PAINT.iron, { roughness: 0.5 })] }];
+}
 
 function wheelMeshes() {
   const wood = new Shape();
@@ -842,7 +1024,8 @@ function windlassMeshes() {
     rod(drum, [c * 0.15, 0.1, s * 0.15], [c * 0.16, 0.48, s * 0.16], 0.02, { r2: 0.024, sides: 5 });
   }
   const base = new Shape();
-  lathe(base, rad([[0, 0], [0.3, 0], [0.3, 0.05], [0.3, 0.05], [0.24, 0.07], [0.18, 0.1], [0, 0.1]]), 24);
+  // its foot 5 mm down into the deck, not on it
+  lathe(base, rad([[0, -0.005], [0.3, -0.005], [0.3, 0.05], [0.3, 0.05], [0.24, 0.07], [0.18, 0.1], [0, 0.1]]), 24);
   ellipsoid(base, [0, 0.68, 0], [0.06, 0.04, 0.06], 6, 12);
   const bars = new Shape();
   for (let k = 0; k < 4; k++) {
@@ -863,10 +1046,13 @@ function windlassMeshes() {
  * the car, its origin on the sole under the car. Low: you step over the
  * track, and stand aft of the block to work it.
  */
+const TRACK = { half: 0.36, top: 0.03 };
+
 function mainsheetMeshes() {
   const steel = new Shape();
-  box(steel, [-0.36, 0, -0.025], [0.36, 0.03, 0.025]);
-  for (const x of [-0.36, 0.36]) box(steel, [x - 0.025, 0, -0.035], [x + 0.025, 0.06, 0.035]);
+  // the track and its stops 5 mm down into the sole, not on it
+  box(steel, [-TRACK.half, -0.005, -0.025], [TRACK.half, TRACK.top, 0.025]);
+  for (const x of [-TRACK.half, TRACK.half]) box(steel, [x - 0.025, -0.005, -0.035], [x + 0.025, 0.06, 0.035]);
   box(steel, [-0.06, 0.03, -0.04], [0.06, 0.065, 0.04]);
   rod(steel, [0, 0.065, 0], [0, 0.13, 0], 0.012, { sides: 6 });
   const block = new Shape();
@@ -991,7 +1177,8 @@ function isletMeshes() {
   const col = [];
   const C = { sand: [0.69, 0.6, 0.4], grass: [0.16, 0.26, 0.08], rock: [0.22, 0.2, 0.18] };
   for (let t = 0; t < rock.i.length; t += 3) {
-    const v = [0, 1, 2].map((k) => rock.i[t + k]).map((ix) => [rock.p[ix * 3], rock.p[ix * 3 + 1], rock.p[ix * 3 + 2]]);
+    // wound outward: the grid runs from the summit out, which would face it in
+    const v = [0, 2, 1].map((k) => rock.i[t + k]).map((ix) => [rock.p[ix * 3], rock.p[ix * 3 + 1], rock.p[ix * 3 + 2]]);
     const n = norm(cross(sub(v[1], v[0]), sub(v[2], v[0])));
     const y = (v[0][1] + v[1][1] + v[2][1]) / 3;
     const c = y < 0.9 ? C.sand : Math.abs(n[1]) > 0.82 && y > 2.5 ? C.grass : C.rock;
@@ -1037,11 +1224,13 @@ const PARTS = {
   // the sheer's rise to the bow and the lifelines, which stand above the deck
   hull: { name: "Hull", meshes: hullMeshes, extras: () => ({ ship: { length: HULL.length, beam: HULL.beam, draft: HULL.draft, freeboard: HULL.freeboard }, connectors: connectors(), snapRadius: SNAP_RADIUS }) },
   mast: { name: "Mast", meshes: mastMeshes },
-  rig: { name: "Boom and sail", meshes: rigMeshes, extras: () => ({ sail: sailFacts() }) },
+  rig: { name: "Boom and sail", meshes: rigMeshes, extras: () => ({ sail: { ...sailFacts(), at: { position: [...FIT.rig.position], rotation: [...FIT.rig.rotation] }, cloth: mainCloth() }, rig: stockContract(rigDrawing()) }) },
   wheel: { name: "Wheel", meshes: wheelMeshes },
   windlass: { name: "Windlass", meshes: windlassMeshes },
   ladder: { name: "Ladder", meshes: ladderMeshes },
   mainsheet: { name: "Mainsheet", meshes: mainsheetMeshes },
+  jib: { name: "Jib", meshes: jibMeshes, extras: () => ({ sail: { cloth: jibCloth() } }) },
+  winch: { name: "Jib winch", meshes: winchMeshes },
   anchor: { name: "Anchor", meshes: anchorMeshes },
   redBuoy: { name: "Red buoy", meshes: () => buoyMeshes("red") },
   greenBuoy: { name: "Green buoy", meshes: () => buoyMeshes("green") },
@@ -1066,7 +1255,7 @@ function sailFacts() {
   const { tack, clew, head } = SAIL;
   const luff = Math.hypot(...sub(head, tack));
   const foot = Math.hypot(...sub(clew, tack));
-  const { p, i } = sailShape();
+  const { p, i } = clothShape(mainCloth()).shape;
   let main = 0;
   for (let k = 0; k < i.length; k += 3) {
     const [a, b, c] = [i[k] * 3, i[k + 1] * 3, i[k + 2] * 3];
@@ -1079,6 +1268,43 @@ function sailFacts() {
   const tuned = SLOOP.sail;
   const plan = { tack: sub(tuned.tack, FIT.rig.position).map((v) => Math.round(v * 1e6) / 1e6 + 0), luff: tuned.luff, foot: tuned.foot, area: tuned.area };
   return { tack: [...tack], clew: [...clew], head: [...head], luff, foot, main: r2(main), jib: r2(jib), plan };
+}
+
+/**
+ * The rig as drawn, in the hull's frame (her body frame: x starboard, y up,
+ * z aft, the waterline at y = 0): every point the stock rig contract is
+ * stated from (stock-rig.js). mastMeshes and rigMeshes draw from the same
+ * constants, so the contract and the drawing can't disagree.
+ */
+export function rigDrawing() {
+  const onHull = (p) => [p[0] + mastStep[0], p[1] + mastStep[1], p[2] + mastStep[2]];
+  const onRig = (p) => [p[0] + gooseneck[0], p[1] + gooseneck[1], p[2] + gooseneck[2]];
+  const outline = [];
+  for (let r = 0; r <= SAIL_ROWS; r++) {
+    const { lu } = sailRow(r / SAIL_ROWS);
+    outline.push(onRig([0, lu[0], lu[1]]));
+  }
+  for (let r = SAIL_ROWS - 1; r >= 0; r--) {
+    const { le } = sailRow(r / SAIL_ROWS);
+    outline.push(onRig([0, le[0], le[1]]));
+  }
+  const tips = SPREADER_TIPS.map(onHull); // [port, starboard]
+  const chain = (side, dz) => chainOnHull(side, dz);
+  const traveller = [-1, 1].map((side) => [side * TRACK.half, FIT.mainsheet.position[1] + TRACK.top, FIT.mainsheet.position[2]]);
+  return {
+    mast: { step: [...mastStep], head: onHull([0, MAST_HEIGHT, 0]), height: MAST_HEIGHT, section: 0.19 },
+    boom: { gooseneck: [...gooseneck], end: onRig([0, 0, BOOM_LENGTH]), length: BOOM_LENGTH },
+    main: { head: onRig(SAIL.head), clew: onRig(SAIL.clew), outline },
+    forestay: { from: [...STEM_PLATE], to: onHull(FORESTAY_TOP) },
+    backstay: { from: onHull(BACKSTAY_TOP), to: [...STERN_PLATE] },
+    caps: [-1, 1].map((side, i) => ({ side, from: onHull(CAP_TOP), via: tips[i], to: chain(side, 0) })),
+    lowers: [-1, 1].flatMap((side) => [-0.45, 0.45].map((dz) => ({ side, dz, from: onHull(LOWER_TOP), to: chain(side, dz) }))),
+    spreaders: { height: SPREADER_Y, root: onHull([0, SPREADER_Y, 0]), tips },
+    chainplates: { port: chain(-1, 0), starboard: chain(1, 0) },
+    stemhead: [...STEMHEAD],
+    traveller,
+    deckAt: deckSurfaceAt,
+  };
 }
 
 /** A part's meshes (glb.js meshes: name and primitives). */

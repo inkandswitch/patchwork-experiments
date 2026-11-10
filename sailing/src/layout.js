@@ -11,7 +11,7 @@
 // which a template's context has.
 
 import { PIECES, WIND, newSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
-import { ANCHOR, QUARTER, RODE, SAIL, SEA, SHIP } from "./traits.js";
+import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP } from "./traits.js";
 
 export { SEA, SHIP, WIND, partObject };
 
@@ -59,14 +59,16 @@ const ANCHORAGE = [
 
 /**
  * The anchorage's breeze (speed m/s, from degrees): a moderate one, Beaufort
- * 4. Her sail is down at anchor, so it costs nothing there, and it's what she
- * needs to get out of irons and away once the anchor's up and the sail's
- * raised: in a light air (4.5 m/s) she can sit head to wind for minutes.
+ * 4. Her sail is down at anchor, so it costs nothing there. The main raised
+ * at anchor and the anchor up, she leaves as a crew does: the jib backed (B
+ * at the helm unrolls it backed; dead ahead, on the side the wheel picks),
+ * off in 6–10 s at 12 kn (stock-rig.test.js); left alone she drifts astern
+ * and falls off by herself in about a minute.
  */
 export const ANCHORAGE_AIR = Object.freeze({ speed: 6.5, from: 45 });
 
-/** Her stations at anchor: the sail down, the anchor down with its rode out. */
-export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [ANCHOR]: Object.freeze({ down: true, rode: RODE }) });
+/** Her stations at anchor: the main down, the jib rolled away, the anchor down with its rode out. */
+export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [JIB]: Object.freeze({ furl: 1 }), [ANCHOR]: Object.freeze({ down: true, rode: RODE }) });
 
 /**
  * Lay out a sloop under way on open water in one change: the sea trait,

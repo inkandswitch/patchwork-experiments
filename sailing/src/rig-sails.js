@@ -22,7 +22,7 @@ import { liftSlope } from "./physics-foils.js";
 const EPS = 1e-9;
 
 /** Polygon area and centroid in the sail's plane: (z, y) shoelace, x carried as the mean. */
-function areaCentroid(poly) {
+export function areaCentroid(poly) {
   let a = 0, cy = 0, cz = 0, x = 0;
   const n = poly.length;
   for (let i = 0; i < n; i++) {
@@ -130,6 +130,9 @@ export function rigSails(rig) {
         source: s,
         min: (Number.isFinite(sh.minDeg) ? sh.minDeg : range[0]) * DEG,
         max: (Number.isFinite(sh.maxDeg) ? sh.maxDeg : range[1]) * DEG,
+        // backed (held to windward, pressed by its air against its sheet) its head can't twist open past the
+        // shrouds as an eased one's does: its sheet's travel there is the family's (§6.2), within its own
+        backMax: Math.min(Number.isFinite(sh.maxDeg) ? sh.maxDeg : range[1], range[1]) * DEG,
         wing,
         pivot: t,
         axis: [(h[0] - t[0]) / ul, (h[1] - t[1]) / ul, (h[2] - t[2]) / ul],

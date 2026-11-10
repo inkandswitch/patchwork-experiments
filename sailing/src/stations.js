@@ -38,13 +38,34 @@
 // holds the wheel's pose too, so it turns as their key does, not a round
 // trip later.
 //
+// The jib (DESIGN.md, "Trim feedback" §2) is worked from its winches, port
+// and starboard in the cockpit, each a post you lock in to (F): Q / E trim
+// its sheet, but only from the winch on the side its clew is (the working
+// sheet; the other is lazy), B makes it fast on this winch's side or lets it
+// fly, hold R furls or unfurls it. Its `held` side is the physics' jibHeld:
+// held on the windward side the jib is backed. From the helm, B backs it to
+// windward (to bear away out of irons) or lets it fly; furled, B unrolls it
+// backed (the furling line is led aft, as the sheets are). With its own air
+// within its zero-lift angle of dead ahead, where the physics backs it on
+// either side (trim.js heldEitherSide), B backs it on the side that turns her
+// bow the way the wheel is over: that is how she leaves her anchor on the
+// tack you choose. Further off, only windward backs it, so the wind decides,
+// and the hint names the way her bow will go. Whoever is changing
+// one of its fields holds the jib's "station" claim (only while the key is
+// down, as the sail's), so two people can't trim one sheet; each winch's own
+// "station" claim says who stands there.
+//
 // Looking at the mast (a part of the ship with no traits of its own) works
 // the sail it carries: the rig hangs under it, or (a doc made before the
 // rig hung from the mast) the rig's gooseneck stands over it.
 
-import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, isUnder, shipOf, wheelTransform } from "./traits.js";
+import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, wheelTransform } from "./traits.js";
+import { heldEitherSide, trimOf } from "./trim.js";
 import { bodyOf } from "./body.js";
 import { apply, invert } from "./frames.js";
+
+/** jibState's trim, written in place each frame (no allocation). */
+const JIB_TRIM = {};
 
 export { RODE };
 
@@ -58,7 +79,24 @@ export const WHEEL_RATE = 0.6; // of the wheel's travel per second, while A or D
 export const RAISE_RATE = 1 / 4; // the sail, all the way in 4 s
 export const SHEET_RATE = 0.25; // per second
 export const WINCH_RATE = RODE / 6; // m/s: a full rode comes up in 6 s
-const BREAKOUT = 4; // m of winding to bring up an anchor that's down short
+export const FURL_RATE = 1 / 4; // the jib, all the way in or out in 4 s (as the halyard)
+const BREAKOUT = 4;
+
+/**
+ * The side B at the helm makes the jib fast on (−1 port, +1 starboard), by
+ * its own air (`from`, rad, + from starboard; its zero-lift angle `alpha0`,
+ * deg): to windward; where either side backs it (trim.js heldEitherSide),
+ * opposite the wheel (`wheel`, −1..1: held to starboard, it pushes her bow
+ * to port), or amidships to windward, else the clew's side (`clew`), else
+ * starboard. Whichever, the side chosen backs it, so her bow goes to the
+ * other side: the hint's "bow to …".
+ */
+export function helmBackSide({ from, alpha0 = 0, wheel = 0, clew = 0 }) {
+  const a = Number(from) || 0;
+  const w = Number(wheel) || 0;
+  if (heldEitherSide(a, alpha0) && Math.abs(w) > 0.05) return -Math.sign(w);
+  return (a > 0 ? 1 : a < 0 ? -1 : 0) || (clew > 0 ? 1 : clew < 0 ? -1 : 0) || 1;
+} // m of winding to bring up an anchor that's down short
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
@@ -117,6 +155,8 @@ export function walkTo(kind, stations = {}, near = {}) {
     }
     case "anchor":
       return "Anchor · walk to the windlass";
+    case "winch":
+      return "Jib winch · walk to the cockpit";
     default:
       return null;
   }
@@ -328,6 +368,12 @@ export function stationCommands(api, ctx) {
    */
   function sailKeys(sailId, { sheet, halyard }) {
     const open = new Map(); // "sheet" | "raised" → { code, trim }
+    // each frame's trims, without copying the map (deleting the entry being visited is safe in forEach)
+    let step = 0;
+    const tickOne = (h, slot) => {
+      h.trim.update(step);
+      if (!h.trim.open) open.delete(slot);
+    };
     const start = (slot, code, make) => {
       if (open.has(slot)) return;
       const t = make();
@@ -357,10 +403,8 @@ export function stationCommands(api, ctx) {
         return false;
       },
       tick(dt) {
-        for (const [slot, h] of [...open]) {
-          h.trim.update(dt);
-          if (!h.trim.open) open.delete(slot);
-        }
+        step = dt;
+        open.forEach(tickOne);
       },
       end() {
         for (const h of open.values()) h.trim.end();
@@ -418,6 +462,269 @@ export function stationCommands(api, ctx) {
     if (lost) leave?.();
   }
 
+  // ─── the jib, and its winches ─────────────────────────────────────────
+
+  /** A winch's side: −1 port, +1 starboard. */
+  const winchSide = (sc, id) => (traitOf(sc, id, WINCH)?.side === "port" ? -1 : 1);
+  const readOf = (sc, id) => {
+    const ship = shipOf(sc, id);
+    return ship ? (ctx.sim.read?.(ship) ?? null) : null;
+  };
+  /** Which side the jib's clew is on (−1 port, +1 starboard), as her physics has it; 0 when it doesn't say. */
+  const clewSide = (sc, id) => {
+    const j = readOf(sc, id)?.jib;
+    return Number.isFinite(j) && j !== 0 ? Math.sign(j) : 0;
+  };
+  /** Her windward side (−1, +1) by the apparent wind; 0 dead ahead or unknown. */
+  const windward = (sc, id) => {
+    const a = readOf(sc, id)?.apparentWind?.angle;
+    return Number.isFinite(a) && a !== 0 ? Math.sign(a) : 0;
+  };
+  /** The jib's own air as her physics reads it ({ from: rad, + from starboard; alpha0: deg }); null when it flies no jib. */
+  const jibAir = (sc, id) => {
+    const ship = shipOf(sc, id);
+    const s = ship ? ctx.sim.read?.(ship)?.sails?.find((x) => !x.main) : null;
+    if (!s || !Number.isFinite(s.from)) return null;
+    return { from: s.from, alpha0: ctx.sim.sailModels?.(ship)?.[s.id]?.alpha0 ?? 0 };
+  };
+  /** The jib's windward side by its own air (−1, +1; by the apparent wind when it has none); 0 dead ahead or unknown. */
+  const jibWindward = (sc, id) => {
+    const air = jibAir(sc, id);
+    return air ? (air.from > 0 ? 1 : air.from < 0 ? -1 : 0) : windward(sc, id);
+  };
+  /** Does making the jib fast on `side` back it (P2): to windward, or either side within its zero-lift angle of dead ahead? */
+  const backs = (sc, id, side) => {
+    const air = jibAir(sc, id);
+    return (air != null && heldEitherSide(air.from, air.alpha0)) || jibWindward(sc, id) === side;
+  };
+  /** Is this winch's the working sheet: the one on the clew's side (either, while that's unknown)? */
+  const working = (sc, winch) => {
+    const c = clewSide(sc, winch);
+    return !c || c === winchSide(sc, winch);
+  };
+  const jibField = (id, k, d) => {
+    const v = value(id)[k];
+    return v === undefined ? d : v;
+  };
+  const furlOf = (id) => {
+    const v = Number(jibField(id, "furl", 0));
+    return Number.isFinite(v) ? v : 0;
+  };
+  /** The jib's trim state ("drawing", "luffing", …: trim.js; "eased out · stalled" at its stop), from her read; null when her physics flies no jib. */
+  function jibState(sc, id) {
+    const ship = shipOf(sc, id);
+    const sails = ship ? ctx.sim.read?.(ship)?.sails : null;
+    if (!Array.isArray(sails)) return null;
+    for (let i = 0; i < sails.length; i++) {
+      const s = sails[i];
+      if (s.main) continue;
+      const k = ctx.sim.sailModels?.(ship)?.[s.id];
+      if (!k) return null;
+      const t = trimOf(s, k, JIB_TRIM);
+      return t.atStop ? "eased out · stalled" : t.state;
+    }
+    return null;
+  }
+
+  /**
+   * The jib's keys, at a winch (`winch`: Q / E its sheet from the working
+   * winch, B made fast here or let fly, hold R furl) or at the helm (`from`
+   * the wheel, `wheel()` its live angle: B backs it to windward, unrolling it
+   * if it's furled, or lets it fly). Each change is under the jib's own
+   * claim: a held key's for as long as it's down, B's for the moment of the
+   * press (an unroll's until it's out); while someone else holds it, keys do
+   * nothing.
+   */
+  function jibKeys(jibId, { winch = null, from = winch, wheel = () => 0 } = {}) {
+    const open = new Map(); // "sheet" | "furl" → { code, trim, goal? } (goal: runs on its own until it's there)
+    let step = 0;
+    const tickOne = (h, slot) => {
+      h.trim.update(step);
+      if (h.goal !== undefined && h.trim.value === h.goal) h.trim.end();
+      if (!h.trim.open) open.delete(slot);
+    };
+    const start = (slot, code, make) => {
+      if (open.has(slot)) return;
+      const t = make();
+      if (t) open.set(slot, { code, trim: t });
+    };
+    const held = () => jibField(jibId, "held", null);
+    /** What B does here: the side it makes the jib fast on (null: let it fly), and what that's called. */
+    const back = () => {
+      const sc = api.scene();
+      if (held()) return { held: null, label: "let jib fly" };
+      if (winch) {
+        const side = winchSide(sc, winch);
+        return { held: sideName(side), label: backs(sc, winch, side) ? "back jib" : "hold jib here" };
+      }
+      // at the helm: to windward by the jib's own air; where either side backs it, opposite the
+      // wheel (held to starboard, it pushes her bow to port); amidships there, windward, the
+      // clew's side, starboard. Either way the side chosen backs it, so the hint is the way she goes
+      const air = jibAir(sc, from);
+      const side = helmBackSide({ from: air ? air.from : readOf(sc, from)?.apparentWind?.angle, alpha0: air ? air.alpha0 : 0, wheel: wheel(), clew: clewSide(sc, from) });
+      const verb = furlOf(jibId) > 0 ? "unroll jib backed" : "back jib";
+      return { held: sideName(side), label: `${verb}, bow to ${sideName(-side)}` };
+    };
+    return {
+      key(ev) {
+        if (!jibId) return false;
+        const k = String(ev.key).toLowerCase();
+        if (winch && (k === "q" || k === "e")) {
+          if (!ev.repeat && working(api.scene(), winch)) start("sheet", ev.code, () => trim(jibId, "sheet", k === "q" ? 0 : 1, SHEET_RATE, 0.5));
+          return true;
+        }
+        if (winch && k === "r") {
+          if (!ev.repeat) start("furl", ev.code, () => trim(jibId, "furl", furlOf(jibId) < 0.5 ? 1 : 0, FURL_RATE, 0));
+          return true;
+        }
+        if (k === "b") {
+          if (ev.repeat || !exists(jibId)) return true;
+          const c = claim(jibId);
+          if (c) {
+            const b = back();
+            // furled (at the helm): it unrolls, backed, at the furler's rate, under its own claim till it's out
+            if (!winch && b.held && furlOf(jibId) > 0 && !open.has("furl")) {
+              const t = trim(jibId, "furl", 0, FURL_RATE, 0);
+              if (t) open.set("furl", { code: null, trim: t, goal: 0 });
+            }
+            ctx.sim.commit(jibId, { held: b.held });
+            c.release();
+          }
+          return true;
+        }
+        return false;
+      },
+      keyup(ev) {
+        for (const [slot, h] of open) {
+          if (h.code !== ev.code) continue;
+          open.delete(slot);
+          h.trim.end();
+          return true;
+        }
+        return false;
+      },
+      tick(dt) {
+        step = dt;
+        open.forEach(tickOne);
+      },
+      end() {
+        for (const h of open.values()) h.trim.end();
+        open.clear();
+      },
+      /** "Q / E jib sheet 40% · B back jib · hold R furl jib" at a winch; "B back jib, bow to port" at the helm. */
+      hint() {
+        if (!jibId) return "";
+        const out = [];
+        if (winch) {
+          const sc = api.scene();
+          if (working(sc, winch)) out.push(`Q / E jib sheet ${pct(jibField(jibId, "sheet", 0.5))}%`);
+          else out.push(`lazy sheet: the jib's to ${sideName(clewSide(sc, winch))}`);
+        }
+        out.push(`B ${back().label}`);
+        if (winch) out.push(`hold R ${furlOf(jibId) < 0.5 ? "furl" : "unfurl"} jib`);
+        return out.join(" · ");
+      },
+    };
+  }
+
+  /**
+   * A point on the jib's luff `h` of the way up (0 tack, 1 head), in the
+   * world: its cloth's luff (the Jib piece's extras.sail.cloth, in its own
+   * frame, which the jib swings about) through the piece's world matrix;
+   * null without one.
+   */
+  function jibLuffAt(jibId, h) {
+    const luff = jibId ? api.content?.(jibId)?.extras?.sail?.cloth?.luff : null;
+    const m = jibId ? api.worldOf?.(jibId) : null;
+    if (!Array.isArray(luff) || luff.length < 6 || !m) return null;
+    const n = luff.length / 3;
+    const x = Math.min(1, Math.max(0, h)) * (n - 1);
+    const i = Math.min(n - 2, Math.floor(x)), f = x - i;
+    const p = [0, 1, 2].map((k) => luff[3 * i + k] + (luff[3 * i + 3 + k] - luff[3 * i + k]) * f);
+    return apply(m, p);
+  }
+
+  /** Stand at a winch and lock in: its own claim says who's there; the jib's keys work under the jib's claim; F leaves. */
+  function takeWinch(id) {
+    let lost = false;
+    let leave = null;
+    const release = api.claim(id, STATION, {
+      onLost: () => {
+        lost = true;
+        leave?.();
+      },
+    });
+    if (!release) return;
+    const jibId = stationsOf(api.scene(), id).jib ?? null;
+    const keys = jibKeys(jibId, { winch: id });
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      keys.end();
+      release();
+    };
+    leave = ctx.crew.take(id, {
+      // arriving, the eye turns to the jib's luff halfway up, where its middle telltales are
+      look: () => jibLuffAt(jibId, 0.5),
+      key(ev) {
+        if (keys.key(ev)) return true;
+        if (String(ev.key).toLowerCase() !== "f") return false;
+        if (!ev.repeat) leave?.();
+        return true;
+      },
+      keyup: (ev) => keys.keyup(ev),
+      tick(dt) {
+        if (lost || !exists(id) || (jibId && !exists(jibId))) return leave?.();
+        keys.tick(dt);
+      },
+      left: close,
+      hint: () => {
+        const sc = api.scene();
+        const js = jibId && !someoneElse(jibId) ? jibState(sc, id) : null;
+        const state = jibId && someoneElse(jibId) ? "someone's trimming the jib" : jibId ? js && `jib ${js}` : "no jib";
+        return [keys.hint(), "F leave", state].filter(Boolean).join(" · ");
+      },
+    });
+    if (lost) leave?.();
+  }
+
+  const winch = {
+    id: "winch",
+    name: "Take the jib sheet",
+    key: "f",
+    show: ["use"],
+    state(target, c) {
+      if (!traitOf(c?.scene, target, WINCH) || !reach(c, target)) return null;
+      if (me().station === target) return null;
+      const side = sideName(winchSide(c.scene, target));
+      return someoneElse(target) ? { disabled: true, label: `Someone's at the ${side} winch` } : { label: `Take the ${side} jib sheet` };
+    },
+    run: (target) => takeWinch(target),
+  };
+
+  /** A quick hold of the jib's sheet at a winch, Q in and E out: only at the working winch (the lazy one says where the jib is). */
+  const jibSheet = (cid, name, key, goal) => ({
+    id: cid,
+    name,
+    key,
+    show: ["use"],
+    hold: true,
+    state(target, c) {
+      const sc = c?.scene;
+      if (!traitOf(sc, target, WINCH) || !reach(c, target)) return null;
+      const jib = stationsOf(sc, target).jib;
+      if (!jib) return null;
+      if (!working(sc, target)) return goal === 0 ? { disabled: true, label: `Lazy sheet: the jib's to ${sideName(clewSide(sc, target))}` } : null;
+      return someoneElse(jib) ? { disabled: true, label: "Someone's trimming the jib" } : {};
+    },
+    run(target) {
+      const sc = api.scene();
+      const jib = stationsOf(sc, target).jib;
+      return jib && working(sc, target) ? trim(jib, "sheet", goal, SHEET_RATE, 0.5) : undefined;
+    },
+  });
+
   // ─── the helm ─────────────────────────────────────────────────────────
 
   function takeHelm(id) {
@@ -432,9 +739,11 @@ export function stationCommands(api, ctx) {
     if (!release) return;
     let angle = Number(value(id).angle) || 0;
     const held = new Set();
-    // the sheet and the halyard are led aft: both work from the wheel
-    const sailId = stationsOf(api.scene(), id).sail ?? null;
+    // the sheet and the halyard are led aft: both work from the wheel; and B backs the jib
+    const st = stationsOf(api.scene(), id);
+    const sailId = st.sail ?? null;
     const keys = sailKeys(sailId, { sheet: true, halyard: true });
+    const jib = jibKeys(st.jib ?? null, { from: id, wheel: () => angle });
     let closed = false;
     const steering = (code) => code === "KeyA" || code === "ArrowLeft" || code === "KeyD" || code === "ArrowRight";
     const showWheel = () => {
@@ -445,6 +754,7 @@ export function stationCommands(api, ctx) {
       if (closed) return;
       closed = true;
       keys.end();
+      jib.end();
       if (!lost && exists(id)) ctx.sim.commit(id, { angle });
       ctx.sim.input(id, null);
       // the simulator draws it from here (and peers keep this pose until it does)
@@ -458,7 +768,7 @@ export function stationCommands(api, ctx) {
           held.add(ev.code);
           return true;
         }
-        if (keys.key(ev)) return true;
+        if (keys.key(ev) || jib.key(ev)) return true;
         if (String(ev.key).toLowerCase() === "f") {
           if (!ev.repeat) leave?.();
           return true;
@@ -466,7 +776,7 @@ export function stationCommands(api, ctx) {
         return false;
       },
       keyup(ev) {
-        if (keys.keyup(ev)) return true;
+        if (keys.keyup(ev) || jib.keyup(ev)) return true;
         if (!held.delete(ev.code)) return false;
         // let go of the wheel: where it was left is lasting
         if (![...held].some(steering) && !lost && exists(id)) ctx.sim.commit(id, { angle });
@@ -475,6 +785,7 @@ export function stationCommands(api, ctx) {
       tick(dt) {
         if (lost || !exists(id)) return leave?.();
         keys.tick(dt);
+        jib.tick(dt);
         const dir = (held.has("KeyD") || held.has("ArrowRight") ? 1 : 0) - (held.has("KeyA") || held.has("ArrowLeft") ? 1 : 0);
         const next = wheelStep(angle, dir, dt);
         if (next !== angle) {
@@ -486,7 +797,7 @@ export function stationCommands(api, ctx) {
       left: close,
       hint: () => {
         const wheel = `wheel ${angle > 0.02 ? "▶" : angle < -0.02 ? "◀" : "•"} ${Math.round(Math.abs(angle) * 100)}%`;
-        const sail = keys.hint();
+        const sail = [keys.hint(), jib.hint()].filter(Boolean).join(" · ");
         return `A / D steer${sail ? ` · ${sail}` : ""} · F leave · ${wheel}`;
       },
     });
@@ -647,6 +958,7 @@ export function stationCommands(api, ctx) {
     if (traitOf(sc, target, HELM)) return "helm";
     if (traitOf(sc, target, MAINSHEET)) return "mainsheet";
     if (traitOf(sc, target, ANCHOR)) return "anchor";
+    if (traitOf(sc, target, WINCH)) return "winch";
     return sailOf(sc, target) ? "sail" : null;
   }
 
@@ -708,5 +1020,5 @@ export function stationCommands(api, ctx) {
   };
 
   // in the order the prompt shows them (at most three for one look)
-  return [helm, mainsheet, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), weigh, drop, climb, far, aboard];
+  return [helm, mainsheet, winch, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), jibSheet("jibHaul", "Haul in the jib sheet", "q", 0), jibSheet("jibEase", "Ease the jib sheet", "e", 1), weigh, drop, climb, far, aboard];
 }

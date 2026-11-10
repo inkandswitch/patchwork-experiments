@@ -1,0 +1,760 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchwork.inkandswitch.com/rig/contract/v1/schema.json",
+  "title": "patchwork-rig v1",
+  "description": "Structural schema for extras.rig (format patchwork-rig, version 1). The numerical and cross-field rules are in specification.md §5; validate.js applies both.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "name", "frame", "source", "hull", "loading", "appendages", "sails", "sailModel", "sets", "rig", "resistance", "hardpoints", "loads", "predicted", "lumpedSail", "warnings", "rules"],
+  "properties": {
+    "format": { "const": "patchwork-rig" },
+    "version": { "const": 1 },
+    "name": { "type": "string" },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axes", "units", "originDescription", "glbToFrame", "glbAxes", "design"],
+      "properties": {
+        "axes": { "const": "x-forward-y-port-z-up" },
+        "units": { "const": "m" },
+        "originDescription": { "type": "string" },
+        "glbToFrame": { "type": "array", "items": { "type": "number" }, "minItems": 16, "maxItems": 16 },
+        "glbAxes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bow", "up"],
+          "properties": { "bow": { "enum": ["+X", "-X", "+Z", "-Z"] }, "up": { "enum": ["+Y", "+Z"] } }
+        },
+        "design": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["heelDeg", "trimDeg", "waterplaneZM", "sourceWaterplaneZM", "displacementKg", "volumeM3", "rhoWaterKgM3"],
+          "properties": {
+            "heelDeg": { "const": 0 },
+            "trimDeg": { "const": 0 },
+            "waterplaneZM": { "const": 0 },
+            "sourceWaterplaneZM": { "type": "number" },
+            "displacementKg": { "type": "number", "exclusiveMinimum": 0 },
+            "volumeM3": { "type": "number", "exclusiveMinimum": 0 },
+            "rhoWaterKgM3": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "rigDoc", "rigHeads", "hull", "statics"],
+      "properties": {
+        "generator": { "type": "string" },
+        "rigDoc": { "type": ["string", "null"] },
+        "rigHeads": { "$ref": "#/$defs/stringsOrNull" },
+        "hull": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "url", "path", "label", "heads", "glbKey"],
+          "properties": {
+            "kind": { "enum": ["linked", "synthetic"] },
+            "url": { "type": ["string", "null"] },
+            "path": { "enum": ["render", "file", "source", null] },
+            "label": { "type": "string" },
+            "heads": { "$ref": "#/$defs/stringsOrNull" },
+            "glbKey": { "type": ["string", "null"] }
+          }
+        },
+        "statics": { "enum": ["chartroom-table", "mesh", "gm"] }
+      }
+    },
+    "hull": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loaM", "beamM", "lwlM", "bwlM", "tcM", "xFwdM", "xAftM", "volumeM3", "wsaM2", "transomWetM2", "awM2", "lcbM", "lcfM", "vcbM", "cp", "cm", "cb", "zMetacentreM", "halfEntranceDeg", "stemheadM", "sternM", "keelZM", "lateral", "sideForce", "dsyhs", "envelope", "prov"],
+      "properties": {
+        "loaM": { "$ref": "#/$defs/positive" },
+        "beamM": { "$ref": "#/$defs/positive" },
+        "lwlM": { "$ref": "#/$defs/positive" },
+        "bwlM": { "$ref": "#/$defs/positive" },
+        "tcM": { "$ref": "#/$defs/positive" },
+        "xFwdM": { "type": "number" },
+        "xAftM": { "type": "number" },
+        "volumeM3": { "$ref": "#/$defs/positive" },
+        "wsaM2": { "$ref": "#/$defs/positive" },
+        "transomWetM2": { "type": "number", "minimum": 0 },
+        "awM2": { "$ref": "#/$defs/positive" },
+        "lcbM": { "type": "number" },
+        "lcfM": { "type": ["number", "null"] },
+        "vcbM": { "type": "number" },
+        "cp": { "$ref": "#/$defs/positive" },
+        "cm": { "$ref": "#/$defs/positive" },
+        "cb": { "$ref": "#/$defs/positive" },
+        "zMetacentreM": { "type": ["number", "null"] },
+        "halfEntranceDeg": { "type": ["number", "null"] },
+        "stemheadM": { "$ref": "#/$defs/vec3" },
+        "sternM": { "$ref": "#/$defs/vec3" },
+        "keelZM": { "type": "number" },
+        "lateral": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["areaM2", "centroidM"],
+          "properties": { "areaM2": { "type": "number", "minimum": 0 }, "centroidM": { "$ref": "#/$defs/vec3OrNull" } }
+        },
+        "sideForce": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["yv", "nv", "lwlM", "xMidM", "atM", "source"],
+          "properties": {
+            "yv": { "type": "number", "minimum": 0 },
+            "nv": { "type": "number", "minimum": 0 },
+            "lwlM": { "$ref": "#/$defs/positive" },
+            "xMidM": { "type": "number" },
+            "atM": { "$ref": "#/$defs/vec3" },
+            "source": { "type": "string" }
+          }
+        },
+        "dsyhs": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["lwlM", "bwlM", "tcM", "volumeM3", "awM2", "cp", "cm", "lcbFppM", "lcfFppM", "lcbPct", "wsaM2"],
+          "properties": {
+            "lwlM": { "$ref": "#/$defs/positive" },
+            "bwlM": { "$ref": "#/$defs/positive" },
+            "tcM": { "$ref": "#/$defs/positive" },
+            "volumeM3": { "$ref": "#/$defs/positive" },
+            "awM2": { "$ref": "#/$defs/positive" },
+            "cp": { "type": "number" },
+            "cm": { "type": "number" },
+            "lcbFppM": { "type": "number" },
+            "lcfFppM": { "type": ["number", "null"] },
+            "lcbPct": { "type": "number" },
+            "wsaM2": { "$ref": "#/$defs/positive" }
+          }
+        },
+        "envelope": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["param", "label", "value", "min", "max"],
+            "properties": {
+              "param": { "enum": ["lcbFpp", "cp", "volAw", "bwlLwl", "lcbLcf", "bwlTc", "cm", "volLwl"] },
+              "label": { "type": "string" },
+              "value": { "type": ["number", "null"] },
+              "min": { "type": "number" },
+              "max": { "type": "number" }
+            }
+          }
+        },
+        "prov": { "enum": ["mesh", "synthetic"] }
+      }
+    },
+    "loading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["massKg", "cgM", "gyradiiM", "gyradiiBasis", "items", "crew", "righting", "heelLimitDeg"],
+      "properties": {
+        "massKg": { "$ref": "#/$defs/positive" },
+        "cgM": { "$ref": "#/$defs/vec3" },
+        "gyradiiM": { "$ref": "#/$defs/vec3" },
+        "gyradiiBasis": { "type": "string" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "kind", "massKg", "atM", "estimated"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "kind": { "enum": ["lightship", "ballast", "rig", "appendage", "crew"] },
+              "massKg": { "type": "number" },
+              "atM": { "$ref": "#/$defs/vec3" },
+              "estimated": { "type": "boolean" }
+            }
+          }
+        },
+        "crew": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "kgEach", "mode", "massKg", "armM", "armGiven", "stations"],
+          "properties": {
+            "count": { "type": "number", "minimum": 0 },
+            "kgEach": { "type": "number", "minimum": 0 },
+            "mode": { "enum": ["none", "sitting", "rail", "hiking", "trapeze"] },
+            "massKg": { "type": "number", "minimum": 0 },
+            "armM": { "type": "number", "minimum": 0 },
+            "armGiven": { "type": "boolean" },
+            "stations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["side", "atM"],
+                "properties": { "side": { "const": "windward" }, "atM": { "$ref": "#/$defs/vec3" } }
+              }
+            }
+          }
+        },
+        "righting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "heelsDeg", "boatNm", "crewNm", "wettedAreaM2"],
+          "properties": {
+            "source": { "enum": ["table", "gm"] },
+            "heelsDeg": { "$ref": "#/$defs/numbers" },
+            "boatNm": { "$ref": "#/$defs/numbers" },
+            "crewNm": { "$ref": "#/$defs/numbers" },
+            "wettedAreaM2": { "type": ["array", "null"], "items": { "type": "number" } }
+          }
+        },
+        "heelLimitDeg": { "type": "number", "exclusiveMinimum": 0, "maximum": 90 }
+      }
+    },
+    "appendages": { "type": "array", "items": { "$ref": "#/$defs/appendage" } },
+    "sails": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/sail" } },
+    "sailModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rhoAirKgM3", "interaction", "flatMin", "spanFactor", "cnExp"],
+      "properties": {
+        "rhoAirKgM3": { "$ref": "#/$defs/positive" },
+        "interaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kIntDeg", "upwash", "blanket"],
+          "properties": {
+            "kIntDeg": { "type": "number" },
+            "upwash": { "$ref": "#/$defs/pair" },
+            "blanket": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["max", "from", "to"],
+              "properties": { "max": { "type": "number" }, "from": { "type": "number" }, "to": { "type": "number" } }
+            }
+          }
+        },
+        "flatMin": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "spanFactor": { "$ref": "#/$defs/positive" },
+        "cnExp": { "type": "number" }
+      }
+    },
+    "sets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "reef", "sails", "areaM2", "ceM", "heM", "are", "trimmed"],
+        "properties": {
+          "id": { "type": "string" },
+          "reef": { "type": "integer", "minimum": -1 },
+          "sails": { "type": "array", "items": { "enum": ["main", "jib", "staysail"] }, "minItems": 1 },
+          "areaM2": { "$ref": "#/$defs/positive" },
+          "ceM": { "$ref": "#/$defs/vec3" },
+          "heM": { "type": "number", "minimum": 0 },
+          "are": { "type": "number", "minimum": 0 },
+          "trimmed": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["betaDeg", "cl", "cdv", "sheetsDeg"],
+            "properties": {
+              "betaDeg": { "$ref": "#/$defs/numbers" },
+              "cl": { "$ref": "#/$defs/numbers" },
+              "cdv": { "$ref": "#/$defs/numbers" },
+              "sheetsDeg": { "type": "object", "additionalProperties": { "$ref": "#/$defs/numbers" } }
+            }
+          }
+        }
+      }
+    },
+    "rig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "I", "J", "P", "E", "BAS", "ISP", "LP", "rakeDeg", "mast", "boom", "standing", "spreaders", "designer", "actual"],
+      "properties": {
+        "type": { "enum": ["masthead", "fractional", "cat", "cutter"] },
+        "I": { "type": "number", "minimum": 0 },
+        "J": { "type": "number", "minimum": 0 },
+        "P": { "type": "number", "minimum": 0 },
+        "E": { "type": "number", "minimum": 0 },
+        "BAS": { "type": "number", "minimum": 0 },
+        "ISP": { "type": ["number", "null"] },
+        "LP": { "type": ["number", "null"] },
+        "rakeDeg": { "type": "number" },
+        "mast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stepM", "partnersM", "headM", "heightM", "lengthM", "massKg", "kgPerM", "stepped", "stayed", "sectionM"],
+          "properties": {
+            "stepM": { "$ref": "#/$defs/vec3" },
+            "partnersM": { "$ref": "#/$defs/vec3" },
+            "headM": { "$ref": "#/$defs/vec3" },
+            "heightM": { "$ref": "#/$defs/positive" },
+            "lengthM": { "$ref": "#/$defs/positive" },
+            "massKg": { "type": ["number", "null"] },
+            "kgPerM": { "type": ["number", "null"] },
+            "stepped": { "enum": ["deck", "keel"] },
+            "stayed": { "type": "boolean" },
+            "sectionM": { "$ref": "#/$defs/positive" }
+          }
+        },
+        "boom": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["gooseneckM", "endM", "lengthM"],
+          "properties": { "gooseneckM": { "$ref": "#/$defs/vec3" }, "endM": { "$ref": "#/$defs/vec3" }, "lengthM": { "type": "number", "minimum": 0 } }
+        },
+        "standing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "fromM", "toM", "viaM"],
+            "properties": {
+              "id": { "enum": ["forestay", "backstay", "inner-forestay", "cap-shroud-port", "cap-shroud-starboard", "lower-shroud-port", "lower-shroud-starboard"] },
+              "fromM": { "$ref": "#/$defs/vec3" },
+              "toM": { "$ref": "#/$defs/vec3" },
+              "viaM": { "type": "array", "items": { "$ref": "#/$defs/vec3" } }
+            }
+          }
+        },
+        "spreaders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["heightM", "rootM", "tipsM", "lengthM"],
+            "properties": {
+              "heightM": { "type": "number", "minimum": 0 },
+              "rootM": { "$ref": "#/$defs/vec3" },
+              "tipsM": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "minItems": 2, "maxItems": 2 },
+              "lengthM": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "designer": { "$ref": "#/$defs/areaCe" },
+        "actual": { "$ref": "#/$defs/areaCe" }
+      }
+    },
+    "resistance": {
+      "type": "object",
+      "required": ["status", "why", "model", "speedsMs", "heelsDeg", "hullN", "frictionN", "heelResiduaryN", "residuaryN", "planingN", "planingWeight", "appendagesN", "regime"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["computed", "not-computed"] },
+        "why": { "type": ["string", "null"] },
+        "model": { "const": "ITTC57+DSYHS+Savitsky" },
+        "rhoWaterKgM3": { "$ref": "#/$defs/positive" },
+        "nuM2s": { "$ref": "#/$defs/positive" },
+        "speedsMs": { "$ref": "#/$defs/numbers" },
+        "fn": { "$ref": "#/$defs/numbers" },
+        "heelsDeg": { "$ref": "#/$defs/numbers" },
+        "hullN": { "$ref": "#/$defs/grid" },
+        "frictionN": { "$ref": "#/$defs/grid" },
+        "heelResiduaryN": { "$ref": "#/$defs/grid" },
+        "residuaryN": { "$ref": "#/$defs/numbers" },
+        "planingN": { "type": "array", "items": { "type": ["number", "null"] } },
+        "planingWeight": { "$ref": "#/$defs/numbers" },
+        "appendagesN": { "$ref": "#/$defs/numbers" },
+        "regime": { "type": "array", "items": { "enum": ["displacement", "transition", "planing", "beyond"] } },
+        "induced": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["draftM", "keelTaper", "rule"],
+          "properties": { "draftM": { "$ref": "#/$defs/positive" }, "keelTaper": { "type": "number" }, "rule": { "type": "string" } }
+        },
+        "coefficients": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["residuaryFn", "residuaryA", "heelFn", "heelU", "teUpright"],
+          "properties": {
+            "residuaryFn": { "$ref": "#/$defs/numbers" },
+            "residuaryA": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 8, "maxItems": 8 } },
+            "heelFn": { "$ref": "#/$defs/numbers" },
+            "heelU": { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 } },
+            "teUpright": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 }
+          }
+        },
+        "planing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capability", "dL", "weightN", "beamM", "deadriseDeg", "deadriseFrom", "lcgFromAftM", "fnBlend"],
+          "properties": {
+            "capability": { "type": "number", "minimum": 0, "maximum": 1 },
+            "dL": { "type": "number" },
+            "weightN": { "$ref": "#/$defs/positive" },
+            "beamM": { "$ref": "#/$defs/positive" },
+            "deadriseDeg": { "type": "number" },
+            "deadriseFrom": { "type": "string" },
+            "lcgFromAftM": { "type": "number" },
+            "fnBlend": { "$ref": "#/$defs/pair" }
+          }
+        },
+        "fnMax": { "type": "number" },
+        "formFactor": { "type": "number" }
+      }
+    },
+    "hardpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mastStepM", "mastPartnersM", "mastheadM", "stemheadM", "forestayTackM", "innerForestayTackM", "backstayPlateM", "chainplates", "rudderStock", "mainsheet", "jibLeads", "halyardExits", "crewStations"],
+      "properties": {
+        "mastStepM": { "$ref": "#/$defs/vec3" },
+        "mastPartnersM": { "$ref": "#/$defs/vec3" },
+        "mastheadM": { "$ref": "#/$defs/vec3" },
+        "stemheadM": { "$ref": "#/$defs/vec3" },
+        "forestayTackM": { "$ref": "#/$defs/vec3OrNull" },
+        "innerForestayTackM": { "$ref": "#/$defs/vec3OrNull" },
+        "backstayPlateM": { "$ref": "#/$defs/vec3OrNull" },
+        "chainplates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "atM"],
+            "properties": { "id": { "type": "string" }, "atM": { "$ref": "#/$defs/vec3" } }
+          }
+        },
+        "rudderStock": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["axisM", "bearingM", "deckM"],
+          "properties": { "axisM": { "$ref": "#/$defs/segment" }, "bearingM": { "$ref": "#/$defs/vec3" }, "deckM": { "$ref": "#/$defs/vec3" } }
+        },
+        "mainsheet": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["boomM", "travellerM"],
+          "properties": { "boomM": { "$ref": "#/$defs/vec3" }, "travellerM": { "$ref": "#/$defs/segment" } }
+        },
+        "jibLeads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sail", "side", "trackFromM", "trackToM", "leads"],
+            "properties": {
+              "sail": { "enum": ["jib", "staysail"] },
+              "side": { "enum": ["port", "starboard"] },
+              "trackFromM": { "$ref": "#/$defs/vec3" },
+              "trackToM": { "$ref": "#/$defs/vec3" },
+              "leads": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["furl", "atM"],
+                  "properties": { "furl": { "type": "number", "minimum": 0, "maximum": 1 }, "atM": { "$ref": "#/$defs/vec3" } }
+                }
+              }
+            }
+          }
+        },
+        "halyardExits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sail", "atM"],
+            "properties": { "sail": { "enum": ["main", "jib", "staysail"] }, "atM": { "$ref": "#/$defs/vec3" } }
+          }
+        },
+        "crewStations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["side", "atM", "mode"],
+            "properties": {
+              "side": { "const": "windward" },
+              "atM": { "$ref": "#/$defs/vec3" },
+              "mode": { "enum": ["none", "sitting", "rail", "hiking", "trapeze"] }
+            }
+          }
+        }
+      }
+    },
+    "loads": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["basis", "rm30Nm", "chainplateBaseM", "chainplatesN", "mastCompressionN", "atAwsMs", "sheetN", "halyardN", "rudderTorqueNm", "rudderAtSpeedMs", "notes"],
+      "properties": {
+        "basis": { "const": "RM30" },
+        "rm30Nm": { "type": ["number", "null"] },
+        "chainplateBaseM": { "type": ["number", "null"] },
+        "chainplatesN": { "$ref": "#/$defs/numberMap" },
+        "mastCompressionN": { "type": ["number", "null"] },
+        "atAwsMs": { "type": ["number", "null"] },
+        "sheetN": { "$ref": "#/$defs/numberMap" },
+        "halyardN": { "$ref": "#/$defs/numberMap" },
+        "rudderTorqueNm": { "type": ["number", "null"] },
+        "rudderAtSpeedMs": { "type": ["number", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "predicted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "why", "conditions", "reference", "helm", "points", "beat", "run"],
+      "properties": {
+        "status": { "enum": ["computed", "not-computed"] },
+        "why": { "type": ["string", "null"] },
+        "conditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["twsMs", "twaDeg", "reference"],
+          "properties": {
+            "twsMs": { "$ref": "#/$defs/numbers" },
+            "twaDeg": { "$ref": "#/$defs/numbers" },
+            "reference": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["twsMs", "twaDeg"],
+              "properties": { "twsMs": { "$ref": "#/$defs/positive" }, "twaDeg": { "type": "number" } }
+            }
+          }
+        },
+        "reference": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/point" }] },
+        "helm": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["id", "text", "rudderDeg"],
+          "properties": {
+            "id": { "enum": ["weather", "lee", "neutral", "cannot", "none", "unknown"] },
+            "text": { "type": "string" },
+            "rudderDeg": { "type": ["number", "null"] }
+          }
+        },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/point" } },
+        "beat": { "type": "array", "items": { "$ref": "#/$defs/point" } },
+        "run": { "type": "array", "items": { "$ref": "#/$defs/point" } }
+      }
+    },
+    "lumpedSail": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["tackM", "luffM", "footM", "areaM2", "ceM", "ceHeightFrac"],
+      "properties": {
+        "tackM": { "$ref": "#/$defs/vec3" },
+        "luffM": { "$ref": "#/$defs/positive" },
+        "footM": { "$ref": "#/$defs/positive" },
+        "areaM2": { "$ref": "#/$defs/positive" },
+        "ceM": { "$ref": "#/$defs/vec3" },
+        "ceHeightFrac": { "$ref": "#/$defs/positive" }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "rules": { "type": "string" }
+  },
+  "$defs": {
+    "positive": { "type": "number", "exclusiveMinimum": 0 },
+    "numbers": { "type": "array", "items": { "type": "number" } },
+    "pair": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+    "grid": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "stringsOrNull": { "type": ["array", "null"], "items": { "type": "string" } },
+    "numberMap": { "type": "object", "additionalProperties": { "type": ["number", "null"] } },
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "vec3OrNull": { "type": ["array", "null"], "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "segment": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "minItems": 2, "maxItems": 2 },
+    "polygon": { "type": "array", "items": { "$ref": "#/$defs/vec3" }, "minItems": 3 },
+    "areaCe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["areaM2", "ceM"],
+      "properties": { "areaM2": { "type": "number", "minimum": 0 }, "ceM": { "$ref": "#/$defs/vec3OrNull" } }
+    },
+    "appendage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "cornersM", "spanM", "rootChordM", "tipChordM", "sweepDeg", "sweepHalfDeg", "tc", "taper", "areaM2", "macM", "macFromRootM", "qcM", "arGeom", "endPlateFactor", "arEff", "liftSlope", "stallDeg", "clMax", "volumeM3", "volumeCentroidM", "bulb", "stock"],
+      "properties": {
+        "id": { "enum": ["keel", "rudder"] },
+        "kind": { "enum": ["fin", "fin-bulb", "centreboard", "daggerboard", "long", "spade", "skeg", "transom-hung", "kick-up"] },
+        "cornersM": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rootLE", "rootTE", "tipLE", "tipTE"],
+          "properties": {
+            "rootLE": { "$ref": "#/$defs/vec3" },
+            "rootTE": { "$ref": "#/$defs/vec3" },
+            "tipLE": { "$ref": "#/$defs/vec3" },
+            "tipTE": { "$ref": "#/$defs/vec3" }
+          }
+        },
+        "spanM": { "$ref": "#/$defs/positive" },
+        "rootChordM": { "$ref": "#/$defs/positive" },
+        "tipChordM": { "type": "number", "minimum": 0 },
+        "sweepDeg": { "type": "number" },
+        "sweepHalfDeg": { "type": "number" },
+        "tc": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "taper": { "type": "number", "minimum": 0 },
+        "areaM2": { "$ref": "#/$defs/positive" },
+        "macM": { "$ref": "#/$defs/positive" },
+        "macFromRootM": { "type": "number", "minimum": 0 },
+        "qcM": { "$ref": "#/$defs/vec3" },
+        "arGeom": { "$ref": "#/$defs/positive" },
+        "endPlateFactor": { "enum": [1, 2] },
+        "arEff": { "$ref": "#/$defs/positive" },
+        "liftSlope": { "$ref": "#/$defs/positive" },
+        "stallDeg": { "$ref": "#/$defs/positive" },
+        "clMax": { "$ref": "#/$defs/positive" },
+        "volumeM3": { "type": "number", "minimum": 0 },
+        "volumeCentroidM": { "$ref": "#/$defs/vec3OrNull" },
+        "bulb": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["lengthM", "diameterM", "centreM", "volumeM3"],
+          "properties": {
+            "lengthM": { "$ref": "#/$defs/positive" },
+            "diameterM": { "$ref": "#/$defs/positive" },
+            "centreM": { "$ref": "#/$defs/vec3" },
+            "volumeM3": { "$ref": "#/$defs/positive" }
+          }
+        },
+        "stock": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["axisM", "bearingM", "deckM", "balanceFrac", "maxDeg"],
+          "properties": {
+            "axisM": { "$ref": "#/$defs/segment" },
+            "bearingM": { "$ref": "#/$defs/vec3" },
+            "deckM": { "$ref": "#/$defs/vec3" },
+            "balanceFrac": { "type": "number", "minimum": 0, "maximum": 1 },
+            "maxDeg": { "$ref": "#/$defs/positive" }
+          }
+        }
+      }
+    },
+    "sail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "model", "polygonM", "areaM2", "ceM", "tackM", "headM", "clewM", "luffM", "footM", "ar", "liftSlope", "reefs", "furl", "sheeting", "coeffs"],
+      "properties": {
+        "id": { "enum": ["main", "jib", "staysail"] },
+        "kind": { "enum": ["main", "jib", "genoa", "self-tacking", "staysail"] },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["family", "alpha0", "clMax", "clBack", "cdp", "kv", "stall", "width", "cn90", "sheet", "wing", "ease"],
+          "properties": {
+            "family": { "enum": ["main", "jib", "staysail"] },
+            "alpha0": { "type": "number" },
+            "clMax": { "$ref": "#/$defs/positive" },
+            "clBack": { "$ref": "#/$defs/positive" },
+            "cdp": { "type": "number", "minimum": 0 },
+            "kv": { "type": "number", "minimum": 0 },
+            "stall": { "$ref": "#/$defs/positive" },
+            "width": { "$ref": "#/$defs/positive" },
+            "cn90": { "$ref": "#/$defs/positive" },
+            "sheet": { "$ref": "#/$defs/pair" },
+            "wing": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["fromBeta", "sheet", "qFactor"],
+              "properties": { "fromBeta": { "type": "number" }, "sheet": { "$ref": "#/$defs/pair" }, "qFactor": { "type": "number" } }
+            },
+            "ease": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["from", "to", "loss", "drag"],
+              "properties": { "from": { "type": "number" }, "to": { "type": "number" }, "loss": { "type": "number" }, "drag": { "type": "number" } }
+            }
+          }
+        },
+        "polygonM": { "$ref": "#/$defs/polygon" },
+        "areaM2": { "$ref": "#/$defs/positive" },
+        "ceM": { "$ref": "#/$defs/vec3" },
+        "tackM": { "$ref": "#/$defs/vec3" },
+        "headM": { "$ref": "#/$defs/vec3" },
+        "clewM": { "$ref": "#/$defs/vec3" },
+        "luffM": { "$ref": "#/$defs/positive" },
+        "footM": { "$ref": "#/$defs/positive" },
+        "ar": { "$ref": "#/$defs/positive" },
+        "liftSlope": { "$ref": "#/$defs/positive" },
+        "reefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["fraction", "areaM2", "ceM", "luffM", "polygonM"],
+            "properties": {
+              "fraction": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+              "areaM2": { "$ref": "#/$defs/positive" },
+              "ceM": { "$ref": "#/$defs/vec3" },
+              "luffM": { "$ref": "#/$defs/positive" },
+              "polygonM": { "$ref": "#/$defs/polygon" }
+            }
+          }
+        },
+        "furl": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sheeting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minDeg", "maxDeg", "wing", "boom", "lead"],
+          "properties": {
+            "minDeg": { "type": "number" },
+            "maxDeg": { "type": "number" },
+            "wing": { "type": ["object", "null"] },
+            "boom": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["gooseneckM", "endM", "lengthM"],
+              "properties": { "gooseneckM": { "$ref": "#/$defs/vec3" }, "endM": { "$ref": "#/$defs/vec3" }, "lengthM": { "type": "number", "minimum": 0 } }
+            },
+            "lead": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["port", "starboard"],
+              "properties": { "port": { "$ref": "#/$defs/vec3" }, "starboard": { "$ref": "#/$defs/vec3" } }
+            }
+          }
+        },
+        "coeffs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alphaDeg", "cl", "cd"],
+          "properties": { "alphaDeg": { "$ref": "#/$defs/numbers" }, "cl": { "$ref": "#/$defs/numbers" }, "cd": { "$ref": "#/$defs/numbers" } }
+        }
+      }
+    },
+    "flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "enum": ["no-equilibrium", "over-heel", "helm", "rudder-stall", "keel-stall", "beyond", "planing-range", "dsyhs"] },
+        "text": { "type": "string" }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["twsMs", "twsKn", "twaDeg", "ok", "speedMs", "VMs", "heelDeg", "leewayDeg", "rudderDeg", "flat", "set", "reef", "sheetsDeg", "awsMs", "awaDeg", "fn", "regime", "planingWeight", "vmgMs", "residual", "flags", "hollow"],
+      "properties": {
+        "twsMs": { "$ref": "#/$defs/positive" },
+        "twsKn": { "$ref": "#/$defs/positive" },
+        "twaDeg": { "type": "number", "minimum": 0, "maximum": 180 },
+        "ok": { "type": "boolean" },
+        "speedMs": { "type": ["number", "null"] },
+        "VMs": { "type": ["number", "null"] },
+        "heelDeg": { "type": ["number", "null"] },
+        "leewayDeg": { "type": ["number", "null"] },
+        "rudderDeg": { "type": ["number", "null"] },
+        "flat": { "type": "number", "minimum": 0, "maximum": 1 },
+        "set": { "type": "string" },
+        "reef": { "type": "integer", "minimum": -1 },
+        "sheetsDeg": { "$ref": "#/$defs/numberMap" },
+        "awsMs": { "type": ["number", "null"] },
+        "awaDeg": { "type": ["number", "null"] },
+        "fn": { "type": ["number", "null"] },
+        "regime": { "enum": ["displacement", "transition", "planing", "beyond"] },
+        "planingWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "vmgMs": { "type": ["number", "null"] },
+        "residual": { "type": ["number", "null"] },
+        "flags": { "type": "array", "items": { "$ref": "#/$defs/flag" } },
+        "hollow": { "type": "boolean" }
+      }
+    }
+  }
+}

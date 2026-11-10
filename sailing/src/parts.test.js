@@ -4,8 +4,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import * as parts from "./parts.js";
 import { PIECES, fileKey, placement } from "./parts.js";
-import { LIFT, STAND, TAGS } from "./ship.js";
-import { ANCHOR, FLOAT, HELM, HOOK, LADDER, SAIL, SEA, SHIP, partsOf } from "./traits.js";
+import { FIT, LIFT, STAND, TAGS, jibDrawing, winchTrait } from "./ship.js";
+import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, SAIL, SEA, SHIP, WINCH, partsOf } from "./traits.js";
 import { placeIn } from "./body.js";
 import { apply, matrixOf } from "./frames.js";
 import { createSim } from "./sim.js";
@@ -34,7 +34,8 @@ function withHull(trait = {}, transform = { position: [5, 0, 5], rotation: [0, 0
 describe("the parts", () => {
   it("each puts its pieces in, the part first and the rest under it, with the traits that make them work", async () => {
     const want = {
-      mast: [["Mast", undefined], ["Boom and sail", { [SAIL]: { raised: 1, sheet: 0.5 } }]],
+      mast: [["Mast", undefined], ["Boom and sail", { [SAIL]: { raised: 1, sheet: 0.5 } }], ["Jib", { [JIB]: { sheet: 0.5, held: null, furl: 0 } }]],
+      winches: [["Port jib winch", { [WINCH]: winchTrait(-1) }], ["Starboard jib winch", { [WINCH]: winchTrait(1) }]],
       wheel: [["Wheel", { [HELM]: { angle: 0 } }]],
       windlass: [["Windlass", { [ANCHOR]: { down: false, rode: 0 } }], ["Anchor", { [HOOK]: {} }]],
       ladder: [["Ladder", { [LADDER]: {} }]],
@@ -54,7 +55,13 @@ describe("the parts", () => {
       expect(doc.objects[id].transform).toEqual({ position: [1, 0, 2], rotation: [0, 0.5, 0], scale: 1 });
       const rest = children(doc, id);
       expect(rest.map((k) => [doc.objects[k].name, doc.objects[k].traits])).toEqual(pieces.slice(1));
-      for (const k of rest) expect(doc.objects[k].transform.position).toEqual(PIECES[name].find((p) => p.name === doc.objects[k].name).at);
+      for (const k of rest) {
+        const piece = PIECES[name].find((p) => p.name === doc.objects[k].name);
+        // a pair's mirror: across her centreline from where the part went (put on nothing: the stock stand's x)
+        if (piece.mirror) near(doc.objects[k].transform.position, [-2 * FIT.winch.position[0], 0, 0]);
+        else expect(doc.objects[k].transform.position).toEqual(piece.at);
+        expect(doc.objects[k].transform.rotation).toEqual(piece.rotation ?? [0, 0, 0]);
+      }
       for (const o of Object.values(doc.objects)) expect(o.providerId).toBe("file-glb");
     }
   });
@@ -62,7 +69,7 @@ describe("the parts", () => {
   it("a part that fits a stand carries its tag, as the bin's metadata says, so the hand snaps it alike", async () => {
     const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
-    for (const [name, tag] of [["mast", "sailing.mast"], ["wheel", "sailing.helm"], ["windlass", "sailing.windlass"], ["ladder", "sailing.ladder"]]) {
+    for (const [name, tag] of [["mast", "sailing.mast"], ["wheel", "sailing.helm"], ["windlass", "sailing.windlass"], ["ladder", "sailing.ladder"], ["winches", "sailing.winch"]]) {
       const id = await parts[name].create(ctx, { parent: null, transform: {} });
       expect(doc.objects[id].tags).toEqual([tag]);
       expect(TAGS[name]).toBe(tag);
@@ -157,6 +164,34 @@ describe("put on a ship", () => {
     expect(outboard(port)[2]).toBeCloseTo(-1, 9);
   });
 
+  it("the jib's winches put on her starboard side: the first is the starboard winch, its mirror the port one, each standing inboard of itself", async () => {
+    const doc = withHull({});
+    const { ctx } = fakeDrop(doc);
+    const id = await parts.winches.create(ctx, { parent: "hull", transform: { position: [1.1, 1.2, 2] } });
+    const [other] = children(doc, id);
+    expect(doc.objects[id].traits[WINCH]).toEqual(winchTrait(1));
+    expect(doc.objects[other].traits[WINCH]).toEqual(winchTrait(-1));
+    expect(doc.objects[id].name).toBe("Starboard jib winch");
+    near(inFrame(doc, other, "hull"), [-1.1, 1.2, 2]);
+    // each one's stand is inboard of it: toward her centreline
+    expect(winchTrait(1).stand[0]).toBeLessThan(0);
+    expect(winchTrait(-1).stand[0]).toBeGreaterThan(0);
+    expect(winchTrait(1).stand[1]).toBeLessThan(0); // down on the cockpit's sole
+  });
+
+  it("the Jib piece stands at the jib's tack under the mast, its Y up the luff and its Z square to it, aft, in her centreplane", () => {
+    const d = jibDrawing();
+    const jib = PIECES.mast.find((p) => p.kind === "jib");
+    near(jib.at.map((v, i) => v + FIT.mast.position[i]), d.tack);
+    const u = [0, Math.cos(jib.rotation[0]), Math.sin(jib.rotation[0])];
+    const luff = d.head.map((v, i) => v - d.tack[i]);
+    const L = Math.hypot(...luff);
+    near(u, luff.map((v) => v / L));
+    near(d.local(d.head), [0, L, 0]);
+    expect(d.local(d.clew)[2]).toBeCloseTo(4.52, 9); // LP = J, square to the luff, aft
+    expect(d.local(d.clew)[0]).toBeCloseTo(0, 12);
+  });
+
   it("the stock hull's stand for a part is where the template puts it", () => {
     const doc = withHull({});
     const at = (part) => placement(doc, { parent: "hull", transform: { position: STAND[part] } }, part).transform.position;
@@ -183,9 +218,10 @@ describe("the sloop", () => {
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
     expect(hull.traits).toEqual({ [SHIP]: {} });
     const aboard = Object.values(doc.objects).filter((o) => o.parent === id).map((o) => o.name).sort();
-    expect(aboard).toEqual(["Ladder", "Mainsheet", "Mast", "Wheel", "Windlass"]);
+    expect(aboard).toEqual(["Ladder", "Mainsheet", "Mast", "Port jib winch", "Wheel", "Windlass"]);
     const p = partsOf(fakeWorld(doc).scene(), id);
-    for (const k of ["helm", "sail", "anchor", "mainsheet", "ladder", "hook"]) expect(p[k]).not.toBeNull();
+    for (const k of ["helm", "sail", "anchor", "mainsheet", "jib", "ladder", "hook"]) expect(p[k]).not.toBeNull();
+    expect(p.winches.map((w) => doc.objects[w].traits[WINCH].side)).toEqual(["port", "starboard"]);
   });
 
   it("brings her sea when the scene has none, and leaves one that's there alone", async () => {

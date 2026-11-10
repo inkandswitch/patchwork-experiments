@@ -11,7 +11,8 @@ import { createShip } from "./physics.js";
 import { rigSailCoeffs } from "./physics-foils.js";
 import { furled, reefed, rigSails, swungCE } from "./rig-sails.js";
 import { contractShip, windFrom } from "./test/agreement-harness.js";
-import { controlsOf } from "./sim.js";
+import { controlsOf, published } from "./sim.js";
+import { heldEitherSide, trimModelOf, trimOf } from "./trim.js";
 import sloop from "./test/rig-contract/sloop-12m.json";
 import cuvature from "./test/rig-contract/cuvature-first-guess.json";
 import catalina from "./test/rig-contract/catalina-30.json";
@@ -193,8 +194,13 @@ describe("the jib swings about its tack within its sheet's travel", () => {
     expect(jibAt({ jibSheet: 0 }, -40)).toBeCloseTo(7, 9); // port tack: to starboard
   });
 
-  it("inside its least angle it can't draw: within 7° of the wind it lies along it, luffing", () => {
-    expect(jibAt({ jibSheet: 0 }, 4)).toBeCloseTo(-4, 6);
+  it("a jib its sheet doesn't hold lies at its zero-lift angle (alpha0, −5°) off the wind, luffing (P1); one that does is pinned at the sheet", () => {
+    // 1° off the wind: free at 1 + 5 = 6°, inside the least angle (7°)
+    expect(jibAt({ jibSheet: 0 }, 1)).toBeCloseTo(-6, 6);
+    expect(jibAt({ jibSheet: 0 }, -1)).toBeCloseTo(6, 6);
+    // 4° off: it would lie at 9°, so the sheet (7°) holds it
+    expect(jibAt({ jibSheet: 0 }, 4)).toBeCloseTo(-7, 6);
+    // dead ahead its air has no side: it lies along it
     expect(jibAt({ jibSheet: 0 }, 0)).toBeCloseTo(0, 9);
   });
 
@@ -228,9 +234,11 @@ describe("the jib swings about its tack within its sheet's travel", () => {
 });
 
 describe("the sim's input carries the jib's controls (sim.js controlsOf)", () => {
-  it("a jib value gives jibSheet, jibBacked and furl, clamped; without one there are none", () => {
+  it("a jib value gives jibSheet, jibHeld (port −1, starboard +1) and furl, clamped; without one there are none", () => {
     const spec = { freeboard: 1 };
-    expect(controlsOf({ jib: { sheet: 2, backed: 1, furl: 0.25 } }, null, spec)).toMatchObject({ jibSheet: 1, jibBacked: true, furl: 0.25 });
+    expect(controlsOf({ jib: { sheet: 2, held: "starboard", furl: 0.25 } }, null, spec)).toMatchObject({ jibSheet: 1, jibHeld: 1, furl: 0.25 });
+    expect(controlsOf({ jib: { held: "port" } }, null, spec)).toMatchObject({ jibHeld: -1 });
+    expect(controlsOf({ jib: { held: null, sheet: 0.5, furl: 0 } }, null, spec)).not.toHaveProperty("jibHeld");
     expect(controlsOf({ jib: { sheet: -1 } }, null, spec)).toMatchObject({ jibSheet: 0 });
     expect(Object.keys(controlsOf({ jib: {} }, null, spec))).toEqual(["rudder", "sail", "sheet", "anchor"]);
     expect(Object.keys(controlsOf({}, null, spec))).toEqual(["rudder", "sail", "sheet", "anchor"]);
@@ -269,6 +277,126 @@ describe("a backed jib", () => {
         expect(Math.sign(force[0])).toBe(-side); // pushed away from the side it's held on
         expect(Math.sign(torque[1])).toBe(side); // + about +Y: the bow (−Z) to port (−X)
       }
+    }
+  });
+});
+
+describe("a jib made fast on one side (P2: controls.jibHeld)", () => {
+  const w = (controls, fromDeg) => shipOf(sloop).wrench(REST, STILL, { sail: 1, ...controls }, { wind: windFrom(6, fromDeg) }).jib / DEG;
+
+  it("held on the leeward side its sheet only stops it going further out: it draws at its sheet as a free one does, or eased past its air lies where a free one does and luffs, never backed", () => {
+    // wind from 40° (starboard): leeward is port
+    expect(w({ jibSheet: 0, jibHeld: -1 }, 40)).toBeCloseTo(w({ jibSheet: 0 }, 40), 9);
+    expect(w({ jibSheet: 0.5, jibHeld: -1 }, 60)).toBeCloseTo(-18.5, 9);
+    // its sheet right out (30°), the true wind 10°, 15° and 25° off, 2 m/s in 6 m/s (her air 8–19° off): a free one
+    // lies at alpha0 (5°) off its air, and so does a made-fast one (a sheet can't push it out to 30°)
+    const ship = shipOf(sloop);
+    const under = { ...REST, velocity: [0, 0, -2], spin: [0, 0, 0] };
+    const k = trimModelOf(sloop.sails.find((x) => x.id === "jib"));
+    for (const from of [10, 15, 25]) {
+      const c = (held) => ({ sail: 1, sheet: 0.5, jibSheet: 1, ...(held ? { jibHeld: held } : {}) });
+      const env = { wind: windFrom(6, from) };
+      const free = ship.wrench(REST, under, c(0), env);
+      const held = ship.wrench(REST, under, c(-1), env);
+      expect(held.jib).toBeCloseTo(free.jib, 9);
+      expect(held.torque[1]).toBeCloseTo(free.torque[1], 6);
+      const jib = ship.read({ ...ship.rest(), velocity: under.velocity, jib: held.jib }, c(-1), env).sails.find((x) => x.id === "jib");
+      expect(trimOf(jib, k).state).toBe("luffing");
+    }
+  });
+
+  it("within its zero-lift angle (5°) of dead ahead, where its air can't say which side is leeward, it's backed on whichever side it's held", () => {
+    expect(heldEitherSide(4.9 * DEG, -5)).toBe(true);
+    expect(heldEitherSide(5.1 * DEG, -5)).toBe(false);
+    // wind from 1°: free, it lies at −6 (alpha0 off its air) and luffs; made fast either side, at its sheet's 7°
+    expect(w({ jibSheet: 0 }, 1)).toBeCloseTo(-6, 6);
+    expect(w({ jibSheet: 0, jibHeld: -1 }, 1)).toBeCloseTo(-7, 9);
+    expect(w({ jibSheet: 0, jibHeld: 1 }, 1)).toBeCloseTo(7, 9);
+    expect(w({ jibSheet: 0.5, jibHeld: 1 }, 0)).toBeCloseTo(18.5, 9);
+    expect(w({ jibSheet: 0.5, jibHeld: -1 }, 0)).toBeCloseTo(-18.5, 9);
+    // to the band's edge, and past it on the leeward side, as a free one
+    expect(w({ jibSheet: 0, jibHeld: -1 }, 4.9)).toBeCloseTo(-7, 9);
+    expect(w({ jibSheet: 0, jibHeld: -1 }, 5.1)).toBeCloseTo(w({ jibSheet: 0 }, 5.1), 9);
+    // backed: read as to windward of its air (sheet < 0), its cloth bellied away from the side it's held, pushing her bow off it
+    const ship = shipOf(sloop);
+    for (const held of [1, -1]) {
+      const c = { sail: 0, furl: 0, jibSheet: 0.5, jibHeld: held };
+      const env = { wind: windFrom(6, 2) };
+      const jib = ship.read({ ...ship.rest(), jib: held * 18.5 * DEG }, c, env).sails.find((x) => x.id === "jib");
+      expect(jib.sheet).toBeLessThan(0);
+      expect(trimOf(jib, trimModelOf(sloop.sails.find((x) => x.id === "jib"))).state).toBe("backed");
+      expect(Math.sign(ship.wrench({ ...REST, jib: held * 18.5 * DEG }, STILL, c, env).torque[1])).toBe(held); // + the bow to port
+    }
+  });
+
+  it("held on the windward side it is backed there at its sheet's angle, goose-winged from β 140°", () => {
+    expect(w({ jibSheet: 0, jibHeld: 1 }, 40)).toBeCloseTo(7, 9);
+    expect(w({ jibSheet: 1, jibHeld: 1 }, 40)).toBeCloseTo(30, 9);
+    expect(w({ jibSheet: 0, jibHeld: -1 }, -40)).toBeCloseTo(-7, 9);
+    expect(w({ jibSheet: 1, jibHeld: 1 }, 160)).toBeCloseTo(90, 9);
+    // it wins over jibBacked: held to port with the wind from starboard, it draws to port
+    expect(w({ jibSheet: 0, jibHeld: -1, jibBacked: true }, 40)).toBeCloseTo(-7, 9);
+  });
+
+  // One scripted tack, flat water, a steady 6 m/s: close-hauled on starboard
+  // tack (wind from 40°, the jib to port), the wind swung to −40° over 2 s
+  // (as her bow going through it would), then 4 s on the new tack.
+  function tack(controls) {
+    const ship = shipOf(sloop);
+    const s0 = { ...ship.rest(), jib: -7 * DEG };
+    let s = s0;
+    const trace = [];
+    for (let i = 0; i < 6 * 30; i++) {
+      const t = i / 30;
+      const from = t < 1 ? 40 : t < 3 ? 40 - 40 * (t - 1) : -40;
+      s = ship.step({ ...s, position: [0, 0, 0], quaternion: [0, 0, 0, 1], velocity: [0, 0, 0], spin: [0, 0, 0] }, { sail: 1, jibSheet: 0, ...controls }, { wind: windFrom(6, from) }, 1 / 30);
+      trace.push(s.jib / DEG);
+    }
+    return trace;
+  }
+
+  it("tacking with it held to port, the jib stays to port: drawing before, backed after (hove to)", () => {
+    const t = tack({ jibHeld: -1 });
+    expect(t[20]).toBeCloseTo(-7, 6);
+    for (const a of t) expect(a).toBeLessThanOrEqual(1e-9);
+    expect(t.at(-1)).toBeCloseTo(-7, 6); // backed to port at its sheet's angle, the wind now from port
+    const r = shipOf(sloop).read({ ...shipOf(sloop).rest(), jib: t.at(-1) * DEG }, { sail: 1, jibSheet: 0, jibHeld: -1 }, { wind: windFrom(6, -40) });
+    expect(r.sails.find((x) => x.id === "jib").sheet).toBeLessThan(0); // to windward: backed
+  });
+
+  it("tacking with it tending itself (no jibHeld), it crosses to the new leeward side", () => {
+    const t = tack({});
+    expect(t[20]).toBeCloseTo(-7, 6);
+    expect(t.at(-1)).toBeCloseTo(7, 6);
+  });
+});
+
+describe("a free sail lies at its zero-lift angle (P1): read().sails", () => {
+  it("eased past its air, the main's α is alpha0 less its upwash and its CL_a ≤ 0; the jib's α is alpha0 and its CL_a 0", () => {
+    const ship = shipOf(sloop);
+    // 20° off the wind, both sheets eased right out (the main's to 85°, the jib's to 30°): neither holds its sail
+    const env = { wind: windFrom(6, 20) };
+    const c = { sail: 1, sheet: 1, jibSheet: 1, furl: 0 };
+    // at rest, with no boom or jib in the state: each is read where its air and sheet put it
+    const r = ship.read(ship.rest(), c, env);
+    const main = r.sails.find((x) => x.main), jib = r.sails.find((x) => x.id === "jib");
+    expect(Math.abs(main.angle)).toBeLessThan(main.limit);
+    expect(Math.abs(jib.angle)).toBeLessThan(jib.limit);
+    expect(jib.alpha).toBeCloseTo(-5, 9);
+    expect(main.alpha + main.upwash).toBeCloseTo(-4, 9);
+    // CL_a at alpha0 is 0; σ is 0 that far inside the stall, so CL is (the jib's: §6.2's blend weight is exactly 0)
+    expect(Math.abs(jib.cl)).toBeLessThan(1e-9);
+    expect(main.cl).toBeLessThanOrEqual(1e-9);
+  });
+
+  it("read().sails gives each sail's angle, goal, limit, air, β_e, δ_s, ε, α, CL, CD, area and q", () => {
+    const r = shipOf(sloop).read(shipOf(sloop).rest(), { sail: 1, sheet: 0.3, jibSheet: 0.2, furl: 0 }, { wind: windFrom(6, 50) });
+    expect(r.sails.map((x) => x.id)).toEqual(sloop.sails.map((x) => x.id));
+    for (const x of r.sails) {
+      for (const k of ["angle", "goal", "limit", "from", "beta", "sheet", "upwash", "alpha", "cl", "cd", "area", "q"]) expect(Number.isFinite(x[k])).toBe(true);
+      expect(x.beta).toBeCloseTo(Math.abs(x.from) / DEG, 9);
+      expect(x.alpha).toBeCloseTo(x.beta - x.sheet - x.upwash, 9);
+      expect(x.q).toBeCloseTo(0.5 * 1.225 * 36, 0); // still, in 6 m/s
     }
   });
 });
@@ -347,4 +475,22 @@ describe("in irons (deterministic, flat water, 12 kn true wind dead ahead, from 
       if (sheeted.past != null) expect(sheeted.past).toBeGreaterThanOrEqual(1.5 * backed.past);
     });
   }
+});
+
+describe("the sails' read allocates nothing per frame", () => {
+  it("read().sails is one array of one object per sail, refilled on each read; published() reuses its own copies the same way", () => {
+    const ship = shipOf(sloop);
+    const env = { wind: windFrom(6, 40) };
+    const a = ship.read(ship.rest(), { sail: 1, jibSheet: 0.3 }, env);
+    const first = a.sails, firstJib = a.sails[1], jibAlpha = a.sails[1].alpha;
+    const b = ship.read(ship.rest(), { sail: 1, jibSheet: 0.9 }, env);
+    expect(b.sails).toBe(first);
+    expect(b.sails[1]).toBe(firstJib);
+    expect(b.sails[1].alpha).not.toBe(jibAlpha); // refilled for this read
+    const s0 = ship.rest();
+    const p1 = published(b, s0).sails, p2 = published(ship.read(s0, { sail: 1, jibSheet: 0.3 }, env), s0).sails;
+    expect(p2).toBe(p1);
+    expect(p2[1]).toBe(p1[1]);
+    expect(p2[1].alpha).toBeCloseTo(jibAlpha, 3);
+  });
 });

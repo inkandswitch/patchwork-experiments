@@ -418,29 +418,4 @@ describe("induced drag of her whole side force (§6.5.5)", () => {
 // against the stock sloop's 88% (now 97%). Not a measure of seakeeping (the
 // contract is flat-water and says so): only that the contract's hull terms
 // cost her no more on a sea than the stock's do.
-describe("on a sea", () => {
-  it("a contract sloop keeps as much of her flat-water speed on a seeded sea as the stock sloop does (45 s, 11 kn, 45° off the wind)", () => {
-    const DEG = Math.PI / 180;
-    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-    const keep = (ship) => {
-      const speed = (water) => {
-        const env = { wind: windFrom(5.66, 45), ...(water ? { water } : null) };
-        let s = { ...ship.rest(), velocity: [0, 0, -2] };
-        const c = { sail: 1, sheet: 0.15, rudder: 0 };
-        let sum = 0, k = 0;
-        for (let i = 0; i < 45 * 30; i++) {
-          const d = ship.read(s, c, env);
-          c.rudder = Math.max(-1, Math.min(1, 2 * wrap(0 - d.heading) + 4 * s.spin[1]));
-          if (i >= 30 * 30) (sum += d.speed), k++;
-          s = ship.step(s, c, env, 1 / 30);
-        }
-        return sum / k;
-      };
-      return speed(createOcean({ wind: { speed: 5.66, from: 45 }, seed: 4242 })) / speed(null);
-    };
-    const stock = keep(createShip());
-    const contract = keep(shipOf(sloop));
-    expect(stock).toBeGreaterThan(0.7);
-    expect(contract).toBeGreaterThan(stock);
-  }, 120000);
-});
+// (on a sea, 45 s on a seeded sea twice over: hull-resistance.slow.test.js)

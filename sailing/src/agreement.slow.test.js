@@ -77,8 +77,10 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  *   (hull-resistance.test.js), so roll and heel fail at 20 points (worst
  *   2.47 tolerances, 5.2° of heel at 20 kn), and her settle heels 12.2°
  *   against 10.3° (inside ±2° by 0.04°). In the sim she floats on her drawn
- *   mesh. Two of those points (20 kn 40° and 45°) also miss the helm by 2.0°
- *   and 1.85°, which is windage's (1.1° and 1.0° without it).
+ *   mesh. Two of those points (20 kn 40° and 45°) also miss the helm by 2.07°
+ *   and 1.85°, which is windage's (1.1° and 1.0° without it). (2.0° until
+ *   the Munk moment went as u·v, sin λ·cos λ, not sin λ: its cos λ, which
+ *   stock-rig.test.js checks against §6.4 at λ 5° and 15°.)
  * - the J/24 at 14 kn 52°: her righting curve is near its top there, so a
  *   roll residual of 0.17 tolerances is 2.2° less heel than predicted; less
  *   windage, 13 more of her points do the same (2.1–3.7° less heel at 14–20
@@ -99,7 +101,7 @@ const KNOWN_GAPS = {
       failing: ["12 kn 45°", "12 kn 52°", "14 kn 40°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "14 kn 70°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°"],
       pass: 71,
       of: 91,
-      worst: { surge: -0.533, sway: 0.509, roll: 2.465, yaw: -0.21, heelDeg: 5.245, rudderDeg: -2.0 },
+      worst: { surge: -0.533, sway: 0.509, roll: 2.465, yaw: -0.21, heelDeg: 5.245, rudderDeg: -2.069 },
     },
   },
   j24: {

@@ -169,7 +169,11 @@ try {
   {
     const d = await P("doc()");
     check("the mast brought its boom and sail, under the mast; the windlass its anchor, under the windlass", d.objects[rig]?.parent === mast && d.objects[report.ids.anchor]?.parent === windlass && d.objects[rig].traits?.["sailing.sail"]?.raised === 1, { rig: d.objects[rig], anchor: d.objects[report.ids.anchor]?.parent });
-    check("the parts share the scene's files: one GLB doc per kind (doc.assets)", ["mast", "rig", "wheel", "windlass", "anchor", "ladder"].every((k) => d.assets?.[`sailing/${k}@1`]?.url), Object.keys(d.assets ?? {}));
+    // each kind under its drawing's version (parts.js VERSIONS, fileKey): the rig's 2 began carrying the stock
+    // sloop's rig contract and the mast's 2 dropped the rolled jib (the mast brings the Jib piece instead); the
+    // render fixes (faces turned outward, parts seated into the deck) moved these to the versions below
+    const VERSION = { rig: 3, mast: 3, jib: 2, wheel: 2, windlass: 2, anchor: 2 };
+    check("the parts share the scene's files: one GLB doc per kind (doc.assets)", ["mast", "rig", "jib", "wheel", "windlass", "anchor", "ladder"].every((k) => d.assets?.[`sailing/${k}@${VERSION[k] ?? 1}`]?.url), Object.keys(d.assets ?? {}));
   }
   await until(`['${mast}', '${rig}', '${wheel}', '${windlass}', '${ladder}'].every((id) => window.__p.content(id)?.loaded)`, 20_000);
 
@@ -243,6 +247,10 @@ try {
     report.measured.sail = { seaSeconds: n2((await P("clock()")) - t0), speed: n2(len(travel) / dt), along: n2(along), leeway: deg(Math.acos(Math.min(1, along))), read: { speed: n2(rd?.speed ?? 0), heel: deg(rd?.heel ?? 0), apparentWind: rd?.apparentWind && { angle: deg(rd.apparentWind.angle), speed: n2(rd.apparentWind.speed) } } };
     check("under the sail the mast brought, she makes way (over 1 m/s)", !!got && len(travel) / dt > 0.8, report.measured.sail);
     check("bow first: her way is along the hull's +X, where camber drew her bow (within 20°)", along > Math.cos((20 * Math.PI) / 180), report.measured.sail);
+    // the "Mast and sail" rig carries the stock sloop's rig contract, which names the stock hull
+    // (sailing/hull): on camber's hull it isn't taken, and the rig is the plain one, as before
+    // (a contract ship's read has her jib)
+    check("the stock rig's contract isn't taken on her (it describes the stock hull): a plain rig, no jib", rd != null && rd.jib === undefined, { jib: rd?.jib ?? null });
   }
   // from off her quarter, under sail
   {

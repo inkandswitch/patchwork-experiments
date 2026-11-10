@@ -3,9 +3,13 @@
 //
 //   node probes/ship-shots.mjs [<dir>] [view …]
 //
+// A view may carry the page's query: "quarter?trim=luff" (the sails as
+// looks.js dresses them for that trim; ship-probe.html says which).
+//
 // Needs the scene package installed beside this one (the page borrows its
 // three.js); nothing else. Plain node, no dependencies.
 import { spawn } from "node:child_process";
+import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve, sep } from "node:path";
@@ -33,15 +37,17 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "ship-probe-"));
-const chrome = spawn(CHROME, ["--headless=new", "--no-first-run", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`, "--window-size=1280,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+const chrome = spawn(CHROME, ["--headless=new", "--no-first-run", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`, "--window-size=1280,800", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "about:blank"], { stdio: "ignore", detached: true });
 const done = (code) => {
-  chrome.kill();
+  killChrome(chrome);
   server.close();
   setTimeout(() => {
     rmSync(profile, { recursive: true, force: true });
     process.exit(code);
   }, 300);
 };
+// Chrome dies with this process however it ends (chrome-guard.mjs)
+guardChrome(chrome, { profile, stop: done });
 
 let target;
 for (let i = 0; i < 150 && !target; i++) {
@@ -71,9 +77,10 @@ await send("Runtime.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 
 const shots = [];
-for (const view of VIEWS) {
+for (const spec of VIEWS) {
+  const [view, extra = ""] = spec.split("?");
   const water = view === "under" || view === "side" ? 0 : 1;
-  await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/sailing/probes/ship-probe.html?view=${view}&water=${water}` });
+  await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/sailing/probes/ship-probe.html?view=${view}&water=${water}${extra ? `&${extra}` : ""}` });
   let ok = false;
   for (let i = 0; i < 300 && !ok; i++) {
     await sleep(100);
@@ -85,7 +92,7 @@ for (const view of VIEWS) {
   }
   await sleep(200);
   const r = await send("Page.captureScreenshot", { format: "png" });
-  const path = join(OUT, `ship-${view}.png`);
+  const path = join(OUT, `ship-${view}${extra ? `-${extra.replace(/[^a-z0-9]+/gi, "-")}` : ""}.png`);
   writeFileSync(path, Buffer.from(r.result.data, "base64"));
   shots.push(path);
 }

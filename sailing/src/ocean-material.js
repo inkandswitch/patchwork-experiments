@@ -401,6 +401,8 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
   #include <fog_fragment>
+  // a smooth gradient to the horizon bands in 8 bits: half a level of noise either way
+  gl_FragColor.rgb += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
 }`;
 
 /** A colour from a THREE.Color, a hex string or number, or [r, g, b] (linear). */

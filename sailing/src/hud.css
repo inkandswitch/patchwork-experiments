@@ -197,3 +197,31 @@
 .scene-stage .sail-hud[data-seated] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
   top: calc(var(--sail-gap) + 38px);
 }
+
+/* a sail's row on a ship that flies her main and jib apart: coloured by its
+   trim (trim.js), so a glance says which sail wants attention */
+.scene-stage .sail-hud .sail-read dd[data-trim]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: var(--sail-ink);
+  color: var(--sail-trim);
+}
+.scene-stage .sail-hud .sail-read dd[data-trim="drawing"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: var(--sail-accent);
+}
+.scene-stage .sail-hud .sail-read dd[data-trim="luffing"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: var(--sail-wind);
+}
+/* soft: under-trimmed, the windward telltale lifting; between luffing's and drawing's colours */
+.scene-stage .sail-hud .sail-read dd[data-trim="soft"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: #d4ef9e;
+}
+/* "eased": stalled with its sheet all the way out (stalled · eased out): neutral, nothing to fix by the sheet */
+.scene-stage .sail-hud .sail-read dd[data-trim="stalled"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: #ff9a8a;
+}
+.scene-stage .sail-hud .sail-read dd[data-trim="backed"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .sail-hud .sail-read dd[data-trim="wing"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: #a9c8ff;
+}
+.scene-stage .sail-hud .sail-read dd[data-trim="down"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-trim: var(--sail-ink-muted);
+}

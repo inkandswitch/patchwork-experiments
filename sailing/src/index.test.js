@@ -4,14 +4,14 @@ import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 
 const byId = (id) => plugins.find((p) => p.id === id);
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
   it("are two scene extensions, parts for the bin and two templates, and nothing else", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
       ["scene:extension", "sailing"],
       ["scene:extension", "sailing.edit"],
-      ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
+      ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
       ["scene:template", "ship-at-sea"],
       ["scene:template", "ship-at-anchor"],
     ]);
@@ -30,6 +30,7 @@ describe("sailing's plugins", () => {
     expect(byId("sailing.windlass").tags).toEqual(["sailing.windlass"]);
     expect(byId("sailing.ladder").tags).toEqual(["sailing.ladder"]);
     expect(byId("sailing.mainsheet").tags).toEqual(["sailing.mainsheet"]);
+    expect(byId("sailing.winches").tags).toEqual(["sailing.winch"]);
     expect(byId("sailing.sloop").traits).toContain("sailing.ship");
   });
 
@@ -67,6 +68,9 @@ describe("sailing's plugins", () => {
     expect(fields("sailing.sail").raised.default).toBe(1);
     expect(fields("sailing.sail").sheet.default).toBe(0.5);
     expect(fields("sailing.anchor").down).toMatchObject({ kind: "boolean", default: true });
+    expect(fields("sailing.jib").sheet.default).toBe(0.5);
+    expect(fields("sailing.jib").furl.default).toBe(0);
+    expect(fields("sailing.jib").held.options.map((o) => o.value)).toEqual(["", "port", "starboard"]);
     // the ship's spec is optional: no default, so adding the trait writes nothing to override its box
     expect(fields("sailing.ship").spec.default).toBeUndefined();
     // her frame: one field, a transform (unset: as her model says)

@@ -60,22 +60,50 @@ export function rigFrame(contract) {
 }
 
 /** A doc URL without its heads. */
-const docOf = (url) => (typeof url === "string" ? url.split("#")[0] : null);
+export const docOf = (url) => (typeof url === "string" ? url.split("#")[0] : null);
+
+/** A scene file key's family: "sailing/hull@3" → "sailing/hull" (parts.js fileKey). */
+export const keyFamily = (key) => (typeof key === "string" ? key.replace(/@[^@/]*$/, "") : null);
+
+/**
+ * Does a synthetic-hull contract name the hull family it describes
+ * (`source.hull.glbKey`, as the stock sloop's does: "sailing/hull")? Such a
+ * contract is that hull's alone.
+ */
+const namesItsHull = (contract) => contract?.source?.hull?.kind === "synthetic" && typeof contract.source.hull.glbKey === "string" && !!contract.source.hull.glbKey;
+
+/**
+ * The contract on a rig, if this ship takes it: `rigContract`, and, for one
+ * that names the hull family it describes (namesItsHull: the stock sloop's),
+ * only on a hull whose file is of that family (`hullKey`: the scene's
+ * doc.assets key for the hull object's file, body.js hullKeyOf). On any
+ * other hull it describes someone else's boat, so it isn't taken: the rig
+ * is read by its plain `extras.sail.plan`, as before the contract existed.
+ * A rig-aid contract (no glbKey) is taken anywhere, with checkSource's warning.
+ */
+export function contractOn(extrasRig, hullKey = null) {
+  const c = rigContract(extrasRig);
+  if (!c) return null;
+  if (namesItsHull(c) && keyFamily(hullKey) !== c.source.hull.glbKey) return null;
+  return c;
+}
 
 /**
  * The contract's warnings about the hull it's on (§3.2): a rig designed on
  * a linked hull put on another, or one designed on a synthetic hull put on
  * a drawn one. `hullUrl` is the hull object's document (its sourceUrl);
- * nothing to check without it.
+ * nothing to check without it. A synthetic-hull contract that names her
+ * hull's family (`hullKey`'s) describes her: nothing to say.
  * @returns {string[]}
  */
-export function checkSource(contract, hullUrl) {
+export function checkSource(contract, hullUrl, hullKey = null) {
   const h = contract?.source?.hull;
   if (!h || !hullUrl) return [];
   if (h.kind === "linked" && h.url && docOf(h.url) !== docOf(hullUrl)) {
     return [`This rig was designed on another hull (${h.label ?? h.url}), not the one it's on: its physics are that hull's.`];
   }
   if (h.kind === "synthetic") {
+    if (namesItsHull(contract) && keyFamily(hullKey) === h.glbKey) return [];
     return ["This rig was designed on a synthetic hull from principal dimensions, not the hull it's on: its physics are the synthetic hull's."];
   }
   return [];
@@ -190,12 +218,12 @@ function hullForm(H, k) {
  * by reference. `gyradiiM` is in body axes: [pitch (x), yaw (y), roll (z)].
  * `warnings` says where it can't be trusted as is.
  */
-export function bodyRig(contract, k = 1, { matrix = null, hullUrl = null, mesh = null } = {}) {
+export function bodyRig(contract, k = 1, { matrix = null, hullUrl = null, hullKey = null, mesh = null } = {}) {
   const c = contract;
   const L = c.loading;
   const H = c.hull;
   const g = L.gyradiiM;
-  const source = checkSource(c, hullUrl);
+  const source = checkSource(c, hullUrl, hullKey);
   const warnings = [...source];
   const form = hullForm(H, k);
   const drawn = form && !source.length && c.source?.hull?.kind === "linked" ? drawnHull(c, mesh, k, form, warnings) : null;
@@ -300,7 +328,7 @@ function drawnHull(c, mesh, k, form, warnings) {
  */
 export function rigSpecParts(contract, k = 1, o = {}) {
   // once per contract, scale, placement and hull: sim.js asks every frame
-  const key = `${k}|${isIdentityMatrix(o.matrix ?? null)}|${o.hullUrl ?? ""}|${o.mesh ? meshSerial(o.mesh) : ""}`;
+  const key = `${k}|${isIdentityMatrix(o.matrix ?? null)}|${o.hullUrl ?? ""}|${o.hullKey ?? ""}|${o.mesh ? meshSerial(o.mesh) : ""}`;
   let byKey = parts.get(contract);
   if (!byKey) parts.set(contract, (byKey = new Map()));
   let out = byKey.get(key);

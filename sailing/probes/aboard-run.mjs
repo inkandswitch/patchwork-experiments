@@ -25,8 +25,12 @@
 //     hull doesn't board, and the HUD offers Enter, not the walking keys,
 //     its dial top left clear of the hand;
 //  8. B gets her under way with the keys in the template's own breeze: Enter,
-//     F held at the windlass and at the mast, F at the wheel, A and D to
-//     bear away onto a reach; over 1 m/s within 90 s; then 3–6 again for A
+//     R held at the mast (the main up at anchor), F held at the windlass, F
+//     at the wheel; head to wind (the HUD's: within 40°, slow; else the step fails as not
+//     exercised), the wheel to port and B unrolls the jib backed on the side
+//     opposite the bow its hint names, and she falls off that way past 45°
+//     within 15 s of sailing time (one bounded step: DESIGN.md, "Leaving
+//     the anchor"); A and D onto a reach, over 1 m/s within 90 s; then 3–6 again for A
 //     (still seated), and the name tags stay on their trays;
 //  9. Enter boards: over the deck the prompt shows only Flip, and S and D
 //     walk; with the table in her cockpit the mainsheet is in reach from its
@@ -142,8 +146,7 @@ async function steer(w, want, ms, speed = 1, wallMs = ms * 4) {
       const rd = await P(`read('a')`);
       const angle = await P(`live(__p.ids.wheel, 'angle')`) || 0;
       const err = wrap(want - compassOf(m));
-      // going astern the rudder works backwards
-      const goal = (rd?.speed ?? 0) < -0.2 ? -Math.sign(err) : Math.max(-1, Math.min(1, err * 1.5));
+      const goal = Math.max(-1, Math.min(1, err * 1.5));
       await hold(Math.abs(goal - angle) < 0.08 ? null : goal > angle ? "d" : "a");
       const t = +(await sailed()).toFixed(1);
       trace.push([t, +(rd?.speed ?? 0).toFixed(2), +err.toFixed(2)]);
@@ -156,6 +159,42 @@ async function steer(w, want, ms, speed = 1, wallMs = ms * 4) {
   const g = await js("(() => { const g = window.__sail; g.on = false; return { t: g.t, frames: g.frames }; })()");
   const wall = (Date.now() - t0) / 1000;
   return { t: reached, sailedS: +g.t.toFixed(1), wallS: +wall.toFixed(1), fps: +(g.frames / wall).toFixed(1), max: Math.max(...trace.map((x) => x[1])), trace: trace.filter((_, i) => i % 25 === 0) };
+}
+
+/**
+ * Leaving head to wind (DESIGN.md, "Leaving the anchor"), at the helm in view `w`: the wheel over
+ * (`key` held 0.6 s: "a" port, "d" starboard; it picks the side dead ahead), B backs the jib
+ * (unrolling it if it's furled) on the side opposite the bow its hint names, and her heading must
+ * swing past 45° that way within `seaS` s of sailing time; then B lets it fly. One bounded step:
+ * whatever happens is reported, nothing is retried.
+ */
+async function backJib(w, key, seaS = 15) {
+  await js(`(() => { const g = (window.__sail = { t: 0, frames: 0, last: performance.now(), on: true });
+    const f = (now) => { if (!g.on) return; g.t += Math.min(0.25, (now - g.last) / 1000); g.last = now; g.frames++; requestAnimationFrame(f); };
+    requestAnimationFrame(f); return true; })()`);
+  const sailed = () => js("window.__sail.t");
+  const h0 = compassOf(await P(`worldOf(__p.ids.hull, '${w}')`));
+  const awa0 = (await P("read('a')"))?.apparentWind?.angle ?? NaN;
+  await b.keyDown(key);
+  await sleep(600);
+  await b.keyUp(key);
+  const hint = (await P(`me('${w}')`))?.hint ?? "";
+  await b.key("b");
+  await sleep(300);
+  const held = await P("jibHeld()");
+  const t0 = Date.now();
+  let past = null, turned = 0;
+  while ((await sailed()) < seaS && Date.now() - t0 < seaS * 4000) {
+    turned = wrap(compassOf(await P(`worldOf(__p.ids.hull, '${w}')`)) - h0);
+    if (Math.abs(turned) > Math.PI / 4) { past = +(await sailed()).toFixed(1); break; }
+    await sleep(200);
+  }
+  const furl = (await P("jib()"))?.furl ?? NaN;
+  await b.key("b"); // and let it fly
+  await sleep(300);
+  await js("window.__sail.on = false");
+  const bow = /bow to port/.test(hint) ? "port" : /bow to starboard/.test(hint) ? "starboard" : null;
+  return { awa0: +awa0.toFixed(3), hint, bow, held, past, turnedDeg: Math.round((turned * 180) / Math.PI), furl, let: await P("jibHeld()") };
 }
 
 /** 4: hover the deck in A, the prompt, D into A's tray. */
@@ -308,7 +347,7 @@ try {
   // ── 8: under way ──
   if (!QUICK) {
     // B leaves the table and gets her under way with the keys, in the template's own breeze:
-    // Enter; F held at the windlass, then R at the mast; F at the wheel; A and D to bear away onto a reach
+    // Enter; R held at the mast, then F at the windlass; F at the wheel; A and D to bear away onto a reach
     report.numbers.breeze = await P("wind()");
     await P("focus('b')");
     await b.key("Enter");
@@ -318,25 +357,41 @@ try {
     const rigAt = await P(`hullLocal(${J(ids.rig)})`);
     const wh = await P(`hullLocal(${J(ids.wheel)})`);
     await P("focus('b')");
+    // the main hoisted while she's anchored (DESIGN.md, "Leaving the anchor"), so she lies head to wind as it breaks out
+    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/);
+    let raised = false;
+    if (atMast) { await b.keyDown("r"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("r"); }
+    check("8: B raises the sail at anchor, holding R at the mast", atMast && raised, await P("shape().sail"));
     const atWindlass = await face("b", ids.windlass, [wl[0], wl[1], wl[2] + 0.9], -0.75, /Raise anchor/);
     let up = false;
     if (atWindlass) { await b.keyDown("f"); up = await until("shape().anchor.down === false", 90_000); await b.keyUp("f"); }
     check("8: B weighs anchor, holding F at the windlass", atWindlass && up, await P("shape().anchor"));
-    await sleep(2000);
-    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/);
-    let raised = false;
-    if (atMast) { await b.keyDown("r"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("r"); }
-    check("8: B raises the sail, holding R at the mast", atMast && raised, await P("shape().sail"));
     const atWheel = await face("b", ids.wheel, [wh[0], wh[1] - 0.6, wh[2] + 0.75], -0.45, /Take the helm/);
     if (atWheel) await b.key("f");
     check("8: B takes the helm with F", atWheel && (await until(`me('b').station === ${J(ids.wheel)}`, 3000)), await P("me('b')"));
     mark("sail up, anchor up, at the helm");
-    // bear away onto a beam reach, on whichever side the wind is
+    // she lies near head to wind, her jib rolled away at anchor (layout.js AT_ANCHOR). B leaves as a
+    // crew does (DESIGN.md, "Leaving the anchor"): the tack chosen with the wheel (to port), B unrolls
+    // the jib backed (the furling line's led aft), and she falls off: one bounded step, then B lets it fly
     const wind = await P("wind()");
+    let jib = null;
+    if (ids.jib) {
+      const advice = (await P("hud('b')"))?.advice ?? "";
+      const rd = await P("read('a')");
+      // head to wind in the HUD's own sense (hud.js luffing: within 40°, under 0.5 m/s), or the step isn't exercised
+      const inIrons = Math.abs(rd?.apparentWind?.angle ?? Infinity) < (40 * Math.PI) / 180 && Math.abs(rd?.speed ?? Infinity) < 0.5;
+      check("8: weighed with the main up, she lies head to wind (the apparent wind within 40°, under 0.5 m/s): the leave step is exercised", inIrons, { awa: rd?.apparentWind?.angle, speed: rd?.speed });
+      check("8: head to wind, the HUD names the move (back the jib, B at the helm)", /back the jib \(B at the helm/.test(advice), { advice, awa: rd?.apparentWind?.angle, speed: rd?.speed });
+      jib = await backJib("b", "a");
+      // the hint names her bow's way, the jib held on the other side (stations.js helmBackSide), unrolled
+      check("8: B, the wheel to port, unrolls the jib (furl 0) and makes it fast on the side opposite the bow its hint names, and lets it fly once she's off", inIrons && jib.bow != null && jib.held != null && jib.held !== jib.bow && jib.furl <= 0.02 && jib.let == null, jib);
+      // compass + is her bow to starboard: a turn the other way, or with the jib still furled, is drifting, not backing
+      check("8: backed, she falls off the way the hint said: past 45° that way within 15 s of sailing time, the jib out", inIrons && jib.past != null && jib.furl <= 0.02 && jib.held != null && Math.sign(jib.turnedDeg) === (jib.bow === "starboard" ? 1 : -1), jib);
+    }
     const awa = (await P("read('a')"))?.apparentWind?.angle ?? 0.5;
     const want = ((wind.from + (awa < 0 ? 1 : -1) * 90) * Math.PI) / 180;
     const sailed = await steer("b", want, 90_000, 1);
-    report.numbers["under way"] = { ...sailed, wind: wind.speed };
+    report.numbers["under way"] = { ...sailed, wind: wind.speed, jib };
     check("8: steered with A and D, she makes over 1 m/s within 90 s (of sailing time) in the anchorage's breeze", sailed.t != null, report.numbers["under way"]);
     // and on, a little: the helm left as it is
     await sleep(5000);
@@ -350,7 +405,7 @@ try {
     const tags = await P("tags('a')");
     // (on the tray, at its edge nearest the seat)
     const tray1 = await P(`pageOf(${J(ids.hand1)}, [0, 0, 0.065], 'a')`);
-    const near1 = tags.filter((t) => /Player 1/.test(t.text)).map((t) => Math.hypot(t.x - tray1.x, t.y - tray1.y));
+    const near1 = tray1 ? tags.filter((t) => /Player 1/.test(t.text)).map((t) => Math.hypot(t.x - tray1.x, t.y - tray1.y)) : [];
     check("8: the name tags stay on their trays", near1.length === 1 && near1[0] < 30, { tags, tray1 });
     await shot("under-way-played");
   }
