@@ -1112,9 +1112,9 @@ from the spec above, or says more:
   its `@n`). It is scoped to synthetic-hull contracts because the rig aid
   writes a linked render's identity into `glbKey` too (its renderKey), and
   such a rig keeps today's rule. A hull with no key in `doc.assets` (an
-  imported hull, or a stage without `ctx.file`) doesn't take the stock
-  contract. The gate is in one place for both readers: `specFor` (the
-  physics) and `rigContractOf` (her frame). `checkSource` is quiet when the
+  imported hull) doesn't take the stock contract. The gate is in one place
+  for both readers: `specFor` (the physics) and `rigContractOf` (her
+  frame). `checkSource` is quiet when the
   key's family matches; a synthetic contract never tries her drawn mesh, so
   sim.js reads her triangles only for a linked contract.
 - *Her lowers.* She draws a forward and an aft lower shroud each side;
@@ -1517,8 +1517,8 @@ a scene:part in index.js under "Sailing":
   and her anchor up. A ship brings her sea.
 - **Files:** each kind is the scene's one GLB doc under
   `doc.assets["sailing/<kind>@<n>"]` (`ctx.file`), so ten buoys share one;
-  bump `<n>` (`fileKey`) when a kind's drawing changes. A stage without
-  `ctx.file` gets a doc of its own per kind, as before parts.
+  bump `<n>` (`fileKey`) when a kind's drawing changes. `ctx.file` is
+  required: there is no other way a part makes its files.
 - The template is the Sloop part's objects with her way on, the landmarks
   (the buoy and islet parts, locked, in a group), the home view and "play".
   At anchor, her stations' settings are set over the parts' own

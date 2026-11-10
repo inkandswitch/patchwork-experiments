@@ -8,7 +8,7 @@ import { placement } from "./parts.js";
 import { createSeaView } from "./sea-view.js";
 import { createSim } from "./sim.js";
 import { SHIP } from "./traits.js";
-import { fakeNode, fakeWorld } from "./test/fakes.js";
+import { fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
 import { near, quarter, rigSail, stated, turned } from "./test/frame-hulls.js";
 
 
@@ -20,14 +20,17 @@ import { near, quarter, rigSail, stated, turned } from "./test/frame-hulls.js";
  * it (squared to her frame), so her body is where the stock one's is.
  */
 async function sloop({ turned: isTurned = false, yaw = headTo(45 - 90) } = {}) {
-  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {} };
-  let n = 0;
+  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
   const hull = await layOutShip(
-    { repo: { create2: async () => ({ url: `automerge:f${++n}` }) }, change: (fn) => fn(doc), newId: (p) => `${p}${++n}` },
+    fakeDrop(doc).ctx,
     { wind: { speed: 7, from: 45 }, seed: 3 },
   );
   const byName = (name) => Object.keys(doc.objects).find((id) => doc.objects[id].name === name);
   const ids = { hull, rig: byName("Boom and sail"), wheel: byName("Wheel"), windlass: byName("Windlass"), mast: byName("Mast") };
+  // either hull is a drawing of its own (a stated bow, or turned a quarter), not
+  // the stock hull's file: an imported model, with no key in doc.assets, so the
+  // rig's stock contract is taken by neither (rig-contract.js, the gate)
+  doc.objects[hull].sourceUrl = `automerge:${isTurned ? "turnedHull" : "statedHull"}`;
   const content = {
     [hull]: { loaded: true, ...(isTurned ? turned : stated), root: fakeNode() },
     [ids.rig]: { loaded: true, box: null, extras: rigSail, root: fakeNode({ Sail: fakeNode() }) },

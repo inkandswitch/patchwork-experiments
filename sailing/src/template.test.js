@@ -8,7 +8,7 @@ import { fakeDrop } from "./test/fakes.js";
 
 const fakeScene = (doc, o) => fakeDrop(doc, o);
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {} });
+const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} });
 
 describe("the Ship at sea template", () => {
   it("writes the sea, starts the scene in play, and says how to go aboard", async () => {
@@ -48,16 +48,6 @@ describe("the Ship at sea template", () => {
       expect(o.hint.bounds.min).toHaveLength(3);
     }
     expect(doc.order).toHaveLength(Object.keys(doc.objects).length);
-  });
-
-  it("on a stage without ctx.file, files a doc of its own for each kind", async () => {
-    const doc = emptyScene();
-    const { ctx, calls } = fakeScene(doc, { file: false });
-    await template.create(ctx);
-    expect(calls.created).toHaveLength(13);
-    expect(doc.assets).toBeUndefined();
-    const urls = new Set(calls.created.map((_, i) => `automerge:file${i + 1}`));
-    for (const o of Object.values(doc.objects)) if (o.kind !== "group") expect(urls.has(o.sourceUrl)).toBe(true);
   });
 
   it("lays out the hull as a ship, with its parts attached under it in its frame", async () => {

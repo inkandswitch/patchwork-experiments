@@ -100,16 +100,9 @@ export function makeFile(kind) {
   };
 }
 
-/**
- * The scene's file doc for a kind: { url, hint }. A stage older than parts
- * has no ctx.file: then a doc of its own each time, as the template made
- * them before.
- */
-export async function fileFor(ctx, kind) {
-  if (typeof ctx.file === "function") return ctx.file(fileKey(kind), () => makeFile(kind));
-  const f = makeFile(kind);
-  const doc = await ctx.repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
-  return { url: doc.url, hint: f.hint };
+/** The scene's file doc for a kind (ctx.file, under its fileKey): { url, hint }. */
+export function fileFor(ctx, kind) {
+  return ctx.file(fileKey(kind), () => makeFile(kind));
 }
 
 /** Every kind a list of parts is made of, filed once each. */

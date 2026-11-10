@@ -11,7 +11,7 @@ import { apply, matrixOf } from "./frames.js";
 import { createSim } from "./sim.js";
 import { fakeDrop, fakeWorld } from "./test/fakes.js";
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {} });
+const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} });
 const near = (a, b, digits = 9) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], digits));
 const children = (doc, id) => Object.keys(doc.objects).filter((k) => doc.objects[k].parent === id);
 /** Where a point local to `id` is in `root`'s frame (doc transforms). */
