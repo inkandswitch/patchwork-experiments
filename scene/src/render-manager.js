@@ -267,9 +267,6 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       reason: unsure || behind ? null : reason,
       behind,
       contested,
-      // built by a scene host from before dependencies (SCENE-CONTRACT v2 §1)
-      // existed: it records no `deps` at all, where this one always does
-      olderHost: contested && !!render.builtFrom && render.builtFrom.deps === undefined,
       depsUnavailable,
       deps: entry.deps.urls(),
     });

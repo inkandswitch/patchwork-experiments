@@ -157,6 +157,12 @@ describe("helpers", () => {
 });
 
 describe("v2 additions", () => {
+  it("writes asset.copyright only when given", () => {
+    for (const none of [undefined, null, ""]) expect("copyright" in parseGLB(encodeGLB({ meshes: [tri], copyright: none })).json.asset).toBe(false);
+    expect(parseGLB(encodeGLB({ meshes: [tri] })).json.asset).toEqual({ version: "2.0", generator: "patchwork glb.js", extras: { units: "m" } });
+    expect(parseGLB(encodeGLB({ meshes: [tri], copyright: "© OpenStreetMap contributors" })).json.asset.copyright).toBe("© OpenStreetMap contributors");
+  });
+
   it("records the units in asset.extras (metres unless told otherwise)", () => {
     expect(parseGLB(encodeGLB({ meshes: [tri] })).json.asset.extras).toEqual({ units: "m" });
     expect(parseGLB(encodeGLB({ meshes: [tri], units: "mm" })).json.asset.extras).toEqual({ units: "mm" });

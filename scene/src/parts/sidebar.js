@@ -1,4 +1,4 @@
-// scene.sidebar: the panel stack at the right (old tool.js "panels", ~2029-2089).
+// scene.sidebar: the panel stack at the right.
 //
 // It presents every running extension's `panels` ([{ id, title, pinned?, mount(el) }]):
 // each a <section> with a title that folds it, in running order. Every panel

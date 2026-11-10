@@ -39,7 +39,6 @@ export default {
             if (Array.isArray(cam.target)) home.target = [...cam.target].map(Number);
             if (Number.isFinite(cam.fov)) home.fov = cam.fov;
             api.change((d) => {
-              if (!d.view) d.view = {};
               d.view.home = home;
             });
           },

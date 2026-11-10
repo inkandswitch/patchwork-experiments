@@ -1,5 +1,4 @@
-// scene.measure: point-to-point measuring, as an armed tool (ported from the
-// old tool.js measure, ~913-988, and the old viewport's measure preview).
+// scene.measure: point-to-point measuring, as an armed tool.
 //
 // "Measure" (M) arms it. While armed:
 //   - the pointer's hover picks a point (the ground counts; a vertex within

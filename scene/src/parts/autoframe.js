@@ -1,5 +1,5 @@
 // scene.autoframe: an untouched camera frames the scene as its content
-// arrives (the old tool.js autoFrame): once from hint bounds when there are
+// arrives: once from hint bounds when there are
 // any (before anything has loaded), else each time the scene's box grows,
 // until everything shown has loaded or the person moves the camera. It starts
 // again when objects arrive in an empty scene.

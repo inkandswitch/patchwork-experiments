@@ -18,6 +18,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo, FakeHandle, fakeUrl } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 
 const P = (window.__probe = { phase: "boot", errors: [], log: [] });
 const origError = console.error;
@@ -103,7 +104,7 @@ try {
     if (o.infoUrl) o.infoUrl = mapUrl(o.infoUrl, (key) => repo.add({ "@patchwork": { type: "markdown" }, content: `# ${key}\n\n(probe stand-in for the imported markdown doc)` }).url);
   }
   if (params.get("camera") === "none") delete sceneJson.view?.home;
-  const scene = repo.add(sceneJson);
+  const scene = repo.add(emptyScene(sceneJson));
   P.sceneUrl = scene.url;
   const ids = (pred) => Object.entries(objects).filter(([, o]) => pred(o)).map(([id]) => id);
   const byName = (name) => ids((o) => o.name === name && o.kind === "object")[0];

@@ -30,6 +30,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
 const q = new URLSearchParams(location.search);
@@ -56,8 +57,8 @@ function stlBox(w, d, h) {
 const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const obj = (name, file, extra = {}) => ({ name, sourceUrl: file.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: T([0, 0, 0]), ...extra });
 const fileDoc = (name, glb) => ({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(glb) });
-const sceneDoc = (title, objects = {}, order = [], extra = {}) => ({
-  "@patchwork": { type: "scene" }, title, objects, order, dimensions: {}, traits: {}, assets: {},
+const sceneDoc = (title, objects = {}, order = [], extra = {}) => emptyScene({
+  title, objects, order,
   view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } }, ...extra,
 });
 
@@ -109,7 +110,7 @@ try {
     }));
     B = repo.add(sceneDoc("Scene B", {
       deck: obj("Deck", files.deck, { transform: T([0.6, 0, 0.2], [0, Math.PI / 2, 0]) }),
-    }, ["deck"], { assets: {} }));
+    }, ["deck"]));
   } else {
     A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));
     B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));

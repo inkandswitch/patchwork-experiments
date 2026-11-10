@@ -1,4 +1,4 @@
-// Scene-level material rules (SCENE-CONTRACT v3 §9), pure. `scene.materialRules`
+// Scene-level material rules (README.md, "`scene` — the composition"), pure. `scene.materialRules`
 // is an ordered list; every rule whose `match` fits a loaded material's name
 // sets some of its properties, after the GLB's own values and before the
 // object's colour / opacity. Later rules win. Display state only: no rebuild.
@@ -12,7 +12,6 @@
 const HEX = /^#[0-9a-f]{6}$/i;
 const UNIT_KEYS = ["metalness", "roughness", "opacity", "transmission"];
 const COLOR_KEYS = ["color", "emissive"];
-export const RULE_SET_KEYS = Object.freeze([...COLOR_KEYS, ...UNIT_KEYS]);
 
 function cleanMatch(m) {
   if (!m || typeof m !== "object") return null;

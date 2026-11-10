@@ -50,9 +50,6 @@ export function sanitizeConnectors(raw) {
   return out;
 }
 
-/** The older name: snap points are connectors. */
-export const sanitizeSnapPoints = sanitizeConnectors;
-
 /** Does a connector with these tags take an object with those? (No tags on the connector: anything.) */
 export function accepts(connectorTags, objectTags) {
   if (!connectorTags?.length) return true;

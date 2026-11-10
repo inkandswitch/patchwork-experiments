@@ -336,7 +336,7 @@ export function createRouter(o) {
       gesture = null;
     }
     // claimed presses preventDefault, which also stops the browser moving
-    // focus, so bring keys to this view by hand (tool.js did this too)
+    // focus, so bring keys to this view by hand
     if (keyRoot && doc.activeElement !== keyRoot) keyRoot.focus?.({ preventScroll: true });
     lastAt = { clientX: e.clientX, clientY: e.clientY };
     const g = {

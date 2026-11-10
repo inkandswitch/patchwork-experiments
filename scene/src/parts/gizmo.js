@@ -1,7 +1,5 @@
 // scene.gizmo: the move / rotate transform gizmo on the selected object, or on
-// a pivot at a selected group's centre that moves the group's members (ported
-// from the old viewport.js updateGizmo / startGroupDrag / dragGroup /
-// endGroupDrag and tool.js onTransformEnd / onGroupTransformEnd).
+// a pivot at a selected group's centre that moves the group's members.
 //
 // three's TransformControls is made without a DOM element: the stage's router
 // drives it. widgetAt tells the stage when the pointer is over a handle (so

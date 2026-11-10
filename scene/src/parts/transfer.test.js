@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
+import { emptyScene } from "../test/empty-scene.js";
 import transfer, { besideOffset, clipText, pasteStep } from "./transfer.js";
 import menuPart from "./menu.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
@@ -76,8 +77,7 @@ async function setup({ sea = false } = {}) {
   const stl = repo.add({ "@patchwork": { type: "file" }, name: "boom.stl", extension: "stl", mimeType: "model/stl", content: new Uint8Array(84) });
   const glbOut = repo.add({ "@patchwork": { type: "file" }, name: "boom.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array(4) });
   const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "Boom", parent: stl.url, providerId: "file-stl", params: { unit: "cm", up: "y" }, glbUrl: glbOut.url, builtFrom: { heads: stl.heads(), fingerprint: null, paramsKey: '{"unit":"cm","up":"y"}' }, builtAt: 7, bounds: null, status: "idle", error: null, pinned: false });
-  const other = repo.add({
-    "@patchwork": { type: "scene" },
+  const other = repo.add(emptyScene({
     title: "Other",
     objects: {
       mast: object({ name: "Mast", sourceUrl: glb.url, providerId: "file-glb", tags: ["mast"], color: "#ff0000", locked: true, infoUrl: "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u", hint: { bounds: { min: [0, 0, 0], max: [0.2, 9, 0.2] } }, claims: { sim: { viewer: "v", session: "s" } }, traits: { "t.ship": { spec: { lwl: 9 }, motion: { velocity: [3, 0, 0] } } }, transform: T([40, 0, 0], [0, 0.7, 0], 1.5) }),
@@ -87,10 +87,8 @@ async function setup({ sea = false } = {}) {
     },
     order: ["mast", "boom", "sail", "crate"],
     traits: { "t.sea": {} },
-    view: {},
-    dimensions: {},
     assets: { "t/mast@1": { url: glb.url }, "t/other@1": { url: "automerge:3k9knn3DsFnFYDFvXkyMu4UHyp7u" } },
-  });
+  }));
   const api = s.api("scene.transfer");
   // what's under the pointer: the hull at x < 100, else the ground
   api.pick = (x) => (x < 100 ? { id: "hull", point: [5.5, 1, 1.5] } : { id: null, point: [9, 0, 9] });
@@ -355,19 +353,14 @@ describe("references", () => {
 
   it("a field naming an object copied with it points at the copy; one naming something left behind is cleared, with a notice", async () => {
     await mountWith({ objects: {}, order: [] });
-    const other = s.repo.add({
-      "@patchwork": { type: "scene" },
+    const other = s.repo.add(emptyScene({
       objects: {
         door: object({ name: "Door" }),
         lever: object({ name: "Lever", parent: "door", traits: { "t.lever": { target: "door" } } }),
         far: object({ name: "Far lever", traits: { "t.lever": { target: "door" } } }),
       },
       order: ["door", "lever", "far"],
-      traits: {},
-      view: {},
-      dimensions: {},
-      assets: {},
-    });
+    }));
     await drop(rowPayload(other.url, ["door"]), { x: 150 });
     const door = byName("Door");
     expect(byName("Lever").traits["t.lever"].target).toBe(door.id);
@@ -402,15 +395,11 @@ describe("references", () => {
 
   it("an entry field: kept where this scene has that entry; else cleared, and the notice names what's missing", async () => {
     await mountWith({ objects: {}, order: [], traits: { "t.seats": { seat_b: { name: "B" } } } });
-    const other = s.repo.add({
-      "@patchwork": { type: "scene" },
+    const other = s.repo.add(emptyScene({
       objects: { z1: object({ name: "Zone 1", traits: { "t.zone": { seat: "seat_b" } } }), z2: object({ name: "Zone 2", traits: { "t.zone": { seat: "seat_a" } } }) },
       order: ["z1", "z2"],
       traits: { "t.seats": { seat_a: { name: "A" }, seat_b: { name: "B" } } },
-      view: {},
-      dimensions: {},
-      assets: {},
-    });
+    }));
     await drop(rowPayload(other.url, ["z1"]), { x: 150 });
     expect(byName("Zone 1").traits["t.zone"].seat).toBe("seat_b");
     await drop(rowPayload(other.url, ["z2"]), { x: 150 });

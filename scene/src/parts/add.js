@@ -1,5 +1,4 @@
-// scene.add: adding documents to the scene (ported from the old tool.js
-// addFromUrl, addFiles, choose and the root drag/paste handlers).
+// scene.add: adding documents to the scene.
 //   - Drop documents (dnd.js payloads) or desktop files (.stl, .glb, …)
 //     anywhere in the stage. Files become file docs first, named after the
 //     file. A "Drop to add" hint shows while an acceptable drag is over the
@@ -311,8 +310,7 @@ function create(api) {
     return hit?.point ? { point: hit.point, hitId: hit.id ?? null } : null;
   }
 
-  // Anywhere in the stage takes a drop (the side panels too, as the old tool
-  // did), unless something under it already did (an outline row, which stops
+  // Anywhere in the stage takes a drop (the side panels too), unless something under it already did (an outline row, which stops
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
   api.listen(root, "dragenter", (e) => {

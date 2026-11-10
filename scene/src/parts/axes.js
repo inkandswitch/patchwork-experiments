@@ -1,7 +1,6 @@
 // scene.axes: the world axes (X, Y, Z lines from the origin, with labels just
 // past their ends) and the orientation triad in the bottom-left corner, while
-// the viewer's `axes` pref is on (ported from the old viewport's
-// rebuildHelpers and its triad pass). The triad is its own small orthographic
+// the viewer's `axes` pref is on. The triad is its own small orthographic
 // scene, drawn after the main pass in a scissored corner (api.afterRender),
 // turned with the camera; its X/Y/Z labels go on screen through api.labels.
 

@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import { imported, resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
@@ -113,7 +114,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
   it("a view of the scene at a version (read-only) is never written", async () => {
     const repo = new FakeRepo();
     await mount({ extensions: [sea], repo });
-    const h = repo.add({ "@patchwork": { type: "scene" }, title: "T", objects: {}, order: [], dimensions: {}, traits: { "sailing.sea": {} }, assets: {}, packages: [], view: {} });
+    const h = repo.add(emptyScene({ title: "T", traits: { "sailing.sea": {} } }));
     const view = h.view(h.heads()); // change() on it throws
     const v = await mount({ handle: view, repo });
     await settle();
@@ -178,11 +179,11 @@ describe("reconcile: the doc suggests the scene package", () => {
     registerScene(SCENE);
     await settle();
     expect(meta(kept).suggestedImportUrl).toBe(OTHER);
-    const dev = await mount({ handle: kept.repo.add({ "@patchwork": { type: "scene", suggestedImportUrl: "http://localhost:5173/" }, title: "T", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, packages: [], view: {} }), repo: kept.repo });
+    const dev = await mount({ handle: kept.repo.add(emptyScene({ "@patchwork": { suggestedImportUrl: "http://localhost:5173/" }, title: "T" })), repo: kept.repo });
     await settle();
     expect(meta(dev).suggestedImportUrl).toBe(SCENE);
     registerScene("http://localhost:5173/");
-    const bare = await mount({ handle: kept.repo.add({ "@patchwork": { type: "scene" }, title: "T", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, packages: [], view: {} }), repo: kept.repo });
+    const bare = await mount({ handle: kept.repo.add(emptyScene({ title: "T" })), repo: kept.repo });
     await settle();
     expect(meta(bare)).toEqual({ type: "scene" });
   });
@@ -190,7 +191,7 @@ describe("reconcile: the doc suggests the scene package", () => {
   it("a read-only view is never written", async () => {
     const first = await mount({});
     registerScene(SCENE);
-    const h = first.repo.add({ "@patchwork": { type: "scene" }, title: "T", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, packages: [], view: {} });
+    const h = first.repo.add(emptyScene({ title: "T" }));
     const view = h.view(h.heads());
     await mount({ handle: view, repo: first.repo });
     await settle();

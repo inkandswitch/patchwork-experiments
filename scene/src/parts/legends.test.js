@@ -17,7 +17,7 @@ async function mount(doc, legendsById = {}) {
 const cards = (s) => [...s.root.querySelectorAll(".stage-overlay > .legends > .legend")];
 
 describe("scene.legends (pure)", () => {
-  it("rejects legends it can't draw safely (the old sanitizeLegend)", () => {
+  it("rejects legends it can't draw safely", () => {
     expect(sanitizeLegend(null)).toBe(null);
     expect(sanitizeLegend({ min: 1, max: 1, stops: ["#000000", "#ffffff"] })).toBe(null);
     expect(sanitizeLegend({ min: 0, max: 1, stops: ["red", "url(x)"] })).toBe(null);

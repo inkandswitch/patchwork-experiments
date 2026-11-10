@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, sanitizeSnapPoints, yawDelta, yawOfEuler } from "./hand.js";
+import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./hand.js";
 
 describe("connectors", () => {
   it("keeps finite [x, y, z] and { position, yaw } snap points (the older shape), drops the rest", () => {
-    expect(sanitizeSnapPoints([[1, 2, 3], { position: [4, 5, 6], yaw: Math.PI }, { position: [7, 8, 9], yaw: "x" }, [1, 2], ["a", 0, 0], null, [0, 0, Infinity]])).toEqual([
+    expect(sanitizeConnectors([[1, 2, 3], { position: [4, 5, 6], yaw: Math.PI }, { position: [7, 8, 9], yaw: "x" }, [1, 2], ["a", 0, 0], null, [0, 0, Infinity]])).toEqual([
       { position: [1, 2, 3], yaw: null, tags: [] },
       { position: [4, 5, 6], yaw: Math.PI, tags: [] },
       { position: [7, 8, 9], yaw: null, tags: [] },
     ]);
-    expect(sanitizeSnapPoints("nope")).toEqual([]);
+    expect(sanitizeConnectors("nope")).toEqual([]);
   });
 
   it("a connector's rotation gives the yaw a piece set down there faces; its tags say what it takes", () => {

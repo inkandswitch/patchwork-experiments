@@ -285,7 +285,9 @@ the use prompt serves a table, frames serve the arena.
   anchor are fields on the ship's objects.
 - **Walking a moving deck** works against raycasts that see displayed poses.
 
-**What's missing.**
+**What was missing.** Items 1 and 2 have been built since, as recommended
+here: claims are in [STAGE.md](STAGE.md), "Claims", and the use prompt is
+the shared part `scene.use` (`src/parts/use.js`). The rest still stand.
 
 1. **Claims, in the doc.** One player at the helm; a bucket in one
    person's hands; one peer simulating the ship. These are facts about the
@@ -376,8 +378,8 @@ the use prompt serves a table, frames serve the arena.
 | `stage/router.js` | `ev.holders` for armed handlers |
 | `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` |
 | `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
-| `stage/stage.js` | `api.claim` / `api.claimedBy` (claims as doc fields, lapsing with their holder's presence); commands' `state` gets `from`; `run` may return a session |
-| new part `scene.use` | the first-person use prompt over commands, held verbs |
+| `stage/stage.js` | `api.claim` / `api.claimedBy` (claims as doc fields, lapsing with their holder's presence): done |
+| new part `scene.use` | the first-person use prompt over commands, held verbs; it passes commands' `state` a `from`, and `run` may return a session: done |
 | new part for avatars | drawing people from presence, in their frame, with what they hold (shared by the arena and the ship) |
 | `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents |
 | `parts/menu.js` | sections by holder, nearest first |

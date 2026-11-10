@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
 import outline, { peerColor, peerMarks, readRowDrag, ROW_MIME } from "./outline.js";
 
 // A stand-in for scene.sidebar: mounts every collected panel in a section of
@@ -331,7 +332,7 @@ describe("scene.outline: dragging rows", () => {
   }
   const rowDrag = (id, sceneUrl = s.handle.url) => {
     const e = new Event("drop", { bubbles: true, cancelable: true });
-    const payload = JSON.stringify({ scene: sceneUrl, id });
+    const payload = JSON.stringify({ scene: sceneUrl, id, ids: [id] });
     e.dataTransfer = { types: [ROW_MIME], files: [], getData: (t) => (t === ROW_MIME ? payload : "") };
     return e;
   };
@@ -421,7 +422,7 @@ describe("scene.outline: dragging rows", () => {
 
   it("copies a row from another scene into the place it's dropped in the tree, put down where the view is looking (not where it was in its own scene)", async () => {
     await mount({ objects: { g1: grp("G") }, order: ["g1"] });
-    const other = s.repo.add({ objects: { m: leafAt("Mast", { x: 3 }), b: leafAt("Boom", { parent: "m", x: 1 }) }, order: ["m", "b"], traits: {}, assets: {} });
+    const other = s.repo.add(emptyScene({ objects: { m: leafAt("Mast", { x: 3 }), b: leafAt("Boom", { parent: "m", x: 1 }) }, order: ["m", "b"] }));
     const api = s.api("scene.outline");
     api.pick = () => ({ id: null, point: [7, 0, -2] });
     atRow("g1", 0.5, rowDrag("m", other.url));
@@ -440,7 +441,7 @@ describe("scene.outline: dragging rows", () => {
 
   it("another scene's row dropped among an object's attachments: under it, at the nearest of its connectors that takes it, however far", async () => {
     await mount({ objects: { deck: leafAt("Deck", { x: 10 }), cleat: leafAt("Cleat", { parent: "deck" }) }, order: ["deck", "cleat"] });
-    const other = s.repo.add({ objects: { m: { ...leafAt("Mast", { x: -40 }), tags: ["mast"] } }, order: ["m"], traits: {}, assets: {} });
+    const other = s.repo.add(emptyScene({ objects: { m: { ...leafAt("Mast", { x: -40 }), tags: ["mast"] } }, order: ["m"] }));
     const api = s.api("scene.outline");
     api.content = (id) => (id === "deck" ? { extras: { connectors: [{ position: [0, 1, 5], yaw: null, tags: ["mast"] }, { position: [0, 1, -1], tags: ["cleat"] }], snapRadius: 0.1 } } : null);
     atRow("cleat", 0.2, rowDrag("m", other.url));
@@ -581,6 +582,6 @@ describe("outline helpers", () => {
   it("readRowDrag reads only our payload", () => {
     expect(readRowDrag({ getData: () => "" })).toBeNull();
     expect(readRowDrag({ getData: () => "{bad" })).toBeNull();
-    expect(readRowDrag({ getData: () => JSON.stringify({ id: "a" }) })).toEqual({ scene: null, id: "a", ids: ["a"] });
+    expect(readRowDrag({ getData: () => JSON.stringify({ ids: ["a"] }) })).toEqual({ scene: null, id: "a", ids: ["a"] });
   });
 });

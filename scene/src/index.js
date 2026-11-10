@@ -66,13 +66,10 @@ export const plugins = [
     supportedDatatypes: ["file"],
     extensions: ["glb"],
     params: [],
-    // SCENE-CONTRACT v3 §6: the source doc already is the GLB. New objects get
-    // no render doc (renderUrl: null) and the scene shows the file directly;
-    // load() is only used by objects added before v3 (they have a renderUrl).
+    // The source doc already is the GLB: its objects get no render doc
+    // (renderUrl: null) and the scene shows the file directly, so there is
+    // nothing to load or build (README.md, "`scene` — the composition").
     passthrough: true,
-    async load() {
-      return (await import("./sources/file-glb.js")).default;
-    },
   },
   {
     type: "scene:source",

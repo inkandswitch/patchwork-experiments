@@ -1,7 +1,6 @@
 // The hand's carry maths (scene.hand, ./hand.js), as plain arrays so it can be
-// tested without three.js or a stage. This is the old viewport's
-// startCarry / landingFor / settle / flipCarried / endCarry with the three.js
-// group swapped for a world matrix the carry keeps itself: the part holds
+// tested without three.js or a stage. In place of a three.js group there is
+// a world matrix the carry keeps itself: the part holds
 // that pose on the stage and writes the final one to the doc.
 //
 // Matrices are 4×4 column-major (transform.js). A ray is { origin, dir }

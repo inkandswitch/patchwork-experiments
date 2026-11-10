@@ -1,6 +1,6 @@
-// One priority queue for showing GLB file docs directly (passthrough objects,
-// SCENE-CONTRACT v3 §6). Pure: no three, no DOM; `find`, `read` and `parse`
-// are injected, so it is testable with fakes.
+// One priority queue for showing GLB file docs directly (passthrough objects:
+// README.md, "`scene` — the composition"). Pure: no three, no DOM; `find`,
+// `read` and `parse` are injected, so it is testable with fakes.
 //
 // Per object: queued → finding → parse-queued → parsing → ready | error.
 // - At most `maxFinds` repo.find calls in flight, at most `maxParses` parses at

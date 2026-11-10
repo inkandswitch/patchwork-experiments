@@ -77,7 +77,7 @@ export function rowDocument(o) {
 
 /**
  * The row payload (ROW_MIME, and the clipboard's): `{ scene, id, ids, lift?,
- * copy? }`; `id` is the first, for older readers. `lift`: how far the copy's
+ * copy? }`; `id` is the first, for a reader that takes one (the slicer). `lift`: how far the copy's
  * reference point (the top object's origin) is above its lowest point, so it
  * lands on its base (measured where it's drawn, in the scene it's from).
  * `copy`: which Copy this was (a paste counts its repeats by it).
@@ -95,7 +95,7 @@ export function readRowPayload(raw) {
   if (!raw || typeof raw !== "string") return null;
   try {
     const v = JSON.parse(raw);
-    const ids = strings(v?.ids).length ? strings(v.ids) : typeof v?.id === "string" && v.id ? [v.id] : [];
+    const ids = strings(v?.ids);
     if (!ids.length) return null;
     const out = { scene: typeof v.scene === "string" ? v.scene : null, id: ids[0], ids };
     if (Number.isFinite(v.lift)) out.lift = v.lift;
@@ -620,7 +620,6 @@ export async function copyObjects(api, payload, target) {
   const map = new Map(); // source id → new id
   const before = t.before ?? null;
   const placeInOrder = (d, id) => {
-    if (!d.order) d.order = [];
     const at = before ? d.order.indexOf(before) : -1;
     if (at >= 0) d.order.splice(at, 0, id);
     else d.order.push(id);
@@ -631,7 +630,6 @@ export async function copyObjects(api, payload, target) {
   if (groupItems.length) {
     for (const it of groupItems) map.set(it.from, api.newId("g"));
     api.change((d) => {
-      if (!d.objects) d.objects = {};
       for (const it of groupItems) {
         const id = map.get(it.from);
         const g = it.groupOf != null ? map.get(it.groupOf) : it.groupIn;
@@ -656,7 +654,6 @@ export async function copyObjects(api, payload, target) {
       // nothing to show it from: written as it is, in its turn (what's under it needs it there)
       const id = api.newId("o");
       api.change((d) => {
-        if (!d.objects) d.objects = {};
         const p = parent && d.objects[parent] && !isGroup(d.objects[parent]) ? parent : null;
         const gWanted = group !== undefined ? group : p ? (d.objects[p].group ?? null) : null;
         const g = gWanted && d.objects[gWanted] && isGroup(d.objects[gWanted]) ? gWanted : null;

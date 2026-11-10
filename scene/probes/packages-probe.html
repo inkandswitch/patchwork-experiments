@@ -25,6 +25,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { imported, servePackage } from "@inkandswitch/patchwork-filesystem";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { newRenderDoc } from "../src/datatype.js";
 
 const errors = [];
@@ -56,13 +57,13 @@ try {
 
   const source = repo.add({ "@patchwork": { type: "probe-box" }, title: "A box", size: 1.2 });
   const render = repo.add(newRenderDoc({ title: "A box", parent: source.url, providerId: "probe-box", params: {} }));
-  const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Packages probe",
+  const scene = repo.add(emptyScene({
+    title: "Packages probe",
     objects: { box: { name: "Box", sourceUrl: source.url, providerId: "probe-box", renderUrl: render.url, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } },
-    order: ["box"], dimensions: {}, traits: { "probe.sea": {}, "probe.local": {} }, assets: {},
+    order: ["box"], traits: { "probe.sea": {}, "probe.local": {} },
     packages: [{ url: PKG }, { url: BROKEN }],
     view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3, 2.5, 3.5], target: [0, 0.5, 0] } },
-  });
+  }));
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");
   host.repo = repo;

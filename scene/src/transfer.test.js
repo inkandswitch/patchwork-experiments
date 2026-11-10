@@ -36,9 +36,9 @@ const close = (a, b) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 6));
 const SCENE = "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u";
 
 describe("the payload and the drag's summary", () => {
-  it("rowPayload / readRowPayload: { scene, id, ids }, and the old { scene, id }", () => {
+  it("rowPayload / readRowPayload: { scene, id, ids }; nothing without ids", () => {
     expect(readRowPayload(rowPayload(SCENE, ["a", "b"]))).toEqual({ scene: SCENE, id: "a", ids: ["a", "b"] });
-    expect(readRowPayload(JSON.stringify({ scene: SCENE, id: "a" }))).toEqual({ scene: SCENE, id: "a", ids: ["a"] });
+    expect(readRowPayload(JSON.stringify({ scene: SCENE, id: "a" }))).toBeNull();
     expect(readRowPayload("{bad")).toBeNull();
     expect(readRowPayload(JSON.stringify({ scene: SCENE }))).toBeNull();
     expect(readRowPayload("")).toBeNull();

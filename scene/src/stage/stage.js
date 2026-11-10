@@ -68,7 +68,7 @@ const NOTICE_MS = 6_000;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
 // single remote edit answers immediately; past that, the rest of a burst is
-// coalesced into one pass per frame. (tool.js did the same for its panels.)
+// coalesced into one pass per frame.
 const UI_BUDGET_MS = 4;
 const UI_PASSES = 3;
 const EDGES = ["top", "right", "bottom", "left"];
@@ -216,11 +216,7 @@ export function initialCamera({ stored = null, doc = null } = {}) {
   return cleanCamera(stored) ?? cleanCamera(doc?.view?.home) ?? null;
 }
 
-function contestedText(s) {
-  return s.olderHost
-    ? "A collaborator running an older version of the scene tool rebuilt this with their own provider, so it isn't what this version builds. Ask them to reload Patchwork; Rebuild to put this version's build back (their old version may rebuild over it again until they reload)."
-    : "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
-}
+const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
 
 /**
  * An object's load and build state, for local.status: { state, reason?, text,
@@ -267,7 +263,7 @@ export function statusOf(o, s) {
   if (s.status === "error") return { state: "error", text: "error", title: s.retryAt ? `${s.error} · retrying automatically` : s.error };
   if (s.glbError || s.parseError) return { state: "error", text: "error", title: s.glbError || s.parseError };
   if (s.stale && s.depsUnavailable?.length) return { state: "stale", reason: "deps", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
-  if (s.stale && s.contested) return { state: "stale", reason: "contested", text: "stale", title: contestedText(s) };
+  if (s.stale && s.contested) return { state: "stale", reason: "contested", text: "stale", title: CONTESTED_TEXT };
   if (s.stale) return { state: "stale", reason: s.pinned ? "pinned" : "out-of-date", text: s.pinned ? "pinned" : "stale", title: s.pinned ? "Out of date; pinned, so it won't rebuild on its own" : "Out of date; rebuilding soon" };
   if (s.phase === "loading" || (!s.hasGLB && s.phase !== "ready")) return { state: "loading", text: "loading", title: "Loading…" };
   return null;
@@ -1354,8 +1350,7 @@ export default function Stage(handle, element) {
   }
 
   /**
-   * Add a document to the scene as an object (tool.js addFromUrl without the
-   * UI): through `providerId` (else the best match), as a render doc, or
+   * Add a document to the scene as an object: through `providerId` (else the best match), as a render doc, or
    * straight through for a passthrough provider.
    * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
    * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
@@ -1391,7 +1386,7 @@ export default function Stage(handle, element) {
       throw new Error(`No scene provider is installed for ${describeForHumans(info)}.`);
     }
     const name = opts.name || (await titleOf(sourceDoc, info.datatype));
-    // A passthrough provider's source already is a GLB: no render doc, no copy (v3 §6).
+    // A passthrough provider's source already is a GLB: no render doc, no copy (README.md, "`scene` — the composition").
     const renderHandle = provider.passthrough ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
     if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
@@ -1401,8 +1396,6 @@ export default function Stage(handle, element) {
     // fresh copies: automerge won't take a value that is already in a document
     const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
     handle.change((d) => {
-      if (!d.objects) d.objects = {};
-      if (!d.order) d.order = [];
       // only what is still there can be a place (someone may have removed it meanwhile)
       const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
       const groupWanted = opts.group !== undefined ? opts.group : parent ? resolveGroups(d.objects).get(parent) ?? null : null;
@@ -1442,7 +1435,8 @@ export default function Stage(handle, element) {
       manager.rebuild(id);
       return true;
     }
-    // Hidden, so not hydrated yet (v3 §7): an explicit rebuild loads it first.
+    // Hidden, so not loaded yet (README.md, "Using it": only what is shown
+    // loads): an explicit rebuild loads it first.
     // It then stays tracked, like anything that has loaded.
     if (!o.sourceUrl) return false;
     const url = o.renderUrl;

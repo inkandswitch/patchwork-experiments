@@ -305,6 +305,7 @@ except `load` must survive `structuredClone`) with the code behind `load()`:
   params: [ParamSpec, ...],            // build params, optional
   handles: [Handle, ...],              // params to drag in the viewport, optional (below)
   cost: "expensive",                   // what a build after a source edit costs (set it!)
+  passthrough: true,                   // ONLY when the source doc already is a GLB file: shown as it is, never built (no load())
   version: 1,                          // integer; bump when build() output changes for the same inputs
   async load() { return (await import("./scene-source.js")).default },
 }
@@ -457,8 +458,9 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   footprint within the radius, in plan — it goes there; height is still
   decided by what is underneath, so pieces stack on a board's spaces. Without
   a radius it is 0.71 × the closest spacing between the points, so every part
-  of a square grid's cell, corners included, snaps to that cell. Malformed
-  connectors are ignored.
+  of a square grid's cell, corners included, snaps to that cell. A lone
+  connector has no spacing to take one from, so with no `snapRadius` the hand
+  doesn't snap to it. Malformed connectors are ignored.
 - Optional colour legend: put `extras.legend = { title, unit, min, max, stops }`
   on a mesh, `stops` being 2–32 `#rrggbb` colours spaced evenly from `min` to
   `max`. The scene draws it as a bar with three ticks. Anything else in it is
@@ -485,7 +487,8 @@ without `--fix` the script fails on any copy that has drifted.
 (never import across packages). Its API is documented at the top of the file.
 v2 adds per-vertex `colors` (COLOR_0), `unlit` (KHR_materials_unlit), `blend`
 (alphaMode BLEND) and writes `asset.extras.units = "m"`, so a consumer outside
-a scene (a slicer, say) knows the scale without guessing:
+a scene (a slicer, say) knows the scale without guessing; v3 adds an optional
+`copyright` (`asset.copyright`, written only when given):
 
 ```js
 import { encodeGLB, computeNormals, MODE } from "./glb.js"
@@ -515,7 +518,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   glbUrl: AutomergeUrl | null,      // repointed on every rebuild
   builtFrom: {
     heads: string[], fingerprint: string | null, paramsKey: string,
-    deps?: { [url: AutomergeUrl]: string[] },  // each dependency's sorted heads, as read ({} when none),
+    deps: { [url: AutomergeUrl]: string[] },   // each dependency's sorted heads, as read ({} when none),
                                                // or ["fp:<key>"] for a keyed dependency
     providerVersion?: number,                  // the provider's `version`, if it declares one
     glbHash?: string                           // content hash of the GLB at glbUrl
@@ -536,10 +539,8 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   fingerprint ? `fingerprint(source) !== builtFrom.fingerprint` : sorted source
   heads ≠ sorted `builtFrom.heads`), or the provider's current dependency URLs
   differ from the keys of `builtFrom.deps`, or any dependency's sorted heads
-  differ from the recorded ones. A render doc without `deps` (built before
-  dependencies existed) counts as `{}`, so a provider that starts reporting
-  dependencies rebuilds each of its renders once. A dependency that isn't
-  loaded counts as having no heads (`[]`).
+  differ from the recorded ones. A dependency that isn't loaded counts as
+  having no heads (`[]`).
 - Every build that produces new bytes makes a **new immutable GLB file doc**
   and repoints `glbUrl`: `{ "@patchwork": { type: "file" }, name:
   "<title>.glb", extension: "glb", mimeType: "model/gltf-binary", content:
@@ -631,8 +632,7 @@ MaterialRule = {
 - `renderUrl` is written once, when the object is added. It is `null` for an
   object added through a passthrough provider (`file-glb`): no render doc and
   no GLB copy are made, the scene shows `sourceUrl`'s bytes directly and never
-  builds it. An object that has a `renderUrl` keeps the render-doc path, so
-  GLBs added before passthrough still work.
+  builds it.
 - **Groups** (`kind: "group"`) organise: no geometry and no transform.
   Hiding a group hides everything filed in it (at any depth), and its opacity
   multiplies into everything filed in it. A group is never picked, never a
@@ -760,7 +760,8 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/controls-tool.js`, `src/param-form.js` | the `scene-render-controls` tool |
 | `src/glb.js` | the GLB encoder (kit: copy me) |
 | `src/render-read.js` | reading a render doc and its GLB from another package (kit: copy me) |
-| `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
+| `src/stl.js`, `src/sources/file-stl.js` | STL parsing and the STL file provider (the GLB one is passthrough: metadata in `src/index.js`, nothing to build) |
+| `src/test/` | test doubles (a repo, the plugin registry, a camera), the stage harness, and `empty-scene.js`: the whole scene doc every test, probe page and publish script starts from, which is the datatype's `init` |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |

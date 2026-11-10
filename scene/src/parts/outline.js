@@ -1,7 +1,7 @@
 // scene.outline: the object tree, as the sidebar panel "objects".
 //
-// Ported from tool.js's outline (expand state, rows, renderOutline, the
-// filter, keyboard navigation, row drag and drop, New group). A double-click
+// Expand state, rows, the filter, keyboard navigation, row drag and drop,
+// New group. A double-click
 // on a row, or Enter in the filter, frames it. It reads the
 // doc through api.scene(), writes it through api.ops planners, and selects by
 // writing local.selected. Everything else is someone else's:

@@ -1655,7 +1655,7 @@ export class Viewport {
   }
 
   /**
-   * The scene's material rules (SCENE-CONTRACT v3 §9), applied to every
+   * The scene's material rules (README.md, "`scene` — the composition"), applied to every
    * loaded material now and to every GLB that loads later.
    */
   setMaterialRules(rules) {

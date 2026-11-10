@@ -112,12 +112,6 @@ export function inheritedDisplay(objects, parents = outlineParents(objects)) {
   return memo;
 }
 
-/** Effective visibility: its own flag and every group ancestor's. */
-export function effectivelyVisible(objects, id, inherited) {
-  const o = objects?.[id];
-  return !!o && o.visible !== false && (inherited.get(id)?.visible ?? true);
-}
-
 /**
  * Groups that have something hidden below them (an object or group whose own
  * `visible` is false, at any depth): their checkbox shows indeterminate.
@@ -181,13 +175,6 @@ export function ungroupPlan(objects, id, groups = resolveGroups(objects)) {
     if (Object.keys(d).length) display[child] = d;
   }
   return { group: into, members, display };
-}
-
-/** Names of an object's ancestors, root first. */
-export function pathNames(objects, id, parents) {
-  const names = [];
-  for (let p = parents.get(id); p != null; p = parents.get(p)) names.unshift(objects[p]?.name || "");
-  return names;
 }
 
 /** Search terms: lower-case, whitespace separated, empty ones dropped. */

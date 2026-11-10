@@ -1,6 +1,7 @@
 {
   "@patchwork": {
-    "type": "scene"
+    "type": "scene",
+    "suggestedImportUrl": "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F"
   },
   "title": "Solander 38",
   "objects": {
@@ -11247,10 +11248,17 @@
   ],
   "dimensions": {},
   "traits": {},
+  "assets": {},
+  "packages": [
+    {
+      "url": "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F"
+    }
+  ],
   "view": {
     "units": "m",
     "grid": true,
     "axes": true,
-    "bounds": false
+    "bounds": false,
+    "snap": true
   }
 }

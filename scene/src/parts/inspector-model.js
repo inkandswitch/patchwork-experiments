@@ -1,7 +1,5 @@
 // scene.inspector's pure side: what the panel shows, worked out from the
 // stage's snapshot (api.scene()) and a few lookups passed in. No DOM, no api.
-// Ported from tool.js aboutFor (~1328), updateInspector (~1477-1553) and
-// commandButtons (~2014).
 
 import { groupChain, groupTargets, inheritedDisplay, isGroup, outlineParents } from "../groups.js";
 import { attachTargets, treeOrder } from "../hierarchy.js";
@@ -19,7 +17,7 @@ export function docUrl(v) {
 }
 
 /**
- * What the About section shows (v3 §8): the object's own infoUrl, else the
+ * What the About section shows (README.md, "Using it"): the object's own infoUrl, else the
  * nearest group's, labelled with that group's name; null when neither has one.
  * @param {{ objects: object, groups: Map }} scene
  * @returns {{ url: string, toolId: string | null, label: string, from: string } | null}
@@ -126,7 +124,7 @@ export function statusParts(o, { status = null, load = null, content = null, sho
     return out;
   }
   if (load) {
-    // the stage's raw state: exactly the old rules
+    // the stage's raw state
     if (load.notes) out.push({ kind: "notes", text: String(load.notes) });
     if (load.phase === "no-provider") out.push({ kind: "error", text: `Provider “${load.providerId ?? o.providerId}” is not installed, so this object can't be rebuilt here.` });
     if (load.stale && load.contested && !load.building && status?.title) out.push({ kind: "warn", text: String(status.title) });

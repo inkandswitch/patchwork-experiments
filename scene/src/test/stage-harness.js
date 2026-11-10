@@ -18,6 +18,7 @@
 // s.activity("play").
 
 import { FakeRepo, flush } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
 
 export { flush };
@@ -65,10 +66,7 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     for (const { meta, module } of extensions) getRegistry("scene:extension").register({ type: "scene:extension", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of parts) getRegistry("scene:part").register({ type: "scene:part", name: meta.id, ...meta, load: async () => module });
-    const { SceneDatatype } = await import("../datatype.js");
-    const init = {};
-    SceneDatatype.init(init);
-    handle = repo.add({ "@patchwork": { type: "scene" }, ...init, ...doc, view: { ...init.view, ...(doc.view ?? {}) } });
+    handle = repo.add(emptyScene(doc));
   }
   const { default: Stage } = await import("../stage/stage.js");
   const element = document.createElement("div");

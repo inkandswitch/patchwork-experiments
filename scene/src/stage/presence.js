@@ -516,8 +516,8 @@ export function createPresence({
     if (parent !== h.parent) h.samples = null;
     h.parent = parent;
     h.transform = t;
-    // Timed by the sender's clock when it says (an older peer doesn't: then
-    // by ours, on arrival), so the wire's jitter isn't played back.
+    // Timed by the sender's clock, so the wire's jitter isn't played back
+    // (a pose whose `at` isn't a number is timed by ours, on arrival).
     const heard = now();
     const sentAt = Number.isFinite(msg.at) ? msg.at : heard;
     offsets.set(s, Number.isFinite(msg.at) ? clockOffset(offsets.get(s) ?? null, sentAt, heard) : 0);

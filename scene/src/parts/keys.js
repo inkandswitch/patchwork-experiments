@@ -1,7 +1,5 @@
-// scene.keys: the key map. Unclaimed keys become command invocations (old
-// tool.js onKey and runKeyCommand, ~1687-1716 and ~2019-2027; the old
-// hard-wired keys — M, F, P, G/R/H, Escape, Delete — are commands now, each
-// from its own part).
+// scene.keys: the key map. Unclaimed keys become command invocations (M,
+// F, P, G/R/H, Escape, Delete are commands, each from its own part).
 //
 // A key runs the first command whose `key` matches (letters in either case)
 // that applies to, in turn, the selection, the scene, then the hovered object

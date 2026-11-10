@@ -124,7 +124,6 @@ export function repairCycles(d, broken = [], brokenG = []) {
 
 /** Inside a change: take every id in `gone` out of the doc's `order`, in place. */
 export function removeFromOrder(d, gone) {
-  if (!d.order) return;
   for (let i = d.order.length - 1; i >= 0; i--) if (gone.has(d.order[i])) d.order.splice(i, 1);
 }
 
@@ -229,8 +228,6 @@ export function newGroup(snapshot, { into = null, around = null, id = newGroupId
   return planned(
     (d) => {
       repairCycles(d, [], brokenG);
-      if (!d.objects) d.objects = {};
-      if (!d.order) d.order = [];
       d.objects[id] = { kind: "group", name, group: inGroup, visible: true, opacity: 1 };
       const at = wrap ? d.order.indexOf(wrap) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
@@ -356,7 +353,6 @@ export function moveRow(snapshot, id, place, order = orderedIds(snapshot)) {
         writeTransform(o, fresh(plan.transform));
       }
       if (regroup) o.group = group;
-      if (!d.order) d.order = [];
       spliceOrder(d.order, id, before);
     },
     { id, parent: target, group },

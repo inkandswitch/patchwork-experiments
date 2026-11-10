@@ -24,6 +24,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
 const errors = [];
@@ -81,11 +82,11 @@ try {
   const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
   for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1]);
   for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
-  const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Editor probe", objects, order: Object.keys(objects), dimensions: {}, traits: {},
+  const scene = repo.add(emptyScene({
+    title: "Editor probe", objects, order: Object.keys(objects),
     view: { units: "cm", grid: true, axes: true, bounds: false, snap: true,
             home: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] } },
-  });
+  }));
   window.sceneHandle = scene;
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;

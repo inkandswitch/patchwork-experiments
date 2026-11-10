@@ -37,7 +37,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => {
 
 const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { plugins } = await import("../index.js");
-const { SceneDatatype } = await import("../datatype.js");
+const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
 
@@ -132,9 +132,7 @@ function mount(handle, viewerId) {
   return m;
 }
 function newScene(extra = {}) {
-  const doc = {};
-  SceneDatatype.init(doc);
-  return repo.add({ "@patchwork": { type: "scene" }, ...doc, ...extra, view: { ...doc.view, ...(extra.view ?? {}) } });
+  return repo.add(emptyScene(extra));
 }
 const running = (m) => m.local.get().running.map((r) => `${r.id}:${r.scope}`);
 

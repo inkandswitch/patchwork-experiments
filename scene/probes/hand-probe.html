@@ -26,6 +26,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
 const errors = [];
@@ -132,11 +133,11 @@ try {
       },
     }),
   });
-  const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {}, traits: {},
+  const scene = repo.add(emptyScene({
+    title: "Hand probe", objects, order: Object.keys(objects),
     view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
             home: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] } },
-  });
+  }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);

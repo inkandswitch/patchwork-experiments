@@ -69,10 +69,3 @@ export function gridFor(extentMeters, unit, targetLines = 10) {
   };
 }
 
-/** STL / source-file units → metres factor, for provider params. */
-export const SOURCE_UNIT_OPTIONS = [
-  { value: "mm", label: "Millimetres" },
-  { value: "cm", label: "Centimetres" },
-  { value: "m", label: "Metres" },
-  { value: "in", label: "Inches" },
-];

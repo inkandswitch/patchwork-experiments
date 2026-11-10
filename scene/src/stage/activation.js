@@ -25,9 +25,6 @@ export function docReason(meta, d) {
   return null;
 }
 
-/** Does the doc call for it at all? */
-export const docWants = (meta, d) => docReason(meta, d) != null;
-
 /**
  * Its own reason to run, whatever the activity: the doc's (above), else
  * "general" when it declares no traits (a general-purpose part: the editor's

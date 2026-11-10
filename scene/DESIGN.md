@@ -109,20 +109,11 @@ The other kinds of contribution combine as follows:
 
 ### Where today's code stands
 
-`scene:extension` already covers scene-scope activation, commands, lenses,
-drop and landing rules. Objects already contribute connectors and handles
-through their GLB or source. Still missing:
-
-- object-scope and general activation;
-- gestures and the claiming chain (move, rotate and hand become
-  contributions);
-- widgets in the stage's layers;
-- surfaces as contributions (these replace `panels` and `hud`);
-- commands that take a target;
-- the stage itself, carved out of `src/tool.js`;
-- today's toolbar, outline, inspector, gizmo, measure and dimensions split
-  into shared parts that together, while editing, look the way the scene
-  looks now.
+All of the above is built, and [STAGE.md](STAGE.md) is its contract. The
+stage is `src/stage/`; activation has all three scopes; input goes down one
+claiming chain; widgets sit in the stage's layers; commands take a target;
+and the toolbar, outline, inspector, gizmo, hand, measure and dimensions are
+shared parts (`src/parts/`) that together, while editing, make the editor.
 
 ## Use cases that prove it's general
 

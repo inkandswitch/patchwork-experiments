@@ -528,7 +528,7 @@ describe("pose streams, for playing back", () => {
     pose(1, 0, clock.now() - 5_020);
     expect(b.remoteHolds().get("o9").offset).toBe(5_020);
     expect(b.remoteHolds().get("o9").samples[0].at).toBe(clock.now() - 5_020);
-    // an older peer: no stamp, no interval
+    // a pose with no stamp and no interval
     ha.broadcast({ type: "scene:pose", session: "sy", viewer: "yan", id: "o8", parent: null, transform: T(1), since: 1, seq: 1 });
     expect(b.remoteHolds().get("o8")).toMatchObject({ offset: 0, every: POSE_MS, samples: [{ at: clock.now(), transform: T(1) }] });
   });

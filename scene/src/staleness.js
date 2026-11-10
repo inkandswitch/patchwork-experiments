@@ -31,8 +31,7 @@ export function sameHeads(a, b) {
 // A provider's optional dependencies(doc) lists other docs its build() reads.
 // builtFrom.deps records each one's sorted heads as read for that build:
 // { [url]: string[] }. A dependency that isn't loaded counts as having no heads
-// ([]), so a render built without it goes stale once it arrives. Old render
-// docs have no `deps`; that reads as {}.
+// ([]), so a render built without it goes stale once it arrives.
 
 /** { url: sorted heads } from anything shaped like it; junk entries dropped. */
 export function normalizeDeps(deps) {

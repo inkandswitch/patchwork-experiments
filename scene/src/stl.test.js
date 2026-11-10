@@ -4,7 +4,6 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { isBinarySTL, parseSTL, toYUpMeters } from "./stl.js";
 import { stlToGLB } from "./sources/file-stl.js";
 import fileStl from "./sources/file-stl.js";
-import fileGlb from "./sources/file-glb.js";
 import { encodeGLB } from "./glb.js";
 
 const ascii = `solid cube-ish
@@ -83,11 +82,5 @@ describe("file providers", () => {
     const res = await fileStl.build({ doc: { name: "part.stl", extension: "stl", content: ascii }, params: { unit: "mm", up: "z" } });
     expect(res.kind).toBe("glb");
     expect(res.meta.notes).toMatch(/2 triangles/);
-  });
-  it("file-glb passes bytes through and rejects non-GLB", async () => {
-    const glb = encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0] }] });
-    const res = await fileGlb.build({ doc: { content: glb } });
-    expect(res.glb).toBe(glb);
-    await expect(fileGlb.build({ doc: { content: new Uint8Array(40) } })).rejects.toThrow(/magic/);
   });
 });

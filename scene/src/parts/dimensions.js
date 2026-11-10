@@ -1,7 +1,4 @@
-// scene.dimensions: the saved dimensions in doc.dimensions (ported from the
-// old tool.js dimensionList / renderDimensionList / deleteDimension, ~990-1044
-// and ~618, removeObject's anchor detaching ~559-563, and the old viewport's
-// dimension overlay and anchorGap).
+// scene.dimensions: the saved dimensions in doc.dimensions.
 //
 // Each dimension is drawn as a line over everything with its end markers and
 // a label (its name, if any, and its length in the viewer's units) that can be
@@ -249,7 +246,6 @@ export function create(api) {
     // fresh plain data: automerge won't take a value that's already in a doc
     const dim = JSON.parse(JSON.stringify({ a: value.a, b: value.b, label: value.label ?? null }));
     api.change((d) => {
-      if (!d.dimensions) d.dimensions = {};
       d.dimensions[id] = dim;
     });
     select(id);

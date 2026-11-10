@@ -10,8 +10,7 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // Hidden while the effective tool is the hand and while any extension is armed
-// (measuring, say). Ported from the old viewport.js (setHandles … wireHandles)
-// and tool.js (updateHandles, onHandleEnd).
+// (measuring, say).
 //
 // Reads local.selected, local.tool (via the doc's view defaults), local.armed
 // and local.theme. Writes only the render doc's params.
@@ -64,7 +63,7 @@ export function handleLine(spec, matrix, box) {
 /**
  * Where to draw a handle at `value`: the knob, its track (the param's range,
  * or the object's extent along the axis, around the knob) and the knob's
- * radius. Matches the old viewport's drawHandles.
+ * radius.
  */
 export function handlePlacement(spec, line, value) {
   const at = along(line.base, line.unit, value);

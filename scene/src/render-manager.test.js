@@ -437,34 +437,10 @@ describe("render manager: convergence and recovery", () => {
     expect(render.doc().builtFrom.fingerprint).toMatch(/:2$/);
     // The peer that was overridden reports it, and a manual rebuild still works.
     const loser = [a, b].find((m) => m.state("o").stale);
-    expect(loser.state("o")).toMatchObject({ stale: true, reason: "fingerprint", contested: true, olderHost: false });
+    expect(loser.state("o")).toMatchObject({ stale: true, reason: "fingerprint", contested: true });
     loser.rebuild("o");
     await flush();
     expect(repo.created.length - before).toBeLessThanOrEqual(3);
-  });
-
-  it("says when the build it won't fight came from a scene host older than dependencies", async () => {
-    const repo = new FakeRepo();
-    const timers = fakeTimers();
-    const source = repo.add({ "@patchwork": { type: "hull" }, hull: 1 });
-    const render = repo.add(newRenderDoc({ title: "Hull", parent: source.url, providerId: "p", params: {} }));
-    const mgr = createRenderManager({
-      repo,
-      timers,
-      now: timers.now,
-      loadProvider: async () => ({ id: "p", name: "p", params: [], module: { fingerprint: (d) => `p/3:${d.hull}`, build: async () => ({ kind: "glb", glb: tinyGLB() }) } }),
-    });
-    await mgr.track("o", { sourceUrl: source.url, renderUrl: render.url });
-    for (let i = 0; i < 5; i++) await timers.advance(1000);
-    expect(render.doc().builtFrom.deps).toEqual({});
-    // an old host (provider v2) builds over it, recording no deps at all
-    render.change((d) => {
-      d.builtFrom = { heads: [...d.builtFrom.heads], fingerprint: "p/2:1", paramsKey: d.builtFrom.paramsKey };
-    });
-    for (let i = 0; i < 5; i++) await timers.advance(1000);
-    expect(mgr.state("o")).toMatchObject({ stale: true, reason: "fingerprint", contested: true, olderHost: true });
-    expect(render.doc().builtFrom.fingerprint).toBe("p/2:1"); // left alone: no ping-pong
-    mgr.dispose();
   });
 
   it("a provider upgrade still rebuilds a render built by the old version", async () => {

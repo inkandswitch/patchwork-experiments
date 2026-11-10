@@ -4,7 +4,7 @@
 // row being moved inside the tree — and both need the same answer: which
 // parent, and where among its children. Keeping that answer here, as a
 // function of the row under the pointer, is what lets it be tested without a
-// browser; tool.js only supplies the geometry and applies the result.
+// browser; the outline (parts/outline.js) only supplies the geometry and applies the result.
 //
 // "Parent" here is the outline's (groups.js outlineParents): a group, or the
 // object a row is attached to within its group.

@@ -1,5 +1,4 @@
-// scene.inspector: the "inspector" panel for local.selected (old tool.js
-// ~1288-1591: buildInspector, updateInspector, updateAbout, mountControls).
+// scene.inspector: the "inspector" panel for local.selected.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
@@ -176,7 +175,7 @@ function create(api) {
     api.change((d) => {
       const h = holderIn(d, id);
       if (!h) return;
-      // the scene's map is pre-created (STAGE.md, Migrations); an object's
+      // the scene's map is pre-created (STAGE.md, "Shared maps"); an object's
       // first trait makes its own
       if (!isMap(h.traits)) h.traits = {};
       if (!(desc.key in h.traits)) h.traits[desc.key] = newValue(desc);
@@ -227,7 +226,6 @@ function create(api) {
   /** Start everyone who opens the scene in this activity: doc.view.activity ("edit", the default, is no key). */
   function startIn(activity) {
     api.change((d) => {
-      if (!d.view) d.view = {};
       if (activity === "edit") {
         if ("activity" in d.view) delete d.view.activity;
       } else if (d.view.activity !== activity) d.view.activity = activity;

@@ -1,8 +1,8 @@
 // scene.notices: what the scene has to say, over the view.
 //   - toasts (bottom centre): local.notices, which api.notify() adds and the
-//     stage expires; a notice that goes fades out (old tool.js toast).
+//     stage expires; a notice that goes fades out.
 //   - HUD pills (top left): the load summary from local.status ("Loading 40
-//     of 74…", "Building 2…", "3 errors"; old tool.js renderHud ~1233-1250),
+//     of 74…", "Building 2…", "3 errors"),
 //     then every running extension's hud(scene, local) in running order.
 
 import css from "./notices.css?inline";

@@ -1,9 +1,6 @@
 // Reading commands (STAGE.md, "A command"), for the surfaces that present
 // them: the toolbar, the key map and the menu. Pure: no DOM, no api.
 
-/** The surfaces a command names in `show`. */
-export const SURFACES = Object.freeze(["toolbar", "menu", "inspector", "use"]);
-
 /**
  * Every running extension's commands, flattened, in running order then
  * command order. Anything that isn't a command (no id, no run) is skipped.

@@ -12,10 +12,6 @@
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
 // - Asks the stage to load the selection first (api.focus), if it's an object.
 // - Commands: Deselect (Escape), Remove (Delete, Backspace; objects only), Select.
-//
-// Ported from tool.js select() / setHover / broadcastPresence / removeObject
-// and viewport.js setSelection / setRemoteSelections / the boxes in
-// rebuildHelpers.
 
 import { peerColor, peerSelections } from "../peers.js";
 

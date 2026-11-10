@@ -1,6 +1,6 @@
 // scene.grid: the ground grid, its ruler labels along X and Z, and the
-// "grid 10 cm" caption in the corner, while the viewer's `grid` pref is on
-// (ported from the old viewport's rebuildHelpers). The grid is sized to the
+// "grid 10 cm" caption in the corner, while the viewer's `grid` pref is on.
+// The grid is sized to the
 // scene in the current units (units.js gridFor), and its plane is given to
 // the stage as an extent so the near plane never cuts it.
 

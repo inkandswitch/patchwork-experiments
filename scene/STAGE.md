@@ -5,9 +5,6 @@ everything that adds to it (**extensions**). [DESIGN.md](DESIGN.md) says why;
 this says exactly what. It is plain data and functions throughout. No
 extension imports another, and the stage knows no extension by name.
 
-Revised after a four-lens review (simplicity, composition, feasibility,
-multiplayer); [the report](REPORT.md) records what changed and why.
-
 ## Words
 
 | Word | Means |
@@ -1033,9 +1030,13 @@ taken out. It keeps the following:
 - **messages** (on `handle.broadcast`):
   - `scene:presence` carries `{ session, viewer, seq, at, keys }` or
     `{ session, bye: true }`;
-  - `scene:send` carries `{ session, viewer, ext, type, data }`;
-  - `scene:pose` carries `{ session, id, parent, transform | null, since, landed?, at, every }`,
-    `at` being the sender's clock when it went and `every` its pose interval
+  - `scene:send` carries `{ session, viewer, ext, kind, n, data }`, `n`
+    counting this session's sends, so one delivered twice is told once;
+  - `scene:pose` carries `{ session, viewer, id, parent, transform, since, seq, at, every }`
+    while held and `{ session, viewer, id, parent, transform: null, seq, landed? }`
+    on release; `seq` counting this session's poses, so a late one can't
+    undo a release;
+    `at` being the sender's clock when it was held and `every` its pose interval
     (ms), which a peer plays the stream back by (`smooth.js`); `since` being
     the hold's Lamport stamp: one past every stamp its holder had seen. Of
     two holds on one object the lower stamp wins, then the lower session

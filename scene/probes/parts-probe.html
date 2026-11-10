@@ -23,6 +23,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
 const errors = [];
@@ -64,10 +65,10 @@ try {
   getRegistry("scene:part").register({ type: "scene:part", id: "probe.crate", name: "Crate", icon: "Package", category: "Probe", description: "A box", load: async () => crate });
   getRegistry("scene:part").register({ type: "scene:part", id: "probe.mast", name: "Mast", icon: "Sailboat", category: "Rig", tags: ["mast"], traits: ["probe.rig"], load: async () => mast });
 
-  const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Parts probe", objects: { hull }, order: ["hull"], dimensions: {}, traits: {}, assets: {},
+  const scene = repo.add(emptyScene({
+    title: "Parts probe", objects: { hull }, order: ["hull"],
     view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } },
-  });
+  }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");

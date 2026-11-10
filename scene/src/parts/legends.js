@@ -1,13 +1,12 @@
 // scene.legends: a colour-bar card in the port's bottom-left corner for each
 // shown object whose GLB says how it was coloured (extras.legend; legend.js),
-// tinted when the object's colour override tints it (ported from the old
-// tool.js renderLegends). Names are what this viewer sees (api.nameOf).
+// tinted when the object's colour override tints it. Names are what this viewer sees (api.nameOf).
 
 import css from "./legends.css?inline";
 import { legendModel } from "../legend.js";
 import { inheritedDisplay, isGroup, outlineParents } from "../groups.js";
 
-/** A provider's legend, checked; null when it isn't usable. Pure. (The old viewport's sanitizeLegend.) */
+/** A provider's legend, checked; null when it isn't usable. Pure. */
 export function sanitizeLegend(l) {
   if (!l || typeof l !== "object") return null;
   const min = Number(l.min);

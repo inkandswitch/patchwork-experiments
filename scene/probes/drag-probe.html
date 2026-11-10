@@ -21,6 +21,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 
 const errors = [];
 const origError = console.error;
@@ -42,9 +43,7 @@ try {
   const { plugins } = await import("../dist/index.js");
   for (const p of plugins) getRegistry(p.type).register(p);
   const repo = new FakeRepo();
-  const sceneDoc = {};
-  (await getRegistry("patchwork:datatype").load("scene")).module.init(sceneDoc);
-  const scene = repo.add({ "@patchwork": { type: "scene" }, ...sceneDoc });
+  const scene = repo.add(emptyScene());
 
   // The stage: a group G holding an empty group G2, and three loose leaves
   // after it. Leaves are hidden so nothing needs loading.

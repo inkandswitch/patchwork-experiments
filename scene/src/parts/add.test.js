@@ -224,7 +224,7 @@ describe("scene.add", () => {
     s.port.querySelector(".add-layer").dispatchEvent(dragEvent("dragleave", { "text/plain": stl.url }));
     expect(hint.hidden).toBe(true);
     // a row being moved in the outline isn't a document being added
-    const row = { [ROW_MIME]: JSON.stringify({ scene: s.handle.url, id: "a" }) };
+    const row = { [ROW_MIME]: JSON.stringify({ scene: s.handle.url, id: "a", ids: ["a"] }) };
     s.canvas.dispatchEvent(dragEvent("dragenter", row));
     expect(hint.hidden).toBe(true);
     const rowOver = dragEvent("dragover", row);

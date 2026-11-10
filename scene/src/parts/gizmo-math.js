@@ -24,7 +24,7 @@ export function groupMembers(scene, gid) {
 }
 
 /**
- * What a group's move moves (old viewport groupRoots): its members that
+ * What a group's move moves: its members that
  * aren't locked and aren't attached to another member (those follow their
  * parent).
  */

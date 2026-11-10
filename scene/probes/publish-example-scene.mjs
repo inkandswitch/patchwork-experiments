@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
+import { emptyScene } from "../src/test/empty-scene.js"
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -22,7 +23,8 @@ const SETS = { main: "models-1789414952", battery: "models-battery-1789233002", 
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com"
 const geom = resolve(args.geom)
 const scenePath = resolve(args.scene ?? "probes/solander-scene.example.json")
-const doc = JSON.parse(readFileSync(scenePath, "utf8"))
+// whatever the file leaves out, the doc is made with every field a scene has
+const doc = emptyScene(JSON.parse(readFileSync(scenePath, "utf8")))
 
 await initSubduction()
 const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })

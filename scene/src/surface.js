@@ -3,8 +3,8 @@
 // tested; the viewport feeds it each object's GLB in object-local coordinates.
 //
 // Used to tell when a dimension's anchor has come off its object: anchors are
-// fixed points in the object's frame (SCENE-CONTRACT: they follow the object's
-// transform, not its geometry), so when the object is rebuilt with different
+// fixed points in the object's frame (README.md, "`scene` — the
+// composition": they follow the object's transform, not its geometry), so when the object is rebuilt with different
 // geometry an anchor that sat on the old surface can end up in mid-air or
 // inside the new one, and the dimension silently measures the old shape.
 

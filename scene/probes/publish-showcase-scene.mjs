@@ -32,7 +32,8 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { newRenderDoc, DEFAULT_VIEW } from "../src/datatype.js"
+import { newRenderDoc } from "../src/datatype.js"
+import { emptyScene } from "../src/test/empty-scene.js"
 import { defaultParams } from "../src/staleness.js"
 import { isGroup, resolveGroups } from "../src/groups.js"
 import { resolveParents, worldMatrix } from "../src/hierarchy.js"
@@ -209,25 +210,21 @@ const dims = {
 // The packages its providers come from: file-glb (scene), implicit-mesh,
 // openscad-model, flow-field-*, camber-hull-surface.
 const PACKAGES = ["scene", "implicit", "openscad", "flow-field", "../camber/patchwork"]
-const sceneDoc = {
+const sceneDoc = emptyScene({
   "@patchwork": scenePatchwork(),
   title: "Geometry showcase",
   objects,
   order,
   dimensions: dims,
-  traits: {},
-  assets: {},
   packages: scenePackages(PACKAGES),
   view: {
-    ...DEFAULT_VIEW,
     units: "mm",
     home: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
   },
-}
+})
 
 // ─── checks: the stage opens this as it is ───────────────────────────────────
 const problems = []
-for (const k of ["traits", "view", "dimensions", "assets"]) if (sceneDoc[k] == null) problems.push(`no ${k} map (every scene is made with one)`)
 problems.push(...packageProblems(sceneDoc, PACKAGES))
 const groups = resolveGroups(objects)
 for (const [id, o] of Object.entries(objects)) {
