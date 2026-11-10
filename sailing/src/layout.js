@@ -34,9 +34,9 @@ export function turn([x, y, z], yaw, at = [0, 0, 0]) {
 
 // You join her under way, as you join a ship in Sea of Thieves: on a beam
 // reach, the sail up and drawing, the anchor up (the parts' own settings).
-// (Lying head to wind at anchor, a one-sail boat takes minutes to fall off
-// once the anchor's up; a jib to back is what a sailor would use, and she
-// has none yet.)
+// (Lying head to wind at anchor, she takes about a minute to fall off by
+// herself once the anchor's up; a crew backs the jib, which is how "Ship at
+// anchor" leaves: ANCHORAGE_AIR, below.)
 
 // Landmarks, in the ship's heading frame (ahead is −Z), so they're in view
 // from astern whichever way the wind put the bow: something to sail past and

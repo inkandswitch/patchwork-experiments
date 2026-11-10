@@ -36,7 +36,7 @@ modules share.
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
 | `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
-| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@2` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
+| `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@3` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
@@ -216,9 +216,9 @@ specification (`naval/contract/v1/specification.md`) is the authority,
 §6 most of all (how a consumer composes forces from it). Sailing reads the
 JSON; it imports nothing of the rig package's. Everything that follows is
 gated on a contract being present: a ship without one sails as before. The
-stock sloop now carries one (her `rig@2`, "Trim feedback" item 1); a doc
-made before that keeps its `rig@1`, which has none, and sails on the old
-path (`stock-rig.test.js` pins its spec key for key). `stock-golden.test.js`,
+stock sloop carries one (on her rig's GLB since `rig@2`, `rig@3` today;
+"Trim feedback" item 1); a rig file without one (a `rig@1`) sails on the
+old path (`stock-rig.test.js` pins its spec key for key). `stock-golden.test.js`,
 which held the stock boats bit for bit to their pre-contract runs, is
 retired: see "Trim feedback", item 1.
 
@@ -850,7 +850,7 @@ typed arrays each frame: no allocation per frame. Mesh positions come from
 typed arrays and reused result objects.
 
 They apply to a ship whose spec has `rig` and whose rig GLB says
-`extras.sail.cloth` (the stock `rig@2` and `jib@1`). That field gives the
+`extras.sail.cloth` (the stock rig and jib). That field gives the
 cloth's grid, so a view can rewrite its vertices. A rig-aid GLB (no
 `cloth`) keeps today's dressing (scaled camber, lowered), with the
 indicators below that need no cloth: the masthead arrow, the burgee and
@@ -1082,7 +1082,7 @@ parent.
 (every point the mast and rig meshes are drawn from, now shared constants,
 so the meshes are byte for byte what they were) and the kept parts of the
 fixture (`stock-rig-12m.js`). `partGLB("rig")` carries it as `extras.rig`,
-filed under `sailing/rig@2` (parts.js `VERSIONS`). Where the build differs
+filed under `sailing/rig@2` then (`rig@3` today: parts.js `VERSIONS`). Where the build differs
 from the spec above, or says more:
 - *The runtime copy is a module, not JSON* (`stock-rig-12m.js`, the kept
   parts only: about 19 KB, not the fixture's 199 KB), because plain node
@@ -1109,9 +1109,11 @@ from the spec above, or says more:
   is a synthetic-hull contract that names a `glbKey`, and her hull's file
   key (`body.js hullKeyOf`: the `doc.assets` key whose URL is her hull
   object's `sourceUrl`) is not of that family (`keyFamily`: the key less
-  its `@n`). It is scoped to synthetic-hull contracts because the rig aid
-  writes a linked render's identity into `glbKey` too (its renderKey), and
-  such a rig keeps today's rule. A hull with no key in `doc.assets` (an
+  its `@n`). It is scoped to synthetic-hull contracts because a linked
+  contract may carry a `glbKey` too: the rig aid (now in `naval/`) links
+  the hull itself (`path` `file` or `source`), refuses a scene render and
+  always writes `glbKey` null, but v1 keeps a non-null one for contracts
+  written before that (§3.2), and such a rig keeps today's rule. A hull with no key in `doc.assets` (an
   imported hull) doesn't take the stock contract. The gate is in one place
   for both readers: `specFor` (the physics) and `rigContractOf` (her
   frame). `checkSource` is quiet when the
@@ -1224,7 +1226,7 @@ terrain/.
 ### As built (items 2 and 3)
 
 **Tests in two tiers first.** `pnpm test` (vitest.config.ts) runs every
-`src/**/*.test.js` but `*.slow.test.js`: 525 cases in about 6 s wall.
+`src/**/*.test.js` but `*.slow.test.js`: 613 cases in about 6 s wall.
 `pnpm test:slow` (vitest.slow.config.ts) runs the `*.slow.test.js`: the
 polar (`physics.slow.test.js`), 45 s on a seeded sea
 (`hull-resistance.slow.test.js`), the agreement sweep over the five
@@ -1278,8 +1280,9 @@ Irons, re-measured with P1 and P2:
   put on and mirrors the other. `winchTrait(side)`: stand 0.73 inboard and
   down to the sole (0.514 below the winch's foot). The hull's connector
   for them is `hull@3` (`STAND.winches`, tag `sailing.winch`).
-- `mast@2` has no rolled jib on its forestay; `parts.js VERSIONS` is
-  `{ hull: 3, rig: 2, mast: 2 }`, so the template files 13 GLBs.
+- `mast@2` has no rolled jib on its forestay; `parts.js VERSIONS` was
+  `{ hull: 3, rig: 2, mast: 2 }` then ("Parts" has today's), so the
+  template files 13 GLBs.
 - Not built: the bin's placement "1.2 m aft of the contract's lead" on a
   contract hull without a winch connector (put by hand, they go where
   they're put, mirrored across her).
@@ -1340,8 +1343,9 @@ rows `sailRow`'s, `foot` 0.14 for the flat foot on the boom, battens on rows
 up the rig's Y); `jib@1`'s is the jib's (20 × 10, twist 0.2). The `Sail`
 node is the cloth and the battens (now ribbons, `battenVertices`, not
 tubes) at `NEUTRAL`; a new `Bunt` node lies along the boom at radius
-`BUNT_R` 0.02 (inside the boom until a view swells it). The file keys stay
-`rig@2` and `jib@1` (nothing filed before item 4 needs them kept).
+`BUNT_R` 0.02 (inside the boom until a view swells it). The file keys
+stayed `rig@2` and `jib@1` (nothing filed before item 4 needed them kept);
+they are `rig@3` and `jib@2` since, their cloth taking no shadows.
 
 **Where it differs from §4, and why.**
 - *The reef* cuts level at f of the contract's own tack → head (the
@@ -1494,11 +1498,12 @@ a scene:part in index.js under "Sailing":
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
 | Sloop | the hull, and every part below at her stands | | `sailing.ship`, and a `sailing.sea` if the scene has none |
-| Mast and sail | the mast; the boom and sail under it | `sailing.mast` | `sailing.sail` |
+| Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
 | Ladder | the ladder | `sailing.ladder` | `sailing.ladder` |
 | Mainsheet | a traveller across the cockpit's sole and the sheet's block on it, under the boom's end | `sailing.mainsheet` | `sailing.mainsheet` |
+| Jib winches | the winch on the side it's put; the other, its mirror across her, under it | `sailing.winch` | `sailing.winch` |
 | Red buoy, Green buoy | the buoy | | `sailing.float` |
 | Islet | the islet | | |
 
@@ -1517,7 +1522,9 @@ a scene:part in index.js under "Sailing":
   and her anchor up. A ship brings her sea.
 - **Files:** each kind is the scene's one GLB doc under
   `doc.assets["sailing/<kind>@<n>"]` (`ctx.file`), so ten buoys share one;
-  bump `<n>` (`fileKey`) when a kind's drawing changes. `ctx.file` is
+  bump `<n>` (`fileKey`) when a kind's drawing changes (`VERSIONS`: the
+  hull's is 4, the rig's and the mast's 3, the jib's, winch's, windlass's,
+  mainsheet's, wheel's, anchor's and islet's 2, the rest 1). `ctx.file` is
   required: there is no other way a part makes its files.
 - The template is the Sloop part's objects with her way on, the landmarks
   (the buoy and islet parts, locked, in a group), the home view and "play".
@@ -1532,6 +1539,8 @@ a scene:part in index.js under "Sailing":
 | `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
 | `sailing.sail` | a station under the ship | `{ raised, sheet }` 0..1 |
+| `sailing.jib` | a station under the ship (the jib, on the mast) | `{ sheet, held, furl }`: `sheet` 0 hard in .. 1 eased; `held` null (it tends itself) or the side its clew is made fast on, `"port"` \| `"starboard"`; `furl` 0..1 of it rolled away. Worked from its winches or the helm |
+| `sailing.winch` | a winch under the ship, one each side | `{ sail: "jib", side: "port" \| "starboard", stand: [x, y, z] }`: the sheet led to it, and where you stand to work it, in the winch's own frame; who stands at it is its `"station"` claim |
 | `sailing.anchor` | a station under the ship (the windlass) | `{ down, rode, at? }` (`rode`: metres of chain out; `at`: where the anchor lies, world, while it's down). The windlass writes `down` and `rode`; only the simulator writes `at`: it drops the anchor on the bottom under the bow, clears `at` when it's up, and drops it again where she is when `at` is further from her bow than her rode allows (she was moved, or copied, while nobody sailed) |
 | `sailing.mainsheet` | a station under the ship (the cockpit's traveller) | `{}`: where the ship's sail is trimmed and hoisted from (its values are the sail station's); who stands at it is its `"station"` claim |
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
@@ -1573,8 +1582,9 @@ traits mark, put back when it stops).
 `create…(api, ctx) → part`, where a part may have `tick(…)`, `update(scene,
 local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
-ticks them in the order a frame needs, and no part imports another (what
-they share of the doc is traits.js, of the maths frames.js). play.js also
+ticks them in the order a frame needs, and no part imports another, but
+for hud.js taking crew.js's `seatedView` (what they share of the doc is
+traits.js, of the maths frames.js). play.js also
 answers the hand's `carryable` (traits.js `carryableAboard`): never the ship
 or anything with a sailing trait or tag, so a game played aboard can't carry
 off her mast; anything else aboard is the game's business. And the sail's
@@ -1606,7 +1616,7 @@ ctx.sea.tick(dt, now, own, simulator)   // the clock on (its own, or following `
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
 ctx.sim.read(shipId)     // what a sailor reads off her (published(): diagnostics, velocity, spin), as simulated or streamed, or null
-ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, ladder }   // object ids anywhere under her (a rig on a mast on the hull), null if missing
+ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, jib, ladder, winches }   // object ids anywhere under her (a rig on a mast on the hull), null if missing; winches a list
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }
 ctx.sim.commit(stationId, fields)   // a lasting change to a station's trait (doc), e.g. { raised: 0 }
