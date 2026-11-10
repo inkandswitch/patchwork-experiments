@@ -6,6 +6,7 @@
 import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
 import { orderedKinds, tableLayout, writeTable } from "./setup.js";
+import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -119,8 +120,10 @@ export default function TabletopGameTool(handle, element) {
       // the decks first, so the scene never names one that isn't there
       const urls = {};
       for (const [deckId, deck] of Object.entries(layout.decks)) urls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
-      // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
-      const table = { "@patchwork": { type: "scene" }, title, objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+      // every map and list a scene has, made with it (scene/STAGE.md, "Shared
+      // maps"; the stage fills `packages` in), and where the scene package
+      // comes from, for a viewer who doesn't have it
+      const table = { "@patchwork": scenePatchwork(await sceneImportUrl()), title, objects: {}, order: [], dimensions: {}, assets: {}, packages: [], traits: {}, view: {} };
       writeTable(table, layout, urls);
       const scene = await repo.create2(table);
       handle.change((g) => {
