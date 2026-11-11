@@ -48,6 +48,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fill } from "../src/games/lost-cities.js";
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
+import { emptyScene } from "../src/empty-scene.js";
 import { packageProblems, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
 
 // A published table names the scene package as its suggested import and
@@ -124,7 +125,7 @@ const decks = layout.decks;
 // the decks first, so the scene never names one that isn't there
 const deckUrls = {};
 for (const [deckId, deck] of Object.entries(decks)) deckUrls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
-const table = { "@patchwork": scenePatchwork(), title, objects: {}, order: [], dimensions: {}, assets: {}, packages: scenePackages(PACKAGES), traits: {}, view: {} };
+const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
 writeTable(table, layout, deckUrls);
 const scene = await repo.create2(table);
 game.change((d) => {

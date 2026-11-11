@@ -6,6 +6,7 @@ import { fill as loadSantorini, santoriniPieces } from "./games/santorini.js";
 import { EXPEDITIONS, fill as loadLostCities, lostCitiesPieces } from "./games/lost-cities.js";
 import { kindsUsed, shuffle, supplySpot, tableLayout, writeTable } from "./setup.js";
 import { TabletopGameDatatype } from "./datatype.js";
+import { emptyScene } from "./empty-scene.js";
 
 /** A doc handle and repo that keep docs in memory. */
 function fakeRepo() {
@@ -55,8 +56,8 @@ const gameFiles = (game) => (kind) => {
   return p?.glbUrl ? { url: p.glbUrl, hint: p.bounds ? { bounds: p.bounds } : null } : null;
 };
 
-/** A skeleton scene doc, as tool.js writes a table onto. */
-const skeleton = () => ({ "@patchwork": { type: "scene" }, title: "T", objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} });
+/** An empty scene doc, as tool.js writes a table onto. */
+const skeleton = () => emptyScene({ title: "T" });
 
 /**
  * The game page's table: the layout, and the scene writeTable makes of it

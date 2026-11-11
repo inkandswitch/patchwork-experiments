@@ -5,9 +5,10 @@
 // targets on its deck is a level too.
 //
 // State lives where the scene's contract says it should:
-// - doc: a target knocked over ({ down: { by, at }, stand }) and its fallen
-//   pose. Scores aren't stored; they're counted from who knocked what down,
-//   so two players hitting one target at once agree on whose it is.
+// - doc: a target knocked over ({ down: { by, at }, stand: { rotation } }:
+//   level.js isDown) and its fallen pose. Scores aren't stored; they're
+//   counted from who knocked what down, so two players hitting one target at
+//   once agree on whose it is.
 // - presence: where each player is (their avatar), at 20 Hz while playing.
 // - sends: shots, so peers see the tracer; nobody keeps them.
 // - local (this closure): your body, keys, ammo.
@@ -19,7 +20,7 @@
 
 import css from "./play.css?inline";
 import { BODY, look, lookDir, step } from "./walk.js";
-import { knockedOver, standTargetsUp } from "./level.js";
+import { isDown, knockedOver, standTargetsUp } from "./level.js";
 
 const TARGET = "arena.target";
 const SPAWN = "arena.spawn";
@@ -68,7 +69,6 @@ export function scores(objects) {
 }
 
 const isTarget = (o) => !!o?.traits?.[TARGET];
-const isDown = (o) => !!o?.traits?.[TARGET]?.down;
 
 export default {
   create(api) {
@@ -351,8 +351,8 @@ export default {
         api.change((dd) => {
           const t = dd.objects?.[hit.id];
           const tr = t?.traits?.[TARGET];
-          if (!tr || tr.down) return; // someone got there first
-          tr.stand = JSON.parse(JSON.stringify(t.transform));
+          if (!tr || isDown(t)) return; // someone got there first
+          tr.stand = { rotation: [...(t.transform.rotation ?? [0, 0, 0])] };
           tr.down = { by: api.viewer, at: Date.now() };
           const fallen = knockedOver(t.transform, yaw);
           t.transform.position = fallen.position;

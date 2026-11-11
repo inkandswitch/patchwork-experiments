@@ -25,6 +25,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/empty-scene.js";
 import * as lostCities from "../src/games/lost-cities.js";
 import * as santorini from "../src/games/santorini.js";
 import { kindsUsed } from "../src/setup.js";
@@ -77,7 +78,7 @@ try {
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
   // an empty scene, as the scene datatype's init makes it
-  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  const scene = repo.add(emptyScene());
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);

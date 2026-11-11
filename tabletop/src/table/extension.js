@@ -1113,8 +1113,6 @@ export default {
     const gid = ctx.newId("g");
     const ids = Array.from({ length: place.count }, () => ctx.newId("o"));
     ctx.change((d) => {
-      if (!d.objects) d.objects = {};
-      if (!d.order) d.order = [];
       d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, group: group ?? null, visible: true, opacity: 1 };
       d.order.push(gid);
       ids.forEach((oid, j) => {

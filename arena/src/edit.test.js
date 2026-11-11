@@ -3,10 +3,12 @@
 // runs) and the edit extension's command.
 import { describe, it, expect, beforeEach } from "vitest";
 import { plugins } from "./index.js";
-import { KINDS, sampleArena } from "./level.js";
+import { KINDS, isDown, sampleArena } from "./level.js";
+import { scores } from "./play.js";
 import { kindKey } from "./layout.js";
 import edit from "./edit.js";
 import template from "./template.js";
+import { emptyScene } from "./test/empty-scene.js";
 
 /**
  * The stage's drop context, as a template or a part gets it: what layout.js
@@ -32,7 +34,6 @@ function fakeScene(doc) {
       if (doc.assets?.[key]) return doc.assets[key];
       const { name, bytes, extension, mimeType, hint = null } = make();
       const h = await ctx.repo.create2({ "@patchwork": { type: "file" }, name, extension, mimeType, content: bytes });
-      doc.assets ??= {};
       doc.assets[key] ??= { url: h.url, hint };
       return doc.assets[key];
     },
@@ -48,7 +49,6 @@ function fakeScene(doc) {
   return { ctx, calls };
 }
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {} });
 
 describe("the Arena level template", () => {
   it("is a scene:template plugin, plain metadata with a Crosshair", () => {
@@ -117,7 +117,6 @@ describe("the arena's parts", () => {
   });
 
   it("a target goes where the bin says, makes the scene a level, and returns its id to select", async () => {
-    delete doc.traits;
     const id = await (await load("arena.target")).create(f.ctx, AT);
     const o = doc.objects[id];
     expect(o).toMatchObject({ name: "Target", providerId: "file-glb", sourceUrl: "automerge:glb1", parent: null });
@@ -196,12 +195,27 @@ describe("editing a level (arena.edit)", () => {
     const reset = x.commands.find((c) => c.id === "reset");
     doc.objects.t = { traits: { "arena.target": {} }, transform: { position: [0, 0, 0], rotation: [0, 1, 0], scale: 1 } };
     expect(reset.state(null, { scene: { objects: doc.objects } })).toBeNull();
-    doc.objects.t.traits["arena.target"] = { down: { by: "p", at: 1 }, stand: { position: [0, 0, 0], rotation: [0, 1, 0], scale: 1 } };
+    doc.objects.t.traits["arena.target"] = { down: { by: "p", at: 1 }, stand: { rotation: [0, 1, 0] } };
     doc.objects.t.transform.rotation = [1.5, 1, 0];
     expect(reset.state(null, { scene: { objects: doc.objects } })).toBeTruthy();
     reset.run(null);
     expect(doc.objects.t.transform.rotation).toEqual([0, 1, 0]);
     expect(doc.objects.t.traits["arena.target"]).toEqual({});
+  });
+
+  it("a copied knocked-over target (the scene's copy: `down` left behind, put somewhere else) is nobody's point, and stands up where it is", () => {
+    const reset = x.commands.find((c) => c.id === "reset");
+    const runtime = plugins.find((p) => p.id === "arena").describes["arena.target"].runtime;
+    const fallen = { down: { by: "p", at: 1 }, stand: { rotation: [0, 1, 0] } };
+    const copy = Object.fromEntries(Object.entries(fallen).filter(([k]) => !runtime.includes(k)));
+    doc.objects.c = { traits: { "arena.target": copy }, transform: { position: [7, 0, -3], rotation: [1.5, 1, 0], scale: 1 } };
+    expect(scores(doc.objects)).toEqual({});
+    expect(isDown(doc.objects.c)).toBe(true);
+    expect(reset.state(null, { scene: { objects: doc.objects } })).toBeTruthy();
+    reset.run(null);
+    expect(doc.objects.c.transform).toEqual({ position: [7, 0, -3], rotation: [0, 1, 0], scale: 1 });
+    expect(doc.objects.c.traits["arena.target"]).toEqual({});
+    expect(isDown(doc.objects.c)).toBe(false);
   });
 });
 

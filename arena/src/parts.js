@@ -38,8 +38,6 @@ export function part(kind) {
       ctx.change((d) => {
         if (parent && !d.objects?.[parent]) return;
         if (traits) makeLevel(d);
-        if (!d.objects) d.objects = {};
-        if (!d.order) d.order = [];
         // under what it was put on, in that one's group (as addObject files it)
         const group = parent ? (d.objects[parent].group ?? null) : null;
         d.objects[id] = { ...levelObject({ name: KINDS[kind].name, transform: at?.transform ?? IDENTITY, traits }, file, group), parent, locked: false };

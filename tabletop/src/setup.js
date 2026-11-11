@@ -350,8 +350,6 @@ export function writeTable(d, layout, deckUrls = {}, { view = true } = {}) {
     const deckId = deckRef(o);
     if (deckId != null && !deckUrls[deckId]) throw new Error(`no doc for deck “${deckId}”`);
   }
-  if (!d.objects) d.objects = {};
-  if (!d.order) d.order = [];
   for (const oid of layout.order) {
     const o = JSON.parse(JSON.stringify(layout.objects[oid]));
     const deckId = deckRef(o);
@@ -359,7 +357,6 @@ export function writeTable(d, layout, deckUrls = {}, { view = true } = {}) {
     d.objects[oid] = o;
     d.order.push(oid);
   }
-  if (!d.traits) d.traits = {};
   if (Object.keys(layout.seats ?? {}).length && !d.traits["tabletop.seats"]) d.traits["tabletop.seats"] = JSON.parse(JSON.stringify(layout.seats));
   else if (d.traits["tabletop.seats"]) {
     // seats there already: one whose view is in a frame that's gone (the table it was at,
@@ -371,6 +368,5 @@ export function writeTable(d, layout, deckUrls = {}, { view = true } = {}) {
     }
   }
   if (!view) return;
-  if (!d.view) d.view = {};
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
 }

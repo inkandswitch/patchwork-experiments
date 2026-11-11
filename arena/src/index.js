@@ -23,8 +23,13 @@ export const plugins = [
     traits: ["arena.level", "arena.target", "arena.spawn"],
     activities: ["play"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
-    // level can be made without a script. A target's down/stand are play
-    // state, not settings: nothing to describe.
+    // level can be made without a script. A target's down/stand are not
+    // settings: no fields to edit. `down` (who shot it, when) is play state,
+    // marked `runtime`, so a copy of a knocked-over target (into another
+    // scene, or a duplicate) is nobody's point. `stand` (how it stood) is
+    // about the object, which the copy still is: lying down, so it goes
+    // along, and Stand them up raises the copy too (scene/STAGE.md,
+    // "Copying objects" and `runtime`; src/level.js).
     describes: {
       "arena.level": {
         name: "Arena level",
@@ -43,7 +48,7 @@ export const plugins = [
           },
         ],
       },
-      "arena.target": { name: "Target", on: "object", blurb: "Can be shot down; counts toward the shooter's score" },
+      "arena.target": { name: "Target", on: "object", blurb: "Can be shot down; counts toward the shooter's score", runtime: ["down"] },
       "arena.spawn": { name: "Spawn point", on: "object", blurb: "Where players start, facing the way it faces" },
     },
     // playing brings no editor, so it says what it needs: Enter to play

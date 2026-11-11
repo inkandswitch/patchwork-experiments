@@ -333,21 +333,34 @@ export function yawThenTilt(yaw, tilt) {
 }
 
 /**
- * Stand every knocked-over target back up where it stood (inside a change).
- * Playing and editing both offer it, so it lives here with the doc's shape.
+ * A target's trait while it's knocked over: { down: { by, at }, stand: {
+ * rotation } }, written together by the shot (play.js).
+ * - `stand`: it's lying down, and this is the rotation it stood at. About the
+ *   object, so a copy keeps it (and is lying down too).
+ * - `down`: who knocked it over and when: play state, which a copy leaves
+ *   behind (index.js `runtime`), so a copied target is nobody's point.
+ * Falling turns a target about its foot, its origin (knockedOver keeps the
+ * position), so standing it up is its rotation alone: it stands where it is
+ * now, wherever a copy or the editor has put it since.
+ */
+export const isDown = (o) => {
+  const tr = o?.traits?.["arena.target"];
+  return !!(tr?.stand || tr?.down);
+};
+
+/**
+ * Stand every knocked-over target back up (inside a change). Playing and
+ * editing both offer it, so it lives here with the doc's shape.
  */
 export function standTargetsUp(d) {
   for (const o of Object.values(d.objects ?? {})) {
-    const tr = o?.traits?.["arena.target"];
-    if (!tr?.down) continue;
-    if (tr.stand) {
-      o.transform.position = [...tr.stand.position];
-      o.transform.rotation = [...tr.stand.rotation];
-    }
+    if (!isDown(o)) continue;
+    const tr = o.traits["arena.target"];
+    if (Array.isArray(tr.stand?.rotation)) o.transform.rotation = [...tr.stand.rotation];
     delete tr.down;
     delete tr.stand;
   }
 }
 
 /** Whether any target in the scene is knocked over. */
-export const anyDown = (objects) => Object.values(objects ?? {}).some((o) => !!o?.traits?.["arena.target"]?.down);
+export const anyDown = (objects) => Object.values(objects ?? {}).some(isDown);

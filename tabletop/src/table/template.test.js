@@ -8,9 +8,8 @@ import * as lostCitiesGame from "../games/lost-cities.js";
 import { kindsUsed } from "../setup.js";
 import { glbKey } from "../pieces.js";
 import { fakeDrop, fakeRegistry } from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
-/** What the scene datatype's init makes. */
-const emptyScene = () => ({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} });
 
 /** A registry with a secure-deck provider, as card-table registers it. */
 const secureDecks = () =>

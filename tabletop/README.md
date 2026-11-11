@@ -81,8 +81,8 @@ tool by id. Without the scene installed the tables are just documents.
     (`tabletop/lost-cities/back@1a2b3c4d`). There is no game doc, so the table
     stands alone, and new art gets a new key: a table made with the old keeps
     its own.
-- A board's spaces are **snap points** in its GLB (`extras.snapPoints`, see the
-  scene's GLB conventions). The scene's hand does the snapping and stacking;
+- A board's spaces are **connectors** in its GLB (`extras.connectors`, see the
+  scene's GLB conventions), made from the piece's `snapPoints`. The scene's hand does the snapping and stacking;
   nothing here is specific to Santorini.
 - The board is set up **locked**, so dragging it orbits instead.
 - On a table set up from the game page, each copy's About (`infoUrl`) is the
@@ -116,6 +116,16 @@ package installed shows a table's cards as their backs and nothing else.
 | `tabletop.hidden` | an object | `{ by: <deck url> }`: what it really is comes from that deck |
 | `tabletop.die` | an object | `{ faces?: { "+y": n, … } }`: a die; gives it Roll (R) in play (Rolling, below) |
 
+**Copies.** The scene copies objects between scenes (and duplicates them in
+one); the traits' descriptions say what a copy takes (scene/STAGE.md,
+"Copying objects"). A copied hidden card leaves its deck behind
+(`tabletop.hidden.by` is `copy: "drop"`): a deck knows its cards by object
+id and the copy has a new one, so it's a bare back in no deck, and the scene
+it lands in is never set to reading (or, for a secure deck, shuffling)
+another table's deck. A copied zone keeps its seat only where that scene has
+a seat by that id (an `entry` field). Putting a card into the deck of the
+table it lands on isn't done.
+
 **Who sees what** (`src/table/visibility.js`). A hidden object is drawn as
 itself — its public look, a card back — except:
 
@@ -142,7 +152,7 @@ of:
 
 (A deck whose resolver has no `dealt()` is taken at its word only for what
 the zone rule keeps from you: a face-up card of yours with no face yet shows
-its back, as before.)
+its back.)
 
 The privacy face is one generic picture for every card of a size: a dark
 card with a mid-grey frosted, reeded field and a big pale padlock, on both
@@ -458,9 +468,15 @@ at its supply spot, the board at the top level; each deck shuffled into one
 group, dealt, and the rest stacked. Its seats, empty (`tabletop.seats`; only if
 the scene has none yet, as a shared map is made once). If anything is hidden,
 a doc per deck, made first, which its cards name (`tabletop.hidden`).
-The game page's "Set up a table" writes it onto a fresh `scene` doc (with
-every map a scene has) and creates that; a template writes it into the empty
-scene it was started on, in one `ctx.change`.
+The game page's "Set up a table" writes it onto a fresh `scene` doc and
+creates that: an empty scene as the scene's own datatype makes one
+(`src/empty-scene.js`, a copy of its init: every map and list a scene has,
+`assets` and `packages` among them), with the scene package as its
+`@patchwork.suggestedImportUrl` when the registry has it from somewhere
+another viewer can load (`src/scene-package.js`; scene/STAGE.md,
+"Packages"), so someone with nothing installed is offered the scene tool.
+The stage fills `packages` in when the table is opened. A template writes
+the table into the empty scene it was started on, in one `ctx.change`.
 Its view opens in the hand (`view.tool: "hand"`) with snapping on, the
 grid and axes off, units in cm, looking from the game's `camera`
 (`view.home`), and, when it has seats, zones or hidden cards, starts in
@@ -547,6 +563,8 @@ are none.
 | `src/glyphs.js` | numbers made of boxes, for card faces |
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
+| `src/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the game page, the tests and the probe pages start a scene doc from |
+| `src/scene-package.js` | where the scene package comes from, for a new table's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as tts-import's) |
 | `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), set down on something (`placeLayout`), and writing it into a scene doc |
 | `src/table/template.js` | the Lost Cities and Santorini templates: the game's table in an empty scene, its art by `ctx.file` |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
@@ -559,10 +577,15 @@ are none.
 | `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
 | `src/table/dice.js` | dice: which side is up, and a roll worked out from its seed (pure) |
 | `src/table/slots.js` | card slots: which connectors take a card, in the world (the hand's rule, copied; pure) |
+| `src/table/test-scene.js` | for tests: a scene snapshot like the extension api's, from a plain objects map |
 | `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome: a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |
 | `probes/draw.mjs`, `probes/draw-probe.html` | two players at a secure Lost Cities table (card-table's built plugins too): A hovers the deck and presses D; the card lands in A's hand, A sees its face, B sees it and A's whole hand as the privacy face (and a close-up shot of it), B is told |
+| `probes/privacy.mjs`, `probes/privacy-probe.html` | what a hidden card looks like to each of two people (`--part secure` or `plain`): its back face down, its face when it's theirs, the privacy face when it's face up but not theirs; one privacy file per scene; a card whose key is still on its way; the plain-deck HUD warning |
+| `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in for something that walks in first person: Sit as Player 1, Stand up, Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
 | `probes/table.mjs`, `probes/table-probe.html` | two players at a plain-deck Lost Cities table (card-table's built plugins loaded for a dropped secure deck): the use prompt over the pile (Flip, Shuffle) and S telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, R as the gizmo's Rotate, a dropped deck stacking at the point and squaring onto a discard slot; back in play with the hand, R rolling the die to the same face in both views |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, play, seats and the secure deck reaching play, and publish the table it made |
+| `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (a watchdog; copied, the same in every package), and a finite check of it |
+| `probes/scene-packages.mjs` | for the publish script: the suggested import and `packages` of a published scene, from each package's pushwork URL (copied, the same in every package) |
 | `src/test/fakes.js` | a stand-in stage for tests: shared doc, presence, claims, sends, poses, loops; and a drop context for templates (`fakeDrop`) (copied from sailing's) |
 | `src/glb.js` | the GLB encoder, copied from the scene package |
 
