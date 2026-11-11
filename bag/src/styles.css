@@ -1,0 +1,176 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --bag-bg: var(--editor-fill, white);
+    --bag-fg: var(--editor-line, black);
+    --bag-muted: var(--editor-line-offset-50, #888);
+    --bag-border: var(--editor-fill-offset-20, #ddd);
+    --bag-field: var(--editor-fill-offset-10, #f6f6f6);
+    --bag-accent: var(--studio-primary-fill, var(--studio-primary, #35f7ca));
+    --bag-accent-ink: var(--studio-primary-line, black);
+    --bag-note: color-mix(in oklch, var(--studio-warning, #e0a800), var(--editor-fill, white) 80%);
+    --bag-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.bag-tool {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: var(--studio-space, 0.75rem);
+  background: var(--bag-bg);
+  color: var(--bag-fg);
+  font-family: var(--bag-family);
+  font-size: 14px;
+}
+
+.bag-tool > * + * {
+  margin-top: var(--studio-space, 0.75rem);
+}
+
+.bag-tool .head {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: baseline;
+}
+
+.bag-tool .title {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 2px 4px;
+}
+
+.bag-tool .title:hover,
+.bag-tool .title:focus {
+  border-color: var(--bag-border);
+}
+
+.bag-tool .total {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.bag-tool .total small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--bag-muted);
+}
+
+.bag-tool .note {
+  margin-block: 0;
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--bag-note);
+  font-size: 12px;
+}
+
+.bag-tool .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: center;
+}
+
+.bag-tool label {
+  display: inline-flex;
+  gap: var(--studio-space-xs, 0.375rem);
+  align-items: center;
+  color: var(--bag-muted);
+  font-size: 12px;
+}
+
+.bag-tool select,
+.bag-tool input[type="number"] {
+  font: inherit;
+  color: var(--bag-fg);
+  background: var(--bag-field);
+  border: 1px solid var(--bag-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 2px 6px;
+}
+
+.bag-tool input[type="number"] {
+  width: 4.5em;
+}
+
+.bag-tool button {
+  font: inherit;
+  color: var(--bag-fg);
+  background: var(--bag-field);
+  border: 1px solid var(--bag-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.bag-tool button[data-primary] {
+  background: var(--bag-accent);
+  color: var(--bag-accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.bag-tool button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bag-tool h3 {
+  margin-bottom: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bag-muted);
+}
+
+.bag-tool ul {
+  list-style: none;
+  margin: var(--studio-space-xs, 0.375rem) 0 0;
+  padding: 0;
+  border: 1px solid var(--bag-border);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.bag-tool li {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: center;
+  padding: 3px 8px;
+}
+
+.bag-tool li + li {
+  border-top: 1px solid var(--bag-border);
+}
+
+.bag-tool li .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bag-tool li .n {
+  font-variant-numeric: tabular-nums;
+  color: var(--bag-muted);
+}
+
+.bag-tool .empty,
+.bag-tool .status {
+  color: var(--bag-muted);
+  font-size: 12px;
+}
+
+.bag-tool [hidden] {
+  display: none;
+}

@@ -1,0 +1,168 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>bag probe</title>
+<!-- Driven by probes/bag.mjs. The BUILT scene tool (scene/dist) with the BUILT
+     bag plugins (dist) in a stub registry, on REAL Automerge documents: two
+     peers, A (Ana) and B (Ben), each with its own replica of every doc
+     (probes/real-repo.js), a change reaching the other 25 ms later by a real
+     merge, unless the link is held. Each view's broadcasts (presence, poses,
+     sends) reach only the other. ?rule=top|random sets the bag's draw rule. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 900px; height: 600px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import * as Automerge from "@automerge/automerge";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "../src/empty-scene.js";
+import { encodeGLB } from "../src/glb.js";
+import { inside, outside, shadowsFor } from "../src/contents.js";
+import { bagUrlOf } from "../src/part.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// a box standing on y = 0 (w × h × d)
+const box = (w, h, d, color) => {
+  const a = w / 2, c = d / 2;
+  const v = [[-a,0,-c],[a,0,-c],[a,0,c],[-a,0,c],[-a,h,-c],[a,h,-c],[a,h,c],[-a,h,c]];
+  const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+  return { positions: f.flat().flatMap((i) => v[i]), color };
+};
+
+try {
+  const rule = new URLSearchParams(location.search).get("rule");
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const net = twoPeers({ delay: 25 });
+  window.repo = net.a;
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+
+  // a table top, and three different tokens on it: plain shapes of our own
+  const file = async (name, mesh) => (await net.a.create2({ "@patchwork": { type: "file" }, name: `${name}.glb`, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [mesh] }) })).url;
+  const object = (name, sourceUrl, position, size, more = {}) => ({
+    name, sourceUrl, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false,
+    transform: { position, rotation: [0, 0, 0], scale: 1 }, hint: { bounds: { min: [-size[0] / 2, 0, -size[2] / 2], max: [size[0] / 2, size[1], size[2] / 2] } }, ...more,
+  });
+  const TOP = 0.02;
+  const SHAPES = { cube: [[0.03, 0.03, 0.03], "#c0392b"], tile: [[0.05, 0.008, 0.05], "#2e86c1"], post: [[0.02, 0.06, 0.02], "#27ae60"] };
+  const objects = { table: object("Table", await file("table", box(1.2, TOP, 0.8, "#6b5a45")), [0, 0, 0], [1.2, TOP, 0.8], { locked: true }) };
+  let x = -0.3;
+  for (const [id, [size, color]] of Object.entries(SHAPES)) {
+    objects[id] = object(id[0].toUpperCase() + id.slice(1), await file(id, box(...size, color)), [x, TOP, 0.15], size);
+    x += 0.12;
+  }
+  const sceneA = await net.a.create2(emptyScene({
+    title: "Bag probe", objects, order: Object.keys(objects),
+    view: { ...DEFAULT_VIEW, grid: false, axes: false, tool: "hand", home: { position: [0, 0.9, 0.9], target: [0, 0, 0] } },
+  }));
+  const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(scene.a, hosts.a);
+  Tool(scene.b, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const told = { a: [], b: [] };
+  const seen = { a: new Set(), b: new Set() };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
+  }, 20);
+  const other = (w) => (w === "a" ? "b" : "a");
+  const objectsOf = (w) => scene[w].doc().objects;
+  const bagObject = (w) => Object.entries(objectsOf(w)).find(([, o]) => bagUrlOf(o)) ?? null;
+  const bagDoc = (w) => { const b = bagObject(w); return b ? net[w].handles.get(bagUrlOf(b[1]))?.doc() ?? null : null; };
+  const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+
+  window.__p = {
+    errors, tokens: Object.keys(SHAPES), viewers: { a: ana.url, b: ben.url },
+    net: { hold: () => net.hold(), release: () => net.release(), held: () => net.held(), stats: () => ({ ...net.stats }) },
+    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    play: (w) => { dbg[w].local.swap((m) => ({ ...m, activity: "play" })); return true; },
+    /** the parts bin's row for a part, in a view (scrolled into sight) */
+    part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rectOf(e); },
+    /** the bag: its object id, and whether its GLB has loaded, in a view */
+    bag: (w) => { const b = bagObject(w); return b ? { id: b[0], url: bagUrlOf(b[1]), loaded: !!dbg[w].viewport.contentOf(b[0])?.loaded, title: bagDoc(w)?.title ?? null } : null; },
+    setRule: (r) => { const b = bagObject("a"); net.a.handles.get(bagUrlOf(b[1])).change((d) => (d.rule = r)); return r; },
+    rule: (w) => bagDoc(w)?.rule ?? null,
+    /** what the scene doc holds, by peer: the object ids (each peer's own replica) */
+    inScene: (w) => Object.keys(objectsOf(w)).filter((id) => id in SHAPES).sort(),
+    order: (w) => [...scene[w].doc().order],
+    /** what is inside the bag, by peer, by the readers' rule; and as listed */
+    inBag(w) {
+      const d = bagDoc(w);
+      if (!d) return null;
+      const url = bagUrlOf(bagObject(w)[1]);
+      const sh = shadowsFor([{ url, doc: d }], { sceneUrl: scene[w].url, has: (id) => !!objectsOf(w)[id] });
+      return { inside: inside(d, sh.get(url)).map((x) => x.entry.id), listed: inside(d).map((x) => x.entry.id), out: outside(d).map((x) => [x.entry.id, x.entry.out?.by ?? null]) };
+    },
+    /** is every doc the same on both peers? */
+    converged() {
+      const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && !Array.isArray(x) && !(x instanceof Uint8Array) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x instanceof Uint8Array ? x.length : x));
+      const differ = [];
+      for (const [url, h] of net.a.handles) if (stable(h.doc()) !== stable(net.b.handles.get(url).doc())) differ.push(url);
+      return differ;
+    },
+    session: (w) => dbg[w].presence.session,
+    /** the count label over the bag, as drawn in a view */
+    label: (w) => [...hosts[w].querySelectorAll(".label.bag-count")].map((e) => e.textContent),
+    /** what this view's hand holds now, as the OTHER view hears it (pose holds; not one already put down and waiting for the doc) */
+    carrying: (w) => [...dbg[other(w)].presence.remoteHolds()].filter(([, h]) => !h.landed).map(([id]) => id).sort(),
+    armed: (w) => dbg[w].local.get().armed ?? null,
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    notices: (w) => [...told[w]],
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    transform: (w, id) => JSON.parse(JSON.stringify(objectsOf(w)[id]?.transform ?? null)),
+    loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
+    /** a page point over object `id` in view `w` (its origin, then spiralling out until a pick hits it) */
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const c = v.contentOf(id)?.box;
+      const p = m && v.project([m[12], m[13] + (c ? (c.max[1] + c.min[1]) / 2 : 0), m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+    /** the page point of a world point in a view */
+    pageOf(w, p) { const v = dbg[w].viewport; const r = v.canvas.getBoundingClientRect(); const q = v.project(p); return q && { x: r.left + q.x, y: r.top + q.y }; },
+    canvas: (w) => rectOf(dbg[w].viewport.canvas),
+    panel: (w) => { const e = hosts[w].querySelector(".bag-dock .bag-tool"); return e ? { total: e.querySelector(".total")?.dataset.count ?? null, kinds: [...e.querySelectorAll(".kinds li")].map((li) => li.textContent), note: e.querySelector(".note")?.textContent ?? "" } : null; },
+    /** the open context menu's items in a view: [{ text, x, y }] */
+    menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rectOf(e) })),
+    run: (w, command, target, value) => { dbg[w].host.instanceOf("bag").commands.find((c) => c.id === command).run(target, value); return true; },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>
