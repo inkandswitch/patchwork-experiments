@@ -56,13 +56,11 @@
 // "station" claim says who stands there.
 //
 // Looking at the mast (a part of the ship with no traits of its own) works
-// the sail it carries: the rig hangs under it, or (a doc made before the
-// rig hung from the mast) the rig's gooseneck stands over it.
+// the sail it carries: the rig hangs under it, or it carries the mast's tag.
 
 import { ANCHOR, HALYARD, HELM, MAINSHEET, RODE, SAIL, STATION, WINCH, isUnder, shipOf, sideName, wheelTransform } from "./traits.js";
 import { heldEitherSide, trimOf } from "./trim.js";
-import { bodyOf } from "./body.js";
-import { apply, invert } from "./frames.js";
+import { apply } from "./frames.js";
 
 /** jibState's trim, written in place each frame (no allocation). */
 const JIB_TRIM = {};
@@ -73,8 +71,6 @@ export { RODE };
 export const REACH = 2.5;
 /** How far off a station you look at still says where to go to work it (m). */
 export const FAR = 12;
-/** A traitless object aboard whose origin is this near the sail's gooseneck in plan (her frame, m) is its mast. */
-export const MAST_NEAR = 0.6;
 export const WHEEL_RATE = 0.6; // of the wheel's travel per second, while A or D is held
 export const RAISE_RATE = 1 / 4; // the sail, all the way in 4 s
 export const SHEET_RATE = 0.25; // per second
@@ -333,10 +329,9 @@ export function stationCommands(api, ctx) {
   /**
    * The sail station a look at `target` works, and whether that look is at
    * its mast: the station itself; or (the mast) a traitless object aboard
-   * the same ship that the rig hangs under, or one tagged as her mast, or
-   * (a doc made before the rig hung from the mast: both under the hull) one
-   * whose origin stands under the rig's gooseneck in plan. Else null:
-   * anything else aboard (a table in the cockpit) is no part of the sail.
+   * the same ship that the rig hangs under, or one tagged as her mast.
+   * Else null: anything else aboard (a table in the cockpit) is no part of
+   * the sail.
    */
   function sailOf(sc, target) {
     if (traitOf(sc, target, SAIL)) return { id: target, mast: false };
@@ -346,14 +341,7 @@ export function stationCommands(api, ctx) {
     const id = ship && ship !== target ? ctx.sim.stationsOf(ship)?.sail : null;
     if (!id || id === target) return null;
     if (isUnder(sc, id, target)) return { id, mast: true };
-    if (Array.isArray(o.tags) && o.tags.includes("sailing.mast")) return { id, mast: true };
-    const B = bodyOf(api, ship);
-    const a = originOf(target);
-    const b = originOf(id);
-    if (!B || !a || !b) return null;
-    const back = invert(B);
-    const [pa, pb] = [apply(back, a), apply(back, b)];
-    return Math.hypot(pa[0] - pb[0], pa[2] - pb[2]) <= MAST_NEAR ? { id, mast: true } : null;
+    return Array.isArray(o.tags) && o.tags.includes("sailing.mast") ? { id, mast: true } : null;
   }
 
   /** Is this look at the mast (the mast itself, or the rig within reach of its gooseneck)? Where the halyard is worked. */

@@ -19,7 +19,7 @@
 // and flies each of its sails as its own foil (riggedSails).
 
 import { buildHull, mergeSpec, SLOOP, specFromBox } from "./hull-model.js";
-import { liftSlope, foilCL, foilCD, sailCL, sailCD, planformAspect, planformSlope, planformCL, planformCD, ittc57, rigSailCoeffs, wrap180 } from "./physics-foils.js";
+import { liftSlope, foilCL, foilCD, sailCL, sailCD, planformAspect, planformSlope, planformCL, planformCD, ittc57, rigSailCoeffs } from "./physics-foils.js";
 import { contractResistance } from "./resistance.js";
 import { rigSails, swungCE } from "./rig-sails.js";
 import { heldEitherSide } from "./trim.js";

@@ -4,11 +4,10 @@ import { describe, it, expect } from "vitest";
 import template from "./template.js";
 import { FIT } from "./ship.js";
 import { REACH, WAY, headTo, layOutShip, turn } from "./layout.js";
-import { fakeDrop } from "./test/fakes.js";
+import { emptyScene, fakeDrop } from "./test/fakes.js";
 
 const fakeScene = (doc, o) => fakeDrop(doc, o);
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} });
 
 describe("the Ship at sea template", () => {
   it("writes the sea, starts the scene in play, and says how to go aboard", async () => {

@@ -3,7 +3,7 @@
 // finite list of what a look can be (DESIGN.md, "Stations"): at each kind of
 // station, in reach (to the point looked at, or the origin without one), out
 // of reach but in sight, past sight; the mast as the rig's parent, by its
-// tag, or standing under the gooseneck (an older doc); and each station you
+// tag; and each station you
 // lock in to, with which of the sail's keys work there.
 import { describe, it, expect, vi } from "vitest";
 import { FAR, FURL_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
@@ -143,10 +143,10 @@ const at = (x, y, z) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1];
 
 /**
  * A sloop on a stand-in stage. `mainsheet`: she has one (in the cockpit).
- * `old`: the rig hangs from the hull beside the mast, as docs made before
- * the rig hung from the mast have it.
+ * `rehung`: the rig hangs from the hull beside the mast (moved there by
+ * hand in the editor), not from the mast as the part puts it.
  */
-function stage({ mainsheet = true, helm = true, old = false } = {}) {
+function stage({ mainsheet = true, helm = true, rehung = false } = {}) {
   const scene = {
     objects: {
       hull: { traits: { "sailing.ship": {} } },
@@ -165,7 +165,7 @@ function stage({ mainsheet = true, helm = true, old = false } = {}) {
       winchS: { traits: { "sailing.winch": { sail: "jib", side: "starboard", stand: [-0.73, -0.51, 0] } } },
     },
     // the boom and sail hang from the mast, as the sloop's parts put them
-    parents: new Map([["wheel", "hull"], ["rig", old ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"], ["jib", "mast"], ["winchP", "hull"], ["winchS", "winchP"]]),
+    parents: new Map([["wheel", "hull"], ["rig", rehung ? "hull" : "mast"], ["sheet", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"], ["jib", "mast"], ["winchP", "hull"], ["winchS", "winchP"]]),
   };
   const s = {
     scene,
@@ -536,8 +536,11 @@ describe("the commands", () => {
     expect(s.cmd("haul").state("board", near)).toBe(null);
   });
 
-  it("an older doc (the rig under the hull beside the mast): the mast still works the sail, a table a metre off doesn't", () => {
-    const s = stage({ old: true });
+  it("the rig rehung under the hull beside the mast: only the mast's tag (the bin's) makes it the mast; a table never is", () => {
+    const s = stage({ rehung: true });
+    // untagged, with nothing of the sail's under it: just a thing aboard
+    expect(s.offered("mast", s.at("mast", 0.8))).toEqual([]);
+    s.scene.objects.mast = { tags: ["sailing.mast"] };
     expect(s.offered("mast", s.at("mast", 0.8))).toEqual([
       ["halyard", null, false],
       ["sail", "Lower sail", false],
@@ -545,19 +548,6 @@ describe("the commands", () => {
     // the table, a metre aft of the mast, in reach: nothing of the sail's
     s.worlds.table = at(0, 0.7, -0.6);
     expect(s.offered("table", s.at("table", 0.8))).toEqual([]);
-    // a mast moved off from under the gooseneck isn't it any more…
-    s.worlds.mast = at(0, 1.4, -0.6);
-    expect(s.offered("mast", s.at("mast", 0.8))).toEqual([]);
-    // …unless it says it's the mast (the bin's tag)
-    s.scene.objects.mast = { tags: ["sailing.mast"] };
-    expect(s.offered("mast", s.at("mast", 0.8)).map(([id]) => id)).toEqual(["halyard", "sail"]);
-    // a heeled ship: in her frame, the mast still stands under the gooseneck
-    const t = stage({ old: true });
-    const c = Math.cos(0.4);
-    const sn = Math.sin(0.4);
-    const heel = (x, y, z) => [c, sn, 0, 0, -sn, c, 0, 0, 0, 0, 1, 0, ...[c * x - sn * y, sn * x + c * y, z], 1];
-    Object.assign(t.worlds, { hull: heel(0, 0, 0), mast: heel(0, 1.4, -1.6), rig: heel(0, 2.8, -1.5) });
-    expect(t.offered("mast", t.at("mast", 0.8)).map(([id]) => id)).toEqual(["halyard", "sail"]);
   });
 
   // ─── out of reach: where to go ─────────────────────────────────────────

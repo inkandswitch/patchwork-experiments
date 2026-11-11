@@ -7,11 +7,10 @@ import { PIECES, fileKey, placement } from "./parts.js";
 import { FIT, LIFT, STAND, TAGS, jibDrawing, winchTrait } from "./ship.js";
 import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, SAIL, SEA, SHIP, WINCH, partsOf } from "./traits.js";
 import { placeIn } from "./body.js";
-import { apply, matrixOf } from "./frames.js";
+import { apply } from "./frames.js";
 import { createSim } from "./sim.js";
-import { fakeDrop, fakeWorld } from "./test/fakes.js";
+import { emptyScene, fakeDrop, fakeWorld } from "./test/fakes.js";
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} });
 const near = (a, b, digits = 9) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], digits));
 const children = (doc, id) => Object.keys(doc.objects).filter((k) => doc.objects[k].parent === id);
 /** Where a point local to `id` is in `root`'s frame (doc transforms). */
@@ -213,7 +212,7 @@ describe("the sloop", () => {
     const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
     // the bin faces a part's +Z toward the eye: her stern
-    const id = await parts.sloop.create(ctx, { parent: null, transform: { position: [10, 0.3, -4], rotation: [0, 0.8, 0], scale: 1 } });
+    const id = await parts.sloop.create(ctx, { parent: null, transform: { position: [10, 0.3, -4], rotation: [0, 0.8, 0], scale: 1 }, world: { position: [10, 0.3, -4], rotation: [0, 0.8, 0], scale: 1 } });
     const hull = doc.objects[id];
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
     expect(hull.traits).toEqual({ [SHIP]: {} });
@@ -227,13 +226,13 @@ describe("the sloop", () => {
   it("brings her sea when the scene has none, and leaves one that's there alone", async () => {
     const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
-    await parts.sloop.create(ctx, { parent: null, transform: {} });
+    await parts.sloop.create(ctx, { parent: null, transform: {}, world: {} });
     expect(doc.traits[SEA]).toMatchObject({ wind: { speed: 7, from: 45 }, scale: 1 });
     const sea = { wind: { speed: 3, from: 200 }, seed: 5, scale: 0.5 };
     const other = emptyScene();
     other.traits[SEA] = structuredClone(sea);
     const second = fakeDrop(other);
-    await parts.sloop.create(second.ctx, { parent: null, transform: {} });
+    await parts.sloop.create(second.ctx, { parent: null, transform: {}, world: {} });
     expect(other.traits[SEA]).toEqual(sea);
   });
 
@@ -241,15 +240,11 @@ describe("the sloop", () => {
     const doc = emptyScene();
     doc.objects.islet = { name: "Islet", parent: null, transform: { position: [100, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 } };
     const { ctx } = fakeDrop(doc);
-    const id = await parts.sloop.create(ctx, { parent: "islet", transform: { position: [0, 3, 10], rotation: [0, 0, 0], scale: 1 } });
+    // the stage's at.world is where she goes: on the water under it, turned as it is
+    const id = await parts.sloop.create(ctx, { parent: "islet", transform: { position: [0, 3, 10], rotation: [0, 0, 0], scale: 1 }, world: { position: [7, 3, 8], rotation: [0, 0.5, 0], scale: 1 } });
     expect(doc.objects[id].parent).toBeNull();
-    const world = apply(matrixOf(doc.objects.islet.transform), [0, 3, 10]);
-    near(doc.objects[id].transform.position, [world[0], 0, world[2]]);
-    expect(doc.objects[id].transform.rotation[1]).toBeCloseTo(Math.PI / 2, 9);
-    // the stage's at.world, when it gives one, is where she goes
-    const other = await parts.sloop.create(ctx, { parent: "islet", transform: { position: [0, 3, 10] }, world: { position: [7, 3, 8], rotation: [0, 0.5, 0], scale: 1 } });
-    near(doc.objects[other].transform.position, [7, 0, 8]);
-    expect(doc.objects[other].transform.rotation[1]).toBeCloseTo(0.5, 9);
+    near(doc.objects[id].transform.position, [7, 0, 8]);
+    expect(doc.objects[id].transform.rotation[1]).toBeCloseTo(0.5, 9);
   });
 });
 

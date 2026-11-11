@@ -5,7 +5,7 @@ import { createOcean } from "./ocean.js";
 import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";
-import { composeMatrix, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
+import { composeMatrix, emptyScene, fakeNode, fakeThree, fakeWorld } from "./test/fakes.js";
 import { parseGLB } from "./glb.js";
 import { jibFit, partGLB } from "./ship.js";
 import { clothCount, clothVertices } from "./cloth.js";
@@ -128,10 +128,10 @@ describe("createLooks", () => {
 
   it("bobs what floats on the clock the sea is drawn at, and puts it back on dispose", () => {
     const doc = {
+      ...emptyScene(),
       objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
       order: ["buoy", "rock"],
       traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 } },
-      view: {},
     };
     const root = fakeNode();
     const rock = fakeNode();

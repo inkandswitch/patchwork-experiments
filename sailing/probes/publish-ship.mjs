@@ -18,6 +18,7 @@
 import template from "../src/template.js";
 import { fileKey } from "../src/parts.js";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
+import { emptyScene } from "./empty-scene.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -30,22 +31,12 @@ await initSubduction();
 const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
 if (!DRY) console.log(`connected to ${SYNC}`);
 
-// ─── an empty scene, as SceneDatatype.init writes it (scene/src/datatype.js) ──
+// ─── an empty scene, as SceneDatatype.init writes it (empty-scene.js) ──────
 // with the scene package as its suggested import, and the packages its
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
 // stage works these out from the registry; here they're stated
 const PACKAGES = ["scene", "sailing"];
-const scene = await repo.create2({
-  "@patchwork": scenePatchwork(),
-  title: "Ship at sea",
-  objects: {},
-  order: [],
-  dimensions: {},
-  traits: {},
-  assets: {},
-  packages: scenePackages(PACKAGES),
-  view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
-});
+const scene = await repo.create2(emptyScene({ title: "Ship at sea", patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────
 // The scene's own file doc for `key`: the one doc.assets[key] names, else one

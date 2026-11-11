@@ -189,7 +189,7 @@ try {
   };
 
   // both in play, running only the sailing extension and what it requires
-  const PLAY = ["sailing", "scene.activity", "scene.keys", "scene.notices", "scene.use"];
+  const PLAY = ["sailing", "scene.activity", "scene.keys", "scene.notices", "scene.packages", "scene.use"];
   await sleep(2500); // lingering parts each stop on their own timer
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in play", (await P("activity('a')")) === "play" && (await P("activity('b')")) === "play");
@@ -679,7 +679,16 @@ try {
       const w = await P(`byName(${JSON.stringify(name)})`);
       const s = name.startsWith("Port") ? -1 : 1;
       let aim = null;
-      // from its stand spot, looking at the winch (its origin, as she lies now), then either way abeam
+      // the pointer on the middle of its drum (0.35 up its own axis), where she is this moment: she's rolling, and the
+      // eye stays level, so a point on the drum's edge slides off it between the look and the key
+      const aimDrum = async () => {
+        const p = await P(`aimNear('${w}', 'b', ${JSON.stringify(apply(await P(`worldOf('${w}', 'b')`), [0, 0.35, 0]))})`);
+        if (!p || p.miss) return null;
+        await b.move(p.x, p.y);
+        await sleep(120);
+        return p;
+      };
+      // from the sole beside it, looking at the winch (its origin, as she lies now), then either way abeam
       await P(`place('b', '${hull}', [${s * 0.22}, 0.75, 2.3], 0, 0)`);
       await sleep(300);
       const mH = await P(`worldOf('${hull}', 'b')`), mW = await P(`worldOf('${w}', 'b')`), eye = (await P("me('b')")).eye;
@@ -688,13 +697,14 @@ try {
       for (const [yaw, pitch] of looks) {
         await P(`place('b', '${hull}', [${s * 0.22}, 0.75, 2.3], ${yaw}, ${pitch})`);
         await sleep(400);
-        aim = await pointAt(w, "b");
+        aim = await aimDrum();
         if (aim) break;
       }
       const vs = aim ? await P("verbs('b')") : [];
       furled.tried.push({ name, aim: !!aim, verbs: vs.map((v) => `${v.command}${v.disabled ? " (disabled)" : ""}: ${v.name}`) });
       if (!aim || vs.some((v) => v.disabled && /Lazy sheet/.test(v.name))) continue;
       await focus("b", aim);
+      aim = (await aimDrum()) ?? aim;
       await press("f");
       await sleep(400);
       furled.station = (await P("me('b')")).station === w;

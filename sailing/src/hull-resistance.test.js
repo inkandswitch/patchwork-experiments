@@ -3,7 +3,7 @@
 // designed on, else the hull the contract describes, §3.3), her canoe body
 // resists by the contract's R(V, φ) table with its planing blend (§6.5,
 // §6.5.6–7), pushes sideways by §6.4's Y_h and N_h, and her whole side
-// force costs §6.5.5's induced drag. The fixtures are the rig package's
+// force costs §6.5.5's induced drag. The fixtures are naval's
 // (test/rig-contract/); compose.js is its reference consumer of §6, copied.
 import { describe, it, expect } from "vitest";
 import { createShip } from "./physics.js";
@@ -12,8 +12,7 @@ import { contractResistance } from "./resistance.js";
 import { bodyRig, rigSpecParts, toContract } from "./rig-contract.js";
 import { hullTriangles, specFor, specKey } from "./sim.js";
 import { invert } from "./frames.js";
-import { contractShip, floatHeight, heelQuat, unflagged, windFrom } from "./test/agreement-harness.js";
-import { createOcean } from "./ocean.js";
+import { contractShip, floatHeight, heelQuat, unflagged } from "./test/agreement-harness.js";
 import { composer } from "./test/rig-contract/compose.js";
 import sloop from "./test/rig-contract/sloop-12m.json";
 import cuvature from "./test/rig-contract/cuvature-first-guess.json";

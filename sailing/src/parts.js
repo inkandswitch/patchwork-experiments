@@ -22,7 +22,7 @@
 import { FIT, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
 import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, WINCH } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
-import { apply, eulerFromQuat, invert, matrixOf, multiply, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
+import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
 /** The wind a new sea starts with: a working breeze from the north-east (speed m/s, from degrees). */
 export const WIND = Object.freeze({ speed: 7, from: 45 });
@@ -75,9 +75,8 @@ export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mai
 /**
  * Each kind's drawing's version, where it isn't 1: the hull's 2 has a stand
  * for the mainsheet, its 3 one for the jib's winches; the rig's 2 carries
- * her rig contract (extras.rig: stock-rig.js), so a doc that already has
- * `rig@1` keeps sailing as it did; the mast's 2 has no jib rolled on its
- * forestay (the jib is its own piece). Then every face wound to look out and
+ * her rig contract (extras.rig: stock-rig.js); the mast's 2 has no jib
+ * rolled on its forestay (the jib is its own piece). Then every face wound to look out and
  * no face lying on another's (shadows and depth fought there): the hull's 4,
  * the mast's 3, and 2 for the winch, windlass, mainsheet, wheel, anchor and
  * islet. The rig's 3 and the jib's 2 mark their cloth as taking no shadows
@@ -172,8 +171,6 @@ export function objectsFor(part, place, files, newId, { group = null, locked = f
 
 /** Write objects into the doc, in order. */
 export function writeObjects(d, objects) {
-  if (!d.objects) d.objects = {};
-  if (!d.order) d.order = [];
   for (const [id, o] of objects) {
     d.objects[id] = o;
     d.order.push(id);
@@ -229,7 +226,7 @@ export function part(name) {
   return {
     async create(ctx, at) {
       const files = await filesFor(ctx, [name]);
-      const scene = ctx.scene?.() ?? ctx.doc?.() ?? {};
+      const scene = ctx.scene();
       const ship = at?.parent ? shipAbove(scene, at.parent) : null;
       const place = placement(scene, at, name, ship ? (ctx.content?.(ship) ?? null) : null);
       // a pair across her (the winches) mirrors the first across her centreline
@@ -282,12 +279,10 @@ export async function sloopFiles(ctx) {
 export const sloop = {
   async create(ctx, at) {
     const files = await sloopFiles(ctx);
-    // where she was put, in the world (a stage older than `at.world`: through her parent as the doc has it)
-    const scene = ctx.scene?.() ?? ctx.doc?.() ?? {};
-    const world = at?.world ? matrixOf(at.world) : multiply(placeIn(scene, at?.parent ?? null, null) ?? matrixOf(null), matrixOf(at?.transform));
+    // where she was put, in the world (the stage's at.world: STAGE.md, api.part)
+    const world = matrixOf(at.world);
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {
-      if (!d.traits) d.traits = {};
       if (!d.traits[SEA]) d.traits[SEA] = newSea();
       writeObjects(d, objects);
     });

@@ -11,7 +11,8 @@
 // inverse(glbToFrame) · (body → contract).
 //
 // Everything here is gated on a contract being present: a hull or rig
-// without `extras.rig` never reaches this module, and sails as it did.
+// without `extras.rig` never reaches this module, and sails the plain path
+// (sim.js specFor: her box and `extras.sail`).
 
 import { eulerFromQuat, invert, multiply, poseOfMatrix } from "./frames.js";
 import { meshVolumeBelow } from "./hull-model.js";

@@ -1,4 +1,4 @@
-// The parts of the rig package's 12 m sloop fixture (naval/contract/v1/
+// The parts of naval's 12 m sloop fixture (naval/contract/v1/
 // fixtures/valid/sloop-12m.json; the test copy is test/rig-contract/
 // sloop-12m.json) that the stock sloop's contract keeps as they are
 // (stock-rig.js): her synthetic canoe body, its appendages and resistance,

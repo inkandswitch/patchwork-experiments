@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://patchwork.inkandswitch.com/rig/contract/v1/schema.json",
+  "$id": "https://patchwork.inkandswitch.com/naval/contract/v1/schema.json",
   "title": "patchwork-rig v1",
   "description": "Structural schema for extras.rig (format patchwork-rig, version 1). The numerical and cross-field rules are in specification.md §5; validate.js applies both.",
   "type": "object",
@@ -56,7 +56,7 @@
           "properties": {
             "kind": { "enum": ["linked", "synthetic"] },
             "url": { "type": ["string", "null"] },
-            "path": { "enum": ["render", "file", "source", null] },
+            "path": { "enum": ["file", "source", null] },
             "label": { "type": "string" },
             "heads": { "$ref": "#/$defs/stringsOrNull" },
             "glbKey": { "type": ["string", "null"] }

@@ -1,5 +1,5 @@
 // Sailing's physics against the rig aid's predictions (DESIGN.md, "The rig
-// contract"). For each of the rig package's valid contract fixtures
+// contract"). For each of naval's valid contract fixtures
 // (copied into test/rig-contract/ from naval/contract/v1/fixtures/valid, with
 // its reference consumer of §6, compose.js):
 //
@@ -51,7 +51,10 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  * under the keel's stall), and her sails each their own foil (§6.2–6.3:
  * sails-jib.test.js reproduces every set's trimmed CL and CD through the
  * wrench). The 12 m sloop and the Catalina 30 pass every point and settle
- * within every tolerance, so they're not listed.
+ * within every tolerance, so they're not listed. cuvature's entries were
+ * re-measured 2026-11-10 on naval's balanced first guess (her rig 1.81 m
+ * further aft: lead 7%, the reference point's rudder 0.5° where it was
+ * −5.9°).
  * `wrench`: the points that fail (wrench, helm or heel), how many pass of
  * how many, and the worst of each kind: residuals in tolerances (1 is the
  * limit; signs as the harness's: surge + forward, sway + to leeward, roll +
@@ -63,8 +66,8 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  * at every point, or switching a term off in a scratch copy, not here):
  * - windage. Sailing's wind on her topsides and bare mast, which §6.1
  *   leaves out, costs every boat drive and heels her (at 12 kn 45°: 209 N
- *   of the sloop's 232 N surge residual; more than all of cuvature's 353 N;
- *   36 of the Laser's 37 N). Less windage, the water's and the sails'
+ *   of the sloop's 232 N surge residual; 395 N of cuvature's 428 N; 36 of
+ *   the Laser's 37 N). Less windage, the water's and the sails'
  *   forces close: every fixture's surge residual is within 0.07 of its
  *   tolerance at every point, and its sway within 0.15, but for the Laser
  *   running at 135° (0.84 at 16 kn, where sailing's sails heel her with
@@ -72,15 +75,25 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  *   It is under 2% of weight on the keelboats but not on the Laser, whose
  *   close-hauled and reaching surge, sway and roll failures it all is;
  *   with it, her settle is 9% slow and heels 2.1° less.
+ *   cuvature's settle is windage's too: 395 N is a quarter of her 1602 N
+ *   of drive at the reference point (5.54 m of beam and 1.77 m of freeboard
+ *   to the wind; the sloop's 209 N is 18% of hers, and she settles 4.8%
+ *   slow), close-hauled where her polar is steep (3.52 m/s at 40°, 3.88 at
+ *   45°), so she settles at 3.24 m/s against 3.88: 16.4% slow, past the 10%.
+ *   With windage switched off she settles at 3.85 m/s (0.8% slow): the
+ *   water's and the sails' forces are the contract's. The first guess
+ *   before this one passed (3.81 m/s) only because its 6° of lee helm let
+ *   the harness's proportional helmsman sit 5° off course, at 50°, where
+ *   she is faster; with a balanced rig she is held at 45° (0.2° off).
  * - cuvature's righting moment: her stand-in hull (the contract describes
  *   her drawn hull only by its coefficients) is 14–18% short past 10°
- *   (hull-resistance.test.js), so roll and heel fail at 20 points (worst
- *   2.47 tolerances, 5.2° of heel at 20 kn), and her settle heels 12.2°
- *   against 10.3° (inside ±2° by 0.04°). In the sim she floats on her drawn
- *   mesh. Two of those points (20 kn 40° and 45°) also miss the helm by 2.07°
- *   and 1.85°, which is windage's (1.1° and 1.0° without it). (2.0° until
- *   the Munk moment went as u·v, sin λ·cos λ, not sin λ: its cos λ, which
- *   stock-rig.test.js checks against §6.4 at λ 5° and 15°.)
+ *   (hull-resistance.test.js), so roll fails at 21 points and heel at 17
+ *   of them (worst 2.57 tolerances, 5.4° of heel at 20 kn; without windage
+ *   18 points, 2.41 and 5.2°), and her settle heels 10.8° against 10.2°.
+ *   In the sim she floats on her drawn mesh. No point misses the helm now
+ *   (worst −1.30° at 20 kn 40°, −0.48° without windage). (Her Munk moment
+ *   goes as u·v, sin λ·cos λ, not §6.4's sin λ: its cos λ, which
+ *   stock-rig.test.js checks at λ 5° and 15°.)
  * - the J/24 at 14 kn 52°: her righting curve is near its top there, so a
  *   roll residual of 0.17 tolerances is 2.2° less heel than predicted; less
  *   windage, 13 more of her points do the same (2.1–3.7° less heel at 14–20
@@ -98,11 +111,13 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
 const KNOWN_GAPS = {
   "cuvature-first-guess": {
     wrench: {
-      failing: ["12 kn 45°", "12 kn 52°", "14 kn 40°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "14 kn 70°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°"],
-      pass: 71,
+      failing: ["12 kn 40°", "12 kn 45°", "12 kn 52°", "14 kn 40°", "14 kn 45°", "14 kn 52°", "14 kn 60°", "14 kn 70°", "16 kn 40°", "16 kn 45°", "16 kn 52°", "16 kn 60°", "16 kn 70°", "16 kn 75°", "20 kn 40°", "20 kn 45°", "20 kn 52°", "20 kn 60°", "20 kn 70°", "20 kn 75°", "20 kn 90°"],
+      pass: 70,
       of: 91,
-      worst: { surge: -0.533, sway: 0.509, roll: 2.465, yaw: -0.21, heelDeg: 5.245, rudderDeg: -2.069 },
+      worst: { surge: -0.659, sway: 0.52, roll: 2.565, yaw: 0.139, heelDeg: 5.449, rudderDeg: -1.302 },
     },
+    // 16.4% slow at 12 kn 45° (predicted 3.881 m/s): windage, above
+    settle: { speedMs: 3.243, heelDeg: 10.82, leewayDeg: 4.64, rudderDeg: 0.2, fails: ["speed"] },
   },
   j24: {
     wrench: { failing: ["14 kn 52°"], pass: 90, of: 91, worst: { surge: -0.623, sway: 0.752, roll: -0.49, yaw: 0.3, heelDeg: -2.161, rudderDeg: 0.984 } },

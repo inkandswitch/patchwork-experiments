@@ -5,13 +5,13 @@ import { createSeaView } from "../sea-view.js";
 import { createLooks } from "../looks.js";
 import { createSim } from "../sim.js";
 import { ANCHOR, SAIL } from "../traits.js";
-import { fakeDrop, fakeNode } from "./fakes.js";
+import { emptyScene, fakeDrop, fakeNode } from "./fakes.js";
 
 export const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
 
 /** A sloop laid out as the template does, on a beam reach with its anchor up, and the content the stage would show. */
 export async function sloop({ yaw = headTo(45 - 90), down = false } = {}) {
-  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
+  const doc = emptyScene();
   const hull = await layOutShip(
     fakeDrop(doc).ctx,
     { wind: { speed: 7, from: 45 }, seed: 3 },

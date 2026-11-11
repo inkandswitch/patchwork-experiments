@@ -6,7 +6,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import play from "./play.js";
 import { layOutShip, headTo } from "./layout.js";
 import { apply, invert, unrotateM as unrotate, rotateM as rotate } from "./frames.js";
-import { fakeDrop, fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
+import { emptyScene, fakeDrop, fakeNode, fakeWorld, meshNode } from "./test/fakes.js";
 import { boxTriangles } from "./navmesh.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
@@ -50,7 +50,7 @@ function rays(worldOf, hull) {
 }
 
 async function sloop() {
-  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
+  const doc = emptyScene();
   const hull = await layOutShip(
     fakeDrop(doc).ctx,
     { wind: { speed: 7, from: 45 }, seed: 3 },
@@ -119,6 +119,8 @@ function join(w, session, hull) {
       get: () => ({ ...s.cam }),
       set: (c) => (s.cam = { ...s.cam, ...c }),
       hold: () => (s.held++, () => s.held--),
+      // the stage carries the camera with what it rides (STAGE.md, "Riding"): here, only asked and let go
+      ride: () => () => {},
     },
   });
   s.api = api;
