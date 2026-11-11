@@ -89,7 +89,7 @@ describe("the rig GLB", () => {
       const aft = doc.rig.forestayAftOfStem;
       expect(aft).toBeGreaterThanOrEqual(0);
       if (id === "sloop-12m") expect(aft).toBe(0);
-      else expect(aft).toBeGreaterThan(1);
+      else expect(aft).toBeGreaterThan(0);
       rows.push([`forestay tack, ${aft.toFixed(2)} m aft of the stemhead`, near([tack[0] + aft, tack[1], tack[2]], stem)]);
       // chainplates: on the sheer (the highest vertex at that station), inside the hull's breadth there
       for (const cp of c.hardpoints.chainplates) {

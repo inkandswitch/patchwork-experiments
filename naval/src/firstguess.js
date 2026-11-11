@@ -77,9 +77,10 @@ export const RULES = {
   },
   keelShape: { fin: { taper: 0.6, sweepDeg: 8, tc: 0.12 }, board: { taper: 1, sweepDeg: 0, tc: 0.1 }, basis: "A tapered, lightly swept fin, t/c 12%; a rectangular board, t/c 10% (Laser 0.097)", verify: VERIFY },
   keelAt: {
+    keelAtLwl: 0.455,
     boardAtLwl: 0.42,
     basis:
-      "A keelboat's keel with its quarter chord (on the MAC) over the LCB, so its ballast trims her level; the mass model keeps G over the LCB too. A dinghy's board with its quarter chord 42% of the LWL aft of the waterline's forward end (Laser). The keel is not moved for the lead: the rig is (the mast rule). The helm is the helpers', and the first guess reports it",
+      "A keelboat's keel with its quarter chord (on the MAC) 45.5% of the LWL aft of the waterline's forward end: the mean of the six fin-keel boats whose keels are from drawings (Soling 0.416, Farr 40 0.445, Cal 40 0.453, HR 40C 0.456, J/70 0.476, Contessa 32 0.486). The plan's 'over the LCB' put it 4–11% of the LWL aft of every one of them. A dinghy's board 42% (Laser 0.416, 470 0.426). The keel is not moved for the lead: the rig is (the mast rule). The helm is the helpers', and the first guess reports it",
     verify: VERIFY,
   },
 
@@ -103,10 +104,10 @@ export const RULES = {
     verify: VERIFY,
   },
   mast: {
-    jOverLwl: 0.46,
+    jOverLoa: 0.38,
     catAtLoa: 0.31,
     basis:
-      "Sloops and cutters: J = 0.46·LWL (Catalina 30 0.46, J/24 0.48, stock 0.46; the plan's 0.3·LWL is shorter than all three), and the mast where the lead over the extended-keel CLR is the middle of its band (a cutter uses the masthead's), the forestay's tack as far aft of the stem as that takes, never forward of it, and the boom's end never aft of the stern. Cat: 0.31·LOA aft of the stem (Laser 1.305/4.23); no lead band is quoted for a cat",
+      "Sloops and cutters: J = 0.38·LOA (Farr 40 0.379, Catalina 30 0.384, Cal 40 0.386, Contessa 32 0.396, J/24 0.396, stock 0.40, HR 40C 0.372; by the LWL the same boats run 0.39–0.53, and 0.46·LWL was longer than a plumb-bowed hull's foredeck), and the mast where the lead over the extended-keel CLR is the middle of its band (a cutter uses the masthead's), the forestay's tack as far aft of the stem as that takes, never forward of it, and the boom's end never aft of the stern. Cat: 0.31·LOA aft of the stem (Laser 1.305/4.23); no lead band is quoted for a cat",
     verify: VERIFY,
   },
   headsail: { lpOverJ: 1.05, basis: "A 105% jib; a cutter's staysail I2 0.8·I, J2 0.5·J, LP2 0.45·J (as the tool's cutter choice)", verify: VERIFY },
@@ -181,7 +182,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
   const r = cat ? RULES.pOverE.cat : RULES.pOverE.keelboat;
   const bas = RULES.basOverP.value;
   const c = cat ? 0 : type === "fractional" ? RULES.iOverP.fractional * (1 + bas) : bas + RULES.iOverP.masthead;
-  const J = cat ? 0 : RULES.mast.jOverLwl * lwl;
+  const J = cat ? 0 : RULES.mast.jOverLoa * loa;
   const mastX = cat ? RULES.mast.catAtLoa * loa : J;
   const P = pForArea(area, { r, c, J });
   const BAS = bas * P;
@@ -275,8 +276,8 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
       },
     });
 
-  // ── the keel: its quarter chord over the LCB (keelboat), a dinghy's board by its rule
-  const keel = keelAt(dinghy ? h.xFwd - RULES.keelAt.boardAtLwl * lwl : h.lcb);
+  // ── the keel: its quarter chord a fraction of the LWL aft of the waterline's forward end (keelboat and dinghy each by its rule)
+  const keel = keelAt(h.xFwd - (dinghy ? RULES.keelAt.boardAtLwl : RULES.keelAt.keelAtLwl) * lwl);
   const bulb = keel.bulb;
 
   // ── the mast: where the lead is its band's middle (see the header); a cat's stays by its rule
@@ -295,7 +296,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
         why:
           mast.m == null
             ? `this hull is too heavy to rig by the rules: at ${(massKg / 1000).toFixed(1)} t, SA/D ${saD} is ${area.toFixed(0)} m², whose J ${m(J)} and boom ${m(rig0.E)} are together longer than her ${m(loa)} overall`
-            : `no mast position balances this hull: with the keel over the LCB, the lead is in its ${bandText} band nowhere from ${m(lo)} (the forestay's tack at the stem) to ${m(hi)} aft of the stem (the boom's end at the stern); the nearest, at ${m(mast.m)}, gives ${pct(mast.lead)}`,
+            : `no mast position balances this hull: with the keel where its rule puts it, the lead is in its ${bandText} band nowhere from ${m(lo)} (the forestay's tack at the stem) to ${m(hi)} aft of the stem (the boom's end at the stern); the nearest, at ${m(mast.m)}, gives ${pct(mast.lead)}`,
       };
     }
     rig = { ...rig0, mast: { ...rig0.mast, aftOfStem: round(mast.m) }, forestayAftOfStem: round(mast.m - J) };

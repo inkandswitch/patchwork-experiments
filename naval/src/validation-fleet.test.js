@@ -38,7 +38,7 @@ const OLDER = {
     phrf: { value: 184, source: "phrf-alamo" },
     real: { mastAftOfStem: { status: "given", how: "J 11.50 ft, the tack taken at the stem (estimated)" }, keelLeAftOfStem: { status: "placed", how: "no source: placed with its quarter chord near the LCB" } },
     weight: "none",
-    why: "Her keel's position is not from any source: it was placed by the same rule the first guess uses. Her lead says where that rule puts a keel, not where Catalina did.",
+    why: "Her keel's position is not from any source: it was placed with its quarter chord over the LCB, the rule the first guess used before the sourced boats replaced it. Her lead says where that rule put a keel, not where Catalina did.",
   },
   j24: {
     phrf: { value: 170, source: "phrf-alamo" },
@@ -63,17 +63,17 @@ const OLDER = {
  * type) puts the mast, m aft of the stem, or null where it refuses.
  */
 const PINNED = {
-  "catalina-30": { leadLE: 19.5, leadWhole: 25.5, leadHc: 30.7, helm: -3.5, fgMast: 4.36 },
-  "j24": { leadLE: 16.2, leadWhole: 28.1, leadHc: 29.6, helm: -5.3, fgMast: 3.69 },
+  "catalina-30": { leadLE: 19.5, leadWhole: 25.5, leadHc: 30.7, helm: -3.5, fgMast: 3.77 },
+  "j24": { leadLE: 16.2, leadWhole: 28.1, leadHc: 29.6, helm: -5.3, fgMast: 3.23 },
   "laser-ilca7": { leadLE: -10.1, leadWhole: 7.2, leadHc: 3.2, helm: 1.4, fgMast: 1.31 },
-  "j70": { leadLE: 11.5, leadWhole: 21.8, leadHc: 24.8, helm: -2.4, fgMast: 3.67 },
-  "farr40": { leadLE: 5.4, leadWhole: 17.3, leadHc: 23.8, helm: -0.9, fgMast: 6.5 },
-  "soling": { leadLE: 4.6, leadWhole: 19.2, leadHc: 17.1, helm: -0.3, fgMast: 4.33 },
-  "folkboat": { leadLE: 16.5, leadWhole: 18.8, leadHc: 13.9, helm: 5.2, fgMast: 3.71 },
-  "cal40": { leadLE: 10.4, leadWhole: 22.7, leadHc: 21.7, helm: -2.6, fgMast: 5.97 },
-  "contessa32": { leadLE: 15.9, leadWhole: 28.4, leadHc: 26.9, helm: -2, fgMast: 4.76 },
-  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2.1, fgMast: 5.97 },
-  "dinghy-470": { leadLE: 0.6, leadWhole: 16.6, leadHc: 11.8, helm: -1.6, fgMast: null },
+  "j70": { leadLE: 11.5, leadWhole: 21.8, leadHc: 24.8, helm: -2.4, fgMast: 3.1 },
+  "farr40": { leadLE: 5.4, leadWhole: 17.3, leadHc: 23.8, helm: -0.9, fgMast: 5.59 },
+  "soling": { leadLE: 4.6, leadWhole: 19.2, leadHc: 17.1, helm: -0.3, fgMast: 4 },
+  "folkboat": { leadLE: 16.5, leadWhole: 18.8, leadHc: 13.9, helm: 5.2, fgMast: 3.33 },
+  "cal40": { leadLE: 10.4, leadWhole: 22.7, leadHc: 21.7, helm: -2.6, fgMast: 5.42 },
+  "contessa32": { leadLE: 15.9, leadWhole: 28.4, leadHc: 26.9, helm: -2, fgMast: 4.37 },
+  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2.1, fgMast: 4.77 },
+  "dinghy-470": { leadLE: 0.6, leadWhole: 16.6, leadHc: 11.8, helm: -1.6, fgMast: 1.79 },
 };
 const RATCHET = { lead: 0.3, helm: 0.5, mast: 0.03 };
 

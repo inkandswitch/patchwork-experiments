@@ -144,12 +144,12 @@ describe("a first guess on camber's hulls (12 m, floated at a given 8 t)", () =>
       expect(r.type).toBe("masthead");
       expect(Math.abs(n.ratios.saDDesigner - 17)).toBeLessThan(0.5);
       expect(n.ratios.saDDesigner).toBeCloseTo(17, 3); // solved, not approximated
-      expect(jOf(g.doc.rig)).toBeCloseTo(RULES.mast.jOverLwl * h.lwl, 3);
+      expect(jOf(g.doc.rig)).toBeCloseTo(RULES.mast.jOverLoa * n.form.loa, 3);
       expectBalanced(g, n);
       expect(g.doc.rig.P / g.doc.rig.E).toBeCloseTo(3, 3);
       expect(g.doc.rig.BAS / g.doc.rig.P).toBeCloseTo(0.12, 3);
       expect(n.ratios.ballast).toBeCloseTo(0.38, 3);
-      expect(Math.abs(keel.qc[0] - h.lcb)).toBeLessThan(0.01); // its quarter chord over the LCB
+      expect(Math.abs(keel.qc[0] - (h.xFwd - RULES.keelAt.keelAtLwl * h.lwl))).toBeLessThan(0.01); // its quarter chord by its rule
       expect(keel.areaM2 / n.plan.designer.areaM2).toBeCloseTo(0.04, 3);
       expect(keel.arGeom).toBeGreaterThanOrEqual(RULES.keelArea.minArGeom - 1e-3); // planform rounded to 0.1 mm
       expect(r.draftOverallM).toBeGreaterThanOrEqual(RULES.draft.keelboat * h.lwl - 0.01);
@@ -229,16 +229,16 @@ describe("a first guess on the fixtures' hulls, against the real boats (the rule
   });
 
   it("says so, and guesses nothing, when no mast position balances the hull or the rig doesn't fit it", () => {
-    // narrow-transom at 12 m floated at 16 t: SA/D 17's boom leaves the mast 4.39–5.64 m, and the keel
-    // (over the LCB) is too far aft of that for the band: the nearest position still reads 10.8%
-    const a = firstGuess(linkedDoc(16000), { linked: camber("narrow-transom") });
+    // cuvature-kink at 12 m floated at 20 t: SA/D 17's J and boom leave the mast 4.27–4.30 m, the tack at the
+    // stem, and the keel (by its rule) is too far forward of that for the band: the nearest position still reads 3.9%
+    const a = firstGuess(linkedDoc(20000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
     expect(a.ok).toBe(false);
-    expect(a.why).toMatch(/^no mast position balances this hull: .* 5\.0%–9\.0% band nowhere from 4\.39 m .* to 5\.64 m aft of the stem .*; the nearest, at 5\.64 m, gives 10\.8%$/);
+    expect(a.why).toMatch(/^no mast position balances this hull: .* 5\.0%–9\.0% band nowhere from 4\.27 m .* to 4\.30 m aft of the stem .*; the nearest, at 4\.27 m, gives 3\.9%$/);
     expect(a.doc).toBeUndefined();
-    // cuvature-kink at 12 m at 24 t (it floats at 23.7 t as drawn): J and the boom together are longer than the hull
+    // the same hull at 24 t (it floats at 23.7 t as drawn): J and the boom together are longer than the hull
     const b = firstGuess(linkedDoc(24000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
     expect(b.ok).toBe(false);
-    expect(b.why).toMatch(/^this hull is too heavy to rig by the rules: at 24\.0 t, SA\/D 17 is \d+ m², whose J 4\.64 m and boom 7\.33 m are together longer than her 11\.24 m overall$/);
+    expect(b.why).toMatch(/^this hull is too heavy to rig by the rules: at 24\.0 t, SA\/D 17 is \d+ m², whose J 4\.27 m and boom \d\.\d\d m are together longer than her 11\.24 m overall$/);
     expect(b.doc).toBeUndefined();
     console.log(`refusals:\n  ${a.why}\n  ${b.why}`);
   });
