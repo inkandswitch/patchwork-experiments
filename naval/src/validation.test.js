@@ -16,7 +16,7 @@ import { computeNumbers } from "./numbers.js";
 import { buildTable } from "./naval/statics.js";
 import { buildDesign } from "./naval/design.js";
 import { solvePoint, polar } from "./naval/vpp.js";
-import { FT, KNOT } from "./naval/units.js";
+import { FT, KNOT, LB } from "./naval/units.js";
 import { G } from "./naval/ratios.js";
 
 const byId = Object.fromEntries(FIXTURES.map((f) => [f.id, f.fixture]));
@@ -61,6 +61,13 @@ const OURS = {
   wettedM2: (n) => n.form.hydro.wsaCanoeM2,
   rm1KgM: (n) => readout(n, "rm1") / G,
   avsDeg: (n) => readout(n, "avs"),
+  // added with the 2026-11-10 fleet
+  capsize: (n, doc) => doc.hull.dims.beam / FT / Math.cbrt(n.displacement.kg / LB / 64), // not a tool row: worked from the doc
+  awM2: (n) => n.form.hydro.awM2,
+  bmtM: (n) => n.form.hydro.bmt,
+  gmM: (n) => readout(n, "gmTable"),
+  gzMaxM: (n) => readout(n, "gzMax"),
+  rm30KgM: (n) => readout(n, "rm30") / G,
 };
 
 const within = (ours, theirs, tol) => (tol.rel != null ? Math.abs(ours / theirs - 1) <= tol.rel : Math.abs(ours - theirs) <= tol.abs);
@@ -117,7 +124,7 @@ for (const { id, label, fixture: fx } of FIXTURES)
       const fails = [];
       for (const f of fx.published.figures) {
         const { doc, n } = numbersOf(fx, f.condition ?? null);
-        const ours = OURS[f.id](n);
+        const ours = OURS[f.id](n, doc);
         const est = estimatedOf(doc);
         const ok = f.tol ? within(ours, f.value, f.tol) : null;
         // a ratchet: within ±ratchet of what was measured when the gap was recorded

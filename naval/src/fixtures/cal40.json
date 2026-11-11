@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "title": "Cal 40",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 11.987784,
+      "lwl": 9.244584,
+      "beam": 3.3528,
+      "bwl": 3.15,
+      "tc": 0.55,
+      "draft": 1.700784,
+      "freeboard": 1.21,
+      "displacementKg": 6803.88555,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "masthead",
+    "mast": {
+      "aftOfStem": 4.623816,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 14.0208,
+    "P": 12.192,
+    "E": 5.334,
+    "BAS": 1.41,
+    "ISP": null,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0,
+      "reefs": [
+        0.15,
+        0.3
+      ]
+    },
+    "headsail": {
+      "kind": "genoa",
+      "LP": 6.9342,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 4.52,
+      "span": 1.1696,
+      "rootChord": 4.37,
+      "tipChord": 2.52,
+      "sweepDeg": 39,
+      "tc": 0.075,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 10.09,
+      "span": 1,
+      "rootChord": 0.762,
+      "tipChord": 0.381,
+      "sweepDeg": 33.6,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.26
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 2721.55422,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 6,
+      "kgEach": 80,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.BAS": "estimated",
+    "rig.forestayAftOfStem": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "appendages.rudder.stockFrac": "estimated",
+    "loading.crew.count": "estimated"
+  },
+  "sources": [
+    {
+      "id": "gob-cal40",
+      "what": "LOA 39.33, LWL 30.33, beam 11.00, draft 5.58 ft, displacement 15,000 lb, ballast 6,000 lb; I 46, J 15.17, P 40, E 17.50 ft",
+      "cite": "Good Old Boat sail data (Sailrite), \"Cal 40\"",
+      "url": "https://goodoldboat.com/saildata/boat/cal-40/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "cal40-lines",
+      "what": "Lapworth's lines drawing: DISP. 14300# S.W., #/INCH 1060, W.P. COEF .666, W.S. 325.19; stations 3 ft apart, the stemhead 4'-6\" forward of station 0; rudder chords 30 in and 15 in, its tip 3'-8\" below the DWL; measured for the keel, the rudder and the hull's profile",
+      "cite": "C. William Lapworth, Cal 40 lines (1963), scan on the Cal 40 class site",
+      "url": "https://www.cal40.com/files/TEMP006.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Scale 224.5 px/ft from the stations (224.3 from the dimensioned 39'-4\"). Checks: draft 5.53–5.68 ft (5.58 published), beam 10.8–10.9 ft (11.0). Read off it: the keel's straight leading edge produced to the hull 14.83 ft (4.52 m) aft of the stemhead (its fillet leaves the hull at about 13.7 ft), the trailing edge at 29.16 ft; chord 14.33 ft at the hull, 8.27 ft at the bottom; span 3.91–4.37 ft; leading-edge sweep 39°. Rudder leading edge 33.12 ft at the hull, sweep 33.6°, stock at about 26% chord. The 'DWL 6' half-breadth gives BWL about 3.15 m; the canoe body is 0.39–0.50 m deep at the keel's ends (its lowest point is hidden by the keel). Straight edges ±0.03 m; the keel's root corners depend on the fillet, ±0.1 m."
+    },
+    {
+      "id": "cal40-sailplan",
+      "what": "Lapworth's sail and rig plan, 3/8\" = 1 ft, 24 January 1963: P 40.00, P2 46.00, E 17.50, J 15.17; main 350 ft²; genoa luff 45'-9\", foot 24'-6\", leech 43'-2\", 520 ft², LP 22'-9\"; measured for the mast and the forestay's tack",
+      "cite": "C. William Lapworth, California 40 sail & rig plan (1963); and the inboard profile of 10 January 1963",
+      "url": "https://www.cal40.com/files/TEMP005.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The mast's front face reads 15.08–15.14 ft aft of the stemhead on the sail plan and 14.98–15.05 ft on the inboard profile (https://www.cal40.com/files/TEMP004.pdf), against J 15.17 ft with the tack at the stemhead fitting (read 0.04 ft aft of it). Boom 4.6 ft above the sheer at the mast (±0.2). The inboard profile shows the mast stepped on the hull's floor."
+    },
+    {
+      "id": "ps-cal40",
+      "what": "S.A./Displ. 18.48 (calc. 18.45), Bal./Displ. 40, Disp./Len. 240.01, capsize screening 1.79, hull speed 7.38 kn; S.A. fore 348.91 ft²; PHRF 108–120 by region",
+      "cite": "Practical Sailor, Cal 40 review (embeds sailboatdata's table)",
+      "url": "https://www.practical-sailor.com/sailboat-reviews/cal-40/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "ncphrf",
+      "what": "PHRF base ratings: CAL 40 114 (dated 12/29/1988); Contessa 32 186 (3/16/2000)",
+      "cite": "NCPHRF Base Rating Report, YRA of San Francisco Bay, 1 September 2026 edition",
+      "url": "https://yra.org/wp-content/uploads/2026/09/ncphrf_baserates090126.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "A different list from the Alamo's: usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "Published dimensions and Lapworth's own dimensioned drawings. The mast is J aft of the stemhead (the forestay's tack is at the stemhead fitting on the sail plan).",
+    "figures": [
+      {
+        "id": "saDesignerFt2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 698.91,
+        "unit": "ft²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "ps-cal40",
+        "work": "½·40·17.5 + ½·46·15.17 = 350.00 + 348.91"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D",
+        "value": 18.45,
+        "unit": "",
+        "tol": {
+          "abs": 0.1
+        },
+        "source": "ps-cal40",
+        "work": "698.91 / (15,000/64)^(2/3) = 698.91/38.02 = 18.38; the printed 18.45 (calc.) and 18.48 are on about 702 ft², J 15.3"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 240.01,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "ps-cal40",
+        "work": "(15,000/2240)/(0.01·30.33)³ = 6.6964/0.027901 = 240.0"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.4,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "ps-cal40",
+        "work": "6,000 / 15,000"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 7.38,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "ps-cal40",
+        "work": "1.34·√30.33 = 7.380"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 1.79,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "ps-cal40",
+        "work": "11.00 / (15,000/64)^⅓ = 11/6.166 = 1.784"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 1.700784,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "gob-cal40",
+        "roundTrip": "the keel's span is solved so that the draft reaches the published 5.58 ft (the drawing's span is 1.19–1.33 m)"
+      },
+      {
+        "id": "awM2",
+        "label": "Waterplane area (the lines' 1060 lb per inch, at 14,300 lb)",
+        "value": 18.4678,
+        "unit": "m²",
+        "tol": null,
+        "source": "cal40-lines",
+        "condition": "design",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the synthetic hull's waterplane on a BWL read off the drawing; the lines' own waterplane coefficient is 0.666",
+        "work": "1060 lb per inch = 1060/0.0254 · 0.4536 = 18,929 kg per metre of immersion; / 1025 kg/m³ = 18.47 m²"
+      },
+      {
+        "id": "wettedM2",
+        "label": "Wetted surface (the lines' 325.19 ft², at 14,300 lb)",
+        "value": 30.2111,
+        "unit": "m²",
+        "tol": null,
+        "source": "cal40-lines",
+        "condition": "design",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the lines don't say whether the figure includes the keel and rudder; ours is shown both ways"
+      }
+    ],
+    "conditions": {
+      "design": {
+        "what": "The lines drawing's design displacement, 14,300 lb in salt water, no crew",
+        "displacementKg": 6486.370891,
+        "crew": {
+          "count": 0,
+          "kgEach": 80,
+          "mode": "none"
+        }
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 114,
+        "source": "ncphrf"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 4.623816,
+          "status": "given",
+          "how": "J 15.17 ft on Lapworth's sail plan, the tack at the stemhead fitting; the mast's face reads 4.57–4.61 m on two drawings",
+          "pm": 0.04
+        },
+        "keelLeAftOfStem": {
+          "value": 4.52,
+          "status": "estimated",
+          "how": "the straight leading edge produced to the hull on Lapworth's lines, scaled by its stations",
+          "pm": 0.1
+        },
+        "wlFwdAftOfStem": {
+          "value": 1.3716,
+          "status": "given",
+          "how": "dimensioned on the lines: station 0 is 4'-6\" aft of the stemhead"
+        }
+      },
+      "weight": "good",
+      "why": "The rig is dimensioned on the designer's sail plan and the keel and rudder are read off his lines, whose scale checks to 0.2% against its own dimensions. The keel's root corner depends on how its fillet is read (±0.1 m). Her keel is a fin by family, but its root is 47% of the LWL long."
+    },
+    "disagreements": [
+      {
+        "what": "LWL",
+        "values": [
+          {
+            "value": "30.33 ft",
+            "source": "gob-cal40"
+          },
+          {
+            "value": "30.0 ft as drawn at 14,300 lb",
+            "source": "cal40-lines"
+          }
+        ],
+        "used": "30.33 ft (published, with the published 15,000 lb)"
+      },
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "15,000 lb",
+            "source": "gob-cal40"
+          },
+          {
+            "value": "14,300 lb (design, salt water)",
+            "source": "cal40-lines"
+          }
+        ],
+        "used": "15,000 lb in the doc; the lines' own figures are compared at 14,300 lb"
+      },
+      {
+        "what": "J",
+        "values": [
+          {
+            "value": "15.17 ft",
+            "source": "cal40-sailplan"
+          },
+          {
+            "value": "15.30 ft (class band limit; sailboatdata's SA/D is on about this)",
+            "source": "ps-cal40"
+          }
+        ],
+        "used": "15.17 ft (the designer's)"
+      }
+    ],
+    "estimatedWhy": "BWL (the 'DWL 6' half-breadth), Tc, freeboard, BAS and the forestay's tack are read off Lapworth's drawings. The keel's and rudder's positions, the keel's chords and both sweeps are read off the lines; the rudder's chords are dimensioned there. The keel's section is about 0.26 m thick on the body plan. The synthetic hull puts the waterline's forward end 0.6·(LOA − LWL) = 1.65 m aft of the stem; the lines' is 1.37 m."
+  }
+}

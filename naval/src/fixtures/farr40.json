@@ -1,0 +1,555 @@
+{
+  "version": 1,
+  "title": "Farr 40 One Design",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 12.41,
+      "lwl": 10.75,
+      "beam": 4.03,
+      "bwl": 2.8323,
+      "tc": 0.37,
+      "draft": 2.6,
+      "freeboard": 1.186,
+      "displacementKg": 4945,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 4.705,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 16.2,
+    "P": 16.7,
+    "E": 5.9,
+    "BAS": 1.76,
+    "ISP": 18.3,
+    "forestayAftOfStem": 0,
+    "main": {
+      "roach": 0.28164,
+      "reefs": []
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 4.94,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin-bulb",
+      "aftOfStem": 5.35,
+      "span": 1.7966,
+      "rootChord": 0.79,
+      "tipChord": 0.655,
+      "sweepDeg": 15.8,
+      "tc": 0.12,
+      "bulb": {
+        "length": 1.77,
+        "diameter": 0.4362
+      }
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 11,
+      "span": 2.02,
+      "rootChord": 0.49,
+      "tipChord": 0.26,
+      "sweepDeg": 13,
+      "tc": 0.1561,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 2250,
+      "at": "bulb"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 8,
+      "kgEach": 85,
+      "mode": "rail",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.keel.bulb.length": "estimated",
+    "appendages.keel.bulb.diameter": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "loading.crew.count": "estimated",
+    "loading.crew.kgEach": "estimated"
+  },
+  "sources": [
+    {
+      "id": "orc-farr40",
+      "what": "LOA 12.411, beam 3.956, draft 2.593, displacement 4 966 kg; P 16.700, E 5.900, IG 16.318, J 4.705, ISP 18.300, BAS 1.760, SFJ 0.000; main 63.14, headsail 43.23 m² (HLP 4.94); wetted area 27.64; sink 20.97 kg/mm; RM 171.6 kg·m; LPS 131.4°; VCGM −0.372; FF 1.346, FA 1.026; crew 570–760 kg; rated boat velocities",
+      "cite": "ORC International One Design Certificate 2021, Farr 40 OD (sample certificate marked TEST), VPP ver. 2021 1.00",
+      "url": "https://data.orc.org/public/od/2021/farr40.od.html?nav=1",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The certificate's SG field is blank; 1.025 is assumed for the sink figure."
+    },
+    {
+      "id": "farr-374",
+      "what": "LOA 12.41 m, beam 4.03, LWL 10.75, draft 2.6, displacement 4,945 kg, ballast 2,250 kg; brochure: IM 16.20, J 4.71, P 16.70, E 5.90, RMC 175 kg·m, steel fin and lead bulb",
+      "cite": "Farr Yacht Design, design 374 (page and brochure 374brochure.pdf, p. 6)",
+      "url": "https://www.farrdesign.com/yacht/374",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "farr-374-drawings",
+      "what": "The inboard profile measured for the waterline's ends, the mast, the keel, the bulb and the rudder; the sail plan labelled P 16.700, IM 16.200, E 5.900, J 4.705",
+      "cite": "Farr Yacht Design, promotional sail plan and interior arrangement of design 374, vector PDFs dated 12/29/2010, marked NOT TO SCALE",
+      "url": "https://www.farrdesign.com/resources/374/374interior.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Scaled on LOA (2578 px = 12.411 m, 4.81 mm/px). Checks against published figures: LWL 10.745 (10.75), draft 2.600 (2.60), mast front 4.708 (J 4.705), bow freeboard 1.362 (ORC FF 1.346). Keel: straight leading edge produced to the hull 5.35 m aft of the stem (its fillet meets the hull at 5.12), trailing edge 6.14; chord 0.79 m at the hull and 0.655 at the bulb; leading-edge sweep 15.8°; hull to bulb top 1.63 m, to keel bottom 2.23; bulb 1.77 m long, trailing aft of the fin. Rudder: root 11.00–11.49 m, span 2.02, sweep about 13°, chord 0.26 at 90% span. Waterline forward end 0.50 m aft of the stem. Canoe-body depth 0.37 m. Against the class rules' transom-based locations (rule 11.3: keel trailing edge 6169 ± 11 mm, whose datum drawing #23 was not found) the drawing reads 0.06–0.13 m more, so the keel's fore-and-aft position carries ±0.07 m."
+    },
+    {
+      "id": "farr40-class-rules",
+      "what": "Keel assembly 2,245–2,262 kg; keel chords 745 ± 5 and 680 ± 5 mm; rudder span 2,075–2,085 mm, top section 75–78 mm thick; BAS 1.750–1.760; J 4.705 max; crew 760 kg max",
+      "cite": "Farr 40 One Design Class Rules 2016 (World Sailing), rules 11–12, 19",
+      "url": "https://sailing.org/tools/documents/Farr402016CR150416-[20640].pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "farr-374-vpp",
+      "what": "Designer's VPP: best boat speeds by true wind, for cross-reading (beat VMG 4.82 / 5.44 / 5.63 kn at 8 / 12 / 16 kn)",
+      "cite": "Farr Yacht Design, VPP of design #374, 22 April 1997",
+      "url": "https://www.farrdesign.com/resources/374/374_Farr40VPP_FRACTIONALSPIN_MH.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "keelindex-farr40",
+      "what": "SA/D 36.2 (reported area), 30.7 (calculated from I, J, P, E); ballast/displacement 45.5%; D/L 111; capsize screening 2.39; hull speed 8.0 kn",
+      "cite": "keelindex.com, Farr 40 One Design (reproduces sailboatdata's table)",
+      "url": "https://www.keelindex.com/boat/farr-40-one-design/performance",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "usphrf-hla",
+      "what": "PHRF lowest / highest / average across US fleets: FARR 40 OD 0 / 12 / 6; SOLING ODR 135 / 175 / 153; FOLKBOAT NORDIC 276 / 276 / 276",
+      "cite": "US Sailing PHRF, \"High, low and average performance handicaps by class/type\" (fleet reports March 1995 to March 2007), as attached to a sailboatowners.com forum thread",
+      "url": "https://forums.sailboatowners.com/attachments/phrf_ratings_report-pdf.174186/",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "A different list from the Alamo's and twenty years old: usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "Designer's hull and rig figures; the mast is ORC's SFJ (0) plus the class's J. Roach is worked from ORC's measured main over ½·P·E.",
+    "figures": [
+      {
+        "id": "saD",
+        "label": "SA/D, calculated from I, J, P, E",
+        "value": 30.7,
+        "unit": "",
+        "tol": {
+          "abs": 0.15
+        },
+        "source": "keelindex-farr40",
+        "work": "(½·16.7·5.9 + ½·16.2·4.705) / (4,945/1025)^(2/3) = 87.376/2.8552 = 30.60"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 111,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "keelindex-farr40",
+        "work": "(4,945/1016.05)/(0.01·35.27)³ = 4.867/0.04387 = 110.9"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.455,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "keelindex-farr40",
+        "work": "2,250 / 4,945"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 8,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "keelindex-farr40",
+        "work": "1.34·√35.27 = 7.958"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 2.39,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-farr40",
+        "work": "13.22 / (10,902/64)^⅓ = 13.22/5.543 = 2.385"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 63.14,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-farr40",
+        "roundTrip": "the roach is set so the main is ORC's measured 63.14 m²"
+      },
+      {
+        "id": "headsailM2",
+        "label": "Jib, LP 4.94",
+        "value": 43.23,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.06
+        },
+        "source": "orc-farr40",
+        "work": "ORC 'headsail luffed'; ours is ½·LP·luff, a triangle with no roach"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 2.6,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "farr-374",
+        "roundTrip": "the keel's span is solved so that the draft reaches the designer's 2.60 m"
+      },
+      {
+        "id": "awM2",
+        "label": "Waterplane area (ORC sink 20.97 kg/mm at SG 1.025)",
+        "value": 20.4585,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-farr40",
+        "condition": "orc-lightship",
+        "roundTrip": "BWL is solved so that the synthetic hull's waterplane is ORC's"
+      },
+      {
+        "id": "wettedM2",
+        "label": "Wetted area (ORC condition)",
+        "value": 27.64,
+        "unit": "m²",
+        "tol": null,
+        "source": "orc-farr40",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways"
+      },
+      {
+        "id": "rm1KgM",
+        "label": "Righting moment at 1°, no crew (ORC condition)",
+        "value": 171.6,
+        "unit": "kg·m",
+        "tol": {
+          "rel": 0.25
+        },
+        "source": "orc-farr40",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "work": "ORC 'RM measured' at 4 966 kg, GM 171.6/(4966·sin 1°) = 1.980 m (the brochure's RMC is 175 kg·m)"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Limit of positive stability, no crew (ORC condition)",
+        "value": 131.4,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "orc-farr40",
+        "condition": "orc-lightship",
+        "estimatedInputs": true
+      }
+    ],
+    "conditions": {
+      "orc": {
+        "what": "ORC's measured displacement 4 966 kg plus a crew of 8 × 85 kg (680 kg, estimated; the certificate gives 570–760 kg)",
+        "displacementKg": 5646,
+        "crew": {
+          "count": 8,
+          "kgEach": 85,
+          "mode": "rail"
+        }
+      },
+      "orc-lightship": {
+        "what": "ORC's measured displacement, no crew",
+        "displacementKg": 4966,
+        "crew": {
+          "count": 0,
+          "kgEach": 85,
+          "mode": "none"
+        }
+      }
+    },
+    "polar": {
+      "kind": "orc",
+      "source": "orc-farr40",
+      "condition": "orc",
+      "twsKn": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20
+      ],
+      "rows": {
+        "52": [
+          6.49,
+          7.52,
+          7.82,
+          7.96,
+          8.04,
+          8.17,
+          8.27
+        ],
+        "60": [
+          6.88,
+          7.75,
+          8.06,
+          8.22,
+          8.33,
+          8.46,
+          8.67
+        ],
+        "75": [
+          7.18,
+          7.93,
+          8.38,
+          8.7,
+          8.9,
+          9.03,
+          9.37
+        ],
+        "90": [
+          7.15,
+          7.94,
+          8.46,
+          9,
+          9.42,
+          9.69,
+          10
+        ],
+        "beatAngle": [
+          42.4,
+          40.5,
+          38.6,
+          38.3,
+          37.5,
+          36.9,
+          37.5
+        ],
+        "beatVmg": [
+          4.26,
+          5.12,
+          5.49,
+          5.66,
+          5.79,
+          5.9,
+          5.9
+        ]
+      },
+      "compare": {
+        "twsKn": [
+          8,
+          12,
+          16
+        ],
+        "twaDeg": [
+          52,
+          75,
+          90
+        ],
+        "beat": true
+      },
+      "tol": {
+        "rel": 0.08
+      },
+      "note": "ORC rates downwind with the masthead spinnaker (161.97 m²); the VPP has none, so only the beat and 52–90° are compared. Farr's own 1997 VPP gives beat VMG 4.82 / 5.44 / 5.63 kn at 8 / 12 / 16 kn, 4–6% under ORC's.",
+      "pinned": {
+        "measuredOn": "2026-11-10",
+        "ratchetPoints": 2,
+        "ratchetDeg": 1.5,
+        "cells": {
+          "8kn 52°": -3.5,
+          "8kn 75°": -1.2,
+          "8kn 90°": -1.7,
+          "12kn 52°": -1.8,
+          "12kn 75°": -0.5,
+          "12kn 90°": 0.1,
+          "16kn 52°": -0.6,
+          "16kn 75°": -0.9,
+          "16kn 90°": 0.1,
+          "8kn beatVMG": -2,
+          "8kn beatAngle": -1.6,
+          "12kn beatVMG": 0.8,
+          "12kn beatAngle": -2.7,
+          "16kn beatVMG": 0.8,
+          "16kn beatAngle": -4.8
+        },
+        "why": "the closest of the fleet: every speed within 4% of ORC; she still points 3–5° higher at 12 and 16 kn."
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 6,
+        "source": "usphrf-hla"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 4.705,
+          "status": "given",
+          "how": "ORC's SFJ 0.000 plus J 4.705 (the class maximum and ORC's); the designer's drawing reads 4.708",
+          "pm": 0.01
+        },
+        "keelLeAftOfStem": {
+          "value": 5.35,
+          "status": "estimated",
+          "how": "the straight leading edge produced to the hull on the designer's vector profile, scaled on LOA",
+          "pm": 0.07
+        },
+        "wlFwdAftOfStem": {
+          "value": 0.5,
+          "status": "estimated",
+          "how": "the same drawing"
+        }
+      },
+      "weight": "good",
+      "why": "Mast and forestay are measured (ORC, class rule); the keel, bulb and rudder are read off the designer's own vector profile, whose scale checks to 0.01 m against LWL, draft and J. The class rules' transom-based keel location sits 0.06–0.13 m off the drawing under an assumed datum, hence ±0.07 m."
+    },
+    "disagreements": [
+      {
+        "what": "Beam",
+        "values": [
+          {
+            "value": "4.03 m",
+            "source": "farr-374"
+          },
+          {
+            "value": "3.956 m (measured)",
+            "source": "orc-farr40"
+          }
+        ],
+        "used": "4.03 m"
+      },
+      {
+        "what": "Foretriangle height",
+        "values": [
+          {
+            "value": "IM 16.20 m",
+            "source": "farr-374"
+          },
+          {
+            "value": "IG 16.318 m",
+            "source": "orc-farr40"
+          }
+        ],
+        "used": "16.20 m (the designer's, with the published ratios)"
+      },
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "4,945 kg",
+            "source": "farr-374"
+          },
+          {
+            "value": "4 966 kg (measured)",
+            "source": "orc-farr40"
+          }
+        ],
+        "used": "4,945 kg in the doc; the ORC comparisons sail at 4 966 kg"
+      },
+      {
+        "what": "SA/D",
+        "values": [
+          {
+            "value": "30.7 (calculated from I, J, P, E)",
+            "source": "keelindex-farr40"
+          },
+          {
+            "value": "36.2 (reported sail area)",
+            "source": "keelindex-farr40"
+          }
+        ],
+        "used": "30.7: the tool's is the designer's main + 100% foretriangle"
+      },
+      {
+        "what": "Keel position",
+        "values": [
+          {
+            "value": "leading edge 5.35 m aft of the stem (drawing)",
+            "source": "farr-374-drawings"
+          },
+          {
+            "value": "trailing edge 6169 ± 11 mm from the transom (rule 11.3, datum on drawing #23, not found): 0.06–0.13 m further aft than the drawing under an assumed datum",
+            "source": "farr40-class-rules"
+          }
+        ],
+        "used": "the drawing, ±0.07 m"
+      }
+    ],
+    "estimatedWhy": "BWL is solved from ORC's sink; Tc, the keel, the bulb's length and the rudder are read off the designer's profile. The bulb's width is not published: its diameter is that of a spheroid of the drawn length holding 2,000 kg of lead (the profile's depth is 0.58 m). The model centres a bulb under the tip's quarter chord; the real one trails aft, its nose flush with the fin's leading edge, so the model's bulb sits about 0.7 m too far forward. The synthetic hull puts the waterline's forward end 0.6·(LOA − LWL) = 1.00 m aft of the stem; the drawing's is 0.50 m."
+  }
+}

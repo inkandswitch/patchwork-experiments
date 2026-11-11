@@ -1,0 +1,912 @@
+// Writes the eight boats added on 2026-11-10 (j70, farr40, soling, folkboat,
+// cal40, contessa32, hr40c, dinghy470) from the figures quoted below. Kept as
+// .txt so nothing builds or tests it; to regenerate, copy it to
+// make-fleet-fixtures.mjs in this folder and run it with node (it imports
+// ../doc.js and ../numbers.js). Unlike make-fixtures.mjs.txt, the JSON it
+// writes is not edited afterwards: this file is the authority for these eight.
+//
+// Three things are solved here, with the tool's own model, and then written
+// as plain numbers:
+//
+// - BWL, where a source gives a waterplane figure and none gives BWL: the
+//   BWL whose synthetic hull has that waterplane area (ORC's "sink", kg/mm,
+//   over the certificate's water density) or that BMt (the Contessa 32's,
+//   from the Wolfson report). It is marked estimated: the waterplane's
+//   shape is the synthetic hull's.
+// - The keel's span, so the overall draft is the published one (the root is
+//   at the synthetic hull's underside, which no drawing was measured for).
+// - Nothing else.
+//
+// PINS at the bottom are the model's readings measured when each known
+// disagreement was recorded. They are pasted in from the suite's own output
+// (NAVAL_PRINT_PINS=1 npx vitest run src/validation-fleet.test.js) and are
+// what the ratchets hold; re-measure and paste again when a ratchet trips.
+
+import { writeFileSync } from "node:fs";
+
+const OUT = new URL("./", import.meta.url).pathname;
+const { normalize } = await import(new URL("../doc.js", import.meta.url).href);
+const { computeNumbers } = await import(new URL("../numbers.js", import.meta.url).href);
+
+const FT = 0.3048, LB = 0.45359237;
+const r4 = (v) => Math.round(v * 1e4) / 1e4;
+const r6 = (v) => Math.round(v * 1e6) / 1e6;
+const ft = (v) => r6(v * FT);
+const lb = (v) => r6(v * LB);
+const RET = "2026-11-10";
+const est = (...paths) => Object.fromEntries(paths.map((p) => [p, "estimated"]));
+const foil = (id, ...keys) => keys.map((k) => `appendages.${id}.${k}`);
+const src = (id, what, cite, url, extra = {}) => ({ id, what, cite, url, retrieved: RET, fetched: true, ...extra });
+const notFetched = (id, what, cite, url, note) => ({ id, what, cite, url, retrieved: RET, fetched: false, note });
+
+const SAILBOATDATA = notFetched("sailboatdata", "Would give the ratios as sailboatdata prints them", "sailboatdata.com", "https://sailboatdata.com/", "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure).");
+const ALAMO = src(
+  "phrf-alamo",
+  "PHRF base ratings: J-70 114-P, Soling ODR 153 (also Catalina 30 184, J-24 170)",
+  "PHRF of the Alamo rating list (Excel export, file dated 2020-02-19), regattanetwork.com upload 20438",
+  "https://www.regattanetwork.com/clubmgmt/regatta_uploads/20438/PHRFoftheAlamo01072020.pdf",
+  { note: "The same list as the Catalina 30's and the J/24's. It has no Farr 40, Cal 40, Contessa 32, Folkboat or Hallberg-Rassy." },
+);
+const USPHRF = src(
+  "usphrf-hla",
+  "PHRF lowest / highest / average across US fleets: FARR 40 OD 0 / 12 / 6; SOLING ODR 135 / 175 / 153; FOLKBOAT NORDIC 276 / 276 / 276",
+  "US Sailing PHRF, \"High, low and average performance handicaps by class/type\" (fleet reports March 1995 to March 2007), as attached to a sailboatowners.com forum thread",
+  "https://forums.sailboatowners.com/attachments/phrf_ratings_report-pdf.174186/",
+  { note: "A different list from the Alamo's and twenty years old: usable for order only." },
+);
+const NCPHRF = src(
+  "ncphrf",
+  "PHRF base ratings: CAL 40 114 (dated 12/29/1988); Contessa 32 186 (3/16/2000)",
+  "NCPHRF Base Rating Report, YRA of San Francisco Bay, 1 September 2026 edition",
+  "https://yra.org/wp-content/uploads/2026/09/ncphrf_baserates090126.pdf",
+  { note: "A different list from the Alamo's: usable for order only." },
+);
+
+// ORC one-design certificates: the rated boat velocities (kn), page 1
+const ORC_TWS = [6, 8, 10, 12, 14, 16, 20];
+const orcPolar = (source, rows, note) => ({
+  kind: "orc",
+  source,
+  condition: "orc",
+  twsKn: ORC_TWS,
+  rows,
+  compare: { twsKn: [8, 12, 16], twaDeg: [52, 75, 90], beat: true },
+  tol: { rel: 0.08 },
+  note,
+});
+/** ORC "sink" (kg per mm of immersion) as a waterplane area, m². */
+const awOfSink = (kgPerMm, sg) => r4((kgPerMm * 1000) / (1000 * sg));
+
+// ───────────────────────────── J/70
+const j70 = (() => {
+  const P = 7.973, E = 2.877, I = 8.159, J = 2.341, SFJ = 0.16;
+  // the bulb: a spheroid 4.5 diameters long holding the 286 kg keel in lead (firstguess.js's rule; no source gives it)
+  const bulbD = r4(Math.cbrt(286 / 11340 / ((2 / 3) * (Math.PI / 4) * 4.5)));
+  return {
+    id: "j70",
+    solve: { awM2: awOfSink(7.58, 1.02), awCondition: "orc-lightship", draft: 1.45 },
+    doc: {
+      version: 1,
+      title: "J/70",
+      hull: { link: null, dims: { loa: 6.934, lwl: 6.24, beam: 2.249, bwl: 1.8, tc: 0.21, draft: 1.45, freeboard: r4((0.792 + 0.571) / 2), displacementKg: 794, cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: r4(SFJ + J), rakeDeg: 0, stepped: "deck", kgPerM: null },
+        I, P, E, BAS: 0.992, ISP: 9.189, forestayAftOfStem: SFJ,
+        main: { roach: r6(15.44 / (0.5 * P * E) - 1), reefs: [] },
+        headsail: { kind: "jib", LP: 2.45, clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        keel: { kind: "fin-bulb", aftOfStem: 3.27, span: 1, rootChord: 0.47, tipChord: 0.47, sweepDeg: 0, tc: 0.12, bulb: { length: r4(4.5 * bulbD), diameter: bulbD } },
+        rudder: { kind: "transom-hung", aftOfStem: 6.94, span: 0.914, rootChord: 0.25, tipChord: 0.25, sweepDeg: 0, tc: 0.12, maxDeg: 35, stockFrac: 0.2 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 286, at: "bulb" }, lightship: { kg: null, vcg: null }, crew: { count: 4, kgEach: 80, mode: "rail", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "rig.main.reefs",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc", "bulb.length", "bulb.diameter"),
+        ...foil("rudder", "aftOfStem", "rootChord", "tipChord", "sweepDeg", "tc"),
+        "loading.crew.count", "loading.crew.kgEach",
+      ),
+    },
+    sources: [
+      src("orc-j70", "LOA 6.910, beam 2.254, draft 1.383, displacement 811 kg; P 7.974, E 2.876, IG 8.000, J 2.340, ISP 9.290, BAS 0.992, SFJ 0.160; main 15.44, jib 10.01 m² (HLP 2.45, HLU 8.00); wetted area 9.13; sink 7.58 kg/mm at SG 1.0200; RM 18.5 kg·m; LPS 100.0°; VCGM 0.024; FF 0.792, FA 0.571; crew 255–340 kg; rated boat velocities", "ORC International One Design Certificate 2021, J 70 (sample certificate marked TEST), VPP ver. 2021 1.00", "https://data.orc.org/public/od/2021/j70.od.html?nav=1", { quoted: "SFJ 0.160; J 2.340; comment: weight acc to OD class rules incl outboard engine, 4 crew" }),
+      src("jboats-j70", "LOA 22.75, LWL 20.47, beam 7.38, draft 4.75 ft, ballast 630, displacement 1,750 lb; I 26.77, ISP 30.15, J 7.68, P 26.16, E 9.44 ft; SA/Dspl 25, Dspl/L 91", "J/Boats, J/70 technical specifications", "https://jboats.com/j70-tech-specs"),
+      src("j70-owner-guide", "LOA 6.934, LWL 6.240, beam 2.249, draft keel down 1.45 [max loaded 1.50], rudder draft 0.914 m, ballast 286 kg, displacement 794 kg; I 8.159, ISP 9.189, J 2.341, P 7.973, E 2.877 m; 100% triangles 21.0 m²; STIX 22.53 / AVS 122° (minimum operating), 18.20 / 107° (loaded); deck-stepped carbon mast; lifting keel with a lead bulb on a stainless spar", "J/70 Owner Guide, J Boats 2012, pp. 6–9 and 13", "https://www.ksss.se/contentassets/e3880590f04f42938e4d80310310db00/j70-user-manual.pdf", { quoted: "LWL (Lwl) 6.240m (20.47'); Draft : [Max Loaded Draft] - Keel Down 1.45m (4.75') : [1.50m (4.92')]; Rudder Draft .914m (3.00'); Ballast 286 kg (630 lbs.)" }),
+      src("j70-class-rules", "Dry weight 812 kg; boom outer point 2876 mm; the inboard profile of H.2 'Corrector Weight Locations' (p. 24), measured for the keel trunk, the forestay fitting and the mast post", "International J/70 Class Rules, effective 30 January 2020 (World Sailing)", "https://www.sailing.org/tools/documents/J70CR202001302-[25979].pdf", { note: "The drawing is a schematic for corrector weights: the keel is a cut-off stub with vertical parallel edges. Scaled on ORC's LOA (1238 px = 6.910 m, 5.58 mm/px); its forestay fitting reads 0.167 m against ORC's SFJ 0.160 and its mast post 2.534 m against SFJ + J = 2.500 m. Keel at the hull bottom: leading edge 3.27 m, trailing edge 3.74 m aft of the stem, ±0.03 m. Canoe-body depth 0.21 m with the waterline placed by ORC's freeboards. Rudder pintle line 6.94 m, chord 0.25 m." }),
+      src("keelindex-j70", "SA/D 24.9, ballast/displacement 36.00, D/L 91.08, capsize screening 2.45, hull speed 6.06 kn", "keelindex.com, J/70 (reproduces sailboatdata's table)", "https://www.keelindex.com/boat/j-70", { note: "Its prose contradicts its own table (2,050 lb, 900 lb bulb); the table agrees with the builder." }),
+      ALAMO,
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "The rig is the builder's (its ratios are printed on it), with ORC's measured forestay setback and BAS; the mast is ORC's SFJ plus J. Roach is worked from ORC's measured main over ½·P·E.",
+      figures: [
+        { id: "saDesignerM2", label: "Sail area, main + 100% foretriangle", value: 21.0, unit: "m²", tol: { rel: 0.005 }, source: "j70-owner-guide", work: "½·7.973·2.877 + ½·8.159·2.341 = 11.469 + 9.550 = 21.019 (the guide prints 21.0)" },
+        { id: "saD", label: "SA/D", value: 24.9, unit: "", tol: { abs: 0.1 }, source: "keelindex-j70", work: "21.019 / (794/1025)^(2/3) = 21.019/0.8435 = 24.92 (J/Boats prints 25)" },
+        { id: "dL", label: "D/L", value: 91.08, unit: "", tol: { abs: 0.5 }, source: "keelindex-j70", work: "(1,750/2240)/(0.01·20.47)³ = 0.78125/0.008577 = 91.08 (J/Boats prints 91)" },
+        { id: "ballastRatio", label: "Ballast / displacement", value: 0.36, unit: "", tol: { abs: 0.005 }, source: "keelindex-j70", work: "286 / 794 = 0.3602" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 6.06, unit: "kn", tol: { abs: 0.01 }, source: "keelindex-j70", work: "1.34·√20.47 = 6.063" },
+        { id: "capsize", label: "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 2.45, unit: "", tol: { abs: 0.01 }, source: "keelindex-j70", work: "7.38 / (1,750/64)^⅓ = 7.38/3.012 = 2.450" },
+        { id: "mainM2", label: "Main, with roach", value: 15.44, unit: "m²", tol: { rel: 0.01 }, source: "orc-j70", work: "ORC measured mainsail area", roundTrip: "the roach is set so the main is ORC's measured 15.44 m²" },
+        { id: "headsailM2", label: "Jib, LP 2.45", value: 10.01, unit: "m²", tol: { rel: 0.08 }, source: "orc-j70", work: "ORC 'headsail luffed' 10.01 m² on a luff of 8.00 m; ours is ½·LP·(the whole forestay), a triangle with no roach" },
+        { id: "draftM", label: "Draft, keel down", value: 1.45, unit: "m", tol: { abs: 0.02 }, source: "j70-owner-guide", roundTrip: "the keel's span is solved so that the draft reaches the builder's 1.45 m: a check of the foil geometry, not of the model" },
+        { id: "awM2", label: "Waterplane area (ORC sink 7.58 kg/mm at SG 1.02)", value: awOfSink(7.58, 1.02), unit: "m²", tol: { rel: 0.01 }, source: "orc-j70", condition: "orc-lightship", roundTrip: "BWL is solved so that the synthetic hull's waterplane is ORC's: a check of the solve" },
+        { id: "wettedM2", label: "Wetted area (ORC condition)", value: 9.13, unit: "m²", tol: null, source: "orc-j70", condition: "orc-lightship", estimatedInputs: true, assert: false, why: "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways" },
+        { id: "rm1KgM", label: "Righting moment at 1°, no crew (ORC condition)", value: 18.5, unit: "kg·m", tol: { rel: 0.25 }, source: "orc-j70", condition: "orc-lightship", estimatedInputs: true, work: "ORC 'RM measured' at 811 kg, GM 18.5/(811·sin 1°) = 1.307 m; ours from the synthetic hull and the mass roll-up" },
+        { id: "avsDeg", label: "Limit of positive stability, no crew (ORC condition)", value: 100.0, unit: "°", tol: { abs: 10 }, source: "orc-j70", condition: "orc-lightship", estimatedInputs: true, work: "ORC's LPS 100.0°; the builder's ISO figures are 122° (minimum operating) and 107° (loaded)" },
+      ],
+      conditions: {
+        orc: { what: "ORC's measured displacement 811 kg plus a crew of 4 × 80 kg (320 kg, estimated; the certificate gives 255–340 kg and says '4 crew')", displacementKg: 1131, crew: { count: 4, kgEach: 80, mode: "rail" } },
+        "orc-lightship": { what: "ORC's measured displacement, no crew", displacementKg: 811, crew: { count: 0, kgEach: 80, mode: "none" } },
+      },
+      polar: orcPolar(
+        "orc-j70",
+        { beatAngle: [42.8, 42.0, 40.1, 37.9, 37.5, 37.9, 39.0], beatVmg: [3.04, 3.7, 4.2, 4.51, 4.58, 4.58, 4.54], 52: [4.63, 5.55, 6.02, 6.31, 6.46, 6.51, 6.57], 60: [4.95, 5.8, 6.19, 6.55, 6.81, 6.9, 6.98], 75: [5.17, 5.96, 6.35, 6.81, 7.31, 7.61, 7.79], 90: [5.48, 6.25, 6.72, 7.04, 7.45, 8.11, 8.89] },
+        "ORC rates downwind with the asymmetric spinnaker (45.64 m²); the VPP has none, so only the beat and 52–90° are compared.",
+      ),
+      balance: {
+        phrf: { value: 114, source: "phrf-alamo" },
+        real: {
+          mastAftOfStem: { value: r4(SFJ + J), status: "given", how: "ORC's measured SFJ 0.160 plus J 2.341 (ORC's own J is 2.340)", pm: 0.01 },
+          keelLeAftOfStem: { value: 3.27, status: "estimated", how: "read off the class rules' inboard profile, scaled on ORC's LOA", pm: 0.03 },
+          wlFwdAftOfStem: { value: null, status: "not sourced" },
+        },
+        weight: "good",
+        why: "Mast and forestay are measured (ORC); the keel's position and root chord are read off a class-rules drawing whose scale checks to 0.01–0.03 m. The keel's planform below the hull and the bulb are not sourced: a lifting keel is taken as constant-chord and unswept, the bulb by rule.",
+      },
+      disagreements: [
+        { what: "LOA", values: [{ value: "6.934 m", source: "j70-owner-guide" }, { value: "6.910 m (measured)", source: "orc-j70" }], used: "6.934 m" },
+        { what: "Displacement", values: [{ value: "794 kg (standard boat)", source: "j70-owner-guide" }, { value: "811 kg (with outboard)", source: "orc-j70" }, { value: "812 kg (class dry weight)", source: "j70-class-rules" }], used: "794 kg in the doc (the builder's ratios are on it); the ORC comparisons sail at 811 kg" },
+        { what: "Draft", values: [{ value: "1.45 m keel down, 1.50 m max loaded", source: "j70-owner-guide" }, { value: "1.383 m (measured)", source: "orc-j70" }], used: "1.45 m" },
+        { what: "I", values: [{ value: "8.159 m", source: "j70-owner-guide" }, { value: "IG 8.000 m", source: "orc-j70" }], used: "8.159 m (the builder's, with the builder's ratios)", effect: "foretriangle 2% larger than ORC's" },
+        { what: "Angle of vanishing stability", values: [{ value: "100.0° (LPS)", source: "orc-j70" }, { value: "122° minimum operating, 107° loaded", source: "j70-owner-guide" }], used: "100.0° (ORC, at the measured displacement the comparison is run at)" },
+      ],
+      estimatedWhy: "BWL is solved from ORC's sink; Tc is read off the class-rules drawing with the waterline placed by ORC's freeboards (±0.03 m). The keel's leading edge and root chord are read off the same drawing; its tip chord (taken equal: a keel that lifts through a trunk), sweep (0), section and bulb (a spheroid 4.5 diameters long holding the 286 kg) are not in any source. The rudder's draft is the builder's; its chord and position are read off the drawing.",
+    },
+  };
+})();
+
+// ───────────────────────────── Farr 40 One Design
+const farr40 = (() => {
+  const P = 16.7, E = 5.9, I = 16.2, J = 4.705;
+  // the bulb: a spheroid of the drawn length holding 2,000 kg of lead (the 2,250 kg keel less an assumed 250 kg steel fin)
+  const bulbL = 1.77;
+  const bulbD = r4(Math.sqrt(2000 / (11340 * (2 / 3) * (Math.PI / 4) * bulbL)));
+  return {
+    id: "farr40",
+    solve: { awM2: awOfSink(20.97, 1.025), awCondition: "orc-lightship", draft: 2.6 },
+    doc: {
+      version: 1,
+      title: "Farr 40 One Design",
+      hull: { link: null, dims: { loa: 12.41, lwl: 10.75, beam: 4.03, bwl: 3.2, tc: 0.37, draft: 2.6, freeboard: r4((1.346 + 1.026) / 2), displacementKg: 4945, cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: J, rakeDeg: 0, stepped: "keel", kgPerM: null },
+        I, P, E, BAS: 1.76, ISP: 18.3, forestayAftOfStem: 0,
+        main: { roach: r6(63.14 / (0.5 * P * E) - 1), reefs: [] },
+        headsail: { kind: "jib", LP: 4.94, clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        keel: { kind: "fin-bulb", aftOfStem: 5.35, span: 1.6, rootChord: 0.79, tipChord: 0.655, sweepDeg: 15.8, tc: 0.12, bulb: { length: bulbL, diameter: bulbD } },
+        rudder: { kind: "spade", aftOfStem: 11.0, span: 2.02, rootChord: 0.49, tipChord: 0.26, sweepDeg: 13, tc: r4(0.0765 / 0.49), maxDeg: 35, stockFrac: 0.2 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 2250, at: "bulb" }, lightship: { kg: null, vcg: null }, crew: { count: 8, kgEach: 85, mode: "rail", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "rig.main.reefs",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc", "bulb.length", "bulb.diameter"),
+        ...foil("rudder", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg"),
+        "loading.crew.count", "loading.crew.kgEach",
+      ),
+    },
+    sources: [
+      src("orc-farr40", "LOA 12.411, beam 3.956, draft 2.593, displacement 4 966 kg; P 16.700, E 5.900, IG 16.318, J 4.705, ISP 18.300, BAS 1.760, SFJ 0.000; main 63.14, headsail 43.23 m² (HLP 4.94); wetted area 27.64; sink 20.97 kg/mm; RM 171.6 kg·m; LPS 131.4°; VCGM −0.372; FF 1.346, FA 1.026; crew 570–760 kg; rated boat velocities", "ORC International One Design Certificate 2021, Farr 40 OD (sample certificate marked TEST), VPP ver. 2021 1.00", "https://data.orc.org/public/od/2021/farr40.od.html?nav=1", { note: "The certificate's SG field is blank; 1.025 is assumed for the sink figure." }),
+      src("farr-374", "LOA 12.41 m, beam 4.03, LWL 10.75, draft 2.6, displacement 4,945 kg, ballast 2,250 kg; brochure: IM 16.20, J 4.71, P 16.70, E 5.90, RMC 175 kg·m, steel fin and lead bulb", "Farr Yacht Design, design 374 (page and brochure 374brochure.pdf, p. 6)", "https://www.farrdesign.com/yacht/374"),
+      src("farr-374-drawings", "The inboard profile measured for the waterline's ends, the mast, the keel, the bulb and the rudder; the sail plan labelled P 16.700, IM 16.200, E 5.900, J 4.705", "Farr Yacht Design, promotional sail plan and interior arrangement of design 374, vector PDFs dated 12/29/2010, marked NOT TO SCALE", "https://www.farrdesign.com/resources/374/374interior.pdf", { note: "Scaled on LOA (2578 px = 12.411 m, 4.81 mm/px). Checks against published figures: LWL 10.745 (10.75), draft 2.600 (2.60), mast front 4.708 (J 4.705), bow freeboard 1.362 (ORC FF 1.346). Keel: straight leading edge produced to the hull 5.35 m aft of the stem (its fillet meets the hull at 5.12), trailing edge 6.14; chord 0.79 m at the hull and 0.655 at the bulb; leading-edge sweep 15.8°; hull to bulb top 1.63 m, to keel bottom 2.23; bulb 1.77 m long, trailing aft of the fin. Rudder: root 11.00–11.49 m, span 2.02, sweep about 13°, chord 0.26 at 90% span. Waterline forward end 0.50 m aft of the stem. Canoe-body depth 0.37 m. Against the class rules' transom-based locations (rule 11.3: keel trailing edge 6169 ± 11 mm, whose datum drawing #23 was not found) the drawing reads 0.06–0.13 m more, so the keel's fore-and-aft position carries ±0.07 m." }),
+      src("farr40-class-rules", "Keel assembly 2,245–2,262 kg; keel chords 745 ± 5 and 680 ± 5 mm; rudder span 2,075–2,085 mm, top section 75–78 mm thick; BAS 1.750–1.760; J 4.705 max; crew 760 kg max", "Farr 40 One Design Class Rules 2016 (World Sailing), rules 11–12, 19", "https://sailing.org/tools/documents/Farr402016CR150416-[20640].pdf"),
+      src("farr-374-vpp", "Designer's VPP: best boat speeds by true wind, for cross-reading (beat VMG 4.82 / 5.44 / 5.63 kn at 8 / 12 / 16 kn)", "Farr Yacht Design, VPP of design #374, 22 April 1997", "https://www.farrdesign.com/resources/374/374_Farr40VPP_FRACTIONALSPIN_MH.pdf"),
+      src("keelindex-farr40", "SA/D 36.2 (reported area), 30.7 (calculated from I, J, P, E); ballast/displacement 45.5%; D/L 111; capsize screening 2.39; hull speed 8.0 kn", "keelindex.com, Farr 40 One Design (reproduces sailboatdata's table)", "https://www.keelindex.com/boat/farr-40-one-design/performance"),
+      USPHRF,
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "Designer's hull and rig figures; the mast is ORC's SFJ (0) plus the class's J. Roach is worked from ORC's measured main over ½·P·E.",
+      figures: [
+        { id: "saD", label: "SA/D, calculated from I, J, P, E", value: 30.7, unit: "", tol: { abs: 0.15 }, source: "keelindex-farr40", work: "(½·16.7·5.9 + ½·16.2·4.705) / (4,945/1025)^(2/3) = 87.376/2.8552 = 30.60" },
+        { id: "dL", label: "D/L", value: 111, unit: "", tol: { abs: 0.5 }, source: "keelindex-farr40", work: "(4,945/1016.05)/(0.01·35.27)³ = 4.867/0.04387 = 110.9" },
+        { id: "ballastRatio", label: "Ballast / displacement", value: 0.455, unit: "", tol: { abs: 0.005 }, source: "keelindex-farr40", work: "2,250 / 4,945" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 8.0, unit: "kn", tol: { abs: 0.05 }, source: "keelindex-farr40", work: "1.34·√35.27 = 7.958" },
+        { id: "capsize", label: "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 2.39, unit: "", tol: { abs: 0.01 }, source: "keelindex-farr40", work: "13.22 / (10,902/64)^⅓ = 13.22/5.543 = 2.385" },
+        { id: "mainM2", label: "Main, with roach", value: 63.14, unit: "m²", tol: { rel: 0.01 }, source: "orc-farr40", roundTrip: "the roach is set so the main is ORC's measured 63.14 m²" },
+        { id: "headsailM2", label: "Jib, LP 4.94", value: 43.23, unit: "m²", tol: { rel: 0.06 }, source: "orc-farr40", work: "ORC 'headsail luffed'; ours is ½·LP·luff, a triangle with no roach" },
+        { id: "draftM", label: "Draft", value: 2.6, unit: "m", tol: { abs: 0.02 }, source: "farr-374", roundTrip: "the keel's span is solved so that the draft reaches the designer's 2.60 m" },
+        { id: "awM2", label: "Waterplane area (ORC sink 20.97 kg/mm at SG 1.025)", value: awOfSink(20.97, 1.025), unit: "m²", tol: { rel: 0.01 }, source: "orc-farr40", condition: "orc-lightship", roundTrip: "BWL is solved so that the synthetic hull's waterplane is ORC's" },
+        { id: "wettedM2", label: "Wetted area (ORC condition)", value: 27.64, unit: "m²", tol: null, source: "orc-farr40", condition: "orc-lightship", estimatedInputs: true, assert: false, why: "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways" },
+        { id: "rm1KgM", label: "Righting moment at 1°, no crew (ORC condition)", value: 171.6, unit: "kg·m", tol: { rel: 0.25 }, source: "orc-farr40", condition: "orc-lightship", estimatedInputs: true, work: "ORC 'RM measured' at 4 966 kg, GM 171.6/(4966·sin 1°) = 1.980 m (the brochure's RMC is 175 kg·m)" },
+        { id: "avsDeg", label: "Limit of positive stability, no crew (ORC condition)", value: 131.4, unit: "°", tol: { abs: 10 }, source: "orc-farr40", condition: "orc-lightship", estimatedInputs: true },
+      ],
+      conditions: {
+        orc: { what: "ORC's measured displacement 4 966 kg plus a crew of 8 × 85 kg (680 kg, estimated; the certificate gives 570–760 kg)", displacementKg: 5646, crew: { count: 8, kgEach: 85, mode: "rail" } },
+        "orc-lightship": { what: "ORC's measured displacement, no crew", displacementKg: 4966, crew: { count: 0, kgEach: 85, mode: "none" } },
+      },
+      polar: orcPolar(
+        "orc-farr40",
+        { beatAngle: [42.4, 40.5, 38.6, 38.3, 37.5, 36.9, 37.5], beatVmg: [4.26, 5.12, 5.49, 5.66, 5.79, 5.9, 5.9], 52: [6.49, 7.52, 7.82, 7.96, 8.04, 8.17, 8.27], 60: [6.88, 7.75, 8.06, 8.22, 8.33, 8.46, 8.67], 75: [7.18, 7.93, 8.38, 8.7, 8.9, 9.03, 9.37], 90: [7.15, 7.94, 8.46, 9.0, 9.42, 9.69, 10.0] },
+        "ORC rates downwind with the masthead spinnaker (161.97 m²); the VPP has none, so only the beat and 52–90° are compared. Farr's own 1997 VPP gives beat VMG 4.82 / 5.44 / 5.63 kn at 8 / 12 / 16 kn, 4–6% under ORC's.",
+      ),
+      balance: {
+        phrf: { value: 6, source: "usphrf-hla" },
+        real: {
+          mastAftOfStem: { value: J, status: "given", how: "ORC's SFJ 0.000 plus J 4.705 (the class maximum and ORC's); the designer's drawing reads 4.708", pm: 0.01 },
+          keelLeAftOfStem: { value: 5.35, status: "estimated", how: "the straight leading edge produced to the hull on the designer's vector profile, scaled on LOA", pm: 0.07 },
+          wlFwdAftOfStem: { value: 0.5, status: "estimated", how: "the same drawing" },
+        },
+        weight: "good",
+        why: "Mast and forestay are measured (ORC, class rule); the keel, bulb and rudder are read off the designer's own vector profile, whose scale checks to 0.01 m against LWL, draft and J. The class rules' transom-based keel location sits 0.06–0.13 m off the drawing under an assumed datum, hence ±0.07 m.",
+      },
+      disagreements: [
+        { what: "Beam", values: [{ value: "4.03 m", source: "farr-374" }, { value: "3.956 m (measured)", source: "orc-farr40" }], used: "4.03 m" },
+        { what: "Foretriangle height", values: [{ value: "IM 16.20 m", source: "farr-374" }, { value: "IG 16.318 m", source: "orc-farr40" }], used: "16.20 m (the designer's, with the published ratios)" },
+        { what: "Displacement", values: [{ value: "4,945 kg", source: "farr-374" }, { value: "4 966 kg (measured)", source: "orc-farr40" }], used: "4,945 kg in the doc; the ORC comparisons sail at 4 966 kg" },
+        { what: "SA/D", values: [{ value: "30.7 (calculated from I, J, P, E)", source: "keelindex-farr40" }, { value: "36.2 (reported sail area)", source: "keelindex-farr40" }], used: "30.7: the tool's is the designer's main + 100% foretriangle" },
+        { what: "Keel position", values: [{ value: "leading edge 5.35 m aft of the stem (drawing)", source: "farr-374-drawings" }, { value: "trailing edge 6169 ± 11 mm from the transom (rule 11.3, datum on drawing #23, not found): 0.06–0.13 m further aft than the drawing under an assumed datum", source: "farr40-class-rules" }], used: "the drawing, ±0.07 m" },
+      ],
+      estimatedWhy: "BWL is solved from ORC's sink; Tc, the keel, the bulb's length and the rudder are read off the designer's profile. The bulb's width is not published: its diameter is that of a spheroid of the drawn length holding 2,000 kg of lead (the profile's depth is 0.58 m). The model centres a bulb under the tip's quarter chord; the real one trails aft, its nose flush with the fin's leading edge, so the model's bulb sits about 0.7 m too far forward. The synthetic hull puts the waterline's forward end 0.6·(LOA − LWL) = 1.00 m aft of the stem; the drawing's is 0.50 m.",
+    },
+  };
+})();
+
+// ───────────────────────────── Soling
+const soling = (() => {
+  const P = 8.5, E = 3.2, I = 7.505, J = 2.65, SFJ = 0.49;
+  const BMP = r4(SFJ + 2.32); // the Breakwater Measurement Point aft of the stem: ORC's SFJ plus the rule's 2320 mm
+  return {
+    id: "soling",
+    solve: { awM2: awOfSink(6.84, 1.0), awCondition: "orc-lightship", draft: 1.304 },
+    doc: {
+      version: 1,
+      title: "Soling",
+      hull: { link: null, dims: { loa: 8.185, lwl: 6.1, beam: 1.9, bwl: 1.6, tc: 0.32, draft: 1.304, freeboard: 0.54, displacementKg: 1035, cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: r4(SFJ + J), rakeDeg: 0, stepped: "deck", kgPerM: null },
+        I, P, E, BAS: 0.705, ISP: 7.565, forestayAftOfStem: SFJ,
+        main: { roach: r6(15.98 / (0.5 * P * E) - 1), reefs: [] },
+        headsail: { kind: "jib", LP: 2.39, clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        // tc: the section whose volume is the 580 kg keel in cast iron (7200 kg/m³): 580/7200 / (0.685·∫c² ds) with chords 1.03–1.09 over 0.98 m
+        keel: { kind: "fin", aftOfStem: r4(BMP + 0.333), span: 0.98, rootChord: 1.03, tipChord: 1.09, sweepDeg: 34.6, tc: 0.107, bulb: null },
+        rudder: { kind: "spade", aftOfStem: 6.55, span: 0.83, rootChord: 0.503, tipChord: 0.255, sweepDeg: 30, tc: 0.12, maxDeg: 35, stockFrac: 0.3 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 580, at: "keel" }, lightship: { kg: null, vcg: null }, crew: { count: 3, kgEach: 90, mode: "hiking", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "rig.main.reefs",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+        ...foil("rudder", "aftOfStem", "span", "sweepDeg", "tc", "stockFrac"),
+        "loading.crew.kgEach", "loading.crew.mode",
+      ),
+    },
+    sources: [
+      src("orc-soling", "LOA 8.180, beam 1.904, draft 1.304, displacement 1 036 kg; P 8.500, E 3.200, IG 7.505, J 2.650, ISP 7.565, BAS 0.705, SFJ 0.490; main 15.98, jib 8.50 m² (HLP 2.39, HLU 7.01); wetted area 9.89; sink 6.84 kg/mm at SG 1.0000; RM 16.9 kg·m; LPS 113.0°; VCGM −0.136; crew 215–300 kg; rated boat velocities", "ORC International One Design Certificate 2021, Soling OD (sample certificate marked TEST; measurer 'CLASS RULES', sails copied from legacy), VPP ver. 2021 1.00", "https://data.orc.org/public/od/2021/soling.od.html?nav=1"),
+      src("soling-class-rules", "Dry weight not less than 1035 kg; keel 580 ± 10 kg cast iron; mast deck-stepped, its forward side 270 ± 50 mm aft of the Breakwater Measurement Point (BMP); forestay meets the deck 2320 ± 5 mm forward of the BMP; bands 700 mm above deck, 6800 and 8500 above that; boom band 3200 mm; rudder stock 1500 ± 25 mm from the transom point along the counter, top edge 503 mm, bottom 255 mm; two or three crew", "Soling Class Rules 2023 (World Sailing), C.4.1, E.3.4.1, E.4.2, F.2.4, F.5.4.2 and the rudder diagram on p. 19", "https://arbitrage.ffvoile.fr/media/d4cjyndr/soling-2023-e.pdf", { quoted: "The forward side of the mast shall be located 270mm ± 50mm aft of the Breakwater Measurement Point; The forestay shall meet the deck at 2320mm ± 5mm forward of the Breakwater Measurement Point." }),
+      src("soling-guide", "The class measurement diagram (LOA 8185 ± 15; stations 1475 apart; keel's aft lower corner 3470 ± 20 from the transom point; keel span 1000 max; max-section line 440 ± 10 aft of the leading edge), measured for the keel's edges; the specification box: LWL 6.10 m, beam 1.90, average freeboard 0.54, displacement 1,035 kg, keel 580 kg, ballast ratio 56%, mainsail 13.6 m², jib 8.1 m²", "International Soling Association, Soling Guide 1992–1995, 'Soling Class Measurement Diagram' (PDF pp. 12–14)", "https://www.soling.com/solinguide/Soling_Guide_1992-1995.pdf", { note: "The diagram is schematic (local scales 4.03–4.29 mm/px) and never prints the stem-to-BMP distance. Read off it: the keel's straight leading edge produced to the hull 0.333 m aft of the BMP, the trailing edge 1.365 m aft of it; chord 1.03 m at the hull, 1.09 at the base; span 0.96 (1.00 max given); sweep 34.6° ± 2°. The dimensioned 3470 is reconstructed from the readings to 2 mm; other checks are within 3–5%, so the keel's position carries ±0.06 m. Closing the diagram's own dimensions puts the BMP 2.98 ± 0.04 m aft of the stem; ORC's SFJ puts it at 0.490 + 2.320 = 2.810 m." }),
+      src("yachtdatabase-soling", "SA/D 23.4 (ISO 8666 reference sail), D/L 127, ballast 56%, capsize screening 1.89, hull speed 6.0 kn", "yachtdatabase.com, Soling", "https://yachtdatabase.com/en/review.jsp?id=Soling"),
+      src("keelindex-soling", "SA/D 23.2 (251 ft²), D/L 122.42 (on LWL 20.25 ft), ballast 56.17%, capsize screening 1.9, hull speed 6.03 kn", "keelindex.com, Soling (reproduces sailboatdata's table)", "https://www.keelindex.com/boat/soling"),
+      ALAMO,
+      USPHRF,
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "The rig is the ORC certificate's (the class rules' bands give the same P, E, BAS and IG). Stem-based positions go through ORC's SFJ; the mast, the forestay and the keel are all located from the class's Breakwater Measurement Point, so the lead doesn't depend on where the stem is.",
+      figures: [
+        { id: "saDesignerM2", label: "Sail area, main + 100% foretriangle", value: 23.544, unit: "m²", tol: { rel: 0.005 }, source: "orc-soling", work: "½·8.5·3.2 + ½·7.505·2.65 = 13.600 + 9.944 = 23.544 (the class prints main 13.6 m²)" },
+        { id: "saD", label: "SA/D", value: 23.4, unit: "", tol: { abs: 0.1 }, source: "yachtdatabase-soling", work: "23.544 / (1035/1025)^(2/3) = 23.544/1.0065 = 23.39" },
+        { id: "dL", label: "D/L", value: 127, unit: "", tol: { abs: 0.5 }, source: "yachtdatabase-soling", work: "(1035/1016.05)/(0.01·6.10/0.3048)³ = 1.01865/0.008016 = 127.1 (keelindex's 122.42 is on LWL 20.25 ft)" },
+        { id: "ballastRatio", label: "Ballast / displacement", value: 0.56, unit: "", tol: { abs: 0.005 }, source: "soling-guide", work: "580 / 1035 = 0.5604" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 6.0, unit: "kn", tol: { abs: 0.01 }, source: "yachtdatabase-soling", work: "1.34·√20.013 = 5.995" },
+        { id: "capsize", label: "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 1.89, unit: "", tol: { abs: 0.01 }, source: "yachtdatabase-soling", work: "6.234 / (2,282/64)^⅓ = 6.234/3.291 = 1.894" },
+        { id: "mainM2", label: "Main, with roach", value: 15.98, unit: "m²", tol: { rel: 0.01 }, source: "orc-soling", roundTrip: "the roach is set so the main is ORC's measured 15.98 m²" },
+        { id: "headsailM2", label: "Jib, LP 2.39", value: 8.5, unit: "m²", tol: { rel: 0.15 }, source: "orc-soling", work: "ORC 'headsail luffed' 8.50 m² on a luff of 7.01 m; ours is ½·LP·(the whole forestay, 7.96 m), a triangle with no roach" },
+        { id: "draftM", label: "Draft", value: 1.304, unit: "m", tol: { abs: 0.02 }, source: "orc-soling", roundTrip: "the keel's span is solved so that the draft reaches ORC's 1.304 m (the diagram's maximum span is 1.00 m)" },
+        { id: "awM2", label: "Waterplane area (ORC sink 6.84 kg/mm at SG 1.000)", value: awOfSink(6.84, 1.0), unit: "m²", tol: { rel: 0.01 }, source: "orc-soling", condition: "orc-lightship", roundTrip: "BWL is solved so that the synthetic hull's waterplane is ORC's" },
+        { id: "wettedM2", label: "Wetted area (ORC condition)", value: 9.89, unit: "m²", tol: null, source: "orc-soling", condition: "orc-lightship", estimatedInputs: true, assert: false, why: "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways" },
+        { id: "rm1KgM", label: "Righting moment at 1°, no crew (ORC condition)", value: 16.9, unit: "kg·m", tol: { rel: 0.25 }, source: "orc-soling", condition: "orc-lightship", estimatedInputs: true, work: "ORC 'RM measured' at 1 036 kg, GM 16.9/(1036·sin 1°) = 0.935 m" },
+        { id: "avsDeg", label: "Limit of positive stability, no crew (ORC condition)", value: 113.0, unit: "°", tol: { abs: 10 }, source: "orc-soling", condition: "orc-lightship", estimatedInputs: true },
+      ],
+      conditions: {
+        orc: { what: "ORC's measured displacement 1 036 kg plus a crew of 3 × 90 kg (270 kg, estimated; the certificate gives 215–300 kg)", displacementKg: 1306, crew: { count: 3, kgEach: 90, mode: "hiking" } },
+        "orc-lightship": { what: "ORC's measured displacement, no crew", displacementKg: 1036, crew: { count: 0, kgEach: 90, mode: "none" } },
+      },
+      polar: orcPolar(
+        "orc-soling",
+        { beatAngle: [43.5, 42.8, 40.5, 38.3, 37.9, 37.9, 37.5], beatVmg: [2.91, 3.58, 4.11, 4.39, 4.47, 4.5, 4.59], 52: [4.48, 5.46, 5.94, 6.17, 6.26, 6.3, 6.44], 60: [4.76, 5.71, 6.11, 6.36, 6.49, 6.56, 6.72], 75: [4.97, 5.86, 6.26, 6.59, 6.88, 7.03, 7.15], 90: [5.19, 6.08, 6.43, 6.67, 7.05, 7.43, 7.84] },
+        "ORC rates downwind with the spinnaker (36.38 m²); the VPP has none, so only the beat and 52–90° are compared.",
+      ),
+      balance: {
+        phrf: { value: 153, source: "phrf-alamo" },
+        real: {
+          mastAftOfStem: { value: r4(SFJ + J), status: "given", how: "ORC's SFJ 0.490 plus J 2.650. By the class rule the mast is 0.27 ± 0.05 m aft of the BMP and the forestay 2.320 forward of it, J 2.590 ± 0.055: ORC's J is at the top of that tolerance", pm: 0.06 },
+          keelLeAftOfStem: { value: r4(BMP + 0.333), status: "estimated", how: "0.333 m aft of the BMP on the class measurement diagram, the BMP 2.810 m aft of the stem by ORC's SFJ and the rule's 2320 mm", pm: 0.06 },
+          wlFwdAftOfStem: { value: null, status: "not sourced" },
+        },
+        weight: "good",
+        why: "Every rig dimension is a class rule or an ORC measurement, and mast, forestay and keel share one datum (the BMP), so the stem's uncertain place doesn't enter the lead. The keel's edges are read off a schematic diagram (±0.06 m), and ORC's J is 0.06 m longer than the rule's nominal.",
+      },
+      disagreements: [
+        { what: "J", values: [{ value: "2.650 m", source: "orc-soling" }, { value: "2.590 ± 0.055 m (2320 ± 5 + 270 ± 50)", source: "soling-class-rules" }], used: "2.650 m (ORC)", effect: "with the rule's nominal the mast is 0.06 m further forward: the lead 1.0% of LWL more" },
+        { what: "Stem to the Breakwater Measurement Point", values: [{ value: "2.810 m (SFJ 0.490 + 2.320)", source: "orc-soling" }, { value: "2.98 ± 0.04 m (LOA 8185 − 783 − 3·1475, the forward template on the BMP line)", source: "soling-guide" }], used: "2.810 m", effect: "none on the lead; the whole rig and keel move together" },
+        { what: "LWL", values: [{ value: "6.10 m", source: "soling-guide" }, { value: "LSM0 6.060 m", source: "orc-soling" }, { value: "20.25 ft = 6.17 m", source: "keelindex-soling" }], used: "6.10 m (the class's)" },
+        { what: "Mainsail area", values: [{ value: "13.6 m² (the triangle)", source: "soling-guide" }, { value: "15.98 m² (measured)", source: "orc-soling" }], used: "15.98 m², by the roach" },
+      ],
+      estimatedWhy: "BWL is solved from ORC's sink; Tc is ORC's draft less the diagram's keel span. The keel's planform and sweep are read off the class diagram; its section is the one that makes 580 kg of cast iron. The rudder's chords are the rule diagram's; its span (0.81–0.85 m normal to the top edge), sweep and position along the hull are worked from the rule's quadrilateral and a counter slope read off the diagram. The crew's weight is the middle of ORC's range.",
+    },
+  };
+})();
+
+// ───────────────────────────── Nordic Folkboat
+const folkboat = (() => {
+  const P = 8.75, E = 3.38, I = 6.5, J = 1.995, TACK = 0.8;
+  // The main's area by its class girths (rule 9.22), trapezoids down the luff from the head:
+  // widths 0.15 (head, estimated), 0.37 at 0.50 m, 1.31 at 2.28, 2.225 at 4.57, 3.38 at 8.75
+  const girth = [[0, 0.15], [0.5, 0.37], [2.28, 1.31], [4.57, 2.225], [8.75, 3.38]];
+  const mainM2 = girth.slice(1).reduce((s, [h, w], i) => s + ((w + girth[i][1]) / 2) * (h - girth[i][0]), 0);
+  const jibM2 = 24.0 - mainM2; // the class's "sail area (actual) 24.00 m²" less the main
+  const luff = Math.hypot(I, J);
+  return {
+    id: "folkboat",
+    solve: { draft: 1.2 },
+    doc: {
+      version: 1,
+      title: "Nordic Folkboat",
+      hull: { link: null, dims: { loa: 7.68, lwl: 6.0, beam: 2.2, bwl: 1.83, tc: 0.42, draft: 1.2, freeboard: 0.65, displacementKg: r4(2.15 * 1025), cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: r4(TACK + J), rakeDeg: 0, stepped: "keel", kgPerM: null },
+        I, P, E, BAS: 1.0, ISP: null, forestayAftOfStem: TACK,
+        main: { roach: r6(mainM2 / (0.5 * P * E) - 1), reefs: [0.15] },
+        headsail: { kind: "jib", LP: r4((2 * jibM2) / luff), clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        keel: { kind: "long", aftOfStem: 2.08, span: 0.78, rootChord: 4.52, tipChord: 2.18, sweepDeg: 66, tc: 0.06, bulb: null },
+        rudder: { kind: "skeg", aftOfStem: 6.6, span: 0.66, rootChord: 0.645, tipChord: 0.3, sweepDeg: -45, tc: 0.07, maxDeg: 35, stockFrac: 0 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 1000, at: "keel" }, lightship: { kg: null, vcg: null }, crew: { count: 3, kgEach: 75, mode: "sitting", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "hull.dims.freeboard", "rig.main.roach", "rig.main.reefs", "rig.headsail.LP",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+        ...foil("rudder", "kind", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc", "stockFrac"),
+        "loading.crew.kgEach",
+      ),
+    },
+    sources: [
+      src("folkboat-class-rules", "LOA 7.68 m, LWL 6.00, beam 2.20, lowest freeboard 0.568, draft 1.20, displacement from the CWL 2.15 m³, sail area (actual) 24.00 m², keel 1000–1050 kg cast iron; weight not less than 1930 kg; fore side of the mast 1990–2000 mm from the forestay at deck (6.1.7); the forestay not less than 800 mm from the bow point (7.21); bands 1000 mm above deck, 5500 and 8750 above that; boom band 3380 mm; mainsail girths (9.22); rudder offsets (5.20); two or three crew", "Nordic Folkboat International Class Rules 2025–2028, update March 2026 (NFIA)", "https://folkboat.com/wp-content/uploads/2026/03/NORDIC-FOLKBOAT-CLASS-RULES-2025-2028-Update-March-2026.pdf", { quoted: "The distance from the fore side of the mast, with the mast in the center of the mast hole, to the intersecting point of the center line of the forestay or its extension with the deck shall not exceed 2000mm and be not less than 1990mm." }),
+      src("folkboat-plan-5", "The official 1:10 construction plan: MAST POSITION MANDATORY; 800 mm bow point to forestay; 1020 mm bow point to the forward end of the CWL; stations 500 mm apart, the bow point 140 mm forward of station 16; stem profile depths at stations 9–16; the iron keel's forward tip 170 mm forward of station 11; 1200 mm CWL to keel base; measured for the sternpost, the keel's aft corner and the section at station 8", "NFIA Plan No. 5, 'Nordic Folkboat Construction Plan', scale 1:10, drawn 1947, redrawn 1961, Rev 3 July 2024", "https://folkboat.com/wp-content/uploads/2025/01/5_Construction-plan-wood-English-Rev-3-July-2024-1.pdf", { note: "Scale 0.8333 mm/px from the stations. Checks: deck length 7639 mm (7640 given), LWL 5994 (6000), forestay 793 (800), CWL forward end 1026 (1020). Read off it: the mast's fore edge 2.798 m aft of the bow point; the sternpost straight at 45° from the vertical, meeting the CWL 7.02 m aft of the bow point and the keel base at 5.82 m; half-breadth at the CWL at station 8 0.914 m. Centreline profile (mm aft of the bow point, depth below the CWL): (1020, 0) (1640, 249) (2140, 442) (2640, 670) (3140, 947) (3640, 1110) (4140, 1152) (4640, 1161), then 1200 to the aft lower corner at 5817." }),
+      src("keelindex-folkboat", "SA/D 15.72 (258 ft²), ballast/displacement 51.82, D/L 248.84, capsize screening 1.78, hull speed 5.95 kn; displacement 4,255 lb, ballast 2,205 lb, LWL 19.68 ft", "keelindex.com, Nordic Folkboat (reproduces sailboatdata's table)", "https://www.keelindex.com/boat/nordic-folkboat"),
+      src("gob-folkboat", "I 18.04 ft (above the lower band, not the deck), J 6.72, P 28.71, E 11.10 ft; main 162.12 ft², jib 70.46 ft² (calculated)", "Good Old Boat sail data (Sailrite), \"Nordic Folkboat 25\"", "https://goodoldboat.com/saildata/boat/nordic-folkboat-25/"),
+      USPHRF,
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "Everything fore and aft is a class rule or a dimension on the official 1:10 plan. The doc floats at the class's design displacement (2.15 m³ at the CWL, where LWL is 6.00 m and the draft 1.20 m); the published ratios are on the class's minimum weight, 1930 kg, and are compared in that condition.",
+      figures: [
+        { id: "saDesignerM2", label: "Sail area, main + 100% foretriangle", value: 21.271, unit: "m²", tol: { rel: 0.005 }, source: "folkboat-class-rules", work: "½·8.75·3.38 + ½·6.50·1.995 = 14.7875 + 6.4838 = 21.271, from the rule's bands (the class's 24.00 m² is the sails' actual area)" },
+        { id: "saD", label: "SA/D, designer's, at 1930 kg", value: 13.95, unit: "", tol: { abs: 0.05 }, source: "folkboat-class-rules", condition: "class-minimum", work: "21.271 / (1930/1025)^(2/3) = 21.271/1.5249 = 13.95, worked here; keelindex prints 15.72 on the actual 258 ft² and yachtdatabase 13.3 on an ISO reference sail" },
+        { id: "dL", label: "D/L, at 1930 kg", value: 248.84, unit: "", tol: { abs: 0.5 }, source: "keelindex-folkboat", condition: "class-minimum", work: "(4,255/2240)/(0.01·19.68)³ = 1.8996/0.007622 = 249.2 (printed 248.84)" },
+        { id: "ballastRatio", label: "Ballast / displacement, at 1930 kg", value: 0.5182, unit: "", tol: { abs: 0.005 }, source: "keelindex-folkboat", condition: "class-minimum", work: "1000 / 1930 (the rule's minimum keel over its minimum weight)" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 5.95, unit: "kn", tol: { abs: 0.01 }, source: "keelindex-folkboat", work: "1.34·√19.685 = 5.945" },
+        { id: "capsize", label: "Capsize screening at 1930 kg, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 1.78, unit: "", tol: { abs: 0.01 }, source: "keelindex-folkboat", condition: "class-minimum", work: "7.218 / (4,255/64)^⅓ = 7.218/4.051 = 1.782" },
+        { id: "draftM", label: "Draft", value: 1.2, unit: "m", tol: { abs: 0.02 }, source: "folkboat-class-rules", roundTrip: "the keel's span is solved so that the draft reaches the class's 1.20 m" },
+      ],
+      conditions: {
+        "class-minimum": { what: "The class's minimum weight, 1930 kg (rigged, no crew or sails): what the ratio sites call her displacement", displacementKg: 1930, crew: { count: 0, kgEach: 75, mode: "none" } },
+      },
+      balance: {
+        phrf: { value: 276, source: "usphrf-hla" },
+        real: {
+          mastAftOfStem: { value: r4(TACK + J), status: "given", how: "the rule's forestay 800 mm from the bow point plus its 1990–2000 mm to the mast's fore side; the plan reads 2.798", pm: 0.01 },
+          keelLeAftOfStem: { value: 2.08, status: "estimated", how: "where the plan's dimensioned stem profile passes 0.42 m below the CWL, the depth taken for the canoe body (a modelling choice on a wineglass section)", pm: 0.15 },
+          wlFwdAftOfStem: { value: 1.02, status: "given", how: "dimensioned on the plan" },
+        },
+        weight: "good",
+        why: "Mast, forestay, the waterline's forward end and the whole underwater profile are class rules or dimensions on the official 1:10 plan. What is a choice is where the canoe body ends and the keel begins (Tc 0.42 m): the model's keel is a trapezoid fitted to the profile below that depth (2.61 m² against the profile's 2.50).",
+      },
+      disagreements: [
+        { what: "Displacement", values: [{ value: "2.15 m³ from the CWL (2204 kg in sea water)", source: "folkboat-class-rules" }, { value: "weight not less than 1930 kg (4,255 lb)", source: "folkboat-class-rules" }], used: "2204 kg in the doc (the condition LWL 6.00 and draft 1.20 belong to); 1930 kg for the published ratios" },
+        { what: "J", values: [{ value: "1.990–2.000 m", source: "folkboat-class-rules" }, { value: "6.72 ft = 2.048 m", source: "gob-folkboat" }], used: "1.995 m (the rule)" },
+        { what: "Sail area", values: [{ value: "24.00 m² actual", source: "folkboat-class-rules" }, { value: "main 162.12 + jib 70.46 ft² = 21.61 m²", source: "gob-folkboat" }], used: "the rule's bands for the designer's area; the main's roach from its girths (17.39 m²), the jib the remainder of 24.00" },
+      ],
+      estimatedWhy: "BWL is twice the half-breadth read off the plan's station 8 (±0.05 m); Tc (0.42 m) is where that section turns into the garboard. The keel is a trapezoid fitted to the dimensioned profile below Tc: leading edge at 2.08 m, root on the sternpost at 6.60 m, bottom from 3.64 to 5.82 m, leading edge swept 66°. The rudder is hung on the 45° sternpost: modelled as a skeg rudder, its chords the rule's offsets turned to the horizontal, only the part below Tc. Freeboard is between the rule's lowest (0.568) and the plan's ends (0.62, 0.865). The jib's LP gives the area left of the class's 24.00 m² after the main.",
+    },
+  };
+})();
+
+// ───────────────────────────── Cal 40
+const cal40 = (() => ({
+  id: "cal40",
+  solve: { draft: ft(5.58) },
+  doc: {
+    version: 1,
+    title: "Cal 40",
+    hull: { link: null, dims: { loa: ft(39.33), lwl: ft(30.33), beam: ft(11), bwl: 3.15, tc: 0.55, draft: ft(5.58), freeboard: 1.21, displacementKg: lb(15000), cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+    rig: {
+      type: "masthead",
+      mast: { aftOfStem: ft(15.17), rakeDeg: 0, stepped: "keel", kgPerM: null },
+      I: ft(46), P: ft(40), E: ft(17.5), BAS: 1.41, ISP: null, forestayAftOfStem: 0,
+      main: { roach: 0, reefs: [0.15, 0.3] },
+      headsail: { kind: "genoa", LP: ft(22.75), clewHeight: null, furl: 0 },
+      staysail: null,
+    },
+    appendages: {
+      keel: { kind: "fin", aftOfStem: 4.52, span: 1.26, rootChord: 4.37, tipChord: 2.52, sweepDeg: 39, tc: 0.075, bulb: null },
+      rudder: { kind: "spade", aftOfStem: 10.09, span: 1.0, rootChord: 0.762, tipChord: 0.381, sweepDeg: 33.6, tc: 0.12, maxDeg: 35, stockFrac: 0.26 },
+    },
+    loading: { displacement: { from: "hull", kg: null }, ballast: { kg: lb(6000), at: "keel" }, lightship: { kg: null, vcg: null }, crew: { count: 6, kgEach: 80, mode: "sitting", arm: null } },
+    prov: est(
+      "hull.dims.bwl", "hull.dims.tc", "hull.dims.freeboard", "rig.BAS", "rig.forestayAftOfStem", "rig.main.reefs",
+      ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+      ...foil("rudder", "aftOfStem", "span", "sweepDeg", "tc", "stockFrac"),
+      "loading.crew.count",
+    ),
+  },
+  sources: [
+    src("gob-cal40", "LOA 39.33, LWL 30.33, beam 11.00, draft 5.58 ft, displacement 15,000 lb, ballast 6,000 lb; I 46, J 15.17, P 40, E 17.50 ft", "Good Old Boat sail data (Sailrite), \"Cal 40\"", "https://goodoldboat.com/saildata/boat/cal-40/"),
+    src("cal40-lines", "Lapworth's lines drawing: DISP. 14300# S.W., #/INCH 1060, W.P. COEF .666, W.S. 325.19; stations 3 ft apart, the stemhead 4'-6\" forward of station 0; rudder chords 30 in and 15 in, its tip 3'-8\" below the DWL; measured for the keel, the rudder and the hull's profile", "C. William Lapworth, Cal 40 lines (1963), scan on the Cal 40 class site", "https://www.cal40.com/files/TEMP006.pdf", { note: "Scale 224.5 px/ft from the stations (224.3 from the dimensioned 39'-4\"). Checks: draft 5.53–5.68 ft (5.58 published), beam 10.8–10.9 ft (11.0). Read off it: the keel's straight leading edge produced to the hull 14.83 ft (4.52 m) aft of the stemhead (its fillet leaves the hull at about 13.7 ft), the trailing edge at 29.16 ft; chord 14.33 ft at the hull, 8.27 ft at the bottom; span 3.91–4.37 ft; leading-edge sweep 39°. Rudder leading edge 33.12 ft at the hull, sweep 33.6°, stock at about 26% chord. The 'DWL 6' half-breadth gives BWL about 3.15 m; the canoe body is 0.39–0.50 m deep at the keel's ends (its lowest point is hidden by the keel). Straight edges ±0.03 m; the keel's root corners depend on the fillet, ±0.1 m." }),
+    src("cal40-sailplan", "Lapworth's sail and rig plan, 3/8\" = 1 ft, 24 January 1963: P 40.00, P2 46.00, E 17.50, J 15.17; main 350 ft²; genoa luff 45'-9\", foot 24'-6\", leech 43'-2\", 520 ft², LP 22'-9\"; measured for the mast and the forestay's tack", "C. William Lapworth, California 40 sail & rig plan (1963); and the inboard profile of 10 January 1963", "https://www.cal40.com/files/TEMP005.pdf", { note: "The mast's front face reads 15.08–15.14 ft aft of the stemhead on the sail plan and 14.98–15.05 ft on the inboard profile (https://www.cal40.com/files/TEMP004.pdf), against J 15.17 ft with the tack at the stemhead fitting (read 0.04 ft aft of it). Boom 4.6 ft above the sheer at the mast (±0.2). The inboard profile shows the mast stepped on the hull's floor." }),
+    src("ps-cal40", "S.A./Displ. 18.48 (calc. 18.45), Bal./Displ. 40, Disp./Len. 240.01, capsize screening 1.79, hull speed 7.38 kn; S.A. fore 348.91 ft²; PHRF 108–120 by region", "Practical Sailor, Cal 40 review (embeds sailboatdata's table)", "https://www.practical-sailor.com/sailboat-reviews/cal-40/"),
+    NCPHRF,
+    SAILBOATDATA,
+  ],
+  published: {
+    note: "Published dimensions and Lapworth's own dimensioned drawings. The mast is J aft of the stemhead (the forestay's tack is at the stemhead fitting on the sail plan).",
+    figures: [
+      { id: "saDesignerFt2", label: "Sail area, main + 100% foretriangle", value: 698.91, unit: "ft²", tol: { rel: 0.005 }, source: "ps-cal40", work: "½·40·17.5 + ½·46·15.17 = 350.00 + 348.91" },
+      { id: "saD", label: "SA/D", value: 18.45, unit: "", tol: { abs: 0.1 }, source: "ps-cal40", work: "698.91 / (15,000/64)^(2/3) = 698.91/38.02 = 18.38; the printed 18.45 (calc.) and 18.48 are on about 702 ft², J 15.3" },
+      { id: "dL", label: "D/L", value: 240.01, unit: "", tol: { abs: 0.5 }, source: "ps-cal40", work: "(15,000/2240)/(0.01·30.33)³ = 6.6964/0.027901 = 240.0" },
+      { id: "ballastRatio", label: "Ballast / displacement", value: 0.4, unit: "", tol: { abs: 0.005 }, source: "ps-cal40", work: "6,000 / 15,000" },
+      { id: "hullSpeedKn", label: "Hull speed", value: 7.38, unit: "kn", tol: { abs: 0.01 }, source: "ps-cal40", work: "1.34·√30.33 = 7.380" },
+      { id: "capsize", label: "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 1.79, unit: "", tol: { abs: 0.01 }, source: "ps-cal40", work: "11.00 / (15,000/64)^⅓ = 11/6.166 = 1.784" },
+      { id: "draftM", label: "Draft", value: ft(5.58), unit: "m", tol: { abs: 0.02 }, source: "gob-cal40", roundTrip: "the keel's span is solved so that the draft reaches the published 5.58 ft (the drawing's span is 1.19–1.33 m)" },
+      { id: "awM2", label: "Waterplane area (the lines' 1060 lb per inch, at 14,300 lb)", value: r4(((1060 / 0.0254) * LB) / 1025), unit: "m²", tol: null, source: "cal40-lines", condition: "design", estimatedInputs: true, assert: false, why: "printed, not compared: the synthetic hull's waterplane on a BWL read off the drawing; the lines' own waterplane coefficient is 0.666", work: "1060 lb per inch = 1060/0.0254 · 0.4536 = 18,929 kg per metre of immersion; / 1025 kg/m³ = 18.47 m²" },
+      { id: "wettedM2", label: "Wetted surface (the lines' 325.19 ft², at 14,300 lb)", value: r4(325.19 * FT * FT), unit: "m²", tol: null, source: "cal40-lines", condition: "design", estimatedInputs: true, assert: false, why: "printed, not compared: the lines don't say whether the figure includes the keel and rudder; ours is shown both ways" },
+    ],
+    conditions: {
+      design: { what: "The lines drawing's design displacement, 14,300 lb in salt water, no crew", displacementKg: lb(14300), crew: { count: 0, kgEach: 80, mode: "none" } },
+    },
+    balance: {
+      phrf: { value: 114, source: "ncphrf" },
+      real: {
+        mastAftOfStem: { value: ft(15.17), status: "given", how: "J 15.17 ft on Lapworth's sail plan, the tack at the stemhead fitting; the mast's face reads 4.57–4.61 m on two drawings", pm: 0.04 },
+        keelLeAftOfStem: { value: 4.52, status: "estimated", how: "the straight leading edge produced to the hull on Lapworth's lines, scaled by its stations", pm: 0.1 },
+        wlFwdAftOfStem: { value: ft(4.5), status: "given", how: "dimensioned on the lines: station 0 is 4'-6\" aft of the stemhead" },
+      },
+      weight: "good",
+      why: "The rig is dimensioned on the designer's sail plan and the keel and rudder are read off his lines, whose scale checks to 0.2% against its own dimensions. The keel's root corner depends on how its fillet is read (±0.1 m). Her keel is a fin by family, but its root is 47% of the LWL long.",
+    },
+    disagreements: [
+      { what: "LWL", values: [{ value: "30.33 ft", source: "gob-cal40" }, { value: "30.0 ft as drawn at 14,300 lb", source: "cal40-lines" }], used: "30.33 ft (published, with the published 15,000 lb)" },
+      { what: "Displacement", values: [{ value: "15,000 lb", source: "gob-cal40" }, { value: "14,300 lb (design, salt water)", source: "cal40-lines" }], used: "15,000 lb in the doc; the lines' own figures are compared at 14,300 lb" },
+      { what: "J", values: [{ value: "15.17 ft", source: "cal40-sailplan" }, { value: "15.30 ft (class band limit; sailboatdata's SA/D is on about this)", source: "ps-cal40" }], used: "15.17 ft (the designer's)" },
+    ],
+    estimatedWhy: "BWL (the 'DWL 6' half-breadth), Tc, freeboard, BAS and the forestay's tack are read off Lapworth's drawings. The keel's and rudder's positions, the keel's chords and both sweeps are read off the lines; the rudder's chords are dimensioned there. The keel's section is about 0.26 m thick on the body plan. The synthetic hull puts the waterline's forward end 0.6·(LOA − LWL) = 1.65 m aft of the stem; the lines' is 1.37 m.",
+  },
+}))();
+
+// ───────────────────────────── Contessa 32
+const contessa32 = (() => {
+  const J = ft(12.66), MAST = 3.95;
+  const P = ft(32), E = ft(10);
+  return {
+    id: "contessa32",
+    solve: { bmtM: r4(3.34 * FT), bmCondition: "ior", draft: ft(5.5) },
+    doc: {
+      version: 1,
+      title: "Contessa 32",
+      hull: { link: null, dims: { loa: 9.75, lwl: ft(24), beam: ft(9.5), bwl: 2.5, tc: 0.6, draft: ft(5.5), freeboard: 1.03, displacementKg: lb(9500), cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "masthead",
+        mast: { aftOfStem: MAST, rakeDeg: 0, stepped: "keel", kgPerM: null },
+        I: ft(37.1), P, E, BAS: 1.3, ISP: null, forestayAftOfStem: r4(MAST - J),
+        main: { roach: r6(17 / (0.5 * P * E) - 1), reefs: [0.15, 0.3] },
+        headsail: { kind: "genoa", LP: 5.81, clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        keel: { kind: "fin", aftOfStem: 3.9, span: 1.0, rootChord: 2.66, tipChord: 1.72, sweepDeg: 46, tc: 0.1, bulb: null },
+        rudder: { kind: "skeg", aftOfStem: 7.89, span: 0.75, rootChord: 0.99, tipChord: 0.5, sweepDeg: 40, tc: 0.12, maxDeg: 35, stockFrac: 0.7 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: lb(4500), at: "keel" }, lightship: { kg: null, vcg: null }, crew: { count: 4, kgEach: 80, mode: "sitting", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "hull.dims.freeboard", "rig.mast.aftOfStem", "rig.forestayAftOfStem", "rig.BAS", "rig.main.reefs",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+        ...foil("rudder", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc", "stockFrac"),
+        "loading.crew.count",
+      ),
+    },
+    sources: [
+      src("co32-brochure", "LOA 32 ft 9.75 m, LWL 24 ft 7.31 m, beam 9 ft 6 in, draft 5 ft 6 in, displacement 9500 lb 4300 kg, lead ballast 4500 lb 2045 kg, ballast ratio 47%; alloy mast stepped on the keel; the scaled inboard profile on p. 2 (scale bar 0–8 ft), measured for the mast, the keel, the skeg and the rudder", "Jeremy Rogers Ltd, Contessa 32 brochure (1970s)", "https://www.jeremyrogers.co.uk/wp-content/uploads/2023/05/70s-Contessa-32-Brochure.pdf", { note: "15.94 px/ft by the scale bar (about 2 cm a pixel). Checks: hull length 31.56 ft (32.0), LWL 24.34 (24.0), draft 5.38 (5.50): ±2%, ±0.08 m at the mast and keel. Read off it: mast front 3.89 m aft of the stemhead (3.95 with the scale normalised to LOA; a third-party redraw reads 4.00); the keel's leading edge, a sharp-corner construction on a keel that blends into the hull, 3.86–3.94 m; trailing edge 6.52–6.62; chord 2.66 m at the hull, 1.72 at the bottom; span 0.90–1.11; leading edge swept 46°. Skeg root 7.89 m; skeg and rudder 0.99 m at the hull, the blade 0.50 at the bottom, 1.04 m below the waterline. The canoe body is 0.54–0.73 m deep at the keel's ends. The brochure's profile doesn't show the forestay." }),
+      src("fastnet-wolfson", "Table 1: displacement 10,112 lb, BM 3.34 ft, GM 3.10 ft, VCG −0.75 ft above the measured waterline (IOR measurement trim, no crew); maximum GZ 2.3 ft at 78°; angle of vanishing stability 156° (text) and 157° (conclusions)", "Wolfson Unit Report No. 431, 'Stability conditions on Contessa 32 and 1976 Half Tonner' (November 1979), Annex 3A of the 1979 Fastnet Race Inquiry report (RYA / RORC), printed pp. 70–73", "https://www.blur.se/images/fastnet-race-inquiry.pdf", { quoted: "The Contessa 32 has an initial GM of 3.1ft, a maximum GZ value of 2.3ft at a heel angle of 78 degrees, and a heel angle of vanishing stability of 157degrees." }),
+      src("gob-co32", "I 37.10, J 12.20, P 32, E 10 ft (J.J. Taylor's); the MacBar Contessa 32's entry gives I 37.17, J 12.66, P 32.02, E 10.01 ft", "Good Old Boat sail data (Sailrite), \"Contessa 32\" and \"MacBar Contessa 32\"", "https://goodoldboat.com/saildata/boat/macbar-contessa-32/"),
+      src("co32-class", "Class rules: boom band 10 ft (3,048 mm), 32 ft (9,755 mm) above the gooseneck; spinnaker poles not over 12.67 ft (3,868 mm). Round the Island notes: mainsail 17 m², largest headsail 32 m² with LP 5.81 m, empty weight 4309 kg, sailing displacement 4600 kg", "Contessa 32 Class Association, Class Racing Rules (version 3.6, 2022) and Round the Island Race notes", "https://www.co32.org/racing/round-the-island-race"),
+      src("keelindex-co32", "Ballast/displacement 47.37, D/L 306.79, capsize screening 1.8, hull speed 6.56 kn; SA/D 15.5 on 433 ft² (P 35.0, I 40.7 ft: the taller Canadian rig)", "keelindex.com, Contessa 32 (reproduces sailboatdata's table)", "https://www.keelindex.com/boat/contessa-32"),
+      NCPHRF,
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "The brochure's dimensions, with the stability of the Wolfson Unit's 1979 report compared in its own condition. J is the MacBar entry's 12.66 ft, which the class's 12.67 ft pole limit supports; the mast is read off the brochure's profile, and the forestay's tack is what is left.",
+      figures: [
+        { id: "saD", label: "SA/D, designer's (UK rig)", value: 14.08, unit: "", tol: { abs: 0.05 }, source: "gob-co32", work: "(½·32·10 + ½·37.10·12.66) / (9,500/64)^(2/3) = 394.84/28.04 = 14.08, worked here; keelindex's 15.5 is on the taller Canadian rig" },
+        { id: "dL", label: "D/L", value: 306.79, unit: "", tol: { abs: 0.5 }, source: "keelindex-co32", work: "(9,500/2240)/(0.01·24)³ = 4.2411/0.013824 = 306.8" },
+        { id: "ballastRatio", label: "Ballast / displacement", value: 0.47, unit: "", tol: { abs: 0.005 }, source: "co32-brochure", work: "4,500 / 9,500 = 0.4737 (the brochure prints 47%)" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 6.56, unit: "kn", tol: { abs: 0.01 }, source: "keelindex-co32", work: "1.34·√24 = 6.565" },
+        { id: "capsize", label: "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)", value: 1.8, unit: "", tol: { abs: 0.01 }, source: "keelindex-co32", work: "9.5 / (9,500/64)^⅓ = 9.5/5.295 = 1.794" },
+        { id: "mainM2", label: "Main, with roach", value: 17, unit: "m²", tol: { rel: 0.01 }, source: "co32-class", roundTrip: "the roach is set so the main is the class's 17 m²" },
+        { id: "draftM", label: "Draft", value: ft(5.5), unit: "m", tol: { abs: 0.02 }, source: "co32-brochure", roundTrip: "the keel's span is solved so that the draft reaches the published 5 ft 6 in" },
+        { id: "bmtM", label: "BMt (Wolfson, IOR trim)", value: r4(3.34 * FT), unit: "m", tol: { rel: 0.01 }, source: "fastnet-wolfson", condition: "ior", roundTrip: "BWL is solved so that the synthetic hull's BMt is the Wolfson report's 3.34 ft" },
+        { id: "gmM", label: "GM (Wolfson, IOR trim, no crew)", value: r4(3.1 * FT), unit: "m", tol: { rel: 0.15 }, source: "fastnet-wolfson", condition: "ior", estimatedInputs: true, work: "3.10 ft, with the VCG 0.75 ft below the measured waterline; ours from the mass roll-up (ballast in the keel, the lightship at mid-depth)" },
+        { id: "gzMaxM", label: "Maximum GZ (Wolfson, IOR trim)", value: r4(2.3 * FT), unit: "m", tol: { rel: 0.15 }, source: "fastnet-wolfson", condition: "ior", estimatedInputs: true, work: "2.3 ft at 78°" },
+        { id: "avsDeg", label: "Angle of vanishing stability (Wolfson, IOR trim)", value: 156, unit: "°", tol: { abs: 10 }, source: "fastnet-wolfson", condition: "ior", estimatedInputs: true, work: "156° in the report's text, 157° in its conclusions; the Wolfson hull has a coachroof, the synthetic one a flat deck" },
+      ],
+      conditions: {
+        ior: { what: "The Wolfson report's condition: IOR measurement trim, 10,112 lb, no crew", displacementKg: lb(10112), crew: { count: 0, kgEach: 80, mode: "none" } },
+      },
+      balance: {
+        phrf: { value: 186, source: "ncphrf" },
+        real: {
+          mastAftOfStem: { value: MAST, status: "estimated", how: "read off the brochure's scaled profile: 3.89 m by its scale bar, 3.95 with the scale normalised to LOA, 4.00 on a third-party redraw", pm: 0.08 },
+          keelLeAftOfStem: { value: 3.9, status: "estimated", how: "a sharp-corner construction on the same profile (the keel blends into the hull): 3.86–3.94 m on two drawings", pm: 0.1 },
+          wlFwdAftOfStem: { value: r4((762.5 - 688) / 15.72 * FT), status: "estimated", how: "the same profile, scale normalised to LOA" },
+        },
+        weight: "fair",
+        why: "The mast, the forestay's tack and the keel are all read off an undimensioned brochure profile at about 2 cm a pixel (±2%, ±0.08–0.10 m each), her keel blends into the hull so its root is a construction, and sources give two J's (12.20 and 12.66 ft). Her stability check is the strong one: the Wolfson curve with its own inputs.",
+      },
+      disagreements: [
+        { what: "J", values: [{ value: "12.20 ft (J.J. Taylor)", source: "gob-co32" }, { value: "12.66 ft (MacBar; the class's pole limit is 12.67 ft)", source: "gob-co32" }], used: "12.66 ft", effect: "foretriangle 3.8% larger; with the mast read at 3.95 m the tack is 0.09 m aft of the stemhead (a redraw reads 0.17 ± 0.1)" },
+        { what: "Angle of vanishing stability", values: [{ value: "156° (text)", source: "fastnet-wolfson" }, { value: "157° (conclusions)", source: "fastnet-wolfson" }], used: "156°" },
+        { what: "Displacement", values: [{ value: "9,500 lb", source: "co32-brochure" }, { value: "10,112 lb (IOR trim)", source: "fastnet-wolfson" }, { value: "4309 kg empty, 4600 kg sailing", source: "co32-class" }], used: "9,500 lb in the doc (the published ratios are on it); the Wolfson figures at 10,112 lb" },
+        { what: "SA/D", values: [{ value: "14.08 (UK rig, worked here)", source: "gob-co32" }, { value: "15.5 (433 ft², the Canadian rig)", source: "keelindex-co32" }], used: "14.08" },
+      ],
+      estimatedWhy: "BWL is solved from the Wolfson report's BM; Tc, freeboard and every fore-and-aft position are read off the brochure's profile. BAS is a guess from the class's gooseneck height above a keel-stepped mast's butt (2.795 m), ±0.2 m. The skeg and rudder are modelled as one skeg rudder of their combined planform.",
+    },
+  };
+})();
+
+// ───────────────────────────── Hallberg-Rassy 40C
+const hr40c = (() => {
+  const SFJ = 0.31, MAST = 4.89, J = MAST - SFJ, I = 17.5, P = 16.3, E = 5.34;
+  const VPP_TWS = [6, 8, 10, 12, 14, 16, 20];
+  return {
+    id: "hr40c",
+    solve: { draft: 1.92 },
+    doc: {
+      version: 1,
+      title: "Hallberg-Rassy 40C",
+      hull: { link: null, dims: { loa: 12.3, lwl: 11.74, beam: 4.18, bwl: 3.6, tc: 0.6, draft: 1.92, freeboard: 1.55, displacementKg: 11000, cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: MAST, rakeDeg: 0, stepped: "deck", kgPerM: null },
+        I, P, E, BAS: 1.8, ISP: null, forestayAftOfStem: SFJ,
+        main: { roach: r6(51.2 / (0.5 * P * E) - 1), reefs: [0.15, 0.3] },
+        headsail: { kind: "jib", LP: r4((2 * 41.5) / Math.hypot(I, J)), clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        // tc: the section whose volume is the 3,650 kg keel in lead (11340 kg/m³) on the drawn planform
+        keel: { kind: "fin", aftOfStem: 4.91, span: 1.26, rootChord: 2.04, tipChord: 1.59, sweepDeg: 27, tc: 0.113, bulb: null },
+        rudder: { kind: "spade", aftOfStem: 11.63, span: 1.18, rootChord: 0.45, tipChord: 0.19, sweepDeg: 16, tc: 0.12, maxDeg: 35, stockFrac: 0.2 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 3650, at: "keel" }, lightship: { kg: null, vcg: null }, crew: { count: 4, kgEach: 80, mode: "sitting", arm: null } },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "hull.dims.freeboard",
+        "rig.type", "rig.mast.aftOfStem", "rig.mast.stepped", "rig.I", "rig.P", "rig.E", "rig.BAS", "rig.forestayAftOfStem", "rig.main.reefs", "rig.headsail.LP",
+        ...foil("keel", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+        ...foil("rudder", "aftOfStem", "span", "rootChord", "tipChord", "sweepDeg", "tc"),
+        "loading.crew.count",
+      ),
+    },
+    sources: [
+      src("hr-40c", "Hull length 12.30 m, waterline at rest 11.74 m, beam 4.18, draught (empty standard boat) 1.92, displacement (empty standard boat) 11 t, keel weight 3.65 t, keel type lead on deep bilge, sail area with genoa jib 90.1 m², air draft 19.75 m, CE category A; triple-spreader Seldén rig", "Hallberg-Rassy, HR 40C data sheet and brochure (HR40C-400-colour-2025.pdf)", "https://www.hallberg-rassy.com/yachts/hallberg-rassy-40c", { note: "The builder publishes no I, J, P or E, no STIX and no handicap number." }),
+      src("hr-40c-section", "The builder's longitudinal section with a 0–2 m scale bar, measured for the mast, the forestay's tack, the boom band, the keel and the rudder", "Hallberg-Rassy, HR 40C interior side view (1900 × 858 px)", "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40Cinteriorsideview.jpg", { note: "134.0 px/m by the scale bar. Checks: hull length 12.30 m (12.30 published); the waterline, not drawn, is placed 1.92 m above the keel's bottom and then reads 11.56 m long against 11.74 (−1.5%). Read off it: forestay tack 0.31 m aft of the stemhead; mast front 4.89 (a rendering in the brochure reads 4.85); boom band 5.34 m aft of the mast's aft face; keel at the hull 4.91–6.95 m, 1.59 m long above the bulb, 1.26 m deep, leading edge swept about 27°, the bulb 1.78 m long; rudder root 11.63 m, chords 0.45 and 0.19, span 1.18 (one of two canted blades, in projection). Fore and aft ±0.04 m; heights ±0.06 m. I (17.5 m) and P (16.3 m) are scaled off the brochure's perspective rendering, corrected by the published air draft: ±0.5 m." }),
+      src("hr-40c-vpp", "Frers' VPP output for design D1381: sailing displacement 11.6 t, draft 1.90 m, main 51.2 m², jib 41.5 m², true wind at the masthead; boat speeds by true wind speed and angle", "Hallberg-Rassy, HR 40C boat speeds (Germán Frers, 'D1381 VPP Output')", "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40C-Boatspeeds.jpg"),
+      src("hr-40c-stability", "Frers' stability curve, righting moment (kgf·m) against heel, 'Full Load' and 'Light Ship' (their displacements are not printed): light ship 1307 at 5°, 2542 at 10°, 6272 at 30°, maximum 8502 at 66°, vanishing at 125.5°; full load vanishing at 122.3°", "Hallberg-Rassy, HR 40C stability curve (Germán Frers), standard keel", "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40C-StabilityCurve.jpg", { note: "Digitised from the image: about ±100 kgf·m and ±1°." }),
+      src("yacht-hr40c", "Wasserlinienlänge 11,74 m, Gewicht 11,0 t, Ballast/-anteil 3,65 t / 33 %, theoretische Rumpfgeschwindigkeit 8,3 kn, Großsegel 52,2 m², Rollgenua (110 %) 44,2 m²; twin rudders", "YACHT, test of the Hallberg-Rassy 40C", "https://www.yacht.de/yachten/fahrtenyachten/yacht-test-die-neue-hr-40c-bewahrtes-gutes-noch-verbessert/"),
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "Hull, weights, sail areas, the VPP and the stability curve are the builder's. Nothing about the rig's geometry is published: every rig dimension and every fore-and-aft position is read off the builder's section (I and P off a rendering). She is here for the VPP and the stability curve; her balance reading carries the least weight of the fleet.",
+      figures: [
+        { id: "dL", label: "D/L", value: 189.2, unit: "", tol: { abs: 0.5 }, source: "hr-40c", work: "(11,000/1016.05)/(0.01·11.74/0.3048)³ = 10.826/0.05714 = 189.5, worked here from the builder's displacement and waterline (no source prints it)" },
+        { id: "ballastRatio", label: "Ballast / displacement", value: 0.33, unit: "", tol: { abs: 0.005 }, source: "yacht-hr40c", work: "3,650 / 11,000 = 0.3318" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 8.3, unit: "kn", tol: { abs: 0.05 }, source: "yacht-hr40c", work: "1.34·√38.52 = 8.317" },
+        { id: "mainM2", label: "Main, with roach", value: 51.2, unit: "m²", tol: { rel: 0.01 }, source: "hr-40c-vpp", roundTrip: "the roach is set so the main is the VPP's 51.2 m² on an estimated P and E" },
+        { id: "headsailM2", label: "Jib", value: 41.5, unit: "m²", tol: { rel: 0.01 }, source: "hr-40c-vpp", roundTrip: "LP is set so the jib is the VPP's 41.5 m² on an estimated I and J" },
+        { id: "draftM", label: "Draft", value: 1.92, unit: "m", tol: { abs: 0.02 }, source: "hr-40c", roundTrip: "the keel's span is solved so that the draft reaches the builder's 1.92 m" },
+        { id: "rm30KgM", label: "Righting moment at 30°, light ship, no crew", value: 6272, unit: "kg·m", tol: { rel: 0.25 }, source: "hr-40c-stability", condition: "light", estimatedInputs: true, work: "digitised from Frers' curve (±100); the light ship's displacement isn't printed and is taken as the 11 t empty boat" },
+        { id: "avsDeg", label: "Angle of vanishing stability, light ship", value: 125.5, unit: "°", tol: { abs: 10 }, source: "hr-40c-stability", condition: "light", estimatedInputs: true, work: "digitised from Frers' curve (±1°)" },
+      ],
+      conditions: {
+        light: { what: "The builder's empty standard boat, 11 t, no crew (taken as the stability curve's 'Light Ship', whose displacement isn't printed)", displacementKg: 11000, crew: { count: 0, kgEach: 80, mode: "none" } },
+        vpp: { what: "Frers' VPP condition: sailing displacement 11.6 t (the crew is taken to be in it), sitting", displacementKg: 11600, crew: { count: 4, kgEach: 80, mode: "sitting" } },
+      },
+      polar: {
+        kind: "designer-vpp",
+        source: "hr-40c-vpp",
+        condition: "vpp",
+        twsKn: VPP_TWS,
+        rows: {
+          beatAngle: [45.3, 43.5, 42.8, 41.7, 40.6, 40, 39.9],
+          beatVmg: [3.28, 4.05, 4.57, 4.9, 5.11, 5.24, 5.39],
+          52: [5.13, 6.22, 6.95, 7.3, 7.47, 7.6, 7.78],
+          60: [5.51, 6.63, 7.28, 7.61, 7.79, 7.91, 8.09],
+          70: [5.79, 6.89, 7.49, 7.84, 8.06, 8.2, 8.39],
+          90: [6.46, 7.44, 7.88, 8.13, 8.32, 8.5, 8.88],
+        },
+        compare: { twsKn: [8, 12, 16], twaDeg: [52, 70, 90], beat: true },
+        tol: { rel: 0.08 },
+        note: "The designer's VPP, not measured speeds: a check that two VPPs agree. Its true wind is at the masthead (19.75 m), the tool's at its own reference height. Downwind is with the A2 and is not compared.",
+      },
+      balance: {
+        phrf: null,
+        real: {
+          mastAftOfStem: { value: MAST, status: "estimated", how: "read off the builder's section by its scale bar; a rendering reads 4.85", pm: 0.04 },
+          keelLeAftOfStem: { value: 4.91, status: "estimated", how: "the same section; the root includes the deep-bilge sump", pm: 0.04 },
+          wlFwdAftOfStem: { value: 0.04, status: "estimated", how: "the same section, the waterline placed from the draft (±0.2 m)" },
+        },
+        weight: "low",
+        why: "I, J, P, E, BAS, the mast, the forestay's tack, the keel and the rudder are all estimates (20 of the fields the balance reads); I and P are ±0.5 m off a rendering. She has twin canted rudders, modelled as one blade in projection, and a keel whose root is a hull sump. The synthetic hull also puts her waterline's forward end 0.34 m aft of the stem where the drawing's is nearly plumb.",
+      },
+      disagreements: [
+        { what: "Sails", values: [{ value: "main 51.2, jib 41.5 m²", source: "hr-40c-vpp" }, { value: "main 52.2, furling genoa (110%) 44.2 m²", source: "yacht-hr40c" }, { value: "90.1 m² with the genoa jib", source: "hr-40c" }], used: "the VPP's, which the polar is compared with" },
+        { what: "Draft", values: [{ value: "1.92 m (empty)", source: "hr-40c" }, { value: "1.90 m", source: "hr-40c-vpp" }], used: "1.92 m" },
+      ],
+      estimatedWhy: "BWL is 0.86 of the beam, a proportion: nothing gives it, and the stability comparison hangs on it. Tc, freeboard and every rig and appendage dimension are read off the builder's section; I and P off a rendering. The keel's section is the one that makes 3,650 kg of lead on the drawn planform (its bulb is folded into the fin). The rudder is one of two.",
+    },
+  };
+})();
+
+// ───────────────────────────── International 470
+const dinghy470 = (() => {
+  const LOA = 4.7;
+  const TACK = r4(LOA - 4.63); // the headsail attachment hole, 4615–4645 mm from the aft measurement point
+  const MAST = 1.575; // the mast's front at the deck: inside the partner, 1.525–1.625 m aft of the stem
+  const P = 5.75, E = 2.65;
+  return {
+    id: "dinghy-470",
+    solve: { draft: 0.97 },
+    doc: {
+      version: 1,
+      title: "470",
+      hull: { link: null, dims: { loa: LOA, lwl: 4.4, beam: 1.69, bwl: 1.37, tc: 0.105, draft: 0.97, freeboard: 0.4, displacementKg: 250, cp: null, cm: null, lcbFrac: null, deadriseDeg: null } },
+      rig: {
+        type: "fractional",
+        mast: { aftOfStem: MAST, rakeDeg: 0, stepped: "keel", kgPerM: null },
+        I: 4.5, P, E, BAS: 0.55, ISP: null, forestayAftOfStem: TACK,
+        main: { roach: r6(9.12 / (0.5 * P * E) - 1), reefs: [] },
+        headsail: { kind: "genoa", LP: 1.78, clewHeight: null, furl: 0 },
+        staysail: null,
+      },
+      appendages: {
+        keel: { kind: "centreboard", aftOfStem: r4(LOA - 2.65 - 0.09), span: 0.87, rootChord: 0.46, tipChord: 0.295, sweepDeg: 0, tc: r4(0.022 / 0.46), bulb: null },
+        rudder: { kind: "kick-up", aftOfStem: 4.75, span: 0.58, rootChord: 0.25, tipChord: 0.25, sweepDeg: 0, tc: r4(0.022 / 0.25), maxDeg: 30, stockFrac: 0.15 },
+      },
+      loading: { displacement: { from: "hull", kg: null }, ballast: { kg: 0, at: "hull" }, lightship: { kg: null, vcg: null }, crew: { count: 2, kgEach: 65, mode: "trapeze", arm: null } },
+      conditions: { heelLimitDeg: 15 },
+      prov: est(
+        "hull.dims.bwl", "hull.dims.tc", "hull.dims.freeboard", "hull.dims.displacementKg",
+        "rig.I", "rig.BAS", "rig.headsail.LP",
+        ...foil("keel", "span", "sweepDeg"),
+        ...foil("rudder", "aftOfStem", "span", "sweepDeg", "maxDeg", "stockFrac"),
+        "loading.crew.kgEach", "loading.crew.mode",
+      ),
+    },
+    sources: [
+      src("470-class-rules", "Hull length 4690–4710 mm between the aft measurement point (AMP, the transom's lower edge on the centreplane) and the sheer point on the stem; the mast's aft edge at the step 3055–3115 mm from the hull datum point, its section 65–75 mm fore and aft; forestay height 4995–5025 mm above the mast's heel; lower point 1055 mm, upper point 5750 mm above it; boom outer point 2650 mm; centreboard pivot 2650 ± 10 mm from the datum, 102 ± 10 mm above the hull; centreboard chord 450–470, 285–305 at the lower edge, pivot 1015–1035 from the lower edge and 85–95 from the leading edge, 20–24 mm thick; rudder chord 240–260, 20–24 mm thick, its pivot at most 150 mm abaft the transom; boat weight 120 kg; two crew, one trapeze", "International 470 Class Rules 2019 (World Sailing, effective 15 January 2019), C.6, C.8, D.3, D.4, E.3, E.4, F.3, F.4", "https://arbitrage.ffvoile.fr/media/lgjjpzdb/470-2019-gbr.pdf", { quoted: "The distance of the centre of the centreboard pivot from the HDP shall be 2650mm ± 10mm and its height above the prolongation of the hull at the centreplane shall be 102mm ± 10mm" }),
+      src("470-measurement-form", "From the AMP: the headsail attachment hole in the stemhead fitting 4615–4645 mm; the mast partner's aft end 2990–3020 and forward end 3160–3190 mm; the centreboard slot at the keel 1575–1585 to 2755–2765 mm", "ISAF, International 470 Class measurement form (2013), as hosted by Svensk Segling", "https://www.svensksegling.se/om-oss/dokumentbanken/217-470-matformular-2013.pdf/"),
+      src("470-class", "Length 4.7 m, waterline 4.4 m, boat weight 120 kg, main 9.12 m², jib 3.58 m², optimum crew weight 110–145 kg", "International 470 Class Association, 'About the 470'", "https://www.470.org/default/classinfo/content/id/about-the-470"),
+      src("wiki-470", "Beam 1690 mm, draft 150 / 970 mm (neither with an inline citation); D-PN 86.3, RYA PN 973", "Wikipedia, \"470 (dinghy)\" (infobox; cites 470.org and the two yardstick lists)", "https://en.wikipedia.org/wiki/470_(dinghy)", { note: "Its sketch (470_dinghy.svg) was used only for the hull's depth at the mast, 0.52 m: I and BAS above the sheer are the rule's heights above the heel less about 0.5 m, ±0.1 m." }),
+      src("rya-pn-2010", "470: Portsmouth Number 973", "RYA Portsmouth Yardstick List 2010 (archived)", "https://web.archive.org/web/20130525172946if_/http://www.rya.org.uk/SiteCollectionDocuments/technical/Web%20Documents/py-general/2010%20Part%207%20PN%20List.pdf", { note: "The Laser's fixture quotes 1102 from Wikipedia's 2024 list: two editions, usable for order only." }),
+      SAILBOATDATA,
+    ],
+    published: {
+      note: "Mast, forestay, centreboard and rudder are class-rule dimensions from the transom's measurement point, turned into distances from the stem with the rule's hull length (4.70 m ± 0.01). No source gives her waterline beam, canoe-body draft, coefficients or a polar.",
+      figures: [
+        { id: "mainM2", label: "Main, with roach", value: 9.12, unit: "m²", tol: { rel: 0.01 }, source: "470-class", roundTrip: "the roach is set so the main is the class's 9.12 m² (½·5.75·2.65 = 7.619 m²)" },
+        { id: "hullSpeedKn", label: "Hull speed", value: 5.09, unit: "kn", tol: { abs: 0.01 }, source: "470-class", work: "1.34·√(4.4/0.3048) = 5.091, worked here from the class's waterline" },
+        { id: "draftM", label: "Draft, board down", value: 0.97, unit: "m", tol: { abs: 0.02 }, source: "wiki-470", roundTrip: "the board's span is solved so that the draft reaches 0.97 m; the rule's board, its leading edge vertical, reaches 0.92 m below the hull" },
+      ],
+      balance: {
+        phrf: null,
+        portsmouth: { value: 973, source: "rya-pn-2010" },
+        real: {
+          mastAftOfStem: { value: MAST, status: "given", how: "the middle of where the rule lets the mast's front be at the deck: inside the partner (1.510–1.710 m aft of the stem) with the 65–75 mm section, 1.525–1.625", pm: 0.05 },
+          keelLeAftOfStem: { value: r4(LOA - 2.65 - 0.09), status: "given", how: "the pivot 2650 mm from the transom's datum, 85–95 mm aft of the leading edge, the leading edge taken vertical (the down angle is the sailor's)", pm: 0.05 },
+          wlFwdAftOfStem: { value: null, status: "not sourced" },
+        },
+        weight: "fair",
+        why: "Her rig and foils are fixed by class rule to within 0.05 m, the best positions in the fleet. But no lead band is quoted for a centreboard dinghy with a trapeze crew, whose balance is trimmed by rake, board angle and heel, and her hull (BWL, Tc, displacement with crew) is estimated throughout.",
+      },
+      disagreements: [
+        { what: "Jib area", values: [{ value: "3.58 m²", source: "470-class" }, { value: "3.66 m² (Heron's formula on the rule's maximum luff 4100, leech 3750, foot 1955)", source: "470-class-rules" }], used: "LP 1.78 m, from the rule's edges" },
+        { what: "Crew weight", values: [{ value: "110–145 kg", source: "470-class" }, { value: "120–135 kg (World Sailing's class page)", source: "470-class" }], used: "130 kg" },
+      ],
+      estimatedWhy: "BWL is 0.81 of the beam, the Laser's proportion in Day (2017); Tc is what the synthetic hull then needs to float 250 kg (the rule's 120 kg boat and an estimated 130 kg crew). Freeboard, I and BAS go through a hull depth read off a sketch. The board's span is solved to the published draft and its leading edge is taken vertical; the rudder hangs from the waterline, 0.58 m of its blade below it.",
+    },
+  };
+})();
+
+// ───────────────────────────── the solves, with the tool's own model
+const readout = (n, id) => n.sections.flatMap((s) => s.rows).find((r) => r.id === id)?.value;
+const numbers = (doc, condition) => {
+  const d = JSON.parse(JSON.stringify(doc));
+  if (condition) d.loading = { ...d.loading, displacement: { from: "given", kg: condition.displacementKg }, crew: { ...d.loading.crew, ...condition.crew } };
+  return computeNumbers(normalize(d));
+};
+
+function solve(boat) {
+  const { doc, solve: s, published } = boat;
+  const cond = (name) => published.conditions?.[name];
+  const bisect = (lo, hi, f) => {
+    for (let i = 0; i < 40; i++) {
+      const mid = 0.5 * (lo + hi);
+      if (f(mid) < 0) lo = mid;
+      else hi = mid;
+    }
+    return r4(0.5 * (lo + hi));
+  };
+  const withBwl = (b) => ((doc.hull.dims.bwl = b), doc);
+  if (s.awM2) doc.hull.dims.bwl = bisect(0.4 * doc.hull.dims.beam, doc.hull.dims.beam, (b) => numbers(withBwl(b), cond(s.awCondition)).form.hydro.awM2 - s.awM2);
+  if (s.bmtM) doc.hull.dims.bwl = bisect(0.4 * doc.hull.dims.beam, doc.hull.dims.beam, (b) => numbers(withBwl(b), cond(s.bmCondition)).form.hydro.bmt - s.bmtM);
+  for (let i = 0; i < 8; i++) {
+    const d = readout(numbers(doc), "draftOverall");
+    doc.appendages.keel.span = r4(doc.appendages.keel.span + (s.draft - d));
+  }
+}
+
+// ───────────────────────────── PINS: the model's readings when each known disagreement was recorded
+const PINS = {
+  "j70": {
+    "polar": {
+      "measuredOn": "2026-11-10",
+      "ratchetPoints": 2,
+      "ratchetDeg": 1.5,
+      "cells": {
+        "8kn 52°": 4.1,
+        "8kn 75°": 2.5,
+        "8kn 90°": -3.4,
+        "12kn 52°": 1.7,
+        "12kn 75°": 6.4,
+        "12kn 90°": 2.6,
+        "16kn 52°": 2.8,
+        "16kn 75°": 0.4,
+        "16kn 90°": 6.8,
+        "8kn beatVMG": 10.5,
+        "8kn beatAngle": -1.7,
+        "12kn beatVMG": 3.9,
+        "12kn beatAngle": -7.3,
+        "16kn beatVMG": 4.9,
+        "16kn beatAngle": -7
+      },
+      "why": "she points 7° higher than ORC at 12 and 16 kn and her beat VMG is 4–11% over, as the J/24's is: the VPP has no heel-induced hull side force and generic sail coefficients. Reaching speeds are within 7%."
+    },
+    "figures": {
+      "avsDeg": {
+        "measured": 126.7,
+        "ratchet": {
+          "abs": 3
+        },
+        "measuredOn": "2026-11-10",
+        "why": "ours is 126.7° against ORC's 100.0° (the builder's own ISO figures are 107° loaded and 122° light): the synthetic hull has a flat, closed deck at the sheer and no open cockpit, and the mass roll-up puts the lightship's G at mid-depth; RM at 1° is 16% over in the same condition"
+      }
+    }
+  },
+  "farr40": {
+    "polar": {
+      "measuredOn": "2026-11-10",
+      "ratchetPoints": 2,
+      "ratchetDeg": 1.5,
+      "cells": {
+        "8kn 52°": -3.5,
+        "8kn 75°": -1.2,
+        "8kn 90°": -1.7,
+        "12kn 52°": -1.8,
+        "12kn 75°": -0.5,
+        "12kn 90°": 0.1,
+        "16kn 52°": -0.6,
+        "16kn 75°": -0.9,
+        "16kn 90°": 0.1,
+        "8kn beatVMG": -2,
+        "8kn beatAngle": -1.6,
+        "12kn beatVMG": 0.8,
+        "12kn beatAngle": -2.7,
+        "16kn beatVMG": 0.8,
+        "16kn beatAngle": -4.8
+      },
+      "why": "the closest of the fleet: every speed within 4% of ORC; she still points 3–5° higher at 12 and 16 kn."
+    }
+  },
+  "soling": {
+    "polar": {
+      "measuredOn": "2026-11-10",
+      "ratchetPoints": 2,
+      "ratchetDeg": 1.5,
+      "cells": {
+        "8kn 52°": 3.6,
+        "8kn 75°": 0.9,
+        "8kn 90°": -3.6,
+        "12kn 52°": 3,
+        "12kn 75°": 5.4,
+        "12kn 90°": 2.6,
+        "16kn 52°": 4.9,
+        "16kn 75°": 7.9,
+        "16kn 90°": 5.8,
+        "8kn beatVMG": 11.7,
+        "8kn beatAngle": -2.3,
+        "12kn beatVMG": 5.1,
+        "12kn beatAngle": -7,
+        "16kn beatVMG": 5.6,
+        "16kn beatAngle": -7.3
+      },
+      "why": "as the J/70: 7° higher than ORC at 12 and 16 kn, beat VMG 5–12% over; reaching within 8%."
+    },
+    "figures": {
+      "avsDeg": {
+        "measured": 132.3,
+        "ratchet": {
+          "abs": 3
+        },
+        "measuredOn": "2026-11-10",
+        "why": "ours is 132.3° against ORC's 113.0°: the Soling is an open boat with a low coaming; the synthetic hull is decked flat at the sheer, and its freeboard is the class's average"
+      }
+    }
+  },
+  "hr40c": {
+    "polar": {
+      "measuredOn": "2026-11-10",
+      "ratchetPoints": 2,
+      "ratchetDeg": 1.5,
+      "cells": {
+        "8kn 52°": 7,
+        "8kn 70°": 3.6,
+        "8kn 90°": -5.2,
+        "12kn 52°": 3.6,
+        "12kn 70°": 1.5,
+        "12kn 90°": -1.6,
+        "16kn 52°": 4.6,
+        "16kn 70°": 3,
+        "16kn 90°": 1.4,
+        "8kn beatVMG": 12.4,
+        "8kn beatAngle": -1.1,
+        "12kn beatVMG": 9.9,
+        "12kn beatAngle": -5.9,
+        "16kn beatVMG": 12.7,
+        "16kn beatAngle": -4
+      },
+      "why": "beat VMG 10–13% over Frers' VPP at every wind (she points 4–6° higher at 12 and 16 kn); reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
+    }
+  },
+  "contessa32": {
+    "figures": {
+      "avsDeg": {
+        "measured": 137.4,
+        "ratchet": {
+          "abs": 3
+        },
+        "measuredOn": "2026-11-10",
+        "why": "ours is 137.4° against the Wolfson report's 156°: GM (−0.8%) and maximum GZ (+4%) agree, the far end of the curve doesn't. The synthetic hull has a flat deck where she has a coachroof, and its sections are super-ellipses, not her wineglass with the ballast deep in it"
+      }
+    }
+  }
+};
+
+const boats = [j70, farr40, soling, folkboat, cal40, contessa32, hr40c, dinghy470];
+for (const b of boats) {
+  solve(b);
+  const pins = PINS[b.id] ?? {};
+  for (const f of b.published.figures) if (pins.figures?.[f.id]) f.knownGap = pins.figures[f.id];
+  if (b.published.polar && pins.polar) b.published.polar.pinned = pins.polar;
+  if (pins.balance) b.published.balance.pinned = pins.balance;
+  writeFileSync(OUT + b.id + ".json", JSON.stringify({ ...b.doc, sources: b.sources, published: b.published }, null, 2) + "\n");
+}
+console.log(`wrote ${boats.length} fixtures: ${boats.map((b) => `${b.id} (BWL ${b.doc.hull.dims.bwl}, keel span ${b.doc.appendages.keel.span})`).join(", ")}`);

@@ -39,9 +39,9 @@ profile drawing and the numbers on the right. Units (m / ft) are per viewer.
   and speed at a reference point on every change, and a polar from a worker
   once the design has been still. Each row says where it came from, and
   what was estimated is marked "est.".
-- **New from…** loads one of four fixture boats (`src/fixtures/`: the
-  Catalina 30, the J/24 and the Laser from their published figures, and
-  sailing's stock sloop), or a **first guess from this hull** (`src/firstguess.js`): a whole boat by rules of thumb, with P
+- **New from…** loads one of the fixture boats (`src/fixtures/`: sailing's
+  stock sloop and eleven real boats from their published figures, the
+  Catalina 30 and Laser to the Farr 40 and Nordic Folkboat), or a **first guess from this hull** (`src/firstguess.js`): a whole boat by rules of thumb, with P
   solved for SA/D and the mast placed for the middle of the lead band. It
   refuses, with the reason, a hull no mast position balances or that is too
   heavy to rig by the rules.
@@ -113,8 +113,10 @@ camber.
 ## Tests and probes
 
 `pnpm test` runs the unit tests (vitest, happy-dom), which include the
-published boats against their sources (`src/validation.test.js`, with its
-known gaps stated in `src/fixtures/README.md`) and the contract fixtures.
+published boats against their sources (`src/validation.test.js`, and as a
+fleet, the balance model against where their masts and keels really are, in
+`src/validation-fleet.test.js`; the known gaps are stated in
+`src/fixtures/README.md`) and the contract fixtures.
 
 The probes drive the built package in headless Chrome (`pnpm build` first;
 they borrow camber's built plugins from `~/dev/camber` at dev time):

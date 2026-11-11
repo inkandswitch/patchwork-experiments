@@ -1,0 +1,574 @@
+{
+  "version": 1,
+  "title": "J/70",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 6.934,
+      "lwl": 6.24,
+      "beam": 2.249,
+      "bwl": 1.7698,
+      "tc": 0.21,
+      "draft": 1.45,
+      "freeboard": 0.6815,
+      "displacementKg": 794,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 2.501,
+      "rakeDeg": 0,
+      "stepped": "deck",
+      "kgPerM": null
+    },
+    "I": 8.159,
+    "P": 7.973,
+    "E": 2.877,
+    "BAS": 0.992,
+    "ISP": 9.189,
+    "forestayAftOfStem": 0.16,
+    "main": {
+      "roach": 0.346219,
+      "reefs": []
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 2.45,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin-bulb",
+      "aftOfStem": 3.27,
+      "span": 1.0587,
+      "rootChord": 0.47,
+      "tipChord": 0.47,
+      "sweepDeg": 0,
+      "tc": 0.12,
+      "bulb": {
+        "length": 0.9918,
+        "diameter": 0.2204
+      }
+    },
+    "rudder": {
+      "kind": "transom-hung",
+      "aftOfStem": 6.94,
+      "span": 0.914,
+      "rootChord": 0.25,
+      "tipChord": 0.25,
+      "sweepDeg": 0,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 286,
+      "at": "bulb"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 80,
+      "mode": "rail",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.keel.bulb.length": "estimated",
+    "appendages.keel.bulb.diameter": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "loading.crew.count": "estimated",
+    "loading.crew.kgEach": "estimated"
+  },
+  "sources": [
+    {
+      "id": "orc-j70",
+      "what": "LOA 6.910, beam 2.254, draft 1.383, displacement 811 kg; P 7.974, E 2.876, IG 8.000, J 2.340, ISP 9.290, BAS 0.992, SFJ 0.160; main 15.44, jib 10.01 m² (HLP 2.45, HLU 8.00); wetted area 9.13; sink 7.58 kg/mm at SG 1.0200; RM 18.5 kg·m; LPS 100.0°; VCGM 0.024; FF 0.792, FA 0.571; crew 255–340 kg; rated boat velocities",
+      "cite": "ORC International One Design Certificate 2021, J 70 (sample certificate marked TEST), VPP ver. 2021 1.00",
+      "url": "https://data.orc.org/public/od/2021/j70.od.html?nav=1",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "SFJ 0.160; J 2.340; comment: weight acc to OD class rules incl outboard engine, 4 crew"
+    },
+    {
+      "id": "jboats-j70",
+      "what": "LOA 22.75, LWL 20.47, beam 7.38, draft 4.75 ft, ballast 630, displacement 1,750 lb; I 26.77, ISP 30.15, J 7.68, P 26.16, E 9.44 ft; SA/Dspl 25, Dspl/L 91",
+      "cite": "J/Boats, J/70 technical specifications",
+      "url": "https://jboats.com/j70-tech-specs",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "j70-owner-guide",
+      "what": "LOA 6.934, LWL 6.240, beam 2.249, draft keel down 1.45 [max loaded 1.50], rudder draft 0.914 m, ballast 286 kg, displacement 794 kg; I 8.159, ISP 9.189, J 2.341, P 7.973, E 2.877 m; 100% triangles 21.0 m²; STIX 22.53 / AVS 122° (minimum operating), 18.20 / 107° (loaded); deck-stepped carbon mast; lifting keel with a lead bulb on a stainless spar",
+      "cite": "J/70 Owner Guide, J Boats 2012, pp. 6–9 and 13",
+      "url": "https://www.ksss.se/contentassets/e3880590f04f42938e4d80310310db00/j70-user-manual.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "LWL (Lwl) 6.240m (20.47'); Draft : [Max Loaded Draft] - Keel Down 1.45m (4.75') : [1.50m (4.92')]; Rudder Draft .914m (3.00'); Ballast 286 kg (630 lbs.)"
+    },
+    {
+      "id": "j70-class-rules",
+      "what": "Dry weight 812 kg; boom outer point 2876 mm; the inboard profile of H.2 'Corrector Weight Locations' (p. 24), measured for the keel trunk, the forestay fitting and the mast post",
+      "cite": "International J/70 Class Rules, effective 30 January 2020 (World Sailing)",
+      "url": "https://www.sailing.org/tools/documents/J70CR202001302-[25979].pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The drawing is a schematic for corrector weights: the keel is a cut-off stub with vertical parallel edges. Scaled on ORC's LOA (1238 px = 6.910 m, 5.58 mm/px); its forestay fitting reads 0.167 m against ORC's SFJ 0.160 and its mast post 2.534 m against SFJ + J = 2.500 m. Keel at the hull bottom: leading edge 3.27 m, trailing edge 3.74 m aft of the stem, ±0.03 m. Canoe-body depth 0.21 m with the waterline placed by ORC's freeboards. Rudder pintle line 6.94 m, chord 0.25 m."
+    },
+    {
+      "id": "keelindex-j70",
+      "what": "SA/D 24.9, ballast/displacement 36.00, D/L 91.08, capsize screening 2.45, hull speed 6.06 kn",
+      "cite": "keelindex.com, J/70 (reproduces sailboatdata's table)",
+      "url": "https://www.keelindex.com/boat/j-70",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Its prose contradicts its own table (2,050 lb, 900 lb bulb); the table agrees with the builder."
+    },
+    {
+      "id": "phrf-alamo",
+      "what": "PHRF base ratings: J-70 114-P, Soling ODR 153 (also Catalina 30 184, J-24 170)",
+      "cite": "PHRF of the Alamo rating list (Excel export, file dated 2020-02-19), regattanetwork.com upload 20438",
+      "url": "https://www.regattanetwork.com/clubmgmt/regatta_uploads/20438/PHRFoftheAlamo01072020.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The same list as the Catalina 30's and the J/24's. It has no Farr 40, Cal 40, Contessa 32, Folkboat or Hallberg-Rassy."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "The rig is the builder's (its ratios are printed on it), with ORC's measured forestay setback and BAS; the mast is ORC's SFJ plus J. Roach is worked from ORC's measured main over ½·P·E.",
+    "figures": [
+      {
+        "id": "saDesignerM2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 21,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "j70-owner-guide",
+        "work": "½·7.973·2.877 + ½·8.159·2.341 = 11.469 + 9.550 = 21.019 (the guide prints 21.0)"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D",
+        "value": 24.9,
+        "unit": "",
+        "tol": {
+          "abs": 0.1
+        },
+        "source": "keelindex-j70",
+        "work": "21.019 / (794/1025)^(2/3) = 21.019/0.8435 = 24.92 (J/Boats prints 25)"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 91.08,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "keelindex-j70",
+        "work": "(1,750/2240)/(0.01·20.47)³ = 0.78125/0.008577 = 91.08 (J/Boats prints 91)"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.36,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "keelindex-j70",
+        "work": "286 / 794 = 0.3602"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 6.06,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-j70",
+        "work": "1.34·√20.47 = 6.063"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 2.45,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-j70",
+        "work": "7.38 / (1,750/64)^⅓ = 7.38/3.012 = 2.450"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 15.44,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-j70",
+        "work": "ORC measured mainsail area",
+        "roundTrip": "the roach is set so the main is ORC's measured 15.44 m²"
+      },
+      {
+        "id": "headsailM2",
+        "label": "Jib, LP 2.45",
+        "value": 10.01,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.08
+        },
+        "source": "orc-j70",
+        "work": "ORC 'headsail luffed' 10.01 m² on a luff of 8.00 m; ours is ½·LP·(the whole forestay), a triangle with no roach"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft, keel down",
+        "value": 1.45,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "j70-owner-guide",
+        "roundTrip": "the keel's span is solved so that the draft reaches the builder's 1.45 m: a check of the foil geometry, not of the model"
+      },
+      {
+        "id": "awM2",
+        "label": "Waterplane area (ORC sink 7.58 kg/mm at SG 1.02)",
+        "value": 7.4314,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-j70",
+        "condition": "orc-lightship",
+        "roundTrip": "BWL is solved so that the synthetic hull's waterplane is ORC's: a check of the solve"
+      },
+      {
+        "id": "wettedM2",
+        "label": "Wetted area (ORC condition)",
+        "value": 9.13,
+        "unit": "m²",
+        "tol": null,
+        "source": "orc-j70",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways"
+      },
+      {
+        "id": "rm1KgM",
+        "label": "Righting moment at 1°, no crew (ORC condition)",
+        "value": 18.5,
+        "unit": "kg·m",
+        "tol": {
+          "rel": 0.25
+        },
+        "source": "orc-j70",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "work": "ORC 'RM measured' at 811 kg, GM 18.5/(811·sin 1°) = 1.307 m; ours from the synthetic hull and the mass roll-up"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Limit of positive stability, no crew (ORC condition)",
+        "value": 100,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "orc-j70",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "work": "ORC's LPS 100.0°; the builder's ISO figures are 122° (minimum operating) and 107° (loaded)",
+        "knownGap": {
+          "measured": 126.7,
+          "ratchet": {
+            "abs": 3
+          },
+          "measuredOn": "2026-11-10",
+          "why": "ours is 126.7° against ORC's 100.0° (the builder's own ISO figures are 107° loaded and 122° light): the synthetic hull has a flat, closed deck at the sheer and no open cockpit, and the mass roll-up puts the lightship's G at mid-depth; RM at 1° is 16% over in the same condition"
+        }
+      }
+    ],
+    "conditions": {
+      "orc": {
+        "what": "ORC's measured displacement 811 kg plus a crew of 4 × 80 kg (320 kg, estimated; the certificate gives 255–340 kg and says '4 crew')",
+        "displacementKg": 1131,
+        "crew": {
+          "count": 4,
+          "kgEach": 80,
+          "mode": "rail"
+        }
+      },
+      "orc-lightship": {
+        "what": "ORC's measured displacement, no crew",
+        "displacementKg": 811,
+        "crew": {
+          "count": 0,
+          "kgEach": 80,
+          "mode": "none"
+        }
+      }
+    },
+    "polar": {
+      "kind": "orc",
+      "source": "orc-j70",
+      "condition": "orc",
+      "twsKn": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20
+      ],
+      "rows": {
+        "52": [
+          4.63,
+          5.55,
+          6.02,
+          6.31,
+          6.46,
+          6.51,
+          6.57
+        ],
+        "60": [
+          4.95,
+          5.8,
+          6.19,
+          6.55,
+          6.81,
+          6.9,
+          6.98
+        ],
+        "75": [
+          5.17,
+          5.96,
+          6.35,
+          6.81,
+          7.31,
+          7.61,
+          7.79
+        ],
+        "90": [
+          5.48,
+          6.25,
+          6.72,
+          7.04,
+          7.45,
+          8.11,
+          8.89
+        ],
+        "beatAngle": [
+          42.8,
+          42,
+          40.1,
+          37.9,
+          37.5,
+          37.9,
+          39
+        ],
+        "beatVmg": [
+          3.04,
+          3.7,
+          4.2,
+          4.51,
+          4.58,
+          4.58,
+          4.54
+        ]
+      },
+      "compare": {
+        "twsKn": [
+          8,
+          12,
+          16
+        ],
+        "twaDeg": [
+          52,
+          75,
+          90
+        ],
+        "beat": true
+      },
+      "tol": {
+        "rel": 0.08
+      },
+      "note": "ORC rates downwind with the asymmetric spinnaker (45.64 m²); the VPP has none, so only the beat and 52–90° are compared.",
+      "pinned": {
+        "measuredOn": "2026-11-10",
+        "ratchetPoints": 2,
+        "ratchetDeg": 1.5,
+        "cells": {
+          "8kn 52°": 4.1,
+          "8kn 75°": 2.5,
+          "8kn 90°": -3.4,
+          "12kn 52°": 1.7,
+          "12kn 75°": 6.4,
+          "12kn 90°": 2.6,
+          "16kn 52°": 2.8,
+          "16kn 75°": 0.4,
+          "16kn 90°": 6.8,
+          "8kn beatVMG": 10.5,
+          "8kn beatAngle": -1.7,
+          "12kn beatVMG": 3.9,
+          "12kn beatAngle": -7.3,
+          "16kn beatVMG": 4.9,
+          "16kn beatAngle": -7
+        },
+        "why": "she points 7° higher than ORC at 12 and 16 kn and her beat VMG is 4–11% over, as the J/24's is: the VPP has no heel-induced hull side force and generic sail coefficients. Reaching speeds are within 7%."
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 114,
+        "source": "phrf-alamo"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 2.501,
+          "status": "given",
+          "how": "ORC's measured SFJ 0.160 plus J 2.341 (ORC's own J is 2.340)",
+          "pm": 0.01
+        },
+        "keelLeAftOfStem": {
+          "value": 3.27,
+          "status": "estimated",
+          "how": "read off the class rules' inboard profile, scaled on ORC's LOA",
+          "pm": 0.03
+        },
+        "wlFwdAftOfStem": {
+          "value": null,
+          "status": "not sourced"
+        }
+      },
+      "weight": "good",
+      "why": "Mast and forestay are measured (ORC); the keel's position and root chord are read off a class-rules drawing whose scale checks to 0.01–0.03 m. The keel's planform below the hull and the bulb are not sourced: a lifting keel is taken as constant-chord and unswept, the bulb by rule."
+    },
+    "disagreements": [
+      {
+        "what": "LOA",
+        "values": [
+          {
+            "value": "6.934 m",
+            "source": "j70-owner-guide"
+          },
+          {
+            "value": "6.910 m (measured)",
+            "source": "orc-j70"
+          }
+        ],
+        "used": "6.934 m"
+      },
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "794 kg (standard boat)",
+            "source": "j70-owner-guide"
+          },
+          {
+            "value": "811 kg (with outboard)",
+            "source": "orc-j70"
+          },
+          {
+            "value": "812 kg (class dry weight)",
+            "source": "j70-class-rules"
+          }
+        ],
+        "used": "794 kg in the doc (the builder's ratios are on it); the ORC comparisons sail at 811 kg"
+      },
+      {
+        "what": "Draft",
+        "values": [
+          {
+            "value": "1.45 m keel down, 1.50 m max loaded",
+            "source": "j70-owner-guide"
+          },
+          {
+            "value": "1.383 m (measured)",
+            "source": "orc-j70"
+          }
+        ],
+        "used": "1.45 m"
+      },
+      {
+        "what": "I",
+        "values": [
+          {
+            "value": "8.159 m",
+            "source": "j70-owner-guide"
+          },
+          {
+            "value": "IG 8.000 m",
+            "source": "orc-j70"
+          }
+        ],
+        "used": "8.159 m (the builder's, with the builder's ratios)",
+        "effect": "foretriangle 2% larger than ORC's"
+      },
+      {
+        "what": "Angle of vanishing stability",
+        "values": [
+          {
+            "value": "100.0° (LPS)",
+            "source": "orc-j70"
+          },
+          {
+            "value": "122° minimum operating, 107° loaded",
+            "source": "j70-owner-guide"
+          }
+        ],
+        "used": "100.0° (ORC, at the measured displacement the comparison is run at)"
+      }
+    ],
+    "estimatedWhy": "BWL is solved from ORC's sink; Tc is read off the class-rules drawing with the waterline placed by ORC's freeboards (±0.03 m). The keel's leading edge and root chord are read off the same drawing; its tip chord (taken equal: a keel that lifts through a trunk), sweep (0), section and bulb (a spheroid 4.5 diameters long holding the 286 kg) are not in any source. The rudder's draft is the builder's; its chord and position are read off the drawing."
+  }
+}

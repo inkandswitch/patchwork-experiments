@@ -1,0 +1,561 @@
+{
+  "version": 1,
+  "title": "Soling",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 8.185,
+      "lwl": 6.1,
+      "beam": 1.9,
+      "bwl": 1.6698,
+      "tc": 0.32,
+      "draft": 1.304,
+      "freeboard": 0.54,
+      "displacementKg": 1035,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 3.14,
+      "rakeDeg": 0,
+      "stepped": "deck",
+      "kgPerM": null
+    },
+    "I": 7.505,
+    "P": 8.5,
+    "E": 3.2,
+    "BAS": 0.705,
+    "ISP": 7.565,
+    "forestayAftOfStem": 0.49,
+    "main": {
+      "roach": 0.175,
+      "reefs": []
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 2.39,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 3.143,
+      "span": 1.0911,
+      "rootChord": 1.03,
+      "tipChord": 1.09,
+      "sweepDeg": 34.6,
+      "tc": 0.107,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 6.55,
+      "span": 0.83,
+      "rootChord": 0.503,
+      "tipChord": 0.255,
+      "sweepDeg": 30,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.3
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 580,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 3,
+      "kgEach": 90,
+      "mode": "hiking",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "appendages.rudder.stockFrac": "estimated",
+    "loading.crew.kgEach": "estimated",
+    "loading.crew.mode": "estimated"
+  },
+  "sources": [
+    {
+      "id": "orc-soling",
+      "what": "LOA 8.180, beam 1.904, draft 1.304, displacement 1 036 kg; P 8.500, E 3.200, IG 7.505, J 2.650, ISP 7.565, BAS 0.705, SFJ 0.490; main 15.98, jib 8.50 m² (HLP 2.39, HLU 7.01); wetted area 9.89; sink 6.84 kg/mm at SG 1.0000; RM 16.9 kg·m; LPS 113.0°; VCGM −0.136; crew 215–300 kg; rated boat velocities",
+      "cite": "ORC International One Design Certificate 2021, Soling OD (sample certificate marked TEST; measurer 'CLASS RULES', sails copied from legacy), VPP ver. 2021 1.00",
+      "url": "https://data.orc.org/public/od/2021/soling.od.html?nav=1",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "soling-class-rules",
+      "what": "Dry weight not less than 1035 kg; keel 580 ± 10 kg cast iron; mast deck-stepped, its forward side 270 ± 50 mm aft of the Breakwater Measurement Point (BMP); forestay meets the deck 2320 ± 5 mm forward of the BMP; bands 700 mm above deck, 6800 and 8500 above that; boom band 3200 mm; rudder stock 1500 ± 25 mm from the transom point along the counter, top edge 503 mm, bottom 255 mm; two or three crew",
+      "cite": "Soling Class Rules 2023 (World Sailing), C.4.1, E.3.4.1, E.4.2, F.2.4, F.5.4.2 and the rudder diagram on p. 19",
+      "url": "https://arbitrage.ffvoile.fr/media/d4cjyndr/soling-2023-e.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "The forward side of the mast shall be located 270mm ± 50mm aft of the Breakwater Measurement Point; The forestay shall meet the deck at 2320mm ± 5mm forward of the Breakwater Measurement Point."
+    },
+    {
+      "id": "soling-guide",
+      "what": "The class measurement diagram (LOA 8185 ± 15; stations 1475 apart; keel's aft lower corner 3470 ± 20 from the transom point; keel span 1000 max; max-section line 440 ± 10 aft of the leading edge), measured for the keel's edges; the specification box: LWL 6.10 m, beam 1.90, average freeboard 0.54, displacement 1,035 kg, keel 580 kg, ballast ratio 56%, mainsail 13.6 m², jib 8.1 m²",
+      "cite": "International Soling Association, Soling Guide 1992–1995, 'Soling Class Measurement Diagram' (PDF pp. 12–14)",
+      "url": "https://www.soling.com/solinguide/Soling_Guide_1992-1995.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The diagram is schematic (local scales 4.03–4.29 mm/px) and never prints the stem-to-BMP distance. Read off it: the keel's straight leading edge produced to the hull 0.333 m aft of the BMP, the trailing edge 1.365 m aft of it; chord 1.03 m at the hull, 1.09 at the base; span 0.96 (1.00 max given); sweep 34.6° ± 2°. The dimensioned 3470 is reconstructed from the readings to 2 mm; other checks are within 3–5%, so the keel's position carries ±0.06 m. Closing the diagram's own dimensions puts the BMP 2.98 ± 0.04 m aft of the stem; ORC's SFJ puts it at 0.490 + 2.320 = 2.810 m."
+    },
+    {
+      "id": "yachtdatabase-soling",
+      "what": "SA/D 23.4 (ISO 8666 reference sail), D/L 127, ballast 56%, capsize screening 1.89, hull speed 6.0 kn",
+      "cite": "yachtdatabase.com, Soling",
+      "url": "https://yachtdatabase.com/en/review.jsp?id=Soling",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "keelindex-soling",
+      "what": "SA/D 23.2 (251 ft²), D/L 122.42 (on LWL 20.25 ft), ballast 56.17%, capsize screening 1.9, hull speed 6.03 kn",
+      "cite": "keelindex.com, Soling (reproduces sailboatdata's table)",
+      "url": "https://www.keelindex.com/boat/soling",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "phrf-alamo",
+      "what": "PHRF base ratings: J-70 114-P, Soling ODR 153 (also Catalina 30 184, J-24 170)",
+      "cite": "PHRF of the Alamo rating list (Excel export, file dated 2020-02-19), regattanetwork.com upload 20438",
+      "url": "https://www.regattanetwork.com/clubmgmt/regatta_uploads/20438/PHRFoftheAlamo01072020.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The same list as the Catalina 30's and the J/24's. It has no Farr 40, Cal 40, Contessa 32, Folkboat or Hallberg-Rassy."
+    },
+    {
+      "id": "usphrf-hla",
+      "what": "PHRF lowest / highest / average across US fleets: FARR 40 OD 0 / 12 / 6; SOLING ODR 135 / 175 / 153; FOLKBOAT NORDIC 276 / 276 / 276",
+      "cite": "US Sailing PHRF, \"High, low and average performance handicaps by class/type\" (fleet reports March 1995 to March 2007), as attached to a sailboatowners.com forum thread",
+      "url": "https://forums.sailboatowners.com/attachments/phrf_ratings_report-pdf.174186/",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "A different list from the Alamo's and twenty years old: usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "The rig is the ORC certificate's (the class rules' bands give the same P, E, BAS and IG). Stem-based positions go through ORC's SFJ; the mast, the forestay and the keel are all located from the class's Breakwater Measurement Point, so the lead doesn't depend on where the stem is.",
+    "figures": [
+      {
+        "id": "saDesignerM2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 23.544,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "orc-soling",
+        "work": "½·8.5·3.2 + ½·7.505·2.65 = 13.600 + 9.944 = 23.544 (the class prints main 13.6 m²)"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D",
+        "value": 23.4,
+        "unit": "",
+        "tol": {
+          "abs": 0.1
+        },
+        "source": "yachtdatabase-soling",
+        "work": "23.544 / (1035/1025)^(2/3) = 23.544/1.0065 = 23.39"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 127,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "yachtdatabase-soling",
+        "work": "(1035/1016.05)/(0.01·6.10/0.3048)³ = 1.01865/0.008016 = 127.1 (keelindex's 122.42 is on LWL 20.25 ft)"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.56,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "soling-guide",
+        "work": "580 / 1035 = 0.5604"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 6,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "yachtdatabase-soling",
+        "work": "1.34·√20.013 = 5.995"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 1.89,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "yachtdatabase-soling",
+        "work": "6.234 / (2,282/64)^⅓ = 6.234/3.291 = 1.894"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 15.98,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-soling",
+        "roundTrip": "the roach is set so the main is ORC's measured 15.98 m²"
+      },
+      {
+        "id": "headsailM2",
+        "label": "Jib, LP 2.39",
+        "value": 8.5,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.15
+        },
+        "source": "orc-soling",
+        "work": "ORC 'headsail luffed' 8.50 m² on a luff of 7.01 m; ours is ½·LP·(the whole forestay, 7.96 m), a triangle with no roach"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 1.304,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "orc-soling",
+        "roundTrip": "the keel's span is solved so that the draft reaches ORC's 1.304 m (the diagram's maximum span is 1.00 m)"
+      },
+      {
+        "id": "awM2",
+        "label": "Waterplane area (ORC sink 6.84 kg/mm at SG 1.000)",
+        "value": 6.84,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "orc-soling",
+        "condition": "orc-lightship",
+        "roundTrip": "BWL is solved so that the synthetic hull's waterplane is ORC's"
+      },
+      {
+        "id": "wettedM2",
+        "label": "Wetted area (ORC condition)",
+        "value": 9.89,
+        "unit": "m²",
+        "tol": null,
+        "source": "orc-soling",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "assert": false,
+        "why": "printed, not compared: the certificate doesn't say whether its figure includes the keel and rudder; ours is shown both ways"
+      },
+      {
+        "id": "rm1KgM",
+        "label": "Righting moment at 1°, no crew (ORC condition)",
+        "value": 16.9,
+        "unit": "kg·m",
+        "tol": {
+          "rel": 0.25
+        },
+        "source": "orc-soling",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "work": "ORC 'RM measured' at 1 036 kg, GM 16.9/(1036·sin 1°) = 0.935 m"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Limit of positive stability, no crew (ORC condition)",
+        "value": 113,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "orc-soling",
+        "condition": "orc-lightship",
+        "estimatedInputs": true,
+        "knownGap": {
+          "measured": 132.3,
+          "ratchet": {
+            "abs": 3
+          },
+          "measuredOn": "2026-11-10",
+          "why": "ours is 132.3° against ORC's 113.0°: the Soling is an open boat with a low coaming; the synthetic hull is decked flat at the sheer, and its freeboard is the class's average"
+        }
+      }
+    ],
+    "conditions": {
+      "orc": {
+        "what": "ORC's measured displacement 1 036 kg plus a crew of 3 × 90 kg (270 kg, estimated; the certificate gives 215–300 kg)",
+        "displacementKg": 1306,
+        "crew": {
+          "count": 3,
+          "kgEach": 90,
+          "mode": "hiking"
+        }
+      },
+      "orc-lightship": {
+        "what": "ORC's measured displacement, no crew",
+        "displacementKg": 1036,
+        "crew": {
+          "count": 0,
+          "kgEach": 90,
+          "mode": "none"
+        }
+      }
+    },
+    "polar": {
+      "kind": "orc",
+      "source": "orc-soling",
+      "condition": "orc",
+      "twsKn": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20
+      ],
+      "rows": {
+        "52": [
+          4.48,
+          5.46,
+          5.94,
+          6.17,
+          6.26,
+          6.3,
+          6.44
+        ],
+        "60": [
+          4.76,
+          5.71,
+          6.11,
+          6.36,
+          6.49,
+          6.56,
+          6.72
+        ],
+        "75": [
+          4.97,
+          5.86,
+          6.26,
+          6.59,
+          6.88,
+          7.03,
+          7.15
+        ],
+        "90": [
+          5.19,
+          6.08,
+          6.43,
+          6.67,
+          7.05,
+          7.43,
+          7.84
+        ],
+        "beatAngle": [
+          43.5,
+          42.8,
+          40.5,
+          38.3,
+          37.9,
+          37.9,
+          37.5
+        ],
+        "beatVmg": [
+          2.91,
+          3.58,
+          4.11,
+          4.39,
+          4.47,
+          4.5,
+          4.59
+        ]
+      },
+      "compare": {
+        "twsKn": [
+          8,
+          12,
+          16
+        ],
+        "twaDeg": [
+          52,
+          75,
+          90
+        ],
+        "beat": true
+      },
+      "tol": {
+        "rel": 0.08
+      },
+      "note": "ORC rates downwind with the spinnaker (36.38 m²); the VPP has none, so only the beat and 52–90° are compared.",
+      "pinned": {
+        "measuredOn": "2026-11-10",
+        "ratchetPoints": 2,
+        "ratchetDeg": 1.5,
+        "cells": {
+          "8kn 52°": 3.6,
+          "8kn 75°": 0.9,
+          "8kn 90°": -3.6,
+          "12kn 52°": 3,
+          "12kn 75°": 5.4,
+          "12kn 90°": 2.6,
+          "16kn 52°": 4.9,
+          "16kn 75°": 7.9,
+          "16kn 90°": 5.8,
+          "8kn beatVMG": 11.7,
+          "8kn beatAngle": -2.3,
+          "12kn beatVMG": 5.1,
+          "12kn beatAngle": -7,
+          "16kn beatVMG": 5.6,
+          "16kn beatAngle": -7.3
+        },
+        "why": "as the J/70: 7° higher than ORC at 12 and 16 kn, beat VMG 5–12% over; reaching within 8%."
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 153,
+        "source": "phrf-alamo"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 3.14,
+          "status": "given",
+          "how": "ORC's SFJ 0.490 plus J 2.650. By the class rule the mast is 0.27 ± 0.05 m aft of the BMP and the forestay 2.320 forward of it, J 2.590 ± 0.055: ORC's J is at the top of that tolerance",
+          "pm": 0.06
+        },
+        "keelLeAftOfStem": {
+          "value": 3.143,
+          "status": "estimated",
+          "how": "0.333 m aft of the BMP on the class measurement diagram, the BMP 2.810 m aft of the stem by ORC's SFJ and the rule's 2320 mm",
+          "pm": 0.06
+        },
+        "wlFwdAftOfStem": {
+          "value": null,
+          "status": "not sourced"
+        }
+      },
+      "weight": "good",
+      "why": "Every rig dimension is a class rule or an ORC measurement, and mast, forestay and keel share one datum (the BMP), so the stem's uncertain place doesn't enter the lead. The keel's edges are read off a schematic diagram (±0.06 m), and ORC's J is 0.06 m longer than the rule's nominal."
+    },
+    "disagreements": [
+      {
+        "what": "J",
+        "values": [
+          {
+            "value": "2.650 m",
+            "source": "orc-soling"
+          },
+          {
+            "value": "2.590 ± 0.055 m (2320 ± 5 + 270 ± 50)",
+            "source": "soling-class-rules"
+          }
+        ],
+        "used": "2.650 m (ORC)",
+        "effect": "with the rule's nominal the mast is 0.06 m further forward: the lead 1.0% of LWL more"
+      },
+      {
+        "what": "Stem to the Breakwater Measurement Point",
+        "values": [
+          {
+            "value": "2.810 m (SFJ 0.490 + 2.320)",
+            "source": "orc-soling"
+          },
+          {
+            "value": "2.98 ± 0.04 m (LOA 8185 − 783 − 3·1475, the forward template on the BMP line)",
+            "source": "soling-guide"
+          }
+        ],
+        "used": "2.810 m",
+        "effect": "none on the lead; the whole rig and keel move together"
+      },
+      {
+        "what": "LWL",
+        "values": [
+          {
+            "value": "6.10 m",
+            "source": "soling-guide"
+          },
+          {
+            "value": "LSM0 6.060 m",
+            "source": "orc-soling"
+          },
+          {
+            "value": "20.25 ft = 6.17 m",
+            "source": "keelindex-soling"
+          }
+        ],
+        "used": "6.10 m (the class's)"
+      },
+      {
+        "what": "Mainsail area",
+        "values": [
+          {
+            "value": "13.6 m² (the triangle)",
+            "source": "soling-guide"
+          },
+          {
+            "value": "15.98 m² (measured)",
+            "source": "orc-soling"
+          }
+        ],
+        "used": "15.98 m², by the roach"
+      }
+    ],
+    "estimatedWhy": "BWL is solved from ORC's sink; Tc is ORC's draft less the diagram's keel span. The keel's planform and sweep are read off the class diagram; its section is the one that makes 580 kg of cast iron. The rudder's chords are the rule diagram's; its span (0.81–0.85 m normal to the top edge), sweep and position along the hull are worked from the rule's quadrilateral and a counter slope read off the diagram. The crew's weight is the middle of ORC's range."
+  }
+}
