@@ -24,7 +24,7 @@
 //      url rewritten and every map's keys sorted (as automerge returns
 //      them), it is still the render's builtFrom.fingerprint;
 //    - the sea has the summer breeze; it opens in play; a home view;
-//    - the sloop is on the mooring with her sail down and her anchor down,
+//    - the sloop is on the mooring with her main down, her jib rolled away and her anchor down,
 //      in water deeper than her draft at the lowest normal tide all round
 //      her swing, read from the GLB's own extras.terrain with the copyable
 //      sampler, as sailing will read it;
@@ -122,7 +122,7 @@ try {
   check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 2 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 1, s.render);
   check("a summer afternoon's sea: 4 m/s from 235°, small waves", J(s.sea?.wind) === J({ speed: 4, from: 235 }) && s.sea.scale === 0.5, s.sea);
   check("it opens in play, with a home view from the club", s.activity === "play" && (await P("activity()")) === "play" && J(s.home) === J({ position: [-400, 22, 300], target: [120, 0, -40] }), { doc: s.activity, here: await P("activity()"), home: s.home });
-  check("the sloop is on the mooring, head to wind, sail down, anchor down", s.hull && Math.hypot(s.hull.position[0], s.hull.position[2]) < 0.01 && Math.abs(Math.cos(s.hull.rotation[1] + (235 * Math.PI) / 180) - 1) < 1e-9 && s.sail?.raised === 0 && s.anchor?.down === true && s.anchor.rode === 25, { hull: s.hull, sail: s.sail, anchor: s.anchor });
+  check("the sloop is on the mooring, head to wind, main down, jib rolled away, anchor down", s.hull && Math.hypot(s.hull.position[0], s.hull.position[2]) < 0.01 && Math.abs(Math.cos(s.hull.rotation[1] + (235 * Math.PI) / 180) - 1) < 1e-9 && s.sail?.raised === 0 && s.jib?.furl === 1 && s.anchor?.down === true && s.anchor.rode === 25, { hull: s.hull, sail: s.sail, jib: s.jib, anchor: s.anchor });
   const t = await P("terrain()");
   report.numbers.terrain = t;
   check(`deep enough for her ${DRAFT} m keel at the lowest normal tide, all round a 30 m swing (read from the GLB's extras.terrain)`, t.depthUnderHull + LLWLT > DRAFT && t.shallowestInSwing + LLWLT > DRAFT, { depthUnderHull: t.depthUnderHull, shallowestInSwing: t.shallowestInSwing, hullAt: t.hullAt });

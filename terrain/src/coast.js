@@ -245,6 +245,3 @@ export function classify(grid, chains, { band = grid.cell * Math.SQRT2 } = {}) {
   for (let at = 0; at < N; at++) (label[at] === 1 ? land++ : label[at] === -1 ? water++ : unknown++);
   return { label, dist, band, problems, stats: { nodes: N, band: bandNodes, regions, conflicts, orphans, land, water, unknown, freeEnds } };
 }
-
-/** The signed distance (land +) of a band node, or ±Infinity off the band. */
-export const signedDistance = (cls, at) => cls.label[at] * cls.dist[at];
