@@ -1,0 +1,70 @@
+/* The die's 2D panel (tool.js). Everything is under .die-tool; the colours
+   come from the editor's theme, through this block's own variables. A die's
+   own body and ink colours are data, set on the pictures themselves. */
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --die-tool-bg: var(--editor-fill, white);
+    --die-tool-fg: var(--editor-line, black);
+    --die-tool-muted: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 45%);
+    --die-tool-border: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 18%);
+    --die-tool-raised: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 5%);
+    --die-tool-accent: var(--studio-primary, #35f7ca);
+    --die-tool-accent-fg: var(--studio-primary-line, black);
+    --die-tool-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.die-tool {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: var(--studio-space, 12px);
+  background: var(--die-tool-bg);
+  color: var(--die-tool-fg);
+  font: 13px/1.4 var(--die-tool-family);
+  container-type: inline-size;
+}
+.die-tool * { box-sizing: border-box; }
+.die-tool h2 { font-size: 12px; font-weight: 600; margin: 16px 0 6px; color: var(--die-tool-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.die-tool label { display: inline-flex; align-items: center; gap: 6px; }
+.die-tool input, .die-tool select, .die-tool button { font: inherit; color: inherit; }
+.die-tool input[type="text"], .die-tool input[type="number"], .die-tool select {
+  background: var(--die-tool-bg); border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius-sm, 4px); padding: 2px 6px; min-width: 0;
+}
+.die-tool input[type="number"] { width: 5.5em; }
+.die-tool input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius-sm, 4px); background: none; }
+.die-tool button {
+  background: var(--die-tool-raised); border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius-sm, 4px); padding: 2px 10px; cursor: pointer;
+}
+.die-tool button:disabled { opacity: 0.5; cursor: default; }
+.die-tool button[data-primary] { background: var(--die-tool-accent); color: var(--die-tool-accent-fg); border-color: transparent; font-weight: 600; padding: 6px 18px; }
+
+.die-tool .die-about { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.die-tool .die-about .muted, .die-tool .muted { color: var(--die-tool-muted); }
+
+.die-tool .die-table { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 10px; border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius, 8px); background: var(--die-tool-raised); }
+.die-tool .die-shows { width: 96px; height: 96px; flex: none; }
+.die-tool .die-shows svg { width: 100%; height: 100%; display: block; }
+.die-tool .die-now { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.die-tool .die-now .reads { font-size: 20px; font-weight: 600; }
+.die-tool .die-rolls { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.die-tool .die-rolls li { padding: 1px 8px; border-radius: var(--studio-radius-round, 999px); border: 1px solid var(--die-tool-border); }
+.die-tool .die-rolls li[data-how="turned"] { font-style: italic; }
+.die-tool .die-rolls li[data-latest] { border-color: var(--die-tool-fg); }
+
+.die-tool .die-faces { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.die-tool .die-face { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 8px; border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius, 8px); }
+.die-tool .die-face[data-showing] { border-color: var(--die-tool-fg); }
+.die-tool .die-face .picture { width: 64px; height: 64px; }
+.die-tool .die-face .picture svg { width: 100%; height: 100%; display: block; }
+.die-tool .die-face .picture button { margin-top: 4px; width: 100%; padding: 1px 0; font-size: 11px; }
+.die-tool .die-face .fields { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.die-tool .die-face .reads { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.die-tool .die-mark { display: flex; gap: 4px; align-items: center; }
+.die-tool .die-mark select { flex: 0 0 auto; }
+.die-tool .die-mark input, .die-tool .die-mark select.value { flex: 1 1 0; width: 0; }
+.die-tool .die-mark button { padding: 0 6px; }
+.die-tool .die-face .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.die-tool .die-face .row input[type="text"] { flex: 1 1 0; width: 0; }

@@ -1,0 +1,226 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dice probe</title>
+<!-- Driven by probes/dice.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT dice plugins (dist) in a stub registry, on an in-memory repo, at a
+     scene with one thing in it: a table top, tilted and turned (a table
+     aboard a ship), for dice to lie on. Two views of one doc, A (Ana) and B
+     (Ben), both open from the start, each view's broadcasts (presence, poses,
+     sends) reaching only the other, a few ms late. A plus/minus die doc waits
+     in the repo for the runner to drop on the scene. Every die is built here
+     by the scene's own render pipeline, from this package's scene:source. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 900px; height: 620px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
+import { encodeGLB } from "../src/glb.js";
+import { newDieDoc } from "../src/parts.js";
+import { builtOf, faceUp } from "../src/roll.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+// column-major 4 × 4 helpers
+const mul4 = (a, b) => { const o = new Array(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
+const invRigid = (m) => {
+  const s2 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2];
+  const o = [m[0] / s2, m[4] / s2, m[8] / s2, 0, m[1] / s2, m[5] / s2, m[9] / s2, 0, m[2] / s2, m[6] / s2, m[10] / s2, 0, 0, 0, 0, 1];
+  for (let r = 0; r < 3; r++) o[12 + r] = -(o[r] * m[12] + o[4 + r] * m[13] + o[8 + r] * m[14]);
+  return o;
+};
+const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  // a table top: 0.5 × 0.03 × 0.5 m, its top at y = 0.03 in its own frame
+  const TOP = 0.03;
+  const a = 0.25;
+  const v = [[-a, 0, -a], [a, 0, -a], [a, 0, a], [-a, 0, a], [-a, TOP, -a], [a, TOP, -a], [a, TOP, a], [-a, TOP, a]];
+  const f = [[0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6], [0, 4, 5], [0, 5, 1], [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3], [3, 7, 4], [3, 4, 0]];
+  const tableGLB = repo.add({ "@patchwork": { type: "file" }, name: "table.glb", extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [{ name: "top", positions: f.flat().flatMap((i) => v[i]), color: "#2f5a45" }] }) });
+  const table = {
+    name: "Table", sourceUrl: tableGLB.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: true,
+    // heeled and turned, as aboard a ship
+    transform: { position: [0, 0.1, 0], rotation: [0.22, 0.5, -0.12], scale: 1 },
+    hint: { bounds: { min: [-a, 0, -a], max: [a, TOP, a] } },
+  };
+  const scene = repo.add(emptyScene({ title: "Dice probe", objects: { table }, order: ["table"] }));
+  // a die doc of its own, in no scene yet: what someone drags in
+  const symbolDie = repo.add(newDieDoc("plus-minus"));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(A, hosts.a);
+  Tool(B, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  // every write to the scene doc, and which objects' transforms it changed
+  const writes = [];
+  let last = JSON.parse(JSON.stringify(scene.doc().objects));
+  scene.on("change", () => {
+    const now = JSON.parse(JSON.stringify(scene.doc().objects));
+    const moved = Object.keys(now).filter((id) => last[id] && JSON.stringify(now[id].transform) !== JSON.stringify(last[id].transform));
+    writes.push({ at: performance.now(), moved });
+    last = now;
+  });
+  const objects = () => scene.doc().objects;
+  const canvasRect = (w) => dbg[w].viewport.canvas.getBoundingClientRect();
+  const r6 = (x) => +(+x).toFixed(6);
+  const builtIn = (id, w) => builtOf(dbg[w].viewport.contentOf(id)?.extras?.dice);
+  /** an object's matrix in its parent's frame, as a view DRAWS both (poses included) */
+  const drawnLocal = (id, w) => {
+    const m = dbg[w].viewport.worldOf(id);
+    if (!m) return null;
+    const p = objects()[id]?.parent;
+    const pm = p ? dbg[w].viewport.worldOf(p) : IDENT;
+    return mul4(invRigid([...pm]), [...m]);
+  };
+  const rowsOf = (m) => { const k = Math.hypot(m[0], m[1], m[2]) || 1; return [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]].map((r) => r.map((x) => x / k)); };
+  let sampler = null;
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, symbolDie: symbolDie.url, TOP,
+    doc: () => JSON.parse(JSON.stringify(scene.doc())),
+    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    available: (w) => dbg[w].local.get().activities?.available ?? [],
+    tool: (w) => dbg[w].local.get().tool ?? null,
+    running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    writes: () => writes.map((x) => ({ at: Math.round(x.at), moved: x.moved })),
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    loaded: (id, w = "a") => !!dbg[w].viewport.contentOf(id)?.loaded,
+    status: (id, w = "a") => dbg[w].local.get().status?.[id] ?? null,
+    /** what a view's built content says the die is: its shape and labels, or null until it's built there */
+    built: (id, w) => { const b = builtIn(id, w); return b && { shape: b.shape, turnOnly: b.turnOnly, labels: b.faces.map((f) => f.label), verts: b.verts.length }; },
+    /** the matrix a view is drawing an object with (a pose if one holds it) */
+    shown: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m && [...m].map(r6); },
+    /** which face a view DRAWS up, against the parent as that view draws it, read with that view's own built content: { face, label } */
+    dieShows(id, w) {
+      const b = builtIn(id, w);
+      const m = drawnLocal(id, w);
+      if (!b || !m) return null;
+      const face = faceUp(rowsOf(m), b);
+      return { face, label: b.faces[face].label };
+    },
+    /** how the die lies on its parent, as a view draws it: the heights of its corners above the parent's frame, lowest first (m) */
+    lies(id, w) {
+      const b = builtIn(id, w);
+      const m = drawnLocal(id, w);
+      if (!b || !m) return null;
+      const at = (p) => m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13];
+      return b.verts.map((q) => at([q[0] + b.centre[0], q[1] + b.centre[1], q[2] + b.centre[2]])).sort((x, y) => x - y).map(r6);
+    },
+    /** sample a die every frame: the doc's transform (has it moved?) and where each view draws its origin */
+    watch(id) {
+      const t0 = performance.now();
+      const doc0 = JSON.stringify(objects()[id]?.transform);
+      const rows = [];
+      const tick = () => {
+        const la = drawnLocal(id, "a"), lb = drawnLocal(id, "b");
+        rows.push({ t: Math.round(performance.now() - t0), docMoved: JSON.stringify(objects()[id]?.transform) !== doc0, a: la && r6(la[13]), b: lb && r6(lb[13]), up: window.__p.dieShows(id, "a")?.label ?? null });
+        sampler = requestAnimationFrame(tick);
+      };
+      tick();
+      window.__p.samples = rows;
+    },
+    unwatch() { cancelAnimationFrame(sampler); return window.__p.samples; },
+    screen(p, w = "a") { const q = dbg[w].viewport.project(p); const r = canvasRect(w); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible !== false && q.x > 4 && q.y > 4 && q.x < r.width - 4 && q.y < r.height - 4 }; },
+    /** a point on the table's top, given in the table's own frame, in the world */
+    onTable(x, z, w = "a") { const m = dbg[w].viewport.worldOf("table"); const p = [x, TOP, z]; return [0, 1, 2].map((r) => r6(m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])); },
+    pickAt: (x, y, w = "a") => { const r = canvasRect(w); const h = dbg[w].viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id ?? null, point: h.point?.map(r6) }; },
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    rect(sel, w = "a") { const e = hosts[w].querySelector(sel); if (!e) return null; e.scrollIntoView?.({ block: "center" }); const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height } : null; },
+    count: (sel, w = "a") => hosts[w].querySelectorAll(sel).length,
+    text: (sel, w = "a") => hosts[w].querySelector(sel)?.textContent?.trim() ?? null,
+    /** type into a field of a view and commit it, as leaving the field does */
+    commit(sel, value, w = "a") { const e = hosts[w].querySelector(sel); if (!e) return false; e.focus(); e.value = value; e.dispatchEvent(new Event("change", { bubbles: true })); return true; },
+    binParts: (w = "a") => [...hosts[w].querySelectorAll('.scene-parts .parts-group[data-category="Dice"] .part')].map((b) => b.dataset.part),
+    camera: (w = "a") => JSON.parse(JSON.stringify(dbg[w].viewport.getCamera())),
+    setCamera(w, c) { dbg[w].viewport.setCamera(c); return true; },
+    canvas: (w = "a") => { const r = canvasRect(w); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+    /** a doc dropped on a view's port at a page point, as dragging it from the sidebar does */
+    dropUrl(w, url, x, y) {
+      const target = document.elementFromPoint(x, y) ?? dbg[w].viewport.canvas;
+      const data = { "text/plain": url };
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        const e = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(e, "dataTransfer", { value: { types: Object.keys(data), files: [], items: [], dropEffect: "none", getData: (t) => data[t] ?? "" } });
+        Object.defineProperty(e, "clientX", { value: x });
+        Object.defineProperty(e, "clientY", { value: y });
+        target.dispatchEvent(e);
+      }
+      return target.tagName;
+    },
+    /** a page point where a view's pick lands on this object */
+    aimAt(id, w) {
+      const vp = dbg[w].viewport;
+      const r = vp.canvas.getBoundingClientRect();
+      const m = vp.worldOf(id);
+      const p = m && vp.project([m[12], m[13], m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const ang = k * 0.6, rad = 1.2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(ang), y = p.y + rad * Math.sin(ang);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = vp.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

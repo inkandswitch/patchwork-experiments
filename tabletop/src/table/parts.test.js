@@ -1,23 +1,21 @@
 // The tabletop's parts for the bin, on a stand-in for the stage's drop
 // context (test/fakes.js fakeDrop): what each puts in and where, one file per
-// kind per scene, the card spot's one card slot, and the d6's pips matching
-// the numbers a roll reads.
+// kind per scene, and the card spot's one card slot.
 import { describe, it, expect } from "vitest";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as parts from "./parts.js";
 import { PIECES, partKey, makeFile } from "./parts.js";
-import { DEFAULT_FACES, DIE } from "./dice.js";
 import { CARD_TAGS, accepts, nearestSlot, worldSlots } from "./slots.js";
 import { SEATS } from "./visibility.js";
 import { composeMatrix, fakeDrop } from "../test/fakes.js";
 import { emptyScene } from "../empty-scene.js";
 
-const KINDS = { pawn: "pawn", token: "token", cardSpot: "card-spot", die: "d6" };
+const KINDS = { pawn: "pawn", token: "token", cardSpot: "card-spot" };
 const at = (position = [0.1, 0, 0.2], rotation = [0, 0.5, 0]) => ({ parent: null, transform: { position, rotation, scale: 1 }, world: null });
 const loadGLB = (glb) => new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength), "");
 
 describe("the parts", () => {
-  it("each puts one unlocked piece where the bin says, showing its kind's file, a die with its trait", async () => {
+  it("each puts one unlocked piece where the bin says, showing its kind's file, with no traits", async () => {
     for (const [name, kind] of Object.entries(KINDS)) {
       const doc = emptyScene();
       const { ctx, calls } = fakeDrop(doc);
@@ -28,9 +26,9 @@ describe("the parts", () => {
       expect(o.transform).toEqual({ position: [0.1, 0, 0.2], rotation: [0, 0.5, 0], scale: 1 });
       expect(o.sourceUrl).toBe(doc.assets[partKey(kind)].url);
       expect(o.hint.bounds.min).toHaveLength(3);
-      // stands on y = 0 (a die's pips stand a hair proud underneath)
+      // stands on y = 0
       expect(o.hint.bounds.min[1]).toBeCloseTo(0, 3);
-      expect(o.traits).toEqual(kind === "d6" ? { [DIE]: {} } : undefined);
+      expect(o.traits).toBeUndefined();
       // nothing it fits: only a card fits a card slot
       expect(o.tags).toBeUndefined();
       expect(calls.changes).toBe(1);
@@ -55,14 +53,14 @@ describe("the parts", () => {
     const { ctx, calls } = fakeDrop(doc);
     const a = await parts.pawn.create(ctx, at());
     const b = await parts.pawn.create(ctx, at([0.3, 0, 0]));
-    await parts.die.create(ctx, at());
+    await parts.token.create(ctx, at());
     expect(doc.objects[a].sourceUrl).toBe(doc.objects[b].sourceUrl);
-    expect(calls.made.map((m) => m.key)).toEqual(["tabletop/pawn@1", "tabletop/d6@1"]);
+    expect(calls.made.map((m) => m.key)).toEqual(["tabletop/pawn@1", "tabletop/token@1"]);
     for (const m of calls.made) {
       expect(m.mimeType).toBe("model/gltf-binary");
       expect(m.bytes).toBeInstanceOf(Uint8Array);
     }
-    expect(Object.keys(doc.assets).sort()).toEqual(["tabletop/d6@1", "tabletop/pawn@1"]);
+    expect(Object.keys(doc.assets).sort()).toEqual(["tabletop/pawn@1", "tabletop/token@1"]);
   });
 
   it("goes under what it was put on, filed in that one's group", async () => {
@@ -70,7 +68,7 @@ describe("the parts", () => {
     doc.objects.board = { name: "Board", parent: null, group: "g1", transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } };
     doc.order.push("board");
     const { ctx } = fakeDrop(doc);
-    const id = await parts.die.create(ctx, { parent: "board", transform: { position: [0.05, 0.04, 0], rotation: [0, 0, 0], scale: 1 } });
+    const id = await parts.pawn.create(ctx, { parent: "board", transform: { position: [0.05, 0.04, 0], rotation: [0, 0, 0], scale: 1 } });
     expect(doc.objects[id]).toMatchObject({ parent: "board", group: "g1" });
     expect(doc.objects[id].transform.position).toEqual([0.05, 0.04, 0]);
   });
@@ -102,7 +100,7 @@ describe("the card spot", () => {
     expect(snapRadius).toBeGreaterThan(0.02);
   });
 
-  it("takes a card dropped near it, squared to the mat; a pawn or a die doesn't fit it", () => {
+  it("takes a card dropped near it, squared to the mat; a pawn doesn't fit it", () => {
     const piece = PIECES["card-spot"];
     // as the stage normalises a connector: its rotation's yaw
     const extras = { connectors: piece.snapPoints.map((p) => ({ position: p.position, yaw: p.yaw, tags: p.tags })), snapRadius: piece.snapRadius };
@@ -113,23 +111,5 @@ describe("the card spot", () => {
     expect(slot.yaw).toBeCloseTo(0.7, 9);
     expect(nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.5, 0, 0.1])).toBeNull();
     expect(accepts(extras.connectors[0].tags, undefined)).toBe(false);
-  });
-});
-
-describe("the d6", () => {
-  it("shows on each side the number a roll reads for it", () => {
-    const s = parts.D6_SIZE;
-    const pips = PIECES.d6.parts.filter((p) => p.name === "pips");
-    const count = {};
-    for (const p of pips) {
-      // which side: the axis its thin dimension is along, and which end
-      const thin = p.size.indexOf(Math.min(...p.size));
-      const mid = [p.at[0], p.at[1] + p.size[1] / 2, p.at[2]];
-      const off = mid[thin] - (thin === 1 ? s / 2 : 0);
-      const side = `${off > 0 ? "+" : "-"}${"xyz"[thin]}`;
-      expect(Math.abs(off)).toBeCloseTo(s / 2, 3);
-      count[side] = (count[side] ?? 0) + 1;
-    }
-    expect(count).toEqual(DEFAULT_FACES);
   });
 });

@@ -15,8 +15,9 @@
 // as one of their tables without a game doc (src/table/template.js).
 //
 // Pieces for any table are `scene:part`s, in the editor's parts bin under
-// "Tabletop": a pawn, a token, a card spot (a mat with one card slot) and a
-// die (src/table/parts.js). None of them makes seats. So are a Card table to
+// "Tabletop": a pawn, a token and a card spot (a mat with one card slot)
+// (src/table/parts.js). None of them makes seats. (Dice come from the dice
+// package: its own parts, under "Dice".) So are a Card table to
 // play at and Lost Cities, the whole game set down on whatever it's put on
 // (a Card table aboard a ship); the game brings seats if the scene has none.
 
@@ -27,7 +28,7 @@ export const plugins = [
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
-    traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden", "tabletop.die"],
+    traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
     // a table is played, and edited too: while editing, hidden cards still
     // stay hidden (only their deck says who may see them)
     activities: ["play", "edit"],
@@ -63,19 +64,11 @@ export const plugins = [
         // for) from a scene that isn't its table
         fields: [{ key: "by", label: "Deck", kind: "url", copy: "drop" }],
       },
-      // (src/table/dice.js: the default is a d6's, opposite sides adding to seven)
-      "tabletop.die": {
-        name: "Die",
-        on: "object",
-        blurb: "Press R over it in play to roll it; everyone is told what it shows. Faces says which number each side shows, by the local axis out of that side",
-        fields: [{ key: "faces", label: "Faces", kind: "json", default: { "+y": 1, "-y": 6, "+x": 3, "-x": 4, "+z": 2, "-z": 5 } }],
-      },
     },
     drops: ["*"],
     // playing needs these and nothing else: carry pieces, the use prompt
-    // (hover a pile: "[F] Flip  [S] Shuffle pile  [D] Draw to my hand", a die:
-    // "[R] Roll  [F] Flip"; play only, it does nothing
-    // while editing), keys for verbs, a right-click menu, a camera that opens
+    // (hover a pile: "[F] Flip  [S] Shuffle pile  [D] Draw to my hand"; play
+    // only, it does nothing while editing), keys for verbs, a right-click menu, a camera that opens
     // on the table, and somewhere for notices (not scene.frame: F is the
     // hand's flip at a table). scene.use comes before scene.keys, so the
     // prompt hears its verbs' keys first (scene/STAGE.md, "The use prompt").
@@ -163,7 +156,6 @@ export const plugins = [
     { id: "pawn", name: "Pawn", icon: "PersonStanding", description: "A playing piece to move about the table" },
     { id: "token", name: "Token", icon: "Coins", description: "A flat counter: a coin, a marker, a life" },
     { id: "cardSpot", part: "card-spot", name: "Card spot", icon: "RectangleVertical", description: "A mat with one card slot: a card or a dropped deck squares onto it" },
-    { id: "die", name: "Die", icon: "Dice6", description: "A six-sided die. Press R over it in play to roll it", traits: ["tabletop.die"] },
     // somewhere to play, and a whole game to put on it (anywhere: a ship's cockpit rides it along)
     { id: "cardTable", part: "table", name: "Card table", icon: "RectangleHorizontal", description: "A table to play at, 0.76 × 1.2 m and 0.7 m high. A game dropped on it sits square in the middle of its top" },
     {
