@@ -107,18 +107,24 @@ async function hover(id, verb, { pile = false, tries = 6 } = {}) {
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const compassOf = (m) => Math.atan2(-m[8], m[10]);
 
-/** Stand view `w` at `pos` (the hull's frame) looking down `pitch`, and point at `id` until the prompt offers `verb`. → whether it did. */
-async function face(w, id, pos, pitch, verb) {
+/**
+ * Stand view `w` at `pos` (the hull's frame) looking down `pitch`, and point at `id` (at `local` in its own frame, else
+ * its origin) until the prompt offers `verb`: aimed afresh a few times, each waited on as hover() waits (a view at a
+ * few frames a second takes more than one to hear the pointer). → whether it did; what each try saw is in report.numbers.
+ */
+async function face(w, id, pos, pitch, verb, local = null) {
   await P(`place('${w}', ${J((await P("ids")).hull)}, ${J(pos)}, 0, ${pitch})`);
   await sleep(600);
+  const tries = [];
   for (let i = 0; i < 6; i++) {
-    const at = await P(`aimAt(${J(id)}, '${w}')`);
-    if (!at) { await sleep(300); continue; }
+    const at = await P(`aimAt(${J(id)}, '${w}', ${J(local)})`);
+    if (!at) { tries.push(null); await sleep(300); continue; }
     await b.move(at.x + 1, at.y);
     await b.move(at.x, at.y);
-    await sleep(250);
-    if ((await P(`prompt('${w}')`)).some((t) => verb.test(t))) return true;
+    if (await until(`prompt('${w}').some((t) => ${verb}.test(t))`, 1500)) return true;
+    tries.push({ at, prompt: await P(`prompt('${w}')`), hovered: await P(`hovered('${w}')`) });
   }
+  (report.numbers.unfaced ??= []).push({ id, pos, verb: String(verb), tries });
   return false;
 }
 
@@ -358,7 +364,8 @@ try {
     const wh = await P(`hullLocal(${J(ids.wheel)})`);
     await P("focus('b')");
     // the main hoisted while she's anchored (DESIGN.md, "Leaving the anchor"), so she lies head to wind as it breaks out
-    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/);
+    // (0.6 m up the mast, the middle of that look: its foot is 2.47 m from the eye, at the edge of the 2.5 m reach as she heaves)
+    const atMast = await face("b", ids.mast, [0.4, mastAt[1] + 0.3, rigAt[2] + 1.3], -0.8, /Raise sail/, [0, 0.6, 0]);
     let raised = false;
     if (atMast) { await b.keyDown("r"); raised = await until("live(__p.ids.rig, 'raised') >= 0.98", 60_000); await b.keyUp("r"); }
     check("8: B raises the sail at anchor, holding R at the mast", atMast && raised, await P("shape().sail"));

@@ -13,6 +13,26 @@
 
 import { vi } from "vitest";
 
+/**
+ * An empty scene doc, as the scene datatype's init writes one: every map a
+ * scene has, made with the doc. The source of truth is scene/src/datatype.js
+ * (SceneDatatype.init and DEFAULT_VIEW); packages don't import each other,
+ * so this is a copy of its shape. Every test that needs a scene doc starts
+ * from this one.
+ */
+export function emptyScene() {
+  return {
+    title: "Untitled scene",
+    objects: {},
+    order: [],
+    dimensions: {},
+    traits: {},
+    assets: {},
+    packages: [],
+    view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
+  };
+}
+
 /** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
 export function composeMatrix(t) {
   const p = t?.position ?? [0, 0, 0];
@@ -440,7 +460,6 @@ export function fakeDrop(doc, { content } = {}) {
       const f = await make();
       calls.made.push({ key, ...f });
       const made = await repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
-      if (!doc.assets) doc.assets = {};
       doc.assets[key] = { url: made.url, ...(f.hint ? { hint: f.hint } : {}) };
       return { url: made.url, hint: f.hint ?? null };
     },

@@ -3,7 +3,7 @@
 // feedback", item 1). Pure: no THREE, no ship.js (ship.js hands it
 // `rigDrawing()`, and puts what comes back on the GLB).
 //
-// It is the rig package's 12 m sloop fixture with her own rig. Her
+// It is naval's 12 m sloop fixture with her own rig. Her
 // principal dimensions are the fixture's (LOA 12, beam 3.8, 8000 kg), so the
 // fixture's synthetic canoe body, its appendages and resistance, the sail
 // model and each sail family's constants, the loading (but for where the

@@ -125,12 +125,6 @@ export function trimOf(s, k, out = {}) {
   return out;
 }
 
-/** Each sail of a read with its trim: [{ sail, trim }] for read.sails, the models by sail id (trimModelOf). */
-export function trimsOf(sails, models) {
-  if (!Array.isArray(sails)) return [];
-  return sails.map((s) => ({ sail: s, trim: trimOf(s, models?.[s.id] ?? trimModelOf(null)) }));
-}
-
 // ─── the rig's geometry, for the sheets and the vane (pure) ────────────────
 
 /** A contract point (its frame: x forward, y to port, z up) in the body frame (x starboard, y up, z aft): rig-contract.js toBody. */

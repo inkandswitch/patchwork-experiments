@@ -3,7 +3,7 @@
 // keel's downwash on the rudder, the rudder's travel, the wet part of the
 // span), her centre of gravity where the contract's roll-up put it, her
 // inertia from its gyradii, and the crew's moment to windward (§6.6). The
-// fixtures are the rig package's (test/rig-contract/); compose.js is its
+// fixtures are naval's (test/rig-contract/); compose.js is its
 // reference consumer of §6, copied.
 import { describe, it, expect } from "vitest";
 import { createShip } from "./physics.js";

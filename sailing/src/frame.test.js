@@ -3,13 +3,12 @@
 // extras.ship.forward saying so, gets the same spec, sails bow first, and
 // makes the same speed; and the rig you place is what drives her.
 import { describe, it, expect } from "vitest";
-import { STAND, partGLB } from "./ship.js";
+import { STAND } from "./ship.js";
 import { PIECES, placement } from "./parts.js";
 import { frameOf, placeIn } from "./body.js";
 import { specFor } from "./sim.js";
 import { SLOOP, createShip } from "./physics.js";
 import { SAIL, SHIP } from "./traits.js";
-import { fakeNode } from "./test/fakes.js";
 import { near, nearDeep, quarter, rigSail, stated, stockHull, turned } from "./test/frame-hulls.js";
 
 describe("a hull drawn bow along +X", () => {

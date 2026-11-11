@@ -22,7 +22,7 @@
 import { DECK, SWIM, easeEye, look, lookDir } from "./walk.js";
 import { bake, sweptAbout } from "./navmesh.js";
 import * as walker from "./walker.js";
-import { apply, headingOf, invert, matrixOf, multiply, onHeading, rotateM, unrotateM } from "./frames.js";
+import { apply, headingOf, invert, matrixOf, multiply, onHeading, rotateM } from "./frames.js";
 import { HELM, HOOK, JIB, QUARTER, SAIL, WINCH, isUnder, partsOf, sailingThing, shipOf } from "./traits.js";
 import { bodyBoxOf, bodyOf, frameMatrix, placeIn, shipFrame } from "./body.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
@@ -44,16 +44,6 @@ const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .abo
 }`;
 
 // ─── frames (pure) ──────────────────────────────────────────────────────────
-
-/** A body in one frame (`from`, a matrix) moved into another (`to`), the same in the world: stepping across onto another deck. */
-export function reframe(body, from, to) {
-  const back = invert(to);
-  return {
-    feet: apply(back, apply(from, body.feet)),
-    vel: unrotateM(to, rotateM(from, body.vel)),
-    yaw: body.yaw + headingOf(from) - headingOf(to),
-  };
-}
 
 /** The shorter way round from angle a to b. */
 const turnTo = (a, b) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a));
@@ -477,18 +467,12 @@ export function createCrew(api, ctx) {
   }
 
   // Before coming aboard the camera is the orbit's, and it goes where the
-  // ship goes (sideways only: no bobbing), so a sailing ship stays in view.
-  // A camera nobody has moved (not even from a saved view) starts off the
-  // ship's quarter. On a stage that has rides (camera.ride) it's a fallback
-  // ride: anything else riding (a seat at a table aboard her) wins over it,
-  // and nothing follows twice; else, as before, moved here each frame.
-  let followAt = null;
+  // ship goes (sideways only: no bobbing), so a sailing ship stays in view:
+  // a fallback ride (the stage's camera.ride), so anything else riding (a
+  // seat at a table aboard her) wins over it. A camera nobody has moved (not
+  // even from a saved view) starts off the ship's quarter.
   let riding = null; // { ship, off }
   let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
-  let dragging = false;
-  // (the release in the capture phase: the stage stops a claimed one at the port)
-  api.listen(api.port, "pointerdown", () => (dragging = true), { capture: true });
-  for (const type of ["pointerup", "pointercancel"]) api.listen(globalThis, type, () => (dragging = false), { capture: true });
   function follow() {
     const ship = ctx.sim?.ships?.()[0] ?? null;
     const m = ship ? frameOfShip(ship) : null;
@@ -496,23 +480,10 @@ export function createCrew(api, ctx) {
       riding.off?.();
       riding = null;
     }
-    if (!m) return void (followAt = null);
-    const at = [m[12], m[14]];
-    if (!followAt) {
-      followAt = at;
-      if (!framed && !api.camera.touched?.()) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target) });
-      framed = true;
-      if (!riding && typeof api.camera.ride === "function") riding = { ship, off: api.camera.ride(ship, { turn: false, rise: false, fallback: true }) };
-      return;
-    }
-    if (riding) return;
-    const dx = at[0] - followAt[0];
-    const dz = at[1] - followAt[1];
-    if (dragging || Math.hypot(dx, dz) < 1e-3) return;
-    followAt = at;
-    const cam = api.camera.get();
-    if (!cam) return;
-    api.camera.set({ position: [cam.position[0] + dx, cam.position[1], cam.position[2] + dz], target: [cam.target[0] + dx, cam.target[1], cam.target[2] + dz] });
+    if (!m || riding) return;
+    if (!framed && !api.camera.touched?.()) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target) });
+    framed = true;
+    riding = { ship, off: api.camera.ride(ship, { turn: false, rise: false, fallback: true }) };
   }
 
   // ─── input ──────────────────────────────────────────────────────────────
@@ -629,7 +600,6 @@ export function createCrew(api, ctx) {
       // the view that asked takes the camera
     } else if (m) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target), ...fov });
     else api.camera.set(fov);
-    followAt = null;
     api.presence.set("crew", undefined);
   }
 

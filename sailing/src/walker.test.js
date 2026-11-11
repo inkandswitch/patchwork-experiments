@@ -5,7 +5,7 @@
 // body's cylinder clear above the step. The bake's own cases are in
 // navmesh.test.js.
 import { describe, it, expect } from "vitest";
-import { DIRS, OPEN, OVERBOARD, STEP, WALL, bake, columnAt, inShadow, planOf, pointOf } from "./navmesh.js";
+import { DIRS, OPEN, OVERBOARD, STEP, WALL, bake, inShadow, pointOf } from "./navmesh.js";
 import { asserting, assertWalker, climb, leaveStation, localFeet, meetsCapsule, place, spawnOn, step, swimmingAt, takeStation, travel, worldPose } from "./walker.js";
 import { DECK, easeEye } from "./walk.js";
 import { apply, invert, matrixOf } from "./frames.js";

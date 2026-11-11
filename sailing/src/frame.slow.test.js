@@ -8,7 +8,7 @@ import { placement } from "./parts.js";
 import { createSeaView } from "./sea-view.js";
 import { createSim } from "./sim.js";
 import { SHIP } from "./traits.js";
-import { fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
+import { emptyScene, fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
 import { near, quarter, rigSail, stated, turned } from "./test/frame-hulls.js";
 
 
@@ -20,7 +20,7 @@ import { near, quarter, rigSail, stated, turned } from "./test/frame-hulls.js";
  * it (squared to her frame), so her body is where the stock one's is.
  */
 async function sloop({ turned: isTurned = false, yaw = headTo(45 - 90) } = {}) {
-  const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
+  const doc = emptyScene();
   const hull = await layOutShip(
     fakeDrop(doc).ctx,
     { wind: { speed: 7, from: 45 }, seed: 3 },

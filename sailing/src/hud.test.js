@@ -90,7 +90,7 @@ describe("the HUD's model", () => {
 
   it("walking her deck, a line says where her stations are and what each works", () => {
     expect(stationGuide(SLOOP)).toBe("Wheel: steer, sheet, hoist · Mainsheet (cockpit): sheet, hoist · Mast: hoist · Windlass: anchor");
-    // no mainsheet (an older doc, a hull rigged from the bin without one)
+    // no mainsheet (a hull rigged from the bin without one)
     expect(stationGuide({ ...SLOOP, mainsheet: null })).toBe("Wheel: steer, sheet, hoist · Mast: hoist · Windlass: anchor");
     // nowhere else to trim: the mast
     expect(stationGuide({ sail: "rig" })).toBe("Mast: hoist, sheet");

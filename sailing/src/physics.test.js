@@ -38,7 +38,7 @@ function swell({ amp, length, toward = 0 }) {
   };
 }
 
-import { bestSpeed, clamp, helmsman, sail, sailAt, speedAt, steady, wrap } from "./test/sail-runs.js";
+import { helmsman, sail, speedAt, steady, wrap } from "./test/sail-runs.js";
 
 describe("the hull", () => {
   it("floats its mass with its waterline at y = 0", () => {

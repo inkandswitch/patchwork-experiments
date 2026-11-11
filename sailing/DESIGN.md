@@ -214,13 +214,14 @@ The rig aid (in `naval/`, a separate package) designs a rig on a hull and
 states it as `extras.rig` on the rig GLB it builds: patchwork-rig v1, whose
 specification (`naval/contract/v1/specification.md`) is the authority,
 §6 most of all (how a consumer composes forces from it). Sailing reads the
-JSON; it imports nothing of the rig package's. Everything that follows is
-gated on a contract being present: a ship without one sails as before. The
-stock sloop carries one (on her rig's GLB since `rig@2`, `rig@3` today;
-"Trim feedback" item 1); a rig file without one (a `rig@1`) sails on the
-old path (`stock-rig.test.js` pins its spec key for key). `stock-golden.test.js`,
-which held the stock boats bit for bit to their pre-contract runs, is
-retired: see "Trim feedback", item 1.
+JSON; it imports nothing of `naval/`'s. Everything that follows is
+gated on a contract being present and taken: a ship without one sails the
+plain path (`specFor`: her box, her `extras.ship` and the rig's
+`extras.sail`; `createShip` without `spec.rig`). The stock sloop carries
+one on her rig's GLB ("Trim feedback" item 1). Two live cases sail the
+plain path: a rig file with no `extras.rig`, and the stock rig on any hull
+but her own (camber's), where her contract isn't taken.
+`stock-rig.test.js` pins the plain spec key for key for both.
 
 - **Frame.** The contract is x forward, y port, z up, the design
   waterplane at z = 0; the body is (−y, z, −x) of it. `frame.glbToFrame`
@@ -415,10 +416,12 @@ retired: see "Trim feedback", item 1.
     at 20 kn, up to 1.6).
   - In irons, head to wind from rest in 12 kn, with the jib backed to
     starboard and the rudder over to bear her away to port, the sloop falls
-    off past 60° in 13.1 s, the J/24 in 6.2 s, the Catalina in 7.7 s,
-    cuvature in 8.6 s; with the jib sheeted instead it takes 3.4–7 times as
-    long (the sloop doesn't come out within 60 s). Re-measured 2026-11-09
-    with P1 (they were 14.6, 6.5, 8.0, 8.9 s, sheeted 2.5–2.8 times). The
+    off past 60° in 12.5 s, the J/24 in 6.1 s, the Catalina in 7.5 s,
+    cuvature in 12.0 s; with the jib sheeted instead it takes 3.0–4.4 times
+    as long (54.9, 20.7, 24.3, 35.8 s). Re-measured 2026-11-10. cuvature's
+    was 8.4 s before naval's first guess balanced her: her rig is 1.81 m
+    further aft, the jib's CE 1.86 m ahead of her CG where it was 3.68 m,
+    so the backed rig turns her with 1391 N·m where it had 3599 N·m. The
     rudder does little with no way on, and once she gathers sternway it
     works backwards. The stock sloop's own cases are in "Leaving the
     anchor".
@@ -435,7 +438,7 @@ retired: see "Trim feedback", item 1.
   `pose.jib` if given, else at its goal. It changes nothing: stepping
   after a wrench is stepping without one.
 - **Agreement** (`agreement.slow.test.js`, `test/agreement-harness.js`). The
-  rig package's valid fixtures and its reference consumer of §6
+  naval package's valid fixtures and its reference consumer of §6
   (`compose.js`) are copied into `test/rig-contract/`. At each predicted
   equilibrium (unflagged, or, §6.7, flagged only `planing-range`: the
   Laser's 25 planing points) she is put in the predicted state (starboard tack,
@@ -456,8 +459,11 @@ retired: see "Trim feedback", item 1.
   ±2°, leeway ±1.5°, rudder on the same side. Her crew are all the way out
   at a heeled point; at an upright one roll passes if somewhere between in
   and out they hold her there. The 12 m sloop and the Catalina 30 pass at
-  every point; every fixture but the Laser settles within every tolerance
-  (cuvature's heel by 0.04°). What still fails is listed in `KNOWN_GAPS`
+  every point, and they and the J/24 settle within every tolerance. The
+  Laser settles 2.1° short of her heel and cuvature 16.4% slow (3.24 m/s
+  against 3.88), both by windage: cuvature's is 395 N, a quarter of her
+  drive at 12 kn 45°, and without it she settles 0.8% slow. What still
+  fails is listed in `KNOWN_GAPS`
   point by point with its measured values, each held to them, so the list
   moves when the physics does: windage, which §6.1 leaves out and sailing
   doesn't (all of the Laser's surge, sway and roll failures; less windage,
@@ -601,8 +607,8 @@ so a test can re-derive it:
   The agreement test reads only the fixtures, so nothing is lost.
 - `lumpedSail`: §6.8's rule on the sails above.
 
-`extras.sail` stays on the GLB, `plan` included, because a reader of the
-old path still finds what it needs there (below).
+`extras.sail` stays on the GLB, `plan` included: on a hull that doesn't
+take her contract the plain path reads it (below).
 
 **Which hull.** Her drawn hull displaces 9.38 m³ below y = 0, against the
 contract's 7.80 m³. That is outside the 5% `drawnHull` allows, so she
@@ -619,32 +625,18 @@ floats on the contract's synthetic canoe body, at the same waterplane
 On any other hull (camber's, in `camber-run.mjs`), a contract with a
 `glbKey` that doesn't match is **not taken**. It describes the stock
 sloop's hull, not this one. The rig is read as a plain rig, by its
-`extras.sail.plan`, as today. So dropping the stock "Mast and sail" on
-another hull behaves exactly as it does now. A rig-aid rig (no `glbKey`)
-keeps today's rule: it is taken, with the warning.
+`extras.sail.plan`. A rig-aid rig (no `glbKey`) is taken on any hull,
+with the warning.
 
-**Old docs stay on the old path.** A part's GLB is the scene's file under
-`fileKey(kind)`. The new drawings get new keys:
-- `rig@2`: the same meshes plus `extras.rig` and `extras.sail.cloth`;
-- `mast@2`: no furled-jib roll, since the jib is now its own piece;
-- `hull@3`: winch stands among her connectors;
-- `jib@1` and `winch@1`: new kinds.
-
-A doc made before keeps its `rig@1`, `mast@1` and `hull@2` files, with no
-`extras.rig`. It sails exactly as before, and its HUD and looks are
-today's: the trim visuals below need a contract. A new "Mast and sail"
-dragged onto an old hull makes `rig@2` in that scene, and that rig is the
-contract path; `hull@2` is in the `sailing/hull` family.
-
-**`stock-golden.test.js` is retired.** It held the default Sloop and the
-stock hull with "Mast and sail" to their pre-contract runs, bit for bit.
-That guarded the promise that the contract path changed nothing for them.
-This section breaks that promise on purpose: they now carry a contract.
-The old path itself doesn't change: the same `createShip` without
-`spec.rig`, still covered by physics.test.js's SLOOP cases. What guards old
-docs now is a finite case in `stock-rig.test.js`: a `rig@1` GLB (extras
-without `rig`) gives a spec with no `rig` and the same `specKey` as before.
-The golden file, its writer and `stock-runs.js` are deleted.
+**A rig without a contract sails the plain path.** A rig GLB with no
+`extras.rig` (any rig not built with one), and the stock rig on a hull
+that doesn't take her contract, give a spec with no `rig`: `createShip`
+without `spec.rig`, one lumped sail from `extras.sail.plan`, no jib. Its
+HUD and looks are the plain ones: the trim visuals below need a contract.
+`stock-rig.test.js` pins that spec key for key (a contract-less rig file
+on the stock hull; the stock rig on camber's, an imported and an unfiled
+hull) and runs it on a fake stage; the plain path's physics is
+physics.test.js's SLOOP cases.
 
 **Tests and probes that assumed the old stock physics** are updated by
 re-measuring, not loosening:
@@ -693,6 +685,13 @@ untouched: it reads the fixtures.
     Locked in, the eye turns to the jib's luff halfway up (crew.js
     `take(…, { look })`, stations.js `jibLuffAt`: the Jib piece's cloth
     luff through its world matrix).
+    Open: that holds for the working winch only. The lazy (windward)
+    winch's stand is then the leeward deck, at (±1.30, 1.22, 2.25) under
+    the boom's sweep: a body there (head 2.97, eye 2.82) meets the boom
+    (2.81 up, 0.07 thick) when it is 15–23° out on that side, a
+    close-reaching trim. Taking a
+    station doesn't check blockers (walker.js `takeStation`), so you stand
+    there with the eye in the boom.
   - On the sloop they sit on the cockpit coamings at the cockpit's forward
     end (`FIT.winch`, z ≈ COCKPIT.z0 + 0.3). That is clear of a card table
     in the well (z 2.47–3.23) and of the mainsheet's stand.
@@ -913,9 +912,11 @@ setting on a beam reach (α 51–63 at AWA 81) and could never be seen to
 luff while sailing. Now on a beam reach (TWA 90°, 7 m/s) it draws at 0.6
 and luffs all the way out (`stock-rig.test.js`). Backed, it's held on the
 family's travel (rig-sails.js `backMax`, ≤ 30°): a sail pressed against
-its sheet doesn't twist open past the shrouds. The cloth swings rigidly,
-so eased past 30° the drawn clew goes outboard of the rail (no twist is
-drawn yet). A stalled jib all the way out reads "eased out · stalled" in
+its sheet doesn't twist open past the shrouds. The cloth swings rigidly
+about its luff (sim.js holds the Jib piece at `jibTransform(read.jib)`; no
+twist is drawn yet), so the drawn clew, 2.8 m over the deck, crosses the
+rail in plan at 23° and is outboard of it by 0.5 m at 30°, 1.2 m at 40°
+and 2.4 m at 60°: an open item, measured, not a claim that it looks right. A stalled jib all the way out reads "eased out · stalled" in
 the neutral colour.
 
 #### Geometry
@@ -1020,7 +1021,7 @@ The panel's "Sail" row becomes two rows on a contract ship. Each is
    - 3 m/s heading 090° in 5 m/s from 0° → atan2 of the known vector;
    - rolling at 0.2 rad/s → swings by atan(ω·h/…), the exact value.
 9. **Stock contract**:
-   - `rigContract` accepts it, and it passes the rig package's validator
+   - `rigContract` accepts it, and it passes naval's validator
      (copied into `test/rig-contract/`, as compose.js is);
    - `rigFrame` is the identity on her;
    - the main's `tackM` is the rig origin and its luff axis is the rig's
@@ -1033,7 +1034,7 @@ The panel's "Sail" row becomes two rows on a contract ship. Each is
    - the leads follow §3.9 at 7°;
    - `lumpedSail` follows §6.8;
    - the CG roll-up is exact;
-   - a `rig@1` GLB still gives no `spec.rig`;
+   - a rig GLB without `extras.rig` gives no `spec.rig`;
    - on a hull keyed otherwise, the stock contract isn't taken.
 10. **P1 and P2**:
     - a free sail's α is alpha0 and its CL_a is 0 (the main's ≤ 0);
@@ -1154,11 +1155,11 @@ sets, I, J, P, E, BAS, designer and actual; the mainsheet hardpoints; the
 lead rule reproducing the fixture's own leads (1e−6) and hers at 7°, on the
 line, on her drawn deck; the lumped-sail rule reproducing the fixture's own
 and hers; the CG roll-up; the gate (any `sailing/hull@n` takes it without
-a warning; camber's, an imported hull, a doc without files, and `rig@1`
-don't, and their spec is the pre-contract one key for key); and on a fake
-stage the template's sloop (files and all) sails the contract (her jib
-read) while the same layout with `rig@1`'s extras doesn't, neither
-warning.
+a warning; camber's, an imported hull, a doc without files, and a rig
+file with no contract don't, and their spec is the plain one key for
+key); and on a fake stage the template's sloop (files and all) sails the
+contract (her jib read) while the same layout with a contract-less rig's
+extras doesn't, neither warning.
 
 *Ship at anchor* (`ANCHORAGE_AIR`, 6.5 m/s): head to wind from rest on
 flat water, the main up at the template's sheet (0.5), the jib unfurled
@@ -1166,15 +1167,6 @@ and backed to starboard, the helm hard over to bear her away to port, she
 falls off past 60° in 12.37 s; with the jib sheeted instead it takes
 37.43 s (and she goes to starboard). Both are pinned (they move with P1).
 (Superseded: "Leaving the anchor".)
-
-**`stock-golden.test.js` is gone**, with `test/stock-golden.json`,
-`test/write-stock-golden.mjs` and `test/stock-runs.js`: the stock hull
-with "Mast and sail" now sails her contract, which is the point of item 1,
-so the promise it held (no change for the stock boats) is withdrawn on
-purpose. What it guarded that still holds is guarded by finite cases: old
-docs' `rig@1` and the stock rig on any other hull give the pre-contract
-spec, key for key (above), and the old path's physics is physics.test.js's
-SLOOP cases.
 
 *The probes, re-measured* (2026-11-09, GPU, seeded sea):
 - `sailing-run.mjs` passes all 76 checks with two changes, each for a
@@ -1291,9 +1283,10 @@ Irons, re-measured with P1 and P2:
 at `stand`, facing the winch; crew.js `navInput`); the jib is moving, so
 not baked (`bakedObjects`). On her static bake (`sloop-navmesh.test.js`,
 `test/sloop.js` gains the winches): C1–C9 hold with them; each stand lands
-on the sole at (±0.22, 0.72, 2.30), 5 cm aft of where it's asked, facing
-outboard (yaw ±π/2), with the drum's top within reach; the "plain deck
-within 2 cm" case skips the winches' bases.
+on the side deck across the well from its winch, at (∓1.30, 1.22, 2.25)
+for the winch at (±0.95, 1.23, 2.25), facing it across the well (yaw
+±π/2), its drum's top within 3 m of the eye; the "plain deck within 2 cm"
+case skips the winches' bases.
 
 **Station** (`stations.js`): as the table in §2, plus quick hold Q / E at
 the working winch (the lazy one shows "Lazy sheet: the jib's to port",
@@ -1458,14 +1451,24 @@ from rest, the jib where the wind and its sheet put it:
 | jib backed (wheel to port) | 7.20 / 7.03 / 6.87 / 6.60 s to 45° (±0.05 s) | under 10 s |
 | jib backed, 6 kn | – / 14.73 / 14.50 / 14.03 s | under 18 s |
 | B at the helm: 0–10° off either bow, the wheel to port, amidships or to starboard, the jib's sheet 0, ½ and 1 (99 cases) | the side B holds it on is backed from the first read; past 45° the way the hint names in 6.1–10.1 s | within 11 s, the hint's way |
-| jib luffing, wheel reversed in sternway | – / 45.07 / 42.27 / 34.53 s (±5%) | 15–30 s, an estimate for a 10–12 m boat: a known gap |
-| left alone | 63.97 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
+| jib luffing, wheel reversed in sternway | – / 48.40 / 45.77 / 38.50 s (±5%) | under a minute, slower than backing the jib and sooner than left alone |
+| left alone | 70.80 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
 
 Without the jib she starts on an unstable equilibrium and creeps off it,
 so those times move with the smallest change in where she starts: they're
-pinned to a band, not to 0.05 s. The 15–30 s for the reversed rudder is
-the diagnosis' own estimate, not a measurement; she takes longer, and
-that is listed here rather than hidden by a looser target.
+pinned to a band, not to 0.05 s.
+
+The reversed rudder's time is what her sternway allows, and the diagnosis'
+first estimate for it (15–30 s, unsourced) was wrong for this breeze. In
+12 kn, luffing, about 150 N of windage pushes 8 t astern: she makes
+0.07 m/s after 5 s, 0.26 m/s after 30 s and 0.37 m/s after 45 s (from 2°
+off). A rudder of 0.6 m² at 0.26 m/s has 35 Pa to work with, so nothing
+turns her until she has that sternway: from 2° off she passes 5° at 20 s,
+10° at 30 s, 20° at 38 s and 45° at 45.8 s, having drifted back less than
+her own length. The time goes with the wind: in 20 kn the same move takes
+20.0–24.0 s (5°–1° off). So the target is the ordering and a bound, both
+asserted: backed (7 s) before reversed (under 60 s) before left alone.
+That is why the HUD's advice is to back the jib.
 
 Also pinned: the canoe body's moment under flow reversal is ½ρ·LWL³·|N'v|·u·v
 both ways (V 0.3 and 0.8 m/s, λ 5° and 15°), and going ahead that is §6.4's
@@ -1589,7 +1592,7 @@ answers the hand's `carryable` (traits.js `carryableAboard`): never the ship
 or anything with a sailing trait or tag, so a game played aboard can't carry
 off her mast; anything else aboard is the game's business. And the sail's
 verbs on the use prompt come from the sail station or its mast (what it
-hangs from, or what stands under its gooseneck in an older doc), never from
+hangs from, or what carries the mast's tag), never from
 another traitless thing aboard (a card table): stations.js `sailOf`.
 
 ```js
@@ -1728,10 +1731,8 @@ at the wheel or the mainsheet (F)": at the wheel, the sail overhead isn't
 "walk to the cockpit"). The quick hold R is the mast's and the sail's only;
 at the wheel and the mainsheet you take the station (F) and then hold R, and
 the HUD's advice and the at-anchor notice say exactly that. The mast is a traitless object
-aboard that the rig hangs under, or that carries the `sailing.mast` tag, or
-(a doc made before the rig hung from the mast: both under the hull) whose
-origin is within `MAST_NEAR` (0.6 m) of the gooseneck in her plan; a card
-table in the cockpit is none of these. The HUD names her stations while you
+aboard that the rig hangs under, or that carries the `sailing.mast` tag; a
+card table in the cockpit is neither. The HUD names her stations while you
 walk (`stationGuide`) and, sail down with the anchor up, where to raise it.
 
 **People.** A person is presence: `{ on, position, yaw, pitch, station }`,
@@ -1854,8 +1855,7 @@ triangles from:
 - For the stock sloop, the tests take the same triangles straight from
   `ship.js` (`partMeshes` + `FIT`), with no stage. A camber hull's
   come from its GLB, exactly the same way. Nothing reads `deckAt` at
-  runtime: what you walk on is what is drawn, including in older docs whose
-  GLBs predate today's `ship.js`.
+  runtime: what you walk on is what is drawn.
 
 **Steps**:
 1. **Rasterise.** For each triangle and each column its plan bounds touch:
@@ -2078,7 +2078,7 @@ the side test still decides.
 |---|---|---|---|
 | W1 | walking → walking | a move within a cell or across a STEP | `to ∈ cells` (B3); `u, v` set to an edge, in `[0, 1]` |
 | W2 | walking → walking | a move into a WALL side | That axis is zeroed; you stay in the cell |
-| W3 | walking → swimming | a move across an OPEN side (no rail; none on the sloop) | You swim at `M · exit`, outside `D_r` (B5). First, if another ship has a kept cell under that world point within `step` of your feet, you go to `walking` on her (stepping across, `reframe`) |
+| W3 | walking → swimming | a move across an OPEN side (no rail; none on the sloop) | You swim at `M · exit`, outside `D_r` (B5). First, if another ship has a kept cell under that world point within `step` of your feet, you go to `walking` on her (stepping across, walker.js `intoWater`) |
 | W4 | walking → airborne | jump | Same cell, `h = 0 ≤ headroom` (B1) |
 | W5 | walking/airborne/station → swimming | awash: feet `SUNK` under the sea (she's going down) | You're put at `putOut` of the column you're in (B5) |
 | A1 | airborne → airborne | `h += vy·dt` under gravity (her −Y), clamped to `[0, headroom]`; touching the top zeroes `vy` (a head bump) | Clamped into the invariant's range |
@@ -2185,7 +2185,7 @@ few boxes as triangles, baked, then driven. This is the full list:
 25. `firstPerson.enter`: you stand at the projection of the seat's eye,
     facing its target.
 26. Stepping across: an OPEN side over another ship's kept cell puts you
-    on her deck, in her frame (`reframe`).
+    on her deck, in her frame (walker.js `intoWater`).
 27. A huge `dt` or speed: the move is capped, and I holds.
 28. The boom blocker: walking into the capsule stops you; a jump under it
     is capped.

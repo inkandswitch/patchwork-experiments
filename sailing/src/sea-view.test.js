@@ -3,10 +3,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
 import { ATMOSPHERE, MAX_STEP_S, RESYNC_S, WATER_REACH, createClock, createSeaView, follow, seaClock, seaParams, seaTime, slew, waterExtent } from "./sea-view.js";
-import { floatPose } from "./looks.js";
 import { FLOAT, SEA } from "./traits.js";
 import edit from "./edit.js";
-import { composeMatrix, fakeWorld } from "./test/fakes.js";
+import { emptyScene, fakeWorld } from "./test/fakes.js";
 
 describe("the followed time", () => {
   it("is the simulator's clock run on to the moment its poses are drawn at", () => {
@@ -101,10 +100,10 @@ const object = (extra) => ({ name: "Object", parent: null, group: null, visible:
 
 function scene() {
   return {
+    ...emptyScene(),
     objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
     order: ["buoy", "rock"],
     traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 } },
-    view: {},
   };
 }
 

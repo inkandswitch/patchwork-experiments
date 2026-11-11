@@ -1,6 +1,6 @@
 // The rig aid's contract read into sailing (rig-contract.js), and the
 // physics' wrench: finite cases, each one mechanism. The fixtures are the
-// rig package's valid contract fixtures, copied (test/rig-contract/).
+// naval package's valid contract fixtures, copied (test/rig-contract/).
 import { describe, it, expect } from "vitest";
 import { RIG_FORMAT, bodyRig, checkSource, contractSerial, rigContract, rigFrame, rigSpecParts, toBody, toContract } from "./rig-contract.js";
 import { frameFromAxes, frameMatrix, frameOf, glbFrame, shipFrame } from "./body.js";

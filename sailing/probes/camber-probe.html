@@ -24,6 +24,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
 
 // invariant I asserted on every walker step (walker.asserting): a breach throws in the crew's tick, so it shows as an error
 globalThis.__SAILING_ASSERT__ = true;
@@ -49,12 +50,7 @@ try {
   const hullJson = await (await fetch(`/camber-examples/${EXAMPLE}`)).json();
   const hullDoc = repo.add({ "@patchwork": { type: "camber-hull" }, title: hullJson.name ?? EXAMPLE.replace(/\.json$/, ""), ...hullJson });
   // a scene with a sea in it and nothing else: a calm-ish breeze from the north-east
-  const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Camber at sea", objects: {}, order: [], dimensions: {}, assets: {},
-    traits: { "sailing.sea": { wind: { speed: 7, from: 45 }, seed: SEED, scale: 1 } },
-    view: { units: "m", grid: false },
-    camera: null,
-  });
+  const scene = repo.add(emptyScene({ title: "Camber at sea", traits: { "sailing.sea": { wind: { speed: 7, from: 45 }, seed: SEED, scale: 1 } }, view: { grid: false } }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");

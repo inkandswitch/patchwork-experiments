@@ -4,7 +4,7 @@
 // walker.test.js's; here, that the crew drives it: invariant I is asserted
 // after every step (__SAILING_ASSERT__).
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, reframe, trianglesOf } from "./crew.js";
+import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, trianglesOf } from "./crew.js";
 import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
 import { carryableAboard, shipOf } from "./traits.js";
@@ -85,16 +85,6 @@ describe("frames", () => {
     expect(shipOf(scene, "spoke")).toBe("hull");
     expect(shipOf(scene, "hull")).toBe("hull");
     expect(shipOf(scene, "buoy")).toBe(null);
-  });
-
-  it("stepping across onto another deck: the same place in the world, in the new ship's frame", () => {
-    const a = matrix([0, 0, 0], [0, 0.3, 0]);
-    const b = matrix([5, 0.2, -3], [0, -1.1, 0.05]);
-    const body = { feet: [1, 1.2, 2], vel: [0.5, 0, -1], yaw: 0.4 };
-    const r = reframe(body, a, b);
-    expect(close(apply(b, r.feet), apply(a, body.feet))).toBe(true);
-    expect(close(rotate(b, r.vel), rotate(a, body.vel))).toBe(true);
-    expect(r.yaw + headingOf(b)).toBeCloseTo(body.yaw + headingOf(a));
   });
 });
 
@@ -215,6 +205,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     labels: [],
     group: new Obj(),
     lockRefusal: false,
+    rides: [], // the stage's camera rides, as asked: { id, opts }
   };
   s.api = {
     id: "sailing",
@@ -239,6 +230,11 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
       hold: () => {
         s.held++;
         return () => s.held--;
+      },
+      ride: (id, opts) => {
+        const r = { id, opts };
+        s.rides.push(r);
+        return () => s.rides.splice(s.rides.indexOf(r), 1);
       },
     },
     arm(handlers, opts = {}) {
@@ -511,50 +507,17 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.group.children.length).toBe(1);
   });
 
-  it("follows the ship sideways before coming aboard", () => {
+  it("before coming aboard, follows the ship by a fallback ride (sideways only), once, and lets go when it stops", () => {
     const s = stage();
-    s.make();
-    s.frames(1);
-    s.ship.m = matrix([3, 0.5, -1]);
-    s.frames(1);
-    expect(close(s.cam.position, [23, 8, 19])).toBe(true);
-    expect(close(s.cam.target, [3, 0, -1])).toBe(true);
-  });
-
-  it("stands still while the orbit is dragged, and follows again after (the stage stops the release at the port)", () => {
-    const s = stage();
-    s.make();
-    s.api.port.addEventListener("pointerup", (e) => e.stopPropagation(), { capture: true });
-    document.body.append(s.api.port);
-    s.frames(1);
-    s.api.port.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    s.ship.m = matrix([3, 0, 0]);
-    s.frames(1);
-    expect(close(s.cam.target, [0, 0, 0])).toBe(true); // held still while dragging
-    s.api.port.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-    s.ship.m = matrix([5, 0, 0]);
-    s.frames(1);
-    expect(close(s.cam.target, [5, 0, 0])).toBe(true);
-    s.api.port.remove();
-  });
-
-  it("on a stage with rides, follows by a fallback ride (sideways only), once, and lets go when it stops", () => {
-    const s = stage();
-    const rides = [];
-    s.api.camera.ride = (id, opts) => {
-      const r = { id, opts };
-      rides.push(r);
-      return () => rides.splice(rides.indexOf(r), 1);
-    };
     const crew = s.make();
     s.frames(3);
-    expect(rides).toEqual([{ id: "hull", opts: { turn: false, rise: false, fallback: true } }]);
-    // the stage moves the camera now: the crew doesn't as well
+    expect(s.rides).toEqual([{ id: "hull", opts: { turn: false, rise: false, fallback: true } }]);
+    // the stage moves the camera: the crew doesn't as well
     s.ship.m = matrix([3, 0.5, -1]);
     s.frames(1);
     expect(s.sets).toEqual([]);
     crew.dispose();
-    expect(rides).toEqual([]);
+    expect(s.rides).toEqual([]);
   });
 
   it("a click comes aboard from the sea or the sky, the ship or a fitting of hers; not from something else aboard her", () => {

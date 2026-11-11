@@ -100,8 +100,6 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
     objectsFor(l.part, { parent: null, transform: { position: turn(l.at, yaw, at), rotation: [0, yaw + (l.yaw ?? 0), 0] } }, files, ctx.newId, { group, locked: true }),
   );
   ctx.change((d) => {
-    if (!d.traits) d.traits = {};
-    if (!d.view) d.view = {};
     d.traits[SEA] = newSea({ wind, seed });
     d.view.activity = "play";
     // where the editor opens (play opens off her quarter wherever she has sailed to: crew.js)

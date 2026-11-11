@@ -5,7 +5,7 @@
 // induced drag), the jib swinging about its tack within its sheet's travel
 // and no closer than its lead's line, a backed jib held to windward, a reef
 // lowering the main's CE, and getting out of irons by backing the jib. The
-// fixtures are the rig package's (test/rig-contract/).
+// fixtures are naval's (test/rig-contract/).
 import { describe, it, expect } from "vitest";
 import { createShip } from "./physics.js";
 import { rigSailCoeffs } from "./physics-foils.js";
@@ -451,18 +451,22 @@ describe("in irons (deterministic, flat water, 12 kn true wind dead ahead, from 
   // The jib backed to starboard (it starts 7° out on that side) and the
   // rudder over to bear her away to port, the way the backed jib pushes her;
   // the control is the same with the jib sheeted on that side, not backed.
-  // Measured 2026-11-09 (backed, then sheeted): the sloop 14.6 s, not within
-  // 30 s; the J/24 6.5 s, 16.0 s; the Catalina 8.0 s, 21.0 s; cuvature 8.9 s,
-  // 24.7 s. (With the rudder amidships the backed times are within 0.2 s of
-  // these: the rudder does little with no way on, and going astern, as she
-  // does in irons, it works backwards.)
+  // Measured 2026-11-10 (backed, then sheeted): the sloop 12.5 s, 54.9 s; the
+  // J/24 6.1 s, 20.7 s; the Catalina 7.5 s, 24.3 s; cuvature 12.0 s, 35.8 s.
+  // (With the rudder amidships cuvature's backed time is 11.97 s: the rudder
+  // does little with no way on, and going astern, as she does in irons, it
+  // works backwards.) cuvature's was 8.4 s on naval's first guess
+  // before it balanced her: her rig is 1.81 m further aft now, so her jib's
+  // CE is 1.86 m ahead of her CG where it was 3.68 m, and the backed rig's
+  // turning moment head to wind is 1391 N·m where it was 3599 N·m (the same
+  // 1216 N of side force). A balanced rig has less of a lever to back.
   const BACKED = { sail: 1, sheet: 0.3, jibBacked: true, rudder: -1 };
   const SHEETED = { sail: 1, sheet: 0.3, rudder: -1 };
   const CASES = [
     ["the sloop", sloop, 20],
     ["the J/24", j24, 10],
     ["the Catalina 30", catalina, 12],
-    ["cuvature", cuvature, 12],
+    ["cuvature", cuvature, 15],
   ];
   for (const [name, c, within] of CASES) {
     it(`${name}, jib backed to starboard and the rudder over to port, falls off to port past 60° within ${within} s, at least 1.5× sooner than with it sheeted`, () => {

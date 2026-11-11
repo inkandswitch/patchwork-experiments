@@ -2,7 +2,7 @@
 //
 // Written from specification.md §6 against the contract alone: it imports
 // nothing (not even the rig aid's own modules), so a consumer such as
-// sailing's physics can copy it, and the rig package's
+// sailing's physics can copy it, and the naval package's
 // src/contract-agreement.test.js checks that, evaluated at each unflagged
 // predicted point of the contract fixtures, it balances (surge, sway, roll
 // and yaw residuals at solver precision). That is the agreement the plan

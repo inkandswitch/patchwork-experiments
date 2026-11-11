@@ -3,9 +3,8 @@
 // stage (test/fakes.js) with two views on one doc.
 import { describe, it, expect, afterEach } from "vitest";
 import { SLOOP, createShip, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
-import { layOutShip, headTo } from "./layout.js";
+import { headTo } from "./layout.js";
 import { createSeaView } from "./sea-view.js";
-import { createLooks } from "./looks.js";
 import {
   DEPTH,
   SAVE_EVERY_MS,
@@ -26,7 +25,7 @@ import {
 } from "./sim.js";
 import { ANCHOR, HELM, SAIL, SHIP, WHEEL_TURNS, stationValue } from "./traits.js";
 import { quatFromEuler } from "./frames.js";
-import { composeMatrix, fakeNode, fakeWorld } from "./test/fakes.js";
+import { fakeWorld } from "./test/fakes.js";
 
 const DIMS = { length: 12, beam: 3.8, draft: 1.9, freeboard: 1.2 };
 

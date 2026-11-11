@@ -168,8 +168,8 @@ export function rigContractOf(api, id) {
 
 /**
  * The scene's file key for a ship's hull (the doc.assets key whose file is
- * her hull object's sourceUrl: "sailing/hull@2"), or null: a hull imported
- * on its own, or a doc older than the scene's files. A rig contract that
+ * her hull object's sourceUrl: "sailing/hull@4"), or null: a hull imported
+ * on its own. A rig contract that
  * names the hull it describes is taken only on that hull's family
  * (rig-contract.js contractOn).
  */

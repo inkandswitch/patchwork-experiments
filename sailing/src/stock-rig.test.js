@@ -2,7 +2,8 @@
 // item 1), case by case: every field it computes re-derived by the rule the
 // specification states, the rules themselves checked against the 12 m
 // fixture the rig aid built, what it keeps held to that fixture, and the
-// gates: old docs (rig@1) and other hulls stay on the plain path, exactly.
+// gates: a rig file without a contract, and her rig on any other hull, sail
+// the plain path, exactly.
 // The specification's validator is copied into test/rig-contract/ (as its
 // reference consumer compose.js is).
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -18,12 +19,12 @@ import { controlsOf, createSim, specFor, specKey } from "./sim.js";
 import { frameOf, glbFrame, placeIn } from "./body.js";
 import { PIECES, fileKey } from "./parts.js";
 import { JIB, SAIL, SHIP, jibTransform } from "./traits.js";
-import { layOutShip, ANCHORAGE_AIR } from "./layout.js";
+import { layOutShip } from "./layout.js";
 import { createSeaView } from "./sea-view.js";
 import { windFrom } from "./test/agreement-harness.js";
 import { helmBackSide } from "./stations.js";
 import { trimModelOf, trimOf } from "./trim.js";
-import { fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
+import { emptyScene, fakeDrop, fakeNode, fakeWorld } from "./test/fakes.js";
 import { validate, errorText, polygonAreaCentroid } from "./test/rig-contract/validate.js";
 import fixture from "./test/rig-contract/sloop-12m.json";
 
@@ -64,8 +65,8 @@ const main = c.sails.find((s) => s.id === "main");
 const jib = c.sails.find((s) => s.id === "jib");
 const hull = readGLB(partGLB("hull").bytes);
 const rigGLB = readGLB(partGLB("rig").bytes).extras;
-/** What a rig@1 file said: the same extras.sail (its plan), and no contract. */
-const RIG1 = { sail: Object.fromEntries(Object.entries(rigGLB.sail).filter(([k]) => k !== "at")) };
+/** A rig file with no contract: only extras.sail (here her own plan), as any rig GLB not built with one says. */
+const PLAIN = { sail: Object.fromEntries(Object.entries(rigGLB.sail).filter(([k]) => k !== "at")) };
 
 /** The stock "Mast and sail" at its stand on the stock hull, as sim.js reads it (placeIn). */
 const placed = (() => {
@@ -81,8 +82,8 @@ const placed = (() => {
 const specOn = (extras, hullKey, o = {}) =>
   specFor(hull, undefined, 1, { frame: frameOf({}, hull), rig: { matrix: o.matrix ?? placed, sail: extras.sail, contract: extras.rig }, hullUrl: "automerge:hull", hullKey });
 
-// Before the stock rig carried a contract, the stock hull with "Mast and sail" at its stand had this spec, exactly (sim.js specKey).
-const OLD_KEY = '{"length":12,"beam":3.8,"draft":1.9,"freeboard":1.2,"mass":8000,"cg":-0.3,"center":[0,0],"sail":{"area":55,"luff":13,"foot":4.5,"tack":[0,1.4,-1.2]},"keel":{"area":2.5,"depth":1.2},"rudder":{"area":0.6,"at":[0,-0.8,5.2]}}';
+// The plain path's spec for her sail plan at its stand on a hull her size, exactly (sim.js specKey): what a ship sails by when no contract is taken.
+const PLAIN_KEY = '{"length":12,"beam":3.8,"draft":1.9,"freeboard":1.2,"mass":8000,"cg":-0.3,"center":[0,0],"sail":{"area":55,"luff":13,"foot":4.5,"tack":[0,1.4,-1.2]},"keel":{"area":2.5,"depth":1.2},"rudder":{"area":0.6,"at":[0,-0.8,5.2]}}';
 
 describe("what the stock contract keeps is the 12 m fixture's", () => {
   it("the runtime copy (stock-rig-12m.js) is the fixture's, part for part", () => {
@@ -216,7 +217,7 @@ describe("the jib: a 100% blade on her drawn forestay", () => {
 describe("every jib state its sheet can reach: on a beam reach some setting draws and all the way out it luffs (finite cases)", () => {
   // TWA 90° in 7 m/s on flat water, the helmsman holding her course, the main sheeted as she'd sail
   // (0.5, 0.6), a minute to settle; the jib's trim on the last read
-  const ship = createShip(specOn(rigGLB, "sailing/hull@2"));
+  const ship = createShip(specOn(rigGLB, fileKey("hull")));
   const k = trimModelOf(jib);
   const DEG_ = Math.PI / 180;
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -401,25 +402,25 @@ describe("which ships take it", () => {
 
   it("the rig placed off her stand still flies the contract's places, and says so", () => {
     const moved = placed.map((v, i) => (i === 12 ? v + 0.5 : v));
-    expect(specOn(rigGLB, "sailing/hull@2", { matrix: moved }).rig.warnings).toEqual([expect.stringMatching(/isn't where its contract put it/)]);
+    expect(specOn(rigGLB, fileKey("hull"), { matrix: moved }).rig.warnings).toEqual([expect.stringMatching(/isn't where its contract put it/)]);
   });
 
-  it("another hull (camber's, an imported one, a doc without files): not taken; the rig is the plain one, exactly as before", () => {
+  it("another hull (camber's, an imported one, a doc without files): not taken; the rig is the plain one, exactly", () => {
     for (const key of [null, "camber/cuvature@1", "sailing/hullish@1", "other/sailing/hull@2"]) {
       const spec = specOn(rigGLB, key);
       expect(spec.rig).toBeUndefined();
-      expect(specKey(spec)).toBe(OLD_KEY);
+      expect(specKey(spec)).toBe(PLAIN_KEY);
     }
     expect(contractOn(c, "camber/cuvature@1")).toBeNull();
-    // a rig-aid contract (no glbKey) is taken anywhere, as it was
+    // a rig-aid contract (no glbKey) is taken anywhere
     expect(contractOn(fixture, null)).toBe(fixture);
     expect(contractOn(fixture, "camber/cuvature@1")).toBe(fixture);
   });
 
-  it("an old doc's rig@1 (extras without rig) on the stock hull: no contract, the same spec as before, key for key", () => {
-    const spec = specOn(RIG1, "sailing/hull@2");
+  it("a rig file without a contract (extras.sail alone) on the stock hull: no contract, the plain spec, key for key", () => {
+    const spec = specOn(PLAIN, fileKey("hull"));
     expect(spec.rig).toBeUndefined();
-    expect(specKey(spec)).toBe(OLD_KEY);
+    expect(specKey(spec)).toBe(PLAIN_KEY);
   });
 });
 
@@ -441,7 +442,7 @@ describe("her drawn hull isn't the contract's (a known gap)", () => {
     expect(c.hull.volumeM3).toBeCloseTo(7.80, 2);
     expect(Math.abs(v / c.hull.volumeM3 - 1)).toBeGreaterThan(0.05);
     // and a synthetic contract never tries her mesh
-    expect(specOn(rigGLB, "sailing/hull@2").rig.mesh).toBeNull();
+    expect(specOn(rigGLB, fileKey("hull")).rig.mesh).toBeNull();
   });
 });
 
@@ -455,11 +456,12 @@ describe("head to wind (DESIGN.md, \"Leaving the anchor\"): no stable irons; bac
   // so they move only when the physics does, and each meets its target
   // (DESIGN.md: backed she's off in seconds). Without the jib she starts on
   // an unstable equilibrium and creeps off it, so those times are pinned to
-  // a band (±5%): the helm reversed in sternway against the diagnosis'
-  // 15–30 s estimate, a known gap; left alone, only that she falls off by
-  // herself, and slower than with the helm reversed.
+  // a band (±5%): the helm reversed works only once she has sternway, so it
+  // is slower than backing the jib and under a minute (DESIGN.md has the
+  // sums); left alone, only that she falls off by herself, and slower than
+  // with the helm reversed.
   const KN = 0.514444;
-  const ship = createShip(specOn(rigGLB, "sailing/hull@2"));
+  const ship = createShip(specOn(rigGLB, fileKey("hull")));
   const air = (kn) => ({ wind: windFrom(kn * KN, 0) });
   function fallOff(v, offDeg, kn, seconds) {
     return fallOffFrom(ship.rest({ yaw: offDeg * DEG }), v, air(kn), seconds); // the jib where the wind and its sheet put it
@@ -573,8 +575,11 @@ describe("head to wind (DESIGN.md, \"Leaving the anchor\"): no stable irons; bac
     expect(bad).toEqual([]);
   });
   for (const [off, t] of Object.entries(TIMES[12].reversed)) {
-    it(`12 kn, ${off}° off: the jib luffing, the wheel to starboard as she gathers sternway, her bow goes to port past 45° in ${t} s ±5% (estimate: 15–30 s; a known gap)`, () => {
-      pinned(fallOff(REVERSED, Number(off), 12, 60), t, t * BAND);
+    it(`12 kn, ${off}° off: the jib luffing, the wheel to starboard as she gathers sternway, her bow goes to port past 45° in ${t} s ±5%: under a minute, after the backed jib's time`, () => {
+      const got = fallOff(REVERSED, Number(off), 12, 60);
+      pinned(got, t, t * BAND);
+      expect(got.past).toBeLessThan(60);
+      expect(got.past).toBeGreaterThan(TIMES[12].backed[off]);
     });
   }
   it(`12 kn, 2° off, left alone (the jib luffing, the wheel amidships): she drifts astern and falls off by herself past 45° in ${TIMES[12].alone[2]} s ±5%, slower than with the helm reversed`, () => {
@@ -598,9 +603,9 @@ describe("head to wind (DESIGN.md, \"Leaving the anchor\"): no stable irons; bac
   });
 });
 
-describe("on a stage: the stock sloop the templates lay out sails her contract; an old doc doesn't", () => {
+describe("on a stage: the stock sloop the templates lay out sails her contract; a rig file without one sails the plain path", () => {
   async function laidOut({ rigExtras }) {
-    const doc = { objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} };
+    const doc = emptyScene();
     const { ctx } = fakeDrop(doc);
     const id = await layOutShip(ctx, { wind: { speed: 7, from: 45 }, seed: 3 });
     const rig = Object.keys(doc.objects).find((k) => doc.objects[k].name === "Boom and sail");
@@ -612,8 +617,8 @@ describe("on a stage: the stock sloop the templates lay out sails her contract; 
     return { doc, id, rig, content };
   }
 
-  for (const [name, rigExtras, contract] of [["rig@2", rigGLB, true], ["an old doc's rig@1", RIG1, false]]) {
-    it(`${name}: ${contract ? "the contract path (her jib is read), no warnings" : "the plain path (no jib), as before"}`, async () => {
+  for (const [name, rigExtras, contract] of [["her own rig file", rigGLB, true], ["a rig file without a contract", PLAIN, false]]) {
+    it(`${name}: ${contract ? "the contract path (her jib is read), no warnings" : "the plain path (no jib)"}`, async () => {
       const { doc, id, content } = await laidOut({ rigExtras });
       expect(Object.keys(doc.assets)).toContain(fileKey("hull"));
       const w = fakeWorld(doc, { content });
@@ -635,7 +640,7 @@ describe("on a stage: the stock sloop the templates lay out sails her contract; 
     });
   }
 
-  it("rig@2: the simulator holds the Jib piece swung about its luff by her read's jib, streams each sail's trim, and the jib's trait reaches her physics", async () => {
+  it("her own rig file: the simulator holds the Jib piece swung about its luff by her read's jib, streams each sail's trim, and the jib's trait reaches her physics", async () => {
     const { doc, id, content } = await laidOut({ rigExtras: rigGLB });
     const jib = Object.keys(doc.objects).find((k) => doc.objects[k].name === "Jib");
     const w = fakeWorld(doc, { content });
