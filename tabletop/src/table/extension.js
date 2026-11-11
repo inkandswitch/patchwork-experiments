@@ -1,13 +1,14 @@
 // The tabletop's scene extension (`scene:extension` "tabletop"): what makes a
 // scene a game table. Seats and who sits in them, private zones, hidden cards
 // and the decks they belong to, shuffling a pile, laying out a deck dropped on
-// the table, drawing a card into your hand face up, and rolling dice. The
-// scene itself knows none of this (scene/README, "Extensions").
+// the table, and drawing a card into your hand face up. The scene itself
+// knows none of this (scene/README, "Extensions"). (Dice are their own
+// package, dice/: a die is a document of its own that goes into any scene.)
 //
 // It is built only from the scene's extension contract (scene/STAGE.md): the
 // hand, keys, menu, frame and notices it relies on are other extensions it
 // `requires`; its own UI is a seat picker over the table (an overlay), deck
-// trouble as HUD lines, Shuffle, Draw and Roll as verbs on the use prompt
+// trouble as HUD lines, Shuffle and Draw as verbs on the use prompt
 // (and the menu), and each seat as a station on the use prompt for whoever
 // walks up to it in first person (Sit as …, Stand up: seat-verbs.js).
 // Nothing here assumes a sidebar or toolbar exists.
@@ -17,7 +18,7 @@
 // face (one generic picture, made once per scene) when it's face up but not
 // for them.
 //
-// What someone does at the table (shuffled, sat down, drew, rolled) is told
+// What someone does at the table (shuffled, sat down, drew) is told
 // to everyone else with api.send, as counts and seat ids only, never which
 // card: `announce` here, `receive` there.
 //
@@ -30,7 +31,6 @@
 import { HIDDEN, SEATS, docUrl, faceUpIn, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
 import { PLAIN_DECK, plainResolver } from "./plain-deck.js";
 import { CARD_TAGS, nearestSlot, worldSlots, yawOfMatrix } from "./slots.js";
-import { DIE, MAX_FACE, ROLL_SECONDS, faceUp, facesOf, pivotOf, rollPlan, scaleOf, upIn } from "./dice.js";
 import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
 import { cardBounds, cardState, privacyFile, privacyKey, rememberAsset } from "./privacy.js";
 import { CONFIRM_MS, seatLookedAt, seatVerb } from "./seat-verbs.js";
@@ -154,8 +154,6 @@ export default {
         }
         case "drew":
           return `${who} drew ${cards(data.n)}`;
-        case "rolled":
-          return `${who} rolled ${data.value}`;
       }
       return null;
     }
@@ -562,118 +560,6 @@ export default {
       api.pose.hold(id, from);
     }
 
-    // ── rolling: a die tossed and tumbled, landing on a random side ──
-    // R over a die in play. The whole roll is worked out from one seed first
-    // (dice.js rollPlan): where it lands and which side is up. It tumbles as a
-    // pose hold, so everyone sees it in the air, and lands in one write. A
-    // peer who takes hold of it meanwhile (or moves it) has it: the roll stops
-    // and writes nothing. (R is the gizmo's Rotate while editing, which is why
-    // Roll is play only.)
-    const rolling = new Map(); // die id → stop
-
-    /** Whether `id` can be rolled now: null when it isn't a die in play; { disabled, title } when it can't now. */
-    function rollState(id, snap = scene, local = api.local?.get?.()) {
-      if (id == null || !snap || local?.activities?.current !== "play") return null;
-      const o = snap.objects?.[id];
-      if (!o?.traits || !Object.hasOwn(o.traits, DIE) || o.locked) return null;
-      if (rolling.has(id)) return { disabled: true, title: "It's rolling" };
-      if (api.heldBy?.(id) != null) return { disabled: true, title: "Someone has that die" };
-      return { title: "Roll the die (R)" };
-    }
-
-    function roll(id) {
-      const snap = api.scene();
-      const st = rollState(id, snap);
-      if (!st) return;
-      if (st.disabled) return rolling.has(id) ? undefined : api.notify(st.title);
-      const o = snap.objects[id];
-      const t0 = o.transform ?? {};
-      const from = { position: [...(t0.position ?? [0, 0, 0])].map(Number), rotation: [...(t0.rotation ?? [0, 0, 0])].map(Number), scale: Number(t0.scale) || 1 };
-      // it lands in its parent's frame, with world up as that frame sees it
-      const parent = snap.parents?.get?.(id) ?? null;
-      const pm = parent ? snap.world(parent) : null;
-      const seed = Math.floor(Math.random() * 2 ** 32) >>> 0;
-      const plan = rollPlan(seed, { from, faces: facesOf(o.traits[DIE]), pivot: pivotOf(o), up: upIn(pm), unitScale: scaleOf(pm) });
-      let t = 0;
-      const stop = () => {
-        rolling.get(id)?.();
-        rolling.delete(id);
-      };
-      rolling.set(
-        id,
-        api.loop((dt) => {
-          const now = api.scene().objects?.[id];
-          // a peer caught it, moved it or removed it: theirs
-          if (!now || api.heldBy(id) != null || !sameTransform(now.transform, from)) {
-            stop();
-            if (now) api.pose.release(id);
-            return;
-          }
-          t = Math.min(1, t + (Number(dt) || 0) / ROLL_SECONDS);
-          if (t < 1) return api.pose.hold(id, plan.at(t));
-          stop();
-          api.change(api.ops.setTransform(api.scene(), id, plan.to));
-          api.pose.release(id, { landed: true });
-          announce("rolled", { die: id, value: plan.value });
-        }),
-      );
-      api.pose.hold(id, from);
-    }
-
-    // ── a peer's roll: what the die shows in the doc, not what they say ──
-    // A peer says which die it rolled and what it shows. That's told only
-    // when the doc moved that die (just before, or soon after: the message
-    // and the doc change travel apart) to a side showing that number, once
-    // per move; otherwise nothing is. So a die set down by hand and
-    // "announced" later isn't told as a roll, nor a number the die doesn't
-    // show. A message the doc doesn't bear out yet waits for the die's next
-    // move, for a few seconds.
-    const seenAt = new Map(); // die id → its doc transform as this view last saw it (a copy)
-    const moved = new Map(); // die id → when this view saw its doc transform change (ms), until a roll is told for it
-    const pending = new Map(); // die id → { value, who }: waiting for the doc to move it
-    const copyOf = (t) => (t ? JSON.parse(JSON.stringify(t)) : null);
-
-    /** In update(): note each die whose transform changed, and tell a roll that was waiting for it. */
-    function diceMoved(snap) {
-      for (const [id, o] of Object.entries(snap.objects ?? {})) {
-        if (!o?.traits || !Object.hasOwn(o.traits, DIE)) continue;
-        const was = seenAt.get(id);
-        seenAt.set(id, copyOf(o.transform));
-        if (was === undefined || sameTransform(o.transform, was)) continue;
-        moved.set(id, Date.now());
-        const p = pending.get(id);
-        if (p && tellRoll(id, p.value, p.who)) pending.delete(id);
-      }
-    }
-    function heardRoll(data, who) {
-      if (!data || typeof data !== "object" || !MESSAGES.rolled(data)) return;
-      const id = data.die;
-      const o = api.scene().objects?.[id];
-      if (!o?.traits || !Object.hasOwn(o.traits, DIE)) return;
-      // the doc has moved it already (here, or since this view last looked)
-      const was = seenAt.get(id);
-      if (was !== undefined && !sameTransform(o.transform, was)) {
-        seenAt.set(id, copyOf(o.transform));
-        moved.set(id, Date.now());
-      }
-      if (Date.now() - (moved.get(id) ?? -Infinity) <= ROLL_TRUST_MS && tellRoll(id, data.value, who)) return;
-      const wait = { value: data.value, who };
-      pending.set(id, wait);
-      later(() => pending.get(id) === wait && pending.delete(id), ROLL_TRUST_MS);
-    }
-    /** "<who> rolled <n>", if the die shows n in the doc; that move of it is then spent. → whether it was told */
-    function tellRoll(id, value, who) {
-      const s = api.scene();
-      const o = s.objects?.[id];
-      if (!o?.traits || !Object.hasOwn(o.traits, DIE)) return false;
-      const parent = s.parents?.get?.(id) ?? null;
-      const shows = faceUp(o.transform?.rotation ?? [0, 0, 0], facesOf(o.traits[DIE]), upIn(parent ? s.world(parent) : null))?.value;
-      if (shows !== value) return false;
-      moved.delete(id);
-      api.notify(told("rolled", { die: id, value }, who));
-      return true;
-    }
-
     /**
      * What each hidden card looks like to this viewer (privacy.js cardState):
      * its face where its deck gives this viewer one (every deck speaks for
@@ -953,8 +839,8 @@ export default {
       update(snapshot, local, prev) {
         // Playing at a table is done with the hand. A tool picked while editing
         // (G, R, the toolbar) is this view's local state and outlives the switch
-        // back to play, and a scene that became a table by a part (a die, a
-        // pawn) suggests no tool, so the stage's default is Move: in play
+        // back to play, and a scene that became a table by a part (Lost Cities
+        // set down in it) suggests no tool, so the stage's default is Move: in play
         // nothing offers a way to the hand, and without this the table could
         // no longer be carried or flipped. The tool in force is the scene's
         // effectiveTool (scene/src/current-tool.js, copied: packages stand
@@ -968,7 +854,6 @@ export default {
         backInSeat(local, prev?.local);
         if (snapshot === prev?.scene) return followTags(snapshot, local);
         scene = snapshot;
-        diceMoved(snapshot);
         regions = null;
         const urls = new Set();
         for (const o of Object.values(snapshot.objects)) {
@@ -983,7 +868,6 @@ export default {
       },
       looks: () => looks,
       receive(type, data, from) {
-        if (type === "rolled") return heardRoll(data, nameOf(from));
         const text = told(type, data, nameOf(from));
         if (text) api.notify(text);
       },
@@ -1030,15 +914,6 @@ export default {
           run: draw,
         },
         {
-          id: "roll",
-          name: "Roll",
-          // play only (state): R is the gizmo's Rotate while editing
-          key: "r",
-          show: ["use", "menu"],
-          state: (id, ctx) => rollState(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.()),
-          run: roll,
-        },
-        {
           // a seat as a station (seat-verbs.js): "Sit as Player 1" in first
           // person, "Stand up" from your seat; the use prompt's alone (it needs
           // the eye), so F elsewhere stays the hand's Flip
@@ -1074,8 +949,6 @@ export default {
         // (the stage puts back any card still on its way: its holds are released as it stops)
         for (const d of drawing.values()) d.stop?.();
         drawing.clear();
-        for (const stop of rolling.values()) stop?.();
-        rolling.clear();
         for (const t of timers) clearTimeout(t);
         timers.clear();
         for (const deck of decks.values()) deck.resolver?.dispose?.();
@@ -1215,8 +1088,6 @@ function frameFor(snap, id) {
 
 /** What everyone at a table with hands and a plain deck is told. */
 export const PLAIN_HANDS = "This table's deck is a plain one: anyone who opens it can read every card, hands included.";
-/** How far apart a peer's "rolled" and the doc change that landed its die may arrive (ms). */
-const ROLL_TRUST_MS = 3000;
 /** How long a drawn card takes to reach your hand (s). */
 const DRAW_SECONDS = 0.35;
 /** How high it rises on the way (m). */
@@ -1280,7 +1151,6 @@ const MESSAGES = {
   shuffled: (d) => typeof d.deck === "string" && d.deck.length < 512 && count(d.n, 10000),
   sat: (d) => typeof d.seat === "string" && d.seat.length > 0 && d.seat.length < 128,
   drew: (d) => count(d.n, 1000),
-  rolled: (d) => typeof d.die === "string" && d.die.length > 0 && d.die.length < 128 && count(d.value, MAX_FACE),
 };
 const count = (n, max) => Number.isInteger(n) && n > 0 && n <= max;
 

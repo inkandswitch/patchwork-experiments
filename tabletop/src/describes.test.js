@@ -79,20 +79,11 @@ describe("tabletop: templates", () => {
   });
 });
 
-describe("tabletop: a die", () => {
-  it("is a trait the table runs on, described with a d6's faces by default", async () => {
-    const { DEFAULT_FACES, DIE } = await import("./table/dice.js");
-    expect(table.traits).toContain(DIE);
-    expect(d[DIE].on).toBe("object");
-    expect(fresh(d[DIE])).toEqual({ faces: { ...DEFAULT_FACES } });
-  });
-});
-
 describe("tabletop: parts", () => {
   const parts = plugins.filter((p) => p.type === "scene:part");
 
-  it("offers a pawn, a token, a card spot, a die, a card table and Lost Cities under Tabletop, as metadata the bin reads without loading anything", () => {
-    expect(parts.map((p) => p.id)).toEqual(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.die", "tabletop.table", "tabletop.lost-cities"]);
+  it("offers a pawn, a token, a card spot, a card table and Lost Cities under Tabletop, as metadata the bin reads without loading anything", () => {
+    expect(parts.map((p) => p.id)).toEqual(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities"]);
     for (const p of parts) {
       const { load, ...meta } = p;
       expect(typeof load).toBe("function");
@@ -106,7 +97,10 @@ describe("tabletop: parts", () => {
 
   it("says what each brings by a trait the table describes", () => {
     for (const p of parts) for (const t of p.traits ?? []) expect(d[t]).toBeDefined();
-    expect(parts.find((p) => p.id === "tabletop.die").traits).toEqual(["tabletop.die"]);
+    // dice are the dice package's: no die trait, no die part here
+    expect(table.traits).toEqual(["tabletop.seats", "tabletop.zone", "tabletop.hidden"]);
+    expect(Object.keys(d)).toEqual(table.traits);
+    expect(parts.some((p) => /die|dice/.test(p.id))).toBe(false);
   });
 
   it("each loads a module with create(ctx, at)", async () => {

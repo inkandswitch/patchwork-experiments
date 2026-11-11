@@ -1,5 +1,5 @@
-// The table's verbs, card slots, a dropped deck and the parts bin's die, by
-// two people in headless Chrome.
+// The table's verbs, card slots, a dropped deck and the parts bin's pawn, by
+// two people in headless Chrome. (Dice are the dice package's: dice/probes/dice.mjs.)
 //
 //   (in scene/, tabletop/ and card-table/) pnpm build
 //   node probes/table.mjs [--shots <dir>] [--show]
@@ -10,14 +10,12 @@
 // - verbs: hovering the deck, A's use prompt offers Flip and Shuffle; S
 //   shuffles, and B is told "Ana shuffled the deck (N)";
 // - card slots: a card carried near a free slot of A's tray squares onto it;
-// - edit: the parts bin offers the four Tabletop parts; a die and a pawn
-//   dragged out land where they were dropped and share one file each; R over
-//   the die is the gizmo's Rotate, not a roll; a secure deck dropped on open
+// - edit: the parts bin offers the Tabletop parts; a pawn dragged out lands
+//   where it was dropped, its art one file; a secure deck dropped on open
 //   table stacks at the point, and one dropped near an empty discard slot
 //   squares onto it;
 // - play again: the pawn (no tags) carried near a free tray slot does not
-//   snap to it; R over the die rolls it: one write, the side both views draw
-//   up is the side announced, and B is told "Ana rolled N".
+//   snap to it.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -152,7 +150,7 @@ try {
   // the camera eases to the editor's view: let it stop before aiming at the ground
   await settled();
   const bin = await P("binParts('a')");
-  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.die", "tabletop.table", "tabletop.lost-cities"]), bin);
+  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities"]), bin);
   const boardBox = await P(`slots(${J(board)})`);
   const xs = boardBox.map((s) => s.world[0]), zs = boardBox.map((s) => s.world[2]);
   const mid = [(Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2];
@@ -164,34 +162,18 @@ try {
   // the deck goes on the board's other side, so it hides neither piece from A's seat
   const g3 = g2 && (await groundNear([2 * mid[0] - g1.world[0], 0, g1.world[2]], [[0, 0], [0, 0.05], [0, -0.05], [0.05, 0], [-0.05, 0], [0.1, 0], [-0.1, 0]]));
   check("open table in A's view to put things on", !!(g1 && g2 && g3), { g1, g2, g3 });
-  g1.hit = await P(`pickAt(${g1.page.x}, ${g1.page.y}, 'a')`);
-  const [dieId] = await dragPart("tabletop.die", g1.page);
-  await settled();
   g2.hit = await P(`pickAt(${g2.page.x}, ${g2.page.y}, 'a')`);
   const [pawnId] = await dragPart("tabletop.pawn", g2.page);
   {
     const d = await P("doc()");
-    const die = d.objects[dieId], pawn = d.objects[pawnId];
-    report.die = dieId; report.pawn = pawnId;
-    check("a die dragged out lands where it was dropped, a die, on nothing", die && die.traits?.["tabletop.die"] && die.parent == null && plan(die.transform.position, g1.hit.point) < 2e-3, { die, at: g1.hit.point });
-    check("a pawn too, with no tags and no traits", pawn && pawn.parent == null && !pawn.tags?.length && !Object.keys(pawn.traits ?? {}).length && plan(pawn.transform.position, g2.hit.point) < 2e-3, { pawn, at: g2.hit.point });
-    check("each part's art is one file under its versioned key", d.assets?.["tabletop/d6@1"]?.url === die?.sourceUrl && d.assets?.["tabletop/pawn@1"]?.url === pawn?.sourceUrl, Object.keys(d.assets ?? {}));
+    const pawn = d.objects[pawnId];
+    report.pawn = pawnId;
+    check("a pawn dragged out lands where it was dropped, on nothing, with no tags and no traits", pawn && pawn.parent == null && !pawn.tags?.length && !Object.keys(pawn.traits ?? {}).length && plan(pawn.transform.position, g2.hit.point) < 2e-3, { pawn, at: g2.hit.point });
+    check("its art is one file under its versioned key", d.assets?.["tabletop/pawn@1"]?.url === pawn?.sourceUrl, Object.keys(d.assets ?? {}));
     check("no part made or changed a seat", J(Object.keys(d.traits["tabletop.seats"])) === J(["p1", "p2"]));
   }
-  await until(`loaded(${J(dieId)}) && __p.loaded(${J(pawnId)})`, 15_000);
+  await until(`loaded(${J(pawnId)})`, 15_000);
   await shot("3-parts");
-  {
-    // R in edit: the gizmo's Rotate, never a roll
-    const t = await P(`transform(${J(dieId)})`);
-    const at = await P(`aimAt(${J(dieId)}, 'a')`);
-    await b.move(at.x, at.y);
-    await P("focus('a')");
-    const tool0 = await P("tool('a')");
-    await b.key("r");
-    await sleep(900);
-    check("R over the die while editing is the gizmo's Rotate: the tool changes, the die doesn't", (await P("tool('a')")) === "rotate" && J(await P(`transform(${J(dieId)})`)) === J(t) && !(await P("notices('a')")).some((n) => /rolled/.test(n)), { tool0, tool: await P("tool('a')"), notices: await P("notices('a')") });
-    await b.key("Escape");
-  }
   {
     // a secure deck dropped on open table, then near an empty discard slot
     const loose = await P("looseDeck");
@@ -230,7 +212,7 @@ try {
     await snapLooks("decks dropped");
   }
 
-  // ── play again: the pawn won't take a card slot; the die rolls ──
+  // ── play again: the pawn won't take a card slot ──
   await click(await P(`rect('.activity-option[data-activity="play"]')`));
   check("A back in play", await until("activity('a') === 'play' && !__p.running('a').includes('scene.parts')", 6000), await P("running('a')"));
   await settled();
@@ -250,34 +232,6 @@ try {
     const pos = await P(`worldPos(${J(pawnId)})`);
     check("the pawn carried as near a free tray slot stays where it was put (no tag, no card slot)", pos && plan(pos, target.world) > 5e-3 && plan(pos, near) < 0.015, { pos, slot: target.world, near });
     await shot("5-pawn-not-snapped");
-  }
-  {
-    const t = await P(`transform(${J(dieId)})`);
-    const at = await P(`aimAt(${J(dieId)}, 'a')`);
-    await b.move(at.x, at.y);
-    check("A hovers the die", await until(`hovered('a') === ${J(dieId)}`, 3000), await P("hovered('a')"));
-    check("the use prompt offers Roll", await until("prompt('a').some((t) => /Roll/.test(t))", 3000), await P("prompt('a')"));
-    report.diePrompt = await P("prompt('a')");
-    await shot("6-die-prompt");
-    await P("focus('a')");
-    await b.key("r");
-    mark("pressed R");
-    await sleep(200);
-    const midDoc = await P(`transform(${J(dieId)})`);
-    const midShown = await P(`shown(${J(dieId)}, 'b')`);
-    check("mid-roll, the doc hasn't moved (it tumbles as a pose)", J(midDoc) === J(t), { t, midDoc });
-    report.midShownB = midShown;
-    const rolled = await until("notices('a').some((n) => /^You rolled \\d+$/.test(n))", 4000);
-    const value = Number((await P("notices('a')")).find((n) => /^You rolled \d+$/.test(n))?.match(/\d+/)?.[0]);
-    check("A is told what it rolled", rolled && value >= 1 && value <= 6, await P("notices('a')"));
-    check("B is told Ana rolled the same", await until(`notices('b').includes('Ana rolled ${value}')`, 3000), await P("notices('b')"));
-    check("the doc has the die's new place", J(await P(`transform(${J(dieId)})`)) !== J(t), await P(`transform(${J(dieId)})`));
-    await sleep(600);
-    const sa = await P(`dieShows(${J(dieId)}, 'a')`), sb = await P(`dieShows(${J(dieId)}, 'b')`);
-    const ma = await P(`shown(${J(dieId)}, 'a')`), mb = await P(`shown(${J(dieId)}, 'b')`);
-    const same = ma && mb && ma.every((v, i) => Math.abs(v - mb[i]) < 1e-5);
-    check("both views draw the die the same, showing the side announced", same && sa === value && sb === value, { value, a: sa, b: sb, ma, mb });
-    await shot("7-rolled");
   }
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

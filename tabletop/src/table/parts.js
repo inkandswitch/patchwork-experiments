@@ -1,15 +1,13 @@
 // The tabletop's parts (scene:part, scene/STAGE.md "Parts"), for the editor's
-// parts bin, under "Tabletop": a pawn, a token, a card spot and a die. Each
-// is one object showing the scene's one GLB doc for its kind (ctx.file, under
+// parts bin, under "Tabletop": a pawn, a token and a card spot. Each is one
+// object showing the scene's one GLB doc for its kind (ctx.file, under
 // "tabletop/<kind>@1": ten pawns share one file), drawn from the same piece
 // vocabulary the games use (shapes.js, pieces.js).
 //
 // - A card spot is a small mat with one card slot: a connector tagged "card"
 //   (the one tag every card and card slot shares, slots.js), with a snap
 //   radius, so a card carried over it or a deck dropped on it squares onto
-//   it. Untagged pieces (a pawn, a die) don't snap there.
-// - A die carries the trait `tabletop.die` (dice.js), which is what gives it
-//   Roll (R) in play (extension.js).
+//   it. Untagged pieces (a pawn) don't snap there.
 //
 // A part goes where the bin says, under what it was dropped on (filed in
 // that one's group), and isn't locked: it's placed by hand, so the gizmo may
@@ -31,52 +29,12 @@
 // turned only about its +Y, wherever it was put (on a heeling deck it stands
 // square to the deck, not plumb).
 
-import { DEFAULT_FACES, DIE } from "./dice.js";
 import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
 import { layOutTable } from "./template.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
-
-/** A d6's edge (m). */
-export const D6_SIZE = 0.016;
-const IVORY = "#f4efe2";
-const INK = "#1f2328";
-
-/** Where a d6 face's pips go, on a 3 × 3 grid ([across, along], each −1, 0 or 1). */
-const PIPS = {
-  1: [[0, 0]],
-  2: [[-1, -1], [1, 1]],
-  3: [[-1, -1], [0, 0], [1, 1]],
-  4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
-  5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
-  6: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 0], [1, 1]],
-};
-
-/** A d6 standing on y = 0: an ivory cube with dark pips just proud of each side, numbered as dice.js DEFAULT_FACES says. */
-function d6Parts(s = D6_SIZE) {
-  const p = s * 0.16; // a pip's width
-  const g = s * 0.27; // from a side's middle to a pip's
-  const t = 0.0003; // a pip's thickness
-  const out = 0.0001; // how far it stands proud
-  const h = s / 2;
-  const n = h + out - t / 2; // a pip's middle, out along its side's axis
-  const parts = [{ shape: "box", size: [s, s, s], color: IVORY, name: "die" }];
-  for (const [side, value] of Object.entries(DEFAULT_FACES)) {
-    const sign = side[0] === "+" ? 1 : -1;
-    for (const [a, b] of PIPS[value]) {
-      const u = a * g;
-      const v = b * g;
-      let pip;
-      if (side[1] === "y") pip = { size: [p, t, p], at: [u, sign > 0 ? s + out - t : -out, v] };
-      else if (side[1] === "x") pip = { size: [t, p, p], at: [sign * n, h + v - p / 2, u] };
-      else pip = { size: [p, p, t], at: [u, h + v - p / 2, sign * n] };
-      parts.push({ shape: "box", ...pip, color: INK, name: "pips" });
-    }
-  }
-  return parts;
-}
 
 /** A pawn's turned outline: a foot, a waist and a round head ([r, y], m). */
 function pawnProfile() {
@@ -123,7 +81,6 @@ export const PIECES = Object.freeze({
     snapPoints: [{ position: [0, SPOT.t + 0.0002, 0], yaw: 0, tags: ["card"] }],
     snapRadius: 0.04,
   },
-  d6: { name: "Die", parts: d6Parts() },
   table: tableDrawing(),
 });
 
@@ -146,8 +103,6 @@ function tableDrawing() {
   };
 }
 
-/** What each part brings: the die is a die. */
-const TRAITS = { d6: { [DIE]: {} } };
 /** Parts written locked: the gizmo and the hand leave them where they are. */
 const LOCKED = new Set(["table"]);
 
@@ -166,7 +121,6 @@ const IDENTITY = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
 /** A scene object for a part: a passthrough GLB, not locked. */
 export function partObject(kind, { url, hint }, { transform = IDENTITY, parent = null, group = null } = {}) {
   const t = { ...IDENTITY, ...transform };
-  const traits = TRAITS[kind];
   return {
     name: PIECES[kind].name,
     sourceUrl: url,
@@ -181,7 +135,6 @@ export function partObject(kind, { url, hint }, { transform = IDENTITY, parent =
     locked: LOCKED.has(kind),
     transform: { position: [...t.position].map(Number), rotation: [...t.rotation].map(Number), scale: Number(t.scale) || 1 },
     ...(hint?.bounds ? { hint: { bounds: { min: [...hint.bounds.min], max: [...hint.bounds.max] } } } : {}),
-    ...(traits ? { traits: structuredClone(traits) } : {}),
   };
 }
 
@@ -247,6 +200,5 @@ export function gamePart(gameId, game) {
 export const pawn = part("pawn");
 export const token = part("token");
 export const cardSpot = part("card-spot");
-export const die = part("d6");
 export const cardTable = part("table", { square: true });
 export const lostCities = gamePart("lost-cities", lostCitiesGame);

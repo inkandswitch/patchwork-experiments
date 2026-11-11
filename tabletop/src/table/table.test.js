@@ -9,7 +9,6 @@ import { emptyScene } from "../empty-scene.js";
 
 /** A scene doc as the scene makes one (empty-scene.js), with these objects in it, listed in order. */
 const sceneOf = (objects, traits = {}, more = {}) => emptyScene({ objects, order: Object.keys(objects), traits, ...more });
-import { DIE, MAX_FACE, eulerMatrix, faceUp, rollPlan, ROLL_SECONDS } from "./dice.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
 const zone = (seat) => ({ [ZONE]: { seat, min: [-0.3, 0, -0.05], max: [0.3, 0.15, 0.05] } });
@@ -585,11 +584,7 @@ describe("telling the others", () => {
       ["sat", null],
       ["drew", { n: 1.5 }],
       ["drew", "1"],
-      ["rolled", { value: 0 }],
-      ["rolled", {}],
-      ["rolled", { value: 4 }], // which die: it's checked against the doc (rolling a die, below)
-      ["rolled", { die: "nope", value: 4 }], // no such die
-      ["rolled", { die: "board", value: 4 }], // not a die
+      ["rolled", { die: "board", value: 4 }], // dice are the dice package's: nothing the table hears
     ]) t.xb.receive(type, data, from("alice"));
     expect(t.notices("B")).toEqual([]);
     t.xb.receive("drew", { n: 1 }, from("alice"));
@@ -969,229 +964,27 @@ describe("drawing to your hand", () => {
   });
 });
 
-describe("rolling a die", () => {
+describe("the hand in play", () => {
   afterEach(() => vi.useRealTimers());
-  const BOUNDS = { min: [-0.008, 0, -0.008], max: [0.008, 0.016, 0.008] };
-  const die = (o = {}) => ({ name: "Die", transform: T([0.1, 0, 0.2], [0, 0.3, 0]), hint: { bounds: BOUNDS }, traits: { [DIE]: {} }, ...o });
-  /** A table with a die, a pawn, and Player 1 (alice) and Player 2 (bob) seated; A is alice, B is bob. */
-  function table({ objects = {}, local = {} } = {}) {
-    const doc = sceneOf({ d1: die(), pawn: { name: "Pawn", transform: T([0, 0, 0]) }, ...objects }, { [SEATS]: seats("alice", "bob") });
-    const w = fakes.fakeWorld(doc);
-    const a = w.join("A", { viewer: "alice", local });
-    const b = w.join("B", { viewer: "bob" });
-    const xa = w.attach("A", Extension.create(a));
-    const xb = w.attach("B", Extension.create(b));
-    w.flush();
-    const writes = [];
-    const change = a.change;
-    a.change = (fn) => (writes.push(fn), change(fn));
-    const rollOf = (x) => x.commands.find((c) => c.id === "roll");
-    const state = (x, id, api = x === xa ? a : b) => rollOf(x).state(id, { scene: api.scene(), local: api.local.get() });
-    const frames = Math.ceil(ROLL_SECONDS * 60) + 2;
-    return { w, a, b, xa, xb, doc, writes, rollOf, state, frames, roll: (id = "d1", x = xa) => rollOf(x).run(id), notices: (s) => w.view(s).notices.map((n) => n.text) };
-  }
-  const centre = (t) => {
-    const c = eulerMatrix(t.rotation).map((r) => r[0] * 0 + r[1] * 0.008 + r[2] * 0);
-    return t.position.map((v, i) => v + c[i]);
-  };
-
-  it("is R, on the use prompt and the menu", () => {
-    const t = table();
-    expect(t.rollOf(t.xa)).toMatchObject({ key: "r", name: "Roll" });
-    expect(t.rollOf(t.xa).show).toEqual(["use", "menu"]);
-    t.w.done();
-  });
+  const pawn = () => ({ name: "Pawn", transform: T([0, 0, 0]) });
 
   it("back in play after editing with Rotate (R) or Move (G), the hand is the tool again", () => {
-    const t = table({ local: { tool: "rotate", activities: { current: "edit", available: ["play", "edit"] } } });
-    t.w.flush();
-    expect(t.a.local.get().tool).toBe("rotate"); // editing: left alone
-    t.a.local.swap((m) => ({ ...m, activities: { ...m.activities, current: "play" } }));
-    t.w.flush();
-    expect(t.a.local.get().tool).toBe("hand");
-    t.a.local.swap((m) => ({ ...m, tool: "move" }));
-    t.w.flush();
-    expect(t.a.local.get().tool).toBe("hand");
-    t.w.done();
+    const w = fakes.fakeWorld(sceneOf({ pawn: pawn() }, { [SEATS]: seats("alice", "bob") }));
+    const a = w.join("A", { viewer: "alice", local: { tool: "rotate", activities: { current: "edit", available: ["play", "edit"] } } });
+    w.attach("A", Extension.create(a));
+    w.flush();
+    expect(a.local.get().tool).toBe("rotate"); // editing: left alone
+    a.local.swap((m) => ({ ...m, activities: { ...m.activities, current: "play" } }));
+    w.flush();
+    expect(a.local.get().tool).toBe("hand");
+    a.local.swap((m) => ({ ...m, tool: "move" }));
+    w.flush();
+    expect(a.local.get().tool).toBe("hand");
+    w.done();
   });
 
-  it("applies to a die in play only: never while editing (R is the gizmo's Rotate there), nor to anything that isn't a die or is locked", () => {
-    const t = table({ objects: { locked: die({ locked: true }) } });
-    expect(t.state(t.xa, "d1")).toEqual({ title: "Roll the die (R)" });
-    expect(t.state(t.xa, "pawn")).toBeNull();
-    expect(t.state(t.xa, "locked")).toBeNull();
-    expect(t.state(t.xa, null)).toBeNull();
-    const edit = { ...t.a.local.get(), activities: { current: "edit", available: ["play", "edit"] } };
-    expect(t.rollOf(t.xa).state("d1", { scene: t.a.scene(), local: edit })).toBeNull();
-    t.w.done();
-  });
-
-  it("tumbles it in the air for everyone, then writes where it landed once, lets go landed and tells everyone what it shows", () => {
-    const t = table();
-    const before = structuredClone(t.doc.objects.d1.transform);
-    t.roll();
-    expect(t.state(t.xa, "d1")).toMatchObject({ disabled: true });
-    t.w.tick(1 / 60, 18); // about half way
-    const mid = t.w.holds.get("d1");
-    expect(mid.session).toBe("A");
-    expect(centre(mid.transform)[1]).toBeGreaterThan(centre(before)[1] + 0.03);
-    expect(t.writes).toHaveLength(0);
-    expect(t.doc.objects.d1.transform).toEqual(before);
-    t.w.tick(1 / 60, t.frames);
-    expect(t.writes).toHaveLength(1);
-    const to = t.doc.objects.d1.transform;
-    const value = faceUp(to.rotation).value;
-    expect(value).toBeGreaterThanOrEqual(1);
-    expect(value).toBeLessThanOrEqual(6);
-    // it lands on its side, its middle as high as before, near where it was
-    expect(centre(to)[1]).toBeCloseTo(centre(before)[1], 5);
-    expect(Math.hypot(to.position[0] - before.position[0], to.position[2] - before.position[2])).toBeLessThan(0.03);
-    expect(t.w.released).toEqual([{ session: "A", id: "d1", landed: true }]);
-    expect(t.w.sent).toEqual([{ session: "A", viewer: "alice", type: "rolled", data: { die: "d1", value } }]);
-    expect(t.notices("A")).toEqual([`You rolled ${value}`]);
-    expect(t.notices("B")).toEqual([`Player 1 rolled ${value}`]);
-    // nothing else is written: no seats, no traits
-    expect(t.doc.traits).toEqual({ [SEATS]: seats("alice", "bob") });
-    expect(t.doc.objects.d1.traits).toEqual({ [DIE]: {} });
-    t.w.done();
-  });
-
-  it("lands as the seed it drew says", () => {
-    const t = table();
-    vi.spyOn(Math, "random").mockReturnValue(0.25);
-    const from = structuredClone(t.doc.objects.d1.transform);
-    t.roll();
-    vi.mocked(Math.random).mockRestore();
-    t.w.tick(1 / 60, t.frames);
-    const plan = rollPlan(Math.floor(0.25 * 2 ** 32), { from, pivot: [0, 0.008, 0] });
-    expect(t.doc.objects.d1.transform).toEqual(plan.to);
-    expect(t.w.sent[0].data).toEqual({ die: "d1", value: plan.value });
-    t.w.done();
-  });
-
-  it("reads the faces its trait gives", () => {
-    const faces = { "+y": 12, "-y": 13 };
-    const t = table({ objects: { d1: die({ traits: { [DIE]: { faces } } }) } });
-    t.roll();
-    t.w.tick(1 / 60, t.frames);
-    const v = t.w.sent[0].data.value;
-    expect([12, 13]).toContain(v);
-    expect(faceUp(t.doc.objects.d1.transform.rotation, faces).value).toBe(v);
-    t.w.done();
-  });
-
-  it("on a tilted board, lands with the side it names facing the world's up", () => {
-    const t = table({ objects: { board: { name: "Board", transform: T([0, 0.1, 0], [0.4, 0.9, -0.2]) }, d1: die({ parent: "board", transform: T([0.05, 0.02, 0], [0, 0, 0]) }) } });
-    t.roll();
-    t.w.tick(1 / 60, t.frames);
-    const value = t.w.sent[0].data.value;
-    const m = fakes.multiply(fakes.composeMatrix(t.doc.objects.board.transform), fakes.composeMatrix(t.doc.objects.d1.transform));
-    // which local axis points most nearly up in the world: the matrix's second row
-    const rows = [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]];
-    expect(faceUp(rows).value).toBe(value);
-    t.w.done();
-  });
-
-  it("pressing R again while it's rolling doesn't roll it twice", () => {
-    const t = table();
-    t.roll();
-    t.w.tick(1 / 60, 5);
-    t.roll();
-    t.w.tick(1 / 60, t.frames * 2);
-    expect(t.writes).toHaveLength(1);
-    expect(t.w.sent).toHaveLength(1);
-    t.w.done();
-  });
-
-  it("a die a peer is holding can't be rolled", () => {
-    const t = table();
-    t.b.pose.hold("d1", t.doc.objects.d1.transform);
-    expect(t.state(t.xa, "d1")).toEqual({ disabled: true, title: "Someone has that die" });
-    t.roll();
-    t.w.tick(1 / 60, t.frames);
-    expect(t.writes).toHaveLength(0);
-    expect(t.w.sent).toHaveLength(0);
-    expect(t.notices("A")).toEqual(["Someone has that die"]);
-    t.w.done();
-  });
-
-  it("a peer who catches it mid-roll has it: no write, nothing told", () => {
-    const t = table();
-    t.roll();
-    t.w.tick(1 / 60, 10);
-    // B grabs it first as the stage sees it (its hold is the one that counts)
-    t.w.holds.set("d1", { session: "B", transform: structuredClone(t.doc.objects.d1.transform), at: Date.now() - 1 });
-    t.w.tick(1 / 60, t.frames);
-    expect(t.writes).toHaveLength(0);
-    expect(t.w.sent).toHaveLength(0);
-    expect(t.w.released).toEqual([{ session: "A", id: "d1", landed: false }]);
-    t.w.done();
-  });
-
-  it("a die a peer moved in the doc mid-roll is left where they put it", () => {
-    const t = table();
-    t.roll();
-    t.w.tick(1 / 60, 10);
-    t.b.change((d) => (d.objects.d1.transform.position = [0.4, 0, 0.4]));
-    t.w.tick(1 / 60, t.frames);
-    expect(t.writes).toHaveLength(0);
-    expect(t.doc.objects.d1.transform.position).toEqual([0.4, 0, 0.4]);
-    expect(t.w.sent).toHaveLength(0);
-    t.w.done();
-  });
-
-  it("stops rolling when the table goes", () => {
-    const t = table();
-    t.roll();
-    t.w.tick(1 / 60, 5);
-    t.xa.dispose();
-    expect(t.w.view("A").loops).toHaveLength(0);
-    t.w.done();
-  });
-
-  it("a peer's roll is told only as the die shows it in the doc, and only when the doc moved it", () => {
-    const t = table();
-    const from = { session: "A", viewer: "alice" };
-    const shows = () => faceUp(t.doc.objects.d1.transform.rotation).value;
-    // the die hasn't moved: a "roll" of it is nobody's word to take
-    t.xb.receive("rolled", { die: "d1", value: shows() }, from);
-    vi.advanceTimersByTime(4000);
-    t.w.flush();
-    expect(t.notices("B")).toEqual([]);
-    // put down by hand on a side, then "announced" after the moment has passed: still nothing
-    t.a.change((d) => (d.objects.d1.transform.rotation = [Math.PI / 2, 0, 0]));
-    t.w.flush();
-    vi.advanceTimersByTime(4000);
-    t.xb.receive("rolled", { die: "d1", value: shows() }, from);
-    expect(t.notices("B")).toEqual([]);
-    // the doc moved it just now, but to another side than they say
-    t.a.change((d) => (d.objects.d1.transform.rotation = [0, 0, 0]));
-    const lie = shows() === 6 ? 5 : 6;
-    t.xb.receive("rolled", { die: "d1", value: lie }, from);
-    t.w.flush();
-    expect(t.notices("B")).toEqual([]);
-    // the message first, the doc after (they travel apart): told when the doc lands it
-    t.xb.receive("rolled", { die: "d1", value: 6 }, from);
-    expect(t.notices("B")).toEqual([]);
-    t.a.change((d) => (d.objects.d1.transform.rotation = [Math.PI, 0, 0]));
-    t.w.flush();
-    expect(t.notices("B")).toEqual(["Player 1 rolled 6"]);
-    t.w.done();
-  });
-
-  it("a number past the highest a side may show (dice.js MAX_FACE) isn't heard", () => {
-    const t = table({ objects: { d1: die({ traits: { [DIE]: { faces: { "+y": MAX_FACE, "-y": 2 } } } }) } });
-    t.a.change((d) => (d.objects.d1.transform.rotation = [0, 0, 0]));
-    t.xb.receive("rolled", { die: "d1", value: MAX_FACE + 1 }, { session: "A", viewer: "alice" });
-    expect(t.notices("B")).toEqual([]);
-    t.a.change((d) => (d.objects.d1.transform.rotation = [0, 0, 1e-3]));
-    t.xb.receive("rolled", { die: "d1", value: MAX_FACE }, { session: "A", viewer: "alice" });
-    expect(t.notices("B")).toEqual([`Player 1 rolled ${MAX_FACE}`]);
-    t.w.done();
-  });
-
-  it("a scene that became a table by a part (a die alone, no view.tool): in play, the hand is the tool", () => {
-    const doc = sceneOf({ d1: die() });
+  it("a table whose doc suggests no tool (no view.tool): in play, the hand is the tool", () => {
+    const doc = sceneOf({ p1: pawn() });
     const w = fakes.fakeWorld(doc);
     const a = w.join("A", { viewer: "alice" });
     w.attach("A", Extension.create(a));
@@ -1199,7 +992,7 @@ describe("rolling a die", () => {
     w.flush();
     expect(a.local.get().tool).toBe("hand");
     // a doc that suggests the hand already: nothing to do
-    const doc2 = sceneOf({ d1: die() }, {}, { view: { ...emptyScene().view, tool: "hand" } });
+    const doc2 = sceneOf({ p1: pawn() }, {}, { view: { ...emptyScene().view, tool: "hand" } });
     const w2 = fakes.fakeWorld(doc2);
     const b = w2.join("B", { viewer: "bob" });
     const swap = vi.spyOn(b.local, "swap");
@@ -1211,19 +1004,11 @@ describe("rolling a die", () => {
     w.done();
   });
 
-  it("a die alone (no seats) still rolls, and the peer is told by someone", () => {
-    const doc = sceneOf({ d1: die() });
-    const w = fakes.fakeWorld(doc);
+  it("has no Roll: dice are the dice package's", () => {
+    const w = fakes.fakeWorld(sceneOf({ p1: pawn() }));
     const a = w.join("A", { viewer: "alice" });
-    const b = w.join("B", { viewer: "bob" });
-    const xa = w.attach("A", Extension.create(a));
-    w.attach("B", Extension.create(b));
-    w.flush();
-    xa.commands.find((c) => c.id === "roll").run("d1");
-    w.tick(1 / 60, Math.ceil(ROLL_SECONDS * 60) + 2);
-    const v = w.sent[0].data.value;
-    expect(w.view("B").notices.map((n) => n.text)).toEqual([`Someone rolled ${v}`]);
-    expect(doc.traits).toEqual({});
+    const x = w.attach("A", Extension.create(a));
+    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw", "seat"]);
     w.done();
   });
 });
