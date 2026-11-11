@@ -111,6 +111,8 @@ try {
   check("Open the table opened the scene with the scene tool", probe.opened?.[0]?.toolId === "scene");
   check("every visible object loaded", probe.sceneStats && probe.sceneStats.loaded >= probe.sceneStats.visible);
   check("scene opens in the hand", probe.scene?.view?.tool === "hand");
+  // (the fixture has a hand, so a seat, so it starts in play)
+  check("the scene is a whole scene doc: the maps and lists the scene's init makes, seats as a trait, starting in play", probe.scene?.patchwork?.type === "scene" && probe.scene.assets && typeof probe.scene.assets === "object" && Array.isArray(probe.scene.packages) && probe.scene.dimensions && probe.scene.seats.length > 0 && probe.scene.view?.activity === "play" && probe.scene.view?.bounds === false);
   report.shots.push(await shoot("overview.png"));
   // closer looks, from the near side (+Z), at the middle of the table
   const cam = probe.camera;

@@ -7,6 +7,7 @@ import Extension from "./extension.js";
 import { BENCH_RADIUS, CONFIRM_MS, SEAT_REACH, seatLookedAt, seatVerb } from "./seat-verbs.js";
 import { apply } from "./frame.js";
 import * as fakes from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -23,18 +24,15 @@ const SHIP = T([10, 0, 5], [0.12, 0.7, -0.08]);
 const seatCam = (z) => ({ position: [0, 1.2, z], target: [0, 0.7, z * 0.17], in: "tbl" });
 const SEATS0 = () => ({ p1: { name: "Player 1", player: null, camera: seatCam(0.95) }, p2: { name: "Player 2", player: null, camera: seatCam(-0.95) } });
 function doc(seats = SEATS0(), claims) {
-  return {
-    objects: {
+  const objects = {
       ship: { name: "Ship", transform: SHIP },
       tbl: { name: "Card table", parent: "ship", transform: T([0, 0, 2.85], [0, Math.PI / 2, 0]), locked: true },
       hand1: { name: "Hand 1", parent: "tbl", transform: T([0, 0.7, 0.5]), traits: zone("p1"), locked: true },
       hand2: { name: "Hand 2", parent: "tbl", transform: T([0, 0.7, -0.5], [0, Math.PI, 0]), traits: zone("p2"), locked: true },
       card: { name: "Card", parent: "tbl", transform: T([0.1, 0.702, 0.5]), traits: { [HIDDEN]: { by: DECK } }, tags: ["card"] },
       pawn: { name: "Pawn", parent: "tbl", transform: T([0.35, 0.7, 0.55]) },
-    },
-    traits: { [SEATS]: seats },
-    ...(claims ? { claims } : {}),
   };
+  return emptyScene({ objects, order: Object.keys(objects), traits: { [SEATS]: seats }, ...(claims ? { claims } : {}) });
 }
 
 /** The table, and views on it: each [session, viewer, { walking }]. */

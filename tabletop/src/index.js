@@ -56,7 +56,12 @@ export const plugins = [
         name: "Hidden card",
         on: "object",
         blurb: "Drawn as itself (a card back) unless its deck says who may see what it really is",
-        fields: [{ key: "by", label: "Deck", kind: "url" }],
+        // a deck knows its cards by object id, and a copy has a new one: it
+        // leaves the deck behind (the scene's copy rule, STAGE.md "Copying
+        // objects"), so it's a bare back, in no deck, rather than a card
+        // another table's deck is asked about (and its players' shuffle run
+        // for) from a scene that isn't its table
+        fields: [{ key: "by", label: "Deck", kind: "url", copy: "drop" }],
       },
       // (src/table/dice.js: the default is a d6's, opposite sides adding to seven)
       "tabletop.die": {

@@ -1,10 +1,14 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { HIDDEN, SEATS, ZONE, docUrl, isFaceUp, seatAt, seatOf, seatedPlayers, visibility, zones } from "./visibility.js";
+import { HIDDEN, SEATS, ZONE, docUrl, faceUpIn, seatAt, seatOf, seatedPlayers, visibility, zones } from "./visibility.js";
 import { plainResolver } from "./plain-deck.js";
 import Extension, { PLAIN_HANDS, seatState } from "./extension.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
+
+/** A scene doc as the scene makes one (empty-scene.js), with these objects in it, listed in order. */
+const sceneOf = (objects, traits = {}, more = {}) => emptyScene({ objects, order: Object.keys(objects), traits, ...more });
 import { DIE, MAX_FACE, eulerMatrix, faceUp, rollPlan, ROLL_SECONDS } from "./dice.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
@@ -39,8 +43,8 @@ describe("who may see what", () => {
 
   it("face up is +Y up in the world, whatever the yaw", () => {
     const scene = testScene(objects());
-    expect(isFaceUp(scene, "faceUp")).toBe(true);
-    expect(isFaceUp(scene, "faceDown")).toBe(false);
+    expect(faceUpIn(scene, "faceUp")).toBe(true);
+    expect(faceUpIn(scene, "faceDown")).toBe(false);
   });
 
   it("a hand is its seat's alone, either way up; the table is face up for everyone", () => {
@@ -136,7 +140,7 @@ function fakeRepo() {
 /** The extension against a stand-in for the scene's api. */
 function mount({ viewer = "alice", registries = {}, deckType = "plain-deck" } = {}) {
   const repo = fakeRepo();
-  let doc = { objects: objects(), traits: { [SEATS]: seats(viewer) } };
+  let doc = sceneOf(objects(), { [SEATS]: seats(viewer) });
   const deck = repo.add(
     { "@patchwork": { type: deckType }, objects: Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray"].map((id) => [id, { sourceUrl: `automerge:${id}`, name: `Face of ${id}` }])) },
     DECK,
@@ -170,13 +174,12 @@ function mount({ viewer = "alice", registries = {}, deckType = "plain-deck" } = 
 const settle = () => new Promise((r) => setTimeout(r, 10));
 
 describe("the table extension", () => {
-  it("reads only a plain-deck doc as a plain deck (scene-secrets is no longer a name for one)", async () => {
-    const m = mount({ deckType: "scene-secrets" });
+  it("a deck of a kind nothing installed reads shows no faces, and the HUD names the kind", async () => {
+    const m = mount({ deckType: "some-deck" });
     m.x.update(m.api.scene());
     await settle();
-    expect(m.deck.doc()["@patchwork"].type).toBe("scene-secrets");
     expect(m.x.looks().size).toBe(0);
-    expect(m.x.hud()).toEqual([{ text: expect.stringContaining("scene-secrets"), state: "error" }]);
+    expect(m.x.hud()).toEqual([{ text: expect.stringContaining("some-deck"), state: "error" }]);
   });
 
   it("reads a deck and shows this viewer what they may see", async () => {
@@ -250,7 +253,7 @@ describe("seats, held by claims", () => {
     repo.add({ name: "Ana" }, ANA);
     repo.add({ name: "Ben" }, BEN);
     repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: {} }, DECK);
-    const doc = { objects: objects(), traits: { [SEATS]: seated }, ...(claims ? { claims } : {}) };
+    const doc = sceneOf(objects(), { [SEATS]: seated }, claims ? { claims } : {});
     const w = fakes.fakeWorld(doc, { repo });
     const t = { w, api: {}, x: {} };
     t.join = async (session, viewer) => {
@@ -525,7 +528,7 @@ describe("telling the others", () => {
   afterEach(() => vi.useRealTimers());
   /** Alice in p1 and Bob in p2 at a table with a two-card pile (faceDown, under2) of a plain deck; each view's extension attached. */
   async function table({ seated = seats("alice", "bob") } = {}) {
-    const doc = { objects: { ...objects(), under2: { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: hidden } }, traits: { [SEATS]: seated } };
+    const doc = sceneOf({ ...objects(), under2: { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: hidden } }, { [SEATS]: seated });
     const repo = fakes.fakeRepo();
     const faces = Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray", "under2"].map((id) => [id, { sourceUrl: `automerge:face-${id}`, name: `Face of ${id}` }]));
     repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: faces }, DECK);
@@ -626,7 +629,7 @@ describe("telling the others", () => {
   it("a plain deck at a table without hands (a TTS import) says nothing", async () => {
     const repo = fakes.fakeRepo();
     repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: { a: { sourceUrl: "automerge:x", name: "A" } } }, DECK);
-    const w = fakes.fakeWorld({ objects: { a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } }, traits: {} }, { repo });
+    const w = fakes.fakeWorld(sceneOf({ a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } }), { repo });
     const x = w.attach("A", Extension.create(w.join("A", { viewer: "alice" })));
     w.flush();
     await vi.advanceTimersByTimeAsync(10);
@@ -751,8 +754,8 @@ describe("drawing to your hand", () => {
    * the table, of a plain deck that knows every card's face.
    */
   async function table({ seated = seats("alice", "bob"), content = { hand1: tray(), hand2: tray() }, local = {} } = {}) {
-    const doc = {
-      objects: {
+    const doc = sceneOf(
+      {
         hand1: { name: "Hand 1", transform: T([0, 0, 0.5]), traits: zone("p1") },
         hand2: { name: "Hand 2", transform: T([0, 0, -0.5], [0, Math.PI, 0]), traits: zone("p2") },
         kept: card([-0.27, 0.002, 0.5], [0, 0.25, 0]),
@@ -761,8 +764,8 @@ describe("drawing to your hand", () => {
         top: card([0.3, 0.003, 0]),
         board: { name: "Board", transform: T([0, 0, 0]) },
       },
-      traits: { [SEATS]: seated },
-    };
+      { [SEATS]: seated },
+    );
     const repo = fakes.fakeRepo();
     const faces = Object.fromEntries(["kept", "low", "mid", "top"].map((id) => [id, { sourceUrl: `automerge:face-${id}`, name: `Face of ${id}` }]));
     repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: faces }, DECK);
@@ -822,7 +825,7 @@ describe("drawing to your hand", () => {
     expect(t.state(t.xa, "top")).toBeNull();
     expect(t.state(t.xb, "top")).toBeNull();
     t.w.done();
-    const doc = { objects: { a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } }, traits: {} };
+    const doc = sceneOf({ a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } });
     const w = fakes.fakeWorld(doc);
     const api = w.join("A", { viewer: "alice" });
     const x = w.attach("A", Extension.create(api));
@@ -972,7 +975,7 @@ describe("rolling a die", () => {
   const die = (o = {}) => ({ name: "Die", transform: T([0.1, 0, 0.2], [0, 0.3, 0]), hint: { bounds: BOUNDS }, traits: { [DIE]: {} }, ...o });
   /** A table with a die, a pawn, and Player 1 (alice) and Player 2 (bob) seated; A is alice, B is bob. */
   function table({ objects = {}, local = {} } = {}) {
-    const doc = { objects: { d1: die(), pawn: { name: "Pawn", transform: T([0, 0, 0]) }, ...objects }, traits: { [SEATS]: seats("alice", "bob") } };
+    const doc = sceneOf({ d1: die(), pawn: { name: "Pawn", transform: T([0, 0, 0]) }, ...objects }, { [SEATS]: seats("alice", "bob") });
     const w = fakes.fakeWorld(doc);
     const a = w.join("A", { viewer: "alice", local });
     const b = w.join("B", { viewer: "bob" });
@@ -1188,7 +1191,7 @@ describe("rolling a die", () => {
   });
 
   it("a scene that became a table by a part (a die alone, no view.tool): in play, the hand is the tool", () => {
-    const doc = { objects: { d1: die() }, traits: {}, view: {} };
+    const doc = sceneOf({ d1: die() });
     const w = fakes.fakeWorld(doc);
     const a = w.join("A", { viewer: "alice" });
     w.attach("A", Extension.create(a));
@@ -1196,7 +1199,7 @@ describe("rolling a die", () => {
     w.flush();
     expect(a.local.get().tool).toBe("hand");
     // a doc that suggests the hand already: nothing to do
-    const doc2 = { objects: { d1: die() }, traits: {}, view: { tool: "hand" } };
+    const doc2 = sceneOf({ d1: die() }, {}, { view: { ...emptyScene().view, tool: "hand" } });
     const w2 = fakes.fakeWorld(doc2);
     const b = w2.join("B", { viewer: "bob" });
     const swap = vi.spyOn(b.local, "swap");
@@ -1209,7 +1212,7 @@ describe("rolling a die", () => {
   });
 
   it("a die alone (no seats) still rolls, and the peer is told by someone", () => {
-    const doc = { objects: { d1: die() }, traits: {} };
+    const doc = sceneOf({ d1: die() });
     const w = fakes.fakeWorld(doc);
     const a = w.join("A", { viewer: "alice" });
     const b = w.join("B", { viewer: "bob" });

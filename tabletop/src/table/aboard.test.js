@@ -9,6 +9,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { HIDDEN, SEATS, ZONE } from "./visibility.js";
 import Extension, { dropSpot, seatTagAt } from "./extension.js";
 import * as fakes from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 import { apply, composeMatrix, multiply } from "./frame.js";
 import { placeLayout, tableLayout, writeTable } from "../setup.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
@@ -33,8 +34,7 @@ const tray = (n = 4, yaw = 0.25) => ({
 const seatCam = (z) => ({ position: [0, 1.2, z], target: [0, 0.7, z * 0.17], in: "tbl" });
 
 async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: null, camera: seatCam(0.95) }, p2: { name: "Player 2", player: null, camera: seatCam(-0.95) } } } = {}) {
-  const doc = {
-    objects: {
+  const objects = {
       ship: { name: "Ship", transform: SHIP },
       tbl: { name: "Card table", parent: "ship", transform: TBL, locked: true },
       hand1: { name: "Hand 1", parent: "tbl", transform: T([0, 0.7, 0.5]), traits: zone("p1") },
@@ -44,9 +44,8 @@ async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: n
       mid: card([0.3, 0.702, 0]),
       top: card([0.3, 0.703, 0]),
       board: { name: "Board", parent: "tbl", transform: T([0, 0.7, 0]), locked: true },
-    },
-    traits: { [SEATS]: seated },
   };
+  const doc = emptyScene({ objects, order: Object.keys(objects), traits: { [SEATS]: seated } });
   const repo = fakes.fakeRepo();
   const faces = Object.fromEntries(["kept", "low", "mid", "top"].map((id) => [id, { sourceUrl: `automerge:face-${id}`, name: `Face of ${id}` }]));
   repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: faces }, DECK);
@@ -105,7 +104,7 @@ describe("a layout set down on something", () => {
   });
 
   it("written without the view: the scene's view, home and units stay as they were", () => {
-    const d = { objects: {}, order: [], traits: {}, view: { units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" } };
+    const d = emptyScene({ view: { units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" } });
     const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
     const deckUrls = Object.fromEntries(Object.keys(on.decks).map((k) => [k, "automerge:2Deck"]));
     writeTable(d, on, deckUrls, { view: false });
@@ -186,7 +185,7 @@ describe("the seat's view aboard", () => {
     t.w.done();
   });
 
-  it("a seat whose camera is in no frame is set once, as before", async () => {
+  it("a seat whose camera is in no frame is set once, and rides nothing", async () => {
     const t = await aboard({ seated: { p1: { name: "Player 1", player: null, camera: { position: [0, 1, 1], target: [0, 0, 0] } }, p2: { name: "Player 2", player: null } } });
     await t.pick("A", "p1");
     expect(t.w.view("A").camera).toEqual({ position: [0, 1, 1], target: [0, 0, 0] });
@@ -331,15 +330,13 @@ describe("dropSpot aboard a moving ship: the hands as drawn", () => {
 });
 
 describe("the Card table and Lost Cities parts", () => {
-  const emptyShip = () => ({
-    "@patchwork": { type: "scene" },
-    title: "Ship at anchor",
-    objects: { ship: { name: "Sloop", transform: SHIP, parent: null } },
-    order: ["ship"],
-    assets: {},
-    traits: {},
-    view: { units: "m", activity: "play", home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } },
-  });
+  const emptyShip = () =>
+    emptyScene({
+      title: "Ship at anchor",
+      objects: { ship: { name: "Sloop", transform: SHIP, parent: null } },
+      order: ["ship"],
+      view: { units: "m", activity: "play", home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } },
+    });
   const secureDecks = () => fakes.fakeRegistry([{ id: "secure-deck", supportedDatatypes: ["secure-deck"], load: async () => ({ createResolver: () => ({}) }) }]);
 
   it("a Card table goes under what it's put on, square to it, locked, with a top that takes a game", async () => {

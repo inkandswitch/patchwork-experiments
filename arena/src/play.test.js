@@ -2,6 +2,7 @@
 // the stage when you start, walk, shoot and stop.
 import { describe, it, expect, beforeEach } from "vitest";
 import play, { ATMOSPHERE, hueOf, scores } from "./play.js";
+import { plugins } from "./index.js";
 
 class Obj {
   constructor() {
@@ -149,18 +150,23 @@ describe("playing", () => {
     const session = h.press({ button: 0 });
     expect(session.tap()).toBe(true);
     expect(doc.objects.t1.traits["arena.target"].down.by).toBe("me");
-    expect(doc.objects.t1.traits["arena.target"].stand.position).toEqual([0, 0, -5]);
+    expect(doc.objects.t1.traits["arena.target"].stand).toEqual({ rotation: [0, 0, 0] });
+    expect(doc.objects.t1.transform.position).toEqual([0, 0, -5]);
     expect(Math.abs(doc.objects.t1.transform.rotation[0])).toBeGreaterThan(1);
     expect(f.calls.sends.at(-1).type).toBe("shot");
     expect(scores(doc.objects)).toEqual({ me: 1 });
+    // of what a shot writes into the trait, who shot it is play state, described
+    // as runtime (the scene's copy rule leaves it behind); how it stood is kept
+    const runtime = plugins.find((p) => p.id === "arena").describes["arena.target"].runtime;
+    expect(Object.keys(doc.objects.t1.traits["arena.target"]).sort()).toEqual([...runtime, "stand"].sort());
     // a second hit on a fallen target changes nothing
     const before = JSON.stringify(doc.objects.t1);
     h.press({ button: 0, locked: true });
     expect(JSON.stringify(doc.objects.t1)).toBe(before);
   });
 
-  it("the lobby's Stand them up puts knocked-over targets back where they stood", () => {
-    doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: T([0, 0, -5]) };
+  it("the lobby's Stand them up stands knocked-over targets back up", () => {
+    doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
     doc.objects.t1.transform = { position: [0, 0, -5], rotation: [1.5, 0, 0], scale: 1 };
     x.update(scene(doc), {}, { scene: null });
     // editing has its own command for this (edit.js); playing has the button

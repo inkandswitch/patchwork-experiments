@@ -36,7 +36,11 @@ It doesn't depend on the scene or tabletop packages: it writes `scene`,
 `plain-deck` and `file` docs in the shapes they document (the scene's, with
 the tabletop's traits for seats and hidden cards) and opens the result with
 the `scene` tool by id. A table needs the tabletop package installed for its
-seats and hidden cards to work.
+seats and hidden cards to work. The scene doc names the scene package as its
+suggested import (below), so a viewer with nothing installed is offered the
+scene tool; the stage lists the tabletop package in the scene's `packages`
+the first time someone who has it opens the table, and offers it to viewers
+who don't (scene/STAGE.md, "Packages").
 
 ## Getting the assets
 
@@ -79,9 +83,12 @@ of the table top, is the commonest resting height of the top-level objects
 (0.94–0.96 in the mods tried).
 
 **Confidence.** The axis and rotation conversion is high: a test round-trips
-200 random transforms with random local points (TTS world point, converted ==
-scene world point of the baked point) and checks the Euler decomposition
-against three's; the browser probe shows text on boards, mats, cards and
+every rotation of a 9 × 9 × 9 grid of TTS angles (the quarter turns, where
+Euler triples are degenerate, among them) at the origin and the three unit
+points of a non-uniformly scaled object (TTS world point, converted == scene
+world point of the baked point; both are affine in the point, so those four
+settle every point) and checks the Euler decomposition against three's on
+the same grid; the browser probe shows text on boards, mats, cards and
 models reading correctly (not mirrored, right way up from the near side) on
 two real mods. Unity's rotation order and matrices are from Unity's
 documentation, matched by real saves (a d6's `RotationValues` give opposite
@@ -182,10 +189,21 @@ shape.
   (an OBJ as text, images and PDFs as bytes; one over `maxStoredBytes`, 32 MB, is used but not kept);
 - a `file` doc per kind: the GLB (`extension: "glb"`, `mimeType: "model/gltf-binary"`);
 - a `plain-deck` doc per face-down TTS deck: `{ "@patchwork": { type: "plain-deck" }, title, objects: { [objectId]: { sourceUrl, name } } }`;
-- the `scene`: passthrough objects (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with
-  `hint.bounds`, groups for decks / stacks / bag contents / states, `locked`, traits (`tabletop.hidden` on hidden cards, `tabletop.seats` on the scene), `infoUrl` = the
-  import doc (the PDF's file doc for a `Custom_PDF`), and `view: { units: "cm", snap: true,
-  tool: "hand", grid: false, axes: false, home }`, `home` being a view over the table from the near side.
+- the `scene`: an empty scene as the scene's own datatype makes one (`src/empty-scene.js`, a copy of its
+  init: `dimensions: {}`, `assets: {}`, `packages: []` and the rest), with passthrough objects
+  (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with `hint.bounds`, groups for decks /
+  stacks / bag contents / states, `locked`, `tags`, traits (`tabletop.hidden` on hidden cards,
+  `tabletop.seats` on the scene), `infoUrl` = the import doc (the PDF's file doc for a `Custom_PDF`), and
+  `view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity?, home }`:
+  `home` is a view over the table from the near side, and `activity: "play"` is written when the mod has
+  seats (a table with seats is for playing: it opens in play, and the scene's activity switcher gets
+  anyone into editing); without seats there is no `activity`, and it opens in the editor.
+  `packages` is left empty for the stage to fill in. Its `@patchwork` is `{ type: "scene",
+  suggestedImportUrl }`: the scene package's own import URL, read from the plugin registry at import
+  time (`src/scene-package.js`) and written only when another viewer could load it (a bare
+  `automerge:` URL, or `https:` on a public host; not localhost, `http:`, `blob:`). With no scene
+  package registered it is just `{ type: "scene" }`, and the stage adds the suggestion when someone
+  who has the package opens the table.
 
 ## Not yet
 
@@ -220,6 +238,8 @@ shape.
 | `src/shapes.js` | slabs, boxes, lathes, dice in the TTS frame; baking into the scene's (pure) |
 | `src/build.js` | a kind → a GLB |
 | `src/layout.js` | the plan, the secrets docs and the scene doc (pure) |
+| `src/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the scene doc starts from |
+| `src/scene-package.js` | where the scene package comes from, for the scene doc's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as tabletop's) |
 | `src/obj.js`, `src/sniff.js`, `src/alpha.js` | OBJ parsing, file type sniffing, token outlines (pure) |
 | `src/images.js` | the browser's image backend (decode, crop, resize, encode on a canvas) |
 | `src/glb.js` | the scene's GLB encoder, copied, with textures added |

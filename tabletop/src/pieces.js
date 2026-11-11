@@ -7,7 +7,7 @@ import { encodeGLB } from "./glb.js";
 import { meshesBounds, pieceMeshes } from "./shapes.js";
 
 // bump when the way parts become geometry changes, so existing GLBs are redrawn
-// 2: snap points written as the scene's connectors (redraws older pieces once)
+// 2: snap points written as the scene's connectors
 const GEOMETRY_VERSION = 2;
 
 /** Everything a piece's GLB is made from, as one string. */

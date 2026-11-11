@@ -44,8 +44,8 @@ On an empty scene's start screen, **Cadboro Bay (RVYC)**:
    4 m/s from 235° (WSW), wave scale 0.5 (a south-westerly reaches the bay
    over Uplands and Oak Bay, so the bay is a lee);
 4. lays sailing's sloop (the `sailing.sloop` part, found in the registry,
-   never imported) on the mooring field, head to wind, sail down, anchor
-   down with 25 m of chain (sailing has no mooring buoy, so her anchor
+   never imported) on the mooring field, head to wind, main down, jib
+   rolled away, anchor down with 25 m of chain (sailing has no mooring buoy, so her anchor
    holds her), in ~8 m of water;
 5. opens in play; the editor's home view is above the clubhouse looking out
    over the docks to the moorings.

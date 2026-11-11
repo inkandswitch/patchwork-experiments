@@ -7,7 +7,6 @@ import {
   convertPosition,
   convertRotation,
   convertTransform,
-  convertYaw,
   eulerXYZ,
   sceneLocalToWorld,
   sceneRotationMatrix,
@@ -19,11 +18,11 @@ import {
 const U = 0.0254;
 const close = (a, b, eps = 1e-6) => a.every((v, i) => Math.abs(v - b[i]) < eps);
 
-// a little deterministic PRNG
-function rng(seed) {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-}
+// Every rotation of a finite grid: each TTS angle (degrees) at the quarter
+// turns (where an Euler triple is degenerate: the scene's Y at ±90° is gimbal
+// lock), past a full turn either way, and at angles off every axis.
+const ANGLES = [-270, -180, -90, -37, 0, 23, 90, 180, 405];
+const ROTATIONS = ANGLES.flatMap((x) => ANGLES.flatMap((y) => ANGLES.map((z) => [x, y, z])));
 
 describe("Unity's rotation", () => {
   it("applies z, then x, then y (Quaternion.Euler)", () => {
@@ -43,18 +42,18 @@ describe("Unity's rotation", () => {
 
 describe("TTS → scene", () => {
   it("round-trips every point of an object: TTS world, converted == scene world of the baked point", () => {
-    const rand = rng(7);
-    for (let i = 0; i < 200; i++) {
-      const t = {
-        posX: (rand() - 0.5) * 80, posY: rand() * 5, posZ: (rand() - 0.5) * 80,
-        rotX: (rand() - 0.5) * 720, rotY: (rand() - 0.5) * 720, rotZ: (rand() - 0.5) * 720,
-        scaleX: 0.2 + rand() * 3, scaleY: 0.2 + rand() * 3, scaleZ: 0.2 + rand() * 3,
-      };
-      const tableY = 0.96;
+    // Both ways round are affine maps of the local point, so agreeing at the
+    // origin and the three unit points is agreeing at every point. The
+    // position and the (non-uniform) scale are off every axis and unequal, so
+    // no term of either cancels; the rotations are the whole grid.
+    const POINTS = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const tableY = 0.96;
+    expect(ROTATIONS.length).toBe(729);
+    for (const [rotX, rotY, rotZ] of ROTATIONS) {
+      const t = { posX: -32.5, posY: 2.25, posZ: 17.75, rotX, rotY, rotZ, scaleX: 0.5, scaleY: 2, scaleZ: 3 };
       const st = convertTransform(t, { unit: U, tableY });
       expect(st.scale).toBe(1);
-      for (let k = 0; k < 4; k++) {
-        const p = [(rand() - 0.5) * 4, (rand() - 0.5) * 4, (rand() - 0.5) * 4];
+      for (const p of POINTS) {
         const viaTTS = convertPosition(ttsLocalToWorld(t, p), { unit: U, tableY });
         const viaScene = sceneLocalToWorld(st, bakePoint(p, [t.scaleX, t.scaleY, t.scaleZ], U));
         expect(close(viaTTS, viaScene, 1e-5)).toBe(true);
@@ -85,9 +84,8 @@ describe("TTS → scene", () => {
   });
 
   it("matches three's Euler XYZ for the same matrix", () => {
-    const rand = rng(11);
-    for (let i = 0; i < 100; i++) {
-      const e = convertRotation([(rand() - 0.5) * 360, (rand() - 0.5) * 360, (rand() - 0.5) * 360]);
+    for (const degrees of ROTATIONS) {
+      const e = convertRotation(degrees);
       const m = sceneRotationMatrix(e);
       const three = new Matrix4().makeRotationFromEuler(new Euler(...e, "XYZ"));
       const el = three.elements; // column-major
@@ -97,8 +95,7 @@ describe("TTS → scene", () => {
     }
   });
 
-  it("yaws, positions and colours", () => {
-    expect(convertYaw(90)).toBeCloseTo(-Math.PI / 2, 6);
+  it("positions and colours", () => {
     expect(convertPosition([1, 2, 3], { unit: 1, tableY: 1 })).toEqual([1, 1, -3]);
     expect(bakePoint([1, 1, 1], [2, 3, 4], 1)).toEqual([2, 3, -4]);
     expect(colorHex({ r: 1, g: 0.5, b: 0 })).toBe("#ff8000");

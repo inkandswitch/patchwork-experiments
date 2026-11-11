@@ -20,7 +20,8 @@ describe("arena: describes its traits", () => {
     expect(look.options.map((o) => o.value)).toEqual(["", "arena"]);
     expect(d["arena.target"].on).toBe("object");
     expect(d["arena.spawn"].on).toBe("object");
-    // a target's play state (down, stand) is not a setting
+    // a target's down and stand are not settings; who shot it is play state, which a copy leaves behind
     expect(d["arena.target"].fields).toBeUndefined();
+    expect(d["arena.target"].runtime).toEqual(["down"]);
   });
 });

@@ -93,9 +93,6 @@ export function bakePoint([x, y, z], scale = [1, 1, 1], unit = DEFAULT_METRES_PE
   return [x * scale[0] * unit, y * scale[1] * unit, -z * scale[2] * unit];
 }
 
-/** A yaw (TTS degrees about +Y) → the scene's (radians about +Y). */
-export const convertYaw = (deg) => clean(-n(deg) * DEG);
-
 /** TTS world point of a local point, the way Unity computes it (for tests and layout). */
 export function ttsLocalToWorld(transform, p) {
   const { position, rotation, scale } = readTransform(transform);

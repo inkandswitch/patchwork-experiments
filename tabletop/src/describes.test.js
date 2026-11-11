@@ -49,9 +49,15 @@ describe("tabletop: describes its traits", () => {
     expect(zones(scene({ ...z, seat: "north" }))).toEqual([{ id: "tray", seat: "north", min: z.min, max: z.max }]);
   });
 
-  it("a hidden card names its deck by URL", () => {
-    expect(d[HIDDEN].fields).toEqual([{ key: "by", label: "Deck", kind: "url" }]);
-    expect(hiddenBy({ traits: { [HIDDEN]: { by: "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh" } } })).toBe("automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh");
+  it("a hidden card names its deck by URL, and a copy leaves the deck behind: it's in no deck", () => {
+    expect(d[HIDDEN].fields).toEqual([{ key: "by", label: "Deck", kind: "url", copy: "drop" }]);
+    const card = { traits: { [HIDDEN]: { by: "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh" } } };
+    expect(hiddenBy(card)).toBe("automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh");
+    // the scene's copy (STAGE.md, "Copying objects"): every `copy: "drop"` field is left behind
+    const copy = structuredClone(card);
+    for (const f of d[HIDDEN].fields) if (f.copy === "drop") delete copy.traits[HIDDEN][f.key];
+    expect(copy.traits[HIDDEN]).toEqual({});
+    expect(hiddenBy(copy)).toBe(null);
   });
 });
 

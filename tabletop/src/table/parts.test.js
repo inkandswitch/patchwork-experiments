@@ -10,8 +10,8 @@ import { DEFAULT_FACES, DIE } from "./dice.js";
 import { CARD_TAGS, accepts, nearestSlot, worldSlots } from "./slots.js";
 import { SEATS } from "./visibility.js";
 import { composeMatrix, fakeDrop } from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
-const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {}, assets: {} });
 const KINDS = { pawn: "pawn", token: "token", cardSpot: "card-spot", die: "d6" };
 const at = (position = [0.1, 0, 0.2], rotation = [0, 0.5, 0]) => ({ parent: null, transform: { position, rotation, scale: 1 }, world: null });
 const loadGLB = (glb) => new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength), "");

@@ -11,7 +11,8 @@
 //    new glbUrl, since the url is in dependencies().
 // 2. file: a Patchwork `file` doc holding a GLB (extension or name `.glb`, or
 //    glTF magic bytes): what a scene shows directly for a passthrough object
-//    (SCENE-CONTRACT v3 §6, no render doc). Its bytes are cut as they are.
+//    (`renderUrl: null`, shown from `sourceUrl`; no render doc: scene/README.md,
+//    "`scene` — the composition"). Its bytes are cut as they are.
 // 3. source: any other doc some `scene:source` provider can build (the most
 //    specific match first, as the scene host picks): it is built in memory
 //    (nothing is stored) with the provider's DEFAULT params and the GLB is

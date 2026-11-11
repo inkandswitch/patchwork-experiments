@@ -30,6 +30,7 @@ import { convertPosition, convertTransform, readTransform, ttsUp } from "./conve
 import { CARD, kindKey, kindOf } from "./kinds.js";
 import { walk } from "./tts.js";
 import { scenePatchwork } from "./scene-package.js";
+import { DEFAULT_VIEW, emptyScene } from "./empty-scene.js";
 
 const r = (v, p = 5) => +Number(v).toFixed(p);
 
@@ -359,25 +360,22 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
   }
   const span = Math.max(ext.hx, ext.hz) * unit;
   const centre = convertPosition([ext.cx, tableY, ext.cz], { unit, tableY });
-  const scene = {
+  // an empty scene as the scene makes one (every map and list it has; the
+  // stage fills `packages` in: scene/STAGE.md, "Packages"), with the table in it
+  const scene = emptyScene({
     // a scene, and where the scene package comes from for a viewer who doesn't have it
     "@patchwork": scenePatchwork(sceneImportUrl),
     title,
     objects,
     order,
-    dimensions: {},
-    assets: {},
-    // the packages its contents come from: the stage fills it in (scene/STAGE.md, "Packages")
-    packages: [],
-    // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
     traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
     view: {
-      units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
+      ...DEFAULT_VIEW, units: "cm", grid: false, axes: false, tool: "hand",
       // a table with seats is for playing: it starts there (the scene's
       // activity switcher gets anyone into editing)
       ...(Object.keys(seats).length ? { activity: "play" } : {}),
       home: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
     },
-  };
+  });
   return { scene, stats: { tableY, skipped } };
 }

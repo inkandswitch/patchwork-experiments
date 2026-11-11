@@ -10,6 +10,7 @@ import { DECAL, DEFAULT_CARD, PRIVACY_VERSION, cardBounds, cardState, cutRects, 
 import { pieceMeshes, meshesBounds } from "../shapes.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
+import { emptyScene } from "../empty-scene.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -138,7 +139,7 @@ describe("three looks", () => {
   });
 
   it("two peers remembering it at once: the merge keeps one, whole", () => {
-    const base = Automerge.from({ objects: {}, assets: {}, traits: {} });
+    const base = Automerge.from(emptyScene());
     const key = privacyKey(BOUNDS);
     const a = Automerge.change(Automerge.clone(base), (d) => rememberAsset(d, key, "automerge:fileA", BOUNDS));
     const b = Automerge.change(Automerge.clone(base), (d) => rememberAsset(d, key, "automerge:fileB", BOUNDS));
@@ -156,8 +157,7 @@ describe("three looks", () => {
 // A Lost Cities-ish table: Alice in p1, Bob in p2, a plain deck that knows every card
 const FACES = ["mineUp", "mineDown", "theirsUp", "theirsDown", "tableUp", "tableDown"];
 function tableDoc({ assets = {} } = {}) {
-  return {
-    objects: {
+  const objects = {
       hand1: { name: "Hand 1", transform: T([0, 0, 0.5]), traits: zone("p1"), locked: true },
       hand2: { name: "Hand 2", transform: T([0, 0, -0.5], [0, Math.PI, 0]), traits: zone("p2"), locked: true },
       mineUp: card([0.1, 0.002, 0.5]),
@@ -166,10 +166,13 @@ function tableDoc({ assets = {} } = {}) {
       theirsDown: card([0.2, 0.002, -0.5], DOWN),
       tableUp: card([0, 0, 0]),
       tableDown: card([0.3, 0.001, 0], DOWN),
-    },
+  };
+  return emptyScene({
+    objects,
+    order: Object.keys(objects),
     traits: { [SEATS]: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } },
     assets,
-  };
+  });
 }
 async function table({ doc = tableDoc(), deck = "plain-deck", resolver, hang = false } = {}) {
   const repo = fakes.fakeRepo();

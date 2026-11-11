@@ -53,7 +53,6 @@ export function kindFile(ctx, kind) {
  * scene's own look.
  */
 export function makeLevel(d) {
-  if (!d.traits) d.traits = {};
   if (!d.traits[LEVEL]) d.traits[LEVEL] = {};
 }
 
@@ -89,9 +88,6 @@ export async function layOutArena(ctx) {
   const gid = ctx.newId("g");
   ctx.change((d) => {
     makeLevel(d);
-    if (!d.objects) d.objects = {};
-    if (!d.order) d.order = [];
-    if (!d.view) d.view = {};
     d.objects[gid] = { kind: "group", name: "Arena", group: null, visible: true, opacity: 1 };
     d.order.push(gid);
     // a laid-out level has the arena's look (sky, haze, sun: play.js); a

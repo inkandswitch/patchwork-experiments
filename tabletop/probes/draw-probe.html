@@ -22,6 +22,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/empty-scene.js";
 import { fill } from "../src/games/lost-cities.js";
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
@@ -67,7 +68,7 @@ try {
   const layout = tableLayout(g, { fileOf, gameUrl: game.url });
   const deckUrls = {};
   for (const [id, deck] of Object.entries(layout.decks)) deckUrls[id] = (await repo.create2(deck)).url;
-  const table = { "@patchwork": { type: "scene" }, title: "Draw probe", objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+  const table = emptyScene({ title: "Draw probe" });
   writeTable(table, layout, deckUrls);
   const scene = repo.add(table);
   const deck = await repo.find(deckUrls.main);

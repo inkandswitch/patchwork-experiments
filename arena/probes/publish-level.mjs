@@ -21,6 +21,7 @@
 import template from "../src/template.js";
 import { kindKey } from "../src/layout.js";
 import { KINDS } from "../src/level.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 
 const args = Object.fromEntries(
@@ -39,22 +40,12 @@ if (DRY) {
   console.log(`connected to ${SYNC}`);
 }
 
-// ─── an empty scene, as SceneDatatype.init writes it (scene/src/datatype.js) ──
+// ─── an empty scene, as the scene datatype's init writes it (src/test/empty-scene.js)
 // with the scene package as its suggested import, and the packages its
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
 // stage works these out from the registry; here they're stated
 const PACKAGES = ["scene", "arena"];
-const scene = await repo.create2({
-  "@patchwork": scenePatchwork(),
-  title: "Arena level",
-  objects: {},
-  order: [],
-  dimensions: {},
-  traits: {},
-  assets: {},
-  packages: scenePackages(PACKAGES),
-  view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
-});
+const scene = await repo.create2(emptyScene({ "@patchwork": scenePatchwork(), title: "Arena level", packages: scenePackages(PACKAGES) }));
 
 // ─── the template's create(ctx), with the drop context's parts it uses ──────
 // (scene/src/stage/stage.js makeDropContext; the stage's newId is the same)

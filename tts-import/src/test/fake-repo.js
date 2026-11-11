@@ -73,37 +73,3 @@ export class FakeRepo {
     return h;
   }
 }
-
-/** Manual timers so debounce is deterministic. */
-export function fakeTimers() {
-  let now = 0;
-  let id = 0;
-  const pending = new Map();
-  return {
-    now: () => now,
-    setTimeout(fn, ms) {
-      pending.set(++id, { fn, at: now + ms });
-      return id;
-    },
-    clearTimeout(t) {
-      pending.delete(t);
-    },
-    pendingDelays: () => [...pending.values()].map((p) => p.at - now),
-    async advance(ms) {
-      now += ms;
-      for (;;) {
-        const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((a, b) => a[1].at - b[1].at);
-        if (!due.length) break;
-        const [tid, p] = due[0];
-        pending.delete(tid);
-        p.fn();
-        await flush();
-      }
-      await flush();
-    },
-  };
-}
-
-export async function flush() {
-  for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
-}

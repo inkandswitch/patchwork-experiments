@@ -203,9 +203,8 @@ export function rememberAsset(d, key, url, bounds) {
  * gave this viewer its face; else, face down, "back"; else, face up:
  *
  *   - its deck not dealt yet (a secure deck waiting for its players: no
- *     card is anyone's, and none can be shown to anybody), "back", as every
- *     card was before there was a privacy face: the HUD says what it's
- *     waiting for;
+ *     card is anyone's, and none can be shown to anybody), "back": the HUD
+ *     says what it's waiting for;
  *   - kept from this viewer by the zone rule (in another seat's hand),
  *     "private";
  *   - this viewer's to see, its face not here yet (a secure deck's keys on

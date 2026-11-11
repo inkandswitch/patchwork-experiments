@@ -64,7 +64,7 @@ export function parentOf(scene, id) {
  * rolls or is upside down in a capsize is face up or down as it lies on the
  * table, and from the doc (scene.world), not the pose drawn this frame, so
  * every peer agrees and nothing flickers as she moves. At the root it is
- * the world's up, as it always was. Pure.
+ * the world's up. Pure.
  */
 export function faceUpIn(scene, id) {
   const m = scene.world(id);
@@ -76,9 +76,6 @@ export function faceUpIn(scene, id) {
   const dot = y[0] * u[0] + y[1] * u[1] + y[2] * u[2];
   return dot / ((Math.hypot(...y) || 1) * (Math.hypot(...u) || 1)) > 1e-6;
 }
-
-/** Does the object's own +Y point up in the frame it lies in (faceUpIn)? */
-export const isFaceUp = faceUpIn;
 
 /** The seat this viewer sits in: the first whose `player` is them. */
 export function seatOf(seats, viewer) {

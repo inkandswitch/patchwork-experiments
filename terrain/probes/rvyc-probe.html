@@ -28,6 +28,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { replayFetch } from "./recorded-fetch.js";
 import { decodeTerrain } from "../src/terrain-sample.js";
 import { KNOWN } from "./known-places.js";
@@ -101,7 +102,7 @@ try {
     for (const [u, d] of Object.entries(snap.docs)) repo.add(revive(d), u);
     scene = repo.handles.get(snap.scene);
   } else {
-    scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+    scene = repo.add(emptyScene());
   }
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -147,6 +148,7 @@ try {
         render: render ? { status: render.status, error: render.error, glbUrl: render.glbUrl, builtFrom: render.builtFrom ? { fingerprint: render.builtFrom.fingerprint, deps: render.builtFrom.deps, providerVersion: render.builtFrom.providerVersion } : null } : null,
         hull: withTrait("sailing.ship") ? objects()[withTrait("sailing.ship")].transform : null,
         sail: objects()[withTrait("sailing.sail")]?.traits?.["sailing.sail"] ?? null,
+        jib: objects()[withTrait("sailing.jib")]?.traits?.["sailing.jib"] ?? null,
         anchor: objects()[withTrait("sailing.anchor")]?.traits?.["sailing.anchor"] ?? null,
       };
     },

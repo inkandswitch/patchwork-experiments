@@ -3,7 +3,8 @@
 // new Terrain doc: fetch-data.js, store.js), puts the terrain in at the
 // scene's origin (locked: it is the ground), gives the scene a sea with a
 // summer afternoon's breeze, and lays a sloop on the club's moorings, head
-// to wind, sail down, her anchor down for a mooring. Then it opens in play.
+// to wind, main down, jib rolled away, her anchor down for a mooring. Then
+// it opens in play.
 //
 // The sloop is sailing's, found in the plugin registry at run time (the
 // "sailing.sloop" part), never imported: without sailing the scene is the
@@ -17,11 +18,18 @@ import { storeTerrainData } from "./store.js";
 /** Where the sloop lies: the mooring field, the frame's origin. */
 export const MOORING = Object.freeze([0, 0, 0]);
 /** sailing's trait keys this writes (its DESIGN.md, "Traits"). */
-export const SEA = "sailing.sea", SAIL = "sailing.sail", ANCHOR = "sailing.anchor";
+export const SEA = "sailing.sea", SAIL = "sailing.sail", JIB = "sailing.jib", ANCHOR = "sailing.anchor";
 /** This package's: the data's credit at the foot of the view (credit.js). */
 export const CREDIT = "terrain.credit";
 /** Chain out on the mooring (sailing's RODE: 25 m; the water is ~8 m deep). */
 export const RODE = 25;
+/**
+ * Her stations on the mooring, as sailing's own ship at anchor has them (its
+ * layout.js AT_ANCHOR, copied by trait key): the main down, the jib rolled
+ * away, the anchor down with its rode out. Each trait's other fields (a
+ * sheet's trim) stay as the sloop part made them.
+ */
+export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [JIB]: Object.freeze({ furl: 1 }), [ANCHOR]: Object.freeze({ down: true, rode: RODE }) });
 
 /** Everything attached under `id`, at any depth (the sail hangs from the mast, not the hull). */
 export function aboard(objects, id) {
@@ -60,8 +68,6 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   // locked (it is the ground); its About is the Terrain doc (sources, licences); its credit shows in the view
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
   ctx.change((d) => {
-    if (!d.traits) d.traits = {};
-    if (!d.view) d.view = {};
     d.traits[SEA] = { wind: { speed: WIND.speed, from: WIND.from }, seed, scale: WIND.scale };
     d.view.home = { position: [...HOME.position], target: [...HOME.target] };
     d.view.activity = "play";
@@ -80,14 +86,11 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
     const place = { position: [...MOORING], rotation: [0, headTo(WIND.from), 0], scale: 1 };
     hull = (await sloop?.create?.(ctx, { parent: null, transform: place, world: place })) ?? null;
     if (hull) {
-      // on her mooring: sail down, made fast (sailing has no mooring, so her anchor holds her)
+      // on her mooring: sails down, made fast (sailing has no mooring, so her anchor holds her)
       ctx.change((d) => {
         for (const o of aboard(d.objects ?? {}, hull)) {
-          if (!o.traits) continue;
-          if (o.traits[SAIL]) o.traits[SAIL].raised = 0;
-          if (o.traits[ANCHOR]) {
-            o.traits[ANCHOR].down = true;
-            o.traits[ANCHOR].rode = RODE;
+          for (const [trait, set] of Object.entries(AT_ANCHOR)) {
+            if (o.traits?.[trait]) for (const [k, v] of Object.entries(set)) o.traits[trait][k] = v;
           }
         }
       });
@@ -116,7 +119,7 @@ export default {
     const { hull } = await layOut(ctx, handle.url);
     ctx.notify?.(
       hull
-        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sail down. Click the sea (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
+        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sails down. Click the sea (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
         : "Cadboro Bay, with no boat: install the sailing tools to sail here.",
       "info",
     );

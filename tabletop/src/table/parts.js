@@ -200,8 +200,6 @@ export function part(kind, { square = false } = {}) {
       let put = false;
       ctx.change((d) => {
         if (parent && !d.objects?.[parent]) return;
-        if (!d.objects) d.objects = {};
-        if (!d.order) d.order = [];
         // under what it was put on, in that one's group (as addObject files it)
         const group = parent ? (d.objects[parent].group ?? null) : null;
         d.objects[id] = partObject(kind, file, { transform, parent, group });

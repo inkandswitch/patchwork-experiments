@@ -8,7 +8,10 @@
      runtime by URL — verification only, not a dependency) on the scene it made.
      window.__probe collects what the runner checks. -->
 <script type="importmap">
-{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
 </script>
 <style>
   html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
@@ -82,11 +85,15 @@ try {
     objects: Object.keys(scene.objects).length,
     groups: Object.values(scene.objects).filter((o) => o.kind === "group").length,
     hiddenGroups: Object.values(scene.objects).filter((o) => o.kind === "group" && !o.visible).length,
-    hiddenCards: Object.values(scene.objects).filter((o) => o.hidden).length,
+    hiddenCards: Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]).length,
     locked: Object.values(scene.objects).filter((o) => o.locked).length,
-    seats: Object.keys(scene.seats ?? {}),
+    seats: Object.keys(scene.traits["tabletop.seats"] ?? {}),
     view: scene.view,
-    camera: scene.camera,
+    // what the scene datatype's init makes that the importer leaves as it is
+    assets: scene.assets,
+    packages: scene.packages,
+    dimensions: scene.dimensions,
+    patchwork: scene["@patchwork"],
   };
   const sceneHost = document.getElementById("scene");
   sceneHost.repo = repo;
@@ -95,9 +102,12 @@ try {
   // the same handle shape the hand probe uses (broadcast goes nowhere)
   SceneTool(sceneHandle, sceneHost);
   const dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
-  const shown = (id) => {
-    for (let o = scene.objects[id]; o; o = o.parent ? scene.objects[o.parent] : null) if (!o.visible) return false;
-    return true;
+  // shown: neither it, nor a group it's filed in (at any depth), nor anything it's attached to, is hidden
+  const shown = (id, seen = new Set()) => {
+    const o = scene.objects[id];
+    if (!o || seen.has(id)) return true;
+    seen.add(id);
+    return o.visible !== false && (o.group == null || shown(o.group, seen)) && (o.parent == null || shown(o.parent, seen));
   };
   const visible = Object.entries(scene.objects).filter(([id, o]) => o.kind !== "group" && shown(id)).length;
   for (let i = 0; i < 1200; i++) {

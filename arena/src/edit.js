@@ -14,7 +14,7 @@ export default {
           id: "reset",
           name: "Stand targets up",
           show: ["menu"],
-          state: (target, { scene }) => (anyDown(scene?.objects) ? { title: "Stand every knocked-over target back where it stood" } : null),
+          state: (target, { scene }) => (anyDown(scene?.objects) ? { title: "Stand every knocked-over target back up" } : null),
           run: () => api.change((d) => standTargetsUp(d)),
         },
       ],

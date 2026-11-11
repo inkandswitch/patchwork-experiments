@@ -26,6 +26,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/empty-scene.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -118,7 +119,7 @@ try {
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
-  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  const scene = repo.add(emptyScene());
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);

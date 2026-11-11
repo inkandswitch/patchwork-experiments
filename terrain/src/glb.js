@@ -1,5 +1,5 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v2]
+ * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v3]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports and no DOM use, so it runs anywhere (main thread, worker, node).
@@ -9,6 +9,7 @@
  * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
  * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
  * so a consumer reading the GLB outside a scene knows it is in metres.
+ * v3 (from terrain's fork): `copyright` (asset.copyright), written only when given.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
@@ -19,7 +20,7 @@
  *     nodes?: Node[],               // optional; default = one root node per mesh
  *     extras?: object,              // copied onto the glTF scene's `extras`
  *     generator?: string,           // asset.generator (default "patchwork glb.js")
- *     copyright?: string,           // asset.copyright: the credit for what it's made from (terrain: the data's attribution)
+ *     copyright?: string,           // asset.copyright: the credit for what it's made from; written only when given
  *     units?: string,               // asset.extras.units (default "m", the scene convention)
  *   }
  *

@@ -1,14 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { layOut, headTo, differences, MOORING, RODE, CREDIT } from "./template.js";
+import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT } from "./template.js";
 import { WIND, HOME, EXPECTED, OSM_DATE, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
 import { credits } from "./credit.js";
 import { FakeRepo } from "./test/fake-repo.js";
+import { emptyScene } from "./test/empty-scene.js";
 
-/** A drop context on a fake scene, with a registry that may or may not have sailing's sloop (a stand-in that writes a hull and two stations as sailing's would). */
+/** A drop context on a fake scene, with a registry that may or may not have sailing's sloop (a stand-in that writes a hull and three stations as sailing's would). */
 function sceneCtx({ sailing }) {
   const repo = new FakeRepo();
-  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: {} });
+  const scene = repo.add(emptyScene());
   let k = 0;
   const newId = (p = "o") => `${p}${++k}`;
   const placed = [];
@@ -22,6 +23,7 @@ function sceneCtx({ sailing }) {
         const mast = ctx.newId("o");
         d.objects[mast] = { name: "Mast", parent: hull };
         d.objects[ctx.newId("o")] = { name: "Boom and sail", parent: mast, traits: { "sailing.sail": { raised: 1, sheet: 0.5 } } };
+        d.objects[ctx.newId("o")] = { name: "Jib", parent: mast, traits: { "sailing.jib": { sheet: 0.5, held: null, furl: 0 } } };
         d.objects[ctx.newId("o")] = { name: "Windlass", parent: hull, traits: { "sailing.anchor": { down: false, rode: 0 } } };
         d.order.push(hull);
       });
@@ -70,16 +72,19 @@ describe("the Cadboro Bay template's layout", () => {
     expect(d.title).toBe("Cadboro Bay");
   });
 
-  it("lays sailing's sloop on the mooring, head to wind, sail down, made fast", async () => {
+  it("lays sailing's sloop on the mooring, head to wind, main down, jib rolled away, made fast", async () => {
     const { ctx, scene, placed } = sceneCtx({ sailing: true });
     const { hull } = await layOut(ctx, "automerge:terrain");
     const d = scene.doc();
     expect(placed[0].world.position).toEqual(MOORING);
     expect(placed[0].world.rotation[1]).toBeCloseTo(headTo(WIND.from), 12);
     expect(d.objects[hull].traits["sailing.ship"]).toEqual({});
-    const aboard = Object.values(d.objects).filter((o) => o.traits?.["sailing.sail"] || o.traits?.["sailing.anchor"]);
-    expect(aboard.find((o) => o.traits["sailing.sail"]).traits["sailing.sail"]).toEqual({ raised: 0, sheet: 0.5 });
-    expect(aboard.find((o) => o.traits["sailing.anchor"]).traits["sailing.anchor"]).toEqual({ down: true, rode: RODE });
+    const station = (trait) => Object.values(d.objects).find((o) => o.traits?.[trait]).traits[trait];
+    expect(station("sailing.sail")).toEqual({ raised: 0, sheet: 0.5 });
+    expect(station("sailing.jib")).toEqual({ sheet: 0.5, held: null, furl: 1 });
+    expect(station("sailing.anchor")).toEqual({ down: true, rode: RODE });
+    // every station the layout sets, and nothing else of the sloop's
+    expect(Object.keys(AT_ANCHOR).sort()).toEqual(["sailing.anchor", "sailing.jib", "sailing.sail"]);
     // its own sea, not the part's default
     expect(d.traits["sailing.sea"].wind.from).toBe(WIND.from);
   });

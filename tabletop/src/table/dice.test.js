@@ -1,7 +1,7 @@
 // Dice, pure: which side is up, the rotation that rests a die on a side, and
 // a roll worked out from its seed.
 import { describe, it, expect } from "vitest";
-import { AXES, DEFAULT_FACES, eulerMatrix, faceUp, facesOf, matrixEuler, pivotOf, restingOn, rollPlan, seeded, upIn, ROLL_SKID } from "./dice.js";
+import { AXES, DEFAULT_FACES, eulerMatrix, faceUp, facesOf, matrixEuler, pivotOf, restingOn, rollPlan, upIn, ROLL_SKID } from "./dice.js";
 
 const near = (got, want, digits = 6) => got.forEach((v, i) => expect(v).toBeCloseTo(want[i], digits));
 const mulV = (m, v) => m.map((r) => r[0] * v[0] + r[1] * v[1] + r[2] * v[2]);
@@ -25,10 +25,11 @@ describe("a die's faces", () => {
 
 describe("which side is up", () => {
   it("Euler XYZ goes to a matrix and back", () => {
-    const rnd = seeded(7);
-    for (let i = 0; i < 50; i++) {
-      const r = [rnd() * 6 - 3, rnd() * 3 - 1.5, rnd() * 6 - 3];
-      const m = eulerMatrix(r);
+    // a grid: every angle at 0, the quarter turns (Y at ±π/2 is gimbal lock), and off them
+    const A = [-3, -Math.PI / 2, -1, 0, 0.7, Math.PI / 2, 3];
+    const Y = [-Math.PI / 2, -1.2, 0, 0.5, Math.PI / 2];
+    for (const x of A) for (const y of Y) for (const z of A) {
+      const m = eulerMatrix([x, y, z]);
       near(eulerMatrix(matrixEuler(m)).flat(), m.flat(), 9);
     }
   });
