@@ -1,0 +1,421 @@
+{
+  "version": 1,
+  "title": "Contessa 32",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 9.75,
+      "lwl": 7.3152,
+      "beam": 2.8956,
+      "bwl": 2.5793,
+      "tc": 0.6,
+      "draft": 1.6764,
+      "freeboard": 1.03,
+      "displacementKg": 4309.127515,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "masthead",
+    "mast": {
+      "aftOfStem": 3.95,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 11.30808,
+    "P": 9.7536,
+    "E": 3.048,
+    "BAS": 1.3,
+    "ISP": null,
+    "forestayAftOfStem": 0.0912,
+    "main": {
+      "roach": 0.143665,
+      "reefs": [
+        0.15,
+        0.3
+      ]
+    },
+    "headsail": {
+      "kind": "genoa",
+      "LP": 5.81,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 3.9,
+      "span": 1.1596,
+      "rootChord": 2.66,
+      "tipChord": 1.72,
+      "sweepDeg": 46,
+      "tc": 0.1,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "skeg",
+      "aftOfStem": 7.89,
+      "span": 0.75,
+      "rootChord": 0.99,
+      "tipChord": 0.5,
+      "sweepDeg": 40,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.7
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 2041.165665,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 80,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.mast.aftOfStem": "estimated",
+    "rig.forestayAftOfStem": "estimated",
+    "rig.BAS": "estimated",
+    "rig.main.reefs": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "appendages.rudder.stockFrac": "estimated",
+    "loading.crew.count": "estimated"
+  },
+  "sources": [
+    {
+      "id": "co32-brochure",
+      "what": "LOA 32 ft 9.75 m, LWL 24 ft 7.31 m, beam 9 ft 6 in, draft 5 ft 6 in, displacement 9500 lb 4300 kg, lead ballast 4500 lb 2045 kg, ballast ratio 47%; alloy mast stepped on the keel; the scaled inboard profile on p. 2 (scale bar 0–8 ft), measured for the mast, the keel, the skeg and the rudder",
+      "cite": "Jeremy Rogers Ltd, Contessa 32 brochure (1970s)",
+      "url": "https://www.jeremyrogers.co.uk/wp-content/uploads/2023/05/70s-Contessa-32-Brochure.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "15.94 px/ft by the scale bar (about 2 cm a pixel). Checks: hull length 31.56 ft (32.0), LWL 24.34 (24.0), draft 5.38 (5.50): ±2%, ±0.08 m at the mast and keel. Read off it: mast front 3.89 m aft of the stemhead (3.95 with the scale normalised to LOA; a third-party redraw reads 4.00); the keel's leading edge, a sharp-corner construction on a keel that blends into the hull, 3.86–3.94 m; trailing edge 6.52–6.62; chord 2.66 m at the hull, 1.72 at the bottom; span 0.90–1.11; leading edge swept 46°. Skeg root 7.89 m; skeg and rudder 0.99 m at the hull, the blade 0.50 at the bottom, 1.04 m below the waterline. The canoe body is 0.54–0.73 m deep at the keel's ends. The brochure's profile doesn't show the forestay."
+    },
+    {
+      "id": "fastnet-wolfson",
+      "what": "Table 1: displacement 10,112 lb, BM 3.34 ft, GM 3.10 ft, VCG −0.75 ft above the measured waterline (IOR measurement trim, no crew); maximum GZ 2.3 ft at 78°; angle of vanishing stability 156° (text) and 157° (conclusions)",
+      "cite": "Wolfson Unit Report No. 431, 'Stability conditions on Contessa 32 and 1976 Half Tonner' (November 1979), Annex 3A of the 1979 Fastnet Race Inquiry report (RYA / RORC), printed pp. 70–73",
+      "url": "https://www.blur.se/images/fastnet-race-inquiry.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "The Contessa 32 has an initial GM of 3.1ft, a maximum GZ value of 2.3ft at a heel angle of 78 degrees, and a heel angle of vanishing stability of 157degrees."
+    },
+    {
+      "id": "gob-co32",
+      "what": "I 37.10, J 12.20, P 32, E 10 ft (J.J. Taylor's); the MacBar Contessa 32's entry gives I 37.17, J 12.66, P 32.02, E 10.01 ft",
+      "cite": "Good Old Boat sail data (Sailrite), \"Contessa 32\" and \"MacBar Contessa 32\"",
+      "url": "https://goodoldboat.com/saildata/boat/macbar-contessa-32/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "co32-class",
+      "what": "Class rules: boom band 10 ft (3,048 mm), 32 ft (9,755 mm) above the gooseneck; spinnaker poles not over 12.67 ft (3,868 mm). Round the Island notes: mainsail 17 m², largest headsail 32 m² with LP 5.81 m, empty weight 4309 kg, sailing displacement 4600 kg",
+      "cite": "Contessa 32 Class Association, Class Racing Rules (version 3.6, 2022) and Round the Island Race notes",
+      "url": "https://www.co32.org/racing/round-the-island-race",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "keelindex-co32",
+      "what": "Ballast/displacement 47.37, D/L 306.79, capsize screening 1.8, hull speed 6.56 kn; SA/D 15.5 on 433 ft² (P 35.0, I 40.7 ft: the taller Canadian rig)",
+      "cite": "keelindex.com, Contessa 32 (reproduces sailboatdata's table)",
+      "url": "https://www.keelindex.com/boat/contessa-32",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "ncphrf",
+      "what": "PHRF base ratings: CAL 40 114 (dated 12/29/1988); Contessa 32 186 (3/16/2000)",
+      "cite": "NCPHRF Base Rating Report, YRA of San Francisco Bay, 1 September 2026 edition",
+      "url": "https://yra.org/wp-content/uploads/2026/09/ncphrf_baserates090126.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "A different list from the Alamo's: usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "The brochure's dimensions, with the stability of the Wolfson Unit's 1979 report compared in its own condition. J is the MacBar entry's 12.66 ft, which the class's 12.67 ft pole limit supports; the mast is read off the brochure's profile, and the forestay's tack is what is left.",
+    "figures": [
+      {
+        "id": "saD",
+        "label": "SA/D, designer's (UK rig)",
+        "value": 14.08,
+        "unit": "",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "gob-co32",
+        "work": "(½·32·10 + ½·37.10·12.66) / (9,500/64)^(2/3) = 394.84/28.04 = 14.08, worked here; keelindex's 15.5 is on the taller Canadian rig"
+      },
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 306.79,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "keelindex-co32",
+        "work": "(9,500/2240)/(0.01·24)³ = 4.2411/0.013824 = 306.8"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.47,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "co32-brochure",
+        "work": "4,500 / 9,500 = 0.4737 (the brochure prints 47%)"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 6.56,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-co32",
+        "work": "1.34·√24 = 6.565"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 1.8,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-co32",
+        "work": "9.5 / (9,500/64)^⅓ = 9.5/5.295 = 1.794"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 17,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "co32-class",
+        "roundTrip": "the roach is set so the main is the class's 17 m²"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 1.6764,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "co32-brochure",
+        "roundTrip": "the keel's span is solved so that the draft reaches the published 5 ft 6 in"
+      },
+      {
+        "id": "bmtM",
+        "label": "BMt (Wolfson, IOR trim)",
+        "value": 1.018,
+        "unit": "m",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "fastnet-wolfson",
+        "condition": "ior",
+        "roundTrip": "BWL is solved so that the synthetic hull's BMt is the Wolfson report's 3.34 ft"
+      },
+      {
+        "id": "gmM",
+        "label": "GM (Wolfson, IOR trim, no crew)",
+        "value": 0.9449,
+        "unit": "m",
+        "tol": {
+          "rel": 0.15
+        },
+        "source": "fastnet-wolfson",
+        "condition": "ior",
+        "estimatedInputs": true,
+        "work": "3.10 ft, with the VCG 0.75 ft below the measured waterline; ours from the mass roll-up (ballast in the keel, the lightship at mid-depth)"
+      },
+      {
+        "id": "gzMaxM",
+        "label": "Maximum GZ (Wolfson, IOR trim)",
+        "value": 0.701,
+        "unit": "m",
+        "tol": {
+          "rel": 0.15
+        },
+        "source": "fastnet-wolfson",
+        "condition": "ior",
+        "estimatedInputs": true,
+        "work": "2.3 ft at 78°"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Angle of vanishing stability (Wolfson, IOR trim)",
+        "value": 156,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "fastnet-wolfson",
+        "condition": "ior",
+        "estimatedInputs": true,
+        "work": "156° in the report's text, 157° in its conclusions; the Wolfson hull has a coachroof, the synthetic one a flat deck",
+        "knownGap": {
+          "measured": 137.4,
+          "ratchet": {
+            "abs": 3
+          },
+          "measuredOn": "2026-11-10",
+          "why": "ours is 137.4° against the Wolfson report's 156°: GM (−0.8%) and maximum GZ (+4%) agree, the far end of the curve doesn't. The synthetic hull has a flat deck where she has a coachroof, and its sections are super-ellipses, not her wineglass with the ballast deep in it"
+        }
+      }
+    ],
+    "conditions": {
+      "ior": {
+        "what": "The Wolfson report's condition: IOR measurement trim, 10,112 lb, no crew",
+        "displacementKg": 4586.726045,
+        "crew": {
+          "count": 0,
+          "kgEach": 80,
+          "mode": "none"
+        }
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 186,
+        "source": "ncphrf"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 3.95,
+          "status": "estimated",
+          "how": "read off the brochure's scaled profile: 3.89 m by its scale bar, 3.95 with the scale normalised to LOA, 4.00 on a third-party redraw",
+          "pm": 0.08
+        },
+        "keelLeAftOfStem": {
+          "value": 3.9,
+          "status": "estimated",
+          "how": "a sharp-corner construction on the same profile (the keel blends into the hull): 3.86–3.94 m on two drawings",
+          "pm": 0.1
+        },
+        "wlFwdAftOfStem": {
+          "value": 1.4445,
+          "status": "estimated",
+          "how": "the same profile, scale normalised to LOA"
+        }
+      },
+      "weight": "fair",
+      "why": "The mast, the forestay's tack and the keel are all read off an undimensioned brochure profile at about 2 cm a pixel (±2%, ±0.08–0.10 m each), her keel blends into the hull so its root is a construction, and sources give two J's (12.20 and 12.66 ft). Her stability check is the strong one: the Wolfson curve with its own inputs."
+    },
+    "disagreements": [
+      {
+        "what": "J",
+        "values": [
+          {
+            "value": "12.20 ft (J.J. Taylor)",
+            "source": "gob-co32"
+          },
+          {
+            "value": "12.66 ft (MacBar; the class's pole limit is 12.67 ft)",
+            "source": "gob-co32"
+          }
+        ],
+        "used": "12.66 ft",
+        "effect": "foretriangle 3.8% larger; with the mast read at 3.95 m the tack is 0.09 m aft of the stemhead (a redraw reads 0.17 ± 0.1)"
+      },
+      {
+        "what": "Angle of vanishing stability",
+        "values": [
+          {
+            "value": "156° (text)",
+            "source": "fastnet-wolfson"
+          },
+          {
+            "value": "157° (conclusions)",
+            "source": "fastnet-wolfson"
+          }
+        ],
+        "used": "156°"
+      },
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "9,500 lb",
+            "source": "co32-brochure"
+          },
+          {
+            "value": "10,112 lb (IOR trim)",
+            "source": "fastnet-wolfson"
+          },
+          {
+            "value": "4309 kg empty, 4600 kg sailing",
+            "source": "co32-class"
+          }
+        ],
+        "used": "9,500 lb in the doc (the published ratios are on it); the Wolfson figures at 10,112 lb"
+      },
+      {
+        "what": "SA/D",
+        "values": [
+          {
+            "value": "14.08 (UK rig, worked here)",
+            "source": "gob-co32"
+          },
+          {
+            "value": "15.5 (433 ft², the Canadian rig)",
+            "source": "keelindex-co32"
+          }
+        ],
+        "used": "14.08"
+      }
+    ],
+    "estimatedWhy": "BWL is solved from the Wolfson report's BM; Tc, freeboard and every fore-and-aft position are read off the brochure's profile. BAS is a guess from the class's gooseneck height above a keel-stepped mast's butt (2.795 m), ±0.2 m. The skeg and rudder are modelled as one skeg rudder of their combined planform."
+  }
+}

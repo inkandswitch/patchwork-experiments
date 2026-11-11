@@ -474,10 +474,10 @@ describe("New from… and the helpers", () => {
   };
   const status = () => element.querySelector(".helper-status");
 
-  it("lists the four published boats and the first guess", () => {
+  it("lists the published boats and the first guess", () => {
     cleanup = RigTool(fakeHandle(seeded()), element);
     const opts = [...element.querySelectorAll('[data-act="new-from"] option')].map((o) => o.value);
-    expect(opts).toEqual(["", "first-guess", "fixture:sloop-12m", "fixture:catalina-30", "fixture:j24", "fixture:laser-ilca7"]);
+    expect(opts).toEqual(["", "first-guess", "fixture:sloop-12m", "fixture:catalina-30", "fixture:j24", "fixture:laser-ilca7", "fixture:j70", "fixture:farr40", "fixture:soling", "fixture:folkboat", "fixture:cal40", "fixture:contessa32", "fixture:hr40c", "fixture:dinghy-470"]);
   });
 
   it("New from the Catalina 30: one change, her published figures read back, her estimated fields marked", () => {

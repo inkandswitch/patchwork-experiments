@@ -1,0 +1,461 @@
+{
+  "version": 1,
+  "title": "Hallberg-Rassy 40C",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 12.3,
+      "lwl": 11.74,
+      "beam": 4.18,
+      "bwl": 3.6,
+      "tc": 0.6,
+      "draft": 1.92,
+      "freeboard": 1.55,
+      "displacementKg": 11000,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 4.89,
+      "rakeDeg": 0,
+      "stepped": "deck",
+      "kgPerM": null
+    },
+    "I": 17.5,
+    "P": 16.3,
+    "E": 5.34,
+    "BAS": 1.8,
+    "ISP": null,
+    "forestayAftOfStem": 0.31,
+    "main": {
+      "roach": 0.176444,
+      "reefs": [
+        0.15,
+        0.3
+      ]
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 4.5883,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "fin",
+      "aftOfStem": 4.91,
+      "span": 1.326,
+      "rootChord": 2.04,
+      "tipChord": 1.59,
+      "sweepDeg": 27,
+      "tc": 0.113,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "spade",
+      "aftOfStem": 11.63,
+      "span": 1.18,
+      "rootChord": 0.45,
+      "tipChord": 0.19,
+      "sweepDeg": 16,
+      "tc": 0.12,
+      "maxDeg": 35,
+      "stockFrac": 0.2
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 3650,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 4,
+      "kgEach": 80,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.type": "estimated",
+    "rig.mast.aftOfStem": "estimated",
+    "rig.mast.stepped": "estimated",
+    "rig.I": "estimated",
+    "rig.P": "estimated",
+    "rig.E": "estimated",
+    "rig.BAS": "estimated",
+    "rig.forestayAftOfStem": "estimated",
+    "rig.main.reefs": "estimated",
+    "rig.headsail.LP": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "loading.crew.count": "estimated"
+  },
+  "sources": [
+    {
+      "id": "hr-40c",
+      "what": "Hull length 12.30 m, waterline at rest 11.74 m, beam 4.18, draught (empty standard boat) 1.92, displacement (empty standard boat) 11 t, keel weight 3.65 t, keel type lead on deep bilge, sail area with genoa jib 90.1 m², air draft 19.75 m, CE category A; triple-spreader Seldén rig",
+      "cite": "Hallberg-Rassy, HR 40C data sheet and brochure (HR40C-400-colour-2025.pdf)",
+      "url": "https://www.hallberg-rassy.com/yachts/hallberg-rassy-40c",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The builder publishes no I, J, P or E, no STIX and no handicap number."
+    },
+    {
+      "id": "hr-40c-section",
+      "what": "The builder's longitudinal section with a 0–2 m scale bar, measured for the mast, the forestay's tack, the boom band, the keel and the rudder",
+      "cite": "Hallberg-Rassy, HR 40C interior side view (1900 × 858 px)",
+      "url": "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40Cinteriorsideview.jpg",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "134.0 px/m by the scale bar. Checks: hull length 12.30 m (12.30 published); the waterline, not drawn, is placed 1.92 m above the keel's bottom and then reads 11.56 m long against 11.74 (−1.5%). Read off it: forestay tack 0.31 m aft of the stemhead; mast front 4.89 (a rendering in the brochure reads 4.85); boom band 5.34 m aft of the mast's aft face; keel at the hull 4.91–6.95 m, 1.59 m long above the bulb, 1.26 m deep, leading edge swept about 27°, the bulb 1.78 m long; rudder root 11.63 m, chords 0.45 and 0.19, span 1.18 (one of two canted blades, in projection). Fore and aft ±0.04 m; heights ±0.06 m. I (17.5 m) and P (16.3 m) are scaled off the brochure's perspective rendering, corrected by the published air draft: ±0.5 m."
+    },
+    {
+      "id": "hr-40c-vpp",
+      "what": "Frers' VPP output for design D1381: sailing displacement 11.6 t, draft 1.90 m, main 51.2 m², jib 41.5 m², true wind at the masthead; boat speeds by true wind speed and angle",
+      "cite": "Hallberg-Rassy, HR 40C boat speeds (Germán Frers, 'D1381 VPP Output')",
+      "url": "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40C-Boatspeeds.jpg",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "hr-40c-stability",
+      "what": "Frers' stability curve, righting moment (kgf·m) against heel, 'Full Load' and 'Light Ship' (their displacements are not printed): light ship 1307 at 5°, 2542 at 10°, 6272 at 30°, maximum 8502 at 66°, vanishing at 125.5°; full load vanishing at 122.3°",
+      "cite": "Hallberg-Rassy, HR 40C stability curve (Germán Frers), standard keel",
+      "url": "https://www.hallberg-rassy.com/fileadmin/data/yachts/hallberg-rassy_40C/downloads/HR40C-StabilityCurve.jpg",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Digitised from the image: about ±100 kgf·m and ±1°."
+    },
+    {
+      "id": "yacht-hr40c",
+      "what": "Wasserlinienlänge 11,74 m, Gewicht 11,0 t, Ballast/-anteil 3,65 t / 33 %, theoretische Rumpfgeschwindigkeit 8,3 kn, Großsegel 52,2 m², Rollgenua (110 %) 44,2 m²; twin rudders",
+      "cite": "YACHT, test of the Hallberg-Rassy 40C",
+      "url": "https://www.yacht.de/yachten/fahrtenyachten/yacht-test-die-neue-hr-40c-bewahrtes-gutes-noch-verbessert/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "Hull, weights, sail areas, the VPP and the stability curve are the builder's. Nothing about the rig's geometry is published: every rig dimension and every fore-and-aft position is read off the builder's section (I and P off a rendering). She is here for the VPP and the stability curve; her balance reading carries the least weight of the fleet.",
+    "figures": [
+      {
+        "id": "dL",
+        "label": "D/L",
+        "value": 189.2,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "hr-40c",
+        "work": "(11,000/1016.05)/(0.01·11.74/0.3048)³ = 10.826/0.05714 = 189.5, worked here from the builder's displacement and waterline (no source prints it)"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement",
+        "value": 0.33,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "yacht-hr40c",
+        "work": "3,650 / 11,000 = 0.3318"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 8.3,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "yacht-hr40c",
+        "work": "1.34·√38.52 = 8.317"
+      },
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 51.2,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "hr-40c-vpp",
+        "roundTrip": "the roach is set so the main is the VPP's 51.2 m² on an estimated P and E"
+      },
+      {
+        "id": "headsailM2",
+        "label": "Jib",
+        "value": 41.5,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "hr-40c-vpp",
+        "roundTrip": "LP is set so the jib is the VPP's 41.5 m² on an estimated I and J"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 1.92,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "hr-40c",
+        "roundTrip": "the keel's span is solved so that the draft reaches the builder's 1.92 m"
+      },
+      {
+        "id": "rm30KgM",
+        "label": "Righting moment at 30°, light ship, no crew",
+        "value": 6272,
+        "unit": "kg·m",
+        "tol": {
+          "rel": 0.25
+        },
+        "source": "hr-40c-stability",
+        "condition": "light",
+        "estimatedInputs": true,
+        "work": "digitised from Frers' curve (±100); the light ship's displacement isn't printed and is taken as the 11 t empty boat"
+      },
+      {
+        "id": "avsDeg",
+        "label": "Angle of vanishing stability, light ship",
+        "value": 125.5,
+        "unit": "°",
+        "tol": {
+          "abs": 10
+        },
+        "source": "hr-40c-stability",
+        "condition": "light",
+        "estimatedInputs": true,
+        "work": "digitised from Frers' curve (±1°)"
+      }
+    ],
+    "conditions": {
+      "light": {
+        "what": "The builder's empty standard boat, 11 t, no crew (taken as the stability curve's 'Light Ship', whose displacement isn't printed)",
+        "displacementKg": 11000,
+        "crew": {
+          "count": 0,
+          "kgEach": 80,
+          "mode": "none"
+        }
+      },
+      "vpp": {
+        "what": "Frers' VPP condition: sailing displacement 11.6 t (the crew is taken to be in it), sitting",
+        "displacementKg": 11600,
+        "crew": {
+          "count": 4,
+          "kgEach": 80,
+          "mode": "sitting"
+        }
+      }
+    },
+    "polar": {
+      "kind": "designer-vpp",
+      "source": "hr-40c-vpp",
+      "condition": "vpp",
+      "twsKn": [
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20
+      ],
+      "rows": {
+        "52": [
+          5.13,
+          6.22,
+          6.95,
+          7.3,
+          7.47,
+          7.6,
+          7.78
+        ],
+        "60": [
+          5.51,
+          6.63,
+          7.28,
+          7.61,
+          7.79,
+          7.91,
+          8.09
+        ],
+        "70": [
+          5.79,
+          6.89,
+          7.49,
+          7.84,
+          8.06,
+          8.2,
+          8.39
+        ],
+        "90": [
+          6.46,
+          7.44,
+          7.88,
+          8.13,
+          8.32,
+          8.5,
+          8.88
+        ],
+        "beatAngle": [
+          45.3,
+          43.5,
+          42.8,
+          41.7,
+          40.6,
+          40,
+          39.9
+        ],
+        "beatVmg": [
+          3.28,
+          4.05,
+          4.57,
+          4.9,
+          5.11,
+          5.24,
+          5.39
+        ]
+      },
+      "compare": {
+        "twsKn": [
+          8,
+          12,
+          16
+        ],
+        "twaDeg": [
+          52,
+          70,
+          90
+        ],
+        "beat": true
+      },
+      "tol": {
+        "rel": 0.08
+      },
+      "note": "The designer's VPP, not measured speeds: a check that two VPPs agree. Its true wind is at the masthead (19.75 m), the tool's at its own reference height. Downwind is with the A2 and is not compared.",
+      "pinned": {
+        "measuredOn": "2026-11-10",
+        "ratchetPoints": 2,
+        "ratchetDeg": 1.5,
+        "cells": {
+          "8kn 52°": 7,
+          "8kn 70°": 3.6,
+          "8kn 90°": -5.2,
+          "12kn 52°": 3.6,
+          "12kn 70°": 1.5,
+          "12kn 90°": -1.6,
+          "16kn 52°": 4.6,
+          "16kn 70°": 3,
+          "16kn 90°": 1.4,
+          "8kn beatVMG": 12.4,
+          "8kn beatAngle": -1.1,
+          "12kn beatVMG": 9.9,
+          "12kn beatAngle": -5.9,
+          "16kn beatVMG": 12.7,
+          "16kn beatAngle": -4
+        },
+        "why": "beat VMG 10–13% over Frers' VPP at every wind (she points 4–6° higher at 12 and 16 kn); reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
+      }
+    },
+    "balance": {
+      "phrf": null,
+      "real": {
+        "mastAftOfStem": {
+          "value": 4.89,
+          "status": "estimated",
+          "how": "read off the builder's section by its scale bar; a rendering reads 4.85",
+          "pm": 0.04
+        },
+        "keelLeAftOfStem": {
+          "value": 4.91,
+          "status": "estimated",
+          "how": "the same section; the root includes the deep-bilge sump",
+          "pm": 0.04
+        },
+        "wlFwdAftOfStem": {
+          "value": 0.04,
+          "status": "estimated",
+          "how": "the same section, the waterline placed from the draft (±0.2 m)"
+        }
+      },
+      "weight": "low",
+      "why": "I, J, P, E, BAS, the mast, the forestay's tack, the keel and the rudder are all estimates (20 of the fields the balance reads); I and P are ±0.5 m off a rendering. She has twin canted rudders, modelled as one blade in projection, and a keel whose root is a hull sump. The synthetic hull also puts her waterline's forward end 0.34 m aft of the stem where the drawing's is nearly plumb."
+    },
+    "disagreements": [
+      {
+        "what": "Sails",
+        "values": [
+          {
+            "value": "main 51.2, jib 41.5 m²",
+            "source": "hr-40c-vpp"
+          },
+          {
+            "value": "main 52.2, furling genoa (110%) 44.2 m²",
+            "source": "yacht-hr40c"
+          },
+          {
+            "value": "90.1 m² with the genoa jib",
+            "source": "hr-40c"
+          }
+        ],
+        "used": "the VPP's, which the polar is compared with"
+      },
+      {
+        "what": "Draft",
+        "values": [
+          {
+            "value": "1.92 m (empty)",
+            "source": "hr-40c"
+          },
+          {
+            "value": "1.90 m",
+            "source": "hr-40c-vpp"
+          }
+        ],
+        "used": "1.92 m"
+      }
+    ],
+    "estimatedWhy": "BWL is 0.86 of the beam, a proportion: nothing gives it, and the stability comparison hangs on it. Tc, freeboard and every rig and appendage dimension are read off the builder's section; I and P off a rendering. The keel's section is the one that makes 3,650 kg of lead on the drawn planform (its bulb is folded into the fin). The rudder is one of two."
+  }
+}
