@@ -1,8 +1,8 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>tabletop template probe</title>
-<!-- Driven by probes/publish-table.mjs --template <game> (?game=lost-cities
-     or santorini). The BUILT
+<!-- Driven by probes/publish-table.mjs --template <game> (?game=lost-cities,
+     santorini or dominoes-2: the template tabletop.<game>). The BUILT
      scene tool (scene/dist) with the BUILT tabletop and card-table plugins
      (tabletop/dist, card-table/dist: a secure deck) in a stub registry, on an
      in-memory repo, on an EMPTY scene (as the scene datatype's init makes
@@ -23,16 +23,23 @@
 </style>
 <div id="a"></div><div id="b"></div>
 <script type="module">
-import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
-import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
+import { PICKER, SEAT_TAG, cardIds, deckUrlOf, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 import * as lostCities from "../src/games/lost-cities.js";
 import * as santorini from "../src/games/santorini.js";
+import { dominoes } from "../src/games/dominoes.js";
 import { kindsUsed } from "../src/setup.js";
 import { gameFileKey } from "../src/table/template.js";
 
-const GAMES = { "lost-cities": lostCities, santorini };
+// each template's game, and the name its files are keyed by (the three
+// Draw Dominoes tables share one set: src/table/template.js)
+const GAMES = {
+  "lost-cities": { files: "lost-cities", game: lostCities },
+  santorini: { files: "santorini", game: santorini },
+  "dominoes-2": { files: "dominoes", game: dominoes(2) },
+};
 const gameId = new URLSearchParams(location.search).get("game") || "lost-cities";
 
 const errors = [];
@@ -70,7 +77,14 @@ const portable = (doc) =>
   }));
 
 try {
-  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  // each package's plugins registered from where it is published (?urls=,
+  // folder → its pushwork URL, from the driver), as the host registers a
+  // package: so the stage itself lists the packages the scene calls for and
+  // names the scene package as its suggested import, as it would for a person
+  const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
+  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"]]) {
+    registerPlugins((await import(path)).plugins, urls[dir]);
+  }
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -97,7 +111,19 @@ try {
   const deckUrl = () => deckUrlOf(objects());
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
   const game = {};
-  GAMES[gameId].fill(game);
+  GAMES[gameId].game.fill(game);
+  /** which seat's hand (a zone) a card lies in, by A's snapshot ("table" for none) */
+  const placeOf = (id) => {
+    const s = dbg.a.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return "table";
+  };
 
   window.__p = {
     errors, viewers: { a: ana.url, b: ben.url }, gameId,
@@ -107,7 +133,7 @@ try {
     /** choose a template on a view's start screen */
     start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
     /** the assets keys the game's every kind should be filed under */
-    expectedKeys: () => kindsUsed(game).map((k) => gameFileKey(gameId, k, game.pieces[k])),
+    expectedKeys: () => kindsUsed(game).map((k) => gameFileKey(GAMES[gameId].files, k, game.pieces[k])),
     doc: () => ({ title: scene.doc().title, view: scene.doc().view, assets: scene.doc().assets, traits: scene.doc().traits, count: Object.values(objects()).filter((o) => o.kind !== "group").length }),
     /** objects whose GLB isn't one of the scene's files, and objects that name a game as About */
     strays() {
@@ -118,6 +144,19 @@ try {
     /** how many cards the table has, and the keeper traits that bind them */
     cards: () => cardIds(objects()).length,
     keptBy: () => [...new Set(cardIds(objects()).map((id) => kept(objects()[id])?.trait ?? null))],
+    /** how many different slots of how many containers the cards are bound to */
+    slots: () => ({ slots: new Set(cardIds(objects()).map((id) => `${kept(objects()[id])?.by}#${kept(objects()[id])?.slot}`)).size, containers: new Set(cardIds(objects()).map((id) => kept(objects()[id])?.by)).size }),
+    /** the joint keeper's deck, as far as anyone can read it: its phase, what's under way, and how many times each card has been shuffled */
+    shuffle: () => { const d = deck(); return d ? { phase: d.phase ?? null, op: d.op ? d.op.pass ?? true : null, queue: d.queue?.length ?? 0, participants: d.participants?.length ?? 0, epochs: Object.values(d.epochs ?? {}).map(Number) } : null; },
+    /** how many hands (zones) the table has, one a seat */
+    zones: () => Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).length,
+    /** the cards lying in each seat's hand (a zone), and on the table */
+    where() { const out = { table: [] }; for (const id of cardIds(objects())) (out[placeOf(id)] ??= []).push(id); return out; },
+    /** what the scene calls for in a view's stage, who answers (each plugin with the package it came from), what the doc lists, and its suggested import */
+    packages(w) {
+      const i = dbg[w].packages.inspect();
+      return { answering: i.answering.map((p) => ({ id: p.id, importUrl: p.importUrl })), listed: i.listed, suggested: scene.doc()["@patchwork"]?.suggestedImportUrl ?? null };
+    },
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },

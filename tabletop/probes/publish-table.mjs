@@ -2,7 +2,7 @@
 // Two ways, the two ways a table is made:
 //
 //   node probes/publish-table.mjs [--sync wss://…] [--settle 8000] [--dry-run]
-//   node probes/publish-table.mjs --template lost-cities|santorini [--sync …] [--dry-run] [--show] [--shots <dir>]
+//   node probes/publish-table.mjs --template lost-cities|santorini|dominoes-2 [--sync …] [--dry-run] [--show] [--shots <dir>]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -29,10 +29,24 @@
 // - the view starts in play, and A is playing (a game with no seats, zones
 //   or hidden cards, Santorini, gives play nothing to run, so its doc
 //   writes no view.activity: A is in the editor, in the hand);
+// - A's stage lists the package of every plugin the scene calls for, each
+//   one this script states (PACKAGES), and names the scene package as the
+//   suggested import (the page registers each built package's plugins from
+//   its pushwork URL, as a host does, so the list is the stage's own);
 // - the deck is kept by the joint keeper (a secure-deck: card-table is
 //   installed), every card bound to it by that keeper's own trait;
 // - with A and B seated, the deck reaches phase "playing" and each hand's
-//   faces reach its player (8 each).
+//   faces reach its player (8 each);
+// - nothing failed to load (in either view, once B is there), and the page
+//   logged no errors.
+// What differs between games is data (TABLES, below), not branches. Draw
+// Dominoes for two (dominoes-2) deals nothing (each player draws), so for it:
+// - the table lays 2 seats, and the boneyard's 28 tiles are kept by the
+//   joint keeper on 28 slots of one container;
+// - with A and B seated, the first joint shuffle reaches every tile (each
+//   shuffled exactly once, nothing under way) and nothing is dealt: no
+//   tile in a rack, no face to either player;
+// - neither view veils a tile: all 28 are backs to both.
 // Then (unless --dry-run) it publishes the table as the template left it
 // (before anyone sat): its files, its deck and the scene, each made anew on
 // the server with the urls between them rewritten.
@@ -57,7 +71,7 @@ import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { containDecks, findSeats } from "../src/table/made-with.js";
-import { packageProblems, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
+import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
 
 // A published table names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -85,6 +99,24 @@ const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 
 const TEMPLATE = typeof args.template === "string" ? args.template : null;
+
+// What each template's table must be, for --template's checks:
+//   seats  how many seats it lays (0: nobody sits, nothing is shuffled)
+//   deck   what its hidden pieces' pile is called, and `piece` one of them
+//   count  how many pieces the deck keeps (null: not counted). Where it is
+//          counted, the first joint shuffle must reach every one, and
+//          neither view may veil one
+//   hand   how many faces reach each player once both sit (0: nothing is
+//          dealt, and no piece lies in a hand)
+const TABLES = {
+  "lost-cities": { seats: 2, deck: "deck", piece: "card", count: null, hand: 8 },
+  santorini: { seats: 0 },
+  "dominoes-2": { seats: 2, deck: "boneyard", piece: "tile", count: 28, hand: 0 },
+};
+if (TEMPLATE && !TABLES[TEMPLATE]) {
+  console.error(`no template ${JSON.stringify(TEMPLATE)}: one of ${Object.keys(TABLES).join(", ")}`);
+  process.exit(2);
+}
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo");
 await initSubduction();
@@ -215,7 +247,19 @@ async function fromTemplate(gameId) {
   for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
   const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
   const id = `tabletop.${gameId}`;
-  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
+  // where each built package is published (its pushwork URL), so the page
+  // registers its plugins from there, as a host does, and the stage lists
+  // the scene's packages itself
+  const urls = {};
+  for (const dir of ["scene", "tabletop", "card-table", "keep"]) {
+    try {
+      urls[dir] = pushworkUrl(dir);
+    } catch {
+      // not synced: its plugins come from nowhere, so a scene that needs them fails the packages check
+    }
+  }
+  const folderOf = (url) => Object.keys(urls).find((dir) => urls[dir] === url) ?? url;
+  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}&urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
   // b.stop() exits the process; this keeps it alive until the publish is done
   const done = (code) => b.stop(code);
   const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
@@ -246,22 +290,66 @@ async function fromTemplate(gameId) {
     const lands = tabled ? "play" : "edit";
     check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, in the hand`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && d.view?.tool === "hand", d.view);
     check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
+    // What the table needs is the stage's to say, not this script's: A's stage
+    // lists the package of every plugin the scene calls for (and of the
+    // template it ran) and names the scene package as the suggested import.
+    // Each must be one this script states, or the published table would ask
+    // for a package nobody said it uses.
+    const stated = PACKAGES.map((dir) => urls[dir]);
+    const listedAll = await until("packages('a') && ((k) => k.suggested !== null && k.answering.length > 0 && k.answering.every((p) => p.importUrl && k.listed.includes(p.importUrl)))(__p.packages('a'))", 10_000);
+    const pk = await P("packages('a')");
+    check(
+      `A's stage lists the package of every plugin the table calls for, each one of ${PACKAGES.join(", ")}, and names the scene package as its suggested import`,
+      listedAll && pk.listed.every((u) => stated.includes(u)) && pk.suggested === urls.scene,
+      { answering: pk.answering.map((p) => `${p.id} ← ${p.importUrl ? folderOf(p.importUrl) : "nowhere"}`), listed: pk.listed.map(folderOf), suggested: folderOf(pk.suggested), stated: PACKAGES }
+    );
     snapshot = await P("snapshot()");
     const seated = Object.keys(await P("seats()"));
-    if (seated.length) {
-      check("the deck is kept by the joint keeper (a secure-deck), every card bound by that keeper's trait", (await P("deckType()")) === "secure-deck" && (await P("keptBy()")).join() === "card-table.kept", { type: await P("deckType()"), traits: await P("keptBy()") });
+    const { seats = 0, deck, piece, count = null, hand = 0 } = TABLES[gameId];
+    check(`the table lays ${seats} seat${seats === 1 ? "" : "s"}`, seated.length === seats, seated);
+    if (seats) {
+      const type = await P("deckType()"), traits = await P("keptBy()"), cards = await P("cards()"), slots = await P("slots()");
+      const kept = type === "secure-deck" && traits.join() === "card-table.kept";
+      check(
+        count == null
+          ? "the deck is kept by the joint keeper (a secure-deck), every card bound by that keeper's trait"
+          : `the ${deck}'s ${count} ${piece}s are kept by the joint keeper (a secure-deck), each bound by card-table.kept to its own slot of one container`,
+        kept && (count == null || (cards === count && slots.slots === count && slots.containers === 1)),
+        { type, traits, cards, ...slots }
+      );
       check("A is told to pick a seat", await until("notices('a').includes('Pick a seat (top right) to play.')", 3000), await P("notices('a')"));
       await P("openB()");
-      check("B opens the table in play, and both pickers are up", await until("activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
+      check("B opens the table in play, and both pickers are up", await until(`activity('b') === 'play' && __p.picker('a') === ${seats + 1} && __p.picker('b') === ${seats + 1}`, 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
       await P(`pick('a', ${JSON.stringify(seated[0])})`);
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
-      const playing = await until("phase() === 'playing' && __p.faces('a').length === 8 && __p.faces('b').length === 8", 120_000);
-      check("the deck reaches phase playing, and each hand's 8 faces reach its player", playing, { phase: await P("phase()"), faces: { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length } });
+      // the first shuffle, done: every counted piece shuffled exactly once, by every seat, nothing under way
+      const shuffled = count == null ? "true" : `((s) => !!s && s.phase === 'playing' && s.op === null && s.queue === 0 && s.participants === ${seats} && s.epochs.length === ${count} && s.epochs.every((e) => e === 1))(__p.shuffle())`;
+      const playing = await until(`phase() === 'playing' && ${shuffled} && __p.faces('a').length === ${hand} && __p.faces('b').length === ${hand}`, 120_000);
+      const faces = { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length };
+      if (count == null) check(`the deck reaches phase playing, and each hand's ${hand} faces reach its player`, playing, { phase: await P("phase()"), faces });
+      else {
+        const where = await P("where()");
+        const zones = await P("zones()");
+        const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
+        check(
+          `the first joint shuffle reaches all ${count} ${piece}s (each shuffled once, by both players, nothing under way), and ${hand ? `each hand's ${hand} faces reach its player` : `nothing is dealt: no ${piece} in any of the ${seats} hands, no face to either player`}`,
+          playing && zones === seats && inHands === hand * seats,
+          { shuffle: await P("shuffle()"), faces, zones, where: Object.fromEntries(Object.entries(where).map(([at, ids]) => [at, ids.length])) }
+        );
+        // a veil is a piece kept from you; nothing on this table is kept from anyone who sits at it, so no view shows one
+        const shown = async () => Object.fromEntries(await Promise.all(["a", "b"].map(async (w) => [w, { faces: (await P(`faces('${w}')`)).length, veils: (await P(`veils('${w}')`)).length, backs: (await P(`backs('${w}')`)).length }])));
+        await until(`backs('a').length + __p.faces('a').length === ${count} && __p.backs('b').length + __p.faces('b').length === ${count}`, 10_000);
+        await sleep(500);
+        const now = await shown();
+        check(`neither view veils a ${piece}: each sees ${hand} faces and ${count - hand} backs`, ["a", "b"].every((w) => now[w].veils === 0 && now[w].faces === hand && now[w].backs === count - hand), now);
+      }
     }
     await sleep(500);
-    check("nothing failed to load", (await P("loading('a')")).errors === 0, await P("loading('a')"));
+    const views = seats ? ["a", "b"] : ["a"];
+    const loads = Object.fromEntries(await Promise.all(views.map(async (w) => [w, await P(`loading('${w}')`)])));
+    check(`nothing failed to load in ${views.length === 2 ? "either view" : "A's view"}`, views.every((w) => loads[w].errors === 0), loads);
     await shot("seated");
     const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
     check("no errors on the page", errors.length === 0, errors);
