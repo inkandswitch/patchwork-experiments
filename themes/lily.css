@@ -160,8 +160,8 @@
 	--syntax-link: var(--blue-crayola);
 	--syntax-style-link: underline;
 
-	--syntax-quote: var(--desaturated-purple-light);
-	--syntax-list: var(--cherries-line);
+	--syntax-quote: var(--text-editor-line);
+	--syntax-list: var(--text-editor-line);
 
 	--syntax-inserted: var(--mosque);
 	--syntax-deleted: var(--chili);

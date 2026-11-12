@@ -78,7 +78,7 @@
 	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
-	--syntax-quote: #c89a78;
+	--syntax-quote: var(--text-editor-line);
 
 	--syntax-inserted: var(--studio-added);
 	--syntax-deleted: var(--studio-deleted);

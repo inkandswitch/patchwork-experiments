@@ -147,8 +147,8 @@
 	--syntax-link: var(--sw-a2);
 	--syntax-style-link: underline;
 
-	--syntax-quote: var(--sw-ink-dim);
-	--syntax-list: var(--sw-a7);
+	--syntax-quote: var(--text-editor-line);
+	--syntax-list: var(--text-editor-line);
 
 	--syntax-inserted: var(--sw-a3);
 	--syntax-deleted: var(--sw-a6);

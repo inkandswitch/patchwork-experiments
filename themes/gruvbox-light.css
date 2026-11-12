@@ -82,8 +82,8 @@
 	--syntax-link: #076678;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #928374;
-	--syntax-list: #3c3836;
+	--syntax-quote: var(--text-editor-line);
+	--syntax-list: var(--text-editor-line);
 
 	--syntax-inserted: #79740e;
 	--syntax-deleted: #9d0006;
