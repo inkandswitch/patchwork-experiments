@@ -602,31 +602,18 @@ The costs:
 - **The acting occurrence can move** when a shallower path arrives, and a
   seated view moves with it.
 
-## Open questions for you
+## Decisions (2026-11-11)
 
-1. **A host never reads into what it contains.** The central trade of
-   nested stages: a boat's sim can't read a helm in a linked fit-out, and a
-   lever can't open a door in a linked level. The only couplings are space
-   and published frames. *Recommendation:* accept it. Section 2's A and B
-   buy that reach by making placement independence a matter of discipline;
-   in CAD, stations go in the assembly (example 2).
-2. **One activity per view, and edit stops at the focus.** Editing the boat
-   puts the game aboard in edit too. In edit only the focus hears input, so
-   acting inside a link means entering it, and the general parts restart on
-   Enter. *Recommendation:* yes: CAD's "edit component", and edit is
-   already the stage's default. An activity per stage would let you edit
-   the boat while the game is played, at the price of a second choice every
-   general part and I4 must take.
-3. **A piece set down outside its doc stays in its doc.** A card dropped on
-   the deck stays the game's: it moves when the table moves, and floats
-   aboard another ship. *Recommendation:* yes; move between docs with a bag
-   doc placed in both, until two direct moves are being built.
-4. **The private layer as a doc the view links** (section 10). It replaces
-   `own:` ids, `scene().own` and the presence guard, at the price of private
-   pieces never riding a public one and the private doc carrying its maker's
-   traits. *Recommendation:* yes, decided before the hiding work's steps 5
-   and 6 are built.
-5. **Seats out of `scene/`.** You let the shared seats part stand
-   (2026-11-11). With composition the stage reads nothing of it and the
-   walker hand-off goes through the arm stack. *Recommendation:* move seats,
-   the roster and `lay` to a `seats/` package; build step 4 waits on this.
+The five open questions were put to the project lead and answered:
+
+1. **A host never reads into what it contains.** Accepted. The only
+   couplings across a link are space and published frames.
+2. **One activity per view, and edit stops at the focus.** Accepted for now;
+   an activity per stage stays possible later.
+3. **A piece set down outside its doc stays in its doc.** Accepted. Moving
+   between docs goes through a container placed in both, until two direct
+   moves are being built.
+4. **The private layer is a doc the view links** (section 10). Accepted,
+   before the hiding work's steps 5 and 6 are built.
+5. **Seats leave `scene/`** for a `seats/` package, with the roster and
+   `lay`. Accepted; build step 4 goes ahead.
