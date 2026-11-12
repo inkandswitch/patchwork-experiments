@@ -30,14 +30,23 @@ const SHOT_MS = 110; // between shots
 const FOV = 75;
 const HIT_MS = 260; // how long the hit marker shows
 const FLASH_MS = 60; // how long a muzzle flash shows
+/** The keys play takes: walking, running and jumping (and Esc, to stop). Every other key goes on down the chain (the use prompt). */
+export const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
 
-/** The level's sky, haze and sun (the stage's atmosphere; STAGE.md). */
+/** The level's sky, haze and sun (the stage's atmosphere; STAGE.md): look "arena". */
 export const ATMOSPHERE = Object.freeze({
   sky: { top: "#5d8fc9", horizon: "#f0dcc0", bottom: "#d8c3a2" },
   fog: { color: "#ecd9bd", near: 45, far: 190 },
   // low and to one side: from a corner spawn, shadows fall across the view
   sun: { direction: [-0.6, 0.55, -0.5], color: "#ffe2bc", intensity: 2.6, shadows: true },
 });
+
+/**
+ * A level's looks, by its trait's `look`: "arena", the sky, haze and sun; "sky",
+ * the sky alone, for a level whose light is its own (baked into an imported
+ * map, say), where a sun would light nothing and haze would only fade it.
+ */
+export const LOOKS = Object.freeze({ arena: ATMOSPHERE, sky: Object.freeze({ sky: ATMOSPHERE.sky }) });
 
 const el = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -264,7 +273,7 @@ export default {
         now < hitUntil ? el("div", { class: "arena-hit" }) : null,
         el("div", { class: "arena-top" }, el("span", {}, `${standing} of ${targets.length} standing`), board.length ? scoreList : null),
         el("div", { class: "arena-ammo", "data-empty": ammo === 0 }, reloading ? "Reloading…" : `${ammo} / ${MAG}`),
-        el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · R reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · R reload · Esc stop"),
+        el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · Right-click reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · Right-click reload · Esc stop"),
         paused ? el("button", { type: "button", class: "arena-resume", onclick: () => resume() }, "Click to carry on") : null,
       );
     }
@@ -429,6 +438,8 @@ export default {
           },
           press(ev) {
             if (paused) return null; // the resume button takes it
+            // the other button reloads: no key of its own, so every key but walking's is the use prompt's
+            if (ev.button === 2) reload();
             if (ev.button !== 0) return shotSession;
             if (!ev.locked) return lookSession(ev);
             shoot();
@@ -437,16 +448,18 @@ export default {
           click: () => true,
           menu: () => true,
           wheel: () => true,
+          // only play's own keys: F, R, E and the rest go on to the use prompt (a door's Open, a die's Roll)
           key(ev) {
             if (ev.key === "Escape") {
               stop();
               return true;
             }
-            if (ev.code === "KeyR") reload();
+            if (!MOVE_KEYS.has(ev.code)) return false;
             keys.add(ev.code);
             return true;
           },
           keyup(ev) {
+            if (!keys.has(ev.code)) return false;
             keys.delete(ev.code);
             return true;
           },
@@ -522,7 +535,10 @@ export default {
       hud: () => [],
       // only a laid-out level has the arena's look (see the top): adding a
       // target to a boat writes the level trait too, but not its look
-      atmosphere: () => (scene?.d?.traits?.["arena.level"]?.look === "arena" ? ATMOSPHERE : null),
+      atmosphere: () => {
+        const look = scene?.d?.traits?.["arena.level"]?.look;
+        return typeof look === "string" && Object.hasOwn(LOOKS, look) ? LOOKS[look] : null;
+      },
       dispose() {
         stop();
         for (const t of tracers) disposeTracer(t);

@@ -1,0 +1,242 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>doom probe</title>
+<!-- Driven by probes/doom.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT arena, joints and doom plugins in a stub registry, on REAL Automerge
+     documents: two peers, each with its own replica of every doc
+     (probes/real-repo.js), a change reaching the other 25 ms later by a real
+     merge. A WAD file doc (the runner serves the WAD at /wad) waits in A's
+     repo for the runner to paste its URL into scene 1.
+       #a  view A (Ana) of scene 1, on peer a
+       #b  view B (Ben) of scene 1, on peer b
+       #c  a late joiner (Cy) of scene 1, on peer b: mounted by joinC()
+       #d  view A of scene 2, an empty scene a door is copied into, on peer a -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: grid; grid-template-columns: 820px 820px; grid-template-rows: 520px 420px; gap: 8px; }
+  #a, #b, #c, #d { position: relative; overflow: hidden; }
+</style>
+<div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+try {
+  // every build the map provider does, in either view (a part built twice is a rebuild)
+  const builds = [];
+  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../joints/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) {
+      if (p.type === "scene:source" && p.id === "doom-map") {
+        const load = p.load;
+        p.load = async () => {
+          const mod = await load();
+          return { ...mod, build: async (args) => { const t = performance.now(); const r = await mod.build(args); builds.push({ door: args.params.door ?? null, ms: Math.round(performance.now() - t), bytes: r.glb.byteLength }); return r; } };
+        };
+      }
+      getRegistry(p.type).register(p);
+    }
+  }
+  const net = twoPeers({ delay: 25 });
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const cy = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Cy" });
+  const t0 = performance.now();
+  const bytes = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
+  // the WAD as a file doc, as the scene's add makes one from a desktop file: nothing said of where it's from
+  const wad = await net.a.create2({ "@patchwork": { type: "file" }, name: "freedoom1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
+  const wadMs = performance.now() - t0;
+  const scene1 = { a: await net.a.create2(emptyScene({ title: "Doom probe", view: { ...DEFAULT_VIEW, grid: false, axes: false } })) };
+  scene1.b = await net.b.find(scene1.a.url);
+  const scene2 = await net.a.create2(emptyScene({ title: "Somewhere else", view: { ...DEFAULT_VIEW } }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c"), d: document.getElementById("d") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b; hosts.c.repo = net.b; hosts.d.repo = net.a;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url; hosts.c.viewerId = cy.url; hosts.d.viewerId = ana.url;
+  Tool(scene1.a, hosts.a);
+  Tool(scene1.b, hosts.b);
+  Tool(scene2, hosts.d);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug, d: hosts.d.querySelector(".scene-stage").__sceneDebug, c: null };
+  const docOf = (w) => (w === "d" ? scene2 : w === "a" ? scene1.a : scene1.b).doc();
+
+  // every change to a scene doc (as peer a has it), and which objects' transforms or slides it changed
+  const writes = { 1: [], 2: [] };
+  const watch = (h, list) => {
+    let last = JSON.parse(JSON.stringify(h.doc().objects));
+    h.on("change", () => {
+      const now = JSON.parse(JSON.stringify(h.doc().objects));
+      const moved = Object.keys(now).filter((id) => last[id] && (JSON.stringify(now[id].transform) !== JSON.stringify(last[id].transform) || JSON.stringify(now[id].traits?.["joints.slide"]) !== JSON.stringify(last[id].traits?.["joints.slide"])));
+      list.push({ at: Math.round(performance.now()), moved, slides: moved.map((id) => now[id].traits?.["joints.slide"]?.at ?? null) });
+      last = now;
+    });
+  };
+  // every pose message view A's peer sends for scene 1 (when, which object, its height, landed or put back)
+  const poses = [];
+  {
+    const send = scene1.a.broadcast.bind(scene1.a);
+    scene1.a.broadcast = (m) => {
+      if (m?.type && m.id && "transform" in m) poses.push({ at: Math.round(performance.now()), session: m.session, id: m.id, y: m.transform?.position?.[1] ?? null, landed: m.landed ? m.landed.position?.[1] : undefined, since: m.since });
+      return send(m);
+    };
+  }
+  watch(scene1.a, writes[1]);
+  watch(scene2, writes[2]);
+
+  // frame timing: requestAnimationFrame intervals and each view's render time
+  const frames = [];
+  let timing = false;
+  const tick = (t) => { if (timing) frames.push(t); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+
+  const rootOf = (w) => hosts[w].querySelector(".scene-stage");
+  window.__p = {
+    errors, wadMs, wadUrl: wad.url, builds,
+    /** what's under a page point in view w: { id, distance } */
+    pickAt: (w, x, y) => { const r = dbg[w].viewport.canvas.getBoundingClientRect(); const h = dbg[w].viewport.pick(x - r.left, y - r.top); return h && { id: h.id, distance: +h.distance.toFixed(3) }; }, scene1: scene1.a.url, scene2: scene2.url, viewers: { a: ana.url, b: ben.url, c: cy.url },
+    joinC() {
+      if (dbg.c) return;
+      Tool(scene1.b, hosts.c);
+      dbg.c = hosts.c.querySelector(".scene-stage").__sceneDebug;
+    },
+    doc: (w = "a") => JSON.parse(JSON.stringify(docOf(w))),
+    wadDoc: () => { const d = wad.doc(); return { name: d.name, origin: d.origin ? JSON.parse(JSON.stringify(d.origin)) : null, bytes: d.content?.byteLength }; },
+    find: async (url) => { const h = await net.a.find(url); return JSON.parse(JSON.stringify(h.doc(), (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v))); },
+    writes: (n = 1) => writes[n],
+    poses: (id) => poses.filter((p) => !id || p.id === id),
+    now: () => Math.round(performance.now()),
+    /** paste text into a view's stage, as ⌘V with that on the clipboard does */
+    paste(w, text) {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", text);
+      rootOf(w).dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    },
+    focus: (w) => rootOf(w).focus(),
+    focused: (w) => rootOf(w).contains(document.activeElement),
+    running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    available: (w) => dbg[w]?.local.get().activities?.available ?? [],
+    setActivity: (w, a) => dbg[w].local.swap((m) => ({ ...m, activity: a })),
+    status: (w) => JSON.parse(JSON.stringify(dbg[w]?.local.get().status ?? {})),
+    loaded(w) {
+      const os = Object.entries(docOf(w).objects ?? {}).filter(([, o]) => o.kind !== "group");
+      return { total: os.length, loaded: os.filter(([id]) => dbg[w]?.viewport.contentOf(id)?.loaded).length };
+    },
+    byName: (name, w = "a") => Object.entries(docOf(w).objects ?? {}).find(([, o]) => o.name === name)?.[0] ?? null,
+    /** where a view draws an object (world matrix translation), held poses included */
+    drawn: (id, w) => { const m = dbg[w]?.viewport.worldOf(id); return m && [m[12], m[13], m[14]].map((v) => +v.toFixed(4)); },
+    /** where the doc says it is (world) */
+    docWorld: (id, w = "a") => { const m = dbg[w].scene().world(id); return m && [m[12], m[13], m[14]].map((v) => +v.toFixed(4)); },
+    heldBy: (id, w) => dbg[w].presence.heldBy(id),
+    /** the other views' holds on an object as view w has them (for a report) */
+    holdsOn: (id, w) => [...(dbg[w].presence.remoteHolds().get(id)?.values() ?? [])].map((h) => ({ session: h.session, since: h.since, landed: h.landed?.position?.[1] ?? null, y: h.transform?.position?.[1] ?? null, samples: h.samples?.map((x) => [Math.round(x.at), x.transform?.position?.[1]]) ?? null })),
+    cam: (w) => dbg[w].viewport.getCamera(),
+    yawPitch(w) {
+      const c = dbg[w].viewport.getCamera();
+      const d = [c.target[0] - c.position[0], c.target[1] - c.position[1], c.target[2] - c.position[2]];
+      const l = Math.hypot(...d);
+      return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
+    },
+    canvasRect(w) { const r = dbg[w].viewport.canvas.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
+    rect(sel, w) {
+      const e = [...hosts[w].querySelectorAll(sel)].find((x) => x.getBoundingClientRect().width > 0);
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+    },
+    /** the context menu's item in view w whose label is `label`, to click (null: no menu, or no such item) */
+    menuItem(w, label) {
+      const e = [...hosts[w].querySelectorAll(".context-menu .menu-item")].find((x) => x.querySelector(".menu-label")?.textContent.trim() === label && !x.disabled);
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, ext: e.dataset.ext, command: e.dataset.command };
+    },
+    /** a visible button under `sel` in view w whose text is `label`, to click */
+    button(w, sel, label) {
+      const e = [...hosts[w].querySelectorAll(sel)].find((x) => x.textContent.trim() === label && x.getBoundingClientRect().width > 0 && !x.disabled);
+      if (!e) return null;
+      e.scrollIntoView({ block: "center" });
+      const r = e.getBoundingClientRect();
+      const h = hosts[w].getBoundingClientRect();
+      // clipped by its view: not clickable where it is
+      if (r.y + r.height / 2 < h.top || r.y + r.height / 2 > h.bottom || r.x + r.width / 2 < h.left || r.x + r.width / 2 > h.right) return { clipped: true, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    },
+    text: (sel, w) => [...hosts[w].querySelectorAll(sel)].map((e) => e.textContent.trim()).filter(Boolean),
+    /** the button of the Play | Edit switch for an activity */
+    switchRect(w, label) {
+      const b = [...hosts[w].querySelectorAll("button")].find((x) => x.textContent.trim() === label && x.getBoundingClientRect().width > 0);
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    },
+    /** an outline row's name, to click */
+    rowRect(w, id) {
+      const li = hosts[w].querySelector(`li.object-row[data-id="${id}"]`);
+      const e = li?.querySelector(".row-main") ?? li;
+      if (!e) return null;
+      e.scrollIntoView({ block: "nearest" });
+      const r = e.getBoundingClientRect();
+      return { x: r.x + Math.min(40, r.width / 2), y: r.y + r.height / 2 };
+    },
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    select: (w, id) => dbg[w].local.swap((m) => ({ ...m, selected: id })),
+    notices: (w) => (dbg[w].local.get().notices ?? []).map((n) => n.text),
+    project: (w, p) => { const q = dbg[w].viewport.project(p); const r = dbg[w].viewport.canvas.getBoundingClientRect(); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible }; },
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    stats: (w) => ({ ...dbg[w].viewport.stats }),
+    setCamera: (w, c) => dbg[w].viewport.setCamera(c),
+    /** show only view w (the others stop drawing), for timing one view's frames alone */
+    solo(w) { for (const k of ["a", "b", "c", "d"]) hosts[k].style.display = k === w ? "" : "none"; hosts[w].style.gridColumn = "1 / 3"; hosts[w].style.gridRow = "1 / 3"; },
+    atmosphere: (w) => JSON.parse(JSON.stringify(dbg[w].atmosphere() ?? null)),
+    /** frame timing over `ms`: rAF intervals (ms) and the render calls of view w */
+    async timeFrames(w, ms = 3000) {
+      frames.length = 0;
+      const slow0 = dbg[w].viewport.perf.slowFrames.length;
+      const f0 = dbg[w].viewport.stats.frames;
+      timing = true;
+      // keep it drawing: each frame asks for another
+      const keep = setInterval(() => dbg[w].viewport.invalidate(), 8);
+      await new Promise((r) => setTimeout(r, ms));
+      clearInterval(keep);
+      timing = false;
+      const d = frames.slice(1).map((t, i) => t - frames[i]).sort((a, b) => a - b);
+      const q = (p) => +(d[Math.min(d.length - 1, Math.floor(p * d.length))] ?? 0).toFixed(1);
+      return { frames: dbg[w].viewport.stats.frames - f0, intervals: d.length, median: q(0.5), p90: q(0.9), max: q(1), calls: dbg[w].viewport.stats.calls, triangles: dbg[w].viewport.stats.triangles, textures: dbg[w].viewport.stats.textures, slow: dbg[w].viewport.perf.slowFrames.slice(slow0).length };
+    },
+    /** fire a pointermove with movement at the canvas (what a locked mouse sends) */
+    nudge(w, dx, dy) {
+      const cv = dbg[w].viewport.canvas;
+      const r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse", clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, movementX: dx, movementY: dy }));
+    },
+    locked: () => !!document.pointerLockElement,
+    useText: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.textContent.trim()),
+    /** the avatars a view draws (arena's world layer) */
+    avatars(w) {
+      const out = [];
+      for (const g of dbg[w].viewport.layers.get("arena") ?? []) for (const c of g.children) if (c.isGroup) out.push(c.position.toArray().map((v) => +v.toFixed(2)));
+      return out;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

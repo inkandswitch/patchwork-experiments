@@ -229,7 +229,7 @@ describe("the arena's activities", () => {
   });
 
   it("brings what playing needs without the editor: keys, notices, and framing as the level loads", () => {
-    expect(byId("arena").requires).toEqual(["scene.keys", "scene.notices", "scene.autoframe"]);
+    expect(byId("arena").requires).toEqual(["scene.use", "scene.keys", "scene.notices", "scene.autoframe"]);
     expect(byId("arena.edit").requires).toBeUndefined();
   });
 
