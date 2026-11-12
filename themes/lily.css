@@ -154,7 +154,7 @@
 	--syntax-emphasis: var(--pizzazz-dark);
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--purple-heart);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--blue-crayola);

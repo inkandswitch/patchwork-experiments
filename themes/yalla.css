@@ -75,7 +75,7 @@
 
 	--syntax-namespace: var(--studio-secondary);
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--studio-link);

@@ -83,7 +83,7 @@
 	--syntax-emphasis: #4c4f69;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #8839ef;
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: #1e66f5;

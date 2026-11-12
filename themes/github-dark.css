@@ -77,7 +77,7 @@
 	--syntax-emphasis: #e6edf3;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #79c0ff;
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: #2f81f7;

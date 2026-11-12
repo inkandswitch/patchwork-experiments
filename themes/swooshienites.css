@@ -131,7 +131,7 @@
 	--syntax-emphasis: var(--sw-120);
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--sw-0);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--sw-210);
