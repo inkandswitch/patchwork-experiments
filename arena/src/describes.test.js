@@ -11,13 +11,13 @@ describe("arena: describes its traits", () => {
     expect(structuredClone(meta.describes)).toEqual(arena.describes);
   });
 
-  it("the level is a scene trait whose look can be the arena's; targets and spawns go on objects", () => {
+  it("the level is a scene trait whose look can be the arena's or a sky alone; targets and spawns go on objects", () => {
     const d = arena.describes;
     expect(d["arena.level"].on).toBe("scene");
     const look = d["arena.level"].fields.find((f) => f.key === "look");
     expect(look.kind).toBe("enum");
-    // play.js gives its atmosphere only for look === "arena"
-    expect(look.options.map((o) => o.value)).toEqual(["", "arena"]);
+    // play.js gives an atmosphere for each of these (LOOKS), and none for the scene's own
+    expect(look.options.map((o) => o.value)).toEqual(["", "arena", "sky"]);
     expect(d["arena.target"].on).toBe("object");
     expect(d["arena.spawn"].on).toBe("object");
     // a target's down and stand are not settings; who shot it is play state, which a copy leaves behind

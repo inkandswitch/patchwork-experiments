@@ -1,0 +1,21 @@
+{
+  "name": "@tiny-patchwork/joints",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "description": "Joints for scene objects: a slide that carries a part between two stops along an axis (a door, a drawer, a sliding hatch), opened with a verb, closing itself after a wait.",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "happy-dom": "^15.11.7",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}

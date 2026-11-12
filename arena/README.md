@@ -26,7 +26,7 @@ plugin registry by its traits.
 
 | trait | on | |
 |---|---|---|
-| `arena.level` | the scene | `{ look?: "arena" }`: the scene is a level. `look: "arena"` gives it the arena's sky, haze and low sun in play (the stage's atmosphere); without it the scene keeps its own |
+| `arena.level` | the scene | `{ look?: "arena" \| "sky" }`: the scene is a level. `look: "arena"` gives it the arena's sky, haze and low sun in play (the stage's atmosphere); `look: "sky"` the sky alone, for a level whose light is its own (an imported map with its light baked in: a sun would light nothing, and haze would only fade it); without either the scene keeps its own |
 | `arena.target` | an object | `{}` standing. Knocked over: `{ down: { by: <viewer>, at: <ms> }, stand: { rotation } }` |
 | `arena.spawn` | an object | `{}`: where players start, facing the way it faces |
 
@@ -58,8 +58,19 @@ Enter, the toolbar's Play, or the lobby's **▶ Play** starts: you're put on a
 spawn point (a random one; with none, above the middle of what's there) and
 the pointer is locked (where it can't be, drag to look). W A S D or the
 arrows move, Shift runs, Space jumps,
-a click shoots (12 in the magazine, R reloads), Esc stops. Falling out of the
-world respawns you.
+a click shoots (12 in the magazine, reloading when it's empty; a right-click
+reloads sooner), Esc stops. Falling out of the world respawns you.
+
+Play takes only those keys (`MOVE_KEYS` and Esc). Every other key, R
+included, goes on down the input chain to the use prompt (`scene.use`, which
+the arena requires before the key map), so whatever in the level has a verb
+on another key can be used while walking: look at a door within reach and
+press F to open it (the joints package's slide), at a die and press R to
+roll it. The prompt shows the verbs for what's in the middle of the view.
+A verb on one of the walking keys (W, A, S, D, Space, Shift: a bag's Draw on
+D, a pile's Shuffle on S) can't be used while walking: the walker has those.
+Which of two contributions gets a key they both want is the stage's
+question, not the arena's.
 
 Nothing in play knows about floors or walls: walking is two questions asked
 of the stage by ray (how far down to the ground, how far until something is
@@ -74,8 +85,9 @@ State lives where the scene's contract says:
 - sends: `shot { from, to }`, so peers see the tracer; nobody keeps them;
 - local: your body, keys and ammo.
 
-The extension `requires` the key map (Enter), notices and the camera framing
-the level as it loads. It brings no editor.
+The extension `requires` the use prompt (the verbs of what you look at), the
+key map (Enter), notices and the camera framing the level as it loads. It
+brings no editor.
 
 ## The level
 

@@ -143,6 +143,33 @@ describe("playing", () => {
     h.keyup({ key: "w", code: "KeyW" });
   });
 
+  it("takes only its own keys: every other key goes on to the use prompt", () => {
+    x.commands.find((c) => c.id === "play").run(null);
+    const h = f.calls.arms[0].handlers;
+    for (const code of ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]) expect(h.key({ key: code, code })).toBe(true);
+    // R too (a die's Roll, a sail's Raise): reloading is the other mouse button
+    for (const code of ["KeyF", "KeyR", "KeyE", "KeyQ", "KeyT", "KeyG", "Digit1", "Tab", "Enter"]) {
+      expect(h.key({ key: code, code })).toBe(false);
+      // and its keyup is not play's either
+      expect(h.keyup({ key: code, code })).toBe(false);
+    }
+    expect(h.keyup({ key: "w", code: "KeyW" })).toBe(true);
+  });
+
+  it("a level's look: the arena's sky, haze and sun; the sky alone; or the scene's own", async () => {
+    const { ATMOSPHERE, LOOKS } = await import("./play.js");
+    const at = (look) => {
+      x.update({ d: { traits: { "arena.level": look === undefined ? {} : { look } } }, objects: {} }, {}, {});
+      return x.atmosphere();
+    };
+    expect(at("arena")).toBe(ATMOSPHERE);
+    expect(at("sky")).toEqual({ sky: ATMOSPHERE.sky });
+    expect(LOOKS.sky.fog).toBeUndefined();
+    expect(at(undefined)).toBe(null);
+    // only the looks it has: not a name it merely inherits
+    for (const bad of ["nonsense", "constructor", "toString", "__proto__", "hasOwnProperty", 3, null]) expect(at(bad), String(bad)).toBe(null);
+  });
+
   it("a shot that hits a target knocks it down, scores it for you, and tells the others", () => {
     x.commands.find((c) => c.id === "play").run(null);
     f.api.raycast = (from, dir) => (dir[2] < -0.9 ? { id: "t1", point: [0, 1.4, -5], normal: [0, 0, 1], distance: 5 } : null);
@@ -201,6 +228,18 @@ describe("playing", () => {
     expect(f.calls.camera.length).toBeGreaterThan(cam0);
     // turned right: looking off -Z toward +X
     expect(c.target[0] - c.position[0]).toBeGreaterThan(0.3);
+  });
+
+  it("the other mouse button reloads (no key: R is the use prompt's)", () => {
+    x.commands.find((c) => c.id === "play").run(null);
+    const h = f.calls.arms[0].handlers;
+    const ammo = () => f.calls.overlay.querySelector(".arena-ammo")?.textContent;
+    h.press({ button: 0, locked: true });
+    expect(ammo()).toBe("11 / 12");
+    expect(h.key({ key: "r", code: "KeyR" })).toBe(false);
+    expect(ammo()).toBe("11 / 12");
+    h.press({ button: 2, locked: true });
+    expect(ammo()).toBe("Reloading…");
   });
 
   it("a refused lock plays on without it; a lost one pauses until it comes back", () => {

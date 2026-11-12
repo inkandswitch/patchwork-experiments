@@ -44,6 +44,7 @@ export const plugins = [
             options: [
               { value: "", label: "The scene's own" },
               { value: "arena", label: "Sky, haze and sun" },
+              { value: "sky", label: "Sky only (the level's light is its own)" },
             ],
           },
         ],
@@ -51,13 +52,16 @@ export const plugins = [
       "arena.target": { name: "Target", on: "object", blurb: "Can be shot down; counts toward the shooter's score", runtime: ["down"] },
       "arena.spawn": { name: "Spawn point", on: "object", blurb: "Where players start, facing the way it faces" },
     },
-    // playing brings no editor, so it says what it needs: Enter to play
-    // goes through the key map, notices, and the camera framing the level as
+    // playing brings no editor, so it says what it needs: the use prompt,
+    // for what's in the level to use (a door's Open: play takes only its own
+    // keys and passes the rest on, and the prompt is listed before the key
+    // map so it hears them first: STAGE.md, "The use prompt"); Enter to play
+    // goes through the key map; notices; and the camera framing the level as
     // it loads (a joiner's camera starts untouched, wherever the stage puts
     // it, which in an arena can be inside a wall). While playing, the game
-    // holds the camera and takes every input, so framing stands aside. Not
+    // holds the camera and the pointer, so framing stands aside. Not
     // scene.frame: Frame all and double-click to frame are editing's.
-    requires: ["scene.keys", "scene.notices", "scene.autoframe"],
+    requires: ["scene.use", "scene.keys", "scene.notices", "scene.autoframe"],
     async load() {
       return (await import("./play.js")).default;
     },
