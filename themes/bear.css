@@ -1,13 +1,18 @@
-/* Bear — the Bear app's default "Red Graphite": white paper, graphite ink
-   (#292c2e, hue 204°), and Bear red for the cursor, links and bullets. Greys are one cool graphite ramp, not neutral
+/* Bear — the Bear app's default "Red Graphite": white paper and graphite ink
+   (#292c2e, hue 204°), a dark graphite left column, and Bear red for the
+   cursor, links and bullets. Greys are one cool graphite ramp, not neutral
    grey; values follow seanwcom/Red-Graphite-for-Obsidian's derivation. */
 [theme="bear"] {
 	color-scheme: light;
 
+	/* Bear 2 sets in Bear Sans (a custom Clarika, not distributable), drawn
+	   to keep the geometric feel of Avenir Next, Bear 1's face */
+	--studio-family-sans: "Bear Sans", "Avenir Next", "Avenir", system-ui,
+		-apple-system, "Helvetica Neue", sans-serif;
+
 	/* red graphite: accent hsl(2 56% 54%), base hsl(204 6% 17%) ramp */
 	--bear-red: #cb4c48;
-	--bear-graphite: #292c2e; /* ink, and the sidebar */
-	--bear-graphite-2: #484d51; /* 30% */
+	--bear-graphite: #292c2e; /* ink */
 	--bear-muted: #71797f; /* 47% — text-muted */
 	--bear-faint: #8b9398; /* 57% — text-faint */
 	--bear-rule: #c9cdcf; /* 80% */
@@ -15,6 +20,19 @@
 	--bear-wash: #f7f7f8; /* 97% */
 	--bear-paper: #ffffff;
 	--bear-selection: #f5dbda; /* red at 20% on paper */
+
+	/* the dark column: the same graphite ramp, stepped up from the ink */
+	--bear-column: #292c2e; /* 17% */
+	--bear-column-2: #303436; /* 20% — hover */
+	--bear-column-3: #35393b; /* 22% — dividers, the filter well */
+	--bear-column-4: #3c4144; /* 25% — the selected row */
+	--bear-column-5: #43484c; /* 28% */
+	--bear-column-6: #545a5f; /* 35% */
+	--bear-column-ink: #dcdee0; /* 87% */
+	--bear-column-ink-2: #c9cdcf; /* 80% */
+	--bear-column-ink-3: #aeb3b7; /* 70% */
+	--bear-column-ink-4: #9ba2a6; /* 63% */
+	--bear-column-muted: #8b9398; /* 57% — icons, placeholders */
 
 	--bear-green: #5a9a4a;
 	--bear-orange: #c9761a;
@@ -24,8 +42,8 @@
 	--studio-fill: var(--bear-paper);
 	--studio-line: var(--bear-graphite);
 
-	/* Bear's toolbar and note list are paper, a hair off the editor; only its
-	   tag column is dark graphite, and the studio has no surface like that */
+	/* the toolbar is paper, a hair off the editor; the left column is Bear's
+	   dark graphite tag column (see the rule below) */
 	--studio-chrome-fill: var(--bear-wash);
 	--studio-chrome-line: var(--bear-graphite);
 
@@ -120,4 +138,83 @@
 	--syntax-changed: var(--bear-orange);
 
 	--syntax-content-separator: var(--bear-border);
+}
+
+/* Bear's dark graphite tag column, as the left sidebar. Sideboard and
+   threepane derive their offsets from the chrome at the root, so overriding
+   the fill alone wouldn't carry through: every derived value is set here. */
+[theme="bear"] :is(.sidebar[data-side="left"], .frame__tray-dock) {
+	/* the chrome ramp, for anything in the column that rides it */
+	--studio-chrome-fill: var(--bear-column);
+	--studio-chrome: var(--bear-column);
+	--studio-chrome-fill-offset-10: var(--bear-column-2);
+	--studio-chrome-fill-offset-20: var(--bear-column-3);
+	--studio-chrome-fill-offset-30: var(--bear-column-4);
+	--studio-chrome-fill-offset-40: var(--bear-column-5);
+	--studio-chrome-fill-offset-50: var(--bear-column-6);
+	--studio-chrome-offset-10: var(--bear-column-2);
+	--studio-chrome-offset-20: var(--bear-column-3);
+	--studio-chrome-offset-30: var(--bear-column-4);
+	--studio-chrome-offset-40: var(--bear-column-5);
+	--studio-chrome-offset-50: var(--bear-column-6);
+	--studio-chrome-line: var(--bear-column-ink);
+	--studio-chrome-line-offset-10: var(--bear-column-ink-2);
+	--studio-chrome-line-offset-20: var(--bear-column-ink-3);
+	--studio-chrome-line-offset-30: var(--bear-column-ink-4);
+	--studio-chrome-line-offset-40: var(--bear-column-muted);
+	--studio-chrome-line-offset-50: var(--bear-column-muted);
+	--studio-chrome-hover-fill: var(--bear-column-2);
+
+	/* threepane: the column, its footer and the tray */
+	--threepane-sidebar-fill: var(--bear-column);
+	--threepane-sidebar-fg: var(--bear-column-ink);
+	--threepane-sidebar-divider: var(--bear-column-3);
+	--threepane-sidebar-hover: var(--bear-column-2);
+	--threepane-sidebar-muted: var(--bear-column-muted);
+
+	/* sideboard: one graphite slab, no white card */
+	--document-list-fill: var(--bear-column);
+	--document-list-fill-offset: var(--bear-column-2);
+	--document-list-widget-fill: var(--bear-column);
+	--document-list-line: var(--bear-column-ink);
+	--document-list-line-offset-20: var(--bear-column-ink-3);
+	--document-list-widget-line: var(--bear-column-ink);
+	--sidebar-widget-line: var(--bear-column-ink);
+	--document-list-muted: var(--bear-column-muted);
+	--placeholder-line: var(--bear-column-muted);
+	--document-list-search-line: var(--bear-column-ink);
+	--document-list-border: var(--bear-column-3);
+	--document-list-border-strong: var(--bear-column-5);
+	--document-list-divider: var(--bear-column-3);
+	--document-list-toggle-hover: var(--bear-column-4);
+
+	/* the selected note: a lighter graphite row, not a red block */
+	--document-list-selection-fill: var(--bear-column-4);
+	--document-list-selection-line: var(--bear-paper);
+
+	--document-list-create-new-fill: var(--bear-column);
+	--document-list-create-new-line: var(--bear-column-ink);
+	--document-list-create-new-border-line: var(--bear-column-5);
+	--document-list-create-new-shadow-color: rgb(0 0 0 / 0.3);
+
+	--account-bar-fill: var(--bear-column);
+	--account-bar-line: var(--bear-column-ink);
+}
+
+/* the filter sits in a faint well so it reads as a field on the slab */
+[theme="bear"] .sidebar[data-side="left"] .document-list__filter {
+	background: var(--bear-column-3);
+}
+
+/* the account menu opens from the column but is a paper surface */
+[theme="bear"] .threepane-account-menu {
+	--threepane-sidebar-hover: var(--bear-border);
+	--threepane-sidebar-divider: var(--bear-border);
+}
+
+/* the left toggle sits over the column while it's open, over the toolbar
+   when it's closed */
+[theme="bear"] .frame__left-toggle[aria-pressed="true"] {
+	--threepane-toggle-fg: var(--bear-column-muted);
+	--threepane-sidebar-fg: var(--bear-column-ink);
 }
