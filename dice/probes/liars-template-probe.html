@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>liar's dice template probe</title>
+<!-- Driven by probes/publish-liars.mjs. The BUILT scene tool (scene/dist)
+     with the BUILT dice plugins (dist: cups, lots and the template) in a
+     stub registry, on REAL Automerge documents: two peers, A (Ana) and B
+     (Ben), each with its own replica of every doc (probes/real-repo.js), a
+     change reaching the other 25 ms later by a real merge. Each view's
+     broadcasts reach only the other. A opens an EMPTY scene (as the scene
+     datatype's init makes it) and starts it from the start screen's
+     "Liar's dice"; B opens it after (a view joins where the doc says).
+     The packages installed are exactly those the query names
+     (?scene=…&dice=…, each its pushwork url: the ones the publisher
+     states), each plugin registered with its package's URL as the host's
+     registry keeps it, so the stage lists the scene's packages and its
+     suggested import itself, from what the doc calls for. Nothing of keep's
+     is installed: a liar's dice table has no deck, and the dice's draws are
+     the dice package's own (dice.lots); a table that needed a package not
+     named would call for something nothing here answers (unanswered()). -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 700px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+/** A doc as JSON, its bytes as { $bytes: base64 }, so it can leave the page. */
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
+const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+
+try {
+  // the packages installed here are exactly the ones named in the query
+  // (?scene=<url>&dice=<url>: a folder, and its pushwork url), each one's
+  // BUILT plugins registered as the host's registry keeps them, with the
+  // URL it came from, so the stage lists the scene's packages itself
+  const named = [...new URLSearchParams(location.search)];
+  if (!named.length) throw new Error("no packages named (?scene=<url>&dice=<url>)");
+  for (const [name, importUrl] of named) {
+    if (!/^[a-z0-9-]+$/.test(name) || !/^automerge:[1-9A-HJ-NP-Za-km-z]+$/.test(importUrl)) throw new Error(`not a package and its url: ${name}=${importUrl}`);
+    const { plugins } = await import(`../../${name}/dist/index.js`);
+    for (const p of plugins) getRegistry(p.type).register({ ...p, importUrl });
+  }
+  const net = twoPeers({ delay: 25 });
+  window.repo = net.a;
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+  // an empty scene, as the scene datatype's init makes it
+  const sceneA = await net.a.create2(emptyScene());
+  const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(scene.a, hosts.a);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
+  const told = { a: [], b: [] };
+  const seen = { a: new Set(), b: new Set() };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
+  }, 20);
+  const objectsOf = (w) => scene[w].doc().objects ?? {};
+  const pieces = (w) => Object.entries(objectsOf(w)).filter(([, o]) => o.kind !== "group");
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, url: sceneA.url,
+    /** the start screen's choices in a view */
+    templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    /** where a template's button is on the page (its middle), if it is there and has a size */
+    template: (w, id) => { const r = rectOf(hosts[w].querySelector(`[data-template="${id}"]`)); return r && r.w > 0 ? r : null; },
+    openB() { if (!dbg.b) { Tool(scene.b, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
+    /** the doc as a view's replica has it, less its objects */
+    doc: (w) => { const d = scene[w].doc(); return plain({ title: d.title, view: d.view, assets: d.assets, packages: d.packages, patchwork: d["@patchwork"] }); },
+    /** what's on the table in a view's replica: cups (and how each was laid out), dice, everything (groups too) */
+    count(w) {
+      const o = Object.values(objectsOf(w));
+      const cups = o.filter((x) => x.traits?.["dice.cup"]);
+      return {
+        all: o.length,
+        cups: cups.length,
+        dice: o.filter((x) => x.traits?.["dice.die"]).length,
+        // lifted, nobody's, nothing shaken, no draw: as the template lays a cup out
+        freshCups: cups.filter((x) => { const c = x.traits["dice.cup"]; return c.up === true && c.blind === false && c.holder === null && c.roll === null && c.round === null; }).length,
+        names: o.map((x) => x.name).sort(),
+      };
+    },
+    /** objects whose GLB isn't one of the scene's files */
+    strays() {
+      const urls = new Set(Object.values(scene.a.doc().assets ?? {}).map((a) => a.url));
+      return pieces("a").filter(([, o]) => !urls.has(o.sourceUrl)).map(([id, o]) => `${id} (${o.name}): ${o.sourceUrl}`);
+    },
+    /** the scene's files that no object shows */
+    unshown() {
+      const shown = new Set(pieces("a").map(([, o]) => o.sourceUrl));
+      return Object.entries(scene.a.doc().assets ?? {}).filter(([, a]) => !shown.has(a.url)).map(([k, a]) => `${k}: ${a.url}`);
+    },
+    /**
+     * What A's doc calls for that nothing registered here answers (the
+     * stage's needs, scene/STAGE.md "Packages"): an object's provider with no
+     * scene:source of that id, a trait on the scene or an object that no
+     * scene:extension declares, a view.activity other than "edit" that no
+     * extension offers, a view.tool "<ext>:<name>" with no such extension.
+     * A table that needs a package not installed here has one.
+     */
+    unanswered() {
+      const list = (t) => getRegistry(t).filter(() => true);
+      const sources = new Set(list("scene:source").map((p) => p.id));
+      const exts = list("scene:extension");
+      const declared = new Set(exts.flatMap((p) => (Array.isArray(p.traits) ? p.traits : [])));
+      const d = scene.a.doc();
+      const out = [];
+      for (const k of Object.keys(d.traits ?? {})) if (!declared.has(k)) out.push(`the scene's trait ${k}`);
+      for (const o of Object.values(d.objects ?? {})) {
+        if (typeof o.providerId === "string" && o.providerId && !sources.has(o.providerId)) out.push(`${o.name}'s provider ${o.providerId}`);
+        for (const k of Object.keys(o.traits ?? {})) if (!declared.has(k)) out.push(`${o.name}'s trait ${k}`);
+      }
+      const act = d.view?.activity;
+      if (typeof act === "string" && act && act !== "edit" && !exts.some((p) => Array.isArray(p.activities) && p.activities.includes(act))) out.push(`view.activity ${act}`);
+      const tool = d.view?.tool;
+      if (typeof tool === "string" && tool.indexOf(":") > 0 && !exts.some((p) => p.id === tool.slice(0, tool.indexOf(":")))) out.push(`view.tool ${tool}`);
+      return out;
+    },
+    /**
+     * Each piece as a view has built it: not loaded yet, or loaded; a die's
+     * content must say it is a d6 (`extras.dice`, six faces), as the die
+     * GLB carries it.
+     */
+    built(w) {
+      const out = { pieces: 0, loaded: 0, dice: 0, diceRead: 0, notLoaded: [], unread: [] };
+      for (const [id, o] of pieces(w)) {
+        out.pieces++;
+        const c = dbg[w]?.viewport.contentOf(id);
+        if (c?.loaded) out.loaded++;
+        else out.notLoaded.push(o.name);
+        if (o.traits?.["dice.die"]) {
+          out.dice++;
+          const x = c?.extras?.dice;
+          if (c?.loaded && x?.shape === "d6" && x.faces?.length === 6) out.diceRead++;
+          else out.unread.push(o.name);
+        }
+      }
+      return out;
+    },
+    /** the scene's seats, as the doc has them */
+    seats: (w) => plain(scene[w].doc().traits?.["scene.seats"] ?? null),
+    /** the seat picker's choices in a view */
+    picker: (w) => [...(hosts[w].querySelector(".seats-pick")?.options ?? [])].map((o) => o.value),
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
+    notices: (w) => [...told[w]],
+    /** what a view is still loading, and what failed to load */
+    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length, failed: Object.entries(dbg[w].local.get().status ?? {}).filter(([, s]) => s?.state === "error").map(([k, s]) => `${k}: ${s?.message ?? s?.error ?? ""}`) }; },
+    /** do both replicas hold the same scene (the same heads)? */
+    same: () => scene.a.heads().join() === scene.b.heads().join(),
+    /** the table's docs as they are now in A's replica, to publish: the scene and its files */
+    snapshot() {
+      const urls = [sceneA.url, ...Object.values(scene.a.doc().assets ?? {}).map((a) => a.url)];
+      return { scene: sceneA.url, contacts: [ana.url, ben.url], docs: Object.fromEntries(urls.map((u) => [u, portable(net.a.handles.get(u).doc())])) };
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

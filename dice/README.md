@@ -734,6 +734,25 @@ moment (the merge ends with one holder whose lots are its shake's).
 node probes/liars-dice.mjs [--shots <dir>] [--show]
 ```
 
+`probes/publish-liars.mjs` (with `liars-template-probe.html`) publishes a
+Liar's dice table to a sync server, made as a person makes it: the BUILT
+scene and dice on an empty scene, Ana picks "Liar's dice" on the start
+screen, and it checks the table (6 cups, 30 dice, 14 files, six empty seats,
+in play, every piece built in both views, nothing failed, no errors, no doc
+named but its files and packages) before writing the files and then the
+scene, with `packages` (scene, dice) and the scene's `suggestedImportUrl`
+stated from each package's `pushwork url` (`probes/scene-packages.mjs`, the
+same in every package). The page installs exactly those packages, each
+plugin registered with its package URL, so the stage lists the packages
+itself: it fails, publishing nothing, if the table calls for anything they
+don't answer or the stage's list isn't exactly the stated one. It prints
+the scene's URL. `--dry-run` checks and publishes nothing.
+
+```sh
+(in scene/ and dice/) pnpm build
+node probes/publish-liars.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--show] [--shots <dir>]
+```
+
 ## Files
 
 | | |
@@ -764,4 +783,4 @@ node probes/liars-dice.mjs [--shots <dir>] [--show]
 | `src/ids.js` | the trait and provider ids |
 | `src/glb.js` | the GLB encoder, copied from the scene package (kit) |
 | `src/test/fakes.js`, `src/test/empty-scene.js` | a stand-in stage and an empty scene doc, for tests and the probe page (copied from tabletop's) |
-| `probes/` | the probes, and `cdp.mjs`, `chrome-guard.mjs`, `fake-repo.js`, `real-repo.js` and the stubs (copied, the same in every package) |
+| `probes/` | the probes, and `cdp.mjs`, `chrome-guard.mjs`, `fake-repo.js`, `real-repo.js`, `scene-packages.mjs` and the stubs (copied, the same in every package) |
