@@ -116,7 +116,7 @@ try {
 
   // ── the parts bin ──
   const bin = await P("binParts('a')");
-  check("the bin offers the Dice parts", J(bin) === J(["dice.die", "dice.d4", "dice.d8", "dice.d10", "dice.percentile", "dice.d12", "dice.d20", "dice.coin", "dice.plus-minus", "dice.doubling"]), bin);
+  check("the bin offers the Dice parts, then a cup and a pool", J(bin) === J(["dice.die", "dice.d4", "dice.d8", "dice.d10", "dice.percentile", "dice.d12", "dice.d20", "dice.coin", "dice.plus-minus", "dice.doubling", "dice.cup", "dice.pool"]), bin);
 
   // a d20 dragged onto the table
   let d20;

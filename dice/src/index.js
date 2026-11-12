@@ -7,6 +7,12 @@
 // read, turned to a face by hand and thrown with others (scene:extension
 // "dice"). The parts bin offers the usual dice under "Dice"; each makes a new
 // die doc.
+//
+// Cups (scene:extension "dice.cup", src/cup-extension.js): a cup covers the
+// dice under it, is shaken over them (a roll nobody chooses, drawn by lots),
+// peeked under by its holder, lifted, knocked over. A template lays out a
+// table of cup dice ("Liar's dice", src/table.js); the bin offers a cup with
+// its dice, and a pool.
 
 export const plugins = [
   {
@@ -69,6 +75,41 @@ export const plugins = [
       return (await import("./extension.js")).default;
     },
   },
+  {
+    // dice cups: who may see under each (an audience policy, so no `activities`: it holds while anyone edits),
+    // the dice under them shown as only their holder's client can know them, and the cup verbs in play
+    type: "scene:extension",
+    id: "dice.cup",
+    name: "Dice cups",
+    traits: ["dice.cup"],
+    describes: {
+      "dice.cup": {
+        name: "Dice cup",
+        on: "object",
+        blurb: "Covers the dice under it. In play: S shakes it over the dice in front of it (a roll nobody chooses), hold P to peek under your own, L lifts it",
+        fields: [
+          { key: "up", label: "Lifted", kind: "boolean", default: true },
+          { key: "blind", label: "Blind (kept from whoever shook it)", kind: "boolean", default: false },
+        ],
+        // who shook it and what's under it are about now: a copy starts as nobody's, with nothing shaken
+        runtime: ["holder", "roll"],
+      },
+    },
+    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"],
+    async load() {
+      return (await import("./cup-extension.js")).default;
+    },
+  },
+  {
+    type: "scene:template",
+    id: "dice.liars-dice",
+    name: "Liar's dice",
+    icon: "Dices",
+    description: "The traditional cup-dice game (dudo, cacho): six seats, a cup and five dice each, a pool for lost dice. Shake, peek, bid, call, lift",
+    async load() {
+      return (await import("./table.js")).liarsDice;
+    },
+  },
   // the usual dice, in the editor's parts bin (src/parts.js)
   ...[
     { id: "die", part: "d6", name: "Die", icon: "Dice5", description: "A six-sided die with spots, 16 mm. Its faces, shape and colours are its own document: open it to change them" },
@@ -91,4 +132,28 @@ export const plugins = [
       return (await import("./parts.js"))[part ?? id];
     },
   })),
+  // cups, after the dice: a cup with its dice, and a pool (src/table.js)
+  {
+    type: "scene:part",
+    id: "dice.cup",
+    name: "Dice cup",
+    icon: "CupSoda",
+    category: "Dice",
+    description: "A dice cup, 9 cm tall, with five dice in front of it: shake it over them, peek under it, lift it",
+    traits: ["dice.cup", "dice.die"],
+    async load() {
+      return (await import("./table.js")).cupPart;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "dice.pool",
+    name: "Dice pool",
+    icon: "Circle",
+    category: "Dice",
+    description: "A shallow dish for dice out of play",
+    async load() {
+      return (await import("./table.js")).poolPart;
+    },
+  },
 ];

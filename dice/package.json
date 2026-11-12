@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "main": "./dist/index.js",
-  "description": "Dice as documents: a die's shape and what each face shows are data, edited in a 2D panel, built at real size into any 3D scene, and rolled, read, turned by hand and thrown together there.",
+  "description": "Dice as documents: a die's shape and what each face shows are data, edited in a 2D panel, built at real size into any 3D scene, and rolled, read, turned by hand and thrown together there. Dice cups: shaken over dice for a roll nobody chooses, peeked under, lifted; and a table for the traditional cup-dice game.",
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
@@ -14,6 +14,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@automerge/automerge": "3.3.0-fragments.2",
     "@inkandswitch/patchwork-bootloader": "^0.3.2",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
     "happy-dom": "^15.11.7",

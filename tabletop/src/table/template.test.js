@@ -196,3 +196,35 @@ describe("in a real automerge change", () => {
     expect(Automerge.toJS(real)).toEqual(plain);
   });
 });
+
+describe("the Draw Dominoes templates", () => {
+  for (const n of [2, 3, 4]) {
+    it(`(${n} players) lay the felt, ${n} racks, ${n} seats and the 28 tiles face down, kept by a keeper whose players shuffle, in one change, in play`, async () => {
+      const { dominoes2, dominoes3, dominoes4 } = await import("./template.js");
+      const template = { 2: dominoes2, 3: dominoes3, 4: dominoes4 }[n];
+      const doc = emptyScene();
+      const { ctx, calls } = fakeDrop(doc, { registries: installed() });
+      await template.create(ctx);
+      expect(calls.changes).toBe(1);
+      // one file per kind, the tiles' shared between counts (the art is "dominoes")
+      for (const k of Object.keys(doc.assets)) expect(k).toMatch(/^tabletop\/dominoes\/[\w-]+@[0-9a-f]{8}$/);
+      const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
+      const tiles = objects.filter((o) => o.traits?.["tabletop.card"]);
+      expect(tiles).toHaveLength(28);
+      for (const o of tiles) {
+        expect(keptIn(o)).toMatchObject({ kind: "joint" });
+        expect(o.name).toBe("Domino");
+        expect(o.transform.rotation[2]).toBeCloseTo(Math.PI, 9);
+      }
+      expect(new Set(tiles.map((o) => keptIn(o).slot)).size).toBe(28);
+      expect(objects.filter((o) => o.traits?.["tabletop.zone"])).toHaveLength(n);
+      expect(Object.keys(doc.traits[SEATS])).toHaveLength(n);
+      expect(doc.view.activity).toBe("play");
+      const deck = calls.created.find((d) => d["@patchwork"].type === "t-joint");
+      expect(deck.items).toHaveLength(28);
+      expect(new Set(deck.items.map((i) => i.name)).size).toBe(28);
+      // the scene itself names no tile: every tile shows the one back
+      expect(new Set(tiles.map((o) => o.sourceUrl)).size).toBe(1);
+    });
+  }
+});

@@ -33,6 +33,7 @@ import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
 import { layOutTable } from "./template.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
+import { dominoes } from "../games/dominoes.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
 
@@ -202,3 +203,6 @@ export const token = part("token");
 export const cardSpot = part("card-spot");
 export const cardTable = part("table", { square: true });
 export const lostCities = gamePart("lost-cities", lostCitiesGame);
+export const dominoes2 = gamePart("dominoes", dominoes(2));
+export const dominoes3 = gamePart("dominoes", dominoes(3));
+export const dominoes4 = gamePart("dominoes", dominoes(4));

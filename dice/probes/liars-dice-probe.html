@@ -1,0 +1,196 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>liar's dice probe</title>
+<!-- Driven by probes/liars-dice.mjs. The BUILT scene tool (scene/dist) with
+     the BUILT dice (dist) and keep (keep/dist: lots) plugins in a stub
+     registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
+     each with its own replica of every doc (probes/real-repo.js), a change
+     reaching the other 25 ms later by a real merge. Each view's broadcasts
+     (presence, poses, sends) reach only the other. Both start on an empty
+     scene; the table comes from the start screen's "Liar's dice". -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 900px; height: 600px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
+import { faceOfSeed, seedFor } from "../src/roll.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+/** SHA-256 hex by WebCrypto: the probe's own, so the seed is checked by something other than the code that drew it. */
+const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../../keep/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const net = twoPeers({ delay: 25 });
+  window.repo = net.a;
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const sceneA = await net.a.create2(emptyScene({ title: "Untitled scene", view: { ...DEFAULT_VIEW } }));
+  const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(scene.a, hosts.a);
+  Tool(scene.b, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const told = { a: [], b: [] };
+  const seen = { a: new Set(), b: new Set() };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
+  }, 20);
+  confirm = () => true;
+  const objectsOf = (w) => scene[w].doc().objects ?? {};
+  const byName = (w, name) => Object.entries(objectsOf(w)).find(([, o]) => o.name === name)?.[0] ?? null;
+  const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+  const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
+  const lotsOf = (w) => dbg[w].host.instanceOf("keep.lots")?.lots ?? null;
+  /** The face a die is drawn showing in a view: its content root as drawn, against the world's +Y (the table is level, at the root). */
+  function drawnFace(w, id) {
+    const c = dbg[w].viewport.contentOf(id);
+    const faces = c?.extras?.dice?.faces;
+    if (!c?.loaded || !faces) return null;
+    c.root.updateWorldMatrix(true, false);
+    const m = c.root.matrixWorld.elements;
+    const s = Math.hypot(m[0], m[1], m[2]);
+    let best = -1, bestY = -Infinity;
+    faces.forEach((f, i) => { const y = (m[1] * f.up[0] + m[5] * f.up[1] + m[9] * f.up[2]) / s; if (y > bestY + 1e-9) { bestY = y; best = i; } });
+    return { face: best, label: faces[best].label };
+  }
+  /** Is it drawn at all in this view (its node and every ancestor visible)? */
+  function drawn(w, id) {
+    const c = dbg[w].viewport.contentOf(id);
+    if (!c?.root) return false;
+    for (let n = c.root; n; n = n.parent) if (n.visible === false) return false;
+    return true;
+  }
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url },
+    net: { stats: () => ({ ...net.stats }) },
+    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    play: (w) => { dbg[w].local.swap((m) => ({ ...m, activity: "play" })); return true; },
+    template: (w, id) => { const r = rectOf(hosts[w].querySelector(`.add-template[data-template="${id}"]`)); return r && r.w > 0 ? r : null; },
+    count: (w) => { const o = Object.values(objectsOf(w)); return { cups: o.filter((x) => x.traits?.["dice.cup"]).length, dice: o.filter((x) => x.traits?.["dice.die"]).length, lots: o.filter((x) => x.traits?.["keep.lots"]).length, all: o.length }; },
+    id: (w, name) => byName(w, name),
+    loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
+    allLoaded: (w) => Object.keys(objectsOf(w)).every((id) => dbg[w].viewport.contentOf(id)?.loaded),
+    /** the seat picker */
+    pick(w, sid) { const s = hosts[w].querySelector(".seats-pick"); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    seats: () => plain(scene.a.doc().traits?.["scene.seats"]),
+    running: (w) => dbg[w].local.get().running.map((r) => r.id),
+    packages: () => plain(scene.a.doc().packages),
+    cup: (w, id) => plain(objectsOf(w)[id]?.traits?.["dice.cup"]),
+    /** how far across the table an object is from its middle (m) */
+    fromMiddle: (w, id) => { const t = objectsOf(w)[id]?.transform; return t ? Math.hypot(t.position[0], t.position[2]) : Infinity; },
+    transform: (w, id) => plain(objectsOf(w)[id]?.transform),
+    round: (w, id) => plain(objectsOf(w)[id]?.traits?.["keep.lots"]?.round),
+    lots: (w, id) => { const s = lotsOf(w)?.state(id); return s ? plain({ id: s.id, by: s.by, phase: s.phase, seed: s.seed, public: s.public, contributors: s.contributors, members: s.members, asked: s.asked, sealers: s.sealers, waiting: s.waiting, protests: s.protests, fault: s.fault, draw: s.draw }) : null; },
+    /** the HUD lines every running extension gives this view now */
+    hudLines: (w) => ["keep.lots", "dice.cup"].flatMap((x) => dbg[w].host.instanceOf(x)?.hud?.() ?? []).map((l) => l.text),
+    /** run a verb in a view as its command (for what one keyboard can't do: two people at once) */
+    verb: (w, ext, cmd, id) => { const c = dbg[w].host.instanceOf(ext)?.commands?.find((c) => c.id === cmd); if (!c) return false; c.run(id); return true; },
+    /** can the hand pick it up in this view (every running extension's carryable) */
+    carryable: (w, id) => dbg[w].host.instanceOf("dice.cup")?.carryable?.(id) !== false,
+    /**
+     * A MODIFIED client's write, on replica `w`: a new lots attempt on the cup, as nobody honest writes it.
+     *   reroll: the same draw, asked by whoever asked it, the same members, nothing tried
+     *   hijack: the same draw as the cup's roll, asked by `w`'s viewer, sealed by `w`'s viewer alone
+     * Returns the new attempt's id.
+     */
+    async forge(w, id, kind) {
+      const o = objectsOf(w)[id];
+      const r = plain(o?.traits?.["keep.lots"]?.round);
+      const by = kind === "reroll" ? r.by : (w === "a" ? ana.url : ben.url);
+      const draw = kind === "reroll" ? r.draw : o.traits["dice.cup"].roll.draw;
+      const rid = "rforged" + Math.random().toString(16).slice(2, 10);
+      const nonce = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const commit = await sha(`keep.lots/commit/1|${rid}|${by}|${nonce}|`);
+      const members = [ana.url, ben.url].sort();
+      scene[w].change((d) => {
+        d.objects[id].traits["keep.lots"].round = { draw, id: rid, by, at: Date.now(), sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, tries: 0, excluded: [] };
+      });
+      return rid;
+    },
+    /** the seed, worked out here from the openings in the doc, by the protocol's formula, with WebCrypto */
+    async seedFromOpenings(w, id) {
+      const r = objectsOf(w)[id]?.traits?.["keep.lots"]?.round;
+      if (!r) return null;
+      const opens = Object.entries(plain(r.opens)).sort(([a], [b]) => (a < b ? -1 : 1));
+      return { contributors: opens.map(([v]) => v), seed: await sha(`keep.lots/seed/1|${r.id}|${opens.map(([v, n]) => `${v}=${n}`).join("|")}`) };
+    },
+    /** what each die of a cup's last shake must show, from a seed */
+    expected: (seed, n = 6, count = 5) => Array.from({ length: count }, (_, k) => faceOfSeed(seedFor(parseInt(seed.slice(0, 8), 16) >>> 0, k), n)),
+    drawnFace, drawn,
+    veiled: (w, id) => dbg[w].veils().has(id),
+    audience: (w, id) => plain(dbg[w].audience(id)),
+    /** the cup's content root turned from plain (a peek, in that view alone) */
+    tilted: (w, id) => { const r = dbg[w].viewport.contentOf(id)?.root; return !!r && Math.abs(r.quaternion.w) < 0.999; },
+    notices: (w) => [...told[w]],
+    tags: (w) => [...hosts[w].querySelectorAll(".label.dice-cup-tag")].map((e) => e.textContent.trim()),
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    heldVerbs: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb[data-held]")].map((e) => e.textContent.trim()),
+    hasFocus: () => document.hasFocus(),
+    cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.()),
+    whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: dbg[w].veils().has(id), look: plain(dbg[w].looks().get?.(id) ?? null) }; },
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rectOf(e) })),
+    hud: (w) => [...hosts[w].querySelectorAll(".hud, .scene-hud, [class*=hud]")].map((e) => e.textContent.trim()).filter(Boolean),
+    /** a page point over object `id` in view `w` (its middle, then spiralling out until a pick hits it) */
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const c = v.contentOf(id)?.box;
+      // (the box is the content's own, before its pose: its middle's height over the origin)
+      const p = m && v.project([m[12], m[13] + (c ? (c.min[1] + c.max[1]) / 2 : 0), m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+    debugAim(id, w) {
+      const v = dbg[w].viewport;
+      const m = v.worldOf(id);
+      const c = v.contentOf(id)?.box;
+      const p = c ? v.project([(c.min[0] + c.max[0]) / 2, (c.min[1] + c.max[1]) / 2, (c.min[2] + c.max[2]) / 2]) : null;
+      const hit = p && v.pick(p.x, p.y);
+      return { m: m && [m[12], m[13], m[14]], c, p, hit: hit && { id: hit.id }, rect: rectOf(v.canvas) };
+    },
+    pageOf(w, p) { const v = dbg[w].viewport; const r = v.canvas.getBoundingClientRect(); const q = v.project(p); return q && { x: r.left + q.x, y: r.top + q.y }; },
+    camera: (w) => plain(dbg[w].viewport.getCamera?.()),
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

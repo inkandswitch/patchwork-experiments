@@ -196,15 +196,42 @@ export function seedFor(seed, k) {
 
 /**
  * The randomness of a roll: one unsigned 32-bit seed, from which the whole
- * roll follows (rollPlan). Today it is this view's own draw, which the other
- * players take on trust. A fair seed, drawn jointly so that no one player
- * chooses it (commit and reveal among those at the table), will replace this
- * one function; nothing else about a roll needs to change.
+ * roll follows (rollPlan, settled). It comes from one of two places, and
+ * nothing else about a roll depends on which:
+ *
+ * - drawSeed(): this view's own draw, which the others take on trust. For a
+ *   die thrown in the open where nothing better is running.
+ * - lots: a seed the seated players' clients draw between them so that no
+ *   one of them chooses it (the `lots` convention; keep's "keep.lots"), as
+ *   64 hex digits; seedFromLots takes its first 32 bits. A cup's dice are
+ *   rolled this way (cup-extension.js), each die its own seed from it by its
+ *   place under the cup (seedFor), as dice thrown together are.
  */
 export function drawSeed() {
   const c = globalThis.crypto;
   if (c?.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0];
   return Math.floor(Math.random() * 2 ** 32) >>> 0;
+}
+
+/** A lots seed (64 hex digits) as a roll's seed: its first 32 bits; null if it isn't one. */
+export const seedFromLots = (hex) => (typeof hex === "string" && /^[0-9a-f]{64}$/.test(hex) ? parseInt(hex.slice(0, 8), 16) >>> 0 : null);
+
+/**
+ * A die that was shaken where nobody could see it, as it turns out to lie:
+ * the face its seed lands (faceOfSeed, as a throw's), turned to a heading
+ * drawn from the same seed, its middle where it is across the table, at
+ * rest on what it stands on. What a cup's dice are shown as once their seed
+ * is known, and written as when they're turned up.
+ * @returns {{ face: number, to: { position, rotation, scale } }}
+ */
+export function settled(built, seed, from) {
+  const n = built.faces.length;
+  const face = faceOfSeed(seed, n);
+  const theta = seeded(seed)() * 2 * Math.PI;
+  const s = Number(from.scale) || 1;
+  const c0 = middleAt(built, { ...from, scale: s });
+  const floor = floorUnder(built, from, s);
+  return { face, to: transformAt(built, [c0[0], floor + s * built.faces[face].rest, c0[2]], showing(built, face, theta), s) };
 }
 
 /** A column-major 4 × 4's scale (uniform): a parent's, to turn metres into its units. */

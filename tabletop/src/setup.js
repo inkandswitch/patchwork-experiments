@@ -27,7 +27,9 @@
 //   (`fileOf(kind)` → { url, hint }), with the kind's box as its load hint,
 //   and the game as its About (infoUrl) when there is a game doc.
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt
-//   onto the snap points of the pieces the deck deals to, the rest stacked.
+//   onto the snap points of the pieces the deck deals to, the rest stacked
+//   (or, for a deck that says `spread`, laid out face down in a jumble, as a
+//   boneyard of dominoes is: table/wash.js).
 //   In the scene each is its `back` piece (name, GLB, box) with the trait
 //   tabletop.card (a card: two-sided, piled, shuffled, drawn) and, written
 //   by writeTable, its keeper's trait naming a slot of the deck's container:
@@ -56,6 +58,7 @@
 //   opens in the editor, in the hand.)
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
+import { jumble } from "./table/wash.js";
 
 /** Where the i-th copy of a piece starts: a grid of `cols` from `at`, `gap` apart. [x, 0, z] */
 export function supplySpot(supply, i) {
@@ -234,6 +237,15 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
     // the rest in a stack, bottom first; face down is a half turn about the card's length
     const h = Number(backFile.bounds?.max?.[1]) || 0;
     const [ax, az] = deck.at ?? [0, 0];
+    if (deck.spread) {
+      // or spread out where it lies, as washing leaves tiles: a jumble of cells round `at`, each at a turn of its own
+      const b = backFile.bounds;
+      const reach = b ? Math.hypot(Math.max(Math.abs(b.min[0]), Math.abs(b.max[0])), Math.max(Math.abs(b.min[2]), Math.abs(b.max[2]))) : 0;
+      const spots = jumble(shuffled.length - next, { centre: [Number(ax), Number(az)], cols: deck.spread.cols, cell: Number(deck.spread.cell) || 0, reach, rng });
+      for (const s of spots) {
+        card(shuffled[next++], { position: [s.x, deck.faceDown ? h : 0, s.z], rotation: [0, s.yaw, deck.faceDown ? Math.PI : 0], scale: 1 });
+      }
+    }
     for (let j = 0; next < shuffled.length; j++) {
       card(shuffled[next++], {
         position: [Number(ax), +(j * h + (deck.faceDown ? h : 0)).toFixed(6), Number(az)],

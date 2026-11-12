@@ -16,11 +16,12 @@ describe("the dice package's plugins", () => {
     }
   });
 
-  it("are a datatype and a tool for die docs, a scene source for them, the dice extension, and the parts", () => {
+  it("are a datatype and a tool for die docs, a scene source for them, the dice and cup extensions, a template and the parts", () => {
     expect(of("patchwork:datatype").map((p) => p.id)).toEqual(["die"]);
     expect(of("patchwork:tool")).toMatchObject([{ id: "die", supportedDatatypes: ["die"] }]);
     expect(of("scene:source")).toMatchObject([{ id: PROVIDER, supportedDatatypes: ["die"] }]);
-    expect(of("scene:extension").map((p) => p.id)).toEqual(["dice"]);
+    expect(of("scene:extension").map((p) => p.id)).toEqual(["dice", "dice.cup"]);
+    expect(of("scene:template").map((p) => p.id)).toEqual(["dice.liars-dice"]);
     expect(new Set(plugins.map((p) => `${p.type}/${p.id}`)).size).toBe(plugins.length);
   });
 
@@ -31,6 +32,16 @@ describe("the dice package's plugins", () => {
     const ext = await of("scene:extension")[0].load();
     expect(ext.create).toBeTypeOf("function");
     expect(ext.drop).toBeTypeOf("function");
+    expect((await of("scene:extension")[1].load()).create).toBeTypeOf("function");
+    expect((await of("scene:template")[0].load()).create).toBeTypeOf("function");
+  });
+
+  it("the cup extension is an audience policy: no activities, so it holds whatever anyone is doing; who shook it and what's under it don't copy", () => {
+    const cup = of("scene:extension")[1];
+    expect(cup.traits).toEqual(["dice.cup"]);
+    expect(cup.activities).toBeUndefined();
+    expect(cup.describes["dice.cup"].runtime).toEqual(["holder", "roll"]);
+    expect(cup.requires.indexOf("scene.use")).toBeLessThan(cup.requires.indexOf("scene.keys"));
   });
 
   it("the extension runs for the die trait, in play and edit, lays out dropped die docs, describes its trait, and requires what playing needs, the use prompt before the key map", () => {
@@ -45,8 +56,11 @@ describe("the dice package's plugins", () => {
     expect(ext.requires.indexOf("scene.use")).toBeLessThan(ext.requires.indexOf("scene.keys"));
   });
 
-  it("the parts: Die first, then the usual dice, all under Dice, each bringing the die trait and loading a part", async () => {
-    const bin = of("scene:part");
+  it("the parts: Die first, then the usual dice, all under Dice, each bringing the die trait and loading a part; then a cup and a pool", async () => {
+    const all = of("scene:part");
+    expect(all.map((p) => p.id).slice(-2)).toEqual(["dice.cup", "dice.pool"]);
+    for (const p of all.slice(-2)) expect((await p.load()).create).toBeTypeOf("function");
+    const bin = all.slice(0, -2);
     expect(bin.map((p) => p.id)).toEqual(["dice.die", "dice.d4", "dice.d8", "dice.d10", "dice.percentile", "dice.d12", "dice.d20", "dice.coin", "dice.plus-minus", "dice.doubling"]);
     expect(bin[0].name).toBe("Die");
     for (const p of bin) {

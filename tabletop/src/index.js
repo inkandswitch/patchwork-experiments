@@ -121,6 +121,20 @@ export const plugins = [
       return await import("./games/lost-cities.js");
     },
   },
+  // Draw Dominoes, laid for as many as play (games/dominoes.js): a table
+  // whose players shuffle between them waits for every seat, so the count
+  // is chosen when it's set up
+  ...[2, 3, 4].map((n) => ({
+    type: "tabletop:game",
+    id: `draw-dominoes-${n}`,
+    name: `Draw Dominoes (${n} players)`,
+    icon: "Grid2x2",
+    players: String(n),
+    blurb: "A double-six set face down on the table: wash it, draw your tiles into your rack, play them face up in a line.",
+    async load() {
+      return (await import("./games/dominoes.js")).dominoes(n);
+    },
+  })),
   // the games' tables on an empty scene's start screen: one click lays the
   // table out in that scene, with its own art (src/table/template.js)
   {
@@ -143,6 +157,16 @@ export const plugins = [
       return (await import("./table/template.js")).santorini;
     },
   },
+  ...[2, 3, 4].map((n) => ({
+    type: "scene:template",
+    id: `tabletop.dominoes-${n}`,
+    name: `Draw Dominoes, ${n} players`,
+    icon: "Grid2x2",
+    description: `A double-six set face down on a felt, and a rack for each of ${n} players where your tiles stand facing you`,
+    async load() {
+      return (await import("./table/template.js"))[`dominoes${n}`];
+    },
+  })),
   // pieces for any table, in the editor's parts bin (src/table/parts.js)
   ...[
     { id: "pawn", name: "Pawn", icon: "PersonStanding", description: "A playing piece to move about the table" },
@@ -159,6 +183,15 @@ export const plugins = [
       tags: ["tabletop.game"],
       traits: ["tabletop.zone", "tabletop.card"],
     },
+    ...[2, 3, 4].map((n) => ({
+      id: `dominoes${n}`,
+      part: `dominoes-${n}`,
+      name: `Draw Dominoes, ${n} players`,
+      icon: "Grid2x2",
+      description: `The whole table for ${n}, set down where you put it: the felt, the boneyard face down, a rack each, and seats if the scene has none`,
+      tags: ["tabletop.game"],
+      traits: ["tabletop.zone", "tabletop.card"],
+    })),
   ].map(({ id, part, ...p }) => ({
     type: "scene:part",
     id: `tabletop.${part ?? id}`,

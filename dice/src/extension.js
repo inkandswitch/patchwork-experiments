@@ -41,6 +41,7 @@
 // keys are its own (STAGE.md, "Keys"). The stage has no general way to dock
 // a document's own tool, so this follows camber.shape's dock.
 
+import { cupsOf } from "./cup.js";
 import { DIE, PROVIDER } from "./ids.js";
 import { ROLL_SECONDS, ROLL_SKID, builtOf, drawSeed, faceUp, rollPlan, scaleOf, seedFor, turnTo } from "./roll.js";
 
@@ -79,11 +80,19 @@ function create(api) {
   /** Has this object's content arrived and turned out not to be a die's (the trait put on something else)? Then no verb applies to it. */
   const notADie = (id) => api.content?.(id)?.loaded === true && !builtFor(id);
   const inPlay = (local) => (local ?? api.local?.get?.())?.activities?.current === "play";
+  /** Dice a cup keeps (under one, or shaken and not yet turned up): what they show isn't the doc's to say, so nobody rolls, turns or reads them. */
+  const keptBy = new WeakMap();
+  const kept = (id, snap) => {
+    if (!snap?.objects) return false;
+    let c = keptBy.get(snap);
+    if (!c) keptBy.set(snap, (c = cupsOf(snap, (p) => (p && snap.world ? scaleOf(snap.world(p)) : 1)).cupOfDie));
+    return c.has(id);
+  };
 
   /** What a die shows in the doc: { face, label }, or null when it can't be read yet. */
   function shows(id, snap = api.scene()) {
     const o = snap?.objects?.[id];
-    const built = isDie(o) ? builtFor(id) : null;
+    const built = isDie(o) && !kept(id, snap) ? builtFor(id) : null;
     if (!built) return null;
     const face = faceUp(o.transform?.rotation ?? [0, 0, 0], built);
     return { face, label: built.faces[face].label };
@@ -157,7 +166,7 @@ function create(api) {
     return null;
   }
   /** Is this a die Roll applies to: not locked, and not one that's only ever turned by hand. */
-  const rollable = (id, snap) => isDie(snap.objects[id]) && !snap.objects[id].locked && !notADie(id) && builtFor(id)?.turnOnly !== true;
+  const rollable = (id, snap) => isDie(snap.objects[id]) && !snap.objects[id].locked && !notADie(id) && !kept(id, snap) && builtFor(id)?.turnOnly !== true;
 
   /** Roll's state for a target: a die, or a group of them. */
   function rollState(target, snap = scene, local) {
@@ -245,7 +254,7 @@ function create(api) {
   /** Turn's state: on any die that can be read. Its value is the face showing; its choices, every face. */
   function turnState(id, snap = scene) {
     const o = snap?.objects?.[id];
-    if (id == null || !isDie(o) || o.locked || notADie(id)) return null;
+    if (id == null || !isDie(o) || o.locked || notADie(id) || kept(id, snap)) return null;
     const built = builtFor(id);
     if (!built) return { disabled: true, title: "That die is still being made" };
     const face = faceUp(o.transform?.rotation ?? [0, 0, 0], built);
@@ -318,7 +327,7 @@ function create(api) {
     const s = api.scene();
     const items = itemsOf(type, data);
     // every die named must be a die here, and each only once
-    if (new Set(items.map((it) => it.die)).size !== items.length || !items.every((it) => isDie(s.objects?.[it.die]))) return;
+    if (new Set(items.map((it) => it.die)).size !== items.length || !items.every((it) => isDie(s.objects?.[it.die]) && !kept(it.die, s))) return;
     // the doc may have moved them already, since this view last looked
     for (const it of items) look(it.die, s.objects[it.die]);
     const w = { type, data, from };

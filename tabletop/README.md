@@ -8,7 +8,8 @@ to the board's spaces and stack on whatever is already there. Rules are a
 description for the players, not enforced.
 
 Make a Tabletop game and pick one to start from, or start an empty scene
-from **Lost Cities** or **Santorini** on its start screen (Templates, below):
+from **Lost Cities**, **Santorini** or **Draw Dominoes** on its start screen
+(Templates, below):
 
 - **Santorini** (Gordon Hamilton): an island board of 5×5 spaces, 22 / 18 / 14
   building levels, 18 domes, and two workers each for three players.
@@ -18,6 +19,18 @@ from **Lost Cities** or **Santorini** on its start screen (Templates, below):
   shuffled face down and dealt, 8 to each tray; pick your seat in the scene and
   only you see your hand's faces. Cards are drawn with boxes (seven-segment
   numbers), no textures.
+- **Draw Dominoes** (the traditional double-six draw game, for 2, 3 or 4;
+  the block game is the same set without drawing): the 28 tiles of a
+  double-six set, 50 × 25 × 9.5 mm, face down on a felt (the boneyard), and
+  a rack for each player where a tile stands on edge facing them: they see
+  its face, everyone else its back (as one stood up on the table in front of
+  them does: U, playing without a rack). Wash the boneyard (W), draw from it
+  (D) as often as you like, lay a tile flat (U) and carry it into the line face
+  up, Q / E to turn it (a double crosswise; the line turns at the felt's
+  edge by hand), and at the end lay your hand face up for everyone
+  (right-click). Nothing deals: 7 tiles each, or 6 with four, is the
+  players' to draw. The art (ivory tiles, black pips, a bar with a brass
+  spinner, a plain back) is drawn here from boxes and discs.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -29,11 +42,11 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `tabletop-game` | a game (listed) |
 | `patchwork:tool` | `tabletop-game` | its page: about, pieces, set up a table, the tables set up so far, the definition as JSON |
-| `tabletop:game` | `santorini`, `lost-cities` | games an empty tabletop-game can start from |
-| `scene:template` | `tabletop.lost-cities`, `tabletop.santorini` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
-| `scene:extension` | `tabletop` | what a table's pieces do: hands (private zones), cards, Shuffle and Draw (Tables, below) |
+| `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes-2`, `-3`, `-4` | games an empty tabletop-game can start from |
+| `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes-2`, `-3`, `-4` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
+| `scene:extension` | `tabletop` | what a table's pieces do: hands (private zones), cards, Shuffle, Draw, Wash, Stand on edge / Lay flat, Lay my hand face up (Tables, below) |
 | `scene:extension` | `tabletop.rule` | who may see what at a table, as the stage's `audience` policy: hands and face-up cards (Tables, below) |
-| `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.table`, `tabletop.lost-cities` | the editor's parts bin, under "Tabletop" (Parts, below) |
+| `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.table`, `tabletop.lost-cities`, `tabletop.dominoes-2`, `-3`, `-4` | the editor's parts bin, under "Tabletop" (Parts, below) |
 
 It registers no plugin type for decks and no deck datatype. Two things at a
 table are other packages', met only through the stage (scene/STAGE.md,
@@ -116,8 +129,8 @@ and nothing else.
 
 | trait | on | |
 |---|---|---|
-| `tabletop.zone` | an object | `{ seat, min: [x,y,z], max: [x,y,z] }`: a **hand**, a seat's private area: a box in the object's own frame. `seat` is a seat's id, as whoever owns seats names it |
-| `tabletop.card` | an object | `{}`: a **card**: two-sided (face up outside every hand it is shown to everyone), and in a pile it can be shuffled and drawn. What it really is, is its keeper's |
+| `tabletop.zone` | an object | `{ seat, min: [x,y,z], max: [x,y,z] }`: a **hand**, a seat's private area: a box in the object's own frame, whose +Z points toward its seat (where a tile stood in it faces). `seat` is a seat's id, as whoever owns seats names it |
+| `tabletop.card` | an object | `{}`: a **card**, or a **tile** (a domino): two-sided (face up outside every hand it is shown to everyone), and in a pile it can be shuffled and drawn, spread out face down it can be washed. What it really is, is its keeper's |
 
 **Copies.** The scene copies objects between scenes (and duplicates them in
 one); the traits' descriptions say what a copy takes (scene/STAGE.md,
@@ -133,8 +146,18 @@ things:
 | | the policy's answer |
 |---|---|
 | anything lying in a **hand** (its origin is), whichever way up | `{ show: [player], only: [player] }`: turned toward whoever sits in that seat, screened from everyone else. A hand nobody sits at: `{ show: [], only: [] }` |
-| a **card** lying **face up** outside every hand | `{ show: "all" }` |
+| a **card standing on edge** outside every hand, its face toward a hand | as if it were in that hand: `{ show: [player], only: [player] }` (nobody sat there: `{ show: [], only: [] }`) |
+| a **card** lying **face up** outside every hand (or standing, its face toward no hand, and turned up at all) | `{ show: "all" }` |
 | a card face down outside every hand; anything that isn't a card | nothing |
+
+Standing (`standingIn`) means its face (+Y) is nearer level than up or down
+in the frame it lies in: more than 45° from either, the same test as Stand
+on edge's. Toward a hand (`facing`) means: of every hand, the one the level
+way from it to the middle of that hand's box is nearest the level way its
+face looks, within 45°, so at most one; a tie goes to the nearer hand, then
+the lower seat id, then the lower hand id. That is a domino stood up on the
+table in front of you, with no rack: yours to see, its back to everyone
+else. Turn it round to face someone else and it's theirs, as it would be.
 
 Face up (`faceUpIn`) means its own +Y points the way the up of the frame it
 lies in does: its parent's +Y, the world's at the root. So a card on a table
@@ -151,8 +174,8 @@ policy, that comes to:
 
 | to you, a kept card is | when |
 |---|---|
-| its **face** | it's in your own hand (whichever way up), or face up on the table, and your client knows it |
-| its **back** (the object's own look) | it's face down on the table; or it's in **another seat's hand**, whichever way up: a hand is never turned toward you, and which back it is, is real information at a table with several decks; or its deck isn't dealt yet; or a package this scene lists isn't loaded here |
+| its **face** | it's in your own hand (whichever way up), or standing on the table facing your hand, or face up on the table, and your client knows it |
+| its **back** (the object's own look) | it's face down on the table; or it's in **another seat's hand**, whichever way up, or standing facing it: a hand is never turned toward you, and which back it is, is real information at a table with several decks; or its deck isn't dealt yet; or a package this scene lists isn't loaded here |
 | the **veil** (the stage's stand-in: a frosted, padlocked box the card's size) | it's turned toward you and not shown yet: yours or face up, its keys still on their way (a joint keeper); or face up behind something another package screens |
 
 Nothing is ever written to hide a card: the veil is drawn by the stage from
@@ -187,8 +210,9 @@ isn't offered Shuffle.
 
 **Draw** (`D` over a pile out on the table, on the use prompt; or *Draw to
 my hand* in its right-click menu; play only) takes the pile's top card into
-the first free card slot of your seat's tray: a connector tagged `card` with
-no card within half its snap radius. The card glides there as a pose hold, so
+the first free card slot of your seat's tray: a connector with one of the
+card's tags (`card`; a domino's, `domino`) with nothing of those within half
+its snap radius. The card glides there as a pose hold, so
 everyone sees it travel, and lands face up, turned the slot's way, in one
 write; the hand's rule then makes it yours alone to see (and a joint keeper's
 other players hand your client its key). Watching, it's greyed out ("Sit down to draw"); with
@@ -205,11 +229,68 @@ tray by hand, it turns face up against the tray as you see it (drawn), not
 where the doc last saved the ship. `probes/draw.mjs` checks it at a table
 whose deck the joint keeper keeps.
 
+**Washing** (`W` over a face-down tile spread out on the table, on the use
+prompt and the menu; `src/table/wash.js`) mixes the pieces lying face down
+round it, as hands sweep a boneyard about: it and every face-down piece of
+the same container lying out on the table (in nobody's hand, attached to
+the same thing, not stacked: a stack is Shuffle's, not held by a peer)
+within one and a half of its own length of the next. Their keeper shuffles
+what they are among themselves (a joint keeper: the seated players, so
+whoever washes knows no more than anyone else), and they are laid out
+again in one write, jumbled where they were: a grid of cells round their
+middle, each at a turn of its own, the cells wide enough that no two can
+touch however they're turned. Positions are public and say nothing.
+Anyone playing may wash, seated or not, as anyone at a table can reach in
+and stir the tiles (and as the hand lets anyone carry or flip them).
+**Shuffle** is offered only where there's a pile (a card lying alone has
+nothing to shuffle with).
+
+Wash, Stand on edge / Lay flat, Lay my hand face up and Draw are play's:
+in Edit they don't apply, by key or menu (Shuffle, as before, does in
+both).
+
+**Standing on edge** (`U`, use prompt, menu, inspector; `src/table/stand.js`)
+is for a piece thick enough to stand (its thinnest side at least a fifth of
+its middle one: a domino, never a card). Over one lying in your own hand it
+stands it on its long edge, its face toward you (the hand's +Z), turned as
+little as it can be from how it lay, resting where it was. Over one lying
+out on the table, when you're seated, it stands it facing the middle of your
+nearest hand, so it's yours to see and its back to the rest (the policy's
+`facing`): what playing without a rack is. Never in someone else's hand.
+Over one standing anywhere (yours, someone else's, or one knocked over on
+the table) it's **Lay flat**: face up, resting where it was; anyone can knock
+a tile over, and one in someone's hand stays in it, so stays theirs. A
+rack's places hold tiles standing (below), so a
+tile drawn with D arrives standing; one carried into your rack by hand turns
+face up as it arrives, as a card does, and U stands it.
+
+**Lay my hand face up** (the menu and inspector only, over your hand or
+anything in it, or a tile standing facing it: no key, so a slip doesn't show
+your hand) puts everything in that hand, and everything standing on the
+table facing it, out in front of it, past its far edge (its −Z), face up, side by
+side in the order it lay across the hand, in rows as wide as the hand,
+resting on whatever is there (a ray down; else level with the hand's foot).
+Outside every hand and face up, everyone sees it. Counting is the players'.
+
+**Places that hold a tile standing.** A card slot whose connector gives a
+whole frame (`snapPoints: [{ position, rotation: [x, y, z], tags }]`, Euler
+XYZ) holds what's drawn into it in that frame: a domino rack's places are
+a quarter turn about Y and then about X (face toward the rack's +Z, length
+along it). Draw puts the piece's footprint middle on the place and its
+underside on it, whatever its frame. The scene keeps only a connector's yaw
+when it reads a GLB (its hand needs no more to snap), so pieces.js writes the
+whole frames again under the GLB's extras `"tabletop.slots"`, and
+`src/table/slots.js` reads those where they are. A slot takes a piece by its
+tags: a domino's are `["domino"]`, a card's `["card"]`, so each fits only its
+own places, and Draw looks for a free one for the piece being drawn.
+
 **Telling the others.** When someone shuffles or draws, everyone else
 gets a notice ("Ana shuffled “Lost Cities table: Deck” (44)"), sent with the
 scene's `api.send`: only `shuffled { n, of }` (a count and the container's
-title) and `drew { n }` are heard, never which card is which. (Sitting down
-is told by the seats' owner.)
+title), `drew { n, noun? }`, `washed { n, of?, noun? }` and `showed { n,
+noun? }` are heard, never which card is which (`noun` is the piece's public
+name, "domino", where it isn't "card"). (Sitting down is told by the seats'
+owner.)
 
 What peers have to trust: these are a peer's word, and none is checked: "Ana
 shuffled the deck" may be said without any change to the deck. Nothing a
@@ -292,7 +373,9 @@ Deck = {
   faceDown?: boolean,
   secure?: boolean,                  // ask for a keeper whose players shuffle it between them (a joint
                                      // keeper, where one is installed; else a plain one)
-  deal?: { to: kind, count: number }[]   // dealt face up onto that piece's snap points, in order
+  deal?: { to: kind, count: number }[],  // dealt face up onto that piece's snap points, in order
+  spread?: { cols: number, cell: number }  // the undealt cards spread out round `at`, not stacked: a jumble of
+                                     // `cols` across, cells `cell` m apart, each at a turn of its own (a boneyard)
 }
 
 Piece = {
@@ -304,8 +387,9 @@ Piece = {
   back?: kind,                       // the piece hidden copies look like (same size; count 0)
   deck?: deckId,
   parts: Part[],                     // what it looks like: metres, Y up, standing on y = 0
-  snapPoints?: ([x, y, z] | { position: [x, y, z], yaw?: number, tags?: string[] })[],
+  snapPoints?: ([x, y, z] | { position: [x, y, z], yaw?: number, rotation?: [x, y, z], tags?: string[] })[],
                                      // spaces on it other pieces snap to (its own frame); a yaw turns them;
+                                     // a whole rotation (Euler XYZ) is the frame a drawn piece lies in there;
                                      // with tags, only pieces with one of them (["card"]: card slots)
   tags?: string[],                   // the tagged spaces its copies fit (["card"]); a hidden card has its back's
   snapRadius?: number,               // how close is close enough; absent = the scene's default
@@ -375,8 +459,11 @@ scene that can't), and its table opens in the editor, in the hand.
 
 ### Templates
 
-An empty scene's start screen offers **Lost Cities** and **Santorini**
-(`src/table/template.js`). One click lays the game's table out in that scene:
+An empty scene's start screen offers **Lost Cities**, **Santorini** and
+**Draw Dominoes** for 2, 3 or 4 (`src/table/template.js`). How many play is
+chosen there, since a table whose players shuffle between them (the joint
+keeper) waits for every seat to be taken; the three share one set of files
+(`tabletop/dominoes/<kind>@<hash>`). One click lays the game's table out in that scene:
 the game is made in memory from its module's `fill()`, each kind's GLB is filed
 with `ctx.file` (above), the deck docs are made, and then one change writes the
 table; the stage then starts its maker where the doc says (play, at Lost
@@ -413,6 +500,9 @@ The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
   view, home, units and title alone. So a game aboard a ship is three steps:
   start from *Ship at anchor* (sailing), drop a Card table in her cockpit,
   drop Lost Cities on the table; everything rides with her.
+- **Draw Dominoes, 2 / 3 / 4 players**: the same for Draw Dominoes. Its
+  table is about 1 m square (the felt is 0.74 m), wider than the Card
+  table's 0.76 m: with three or four players the side racks hang over.
 
 The Card table and Lost Cities square themselves to what they're put on:
 upright in its frame, turned only about its +Y (on a heeling deck they stand
@@ -434,7 +524,7 @@ are none.
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the datatype |
 | `src/tool.js`, `src/styles.css` | the game page |
-| `src/games/santorini.js`, `src/games/lost-cities.js` | the games: pieces, seats, decks, a summary of the rules |
+| `src/games/santorini.js`, `src/games/lost-cities.js`, `src/games/dominoes.js` | the games: pieces, seats, decks, a summary of the rules (`dominoes(players)` for 2, 3 or 4) |
 | `src/glyphs.js` | numbers made of boxes, for card faces |
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
@@ -449,7 +539,9 @@ are none.
 | `src/table/visibility.js` | who may see what: hands, cards, face up in the card's frame, as an `audience` answer (pure) |
 | `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, card table (their art, and putting one in), and Lost Cities as a part |
 | `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
-| `src/table/slots.js` | card slots: which connectors take a card, in the world (the hand's rule, copied; pure) |
+| `src/table/slots.js` | card slots: which connectors take a card (or a tile), in the world, with their whole frames where this package wrote them (the hand's rule, copied; pure) |
+| `src/table/wash.js` | washing: which face-down pieces are swept together, and the jumble they're laid out in (pure) |
+| `src/table/stand.js` | standing a piece on edge facing a way, laying it flat, resting where it was, and a hand laid out face up (pure) |
 | `src/table/test-scene.js` | for tests: a scene snapshot like the extension api's, from a plain objects map |
 | `probes/table-setup.js` | for the probe pages: a Lost Cities table set up as the game page does, and how a probe reads what the three packages put in the scene |
 | `probes/arrive.mjs`, `probes/arrive-probe.html`, `probes/arrive-frame.html`, `probes/frame-repo.js` | arriving by link with only the scene package: A (scene, tabletop, card-table) makes a table; B (scene only, in its own iframe and so its own plugin registry) opens its URL, is offered tabletop and card-table on the one packages card, sits without them (the deck stays undealt and no key is handed over: fail closed), clicks Load, and the joint shuffle completes and deals 8 each |
@@ -459,6 +551,7 @@ are none.
 | `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in for something that walks in first person: Sit as Player 1, Stand up, Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
 | `probes/table.mjs`, `probes/table-probe.html` | two players at a Lost Cities table whose deck a plain keeper keeps: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, a pawn dragged out of the bin; back in play with the hand |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, play, seats and the jointly kept deck reaching play with 8 faces each, and publish the table it made |
+| `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A lays two flat (U) and carries them into the line (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again; A carries a standing tile out of the rack onto the felt and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
 | `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (a watchdog; copied, the same in every package), and a finite check of it |
 | `probes/scene-packages.mjs` | for the publish script: the suggested import and `packages` of a published scene, from each package's pushwork URL (copied, the same in every package) |
 | `src/test/stand-ins.js` | for tests: stand-ins for whoever owns seats and for keepers, made the way the conventions say and naming no real package |
@@ -467,8 +560,15 @@ are none.
 
 ## Not yet
 
+- A tile carried out of your rack standing goes down standing: the scene's
+  `landing` can ask only for face up, so laying it flat to play it is U and
+  then a carry (or a carry and then U). A stage-level "lay flat as it lands"
+  would make it one move.
+- Scoring, turns, who sets the first double, matching ends: the players'.
+
 - `shows` and `screens` as separate switches on a hand (a screen that hides
-  without showing), and a "turned toward a seat" trait.
+  without showing). "Turned toward a seat" is geometric (`facing`: toward
+  a hand), not a trait; a seat with no hand can't be faced.
 - A deck document dropped on a table being laid out (gone with the deck
   plugin type; a keeper could offer it).
 - Santorini's god powers, as face-up cards.
