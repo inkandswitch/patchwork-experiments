@@ -376,6 +376,18 @@ const STEMHEAD = [0, sheerAt(HULL.bow) + 0.08, HULL.bow - 0.22];
 const mastStep = [0, deckAt(0, MAST_Z), MAST_Z];
 const gooseneck = [0, mastStep[1] + BOOM_HEIGHT, MAST_Z + 0.1];
 
+// The companionway: the way below, through the cabin's aft end from the
+// cockpit's forward end. Washboards close it (up from the sole to just under
+// the cabin top), and a sliding hatch covers the hatchway in the cabin top
+// above them. The hatch slides forward along the cabin top to open
+// (HATCH_TRAVEL, at a hand's pace), uncovering the hatchway. Each of its
+// boxes starts inside the crowned roof, not along it.
+const HATCHWAY = { half: 0.25, length: 0.6 };
+const HATCH_COVER = { half: 0.32, length: 0.82, height: 0.11 };
+/** How far the hatch slides forward to open (m), and how fast (m/s). */
+export const HATCH_TRAVEL = 0.55;
+export const HATCH_SPEED = 0.5;
+
 /** Where each part goes, in the hull's frame: { position, rotation (Euler XYZ, radians) }. */
 export const FIT = Object.freeze({
   mast: { position: mastStep, rotation: [0, 0, 0] },
@@ -387,6 +399,9 @@ export const FIT = Object.freeze({
   mainsheet: { position: [0, COCKPIT.floor, MAINSHEET_Z], rotation: [0, 0, 0] },
   // the port winch (the part); the starboard one is its mirror
   winch: { position: [-WINCH_X, deckAt(-WINCH_X, WINCH_Z), WINCH_Z], rotation: [0, 0, 0] },
+  // the companionway, its origin on the cockpit's sole at the cabin's aft end; its hatch's at the cover's aft edge, on the cabin top, shut
+  companionway: { position: [0, COCKPIT.floor, CABIN.z1], rotation: [0, 0, 0] },
+  hatch: { position: [0, CABIN.top - 0.01, CABIN.z1 + 0.02], rotation: [0, 0, 0] },
 });
 
 /**
@@ -402,11 +417,12 @@ export const STAND = Object.freeze({
   ladder: FIT.ladder.position,
   mainsheet: FIT.mainsheet.position,
   winches: FIT.winch.position,
+  companionway: FIT.companionway.position,
 });
 export const LIFT = Object.freeze({ wheel: WHEEL_AXLE - COCKPIT.floor });
 
 /** The connector tag each part's stand takes (parts.js gives the parts the same). */
-export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet", winch: "sailing.winch", winches: "sailing.winch" });
+export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder", mainsheet: "sailing.mainsheet", winch: "sailing.winch", winches: "sailing.winch", companionway: "sailing.companionway", hatch: "sailing.hatch" });
 
 /**
  * A jib winch's sailing.winch trait on one side (−1 port, +1 starboard):
@@ -679,11 +695,9 @@ function deckMeshes(zs) {
   }
   prims.push(prim(ports, PAINT.glass, { roughness: 0.15, metallic: 0.2 }));
 
-  // the companionway: washboards in the cabin's aft end, and its sliding hatch
+  // the forehatch (the companionway, with its sliding hatch, is a part of its own: companionwayMeshes)
   const hatch = new Shape();
-  box(hatch, [-0.27, COCKPIT.floor, CABIN.z1 - 0.12], [0.27, CABIN.top - 0.04, CABIN.z1 + 0.015]);
-  // the hatches' boxes start inside the crowned roof, not along it
-  box(hatch, [-0.32, CABIN.top - 0.01, 1.15], [0.32, CABIN.top + 0.1, CABIN.z1 + 0.02]);
+  // its box starts inside the crowned roof, not along it
   box(hatch, [-0.35, CABIN.top - 0.01, -0.75], [0.35, CABIN.top + 0.1, -0.15]);
   prims.push(prim(hatch, PAINT.teakDark, { roughness: 0.7 }));
 
@@ -1068,6 +1082,33 @@ function mainsheetMeshes() {
 }
 
 /** A boarding ladder, hooked over the gunwale (its origin) and hanging down the starboard side (+X) into the water. */
+/**
+ * The companionway, in its own frame (origin on the cockpit's sole at the
+ * cabin's aft end, FIT.companionway): the washboards across the opening, and
+ * the hatchway in the cabin top above, dark, which the hatch covers when shut.
+ */
+function companionwayMeshes() {
+  const y0 = FIT.companionway.position[1];
+  const boards = new Shape();
+  box(boards, [-0.27, 0, -0.12], [0.27, CABIN.top - 0.04 - y0, 0.015]);
+  const hole = new Shape();
+  box(hole, [-HATCHWAY.half, CABIN.top - 0.01 - y0, -HATCHWAY.length], [HATCHWAY.half, CABIN.top + 0.06 - y0, 0.01]);
+  return [{ name: "Companionway", primitives: [prim(boards, PAINT.teakDark, { roughness: 0.7 }), prim(hole, PAINT.iron, { roughness: 0.9 })] }];
+}
+
+/** The companionway's connectors: where its hatch goes, in its frame (the hand snaps a hatch there). */
+function companionwayConnectors() {
+  const at = FIT.hatch.position.map((v, i) => Math.round((v - FIT.companionway.position[i]) * 1e9) / 1e9 + 0);
+  return [{ position: at, rotation: [0, 0, 0], tags: [TAGS.hatch] }];
+}
+
+/** The hatch: a sliding cover, in its own frame (origin at its aft edge, on the cabin top, FIT.hatch); it reaches forward (−Z). */
+function hatchMeshes() {
+  const cover = new Shape();
+  box(cover, [-HATCH_COVER.half, 0, -HATCH_COVER.length], [HATCH_COVER.half, HATCH_COVER.height, 0]);
+  return [{ name: "Hatch", primitives: [prim(cover, PAINT.teakDark, { roughness: 0.7 })] }];
+}
+
 function ladderMeshes() {
   const wood = new Shape();
   const bottom = -sheerAt(LADDER_Z) - 0.95;
@@ -1231,6 +1272,8 @@ const PARTS = {
   mainsheet: { name: "Mainsheet", meshes: mainsheetMeshes },
   jib: { name: "Jib", meshes: jibMeshes, extras: () => ({ sail: { cloth: jibCloth() } }) },
   winch: { name: "Jib winch", meshes: winchMeshes },
+  companionway: { name: "Companionway", meshes: companionwayMeshes, extras: () => ({ connectors: companionwayConnectors(), snapRadius: 0.5 }) },
+  hatch: { name: "Hatch", meshes: hatchMeshes },
   anchor: { name: "Anchor", meshes: anchorMeshes },
   redBuoy: { name: "Red buoy", meshes: () => buoyMeshes("red") },
   greenBuoy: { name: "Green buoy", meshes: () => buoyMeshes("green") },

@@ -59,7 +59,8 @@ spawn point (a random one; with none, above the middle of what's there) and
 the pointer is locked (where it can't be, drag to look). W A S D or the
 arrows move, Shift runs, Space jumps,
 a click shoots (12 in the magazine, reloading when it's empty; a right-click
-reloads sooner), Esc stops. Falling out of the world respawns you.
+reloads sooner), Esc stops. Falling out of the world respawns you. The lobby and the HUD count the targets standing only in a level that has
+some: an imported map with none shows no count.
 
 Play takes only those keys (`MOVE_KEYS` and Esc). Every other key, R
 included, goes on down the input chain to the use prompt (`scene.use`, which

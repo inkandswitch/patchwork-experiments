@@ -1,0 +1,251 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>round trip probe</title>
+<!-- Driven by probes/round-trip.mjs. The BUILT scene tool with the BUILT
+     sailing, tabletop, card-table, keep, joints, traversal, arena and doom
+     plugins in a stub registry, on REAL Automerge documents (one peer of
+     probes/real-repo.js). Nothing here imports another package's source: each
+     package's built dist is loaded as its plugins.
+
+     The page is a small shell: it shows one scene doc at a time in #view, and
+     a `patchwork:open-document` event reaching the document is recorded and,
+     when `follow` is on, opens that doc there, as Patchwork does (the stage
+     that sent it is unmounted, its cleanup run, and the other mounted fresh).
+
+     The maker (Ana) makes both scenes with the tools: the Ship at anchor
+     template, the Card table in her cockpit and Lost Cities on it (api.part);
+     and an empty scene with Freedoom's E1M1 slice pasted into it, set to start
+     in play at the player 1 start. A visitor (Vi) then opens them. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  #view { position: relative; width: 1100px; height: 640px; overflow: hidden; }
+</style>
+<div id="view"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "./empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+const EXIT = "traversal.exit";
+
+/** Where the Card table goes in the sloop's cockpit, in her hull's frame (as sailing/probes/aboard-probe.html). */
+const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0], scale: 1 };
+const TABLE_TOP = [0, 0.7006, 0];
+const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../doom/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const net = twoPeers({ delay: 25 });
+  const repo = net.a;
+  const ana = await repo.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const vi = await repo.create2({ "@patchwork": { type: "contact" }, name: "Vi" });
+  const bytes = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
+  const wad = await repo.create2({ "@patchwork": { type: "file" }, name: "freedoom1-e1m1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
+  const aboard = await repo.create2(emptyScene({ title: "Lost Cities aboard" }));
+  const doom = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false } }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("view");
+  host.repo = repo;
+
+  // ─── the shell ─────────────────────────────────────────────────────────────
+  let current = null; // { url, cleanup }
+  const opened = []; // every open-document request that reached the document
+  const shell = { follow: false };
+  const handles = { [aboard.url]: aboard, [doom.url]: doom };
+  function show(url, viewer) {
+    if (current) {
+      current.cleanup?.();
+      host.replaceChildren();
+    }
+    host.viewerId = viewer;
+    const h = handles[url];
+    current = { url, cleanup: Tool(h, host), handle: h, told: [] };
+    return url;
+  }
+  document.addEventListener("patchwork:open-document", (e) => {
+    opened.push({ url: e.detail?.url ?? null, from: current?.url ?? null, detail: JSON.parse(JSON.stringify(e.detail ?? null)), bubbles: e.bubbles, composed: e.composed, at: Math.round(performance.now()) });
+    if (shell.follow && handles[e.detail?.url]) setTimeout(() => show(e.detail.url, host.viewerId));
+  });
+  const dbg = () => host.querySelector(".scene-stage")?.__sceneDebug ?? null;
+  const rootEl = () => host.querySelector(".scene-stage");
+  setInterval(() => {
+    for (const n of dbg()?.local.get().notices ?? []) {
+      const t = n.text ?? String(n);
+      if (current && !current.told.includes(t)) current.told.push(t);
+    }
+  }, 20);
+  const doc = () => current.handle.doc();
+  const objects = () => doc().objects ?? {};
+  const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  const apiOf = () => {
+    for (const id of ["sailing", "arena", "tabletop", "traversal", "scene.use", "scene.hand", "scene.add"]) { const a = dbg()?.host.record(id)?.api; if (a) return a; }
+    return null;
+  };
+  const crew = () => dbg()?.host.record("sailing")?.instance?.debug?.crew ?? null;
+  const page = (p) => {
+    const v = dbg().viewport;
+    const r = v.canvas.getBoundingClientRect();
+    const q = v.project(p);
+    return q ? { x: r.left + q.x, y: r.top + q.y, visible: q.visible !== false } : null;
+  };
+
+  const P = (window.__p = {
+    errors, opened, shell, viewers: { maker: ana.url, visitor: vi.url }, urls: { aboard: aboard.url, doom: doom.url, wad: wad.url },
+    show: (which, who) => show(which === "doom" ? doom.url : which === "aboard" ? aboard.url : which, who === "visitor" ? vi.url : ana.url),
+    showing: () => (current?.url === aboard.url ? "aboard" : current?.url === doom.url ? "doom" : current?.url ?? null),
+    forgetCameras() { try { localStorage.clear(); } catch {} return true; },
+    running: () => (dbg()?.local.get().running ?? []).map((r) => r.id),
+    activity: () => dbg()?.local.get().activities?.current ?? null,
+    available: () => dbg()?.local.get().activities?.available ?? [],
+    notices: () => [...(current?.told ?? [])],
+    templates: () => [...host.querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    doc: () => JSON.parse(JSON.stringify(doc(), (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v))),
+    loaded() {
+      const os = Object.entries(objects()).filter(([, o]) => o.kind !== "group");
+      return { total: os.length, loaded: os.filter(([id]) => dbg()?.viewport.contentOf(id)?.loaded).length };
+    },
+    status: () => JSON.parse(JSON.stringify(dbg()?.local.get().status ?? {})),
+    byName: (n) => Object.entries(objects()).find(([, o]) => o.name === n)?.[0] ?? null,
+    withTrait,
+    focus() { rootEl()?.focus(); return !!rootEl()?.contains(document.activeElement); },
+
+    // ─── making the two scenes (the maker) ──────────────────────────────────
+    async makeAboard() {
+      const button = host.querySelector('[data-template="ship-at-anchor"]');
+      if (!button) return { error: "no Ship at anchor on the start screen", templates: P.templates() };
+      button.click();
+      for (let i = 0; i < 300 && !(withTrait("sailing.ship") && dbg()?.host.record("sailing")?.api); i++) await sleep(50);
+      const hull = withTrait("sailing.ship");
+      if (!hull) return { error: "no ship" };
+      const api = apiOf();
+      const table = await api.part("tabletop.table", { parent: hull, transform: COCKPIT_TABLE });
+      if (!table) return { error: "no Card table", notices: P.notices() };
+      const board = await api.part("tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
+      if (!board) return { error: "no Lost Cities", notices: P.notices() };
+      const m = dbg().scene().world(hull);
+      api.change((d) => { d.view.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) }; });
+      dbg().local.swap((l) => ({ ...l, selected: null }));
+      return { hull, table, board, companionway: withTrait(EXIT), hatch: withTrait("joints.slide") };
+    },
+    pasteWad() {
+      rootEl().focus();
+      const dt = new DataTransfer();
+      dt.setData("text/plain", wad.url);
+      rootEl().dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      return true;
+    },
+    /** the Doom scene starts in play, its camera at the spawn point's eye looking its way (as publish-e1m1.mjs sets it) */
+    startAtSpawn() {
+      const id = withTrait("arena.spawn");
+      const m = dbg().scene().world(id);
+      const yaw = Math.atan2(m[8], m[10]);
+      const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
+      const r4 = (v) => Math.round(v * 1e4) / 1e4;
+      const home = { position: eye.map(r4), target: [eye[0] - 2 * Math.sin(yaw), eye[1], eye[2] - 2 * Math.cos(yaw)].map(r4) };
+      current.handle.change((d) => { d.view.activity = "play"; d.view.home = home; });
+      return home;
+    },
+    /** where an exit leads: its `to`, set as the inspector's url field writes it (null: deleted, leading nowhere) */
+    lead(which, url) {
+      const h = which === "doom" ? doom : aboard;
+      const id = Object.entries(h.doc().objects).find(([, o]) => o.traits?.[EXIT])?.[0];
+      h.change((d) => { if (url) d.objects[id].traits[EXIT].to = url; else delete d.objects[id].traits[EXIT].to; });
+      return id;
+    },
+    /** move the Doom scene's spawn point to `local` in the map's frame, facing `yaw` (a probe's shortcut to a far room) */
+    moveSpawn(position, yaw) {
+      const id = withTrait("arena.spawn");
+      current.handle.change((d) => { d.objects[id].transform.position = position; d.objects[id].transform.rotation = [0, yaw, 0]; });
+      return id;
+    },
+
+    // ─── what a viewer sees ───────────────────────────────────────────────────
+    /** the use prompt's verbs, as shown */
+    prompt: () => [...host.querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.textContent.trim().replace(/\s+/g, " ")),
+    /** all the text the view shows (notices, labels, HUDs, prompts, buttons), as rendered */
+    text: () => host.innerText,
+    hovered: () => dbg()?.local.get().hovered ?? null,
+    cam: () => dbg().viewport.getCamera(),
+    yawPitch() {
+      const c = dbg().viewport.getCamera();
+      const d = [c.target[0] - c.position[0], c.target[1] - c.position[1], c.target[2] - c.position[2]];
+      const l = Math.hypot(...d);
+      return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
+    },
+    canvasRect() { const r = dbg().viewport.canvas.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
+    rect(sel) {
+      const e = [...host.querySelectorAll(sel)].find((x) => x.getBoundingClientRect().width > 0);
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim() };
+    },
+    /** a world point on the page */
+    page,
+    /** an object's world matrix as drawn, and a point in its frame in the world */
+    worldOf: (id) => { const m = dbg().viewport.worldOf(id); return m ? [...m] : null; },
+    at: (id, local = [0, 0, 0]) => { const m = dbg().viewport.worldOf(id); return m ? apply(m, local) : null; },
+    box: (id) => { const c = dbg().viewport.contentOf(id); return c?.box ? { min: [...c.box.min], max: [...c.box.max] } : null; },
+    /** the pick under a page point: { id, distance } */
+    pickAt(x, y) { const r = dbg().viewport.canvas.getBoundingClientRect(); const h = dbg().viewport.pick(x - r.left, y - r.top); return h && { id: h.id, distance: +h.distance.toFixed(3) }; },
+    /**
+     * A page point over object `id` (near `local` in its frame), where a pick
+     * hits it: spiralling out from the point's projection until one does.
+     */
+    aimAt(id, local = [0, 0, 0]) {
+      const v = dbg().viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p0 = m && v.project(apply(m, local));
+      if (!p0) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 1.5 * Math.sqrt(k);
+        const x = p0.x + rad * Math.cos(a), y = p0.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, distance: +hit.distance.toFixed(3) };
+      }
+      return null;
+    },
+    /** sailing's crew in this view: where the body is (local to the ship it's on), its look, whether it's playing */
+    me: () => { const m = crew()?.me(); return m ? JSON.parse(JSON.stringify(m)) : null; },
+    /** put the body somewhere aboard (local to ship `on`): a respawn */
+    place: (on, position, yaw = 0, pitch = 0) => crew().place(on, position, yaw, pitch),
+    /** a box (world, as drawn) in a ship's frame: its corners' extent */
+    boxIn(hull, id) {
+      const c = dbg().viewport.contentOf(id);
+      const m = dbg().viewport.worldOf(id), h = dbg().viewport.worldOf(hull);
+      if (!c?.box || !m || !h) return null;
+      const inv = (() => { const r = [h[0], h[1], h[2], h[4], h[5], h[6], h[8], h[9], h[10]]; return (p) => { const d = [p[0] - h[12], p[1] - h[13], p[2] - h[14]]; return [d[0] * r[0] + d[1] * r[1] + d[2] * r[2], d[0] * r[3] + d[1] * r[4] + d[2] * r[5], d[0] * r[6] + d[1] * r[7] + d[2] * r[8]]; }; })();
+      const pts = [];
+      for (const x of [c.box.min[0], c.box.max[0]]) for (const y of [c.box.min[1], c.box.max[1]]) for (const z of [c.box.min[2], c.box.max[2]]) pts.push(inv([x, y, z]));
+      return { min: [0, 1, 2].map((k) => Math.min(...pts.map((p) => p[k]))), max: [0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k]))) };
+    },
+    /** a point in a ship's body frame, in the world, as drawn */
+    onShip(hull, p) { const m = dbg().viewport.worldOf(hull); return m ? apply(m, p) : null; },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

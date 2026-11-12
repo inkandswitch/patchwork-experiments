@@ -2,7 +2,8 @@
 // straight from ship.js (partMeshes, placed by FIT), as the crew's input
 // adapter gathers it from her GLBs in play: the hull, the mast and its
 // rigging, the wheel as the cylinder its turn sweeps, the mainsheet's
-// traveller, the jib's winches, the windlass and the ladder. Not the boom
+// traveller, the jib's winches, the windlass, the ladder, and the
+// companionway with its hatch shut. Not the boom
 // and sail nor the jib (they swing) nor the anchor (it hangs).
 import { FIT, partMeshes, winchTrait } from "../ship.js";
 import { apply, matrixOf } from "../frames.js";
@@ -39,6 +40,8 @@ export function sloopTriangles() {
     ...place(partTriangles("ladder"), { ...FIT.ladder, scale: 1 }),
     ...place(partTriangles("mainsheet"), { ...FIT.mainsheet, scale: 1 }),
     ...WINCHES.flatMap((w) => place(partTriangles("winch"), { position: w.at, rotation: [0, 0, 0], scale: 1 })),
+    ...place(partTriangles("companionway"), { ...FIT.companionway, scale: 1 }),
+    ...place(partTriangles("hatch"), { ...FIT.hatch, scale: 1 }),
   ];
 }
 

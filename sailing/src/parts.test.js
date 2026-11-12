@@ -217,7 +217,7 @@ describe("the sloop", () => {
     expect(hull).toMatchObject({ name: "Sloop", parent: null, transform: { position: [10, 0, -4], rotation: [0, 0.8, 0], scale: 1 } });
     expect(hull.traits).toEqual({ [SHIP]: {} });
     const aboard = Object.values(doc.objects).filter((o) => o.parent === id).map((o) => o.name).sort();
-    expect(aboard).toEqual(["Ladder", "Mainsheet", "Mast", "Port jib winch", "Wheel", "Windlass"]);
+    expect(aboard).toEqual(["Companionway", "Ladder", "Mainsheet", "Mast", "Port jib winch", "Wheel", "Windlass"]);
     const p = partsOf(fakeWorld(doc).scene(), id);
     for (const k of ["helm", "sail", "anchor", "mainsheet", "jib", "ladder", "hook"]) expect(p[k]).not.toBeNull();
     expect(p.winches.map((w) => doc.objects[w].traits[WINCH].side)).toEqual(["port", "starboard"]);
@@ -245,6 +245,59 @@ describe("the sloop", () => {
     expect(doc.objects[id].parent).toBeNull();
     near(doc.objects[id].transform.position, [7, 0, 8]);
     expect(doc.objects[id].transform.rotation[1]).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe("the companionway", () => {
+  const sloopDoc = async () => {
+    const doc = emptyScene();
+    const { ctx } = fakeDrop(doc);
+    const id = await parts.sloop.create(ctx, { parent: null, transform: {}, world: {} });
+    const by = (name) => Object.entries(doc.objects).find(([, o]) => o.name === name);
+    return { doc, id, by };
+  };
+
+  it("is at her stand for it, at the cabin's aft end on the cockpit's sole: an exit with its verb and nowhere to go, its hatch under it", async () => {
+    const { doc, id, by } = await sloopDoc();
+    const [cid, comp] = by("Companionway");
+    const [, hatch] = by("Hatch");
+    expect(comp.parent).toBe(id);
+    near(comp.transform.position, STAND.companionway);
+    expect(comp.tags).toEqual([TAGS.companionway]);
+    // the verb, and no destination: where it leads is the scene's to say, never the bin's or the template's
+    expect(comp.traits).toEqual({ "traversal.exit": { verb: "Go below" } });
+    expect(hatch.parent).toBe(cid);
+    expect(hatch.tags).toEqual([TAGS.hatch]);
+    near(inFrame(doc, Object.keys(doc.objects).find((k) => doc.objects[k] === hatch), id), FIT.hatch.position);
+    // both hers: neither is carried in play, and both are walked on (a sailing tag each)
+    expect(comp.locked).toBe(false);
+  });
+
+  it("its hatch slides forward along the cabin top, square to her (its parent's −Z), by its travel at a hand's pace, shut, closing only by hand", async () => {
+    const { by } = await sloopDoc();
+    const slide = by("Hatch")[1].traits["joints.slide"];
+    expect(slide).toEqual({ axis: [0, 0, -1], stops: { closed: 0, open: 0.55 }, speed: 0.5, at: "closed" });
+    // open, its aft edge is forward of the hatchway's aft end by its travel, and the cover is still on the cabin top
+    const open = FIT.hatch.position[2] - slide.stops.open;
+    expect(open).toBeGreaterThan(1.3); // forward of the hatchway's aft end (1.95), uncovering 0.53 m of it
+    expect(open - 0.82).toBeGreaterThan(-1.3); // the cover's forward edge still over the cabin (it starts at −1.3)
+  });
+
+  it("put from the bin on any ship: the same two pieces, the hatch snapping to the companionway's connector", async () => {
+    const doc = withHull({}, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    const { ctx } = fakeDrop(doc);
+    const id = await parts.companionway.create(ctx, { parent: "hull", transform: { position: STAND.companionway, rotation: [0, 0, 0], scale: 1 } });
+    const kids = children(doc, id);
+    expect(doc.objects[id].traits).toEqual({ "traversal.exit": { verb: "Go below" } });
+    expect(kids.map((k) => doc.objects[k].name)).toEqual(["Hatch"]);
+    const at = FIT.hatch.position.map((v, i) => v - FIT.companionway.position[i]);
+    near(doc.objects[kids[0]].transform.position, at);
+    // the companionway's model says where a hatch goes: there, tagged for it
+    const { partGLB } = await import("./ship.js");
+    const { parseGLB } = await import("./glb.js");
+    const [connector] = parseGLB(partGLB("companionway").bytes).json.scenes[0].extras.connectors;
+    expect(connector.tags).toEqual([TAGS.hatch]);
+    near(connector.position, at);
   });
 });
 

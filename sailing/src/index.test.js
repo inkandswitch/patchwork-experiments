@@ -11,7 +11,7 @@ describe("sailing's plugins", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
       ["scene:extension", "sailing"],
       ["scene:extension", "sailing.edit"],
-      ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
+      ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "companionway", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
       ["scene:template", "ship-at-sea"],
       ["scene:template", "ship-at-anchor"],
     ]);
@@ -23,7 +23,8 @@ describe("sailing's plugins", () => {
       expect(p.category).toBe("Sailing");
       expect(p.name).toBeTruthy();
       expect(p.description).toBeTruthy();
-      for (const t of p.traits ?? []) expect(TRAITS).toContain(t);
+      // its own traits, and the two other packages' its companionway carries (an exit, a slide)
+      for (const t of p.traits ?? []) expect([...TRAITS, "traversal.exit", "joints.slide"]).toContain(t);
     }
     expect(byId("sailing.mast").tags).toEqual(["sailing.mast"]);
     expect(byId("sailing.wheel").tags).toEqual(["sailing.helm"]);
@@ -31,6 +32,8 @@ describe("sailing's plugins", () => {
     expect(byId("sailing.ladder").tags).toEqual(["sailing.ladder"]);
     expect(byId("sailing.mainsheet").tags).toEqual(["sailing.mainsheet"]);
     expect(byId("sailing.winches").tags).toEqual(["sailing.winch"]);
+    expect(byId("sailing.companionway").tags).toEqual(["sailing.companionway"]);
+    expect(byId("sailing.companionway").traits).toEqual(["traversal.exit", "joints.slide"]);
     expect(byId("sailing.sloop").traits).toContain("sailing.ship");
   });
 

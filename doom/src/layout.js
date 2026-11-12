@@ -6,6 +6,7 @@
 //   group "<map>"            its About: what was made, what doesn't work here, the WAD's notice
 //   └ <map>                  { map, door: null }, locked
 //     ├ Door <sector> × n    { map, door: <sector> }, locked; a slide joint (joints.slide) that opens it
+//     ├ Exit switch × n      { map, line: <line> }, locked; an exit (traversal.exit) leading nowhere yet
 //     └ Spawn point          arena's, at the player 1 start (only when the map is the scene: below)
 //
 // Doors are attached to the static part, so moving or resizing the map
@@ -18,10 +19,15 @@
 // registry by id). Dropped into a scene that has something in it already, it
 // is a piece of that scene, and leaves the scene's game, if any, to it.
 //
-// The doom package depends on neither joints nor arena: it writes the slide
-// in the shape joints documents and the level trait in the shape arena
-// documents, and asks for arena's spawn part by id; without arena, there is
-// no spawn (and no level to spawn in), which is nothing lost.
+// An exit switch is an exit with no destination: where a map leads is the
+// scene's to say (traversal's `to`, set by whoever makes the scene part of
+// something), and until it says, the switch offers nothing.
+//
+// The doom package depends on none of joints, traversal and arena: it writes
+// the slide in the shape joints documents, the exit in the shape traversal
+// documents and the level trait in the shape arena documents, and asks for
+// arena's spawn part by id; without arena, there is no spawn (and no level to
+// spawn in), which is nothing lost.
 
 import { freedoomVersion, noticeOf, originOf } from "./freedoom.js";
 import { anchorOf, mapModel, thingAt, UNITS_PER_METRE } from "./parts.js";
@@ -30,6 +36,9 @@ import { wadOf } from "./source.js";
 export const PROVIDER = "doom-map";
 /** The part that makes a spawn point (arena's), by id. */
 export const SPAWN_PART = "arena.spawn";
+/** An object that leads elsewhere (traversal's trait): an exit switch's, with its verb and no destination. */
+export const EXIT = "traversal.exit";
+export const exitTrait = () => ({ verb: "Exit" });
 
 /** A part's place in its parent's frame (metres, Y up), from the two anchors (map units). */
 export function placeIn(parentAnchor, anchor) {
@@ -66,6 +75,7 @@ export function aboutText({ fileName, map, model, origin, freedoom = null, start
     "- **The map**: everything that doesn't move.",
     `- **${doors.length} door${doors.length === 1 ? "" : "s"}** (sector${doors.length === 1 ? "" : "s"} ${doors.join(", ")}): each slides up when opened and closes itself after its wait.`,
     ...(ajar.length ? [`  ${ajar.map((d) => `Sector ${d.sector}`).join(", ")} ${ajar.length === 1 ? "is" : "are"} left ajar in the map, and imported shut.`] : []),
+    ...specials.exits.map((e) => `- **The ${e.secret ? "secret " : ""}exit switch** (line ${e.line}): an object of its own, which leads wherever the scene says (nowhere until it's told).`),
     start ? "- **Player 1 start**: a spawn point, where play starts." : "- No spawn point: the player 1 start is only made one in a scene that is just this map.",
     "",
     "## Not working here",
@@ -134,6 +144,16 @@ export async function layOutMap(ctx, { url, doc, handle, group = null, at = null
       render: render(door.sector),
       transform: { position: placeIn(origin0, anchorOf(model, door.sector)), rotation: [0, 0, 0], scale: 1 },
       fields: { locked: true, traits: { "joints.slide": slideOf(door) } },
+    });
+  }
+  for (const e of model.specials.exits) {
+    await ctx.addObject(url, {
+      name: e.secret ? "Secret exit switch" : "Exit switch",
+      group: gid,
+      parent: root,
+      render: { providerId: PROVIDER, params: { map, line: e.line } },
+      transform: { position: placeIn(origin0, anchorOf(model, null, e.line)), rotation: [0, 0, 0], scale: 1 },
+      fields: { locked: true, traits: { [EXIT]: exitTrait() } },
     });
   }
   if (spawnPart) {

@@ -3,8 +3,8 @@
 //
 // Doom-format maps in a scene (README.md):
 // - scene:source "doom-map": a part of a map in a .wad file doc, as a GLB
-//   (source.js). A map is a static part and a part per door, each one
-//   object, each the same file doc.
+//   (source.js). A map is a static part, a part per door and a part per exit
+//   switch, each one object, each the same file doc.
 // - scene:extension "doom": lays out a dropped .wad file doc's first map as
 //   those objects (layout.js). It has no traits and never runs: it is here
 //   for its drop.
@@ -20,11 +20,13 @@ export const plugins = [
     params: [
       // the map's name ("E1M1", "MAP01"): there is no default map, so a render doc names one
       { key: "map", label: "Map", kind: "string", default: "" },
-      // which part: a door, by its sector; none, the static part (parts.js)
+      // which part: a door, by its sector; an exit switch, by its line; neither, the static part (parts.js)
       { key: "door", label: "Door (sector)", kind: "integer", default: null, min: 0 },
+      { key: "line", label: "Exit switch (line)", kind: "integer", default: null, min: 0 },
     ],
     cost: "expensive",
-    version: 2,
+    // 3: the static part leaves the exit switches out (each is a part of its own)
+    version: 3,
     async load() {
       return (await import("./source.js")).default;
     },

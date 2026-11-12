@@ -32,8 +32,8 @@ modules share.
 | `ocean-material.js` | no (takes `THREE`) | The surface: a camera-following grid and a `ShaderMaterial` running the same Gerstner sum in the vertex shader, with finer normal-only detail, Fresnel sky reflection, subsurface tint, crest foam, sun glint, scene fog |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
-| `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
-| `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
+| `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
+| `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
 | `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
 | `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@3` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
@@ -1507,6 +1507,7 @@ a scene:part in index.js under "Sailing":
 | Ladder | the ladder | `sailing.ladder` | `sailing.ladder` |
 | Mainsheet | a traveller across the cockpit's sole and the sheet's block on it, under the boom's end | `sailing.mainsheet` | `sailing.mainsheet` |
 | Jib winches | the winch on the side it's put; the other, its mirror across her, under it | `sailing.winch` | `sailing.winch` |
+| Companionway | the washboards in the cabin's aft end and the dark hatchway over them; the hatch under it, on the cabin top (tagged `sailing.hatch`, for the companionway's connector) | `sailing.companionway` | `traversal.exit` `{ verb: "Go below" }` (no `to`); the hatch's `joints.slide` (forward, −Z, 0.55 m at 0.5 m/s, shut, no wait) |
 | Red buoy, Green buoy | the buoy | | `sailing.float` |
 | Islet | the islet | | |
 
@@ -1526,8 +1527,9 @@ a scene:part in index.js under "Sailing":
 - **Files:** each kind is the scene's one GLB doc under
   `doc.assets["sailing/<kind>@<n>"]` (`ctx.file`), so ten buoys share one;
   bump `<n>` (`fileKey`) when a kind's drawing changes (`VERSIONS`: the
-  hull's is 4, the rig's and the mast's 3, the jib's, winch's, windlass's,
-  mainsheet's, wheel's, anchor's and islet's 2, the rest 1). `ctx.file` is
+  hull's is 5 (its companionway became a part), the rig's and the mast's 3,
+  the jib's, winch's, windlass's, mainsheet's, wheel's, anchor's and islet's
+  2, the rest 1). `ctx.file` is
   required: there is no other way a part makes its files.
 - The template is the Sloop part's objects with her way on, the landmarks
   (the buoy and islet parts, locked, in a group), the home view and "play".
@@ -1549,6 +1551,16 @@ a scene:part in index.js under "Sailing":
 | `sailing.hook` | the anchor itself, under the ship | `{}`: drawn lying on the bottom at `at` while its windlass has it down, at the bow (its doc place) when it's up |
 | `sailing.ladder` | the ladder under the ship | `{}`: the way aboard from the water |
 | `sailing.float` | any object | `{}`: bobs and tilts with the waves where it's moored (each view, from the shared clock; no hold) |
+
+Two other packages' traits ride on her companionway, written in the shapes
+those packages document (traits.js `SLIDE`, `EXIT`); sailing reads neither
+and imports neither. Its hatch's `joints.slide` opens it (joints moves it,
+in her hull's frame as she heels, and writes where it comes to rest); the
+companionway's `traversal.exit` leads nowhere until a scene gives it a `to`.
+Both pieces carry a sailing tag, so they are hers: the hand never carries
+them in play, a click on them comes aboard, and her navmesh bakes them (the
+hatch where it rests: a hatch that comes to rest open changes her bake key,
+and she is baked again off the frame loop, as for any part moved).
 
 Who is at a station, and who simulates the sea, are **claims** in the doc
 (`claims: { station | halyard | sim: { viewer, session } }` on the object),

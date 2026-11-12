@@ -38,7 +38,7 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   water where you dropped her, rigged, her bow away from you (and the scene
   gets a sea if it had none). The rest are her parts on their own: **Mast
   and sail**, **Wheel**, **Mainsheet**, **Jib winches**, **Windlass and
-  anchor**, **Ladder**, to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
+  anchor**, **Ladder**, **Companionway**, to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
   a hull that's a ship, a part lines up with her bow and attaches under her
   (on the sloop, each snaps to its place); a click instead of a drag puts it
   where you're looking.
@@ -120,7 +120,17 @@ off her quarter. Where pointer lock is refused, drag to look.
 | Looking at the mainsheet | hold Q haul in · hold E ease out |
 | Looking at the mast or the boom | hold R raise or lower the sail |
 | At the windlass | hold F raise the anchor (it says how much chain is out) · F drop it |
+| Looking at the hatch, on the cabin top over the companionway | F slide it open / shut |
 | In the water | WASD swim · F at the ladder to climb aboard |
+
+**The companionway**, at the cockpit's forward end, is the way below:
+washboards in the cabin's aft end, and a hatch over them that slides forward
+along the cabin top (the joints package's slide, `joints.slide`: F within
+reach, or Open from its menu). The companionway itself is an exit (the
+traversal package's `traversal.exit`, its verb "Go below") that leads
+nowhere: it offers nothing until a scene gives it a document to lead to (its
+`to`, the inspector's *Leads to*). Neither the template nor the parts bin
+gives it one. Sailing reads neither trait; it only puts them on her parts.
 
 The sheet and the halyard are led aft: the wheel and the mainsheet work
 both, so a helmsman can sail her alone. The mast is no place to trim from:

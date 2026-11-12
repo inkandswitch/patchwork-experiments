@@ -14,6 +14,10 @@
 //   neighbour's upper wall that the door covers when shut (from its closed
 //   height to its open one), set a hair inside the door so the wall above
 //   hides it as it rises. Slid up by its travel, it is the door open.
+// - an exit switch (line: <linedef>): that line's walls, exactly as the
+//   static part would draw them, and so left out of the static part. It
+//   doesn't move: it is its own object so that a scene can say where it
+//   leads.
 //
 // Textures are aligned as the map draws them at rest with EVERY DOOR SHUT
 // (Doom's pegging rules, dmsp1666 §4.3/§4.4; a door shuts to its floor, so a
@@ -68,7 +72,8 @@ export function modelOf(wad, map) {
     if (v.y < minY) minY = v.y;
     if (v.y > maxY) maxY = v.y;
   }
-  return { wad, map, specials, doors, rest, ceiling, centre: [Math.round((minX + maxX) / 2), Math.round((minY + maxY) / 2)], polygons: new Map() };
+  const exits = new Map(specials.exits.map((e) => [e.line, e]));
+  return { wad, map, specials, doors, exits, rest, ceiling, centre: [Math.round((minX + maxX) / 2), Math.round((minY + maxY) / 2)], polygons: new Map() };
 }
 
 const polygonsOf = (model, s) => {
@@ -98,8 +103,27 @@ export function doorOf(model, sector) {
   return d;
 }
 
-/** Where a part's frame is, in map units: its own geometry is built relative to it. The static part's (door null) is the map's middle at height 0; a door's the middle of its footprint at its shut height. */
-export function anchorOf(model, door = null) {
+/** An exit switch of the map (its line), or a throw saying it isn't one. */
+export function exitOf(model, line) {
+  const e = model.exits.get(line);
+  if (!e) throw new Error(`line ${line} of ${model.map.name} isn't an exit switch`);
+  return e;
+}
+
+/**
+ * Where a part's frame is, in map units: its own geometry is built relative
+ * to it. The static part's (door and line null) is the map's middle at height
+ * 0; a door's the middle of its footprint at its shut height; an exit
+ * switch's the middle of its line, on its front sector's floor.
+ */
+export function anchorOf(model, door = null, line = null) {
+  if (line != null) {
+    exitOf(model, line);
+    const l = model.map.linedefs[line];
+    const a = model.map.vertexes[l.v1];
+    const b = model.map.vertexes[l.v2];
+    return [Math.round((a.x + b.x) / 2), Math.round((a.y + b.y) / 2), model.map.sectors[model.map.sidedefs[l.right].sector].floor];
+  }
   if (door == null) return [...model.centre, 0];
   const d = doorOf(model, door);
   const vs = linesOf(model, door).flatMap((i) => [model.map.linedefs[i].v1, model.map.linedefs[i].v2]).map((v) => model.map.vertexes[v]);
@@ -260,27 +284,38 @@ function plane(c, model, s, z, flat, up) {
   }
 }
 
+/** A line's walls, both its sides, as the static part has them. */
+function lineWalls(c, model, textures, missing, l) {
+  const { map } = model;
+  const V = map.vertexes;
+  const front = map.sidedefs[l.right].sector;
+  const back = l.left >= 0 ? map.sidedefs[l.left].sector : -1;
+  sideWalls(c, model, textures, missing, l, l.right, back, V[l.v1], V[l.v2]);
+  if (l.left >= 0) sideWalls(c, model, textures, missing, l, l.left, front, V[l.v2], V[l.v1]);
+}
+
 /**
- * A part's triangles, by texture: the static part (door null) or a door's.
+ * A part's triangles, by texture: the static part (door and line null), a
+ * door's, or an exit switch's (line).
  * @returns {{ anchor: number[], buckets: Map<string, { key, texture, kind, positions, uvs, colors, indices }>, missing: string[] }}
  */
-export function partGeometry(model, door = null) {
-  const anchor = anchorOf(model, door);
+export function partGeometry(model, door = null, line = null) {
+  const anchor = anchorOf(model, door, line);
   const c = collector(anchor);
   const textures = readTextures(model.wad);
   const missing = new Set();
   const { map, rest } = model;
   const V = map.vertexes;
-  if (door == null) {
+  if (line != null) {
+    lineWalls(c, model, textures, missing, map.linedefs[line]);
+  } else if (door == null) {
     map.sectors.forEach((sec, s) => {
       plane(c, model, s, sec.floor, sec.floorFlat, true);
       if (!model.doors.has(s)) plane(c, model, s, sec.ceiling, sec.ceilingFlat, false);
     });
-    map.linedefs.forEach((l) => {
-      const front = map.sidedefs[l.right].sector;
-      const back = l.left >= 0 ? map.sidedefs[l.left].sector : -1;
-      sideWalls(c, model, textures, missing, l, l.right, back, V[l.v1], V[l.v2]);
-      if (l.left >= 0) sideWalls(c, model, textures, missing, l, l.left, front, V[l.v2], V[l.v1]);
+    // every line's walls but the exit switches' (each a part of its own)
+    map.linedefs.forEach((l, i) => {
+      if (!model.exits.has(i)) lineWalls(c, model, textures, missing, l);
     });
   } else {
     const d = model.doors.get(door);

@@ -1,10 +1,10 @@
 // A Doom map in a scene, walked in first person by two people, in headless
 // Chrome with real keys and a real mouse.
 //
-//   (in scene/, arena/, joints/ and doom/) pnpm build
+//   (in scene/, arena/, joints/, traversal/ and doom/) pnpm build
 //   node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--show] [--gpu]
 //
-// Mounts the BUILT scene tool with the BUILT arena, joints and doom plugins on
+// Mounts the BUILT scene tool with the BUILT arena, joints, traversal and doom plugins on
 // real Automerge docs (two peers, probes/real-repo.js). The WAD is a file doc
 // in peer a's repo; A pastes its URL into an empty scene, and the doom
 // package lays its first map out: one static object and one per door, all the
@@ -156,8 +156,8 @@ try {
   await P(`focus("a")`);
   const t0 = Date.now();
   await P(`paste("a", ${JSON.stringify(wadUrl)})`);
-  const laidOut = await b.waitFor(`window.__p.loaded("a").total >= 13`, 30_000);
-  const built = await b.waitFor(`(() => { const a = window.__p.loaded("a"), b = window.__p.loaded("b"); return a.total >= 13 && a.loaded === a.total && b.total >= 13 && b.loaded === b.total; })()`, 120_000);
+  const laidOut = await b.waitFor(`window.__p.loaded("a").total >= 14`, 30_000);
+  const built = await b.waitFor(`(() => { const a = window.__p.loaded("a"), b = window.__p.loaded("b"); return a.total >= 14 && a.loaded === a.total && b.total >= 14 && b.loaded === b.total; })()`, 120_000);
   report.numbers.buildAndLoadMs = Date.now() - t0;
   const doc = await P(`doc("a")`);
   const objs = Object.entries(doc.objects);
@@ -166,13 +166,15 @@ try {
   // (arena's spawn point is a passthrough GLB: no render doc)
   const renders = await Promise.all(parts.map(([, o]) => (o.renderUrl ? P(`find(${JSON.stringify(o.renderUrl)})`) : null)));
   const doors = parts.filter(([, o]) => o.traits?.["joints.slide"]);
+  const exits = parts.filter(([, o]) => o.traits?.["traversal.exit"]);
   const spawn = parts.find(([, o]) => o.traits?.["arena.spawn"]);
   const staticObj = parts.find(([, o]) => !o.parent);
   const maps = parts.filter(([, o]) => o.providerId === "doom-map");
   const mapRenders = renders.filter((_, i) => parts[i][1].providerId === "doom-map");
   details.layout = { objects: parts.map(([, o], i) => `${o.name}: ${o.providerId} ${JSON.stringify(renders[i]?.params ?? null)}`), group: group?.[1].name };
-  check("pasting the WAD lays out its first map: one static part, a part per door (11), arena's spawn point, in a group", laidOut && parts.length === 13 && maps.length === 12 && doors.length === 11 && !!spawn && spawn[1].providerId !== "doom-map" && group?.[1].name === "E1M1" && parts.every(([, o]) => o.group === group[0]), details.layout);
-  check("every part of the map is the same WAD file doc, seen through the doom-map provider with params of its own: { map, door }", maps.every(([, o]) => o.sourceUrl === wadUrl) && mapRenders.every((r) => r.parent === wadUrl && r.params.map === "E1M1" && Object.keys(r.params).sort().join() === "door,map") && new Set(mapRenders.map((r) => r.params.door)).size === 12 && mapRenders.filter((r) => r.params.door == null).length === 1, mapRenders.map((r) => r.params));
+  check("pasting the WAD lays out its first map: one static part, a part per door (11), the exit switch, arena's spawn point, in a group", laidOut && parts.length === 14 && maps.length === 13 && doors.length === 11 && exits.length === 1 && !!spawn && spawn[1].providerId !== "doom-map" && group?.[1].name === "E1M1" && parts.every(([, o]) => o.group === group[0]), details.layout);
+  check("every part of the map is the same WAD file doc, seen through the doom-map provider with params of its own: { map, door } or { map, line }", maps.every(([, o]) => o.sourceUrl === wadUrl) && mapRenders.every((r) => r.parent === wadUrl && r.params.map === "E1M1" && ["door,map", "line,map"].includes(Object.keys(r.params).sort().join())) && new Set(mapRenders.map((r) => r.params.door ?? `line ${r.params.line}`)).size === 13 && mapRenders.filter((r) => r.params.door == null && r.params.line == null).length === 1 && mapRenders.filter((r) => r.params.line === 407).length === 1, mapRenders.map((r) => r.params));
+  check("the exit switch is an exit called Exit, with nowhere to go", exits.length === 1 && JSON.stringify(exits[0][1].traits["traversal.exit"]) === JSON.stringify({ verb: "Exit" }), exits.map(([, o]) => o.traits));
   check("the doors and the spawn are attached to the static part; the map's parts are locked", parts.every(([id, o]) => (id === staticObj[0] ? !o.parent : o.parent === staticObj[0])) && maps.every(([, o]) => o.locked === true));
   check("each door has a slide (up, by its travel, closing itself after its wait), closed", doors.every(([, o]) => { const s = o.traits["joints.slide"]; return s.at === "closed" && s.axis.join() === "0,1,0" && s.stops.open > 0 && s.wait > 4 && s.speed > 0; }), doors.map(([, o]) => o.traits["joints.slide"]));
   check("the scene is a level with a sky of its own; the start is its spawn", doc.traits?.["arena.level"]?.look === "sky" && !!spawn);
@@ -264,7 +266,7 @@ try {
   // ─── 4. a viewer who joined while it rested open (lateJoin, above) ───────
   details.lateJoin = late && { ms: late.ms, joinedAt: late.joinedAt, open: late.doors.filter((d) => d.at === "open"), posesSent: (await P(`poses(${JSON.stringify(doorId)})`)).filter((p, i, all) => p.landed !== undefined || p.y == null || i % 5 === 0 || i === all.length - 1), writes: (await P("writes(1)")).slice(writes0) };
   check("a viewer who joins while it's open sees every door where the doc has it (this one open, the rest shut)", !!late && late.doors.every((d) => d.drawn && d.doc && d.drawn.every((v, i) => Math.abs(v - d.doc[i]) < 1e-3) && !d.heldBy) && late.doors.filter((d) => d.at === "open").length === 1 && late.doors.find((d) => d.at === "open").id === doorId, details.lateJoin ?? null);
-  await b.waitFor(`(() => { const l = window.__p.loaded("c"); return l.total >= 13 && l.loaded === l.total; })()`, 60_000);
+  await b.waitFor(`(() => { const l = window.__p.loaded("c"); return l.total >= 14 && l.loaded === l.total; })()`, 60_000);
   await shot("4-c-joined");
 
   // it closes itself after its wait

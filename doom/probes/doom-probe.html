@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>doom probe</title>
 <!-- Driven by probes/doom.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT arena, joints and doom plugins in a stub registry, on REAL Automerge
+     BUILT arena, joints, traversal and doom plugins in a stub registry, on REAL Automerge
      documents: two peers, each with its own replica of every doc
      (probes/real-repo.js), a change reaching the other 25 ms later by a real
      merge. A WAD file doc (the runner serves the WAD at /wad) waits in A's
@@ -38,7 +38,7 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 try {
   // every build the map provider does, in either view (a part built twice is a rebuild)
   const builds = [];
-  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../joints/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) {
       if (p.type === "scene:source" && p.id === "doom-map") {

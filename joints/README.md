@@ -102,8 +102,10 @@ The same joint, unchanged, with different numbers:
   shuts itself (an imported map's doors are these);
 - a **drawer**: `axis` out of the cabinet's front, `stops: { closed: 0, open: 0.4 }`,
   no wait, opened from its menu while the cabinet is being designed;
-- a **sliding hatch** on a boat's deck: `axis` along the deck, attached to the
-  hull, so it slides in the hull's frame as she heels.
+- a **sliding hatch** on a boat's cabin top (the sailing package's sloop: her
+  companionway's hatch, `axis: [0, 0, -1]` forward along the cabin top, 0.55 m
+  at 0.5 m/s, no wait), attached under her hull, so it slides in her frame as
+  she heels.
 
 Its stops are named closed and open and its verb is Open / Close, so it is
 for things that open. A lift moves between two stops too, but it isn't

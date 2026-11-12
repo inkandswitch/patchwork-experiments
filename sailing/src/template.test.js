@@ -35,9 +35,9 @@ describe("the Ship at sea template", () => {
     }
     // one per kind, under its versioned key
     expect(Object.keys(doc.assets).sort()).toEqual(
-      ["anchor", "greenBuoy", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 4, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
+      ["anchor", "companionway", "greenBuoy", "hatch", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 5, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
     );
-    expect(calls.created).toHaveLength(13);
+    expect(calls.created).toHaveLength(15);
     const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) {

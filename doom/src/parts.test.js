@@ -1,7 +1,7 @@
 // The parts a map is made of: Doom's pegging rules case by case, and on
 // E1M1 the seams between the static part and each door, at rest.
 import { describe, expect, it } from "vitest";
-import { anchorOf, INSET, mapModel, modelOf, partGeometry, textureTop, UPPER_UNPEGGED, unpeggedFaces } from "./parts.js";
+import { anchorOf, INSET, mapModel, modelOf, partGeometry, sectorAt, textureTop, UPPER_UNPEGGED, unpeggedFaces } from "./parts.js";
 import { notesOf } from "./source.js";
 import { readMap, readTextures } from "./wad.js";
 import { fixture } from "./test/fixture.js";
@@ -187,5 +187,84 @@ describe("E1M1's parts, at rest", () => {
 
   it("every wall texture E1M1 names is drawn: nothing missing", () => {
     expect(statics.g.missing).toEqual([]);
+  });
+});
+
+describe("the exit switch, a part of its own", () => {
+  const model = mapModel(fixture(), "E1M1");
+  /** A bucket's triangles in the map's own units, as world-placed corner lists with their uvs (from the part's anchor). */
+  const corners = (g, key) => {
+    const b = g.buckets.get(key);
+    if (!b) return [];
+    const out = [];
+    for (let t = 0; t < b.indices.length; t += 3) {
+      const tri = [0, 1, 2].map((k) => {
+        const i = b.indices[t + k];
+        return [b.positions[3 * i] + g.anchor[0], b.positions[3 * i + 1] + g.anchor[1], b.positions[3 * i + 2] + g.anchor[2], b.uvs[2 * i], b.uvs[2 * i + 1], b.colors[3 * i]].map((v) => +v.toFixed(9)).join(",");
+      });
+      out.push(tri.join(" "));
+    }
+    return out.sort();
+  };
+
+  it("E1M1 has one: line 407 (type 11), not left among what isn't imported", () => {
+    expect(model.specials.exits).toEqual([{ line: 407, secret: false }]);
+    expect(model.specials.inert.flatMap((r) => r.lines)).not.toContain(407);
+  });
+
+  it("is exactly the walls the static part would draw on that line, which the static part leaves out: the two meet with no seam", () => {
+    const exit = partGeometry(model, null, 407);
+    const whole = partGeometry({ ...model, exits: new Map() }, null); // the static part as if nothing were pulled out
+    const statics = partGeometry(model, null);
+    const key = "wall:SW1GRAY";
+    expect([...exit.buckets.keys()]).toEqual([key]);
+    expect(corners(exit, key)).toHaveLength(2);
+    expect(corners(exit, key)).toEqual(corners(whole, key));
+    expect(statics.buckets.has(key)).toBe(false);
+    // and nothing else differs between the two static parts
+    const others = (g) => [...g.buckets.keys()].filter((k) => k !== key).sort().flatMap((k) => corners(g, k));
+    expect(others(statics)).toEqual(others(whole));
+  });
+
+  it("is anchored at the middle of its line on its floor; a line that isn't one is refused", () => {
+    expect(anchorOf(model, null, 407)).toEqual([-400, 1296, -120]);
+    expect(() => anchorOf(model, null, 406)).toThrow(/isn't an exit switch/);
+  });
+
+  // Can a walker get there from the player 1 start? Over the sectors as they
+  // are here: plain doors open, everything that doesn't work here where it
+  // rests (the lifts too), and a walker with the arena's body at 36 units to
+  // the metre: up 30 (a jump's apex, 0.85 m; it steps 16), any drop, 60 of
+  // headroom (1.67 m), never across an impassable line.
+  it("is reachable on foot from the player 1 start, through plain doors only", () => {
+    const { map, doors } = model;
+    const floor = (s) => map.sectors[s].floor;
+    const ceil = (s) => (doors.has(s) ? doors.get(s).open : map.sectors[s].ceiling);
+    const start = map.things[model.specials.starts.find((s) => s.player === 1).thing];
+    const s0 = sectorAt(model, start.x, start.y);
+    const goal = map.sidedefs[map.linedefs[407].right].sector;
+    const prev = new Map([[s0, null]]);
+    const queue = [s0];
+    while (queue.length) {
+      const s = queue.shift();
+      map.linedefs.forEach((l) => {
+        if (l.left < 0 || l.flags & 1) return;
+        const f = map.sidedefs[l.right].sector, b = map.sidedefs[l.left].sector;
+        const o = f === s ? b : b === s ? f : -1;
+        if (o < 0 || prev.has(o)) return;
+        if (floor(o) - floor(s) > 30 || Math.min(ceil(o), ceil(s)) - Math.max(floor(o), floor(s)) < 60) return;
+        prev.set(o, s);
+        queue.push(o);
+      });
+    }
+    const path = [];
+    for (let s = goal; s != null && prev.has(s); s = prev.get(s)) path.push(s);
+    path.reverse();
+    expect(path[0]).toBe(s0);
+    expect(path.at(-1)).toBe(goal);
+    // the plain doors on the way, and that no locked door is
+    expect(path.filter((s) => doors.has(s))).toEqual([10, 34, 64]);
+    const resting = new Set(model.specials.resting.filter((r) => r.kind !== "lift").flatMap((r) => r.sectors));
+    expect(path.filter((s) => resting.has(s))).toEqual([]);
   });
 });

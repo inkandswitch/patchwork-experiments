@@ -1,0 +1,126 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>E1M1 probe</title>
+<!-- Driven by probes/publish-e1m1.mjs. The BUILT scene tool (scene/dist) with
+     the BUILT arena, joints, traversal and doom plugins in a stub registry,
+     on REAL Automerge documents (one peer of probes/real-repo.js). A WAD file
+     doc (the runner serves the WAD at /wad) waits in the repo, and an EMPTY
+     scene in one view; make() pastes the WAD's URL into it, as a person does,
+     and the doom package lays out its first map. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  #a { position: relative; width: 1200px; height: 720px; overflow: hidden; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+/** A doc as JSON, its bytes as { $bytes: base64 }, so it can leave the page. */
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const net = twoPeers({ delay: 25 });
+  const repo = net.a;
+  const ana = await repo.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const bytes = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
+  // the WAD as a file doc, as the scene's add makes one from a desktop file: nothing said of where it's from
+  const wad = await repo.create2({ "@patchwork": { type: "file" }, name: "freedoom1-e1m1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
+  const scene = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false } }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  host.viewerId = ana.url;
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const root = host.querySelector(".scene-stage");
+  const objects = () => scene.doc().objects ?? {};
+  const told = [];
+  setInterval(() => { for (const n of dbg.local.get().notices ?? []) if (!told.includes(n.text ?? String(n))) told.push(n.text ?? String(n)); }, 20);
+
+  window.__p = {
+    errors, wadUrl: wad.url, sceneUrl: scene.url,
+    /** paste the WAD's URL into the scene, as ⌘V with it on the clipboard does */
+    paste() {
+      root.focus();
+      const dt = new DataTransfer();
+      dt.setData("text/plain", wad.url);
+      root.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      return true;
+    },
+    doc: () => JSON.parse(JSON.stringify(scene.doc())),
+    running: () => (dbg.local.get().running ?? []).map((r) => r.id),
+    loaded() {
+      const os = Object.entries(objects()).filter(([, o]) => o.kind !== "group");
+      return { total: os.length, loaded: os.filter(([id]) => dbg.viewport.contentOf(id)?.loaded).length };
+    },
+    status: () => JSON.parse(JSON.stringify(dbg.local.get().status ?? {})),
+    notices: () => [...told],
+    find: async (url) => { const h = await repo.find(url); return JSON.parse(JSON.stringify(h.doc(), (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v))); },
+    /**
+     * Where play starts, as the scene opens for someone new: in play, the
+     * camera at the spawn point's eye (arena's: 0.1 over it, eye 1.6 up),
+     * looking the way it faces, level. So a visitor arriving sees where
+     * they'll stand, and pressing Play doesn't move the view.
+     */
+    startHere() {
+      const [id] = Object.entries(objects()).find(([, o]) => o.traits?.["arena.spawn"]) ?? [];
+      if (!id) return { error: "no spawn point" };
+      const m = dbg.scene().world(id);
+      const yaw = Math.atan2(m[8], m[10]);
+      const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
+      const r4 = (v) => Math.round(v * 1e4) / 1e4;
+      const home = { position: eye.map(r4), target: [eye[0] - 2 * Math.sin(yaw), eye[1], eye[2] - 2 * Math.cos(yaw)].map(r4) };
+      scene.change((d) => {
+        d.view.activity = "play";
+        d.view.home = home;
+      });
+      return home;
+    },
+    /** the docs to publish: the scene, the WAD, the About, each object's render doc, and the scene's files */
+    snapshot() {
+      const d = scene.doc();
+      const os = Object.values(d.objects ?? {});
+      const urls = new Set([scene.url, wad.url]);
+      for (const o of os) for (const k of ["renderUrl", "infoUrl"]) if (o[k]) urls.add(o[k]);
+      for (const a of Object.values(d.assets ?? {})) urls.add(a.url);
+      for (const o of os) if (o.sourceUrl) urls.add(o.sourceUrl);
+      const docs = {};
+      for (const u of urls) docs[u] = portable(repo.handles.get(u).doc());
+      return { scene: scene.url, wad: wad.url, docs };
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>
