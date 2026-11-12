@@ -1,10 +1,11 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// Decks other than the plain one are `tabletop:deck` plugins: { id,
-// supportedDatatypes } and a load() whose module has createResolver(...) (and,
-// to be laid out when dropped on a table, placement(doc) and bind(handle,
-// ids)); card-table's secure deck is one. See src/table/extension.js.
+// What a table's pieces do is two `scene:extension`s (src/table/):
+// "tabletop" (hands, cards, Shuffle, Draw: in play and in edit) and
+// "tabletop.rule" (who may see what, as the stage's `audience`: in every
+// activity). Seats, and what a hidden card really is, are other packages'
+// (the seats' owner; a keeper), met only through the stage.
 //
 // Games are `tabletop:game` plugins: { id, name, icon, players, blurb } and a
 // load() whose module has `fill(doc)`, which fills an empty tabletop-game doc
@@ -21,51 +22,40 @@
 // play at and Lost Cities, the whole game set down on whatever it's put on
 // (a Card table aboard a ship); the game brings seats if the scene has none.
 
+const TRAITS = {
+  "tabletop.zone": {
+    name: "Hand",
+    on: "object",
+    blurb: "A seat's private area: what lies in this box (in the object's own frame, metres) is turned toward whoever sits in its seat, and screened from everyone else",
+    fields: [
+      // a seat's id, as whoever owns seats names it (this package never reads the seats themselves)
+      { key: "seat", label: "Seat (its id)", kind: "string", default: "" },
+      { key: "min", label: "Box min", kind: "json" },
+      { key: "max", label: "Box max", kind: "json" },
+    ],
+    init: { min: [-0.1, 0, -0.05], max: [0.1, 0.05, 0.05] },
+  },
+  "tabletop.card": {
+    name: "Card",
+    on: "object",
+    blurb: "Two-sided: lying face up outside every hand it is shown to everyone, face down to nobody. In a pile it can be shuffled (S) and drawn (D). What it really is, is its keeper's",
+  },
+};
+
 export const plugins = [
   {
-    // what makes a scene a game table: seats, private zones, hidden cards and
-    // their decks (src/table/extension.js; the scene's README, "Extensions")
+    // what a table's pieces do: hands, cards, Shuffle and Draw
+    // (src/table/extension.js; the scene's README, "Extensions")
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
-    traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
-    // a table is played, and edited too: while editing, hidden cards still
-    // stay hidden (only their deck says who may see them)
+    traits: ["tabletop.zone", "tabletop.card"],
+    // a table is played, and edited too
     activities: ["play", "edit"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
-    // shapes). A zone's box is plain JSON for now.
-    describes: {
-      "tabletop.seats": {
-        name: "Seats",
-        on: "scene",
-        blurb: "The places players sit at this table",
-        entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } },
-      },
-      "tabletop.zone": {
-        name: "Private zone",
-        on: "object",
-        blurb: "Hidden cards in this box (in the object's own frame, metres) are shown only to whoever sits in its seat",
-        fields: [
-          { key: "seat", label: "Seat", kind: "entry", of: "tabletop.seats" },
-          { key: "min", label: "Box min", kind: "json" },
-          { key: "max", label: "Box max", kind: "json" },
-        ],
-        init: { min: [-0.1, 0, -0.05], max: [0.1, 0.05, 0.05] },
-      },
-      "tabletop.hidden": {
-        name: "Hidden card",
-        on: "object",
-        blurb: "Drawn as itself (a card back) unless its deck says who may see what it really is",
-        // a deck knows its cards by object id, and a copy has a new one: it
-        // leaves the deck behind (the scene's copy rule, STAGE.md "Copying
-        // objects"), so it's a bare back, in no deck, rather than a card
-        // another table's deck is asked about (and its players' shuffle run
-        // for) from a scene that isn't its table
-        fields: [{ key: "by", label: "Deck", kind: "url", copy: "drop" }],
-      },
-    },
-    drops: ["*"],
+    // shapes). A hand's box is plain JSON for now.
+    describes: TRAITS,
     // playing needs these and nothing else: carry pieces, the use prompt
     // (hover a pile: "[F] Flip  [S] Shuffle pile  [D] Draw to my hand"; play
     // only, it does nothing while editing), keys for verbs, a right-click menu, a camera that opens
@@ -78,14 +68,16 @@ export const plugins = [
     },
   },
   {
-    // a deck anyone can read: what each of its cards really is
-    type: "patchwork:datatype",
-    id: "plain-deck",
-    name: "Deck",
-    icon: "Layers",
-    unlisted: true,
+    // who may see what at a table: hands and face-up cards, as the stage's
+    // `audience` (src/table/rule.js, visibility.js). No `activities`: it
+    // holds while editing and whatever else a viewer is doing, since a
+    // policy that stopped would take its screen with it.
+    type: "scene:extension",
+    id: "tabletop.rule",
+    name: "Table rule",
+    traits: ["tabletop.zone", "tabletop.card"],
     async load() {
-      return (await import("./table/plain-deck.js")).PlainDeckDatatype;
+      return (await import("./table/rule.js")).default;
     },
   },
   {
@@ -165,7 +157,7 @@ export const plugins = [
       icon: "Map",
       description: "The whole two-player table, set down where you put it: board, deck, a private hand each, and seats if the scene has none",
       tags: ["tabletop.game"],
-      traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
+      traits: ["tabletop.zone", "tabletop.card"],
     },
   ].map(({ id, part, ...p }) => ({
     type: "scene:part",

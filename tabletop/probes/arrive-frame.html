@@ -1,0 +1,128 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>one viewer</title>
+<!-- One viewer of probes/arrive-probe.html: ?who=a|b&has=<packages it has
+     installed>. The BUILT packages it has are registered as from their
+     package URLs (as the module watcher would); the ones it doesn't have are
+     only served, for the stage to load if this viewer says so. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@inkandswitch/patchwork-filesystem": "./filesystem-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; overflow: hidden; }
+  #host { width: 700px; height: 520px; position: relative; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
+import { imported, servePackage } from "@inkandswitch/patchwork-filesystem";
+import { frameRepo } from "./frame-repo.js";
+import { PICKER, cardIds, deckUrlOf, kept, lostCitiesTable, seatsOf, shownAs } from "./table-setup.js";
+
+const q = new URLSearchParams(location.search);
+const who = q.get("who");
+const has = new Set((q.get("has") ?? "").split(",").filter(Boolean));
+const shared = parent.shared;
+const errors = shared.errors;
+const say = (kind, a) => errors.push(`${who} ${kind}: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`);
+window.addEventListener("error", (e) => say("onerror", [e.message]));
+window.addEventListener("unhandledrejection", (e) => say("rejection", [e.reason]));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { say("warn", a); origWarn(...a); };
+console.error = (...a) => { say("error", a); origError(...a); };
+
+const DIST = { scene: "../../scene/dist/index.js", tabletop: "../dist/index.js", "card-table": "../../card-table/dist/index.js" };
+try {
+  for (const [pkg, path] of Object.entries(DIST)) {
+    if (has.has(pkg)) registerPlugins((await import(path)).plugins, shared.urls[pkg]);
+    else servePackage(shared.urls[pkg], new URL(path, location.href).href);
+  }
+  const repo = frameRepo(shared, who);
+  const host = document.getElementById("host");
+  host.repo = repo;
+  host.viewerId = shared.viewers[who];
+  let scene = null;
+  let dbg = null;
+  const told = [];
+  setInterval(() => { for (const n of dbg?.local.get().notices ?? []) if (!told.includes(n)) told.push(n); }, 20);
+  const objects = () => scene?.doc().objects ?? {};
+  const select = () => host.querySelector(PICKER);
+  const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+  const zoneOf = (id) => {
+    const s = dbg.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return null;
+  };
+
+  window.__f = {
+    who, has: [...has],
+    /** make a Lost Cities table as the game page does, with what this viewer has installed */
+    async makeTable() {
+      const { scene: s, deckUrl, kinds } = await lostCitiesTable(repo, { title: "Lost Cities table" });
+      return { scene: s.url, deck: deckUrl, kinds };
+    },
+    /** open a scene by its URL, as following a link does */
+    async open(url) {
+      scene = await repo.find(url);
+      const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+      Tool(scene, host);
+      dbg = host.querySelector(".scene-stage").__sceneDebug;
+      return true;
+    },
+    registered: () => ["scene:extension", "scene:source", "scene:part", "scene:template", "patchwork:tool", "patchwork:datatype", "tabletop:game"].flatMap((t) => getRegistry(t).all().map((p) => `${t}/${p.id}`)),
+    hasPlugin: (type, id) => getRegistry(type).has(id),
+    running: () => (dbg?.local.get().running ?? []).map((r) => r.id),
+    activity: () => dbg?.local.get().activities ?? null,
+    packages: () => JSON.parse(JSON.stringify(dbg?.local.get().packages ?? null)),
+    listed: () => (scene?.doc().packages ?? []).map((e) => e.url),
+    suggested: () => scene?.doc()["@patchwork"]?.suggestedImportUrl ?? null,
+    imported: () => [...imported],
+    card: () => {
+      const c = host.querySelector(".packages-card");
+      return c && { hidden: c.hidden, title: c.querySelector(".packages-title")?.textContent ?? null,
+        rows: [...c.querySelectorAll(".package")].map((li) => ({ url: li.dataset.url, state: li.dataset.state, name: li.querySelector(".package-name")?.textContent ?? null })),
+        actions: [...c.querySelectorAll("[data-action]")].map((b) => b.textContent) };
+    },
+    button: (action) => rectOf(host.querySelector(`.packages-card [data-action="${action}"]`)),
+    seats: () => JSON.parse(JSON.stringify(seatsOf(scene?.doc()))),
+    picker: () => (select() ? [...select().options].map((o) => o.textContent) : null),
+    pick(sid) { const s = select(); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    hud: () => [...host.querySelectorAll(".scene-hud, .hud, [class*=hud]")].map((e) => e.textContent.trim()).filter(Boolean),
+    notices: () => told.map((n) => n.text ?? String(n)),
+    traits: () => { const out = new Set(Object.keys(scene?.doc().traits ?? {})); for (const o of Object.values(objects())) for (const k of Object.keys(o.traits ?? {})) out.add(k); return [...out].sort(); },
+    cards: () => cardIds(objects()).length,
+    keptBy: () => [...new Set(cardIds(objects()).map((id) => kept(objects()[id])?.trait ?? null))],
+    deck: () => deckUrlOf(objects()),
+    /** what this view shows every card as, by where it lies: { p1: { face, veil, back }, p2: …, table: … } */
+    tally() {
+      const out = {};
+      for (const id of cardIds(objects())) {
+        const where = zoneOf(id) ?? "table";
+        out[where] ??= { face: 0, veil: 0, back: 0 };
+        out[where][shownAs(dbg, id)]++;
+      }
+      return out;
+    },
+    /** what the stage tells this viewer's extensions of who may see each card: how many unknown (null), and how many known */
+    audiences() {
+      let unknown = 0, known = 0;
+      for (const id of cardIds(objects())) (dbg.audience(id) === null ? unknown++ : known++);
+      return { unknown, known };
+    },
+    loading: () => { const st = Object.values(dbg?.local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+  };
+} catch (err) {
+  say("setup", [err]);
+  window.__f = { failed: String(err?.stack ?? err) };
+}
+</script>

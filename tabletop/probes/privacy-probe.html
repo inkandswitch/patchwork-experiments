@@ -26,9 +26,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
-import { fill } from "../src/games/lost-cities.js";
-import { ensurePieceGLBs } from "../src/pieces.js";
-import { tableLayout, writeTable } from "../src/setup.js";
+import { PICKER, cardIds, deckUrlOf, install, lostCitiesTable, seatsOf, shownAs } from "./table-setup.js";
 
 const q = new URLSearchParams(location.search);
 const MODE = q.get("mode") || "template";
@@ -88,10 +86,7 @@ const portable = (doc) =>
   }));
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -100,17 +95,8 @@ try {
   if (MODE === "template") {
     scene = repo.add(emptyScene());
   } else {
-    const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
-    game.change((d) => fill(d));
-    await ensurePieceGLBs(repo, game);
-    const g = game.doc();
-    const fileOf = (k) => (g.pieces[k]?.glbUrl ? { url: g.pieces[k].glbUrl, hint: g.pieces[k].bounds ? { bounds: g.pieces[k].bounds } : null } : null);
-    const layout = tableLayout(g, { fileOf, gameUrl: game.url, secure: false });
-    const deckUrls = {};
-    for (const [id, deck] of Object.entries(layout.decks)) deckUrls[id] = (await repo.create2(deck)).url;
-    const table = emptyScene({ title: "Plain table" });
-    writeTable(table, layout, deckUrls);
-    scene = repo.add(table);
+    // a table whose deck doesn't ask for its players to shuffle it: kept in the open, by the plain keeper
+    ({ scene } = await lostCitiesTable(repo, { title: "Plain table", secure: false }));
   }
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -127,12 +113,12 @@ try {
   setInterval(() => {
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects ?? {};
-  const privateKeys = () => Object.keys(scene.doc().assets ?? {}).filter((k) => k.startsWith("tabletop/private-card@"));
-  const privateUrls = () => new Set(privateKeys().map((k) => scene.doc().assets[k]?.url));
-  const hiddenIds = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
-  const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
+  // anything in the scene's own files that could be a stand-in for a hidden thing: there must never be one
+  const privateKeys = () => Object.keys(scene.doc().assets ?? {}).filter((k) => /private|veil|lock/i.test(k));
+  const hiddenIds = () => cardIds(objects());
+  const deckUrl = () => deckUrlOf(objects());
   const zoneOf = (id) => {
     const s = dbg.a.scene();
     const m = s.world(id);
@@ -144,20 +130,15 @@ try {
     }
     return null;
   };
-  /** what a view shows a hidden card as, by its lens: face / private / back */
-  const stateOf = (w, id) => {
-    const L = dbg[w]?.looks();
-    const look = L?.get?.(id);
-    if (!look) return "back";
-    return privateUrls().has(look.sourceUrl) ? "private" : "face";
-  };
+  /** what a view shows a card as, by the stage's merged looks: face / veil / back */
+  const stateOf = (w, id) => shownAs(dbg[w], id);
   /** what a view has actually drawn for it: the loaded content's node names say which GLB */
   const drawnAs = (w, id) => {
     const c = dbg[w]?.viewport.contentOf(id);
     if (!c?.root) return null;
     const names = new Set();
     c.root.traverse((n) => n.name && names.add(n.name));
-    if (names.has("lock") || names.has("frost")) return "privacy";
+    if (names.has("veil")) return "veil";
     return names.size ? [...names].filter((n) => n !== "back").slice(0, 3).join(",") || "back-only" : "?";
   };
   // a log of every change of state, per view per card, with when (for a delivery seen as it happens)
@@ -183,8 +164,10 @@ try {
     assets: () => JSON.parse(JSON.stringify(scene.doc().assets ?? {})),
     objects: () => portable(scene.doc().objects ?? {}),
     privateKeys,
-    filesMade: () => repo.created.filter((h) => h.doc()?.["@patchwork"]?.type === "file" && String(h.doc()?.name).startsWith("Private card")).map((h) => h.url),
-    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    /** how many documents the repo has made, of each type (a veil must make none) */
+    made: () => { const out = {}; for (const h of repo.created) { const t = h.doc()?.["@patchwork"]?.type ?? "?"; out[t] = (out[t] ?? 0) + 1; } return out; },
+    packages: () => JSON.parse(JSON.stringify(scene.doc().packages ?? [])),
+    seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
@@ -209,7 +192,7 @@ try {
       for (const id of hiddenIds()) {
         const where = pile.has(id) ? "pile" : zoneOf(id) ?? "table";
         const s = stateOf(w, id);
-        out[where] ??= { face: 0, private: 0, back: 0 };
+        out[where] ??= { face: 0, veil: 0, back: 0 };
         out[where][s]++;
       }
       return out;

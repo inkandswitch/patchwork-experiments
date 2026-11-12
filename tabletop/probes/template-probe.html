@@ -26,6 +26,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
+import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 import * as lostCities from "../src/games/lost-cities.js";
 import * as santorini from "../src/games/santorini.js";
 import { kindsUsed } from "../src/setup.js";
@@ -69,10 +70,7 @@ const portable = (doc) =>
   }));
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -94,11 +92,9 @@ try {
   setInterval(() => {
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects ?? {};
-  /** the privacy faces' files (doc.assets, tabletop/private-card@…) */
-  const privateUrls = () => new Set(Object.entries(scene.doc().assets ?? {}).filter(([k]) => k.startsWith("tabletop/private-card@")).map(([, a]) => a?.url));
-  const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
+  const deckUrl = () => deckUrlOf(objects());
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
   const game = {};
   GAMES[gameId].fill(game);
@@ -119,16 +115,21 @@ try {
       return Object.entries(objects()).filter(([, o]) => o.kind !== "group" && (!urls.has(o.sourceUrl) || o.infoUrl)).map(([id]) => id);
     },
     deckType: () => deck()?.["@patchwork"]?.type ?? null,
-    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    /** how many cards the table has, and the keeper traits that bind them */
+    cards: () => cardIds(objects()).length,
+    keptBy: () => [...new Set(cardIds(objects()).map((id) => kept(objects()[id])?.trait ?? null))],
+    seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
-    /** the hidden cards a view sees the face of (not the privacy face: a card face up that isn't theirs) */
-    faces: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !p.has(L.get(id)?.sourceUrl)); },
-    /** the hidden cards a view sees as the privacy face (tabletop/src/table/privacy.js) */
-    privates: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => p.has(L.get(id)?.sourceUrl)); },
+    /** the cards a view sees as what they really are (a look with a source) */
+    faces: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "face"),
+    /** the cards a view sees as the stage's veil (turned toward them, kept from them or not known yet) */
+    veils: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "veil"),
+    /** the cards a view sees as their own backs (no look) */
+    backs: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "back"),
     /** what a view is still loading, and what failed to load */
     loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
     /** the table's docs as they are now, to publish: the scene, its deck and its files */

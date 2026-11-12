@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
-import { HIDDEN, SEATS, ZONE, hiddenBy, zones } from "./table/visibility.js";
+import { CARD, ZONE, isCard, zones } from "./table/visibility.js";
 
 // The table's traits, as the scene's inspector offers them ("Add behaviour…").
 const table = plugins.find((p) => p.id === "tabletop");
+const rule = plugins.find((p) => p.id === "tabletop.rule");
 const d = table.describes;
 
 /** What the inspector writes for a new trait or entry: its init, then its fields' defaults. */
@@ -14,9 +15,17 @@ const fresh = (desc) => {
 };
 
 describe("tabletop: activities", () => {
-  it("runs in play and in edit, so hidden cards stay hidden while someone edits", () => {
+  it("the table's verbs run in play and in edit", () => {
     expect(table.activities).toEqual(["play", "edit"]);
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
+  });
+
+  it("its policy declares no activities, so who may see what holds whatever a viewer is doing", () => {
+    expect(rule.type).toBe("scene:extension");
+    expect(rule.activities).toBeUndefined();
+    // on exactly what the table runs on: wherever there's a hand or a card, there's the rule
+    expect(rule.traits).toEqual(table.traits);
+    expect(rule.requires).toBeUndefined();
   });
 
   it("requires the use prompt before the key map, so the prompt hears its verbs' keys first", () => {
@@ -25,39 +34,42 @@ describe("tabletop: activities", () => {
     expect(r).toContain("scene.keys");
     expect(r.indexOf("scene.use")).toBeLessThan(r.indexOf("scene.keys"));
   });
+
+  it("registers no plugin type of its own for decks, and no deck datatype: what a card is, is a keeper's", () => {
+    expect([...new Set(plugins.map((p) => p.type))].sort()).toEqual(["patchwork:datatype", "patchwork:tool", "scene:extension", "scene:part", "scene:template", "tabletop:game"]);
+    expect(plugins.filter((p) => p.type === "patchwork:datatype").map((p) => p.id)).toEqual(["tabletop-game"]);
+    expect(table.drops).toBeUndefined();
+  });
+
+  it("names nobody else's traits: seats and keepers are met through the stage", () => {
+    const said = JSON.stringify(plugins.map(({ load, ...p }) => p));
+    for (const other of ["scene.seats", "keep.", "card-table", "secure-deck", "plain-deck"]) expect(said.includes(other)).toBe(false);
+  });
 });
 
 describe("tabletop: describes its traits", () => {
   it("describes every trait it runs on, as plain data", () => {
     expect(Object.keys(d).sort()).toEqual([...table.traits].sort());
     expect(structuredClone(d)).toEqual(d);
-    expect(d[SEATS].on).toBe("scene");
     expect(d[ZONE].on).toBe("object");
-    expect(d[HIDDEN].on).toBe("object");
+    expect(d[CARD].on).toBe("object");
   });
 
-  it("a seat added from the inspector has the shape setup.js writes: { name, player }", () => {
-    expect(fresh(d[SEATS].entries)).toEqual({ player: null, name: "Seat" });
-  });
-
-  it("a new zone is a well-formed box once it has a seat, picked from the scene's seats", () => {
+  it("a new hand is a well-formed box once it names a seat, by the seat's id", () => {
     const seat = d[ZONE].fields.find((f) => f.key === "seat");
-    expect(seat).toMatchObject({ kind: "entry", of: SEATS });
+    expect(seat).toMatchObject({ kind: "string" });
     const z = fresh(d[ZONE]);
     const scene = (zone) => ({ objects: { tray: { traits: { [ZONE]: zone } } } });
-    expect(zones(scene(z))).toEqual([]);
+    expect(zones(scene({ ...z, seat: 3 }))).toEqual([]);
     expect(zones(scene({ ...z, seat: "north" }))).toEqual([{ id: "tray", seat: "north", min: z.min, max: z.max }]);
   });
 
-  it("a hidden card names its deck by URL, and a copy leaves the deck behind: it's in no deck", () => {
-    expect(d[HIDDEN].fields).toEqual([{ key: "by", label: "Deck", kind: "url", copy: "drop" }]);
-    const card = { traits: { [HIDDEN]: { by: "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh" } } };
-    expect(hiddenBy(card)).toBe("automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh");
-    // the scene's copy (STAGE.md, "Copying objects"): every `copy: "drop"` field is left behind
-    const copy = structuredClone(card);
-    for (const f of d[HIDDEN].fields) if (f.copy === "drop") delete copy.traits[HIDDEN][f.key];
-    expect(copy.traits[HIDDEN]).toEqual({});
-    expect(hiddenBy(copy)).toBe(null);
+  it("a card is a bare marker: nothing in it says what it is, so a copy is a card and nothing more", () => {
+    expect(d[CARD].fields).toBeUndefined();
+    expect(fresh(d[CARD])).toEqual({});
+    expect(isCard({ traits: { [CARD]: fresh(d[CARD]) } })).toBe(true);
+    expect(isCard({ traits: {} })).toBe(false);
+    expect(isCard({})).toBe(false);
   });
 });
 
@@ -98,7 +110,7 @@ describe("tabletop: parts", () => {
   it("says what each brings by a trait the table describes", () => {
     for (const p of parts) for (const t of p.traits ?? []) expect(d[t]).toBeDefined();
     // dice are the dice package's: no die trait, no die part here
-    expect(table.traits).toEqual(["tabletop.seats", "tabletop.zone", "tabletop.hidden"]);
+    expect(table.traits).toEqual(["tabletop.zone", "tabletop.card"]);
     expect(Object.keys(d)).toEqual(table.traits);
     expect(parts.some((p) => /die|dice/.test(p.id))).toBe(false);
   });

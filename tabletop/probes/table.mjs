@@ -1,19 +1,17 @@
-// The table's verbs, card slots, a dropped deck and the parts bin's pawn, by
+// The table's verbs, card slots and the parts bin's pawn, by
 // two people in headless Chrome. (Dice are the dice package's: dice/probes/dice.mjs.)
 //
-//   (in scene/, tabletop/ and card-table/) pnpm build
+//   (in scene/, tabletop/, card-table/ and keep/) pnpm build
 //   node probes/table.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT tabletop and card-table plugins
-// on a Lost Cities table with a plain deck, twice on one doc (A is Ana in
+// Mounts the BUILT scene tool with the BUILT tabletop and keeper plugins
+// on a Lost Cities table whose deck is kept in the open, twice on one doc (A is Ana in
 // Player 1, B is Ben in Player 2; table-probe.html). Then:
 // - verbs: hovering the deck, A's use prompt offers Flip and Shuffle; S
-//   shuffles, and B is told "Ana shuffled the deck (N)";
+//   shuffles (through the card's keeper), and B is told Ana shuffled it (N);
 // - card slots: a card carried near a free slot of A's tray squares onto it;
 // - edit: the parts bin offers the Tabletop parts; a pawn dragged out lands
-//   where it was dropped, its art one file; a secure deck dropped on open
-//   table stacks at the point, and one dropped near an empty discard slot
-//   squares onto it;
+//   where it was dropped, its art one file;
 // - play again: the pawn (no tags) carried near a free tray slot does not
 //   snap to it.
 // Prints a JSON checklist; exits non-zero if any check fails.
@@ -25,7 +23,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-table"));
 
@@ -101,6 +99,7 @@ try {
   {
     const pile = await P("pile()");
     const deck0 = await P("deckDoc()");
+    const bindings0 = await P("bindings()");
     await until(`aimAt(${J(pile[0])}, 'a')`, 30_000);
     const at = await P(`aimAt(${J(pile[0])}, 'a')`);
     await b.move(at.x, at.y);
@@ -114,10 +113,13 @@ try {
     await sleep(500);
     await snapLooks("shuffled");
     check("A is told it's shuffling", await until("notices('a').some((n) => /^Shuffling \\d+ cards/.test(n))", 3000), await P("notices('a')"));
-    check("B is told Ana shuffled the deck", await until(`notices('b').includes('Ana shuffled the deck (${pile.length})')`, 3000), await P("notices('b')"));
+    check("B is told Ana shuffled it, by its container's name and a count", await until(`notices('b').includes('Ana shuffled “Table probe: Deck” (${pile.length})')`, 3000), await P("notices('b')"));
     const deck1 = await P("deckDoc()");
-    const names = (d) => Object.values(d.objects ?? {}).map((o) => `${o.sourceUrl}|${o.name}`).sort();
-    check("the plain deck's cards are the same cards, in another order", J(names(deck0)) === J(names(deck1)) && J(deck0.objects) !== J(deck1.objects), { before: Object.keys(deck0.objects ?? {}).length, after: Object.keys(deck1.objects ?? {}).length });
+    // the keeper's container: the same items, untouched, and which slot holds which permuted among the pile's slots
+    const sorted = (a) => [...a].sort((x, y) => x - y);
+    const moved = deck0.at.filter((v, k) => deck1.at[k] !== v).length;
+    check("the container holds the same items, its slots in another order (only the pile's)", J(deck0.items) === J(deck1.items) && J(sorted(deck0.at)) === J(sorted(deck1.at)) && moved > 0 && moved <= pile.length, { moved, pile: pile.length });
+    check("the scene doc's cards weren't touched by the shuffle: the order is the container's", J(await P("bindings()")) === J(bindings0), null);
   }
 
   // ── a card carried near a free slot of A's tray squares onto it ──
@@ -144,7 +146,7 @@ try {
   }
 
   await snapLooks("card snapped");
-  // ── editing: the parts bin, R, and a dropped deck ──
+  // ── editing: the parts bin ──
   await click(await P(`rect('.activity-option[data-activity="edit"]')`));
   check("A switches to Edit", await until("activity('a') === 'edit' && __p.running('a').includes('scene.parts')", 6000), await P("running('a')"));
   // the camera eases to the editor's view: let it stop before aiming at the ground
@@ -170,55 +172,17 @@ try {
     report.pawn = pawnId;
     check("a pawn dragged out lands where it was dropped, on nothing, with no tags and no traits", pawn && pawn.parent == null && !pawn.tags?.length && !Object.keys(pawn.traits ?? {}).length && plan(pawn.transform.position, g2.hit.point) < 2e-3, { pawn, at: g2.hit.point });
     check("its art is one file under its versioned key", d.assets?.["tabletop/pawn@1"]?.url === pawn?.sourceUrl, Object.keys(d.assets ?? {}));
-    check("no part made or changed a seat", J(Object.keys(d.traits["tabletop.seats"])) === J(["p1", "p2"]));
+    check("no part made or changed a seat", J(Object.keys(await P("seats()"))) === J(["p1", "p2"]));
   }
   await until(`loaded(${J(pawnId)})`, 15_000);
   await shot("3-parts");
-  {
-    // a secure deck dropped on open table, then near an empty discard slot
-    const loose = await P("looseDeck");
-    await settled();
-    g3.hit = await P(`pickAt(${g3.page.x}, ${g3.page.y}, 'a')`);
-    const before = new Set(await ids());
-    await P(`dropUrl('a', ${J(loose)}, ${g3.page.x}, ${g3.page.y})`);
-    await until(`Object.keys(doc().objects).length > ${before.size}`, 6000);
-    await sleep(200);
-    const d = await P("doc()");
-    const added = Object.keys(d.objects).filter((id) => !before.has(id));
-    const cards = added.filter((id) => d.objects[id].traits?.["tabletop.hidden"]);
-    const xz = cards.map((id) => d.objects[id].transform.position);
-    check("a secure deck dropped on open table stacks at the drop point, face down, tagged card", cards.length === 60 && xz.every((p) => plan(p, g3.hit.point) < 2e-3) && cards.every((id) => J(d.objects[id].tags) === '["card"]' && Math.abs(d.objects[id].transform.rotation[2] - Math.PI) < 1e-6), { n: cards.length, at: g3.hit.point, first: xz[0] });
-    report.dropped1 = { n: cards.length, at: g3.hit.point, first: xz[0] };
-    // undo that one (the deck is bound now), and drop a fresh copy near a discard slot
-    await settled();
-    const slots = await P(`slots(${J(board)})`);
-    const discard = slots.filter((s) => s.tags.includes("card") && Math.abs(s.world[2]) < 1e-3 && Math.abs(s.world[0] - 0.3) > 0.01);
-    const target = discard[1] ?? discard[0];
-    const near = [target.world[0] + 0.008, target.world[1], target.world[2] + 0.01];
-    const s = await P(`screen(${J(near)}, 'a')`);
-    const hit = await P(`pickAt(${s.x}, ${s.y}, 'a')`);
-    const second = await js(`(async () => { const h = await window.repo.find(window.__p.looseDeck); const d = JSON.parse(JSON.stringify(h.doc())); d.slots = {}; return (await window.repo.create2(d)).url; })()`);
-    const before2 = new Set(await ids());
-    await P(`dropUrl('a', ${J(second)}, ${s.x}, ${s.y})`);
-    await until(`Object.keys(doc().objects).length > ${before2.size}`, 6000);
-    await sleep(200);
-    const d2 = await P("doc()");
-    const cards2 = Object.keys(d2.objects).filter((id) => !before2.has(id) && d2.objects[id].traits?.["tabletop.hidden"]);
-    const p2 = cards2.map((id) => d2.objects[id].transform);
-    const yawOk = target.yaw == null ? true : p2.every((t) => Math.abs(Math.atan2(Math.sin(t.rotation[1] - target.yaw), Math.cos(t.rotation[1] - target.yaw))) < 1e-3);
-    check("a deck dropped 1.3 cm off an empty discard slot squares onto it", hit?.id === board && cards2.length === 60 && p2.every((t) => plan(t.position, target.world) < 1e-3) && yawOk, { hit, slot: target, first: p2[0] });
-    await shot("4-dropped-decks");
-    await sleep(500);
-    await snapLooks("decks dropped");
-  }
-
   // ── play again: the pawn won't take a card slot ──
   await click(await P(`rect('.activity-option[data-activity="play"]')`));
   check("A back in play", await until("activity('a') === 'play' && !__p.running('a').includes('scene.parts')", 6000), await P("running('a')"));
   await settled();
   await snapLooks("back in play");
   const same = (x, y) => Object.keys(x).every((id) => !(id in y) || x[id] === y[id]);
-  check("the hands keep their faces throughout (a shuffle of the pile, dropped decks, edit and back)", ["shuffled", "card snapped", "decks dropped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
+  check("the hands keep their faces throughout (a shuffle of the pile, edit and back)", ["shuffled", "card snapped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
   check("…with the hand as the tool", (await P("tool('a')")) == null || (await P("tool('a')")) === "hand", { tool: await P("tool('a')") });
   await sleep(400);
   {

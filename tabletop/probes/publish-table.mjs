@@ -11,13 +11,16 @@
 // (games/lost-cities.js fill, as "Start from" does), every piece's GLB drawn
 // into a file doc (pieces.js ensurePieceGLBs, as the game page does while
 // open), then "Set up a table" (tool.js setUpTable): tableLayout with the
-// game's GLBs, a doc per deck, writeTable onto a skeleton scene doc with
-// every map a scene has, the scene doc, and the table listed on the game
-// (its only one: the game is new).
+// game's GLBs, a container per deck from a keeper and the seats from their
+// owner (both found, as the game page finds them, by their plugins'
+// metadata: here in the BUILT scene, card-table and keep packages, so build
+// those first), writeTable onto a skeleton scene doc with every map a scene
+// has, the scene doc, and the table listed on the game (its only one: the
+// game is new).
 //
-// --template <game>: the scene's start screen. Needs scene/, tabletop/ and
-// card-table/ built. In headless Chrome, the BUILT scene tool with the BUILT
-// tabletop and card-table plugins is mounted twice on one EMPTY scene
+// --template <game>: the scene's start screen. Needs scene/, tabletop/,
+// card-table/ and keep/ built. In headless Chrome, the BUILT scene tool with the BUILT
+// tabletop and keeper plugins is mounted twice on one EMPTY scene
 // (template-probe.html; an in-memory repo, two views A and B), and A picks
 // the template on the start screen (api.template); B opens it after. It checks:
 // - the start screen offers it;
@@ -26,17 +29,21 @@
 // - the view starts in play, and A is playing (a game with no seats, zones
 //   or hidden cards, Santorini, gives play nothing to run, so its doc
 //   writes no view.activity: A is in the editor, in the hand);
-// - the deck is a secure-deck (card-table is installed);
-// - with A and B seated, the secure deck reaches phase "playing" and each
-//   hand's faces reach its player.
+// - the deck is kept by the joint keeper (a secure-deck: card-table is
+//   installed), every card bound to it by that keeper's own trait;
+// - with A and B seated, the deck reaches phase "playing" and each hand's
+//   faces reach its player (8 each).
 // Then (unless --dry-run) it publishes the table as the template left it
 // (before anyone sat): its files, its deck and the scene, each made anew on
 // the server with the urls between them rewritten.
 //
-// Lost Cities' deck is secure, so its doc is a `secure-deck` (the card-table
-// package's datatype). Setting up writes it as plain data, waiting for
-// players: the encrypted shuffle happens later, in the seated players' own
-// browsers, so nothing here needs WebCrypto.
+// Lost Cities' deck asks for its players to shuffle it, so its container is
+// the joint keeper's (a `secure-deck`, the card-table package's). Setting up
+// writes it as plain data, waiting for players: the encrypted shuffle
+// happens later, in the seated players' own browsers, so nothing here needs
+// WebCrypto. The published scene lists the three packages it is made of:
+// the scene's (seats are its own), tabletop's (hands and cards) and
+// card-table's (the keeper).
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -49,12 +56,14 @@ import { fill } from "../src/games/lost-cities.js";
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
+import { containDecks, findSeats } from "../src/table/made-with.js";
 import { packageProblems, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
 
 // A published table names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the table's own, and the secure deck's. In the browser the
-// stage works these out from the registry; here they're stated.
+// the scene (the seats are its part), the table's own, and the keeper's. In
+// the browser the stage works these out from the registry; here they're
+// stated.
 const PACKAGES = ["scene", "tabletop", "card-table"];
 
 const args = Object.fromEntries(
@@ -122,11 +131,29 @@ const title = `${g.title || "Game"} table ${(g.tables?.length ?? 0) + 1}`;
 const fileOf = (kind) => (g.pieces[kind]?.glbUrl ? { url: g.pieces[kind].glbUrl, hint: g.pieces[kind].bounds ? { bounds: g.pieces[kind].bounds } : null } : null);
 const layout = tableLayout(g, { fileOf, gameUrl: game.url });
 const decks = layout.decks;
-// the decks first, so the scene never names one that isn't there
-const deckUrls = {};
-for (const [deckId, deck] of Object.entries(decks)) deckUrls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
+// What's installed, for setting up: the built scene (seats), card-table (the
+// joint keeper) and keep (the plain one), as a registry the game page's own
+// lookups read (src/table/made-with.js).
+const here = (p) => resolve(dirname(fileURLToPath(import.meta.url)), "../..", p);
+const installed = [];
+for (const pkg of ["scene", "card-table", "keep"]) {
+  const entry = here(`${pkg}/dist/index.js`);
+  if (!existsSync(entry)) throw new Error(`no ${pkg}/dist/index.js: build it first`);
+  installed.push(...(await import(entry)).plugins);
+}
+const registry = async (type) => {
+  const all = new Map(installed.filter((p) => p.type === type).map((p) => [p.id, { ...p }]));
+  return { filter: (fn) => [...all.values()].filter(fn), load: async (id) => { const p = all.get(id); if (p && !p.module) p.module = await p.load(); return p; } };
+};
+// the decks' containers first, so the scene never names one that isn't there
+const { binds, kinds } = await containDecks({ repo, registry }, decks, (deck) => `${title}: ${deck.title}`);
+const lay = await findSeats(registry);
+if (!lay) throw new Error("nothing built here owns seats (the scene's seats part)");
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, deckUrls);
+writeTable(table, layout, binds, { seats: lay });
+// each deck's container, as its cards name it
+const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
+const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));
 const scene = await repo.create2(table);
 game.change((d) => {
   if (!d.tables) d.tables = [];
@@ -143,10 +170,17 @@ if ("kits" in (s.view ?? {})) problems.push("view still has kits");
 problems.push(...packageProblems(s, PACKAGES));
 const objects = Object.entries(s.objects).filter(([, o]) => o.kind !== "group");
 for (const [id, o] of objects) if (!glbs.includes(o.sourceUrl)) problems.push(`${id} (${o.name}) shows a GLB that isn't the game's`);
-const hidden = objects.filter(([, o]) => o.traits?.["tabletop.hidden"]);
-for (const [id, o] of hidden) if (!Object.values(deckUrls).includes(o.traits["tabletop.hidden"].by)) problems.push(`${id} is hidden by a deck that wasn't made`);
-const deckTypes = Object.values(decks).map((dk) => dk["@patchwork"].type);
+const hidden = objects.filter(([, o]) => o.traits?.["tabletop.card"]);
+for (const [id, o] of hidden) if (!Object.values(deckUrls).includes(keptBy(o)?.by)) problems.push(`${id} is a card no container that was made keeps`);
+if (new Set(hidden.map(([, o]) => `${keptBy(o)?.by}#${keptBy(o)?.slot}`)).size !== hidden.length) problems.push("two cards name one slot");
+const deckTypes = Object.keys(decks).map((deckId) => `${kinds[deckId]} keeper`);
 if (!hidden.length) problems.push("no cards in a deck");
+if (Object.entries(decks).some(([deckId, dk]) => dk.secure && kinds[deckId] !== "joint")) problems.push("a deck that asks for its players to shuffle it went to a plain keeper");
+// no trace of the old shapes, and the traits of the three packages the scene lists
+const text = JSON.stringify(s);
+for (const old of ["tabletop.hidden", "tabletop.seats", "plain-deck"]) if (text.includes(old)) problems.push(`the scene still says ${old}`);
+if (JSON.stringify(Object.keys(s.traits?.["scene.seats"] ?? {})) !== JSON.stringify(Object.keys(layout.seats))) problems.push(`its seats are ${JSON.stringify(Object.keys(s.traits?.["scene.seats"] ?? {}))}`);
+if (!hidden.every(([, o]) => o.traits["card-table.kept"])) problems.push("its cards aren't bound by the joint keeper's trait");
 // the new game lists the one table made here, and nothing older
 if (JSON.stringify(game.doc().tables) !== JSON.stringify([scene.url])) problems.push(`the game lists tables ${JSON.stringify(game.doc().tables)}, not just ${scene.url}`);
 if (problems.length) {
@@ -154,7 +188,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
-console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards in ${deckTypes.join(", ")} decks, starts in ${s.view.activity}`);
+console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits["scene.seats"]).length} seats, starts in ${s.view.activity}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
 if (DRY) {
@@ -178,7 +212,7 @@ async function fromTemplate(gameId) {
   const { browser, checklist, sleep } = await import("./cdp.mjs");
   const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const ROOT = resolve(PKG, "..");
-  for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+  for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
   const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
   const id = `tabletop.${gameId}`;
   const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
@@ -201,21 +235,21 @@ async function fromTemplate(gameId) {
     const keys = await P("expectedKeys()");
     const laid = await until(`doc().count > 0 && ${JSON.stringify(keys)}.every((k) => __p.doc().assets?.[k]?.url)`, 30_000);
     const d = await P("doc()");
-    // (and perhaps the privacy face's, once a view saw a hand that isn't its own: tabletop/src/table/privacy.js)
-    const art = Object.keys(d.assets ?? {}).filter((k) => !k.startsWith("tabletop/private-card@"));
+    // (nothing else is ever filed: a veil is the stage's drawing, not a file)
+    const art = Object.keys(d.assets ?? {});
     check("doc.assets has a file under its versioned key for every kind", laid && art.length === keys.length, { want: keys.length, have: art.length, missing: keys.filter((k) => !d.assets?.[k]) });
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
     // play is on offer only where the table extension has a trait to run on
-    // (seats, zones, hidden cards); Santorini has none, so its doc doesn't
-    // claim play, and it opens in the editor, in the hand
-    const tabled = Object.keys(d.traits ?? {}).some((k) => k.startsWith("tabletop."));
+    // (hands, cards); Santorini has none, so its doc doesn't claim play, and
+    // it opens in the editor, in the hand
+    const tabled = (await P("cards()")) > 0;
     const lands = tabled ? "play" : "edit";
     check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, in the hand`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && d.view?.tool === "hand", d.view);
     check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
     snapshot = await P("snapshot()");
-    const seated = Object.keys(d.traits?.["tabletop.seats"] ?? {});
+    const seated = Object.keys(await P("seats()"));
     if (seated.length) {
-      check("the deck is a secure-deck", (await P("deckType()")) === "secure-deck", await P("deckType()"));
+      check("the deck is kept by the joint keeper (a secure-deck), every card bound by that keeper's trait", (await P("deckType()")) === "secure-deck" && (await P("keptBy()")).join() === "card-table.kept", { type: await P("deckType()"), traits: await P("keptBy()") });
       check("A is told to pick a seat", await until("notices('a').includes('Pick a seat (top right) to play.')", 3000), await P("notices('a')"));
       await P("openB()");
       check("B opens the table in play, and both pickers are up", await until("activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
@@ -223,8 +257,8 @@ async function fromTemplate(gameId) {
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
-      const playing = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 120_000);
-      check("the secure deck reaches phase playing, each hand's faces delivered", playing, { phase: await P("phase()"), faces: { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length } });
+      const playing = await until("phase() === 'playing' && __p.faces('a').length === 8 && __p.faces('b').length === 8", 120_000);
+      check("the deck reaches phase playing, and each hand's 8 faces reach its player", playing, { phase: await P("phase()"), faces: { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length } });
     }
     await sleep(500);
     check("nothing failed to load", (await P("loading('a')")).errors === 0, await P("loading('a')"));

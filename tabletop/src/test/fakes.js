@@ -430,7 +430,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
  * doc.assets[key]), the registry and notify. What it made is in `calls`;
  * `calls.log` is every create2 and change, in order. Copied from
  * sailing/src/test/fakes.js, with the registry and the log added.
- *   const { ctx, calls } = fakeDrop(doc, { registries: { "tabletop:deck": reg } });
+ *   const { ctx, calls } = fakeDrop(doc, { registries: { "scene:extension": reg } });
  * @param {object} doc
  * @param {{ content?: { [id]: object }, registries?: { [type]: object } }} [o]
  */

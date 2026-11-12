@@ -27,6 +27,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
+import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -110,10 +111,7 @@ const walker = {
 };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   getRegistry("scene:extension").register(walker);
   const repo = new FakeRepo();
   window.repo = repo;
@@ -138,9 +136,9 @@ try {
   }, 20);
   const confirms = [];
   window.confirm = (q) => (confirms.push(q), false);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects ?? {};
-  const seats = () => scene.doc().traits?.["tabletop.seats"] ?? {};
+  const seats = () => seatsOf(scene.doc());
   const r4 = (v) => +(+v).toFixed(4);
 
   window.__p = {
@@ -151,7 +149,7 @@ try {
     templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
     start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
     seats,
-    claim: (sid) => scene.doc().claims?.[`tabletop.seat:${sid}`] ?? null,
+    claim: (sid) => scene.doc().claims?.[seatClaim(sid)] ?? null,
     session: (w) => dbg[w].presence.session,
     picker: (w) => select(w)?.options.length ?? 0,
     options: (w) => (select(w) ? [...select(w).options].map((o) => [o.value, o.textContent]) : null),
@@ -160,7 +158,7 @@ try {
     confirms: () => [...confirms],
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
     immersive: (w) => !!dbg[w]?.local.get().immersive,
-    phase: () => { const u = Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean); return u ? repo.handles.get(u)?.doc()?.phase ?? null : null; },
+    phase: () => { const u = deckUrlOf(objects()); return u ? repo.handles.get(u)?.doc()?.phase ?? null : null; },
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** the stand-in walker in view w */
     walk(w, eye, target) { return walkers[viewerOf[w]].start(eye, target); },
@@ -172,7 +170,7 @@ try {
       const s = dbg.a.scene();
       const tray = this.tray(seat);
       const z = objects()[tray].traits["tabletop.zone"];
-      return Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]).filter((id) => { const m = s.world(id); const p = s.toLocal(tray, [m[12], m[13], m[14]]); return p.every((v, k) => v >= z.min[k] && v <= z.max[k]); });
+      return cardIds(objects()).filter((id) => { const m = s.world(id); const p = s.toLocal(tray, [m[12], m[13], m[14]]); return p.every((v, k) => v >= z.min[k] && v <= z.max[k]); });
     },
     /** a seat's camera in the world (its `in` applied) */
     seatCam(sid) {
