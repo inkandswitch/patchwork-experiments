@@ -15,7 +15,8 @@ export const DieDatatype = {
   },
   markCopy(doc) {
     doc.title = `Copy of ${doc.title || "die"}`;
-    // the copy hasn't been rolled
+    // the copy hasn't been rolled, and has no draw under way
     doc.rolls = [];
+    delete doc.round;
   },
 };

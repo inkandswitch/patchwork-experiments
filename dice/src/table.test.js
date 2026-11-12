@@ -7,13 +7,12 @@ import { TABLE_RADIUS, TABLE_TOP } from "./cup-glb.js";
 import { DICE_EACH, SETS, cupPart, layOutTable } from "./table.js";
 import { emptyScene } from "./test/empty-scene.js";
 
-function fakeCtx({ lots = true, seats = true } = {}) {
+function fakeCtx({ seats = true } = {}) {
   const doc = emptyScene();
   const files = new Map();
   const notices = [];
   let n = 0;
   const plugins = [
-    ...(lots ? [{ id: "keep.lots", lots: true, module: { attach: () => ({ "keep.lots": {} }) } }] : []),
     ...(seats ? [{ id: "scene.seats", roster: true, module: { lay: (d, s) => (d.traits["scene.seats"] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { ...v, player: null }]))) } }] : []),
   ];
   const reg = { filter: (fn) => plugins.filter(fn), load: async (id) => ({ module: plugins.find((p) => p.id === id).module }) };
@@ -52,11 +51,8 @@ describe("the Liar's dice table", () => {
     expect(d.order.length).toBe(objects.length);
     // one file per kind of thing: a table, a pool, and a cup and a die per set
     expect(ctx.files.size).toBe(2 + 2 * SETS.length);
-    // every cup is drawn on by lots, and starts lifted, nobody's, with nothing shaken
-    for (const o of objects.filter((x) => x.traits?.["dice.cup"])) {
-      expect(o.traits["keep.lots"]).toEqual({});
-      expect(o.traits["dice.cup"]).toEqual({ up: true, blind: false, holder: null, roll: null });
-    }
+    // every cup starts lifted, nobody's, with nothing shaken and no draw; its trait is all it needs to be drawn for
+    for (const o of objects.filter((x) => x.traits?.["dice.cup"])) expect(o.traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null } });
     expect(ctx.notices.some((n) => n.kind === "warn")).toBe(false);
   });
 
@@ -80,14 +76,10 @@ describe("the Liar's dice table", () => {
     for (const [id, o] of Object.entries(snap.objects)) if (o.traits?.["dice.die"]) expect(p(id)).toBe(null);
   });
 
-  it("without lots or seats installed, it's still laid out, and says what's missing", async () => {
-    const ctx = fakeCtx({ lots: false, seats: false });
+  it("without seats installed, it's still laid out, and says what's missing", async () => {
+    const ctx = fakeCtx({ seats: false });
     await layOutTable(ctx);
-    expect(Object.values(ctx.doc().objects).filter((o) => o.traits?.["keep.lots"]).length).toBe(0);
-    expect(ctx.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual([
-      "Nothing installed here draws lots, so these cups can't be shaken fairly: add the keep package.",
-      "Nothing installed here owns seats, so this table has none.",
-    ]);
+    expect(ctx.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual(["Nothing installed here owns seats, so this table has none."]);
   });
 
   it("the cup part: a cup with its five dice in front of it, on what it's put on", async () => {
@@ -98,6 +90,6 @@ describe("the Liar's dice table", () => {
     const c = cupsOf(snap).cups.get(id);
     expect(c.front.length).toBe(5);
     expect(snap.objects[id].parent).toBe("slab");
-    expect(snap.objects[id].traits["keep.lots"]).toEqual({});
+    expect(snap.objects[id].traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null } });
   });
 });

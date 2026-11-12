@@ -23,8 +23,8 @@
 // THE ROLL. Shaking writes, in one change, the cup down on its spot, its
 // dice in a ring under it in a pose that says nothing of the roll (face 0
 // up, turned only about +Y), and `roll: { draw, dice, blind, done: false }`;
-// and asks the `lots` convention (keep's "keep.lots") for a draw on the cup,
-// sealed by the holder alone (shaken blind: by every seated player, the
+// and asks lots (this package's "dice.lots", lots-ext.js) for a draw on the
+// cup, of those dice in that order, sealed by the holder alone (shaken blind: by every seated player, the
 // holder too; cup.js sealersFor). Nobody's client chooses the seed: the
 // seated players' clients draw it between them, and the sealed parts stay
 // sealed, so only the holder's client can work out the faces (blind: nobody's,
@@ -36,7 +36,7 @@
 //
 // The doc isn't signed, so a client uses a draw's seed only if it is the
 // one the cup's shake asked for (cup.js `fits`: its draw, asked by the
-// holder, sealed as the shake says); a round written over it by anyone else
+// holder, of its dice, sealed as the shake says); a round written over it by anyone else
 // is no roll of this cup's, and the holder's client asks again for its own.
 // Each view says when a cup was shaken from the doc itself (a new draw on
 // it), not from anyone's word, so a reshake can't go untold.
@@ -114,8 +114,9 @@ function create(api) {
   const inPlay = (local) => (local ?? api.local?.get?.())?.activities?.current === "play";
   const kOf = (s) => (parent) => (parent && s?.world ? scaleOf(s.world(parent)) : 1);
 
+  /** This package's lots, as this view runs them (lots-ext.js), or null while they aren't running. */
   function lotsApi() {
-    for (const { value } of api.collect?.("lots") ?? []) if (typeof value?.draw === "function" && typeof value?.state === "function") return value;
+    for (const { value } of api.collect?.("dice.lots") ?? []) if (typeof value?.draw === "function" && typeof value?.state === "function") return value;
     return null;
   }
   function rosterApi() {
@@ -242,7 +243,7 @@ function create(api) {
       const there = st?.id ?? null;
       if (asked.has(roll.draw) && asked.get(roll.draw) === there) continue;
       asked.set(roll.draw, there);
-      lots.draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), draw: roll.draw });
+      lots.draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), draw: roll.draw, of: roll.dice });
     }
   }
 
@@ -376,7 +377,7 @@ function create(api) {
       : api.heldBy?.(id) != null
         ? "Someone has that cup"
         : !lotsApi()
-          ? "A fair roll needs lots (the keep package), and they aren't running here"
+          ? "Rolls are drawn by lots, which aren't running here yet"
           : n === 0
             ? "There are no dice in front of this cup"
             : n > MAX_UNDER
@@ -403,7 +404,7 @@ function create(api) {
     if (!plan) return;
     const lots = lotsApi();
     const before = lots.state(id)?.id ?? null;
-    const draw = lots.draw(id, { sealers: sealersFor(viewer, !!blind, seated(s)) });
+    const draw = lots.draw(id, { sealers: sealersFor(viewer, !!blind, seated(s)), of: [...plan.dice.keys()] });
     if (!draw) return api.notify?.("Couldn't start the roll.");
     // (its round lands after this write, over whatever round is there now: not a round gone astray)
     asked.set(draw, before);
@@ -566,7 +567,7 @@ function create(api) {
     },
     hud() {
       const out = [];
-      if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken here: a fair roll needs lots (the keep package), and they aren't running.", state: "warn" });
+      if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken yet: rolls are drawn by lots, which aren't running here.", state: "warn" });
       const lots = lotsApi();
       const now = Date.now();
       const list = (vs) => (vs.length > 1 ? `${vs.slice(0, -1).join(", ")} and ${vs.at(-1)}` : vs[0]);

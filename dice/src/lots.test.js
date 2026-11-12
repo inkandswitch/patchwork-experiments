@@ -7,7 +7,7 @@
 // opens only when it's addressed to it (seal.test.js checks the real ones).
 
 import { createHash } from "node:crypto";
-import { COMMIT_MS, OPEN_MS, commitOf, complete, contributorsOf, derive, due, faultOf, knewOf, membersFor, newRound, roundOf, seed32, seedOf } from "./lots.js";
+import { COMMIT_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, faultOf, knewOf, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
 import { sha256 } from "./sha256.js";
 
 const nonceOf = (v, id) => sha256(`nonce|${v}|${id}`);
@@ -328,6 +328,116 @@ describe("lots: a reroll", () => {
   });
 });
 
+describe("lots: a draw open to all, and its last opener", () => {
+  // With nothing sealed, the last contributor to open can work the seed out from the others' openings before
+  // writing its own. Every way such a draw among two or three can stand (who has opened), every one of them
+  // asking for it again with everyone, and every client judging it (having opened its own part or not).
+  const cases = [];
+  for (const members of [["a", "b"], ["a", "b", "c"]])
+    for (const opened of subsets(members))
+      for (const by of members) for (const me of members) cases.push({ members, opened, by, me });
+  it("has the cases it means to", () => expect(cases.length).toBe(4 * 2 * 2 + 8 * 3 * 3));
+
+  const roundWith = (members, opened, by = "a", id = "r1xx") => {
+    const r = newRound({ draw: "dxxxx", id, by, at: 0, of: ["d1"], sealers: [], members, commit: commitOf(id, by, nonceOf(by, id), "", ["d1"]) });
+    for (const v of members) r.commits[v] = commitOf(id, v, nonceOf(v, id), "", ["d1"]);
+    for (const v of opened) r.opens[v] = nonceOf(v, id);
+    return roundOf({ round: r });
+  };
+
+  it("who could know it: everyone once all have opened; the one still to open once all the others have; else nobody", () => {
+    for (const { members, opened } of cases) {
+      const missing = members.filter((v) => !opened.includes(v));
+      const r = roundWith(members, opened);
+      expect(couldKnow(r)).toEqual(missing.length === 0 ? "all" : missing.length === 1 ? missing : []);
+      // and only then is the seed in anyone's hands from the doc alone
+      for (const v of [...members, "spectator"]) {
+        const held = members.includes(v) && !opened.includes(v) ? { mine: { nonce: nonceOf(v, "r1xx"), key: null } } : {};
+        const d = derive(r, v, held);
+        const knows = missing.length === 0 || (missing.length === 1 && missing[0] === v);
+        // (a client's own unopened part is the one it holds: derive says what the doc says, so the last opener sees the seed only once it has written its part)
+        if (missing.length === 0) expect(d.seed).toBe(seedOf("r1xx", members.map((m) => [m, nonceOf(m, "r1xx")])));
+        else expect(d.seed).toBe(null);
+        if (!knows) expect(couldKnow(r) === "all" || couldKnow(r).includes(v)).toBe(false);
+      }
+    }
+  });
+
+  it("a new attempt of it is refused exactly when its asker could have known the one before: complete, or all opened but the asker (withheld)", () => {
+    for (const { members, opened, by, me } of cases) {
+      const prev = roundWith(members, opened);
+      const next = roundOf({ round: newRound({ draw: "dxxxx", id: "r2xx", by, at: 0, of: ["d1"], sealers: [], members, commit: "0".repeat(64) }) });
+      const mine = opened.includes(me);
+      const f = faultOf(prev, next, me, { opened: mine });
+      const missing = members.filter((v) => !opened.includes(v));
+      const want = missing.length === 0 ? { of: "r1xx", why: "complete" } : missing.length === 1 && missing[0] === by ? { of: "r1xx", why: "withheld" } : null;
+      expect(f, `${members.join("")} opened ${opened.join("") || "-"}, ${by} asks, ${me} judges`).toEqual(want);
+    }
+  });
+
+  it("the deadlines' own retry is never refused: the asker has opened, and those it leaves out hadn't", () => {
+    for (const { members, opened } of cases) {
+      if (!opened.includes("a")) continue; // an honest asker opens as soon as the contributors are fixed
+      const r = roundWith(members, opened);
+      const step = due(r, "a", 1e9, { openingSince: 0 });
+      if (!step?.retry) continue;
+      const next = roundOf({ round: newRound({ draw: "dxxxx", id: "r2xx", by: "a", at: 0, of: ["d1"], sealers: [], members: step.retry.members, commit: "0".repeat(64), excluded: step.retry.excluded }) });
+      for (const me of members) expect(faultOf(r, next, me, { opened: opened.includes(me) })).toBe(null);
+    }
+  });
+
+  it("the asker opens first: nobody else opens until its opening is in, so the asker never knows the seed before everyone can", () => {
+    for (const { members, opened, by, me } of cases) {
+      const r = roundWith(members, opened, by);
+      const d = derive(r, me, { mine: { nonce: nonceOf(me, "r1xx"), key: null } });
+      const want = !opened.includes(me) && (me === by || opened.includes(by));
+      expect(d.mustOpen, `${members.join("")} opened ${opened.join("") || "-"}, ${by} asked, ${me}`).toBe(want);
+      if (!opened.includes(by) && members.length > 1) expect(d.waiting).toEqual([by]);
+      // in every state honest clients can reach (nobody opened, or the asker among those who have), the asker
+      // could know the seed only once everyone can
+      if (!opened.length || opened.includes(by)) {
+        const knew = couldKnow(r);
+        expect(knew === "all" || !knew.includes(by) || members.length === 1).toBe(true);
+      }
+    }
+  });
+
+  it("a new draw on the same thing is refused exactly when the one before was open to all, not yet drawn, and its one contributor still to open asks it", () => {
+    for (const { members, opened, by, me } of cases) {
+      if (by !== "a") continue; // (the one before is a's; every asker of the next is below)
+      const prev = roundWith(members, opened, "a");
+      for (const asker of members) {
+        const next = roundOf({ round: newRound({ draw: "dnext", id: "r2xx", by: asker, at: 0, of: ["d1"], sealers: [], members, commit: "0".repeat(64) }) });
+        const missing = members.filter((v) => !opened.includes(v));
+        const want = missing.length === 1 && missing[0] === asker ? { of: "r1xx", why: "withheld" } : null;
+        expect(faultOf(prev, next, me, { opened: opened.includes(me) }), `${members.join("")} opened ${opened.join("") || "-"}, ${asker} draws anew, ${me} judges`).toEqual(want);
+        // after a draw that's drawn (everyone opened), the next draw is just the next roll; and an asker that has
+        // opened, as an honest one does first, is never refused a new draw
+        if (!missing.length || opened.includes(asker)) expect(faultOf(prev, next, me, { opened: opened.includes(me) })).toBe(null);
+        // a cup's new shake (its draw sealed) is never refused: the cup tells it
+        const sealedPrev = roundOf({ round: { ...structuredClone(prev), sealers: ["a"] } });
+        expect(faultOf(sealedPrev, next, me)).toBe(null);
+      }
+    }
+  });
+
+  it("alone: one member, closed by its own commit, its seed the hash of its one opening, no deadline", () => {
+    const r = roundWith(["a"], ["a"]);
+    expect(contributorsOf(r)).toEqual(["a"]);
+    expect(derive(r, "a")).toMatchObject({ phase: "open", public: true, seed: seedOf("r1xx", [["a", nonceOf("a", "r1xx")]]) });
+    expect(due(roundWith(["a"], []), "a", 0)).toBe(null);
+    expect(derive(roundWith(["a"], []), "a", { mine: { nonce: nonceOf("a", "r1xx"), key: null } })).toMatchObject({ phase: "opening", mustOpen: true });
+  });
+
+  it("what it's of is bound into every commit: the same nonce opens it only for the `of` it was committed with", () => {
+    const id = "rofxx";
+    const n = nonceOf("a", id);
+    const r = roundOf({ round: newRound({ draw: "dxxxx", id, by: "a", at: 0, of: ["d1", "d2"], sealers: [], members: ["a"], commit: commitOf(id, "a", n, "", ["d1", "d2"]) }) });
+    expect(opensRight(r, "a", n)).toBe(true);
+    for (const of of [["d2", "d1"], ["d1"], ["d1", "d2", "d3"], []]) expect(opensRight({ ...r, of }, "a", n)).toBe(false);
+  });
+});
+
 describe("lots: a contributor can't steer it", () => {
   it("every contributor's nonce changes the seed, the others held", () => {
     const parts = [["a", nonceOf("a", "r")], ["b", nonceOf("b", "r")], ["c", nonceOf("c", "r")]];
@@ -387,9 +497,12 @@ describe("lots: deadlines", () => {
     expect(due(r, "a", 1000 + COMMIT_MS - 1)).toBe(null);
     expect(due(r, "a", 1000 + COMMIT_MS)).toEqual({ close: ["a"] });
   });
-  it("an open deadline retries without whoever didn't open", () => {
+  it("an open deadline retries without whoever didn't open, once the asker has (until then the others wait on it, and it holds up only its own draw)", () => {
     const r = base();
     r.commits.b = commitOf(id, "b", nonceOf("b", id), keyOf("b", id));
+    expect(derive(r, null).waiting).toEqual(["a"]);
+    expect(due(r, "a", 99_999, { openingSince: 5000 })).toBe(null);
+    r.opens.a = nonceOf("a", id);
     expect(due(r, "a", 99_999, { openingSince: 5000 })).toEqual({ retry: { members: ["a"], excluded: ["b"] } });
     expect(due(r, "a", 5000 + OPEN_MS - 1, { openingSince: 5000 })).toBe(null);
   });
@@ -399,7 +512,7 @@ describe("lots: what the doc may hold", () => {
   it("a malformed round is no round", () => {
     const good = newRound({ draw: "dxxxx", id: "rxxxx", by: "a", at: 0, sealers: ["a"], members: ["a"], commit: sha256("x"), key: keyOf("a", "r") });
     expect(roundOf({ round: good })).not.toBe(null);
-    for (const bad of [null, {}, { ...good, id: "" }, { ...good, by: 7 }, { ...good, members: ["b"] }, { ...good, sealers: "some" }, { ...good, protests: undefined }, { ...good, sealed: [] }, { ...good, draw: "a b" }]) expect(roundOf({ round: bad })).toBe(null);
+    for (const bad of [null, {}, { ...good, id: "" }, { ...good, by: 7 }, { ...good, members: ["b"] }, { ...good, sealers: "some" }, { ...good, protests: undefined }, { ...good, sealed: [] }, { ...good, draw: "a b" }, { ...good, of: "d1" }, { ...good, of: [7] }, { ...good, of: Array.from({ length: MAX_OF + 1 }, (_, i) => `d${i}`) }]) expect(roundOf({ round: bad })).toBe(null);
     // junk in its maps is left out, not trusted
     const r = roundOf({ round: { ...good, commits: { a: "zz", b: sha256("y") }, opens: { a: "short" } } });
     expect(r.commits).toEqual({});

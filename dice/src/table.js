@@ -16,9 +16,9 @@
 // A die here is a GLB carrying `extras.dice` (as the die source builds), not
 // a die doc: a set's five dice are one kind of thing, and the table is laid
 // out in one change. What each cup can do comes from its trait (`dice.cup`),
-// and fair rolls from the lots convention: setup finds a plugin whose
-// metadata says `lots: true` and writes its module's `attach()` traits on
-// each cup, never naming the package.
+// which is also where its shakes' draws live (lots-ext.js): nothing more to
+// write for fair rolls. Seats come from whoever owns them, found by its
+// plugin's metadata (`roster: true`), never by package.
 
 import { CUP, LIFT_BACK, ringOf } from "./cup.js";
 import { TABLE_TOP, cupGLB, poolGLB, tableGLB } from "./cup-glb.js";
@@ -64,8 +64,8 @@ export function objectOf(name, f, transform, more = {}) {
   return { ...base(name), sourceUrl: f.url, providerId: "file-glb", renderUrl: null, transform, ...(f.hint?.bounds ? { hint: { bounds: copy(f.hint.bounds) } } : {}), ...more };
 }
 
-/** A cup's trait as a table lays it out: lifted, nobody's yet, nothing shaken. */
-export const freshCup = () => ({ [CUP]: { up: true, blind: false, holder: null, roll: null } });
+/** A cup's trait as a table lays it out: lifted, nobody's yet, nothing shaken, no draw. */
+export const freshCup = () => ({ [CUP]: { up: true, blind: false, holder: null, roll: null, round: null } });
 
 /**
  * One player's things: a cup lifted beside its spot (its +Z toward the
@@ -73,10 +73,10 @@ export const freshCup = () => ({ [CUP]: { up: true, blind: false, holder: null, 
  * the objects go in; `yaw`: toward the player; `k`: that frame's scale.
  * @returns {{ cup: object, dice: object[] }}
  */
-export function setOut({ set, files: f, at, yaw, k = 1, n = DICE_EACH, lots = {} }) {
+export function setOut({ set, files: f, at, yaw, k = 1, n = DICE_EACH }) {
   // lifted: beside its dice, to the player's right (cup.js lifted)
   const back = [Math.cos(yaw) * (LIFT_BACK / k), 0, -Math.sin(yaw) * (LIFT_BACK / k)];
-  const cup = objectOf(`${set.name} cup`, f.cup, { position: at.map((v, i) => tidy(v + back[i])), rotation: [0, tidy(yaw), 0], scale: 1 }, { traits: { ...freshCup(), ...copy(lots) } });
+  const cup = objectOf(`${set.name} cup`, f.cup, { position: at.map((v, i) => tidy(v + back[i])), rotation: [0, tidy(yaw), 0], scale: 1 }, { traits: freshCup() });
   const dice = ringOf(n, yaw).map(({ at: d, yaw: y }, i) =>
     objectOf(`${set.name} die ${i + 1}`, f.die, { position: [tidy(at[0] + d[0] / k), tidy(at[1]), tidy(at[2] + d[2] / k)], rotation: [0, y, 0], scale: 1 }, { traits: { [DIE]: {} } }),
   );
@@ -105,11 +105,6 @@ async function moduleWith(registry, test) {
   }
   return null;
 }
-/** The traits that let an object be drawn on by lots (the module of the plugin with `lots: true`), or null where none is installed. */
-export async function findLots(registry) {
-  const mod = await moduleWith(registry, (p) => p?.lots === true);
-  return typeof mod?.attach === "function" ? mod.attach() : null;
-}
 /** How to write seats into a scene doc (the seats owner's `lay`), or null. */
 export async function findSeats(registry) {
   const mod = await moduleWith(registry, (p) => p?.roster === true);
@@ -125,7 +120,6 @@ export async function layOutTable(ctx, { players = SETS.length } = {}) {
   const f = { table: await files.table(ctx), pool: await files.pool(ctx) };
   const per = [];
   for (const set of sets) per.push({ set, f: { cup: await files.cup(ctx, set), die: await files.die(ctx, set) } });
-  const lots = await findLots(ctx.registry);
   const lay = await findSeats(ctx.registry);
 
   const objects = {};
@@ -142,7 +136,7 @@ export async function layOutTable(ctx, { players = SETS.length } = {}) {
     const yaw = (2 * Math.PI * i) / sets.length;
     const dir = [Math.sin(yaw), 0, Math.cos(yaw)];
     const at = [tidy(dir[0] * SPOT_RADIUS), TABLE_TOP, tidy(dir[2] * SPOT_RADIUS)];
-    const { cup, dice } = setOut({ set, files: sf, at, yaw, lots: lots ?? {} });
+    const { cup, dice } = setOut({ set, files: sf, at, yaw });
     const seat = `seat${i + 1}`;
     ids.seats.push({ seat, cup: put(cup), dice: dice.map(put) });
     seats[seat] = {
@@ -165,7 +159,6 @@ export async function layOutTable(ctx, { players = SETS.length } = {}) {
     d.view.home = { position: [0, TABLE_TOP + 0.9, 1.1], target: [0, TABLE_TOP, 0] };
     if (!title || title === "Untitled scene") d.title = "Liar's dice";
   });
-  if (!lots) ctx.notify?.("Nothing installed here draws lots, so these cups can't be shaken fairly: add the keep package.", "warn");
   if (!lay) ctx.notify?.("Nothing installed here owns seats, so this table has none.", "warn");
   else ctx.notify?.("Pick a seat (top right). Hover your cup: S shakes it, hold P to peek, L lifts it.", "info");
   return { seats, ids };
@@ -188,8 +181,7 @@ export const cupPart = {
     const p = placeOf(ctx, at);
     const set = SETS[0];
     const f = { cup: await files.cup(ctx, set), die: await files.die(ctx, set) };
-    const lots = await findLots(ctx.registry);
-    const { cup, dice } = setOut({ set, files: f, at: p.position, yaw: p.yaw, k: p.k, lots: lots ?? {} });
+    const { cup, dice } = setOut({ set, files: f, at: p.position, yaw: p.yaw, k: p.k });
     let cupId = null;
     ctx.change((d) => {
       if (p.parent && !d.objects?.[p.parent]) return;
@@ -200,7 +192,6 @@ export const cupPart = {
       }
     });
     if (!cupId) ctx.notify?.("What that was put on has gone.");
-    if (cupId && !lots) ctx.notify?.("Nothing installed here draws lots, so this cup can't be shaken fairly: add the keep package.", "warn");
     return cupId;
   },
 };

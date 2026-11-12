@@ -41,7 +41,7 @@ async function boxKey(jwk, theirPub, label) {
   return subtle().importKey("raw", sha256Bytes(both), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-const labelOf = (id, recipient) => `keep.lots/seal/1|${id}|${recipient}`;
+const labelOf = (id, recipient) => `dice.lots/seal/1|${id}|${recipient}`;
 
 /**
  * Seal `text` (a nonce) to `recipient` for round `id`.

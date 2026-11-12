@@ -204,26 +204,30 @@ describe("a cup's dice, from their seed", () => {
 });
 
 describe("a shake's lots: is the round on a cup the one its shake asked for, and who can know it before it's lifted", () => {
-  // every round a client might find on a cup, against every cup: whose it is, how it was shaken, which draw, who
-  // asked, whose parts it asked to keep sealed, and (once the contributors are fixed) who took part
+  // every round a client might find on a cup, against every cup: whose it is, how it was shaken, which draw, what
+  // it's of (the shake's dice in order, them in another order, fewer, none), who asked, whose parts it asked to keep
+  // sealed, and (once the contributors are fixed) who took part
   const P = ["ana", "ben", "cy"];
   const subsetsOf = (list) => list.reduce((acc, x) => acc.concat(acc.map((s) => [...s, x])), [[]]);
   const ASKED = subsetsOf(P).filter((s) => s.length).map((s) => s.sort());
+  const DICE = ["x", "y"];
+  const OF = [DICE, ["y", "x"], ["x"], []];
   const cases = [];
   for (const holder of [null, "ana"])
     for (const blind of [false, true])
       for (const draw of ["d1", "d2"])
-        for (const by of ["ana", "ben"])
-          for (const asked of ASKED)
-            for (const contributors of [null, ...subsetsOf(P).filter((s) => s.includes(by)).map((s) => s.sort())]) cases.push({ holder, blind, draw, by, asked, contributors });
-  it("has every case", () => expect(cases.length).toBe(2 * 2 * 2 * 2 * 7 * 5));
+        for (const of of OF)
+          for (const by of ["ana", "ben"])
+            for (const asked of ASKED)
+              for (const contributors of [null, ...subsetsOf(P).filter((s) => s.includes(by)).map((s) => s.sort())]) cases.push({ holder, blind, draw, of, by, asked, contributors });
+  it("has every case", () => expect(cases.length).toBe(2 * 2 * 2 * 4 * 2 * 7 * 5));
 
-  it("ours: its draw, asked by the holder, sealed by the holder alone (or, blind, the holder among others); fits: and, blind, someone besides the holder kept a part sealed", () => {
+  it("ours: its draw, of its dice in order, asked by the holder, sealed by the holder alone (or, blind, the holder among others); fits: and, blind, someone besides the holder kept a part sealed", () => {
     for (const c of cases) {
-      const cup = cupOf({ traits: { "dice.cup": { holder: c.holder, up: false, blind: false, roll: { draw: "d1", dice: ["x"], blind: c.blind, done: false } } } });
+      const cup = cupOf({ traits: { "dice.cup": { holder: c.holder, up: false, blind: false, roll: { draw: "d1", dice: DICE, blind: c.blind, done: false } } } });
       const sealers = c.contributors ? c.asked.filter((v) => c.contributors.includes(v)) : null;
-      const st = { draw: c.draw, by: c.by, asked: c.asked, sealers };
-      const isOurs = c.holder !== null && c.draw === "d1" && c.by === c.holder && (c.blind ? c.asked.includes(c.holder) && c.asked.length > 1 : c.asked.length === 1 && c.asked[0] === c.holder);
+      const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers };
+      const isOurs = c.holder !== null && c.draw === "d1" && c.of === DICE && c.by === c.holder && (c.blind ? c.asked.includes(c.holder) && c.asked.length > 1 : c.asked.length === 1 && c.asked[0] === c.holder);
       expect(ours(st, cup), JSON.stringify(c)).toBe(isOurs);
       const isFit = isOurs && (!c.blind || sealers === null || sealers.some((v) => v !== c.holder));
       expect(fits(st, cup), JSON.stringify(c)).toBe(isFit);
@@ -236,7 +240,7 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
     }
     // no round at all, or no roll, is never a cup's
     expect(ours(null, cupOf({ traits: { "dice.cup": { holder: "ana", roll: { draw: "d1", dice: [] } } } }))).toBe(false);
-    expect(ours({ draw: "d1", by: "ana", asked: ["ana"] }, cupOf({ traits: { "dice.cup": { holder: "ana", roll: null } } }))).toBe(false);
+    expect(ours({ draw: "d1", of: [], by: "ana", asked: ["ana"] }, cupOf({ traits: { "dice.cup": { holder: "ana", roll: null } } }))).toBe(false);
   });
 
   it("a shake asks for the holder's part sealed; shaken blind, every seated player's and the holder's: and the rounds asked so are ours", () => {
@@ -246,22 +250,22 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
     expect(sealersFor("ana", true, null)).toEqual(["ana"]);
     for (const blind of [false, true]) {
       const cup = cupOf({ traits: { "dice.cup": { holder: "ana", roll: { draw: "d1", dice: [], blind } } } });
-      expect(ours({ draw: "d1", by: "ana", asked: sealersFor("ana", blind, ["ana", "ben"]) }, cup)).toBe(true);
+      expect(ours({ draw: "d1", of: [], by: "ana", asked: sealersFor("ana", blind, ["ana", "ben"]) }, cup)).toBe(true);
     }
     // shaken blind with nobody else seated: no round is ours (and Shake blind isn't offered then)
     const cup = cupOf({ traits: { "dice.cup": { holder: "ana", roll: { draw: "d1", dice: [], blind: true } } } });
-    expect(ours({ draw: "d1", by: "ana", asked: sealersFor("ana", true, ["ana"]) }, cup)).toBe(false);
+    expect(ours({ draw: "d1", of: [], by: "ana", asked: sealersFor("ana", true, ["ana"]) }, cup)).toBe(false);
   });
 });
 
 describe("two shakes of one cup at once, merged by Automerge", () => {
-  // The cup's roll (dice.cup) and its lots round (keep.lots) are separate keys, the round written after an await. Every
+  // The cup's roll and its lots round are separate keys of its trait, the round written after an await. Every
   // order of actors, and whether Ben's round is written before or after Ana's shake reached him: whichever roll and
   // round the merge keeps, a client can tell from the doc alone whether the round is the roll's (`ours`), and when it
   // isn't, it is the merged holder's own draw that has no round (so the holder's client is the one to ask again).
   it("ours tells, in every case, and the holder is the one whose round is missing", async () => {
     const A = await import("@automerge/automerge");
-    const base = A.from({ objects: { cup: { traits: { "dice.cup": { holder: null, up: true, blind: false, roll: null }, "keep.lots": {} } } } });
+    const base = A.from({ objects: { cup: { traits: { "dice.cup": { holder: null, up: true, blind: false, roll: null, round: null } } } } });
     const shake = (who, draw) => (d) => {
       const t = d.objects.cup.traits["dice.cup"];
       t.holder = who;
@@ -269,7 +273,7 @@ describe("two shakes of one cup at once, merged by Automerge", () => {
       t.roll = { draw, dice: ["d0"], blind: false, done: false };
     };
     const round = (who, draw) => (d) => {
-      d.objects.cup.traits["keep.lots"].round = { draw, id: `r${draw}`, by: who, sealers: [who] };
+      d.objects.cup.traits["dice.cup"].round = { draw, id: `r${draw}`, by: who, of: ["d0"], sealers: [who] };
     };
     const seen = new Set();
     for (const [x, y] of [["aa", "bb"], ["bb", "aa"]]) {
@@ -282,8 +286,8 @@ describe("two shakes of one cup at once, merged by Automerge", () => {
         const m = A.merge(A.clone(a), b);
         const t = m.objects.cup.traits;
         const cup = cupOf({ traits: { "dice.cup": JSON.parse(JSON.stringify(t["dice.cup"])) } });
-        const r = t["keep.lots"].round;
-        const st = { draw: r.draw, by: r.by, asked: [...r.sealers] };
+        const r = t["dice.cup"].round;
+        const st = { draw: r.draw, of: [...r.of], by: r.by, asked: [...r.sealers] };
         const ok = ours(st, cup);
         seen.add(`${cup.holder}/${r.by}`);
         expect(ok).toBe(cup.roll.draw === r.draw && cup.holder === r.by);

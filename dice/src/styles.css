@@ -52,7 +52,10 @@
 .die-tool .die-rolls { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .die-tool .die-rolls li { padding: 1px 8px; border-radius: var(--studio-radius-round, 999px); border: 1px solid var(--die-tool-border); }
 .die-tool .die-rolls li[data-how="turned"] { font-style: italic; }
+.die-tool .die-rolls li[data-how="again"] { text-decoration: line-through; opacity: 0.7; }
 .die-tool .die-rolls li[data-latest] { border-color: var(--die-tool-fg); }
+.die-tool .die-drawn { font-size: 12px; opacity: 0.8; }
+.die-tool .die-drawn[data-state="warn"], .die-tool .die-drawn[data-state="error"] { opacity: 1; font-weight: 600; }
 
 .die-tool .die-faces { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
 .die-tool .die-face { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 8px; border: 1px solid var(--die-tool-border); border-radius: var(--studio-radius, 8px); }

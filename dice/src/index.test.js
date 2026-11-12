@@ -16,11 +16,13 @@ describe("the dice package's plugins", () => {
     }
   });
 
-  it("are a datatype and a tool for die docs, a scene source for them, the dice and cup extensions, a template and the parts", () => {
+  it("are a datatype and a tool for die docs, a scene source for them, the dice, cup and lots extensions, a template and the parts", () => {
     expect(of("patchwork:datatype").map((p) => p.id)).toEqual(["die"]);
     expect(of("patchwork:tool")).toMatchObject([{ id: "die", supportedDatatypes: ["die"] }]);
     expect(of("scene:source")).toMatchObject([{ id: PROVIDER, supportedDatatypes: ["die"] }]);
-    expect(of("scene:extension").map((p) => p.id)).toEqual(["dice", "dice.cup"]);
+    expect(of("scene:extension").map((p) => p.id)).toEqual(["dice", "dice.cup", "dice.lots"]);
+    // nothing here is anyone else's: no plugin, trait or metadata of another package's
+    expect(JSON.stringify(plugins.map(({ load, ...m }) => m))).not.toMatch(/keep\.|"lots":/);
     expect(of("scene:template").map((p) => p.id)).toEqual(["dice.liars-dice"]);
     expect(new Set(plugins.map((p) => `${p.type}/${p.id}`)).size).toBe(plugins.length);
   });
@@ -33,15 +35,25 @@ describe("the dice package's plugins", () => {
     expect(ext.create).toBeTypeOf("function");
     expect(ext.drop).toBeTypeOf("function");
     expect((await of("scene:extension")[1].load()).create).toBeTypeOf("function");
+    expect((await of("scene:extension")[2].load()).create).toBeTypeOf("function");
     expect((await of("scene:template")[0].load()).create).toBeTypeOf("function");
   });
 
-  it("the cup extension is an audience policy: no activities, so it holds whatever anyone is doing; who shook it and what's under it don't copy", () => {
+  it("the cup extension is an audience policy: no activities, so it holds whatever anyone is doing; who shook it, what's under it and its draw don't copy", () => {
     const cup = of("scene:extension")[1];
     expect(cup.traits).toEqual(["dice.cup"]);
     expect(cup.activities).toBeUndefined();
-    expect(cup.describes["dice.cup"].runtime).toEqual(["holder", "roll"]);
+    expect(cup.describes["dice.cup"].runtime).toEqual(["holder", "roll", "round"]);
     expect(cup.requires.indexOf("scene.use")).toBeLessThan(cup.requires.indexOf("scene.keys"));
+  });
+
+  it("lots run wherever there's a die or a cup, in every activity (a member's client answers whatever its viewer is doing), with no trait of their own: a round lives in its die's or cup's trait and doesn't copy", () => {
+    const lots = of("scene:extension")[2];
+    expect(lots.id).toBe("dice.lots");
+    expect(lots.traits).toEqual([DIE, "dice.cup"]);
+    expect(lots.activities).toBeUndefined();
+    expect(lots.describes).toBeUndefined();
+    expect(of("scene:extension")[0].describes[DIE].runtime).toEqual(["round"]);
   });
 
   it("the extension runs for the die trait, in play and edit, lays out dropped die docs, describes its trait, and requires what playing needs, the use prompt before the key map", () => {

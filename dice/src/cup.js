@@ -8,8 +8,9 @@
 //   "dice.cup": { holder: <viewer> | null,   // who shook it last: whose dice are under it
 //                 up: boolean,               // lifted: set down behind its dice, mouth down, covering nothing
 //                 blind: boolean,            // shaken blind: what's under it is the others' to see, never the holder's
-//                 roll: null | { draw, dice: [id…], blind, done } }   // the last shake: its lots draw, its dice in order,
+//                 roll: null | { draw, dice: [id…], blind, done },   // the last shake: its lots draw, its dice in order,
 //                                                                     // whether it was shaken blind, and whether they've been turned up
+//                 round: lots.js round }      // the shake's draw (lots-ext.js), of its dice
 //
 // Its GLB stands on its mouth at the origin, closed at the top, 9 cm tall
 // (cup-glb.js). Down, it covers every die whose origin lies within COVER of
@@ -249,7 +250,7 @@ export function shakePlan(c, dice, scales = new Map()) {
 export const includes = (set, viewer) => set === "all" || (Array.isArray(set) && typeof viewer === "string" && set.includes(viewer));
 
 /**
- * Whose parts of a shake's lots stay sealed (the `lots` convention): the
+ * Whose parts of a shake's lots stay sealed (lots-run.js draw): the
  * holder's alone, so its client knows the roll at once and nobody else's
  * can; shaken blind, every seated player's and the holder's, so nobody
  * knows it while the cup is down and, once it's lifted, each releases to
@@ -257,18 +258,21 @@ export const includes = (set, viewer) => set === "all" || (Array.isArray(set) &&
  */
 export const sealersFor = (holder, blind, seated) => (blind ? [...new Set([holder, ...(Array.isArray(seated) ? seated : [])])].sort() : [holder]);
 
+const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+
 /**
- * Is a lots draw (the convention's state(): { draw, by, asked, sealers, … })
- * the one this cup's shake asked for? Its draw, asked by its holder,
- * sealed as the shake says: the holder's part alone, or (blind) the
- * holder's among others. The doc isn't signed, so a round on a cup can be
- * anybody's: one written over it by someone else (to learn the roll
- * themselves, sealed to them), or the other of two shakes at once. Its seed
- * is no roll of this cup's.
+ * Is a lots draw (lots-run.js state(): { draw, by, of, asked, sealers, … })
+ * the one this cup's shake asked for? Its draw, asked by its holder, of the
+ * shake's dice in their order, sealed as the shake says: the holder's part
+ * alone, or (blind) the holder's among others. The doc isn't signed, so a
+ * round on a cup can be anybody's: one written over it by someone else (to
+ * learn the roll themselves, sealed to them), or the other of two shakes at
+ * once, or a shake's dice changed after it was drawn. Its seed is no roll of
+ * this cup's.
  */
 export function ours(st, cup) {
   const roll = cup?.roll;
-  if (!st || !roll || !cup.holder || st.draw !== roll.draw || st.by !== cup.holder) return false;
+  if (!st || !roll || !cup.holder || st.draw !== roll.draw || st.by !== cup.holder || !sameList(st.of, roll.dice)) return false;
   const asked = Array.isArray(st.asked) ? st.asked : [];
   if (!roll.blind) return asked.length === 1 && asked[0] === cup.holder;
   return asked.includes(cup.holder) && asked.length > 1;

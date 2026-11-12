@@ -2,8 +2,7 @@
 <meta charset="utf-8">
 <title>liar's dice probe</title>
 <!-- Driven by probes/liars-dice.mjs. The BUILT scene tool (scene/dist) with
-     the BUILT dice (dist) and keep (keep/dist: lots) plugins in a stub
-     registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
+     the BUILT dice plugins (dist: lots included) in a stub registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
      each with its own replica of every doc (probes/real-repo.js), a change
      reaching the other 25 ms later by a real merge. Each view's broadcasts
      (presence, poses, sends) reach only the other. Both start on an empty
@@ -37,7 +36,7 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../keep/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -65,7 +64,9 @@ try {
   const byName = (w, name) => Object.entries(objectsOf(w)).find(([, o]) => o.name === name)?.[0] ?? null;
   const rectOf = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
   const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
-  const lotsOf = (w) => dbg[w].host.instanceOf("keep.lots")?.lots ?? null;
+  const lotsOf = (w) => dbg[w].host.instanceOf("dice.lots")?.["dice.lots"] ?? null;
+  /** the round on a cup, in its own trait */
+  const roundIn = (w, id) => objectsOf(w)[id]?.traits?.["dice.cup"]?.round ?? null;
   /** The face a die is drawn showing in a view: its content root as drawn, against the world's +Y (the table is level, at the root). */
   function drawnFace(w, id) {
     const c = dbg[w].viewport.contentOf(id);
@@ -92,7 +93,7 @@ try {
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
     play: (w) => { dbg[w].local.swap((m) => ({ ...m, activity: "play" })); return true; },
     template: (w, id) => { const r = rectOf(hosts[w].querySelector(`.add-template[data-template="${id}"]`)); return r && r.w > 0 ? r : null; },
-    count: (w) => { const o = Object.values(objectsOf(w)); return { cups: o.filter((x) => x.traits?.["dice.cup"]).length, dice: o.filter((x) => x.traits?.["dice.die"]).length, lots: o.filter((x) => x.traits?.["keep.lots"]).length, all: o.length }; },
+    count: (w) => { const o = Object.values(objectsOf(w)); return { cups: o.filter((x) => x.traits?.["dice.cup"]).length, dice: o.filter((x) => x.traits?.["dice.die"]).length, lots: o.filter((x) => x.traits?.["dice.cup"] && "round" in x.traits["dice.cup"]).length, all: o.length }; },
     id: (w, name) => byName(w, name),
     loaded: (w, id) => !!dbg[w].viewport.contentOf(id)?.loaded,
     allLoaded: (w) => Object.keys(objectsOf(w)).every((id) => dbg[w].viewport.contentOf(id)?.loaded),
@@ -105,10 +106,10 @@ try {
     /** how far across the table an object is from its middle (m) */
     fromMiddle: (w, id) => { const t = objectsOf(w)[id]?.transform; return t ? Math.hypot(t.position[0], t.position[2]) : Infinity; },
     transform: (w, id) => plain(objectsOf(w)[id]?.transform),
-    round: (w, id) => plain(objectsOf(w)[id]?.traits?.["keep.lots"]?.round),
+    round: (w, id) => plain(roundIn(w, id)),
     lots: (w, id) => { const s = lotsOf(w)?.state(id); return s ? plain({ id: s.id, by: s.by, phase: s.phase, seed: s.seed, public: s.public, contributors: s.contributors, members: s.members, asked: s.asked, sealers: s.sealers, waiting: s.waiting, protests: s.protests, fault: s.fault, draw: s.draw }) : null; },
     /** the HUD lines every running extension gives this view now */
-    hudLines: (w) => ["keep.lots", "dice.cup"].flatMap((x) => dbg[w].host.instanceOf(x)?.hud?.() ?? []).map((l) => l.text),
+    hudLines: (w) => ["dice.lots", "dice.cup"].flatMap((x) => dbg[w].host.instanceOf(x)?.hud?.() ?? []).map((l) => l.text),
     /** run a verb in a view as its command (for what one keyboard can't do: two people at once) */
     verb: (w, ext, cmd, id) => { const c = dbg[w].host.instanceOf(ext)?.commands?.find((c) => c.id === cmd); if (!c) return false; c.run(id); return true; },
     /** can the hand pick it up in this view (every running extension's carryable) */
@@ -121,24 +122,29 @@ try {
      */
     async forge(w, id, kind) {
       const o = objectsOf(w)[id];
-      const r = plain(o?.traits?.["keep.lots"]?.round);
+      const r = plain(roundIn(w, id));
       const by = kind === "reroll" ? r.by : (w === "a" ? ana.url : ben.url);
       const draw = kind === "reroll" ? r.draw : o.traits["dice.cup"].roll.draw;
+      // of the shake's dice, as an honest round is (anything else is no round of the cup's anyway)
+      const of = plain(o.traits["dice.cup"].roll.dice);
       const rid = "rforged" + Math.random().toString(16).slice(2, 10);
       const nonce = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
-      const commit = await sha(`keep.lots/commit/1|${rid}|${by}|${nonce}|`);
+      const commit = await sha(`dice.lots/commit/1|${rid}|${by}|${nonce}||${JSON.stringify(of)}`);
       const members = [ana.url, ben.url].sort();
+      // a modified client of the view's own viewer writes it: so its own client holds the part it committed (as
+      // its runner would, lots-run.js), and doesn't take the round for a forgery in its name
+      try { localStorage.setItem(`dice.lots:${by}:${rid}`, JSON.stringify({ nonce, pub: "", jwk: null })); } catch {}
       scene[w].change((d) => {
-        d.objects[id].traits["keep.lots"].round = { draw, id: rid, by, at: Date.now(), sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, tries: 0, excluded: [] };
+        d.objects[id].traits["dice.cup"].round = { draw, id: rid, by, at: Date.now(), of, sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, tries: 0, excluded: [] };
       });
       return rid;
     },
     /** the seed, worked out here from the openings in the doc, by the protocol's formula, with WebCrypto */
     async seedFromOpenings(w, id) {
-      const r = objectsOf(w)[id]?.traits?.["keep.lots"]?.round;
+      const r = roundIn(w, id);
       if (!r) return null;
       const opens = Object.entries(plain(r.opens)).sort(([a], [b]) => (a < b ? -1 : 1));
-      return { contributors: opens.map(([v]) => v), seed: await sha(`keep.lots/seed/1|${r.id}|${opens.map(([v, n]) => `${v}=${n}`).join("|")}`) };
+      return { contributors: opens.map(([v]) => v), seed: await sha(`dice.lots/seed/1|${r.id}|${opens.map(([v, n]) => `${v}=${n}`).join("|")}`) };
     },
     /** what each die of a cup's last shake must show, from a seed */
     expected: (seed, n = 6, count = 5) => Array.from({ length: count }, (_, k) => faceOfSeed(seedFor(parseInt(seed.slice(0, 8), 16) >>> 0, k), n)),

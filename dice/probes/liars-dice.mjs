@@ -1,9 +1,9 @@
 // Liar's dice at one table, by two people at once, in headless Chrome.
 //
-//   (in scene/, keep/ and dice/) pnpm build
+//   (in scene/ and dice/) pnpm build
 //   node probes/liars-dice.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT dice and keep plugins, twice,
+// Mounts the BUILT scene tool with the BUILT dice plugins (lots and all), twice,
 // on REAL Automerge documents (liars-dice-probe.html, real-repo.js): A (Ana)
 // and B (Ben) each have their own replica of every doc, and a change
 // reaches the other 25 ms later by a real merge. Real mouse and keys over
@@ -52,7 +52,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["dice/dist/index.js", "keep/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["dice/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : null;
@@ -107,7 +107,7 @@ try {
   }
   check("A's start screen offers Liar's dice", !!tpl, tpl);
   await b.click(tpl.x, tpl.y);
-  check("the table is in both peers' docs: 6 cups (each drawn by lots), 30 dice", await until("count('a').cups === 6 && __p.count('b').cups === 6 && __p.count('b').dice === 30 && __p.count('b').lots === 6", 15_000), { a: await P("count('a')"), b: await P("count('b')") });
+  check("the table is in both peers' docs: 6 cups (each with room for its draw in its own trait), 30 dice", await until("count('a').cups === 6 && __p.count('b').cups === 6 && __p.count('b').dice === 30 && __p.count('b').lots === 6", 15_000), { a: await P("count('a')"), b: await P("count('b')") });
   check("…and every piece is built in both views", await until("allLoaded('a') && __p.allLoaded('b')", 60_000), { a: await P("allLoaded('a')"), b: await P("allLoaded('b')") });
   const cup = { a: await P("id('a', 'Red cup')"), b: await P("id('a', 'Blue cup')") };
   const dice = { a: [], b: [] };
@@ -123,7 +123,7 @@ try {
   await P("pick('a', 'seat1')");
   await P("pick('b', 'seat2')");
   check("A sits as Red, B as Blue; both play", await until(`seats().seat1.player === ${Q(V.a)} && __p.seats().seat2.player === ${Q(V.b)} && __p.activity('a') === 'play' && __p.activity('b') === 'play'`, 10_000), await P("seats()"));
-  check("the cup extension and lots run in both views", (await P("running('a')")).includes("dice.cup") && (await P("running('b')")).includes("keep.lots"), { a: await P("running('a')") });
+  check("the cup extension and the dice's own lots run in both views, and nothing of keep's", (await P("running('a')")).includes("dice.cup") && (await P("running('b')")).includes("dice.lots") && !(await P("running('a')")).some((x) => x.startsWith("keep.")), { a: await P("running('a')") });
   await sleep(1500); // seat cameras settle
   await shot("seated");
 

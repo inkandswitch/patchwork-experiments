@@ -1,8 +1,9 @@
 // The cup extension against a fake stage (test/fakes.js): two players and a
 // spectator on one doc, each view with its own api, its audience the stage's
-// merge of this extension's own policy, and a scripted `lots` convention (the
-// real one is keep's, which this package doesn't import: its rounds are
-// tested there). What a die is comes from what the stage says it built.
+// merge of this extension's own policy, and a scripted lots (what
+// api.collect("dice.lots") gives: the real one, lots-ext.js, is tested on its
+// own in lots-ext.test.js and lots.test.js). What a die is comes from what
+// the stage says it built.
 import { describe, it, expect } from "vitest";
 import Cups, { ASTRAY_MS, MESSAGES, SHAKE_SECONDS, dressFor } from "./cup-extension.js";
 import { CUP, lifted, ringOf, sealersFor } from "./cup.js";
@@ -46,7 +47,7 @@ function scriptedLots() {
 }
 
 /** A lots state as the convention gives it. */
-const lotsState = (o) => ({ id: "r1xx", phase: "known", seed: SEED, public: false, contributors: ["alice", "bob"], waiting: [], protests: [], ...o });
+const lotsState = (o) => ({ id: "r1xx", of: ["d0", "d1", "d2"], phase: "known", seed: SEED, public: false, contributors: ["alice", "bob"], waiting: [], protests: [], ...o });
 
 /**
  * A table: Alice's cup (lifted, nobody's) with three dice in front of it; A is
@@ -54,7 +55,7 @@ const lotsState = (o) => ({ id: "r1xx", phase: "known", seed: SEED, public: fals
  */
 function table({ present = ["A", "B", "S"] } = {}) {
   const base = T([0, 0.75, 0]);
-  const objects = { cup: { name: "Alice's cup", transform: lifted(base), traits: { [CUP]: { holder: null, up: true, blind: false, roll: null }, "keep.lots": {} } } };
+  const objects = { cup: { name: "Alice's cup", transform: lifted(base), traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } } };
   const dice = ringOf(3, 0).map((r, i) => {
     objects[`d${i}`] = { name: `d${i}`, transform: T([r.at[0], 0.75, r.at[2] + 0.004], [0.4, 0.2, 0]), traits: { "dice.die": {} } };
     return `d${i}`;
@@ -67,7 +68,7 @@ function table({ present = ["A", "B", "S"] } = {}) {
   for (const [session, viewer] of [["A", "alice"], ["B", "bob"], ["S", "spec"]]) {
     if (!present.includes(session)) continue;
     const api = w.join(session, { viewer });
-    w.view(session).collected = { lots: lots.value, roster: { viewers: () => SEATED, who: name } };
+    w.view(session).collected = { "dice.lots": lots.value, roster: { viewers: () => SEATED, who: name } };
     let x = null;
     api.audience = (id) => audienceOf(x.audience(api.scene())(id)).audience;
     api.shown = (id) => audienceOf(x.audience(api.scene())(id)).shown;
@@ -121,7 +122,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.views.A.api.change = (fn) => (writes++, change(fn));
     t.run("A", "shake");
     expect(writes).toBe(1);
-    expect(t.lots.draws).toEqual([{ id: "cup", sealers: ["alice"], draw: "dfake0xx" }]);
+    expect(t.lots.draws).toEqual([{ id: "cup", sealers: ["alice"], of: t.dice, draw: "dfake0xx" }]);
     expect(t.cup()).toMatchObject({ holder: "alice", up: false, blind: false, roll: { draw: "dfake0xx", dice: t.dice, blind: false, done: false } });
     for (const d of t.dice) {
       const r = t.doc.objects[d].transform.rotation;
@@ -201,7 +202,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.lots.states.set("cup", lotsState({ id: "rbob", draw, by: "bob", asked: ["bob"], sealers: ["bob"], phase: "open", public: true }));
     t.w.change(() => {});
     t.w.flush();
-    expect(t.lots.draws.slice(1)).toEqual([{ id: "cup", sealers: ["alice"], draw }]);
+    expect(t.lots.draws.slice(1)).toEqual([{ id: "cup", sealers: ["alice"], of: t.dice, draw }]);
     t.w.change(() => {});
     t.w.flush();
     expect(t.lots.draws.length).toBe(2); // once for that round
@@ -219,6 +220,13 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.flush();
     expect(t.cup().roll.done).toBe(false);
     expect(t.lots.draws.length).toBe(3);
+    // Alice's own round, but of her dice in another order (so each would show another's face): no better
+    t.lots.states.set("cup", lotsState({ id: "rswap", draw, by: "alice", of: [...t.dice].reverse(), asked: ["alice"], sealers: ["alice"], phase: "open", public: true }));
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.cup().roll.done).toBe(false);
+    for (const d of t.dice) expect(t.views.B.x.looks().get(d)).toEqual({ veil: true });
+    expect(t.lots.draws.length).toBe(4);
     t.w.done();
   });
 
@@ -229,7 +237,7 @@ describe("the cup's verbs and what the doc says", () => {
     t.lots.states.set("cup", lotsState({ id: "rben", draw: "dBEN0", by: "bob", asked: ["bob"], sealers: ["bob"] }));
     t.w.change(() => {});
     t.w.flush();
-    expect(t.lots.draws.at(-1)).toEqual({ id: "cup", sealers: ["alice"], draw });
+    expect(t.lots.draws.at(-1)).toEqual({ id: "cup", sealers: ["alice"], of: t.dice, draw });
     t.w.done();
   });
 
@@ -241,7 +249,7 @@ describe("the cup's verbs and what the doc says", () => {
     const t = table();
     expect(t.state("A", "shake-blind").disabled).toBeUndefined();
     t.shake(true);
-    expect(t.lots.draws).toEqual([{ id: "cup", sealers: sealersFor("alice", true, SEATED), draw: "dfake0xx" }]);
+    expect(t.lots.draws).toEqual([{ id: "cup", sealers: sealersFor("alice", true, SEATED), of: t.dice, draw: "dfake0xx" }]);
     expect(t.cup()).toMatchObject({ blind: true, roll: { blind: true } });
     expect(t.notices("B")).toEqual(["Alice shook their cup blind."]);
     const draw = t.cup().roll.draw;

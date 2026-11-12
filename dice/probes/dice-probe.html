@@ -2,17 +2,19 @@
 <meta charset="utf-8">
 <title>dice probe</title>
 <!-- Driven by probes/dice.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT dice plugins (dist) in a stub registry, on an in-memory repo, at a
-     scene with one thing in it: a table top, tilted and turned (a table
-     aboard a ship), for dice to lie on. Two views of one doc, A (Ana) and B
-     (Ben), both open from the start, each view's broadcasts (presence, poses,
-     sends) reaching only the other, a few ms late. A plus/minus die doc waits
-     in the repo for the runner to drop on the scene. Every die is built here
-     by the scene's own render pipeline, from this package's scene:source. -->
+     BUILT dice plugins (dist) in a stub registry, on REAL Automerge documents
+     (real-repo.js: A and B each their own replica of every doc, a change
+     reaching the other 25 ms later by a real merge, a broadcast 5 ms later),
+     at a scene with one thing in it: a table top, tilted and turned (a table
+     aboard a ship), for dice to lie on. Two views, A (Ana) and B (Ben), both
+     open from the start. A plus/minus die doc waits in the repo for the
+     runner to drop on the scene. Every die is built here by the scene's own
+     render pipeline, from this package's scene:source; every roll is drawn
+     by lots between the clients present (dice.lots). -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
-  "@automerge/automerge": "./automerge-stub.js"
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
 } }
 </script>
 <style>
@@ -23,11 +25,11 @@
 <div id="a"></div><div id="b"></div>
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { FakeRepo } from "./fake-repo.js";
+import { twoPeers } from "./real-repo.js";
 import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 import { newDieDoc } from "../src/parts.js";
-import { builtOf, faceUp } from "../src/roll.js";
+import { builtOf, faceOfSeed, faceUp, seedFor } from "../src/roll.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -36,21 +38,11 @@ const origWarn = console.warn, origError = console.error;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
 
-// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
-function peer(handle) {
-  const eph = new Set();
-  const p = {
-    url: handle.url,
-    doc: () => handle.doc(),
-    heads: () => handle.heads?.(),
-    change: (fn) => handle.change(fn),
-    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
-    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
-    eph,
-  };
-  return p;
-}
+/** SHA-256 hex by WebCrypto: the probe's own, so a seed is checked by something other than the code that drew it. */
+const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+/** When each key was last pressed, on this page's clock. */
+const pressed = {};
+window.addEventListener("keydown", (e) => (pressed[e.key] = performance.now()), true);
 
 // column-major 4 × 4 helpers
 const mul4 = (a, b) => { const o = new Array(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
@@ -67,47 +59,82 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
-  const repo = new FakeRepo();
+  const net = twoPeers({ delay: 25 });
+  // how long each doc change takes the views to take in (its "change" listeners, run at once): for the timings
+  const changeCost = [];
+  {
+    const h0 = await net.a.create2({});
+    const proto = Object.getPrototypeOf(h0);
+    const emit = proto.emit;
+    proto.emit = function (ev, payload) {
+      if (ev !== "change") return emit.call(this, ev, payload);
+      const t = performance.now();
+      const out = emit.call(this, ev, payload);
+      changeCost.push({ at: t, ms: performance.now() - t, peer: this.peer.name });
+      return out;
+    };
+  }
+  window.__changeCost = changeCost;
+  const longTasks = [];
+  try { new PerformanceObserver((l) => { for (const e of l.getEntries()) longTasks.push({ at: e.startTime, ms: e.duration }); }).observe({ type: "longtask", buffered: true }); } catch {}
+  window.__longTasks = longTasks;
+  const frames = [];
+  const frame = (t) => { frames.push(t); if (frames.length > 4000) frames.splice(0, 2000); requestAnimationFrame(frame); };
+  requestAnimationFrame(frame);
+  window.__frames = frames;
+  const repo = net.a;
   window.repo = repo;
-  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
-  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const ana = await repo.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await repo.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
   // a table top: 0.5 × 0.03 × 0.5 m, its top at y = 0.03 in its own frame
   const TOP = 0.03;
   const a = 0.25;
   const v = [[-a, 0, -a], [a, 0, -a], [a, 0, a], [-a, 0, a], [-a, TOP, -a], [a, TOP, -a], [a, TOP, a], [-a, TOP, a]];
   const f = [[0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6], [0, 4, 5], [0, 5, 1], [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3], [3, 7, 4], [3, 4, 0]];
-  const tableGLB = repo.add({ "@patchwork": { type: "file" }, name: "table.glb", extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [{ name: "top", positions: f.flat().flatMap((i) => v[i]), color: "#2f5a45" }] }) });
+  const tableGLB = await repo.create2({ "@patchwork": { type: "file" }, name: "table.glb", extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [{ name: "top", positions: f.flat().flatMap((i) => v[i]), color: "#2f5a45" }] }) });
   const table = {
     name: "Table", sourceUrl: tableGLB.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: true,
     // heeled and turned, as aboard a ship
     transform: { position: [0, 0.1, 0], rotation: [0.22, 0.5, -0.12], scale: 1 },
     hint: { bounds: { min: [-a, 0, -a], max: [a, TOP, a] } },
   };
-  const scene = repo.add(emptyScene({ title: "Dice probe", objects: { table }, order: ["table"] }));
+  const scene = await repo.create2(emptyScene({ title: "Dice probe", objects: { table }, order: ["table"] }));
+  const sceneB = await net.b.find(scene.url);
   // a die doc of its own, in no scene yet: what someone drags in
-  const symbolDie = repo.add(newDieDoc("plus-minus"));
+  const symbolDie = await repo.create2(newDieDoc("plus-minus"));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
-  const A = peer(scene), B = peer(scene);
-  A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
-  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
-  Tool(A, hosts.a);
-  Tool(B, hosts.b);
+  const unmount = { a: Tool(scene, hosts.a), b: Tool(sceneB, hosts.b) };
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const lotsOf = (w) => dbg[w]?.host.instanceOf("dice.lots")?.["dice.lots"] ?? null;
+  const plain = (x) => JSON.parse(JSON.stringify(x ?? null));
   const told = { a: [], b: [] };
   setInterval(() => {
-    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+    for (const w of ["a", "b"]) if (dbg[w]) for (const n of dbg[w].local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
   // every write to the scene doc, and which objects' transforms it changed
   const writes = [];
+  // and, for each die's round, whose openings A's replica holds, each time that changes (the order they came in)
+  const opensLog = [];
+  const opensSeen = new Map();
   let last = JSON.parse(JSON.stringify(scene.doc().objects));
   scene.on("change", () => {
     const now = JSON.parse(JSON.stringify(scene.doc().objects));
     const moved = Object.keys(now).filter((id) => last[id] && JSON.stringify(now[id].transform) !== JSON.stringify(last[id].transform));
     writes.push({ at: performance.now(), moved });
     last = now;
+    for (const [id, o] of Object.entries(now)) {
+      const r = o?.traits?.["dice.die"]?.round;
+      if (!r?.id) continue;
+      const k = Object.keys(r.opens ?? {}).sort().join(" ");
+      const was = opensSeen.get(id);
+      if (was?.round === r.id && was.k === k) continue;
+      opensSeen.set(id, { round: r.id, k });
+      opensLog.push({ at: performance.now(), id, round: r.id, opens: k ? k.split(" ") : [] });
+    }
   });
   const objects = () => scene.doc().objects;
   const canvasRect = (w) => dbg[w].viewport.canvas.getBoundingClientRect();
@@ -126,6 +153,26 @@ try {
 
   window.__p = {
     errors, viewers: { a: ana.url, b: ben.url }, symbolDie: symbolDie.url, TOP,
+    /** when a key was last pressed (this page's clock, ms) */
+    pressedAt: (key) => pressed[key] ?? null,
+    now: () => performance.now(),
+    /** the throw's draw on a die as a view's lots know it */
+    lots(id, w) { const s = lotsOf(w)?.state(id); return s && plain({ id: s.id, draw: s.draw, by: s.by, of: s.of, phase: s.phase, seed: s.seed, public: s.public, contributors: s.contributors, members: s.members, waiting: s.waiting, protests: s.protests }); },
+    /** the round on a die or cup as the doc (A's replica) has it */
+    round: (id) => { const t = objects()[id]?.traits; return plain(t?.["dice.cup"]?.round ?? t?.["dice.die"]?.round ?? null); },
+    /** the seed, worked out here from the openings in the doc, by the protocol's formula, with WebCrypto */
+    async seedFromOpenings(id) {
+      const t = objects()[id]?.traits;
+      const r = plain(t?.["dice.cup"]?.round ?? t?.["dice.die"]?.round);
+      if (!r) return null;
+      const opens = Object.entries(r.opens).sort(([a], [b]) => (a < b ? -1 : 1));
+      return { contributors: opens.map(([v]) => v), seed: await sha(`dice.lots/seed/1|${r.id}|${opens.map(([v, n]) => `${v}=${n}`).join("|")}`) };
+    },
+    /** what die k of a throw of n lands, from a seed (64 hex), for a die of `faces` faces */
+    expectedFace: (seed, k, n, faces) => { const s = parseInt(seed.slice(0, 8), 16) >>> 0; return faceOfSeed(n === 1 ? s : seedFor(s, k), faces); },
+    /** close a view's scene tool (its viewer leaves) */
+    leave(w) { unmount[w]?.(); unmount[w] = null; dbg[w] = null; return true; },
+    present: (w) => Object.values(dbg[w]?.presence?.get?.() ?? {}).map((p) => p.viewer),
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
     available: (w) => dbg[w].local.get().activities?.available ?? [],
@@ -133,6 +180,10 @@ try {
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     writes: () => writes.map((x) => ({ at: Math.round(x.at), moved: x.moved })),
+    /** whose openings A's replica held of the round on a die, in the order they came, since `since` */
+    opensOrder: (id, since) => opensLog.filter((x) => x.id === id && x.at >= since).map((x) => ({ at: Math.round(x.at - since), round: x.round, opens: x.opens })),
+    /** the first change to A's replica after `since` that moved this object: when (this page's clock) */
+    movedAt: (id, since) => writes.find((x) => x.at >= since && x.moved.includes(id))?.at ?? null,
     transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     selected: (w) => dbg[w].local.get().selected ?? null,
@@ -164,8 +215,8 @@ try {
       const doc0 = JSON.stringify(objects()[id]?.transform);
       const rows = [];
       const tick = () => {
-        const la = drawnLocal(id, "a"), lb = drawnLocal(id, "b");
-        rows.push({ t: Math.round(performance.now() - t0), docMoved: JSON.stringify(objects()[id]?.transform) !== doc0, a: la && r6(la[13]), b: lb && r6(lb[13]), up: window.__p.dieShows(id, "a")?.label ?? null });
+        const la = drawnLocal(id, "a"), lb = dbg.b ? drawnLocal(id, "b") : null;
+        rows.push({ t: Math.round(performance.now() - t0), at: performance.now(), docMoved: JSON.stringify(objects()[id]?.transform) !== doc0, a: la && r6(la[13]), b: lb && r6(lb[13]), up: window.__p.dieShows(id, "a")?.label ?? null });
         sampler = requestAnimationFrame(tick);
       };
       tick();

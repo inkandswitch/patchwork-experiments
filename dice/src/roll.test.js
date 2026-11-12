@@ -3,7 +3,7 @@
 // turn by hand. Nothing is drawn at random: a roll is a function of its seed,
 // and the seeds are listed.
 import { describe, it, expect } from "vitest";
-import { ROLL_LIFT, ROLL_SKID, builtOf, drawSeed, faceOfSeed, faceUp, middleAt, reach, rollPlan, scaleOf, seedFor, showing, turnTo } from "./roll.js";
+import { RISE_SECONDS, ROLL_LIFT, ROLL_SKID, airborne, builtOf, faceOfSeed, faceUp, landing, middleAt, reach, rollPlan, scaleOf, seedFor, seedFromLots, seedOfThrow, showing, turnTo } from "./roll.js";
 import { apply, axisAngle, eulerMatrix, matrixEuler, mul, rotationBetween, toAxisAngle, transpose, unit } from "./m3.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
@@ -228,13 +228,75 @@ describe("seeds", () => {
     }
   });
 
-  it("a drawn seed is an unsigned 32-bit integer", () => {
-    const s = drawSeed();
-    expect(Number.isInteger(s) && s >= 0 && s < 2 ** 32).toBe(true);
+  it("a die thrown alone lands by the draw's own seed; one of several by its own, by its place", () => {
+    for (const seed of [0, 1, 0xffffffff, 123456789]) {
+      expect(seedOfThrow(seed, 0, 1)).toBe(seed >>> 0);
+      for (const n of [2, 3, 64]) for (let k = 0; k < n; k++) expect(seedOfThrow(seed, k, n)).toBe(seedFor(seed, k));
+    }
+  });
+
+  it("a draw's seed (64 hex digits) is a roll's by its first 32 bits; anything else is none", () => {
+    expect(seedFromLots("ffffffff" + "0".repeat(56))).toBe(0xffffffff);
+    expect(seedFromLots("0000002a" + "f".repeat(56))).toBe(42);
+    for (const bad of [null, 42, "", "0000002a", "g".repeat(64), "A".repeat(64), "0".repeat(65)]) expect(seedFromLots(bad)).toBe(null);
   });
 
   it("a parent's scale is read off its matrix", () => {
     expect(scaleOf(null)).toBe(1);
     expect(scaleOf([0, 0, 3, 0, 0, 3, 0, 0, 3, 0, 0, 0, 1, 2, 3, 1])).toBeCloseTo(3, 12);
+  });
+});
+
+describe("a throw in the air, before anyone knows how it lands", () => {
+  const close = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) < eps);
+  const TIMES = [0, 0.05, RISE_SECONDS / 2, RISE_SECONDS, 0.4, 1.3, 7];
+  it("it leaves the table as it lay, rises a toss's height over where it was, and only turns: every shape, every starting pose, a fan of times and tumbles", () => {
+    for (const shape of SHAPES) {
+      const b = builtFor(shape);
+      for (const from of FROMS)
+        for (const spin of [0, 0.7, 3.1])
+          for (const t of TIMES) {
+            const p = airborne(b, from, t, { spin });
+            const c0 = middleAt(b, from);
+            const c = middleAt(b, p);
+            // over where it was, a toss's height up (in its parent's units: the toss is in metres, and its parent unscaled here)
+            expect(close([c[0], c[2]], [c0[0], c0[2]], 1e-9)).toBe(true);
+            const rise = Math.min(1, t / RISE_SECONDS);
+            expect(c[1] - c0[1]).toBeCloseTo(ROLL_LIFT * (1 - (1 - rise) ** 2), 9);
+            // a rotation, the same size
+            const m = eulerMatrix(p.rotation);
+            expect(det(m)).toBeCloseTo(1, 9);
+            expect(p.scale).toBe(from.scale);
+            if (t === 0) expect(close(m.flat(), eulerMatrix(from.rotation).flat(), 1e-9)).toBe(true);
+          }
+    }
+  });
+
+  it("the way down starts exactly where it is in the air and ends exactly where its seed lands it: every shape, every face, from a fan of moments in the air", () => {
+    for (const shape of SHAPES) {
+      const b = builtFor(shape);
+      const from = FROMS[1];
+      for (let seed = 0; seed < b.faces.length; seed++) {
+        const plan = rollPlan(seed, { built: b, from });
+        for (const t of [0.32, 0.9, 2.5]) {
+          const now = airborne(b, from, t, { spin: 1.1 });
+          const path = landing(b, now, plan.to);
+          const start = path(0);
+          expect(close(eulerMatrix(start.rotation).flat(), eulerMatrix(now.rotation).flat(), 1e-9)).toBe(true);
+          expect(close(middleAt(b, start), middleAt(b, now), 1e-9)).toBe(true);
+          // the end is the landing as the doc will have it, to the last place, and shows the seed's face, at rest
+          expect(path(1)).toEqual({ position: plan.to.position, rotation: plan.to.rotation, scale: plan.to.scale });
+          expect(faceUp(path(1).rotation, b)).toBe(faceOfSeed(seed, b.faces.length));
+          // part way it is a rotation, between the two heights
+          for (const u of [0.25, 0.5, 0.75]) {
+            const q = path(u);
+            expect(det(eulerMatrix(q.rotation))).toBeCloseTo(1, 9);
+            const y = middleAt(b, q)[1];
+            expect(y).toBeLessThanOrEqual(middleAt(b, now)[1] + 1e-9);
+            expect(y).toBeGreaterThanOrEqual(middleAt(b, plan.to)[1] - 1e-9);
+          }
+        }
+      }
+    }
   });
 });

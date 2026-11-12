@@ -15,7 +15,8 @@
 //         ink?: "#ffffff",         // its marks' own colour
 //         turn?: 90 },             // its marks turned this many degrees anticlockwise from their default
 //     ],
-//     rolls: [{ face: 3, at: 1731300000000 }],   // the panel's last few rolls (tool.js); never read by a scene
+//     rolls: [{ face: 3, how: "rolled", at: 1731300000000, draw?, by? }],   // the panel's last few (tool.js); never read by a scene
+//     round?: { … },               // the panel's draw by lots (panel-lots.js, lots.js); never read by a scene
 //   }
 //
 // A mark is { kind, value }:

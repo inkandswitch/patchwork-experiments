@@ -3,9 +3,10 @@
 //   (in scene/ and dice/) pnpm build
 //   node probes/dice.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT dice plugins, twice on one doc
-// (A is Ana, B is Ben; dice-probe.html), at a scene holding one tilted table.
-// Real keys and a real mouse over CDP. Then:
+// Mounts the BUILT scene tool with the BUILT dice plugins, twice, on REAL
+// Automerge documents (A is Ana, B is Ben, each with its own replica, a
+// change reaching the other 25 ms later; dice-probe.html), at a scene holding
+// one tilted table. Real keys and a real mouse over CDP. Then:
 // - edit: the parts bin offers the Dice parts; a d20 dragged onto the table
 //   is a new die doc, built at real size by the scene's own render pipeline
 //   in both views, lying on the table; a plus/minus die DOC dropped on the
@@ -14,12 +15,19 @@
 // - the die's own panel: selecting the d20, the inspector's "Edit die" docks
 //   its 2D tool beside the scene; naming a face there rebuilds the die, and
 //   both views' built content says the new name;
-// - play: R over the d20 rolls it: it tumbles as a pose (the doc unmoved
-//   mid-roll, B drawing it in the air), lands in one write, both views draw
-//   the announced face up, flat on the tilted table, and B is told "Ana
-//   rolled N"; the same for the symbol die; T turns the d20 to its next face,
-//   told as a turn; G over one of the pair rolls both in one write and one
-//   line.
+// - play: R over the d20 rolls it. Every roll is drawn by lots between the
+//   clients here: R puts the die in the air at once (a pose, drawn by both
+//   views within a frame or two of the key), it tumbles until the draw is
+//   known, then lands in one write; the seed is checked here, with WebCrypto,
+//   to be the hash of both clients' openings, and the face to be the one that
+//   seed lands; both views draw that face up, flat on the tilted table, and B
+//   is told "Ana rolled N" from the doc; the same for the symbol die; T turns
+//   the d20 to its next face, told as a turn; G over one of the pair rolls
+//   both: ONE draw, on the first die, of both in order, landing in one write
+//   and told in one line; then B leaves and A rolls alone: a draw of one
+//   member, drawn at once.
+// Measures press-to-in-the-air and press-to-landed for each roll (this page's
+// clock, from the keydown to the frame / the doc write).
 // Prints a JSON checklist (and the d20 roll as a sampled trajectory); exits
 // non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -40,7 +48,7 @@ const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
-const report = { checks: list.checks, details: list.details, shots: [], timeline: [] };
+const report = { checks: list.checks, details: list.details, shots: [], timeline: [], timings: {} };
 const t0 = Date.now();
 const mark = (what, data) => report.timeline.push({ t: +((Date.now() - t0) / 1000).toFixed(2), what, ...(data ? { data } : {}) });
 const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels/;
@@ -104,12 +112,23 @@ async function drawn(id) {
   const ma = await P(`shown(${J(id)}, 'a')`), mb = await P(`shown(${J(id)}, 'b')`);
   return { a: sa, b: sb, same: near(ma, mb, 1e-5), lies: { a: await P(`lies(${J(id)}, 'a')`), b: await P(`lies(${J(id)}, 'b')`) } };
 }
+/** When a key's throw went into the air (in both views) and when it landed: ms after the keydown. */
+async function timing(key, id) {
+  const k = await P(`pressedAt(${J(key)})`);
+  const landed = await until(`movedAt(${J(id)}, ${k})`, 20_000);
+  return { landedMs: landed ? Math.round((await P(`movedAt(${J(id)}, ${k})`)) - k) : null };
+}
+/** The draw of a throw led by `lead`: in the doc, as each view's lots know it, and as worked out here from its openings. */
+async function drawOf(lead) {
+  return { round: await P(`round(${J(lead)})`), a: await P(`lots(${J(lead)}, 'a')`), b: await P(`lots(${J(lead)}, 'b')`), mine: await P(`seedFromOpenings(${J(lead)})`) };
+}
 /** flat on its parent at `height`: nothing below, and at least three corners on it */
 const flatAt = (lies, height) => !!lies && lies[0] > height - 2e-5 && lies.filter((y) => Math.abs(y - height) < 2e-5).length >= 3;
 
 try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const TOP = await P("TOP");
+  const V = await P("viewers");
   check("both views editing, the table loaded", await until("activity('a') === 'edit' && __p.activity('b') === 'edit' && __p.loaded('table', 'a') && __p.loaded('table', 'b')", 30_000));
   check("with no die in the scene the dice extension isn't running, and only Edit is on offer", !(await P("running('a')")).includes("dice") && J(await P("available('a')")) === J(["edit"]), { running: await P("running('a')"), available: await P("available('a')") });
   await settled();
@@ -224,8 +243,10 @@ try {
     check("A hovers the d20, and the use prompt offers Roll and Turn", hovering && prompt.some((p) => /Roll/.test(p)) && prompt.some((p) => /Turn \(shows crit\)/.test(p)), prompt);
     report.d20Prompt = prompt;
     // the moment both views draw it clear of the table: what does the doc say then?
-    const mid = await b.waitFor(`(() => { const p = window.__p, a = p.lies(${J(d20)}, 'a'), c = p.lies(${J(d20)}, 'b'); return a && c && a[0] > ${TOP + 0.005} && c[0] > ${TOP + 0.005} ? { doc: JSON.stringify(p.transform(${J(d20)})), a: a[0], b: c[0] } : false; })()`, 3000, 10);
+    const mid = await b.waitFor(`(() => { const p = window.__p, a = p.lies(${J(d20)}, 'a'), c = p.lies(${J(d20)}, 'b'); return a && c && a[0] > ${TOP + 0.005} && c[0] > ${TOP + 0.005} ? { doc: JSON.stringify(p.transform(${J(d20)})), a: a[0], b: c[0], at: p.now() } : false; })()`, 3000, 10);
     check("mid-roll both views draw it in the air (a pose), and the doc hasn't moved", !!mid && mid.doc === J(t), mid);
+    const k = await P("pressedAt('r')");
+    report.timings.d20 = { bothInAirMs: mid ? Math.round(mid.at - k) : null };
     const rolled = await until("notices('a').some((n) => /^You rolled /.test(n))", 4000);
     const said = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n));
     const value = said?.replace(/^You rolled /, "");
@@ -234,10 +255,27 @@ try {
     check("B is told Ana rolled the same", await until(`notices('b').includes(${J(`Ana rolled ${value}`)})`, 4000), await P("notices('b')"));
     await sleep(700);
     const samples = await P("unwatch()");
-    const w = (await P("writes()")).slice(before.writes);
+    const firstAir = samples.find((s) => s.a > TOP + 0.002);
+    report.timings.d20.aInAirMs = firstAir ? Math.round(firstAir.at - k) : null;
+    Object.assign(report.timings.d20, await timing("r", d20));
+    report.d20Costs = { changes: await js(`window.__changeCost.filter((c) => c.at >= ${k} - 5).map((c) => [Math.round(c.at - ${k}), Math.round(c.ms), c.peer])`), longTasks: await js(`window.__longTasks.filter((c) => c.at >= ${k} - 5).map((c) => [Math.round(c.at - ${k}), Math.round(c.ms)])`), frames: await js(`window.__frames.filter((t) => t >= ${k} - 50 && t <= ${k} + 1500).map((t) => Math.round(t - ${k}))`) };
+    // when B's answer to the draw (its commit) first reached A's replica: the second change there after the key (the first is A's own round)
+    const changes = report.d20Costs.changes;
+    report.timings.d20.bAnswerReachedAMs = changes.filter(([, , peer]) => peer === "a")[1]?.[0] ?? null;
+    check("R puts it in the air at once: A draws it off the table within 100 ms of the key, before B's answer to the draw has even reached A; B draws it in the air too, before it lands", report.timings.d20.aInAirMs != null && report.timings.d20.aInAirMs < 100 && report.timings.d20.bAnswerReachedAMs != null && report.timings.d20.aInAirMs < report.timings.d20.bAnswerReachedAMs && report.timings.d20.bothInAirMs < report.timings.d20.landedMs, report.timings.d20);
+    const w = (await P("writes()")).slice(before.writes).filter((x) => x.moved.length);
     check("it landed in one write", w.length === 1 && J(w[0].moved) === J([d20]), w);
+    const d = await drawOf(d20);
+    report.d20Draw = { contributors: d.mine?.contributors, members: d.round?.members, of: d.round?.of, seed: d.mine?.seed, landedMs: report.timings.d20.landedMs };
+    check("its draw is the doc's, on the die, of it alone, nothing sealed, drawn by both clients: the seed is the hash of both openings (worked out here with WebCrypto), the same in both views", !!d.round && J(d.round.of) === J([d20]) && J(d.round.sealers) === "[]" && J(d.round.members) === J([V.a, V.b].sort()) && d.mine.contributors.length === 2 && d.a?.seed === d.mine.seed && d.b?.seed === d.mine.seed && d.a.public && d.b.public, d);
+    // the asker opens first: in A's replica, A's own opening is in before B's, and B's never comes without it
+    const order = (await P(`opensOrder(${J(d20)}, ${k})`)).filter((x) => x.round === d.round?.id);
+    report.d20OpensOrder = order;
+    const firstOpen = order.find((x) => x.opens.length);
+    check("the asker opens first: A's replica holds A's opening alone before B's comes, and then both (B never opened before Ana: she knew the face no sooner than Ben did)", !!firstOpen && J(firstOpen.opens) === J([V.a]) && J(order.at(-1)?.opens) === J([V.a, V.b].sort()), order);
+    const faceWanted = await P(`expectedFace(${J(d.mine?.seed ?? "")}, 0, 1, 20)`);
     const after = await drawn(d20);
-    check("both views draw the d20 the same, the announced face up", after.same && after.a?.label === value && after.b?.label === value, { value, a: after.a, b: after.b });
+    check("both views draw the d20 the same, the announced face up: the face its seed lands", after.same && after.a?.label === value && after.b?.label === value && after.a.face === faceWanted, { value, faceWanted, a: after.a, b: after.b });
     check("…flat on the tilted table", flatAt(after.lies.a, TOP) && flatAt(after.lies.b, TOP), { a: after.lies.a.slice(0, 4), b: after.lies.b.slice(0, 4) });
     // the roll as it went: every ~4th frame
     report.d20Trajectory = samples.filter((_, i) => i % 4 === 0).map((s) => `${String(s.t).padStart(5)} ms  doc ${s.docMoved ? "moved" : "still"}  A y ${s.a?.toFixed(4)}  B y ${s.b?.toFixed(4)}  A reads ${s.up}`);
@@ -253,11 +291,14 @@ try {
     const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled (plus|minus|blank)$/.test(n))`, 4000);
     const value = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n))?.replace(/^You rolled /, "");
     report.symbolRolled = value;
+    report.timings.symbol = await timing("r", sym);
     check("A is told the symbol it rolled", rolled, await P("notices('a')"));
     check("B is told Ana rolled the same symbol", await until(`notices('b').includes(${J(`Ana rolled ${value}`)})`, 4000), await P("notices('b')"));
     await sleep(700);
     const after = await drawn(sym);
-    check("both views draw the symbol die the same, the announced face up, flat on the ground", after.same && after.a?.label === value && after.b?.label === value && flatAt(after.lies.a, 0) && flatAt(after.lies.b, 0), { value, a: after.a, b: after.b, lies: after.lies.a.slice(0, 5) });
+    const ds = await drawOf(sym);
+    const symWanted = await P(`expectedFace(${J(ds.mine?.seed ?? "")}, 0, 1, 6)`);
+    check("both views draw the symbol die the same, the announced face up, flat on the ground: the face the hash of both openings lands", after.same && after.a?.label === value && after.b?.label === value && flatAt(after.lies.a, 0) && flatAt(after.lies.b, 0) && after.a.face === symWanted && ds.mine.contributors.length === 2 && ds.a.seed === ds.mine.seed && ds.b.seed === ds.mine.seed, { value, symWanted, a: after.a, b: after.b, lies: after.lies.a.slice(0, 5), draw: ds });
     await shot("4-symbol-rolled");
   }
 
@@ -276,6 +317,7 @@ try {
 
   // G over one of the pair rolls both
   {
+    const roundBefore = { lead: await P(`round(${J(pair[0])})`), other: await P(`round(${J(pair[1])})`) };
     const { hovering, prompt, before } = await pressOver(pair[1], "g");
     check("over one of the pair the prompt offers Roll all 2", hovering && prompt.some((p) => /Roll all 2/.test(p)), prompt);
     const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled \\d0, \\d$/.test(n))`, 4000);
@@ -283,12 +325,17 @@ try {
     report.pairRolled = said;
     check("A is told both in one line: the tens, then the units", rolled, (await P("notices('a')")).slice(before.a));
     check("B is told the same line of Ana", await until(`notices('b').includes(${J(said?.replace(/^You/, "Ana"))})`, 4000), (await P("notices('b')")).slice(before.b));
+    report.timings.pair = await timing("g", pair[0]);
     await sleep(700);
-    const w = (await P("writes()")).slice(before.writes);
+    const w = (await P("writes()")).slice(before.writes).filter((x) => x.moved.length);
     check("the pair landed in one write", w.length === 1 && J([...w[0].moved].sort()) === J([...pair].sort()), w);
+    const dp = await drawOf(pair[0]);
+    const other = await P(`round(${J(pair[1])})`);
+    check("a group throw is ONE draw: on its first die, of both dice in the scene's order, drawn by both clients; the second die has no draw of its own", !!dp.round && dp.round.id !== roundBefore.lead?.id && J(dp.round.of) === J(pair) && J(other) === J(roundBefore.other) && dp.mine.contributors.length === 2 && dp.a.seed === dp.mine.seed && dp.b.seed === dp.mine.seed, { round: dp.round && { of: dp.round.of, members: dp.round.members }, other, before: roundBefore });
+    const want = [await P(`expectedFace(${J(dp.mine?.seed ?? "")}, 0, 2, 10)`), await P(`expectedFace(${J(dp.mine?.seed ?? "")}, 1, 2, 10)`)];
     const [tens, units] = said.replace(/^You rolled /, "").split(", ");
     const a0 = await drawn(pair[0]), a1 = await drawn(pair[1]);
-    check("both views draw both dice the same, each the face announced, flat on the ground", a0.same && a1.same && a0.a?.label === tens && a0.b?.label === tens && a1.a?.label === units && a1.b?.label === units && flatAt(a0.lies.b, 0) && flatAt(a1.lies.b, 0), { tens, units, a0: a0.a, a1: a1.a });
+    check("both views draw both dice the same, each the face announced and the face its place's seed lands, flat on the ground", a0.same && a1.same && a0.a?.label === tens && a0.b?.label === tens && a1.a?.label === units && a1.b?.label === units && flatAt(a0.lies.b, 0) && flatAt(a1.lies.b, 0) && a0.a.face === want[0] && a1.a.face === want[1], { tens, units, want, a0: a0.a, a1: a1.a });
     await shot("5-pair-rolled");
   }
 
@@ -298,6 +345,18 @@ try {
     await P(`setCamera('b', { position: [${m[12] + 0.03}, ${m[13] + 0.07}, ${m[14] + 0.06}], target: [${m[12] + 0.01}, ${m[13] + 0.005}, ${m[14]}] })`);
     await sleep(500);
     await shot(name);
+  }
+
+  // ── alone: B leaves, and A rolls the d20 by herself ──
+  {
+    await P("leave('b')");
+    check("B has left: A's view sees nobody else here", await until("present('a').length === 0", 8000), await P("present('a')"));
+    const { before } = await pressOver(d20, "r");
+    const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled /.test(n))`, 8000);
+    report.timings.alone = await timing("r", d20);
+    const d = await drawOf(d20);
+    const said = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n));
+    check("alone, a roll is a draw of one member, drawn at once (no deadline waited out), and lands as its seed says, unremarked", rolled && !!d.round && J(d.round.members) === J([V.a]) && J(d.mine.contributors) === J([V.a]) && !d.round.closed && d.a?.seed === d.mine.seed && report.timings.alone.landedMs != null && report.timings.alone.landedMs < 2000 && said === `You rolled ${(await P(`built(${J(d20)}, 'a')`)).labels[await P(`expectedFace(${J(d.mine?.seed ?? "")}, 0, 1, 20)`)]}`, { said, round: d.round && { members: d.round.members, closed: d.round.closed }, timing: report.timings.alone });
   }
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

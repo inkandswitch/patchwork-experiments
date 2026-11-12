@@ -9,10 +9,15 @@
 // die doc.
 //
 // Cups (scene:extension "dice.cup", src/cup-extension.js): a cup covers the
-// dice under it, is shaken over them (a roll nobody chooses, drawn by lots),
-// peeked under by its holder, lifted, knocked over. A template lays out a
-// table of cup dice ("Liar's dice", src/table.js); the bin offers a cup with
-// its dice, and a pool.
+// dice under it, is shaken over them, peeked under by its holder, lifted,
+// knocked over. A template lays out a table of cup dice ("Liar's dice",
+// src/table.js); the bin offers a cup with its dice, and a pool.
+//
+// Every roll, of a die in the open, of a cup's dice, and in a die's own
+// panel, is drawn by lots: a seed the clients of those present draw between
+// them by commit and open, so that nobody chooses it (src/lots.js; in a
+// scene, scene:extension "dice.lots", src/lots-ext.js; in the panel,
+// src/panel-lots.js). There is no other way a die here lands on a face.
 
 export const plugins = [
   {
@@ -62,6 +67,8 @@ export const plugins = [
         name: "Die",
         on: "object",
         blurb: "Press R over it in play to roll it, T to turn it to its next face; everyone is told what it shows. What it is comes from its own document",
+        // the draw of a throw it leads is about now: a copy starts with none
+        runtime: ["round"],
       },
     },
     drops: ["die"],
@@ -91,13 +98,25 @@ export const plugins = [
           { key: "up", label: "Lifted", kind: "boolean", default: true },
           { key: "blind", label: "Blind (kept from whoever shook it)", kind: "boolean", default: false },
         ],
-        // who shook it and what's under it are about now: a copy starts as nobody's, with nothing shaken
-        runtime: ["holder", "roll"],
+        // who shook it, what's under it and its draw are about now: a copy starts as nobody's, with nothing shaken
+        runtime: ["holder", "roll", "round"],
       },
     },
     requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./cup-extension.js")).default;
+    },
+  },
+  {
+    // every roll's draw, by lots between the clients of those present (src/lots-ext.js): it runs wherever there is
+    // a die or a cup, and keeps its rounds in their traits (it describes none of its own). No `activities`: a
+    // member's client commits and opens whatever its viewer is doing
+    type: "scene:extension",
+    id: "dice.lots",
+    name: "Dice lots",
+    traits: ["dice.die", "dice.cup"],
+    async load() {
+      return (await import("./lots-ext.js")).default;
     },
   },
   {

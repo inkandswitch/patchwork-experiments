@@ -1,18 +1,45 @@
 // The die's 2D panel, mounted on a fake handle with no scene anywhere: the
-// (handle, element) → cleanup contract, what it shows, and that every control
-// writes the doc.
+// (handle, element) → cleanup contract, what it shows, that every control
+// writes the doc, and that its Roll is drawn by lots between everyone who
+// has the die open (panel-lots.js), alone and together.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import Tool, { facePicture, showingFace } from "./tool.js";
+import Tool, { PANEL_AIR_MS, PANEL_GRACE_MS, faceOfDraw, facePicture, rollsOf, showingFace } from "./tool.js";
 import { KEPT_ROLLS, PRESETS, dieOf } from "./die.js";
+import { COMMIT_MS, OPEN_MS, commitOf, freshNonce, newRound, seedOf } from "./lots.js";
+import { GONE_MS, HERE } from "./panel-lots.js";
+import { faceOfSeed, seedFromLots } from "./roll.js";
 import { SYMBOLS, dieMarks } from "./marks.js";
 import { solid } from "./solids.js";
 import { fakeRepo } from "./test/fakes.js";
 
-function mount(preset = "d6", more = {}) {
-  const handle = fakeRepo().add({ "@patchwork": { type: "die" }, ...PRESETS[preset].make(), ...more });
+/** One die doc, and a handle on it per panel: each panel's ephemeral messages reach every other panel's, at once. */
+function sharedDie(preset = "d6", more = {}) {
+  const h = fakeRepo().add({ "@patchwork": { type: "die" }, ...PRESETS[preset].make(), ...more });
+  const peers = [];
+  const peer = () => {
+    const eph = new Set();
+    const p = {
+      url: h.url,
+      doc: () => h.doc(),
+      change: (fn) => h.change(fn),
+      on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : h.on(ev, fn)),
+      off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : h.off(ev, fn)),
+      broadcast: (message) => {
+        for (const q of peers) if (q !== p) for (const fn of [...q.eph]) fn({ message: structuredClone(message) });
+      },
+      eph,
+    };
+    peers.push(p);
+    return p;
+  };
+  return { h, peer, peers };
+}
+
+function mount(preset = "d6", more = {}, { handle = fakeRepo().add({ "@patchwork": { type: "die" }, ...PRESETS[preset].make(), ...more }), viewer } = {}) {
   const host = document.createElement("div");
+  if (viewer) host.viewerId = viewer;
   document.body.append(host);
   const cleanup = Tool(handle, host);
   const $ = (sel) => host.querySelector(sel);
@@ -25,10 +52,19 @@ function mount(preset = "d6", more = {}) {
   const face = (i) => $(`.die-face[data-face="${i}"]`);
   return { handle, host, cleanup, $, $$, set, face, doc: () => handle.doc() };
 }
-const seedIs = (seed) => vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation((arr) => ((arr[0] = seed), arr));
+/** Every byte this client draws next (its nonce, a round's id) is `b`: a listed draw, never a random one. */
+const bytesAre = (b) => vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation((arr) => arr.fill(b));
+/** The face a round in the doc says, worked out here from its openings. */
+const faceOfRound = (r, n) => faceOfSeed(seedFromLots(seedOf(r.id, Object.entries(r.opens))), n);
+/** Press Roll, and let it come down. */
+const roll = (t) => {
+  t.$("button.roll").click();
+  vi.advanceTimersByTime(PANEL_AIR_MS + 20);
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 
@@ -234,28 +270,53 @@ describe("using the die on its own", () => {
     expect(showingFace({ rolls: [{ face: 2 }, { face: 5 }] }, 6)).toBe(5);
   });
 
-  it("Roll lands the face its seed says, for every face of a d20 and of a plus/minus die, and shows it", () => {
+  it("a drawn roll lands the face its seed says: the seeds 0 … n − 1 land every face of every preset once; undrawn, none", () => {
+    for (const [id, p] of Object.entries(PRESETS)) {
+      const n = dieOf(p.make()).faces.length;
+      const faces = Array.from({ length: n }, (_, k) => faceOfDraw({ public: true, seed: k.toString(16).padStart(8, "0") + "0".repeat(56) }, n));
+      expect(faces, id).toEqual(Array.from({ length: n }, (_, k) => k));
+      expect(faceOfDraw({ public: false, seed: null }, n)).toBe(null);
+      expect(faceOfDraw(null, n)).toBe(null);
+    }
+  });
+
+  it("Roll, alone: drawn by lots with one member, at once, and lands the face its draw's seed says, over a listed run of draws of a d20, a plus/minus die and a coin", () => {
+    // (a short run: every face is reached by construction, above; each panel redraw here is a whole DOM)
+    vi.useFakeTimers();
     for (const id of ["d20", "plus-minus", "coin"]) {
       const t = mount(id);
       const die = dieOf(t.doc());
-      for (let seed = 0; seed < die.faces.length; seed++) {
-        seedIs(seed + die.faces.length * 3);
+      const n = die.faces.length;
+      for (let b = 0; b < 6; b++) {
+        bytesAre(b);
         t.$("button.roll").click();
-        expect(t.doc().rolls.at(-1)).toMatchObject({ face: seed, how: "rolled" });
-        expect(t.$(".die-table .reads").textContent).toBe(`Shows ${die.faces[seed].label}`);
-        expect(t.$(".die-table .reads").dataset.face).toBe(String(seed));
-        expect(t.$$(".die-face[data-showing]").map((e) => e.dataset.face)).toEqual([String(seed)]);
         vi.restoreAllMocks();
+        const r = t.doc().round;
+        // one member, its own commit closing it: drawn already, with no deadline to wait for
+        expect(r.members).toHaveLength(1);
+        expect(Object.keys(r.opens)).toEqual(r.members);
+        expect(r.of).toEqual(["die"]);
+        // in the air a moment
+        expect(t.$(".die-table .reads").textContent).toBe("Rolling…");
+        expect(t.$("button.roll").disabled).toBe(true);
+        vi.advanceTimersByTime(PANEL_AIR_MS + 20);
+        const face = faceOfRound(r, n);
+        expect(t.doc().rolls.at(-1)).toMatchObject({ face, how: "rolled", draw: r.draw, by: r.by });
+        expect(t.$(".die-table .reads").textContent).toBe(`Shows ${die.faces[face].label}`);
+        expect(t.$(".die-table .reads").dataset.face).toBe(String(face));
+        expect(t.$$(".die-face[data-showing]").map((e) => e.dataset.face)).toEqual([String(face)]);
+        expect(t.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by you alone."]);
       }
       t.cleanup();
     }
   });
 
   it("keeps the last few, oldest first, each as it was called, rolled or turned", () => {
+    vi.useFakeTimers();
     const t = mount("d6");
-    for (let seed = 0; seed < KEPT_ROLLS + 3; seed++) {
-      seedIs(seed);
-      t.$("button.roll").click();
+    for (let b = 0; b < KEPT_ROLLS + 3; b++) {
+      bytesAre(b);
+      roll(t);
       vi.restoreAllMocks();
     }
     expect(t.doc().rolls).toHaveLength(KEPT_ROLLS);
@@ -297,5 +358,186 @@ describe("a face's picture", () => {
         }
       });
     }
+  });
+});
+
+describe("rolling with others who have the die open", () => {
+  it("two panels on one die: each knows the other is here; a Roll in one is drawn by both, its seed the hash of both openings, and both show the same face, drawn by both", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d12");
+    const ana = mount("d12", {}, { handle: d.peer(), viewer: "ana" });
+    const ben = mount("d12", {}, { handle: d.peer(), viewer: "ben" });
+    ana.$("button.roll").click();
+    const r = ana.doc().round;
+    expect(r.members).toEqual(["ana", "ben"]);
+    expect(Object.keys(r.commits).sort()).toEqual(["ana", "ben"]);
+    expect(Object.keys(r.opens).sort()).toEqual(["ana", "ben"]);
+    // open to all: no keys, nothing sealed
+    expect(r.keys).toEqual({});
+    expect(r.sealed).toEqual({});
+    // both see it tumbling until it comes down
+    expect(ben.$(".die-table .reads").textContent).toBe("Rolling…");
+    vi.advanceTimersByTime(PANEL_AIR_MS + 20);
+    const n = 12;
+    const face = faceOfRound(r, n);
+    expect(ana.doc().rolls.at(-1)).toMatchObject({ face, how: "rolled", draw: r.draw, by: "ana" });
+    const label = dieOf(ana.doc()).faces[face].label;
+    for (const t of [ana, ben]) expect(t.$(".die-table .reads").textContent).toBe(`Shows ${label}`);
+    // (the contributors in viewer order, each view naming itself)
+    expect(ana.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by you and someone."]);
+    expect(ben.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by someone and you."]);
+    // written once, whoever might have
+    vi.advanceTimersByTime(PANEL_GRACE_MS * 2);
+    expect(ana.doc().rolls.filter((x) => x.draw === r.draw)).toHaveLength(1);
+    ana.cleanup();
+    ben.cleanup();
+  });
+
+  it("its asker gone once it's drawn: the other panel writes it down, after a grace, as its seed says", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    ana.$("button.roll").click();
+    const r = ana.doc().round;
+    ana.cleanup();
+    vi.advanceTimersByTime(PANEL_GRACE_MS - 100);
+    expect(ben.doc().rolls ?? []).toEqual([]);
+    vi.advanceTimersByTime(200);
+    expect(ben.doc().rolls.at(-1)).toMatchObject({ face: faceOfRound(r, 6), how: "rolled", draw: r.draw, by: "ana" });
+    ben.cleanup();
+  });
+
+  it("someone here whose panel never answers isn't waited for past the commit deadline: drawn by the roller alone, and the panel says so", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    // a panel that says it's here and then does nothing at all
+    const ghost = d.peer();
+    ghost.broadcast({ type: HERE, session: "sghost", viewer: "ghost" });
+    ana.$("button.roll").click();
+    expect(ana.doc().round.members).toEqual(["ana", "ghost"]);
+    expect(ana.$(".die-table .reads").textContent).toBe("Rolling…");
+    vi.advanceTimersByTime(COMMIT_MS + 600);
+    const r = ana.doc().round;
+    expect(r.closed).toEqual(["ana"]);
+    expect(ana.doc().rolls.at(-1)).toMatchObject({ face: faceOfRound(r, 6), draw: r.draw });
+    expect(ana.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by you alone: nobody else took part."]);
+    // and one not heard from again is gone after a while: the next roll is hers alone, at once
+    vi.advanceTimersByTime(GONE_MS);
+    roll(ana);
+    expect(ana.doc().round.members).toEqual(["ana"]);
+    ana.cleanup();
+  });
+
+  it("a roll written by hand, not as its draw says, is said to be", () => {
+    vi.useFakeTimers();
+    const t = mount("d6");
+    roll(t);
+    const last = t.doc().rolls.at(-1);
+    t.handle.change((doc) => (doc.rolls.at(-1).face = (last.face + 1) % 6));
+    expect(t.$$(".die-drawn").map((e) => e.textContent)).toEqual(["This roll isn't the face its draw says: it was written by hand."]);
+    t.cleanup();
+  });
+
+  it("a draw written twice into the rolls (two panels at once) is one roll", () => {
+    expect(rollsOf({ rolls: [{ face: 1, draw: "dA" }, { face: 1, draw: "dA" }, { face: 2 }, { face: 9 }] }, 6)).toEqual([{ face: 1, draw: "dA" }, { face: 2 }]);
+  });
+
+  it("a roll its asker throws away once it's drawn, for another, is written down anyway by whoever saw it drawn, and said to be; the asker learned it no sooner than they did", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    const ana = d.peer(); // a modified client: speaks the protocol by hand
+    ana.broadcast({ type: HERE, session: "sana", viewer: "ana" });
+    const thrown = [];
+    for (let i = 0; i < 4; i++) {
+      const id = `rgrind${i}xx`;
+      const nonce = freshNonce();
+      ana.change((doc) => void (doc.round = newRound({ draw: `dgrind${i}xx`, id, by: "ana", at: Date.now(), of: ["die"], sealers: [], members: ["ben"], commit: commitOf(id, "ana", nonce, "", ["die"]) })));
+      vi.advanceTimersByTime(30);
+      // ben committed, and waits on her opening: she learns nothing before she opens
+      expect(Object.keys(ana.doc().round.commits).sort()).toEqual(["ana", "ben"]);
+      expect(ana.doc().round.opens).toEqual({});
+      ana.change((doc) => void (doc.round.opens.ana = nonce));
+      vi.advanceTimersByTime(30);
+      const r = ana.doc().round;
+      expect(r.opens.ben).toBeTruthy(); // ben opened once she had: everyone knows it now
+      thrown.push(faceOfRound(r, 6));
+    }
+    // she throws the last away too, for a fifth she writes down herself
+    const id = "rkeepxxx";
+    const nonce = freshNonce();
+    ana.change((doc) => void (doc.round = newRound({ draw: "dkeepxxx", id, by: "ana", at: Date.now(), of: ["die"], sealers: [], members: ["ben"], commit: commitOf(id, "ana", nonce, "", ["die"]) })));
+    vi.advanceTimersByTime(30);
+    ana.change((doc) => void (doc.round.opens.ana = nonce));
+    vi.advanceTimersByTime(30);
+    const kept = faceOfRound(ana.doc().round, 6);
+    ana.change((doc) => void doc.rolls.push({ face: kept, how: "rolled", at: Date.now(), draw: "dkeepxxx", by: "ana" }));
+    vi.advanceTimersByTime(100);
+    // every one of them is in the rolls, as drawn, the thrown-away marked so
+    expect(ben.doc().rolls.map((r) => [r.face, !!r.again])).toEqual([...thrown.map((f) => [f, true]), [kept, false]]);
+    const label = (f) => dieOf(ben.doc()).faces[f].label;
+    expect(ben.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by someone and you.", `Someone rolled again before 4 rolls came down: ${thrown.map(label).join(", ")}, as drawn.`]);
+    expect(ben.$$(".die-rolls li").map((e) => e.dataset.how)).toEqual(["again", "again", "again", "again", "rolled"]);
+    expect(ben.$(".die-table .reads").textContent).toBe(`Shows ${label(kept)}`);
+    ben.cleanup();
+  });
+
+  it("a roll written over in its asker's name (a forger reusing the nonce it opened) isn't written down by anyone, and the asker is told", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    const cy = d.peer();
+    cy.broadcast({ type: HERE, session: "scy", viewer: "cy" });
+    ben.$("button.roll").click();
+    const r1 = ben.doc().round;
+    const nc = freshNonce();
+    cy.change((doc) => void (doc.round.commits.cy = commitOf(r1.id, "cy", nc, "", ["die"])));
+    vi.advanceTimersByTime(30);
+    const opened = ben.doc().round.opens.ben;
+    expect(opened).toBeTruthy(); // ben, the asker, opened first: cy now knows the seed, and doesn't open
+    const id = "rforgexx";
+    const n = freshNonce();
+    const r2 = newRound({ draw: r1.draw, id, by: "ben", at: Date.now(), of: ["die"], sealers: [], members: ["cy"], commit: commitOf(id, "ben", opened, "", ["die"]) });
+    r2.commits.cy = commitOf(id, "cy", n, "", ["die"]);
+    r2.opens = { ben: opened, cy: n };
+    cy.change((doc) => void (doc.round = r2));
+    vi.advanceTimersByTime(PANEL_GRACE_MS * 3);
+    expect(ben.doc().round.protests).toEqual({ ben: { of: id, why: "forged" } });
+    expect(ben.doc().rolls ?? []).toEqual([]);
+    expect(ben.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Someone wrote the lots for that roll in your name: nothing was rolled.", "Someone wrote the lots for d6 in your name: your client refused them, and nothing lands by them."]);
+    expect(ben.$(".die-table .reads").textContent).not.toBe("Rolling…");
+    ben.cleanup();
+  });
+
+  it("someone who could know a roll first and doesn't open it is left out, and the roll says so", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    const cy = d.peer();
+    cy.broadcast({ type: HERE, session: "scy", viewer: "cy" });
+    ana.$("button.roll").click();
+    const r1 = ana.doc().round;
+    cy.change((doc) => void (doc.round.commits.cy = commitOf(r1.id, "cy", freshNonce(), "", ["die"])));
+    vi.advanceTimersByTime(OPEN_MS + 1000);
+    const r = ana.doc().round;
+    expect(r).toMatchObject({ draw: r1.draw, members: ["ana", "ben"], excluded: ["cy"] });
+    expect(ana.doc().rolls.at(-1)).toMatchObject({ draw: r1.draw, face: faceOfRound(r, 6) });
+    expect(ben.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by someone and you; someone didn't open their part, and it was drawn again without them."]);
+    ana.cleanup();
+    ben.cleanup();
+  });
+
+  it("closing a panel says goodbye: the others count it gone at once", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    ben.cleanup();
+    roll(ana);
+    expect(ana.doc().round.members).toEqual(["ana"]);
+    ana.cleanup();
   });
 });

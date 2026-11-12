@@ -196,25 +196,66 @@ export function seedFor(seed, k) {
 
 /**
  * The randomness of a roll: one unsigned 32-bit seed, from which the whole
- * roll follows (rollPlan, settled). It comes from one of two places, and
- * nothing else about a roll depends on which:
- *
- * - drawSeed(): this view's own draw, which the others take on trust. For a
- *   die thrown in the open where nothing better is running.
- * - lots: a seed the seated players' clients draw between them so that no
- *   one of them chooses it (the `lots` convention; keep's "keep.lots"), as
- *   64 hex digits; seedFromLots takes its first 32 bits. A cup's dice are
- *   rolled this way (cup-extension.js), each die its own seed from it by its
- *   place under the cup (seedFor), as dice thrown together are.
+ * roll follows (rollPlan, settled). It always comes from lots (lots.js): a
+ * seed the clients of those present draw between them so that no one of
+ * them chooses it, as 64 hex digits, of which a roll takes the first 32 bits
+ * (seedFromLots). A throw of several dice and a cup's dice take one draw,
+ * each die its own seed from it by its place (seedFor). There is no other
+ * source: a die is never rolled on one client's word.
  */
-export function drawSeed() {
-  const c = globalThis.crypto;
-  if (c?.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0];
-  return Math.floor(Math.random() * 2 ** 32) >>> 0;
+export const seedFromLots = (hex) => (typeof hex === "string" && /^[0-9a-f]{64}$/.test(hex) ? parseInt(hex.slice(0, 8), 16) >>> 0 : null);
+
+/** The seed die `k` of a throw of `n` lands by: the draw's own for a die thrown alone, else its own by its place. */
+export const seedOfThrow = (seed, k, n) => (n === 1 ? seed >>> 0 : seedFor(seed, k));
+
+/** How long a die rises when it's thrown (s), how fast it spins in the air (rad/s), and how long it takes to land once its seed is known (s). */
+export const RISE_SECONDS = 0.18;
+export const SPIN = 2 * Math.PI * 2.2;
+export const LAND_SECONDS = 0.38;
+/** The least a die is in the air before it lands, however soon its seed is known (s): a throw looks like one. */
+export const AIR_SECONDS = 0.32;
+
+/**
+ * A die in the air while its draw is under way, `t` seconds after it was
+ * thrown: tossed up off where it lay and tumbling about an axis of its own
+ * (`spin`, an angle: a throw's dice tumble differently). How it looks
+ * only: nothing here depends on the draw, which nobody knows yet, and
+ * nothing is written.
+ */
+export function airborne(built, from, t, { unitScale = 1, spin = 0 } = {}) {
+  const s = Number(from.scale) || 1;
+  const m0 = matrixOf(numbers(from.rotation));
+  const c0 = middleAt(built, { ...from, scale: s });
+  const rise = Math.min(1, Math.max(0, t) / RISE_SECONDS);
+  const h = (ROLL_LIFT / (unitScale || 1)) * (1 - (1 - rise) * (1 - rise));
+  const m = mul(axisAngle(unit([Math.cos(spin), 0.8, Math.sin(spin)]), SPIN * Math.max(0, t)), m0);
+  const middle = [c0[0], c0[1] + h, c0[2]];
+  return { position: sub(middle, times(apply(m, built.centre), s)), rotation: matrixEuler(m), scale: s };
 }
 
-/** A lots seed (64 hex digits) as a roll's seed: its first 32 bits; null if it isn't one. */
-export const seedFromLots = (hex) => (typeof hex === "string" && /^[0-9a-f]{64}$/.test(hex) ? parseInt(hex.slice(0, 8), 16) >>> 0 : null);
+/**
+ * The way down: from a pose in the air (`now`, a transform) to where the
+ * die lands (`to`, rollPlan's), `u` from 0 to 1. The least turn between the
+ * two and a whole turn more about the same axis, slowing as it lands, so it
+ * starts as it is and ends exactly at `to`.
+ * @returns {(u: number) => { position, rotation, scale }}
+ */
+export function landing(built, now, to) {
+  const s = Number(to.scale) || 1;
+  const m0 = matrixOf(numbers(now.rotation));
+  const m1 = matrixOf(numbers(to.rotation));
+  const c0 = middleAt(built, { ...now, scale: s });
+  const c1 = middleAt(built, { ...to, scale: s });
+  const { axis, angle } = toAxisAngle(mul(m1, transpose(m0)), [0, 1, 0]);
+  return (u) => {
+    const tt = Math.max(0, Math.min(1, u));
+    if (tt >= 1) return { position: numbers(to.position), rotation: numbers(to.rotation), scale: s };
+    const e = 1 - (1 - tt) * (1 - tt);
+    const m = mul(axisAngle(axis, e * (angle + 2 * Math.PI)), m0);
+    const middle = [0, 1, 2].map((i) => c0[i] + (c1[i] - c0[i]) * e);
+    return { position: sub(middle, times(apply(m, built.centre), s)), rotation: matrixEuler(m), scale: s };
+  };
+}
 
 /**
  * A die that was shaken where nobody could see it, as it turns out to lie:

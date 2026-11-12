@@ -92,9 +92,11 @@ describe("the datatype", () => {
     expect(DieDatatype.getTitle(doc)).toBe("d6");
     DieDatatype.setTitle(doc, "Mine");
     doc.rolls.push({ face: 1, at: 1 });
+    doc.round = { draw: "dxxxx" };
     DieDatatype.markCopy(doc);
     expect(doc.title).toBe("Copy of Mine");
     expect(doc.rolls).toEqual([]);
+    expect("round" in doc).toBe(false);
     expect(DieDatatype.getTitle({})).toBe("Die");
   });
 });

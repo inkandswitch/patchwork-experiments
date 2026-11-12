@@ -9,15 +9,10 @@
 //
 // - scene:extension "keep.plain"   the plain keeper (src/plain-keeper.js)
 // - patchwork:datatype "keep-plain" its container document (src/plain.js)
-// - scene:extension "keep.lots"    lots: random values the seated players'
-//                                  clients draw between them by commit and
-//                                  open, some parts sealed until the scene
-//                                  says who may know (src/lots-ext.js,
-//                                  src/lots.js)
 //
 // `keeper: "plain"` is how setup code finds the plain keeper (and its
 // module's `contain`) in the scene:extension registry without naming this
-// package; `lots: true` finds lots (and its module's `attach`).
+// package.
 //
 // Not here yet: a sealed keeper for authored secrets (an envelope a player
 // writes and opens later). It needs a private place in the stage.
@@ -45,26 +40,6 @@ export const plugins = [
     },
     async load() {
       return (await import("./plain-keeper.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "keep.lots",
-    name: "Lots",
-    traits: ["keep.lots"],
-    lots: true,
-    // no `activities`: a member's client commits and opens whatever its viewer is doing
-    describes: {
-      "keep.lots": {
-        name: "Drawn by lots",
-        on: "object",
-        blurb: "Random values for this (a roll) are drawn by the seated players' clients between them, so nobody chooses them: each commits to a secret, then they are opened together",
-        // a draw under way is about this object now: a copy starts with none
-        runtime: ["round"],
-      },
-    },
-    async load() {
-      return (await import("./lots-ext.js")).default;
     },
   },
   {
