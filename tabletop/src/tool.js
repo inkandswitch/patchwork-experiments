@@ -7,6 +7,7 @@ import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
 import { orderedKinds, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
+import { containDecks, findSeats, hostRegistry } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
 
 const OPEN_EVENT = "patchwork:open-document";
@@ -118,14 +119,16 @@ export default function TabletopGameTool(handle, element) {
         return p?.glbUrl ? { url: p.glbUrl, hint: p.bounds ? { bounds: p.bounds } : null } : null;
       };
       const layout = tableLayout(d, { fileOf, gameUrl: handle.url });
-      // the decks first, so the scene never names one that isn't there
-      const urls = {};
-      for (const [deckId, deck] of Object.entries(layout.decks)) urls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
+      // the decks' containers first (each from a keeper, found in the registry by kind:
+      // table/made-with.js), so the scene never names one that isn't there
+      const { binds } = await containDecks({ repo, registry: hostRegistry }, layout.decks, (deck) => `${title}: ${deck.title}`);
+      // the seats are their owner's to write (none where nothing installed owns seats)
+      const lay = Object.keys(layout.seats).length ? await findSeats(hostRegistry) : null;
       // an empty scene as the scene makes one (every map and list it has;
       // the stage fills `packages` in), and where the scene package comes
       // from, for a viewer who doesn't have it
       const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title });
-      writeTable(table, layout, urls);
+      writeTable(table, layout, binds, { seats: lay });
       const scene = await repo.create2(table);
       handle.change((g) => {
         g.tables.push(scene.url);
@@ -191,7 +194,7 @@ export default function TabletopGameTool(handle, element) {
         el("summary", {}, `${deck.name || deckId}: ${total} cards of ${inDeck.length} kinds, shuffled${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
         el(
           "label",
-          { class: "toggle", title: "With the card-table package installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without it, the cards are hidden from the table but listed in an ordinary document." },
+          { class: "toggle", title: "With a keeper whose players shuffle installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without one, the cards are hidden from the table but listed in an ordinary document." },
           el("input", { type: "checkbox", checked: !!deck.secure, onchange: (e) => handle.change((g) => (g.decks[deckId].secure = e.target.checked)) }),
           " The players shuffle it between them (needs every player at the table)",
         ),

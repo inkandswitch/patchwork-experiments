@@ -26,6 +26,10 @@ extension imports another, and the stage knows no extension by name.
 | **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
 | **Local** | no (this view) | no | `api.local.get()` | `api.local.swap(fn)` |
 
+(There is no fourth, private place yet: what is one viewer's alone, lasting
+and on all their devices. A keeper that needs one keeps it itself, as the
+joint keeper keeps its player's secret with their account.)
+
 These rules follow from that:
 
 - **The doc holds what is true for everyone.** Per-viewer things never go in
@@ -58,7 +62,7 @@ this view and by the stage.
 | `activity` | stage (on joining, and after a template), activity surfaces | what this viewer chose to do: `"edit"`, `"play"`, …; null until the stage has the doc. Not persisted. See "Activities" |
 | `activities` | stage | `{ current, available }`: the activity that runs and the ones this scene offers. **Read the activity here**: `current` is `activity` when it's available, else `"edit"` |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
-| `packages` | stage | `{ ask, loading, failed }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`). See "Packages" |
+| `packages` | stage | `{ ask, loading, failed, missing }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`), and `missing`: whether any listed package isn't here (whatever was answered about it; true until that is known). See "Packages" and "Audience" |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
 | `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? "move"` |
 
@@ -82,7 +86,9 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   general?:    false,                 // no traits, yet not general: it runs only when something requires it
   requires?:   string[],              // ids that run whenever this does
   describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
-  async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
+  …                                   // any other plain data: the stage ignores it, others may read it from
+                                      // the registry (a keeper's `keeper: "plain"`, the seats' `roster: true`: "Conventions")
+  async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>, … } } }
 
 { type: "scene:template", id, name, icon?, description?,
   async load() { return { create(ctx) → Promise } } }
@@ -309,10 +315,10 @@ view's side is `scene.transfer`, editing only).
     scene and cleared in another, with a notice ("This lever's target was
     left behind: choose one in the inspector."). An `entry` field is kept in
     the same scene, or where this scene's trait `of` has that key; else
-    cleared, and `of` counts as a need (below) when the scene lacks the trait
-    ("This private zone needs seats…"), or a notice names the missing entry.
-    A field with `copy: "drop"` is left behind (a document that knows its
-    objects by id, such as a deck: the copy has a new id it doesn't know).
+    cleared, and `of` counts as a need (below) when the scene lacks the trait,
+    or a notice names the missing entry.
+    A field with `copy: "drop"` is left behind (a keeper's container, which
+    holds one slot per object: the copy has no slot there).
     `url` and other fields are copied as they are.
   - **What a trait needs.** When a copied trait's description `needs` a scene
     trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
@@ -332,7 +338,7 @@ describes: {
   "arena.level":  { name: "Arena level", on: "scene",
                     fields: [{ key: "look", label: "Look", kind: "enum", default: "",
                                options: [{ value: "", label: "The scene's own" }, { value: "arena", label: "Sky, haze and sun" }] }] },
-  "tabletop.seats": { name: "Seats", on: "scene",
+  "scene.seats": { name: "Seats", on: "scene",
                       entries: { label: "Seats", noun: "seat", prefix: "seat",
                                  fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }],
                                  init: { player: null } } },
@@ -715,6 +721,8 @@ that extension.
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
+| `audience(id)` → `"all"` \| viewer[] \| `null` | who may see what this object is: every running extension's `audience` answer for it, merged. `null`: unknown, tell nobody. See "Audience" |
+| `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
 | `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
@@ -844,7 +852,8 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
 | | Read by |
 |---|---|
 | `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
-| `looks()` → `Map id → { sourceUrl?, name? }` | the stage (lenses combine in running order; later wins per field) |
+| `looks()` → `Map id → { sourceUrl?, name?, veil? }` | the stage (lenses combine in running order; later wins per field). `veil: true`: the stage draws its stand-in instead of the object's content. See "The veil" |
+| `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
 | `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
@@ -930,6 +939,173 @@ and selecting an object (or clicking on nothing) replaces the dimension.
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.
 
+### Audience
+
+Who may see what a thing really is: a card's face, what's under a cup. The
+stage holds no secrets and enforces nothing. It gives the extensions that
+do hold them (keepers, below) one answer per object, the same on every
+peer, made of every policy any package contributes. `stage/audience.js` is
+the algebra (pure).
+
+**A policy** is an extension's `audience(scene)`: a function of the
+snapshot that returns a function of an object id.
+
+```js
+audience(scene) → (id) → null | {
+  show?: "all" | viewer[],   // exposes: face up, in your hand, turned toward you
+  only?: viewer[],           // occludes: a screen, a hand's privacy
+}
+```
+
+- **Pure in the snapshot**: the doc alone (`scene`), never poses, presence,
+  claims or local state. Every peer then answers alike, and nothing
+  flickers as something carrying the object moves. The stage asks each
+  policy once per snapshot.
+- A viewer is a viewer id (`api.viewer`). Seats, roles, a referee are a
+  policy's business, mapped to viewer ids; the stage never learns of them.
+- An extension that contributes `audience` declares **no `activities`**: a
+  policy that stopped when a viewer switched activity would take its `only`
+  with it. (A package whose verbs are play's and whose policy is everyone's
+  registers two extensions: tabletop's `tabletop` and `tabletop.rule`.)
+
+**The merge**, over every running extension's answer for one object:
+
+```
+shown    = ∪ show                  who it is turned toward
+audience = shown ∩ (⋂ only)        who may see what it is
+```
+
+- `"all"` is the top: it includes someone who is in no list (a spectator).
+  With no `show` at all the answer is nobody (`[]`).
+- Unions and intersections of sets: the order extensions run in never
+  matters, and `audience ⊆ shown` always.
+- Two fields because policies do two different things, and one intersection
+  can't say both: a face-down card (shown to nobody) in your own tray
+  (turned toward you, screened from the rest) is yours.
+- A policy that throws is read as `{ only: [] }`: nobody. A broken screen
+  hides.
+
+**`api.audience(id)`** → `"all"` | viewer[] (sorted) | `null`, and
+**`api.shown(id)`** the same for the union alone. `shown` is what lets a
+keeper tell "not turned toward you" (draw its own back) from "turned toward
+you and kept from you" (draw the veil).
+
+**Unknown, and failing closed.** A missing `only` *enlarges* the audience,
+so a viewer who lacks a policy must not answer as if it weren't there. Both
+calls return `null`, and whoever holds a secret then reveals nothing and
+hands nothing over, while either holds:
+- **a listed package isn't here** (`doc.packages` names one none of whose
+  plugins is registered): asked about, declined, loading or failed, it makes
+  no difference, and before the registry can be read at all it is unknown
+  too. `local.packages.missing` says so. It is worked out from the doc as it
+  is now, so a list entry arriving in the same change as its trait already
+  counts;
+- **an extension the doc calls for, of what's registered here, hasn't
+  started** (still loading) **or failed to start**: it may be a policy.
+
+`update` runs when the answer may have changed: a doc change, the running
+set changing (`local.running`), a package arriving (`local.packages`).
+
+**What this is and isn't.**
+- Secrets are guarded by the clients that hold them, each by its own
+  reading of the doc. It is not access control: anyone who can write the
+  doc can change an audience (sit down, carry a card into their tray, turn
+  it over). The guarantee is the physical one: no disclosure without a
+  change everyone can see.
+- A release can't be taken back. Something that passed through "face up"
+  in one peer's view during sync lag may have been released.
+- The list is appended to by whoever adds a package's content, in a change
+  of its own just after: a peer can hear of the trait before the list
+  entry, and for that moment answers without the new policy.
+- A policy from a package the list can't name (a dev server's copy) is
+  invisible to peers: they compute a different audience and nothing says so.
+- A listed package nobody needs any more still counts as missing for a
+  viewer who doesn't load it.
+
+### The veil
+
+A look may say `veil: true`: "what this is, is kept from you". The stage
+then draws its own stand-in instead of the object's content
+(`stage/veil.js`): a frosted box filling the object's `hint.bounds`, a pale
+padlock on its two largest faces, both sides alike, upright on an upright
+face and reading from across a table on a flat one.
+
+- It is made from the bounds alone, for any shape: nothing of what it
+  stands for can reach it, and no file is made and nothing written to the
+  doc for it.
+- While veiled, none of the object's own content is loaded or kept loaded
+  (its `sourceUrl`, a lens's, its render). When the veil goes, its content
+  loads again, and the veil stays up until that has.
+- `box` and picking go by the veil, which is to say by the hint. Without a
+  hint it is drawn to the bounds of whatever was there, else to a 5 cm cube.
+- The merge is the lenses' own: field by field, later wins, so a later
+  lens's `veil: false` lifts it. A veil beats a `sourceUrl` in the same
+  look.
+
+### Conventions
+
+Contributions the stage never reads (`api.collect`), and module exports
+found through plugin metadata, by which packages that don't know each other
+meet. A package that depends on one of these names the convention, never
+the package that provides it.
+
+**Seats** (provided by the scene package's own `scene.seats`, a shared part:
+`src/parts/seats.js`). The places people take at a scene: scene trait
+`scene.seats`, `{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
+It runs wherever the scene has seats, in every activity; it is the seat
+picker, the claim that says a seat's player is here (`scene.seat:<id>`), the
+seat's view (riding the object its camera is `in`), a seat as a station on
+the use prompt, and "sat down" told to the others. No other package reads
+or writes the trait.
+
+| | |
+|---|---|
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. The first four are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's) |
+| `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
+| `firstPerson` (contributed by whatever walks) | `{ enter({ seat, eye, target, frame }) → boolean, leave() }`: the hand-off when someone sits down from, or stands up into, first person |
+| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, only where the scene has none; setup code calls it instead of writing seats |
+
+**Keepers.** A keeper holds what objects really are, away from the scene
+doc, and shows each viewer what `api.audience` allows. It is an ordinary
+`scene:extension`, attached to objects by its own trait, so the scene's
+`packages` lists it like anything else and a viewer without it sees the
+objects' own (closed) looks and is offered it.
+
+- **The binding** is the object's: `"<keeper's trait>": { by: <container url>, slot: n }`,
+  in the scene doc, so moving or drawing a kept thing is one change there.
+  The trait is `runtime` and `by` is `copy: "drop"`: a copy is a bare
+  closed object. Two objects naming one slot: the lower id keeps it, the
+  other stays closed and is flagged.
+- **What it contributes**: `looks()`, by one rule every keeper copies, and
+  `hud()` for status. The rule, per object and viewer:
+
+  | | drawn as |
+  |---|---|
+  | the keeper isn't ready for it, or the audience is unknown (`null`) | the object's own look |
+  | the viewer is in `audience`, and their client knows the item | the item's look |
+  | else, the viewer is in `shown` (turned toward them and screened, or theirs and not known here yet) | `{ veil: true }` |
+  | else (face down; in another's hand) | the object's own look |
+
+- **`keeper`** (contributed, for whatever handles kept things: a table's
+  Shuffle): `{ kind, of(id) → container key | null, name(key) → string | null, shuffle(ids) → n }`.
+  `shuffle` shuffles what those objects are among themselves and answers how
+  many (0: nothing to do).
+- **`contain({ repo }, { title, items }) → Promise<{ key, bind(slot) → traits }>`**
+  (the module of a plugin whose metadata says `keeper: "<kind>"`): makes a
+  container holding `items` (slot k: `items[k]`, any JSON; a scene object's
+  is `{ sourceUrl, name }`). Setup code picks a keeper by kind (`"plain"`:
+  anyone who opens the container reads it; `"joint"`: the seated players
+  shuffle it between them) and writes `bind(slot)` into each object's
+  traits.
+
+**When something isn't loaded**
+
+| Missing here | Effect |
+|---|---|
+| a keeper | its objects show their own (closed) look; the packages card offers it; nothing leaks |
+| a listed package (a policy's, or any) | the audience is unknown here: this viewer's keepers show closed looks and hand nothing over, so a shuffle that needs them waits, and its HUD names who |
+| the seats' owner | no roster: a hand is nobody's, a deck waits for players |
+
 **Atmosphere.** How the world around the objects looks: a sky, fog, a sun.
 
 ```js
@@ -980,12 +1156,14 @@ atmosphere() → null | {
 | `stage/atom.js` | the local value |
 | `stage/activation.js` | the running set, scopes and activities (pure) |
 | `stage/chain.js` | the chain order (pure) |
+| `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
+| `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, parts and the scene's files, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, the activity, templates, parts and the scene's files, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

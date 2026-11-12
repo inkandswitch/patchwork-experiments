@@ -35,7 +35,7 @@
 //  9. Enter boards: over the deck the prompt shows only Flip, and S and D
 //     walk; with the table in her cockpit the mainsheet is in reach from its
 //     stand spot and offers F; Esc puts A back in the seat view;
-// 10. seated, F at A's own tray (tabletop's "Stand up") puts A on her deck
+// 10. seated, F at A's own tray (the seats' "Stand up") puts A on her deck
 //     through sailing's firstPerson.enter: walking, beside the table and
 //     facing it, the seat still A's; Esc puts A back in the seat view;
 // 11. screens of both views at anchor and under way.
@@ -47,7 +47,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");
@@ -279,7 +279,7 @@ try {
   await P("pick('b', 'p2')");
   const viewers = await P("viewers");
   check("2: A in Player 1, B in Player 2", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
-  check("2: the sim's claim and both seats' claims are live", await until("claims('a').includes('sim') && __p.claims('a').includes('tabletop.seat:p1') && __p.claims('b').includes('tabletop.seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
+  check("2: the sim's claim and both seats' claims are live", await until("claims('a').includes('sim') && __p.claims('a').includes('scene.seat:p1') && __p.claims('b').includes('scene.seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
   const dealt = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 180_000);
   mark("dealt");
   check("2: the secure deck reaches playing, each hand's faces delivered", dealt, { phase: await P("phase()"), a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });
@@ -470,7 +470,7 @@ try {
     await shot("back-in-seat");
   }
 
-  // ── 10: Stand up (tabletop's seat verb, through sailing's firstPerson.enter) ──
+  // ── 10: Stand up (the seats' verb, through sailing's firstPerson.enter) ──
   {
     await P("focus('a')");
     const offered = await hover(ids.hand1, /Stand up/);

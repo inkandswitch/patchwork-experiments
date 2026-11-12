@@ -1,10 +1,15 @@
+// The table (extension.js, visibility.js, rule.js): its policy over every
+// case, Shuffle through whatever keeps a card, Draw, a card turning face up
+// over your own hand, the hand as the tool in play, and what it tells the
+// others. Seats and keepers are stand-ins (test/stand-ins.js): the table
+// meets them only through the stage's conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import * as Automerge from "@automerge/automerge";
-import { HIDDEN, SEATS, ZONE, docUrl, faceUpIn, seatAt, seatOf, seatedPlayers, visibility, zones } from "./visibility.js";
-import { plainResolver } from "./plain-deck.js";
-import Extension, { PLAIN_HANDS, seatState } from "./extension.js";
+import { CARD, ZONE, audienceOf, faceUpIn, isCard, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
+import Extension, { keptBy } from "./extension.js";
+import Rule from "./rule.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
+import { SEATS, keeperOf, keptTrait, roster } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
 
 /** A scene doc as the scene makes one (empty-scene.js), with these objects in it, listed in order. */
@@ -13,22 +18,32 @@ const sceneOf = (objects, traits = {}, more = {}) => emptyScene({ objects, order
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
 const zone = (seat) => ({ [ZONE]: { seat, min: [-0.3, 0, -0.05], max: [0.3, 0.15, 0.05] } });
 const DECK = "automerge:2DeckDeckDeckDeckDeckDeck1";
-const hidden = { [HIDDEN]: { by: DECK } };
+let slot = 0;
+// a card something keeps: a card (this package's trait) with a stand-in keeper's binding beside it
+const hidden = () => ({ [CARD]: {}, [keptTrait("plain")]: { by: DECK, slot: slot++ } });
 const objects = () => ({
   // two hand trays, one turned round, each a private zone 0.6 × 0.1 m, 0.15 m high
   hand1: { name: "Hand 1", transform: T([0, 0, 0.5]), traits: zone("p1") },
   hand2: { name: "Hand 2", transform: T([0, 0, -0.5], [0, Math.PI, 0]), traits: zone("p2") },
-  inHand1: { name: "Card", transform: T([0.1, 0.002, 0.5]), traits: hidden },
-  inHand2Flipped: { name: "Card", transform: T([0.2, 0.002, -0.49], [0, 0, Math.PI]), traits: hidden },
-  faceUp: { name: "Card", transform: T([0, 0, 0]), traits: hidden },
-  faceDown: { name: "Card", transform: T([0.3, 0.001, 0], [0, 0.4, Math.PI]), traits: hidden },
+  inHand1: { name: "Card", transform: T([0.1, 0.002, 0.5]), traits: hidden() },
+  inHand2Flipped: { name: "Card", transform: T([0.2, 0.002, -0.49], [0, 0, Math.PI]), traits: hidden() },
+  faceUp: { name: "Card", transform: T([0, 0, 0]), traits: hidden() },
+  faceDown: { name: "Card", transform: T([0.3, 0.001, 0], [0, 0.4, Math.PI]), traits: hidden() },
   // attached to the tray: its world position decides
-  onTray: { name: "Card", parent: "hand1", transform: T([-0.2, 0.002, 0]), traits: hidden },
+  onTray: { name: "Card", parent: "hand1", transform: T([-0.2, 0.002, 0]), traits: hidden() },
   board: { name: "Board", transform: T([0, 0, 0]) },
 });
 const seats = (p1 = null, p2 = null) => ({ p1: { name: "Player 1", player: p1 }, p2: { name: "Player 2", player: p2 } });
 
-describe("who may see what", () => {
+/** A view at the table: the extension, with the seats' roster and a keeper as the stage would let it collect them. */
+function sit(w, session, viewer, { local = {} } = {}) {
+  const api = w.join(session, { viewer, local });
+  const keeper = keeperOf(() => w.doc.objects);
+  w.view(session).collected = { roster, keeper };
+  return { api, keeper, x: w.attach(session, Extension.create(api)) };
+}
+
+describe("who may see what: the table's policy", () => {
   it("zones: the seat whose box holds a point, through the zone's own turn", () => {
     const scene = testScene(objects());
     const regions = zones(scene);
@@ -46,168 +61,142 @@ describe("who may see what", () => {
     expect(faceUpIn(scene, "faceDown")).toBe(false);
   });
 
-  it("a hand is its seat's alone, either way up; the table is face up for everyone", () => {
-    const scene = testScene(objects());
-    const see = visibility(scene, seats("alice", "bob"));
-    const hiddenOnes = (set) => [...set].filter((id) => scene.objects[id].traits?.[HIDDEN]).sort();
-    expect(hiddenOnes(see("alice"))).toEqual(["faceUp", "inHand1", "onTray"]);
-    expect(hiddenOnes(see("bob"))).toEqual(["faceUp", "inHand2Flipped"]);
-    expect(hiddenOnes(see(null))).toEqual(["faceUp"]);
-    expect(hiddenOnes(see("carol"))).toEqual(["faceUp"]); // not seated: watching
-  });
+  // Every case: where a thing lies (p1's hand, p2's, the hand of a seat
+  // nobody has taken, the hand of a seat that isn't there, out on the
+  // table), which way up, whether it's a card, and who is seated.
+  const PLACES = { "p1's hand": [0.1, 0.002, 0.5], "p2's hand": [0.2, 0.002, -0.49], "an empty seat's hand": [1.1, 0.002, 0.5], "a hand of no seat": [2.1, 0.002, 0.5], "the table": [0, 0.001, 0] };
+  const WAYS = { "face up": [0, 0.3, 0], "face down": [0, 0.3, Math.PI] };
+  const KINDS = { card: { [CARD]: {} }, "not a card": {} };
+  const SEATINGS = { "both seated": seats("ann", "ben"), "only p1": seats("ann", null), "nobody seated": seats() };
+  const sceneWith = (position, rotation, traits) =>
+    testScene({
+      hand1: { transform: T([0, 0, 0.5]), traits: zone("p1") },
+      hand2: { transform: T([0, 0, -0.5], [0, Math.PI, 0]), traits: zone("p2") },
+      hand3: { transform: T([1, 0, 0.5]), traits: zone("p3") }, // p3 is a seat, never taken
+      hand4: { transform: T([2, 0, 0.5]), traits: zone("gone") }, // no such seat
+      thing: { transform: T(position, rotation), traits },
+    });
+  const rosterSeats = (s) => [...Object.entries(s).map(([id, v]) => ({ id, viewer: v.player })), { id: "p3", viewer: null }];
+  const CASES = [];
+  for (const [place, position] of Object.entries(PLACES)) for (const [way, rotation] of Object.entries(WAYS)) for (const [kind, traits] of Object.entries(KINDS)) for (const [seating, seated] of Object.entries(SEATINGS)) CASES.push({ place, way, kind, seating, position, rotation, traits, seated });
 
-  it("seats", () => {
-    expect(seatOf(seats("alice"), "alice")).toBe("p1");
-    expect(seatOf(seats("alice"), "bob")).toBeNull();
-    expect(seatedPlayers(seats(null, "bob"))).toEqual(["bob"]);
-    expect(docUrl(`${DECK}#heads`)).toBe(DECK);
-    expect(docUrl("nope")).toBeNull();
-  });
-});
+  it(`covers ${5 * 2 * 2 * 3} cases`, () => expect(CASES).toHaveLength(60));
 
-describe("the plain deck", () => {
-  it("shows what the viewer may see, and shuffles entries", () => {
-    let doc = { objects: { a: { sourceUrl: "automerge:a", name: "A" }, b: { sourceUrl: "automerge:b", name: "B" } } };
-    const handle = { doc: () => doc, change: (fn) => ((doc = structuredClone(doc)), fn(doc)), on() {}, off() {} };
-    const r = plainResolver({ handle, viewer: "alice" });
-    r.update({ visibleTo: () => new Set(["a"]) });
-    expect([...r.looks().keys()]).toEqual(["a"]);
-    expect(r.shuffle(["a", "b"], () => 0)).toBe(2);
-    expect(doc.objects.a.name).toBe("B");
-    expect(r.shuffle(["a"])).toBe(0);
-  });
+  for (const c of CASES) {
+    const owner = { "p1's hand": c.seated.p1.player, "p2's hand": c.seated.p2.player, "an empty seat's hand": null, "a hand of no seat": null }[c.place];
+    const want =
+      c.place !== "the table"
+        ? owner
+          ? { show: [owner], only: [owner] } // a hand: its seat's alone, whichever way up, card or not
+          : { show: [], only: [] } // a hand nobody sits at: nobody's
+        : c.kind === "card" && c.way === "face up"
+          ? { show: "all" }
+          : null; // face down, or not a card: nothing to say
+    it(`${c.kind}, ${c.way}, in ${c.place}, ${c.seating} → ${JSON.stringify(want)}`, () => {
+      expect(audienceOf(sceneWith(c.position, c.rotation, c.traits), rosterSeats(c.seated))("thing")).toEqual(want);
+    });
+  }
 
-  it("two shuffles at once merge to one whole shuffle: no card twice, none lost", () => {
-    const entries = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`o${i}`, { sourceUrl: `automerge:card${i}`, name: `Card ${i}` }]));
-    const base = Automerge.from({ title: "Deck", objects: entries });
-    const handleOf = (doc) => ({ doc: () => doc, change: (fn) => (doc = Automerge.change(doc, fn)), on() {}, off() {}, get current() {
-      return doc;
-    } });
-    const a = handleOf(Automerge.clone(base));
-    const b = handleOf(Automerge.clone(base));
-    const ids = Object.keys(entries);
-    // the same pile, listed in a different order by each peer, shuffled differently
-    expect(plainResolver({ handle: a, viewer: "alice" }).shuffle(ids, seeded(3))).toBe(10);
-    expect(plainResolver({ handle: b, viewer: "bob" }).shuffle([...ids.slice(5), ...ids.slice(0, 5)], seeded(8))).toBe(10);
-    const merged = Automerge.toJS(Automerge.merge(a.current, b.current));
-    expect(Object.keys(merged.objects).sort()).toEqual([...ids].sort());
-    const cards = (objects) => Object.values(objects).map((e) => `${e.sourceUrl}|${e.name}`).sort();
-    expect(cards(merged.objects)).toEqual(cards(entries));
-    // and the shuffle that won is one of the two, whole
-    const one = Automerge.toJS(a.current).objects;
-    const other = Automerge.toJS(b.current).objects;
-    expect([one, other]).toContainEqual(merged.objects);
-  });
-});
-
-/** Deterministic random numbers, for shuffles. */
-function seeded(seed = 1) {
-  let x = seed;
-  return () => ((x = (x * 16807) % 2147483647) - 1) / 2147483646;
-}
-
-/** An in-memory repo with real-looking urls, whose handles emit "change". */
-function fakeRepo() {
-  const handles = new Map();
-  let n = 0;
-  const make = (url, doc) => {
-    const listeners = new Set();
-    const h = {
-      url,
-      doc: () => doc,
-      change(fn) {
-        doc = structuredClone(doc);
-        fn(doc);
-        for (const l of [...listeners]) l();
-      },
-      on: (ev, fn) => ev === "change" && listeners.add(fn),
-      off: (ev, fn) => listeners.delete(fn),
+  it("what that means for each viewer, with no other policy running: another seat's hand is never turned toward you", () => {
+    // (one policy alone: who it's shown to is its `show`; who may see it, that cut by its `only`)
+    const has = (set, v) => set === "all" || (Array.isArray(set) && set.includes(v));
+    const read = (a, v) => {
+      const shown = has(a?.show ?? [], v);
+      return { shown, may: shown && (a?.only === undefined || a.only.includes(v)) };
     };
-    handles.set(url, h);
-    return h;
-  };
-  return {
-    add: (doc, url = `automerge:2Doc${String(n++).padStart(4, "x")}abcdefghijkmnopqr`) => make(url, structuredClone(doc)),
-    async find(url) {
-      const h = handles.get(url);
-      if (!h) throw new Error("unavailable");
-      return h;
-    },
-  };
-}
+    for (const c of CASES.filter((x) => x.seating === "both seated" && x.kind === "card")) {
+      const a = audienceOf(sceneWith(c.position, c.rotation, c.traits), rosterSeats(c.seated))("thing");
+      const [ann, ben, watcher] = ["ann", "ben", "zed"].map((v) => read(a, v));
+      if (c.place === "p1's hand") expect([ann, ben, watcher]).toEqual([{ shown: true, may: true }, { shown: false, may: false }, { shown: false, may: false }]);
+      else if (c.place === "p2's hand") expect([ann, ben, watcher]).toEqual([{ shown: false, may: false }, { shown: true, may: true }, { shown: false, may: false }]);
+      else if (c.place === "the table" && c.way === "face up") expect([ann, ben, watcher]).toEqual([{ shown: true, may: true }, { shown: true, may: true }, { shown: true, may: true }]);
+      else expect([ann, ben, watcher]).toEqual([{ shown: false, may: false }, { shown: false, may: false }, { shown: false, may: false }]);
+      // so a keeper, by its rule, draws: the item to whoever `may`; the veil to whoever it's shown to
+      // and may not (nobody, under this policy alone); and to everyone else its own back
+      for (const v of [ann, ben, watcher]) expect(v.shown && !v.may).toBe(false);
+    }
+  });
 
-/** The extension against a stand-in for the scene's api. */
-function mount({ viewer = "alice", registries = {}, deckType = "plain-deck" } = {}) {
-  const repo = fakeRepo();
-  let doc = sceneOf(objects(), { [SEATS]: seats(viewer) });
-  const deck = repo.add(
-    { "@patchwork": { type: deckType }, objects: Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray"].map((id) => [id, { sourceUrl: `automerge:${id}`, name: `Face of ${id}` }])) },
-    DECK,
-  );
-  const calls = { toasts: [], refreshes: 0, selected: null, camera: null };
-  const api = {
-    repo,
-    viewer,
-    doc: () => doc,
-    scene: () => testScene(doc.objects, doc.traits),
-    change: (fn) => {
-      doc = structuredClone(doc);
-      fn(doc);
-    },
-    newId: (p) => `${p}${Math.random().toString(36).slice(2, 8)}`,
-    local: { get: () => ({}), swap: (fn) => (calls.selected = fn({}).selected) },
-    notify: (m, kind) => calls.toasts.push([m, kind]),
-    schedule: () => calls.refreshes++,
-    overlay: () => (calls.overlay = document.createElement("div")),
-    presence: { get: () => calls.peers ?? {}, watch: (fn) => ((calls.presenceWatch = fn), () => {}) },
-    style() {},
-    box: () => null,
-    camera: { set: (c) => (calls.camera = c) },
-    registry: async (type) => registries[type] ?? null,
-  };
-  const x = Extension.create(api);
-  return { x, api, deck, calls, repo, get doc() {
-    return doc;
-  } };
-}
-const settle = () => new Promise((r) => setTimeout(r, 10));
+  it("is from the doc alone, the same for every asker, and answers nothing for what isn't there", () => {
+    const scene = testScene(objects());
+    const of = audienceOf(scene, rosterSeats(seats("ann", "ben")));
+    expect(of("nope")).toBeNull();
+    expect(of("board")).toBeNull();
+    expect(of("onTray")).toEqual({ show: ["ann"], only: ["ann"] }); // attached to the tray: where it is in the world decides
+    expect(of("inHand2Flipped")).toEqual({ show: ["ben"], only: ["ben"] }); // face down in a hand: still its seat's
+    expect(of("faceUp")).toEqual({ show: "all" });
+    expect(of("faceDown")).toBeNull();
+    expect(of("faceUp")).toBe(of("faceUp"));
+  });
+
+  it("seats come from the roster: with none contributed, every hand is nobody's", () => {
+    const scene = testScene(objects(), { [SEATS]: seats("ann", "ben") });
+    expect(seatsFrom({ collect: () => [] }, scene)).toEqual([]);
+    expect(seatsFrom({ collect: (n) => (n === "roster" ? [{ id: "x", value: roster }] : []) }, scene).map((s) => [s.id, s.viewer])).toEqual([["p1", "ann"], ["p2", "ben"]]);
+    // a roster that throws is no roster
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(seatsFrom({ collect: () => [{ id: "x", value: { seats: () => { throw new Error("boom"); } } }] }, scene)).toEqual([]);
+    vi.restoreAllMocks();
+    expect(audienceOf(scene, [])("inHand1")).toEqual({ show: [], only: [] });
+    expect(seatOf([{ id: "p1", viewer: "ann" }], "ann")).toBe("p1");
+    expect(seatOf([{ id: "p1", viewer: "ann" }], "ben")).toBeNull();
+    expect(seatOf([{ id: "p1", viewer: null }], null)).toBeNull();
+    expect(isCard({ traits: { [CARD]: {} } })).toBe(true);
+  });
+
+  it("the rule extension contributes exactly that, from the roster it collects, and nothing else", () => {
+    const scene = testScene(objects(), { [SEATS]: seats("ann", null) });
+    const x = Rule.create({ collect: (n) => (n === "roster" ? [{ id: "x", value: roster }] : []) });
+    expect(Object.keys(x)).toEqual(["audience"]);
+    const of = x.audience(scene);
+    expect(of("inHand1")).toEqual({ show: ["ann"], only: ["ann"] });
+    expect(of("inHand2Flipped")).toEqual({ show: [], only: [] });
+    expect(of("faceUp")).toEqual({ show: "all" });
+  });
+});
 
 describe("the table extension", () => {
-  it("a deck of a kind nothing installed reads shows no faces, and the HUD names the kind", async () => {
-    const m = mount({ deckType: "some-deck" });
-    m.x.update(m.api.scene());
-    await settle();
-    expect(m.x.looks().size).toBe(0);
-    expect(m.x.hud()).toEqual([{ text: expect.stringContaining("some-deck"), state: "error" }]);
+  afterEach(() => vi.useRealTimers());
+  /** Alice at the table of objects(), seated as given. */
+  function mount({ viewer = "alice", seated = seats(viewer) } = {}) {
+    const w = fakes.fakeWorld(sceneOf(objects(), { [SEATS]: seated }));
+    const { api, keeper, x } = sit(w, "A", viewer);
+    w.flush();
+    return { w, api, keeper, x, toasts: () => w.view("A").notices.map((n) => [n.text, n.kind]) };
+  }
+
+  it("contributes no looks, no HUD and no audience of its own: what a card is, is its keeper's; who may see it, the rule's", () => {
+    const m = mount();
+    expect(m.x.looks).toBeUndefined();
+    expect(m.x.hud).toBeUndefined();
+    expect(m.x.audience).toBeUndefined();
+    expect(Extension.drop).toBeUndefined();
+    m.w.done();
   });
 
-  it("reads a deck and shows this viewer what they may see", async () => {
+  it("says where each seat's hands are, for whoever shows seats", () => {
     const m = mount();
-    m.x.update(m.api.scene());
-    await settle();
-    expect(m.calls.refreshes).toBeGreaterThan(0);
-    m.x.update(m.api.scene());
-    expect([...m.x.looks().keys()].sort()).toEqual(["faceUp", "inHand1", "onTray"]);
-    expect(m.x.looks().get("inHand1").name).toBe("Face of inHand1");
+    expect(m.x.seatPlaces(m.api.scene())).toEqual([
+      { id: "hand1", seat: "p1", min: [-0.3, 0, -0.05], max: [0.3, 0.15, 0.05] },
+      { id: "hand2", seat: "p2", min: [-0.3, 0, -0.05], max: [0.3, 0.15, 0.05] },
+    ]);
+    m.w.done();
   });
 
-  it("turns a hidden card face up over your own zone only", () => {
+  it("turns a card face up over your own hand only", () => {
     const m = mount();
-    m.x.update(m.api.scene());
     expect(m.x.landing("faceDown", [0.1, 0.01, 0.5])).toEqual({ faceUp: true });
     expect(m.x.landing("faceDown", [0.1, 0.01, -0.5])).toBeNull(); // someone else's
     expect(m.x.landing("faceDown", [0, 0, 0])).toBeNull();
-    expect(m.x.landing("board", [0.1, 0.01, 0.5])).toBeNull(); // not hidden
-    const watcher = mount({ viewer: "zed" });
-    watcher.api.change((d) => (d.traits[SEATS] = seats()));
-    watcher.x.update(watcher.api.scene());
+    expect(m.x.landing("board", [0.1, 0.01, 0.5])).toBeNull(); // not a card
+    m.w.done();
+    const watcher = mount({ viewer: "zed", seated: seats() });
     expect(watcher.x.landing("faceDown", [0.1, 0.01, 0.5])).toBeNull();
+    watcher.w.done();
   });
 
-  it("shuffles the pile a card is in, through its deck", async () => {
+  it("shuffles the pile a card is in, through whatever keeps it", () => {
     const m = mount();
-    m.x.update(m.api.scene());
-    await settle();
     const shuffle = m.x.commands.find((c) => c.id === "shuffle");
     expect(shuffle.key).toBe("s");
     expect(shuffle.state("faceDown")).not.toBeNull();
@@ -215,523 +204,109 @@ describe("the table extension", () => {
     expect(shuffle.state(null)).toBeNull();
     // no boxes: the pile is what's on the same spot (faceDown alone)
     shuffle.run("faceDown");
-    expect(m.calls.toasts.at(-1)[0]).toMatch(/nothing here to shuffle/);
+    expect(m.keeper.calls).toEqual([["faceDown"]]);
+    expect(m.toasts().at(-1)[0]).toMatch(/nothing here to shuffle/);
+    m.w.done();
   });
 
-  it("lays out a deck dropped on the table when its provider can", async () => {
-    const placement = vi.fn(() => ({ name: "Secret deck", count: 3, look: { sourceUrl: "automerge:back", name: "Card" }, bounds: { min: [0, 0, 0], max: [0.05, 0.001, 0.08] } }));
-    const bind = vi.fn();
-    const registry = {
-      filter: (fn) => [{ id: "sd", supportedDatatypes: ["secure-deck"] }].filter(fn),
-      load: async () => ({ module: { createResolver: () => ({ update() {}, looks: () => new Map() }), placement, bind } }),
-    };
-    const m = mount({ registries: { "tabletop:deck": registry } });
-    // the drop is the module's, called before the extension runs, with a small context
-    const ctx = { ...m.api, notify: m.api.notify };
-    const url = "automerge:2SecureSecureSecureSecure9";
-    expect(await Extension.drop(ctx, { url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {} })).toBe(true);
-    const cards = Object.values(m.doc.objects).filter((o) => o.traits?.[HIDDEN]?.by === url);
-    expect(cards).toHaveLength(3);
-    expect(cards.every((c) => Math.abs(c.transform.rotation[2] - Math.PI) < 1e-9)).toBe(true);
-    expect(bind).toHaveBeenCalledOnce();
-    // not a deck: left to the scene
-    expect(m.calls.selected).toMatch(/^g/);
-    expect(await Extension.drop(ctx, { url: "automerge:2Other", doc: { "@patchwork": { type: "file" } }, handle: {} })).toBe(false);
-  });
-});
-
-describe("seats, held by claims", () => {
-  afterEach(() => vi.useRealTimers());
-  const KIND = (sid) => `tabletop.seat:${sid}`;
-  // contacts, with names
-  const ANA = "automerge:2AnaAnaAnaAnaAnaAnaAnaAna1";
-  const BEN = "automerge:2BenBenBenBenBenBenBenBen1";
-  /** A table (seats p1/p2, hands hand1/hand2) and its views, each [session, viewer]. */
-  async function room(seated, { claims, views = [] } = {}) {
-    const repo = fakes.fakeRepo();
-    repo.add({ name: "Ana" }, ANA);
-    repo.add({ name: "Ben" }, BEN);
-    repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: {} }, DECK);
-    const doc = sceneOf(objects(), { [SEATS]: seated }, claims ? { claims } : {});
-    const w = fakes.fakeWorld(doc, { repo });
-    const t = { w, api: {}, x: {} };
-    t.join = async (session, viewer) => {
-      t.api[session] = w.join(session, { viewer });
-      t.x[session] = w.attach(session, Extension.create(t.api[session]));
-      await t.step();
-      return t.api[session];
-    };
-    /** let the views hear the doc, and their microtasks (reconcile) and lookups run, twice over */
-    t.step = async () => {
-      for (let i = 0; i < 3; i++) {
-        w.flush();
-        await vi.advanceTimersByTimeAsync(0);
-      }
-    };
-    t.pick = async (session, seat) => {
-      const sel = w.view(session).overlay.querySelector(".tabletop-seat");
-      sel.value = seat;
-      sel.dispatchEvent(new Event("change"));
-      await t.step();
-    };
-    t.options = (session) => [...w.view(session).overlay.querySelector(".tabletop-seat").options].map((o) => o.textContent);
-    t.picked = (session) => w.view(session).overlay.querySelector(".tabletop-seat").value;
-    t.notices = (session) => w.view(session).notices.map((n) => n.text);
-    t.claim = (sid) => w.doc.claims?.[KIND(sid)] ?? null;
-    t.player = (sid) => w.doc.traits[SEATS][sid].player;
-    for (const [s, v] of views) await t.join(s, v);
-    return t;
-  }
-
-  it("seatState: whose a seat is, from the doc's player and the live claim", () => {
-    const seat = (player = null) => ({ name: "Seat", player });
-    const by = (viewer, mine = false) => ({ viewer, session: `s-${viewer}`, mine });
-    const table = [
-      [seat(), null, "free"],
-      [undefined, null, "free"],
-      [seat("a"), null, "mine"], // yours in the doc, not claimed yet (a reload)
-      [seat("b"), null, "away"],
-      [seat(), by("a", true), "mine"],
-      [seat("b"), by("a", true), "mine"], // a split merge: the claim's holder writes itself back
-      [seat("a"), by("a"), "mine-elsewhere"], // your other tab
-      [seat("a"), by("b"), "taken"], // you lost it, or it's theirs now
-      [seat(), by("b"), "taken"], // they're sitting down
-      [seat("b"), by("b"), "taken"],
-      [seat(), by(null), "taken"],
-    ];
-    for (const [s, b, want] of table) expect([s?.player, b?.viewer, b?.mine, seatState(s, b, "a")]).toEqual([s?.player, b?.viewer, b?.mine, want]);
-    expect(seatState(seat(), by(null), null)).toBe("taken");
+  it("a card nothing keeps is only what it looks like: Shuffle isn't offered; nor with no keeper running", () => {
+    const m = mount();
+    m.w.change((d) => (d.objects.bare = { name: "Card", transform: T([0.5, 0, 0]), traits: { [CARD]: {} } }));
+    m.w.flush();
+    const shuffle = m.x.commands.find((c) => c.id === "shuffle");
+    expect(shuffle.state("bare")).toBeNull();
+    expect(keptBy(m.api, "bare")).toBeNull();
+    expect(keptBy(m.api, "faceDown")).toMatchObject({ key: DECK });
+    m.w.view("A").collected = { roster };
+    expect(shuffle.state("faceDown")).toBeNull();
+    // a keeper that throws doesn't keep it
+    m.w.view("A").collected = { roster, keeper: { of: () => { throw new Error("boom"); } } };
+    expect(shuffle.state("faceDown")).toBeNull();
+    m.w.done();
   });
 
-  it("sit, and the seat's camera; the seat is claimed as well as written down", async () => {
-    const t = await room(seats(), { views: [["C", "carol"]] });
-    t.w.change((d) => (d.traits[SEATS].p1.camera = { position: [0, 1, 1], target: [0, 0, 0] }));
-    await t.step();
-    expect(t.options("C")).toEqual(["Watching", "Player 1", "Player 2"]);
-    await t.pick("C", "p1");
-    expect(t.player("p1")).toBe("carol");
-    expect(t.claim("p1")).toEqual({ viewer: "carol", session: "C" });
-    expect(t.w.view("C").camera).toEqual({ position: [0, 1, 1], target: [0, 0, 0] });
-    expect(t.picked("C")).toBe("p1");
-    // moving seats lets go of the last one
-    await t.pick("C", "p2");
-    expect([t.player("p1"), t.player("p2")]).toEqual([null, "carol"]);
-    expect([t.claim("p1"), t.claim("p2")?.session]).toEqual([null, "C"]);
-    t.w.done();
-  });
-
-  it("a view that has just opened sees a present player's seat as taken, and can't take it", async () => {
-    // Ben sat down in a session this view hasn't heard from yet: it counts (the stage's grace)
-    const t = await room(seats(BEN), { claims: { [KIND("p1")]: { viewer: BEN, session: "Sben" } }, views: [["C", "carol"]] });
-    expect(t.options("C")).toEqual(["Watching", "Player 1 (taken)", "Player 2"]);
-    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
-    await t.pick("C", "p1");
-    expect(confirm).not.toHaveBeenCalled();
-    expect(t.notices("C")).toEqual(["Ben is sitting there."]);
-    expect(t.player("p1")).toBe(BEN);
-    expect(t.claim("p1").session).toBe("Sben");
-    expect(t.picked("C")).toBe("");
-    confirm.mockRestore();
-    t.w.done();
-  });
-
-  it("once that claim has lapsed unheard, the seat is away, and taken only after asking", async () => {
-    const t = await room(seats(BEN), { claims: { [KIND("p1")]: { viewer: BEN, session: "Sben" } }, views: [["C", "carol"]] });
-    expect(t.options("C")[1]).toBe("Player 1 (taken)");
-    // no presence event says it lapsed: the view looks again after the grace period
-    t.w.grace = false;
-    await vi.advanceTimersByTimeAsync(6500);
-    expect(t.options("C")[1]).toBe("Player 1 (away)");
-    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
-    await t.pick("C", "p1");
-    expect(confirm).toHaveBeenCalledWith("Ben is away. Take their seat? You'll see their hand.");
-    expect(t.player("p1")).toBe(BEN);
-    expect(t.picked("C")).toBe("");
-    confirm.mockReturnValue(true);
-    await t.pick("C", "p1");
-    expect(t.player("p1")).toBe("carol");
-    expect(t.claim("p1")).toEqual({ viewer: "carol", session: "C" });
-    confirm.mockRestore();
-    t.w.done();
-  });
-
-  it("two sitting at once: the one whose claim lost the merge is told once, and writes nothing", async () => {
-    const t = await room(seats(), { views: [["B", BEN], ["C", "carol"]] });
-    await t.pick("C", "p1");
-    expect(t.claim("p1").session).toBe("C");
-    const writes = vi.spyOn(t.api.C, "change");
-    const claims = vi.spyOn(t.api.C, "claim");
-    // Ben sat down at the same moment, and the merge kept his claim and his player
-    t.w.change((d) => {
-      d.claims[KIND("p1")] = { viewer: BEN, session: "B" };
-      d.traits[SEATS].p1.player = BEN;
+  it("a pile is the cards of one container that overlap: another container's cards on the same spot aren't in it", () => {
+    const m = mount();
+    m.w.change((d) => {
+      d.objects.under = { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: { [CARD]: {}, [keptTrait("plain")]: { by: DECK, slot: 90 } } };
+      d.objects.other = { name: "Card", transform: T([0.3, 0.0015, 0], [0, 0.4, Math.PI]), traits: { [CARD]: {}, [keptTrait("plain")]: { by: "automerge:2OtherOtherOtherOtherOther1", slot: 0 } } };
+      d.objects.pawn = { name: "Pawn", transform: T([0.3, 0.002, 0]) };
     });
-    await t.step();
-    await vi.advanceTimersByTimeAsync(7000);
-    await t.step();
-    expect(t.notices("C").filter((n) => /first/.test(n))).toEqual(["Ben sat in Player 1 first; you're watching"]);
-    expect(writes).not.toHaveBeenCalled();
-    expect(claims).not.toHaveBeenCalled();
-    expect(t.player("p1")).toBe(BEN);
-    expect(t.picked("C")).toBe("");
-    expect(t.options("C")[1]).toBe("Player 1 (taken)");
-    t.w.done();
-  });
-
-  it("a seat taken while this view went unheard, long after it sat down, says so", async () => {
-    const t = await room(seats(), { views: [["B", BEN], ["C", "carol"]] });
-    await t.pick("C", "p1");
-    await vi.advanceTimersByTimeAsync(20_000);
-    const writes = vi.spyOn(t.api.C, "change");
-    t.w.change((d) => {
-      d.claims[KIND("p1")] = { viewer: BEN, session: "B" };
-      d.traits[SEATS].p1.player = BEN;
-    });
-    await t.step();
-    expect(t.notices("C").at(-1)).toBe("Ben took Player 1 while you were away; you're watching");
-    expect(writes).not.toHaveBeenCalled();
-    t.w.done();
-  });
-
-  it("a merge that split the claim from the player: the claim's holder writes itself back in, once", async () => {
-    const t = await room(seats(), { views: [["A", "alice"], ["B", "bob"]] });
-    await t.pick("A", "p1");
-    const writesA = vi.spyOn(t.api.A, "change");
-    const writesB = vi.spyOn(t.api.B, "change");
-    // the claims key went to Alice, the player key to Bob
-    t.w.change((d) => (d.traits[SEATS].p1.player = "bob"));
-    await t.step();
-    expect(t.player("p1")).toBe("alice");
-    expect(writesA).toHaveBeenCalledOnce();
-    // and that's the end of it: no write answers a write
-    t.w.change((d) => (d.view = { touched: true }));
-    await t.step();
-    expect(writesA).toHaveBeenCalledOnce();
-    expect(writesB).not.toHaveBeenCalled();
-    expect(t.picked("B")).toBe("");
-    t.w.done();
-  });
-
-  it("a reload (a new session, the same viewer) claims its seat again", async () => {
-    const t = await room(seats(), { views: [["A", "alice"], ["B", "bob"]] });
-    await t.pick("A", "p1");
-    // a clean close: its claim goes with it, its player stays
-    t.w.leave("A");
-    await t.step();
-    expect([t.claim("p1"), t.player("p1")]).toEqual([null, "alice"]);
-    expect(t.options("B")[1]).toBe("Player 1 (away)");
-    await t.join("A2", "alice");
-    expect(t.claim("p1")).toEqual({ viewer: "alice", session: "A2" });
-    expect(t.picked("A2")).toBe("p1");
-    expect(t.options("B")[1]).toBe("Player 1 (taken)");
-    // a crash leaves its claim behind, lapsed: taken over just the same
-    t.w.leave("A2", { bye: false });
-    expect(t.claim("p1").session).toBe("A2");
-    await t.join("A3", "alice");
-    expect(t.claim("p1")).toEqual({ viewer: "alice", session: "A3" });
-    t.w.done();
-  });
-
-  it("one person in two tabs: both seated; the tab that loses the claim says nothing", async () => {
-    const t = await room(seats(), { views: [["A", "alice"]] });
-    await t.pick("A", "p1");
-    await t.join("A2", "alice");
-    // the second tab is seated too, and leaves the claim with the first
-    expect([t.picked("A"), t.picked("A2")]).toEqual(["p1", "p1"]);
-    expect(t.options("A2")[1]).toBe("Player 1");
-    expect(t.claim("p1").session).toBe("A");
-    await t.pick("A2", "p1");
-    expect(t.claim("p1").session).toBe("A");
-    // both sat down at once and the second tab's claim won: the first just stays seated
-    t.w.change((d) => (d.claims[KIND("p1")] = { viewer: "alice", session: "A2" }));
-    await t.step();
-    expect(t.notices("A").filter((n) => /first|sitting there/.test(n))).toEqual([]);
-    expect([t.picked("A"), t.picked("A2")]).toEqual(["p1", "p1"]);
-    expect(t.player("p1")).toBe("alice");
-    // the second tab closes: the first takes the claim back
-    t.w.leave("A2");
-    await t.step();
-    expect(t.claim("p1").session).toBe("A");
-    t.w.done();
-  });
-
-  it("one person in two tabs: the second moves to another seat, and the first lets go rather than writing itself back", async () => {
-    const t = await room(seats(), { views: [["A", "alice"], ["B", "bob"]] });
-    await t.pick("A", "p1");
-    await t.join("A2", "alice");
-    expect(t.picked("A2")).toBe("p1");
-    let writes = 0;
-    for (const s of ["A", "A2"]) {
-      const change = t.api[s].change;
-      t.api[s].change = (fn) => (writes++, change(fn));
-    }
-    await t.pick("A2", "p2");
-    for (let i = 0; i < 20; i++) await t.step();
-    // A2 claimed p2 and wrote alice there (and out of p1), once; A let go of p1 and wrote nothing
-    expect(writes).toBe(1);
-    expect([t.player("p1"), t.player("p2")]).toEqual([null, "alice"]);
-    expect([t.claim("p1"), t.claim("p2")?.session]).toEqual([null, "A2"]);
-    expect([t.picked("A"), t.picked("A2")]).toEqual(["p2", "p2"]);
-    expect(t.options("B")).toEqual(["Watching", "Player 1", "Player 2 (taken)"]);
-    expect(t.notices("A").filter((n) => /first|sitting there|away/.test(n))).toEqual([]);
-    t.w.done();
-  });
-
-  it("one person in two tabs: Watching in the one without the claim stands them up in both", async () => {
-    const t = await room(seats(), { views: [["A", "alice"], ["B", "bob"]] });
-    await t.pick("A", "p1");
-    await t.join("A2", "alice");
-    let writes = 0;
-    for (const s of ["A", "A2"]) {
-      const change = t.api[s].change;
-      t.api[s].change = (fn) => (writes++, change(fn));
-    }
-    await t.pick("A2", "");
-    for (let i = 0; i < 20; i++) await t.step();
-    expect(writes).toBe(1);
-    expect([t.player("p1"), t.claim("p1")]).toEqual([null, null]);
-    expect([t.picked("A"), t.picked("A2")]).toEqual(["", ""]);
-    expect(t.options("B")[1]).toBe("Player 1");
-    t.w.done();
-  });
-
-  it("Watching lets go of the claim, and says nothing", async () => {
-    const t = await room(seats(), { views: [["A", "alice"], ["B", "bob"]] });
-    await t.pick("A", "p1");
-    await t.pick("A", "");
-    expect([t.claim("p1"), t.player("p1")]).toEqual([null, null]);
-    expect(t.w.sent.map((s) => s.type)).toEqual(["sat"]);
-    expect(t.options("B")[1]).toBe("Player 1");
-    t.w.done();
-  });
-
-  it("a name tag over each hand: its seat, who sits there, and whether they're here", async () => {
-    const t = await room(seats(ANA, BEN), { views: [["A", ANA], ["C", "carol"]] });
-    const tags = () => t.w.view("C").labels.map(({ key, text, position, data }) => ({ key, text, position, state: data.state }));
-    expect(tags()).toEqual([
-      // on each tray, in the world (these seats have no camera to say which edge is theirs: the middle)
-      { key: "hand1", text: "Player 1 · Ana", position: [0, 0, 0.5], state: "taken" },
-      { key: "hand2", text: "Player 2 · Ben (away)", position: [0, 0, -0.5], state: "away" },
-    ]);
-    expect(t.w.view("A").labels[0].text).toBe("Player 1 · Ana");
-    await t.pick("A", "");
-    expect(tags().map((x) => x.text)).toEqual(["Player 1 · free", "Player 2 · Ben (away)"]);
-    // and what peers say comes from them by name
-    t.x.C.receive("sat", { seat: "p2" }, { session: "B", viewer: BEN });
-    expect(t.notices("C").at(-1)).toBe("Ben sat down as Player 2");
-    t.w.done();
+    m.w.flush();
+    m.x.commands.find((c) => c.id === "shuffle").run("faceDown");
+    expect(m.keeper.calls.at(-1).sort()).toEqual(["faceDown", "under"]);
+    m.w.done();
   });
 });
 
 describe("telling the others", () => {
   afterEach(() => vi.useRealTimers());
-  /** Alice in p1 and Bob in p2 at a table with a two-card pile (faceDown, under2) of a plain deck; each view's extension attached. */
-  async function table({ seated = seats("alice", "bob") } = {}) {
-    const doc = sceneOf({ ...objects(), under2: { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: hidden } }, { [SEATS]: seated });
-    const repo = fakes.fakeRepo();
-    const faces = Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray", "under2"].map((id) => [id, { sourceUrl: `automerge:face-${id}`, name: `Face of ${id}` }]));
-    repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: faces }, DECK);
-    const w = fakes.fakeWorld(doc, { repo });
-    const a = w.join("A", { viewer: "alice" });
-    const b = w.join("B", { viewer: "bob" });
-    const xa = w.attach("A", Extension.create(a));
-    const xb = w.attach("B", Extension.create(b));
+  /** Alice in p1 and Bob in p2 at a table with a two-card pile (faceDown, under2); each view's extension attached. */
+  function table({ seated = seats("alice", "bob") } = {}) {
+    const doc = sceneOf({ ...objects(), under2: { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: hidden() } }, { [SEATS]: seated });
+    const w = fakes.fakeWorld(doc);
+    const { api: a, x: xa } = sit(w, "A", "alice");
+    const { api: b, x: xb } = sit(w, "B", "bob");
     w.flush();
-    await vi.advanceTimersByTimeAsync(10);
     return { w, a, b, xa, xb, notices: (s) => w.view(s).notices.map((n) => n.text) };
   }
 
   it("Shuffle is on the use prompt, and on the menu and inspector", () => {
-    const m = mount();
-    const shuffle = m.x.commands.find((c) => c.id === "shuffle");
-    expect(shuffle.show).toEqual(expect.arrayContaining(["use", "menu", "inspector"]));
+    const t = table();
+    expect(t.xa.commands.find((c) => c.id === "shuffle").show).toEqual(expect.arrayContaining(["use", "menu", "inspector"]));
+    t.w.done();
   });
 
-  it("a shuffle is sent once, as the deck and a count, and the others hear who did it", async () => {
-    const t = await table();
+  it("a shuffle is sent once, as a count and the container's title, and the others hear who did it", () => {
+    const t = table();
     t.xa.commands.find((c) => c.id === "shuffle").run("faceDown");
-    expect(t.w.sent).toEqual([{ session: "A", viewer: "alice", type: "shuffled", data: { deck: DECK, n: 2 } }]);
+    expect(t.w.sent).toEqual([{ session: "A", viewer: "alice", type: "shuffled", data: { n: 2, of: "Deck" } }]);
     expect(t.notices("A")).toEqual(["Shuffling 2 cards…"]);
-    expect(t.notices("B")).toEqual(["Player 1 shuffled the deck (2)"]);
+    // who did it is whoever the roster says they are
+    expect(t.notices("B")).toEqual(["<alice> shuffled the deck (2)"]);
     t.w.done();
   });
 
-  it("sitting down is sent as the seat id", async () => {
-    const t = await table({ seated: seats("alice", null) });
-    const select = t.w.view("A").overlay.querySelector(".tabletop-seat");
-    select.value = "p2";
-    select.dispatchEvent(new Event("change"));
-    expect(t.w.doc.traits[SEATS].p2.player).toBe("alice");
-    expect(t.w.sent).toEqual([expect.objectContaining({ type: "sat", data: { seat: "p2" } })]);
-    expect(t.notices("A")).toEqual(["You sat down as Player 2"]);
-    expect(t.notices("B").at(-1)).toMatch(/sat down as Player 2$/);
-    // watching says nothing
-    select.value = "";
-    select.dispatchEvent(new Event("change"));
-    expect(t.w.sent).toHaveLength(1);
-    t.w.done();
-  });
-
-  it("receives only what it knows, in the shape it expects", async () => {
-    const t = await table();
+  it("receives only what it knows, in the shape it expects", () => {
+    const t = table();
     const from = (viewer) => ({ session: `s-${viewer}`, viewer });
     for (const [type, data] of [
       ["nope", { n: 1 }],
       ["toString", {}],
-      ["shuffled", { deck: 5, n: 2 }],
-      ["shuffled", { deck: DECK, n: -1 }],
-      ["sat", { seat: "p9" }],
-      ["sat", null],
+      ["shuffled", { of: 5, n: 2 }],
+      ["shuffled", { of: "Deck", n: -1 }],
+      ["shuffled", { of: "x".repeat(300), n: 2 }],
+      ["sat", { seat: "p1" }], // sitting down is the seats' owner's to tell
       ["drew", { n: 1.5 }],
       ["drew", "1"],
       ["rolled", { die: "board", value: 4 }], // dice are the dice package's: nothing the table hears
     ]) t.xb.receive(type, data, from("alice"));
     expect(t.notices("B")).toEqual([]);
     t.xb.receive("drew", { n: 1 }, from("alice"));
-    t.xb.receive("drew", { n: 2 }, from("carol"));
-    t.xb.receive("sat", { seat: "p1" }, from("carol"));
-    t.xb.receive("shuffled", { deck: DECK, n: 44 }, from("alice"));
-    expect(t.notices("B")).toEqual(["Player 1 drew a card", "Someone drew 2 cards", "Someone sat down as Player 1", "Player 1 shuffled the deck (44)"]);
+    t.xb.receive("drew", { n: 2 }, from(undefined));
+    t.xb.receive("shuffled", { n: 44 }, from("alice"));
+    t.xb.receive("shuffled", { n: 3, of: "Wagers" }, from("alice"));
+    expect(t.notices("B")).toEqual(["<alice> drew a card", "Someone drew 2 cards", "<alice> shuffled the deck (44)", "<alice> shuffled “Wagers” (3)"]);
+    // with nobody to say who a peer is: Someone
+    t.w.view("B").collected = {};
+    t.xb.receive("drew", { n: 1 }, from("alice"));
+    expect(t.notices("B").at(-1)).toBe("Someone drew a card");
     t.w.done();
   });
 
-  it("never sends which card is which", async () => {
-    const t = await table({ seated: seats("alice", null) });
+  it("never sends which card is which", () => {
+    const t = table();
     t.xa.commands.find((c) => c.id === "shuffle").run("faceDown");
-    const select = t.w.view("A").overlay.querySelector(".tabletop-seat");
-    select.value = "p2";
-    select.dispatchEvent(new Event("change"));
-    expect(t.w.sent.map((s) => s.type)).toEqual(["shuffled", "sat"]);
+    expect(t.w.sent.map((s) => s.type)).toEqual(["shuffled"]);
     const wire = JSON.stringify(t.w.sent.map((s) => s.data));
-    expect(wire).not.toMatch(/sourceUrl|face-|Face of/);
+    expect(wire).not.toMatch(/sourceUrl|face-|Face of|faceDown|under2|slot/);
     t.w.done();
-  });
-
-  it("a plain deck at a table with hands: every view is told, each time it opens, that hands aren't secret", async () => {
-    // (as the Lost Cities template leaves a table where no secure deck is installed)
-    const t = await table();
-    expect(t.xa.hud()).toEqual([{ text: PLAIN_HANDS, state: "info" }]);
-    expect(t.xb.hud()).toEqual([{ text: PLAIN_HANDS, state: "info" }]);
-    // a view that opens it later hears it too
-    const c = t.w.join("C", { viewer: "carol" });
-    const xc = t.w.attach("C", Extension.create(c));
-    t.w.flush();
-    await vi.advanceTimersByTimeAsync(10);
-    expect(xc.hud()).toEqual([{ text: PLAIN_HANDS, state: "info" }]);
-    t.w.done();
-  });
-
-  it("a plain deck at a table without hands (a TTS import) says nothing", async () => {
-    const repo = fakes.fakeRepo();
-    repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: { a: { sourceUrl: "automerge:x", name: "A" } } }, DECK);
-    const w = fakes.fakeWorld(sceneOf({ a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } }), { repo });
-    const x = w.attach("A", Extension.create(w.join("A", { viewer: "alice" })));
-    w.flush();
-    await vi.advanceTimersByTimeAsync(10);
-    expect(x.hud()).toEqual([]);
-    w.done();
-  });
-
-  it("a deck's status is news, not trouble: info, and error only for a problem", async () => {
-    const registry = {
-      filter: (fn) => [{ id: "sd", supportedDatatypes: ["secure-deck"] }].filter(fn),
-      load: async () => ({ module: { createResolver: () => ({ update() {}, looks: () => new Map(), status: () => "Waiting for 2 players" }) } }),
-    };
-    const m = mount({ deckType: "secure-deck", registries: { "tabletop:deck": registry } });
-    m.x.update(m.api.scene());
-    await settle();
-    expect(m.x.hud()).toEqual([{ text: "Waiting for 2 players", state: "info" }]);
-  });
-});
-
-describe("a deck dropped on the table", () => {
-  const card = { min: [-0.028, 0, -0.0435], max: [0.028, 0.001, 0.0435] };
-  const registry = {
-    filter: (fn) => [{ id: "sd", supportedDatatypes: ["secure-deck"] }].filter(fn),
-    load: async () => ({ module: { createResolver: () => ({ update() {}, looks: () => new Map() }), placement: () => ({ name: "Deck", count: 3, look: { sourceUrl: "automerge:back", name: "Card" }, bounds: card }), bind() {} } }),
-  };
-  const url = "automerge:2SecureSecureSecureSecure9";
-  /** Drop it with `at`, on a table with a turned mat (yaw 0.5) at x = 0.5; → its cards, bottom first. */
-  async function dropAt(at, content) {
-    const m = mount({ registries: { "tabletop:deck": registry } });
-    m.api.change((d) => (d.objects.mat = { name: "Mat", transform: T([0.5, 0, 0], [0, 0.5, 0]) }));
-    const ctx = { ...m.api, ...(content ? { content: (id) => content[id] ?? null } : {}) };
-    expect(await Extension.drop(ctx, { url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {}, at })).toBe(true);
-    const cards = Object.values(m.doc.objects).filter((o) => o.traits?.[HIDDEN]?.by === url);
-    return { m, cards: cards.sort((p, q) => p.transform.position[1] - q.transform.position[1]) };
-  }
-
-  it("with no point, stacks at the table's origin, face down and tagged as cards", async () => {
-    const { cards } = await dropAt(null);
-    expect(cards.map((c) => c.transform.position)).toEqual([[0, 0.001, 0], [0, 0.002, 0], [0, 0.003, 0]]);
-    for (const c of cards) {
-      expect(c.transform.rotation).toEqual([0, 0, Math.PI]);
-      expect(c.tags).toEqual(["card"]);
-    }
-  });
-
-  it("stacks where it was dropped", async () => {
-    const { cards } = await dropAt({ point: [0.1, 0.02, -0.2], hitId: null });
-    expect(cards.map((c) => c.transform.position)).toEqual([[0.1, 0.021, -0.2], [0.1, 0.022, -0.2], [0.1, 0.023, -0.2]]);
-  });
-
-  it("squares onto a card slot within reach, turned its way", async () => {
-    const content = { mat: { extras: { connectors: [{ position: [0.1, 0.01, 0], yaw: 0.3, tags: ["card"] }, { position: [0, 0, 0], yaw: null, tags: [] }], snapRadius: 0.05 } } };
-    const m0 = mount();
-    m0.api.change((d) => (d.objects.mat = { name: "Mat", transform: T([0.5, 0, 0], [0, 0.5, 0]) }));
-    const w = m0.api.scene().world("mat");
-    const slot = [w[0] * 0.1 + w[4] * 0.01 + w[12], 0, w[2] * 0.1 + w[6] * 0.01 + w[14]];
-    const { cards } = await dropAt({ point: [slot[0] + 0.02, 0.004, slot[2] - 0.01], hitId: "mat" }, content);
-    for (const [j, c] of cards.entries()) {
-      expect(c.transform.position[0]).toBeCloseTo(slot[0], 5);
-      expect(c.transform.position[2]).toBeCloseTo(slot[2], 5);
-      expect(c.transform.position[1]).toBeCloseTo(0.004 + (j + 1) * 0.001, 6);
-      expect(c.transform.rotation[1]).toBeCloseTo(0.8, 5);
-      expect(c.transform.rotation[2]).toBe(Math.PI);
-    }
-  });
-
-  it("ignores slots that don't take cards, and ones out of reach", async () => {
-    const content = { mat: { extras: { connectors: [{ position: [0, 0, 0], tags: [] }, { position: [0.01, 0, 0], tags: ["pawn"] }, { position: [0.3, 0, 0], tags: ["card"] }], snapRadius: 0.05 } } };
-    const { cards } = await dropAt({ point: [0.5, 0.004, 0], hitId: "mat" }, content);
-    for (const c of cards) {
-      expect(c.transform.position[0]).toBe(0.5);
-      expect(c.transform.position[2]).toBe(0);
-      expect(c.transform.rotation).toEqual([0, 0, Math.PI]);
-    }
-  });
-
-  it("never into a hand: a slot in a private zone is passed over, and a drop in one is refused", async () => {
-    const m = mount({ registries: { "tabletop:deck": registry } });
-    const ctx = (content) => ({ ...m.api, content: (id) => content[id] ?? null });
-    // hand1 (p1's zone, at z = 0.5) has two card slots: one inside its zone, one just outside it (a deck spot beside the hand)
-    const content = { hand1: { extras: { connectors: [{ position: [0, 0.002, -0.04], yaw: 0, tags: ["card"] }, { position: [0, 0.002, -0.12], yaw: 0.2, tags: ["card"] }], snapRadius: 0.1 } } };
-    const before = Object.keys(m.doc.objects).length;
-    // dropped on the hand itself: refused, nothing written
-    expect(await Extension.drop(ctx(content), { url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {}, at: { point: [0.01, 0.002, 0.5], hitId: "hand1" } })).toBe(true);
-    expect(Object.keys(m.doc.objects)).toHaveLength(before);
-    expect(m.calls.toasts.at(-1)).toEqual(["Drop the deck on the table, not in a hand.", "error"]);
-    // dropped beside it: the slot outside the zone, though the one inside is nearer
-    expect(await Extension.drop(ctx(content), { url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {}, at: { point: [0, 0.002, 0.44], hitId: "hand1" } })).toBe(true);
-    const cards = Object.values(m.doc.objects).filter((o) => o.traits?.[HIDDEN]?.by === url);
-    expect(cards).toHaveLength(3);
-    for (const c of cards) {
-      expect(c.transform.position[2]).toBeCloseTo(0.38, 6);
-      expect(c.transform.rotation[1]).toBeCloseTo(0.2, 6);
-    }
-    const s = m.api.scene();
-    expect(cards.every((c) => seatAt(s, zones(s), c.transform.position) == null)).toBe(true);
-  });
-
-  it("uses the point while what it hit hasn't loaded", async () => {
-    const { cards } = await dropAt({ point: [0.5, 0.004, 0], hitId: "mat" }, {});
-    expect(cards[0].transform.position).toEqual([0.5, 0.005, 0]);
   });
 });
 
 describe("drawing to your hand", () => {
   afterEach(() => vi.useRealTimers());
-  const card = (position, rotation = [0, 0.4, Math.PI]) => ({ name: "Card", transform: T(position, rotation), traits: hidden, tags: ["card"] });
+  const card = (position, rotation = [0, 0.4, Math.PI]) => ({ name: "Card", transform: T(position, rotation), traits: hidden(), tags: ["card"] });
   /** A tray's card slots, along its length (x), each turned `yaw` in the tray's frame; then two connectors that aren't card slots. */
   const tray = (n = 4, yaw = 0.25) => ({
     extras: {
@@ -746,7 +321,7 @@ describe("drawing to your hand", () => {
   /**
    * Hands for p1 (at +z) and p2 (at −z, turned round), a card already in
    * p1's first slot, and a face-down pile of three (top, mid, low) out on
-   * the table, of a plain deck that knows every card's face.
+   * the table, all kept in one container.
    */
   async function table({ seated = seats("alice", "bob"), content = { hand1: tray(), hand2: tray() }, local = {} } = {}) {
     const doc = sceneOf(
@@ -761,14 +336,9 @@ describe("drawing to your hand", () => {
       },
       { [SEATS]: seated },
     );
-    const repo = fakes.fakeRepo();
-    const faces = Object.fromEntries(["kept", "low", "mid", "top"].map((id) => [id, { sourceUrl: `automerge:face-${id}`, name: `Face of ${id}` }]));
-    repo.add({ "@patchwork": { type: "plain-deck" }, title: "Deck", objects: faces }, DECK);
-    const w = fakes.fakeWorld(doc, { repo, content });
-    const a = w.join("A", { viewer: "alice", local });
-    const b = w.join("B", { viewer: "bob" });
-    const xa = w.attach("A", Extension.create(a));
-    const xb = w.attach("B", Extension.create(b));
+    const w = fakes.fakeWorld(doc, { content });
+    const { api: a, x: xa } = sit(w, "A", "alice", { local });
+    const { api: b, x: xb } = sit(w, "B", "bob");
     w.flush();
     await vi.advanceTimersByTimeAsync(10);
     // every doc write A makes from here on
@@ -788,7 +358,7 @@ describe("drawing to your hand", () => {
     t.w.done();
   });
 
-  it("applies to a hidden card out on the table, while playing, for someone seated with room in their hand", async () => {
+  it("applies to a card out on the table, while playing, for someone seated with room in their hand", async () => {
     const t = await table();
     expect(t.state(t.xa, "top")).toEqual({ title: expect.stringMatching(/\(D\)/) });
     expect(t.state(t.xa, "mid")).not.toBeNull(); // any card of the pile: the top one is what's drawn
@@ -820,10 +390,9 @@ describe("drawing to your hand", () => {
     expect(t.state(t.xa, "top")).toBeNull();
     expect(t.state(t.xb, "top")).toBeNull();
     t.w.done();
-    const doc = sceneOf({ a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden } });
+    const doc = sceneOf({ a: { name: "Card", transform: T([0, 0.001, 0], [0, 0, Math.PI]), traits: hidden() } });
     const w = fakes.fakeWorld(doc);
-    const api = w.join("A", { viewer: "alice" });
-    const x = w.attach("A", Extension.create(api));
+    const { api, x } = sit(w, "A", "alice");
     w.flush();
     expect(x.commands.find((c) => c.id === "draw").state("a", { scene: api.scene(), local: api.local.get() })).toBeNull();
     w.done();
@@ -880,7 +449,7 @@ describe("drawing to your hand", () => {
     expect(t.w.doc.objects.mid.transform.position).toEqual([0.3, 0.002, 0]);
     // told: here as "You", there by seat, as a count only
     expect(t.notices("A")).toEqual(["You drew a card"]);
-    expect(t.notices("B")).toEqual(["Player 1 drew a card"]);
+    expect(t.notices("B")).toEqual(["<alice> drew a card"]);
     expect(t.w.sent).toEqual([expect.objectContaining({ type: "drew", data: { n: 1 } })]);
     t.w.done();
   });
@@ -948,18 +517,16 @@ describe("drawing to your hand", () => {
     t.w.done();
   });
 
-  it("with a plain deck, only the drawer sees what they drew", async () => {
+  it("a card nothing keeps can be drawn all the same: Draw is the table's, not the keeper's", async () => {
     const t = await table();
-    expect(t.xa.looks().has("top")).toBe(false);
-    t.draw("top");
-    t.w.tick(1 / 60, 30);
+    t.w.change((d) => (d.objects.loose = { name: "Card", transform: T([0.5, 0.001, 0], [0, 0, Math.PI]), traits: { [CARD]: {} }, tags: ["card"] }));
     t.w.flush();
-    expect(t.xa.looks().get("top")).toEqual({ sourceUrl: "automerge:face-top", name: "Face of top" });
-    // face up in A's hand: to B, the privacy face (privacy.js), never its face or its name
-    expect(t.xb.looks().get("top")?.name).toBeUndefined();
-    expect(t.xb.looks().get("top")?.sourceUrl ?? null).not.toMatch(/face-/);
+    expect(t.state(t.xa, "loose")).toMatchObject({ title: expect.any(String) });
+    t.draw("loose");
+    t.w.tick(1 / 60, 30);
+    near(t.w.doc.objects.loose.transform.position, [-0.21, 0.002, 0.5]);
     // and nothing on the wire says which card it was
-    expect(JSON.stringify(t.w.sent)).not.toMatch(/face-|Face of|top/);
+    expect(JSON.stringify(t.w.sent)).not.toMatch(/loose|slot/);
     t.w.done();
   });
 });
@@ -970,8 +537,7 @@ describe("the hand in play", () => {
 
   it("back in play after editing with Rotate (R) or Move (G), the hand is the tool again", () => {
     const w = fakes.fakeWorld(sceneOf({ pawn: pawn() }, { [SEATS]: seats("alice", "bob") }));
-    const a = w.join("A", { viewer: "alice", local: { tool: "rotate", activities: { current: "edit", available: ["play", "edit"] } } });
-    w.attach("A", Extension.create(a));
+    const { api: a } = sit(w, "A", "alice", { local: { tool: "rotate", activities: { current: "edit", available: ["play", "edit"] } } });
     w.flush();
     expect(a.local.get().tool).toBe("rotate"); // editing: left alone
     a.local.swap((m) => ({ ...m, activities: { ...m.activities, current: "play" } }));
@@ -986,8 +552,7 @@ describe("the hand in play", () => {
   it("a table whose doc suggests no tool (no view.tool): in play, the hand is the tool", () => {
     const doc = sceneOf({ p1: pawn() });
     const w = fakes.fakeWorld(doc);
-    const a = w.join("A", { viewer: "alice" });
-    w.attach("A", Extension.create(a));
+    const { api: a } = sit(w, "A", "alice");
     expect(a.local.get().tool).toBeUndefined(); // the stage's default, Move, is in force
     w.flush();
     expect(a.local.get().tool).toBe("hand");
@@ -1004,11 +569,10 @@ describe("the hand in play", () => {
     w.done();
   });
 
-  it("has no Roll: dice are the dice package's", () => {
+  it("has Shuffle and Draw and nothing else: no Roll (dice are the dice package's), no Sit (seats are their owner's)", () => {
     const w = fakes.fakeWorld(sceneOf({ p1: pawn() }));
-    const a = w.join("A", { viewer: "alice" });
-    const x = w.attach("A", Extension.create(a));
-    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw", "seat"]);
+    const { x } = sit(w, "A", "alice");
+    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw"]);
     w.done();
   });
 });

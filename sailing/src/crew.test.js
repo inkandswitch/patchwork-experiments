@@ -522,7 +522,7 @@ describe("the crew", { timeout: 60_000 }, () => {
 
   it("a click comes aboard from the sea or the sky, the ship or a fitting of hers; not from something else aboard her", () => {
     const s = stage();
-    s.api.scene().objects.card = { traits: { "tabletop.hidden": {} }, tags: ["card"] };
+    s.api.scene().objects.card = { traits: { "tabletop.card": {} }, tags: ["card"] };
     s.api.scene().objects.mast = { tags: ["sailing.mast"] };
     s.api.scene().parents.set("card", "hull");
     s.api.scene().parents.set("mast", "hull");
@@ -732,7 +732,7 @@ describe("the hand aboard (scene.hand's carryable)", () => {
         rig: { traits: { "sailing.sail": {} } },
         anchor: { traits: { "sailing.hook": {} } },
         table: { locked: true },
-        card: { traits: { "tabletop.hidden": {} }, tags: ["card"] },
+        card: { traits: { "tabletop.card": {} }, tags: ["card"] },
         buoy: { traits: { "sailing.float": {} } },
       },
       parents: new Map([["mast", "hull"], ["rig", "mast"], ["anchor", "hull"], ["table", "hull"], ["card", "table"]]),

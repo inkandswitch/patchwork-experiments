@@ -14,10 +14,23 @@ import { FIXTURE, fixtureSources } from "./test/fixture.js";
 const U = 0.0254;
 const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
 
+// Stand-ins for what an imported table is made with (found in the registry by their metadata, never
+// by package): a keeper that keeps things in the open, and whoever owns seats. Each names only itself.
+const SEATS = "t.seats";
+const KEPT = "t.plain";
+const standIns = () => {
+  const plugins = [
+    { id: "t.keep", keeper: "plain", load: async () => ({ create: () => ({}), contain: async ({ repo }, { title, items }) => { const h = await repo.create2({ "@patchwork": { type: "t-plain" }, title, items: structuredClone(items) }); return { key: h.url, bind: (slot) => ({ [KEPT]: { by: h.url, slot } }) }; } }) },
+    { id: "t.seats", roster: true, load: async () => ({ create: () => ({}), lay: (d, seats) => { d.traits[SEATS] = Object.fromEntries(Object.entries(seats).map(([id, s]) => [id, { ...structuredClone(s), player: null }])); return true; } }) },
+  ];
+  const reg = { filter: (fn) => plugins.filter(fn), load: async (id) => { const p = plugins.find((x) => x.id === id); p.module ??= await p.load(); return p; } };
+  return async (type) => (type === "scene:extension" ? reg : null);
+};
+
 async function importFixture(opts = {}) {
   const repo = new FakeRepo();
   const phases = [];
-  const out = await runImport({ sources: fixtureSources(), repo, images: nodeImages(), fetch: notFound, onProgress: (p) => phases.push(p.phase), infoUrl: "automerge:import", infoToolId: "tts-import", ...opts });
+  const out = await runImport({ sources: fixtureSources(), repo, images: nodeImages(), fetch: notFound, onProgress: (p) => phases.push(p.phase), infoUrl: "automerge:import", infoToolId: "tts-import", registry: standIns(), ...opts });
   const doc = (url) => repo.handles.get(url)?.doc();
   return { ...out, repo, doc, phases };
 }
@@ -69,8 +82,8 @@ describe("runImport on the tiny fixture", () => {
     expect(scene.view).toMatchObject({ tool: "hand", snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
     expect(scene.camera).toBeUndefined();
     expect(scene.traits).toEqual(expect.any(Object));
-    // a table with seats (this one has White's) starts in play
-    expect(scene.traits["tabletop.seats"]).toBeDefined();
+    // its seats (this one has White's) were laid by whoever owns seats; with cards on it, it starts in play
+    expect(scene.traits[SEATS]).toBeDefined();
     expect(scene.view.activity).toBe("play");
     expect(scene.view.kits).toBeUndefined();
     const objs = Object.entries(scene.objects);
@@ -104,28 +117,29 @@ describe("runImport on the tiny fixture", () => {
     expect(coins).toHaveLength(3);
     expect(coins[1] - coins[0]).toBeCloseTo(0.1 * U, 6);
     // a seat from the HandTrigger
-    expect(scene.traits["tabletop.seats"].white).toMatchObject({ name: "White", player: null });
-    expect(scene.traits["tabletop.seats"].white.camera.position[2]).toBeGreaterThan(0); // the hand is at TTS -z: the scene's near side
+    expect(scene.traits[SEATS].white).toMatchObject({ name: "White", player: null });
+    expect(scene.traits[SEATS].white.camera.position[2]).toBeGreaterThan(0); // the hand is at TTS -z: the scene's near side
     expect(report.counts.tableY).toBeGreaterThan(0.9);
   });
 
-  it("a face-down deck is a stack of hidden cards backed by its own plain-deck doc", async () => {
+  it("a face-down deck is a stack of cards kept in a container of its own, each bound to its slot by the keeper's trait", async () => {
     const { scene, doc } = await importFixture();
     const group = Object.entries(scene.objects).find(([, o]) => o.kind === "group" && o.name === "Draw pile (3)");
     expect(group[1].visible).toBe(true);
     const cards = Object.entries(scene.objects).filter(([, o]) => o.group === group[0]);
     expect(cards).toHaveLength(3);
-    const by = new Set(cards.map(([, o]) => o.traits?.["tabletop.hidden"]?.by));
+    for (const [, o] of cards) expect(Object.keys(o.traits).sort()).toEqual([KEPT, "tabletop.card"]);
+    const by = new Set(cards.map(([, o]) => o.traits[KEPT].by));
     expect(by.size).toBe(1);
-    const secrets = doc([...by][0]);
-    expect(secrets["@patchwork"].type).toBe("plain-deck");
-    expect(Object.keys(secrets.objects).sort()).toEqual(cards.map(([id]) => id).sort());
-    // the scene says only "Card", with one look for all three; the secrets say which is which
+    const container = doc([...by][0]);
+    expect(container.items).toHaveLength(3);
+    expect(cards.map(([, o]) => o.traits[KEPT].slot)).toEqual([0, 1, 2]);
+    // the scene says only "Card", with one look for all three; the container says which is which
     expect(cards.map(([, o]) => o.name)).toEqual(["Card", "Card", "Card"]);
     expect(new Set(cards.map(([, o]) => o.sourceUrl)).size).toBe(1);
-    const names = cards.map(([id]) => secrets.objects[id].name);
+    const names = cards.map(([, o]) => container.items[o.traits[KEPT].slot].name);
     expect(names).toEqual(["Red One", "Green Two", "Blue Three"]);
-    expect(new Set(cards.map(([id]) => secrets.objects[id].sourceUrl)).size).toBe(3);
+    expect(new Set(container.items.map((i) => i.sourceUrl)).size).toBe(3);
     // stacked: the first card is on top
     const ys = cards.map(([, o]) => o.transform.position[1]);
     expect(ys[0]).toBeGreaterThan(ys[1]);
@@ -134,12 +148,25 @@ describe("runImport on the tiny fixture", () => {
     expect(scene.secretsUrl).toBeUndefined();
     // a face-up lone card is just itself
     const yellow = Object.values(scene.objects).find((o) => o.name === "Yellow Four");
-    expect(yellow.traits?.["tabletop.hidden"]).toBeUndefined();
+    expect(yellow.traits).toBeUndefined();
+  });
+
+  it("with no keeper and nobody who owns seats installed: the cards are only their backs, there are no seats, and the report says so", async () => {
+    const { scene, report } = await importFixture({ registry: async () => null });
+    const cards = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]);
+    expect(cards.length).toBeGreaterThan(0);
+    for (const o of cards) expect(Object.keys(o.traits)).toEqual(["tabletop.card"]);
+    expect(scene.traits).toEqual({});
+    expect(report.counts).toMatchObject({ seats: 0, secrets: 0 });
+    expect(report.warnings.some((w) => /no keeper is installed/.test(w))).toBe(true);
+    expect(report.warnings.some((w) => /nothing installed here owns seats/.test(w))).toBe(true);
+    // and nothing of the old shapes is written, whatever is installed
+    expect(JSON.stringify(scene)).not.toMatch(/tabletop\.hidden|tabletop\.seats|plain-deck/);
   });
 
   it("hideFaceDown off: the deck's cards are themselves", async () => {
     const { scene } = await importFixture({ settings: { hideFaceDown: false } });
-    expect(Object.values(scene.objects).some((o) => o.traits?.["tabletop.hidden"])).toBe(false);
+    expect(Object.values(scene.objects).some((o) => o.traits?.["tabletop.card"])).toBe(false);
     expect(Object.values(scene.objects).map((o) => o.name)).toContain("Red One");
   });
 
@@ -186,8 +213,9 @@ describe("runImport on the tiny fixture", () => {
     expect(reads).not.toContain("other");
   });
 
-  it("hideObject is the one place that knows the hidden shape", () => {
-    expect(hideObject({ name: "Card" }, "automerge:deck")).toEqual({ name: "Card", traits: { "tabletop.hidden": { by: "automerge:deck" } } });
+  it("hideObject is the one place that knows the hidden shape: a card, and its keeper's binding", () => {
+    expect(hideObject({ name: "Card" }, { "k.kept": { by: "automerge:deck", slot: 2 } })).toEqual({ name: "Card", traits: { "tabletop.card": {}, "k.kept": { by: "automerge:deck", slot: 2 } } });
+    expect(hideObject({ name: "Card" }, {})).toEqual({ name: "Card", traits: { "tabletop.card": {} } });
   });
 
   it("the fixture's JSON is a real file on disk", () => {

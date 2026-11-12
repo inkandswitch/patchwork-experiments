@@ -386,9 +386,30 @@ export function createHost({
     offs.length = 0;
   }
 
+  /**
+   * Is everything the doc calls for, of what's registered here, started?
+   * False before the registry is here, while a doc waits to be synced, and
+   * while any extension is still loading or failed to start: one of those
+   * may be a policy (`audience`), and the stage answers nothing about who
+   * may see what until it's in.
+   */
+  let settledFor = null; // { doc, n, activity, ids }: what the registry as it is now would run for the last doc
+  function settled() {
+    if (!isReady || pending || !lastDoc) return false;
+    // (worked out from the registry as it is now, not as it was at the last sync: a plugin
+    // registered since, which no "changed" event has told of yet, isn't running either)
+    const metas = listOf(reg);
+    const activity = local.get().activity;
+    if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length || settledFor.activity !== activity) {
+      settledFor = { doc: lastDoc, n: metas.length, activity, ids: wanted(metas, lastDoc).set.map((w) => w.id) };
+    }
+    return settledFor.ids.every((id) => recs.get(id)?.state === "running");
+  }
+
   return {
     ready,
     sync,
+    settled,
     running,
     instances,
     instanceOf,

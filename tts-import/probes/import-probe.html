@@ -85,9 +85,9 @@ try {
     objects: Object.keys(scene.objects).length,
     groups: Object.values(scene.objects).filter((o) => o.kind === "group").length,
     hiddenGroups: Object.values(scene.objects).filter((o) => o.kind === "group" && !o.visible).length,
-    hiddenCards: Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]).length,
+    hiddenCards: Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]).length,
     locked: Object.values(scene.objects).filter((o) => o.locked).length,
-    seats: Object.keys(scene.traits["tabletop.seats"] ?? {}),
+    seats: Object.keys(scene.traits["scene.seats"] ?? {}),
     view: scene.view,
     // what the scene datatype's init makes that the importer leaves as it is
     assets: scene.assets,

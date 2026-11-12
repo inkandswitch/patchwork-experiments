@@ -6,9 +6,9 @@
 // The doc (type "secure-deck"):
 //   faces        the deck's contents, public: anything JSON (a scene puts
 //                { sourceUrl, name } here). Only which card is where is secret.
-//   back         what a hidden card looks like: { sourceUrl, name, bounds? }
-//   slots        { [slotId]: offset }: which position each of the host's
-//                things is (a scene's object ids)
+//                Card k is the deck's k-th position: a host names positions by
+//                number (a scene object's trait says which position it is, in
+//                the scene doc; nothing here knows the host's things).
 //   phase        "waiting" (players joining) → "playing"
 //   participants [{ id, exchangeKey }] in turn order; fixed once playing
 //   cards        hex[]: card k, locked under every participant's key for (k, epochs[k])
@@ -39,14 +39,12 @@ import { open, playerKeys, seal } from "./crypto/derive.js";
 export const DATATYPE = "secure-deck";
 
 /** A fresh deck doc (for repo.create2). */
-export function newDeckDoc({ title = "Deck", faces = [], back = null, slots = {} } = {}) {
+export function newDeckDoc({ title = "Deck", faces = [] } = {}) {
   return {
     "@patchwork": { type: DATATYPE },
     title,
     group: GROUP_ID,
     faces,
-    back,
-    slots,
     phase: "waiting",
     participants: [],
     cards: null,
@@ -176,12 +174,11 @@ export function createParticipant({ handle, playerId, secret }) {
 
   const busy = (d) => new Set(d.op?.offsets ?? []);
 
-  /** The offsets of these slots that can be shown: shuffled at least once, and not being shuffled now. */
-  const showable = (d, ids) => {
+  /** Those of these positions that can be shown: shuffled at least once, and not being shuffled now. */
+  const showable = (d, offsets) => {
     const out = new Set();
     const now = busy(d);
-    for (const id of ids ?? []) {
-      const k = d.slots?.[id];
+    for (const k of offsets ?? []) {
       if (Number.isInteger(k) && k >= 0 && k < (d.cards?.length ?? 0) && epochOf(d, k) > 0 && !now.has(k)) out.add(k);
     }
     return out;
@@ -233,7 +230,7 @@ export function createParticipant({ handle, playerId, secret }) {
    * @param {{ players: string[], openSeats?: string[], visibleTo: (playerId: string | null) => Iterable<string> }} ctx
    *   players: who must be in it (e.g. everyone seated); openSeats: places still
    *   waiting for a player (it waits for them: its players are fixed once it starts);
-   *   visibleTo(id): the slot ids that player may see now, visibleTo(null): those everyone may see
+   *   visibleTo(id): the positions (card numbers) that player may see now, visibleTo(null): those everyone may see
    */
   async function step(ctx) {
     if (running) {
@@ -275,10 +272,10 @@ export function createParticipant({ handle, playerId, secret }) {
     await deliver(visibleTo);
   }
 
-  /** Ask for these slots' cards to be shuffled among themselves (by everyone in turn, once the table is playing). */
+  /** Ask for the cards at these positions to be shuffled among themselves (by everyone in turn, once the table is playing). */
   function shuffleSlots(ids) {
-    const d = doc();
-    const offsets = [...new Set((ids ?? []).map((id) => d.slots?.[id]).filter((k) => Number.isInteger(k)))];
+    const n = doc().faces?.length ?? 0;
+    const offsets = [...new Set((ids ?? []).filter((k) => Number.isInteger(k) && k >= 0 && k < n))];
     if (offsets.length < 2) return 0;
     handle.change((dd) => {
       if (!dd.queue) dd.queue = [];
@@ -288,7 +285,7 @@ export function createParticipant({ handle, playerId, secret }) {
   }
 
   /**
-   * What this client can see: slot id → face, for the slots in `ids` it has
+   * What this client can see: position → face, for the positions in `ids` it has
    * every key for (its own, and everyone else's open or sealed to it). Also
    * how many it is still waiting on, and from whom.
    */
@@ -302,7 +299,7 @@ export function createParticipant({ handle, playerId, secret }) {
     const ids_ = [...(ids ?? [])];
     const offsets = showable(d, ids_);
     for (const id of ids_) {
-      const k = d.slots?.[id];
+      const k = id;
       if (!offsets.has(k)) continue;
       const epoch = epochOf(d, k);
       const cacheKey = `${k}:${epoch}`;

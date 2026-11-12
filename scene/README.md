@@ -37,13 +37,26 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (25) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `scene:extension` | `scene.*` (26) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
 All but three of the editor's parts take part only in the `"edit"` activity;
 the key map (`scene.keys`), notices and the packages prompt (`scene.packages`:
 STAGE.md, "Packages") serve every activity. `scene.activity`
 (the switcher: Play | Edit at the bottom left, shown only when a scene offers
 more than editing) runs in every scene.
+
+**Seats** (`scene.seats`, `src/parts/seats.js`) are the places people take
+at a scene (scene trait `scene.seats`): a shared part that runs wherever a
+scene has seats, in every activity. It is the seat picker at the top right,
+the claim that says a seat's player is here, the seat's view, a seat as a
+station on the use prompt, and the `roster` other packages read to learn
+who sits where (a table's hands, a keeper's players) without ever reading
+the trait. STAGE.md, "Conventions".
+
+The stage also answers **who may see what** (`api.audience`, from every
+package's `audience` policy) and draws **the veil** for a look that says
+`veil: true` (STAGE.md, "Audience" and "The veil"); it holds no secrets
+itself.
 
 **Use** (`scene.use`, `src/parts/use.js`) is the use prompt, the
 first-person counterpart of the context menu: in play it shows the verbs
@@ -241,12 +254,12 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 
 ```js
 { type: "scene:extension", id: "tabletop", name: "Tabletop",
-  traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],  // trait keys that start it
+  traits: ["tabletop.zone", "tabletop.card"],                        // trait keys that start it
   drops: ["*"],                                                      // datatypes it may lay out when dropped
   requires: ["scene.hand", "scene.keys"],                            // what must run with it
   always: false,
   activities: ["play"],                                              // the activities it takes part in (absent = all)
-  describes: { "tabletop.seats": { name: "Seats", on: "scene", … } }, // for "Add behaviour…" (STAGE.md)
+  describes: { "tabletop.card": { name: "Card", on: "object", … } },  // for "Add behaviour…" (STAGE.md)
   async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
 
 { type: "scene:template", id: "arena-level", name: "Arena level", icon?, description?,
@@ -745,7 +758,9 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it), `seats` (the places people take at a scene, and who sits where for whoever asks: `seats-model.js` is its pure side) and `activity` (the switcher, always on) |
+| `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
+| `src/test/fake-world.js` | a stand-in stage for a part whose tests need several views with claims that lapse and merges written by hand (seats) |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |

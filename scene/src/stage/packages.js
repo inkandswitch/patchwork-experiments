@@ -158,6 +158,9 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   let settled = !(settleMs > 0);
   let settleTimer = null;
   let queued = false;
+  let noRegistry = false; // the host has no plugin registry: nothing is listed against it, so nothing is missing
+  let completeFor = null; // { doc, stamp, value }: complete()'s last answer
+  let stamp = 0; // bumped whenever what's registered or loaded here may have changed
   const used = new Set(); // importUrls of the parts and templates run in this view
   const declined = new Set(); // "Not now", until the scene is opened again
   const failed = new Map(); // url → what went wrong
@@ -230,8 +233,12 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
       loading: t.loading.map(named),
       failed: t.failed.map((url) => ({ ...named(url), error: failed.get(url) })),
     };
+    // (said whatever the prompt's state: asked about, declined, loading or failed, it isn't here)
+    next.missing = missing.length > 0;
     const key = JSON.stringify(next);
-    local.swap((m) => (JSON.stringify(m.packages) === key ? m : { ...m, packages: Object.freeze({ ask: Object.freeze(next.ask), loading: Object.freeze(next.loading), failed: Object.freeze(next.failed) }) }));
+    local.swap((m) =>
+      JSON.stringify(m.packages) === key ? m : { ...m, packages: Object.freeze({ ask: Object.freeze(next.ask), loading: Object.freeze(next.loading), failed: Object.freeze(next.failed), missing: next.missing }) },
+    );
     if (settled && t.load.length) void run(t.load);
   }
 
@@ -265,13 +272,41 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     return [...(p.ask ?? []), ...(p.failed ?? [])].map((e) => e.url);
   };
 
-  watchers.add(check);
+  /**
+   * Is every listed package here? False while one isn't (whatever the
+   * viewer answered about it), and until the registry can be read at all.
+   * Worked out from the doc as it is now, not from the last check, so a
+   * list entry that arrived in this very change already counts.
+   */
+  function complete() {
+    if (noRegistry) return true;
+    if (!mod) return false;
+    const doc = handle.doc() ?? {};
+    if (completeFor && completeFor.doc === doc && completeFor.stamp === stamp) return completeFor.value;
+    const here = registeredPackages(registries());
+    for (const url of loaded) here.add(url);
+    const value = missingPackages(doc, here).length === 0;
+    completeFor = { doc, stamp, value };
+    return value;
+  }
+
+  const recheck = () => {
+    stamp++;
+    check();
+  };
+  watchers.add(recheck);
   Promise.resolve(plugins).then((m) => {
-    if (dead || !m) return;
+    if (dead) return;
+    if (!m) {
+      noRegistry = true;
+      local.swap((l) => ({ ...l, packages: Object.freeze({ ...l.packages, missing: false }) }));
+      return;
+    }
     mod = m;
     for (const type of WATCHED) {
       try {
         const off = m.getRegistry?.(type)?.on?.("changed", () => {
+          stamp++;
           settle();
           check();
         });
@@ -286,6 +321,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
 
   return {
     check,
+    complete,
     /** A part or template was run here: its package belongs on the list too. */
     used(type, id) {
       if (dead || !mod) return;
@@ -330,7 +366,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     dispose() {
       dead = true;
       clearTimeout(settleTimer);
-      watchers.delete(check);
+      watchers.delete(recheck);
       for (const off of offs) off();
       offs.length = 0;
     },

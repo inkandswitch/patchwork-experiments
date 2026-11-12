@@ -48,7 +48,6 @@ export default function SecureDeckTool(handle, element) {
         d.op ? ` Shuffling ${d.op.offsets.length} of them (${d.op.pass}).` : "",
         d.queue?.length ? ` ${d.queue.length} shuffle${d.queue.length > 1 ? "s" : ""} waiting.` : "",
         shuffles ? ` The most-shuffled card has been shuffled ${shuffles} time${shuffles > 1 ? "s" : ""}.` : "",
-        Object.keys(d.slots ?? {}).length ? "" : " Not on a table yet: drop it on a scene.",
       ),
       rows.length ? el("table", {}, el("tbody", {}, rows)) : el("p", { class: "muted" }, "Nobody has joined yet."),
       el(

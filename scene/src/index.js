@@ -331,6 +331,29 @@ export const plugins = [
       return (await import("./parts/parts.js")).default;
     },
   },
+  // seats: the places people take at a scene, the seat picker, and who sits
+  // where for whoever needs to know (src/parts/seats.js; STAGE.md, "Seats").
+  // A shared part: it runs wherever the scene has seats, in every activity
+  // (who sits where decides who may see what, while editing too). `roster`
+  // says its module can write seats into a scene being set up (`lay`).
+  {
+    type: "scene:extension",
+    id: "scene.seats",
+    name: "Seats",
+    traits: ["scene.seats"],
+    roster: true,
+    describes: {
+      "scene.seats": {
+        name: "Seats",
+        on: "scene",
+        blurb: "The places people take here: pick one to sit in it",
+        entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } },
+      },
+    },
+    async load() {
+      return (await import("./parts/seats.js")).default;
+    },
+  },
   // what this viewer is doing, and switching it (only shown when there's a choice)
   {
     type: "scene:extension",

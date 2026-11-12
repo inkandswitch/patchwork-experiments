@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>tabletop seats probe</title>
 <!-- Driven by probes/seats.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT tabletop plugins (tabletop/dist) in a stub registry, on an
+     BUILT tabletop plugins (tabletop/dist) and a keeper (keep/dist) in a stub registry, on an
      in-memory repo, at a Lost Cities table set up as the game page does
      (src/setup.js). Two views of one doc, A (Ana) and B (Ben), each view's
      broadcasts (presence, poses) reaching only the other, a few ms late, until
@@ -23,10 +23,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
-import { emptyScene } from "../src/empty-scene.js";
-import { fill } from "../src/games/lost-cities.js";
-import { ensurePieceGLBs } from "../src/pieces.js";
-import { tableLayout, writeTable } from "../src/setup.js";
+import { PICKER, SEAT_TAG, install, lostCitiesTable, seatClaim, seatsOf } from "./table-setup.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -56,28 +53,14 @@ function peer(handle) {
 }
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../keep/dist/index.js"]);
   const repo = new FakeRepo();
   window.repo = repo;
   // the two players' contacts, so the name tags and notices can say who
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
-  // Lost Cities, and a table set up from it (tool.js setUpTable)
-  const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
-  game.change((d) => fill(d));
-  await ensurePieceGLBs(repo, game);
-  // the game page's table (tool.js setUpTable): the game's GLBs, the decks first, then the scene
-  const g = game.doc();
-  const fileOf = (k) => (g.pieces[k]?.glbUrl ? { url: g.pieces[k].glbUrl, hint: g.pieces[k].bounds ? { bounds: g.pieces[k].bounds } : null } : null);
-  const layout = tableLayout(g, { fileOf, gameUrl: game.url });
-  const deckUrls = {};
-  for (const [id, deck] of Object.entries(layout.decks)) deckUrls[id] = (await repo.create2(deck)).url;
-  const table = emptyScene({ title: "Seats probe" });
-  writeTable(table, layout, deckUrls);
-  const scene = repo.add(table);
+  // Lost Cities, and a table set up from it as the game page does (its deck kept in the open: seats are what's probed)
+  const { scene } = await lostCitiesTable(repo, { title: "Seats probe", secure: false });
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);
@@ -98,7 +81,7 @@ try {
   const confirms = [];
   let answer = false;
   window.confirm = (q) => (confirms.push(q), answer);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(PICKER);
 
   window.__p = {
     errors, scene, viewers: { a: ana.url, b: ben.url },
@@ -114,8 +97,8 @@ try {
     session: (w) => dbg[w].presence.session,
     /** has a view heard from this session in presence? */
     heard: (w, s) => Object.hasOwn(dbg[w].presence.get?.() ?? {}, s),
-    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
-    claim: (sid) => scene.doc().claims?.[`tabletop.seat:${sid}`] ?? null,
+    seats: () => seatsOf(scene.doc()),
+    claim: (sid) => scene.doc().claims?.[seatClaim(sid)] ?? null,
     options: (w) => (select(w) ? [...select(w).options].map((o) => [o.value, o.textContent]) : null),
     picked: (w) => select(w)?.value ?? null,
     /** choose a seat in a view's picker, answering any confirm with `yes` */
@@ -129,7 +112,7 @@ try {
     confirms: () => [...confirms],
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** the name tags a view draws */
-    tags: (w) => [...hosts[w].querySelectorAll(".label.tabletop-seat-tag")].map((e) => e.textContent.trim()),
+    tags: (w) => [...hosts[w].querySelectorAll(SEAT_TAG)].map((e) => e.textContent.trim()),
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
   };
   window.__ready = true;

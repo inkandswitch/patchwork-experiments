@@ -32,15 +32,21 @@ card-face texture size.
 | `patchwork:datatype` | `tts-import` | one import: settings, progress, report (listed) |
 | `patchwork:tool` | `tts-import` | drop zone, progress, report, *Open the table* |
 
-It doesn't depend on the scene or tabletop packages: it writes `scene`,
-`plain-deck` and `file` docs in the shapes they document (the scene's, with
-the tabletop's traits for seats and hidden cards) and opens the result with
-the `scene` tool by id. A table needs the tabletop package installed for its
-seats and hidden cards to work. The scene doc names the scene package as its
-suggested import (below), so a viewer with nothing installed is offered the
-scene tool; the stage lists the tabletop package in the scene's `packages`
-the first time someone who has it opens the table, and offers it to viewers
-who don't (scene/STAGE.md, "Packages").
+It doesn't depend on the scene or tabletop packages: it writes `scene` and
+`file` docs in the shapes they document (the scene's, with the tabletop's
+`tabletop.card` trait on face-down cards) and opens the result with the
+`scene` tool by id. Two things on a table aren't written here but through
+whoever owns them, found in the plugin registry by their metadata
+(`src/made-with.js`; scene/STAGE.md, "Keepers" and "Seats"): what a
+face-down card really is goes to a keeper that keeps things in the open
+(`keeper: "plain"`; the `keep` package's), and the seats are laid by
+whoever owns seats (`roster: true`; the scene's own part). Where one isn't
+installed the import still finishes: the cards are only their backs, or the
+table has no seats, and the report says so. The scene doc names the scene
+package as its suggested import (below), so a viewer with nothing installed
+is offered the scene tool; the stage lists the tabletop and keeper packages
+in the scene's `packages` the first time someone who has them opens the
+table, and offers them to viewers who don't (scene/STAGE.md, "Packages").
 
 ## Getting the assets
 
@@ -151,8 +157,9 @@ cards, often 4096² px) in every card's file. A cropped face is a few tens of kB
 
 **Hidden cards.** A face-down deck's cards (and face-down loose cards) are the
 scene's hidden objects: each shows the deck's back on both sides and is named
-"Card", with the trait `tabletop.hidden: { by: <url> }` naming a `plain-deck` doc made for
-that TTS deck (one per deck, one more for loose cards) that says what each
+"Card", with the trait `tabletop.card` (a card: two-sided, shown to everyone when it
+lies face up) and its keeper's own trait binding it to a slot of a container made for
+that TTS deck (one per deck, one more for loose cards) that holds what each
 really is. `hideObject()` in `src/layout.js` is the one place that writes that
 shape.
 
@@ -188,12 +195,12 @@ shape.
 - a `file` doc per raw asset found: `{ "@patchwork": { type: "file" }, name, extension, mimeType, content }`
   (an OBJ as text, images and PDFs as bytes; one over `maxStoredBytes`, 32 MB, is used but not kept);
 - a `file` doc per kind: the GLB (`extension: "glb"`, `mimeType: "model/gltf-binary"`);
-- a `plain-deck` doc per face-down TTS deck: `{ "@patchwork": { type: "plain-deck" }, title, objects: { [objectId]: { sourceUrl, name } } }`;
+- a keeper's container per face-down TTS deck, holding `{ sourceUrl, name }` per card (made by the keeper's `contain`; its shape is the keeper's);
 - the `scene`: an empty scene as the scene's own datatype makes one (`src/empty-scene.js`, a copy of its
   init: `dimensions: {}`, `assets: {}`, `packages: []` and the rest), with passthrough objects
   (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with `hint.bounds`, groups for decks /
-  stacks / bag contents / states, `locked`, `tags`, traits (`tabletop.hidden` on hidden cards,
-  `tabletop.seats` on the scene), `infoUrl` = the import doc (the PDF's file doc for a `Custom_PDF`), and
+  stacks / bag contents / states, `locked`, `tags`, traits (`tabletop.card` and the keeper's binding on hidden cards;
+  the seats, laid by their owner, on the scene), `infoUrl` = the import doc (the PDF's file doc for a `Custom_PDF`), and
   `view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity?, home }`:
   `home` is a view over the table from the near side, and `activity: "play"` is written when the mod has
   seats (a table with seats is for playing: it opens in play, and the scene's activity switcher gets

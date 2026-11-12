@@ -1,0 +1,42 @@
+/* scene.seats: the seat picker (top right: the notices take the top left)
+   and a name tag on each of a seat's places. */
+
+.scene-stage .seats-overlay:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.scene-stage .seats-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  pointer-events: auto;
+  background: var(--scene-panel-bg, rgb(255 255 255 / 0.9));
+  color: var(--scene-fg, #222);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
+  font: 13px system-ui, sans-serif;
+}
+.scene-stage .seats-bar[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+.scene-stage .seats-pick:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+.scene-stage .label.seat-tag:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: #f6f3ea;
+  background: color-mix(in oklch, #0b0d10 62%, transparent);
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.4);
+}
+.scene-stage .label.seat-tag:is([data-state="away"], [data-state="free"]):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.7;
+}

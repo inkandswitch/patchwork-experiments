@@ -2,13 +2,13 @@
 <meta charset="utf-8">
 <title>tabletop table probe</title>
 <!-- Driven by probes/table.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT tabletop and card-table plugins (tabletop/dist, card-table/dist) in
-     a stub registry, on an in-memory repo, at a Lost Cities table with a
-     PLAIN deck (so a shuffle is a doc write, not a crypto round), written by
-     the one table writer (src/setup.js). Two views of one doc, A (Ana) and B
-     (Ben), both open from the start, each view's broadcasts (presence, poses,
-     sends) reaching only the other, a few ms late. A secure-deck doc, bound
-     to nothing, waits in the repo for the runner to drop on the table. -->
+     BUILT tabletop and keeper plugins (tabletop/dist, keep/dist,
+     card-table/dist) in a stub registry, on an in-memory repo, at a Lost
+     Cities table whose deck is kept in the open (so a shuffle is a doc
+     write, not a crypto round), written by the one table writer
+     (src/setup.js). Two views of one doc, A (Ana) and B (Ben), both open
+     from the start, each view's broadcasts (presence, poses, sends) reaching
+     only the other, a few ms late. -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -24,10 +24,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
-import { emptyScene } from "../src/empty-scene.js";
-import { fill } from "../src/games/lost-cities.js";
-import { ensurePieceGLBs } from "../src/pieces.js";
-import { tableLayout, writeTable } from "../src/setup.js";
+import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -53,29 +50,14 @@ function peer(handle) {
 }
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
-  const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
-  game.change((d) => fill(d));
-  await ensurePieceGLBs(repo, game);
-  const g = game.doc();
-  const fileOf = (k) => (g.pieces[k]?.glbUrl ? { url: g.pieces[k].glbUrl, hint: g.pieces[k].bounds ? { bounds: g.pieces[k].bounds } : null } : null);
-  // the table: a plain deck
-  const layout = tableLayout(g, { fileOf, gameUrl: game.url, secure: false });
-  const deckUrls = {};
-  for (const [id, deck] of Object.entries(layout.decks)) deckUrls[id] = (await repo.create2(deck)).url;
-  const table = emptyScene({ title: "Table probe" });
-  writeTable(table, layout, deckUrls);
-  const scene = repo.add(table);
-  // a second deck, secure, bound to no table: what someone drags on
-  const loose = tableLayout(g, { fileOf, secure: true }).decks.main;
-  const looseDeck = await repo.create2({ ...JSON.parse(JSON.stringify(loose)), slots: {} });
+  // the table: its deck kept in the open (the plain keeper's container)
+  const { scene, deckUrl } = await lostCitiesTable(repo, { title: "Table probe", secure: false });
+  const deckUrls = { main: deckUrl };
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);
@@ -90,11 +72,9 @@ try {
   setInterval(() => {
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects;
-  /** the privacy faces' files (doc.assets, tabletop/private-card@…) */
-  const privateUrls = () => new Set(Object.entries(scene.doc().assets ?? {}).filter(([k]) => k.startsWith("tabletop/private-card@")).map(([, a]) => a?.url));
-  const hiddenIds = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
+  const hiddenIds = () => cardIds(objects());
   const zoneObj = (seat) => Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat) ?? null;
   const zoneOf = (id) => {
     const s = dbg.a.scene();
@@ -113,15 +93,17 @@ try {
   const r6 = (v) => +(+v).toFixed(6);
 
   window.__p = {
-    errors, viewers: { a: ana.url, b: ben.url }, looseDeck: looseDeck.url, deckUrl: deckUrls.main,
+    errors, viewers: { a: ana.url, b: ben.url }, deckUrl: deckUrls.main,
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
-    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
     tool: (w) => dbg[w].local.get().tool ?? null,
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    /** each card's keeper binding, as the scene doc has it: id → "by#slot" */
+    bindings: () => Object.fromEntries(cardIds(objects()).map((id) => [id, `${kept(objects()[id])?.by}#${kept(objects()[id])?.slot}`])),
     deckDoc: async () => JSON.parse(JSON.stringify((await repo.find(deckUrls.main)).doc())),
     where() {
       const out = { p1: [], p2: [], table: [] };
@@ -140,10 +122,12 @@ try {
     shown: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m && [...m].map(r6); },
     /** what each hidden card in a hand shows in view w: id → face name/url */
     handLooks(w) { const out = {}; const L = dbg[w].looks(); for (const id of hiddenIds()) { const z = zoneOf(id); if (!z) continue; const f = L?.get?.(id); out[id] = f ? `${z}:${f.name ?? ''}:${String(f.sourceUrl).slice(-6)}` : `${z}:-`; } return out; },
-    /** the hidden cards a view sees the face of (not the privacy face: a card face up that isn't theirs) */
-    faces: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !p.has(L.get(id)?.sourceUrl)); },
-    /** the hidden cards a view sees as the privacy face (tabletop/src/table/privacy.js) */
-    privates: (w) => { const L = dbg[w]?.looks(); const p = privateUrls(); return [...(L?.keys?.() ?? [])].filter((id) => p.has(L.get(id)?.sourceUrl)); },
+    /** the cards a view sees as what they really are (a look with a source) */
+    faces: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "face"),
+    /** the cards a view sees as the stage's veil (turned toward them, kept from them or not known yet) */
+    veils: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "veil"),
+    /** the cards a view sees as their own backs (no look) */
+    backs: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "back"),
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     selected: (w) => dbg[w].local.get().selected ?? null,
     loaded: (id, w = "a") => !!dbg[w].viewport.contentOf(id)?.loaded,

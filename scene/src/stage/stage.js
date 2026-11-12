@@ -37,6 +37,8 @@ import { HEARTBEAT_MS, createPresence } from "./presence.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
+import { mergeAudience, mergeShown } from "./audience.js";
+import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
@@ -148,7 +150,7 @@ export function widgetWins(widget, hit) {
  * that aren't there are dropped.
  * @param {Iterable<Map<string, object> | Iterable<[string, object]>>} lenses
  * @param {object} objects
- * @returns {Map<string, { sourceUrl?, name? }>}
+ * @returns {Map<string, { sourceUrl?, name?, veil? }>}
  */
 export function mergeLooks(lenses, objects) {
   const out = new Map();
@@ -390,7 +392,8 @@ export default function Stage(handle, element) {
     activities: Object.freeze({ current: DEFAULT_ACTIVITY, available: Object.freeze([DEFAULT_ACTIVITY]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
-    packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]) }),
+    // (`missing`: a listed package isn't here, or that isn't known yet: the audience is unknown meanwhile)
+    packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]), missing: true }),
   });
 
   // Another tab of this viewer changed its prefs for this scene: take theirs,
@@ -640,7 +643,9 @@ export default function Stage(handle, element) {
 
   // ─── lenses ───────────────────────────────────────────────────────────────
 
-  let looks = new Map(); // id → { sourceUrl?, name? }: what this viewer sees instead
+  let looks = new Map(); // id → { sourceUrl?, name?, veil? }: what this viewer sees instead
+  const veils = new Map(); // id → veilKey of the veil it is shown as (a look with `veil: true`)
+  const veilBytes = new Map(); // veilKey → its GLB
   let lastLooksKey = "[]";
   let atmosphere = null; // the running extensions' atmosphere, merged (mergeAtmosphere)
   let lastAtmosphereKey = "null";
@@ -702,6 +707,22 @@ export default function Stage(handle, element) {
         viewport.applyDisplay(id, o, parent, inh);
       }
       const shown = o.visible !== false && inh.visible;
+      // a veil stands in for it, whatever it is made of: nothing of its own is loaded while it's veiled
+      if (looks.get(id)?.veil === true) {
+        if (tracked.has(id)) manager.untrack(id);
+        queue.remove(id);
+        applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
+        const b = veilBounds(o.hint?.bounds) ?? veilBounds(objState.get(id)?.bounds) ?? veilBounds(viewport.contentOf(id)?.box) ?? DEFAULT_BOUNDS;
+        const vk = veilKey(b);
+        if (veils.get(id) !== vk) {
+          veils.set(id, vk);
+          if (objState.delete(id)) statusDirty = true;
+          showVeil(id, vk, b);
+        }
+        continue;
+      }
+      // (unveiled: its own content loads again below, and the veil stays up until that has)
+      veils.delete(id);
       if (o.renderUrl) {
         queue.remove(id);
         applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
@@ -730,10 +751,71 @@ export default function Stage(handle, element) {
       if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
       hintKeys.delete(id);
+      veils.delete(id);
       remotePosed.delete(id);
       playing.delete(id);
     }
   }
+
+  /** Draw the veil for these bounds in place of an object's content (veil.js): through the GLB path, so box and picking go by it. */
+  function showVeil(id, vk, bounds) {
+    let bytes = veilBytes.get(vk);
+    if (!bytes) veilBytes.set(vk, (bytes = veilGLB(bounds)));
+    Promise.resolve(viewport.setGLB(id, bytes))
+      .catch((err) => console.warn("[scene] the veil failed to draw", err))
+      .then(() => {
+        if (!dead) afterGLB();
+      });
+  }
+
+  // ─── the audience ─────────────────────────────────────────────────────────
+
+  // Who may see what an object is (STAGE.md, "Audience"): every running
+  // extension's `audience(scene)` answer for it, merged (audience.js). Each
+  // policy is asked once per snapshot. One that throws is read as "nobody"
+  // (an `only` of no one): a broken screen hides, it never reveals.
+  const policies = new WeakMap(); // instance → { scene, fn }
+  const CLOSED = Object.freeze({ only: Object.freeze([]) });
+  function audienceAnswers(id) {
+    // a listed package isn't here, or an extension the doc calls for hasn't started (or failed to): one of
+    // its policies may be missing, and a missing `only` would enlarge the audience
+    if (!packages.complete() || !host.settled()) return null;
+    const snap = scene();
+    if (!snap.objects[id]) return [];
+    const out = [];
+    for (const r of host.instances()) {
+      if (typeof r.instance.audience !== "function") continue;
+      let p = policies.get(r.instance);
+      if (!p || p.scene !== snap) {
+        let fn = null;
+        try {
+          fn = r.instance.audience(snap);
+        } catch (err) {
+          console.warn(`[scene] extension “${r.id}”: audience failed`, err);
+          fn = () => CLOSED;
+        }
+        policies.set(r.instance, (p = { scene: snap, fn: typeof fn === "function" ? fn : null }));
+      }
+      if (!p.fn) continue;
+      try {
+        out.push(p.fn(id) ?? null);
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: audience failed for ${id}`, err);
+        out.push(CLOSED);
+      }
+    }
+    return out;
+  }
+  /** "all" | viewer[] | null (unknown): who may see what `id` is. */
+  const audienceOf = (id) => {
+    const answers = audienceAnswers(id);
+    return answers ? mergeAudience(answers) : null;
+  };
+  /** "all" | viewer[] | null (unknown): who `id` is turned toward, before anything screens it. */
+  const shownTo = (id) => {
+    const answers = audienceAnswers(id);
+    return answers ? mergeShown(answers) : null;
+  };
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
@@ -1881,6 +1963,8 @@ export default function Stage(handle, element) {
 
       // the others
       collect: (name) => host.collect(name),
+      audience: audienceOf,
+      shown: shownTo,
       run,
     };
 
@@ -2116,6 +2200,10 @@ export default function Stage(handle, element) {
     root,
     scene,
     looks: () => looks,
+    /** the objects shown as a veil: id → the key of its drawing */
+    veils: () => new Map(veils),
+    audience: audienceOf,
+    shown: shownTo,
     atmosphere: () => atmosphere,
     /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
     busy,

@@ -1,9 +1,10 @@
 // Seats held by claims, at a Lost Cities table, by two people in headless Chrome.
 //
-//   (in scene/ and tabletop/) pnpm build
+//   (in scene/, tabletop/ and keep/) pnpm build
 //   node probes/seats.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool with the BUILT tabletop plugins on a Lost
+// Mounts the BUILT scene tool (the seats are its own part) with the BUILT
+// tabletop and keep plugins on a Lost
 // Cities table set up as the game page does, twice on one doc (A is Ana, B is
 // Ben, with real presence between them; seats-probe.html). Then:
 // - A sits in Player 1, and claims it;
@@ -22,7 +23,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-seats"));
 const PEER_TTL_MS = 15_000; // scene/src/stage/presence.js
@@ -96,7 +97,7 @@ try {
   check("after the presence TTL, B sees Player 1 as away", away, await P("options('b')"));
   check("…and its name tag says so", (await P("tags('b')"))[0] === "Player 1 · Ana (away)", await P("tags('b')"));
   await P("pick('b', 'p1', false)");
-  check("taking it asks first, naming who's away", (await P("confirms()")).at(-1) === "Ana is away. Take their seat? You'll see their hand.", await P("confirms()"));
+  check("taking it asks first, naming who's away", (await P("confirms()")).at(-1) === "Ana is away. Take their seat? You'll see what's theirs.", await P("confirms()"));
   check("saying no leaves it", (await P("seats()")).p1.player === viewers.a && (await P("picked('b')")) === "", await P("seats()"));
   await P("pick('b', 'p1', true)");
   const sessionB = await P("session('b')");

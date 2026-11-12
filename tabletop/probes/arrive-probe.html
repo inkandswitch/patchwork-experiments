@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop arrive probe</title>
+<!-- Driven by probes/arrive.mjs. Two viewers with different packages
+     installed, so two iframes (arrive-frame.html), each with its own plugin
+     registry: A has the scene, tabletop and card-table packages; B has the
+     scene package only. The documents are this page's (one FakeRepo; each
+     frame reads its own copies: frame-repo.js), and each package is a folder
+     doc here with a package.json, as pushwork lays one out, served to a
+     frame that doesn't have it from the BUILT dist when it says Load. -->
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  iframe { width: 700px; height: 520px; flex: none; border: 0; background: #fff; }
+</style>
+<iframe id="a"></iframe><iframe id="b"></iframe>
+<script type="module">
+import { FakeRepo, fakeUrl } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+try {
+  try { localStorage.clear(); } catch {}
+  const repo = new FakeRepo();
+  // the packages, as folders (the packages card reads each one's package.json for its name)
+  const folder = (name) => {
+    const pj = repo.add({ "@patchwork": { type: "file" }, name: "package.json", content: JSON.stringify({ name }) });
+    return repo.add({ title: name, docs: [{ name: "package.json", type: "file", url: pj.url }] }, fakeUrl()).url;
+  };
+  const urls = { scene: folder("@tiny-patchwork/scene"), tabletop: folder("@tiny-patchwork/tabletop"), "card-table": folder("@tiny-patchwork/card-table") };
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  window.shared = { repo, urls, viewers: { a: ana.url, b: ben.url }, listeners: { a: new Set(), b: new Set() }, errors };
+  const frames = { a: document.getElementById("a"), b: document.getElementById("b") };
+  const ready = { a: null, b: null };
+  const start = (w, has) =>
+    (ready[w] ??= new Promise((res) => {
+      frames[w].addEventListener("load", () => {
+        const t = setInterval(() => {
+          if (frames[w].contentWindow.__f) {
+            clearInterval(t);
+            res(true);
+          }
+        }, 20);
+      });
+      frames[w].src = `./arrive-frame.html?who=${w}&has=${has.join(",")}`;
+    }));
+  const f = (w) => frames[w].contentWindow.__f;
+  // a point in a frame, in this page's coordinates (for a real click)
+  const inPage = (w, r) => { if (!r) return null; const o = frames[w].getBoundingClientRect(); return { x: o.left + r.x, y: o.top + r.y }; };
+
+  window.__p = {
+    errors, urls, viewers: window.shared.viewers,
+    start,
+    f,
+    call: (w, name, ...args) => f(w)[name](...args),
+    button: (w, action) => inPage(w, f(w).button(action)),
+    /** a document as the repo has it (public state only is read by the runner) */
+    docOf: (url) => JSON.parse(JSON.stringify(repo.handles.get(url)?.doc() ?? null, (k, v) => (v instanceof Uint8Array || ArrayBuffer.isView(v) ? `<${v.byteLength} bytes>` : v))),
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

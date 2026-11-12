@@ -1,9 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import TabletopGameTool from "./tool.js";
 
-// A stand-in for the host's plugin registry, holding this package's plugins.
+// A stand-in for the host's plugin registry, holding this package's plugins
+// and, as other packages would register them, whoever owns seats and a
+// keeper of each kind (test/stand-ins.js).
 vi.mock("@inkandswitch/patchwork-plugins", async () => {
-  const { plugins } = await import("./index.js");
+  const { plugins: own } = await import("./index.js");
+  const { keeperPlugin, seatsPlugin } = await import("./test/stand-ins.js");
+  const plugins = [...own, seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain")];
   const registries = new Map();
   const getRegistry = (type) => {
     if (!registries.has(type)) {
@@ -25,6 +29,7 @@ vi.mock("@inkandswitch/patchwork-plugins", async () => {
   return { getRegistry };
 });
 import { TabletopGameDatatype } from "./datatype.js";
+import { SEATS, keptIn } from "./test/stand-ins.js";
 
 /** An in-memory repo whose handles emit "change". */
 function fakeRepo() {
@@ -155,7 +160,7 @@ describe("the tabletop-game tool", () => {
     cleanup();
   });
 
-  it("sets up Lost Cities with its deck in a doc of its own, for the players to shuffle", async () => {
+  it("sets up Lost Cities with its deck in a container of its own, from a keeper whose players shuffle, and its seats from their owner", async () => {
     const repo = fakeRepo();
     const init = {};
     TabletopGameDatatype.init(init);
@@ -172,12 +177,16 @@ describe("the tabletop-game tool", () => {
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);
     const scene = (await repo.find(opened[0].url)).doc();
-    const urls = new Set(Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]).map((o) => o.traits["tabletop.hidden"].by));
+    const cards = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]);
+    expect(cards).toHaveLength(60);
+    const urls = new Set(cards.map((o) => keptIn(o).by));
     expect(urls.size).toBe(1);
+    expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
     const deck = (await repo.find([...urls][0])).doc();
-    expect(deck["@patchwork"].type).toBe("secure-deck");
-    expect(deck.faces).toHaveLength(60);
-    for (const id of Object.keys(deck.slots)) expect(scene.objects[id].name).toBe("Card");
+    expect(deck.title).toBe("Lost Cities table 1: Deck");
+    expect(deck.items).toHaveLength(60);
+    for (const o of cards) expect(o.name).toBe("Card");
+    expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2"]);
     cleanup();
   });
 });

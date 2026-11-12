@@ -7,6 +7,11 @@ import { EXPEDITIONS, fill as loadLostCities, lostCitiesPieces } from "./games/l
 import { kindsUsed, shuffle, supplySpot, tableLayout, writeTable } from "./setup.js";
 import { TabletopGameDatatype } from "./datatype.js";
 import { emptyScene } from "./empty-scene.js";
+import { SEATS, keptIn, seatsPlugin } from "./test/stand-ins.js";
+
+// the seats owner's lay, and a keeper's bind, as the registry would give them (test/stand-ins.js)
+const lay = (await seatsPlugin().load()).lay;
+const bindTo = (url) => (slot) => ({ "t.plain": { by: url, slot } });
 
 /** A doc handle and repo that keep docs in memory. */
 function fakeRepo() {
@@ -61,14 +66,15 @@ const skeleton = () => emptyScene({ title: "T" });
 
 /**
  * The game page's table: the layout, and the scene writeTable makes of it
- * with each deck at "automerge:deck-<id>".
+ * with each deck's container at "automerge:deck-<id>", bound by a stand-in
+ * keeper's trait, and the seats laid by a stand-in owner.
  */
 function setUp(game, gameUrl, o = {}) {
   const layout = tableLayout(game, { fileOf: gameFiles(game), gameUrl, ...o });
-  const urls = Object.fromEntries(Object.keys(layout.decks).map((id) => [id, `automerge:deck-${id}`]));
+  const binds = Object.fromEntries(Object.keys(layout.decks).map((id) => [id, bindTo(`automerge:deck-${id}`)]));
   const scene = skeleton();
-  writeTable(scene, layout, urls);
-  return { layout, scene, decks: layout.decks, urls };
+  writeTable(scene, layout, binds, { seats: lay });
+  return { layout, scene, decks: layout.decks, binds };
 }
 
 describe("shapes", () => {
@@ -269,16 +275,17 @@ describe("Lost Cities", () => {
     }
   });
 
-  /** A Lost Cities table; `secure: false` for the plain secrets doc. */
+  /** A Lost Cities table; `secure: false` for a deck that doesn't ask for its players to shuffle it. */
   async function table(seed = 3, { secure = true } = {}) {
     const repo = fakeRepo();
     const game = await newGame(repo, loadLostCities);
     if (!secure) game.change((d) => (d.decks.main.secure = false));
     await ensurePieceGLBs(repo, game);
     const t = setUp(game.doc(), game.url, { rng: seeded(seed) });
-    // which object is which card, as far as setup knows (before any shuffle by the players)
+    // which object is which card, as far as setup knows (before any shuffle by the players):
+    // the container's slot k holds items[k], and each card's keeper trait names its slot
     const secrets = t.decks.main;
-    const truth = secrets.objects ?? Object.fromEntries(Object.entries(secrets.slots).map(([id, k]) => [id, secrets.faces[k]]));
+    const truth = Object.fromEntries(Object.entries(t.scene.objects).filter(([, o]) => keptIn(o)).map(([id, o]) => [id, secrets.items[keptIn(o).slot]]));
     t.secrets = secrets;
     return { game: game.doc(), ...t, truth };
   }
@@ -302,7 +309,7 @@ describe("Lost Cities", () => {
     const h = game.pieces.back.bounds.max[1];
     ys.forEach((y, j) => expect(y).toBeCloseTo((j + 1) * h, 6));
 
-    expect(scene.traits["tabletop.seats"]).toEqual({ p1: expect.objectContaining({ name: "Player 1", player: null }), p2: expect.objectContaining({ name: "Player 2", player: null }) });
+    expect(scene.traits[SEATS]).toEqual({ p1: expect.objectContaining({ name: "Player 1", player: null }), p2: expect.objectContaining({ name: "Player 2", player: null }) });
     const zones = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.zone"]);
     expect(zones.map((o) => o.traits["tabletop.zone"].seat).sort()).toEqual(["p1", "p2"]);
     expect(zones.every((o) => o.locked)).toBe(true);
@@ -338,23 +345,25 @@ describe("Lost Cities", () => {
     expect(names.filter((n) => n === "Blue 7")).toHaveLength(1);
   });
 
-  it("a secure deck becomes a secure-deck doc for the players to shuffle: every card, one slot each", async () => {
+  it("a deck says what its container is to hold, slot by slot, and whether its players should shuffle it: no doc of any keeper's shape", async () => {
     const { scene, secrets } = await table();
-    expect(secrets).toMatchObject({ "@patchwork": { type: "secure-deck" }, group: "rfc3526-2048", phase: "waiting", participants: [], cards: null, epochs: {}, queue: [], op: null });
-    expect(secrets.back).toMatchObject({ name: "Card" });
-    expect(secrets.back.sourceUrl).toMatch(/^automerge:/);
-    expect(secrets.faces).toHaveLength(60);
-    expect(Object.values(secrets.slots).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
-    for (const id of Object.keys(secrets.slots)) expect(scene.objects[id].name).toBe("Card");
+    expect(Object.keys(secrets).sort()).toEqual(["items", "secure", "title"]);
+    expect(secrets).toMatchObject({ title: "Deck", secure: true });
+    expect(secrets.items).toHaveLength(60);
+    for (const item of secrets.items) expect(Object.keys(item).sort()).toEqual(["name", "sourceUrl"]);
+    // every card is a card, bound to one slot each by the keeper's own trait, and nothing else
+    const cards = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]);
+    expect(cards).toHaveLength(60);
+    for (const o of cards) {
+      expect(o.traits["tabletop.card"]).toEqual({});
+      expect(Object.keys(o.traits).sort()).toEqual(["t.plain", "tabletop.card"]);
+      expect(o.name).toBe("Card");
+    }
+    expect(cards.map((o) => keptIn(o).slot).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
+    expect((await table(3, { secure: false })).secrets.secure).toBe(false);
   });
 
-  it("an ordinary deck gets a plain secrets doc", async () => {
-    const { secrets } = await table(3, { secure: false });
-    expect(secrets["@patchwork"].type).toBe("plain-deck");
-    expect(Object.keys(secrets.objects)).toHaveLength(60);
-  });
-
-  it("gives every deck a doc of its own, each card pointing at its deck's", async () => {
+  it("gives every deck a container of its own, each card bound to its deck's", async () => {
     const repo = fakeRepo();
     const game = await newGame(repo, loadLostCities);
     // a second deck: the wagers, kept apart and not secure
@@ -365,18 +374,18 @@ describe("Lost Cities", () => {
     await ensurePieceGLBs(repo, game);
     const { layout, scene, decks } = setUp(game.doc(), game.url, { rng: seeded(5) });
     expect(Object.keys(decks).sort()).toEqual(["main", "wagers"]);
-    expect(decks.main["@patchwork"].type).toBe("secure-deck");
-    expect(decks.main.faces).toHaveLength(45);
-    expect(decks.wagers["@patchwork"].type).toBe("plain-deck");
-    expect(Object.keys(decks.wagers.objects)).toHaveLength(15);
-    // in the layout each card names its deck by id; written, by url
-    const byOf = (objects) => new Set(Object.values(objects).filter((o) => o.traits?.["tabletop.hidden"]).map((o) => o.traits["tabletop.hidden"].by));
-    expect(Object.values(layout.objects).filter((o) => o.traits?.["tabletop.hidden"])).toHaveLength(60);
-    expect(byOf(layout.objects)).toEqual(new Set(["deck:main", "deck:wagers"]));
-    expect(byOf(scene.objects)).toEqual(new Set(["automerge:deck-main", "automerge:deck-wagers"]));
-    // a deck with no doc: nothing written
+    expect([decks.main.secure, decks.main.items.length]).toEqual([true, 45]);
+    expect([decks.wagers.secure, decks.wagers.items.length]).toEqual([false, 15]);
+    // in the layout each card names its deck by id and its slot; written, its keeper's binding
+    const laid = Object.values(layout.objects).filter((o) => o.traits?.["tabletop.card"]);
+    expect(laid).toHaveLength(60);
+    expect(new Set(laid.map((o) => o.traits["tabletop.card"].deck))).toEqual(new Set(["main", "wagers"]));
+    for (const deck of ["main", "wagers"]) expect(laid.filter((o) => o.traits["tabletop.card"].deck === deck).map((o) => o.traits["tabletop.card"].slot)).toEqual(decks[deck].items.map((_, k) => k));
+    const written = Object.values(scene.objects).filter((o) => keptIn(o));
+    expect(new Set(written.map((o) => keptIn(o).by))).toEqual(new Set(["automerge:deck-main", "automerge:deck-wagers"]));
+    // a deck with no container: nothing written
     const d = skeleton();
-    expect(() => writeTable(d, layout, { main: "automerge:main" })).toThrow(/wagers/);
+    expect(() => writeTable(d, layout, { main: bindTo("automerge:main") })).toThrow(/wagers/);
     expect(d).toEqual(skeleton());
   });
 
@@ -402,15 +411,17 @@ describe("one table writer: tableLayout + writeTable", () => {
     const b = tableLayout(game.doc(), { fileOf: gameFiles(game.doc()), rng: seeded(11) });
     expect(a.order).toEqual(b.order);
     expect(JSON.stringify(a.objects)).toBe(JSON.stringify(b.objects));
-    expect(a.decks.main.slots).toEqual(b.decks.main.slots);
-    expect(a.decks.main.faces).not.toEqual(b.decks.main.faces);
+    expect(a.decks.main.items).not.toEqual(b.decks.main.items);
+    // the same cards either way
+    const sorted = (t) => t.decks.main.items.map((i) => i.name).sort();
+    expect(sorted(a)).toEqual(sorted(b));
   });
 
   it("deals onto the trays' card slots, each card turned to its slot", async () => {
     const game = await lostCities();
     const g = game.doc();
     const { scene } = setUp(g, game.url, { rng: seeded(3) });
-    const hidden = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]);
+    const hidden = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]);
     for (const tray of ["hand1", "hand2"]) {
       const origin = supplySpot(g.pieces[tray].supply, 0);
       const slots = connectorsOf(g.pieces[tray].snapPoints).slice(0, 8);
@@ -424,23 +435,34 @@ describe("one table writer: tableLayout + writeTable", () => {
     }
   });
 
-  it("writes the seats only where the scene has none, and the view's every setting", async () => {
+  it("has the seats laid by their owner (which writes them only where the scene has none), and writes the view's every setting", async () => {
     const game = await lostCities();
     const layout = tableLayout(game.doc(), { fileOf: gameFiles(game.doc()) });
-    const urls = { main: "automerge:main" };
+    // what it asks to be laid: names and views, nobody seated, no trait of anyone's
+    expect(Object.keys(layout.seats)).toEqual(["p1", "p2"]);
+    for (const s of Object.values(layout.seats)) expect(Object.keys(s).sort()).toEqual(["camera", "name"]);
+    const binds = { main: bindTo("automerge:main") };
     const fresh = skeleton();
-    writeTable(fresh, layout, urls);
-    expect(Object.keys(fresh.traits["tabletop.seats"])).toEqual(["p1", "p2"]);
+    const asked = [];
+    writeTable(fresh, layout, binds, { seats: (d, seats) => (asked.push(seats), lay(d, seats)) });
+    expect(asked).toEqual([layout.seats]);
+    expect(Object.keys(fresh.traits[SEATS])).toEqual(["p1", "p2"]);
     expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity: "play", home: game.doc().camera });
     expect(fresh.order).toEqual(layout.order);
 
     const mine = { north: { name: "North", player: "automerge:ana" } };
-    const busy = { ...skeleton(), objects: { x: { name: "Lamp" } }, order: ["x"], traits: { "tabletop.seats": structuredClone(mine) } };
-    writeTable(busy, layout, urls);
-    expect(busy.traits["tabletop.seats"]).toEqual(mine);
+    const busy = { ...skeleton(), objects: { x: { name: "Lamp" } }, order: ["x"], traits: { [SEATS]: structuredClone(mine) } };
+    writeTable(busy, layout, binds, { seats: lay });
+    expect(busy.traits[SEATS]).toEqual(mine);
     expect(busy.order[0]).toBe("x");
     expect(busy.objects.x).toEqual({ name: "Lamp" });
     expect(busy.order).toHaveLength(1 + layout.order.length);
+
+    // with nobody to lay them, the table has none: this package writes no seats of its own
+    const bare = skeleton();
+    writeTable(bare, layout, binds);
+    expect(bare.traits).toEqual({});
+    expect(JSON.stringify(bare)).not.toMatch(/seats/i);
   });
 
   it("names the game as About only when there is a game doc", async () => {
@@ -452,13 +474,6 @@ describe("one table writer: tableLayout + writeTable", () => {
       expect("infoUrl" in o).toBe(false);
       expect("infoToolId" in o).toBe(false);
     }
-  });
-
-  it("secure: false makes a secure deck plain", async () => {
-    const game = await lostCities();
-    const t = tableLayout(game.doc(), { fileOf: gameFiles(game.doc()), secure: false });
-    expect(t.decks.main["@patchwork"].type).toBe("plain-deck");
-    expect(Object.keys(t.decks.main.objects)).toHaveLength(60);
   });
 
   it("asks for each kind it shows, the backs included, and no other", async () => {

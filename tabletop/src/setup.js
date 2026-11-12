@@ -1,9 +1,9 @@
-// A game → a table: every piece where it starts, and a doc for each of its
-// decks. The one writer both ways of making a table use:
+// A game → a table: every piece where it starts, and what each of its decks
+// holds. The one writer both ways of making a table use:
 //
 //   const layout = tableLayout(game, { fileOf, newId, rng, gameUrl });   // pure
-//   // make each of layout.decks with repo.create2, then, in one change:
-//   writeTable(d, layout, deckUrls);
+//   // a container for each of layout.decks, from a keeper (table/made-with.js containDecks), then, in one change:
+//   writeTable(d, layout, binds, { seats: lay });
 //
 // - The game page's "Set up a table" (tool.js) writes it onto a skeleton
 //   scene doc it then creates; each kind shows the game's own GLB doc
@@ -16,7 +16,10 @@
 // The scene doc's shape is the scene package's (scene/README.md, "scene —
 // the composition"), with this package's traits on it
 // (src/table/visibility.js); this package only writes it, it never imports
-// the scene.
+// the scene. Two things on a table aren't this package's, and are written
+// through whoever owns them, found in the registry (table/made-with.js):
+// what a hidden card really is (a keeper's container, and its trait on the
+// card) and the seats (their owner's `lay`).
 //
 // - Each visible piece kind with more than one copy gets a group, so the
 //   outline stays short; a single piece (the board) sits at the top level.
@@ -26,30 +29,31 @@
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt
 //   onto the snap points of the pieces the deck deals to, the rest stacked.
 //   In the scene each is its `back` piece (name, GLB, box) with the trait
-//   tabletop.hidden: { by: <its deck's doc> }: which card it really is goes only in that doc,
-//   and ids follow deck order, so nothing in the scene says which is which.
-// - Each deck is a doc of its own, so a table has as many as the game does:
-//   a `plain-deck` doc, or for a `secure` deck a `secure-deck` (the
-//   card-table package's; card-table/README.md), which lists the cards and
-//   which object is which position, and which the seated players shuffle
-//   between them so that nobody knows the order. With `secure: false`
-//   every deck is plain (a template where no secure deck is installed).
-//   Until the decks exist, a hidden card names its deck `deck:<id>`;
-//   writeTable puts each deck's url there.
-// - A piece with a `zone` makes its copy a seat's private area (trait tabletop.zone).
-// - The game's seats become the scene's (trait tabletop.seats), unless the
-//   scene already has seats (a shared map is made once: scene/STAGE.md).
+//   tabletop.card (a card: two-sided, piled, shuffled, drawn) and, written
+//   by writeTable, its keeper's trait naming a slot of the deck's container:
+//   which card it really is goes only there, and ids follow deck order, so
+//   nothing in the scene says which is which.
+// - Each deck is a container of its own, so a table has as many as the game
+//   does. The layout says what it holds, slot by slot (`items`: slot k is
+//   what card k really is, { sourceUrl, name }), in the order shuffled here;
+//   a keeper whose players shuffle (a `secure` deck's) makes that order
+//   mean nothing. Until the container exists, a card names its deck and slot
+//   under `tabletop.card` ({ deck, slot }); writeTable swaps that for the
+//   keeper's binding.
+// - A piece with a `zone` makes its copy a seat's hand (trait tabletop.zone).
+// - The game's seats are laid by the seats' owner (`seats`: its lay), which
+//   writes them only where the scene has none.
 // - A piece's `tags` go on each of its copies (the connectors they fit: a
 //   card slot is tagged "card"). A hidden card has its back's tags, so they
 //   say nothing about which card it is.
 // - The scene opens in play, in the hand, with snapping on and the grid and
-//   axes off; the table extension's seat picker sits over the table.
+//   axes off; the seats' picker sits over the table.
 // - Set down on something (placeLayout: a Card table aboard a ship), every
 //   piece goes under that object in its frame, and each seat's camera says
 //   so (`camera.in`); the scene's view is left alone (writeTable's `view`).
-//   (A game with no seats, zones or hidden cards, such as Santorini, gives
-//   the table extension nothing to run on, so there is no play to open in
-//   yet and it opens in the editor, in the hand.)
+//   (A game with no hands and no cards, such as Santorini, gives the table
+//   extension nothing to run on, so there is no play to open in and it
+//   opens in the editor, in the hand.)
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 
@@ -85,7 +89,8 @@ export function shuffle(list, rng = Math.random) {
   return a;
 }
 
-const DECK_PREFIX = "deck:";
+/** The trait of a card: two-sided, piled, shuffled and drawn (table/visibility.js CARD). */
+const CARD = "tabletop.card";
 
 /** The piece kinds a table of this game shows: every visible kind it has copies of, and each card of a deck with its back. */
 export function kindsUsed(game) {
@@ -114,15 +119,14 @@ const copyBounds = (b) => (Array.isArray(b?.min) && Array.isArray(b?.max) ? { mi
  *   newId?: (prefix: string) => string,
  *   rng?: () => number,
  *   gameUrl?: string | null,
- *   secure?: boolean,
  * }} o  fileOf: the GLB file doc a kind shows, and its box; gameUrl: the game,
- *   as each object's About (none for a template's table); secure: false makes
- *   every deck plain
- * @returns {{ objects, order, seats, decks: { [deckId]: object }, view }} the scene's
- *   objects (hidden ones naming their deck `deck:<id>`), their order, its seats
- *   ({} for none), the deck docs to create, and its view settings
+ *   as each object's About (none for a template's table)
+ * @returns {{ objects, order, seats, decks: { [deckId]: { title, secure, items } }, view }} the scene's
+ *   objects (each card naming its deck and slot under tabletop.card until writeTable binds
+ *   it), their order, its seats ({ [seatId]: { name, camera? } }, {} for none), what each
+ *   deck's container is to hold (slot k: items[k]), and its view settings
  */
-export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = null, secure = true } = {}) {
+export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = null } = {}) {
   let n = 0;
   const id = newId ?? ((prefix) => `${prefix}${(n++).toString(36).padStart(4, "0")}`);
   const objects = {};
@@ -205,11 +209,11 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
     for (const k of cards) drawn(k);
     const parent = group(`${deck.name || deckId} (${cards.length})`);
     const shuffled = shuffle(cards, rng);
-    const secretObjects = {};
+    const items = []; // slot k: what card k really is
     const card = (kind, transform) => {
       const oid = place(backKind, { name: back.name || "Card", parent, transform });
-      objects[oid].traits = { "tabletop.hidden": { by: `${DECK_PREFIX}${deckId}` } };
-      secretObjects[oid] = { sourceUrl: drawn(kind).url, name: pieces[kind].name || kind };
+      objects[oid].traits = { [CARD]: { deck: deckId, slot: items.length } };
+      items.push({ sourceUrl: drawn(kind).url, name: pieces[kind].name || kind });
     };
     // dealt face up onto the first copy of each target's snap points
     let next = 0;
@@ -237,40 +241,19 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
         scale: 1,
       });
     }
-    const deckTitle = deck.name || deckId;
-    if (deck.secure && secure) {
-      // positions in the deck are its objects in the order they were made; the players' shuffle decides which card each is
-      const ids = Object.keys(secretObjects);
-      deckDocs[deckId] = {
-        "@patchwork": { type: "secure-deck" },
-        title: deckTitle,
-        group: "rfc3526-2048",
-        faces: ids.map((oid) => ({ ...secretObjects[oid] })),
-        back: { sourceUrl: backFile.url, name: back.name || "Card", ...(backFile.bounds ? { bounds: copyBounds(backFile.bounds) } : {}) },
-        slots: Object.fromEntries(ids.map((oid, k) => [oid, k])),
-        phase: "waiting",
-        participants: [],
-        cards: null,
-        epochs: {},
-        queue: [],
-        op: null,
-        shares: {},
-      };
-    } else {
-      deckDocs[deckId] = { "@patchwork": { type: "plain-deck" }, title: deckTitle, objects: secretObjects };
-    }
+    deckDocs[deckId] = { title: deck.name || deckId, secure: !!deck.secure, items };
   }
 
   const seats = {};
   for (const [sid, s] of Object.entries(game?.seats ?? {})) {
-    seats[sid] = { name: s?.name || sid, player: null, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
+    seats[sid] = { name: s?.name || sid, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
   }
-  // Play only where the table has something to play with: seats, private
-  // zones or hidden cards are what start the table extension and so put play
-  // on offer. A table with none (Santorini: everything in plain sight, no
-  // seats) opens in the editor, with the hand as its tool, rather than
-  // claiming a play it can't start ("Starts in: Play" over an editor).
-  const playable = Object.keys(seats).length > 0 || Object.values(objects).some((o) => o?.traits?.["tabletop.zone"] || o?.traits?.["tabletop.hidden"]);
+  // Play only where the table has something to play with: hands or cards
+  // are what start the table extension and so put play on offer. A table
+  // with none (Santorini: everything in plain sight) opens in the editor,
+  // with the hand as its tool, rather than claiming a play it can't start
+  // ("Starts in: Play" over an editor).
+  const playable = Object.values(objects).some((o) => o?.traits?.["tabletop.zone"] || o?.traits?.[CARD]);
   return {
     objects,
     order,
@@ -326,47 +309,40 @@ export function placeLayout(layout, { parent = null, transform = null } = {}) {
   return { ...layout, objects, seats, view };
 }
 
-/** The deck a hidden object names before its doc exists (`deck:<id>`), or null. */
+/** The deck and slot a card names before its container exists ({ deck, slot } under tabletop.card), or null. */
 const deckRef = (o) => {
-  const by = o?.traits?.["tabletop.hidden"]?.by;
-  return typeof by === "string" && by.startsWith(DECK_PREFIX) ? by.slice(DECK_PREFIX.length) : null;
+  const c = o?.traits?.[CARD];
+  return c && typeof c.deck === "string" && Number.isInteger(c.slot) ? c : null;
 };
 
 /**
  * Write a layout into a scene doc (inside a change, or onto a plain skeleton):
- * its objects and their order, each hidden card naming its deck's url; the
- * seats, only if the scene has none (a seat there whose view is in an
- * object that's gone takes this layout's view); and the view (not with `view: false`:
+ * its objects and their order, each card bound to its slot of its deck's
+ * container by that keeper's own trait (`binds[deckId](slot)`), beside a
+ * bare tabletop.card; the seats, through their owner's `lay` (which writes
+ * them only where the scene has none); and the view (not with `view: false`:
  * a table set down in a scene that's already somewhere, such as aboard a
  * ship, leaves that scene's view, home and units as they are). Throws,
- * writing nothing, if a deck has no url.
+ * writing nothing, if a deck has no binding.
  * @param {object} d  the scene doc (a draft)
  * @param {ReturnType<typeof tableLayout>} layout
- * @param {{ [deckId]: string }} deckUrls  each deck's doc, made already
- * @param {{ view?: boolean }} [o]
+ * @param {{ [deckId]: (slot: number) => object }} binds  each deck's container's bind, made already
+ * @param {{ view?: boolean, seats?: ((d: object, seats: object) => unknown) | null }} [o]
+ *   seats: the seats owner's lay (table/made-with.js findSeats); without one no seats are written
  */
-export function writeTable(d, layout, deckUrls = {}, { view = true } = {}) {
+export function writeTable(d, layout, binds = {}, { view = true, seats = null } = {}) {
   for (const o of Object.values(layout.objects)) {
-    const deckId = deckRef(o);
-    if (deckId != null && !deckUrls[deckId]) throw new Error(`no doc for deck “${deckId}”`);
+    const ref = deckRef(o);
+    if (ref && typeof binds[ref.deck] !== "function") throw new Error(`no container for deck “${ref.deck}”`);
   }
   for (const oid of layout.order) {
     const o = JSON.parse(JSON.stringify(layout.objects[oid]));
-    const deckId = deckRef(o);
-    if (deckId != null) o.traits["tabletop.hidden"] = { by: deckUrls[deckId] };
+    const ref = deckRef(o);
+    if (ref) o.traits = { ...o.traits, [CARD]: {}, ...JSON.parse(JSON.stringify(binds[ref.deck](ref.slot))) };
     d.objects[oid] = o;
     d.order.push(oid);
   }
-  if (Object.keys(layout.seats ?? {}).length && !d.traits["tabletop.seats"]) d.traits["tabletop.seats"] = JSON.parse(JSON.stringify(layout.seats));
-  else if (d.traits["tabletop.seats"]) {
-    // seats there already: one whose view is in a frame that's gone (the table it was at,
-    // deleted) takes this layout's view for it, so it looks at this table
-    for (const [sid, s] of Object.entries(d.traits["tabletop.seats"])) {
-      const frame = s?.camera?.in;
-      const fresh = layout.seats?.[sid]?.camera;
-      if (frame && !d.objects[frame] && fresh) s.camera = JSON.parse(JSON.stringify(fresh));
-    }
-  }
+  if (typeof seats === "function") seats(d, JSON.parse(JSON.stringify(layout.seats ?? {})));
   if (!view) return;
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
 }

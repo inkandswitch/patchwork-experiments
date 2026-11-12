@@ -1,19 +1,26 @@
 # card-table
 
-**Secure decks** for tables: the players' own clients shuffle a deck between
-them, as often as they like, so that nobody — not any one player, not anyone
-reading the documents — knows which card is where, and a card's face is
-revealed only to whoever the table says may see it. No trusted dealer, no
-server.
+The **joint keeper**: what an object really is, kept in a **secure deck**
+that the players' own clients shuffle between them, as often as they like,
+so that nobody — not any one player, not anyone reading the documents —
+knows which card is where, and a card's face is revealed only to whoever the
+scene says may see it. No trusted dealer, no server.
 
-A deck is something you add to a [scene](../scene/README.md), and a scene can
-have any number: each hidden card names its deck (the tabletop trait
-`tabletop.hidden: { by: <deck url> }`), and this package is the tabletop's
-`tabletop:deck` provider for `secure-deck`
-docs. Drop a deck that isn't on a table yet onto a scene and its cards are
-laid out there, face down. The [tabletop](../tabletop/README.md) package sets
-tables up with a doc per deck, secure for a deck marked `secure` (Lost Cities'
-is).
+A keeper is an ordinary extension of a [scene](../scene/README.md)
+(scene/STAGE.md, "Keepers"), attached to objects by its own trait:
+
+```
+"card-table.kept": { by: <secure deck url>, slot: <position in the deck> }
+```
+
+So a scene that uses it lists this package like any other, and someone who
+arrives by link without it is offered it. It names no other package: who is
+playing comes from the `roster` convention (whoever owns seats), who may see
+what from the stage's `api.audience` (whatever policies are running: a
+table's hands and face-up cards), and whatever handles kept things (a
+table's Shuffle) finds it through the `keeper` convention. Setup code finds
+it by its plugin's `keeper: "joint"` and calls its module's
+`contain({ repo }, { title, items })`.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -26,7 +33,7 @@ pnpm bench [cards] [players]     # what a shuffle costs on this machine
 |---|---|---|
 | `patchwork:datatype` | `secure-deck` | a deck (unlisted: a table makes it) |
 | `patchwork:tool` | `secure-deck` | the deck on its own: shuffles under way and waiting, who is in it, how many keys each has handed over. No faces. |
-| `tabletop:deck` | `secure-deck` | a table's resolver for this deck's cards, and how to lay the deck out when it's dropped on a table |
+| `scene:extension` | `card-table` | the joint keeper (`src/keeper.js`): trait `card-table.kept`, `keeper: "joint"` |
 
 ## How it works
 
@@ -55,23 +62,24 @@ in one fixed group: the quadratic residues of RFC 3526's 2048-bit safe prime.
   asked for together run one after another.
 - **Reveal.** To see a card you need every player's key for it, at its
   current epoch. A player's client hands over its key only when the host says
-  another player may see that card: sealed to that player for a card in their
-  hand, in the open for a card face up on the table. In a scene that's the
-  table's own rule (tabletop/README, "Tables"): a card in your seat's
-  zone, or face up outside every zone. There are no requests: nobody can ask
-  for a card they can't see, and every reveal follows something visible at
-  the table. ("Face up" is the table's too: the card's +Y against the up of
-  the frame it lies in, so a table aboard a heeling ship deals the same keys
-  on every peer whatever she does.)
-- **What you can't see.** A card whose face your client can't show you yet
-  (another seat's hand, or its keys still on their way) is drawn by tabletop
-  as its back face down and, face up, as a privacy face: one generic picture
-  (a frosted card with a padlock) the table makes once, sized from the card's
-  public bounds. It comes from the scene alone, never from this deck: nothing
-  secret, not even which card, goes into it. The one thing the resolver adds
-  is `dealt()`: whether the deck is playing and its first shuffle is done,
-  read from the doc's public phase and epochs. Until then every card shows
-  its back, since none is anyone's yet.
+  another player may see that card: sealed to that player when the audience
+  is some players, in the open when it is everyone. In a scene that is the
+  stage's `api.audience` for the card's object, as this client reads the doc
+  (scene/STAGE.md, "Audience"): at a table, a card in your seat's hand, or
+  face up outside every hand. There are no requests: nobody can ask for a
+  card they can't see, and every reveal follows a change to the scene
+  everyone can see. When the audience is **unknown** (a package the scene
+  lists isn't loaded in this client, so one of its policies may be missing),
+  this client hands over nothing at all, and shows nothing.
+- **What you see** is by the one rule keepers share (`src/rule.js`): a
+  card's own look (its back) when it isn't turned toward you (face down; in
+  another seat's hand) or nothing can be said yet (not dealt; audience
+  unknown); the item when you're in its audience and your client has every
+  key; the stage's veil when it is turned toward you and not shown yet (its
+  keys on their way) or screened from you. The veil is the stage's drawing,
+  made from the object's public bounds: nothing of the deck reaches it.
+  Until the players' first shuffle is done every card is its own back, since
+  none is anyone's yet.
 
 Cards are encoded as squares, so they and everything they encrypt to are
 quadratic residues: nothing about a card's residuosity or order survives
@@ -90,11 +98,9 @@ page while it runs.
   "@patchwork": { type: "secure-deck" },
   title: string,
   group: "rfc3526-2048",
-  faces: any[],                    // what the cards are, public; only which is where is secret.
-                                   // A scene puts { sourceUrl, name } here.
-  back: { sourceUrl, name, bounds? } | null,   // what a hidden card looks like (to lay it out)
-  slots: { [slotId]: number },     // which position each of the host's things is (a scene's
-                                   // object ids); empty until the deck is on a table
+  faces: any[],                    // what the deck holds, public; only which is where is secret.
+                                   // A scene puts { sourceUrl, name } here. Card k is position k:
+                                   // a scene object names its position in its own trait
   phase: "waiting" | "playing",
   participants: { id: string, exchangeKey: string /* hex G^x */ }[],   // turn order; fixed once playing
   cards: string[] | null,          // hex; card k is locked under every participant's key for (k, epochs[k])
@@ -106,9 +112,10 @@ page while it runs.
 Envelope = { Y: string /* hex G^y */, iv: string, ct: string }   // DH in the group + AES-GCM, base64
 ```
 
-Another package may write a new deck doc in this shape (tabletop does, rather
-than importing this one): from `phase` on it starts as `"waiting"`, `[]`,
-`null`, `{}`, `[]`, `null`, `{}`.
+A new deck is made by `contain` (or `newDeckDoc`): from `phase` on it starts
+as `"waiting"`, `[]`, `null`, `{}`, `[]`, `null`, `{}`. The deck knows
+nothing of the scene's objects: which object is which position is the
+object's own trait, in the scene doc.
 
 ## Using it without a scene
 
@@ -120,33 +127,59 @@ function that fetches them):
   playing, start a queued shuffle, take a turn, hand over keys. Call it on
   every change. `players` are who must be in it; it waits while `openSeats`
   isn't empty (its players are fixed once it starts). `visibleTo(playerId)` is
-  the slot ids that player may see; `visibleTo(null)` those everyone may.
-- `shuffle(slotIds)` — ask for those cards to be shuffled among themselves.
-- `reveal(slotIds)` — the faces this client can decrypt now, and whose keys
+  the positions that player may see; `visibleTo(null)` those everyone may.
+- `shuffle(positions)` — ask for those cards to be shuffled among themselves.
+- `reveal(positions)` — the faces this client can decrypt now, and whose keys
   it's still waiting for.
 - `status({ players, openSeats, nameOf })` — a line for a status bar.
 
 A standalone deck view, or an agent taking a seat, would drive the same
 participant with its own idea of `visibleTo`.
 
+## Threat model
+
+What the joint keeper does and doesn't keep, as built.
+
+- **Someone who opens the documents** (the deck, the scene) sees what the
+  deck holds (the multiset of items), which object is which position, how
+  many times each position has been shuffled, the shuffles under way, and
+  who has handed keys to whom for which position. Never which item is where.
+- **A player's client** hands over its key for a position only when its own
+  reading of the scene says another may see it; with the audience unknown
+  (a listed package missing here), nothing. A client that ignores this
+  gives away only its own keys: a card still needs every other player's.
+- **A cheating client** can't read a card without the others' keys. It can
+  stall a shuffle (it needs every player, in turn), corrupt its pass without
+  proof (drop or duplicate cards: revealing every card at the end would show
+  it, but nothing checks), withhold a key it owes after seeing what it was
+  owed, and forge unsigned writes (a turn, an exchange key: visible in the
+  doc's history).
+- **Anyone who can write the scene** can change an audience: sit down in an
+  empty seat, carry a card into their own hand, turn it over. That is the
+  physical guarantee and no more: no disclosure without a change everyone
+  can see. It is not access control.
+- **A key handed over stays handed over.** A card that was face up in one
+  peer's view during sync lag may have been released. After the audience
+  shrinks, whoever saw a card still knows it; the lens goes back to closed.
+  A reshuffle voids old keys (the epoch goes up).
+- **The player's secret** is as private as their account doc (it hangs off
+  it); the sync server can read it.
+
 ## What it doesn't do (yet)
 
 - **Liveness.** A shuffle needs every player's client, in turn; to see a card,
   every other player's client must have been open since it moved to you. Two
-  people at the table: fine. One of them away: you wait (the scene says for
-  whom).
+  people at the table: fine. One of them away, or without a package the
+  scene lists: you wait (the HUD says for whom).
 - **The main thread.** The modular arithmetic runs on the page's main thread;
   it belongs in a worker.
-- **Malicious shufflers.** Nothing proves a player shuffled honestly: a
-  client could drop or duplicate cards in its pass. It can't read anyone's
-  cards by doing so, and revealing every card at the end would show it, but
-  nothing checks.
-- **Who wrote what.** Anyone can write the doc, so a turn or an exchange key
-  could be forged (visibly, in the doc's history). Keyhive's signed,
-  access-controlled docs would close that, and would also let the
-  player-secrets doc be readable by its owner's devices alone; today it is as
-  private as the account doc it hangs off.
-- **Players joining after the deal**, cards moving between decks.
+- **Proofs and signatures.** Nothing proves a player shuffled honestly, and
+  anyone can write the doc. Keyhive's signed, access-controlled docs would
+  close the second, and would also let the player-secrets doc be readable by
+  its owner's devices alone.
+- **Players joining after the deal** (participants are fixed at the first
+  shuffle: a seat taken over later can't decrypt), cards moving between
+  decks, a deck document laid out by dropping it on a scene.
 
 ## History
 

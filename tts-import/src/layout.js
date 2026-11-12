@@ -2,8 +2,8 @@
 //
 //   plan(save, options)                 what goes where, in TTS world space, and
 //                                       the distinct kinds to draw (kinds.js)
-//   secretsDocs(plan, built)            a plain-deck doc per hidden deck
-//   sceneDoc(plan, built, options)      the `scene` doc (scene/README.md)
+//   secrets(plan, built)                what each hidden deck's container is to hold
+//   sceneDoc(plan, built, options)      the `scene` doc (scene/README.md), and its seats
 //
 // `built` maps a kind key to { glbUrl, bounds } once the GLBs exist.
 //
@@ -16,15 +16,17 @@
 //     beside it (shown from the outline when wanted; costs nothing until then);
 //   - an object's other States are a hidden group where it is;
 //   - a table under it all (the mod's table image, if it has one) carrying the
-//     mod's free snap points; HandTriggers become seats (the tabletop
-//     package's scene trait tabletop.seats).
+//     mod's free snap points; HandTriggers become seats, which are whoever
+//     owns seats' to write (sceneDoc returns them; the importer has them
+//     laid: made-with.js).
 //
 // Hidden cards: a face-down card shows only its back (a kind drawn with the
-// back on both sides) and is named "Card"; what it really is goes in a
-// `plain-deck` doc (the tabletop package's), one per TTS deck (and one for
-// loose face-down cards). The scene object says which with the trait
-// tabletop.hidden: { by: <deck url> } (see hideObject: the one place that
-// knows that shape).
+// back on both sides) and is named "Card"; what it really is goes to a
+// keeper's container, one per TTS deck (and one for loose face-down cards).
+// The scene object is a card (the tabletop package's trait tabletop.card:
+// two-sided, shown to all when face up) bound to its slot of that container
+// by the keeper's own trait (see hideObject: the one place that knows that
+// shape).
 
 import { convertPosition, convertTransform, readTransform, ttsUp } from "./convert.js";
 import { CARD, kindKey, kindOf } from "./kinds.js";
@@ -34,9 +36,13 @@ import { DEFAULT_VIEW, emptyScene } from "./empty-scene.js";
 
 const r = (v, p = 5) => +Number(v).toFixed(p);
 
-/** The scene object's hidden-ness: the one function to change if that contract moves. */
-export function hideObject(obj, secretsUrl) {
-  obj.traits = { ...(obj.traits ?? {}), "tabletop.hidden": { by: secretsUrl } };
+/**
+ * The scene object's hidden-ness: the one function to change if that
+ * contract moves. A card, and its keeper's binding (what the keeper's
+ * `bind(slot)` gave: its own trait, naming the container and the slot).
+ */
+export function hideObject(obj, binding) {
+  obj.traits = { ...(obj.traits ?? {}), "tabletop.card": {}, ...binding };
   return obj;
 }
 
@@ -204,16 +210,23 @@ export function secretKeys(p) {
   return [...seen].map(([key, name]) => ({ key, name }));
 }
 
-/** The plain-deck docs: [{ key, doc }], to create before the scene. */
-export function secretsDocs(p, built, { title = p.title } = {}) {
+/**
+ * What each hidden group's container is to hold: [{ key, title, items, ids }],
+ * to be made (by a keeper) before the scene. Slot k holds items[k], which
+ * is what object ids[k] really is.
+ */
+export function secrets(p, built, { title = p.title } = {}) {
   return secretKeys(p).map(({ key, name }) => {
-    const objects = {};
+    const items = [];
+    const ids = [];
     for (const o of p.objects)
       if (o.secret?.by === key) {
         const glb = built.get(o.secret.key)?.glbUrl;
-        if (glb) objects[o.id] = { sourceUrl: glb, name: o.secret.name };
+        if (!glb) continue;
+        ids.push(o.id);
+        items.push({ sourceUrl: glb, name: o.secret.name });
       }
-    return { key, doc: { "@patchwork": { type: "plain-deck" }, title: `${title}: ${name}`, objects } };
+    return { key, title: `${title}: ${name}`, items, ids };
   });
 }
 
@@ -279,14 +292,17 @@ export function tableKind(p, extent) {
  * The scene doc.
  * @param {object} p           plan()
  * @param {Map} built          kind key → { glbUrl, bounds }
- * @returns {{ scene: object, stats: { tableY: number, skipped: number } }}
+ * @returns {{ scene: object, seats: object, stats: { tableY: number, skipped: number } }}
+ *   seats: { [seatId]: { name, camera } }, for whoever owns seats to lay
  * @param {{ unit: number, infoUrl?: string, infoToolId?: string, title?: string,
- *           secretUrls?: Map<string, string>, pdfUrls?: Map<string, string>,
+ *           bindings?: Map<string, object>, pdfUrls?: Map<string, string>,
  *           table?: { key: string, extent }, sceneImportUrl?: string | null }} o
+ *   bindings: object id → its keeper's binding (the traits bind(slot) gave);
+ *   a hidden object without one is left as its back, a card nothing keeps;
  *   sceneImportUrl: the scene package's importUrl as registered; what of it
  *   can be shared goes on the doc as @patchwork.suggestedImportUrl
  */
-export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, title = p.title, secretUrls = new Map(), pdfUrls = new Map(), table = null, sceneImportUrl = null }) {
+export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, title = p.title, bindings = new Map(), pdfUrls = new Map(), table = null, sceneImportUrl = null }) {
   const tableY = tableHeight(p, built, unit);
   const objects = {};
   const order = [];
@@ -341,7 +357,7 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
       ...(o.tags ? { tags: [...o.tags] } : {}),
       ...(b.bounds ? { hint: { bounds: b.bounds } } : {}),
     };
-    if (o.secret && secretUrls.get(o.secret.by)) hideObject(obj, secretUrls.get(o.secret.by));
+    if (o.secret) hideObject(obj, bindings.get(o.id) ?? {});
     objects[o.id] = obj;
     order.push(o.id);
   }
@@ -356,7 +372,7 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     const len = Math.hypot(dx, dz) || 1;
     const eye = [s.position[0] + (dx / len) * 6, tableY + 28, s.position[2] + (dz / len) * 6];
     const target = [s.position[0] - (dx / len) * 14, tableY, s.position[2] - (dz / len) * 14];
-    seats[sid] = { name: s.color, player: null, camera: { position: convertPosition(eye, { unit, tableY }), target: convertPosition(target, { unit, tableY }) } };
+    seats[sid] = { name: s.color, camera: { position: convertPosition(eye, { unit, tableY }), target: convertPosition(target, { unit, tableY }) } };
   }
   const span = Math.max(ext.hx, ext.hz) * unit;
   const centre = convertPosition([ext.cx, tableY, ext.cz], { unit, tableY });
@@ -368,14 +384,16 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     title,
     objects,
     order,
-    traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
+    traits: {},
     view: {
       ...DEFAULT_VIEW, units: "cm", grid: false, axes: false, tool: "hand",
-      // a table with seats is for playing: it starts there (the scene's
-      // activity switcher gets anyone into editing)
-      ...(Object.keys(seats).length ? { activity: "play" } : {}),
+      // a table with cards is for playing: it starts there (the scene's
+      // activity switcher gets anyone into editing). Cards are what put play
+      // on offer (the table's extension runs on them); a table with none
+      // opens in the editor, in the hand.
+      ...(Object.values(objects).some((o) => o.traits?.["tabletop.card"]) ? { activity: "play" } : {}),
       home: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
     },
   });
-  return { scene, stats: { tableY, skipped } };
+  return { scene, seats, stats: { tableY, skipped } };
 }

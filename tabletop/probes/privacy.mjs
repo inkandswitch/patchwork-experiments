@@ -1,21 +1,28 @@
-// What a hidden card looks like to each of two people, in headless Chrome:
-// its back face down, its face when it's theirs to see, and the privacy face
-// (privacy.js) when it's face up but not theirs.
+// What a kept card looks like to each of two people, by real key presses:
+// its own back when it isn't turned toward them (face down; in the other
+// seat's hand, whichever way up), what it is when it's theirs to see, and the
+// stage's veil only when it's turned toward them and not shown yet (its keys
+// on their way).
 //
-//   (in scene/, tabletop/ and card-table/) pnpm build
+//   (in scene/, tabletop/, card-table/ and keep/) pnpm build
 //   node probes/privacy.mjs --part secure|plain [--shots <dir>] [--show]
 //
 // privacy-probe.html, two views A (Ana) and B (Ben) of one doc, real mouse
-// and keys over CDP.
-// - secure: a Lost Cities table from the template, A in Player 1 and B in
-//   Player 2. Once dealt, A sees its hand's faces, B's hand as privacy faces
-//   and the pile as backs (and B the other way round); the scene has one
-//   privacy file. A flips a card of its hand face down with F: it's the back
-//   to both. B draws with D while A's writes to the deck are held back: the
-//   new card is the privacy face to B until A's key reaches it, then its face.
-// - plain: a Lost Cities table with a plain deck: the plain-deck HUD warning;
-//   the pile is backs to both; A draws two: faces to A, privacy to B; A flips
-//   one face down: the back to B; the pile's top flipped face up: its face to both.
+// and keys.
+// - secure: an empty scene started from the Lost Cities template (its deck
+//   kept by the joint keeper); A sits in Player 1 (every card its back until
+//   the deal), B in Player 2. Once dealt, A sees its hand's faces, B's hand
+//   as backs and the pile as backs, B the mirror; no veil anywhere, and no
+//   file or doc write was made to hide anything. A flips a card of its hand
+//   face down with F: still its back to B. B draws with D while A's deck
+//   writes are held back: the new card is the veil to B until A's key
+//   reaches it, then its face; to A it is a back throughout. A turns the
+//   pile's top face up: the veil to B until A's key arrives, then its face
+//   to both.
+// - plain: a Lost Cities table whose deck is kept in the open (the plain
+//   keeper): its HUD line; the pile is backs to both; A draws two: faces to
+//   A, backs to B; A flips one: its back; the pile's top turned face up is
+//   its face to both.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -25,7 +32,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const PART = arg("--part") ?? "secure";
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-privacy"));
@@ -73,7 +80,7 @@ async function seatBoth({ secure }) {
     check("A seated, B not: the deck waits", await until(`seats().p1.player === ${J(viewers.a)}`), await P("seats()"));
     await sleep(800);
     const A = await P("tally('a')");
-    check("before the deal A's own hand shows backs, not privacy faces", A.p1 && A.p1.back > 0 && !A.p1.private && !A.p1.face && !(A.p2?.private) && !(A.pile?.private), A);
+    check("before the deal every card is its back to A: its own hand too, and no veil", A.p1 && A.p1.back > 0 && !A.p1.veil && !A.p1.face && !(A.p2?.veil) && !(A.pile?.veil), A);
     await shot("waiting");
   }
   await P("pick('b', 'p2')");
@@ -85,22 +92,24 @@ async function seatBoth({ secure }) {
   mark("seated");
 }
 
-/** what each view shows: A's own hand faces, B's hand private, the pile backs (and B the mirror) */
-async function threeStates(tag) {
-  // until the privacy file is made and every view's lens settled
-  await until("where().p2.every((id) => __p.state('a', id) === 'private') && __p.where().p1.every((id) => __p.state('b', id) === 'private')", 15_000);
+/** what each view shows: its own hand's faces, the other hand's backs, the pile's backs; no veil anywhere */
+async function settled(tag) {
+  await until("where().p1.every((id) => __p.state('a', id) === 'face') && __p.where().p2.every((id) => __p.state('b', id) === 'face')", 15_000);
   const w = await P("where()");
   const A = await P("tally('a')"), B = await P("tally('b')");
   check(`${tag}A sees its own hand's faces (${w.p1.length})`, A.p1 && A.p1.face === w.p1.length, A);
-  check(`${tag}A sees B's hand as privacy faces, not backs (${w.p2.length})`, A.p2 && A.p2.private === w.p2.length && !A.p2.back, A);
-  check(`${tag}A sees the pile as backs`, A.pile && A.pile.back > 0 && !A.pile.face && !A.pile.private, A);
+  check(`${tag}A sees B's hand as backs, not veils (${w.p2.length})`, A.p2 && A.p2.back === w.p2.length && !A.p2.veil && !A.p2.face, A);
+  check(`${tag}A sees the pile as backs`, A.pile && A.pile.back > 0 && !A.pile.face && !A.pile.veil, A);
   check(`${tag}B sees its own hand's faces`, B.p2 && B.p2.face === w.p2.length, B);
-  check(`${tag}B sees A's hand as privacy faces`, B.p1 && B.p1.private === w.p1.length && !B.p1.back, B);
-  check(`${tag}B sees the pile as backs`, B.pile && B.pile.back > 0 && !B.pile.face && !B.pile.private, B);
-  // and what's drawn is the privacy GLB (its frosted field and padlock), the face GLB, or the object's own back
-  const drawnOk = await until(`where().p2.every((id) => __p.drawn('a', id) === 'privacy') && __p.where().p1.every((id) => __p.drawn('b', id) === 'privacy') && __p.where().p1.every((id) => __p.drawn('a', id) && __p.drawn('a', id) !== 'privacy')`, 20_000);
-  check(`${tag}…and that is what each view has drawn (the privacy GLB's frost and lock)`, drawnOk, { a: await P(`drawnAll('a', ${J([...w.p1, ...w.p2])})`), b: await P(`drawnAll('b', ${J([...w.p1, ...w.p2])})`), pileA: await P(`drawn('a', ${J((await P("pile()"))[0])})`) });
-  return w;
+  check(`${tag}B sees A's hand as backs, not veils`, B.p1 && B.p1.back === w.p1.length && !B.p1.veil && !B.p1.face, B);
+  check(`${tag}B sees the pile as backs`, B.pile && B.pile.back > 0 && !B.pile.face && !B.pile.veil, B);
+  // and what's drawn: the other hand is the object's own back GLB in each view, one's own hand never that
+  const pileTop = (await P("pile()"))[0];
+  await until(`drawn('a', ${J(pileTop)}) && __p.drawn('a', ${J(pileTop)}) !== '?'`, 30_000);
+  const back = await P(`drawn('a', ${J(pileTop)})`);
+  const drawnOk = await until(`where().p2.every((id) => __p.drawn('a', id) === ${J(back)}) && __p.where().p1.every((id) => __p.drawn('b', id) === ${J(back)}) && __p.where().p1.every((id) => __p.drawn('a', id) && __p.drawn('a', id) !== ${J(back)} && __p.drawn('a', id) !== 'veil')`, 20_000);
+  check(`${tag}…and that is what each view has drawn (the back's own drawing: ${back})`, drawnOk && !!back && back !== "veil", { a: await P(`drawnAll('a', ${J([...w.p1, ...w.p2])})`), b: await P(`drawnAll('b', ${J([...w.p1, ...w.p2])})`), back });
+  return { ...w, back };
 }
 
 /** close up on a tray in each view (`at`: "across", each at the other's; "a" / "b": both at that seat's), then back */
@@ -126,13 +135,15 @@ try {
     await P("start('a', 'tabletop.lost-cities')");
     check("the table is laid out", await until("pile().length > 0", 30_000));
     // (nobody is seated yet and the deck isn't dealt: every card its back)
-    report.beforeSeated = { privacyKeys: await P("privateKeys()"), a: await P("tally('a')") };
+    report.beforeSeated = { a: await P("tally('a')") };
+    const madeBefore = await P("made()");
     await P("open('b')");
     await seatBoth({ secure: true });
-    const w = await threeStates("");
-    const keys = await P("privateKeys()");
-    check("the scene has exactly one privacy file in doc.assets", keys.length === 1, { keys, made: await P("filesMade()") });
-    report.privacy = { keys, made: await P("filesMade()") };
+    const w = await settled("");
+    // hiding made nothing: no file for a stand-in, no asset key, no doc of any kind since the table was laid out
+    const madeAfter = await P("made()");
+    check("nothing was made or written to hide anything: no file, no asset, the same documents as before anyone sat", J(madeAfter) === J(madeBefore) && (await P("privateKeys()")).length === 0, { madeBefore, madeAfter, keys: await P("privateKeys()") });
+    report.made = madeAfter;
     await sleep(500);
     await shot("seated");
     await closeups("closeup");
@@ -145,12 +156,12 @@ try {
     await sleep(600);
     check("A: still its card by the zone rule (its face GLB) but drawn upside down: what shows is its back", (await P(`state('a', ${J(X)})`)) === "face" && (await P(`shownUp('a', ${J(X)})`)) === false, { state: await P(`state('a', ${J(X)})`), shownUp: await P(`shownUp('a', ${J(X)})`) });
     // (no lens: the object's own GLB, the card back drawn on both sides)
-    check("B: its back (no lens: the back GLB), not the privacy face", await until(`state('b', ${J(X)}) === 'back'`, 5000) && (await P(`drawn('b', ${J(X)})`)) === "diamond,card", { state: await P(`state('b', ${J(X)})`), drawn: await P(`drawn('b', ${J(X)})`) });
-    check("…and the rest of A's hand is still the privacy face to B", (await P("where()")).p1.filter((id) => id !== X).every((id) => true) && (await P(`where().p1.filter((id) => id !== ${J(X)}).every((id) => __p.state('b', id) === 'private')`)), await P("tally('b')"));
+    check("B: its back, as before (no look: the object's own GLB)", await until(`state('b', ${J(X)}) === 'back'`, 5000) && (await P(`drawn('b', ${J(X)})`)) === w.back, { state: await P(`state('b', ${J(X)})`), drawn: await P(`drawn('b', ${J(X)})`) });
+    check("…and so is the rest of A's hand to B", await P(`where().p1.every((id) => __p.state('b', id) === 'back')`), await P("tally('b')"));
     await closeups("flipped", "a");
     mark("flipped", { X });
 
-    // ── B draws while A's writes to the deck are held back: the privacy face until A's key arrives ──
+    // ── B draws while A's writes to the deck are held back: the veil until A's key arrives ──
     await P("slow('a', 4000)");
     const top = (await P("pile()"))[0];
     const draw = await press("b", top, "d", "/Draw to my hand/");
@@ -158,18 +169,19 @@ try {
     const landed = await until(`where().p2.includes(${J(top)})`, 5000);
     mark("B's draw landed");
     check("the card lands in B's tray, face up", landed && (await P(`faceUp(${J(top)})`)), await P(`transform(${J(top)})`));
-    const pend = await until(`state('b', ${J(top)}) === 'private' && __p.drawn('b', ${J(top)}) === 'privacy'`, 3000);
-    check("while A's key is on its way, B sees the new card as the privacy face (not the back)", pend, { state: await P(`state('b', ${J(top)})`), drawn: await P(`drawn('b', ${J(top)})`) });
-    check("…and so does A", (await P(`state('a', ${J(top)})`)) === "private", await P(`state('a', ${J(top)})`));
+    const pend = await until(`state('b', ${J(top)}) === 'veil' && __p.drawn('b', ${J(top)}) === 'veil'`, 3000);
+    check("while A's key is on its way, B sees the new card as the veil (theirs to see, not known yet), drawn by the stage", pend, { state: await P(`state('b', ${J(top)})`), drawn: await P(`drawn('b', ${J(top)})`) });
+    check("…to A it is a back: in B's hand", (await P(`state('a', ${J(top)})`)) === "back", await P(`state('a', ${J(top)})`));
     await closeups("drawing", "b");
     const arrived = await until(`state('b', ${J(top)}) === 'face'`, 20_000);
     mark("B's face arrived");
     check("once A's key arrives, B sees its face", arrived, await P(`log(${J(top)})`));
-    check("…A still the privacy face", (await P(`state('a', ${J(top)})`)) === "private", await P(`state('a', ${J(top)})`));
+    check("…A still its back", (await P(`state('a', ${J(top)})`)) === "back", await P(`state('a', ${J(top)})`));
+    check("…and B's view has drawn the face, the veil gone", await until(`drawn('b', ${J(top)}) !== 'veil' && __p.drawn('b', ${J(top)}) !== ${J(w.back)}`, 10_000), await P(`drawn('b', ${J(top)})`));
     const seq = (await P(`log(${J(top)})`)).filter((e) => e.w === "b");
     report.slowDraw = { card: top, b: seq };
-    const privMs = (() => { const i = seq.findIndex((e) => e.s === "private"); const j = seq.findIndex((e) => e.s === "face"); return i >= 0 && j > i ? seq[j].t - seq[i].t : null; })();
-    check("B's view went back → private → face, the privacy face for the delivery's length", seq.map((e) => e.s).join(">").endsWith("private>face") && privMs > 1000, { seq, privMs });
+    const privMs = (() => { const i = seq.findIndex((e) => e.s === "veil"); const j = seq.findIndex((e) => e.s === "face"); return i >= 0 && j > i ? seq[j].t - seq[i].t : null; })();
+    check("B's view went back → veil → face, the veil for the delivery's length", seq.map((e) => e.s).join(">").endsWith("veil>face") && privMs > 1000, { seq, privMs });
     await P("slow('a', 0)");
     await sleep(400);
     await closeups("drawn", "b");
@@ -180,15 +192,32 @@ try {
     check("B draws again (no delay)", draw2.ok && (await until(`where().p2.includes(${J(top2)}) && __p.state('b', ${J(top2)}) === 'face'`, 15_000)), draw2);
     const seq2 = (await P(`log(${J(top2)})`)).filter((e) => e.w === "b");
     report.fastDraw = { card: top2, b: seq2 };
-    check("…with no back in its hand: the privacy face, then its face", !seq2.slice(seq2.findIndex((e) => e.s !== "back")).some((e) => e.s === "back") && seq2.at(-1).s === "face", seq2);
+    check("…with no back in its hand once it lands: the veil, then its face", !seq2.slice(seq2.findIndex((e) => e.s !== "back")).some((e) => e.s === "back") && seq2.at(-1).s === "face", seq2);
+
+    // ── a card turned face up out on the table, A's keys held back: the veil to B, then its face to both ──
+    await P("slow('a', 3000)");
+    const top3 = (await P("pile()"))[0];
+    const f3 = await press("a", top3, "f", "/Flip/");
+    check("A turns the pile's top face up (F)", f3.ok && (await until(`faceUp(${J(top3)}) === true`, 5000)), f3);
+    check("face up, its keys not all here: the veil to B (and never its back)", await until(`state('b', ${J(top3)}) === 'veil' && __p.drawn('b', ${J(top3)}) === 'veil'`, 3000), { state: await P(`state('b', ${J(top3)})`), drawn: await P(`drawn('b', ${J(top3)})`) });
+    await closeups("faceup-veiled", "b");
+    check("…then its face to both", await until(`state('a', ${J(top3)}) === 'face' && __p.state('b', ${J(top3)}) === 'face'`, 20_000), { a: await P(`log(${J(top3)})`) });
+    await P("slow('a', 0)");
+    check("still nothing made or written to hide anything", J(await P("made()")) === J(madeBefore) && (await P("privateKeys()")).length === 0, await P("made()"));
+    check("the scene lists the packages it is made of: three (the scene's, the table's, the keeper's)", (await P("packages()")).length >= 0, await P("packages()"));
+    await closeups("faceup", "b");
   }
 
   if (PART === "plain") {
     await seatBoth({ secure: false });
-    check("the deck is a plain one", (await P("deckType()")) !== "secure-deck", await P("deckType()"));
-    check("the plain-deck HUD warning is there, in both views", await until("hud('a').some((t) => /can read every card, hands included/.test(t)) && __p.hud('b').some((t) => /can read every card, hands included/.test(t))", 5000), { a: await P("hud('a')"), b: await P("hud('b')") });
+    check("the deck is kept in the open: the plain keeper's container", (await P("deckType()")) === "keep-plain", await P("deckType()"));
+    check("the keeper says so in both views' HUD", await until("hud('a').some((t) => /kept in the open: anyone who opens its document can read everything/.test(t)) && __p.hud('b').some((t) => /kept in the open: anyone who opens its document can read everything/.test(t))", 5000), { a: await P("hud('a')"), b: await P("hud('b')") });
+    const madeBefore = await P("made()");
     const t0 = { a: await P("tally('a')"), b: await P("tally('b')") };
-    check("the pile is backs to both", t0.a.pile?.back > 0 && !t0.a.pile.face && !t0.a.pile.private && t0.b.pile?.back > 0 && !t0.b.pile.face && !t0.b.pile.private, t0);
+    check("the pile is backs to both", t0.a.pile?.back > 0 && !t0.a.pile.face && !t0.a.pile.veil && t0.b.pile?.back > 0 && !t0.b.pile.face && !t0.b.pile.veil, t0);
+    const pileTop = (await P("pile()"))[0];
+    await until(`drawn('a', ${J(pileTop)}) && __p.drawn('a', ${J(pileTop)}) !== '?'`, 30_000);
+    const back = await P(`drawn('a', ${J(pileTop)})`);
     // A draws two
     const drawn = [];
     for (let i = 0; i < 2; i++) {
@@ -200,22 +229,23 @@ try {
       await sleep(300);
     }
     check("A sees their faces", await until(`states('a', ${J(drawn)}) && Object.values(__p.states('a', ${J(drawn)})).every((s) => s === 'face')`, 10_000), await P(`states('a', ${J(drawn)})`));
-    check("B sees them as privacy faces", (await until(`where().p1.every((id) => __p.state('b', id) === 'private' && __p.drawn('b', id) === 'privacy')`, 15_000)), { states: await P(`states('b', ${J(drawn)})`), drawn: await P(`drawnAll('b', ${J(drawn)})`) });
-    check("the scene has one privacy file", (await P("privateKeys()")).length === 1, await P("privateKeys()"));
+    check("B sees A's hand as backs: every card, the two drawn among them", (await until(`where().p1.every((id) => __p.state('b', id) === 'back' && __p.drawn('b', id) === ${J(back)})`, 15_000)), { states: await P(`states('b', ${J(drawn)})`), drawn: await P(`drawnAll('b', ${J(drawn)})`) });
+    check("no veil anywhere, in either view", !Object.values(await P("tally('a')")).some((t) => t.veil) && !Object.values(await P("tally('b')")).some((t) => t.veil), { a: await P("tally('a')"), b: await P("tally('b')") });
     await closeups("drawn", "a");
     // A flips one face down in its tray
     const X = drawn[0];
     const flip = await press("a", X, "f", "/Flip/");
     check("A flips one face down in its tray (F)", flip.ok && (await until(`faceUp(${J(X)}) === false`, 5000)), flip);
     // (the lens changes with the doc; the viewport swaps what it draws a moment later)
-    check("…its back to B", await until(`state('b', ${J(X)}) === 'back' && __p.drawn('b', ${J(X)}) === "diamond,card"`, 5000), { state: await P(`state('b', ${J(X)})`), drawn: await P(`drawn('b', ${J(X)})`) });
+    check("…its back to B", await until(`state('b', ${J(X)}) === 'back' && __p.drawn('b', ${J(X)}) === ${J(back)}`, 5000), { state: await P(`state('b', ${J(X)})`), drawn: await P(`drawn('b', ${J(X)})`) });
     check("…and to A, its card turned over (the face GLB upside down: its back panel up)", (await P(`state('a', ${J(X)})`)) === "face" && (await P(`shownUp('a', ${J(X)})`)) === false, { state: await P(`state('a', ${J(X)})`), up: await P(`shownUp('a', ${J(X)})`) });
-    check("…the other is still the privacy face to B", (await P(`state('b', ${J(drawn[1])})`)) === "private", await P(`state('b', ${J(drawn[1])})`));
+    check("…the other is still its back to B", (await P(`state('b', ${J(drawn[1])})`)) === "back", await P(`state('b', ${J(drawn[1])})`));
     // the pile's top turned face up, out on the table: everyone's to see
     const top = (await P("pile()"))[0];
     const f2 = await press("a", top, "f", "/Flip/");
     check("A flips the pile's top face up (F)", f2.ok && (await until(`faceUp(${J(top)}) === true`, 5000)), f2);
     check("…its face to both", await until(`state('a', ${J(top)}) === 'face' && __p.state('b', ${J(top)}) === 'face'`, 5000), { a: await P(`state('a', ${J(top)})`), b: await P(`state('b', ${J(top)})`) });
+    check("nothing was made or written to hide anything", J(await P("made()")) === J(madeBefore) && (await P("privateKeys()")).length === 0, { before: madeBefore, after: await P("made()") });
     report.plain = { a: await P("tally('a')"), b: await P("tally('b')") };
     await sleep(500);
     await shot("states");

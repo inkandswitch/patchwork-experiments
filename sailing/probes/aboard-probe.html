@@ -3,8 +3,8 @@
 <title>aboard probe</title>
 <!-- Driven by probes/aboard-run.mjs (checks) and probes/publish-aboard.mjs
      (publishing what it builds). The BUILT scene tool (scene/dist) with the
-     BUILT sailing, tabletop and card-table plugins (sailing/dist,
-     tabletop/dist, card-table/dist: a secure deck) in a stub registry, on an
+     BUILT sailing, tabletop and keeper plugins (sailing/dist,
+     tabletop/dist, card-table/dist: the joint keeper; keep/dist) in a stub registry, on an
      in-memory repo, on an EMPTY scene. Two views of one doc, A (Ana) and B
      (Ben), each view's broadcasts reaching only the other, a few ms late.
      build() makes the scene the way a person would, through the stage's own
@@ -77,7 +77,7 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -103,9 +103,11 @@ try {
   const objects = () => scene.doc().objects ?? {};
   const byName = (n) => Object.entries(objects()).find(([, o]) => o.name === n)?.[0] ?? null;
   const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
-  const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
+  // a card's keeper binding, whichever keeper keeps it ({ by, slot } under the keeper's own trait)
+  const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
+  const deckUrl = () => Object.values(objects()).map((o) => keptBy(o)?.by).find(Boolean) ?? null;
   const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
-  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const select = (w) => hosts[w].querySelector(".seats-pick");
   const ids = {};
   /** any running extension's api in a view: the stage's public calls (api.part) */
   const apiOf = (w) => {
@@ -113,7 +115,7 @@ try {
     return null;
   };
   const ctx = (w) => dbg[w]?.host.record("sailing")?.instance?.debug ?? null;
-  const hidden = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
+  const hidden = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.card"]);
   const zoneOf = (id) => {
     const s = dbg.a.scene();
     const m = s.world(id);
@@ -176,7 +178,7 @@ try {
     /** the doc's shape, for the checks */
     shape() {
       const o = objects();
-      const pieces = Object.entries(o).filter(([id, x]) => x.kind !== "group" && id !== ids.hull && id !== ids.table && (x.traits?.["tabletop.hidden"] || x.traits?.["tabletop.zone"] || id === ids.board));
+      const pieces = Object.entries(o).filter(([id, x]) => x.kind !== "group" && id !== ids.hull && id !== ids.table && (x.traits?.["tabletop.card"] || x.traits?.["tabletop.zone"] || id === ids.board));
       return {
         title: scene.doc().title,
         activity: scene.doc().view?.activity ?? null,
@@ -185,7 +187,7 @@ try {
         tableLocked: !!o[ids.table]?.locked,
         pieces: pieces.length,
         piecesUnderTable: pieces.filter(([, x]) => x.parent === ids.table).length,
-        seats: scene.doc().traits?.["tabletop.seats"] ?? null,
+        seats: scene.doc().traits?.["scene.seats"] ?? null,
         deckType: deck()?.["@patchwork"]?.type ?? null,
         deckTitle: deck()?.title ?? null,
         sail: o[ids.rig]?.traits?.["sailing.sail"] ?? null,
@@ -193,21 +195,19 @@ try {
         shipLocked: !!o[ids.hull]?.locked,
       };
     },
-    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    seats: () => scene.doc().traits?.["scene.seats"] ?? {},
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
     immersive: (w) => !!dbg[w]?.local.get().immersive,
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
-    // a face is a look that isn't tabletop's privacy art (doc.assets "tabletop/private-card@…"), which a view
-    // shows for a face-up card kept from it
+    // a face is a look with a source (what the card really is); a veil (the stage's stand-in) and a back (no look) aren't
     faces(w) {
       const looks = dbg[w]?.looks();
-      const assets = scene.doc().assets ?? {};
-      const privacy = new Set(Object.keys(assets).filter((k) => k.startsWith("tabletop/private-card@")).map((k) => assets[k].url));
-      return [...(looks?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"] && !privacy.has(looks.get(id)?.sourceUrl));
+      return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; });
     },
+    veils(w) { const looks = dbg[w]?.looks(); return hidden().filter((id) => looks?.get?.(id)?.veil === true); },
     claims: (w) => dbg[w].claims().map((c) => c.kind),
     simulating: (w) => !!ctx(w)?.sim.simulating(),
     loaded(w) {
@@ -252,7 +252,7 @@ try {
       return m ? { position: apply(m, c.position), target: apply(m, c.target) } : null;
     },
     /** the name tags a view shows: text and page px */
-    tags: (w) => [...hosts[w].querySelectorAll(".label.tabletop-seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
+    tags: (w) => [...hosts[w].querySelectorAll(".label.seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
     me: (w) => ctx(w)?.crew.me() ?? null,
     walker: (w) => { const s = ctx(w)?.crew.walker?.(); return s ? { mode: s.mode, ship: s.ship ?? null } : null; },
     /** what the sailing HUD says in a view: its state, the way-in button, the keys line, and where its panel is */

@@ -1,36 +1,34 @@
-// Who may see what at a table. Pure, over a scene snapshot (the scene's
-// extension api.scene(): { objects, world(id), toLocal(id, point), traits }).
+// Who may see what at a table: this package's policy, as the stage's
+// `audience` contribution (scene/STAGE.md, "Audience"). Pure, over a scene
+// snapshot (api.scene(): { objects, world(id), toLocal(id, point), parents })
+// and who sits where (the `roster` convention's seats: [{ id, viewer }]).
 //
-// A hidden object (trait tabletop.hidden: { by: <deck url> }) is drawn as
-// itself — its public look, a card back say — unless this viewer may see what
-// it really is:
-//   - it is in a private zone (an object with trait tabletop.zone: { seat,
-//     min, max }, a box in that object's own frame): only whoever sits in
-//     that seat sees it, whichever way up it is;
-//   - otherwise, it is face up (faceUpIn: its own +Y points the way its
-//     parent's does, the world's at the root): everyone does.
-// Anything else stays hidden. The seats are the scene's trait tabletop.seats:
-// { [seatId]: { name, player, camera? } }.
+// Two physical things, and nothing about any game:
+//
+//   - a HAND (an object with trait tabletop.zone: { seat, min, max }, a box
+//     in that object's own frame): whatever lies in it (its origin does) is
+//     turned toward whoever sits in that seat and screened from everyone
+//     else, whichever way up it is:  { show: [player], only: [player] }.
+//     A hand nobody sits at shows to nobody:  { show: [], only: [] }.
+//   - a CARD (trait tabletop.card): two-sided. Lying face up outside every
+//     hand, it shows to everyone:  { show: "all" }. Face down it shows to
+//     nobody (no answer).
+//
+// So another seat's hand is never turned toward you: a keeper shows you its
+// cards' own backs there (which back it is, is real information when a table
+// has several decks), and its veil only for something face up that isn't
+// yours to see. The policy says who; what is then drawn is the keeper's.
+//
+// It reads the doc alone: never poses, presence or claims, so every peer
+// answers alike and nothing flickers as a ship carrying the table moves.
 
 export const ZONE = "tabletop.zone";
-export const HIDDEN = "tabletop.hidden";
-export const SEATS = "tabletop.seats";
+export const CARD = "tabletop.card";
 
-const ID = /automerge:([1-9A-HJ-NP-Za-km-z]{20,60})/;
+/** Is this object a card: two-sided, shuffled and drawn in piles? */
+export const isCard = (o) => !!o?.traits && typeof o.traits === "object" && Object.hasOwn(o.traits, CARD) && o.traits[CARD] != null;
 
-/** An automerge URL without heads or anything else, else null. */
-export function docUrl(v) {
-  const m = typeof v === "string" ? ID.exec(v) : null;
-  return m ? `automerge:${m[1]}` : null;
-}
-
-/** The deck an object belongs to (its url), or null if it isn't hidden. */
-export const hiddenBy = (o) => docUrl(o?.traits?.[HIDDEN]?.by);
-
-/** The scene's seats. */
-export const seatsOf = (scene) => scene?.traits?.[SEATS] ?? {};
-
-/** Every well-formed private zone: { id, seat, min, max }. */
+/** Every well-formed hand: { id, seat, min, max }. */
 export function zones(scene) {
   const out = [];
   for (const [id, o] of Object.entries(scene?.objects ?? {})) {
@@ -41,7 +39,7 @@ export function zones(scene) {
   return out;
 }
 
-/** The seat whose zone holds this world point, or null. */
+/** The seat whose hand holds this world point, or null. */
 export function seatAt(scene, regions, world) {
   for (const r of regions) {
     const p = scene.toLocal(r.id, world);
@@ -77,39 +75,52 @@ export function faceUpIn(scene, id) {
   return dot / ((Math.hypot(...y) || 1) * (Math.hypot(...u) || 1)) > 1e-6;
 }
 
-/** The seat this viewer sits in: the first whose `player` is them. */
+/** The seat a viewer sits in, by the roster's seats ([{ id, viewer }]): the first that names them. */
 export function seatOf(seats, viewer) {
   if (!viewer) return null;
-  for (const [id, s] of Object.entries(seats ?? {})) if (s?.player === viewer) return id;
-  return null;
-}
-
-/** The players in the seats, in seat order. */
-export function seatedPlayers(seats) {
-  return Object.values(seats ?? {}).map((s) => s?.player).filter((p) => typeof p === "string" && p);
+  return (seats ?? []).find((s) => s?.viewer === viewer)?.id ?? null;
 }
 
 /**
- * Who may see what, for this snapshot: a function of a player (their contact
- * / viewer id; null for "everyone") to the set of object ids they may see as
- * themselves. Cached per player for the snapshot.
+ * The table's policy for a snapshot: object id → { show?, only? } | null
+ * (the stage's `audience` answer). `seats` is who sits where, from the
+ * roster ([{ id, viewer | null }]); a hand whose seat isn't among them is
+ * nobody's.
+ * @param {object} scene  the snapshot
+ * @param {{ id: string, viewer: string | null }[]} seats
+ * @returns {(id: string) => { show?: "all" | string[], only?: string[] } | null}
  */
-export function visibility(scene, seats = seatsOf(scene)) {
+export function audienceOf(scene, seats) {
   const regions = zones(scene);
-  const where = new Map(); // id → { owner, faceUp }
-  for (const id of Object.keys(scene?.objects ?? {})) {
-    const m = scene.world(id);
-    where.set(id, { owner: seatAt(scene, regions, [m[12], m[13], m[14]]), faceUp: faceUpIn(scene, id) });
-  }
+  const player = new Map((seats ?? []).map((s) => [s.id, typeof s.viewer === "string" && s.viewer ? s.viewer : null]));
   const cache = new Map();
-  return (player) => {
-    const seat = player == null ? null : seatOf(seats, player);
-    const key = seat ?? "";
-    if (!cache.has(key)) {
-      const out = new Set();
-      for (const [id, w] of where) if (w.owner ? w.owner === seat : w.faceUp) out.add(id);
-      cache.set(key, out);
+  return (id) => {
+    if (cache.has(id)) return cache.get(id);
+    const o = scene?.objects?.[id];
+    let answer = null;
+    if (o) {
+      const m = scene.world(id);
+      const seat = regions.length ? seatAt(scene, regions, [m[12], m[13], m[14]]) : null;
+      if (seat != null) {
+        const p = player.get(seat) ?? null;
+        answer = p ? { show: [p], only: [p] } : { show: [], only: [] };
+      } else if (isCard(o) && faceUpIn(scene, id)) answer = { show: "all" };
     }
-    return cache.get(key);
+    cache.set(id, answer);
+    return answer;
   };
+}
+
+/** The roster's seats for a snapshot, from whoever contributes one (api.collect("roster")): [{ id, name, viewer }], [] with none. */
+export function seatsFrom(api, scene) {
+  for (const r of api.collect?.("roster") ?? []) {
+    if (typeof r?.value?.seats !== "function") continue;
+    try {
+      const list = r.value.seats(scene);
+      if (Array.isArray(list)) return list;
+    } catch (err) {
+      console.warn("[tabletop] the roster failed", err);
+    }
+  }
+  return [];
 }

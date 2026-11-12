@@ -11,7 +11,8 @@
 import { AssetIndex, cacheName, urlVariants, extensionOf } from "./cache.js";
 import { readSave, countNames, collectAssets } from "./tts.js";
 import { kindAssets, kindKey, shortHash } from "./kinds.js";
-import { plan as makePlan, secretsDocs, sceneDoc, tableExtent, tableKind } from "./layout.js";
+import { plan as makePlan, secrets, sceneDoc, tableExtent, tableKind } from "./layout.js";
+import { findKeeper, findSeats, hostRegistry } from "./made-with.js";
 import { sceneImportUrl as registeredSceneImportUrl } from "./scene-package.js";
 import { buildKind } from "./build.js";
 import { parseOBJ } from "./obj.js";
@@ -64,10 +65,12 @@ async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
  * Run an import. Returns { sceneUrl, report }. Never throws for a missing
  * asset — only for no save at all, or a repo that won't take documents.
  *
- * @param {{ sources: ReturnType<typeof source>[], repo, images, fetch?, settings?, onProgress?, infoUrl?, infoToolId?, now?, sceneImportUrl? }} o
+ * @param {{ sources: ReturnType<typeof source>[], repo, images, fetch?, settings?, onProgress?, infoUrl?, infoToolId?, now?, sceneImportUrl?, registry? }} o
  *   sceneImportUrl: () → the scene package's importUrl (default: the registry's), for the scene doc's suggestedImportUrl
+ *   registry: (type) → the plugin registry of that type (default: the host's), where a keeper for
+ *   face-down cards and whoever owns seats are found (made-with.js)
  */
-export async function runImport({ sources, repo, images, fetch: fetchFn = null, settings = {}, onProgress = () => {}, infoUrl = null, infoToolId = null, now = () => Date.now(), sceneImportUrl = registeredSceneImportUrl }) {
+export async function runImport({ sources, repo, images, fetch: fetchFn = null, settings = {}, onProgress = () => {}, infoUrl = null, infoToolId = null, now = () => Date.now(), sceneImportUrl = registeredSceneImportUrl, registry = hostRegistry }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const unit = Number(s.metresPerUnit) > 0 ? Number(s.metresPerUnit) : DEFAULT_METRES_PER_UNIT;
   const progress = (phase, done = 0, total = 0) => onProgress({ phase, done, total });
@@ -249,11 +252,34 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
 
   // ─── secrets, then the scene ─────────────────────────────────────────────
   progress("Laying out the table");
-  const secretUrls = new Map();
-  for (const { key, doc } of secretsDocs(p, built)) secretUrls.set(key, (await repo.create2(doc)).url);
+  // what face-down cards really are goes to a keeper (one that keeps things in the open: a TTS
+  // deck has no players to shuffle it), each deck in a container of its own
+  const bindings = new Map(); // object id → its keeper's binding
+  const hiddenGroups = secrets(p, built);
+  let containers = 0;
+  if (hiddenGroups.length) {
+    const keeper = await findKeeper(registry, ["plain"]);
+    if (!keeper) warnings.push(`${hiddenGroups.reduce((n, g) => n + g.ids.length, 0)} face-down cards are only their backs: no keeper is installed here to keep what they are`);
+    else
+      for (const g of hiddenGroups) {
+        const made = await keeper.contain({ repo }, { title: g.title, items: g.items });
+        g.ids.forEach((id, slot) => bindings.set(id, made.bind(slot)));
+        containers++;
+      }
+  }
   const pdfUrls = new Map();
   for (const a of assets.values()) if (a.role === "pdf" && a.fileUrl) pdfUrls.set(a.url, a.fileUrl);
-  const { scene, stats } = sceneDoc(p, built, { unit, infoUrl, infoToolId, title: `${save.saveName}`, secretUrls, pdfUrls, table: { key: tableKey, extent }, sceneImportUrl: await sceneImportUrl() });
+  const { scene, seats, stats } = sceneDoc(p, built, { unit, infoUrl, infoToolId, title: `${save.saveName}`, bindings, pdfUrls, table: { key: tableKey, extent }, sceneImportUrl: await sceneImportUrl() });
+  // the seats are their owner's to write
+  let seated = 0;
+  if (Object.keys(seats).length) {
+    const lay = await findSeats(registry);
+    if (!lay) warnings.push(`${Object.keys(seats).length} seats weren't made: nothing installed here owns seats`);
+    else {
+      lay(scene, seats);
+      seated = Object.keys(seats).length;
+    }
+  }
   const sceneHandle = await repo.create2(scene);
 
   // ─── the report ──────────────────────────────────────────────────────────
@@ -285,8 +311,8 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
       kinds: list.length,
       glbBytes: Object.values(kindReport).reduce((n, k) => n + (k.bytes ?? 0), 0),
       assets: { needed: assets.size, cache: [...assets.values()].filter((a) => ok(a) && a.source === "cache").length, fetched: [...assets.values()].filter((a) => ok(a) && a.source === "fetch").length, missing, referenced: referenced.size },
-      seats: Object.keys(scene.traits?.["tabletop.seats"] ?? {}).length,
-      secrets: secretUrls.size,
+      seats: seated,
+      secrets: containers,
       tableY: stats.tableY,
     },
     assets: assetReport,
