@@ -1,93 +1,108 @@
-/* Flexoki Light — Steph Ango's inky, warm-paper scheme (stephango.com/flexoki) */
+/* Flexoki Light — Steph Ango's inky scheme (stephango.com/flexoki).
+   Roles and syntax follow the official mapping (kepano/flexoki-neovim):
+   comments tx-3, punctuation/operators tx-2, keywords and types gr,
+   functions or, constants ye, booleans ma, strings and tags cy,
+   variables/properties/attributes bl, numbers pu, escapes and meta ma,
+   imports and errors re. Light themes' accents are the 600 values. */
 [theme="flexoki-light"] {
 	color-scheme: light;
-	--studio-fill: #fffcf0; /* paper */
-	--studio-line: #100f0f; /* black */
-	--studio-primary: #24837b; /* cyan-600 */
-	--studio-secondary: #5e409d; /* purple-600 */
-	--studio-danger: #af3029; /* red-600 */
-	--studio-warning: #ad8301; /* yellow-600 */
-	--studio-added: #66800b; /* green-600 */
-	--studio-deleted: #af3029;
-	--studio-modified: #24837b;
-	--studio-link: #24837b; /* cyan-600 */
-	--studio-selection-fill: #e6e4d9; /* base-100 */
-	--studio-chrome-fill: #f2f0e5; /* base-50 / bg-2 */
 
-	--text-editor-cursor-fill: var(--studio-primary);
-	--text-editor-gutter-fill: #f2f0e5; /* base-50 */
-	--text-editor-gutter-line: #b7b5ac; /* base-300 */
-	--text-editor-gutter-border: #e6e4d9; /* base-100 */
+	/* flexoki's semantic roles */
+	--flexoki-bg: #fffcf0; /* paper */
+	--flexoki-bg-2: #f2f0e5; /* base-50 */
+	--flexoki-ui: #e6e4d9; /* base-100 */
+	--flexoki-ui-2: #dad8ce; /* base-150 */
+	--flexoki-ui-3: #cecdc3; /* base-200 */
+	--flexoki-tx-3: #b7b5ac; /* base-300 */
+	--flexoki-tx-2: #6f6e69; /* base-600 */
+	--flexoki-tx: #100f0f; /* black */
+	--flexoki-re: #af3029;
+	--flexoki-or: #bc5215;
+	--flexoki-ye: #ad8301;
+	--flexoki-gr: #66800b;
+	--flexoki-cy: #24837b;
+	--flexoki-bl: #205ea6;
+	--flexoki-pu: #5e409d;
+	--flexoki-ma: #a02f6f;
 
-	--syntax-comment: #b7b5ac; /* base-300 */
-	--syntax-style-comment: italic;
+	--studio-fill: var(--flexoki-bg);
+	--studio-line: var(--flexoki-tx);
+	--studio-chrome-fill: var(--flexoki-bg-2);
+	--studio-primary: var(--flexoki-bl);
+	--studio-secondary: var(--flexoki-cy);
+	--studio-link: var(--flexoki-bl);
+	--studio-danger: var(--flexoki-re);
+	--studio-warning: var(--flexoki-ye);
+	--studio-added: var(--flexoki-gr);
+	--studio-deleted: var(--flexoki-re);
+	--studio-modified: var(--flexoki-or);
+	--studio-selection-fill: var(--flexoki-ui-2);
 
-	--syntax-doc-comment: #b7b5ac;
-	--syntax-style-doc-comment: italic;
+	--text-editor-cursor-fill: var(--flexoki-tx);
+	--text-editor-active-line-fill: var(--flexoki-bg-2);
+	--text-editor-gutter-fill: var(--flexoki-bg);
+	--text-editor-gutter-line: var(--flexoki-tx-3);
+	--text-editor-gutter-border: var(--flexoki-ui);
 
-	--syntax-meta: #6f6e69;
-	--syntax-invalid: #af3029;
+	--syntax-comment: var(--flexoki-tx-3);
+	--syntax-doc-comment: var(--flexoki-tx-3);
 
-	--syntax-operator: #6f6e69; /* base-600 */
-	--syntax-punctuation: #6f6e69;
+	--syntax-meta: var(--flexoki-ma);
+	--syntax-invalid: var(--flexoki-re);
 
-	--syntax-bool: #5e409d;
-	--syntax-weight-bool: bold;
+	--syntax-operator: var(--flexoki-tx-2);
+	--syntax-punctuation: var(--flexoki-tx-2);
+	--syntax-angle-bracket: var(--flexoki-tx-2);
 
-	--syntax-atom: #5e409d;
-	--syntax-weight-atom: bold;
+	--syntax-keyword: var(--flexoki-gr);
+	--syntax-module-keyword: var(--flexoki-re);
 
-	--syntax-keyword: #66800b; /* green */
+	--syntax-type-name: var(--flexoki-gr);
+	--syntax-class-name: var(--flexoki-gr);
+	--syntax-type-operator: var(--flexoki-tx-2);
 
-	--syntax-type-name: #ad8301; /* yellow */
-	--syntax-class-name: #ad8301;
+	--syntax-function--variable-name: var(--flexoki-or);
+	--syntax-function--property-name: var(--flexoki-or);
 
-	--syntax-type-operator: #66800b;
+	--syntax-variable-name: var(--flexoki-bl);
+	--syntax-definition--variable-name: var(--flexoki-bl);
+	--syntax-namespace: var(--flexoki-bl);
 
-	--syntax-function--variable-name: #bc5215; /* orange */
-	--syntax-function--property-name: #bc5215;
+	--syntax-atom: var(--flexoki-ye);
+	--syntax-bool: var(--flexoki-ma);
 
-	--syntax-variable-name: #205ea6; /* blue */
-	--syntax-definition--variable-name: #205ea6;
+	--syntax-number: var(--flexoki-pu);
+	--syntax-integer: var(--flexoki-pu);
+	--syntax-float: var(--flexoki-pu);
 
-	--syntax-string: #24837b; /* cyan */
+	--syntax-string: var(--flexoki-cy);
 	--syntax-fill-string: transparent;
+	--syntax-special--string: var(--flexoki-ma);
+	--syntax-escape: var(--flexoki-ma);
+	--syntax-regexp: var(--flexoki-ma);
 
-	--syntax-number: #5e409d; /* purple */
-	--syntax-integer: #5e409d;
-	--syntax-float: #5e409d;
+	--syntax-tag-name: var(--flexoki-cy);
+	--syntax-attribute-name: var(--flexoki-bl);
 
-	--syntax-escape: #a02f6f; /* magenta */
-	--syntax-regexp: #a02f6f;
-	--syntax-special--string: #24837b;
-
-	--syntax-tag-name: #66800b;
-	--syntax-angle-bracket: #6f6e69;
-
-	--syntax-attribute-name: #205ea6;
-	--syntax-style-attribute-name: italic;
-
-	--syntax-namespace: #ad8301;
-
-	--syntax-strong: #100f0f;
+	--syntax-strong: var(--flexoki-tx);
 	--syntax-weight-strong: bold;
 
-	--syntax-emphasis: #100f0f;
+	--syntax-emphasis: var(--flexoki-tx);
 	--syntax-style-emphasis: italic;
 
 	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #24837b;
+	--syntax-link: var(--flexoki-bl);
 	--syntax-style-link: underline;
 
 	--syntax-quote: var(--text-editor-line);
 	--syntax-style-quote: var(--text-editor-text-style);
 	--syntax-list: var(--text-editor-line);
 
-	--syntax-inserted: #66800b;
-	--syntax-deleted: #af3029;
-	--syntax-changed: #205ea6;
+	--syntax-inserted: var(--flexoki-gr);
+	--syntax-deleted: var(--flexoki-re);
+	--syntax-changed: var(--flexoki-or);
 
-	--syntax-content-separator: #e6e4d9;
+	--syntax-content-separator: var(--flexoki-ui);
 }
