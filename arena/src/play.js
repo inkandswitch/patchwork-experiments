@@ -259,7 +259,8 @@ export default {
               "div",
               { class: "arena-start" },
               el("button", { type: "button", class: "arena-play", onclick: () => start() }, "▶ Play"),
-              el("span", { class: "arena-count" }, targets.length ? `${standing} of ${targets.length} targets standing` : "No targets yet"),
+              // a level without targets (an imported map) has nothing to count
+              targets.length ? el("span", { class: "arena-count" }, `${standing} of ${targets.length} targets standing`) : null,
               standing < targets.length ? el("button", { type: "button", class: "arena-reset", onclick: () => resetTargets() }, "Stand them up") : null,
             ),
             board.length ? scoreList : null,
@@ -271,7 +272,7 @@ export default {
         el("div", { class: "arena-crosshair" }),
         // the hit marker: four ticks round the crosshair, fading (play.css)
         now < hitUntil ? el("div", { class: "arena-hit" }) : null,
-        el("div", { class: "arena-top" }, el("span", {}, `${standing} of ${targets.length} standing`), board.length ? scoreList : null),
+        targets.length || board.length ? el("div", { class: "arena-top" }, targets.length ? el("span", {}, `${standing} of ${targets.length} standing`) : null, board.length ? scoreList : null) : null,
         el("div", { class: "arena-ammo", "data-empty": ammo === 0 }, reloading ? "Reloading…" : `${ammo} / ${MAG}`),
         el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · Right-click reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · Right-click reload · Esc stop"),
         paused ? el("button", { type: "button", class: "arena-resume", onclick: () => resume() }, "Click to carry on") : null,

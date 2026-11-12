@@ -2,7 +2,7 @@
 
 Doom-format maps in a [scene](../scene/README.md). Drop (or paste the URL of)
 a `.wad` file doc into a scene and its first map is laid out: one object for
-everything that doesn't move and one per door. Every one of them is the same
+everything that doesn't move, one per door, and one per exit switch. Every one of them is the same
 WAD file doc, seen through this package's provider with params of its own,
 so the scene is a composition of references into one foreign document,
 rebuilt from it, not a copy of it.
@@ -12,11 +12,12 @@ pnpm install && pnpm build && pnpm test
 ```
 
 Nothing Doom-shaped is outside this package. The doors open with the joints
-package's slide (`joints.slide`), and a map that is a scene on its own is
-walked with the arena's first-person play (`arena.level`, and arena's own
-spawn point part at the player 1 start); neither knows it is Doom. This
-package writes their traits in the shapes they document and asks for
-arena's part by id in the registry; it imports none of their code.
+package's slide (`joints.slide`), an exit switch is the traversal package's
+exit (`traversal.exit`), and a map that is a scene on its own is walked with
+the arena's first-person play (`arena.level`, and arena's own spawn point
+part at the player 1 start); none of them knows it is Doom. This package
+writes their traits in the shapes they document and asks for arena's part by
+id in the registry; it imports none of their code.
 
 ## What this package registers
 
@@ -25,16 +26,18 @@ arena's part by id in the registry; it imports none of their code.
 | `scene:source` | `doom-map` | `file` docs with extension `wad`: a part of a map as a GLB (`src/source.js`) |
 | `scene:extension` | `doom` | no traits, so it never runs: it is here for its `drop`, which lays out a dropped `.wad` (`src/layout.js`) |
 
-### The provider: `{ map, door }`
+### The provider: `{ map, door, line }`
 
 | param | | |
 |---|---|---|
 | `map` | string | the map's name (`"E1M1"`, `"MAP01"`). There is no default map: a render doc names one, and one that doesn't is an error listing the WAD's maps |
-| `door` | integer or null | a door, by its sector; null: the static part (below) |
+| `door` | integer or null | a door, by its sector |
+| `line` | integer or null | an exit switch, by its line. With neither, the static part (below); with both, an error |
 
 A part's GLB is Y-up metres with its origin at the part's anchor: the
 static part's is the middle of the map at height 0, a door's the middle of
-its footprint at its shut height. Materials are
+its footprint at its shut height, an exit switch's the middle of its line on
+its front sector's floor. Materials are
 `KHR_materials_unlit`, the texture sampled NEAREST up close (mipmapped
 between levels far off), its colour multiplied by the sector's light as a
 per-vertex grey (with Doom's fake contrast: east–west walls a little darker,
@@ -55,8 +58,9 @@ Doom's world is a plan of sectors, each with a floor and a ceiling height. A
 door is a sector whose ceiling rises, stretching the walls beside it. A scene
 object is rigid, so a map becomes rigid parts (`src/parts.js`):
 
-- **the static part** (`door: null`): everything that doesn't move, built
-  **as if every working door were open**, and without the doors' ceilings. The wall above a door
+- **the static part** (`door` and `line` null): everything that doesn't
+  move but the exit switches, built **as if every working door were open**,
+  and without the doors' ceilings. The wall above a door
   reaches down only to where the door's underside stops when open; the
   door's jambs reach up to there.
 - **a door** (`door: <sector>`): the door as a prism: its underside (the sector's
@@ -69,6 +73,11 @@ object is rigid, so a map becomes rigid parts (`src/parts.js`):
   height when open, where nothing hides it; none of E1M1's doors is.
   A door shuts to its floor (Doom's rule), so a door a map leaves ajar is
   imported shut, and its notes and the About say by how much it was open.
+- **an exit switch** (`line: <line>`): an exit switch's line (types 11, and
+  51 for the secret exit), its walls exactly as the static part would draw
+  them, which the static part leaves out. It doesn't move: it is an object of
+  its own so that a scene can say where it leads. An exit walked over (52,
+  124) is a tripwire, not a thing used, and isn't imported.
 
 **Pegging.** Every wall's texture is aligned as Doom draws the map **at
 rest, with every door shut** (`textureTop`, from the Unofficial Doom Specs
@@ -103,6 +112,7 @@ map where it was dropped:
 group "<map>"            infoUrl: an About doc (markdown)
 └ <map>                  { map, door: null }, locked
   ├ Door <sector> × n    { map, door: <sector> }, locked; joints.slide
+  ├ Exit switch × n      { map, line: <line> }, locked; traversal.exit { verb: "Exit" }
   └ Spawn point          arena's part, at the player 1 start (an empty scene only)
 ```
 
@@ -121,20 +131,29 @@ Each door's slide is `{ axis: [0, 1, 0], stops: { closed: 0, open: travel },
 speed, wait, at: "closed" }` in metres and seconds: Doom's speeds (2 units a
 tic, 4× for blazing doors) and wait (150 tics, 4.3 s), from its specs.
 
+Each exit switch is an exit with the verb "Exit" and **no destination**
+(`{ verb: "Exit" }`): where a map leads is the scene's to say, by setting
+its `to` (the inspector's Leads to, or a publisher), and until it says, the
+switch offers nothing. Where a Doom exit goes next (E1M2) isn't a document
+this package can name.
+
 **What works here, and what doesn't.** Plain doors work: sectors opened only
 by doors used directly, with no key (line types 1 and 117, open–wait–close;
 31 and 118, open and stay). Everything else that moves a sector (lifts,
 floors, stairs, ceilings, crushers, locked doors, doors worked from a
 distance by switches or tripwires) is imported where it rests and listed as
 not working here; exits, lights, teleporters and scrolling walls are listed
-as not imported (`src/specials.js`). Things other than the player 1 start are
+as not imported (`src/specials.js`); exit switches are parts of their own
+(above). Things other than the player 1 start are
 not imported (monsters, items and decorations are mechanics or sprites, for
 later). The list is in the About doc and in the static part's notes.
 
-E1M1: 11 plain doors (sectors 10, 34, 48, 54, 64, 78–81, 84, 100). Not
-working: the locked doors (51, 71), the lifts (98, 103), the lowering floor
-(76, 126, 129), the tripwire doors (77, 145). Not imported: the exit (1
-line), 291 things.
+E1M1: 11 plain doors (sectors 10, 34, 48, 54, 64, 78–81, 84, 100), and an
+exit switch (line 407). Not working: the locked doors (51, 71), the lifts
+(98, 103), the lowering floor (76, 126, 129), the tripwire doors (77, 145).
+Not imported: 291 things. The exit switch can be walked to from the player 1
+start through plain doors (10, 34, 64) and off a lift where it rests (98: a
+drop of 3.8 m), which `parts.test.js` checks over the map's sectors.
 
 ### Where it comes from: the notice
 
@@ -164,8 +183,8 @@ Freedoom gets an About saying so.
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/wad.js` | reading a WAD: the directory, a map's lumps, the palette, textures, pictures, flats (from the Unofficial Doom Specs) |
 | `src/sectors.js` | a sector's loops and triangles |
-| `src/specials.js` | what each line special does; which sectors are plain doors, and what rests |
-| `src/parts.js` | a part's triangles by texture: walls, pegging, floors, ceilings, the door prism |
+| `src/specials.js` | what each line special does; which sectors are plain doors, which lines exit switches, and what rests |
+| `src/parts.js` | a part's triangles by texture: walls, pegging, floors, ceilings, the door prism, an exit switch's walls |
 | `src/images.js` | textures and flats as RGBA through the palette; RGBA as PNG |
 | `src/glb.js` | the GLB writer for unlit, textured, palette art (not the scene's kit encoder, which has no textures) |
 | `src/source.js` | the provider |
@@ -174,6 +193,7 @@ Freedoom gets an About saying so.
 | `src/test/e1m1.wad`, `src/test/COPYING.txt` | the tests' WAD: Freedoom 0.13.0's E1M1 and only what drawing it needs (1.5 MB), and Freedoom's notice |
 | `probes/make-fixture.mjs` | makes that WAD from a full one |
 | `probes/doom.mjs`, `probes/doom-probe.html` | the browser probe (below), with copies of the scene's probe helpers |
+| `probes/publish-e1m1.mjs`, `probes/e1m1-probe.html` | publish E1M1 from the test slice as a scene (`--dry-run` to only check; `--exit <url>` to give its exit switch somewhere to go; `--set-exit <scene> <url>` to change only that on one already published); `probes/scene-packages.mjs` gives the scene its suggested import and `packages` |
 
 ## Testing
 
@@ -200,13 +220,16 @@ Freedoom gets an About saying so.
   fails when those doors' faces are made upper-unpegged, and their notes
   then say so; a door left ajar is imported shut with its faces and seams
   still aligned; the static part has no ceiling over a door; the lifts are
-  drawn where they rest.
-- `source.test.js`: the static GLB (154 primitives, unlit, NEAREST, PNGs,
-  copyright), a door's frame, the same bytes twice, a Freedoom WAD's notice
+  drawn where they rest; the exit switch (line 407) is exactly the
+  walls the static part would draw there, which it leaves out, and is
+  reachable on foot from the player 1 start.
+- `source.test.js`: the static GLB (153 primitives: E1M1's 154 textures but
+  the exit switch's; unlit, NEAREST, PNGs, copyright), a door's frame, an exit
+  switch's (one wall, SW1GRAY), the same bytes twice, a Freedoom WAD's notice
   in its GLBs before any drop, the notes, failures (no default map).
 - `layout.test.js`: the drop against a stand-in drop context: into an empty
-  scene, the group, the 12 parts and their params, the parent, the slides,
-  the level, arena's spawn part asked for by id and put at the start; into
+  scene, the group, the 13 parts and their params, the parent, the slides,
+  the exit switch (an exit called Exit, with nowhere to go), the level, arena's spawn part asked for by id and put at the start; into
   a scene with something in it, no level and no spawn; without arena, no
   spawn; the notice written to the file doc; the About, its disclaimer
   whenever the WAD is Freedoom's (and only then), and a release whose

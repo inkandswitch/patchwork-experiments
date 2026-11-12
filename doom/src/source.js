@@ -1,6 +1,7 @@
 // scene:source "doom-map": a part of a map in a .wad file doc, as a GLB.
-// Params { map, door } (index.js): which map, and which part of it: a door
-// (its sector), or with none, the static part (parts.js). Every part is built
+// Params { map, door, line } (index.js): which map, and which part of it: a
+// door (its sector), an exit switch (its line), or with neither, the static
+// part (parts.js). Every part is built
 // at the same scale (UNITS_PER_METRE), so a map's parts fit together whatever
 // else is done to them. Every object made from a map reads the same file doc;
 // what it shows is a function of that doc and its params alone.
@@ -8,7 +9,7 @@
 import { noticeOf, originOf } from "./freedoom.js";
 import { encodeGLB } from "./glb.js";
 import { encodePNG, flatImage, wallImage } from "./images.js";
-import { doorOf, mapModel, partGeometry, UNITS_PER_METRE, unpeggedFaces } from "./parts.js";
+import { doorOf, exitOf, mapModel, partGeometry, UNITS_PER_METRE, unpeggedFaces } from "./parts.js";
 import { readWad } from "./wad.js";
 
 /** The bytes of a `file` doc. */
@@ -47,13 +48,14 @@ export function mapIn(wad, map) {
 /**
  * A part of a map as a GLB, Y-up metres, its origin at the part's anchor.
  * @param {object} wad   readWad's
- * @param {{ map: string, door?: number | null }} params   door null: the static part
+ * @param {{ map: string, door?: number | null, line?: number | null }} params   both null: the static part
  * @param {{ copyright?: string | null }} [o]
  */
-export async function buildPart(wad, { map, door = null }, { copyright = null } = {}) {
+export async function buildPart(wad, { map, door = null, line = null }, { copyright = null } = {}) {
   const k = 1 / UNITS_PER_METRE;
   const model = mapModel(wad, mapIn(wad, map));
-  const { buckets, missing } = partGeometry(model, door);
+  if (door != null && line != null) throw new Error("a part is a door or an exit switch, not both");
+  const { buckets, missing } = partGeometry(model, door, line);
   const images = [];
   const materials = [];
   const primitives = [];
@@ -76,7 +78,8 @@ export async function buildPart(wad, { map, door = null }, { copyright = null } 
     primitives.push({ positions, uvs: b.uvs, colors: b.colors, indices: b.indices, material });
   }
   const bounds = boundsOf(primitives);
-  const glb = encodeGLB({ meshes: [{ name: door == null ? map : `${map} door ${door}`, primitives }], materials, images, copyright: copyright ?? undefined });
+  const name = line != null ? `${map} exit ${line}` : door != null ? `${map} door ${door}` : map;
+  const glb = encodeGLB({ meshes: [{ name, primitives }], materials, images, copyright: copyright ?? undefined });
   return { glb, bounds, missing: [...new Set(missing)].sort() };
 }
 
@@ -95,12 +98,16 @@ function boundsOf(primitives) {
 }
 
 /** What a part's build says about itself (the render's notes). */
-export function notesOf(model, door, missing) {
+export function notesOf(model, door, missing, line = null) {
   const map = model.map.name;
   const out = [];
-  if (door == null) {
+  if (line != null) {
+    const e = exitOf(model, line);
+    out.push(`${map}: the ${e.secret ? "secret " : ""}exit switch, line ${line}.`);
+  } else if (door == null) {
     const { specials } = model;
-    out.push(`${map}: ${model.map.sectors.length} sectors; ${specials.doors.length} doors are objects of their own.`);
+    const exits = specials.exits.length;
+    out.push(`${map}: ${model.map.sectors.length} sectors; ${specials.doors.length} doors${exits ? ` and ${exits} exit switch${exits === 1 ? "" : "es"}` : ""} are objects of their own.`);
     if (specials.resting.length) out.push(`Imported where they rest, not working here: ${specials.resting.map((r) => `${r.kind} (sector${r.sectors.length > 1 ? "s" : ""} ${r.sectors.join(", ")})`).join("; ")}.`);
     if (specials.inert.length) out.push(`Not imported: ${specials.inert.map((r) => `${r.kind} (${r.lines.length} line${r.lines.length > 1 ? "s" : ""})`).join("; ")}.`);
   } else {
@@ -119,7 +126,8 @@ export default {
     const wad = wadOf(doc);
     const map = mapIn(wad, params.map);
     const door = params.door ?? null;
-    const { glb, bounds, missing } = await buildPart(wad, { map, door }, { copyright: noticeOf(originOf(doc, wad)) });
-    return { kind: "glb", glb, meta: { ...(bounds ? { bounds } : {}), notes: notesOf(mapModel(wad, map), door, missing) } };
+    const line = params.line ?? null;
+    const { glb, bounds, missing } = await buildPart(wad, { map, door, line }, { copyright: noticeOf(originOf(doc, wad)) });
+    return { kind: "glb", glb, meta: { ...(bounds ? { bounds } : {}), notes: notesOf(mapModel(wad, map), door, missing, line) } };
   },
 };

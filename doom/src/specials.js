@@ -12,8 +12,11 @@
 // and 118 open and stay. Everything else that moves a sector (lifts, floors,
 // stairs, ceilings, crushers, locked doors, doors worked from a distance by
 // switches or tripwires) is imported where it rests and listed as not
-// working here, with the rest of the specials (exits, lights, teleporters,
-// scrolling walls).
+// working here, with the rest of the specials (lights, teleporters,
+// scrolling walls, exits walked over).
+//
+// EXIT SWITCHES (11, and the secret exit's 51) are pulled out as parts of
+// their own: the line's walls, an object a scene can make lead elsewhere.
 
 /** What each vanilla line special does: [kind, how it's triggered]. */
 const KIND = {};
@@ -28,12 +31,15 @@ put("ceiling", [40, 41, 43, 44]);
 put("crusher", [6, 25, 49, 73, 77, 141]);
 put("stop", [54, 57, 74, 89]);
 put("light", [12, 13, 17, 35, 79, 80, 81, 104, 138, 139]);
-put("exit", [11, 51, 52, 124]);
+put("exit switch", [11, 51]);
+put("exit", [52, 124]); // walked over: a tripwire, not something used
 put("teleporter", [39, 97, 125, 126]);
 put("scrolling wall", [48]);
 
 /** Doors used directly act on the sector behind the line; everything else, on the line's tag. */
 const DIRECT = new Set([1, 26, 27, 28, 31, 32, 33, 34, 117, 118]);
+/** The exit switches: the line is the part (the secret exit, 51, leads somewhere else in Doom). */
+export const EXIT_SWITCHES = { 11: { secret: false }, 51: { secret: true } };
 /** The kinds that move sectors. */
 const MOVES = new Set(["door", "locked door", "remote door", "lift", "floor", "stairs", "ceiling", "crusher"]);
 
@@ -84,6 +90,7 @@ export function doorTop(map, s) {
  *   doors: { sector: number, closed: number, open: number, ajar: number, speed: number, wait: number | null, lines: number[] }[],
  *   resting: { kind: string, sectors: number[], lines: number[] }[],   // moving parts imported where they rest
  *   inert: { kind: string, lines: number[] }[],                         // specials that move nothing, not imported
+ *   exits: { line: number, secret: boolean }[],                        // exit switches: parts of their own
  *   starts: { player: number, thing: number }[],                        // player 1–4 starts (things 1–4)
  * }}
  */
@@ -95,9 +102,14 @@ export function classify(map) {
   // sector → the line specials that act on it
   const actsOn = new Map();
   const inertByKind = new Map();
+  const exits = [];
   map.linedefs.forEach((l, i) => {
     const kind = kindOf(l.special);
     if (!kind) return;
+    if (EXIT_SWITCHES[l.special]) {
+      exits.push({ line: i, secret: EXIT_SWITCHES[l.special].secret });
+      return;
+    }
     if (!MOVES.has(kind)) {
       (inertByKind.get(kind) ?? inertByKind.set(kind, []).get(kind)).push(i);
       return;
@@ -135,6 +147,7 @@ export function classify(map) {
     doors,
     resting: [...restingByKind.values()].map((r) => ({ kind: r.kind, sectors: r.sectors, lines: [...r.lines].sort((a, b) => a - b) })),
     inert: [...inertByKind].map(([kind, lines]) => ({ kind, lines })),
+    exits,
     starts,
   };
 }

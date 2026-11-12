@@ -2,7 +2,7 @@
 // for the drop context (STAGE.md, "Drops") that records what it's asked.
 import { describe, expect, it } from "vitest";
 import ext from "./extension.js";
-import { aboutText, isWad, placeIn, slideOf, SPAWN_PART, yawOf } from "./layout.js";
+import { aboutText, EXIT, isWad, placeIn, slideOf, SPAWN_PART, yawOf } from "./layout.js";
 import { FREEDOOM_NOTICE, freedoomOrigin } from "./freedoom.js";
 import { anchorOf, mapModel, thingAt } from "./parts.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -74,10 +74,10 @@ describe("dropping a WAD", () => {
     const parts = partsOf(d);
     expect(group).toMatchObject({ name: "E1M1", infoUrl: "automerge:about1", visible: true });
     const maps = parts.filter(([, o]) => o.providerId === "doom-map");
-    expect(maps).toHaveLength(12);
+    expect(maps).toHaveLength(13);
     expect(maps.every(([, o]) => o.sourceUrl === "automerge:wad" && o.group === gid && o.locked === true)).toBe(true);
-    // the params: which map, and which door (none: the static part); nothing else
-    expect(maps.map(([, o]) => o.render.params)).toEqual([{ map: "E1M1", door: null }, ...DOORS.map((door) => ({ map: "E1M1", door }))]);
+    // the params: which map, and which door or exit switch (neither: the static part); nothing else
+    expect(maps.map(([, o]) => o.render.params)).toEqual([{ map: "E1M1", door: null }, ...DOORS.map((door) => ({ map: "E1M1", door })), { map: "E1M1", line: 407 }]);
     const [root] = maps[0];
     expect(parts.slice(1).every(([, o]) => o.parent === root)).toBe(true);
     expect(d.traits["arena.level"]).toEqual({ look: "sky" });
@@ -94,6 +94,22 @@ describe("dropping a WAD", () => {
     expect(made[0].content).toContain(FREEDOOM_NOTICE.trim());
     expect(made[0].content).toMatch(/not Freedoom, and neither the Freedoom project nor its contributors endorse it/);
     expect(made[0].content).toMatch(/Player 1 start\*\*: a spawn point/);
+    expect(made[0].content).toMatch(/The exit switch\*\* \(line 407\): an object of its own, which leads wherever the scene says/);
+  });
+
+  it("the exit switch: its own object at its line, an exit with its verb and nowhere to go", async () => {
+    const { ctx, d } = dropContext();
+    await ext.drop(ctx, { url: "automerge:wad", doc: wadDoc(), handle: null });
+    const exits = partsOf(d).filter(([, o]) => o.traits?.[EXIT]);
+    expect(exits).toHaveLength(1);
+    const [, exit] = exits[0];
+    const m = mapModel(fixture(), "E1M1");
+    const [root] = partsOf(d)[0];
+    expect(exit).toMatchObject({ name: "Exit switch", parent: root, locked: true, render: { params: { map: "E1M1", line: 407 } }, transform: { position: placeIn(anchorOf(m, null), anchorOf(m, null, 407)), rotation: [0, 0, 0], scale: 1 } });
+    // the verb, and no destination: where it leads is the scene's to say
+    expect(exit.traits).toEqual({ [EXIT]: { verb: "Exit" } });
+    // the middle of line 407 ((-400, 1296), on its floor at -120), from the map's middle
+    expect(anchorOf(m, null, 407)).toEqual([-400, 1296, -120]);
   });
 
   it("into a scene with something in it: a piece of that scene; it leaves the scene's game alone (no level, no spawn)", async () => {
@@ -103,14 +119,14 @@ describe("dropping a WAD", () => {
     expect(d.traits["arena.level"]).toBeUndefined();
     expect(asked).toEqual([]);
     expect(partsOf(d).filter(([, o]) => o.traits?.["arena.spawn"])).toEqual([]);
-    expect(partsOf(d).filter(([, o]) => o.providerId === "doom-map")).toHaveLength(12);
+    expect(partsOf(d).filter(([, o]) => o.providerId === "doom-map")).toHaveLength(13);
   });
 
   it("without arena installed: no spawn, and nothing breaks", async () => {
     const { ctx, d, made, asked } = dropContext({ parts: {} });
     await ext.drop(ctx, { url: "automerge:wad", doc: wadDoc(), handle: null });
     expect(asked).toEqual([SPAWN_PART]);
-    expect(partsOf(d)).toHaveLength(12);
+    expect(partsOf(d)).toHaveLength(13);
     expect(made[0].content).toMatch(/No spawn point/);
   });
 

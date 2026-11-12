@@ -156,6 +156,21 @@ describe("playing", () => {
     expect(h.keyup({ key: "w", code: "KeyW" })).toBe(true);
   });
 
+  it("counts targets only where there are some: a level without any (an imported map) shows no count, in the lobby or playing", () => {
+    const hudText = () => f.calls.overlay.textContent;
+    expect(hudText()).toMatch(/1 of 1 targets standing/);
+    const bare = { objects: { floor: { name: "Floor", transform: T([0, 0, 0]) } } };
+    const g = fakeApi(bare);
+    const y = play.create(g.api);
+    y.update(scene(bare), {}, { scene: null });
+    expect(g.calls.overlay.textContent).toMatch(/Play/);
+    expect(g.calls.overlay.textContent).not.toMatch(/target|standing/i);
+    y.commands.find((c) => c.id === "play").run(null);
+    g.calls.loops[0](1 / 60);
+    expect(g.calls.overlay.textContent).not.toMatch(/standing/);
+    expect(g.calls.overlay.textContent).toMatch(/Esc stop/);
+  });
+
   it("a level's look: the arena's sky, haze and sun; the sky alone; or the scene's own", async () => {
     const { ATMOSPHERE, LOOKS } = await import("./play.js");
     const at = (look) => {
