@@ -158,6 +158,8 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
       extension: a.extension,
       mimeType: a.mimeType,
       content,
+      // where it came from: the mod's own URL, so a withdrawn module's assets can be found
+      origin: { urls: [a.url] },
     });
     a.fileUrl = h.url;
     progress("Storing assets", ++done, present.length);
@@ -238,6 +240,8 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
         extension: "glb",
         mimeType: "model/gltf-binary",
         content: out.glb,
+        // drawn from these of the mod's URLs
+        origin: { urls: [...new Set(kindAssets(k.kind).map((a) => a.url))] },
       });
       built.set(key, { glbUrl: h.url, bounds: out.bounds });
       kindReport[shortHash(key)] = { name: k.name, type: k.kind.type, copies: k.count, glbUrl: h.url, bytes: out.glb.byteLength, triangles: out.triangles, ...(out.notes.length ? { notes: out.notes.slice(0, 4) } : {}) };
@@ -280,6 +284,10 @@ export async function runImport({ sources, repo, images, fetch: fetchFn = null, 
       seated = Object.keys(seats).length;
     }
   }
+  // the mod it came from (its Workshop id when the file is named for it), so a scene made from a
+  // publisher's module says whose it is wherever it goes
+  const workshopId = /(?:^|\/)(\d{6,})\.json$/i.exec(found.path)?.[1] ?? null;
+  scene.origin = { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } };
   const sceneHandle = await repo.create2(scene);
 
   // ─── the report ──────────────────────────────────────────────────────────

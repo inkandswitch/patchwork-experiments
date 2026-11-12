@@ -48,6 +48,24 @@ is offered the scene tool; the stage lists the tabletop and keeper packages
 in the scene's `packages` the first time someone who has them opens the
 table, and offers them to viewers who don't (scene/STAGE.md, "Packages").
 
+## Where it came from
+
+Every document an import makes says which of the mod's URLs it came from, so
+a scene made from a publisher's module carries its provenance wherever it is
+shared, and a withdrawn module's assets can be found and removed:
+
+- each stored asset (`file` doc): `origin: { urls: [<the mod's URL>] }`;
+- each drawn piece (`.glb` file doc): `origin: { urls }`, the mod's URLs it
+  was drawn from;
+- the scene: `origin: { tts: { saveName, fileName, workshopId } }`, the
+  Workshop id read from a `Mods/Workshop/<id>.json` file name, else null.
+
+Importing copies the assets, as Tabletop Simulator's own cache does, but the
+copies live in synced documents that anyone given the scene can open. So
+import a publisher's module only where the publisher has shared it (their own
+Workshop upload), and keep what you import out of public example folders
+unless the publisher has agreed.
+
 ## Getting the assets
 
 TTS refers to every asset by URL and caches what it downloads in `Mods/`:

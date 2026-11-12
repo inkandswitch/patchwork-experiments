@@ -77,6 +77,22 @@ describe("runImport on the tiny fixture", () => {
     expect(png.content).toBeInstanceOf(Uint8Array);
   });
 
+  it("every stored asset, every drawn piece and the scene say which of the mod's URLs and which mod they came from", async () => {
+    const { report, doc, sceneUrl } = await importFixture();
+    const stored = Object.values(report.assets).filter((a) => a.fileUrl);
+    expect(stored.length).toBeGreaterThan(0);
+    for (const a of stored) expect(doc(a.fileUrl).origin).toEqual({ urls: [a.url] });
+    const known = new Set(Object.values(report.assets).map((a) => a.url));
+    const drawn = Object.values(report.kinds).filter((k) => k.glbUrl);
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const k of drawn) {
+      const urls = doc(k.glbUrl).origin.urls;
+      expect(Array.isArray(urls)).toBe(true);
+      for (const u of urls) expect(known.has(u), u).toBe(true);
+    }
+    expect(doc(sceneUrl).origin).toEqual({ tts: { saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", workshopId: "1234567890" } });
+  });
+
   it("lays out the table: every object a passthrough GLB at its transform, in the hand", async () => {
     const { scene, report, doc } = await importFixture();
     expect(scene.view).toMatchObject({ tool: "hand", snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
