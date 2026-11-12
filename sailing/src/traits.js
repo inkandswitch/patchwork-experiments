@@ -27,6 +27,13 @@ export const JIB = "sailing.jib";
 /** A winch the jib's sheet is led to: `{ sail: "jib", side: "port" | "starboard", stand: [x, y, z] }`, stand in its own frame. */
 export const WINCH = "sailing.winch";
 
+// Other packages' traits that sailing's parts carry, written in the shapes
+// those packages document (sailing reads neither, and imports neither):
+/** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
+export const SLIDE = "joints.slide";
+/** traversal's exit: an object that leads to another document; the companionway is one, leading nowhere until a scene says where. */
+export const EXIT = "traversal.exit";
+
 /** The stations' traits, and what each is called on a ship (ctx.sim.stationsOf). */
 export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET, jib: JIB });
 

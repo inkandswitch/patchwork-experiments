@@ -19,8 +19,8 @@
 // A part that fits a stand carries its tag (ship.js TAGS), as the bin's
 // metadata does, so the hand snaps it to the same stand the bin does.
 
-import { FIT, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
-import { ANCHOR, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, WINCH } from "./traits.js";
+import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
+import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WINCH } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
@@ -40,7 +40,8 @@ const tidy = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
  * up, the jib out and tending itself, the wheel amidships, the anchor up. A
  * piece with a `side` is one of a pair across her (the jib's winches): the
  * first on the side the part is put, the other its mirror across her
- * centreline (`across`, objectsFor).
+ * centreline (`across`, objectsFor). A piece's `tags` are the stand it
+ * fits on the piece above it (the hatch's on the companionway).
  */
 export const PIECES = Object.freeze({
   mast: [
@@ -62,13 +63,19 @@ export const PIECES = Object.freeze({
     { kind: "winch", name: "Port jib winch", side: -1 },
     { kind: "winch", name: "Starboard jib winch", side: 1, mirror: true },
   ],
+  // the way below: the companionway, an exit (traversal's) that leads nowhere until a scene says
+  // where, its verb "Go below"; and its hatch, sliding forward along the cabin top to open (joints')
+  companionway: [
+    { kind: "companionway", name: "Companionway", traits: { [EXIT]: { verb: "Go below" } } },
+    { kind: "hatch", name: "Hatch", tags: [TAGS.hatch], traits: { [SLIDE]: { axis: [0, 0, -1], stops: { closed: 0, open: HATCH_TRAVEL }, speed: HATCH_SPEED, at: "closed" } }, at: sub(FIT.hatch.position, FIT.companionway.position) },
+  ],
   redBuoy: [{ kind: "redBuoy", name: "Red buoy", traits: { [FLOAT]: {} } }],
   greenBuoy: [{ kind: "greenBuoy", name: "Green buoy", traits: { [FLOAT]: {} } }],
   islet: [{ kind: "islet", name: "Islet" }],
 });
 
 /** What goes aboard the sloop, each at the stand her hull has for it (ship.js STAND: her connectors). */
-export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mainsheet", "winches"]);
+export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "companionway"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
 
@@ -80,9 +87,10 @@ export const ABOARD = Object.freeze(["mast", "wheel", "windlass", "ladder", "mai
  * no face lying on another's (shadows and depth fought there): the hull's 4,
  * the mast's 3, and 2 for the winch, windlass, mainsheet, wheel, anchor and
  * islet. The rig's 3 and the jib's 2 mark their cloth as taking no shadows
- * (a one-sided sheet: mesh extras receiveShadow false).
+ * (a one-sided sheet: mesh extras receiveShadow false). The hull's 5 has no
+ * companionway (it is a part of its own) and a stand for it.
  */
-const VERSIONS = Object.freeze({ hull: 4, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 });
+const VERSIONS = Object.freeze({ hull: 5, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 });
 
 /** The key of a kind's GLB in the scene's files (doc.assets). Bump its version (VERSIONS) when its drawing changes. */
 export const fileKey = (kind) => `sailing/${kind}@${VERSIONS[kind] ?? 1}`;
@@ -164,7 +172,7 @@ export function objectsFor(part, place, files, newId, { group = null, locked = f
   for (const p of rest) {
     const at = p.mirror ? [tidy([-2 * across])[0], 0, 0] : p.at;
     const { name, traits } = sided(p);
-    out.push([newId("o"), partObject({ name, ...files[p.kind], transform: { position: at, rotation: p.rotation ?? [0, 0, 0] }, parent: root, traits: traitsOf(traits) })]);
+    out.push([newId("o"), partObject({ name, ...files[p.kind], transform: { position: at, rotation: p.rotation ?? [0, 0, 0] }, parent: root, traits: traitsOf(traits), tags: p.tags })]);
   }
   return out;
 }
@@ -296,6 +304,7 @@ export const windlass = part("windlass");
 export const ladder = part("ladder");
 export const mainsheet = part("mainsheet");
 export const winches = part("winches");
+export const companionway = part("companionway");
 export const redBuoy = part("redBuoy");
 export const greenBuoy = part("greenBuoy");
 export const islet = part("islet");

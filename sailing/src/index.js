@@ -12,9 +12,10 @@
 //   and starts it in play, so its maker is aboard at once; "ship-at-anchor"
 //   lays her out lying at anchor off an islet, sail down, in a moderate breeze;
 // - parts for the editor's parts bin (scene:part): the sloop whole (she
-//   brings her sea), and her mast and sail, wheel, windlass and anchor and
-//   ladder on their own, to drag onto any hull (one modelled elsewhere, with
-//   Ship on it); and buoys and an islet to sail past.
+//   brings her sea), and her mast and sail, wheel, windlass and anchor,
+//   ladder, mainsheet, jib winches and companionway on their own, to drag
+//   onto any hull (one modelled elsewhere, with Ship on it); and buoys and an
+//   islet to sail past.
 // A sea, a ship or a station by hand comes from the inspector's "Add
 // behaviour…", which reads `describes`.
 
@@ -139,13 +140,14 @@ export const plugins = [
   },
   // the parts bin's (scene:part): what each is made of is parts.js
   ...[
-    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder, companionway. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
     { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail, and a jib on its forestay. On a ship it drives her: where you put it is where the sails pull", tags: ["sailing.mast"], traits: ["sailing.sail", "sailing.jib"] },
     { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
     { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },
     { id: "ladder", name: "Ladder", icon: "Ladder", description: "A way back aboard from the water, hung over the side", tags: ["sailing.ladder"], traits: ["sailing.ladder"] },
     { id: "mainsheet", name: "Mainsheet", icon: "Sailboat", description: "A traveller and block for the cockpit, under the boom's end: stand at it to trim and hoist the sail", tags: ["sailing.mainsheet"], traits: ["sailing.mainsheet"] },
     { id: "winches", name: "Jib winches", icon: "Sailboat", description: "A winch either side of the cockpit for the jib's sheets: stand at one to trim the jib, back it and furl it", tags: ["sailing.winch"], traits: ["sailing.winch"] },
+    { id: "companionway", name: "Companionway", icon: "DoorOpen", description: "The way below, at the forward end of the cockpit: washboards, and a hatch that slides open along the cabin top", tags: ["sailing.companionway"], traits: ["traversal.exit", "joints.slide"] },
     { id: "redBuoy", name: "Red buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "greenBuoy", name: "Green buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
     { id: "islet", name: "Islet", icon: "Mountain", description: "A rock with a little grass, to sail round" },
