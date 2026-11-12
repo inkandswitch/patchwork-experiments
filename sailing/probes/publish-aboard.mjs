@@ -61,7 +61,7 @@ const TITLE = typeof args.title === "string" ? args.title : "Lost Cities aboard"
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-aboard"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
@@ -164,7 +164,7 @@ async function publish(snap) {
       let problem = !got || !Object.keys(got).length ? "empty" : null;
       if (!problem && url === scene.url) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
-        const under = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.hidden"]).length;
+        const under = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.card"]).length;
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
         else if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
         else if (!hull) problem = "came back without the ship";

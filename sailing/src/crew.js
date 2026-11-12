@@ -696,7 +696,7 @@ export function createCrew(api, ctx) {
     return true;
   }
 
-  // ─── tabletop's seats (firstPerson, a late-bound hand-off: tabletop/README.md) ───
+  // ─── seats (firstPerson, a late-bound hand-off to whoever owns seats: scene/STAGE.md, "Seats") ───
 
   const firstPerson = {
     /**
