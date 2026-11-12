@@ -1,0 +1,185 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop dominoes probe</title>
+<!-- Driven by probes/dominoes.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT tabletop, card-table (the joint keeper) and keep plugins in a stub
+     registry, on REAL Automerge documents: two peers, A (Ana) and B (Ben),
+     each with its own replica of every doc (probes/real-repo.js, a copy of
+     bag's), a change reaching the other 25 ms later by a real merge. Each
+     view's broadcasts (presence, poses, sends) reach only the other. A starts
+     an empty scene from the "Draw Dominoes, 2 players" template on its start
+     screen; B opens the same scene from its own replica. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 760px; height: 600px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene } from "../src/empty-scene.js";
+import { PICKER, cardIds, deckUrlOf, install, kept, seatsOf, shownAs } from "./table-setup.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+try {
+  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  const net = twoPeers({ delay: 25 });
+  const repos = { a: net.a, b: net.b };
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const sceneA = await net.a.create2(emptyScene());
+  const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(scene.a, hosts.a);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const select = (w) => hosts[w].querySelector(PICKER);
+  const objects = (w = "a") => scene[w].doc().objects ?? {};
+  const tiles = (w = "a") => cardIds(objects(w));
+  const deckUrl = () => deckUrlOf(objects());
+  const deck = (w = "a") => (deckUrl() ? repos[w].handles.get(deckUrl())?.doc() ?? null : null);
+  /** which seat's rack a tile stands in, by A's snapshot ("table" for none) */
+  const placeOf = (id) => {
+    const s = dbg.a.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return "table";
+  };
+  const rect = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url },
+    /** a start-screen button's middle, for a real click */
+    templateAt: (w, id) => { const b = [...hosts[w].querySelectorAll(`[data-template="${id}"]`)].find((e) => e.getBoundingClientRect().width > 0); return b ? rect(b) : null; },
+    templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    openB() { if (!dbg.b) { Tool(scene.b, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
+    seats: () => seatsOf(scene.a.doc()),
+    picker: (w) => select(w)?.options.length ?? 0,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    deck: () => { const d = deck(); return d ? { phase: d.phase, op: d.op ? d.op.pass : null, queue: d.queue?.length ?? 0, epochs: Object.values(d.epochs ?? {}), faces: d.faces?.length ?? 0, participants: d.participants?.length ?? 0, cipherHex: [...new Set((d.cards ?? []).map((c) => String(c).length))] } : null; },
+    /** every tile, by both replicas: how many there are, and the slots they're bound to */
+    census() {
+      const out = {};
+      for (const w of ["a", "b"]) {
+        const ids = tiles(w);
+        const slots = ids.map((id) => kept(objects(w)[id])?.slot);
+        out[w] = { n: ids.length, slots: new Set(slots).size, ids: ids.slice().sort().join() };
+      }
+      out.same = out.a.ids === out.b.ids;
+      return out;
+    },
+    /** the tiles in each rack, and out on the table: face down (the boneyard), face up, and standing on edge (its face within 0.05 of level) */
+    where() {
+      const s = dbg.a.scene();
+      const out = { p1: [], p2: [], down: [], up: [], stand: [], other: [] };
+      for (const id of tiles()) {
+        const at = placeOf(id);
+        if (at !== "table") { out[at].push(id); continue; }
+        const m = s.world(id);
+        if (m[5] < -0.7) out.down.push(id);
+        else if (m[5] > 0.7) out.up.push(id);
+        else if (Math.abs(m[5]) < 0.05) out.stand.push(id);
+        else out.other.push(id);
+      }
+      return out;
+    },
+    /** a tile's footprint as the doc has it (A's snapshot): its body box (its load hint) under its world matrix, boxed, to 0.01 mm */
+    footprint(id) {
+      const m = dbg.a.scene().world(id);
+      const b = objects()[id]?.hint?.bounds;
+      if (!b) return null;
+      const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < 8; i++) {
+        const p = [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]];
+        for (let k = 0; k < 3; k++) {
+          const v = m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k];
+          min[k] = Math.min(min[k], v); max[k] = Math.max(max[k], v);
+        }
+      }
+      const r = (v) => +v.toFixed(5) + 0;
+      return { min: min.map(r), max: max.map(r) };
+    },
+    racks: () => Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).length,
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    /** a tile's face direction (its +Y in the world), by A's snapshot, to 3 places */
+    faceDir: (id) => { const m = dbg.a.scene().world(id); return [m[4], m[5], m[6]].map((v) => +v.toFixed(3) + 0); },
+    faces: (w) => tiles().filter((id) => shownAs(dbg[w], id) === "face"),
+    veils: (w) => tiles().filter((id) => shownAs(dbg[w], id) === "veil"),
+    backs: (w) => tiles().filter((id) => shownAs(dbg[w], id) === "back"),
+    /** what a view says a tile really is (its look's name), for those it shows as faces */
+    seen: (w) => Object.fromEntries(tiles().filter((id) => shownAs(dbg[w], id) === "face").map((id) => [id, dbg[w].looks().get(id)?.name ?? null])),
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    /** the right-click menu's items in a view, and where each is */
+    menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: e.textContent.trim(), ...rect(e) })),
+    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+    /** a page point over object `id` in view `w` (its middle, then spiralling out until a pick hits it) */
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const box = v.objectBox?.(id);
+      const c = box ? ["x", "y", "z"].map((k) => (box.min[k] + box.max[k]) / 2) : [m[12], m[13], m[14]];
+      const p = v.project(c);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 1.5 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+    /** why aimAt finds nothing: where the object projects, and what a pick there hits */
+    aimDebug(id, w) {
+      const v = dbg[w].viewport;
+      const m = v.worldOf(id);
+      const box = v.objectBox?.(id) ?? null;
+      const p = m ? v.project([m[12], m[13], m[14]]) : null;
+      const hit = p ? v.pick(p.x, p.y) : null;
+      return { origin: m ? [m[12], m[13], m[14]] : null, box, p, hit: hit ? { id: hit.id } : null, cam: (() => { const c = v.getCamera(); return c ? { position: c.position, target: c.target } : null; })(), loaded: dbg[w].local.get().status?.[id] ?? null };
+    },
+    /** the joint keeper's deck has every tile shuffled at least `n` times, and nothing under way */
+    shuffledAtLeast: (n) => { const d = deck(); return !!d && d.phase === "playing" && !d.op && !(d.queue?.length) && Object.keys(d.epochs ?? {}).length === 28 && Object.values(d.epochs).every((e) => e >= n); },
+    /** a page point over the world point p in view w */
+    pointAt(p, w) { const v = dbg[w].viewport; const r = v.canvas.getBoundingClientRect(); const q = v.project(p); return q ? { x: r.left + q.x, y: r.top + q.y } : null; },
+    /** set a view's camera (for screenshots) */
+    camera(w, position, target) { const v = dbg[w].viewport; v.setCamera({ position, target }); v.invalidate?.(); return true; },
+    camOf: (w) => { const c = dbg[w].viewport.getCamera(); return { position: c.position, target: c.target }; },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

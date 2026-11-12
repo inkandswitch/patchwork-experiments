@@ -1,4 +1,5 @@
-// The "Lost Cities" and "Santorini" templates (`scene:template`): an empty
+// The "Lost Cities", "Santorini" and "Draw Dominoes" (for 2, 3 or 4)
+// templates (`scene:template`): an empty
 // scene's start screen offers them, and one click lays the game's table out
 // in that scene, through the same writer as the game page's "Set up a table"
 // (setup.js tableLayout + writeTable), so the two can't drift apart.
@@ -31,6 +32,7 @@ import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";
 import { containDecks, findSeats } from "./made-with.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
 import * as santoriniGame from "../games/santorini.js";
+import { dominoes } from "../games/dominoes.js";
 
 const UNTITLED = "Untitled scene"; // the scene datatype's init title
 
@@ -116,3 +118,9 @@ const template = (gameId, game) => ({
 
 export const lostCities = template("lost-cities", lostCitiesGame);
 export const santorini = template("santorini", santoriniGame);
+// Draw Dominoes, laid for 2, 3 or 4: how many sit down is chosen here, since a
+// table whose players shuffle between them waits for every seat. The tiles'
+// art is one set of files whichever it is ("dominoes").
+export const dominoes2 = template("dominoes", dominoes(2));
+export const dominoes3 = template("dominoes", dominoes(3));
+export const dominoes4 = template("dominoes", dominoes(4));

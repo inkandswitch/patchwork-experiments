@@ -4,7 +4,7 @@
 // others. Seats and keepers are stand-ins (test/stand-ins.js): the table
 // meets them only through the stage's conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { CARD, ZONE, audienceOf, faceUpIn, isCard, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
+import { CARD, ZONE, audienceOf, faceUpIn, facing, isCard, seatAt, seatOf, seatsFrom, standingIn, zones } from "./visibility.js";
 import Extension, { keptBy } from "./extension.js";
 import Rule from "./rule.js";
 import { testScene } from "./test-scene.js";
@@ -96,6 +96,122 @@ describe("who may see what: the table's policy", () => {
       expect(audienceOf(sceneWith(c.position, c.rotation, c.traits), rosterSeats(c.seated))("thing")).toEqual(want);
     });
   }
+
+  // Standing on edge out on the table (a domino stood up in front of you,
+  // with no rack): every case of where it stands, which way its face looks
+  // (24 directions, 15° apart, none on a 45° boundary), how far it leans
+  // (face up, 60°, 30° up, on edge, 30° and 60° down, face down), card or
+  // not, and who is seated, against three hands: p1's to the south (+z), p2's
+  // to the north (−z), and an untaken seat's to the east (+x). The expected
+  // answer is worked out here from angles (atan2), not dot products: the
+  // hand its face looks most nearly toward, if within 45°.
+  describe("standing out on the table: the hand its face looks toward", () => {
+    const HANDS = { hand1: [0, 0, 0.5], hand2: [0, 0, -0.5], hand3: [0.5, 0, 0] };
+    const SEAT_OF = { hand1: "p1", hand2: "p2", hand3: "p3" };
+    const STANDS = { "the middle": [0, 0.012, 0], "off to the south-west": [-0.2, 0.012, 0.2] };
+    const DIRS = Array.from({ length: 24 }, (_, k) => -180 + 7.5 + 15 * k); // degrees from +z toward +x
+    const TILTS = [90, 60, 30, 0, -30, -60, -90]; // degrees the face is turned up from level
+    const rad = (d) => (d * Math.PI) / 180;
+    // face = (sinθ cosφ, sinφ, cosθ cosφ): Euler XYZ [0, θ + 90°, 90° − φ] (its +Y column)
+    const turned = (theta, phi) => [0, rad(theta) + Math.PI / 2, Math.PI / 2 - rad(phi)];
+    const sceneAt = (position, rotation, traits) =>
+      testScene({
+        ...Object.fromEntries(Object.entries(HANDS).map(([id, at], i) => [id, { transform: T(at, [0, [0, Math.PI, -Math.PI / 2][i], 0]), traits: zone(SEAT_OF[id]) }])),
+        thing: { transform: T(position, rotation), traits },
+      });
+    const wrap = (d) => ((((d + 180) % 360) + 360) % 360) - 180;
+    const CASES2 = [];
+    for (const [where, position] of Object.entries(STANDS)) for (const theta of DIRS) for (const phi of TILTS) for (const [kind, traits] of Object.entries(KINDS)) for (const [seating, seated] of Object.entries(SEATINGS)) CASES2.push({ where, position, theta, phi, kind, traits, seating, seated });
+
+    it(`covers ${2 * 24 * 7 * 2 * 3} cases`, () => expect(CASES2).toHaveLength(2016));
+
+    it("the Euler angles used here turn the face where they say", () => {
+      for (const theta of DIRS) for (const phi of TILTS) {
+        const m = sceneAt([0, 0, 0], turned(theta, phi), {}).world("thing");
+        const want = [Math.sin(rad(theta)) * Math.cos(rad(phi)), Math.sin(rad(phi)), Math.cos(rad(theta)) * Math.cos(rad(phi))];
+        for (let k = 0; k < 3; k++) expect(m[4 + k]).toBeCloseTo(want[k], 9);
+      }
+    });
+
+    it("every case", () => {
+      let standingToSomeone = 0;
+      for (const c of CASES2) {
+        const scene = sceneAt(c.position, turned(c.theta, c.phi), c.traits);
+        const standing = Math.abs(c.phi) < 45;
+        expect(standingIn(scene, "thing")).toBe(standing);
+        // the hand it looks toward, by angle: the least angle from θ to the way to each hand's middle
+        let want = null;
+        if (standing) {
+          let least = 45;
+          for (const [id, at] of Object.entries(HANDS)) {
+            const way = (Math.atan2(at[0] - c.position[0], at[2] - c.position[2]) * 180) / Math.PI;
+            const off = Math.abs(wrap(way - c.theta));
+            if (off < least) [least, want] = [off, id];
+          }
+        }
+        expect(facing(scene, zones(scene), "thing")?.id ?? null).toBe(want);
+        const player = want ? (c.seated[SEAT_OF[want]]?.player ?? null) : null;
+        const expected =
+          c.kind === "card" && want
+            ? player
+              ? { show: [player], only: [player] } // as if in that hand: its player's alone
+              : { show: [], only: [] } // a hand nobody sits at: nobody's
+            : c.kind === "card" && c.phi > 0
+              ? { show: "all" } // any face up, standing or leaning, that looks toward no hand: as before
+              : null;
+        if (c.kind === "card" && want && player) standingToSomeone++;
+        expect(audienceOf(scene, rosterSeats(c.seated))("thing"), JSON.stringify({ ...c, traits: undefined })).toEqual(expected);
+      }
+      expect(standingToSomeone).toBeGreaterThan(50);
+    });
+
+    it("in a hand, the hand decides, whichever way it faces", () => {
+      // standing in p2's hand, facing p1's
+      const scene = sceneAt([0, 0.012, -0.5], turned(0, 0), { [CARD]: {} });
+      expect(facing(scene, zones(scene), "thing")?.seat).toBe("p1");
+      expect(audienceOf(scene, rosterSeats(seats("ann", "ben")))("thing")).toEqual({ show: ["ben"], only: ["ben"] });
+    });
+
+    it("a tie goes to the nearer hand, then the lower seat id, then the lower hand id", () => {
+      const at = (a, b, ids = ["x", "y"], seatIds = ["p2", "p1"]) =>
+        testScene({
+          [ids[0]]: { transform: T(a), traits: zone(seatIds[0]) },
+          [ids[1]]: { transform: T(b), traits: zone(seatIds[1]) },
+          thing: { transform: T([0, 0.012, 0], turned(0, 0)), traits: { [CARD]: {} } },
+        });
+      const s20 = Math.sin(rad(20)), c20 = Math.cos(rad(20));
+      // both 20° off where it looks: the nearer one
+      let sc = at([0.5 * s20, 0, 0.5 * c20], [-0.8 * s20, 0, 0.8 * c20]);
+      expect(facing(sc, zones(sc), "thing")).toEqual({ id: "x", seat: "p2" });
+      // as near and as far round: the lower seat id
+      sc = at([0.5 * s20, 0, 0.5 * c20], [-0.5 * s20, 0, 0.5 * c20]);
+      expect(facing(sc, zones(sc), "thing")).toEqual({ id: "y", seat: "p1" });
+      // the same seat: the lower hand id
+      sc = at([0.5 * s20, 0, 0.5 * c20], [-0.5 * s20, 0, 0.5 * c20], ["y", "x"], ["p1", "p1"]);
+      expect(facing(sc, zones(sc), "thing")).toEqual({ id: "x", seat: "p1" });
+    });
+
+    it("level is the up of the frame it lies in: a table aboard a ship heeled 25° and turned", () => {
+      const ship = { transform: T([3, 1, -2], [rad(25), rad(70), 0]) };
+      const aboard = (rotation) =>
+        testScene({
+          ship,
+          hand1: { parent: "ship", transform: T([0, 0, 0.5]), traits: zone("p1") },
+          hand2: { parent: "ship", transform: T([0, 0, -0.5], [0, Math.PI, 0]), traits: zone("p2") },
+          thing: { parent: "ship", transform: T([0, 0.012, 0], rotation), traits: { [CARD]: {} } },
+        });
+      const who = rosterSeats(seats("ann", "ben"));
+      for (const theta of DIRS) {
+        const sc = aboard(turned(theta, 0));
+        expect(standingIn(sc, "thing")).toBe(true);
+        const want = Math.abs(theta) < 45 ? { show: ["ann"], only: ["ann"] } : Math.abs(theta) > 135 ? { show: ["ben"], only: ["ben"] } : null;
+        expect(audienceOf(sc, who)("thing")).toEqual(want);
+      }
+      // flat on the heeled table, face up: up as the table has it, not on edge
+      expect(standingIn(aboard([0, 0, 0]), "thing")).toBe(false);
+      expect(audienceOf(aboard([0, 0, 0]), who)("thing")).toEqual({ show: "all" });
+    });
+  });
 
   it("what that means for each viewer, with no other policy running: another seat's hand is never turned toward you", () => {
     // (one policy alone: who it's shown to is its `show`; who may see it, that cut by its `only`)
@@ -199,10 +315,16 @@ describe("the table extension", () => {
     const m = mount();
     const shuffle = m.x.commands.find((c) => c.id === "shuffle");
     expect(shuffle.key).toBe("s");
-    expect(shuffle.state("faceDown")).not.toBeNull();
+    // no boxes: the pile is what's on the same spot (faceDown alone): nothing to shuffle, so not offered
+    expect(shuffle.state("faceDown")).toBeNull();
     expect(shuffle.state("board")).toBeNull();
     expect(shuffle.state(null)).toBeNull();
-    // no boxes: the pile is what's on the same spot (faceDown alone)
+    m.w.change((d) => (d.objects.under = { name: "Card", transform: T([0.3, 0.0005, 0], [0, 0.4, Math.PI]), traits: hidden() }));
+    m.w.flush();
+    expect(shuffle.state("faceDown")).not.toBeNull();
+    m.w.change((d) => delete d.objects.under);
+    m.w.flush();
+    // asked all the same (a key), it says so
     shuffle.run("faceDown");
     expect(m.keeper.calls).toEqual([["faceDown"]]);
     expect(m.toasts().at(-1)[0]).toMatch(/nothing here to shuffle/);
@@ -569,10 +691,10 @@ describe("the hand in play", () => {
     w.done();
   });
 
-  it("has Shuffle and Draw and nothing else: no Roll (dice are the dice package's), no Sit (seats are their owner's)", () => {
+  it("has Shuffle, Draw, Wash, Stand and Lay my hand face up and nothing else: no Roll (dice are the dice package's), no Sit (seats are their owner's)", () => {
     const w = fakes.fakeWorld(sceneOf({ p1: pawn() }));
     const { x } = sit(w, "A", "alice");
-    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw"]);
+    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw", "wash", "stand", "reveal"]);
     w.done();
   });
 });

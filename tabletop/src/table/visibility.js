@@ -12,7 +12,11 @@
 //     A hand nobody sits at shows to nobody:  { show: [], only: [] }.
 //   - a CARD (trait tabletop.card): two-sided. Lying face up outside every
 //     hand, it shows to everyone:  { show: "all" }. Face down it shows to
-//     nobody (no answer).
+//     nobody (no answer). Standing on edge outside every hand (a domino stood
+//     up on the table in front of you, as one is played without a rack), it
+//     shows to the seat whose hand its face looks toward, and is screened
+//     from the rest, as if it were in that hand:  { show: [player], only:
+//     [player] } (`facing`). One facing no hand is judged as lying.
 //
 // So another seat's hand is never turned toward you: a keeper shows you its
 // cards' own backs there (which back it is, is real information when a table
@@ -75,6 +79,69 @@ export function faceUpIn(scene, id) {
   return dot / ((Math.hypot(...y) || 1) * (Math.hypot(...u) || 1)) > 1e-6;
 }
 
+/** A point under a 4 × 4 column-major matrix. */
+const at = (m, p) => [0, 1, 2].map((k) => m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2] + m[12 + k]);
+/** The part of `v` square to the unit `u` (level, when `u` is up). */
+const flat = (v, u) => {
+  const d = v[0] * u[0] + v[1] * u[1] + v[2] * u[2];
+  return [v[0] - d * u[0], v[1] - d * u[1], v[2] - d * u[2]];
+};
+const unit = (v) => {
+  const l = Math.hypot(...v);
+  return l > 1e-9 ? v.map((x) => x / l) : null;
+};
+
+/**
+ * Is it standing on an edge or an end: its own +Y (its face) nearer level
+ * than up or down in the frame it lies in (more than 45° from either)? The
+ * same test as Stand on edge's (stand.js isStanding), judged in the frame as
+ * faceUpIn is. Pure.
+ */
+export function standingIn(scene, id) {
+  const m = scene.world(id);
+  const p = parentOf(scene, id);
+  const up = p ? unit(scene.world(p).slice(4, 7)) : [0, 1, 0];
+  const y = unit([m[4], m[5], m[6]]);
+  if (!y || !up) return false;
+  return Math.abs(y[0] * up[0] + y[1] * up[1] + y[2] * up[2]) < Math.SQRT1_2;
+}
+
+/**
+ * The hand a standing thing's face looks toward: of every hand, the one the
+ * level direction from it to the middle of that hand's box is nearest the
+ * level direction of its face, within 45° (so at most one; a tie goes to the
+ * nearer hand, then the lower seat id, then the lower hand id, so every peer
+ * answers alike). Level is square to the up of the frame it lies in. null
+ * when it isn't standing (standingIn), or no hand is within 45° of where it
+ * looks. Pure, from the doc.
+ * @returns {{ id: string, seat: string } | null}
+ */
+export function facing(scene, regions, id) {
+  if (!standingIn(scene, id)) return null;
+  const m = scene.world(id);
+  const p = parentOf(scene, id);
+  const up = p ? unit(scene.world(p).slice(4, 7)) : [0, 1, 0];
+  const face = unit(flat([m[4], m[5], m[6]], up));
+  if (!face) return null;
+  const here = [m[12], m[13], m[14]];
+  let best = null;
+  for (const r of regions) {
+    const c = at(scene.world(r.id), [0, 1, 2].map((k) => (r.min[k] + r.max[k]) / 2));
+    const to = flat([c[0] - here[0], c[1] - here[1], c[2] - here[2]], up);
+    const dist = Math.hypot(...to);
+    const d = unit(to);
+    if (!d) continue;
+    const cos = d[0] * face[0] + d[1] * face[1] + d[2] * face[2];
+    if (cos < Math.SQRT1_2) continue;
+    const better =
+      !best ||
+      cos > best.cos + 1e-9 ||
+      (Math.abs(cos - best.cos) <= 1e-9 && (dist < best.dist - 1e-9 || (Math.abs(dist - best.dist) <= 1e-9 && (r.seat < best.seat || (r.seat === best.seat && r.id < best.id)))));
+    if (better) best = { id: r.id, seat: r.seat, cos, dist };
+  }
+  return best ? { id: best.id, seat: best.seat } : null;
+}
+
 /** The seat a viewer sits in, by the roster's seats ([{ id, viewer }]): the first that names them. */
 export function seatOf(seats, viewer) {
   if (!viewer) return null;
@@ -100,7 +167,8 @@ export function audienceOf(scene, seats) {
     let answer = null;
     if (o) {
       const m = scene.world(id);
-      const seat = regions.length ? seatAt(scene, regions, [m[12], m[13], m[14]]) : null;
+      // in a hand; else a card standing, facing one
+      const seat = regions.length ? (seatAt(scene, regions, [m[12], m[13], m[14]]) ?? (isCard(o) ? (facing(scene, regions, id)?.seat ?? null) : null)) : null;
       if (seat != null) {
         const p = player.get(seat) ?? null;
         answer = p ? { show: [p], only: [p] } : { show: [], only: [] };
