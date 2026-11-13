@@ -296,19 +296,19 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     t = ARRIVE_WAIT_MS + 5_000;
     await new Promise((r) => setTimeout(r, 300));
     await settle();
-    expect(s.local.get().body.id).toBe("orbit");
+    expect(s.local.get().body.id).toBe("look");
     await press(s, "load");
     await until(() => running(s).includes("t.seats"));
     await settle();
     expect(s.local.get().body.id).toBe("seat");
-    // another visit, saying not now: orbit, and the arrival waits on nothing
+    // another visit, saying not now: Look, and the arrival waits on nothing
     localStorage.clear();
     resetPackages();
     const d = await mount({ extensions: [PROMPT], repo, doc });
     await until(() => state(d).ask.length === 1);
     await press(d, "dismiss");
     await settle();
-    expect(d.local.get().body.id).toBe("orbit");
+    expect(d.local.get().body.id).toBe("look");
     expect(running(d)).not.toContain("t.seats");
   });
 

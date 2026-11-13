@@ -88,7 +88,8 @@ describe("scene.frame: commands and double-click", () => {
     expect(s.doc().view.start.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
     expect(s.local.get().edits.undo).toBe("Set home view");
     expect(s.api("scene.frame").undo()).toBe(true);
-    expect(s.doc().view.start).toBeUndefined();
+    // (a scene made new starts people in Edit: that was there before)
+    expect(s.doc().view.start).toEqual({ body: "edit" });
     s.unmount();
   });
 });

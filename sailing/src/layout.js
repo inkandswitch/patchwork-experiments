@@ -101,7 +101,8 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
   );
   ctx.change((d) => {
     d.traits[SEA] = newSea({ wind, seed });
-    // people start off her quarter, in orbit, where a click comes aboard (crew.js: an
+    // people start off her quarter, in Look (no body named: the stage's orbit
+    // camera, not the editor), where a click comes aboard (crew.js: an
     // untouched camera follows her quarter wherever she has sailed to)
     d.view.start = { home: { position: turn(QUARTER.position, course, at), target: turn(QUARTER.target, course, at) } };
     writeObjects(d, ship);

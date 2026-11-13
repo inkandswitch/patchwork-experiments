@@ -28,8 +28,8 @@
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
 // the game has seats); the stage then starts its maker where the doc says
-// (STAGE.md, "Templates"): at Lost Cities watching from the first seat,
-// Santorini in orbit.
+// (STAGE.md, "Templates"): at Lost Cities watching from the first seat (every
+// built-in game has seats; one without would start them in Look).
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";

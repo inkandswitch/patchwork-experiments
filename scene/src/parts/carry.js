@@ -408,6 +408,7 @@ export default {
       },
       {
         id: "snap",
+        edit: true,
         name: "Snap",
         show: ["toolbar"],
         state(target, { scene, local }) {

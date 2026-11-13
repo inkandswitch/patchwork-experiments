@@ -1,7 +1,7 @@
 // The input router: DOM input on the canvas → event values, offered down the
 // chain until something claims them (STAGE.md, "The input chain"; TOOLS.md
 // §4, §5). It owns the open session (one gesture at a time), the body stack
-// (orbit always at the bottom), the held tool (one slot), the open popovers,
+// (the stage's Look or Edit always at the bottom), the held tool (one slot), the open popovers,
 // pointer lock (stage/pointer.js), the Escape ladder (stage/ladder.js),
 // which keys are down and who claimed them, `menu` synthesis and the cursor.
 // It knows nothing about three.js or the doc: picking, rays, the chain order
@@ -9,7 +9,7 @@
 //
 // A press goes: the held tool, the chain (the widget's owner, the holders
 // nearest first, the general extensions), then the top body's default (in
-// orbit, Select). A key goes: the open gesture's declared keys, the held
+// Edit, Select; Look has none). A key goes: the open gesture's declared keys, the held
 // tool's, the top body's, then the chain (where the key map is the only
 // taker). Presses have a position, so the body comes last there; keys have
 // none, so what reserves them comes first.
@@ -177,7 +177,7 @@ function call(owner, obj, name, ...args) {
  *   centerRay: () => { origin: any, dir: any },
  *   chainFor: (ev: object) => { order: string[], holderOf: (id: string) => string | null },
  *   inputOf: (id: string) => object | undefined,
- *   orbit: RouterBody,                   // the body at the bottom of the stack, always there
+ *   base: RouterBody,                    // the body at the bottom of the stack, always there (setBase changes it)
  *   cameraHeld: () => boolean,
  *   onHover: (ev: object | null) => void,
  *   onCursor: (name: string | null) => void,
@@ -217,9 +217,9 @@ export function createRouter(o) {
       ...extra,
     });
 
-  // The body stack, orbit at the bottom; the held tool; the open popovers.
-  const orbit = { owner: null, ...o.orbit, id: o.orbit?.id ?? "orbit", input: o.orbit?.input ?? {}, lock: !!o.orbit?.lock, keys: o.orbit?.keys ?? [], suspended: false };
-  const stack = [orbit]; // [{ owner, id, input, lock, keys, suspended }], top last
+  // The body stack, the base at the bottom; the held tool; the open popovers.
+  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], suspended: false });
+  const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended }], top last
   const top = () => stack.at(-1);
   let tool = null; // { owner, command, name, input, keys, pointer }
   const popovers = []; // [{ owner, close }], latest last
@@ -228,7 +228,7 @@ export function createRouter(o) {
   const offerTo = (name, handlers, type, ev) => offer([name], () => handlers, type, () => withHolder(ev, null));
 
   // Offer an event: the held tool first, then the chain, then the top body
-  // (its default: in orbit, Select). The chain is only worked out if the
+  // (its default: in Edit, Select). The chain is only worked out if the
   // tool passes, so an event the tool takes never picks.
   function dispatch(type, ev) {
     if (tool) {
@@ -666,7 +666,7 @@ export function createRouter(o) {
 
   // ─── the pointer (stage/pointer.js) ───────────────────────────────────────
 
-  let ptr = { lock: !!orbit.lock, wanted: false, released: false, refused: false };
+  let ptr = { lock: !!stack[0].lock, wanted: false, released: false, refused: false };
   let exiting = false; // the lock is going because this page let it go, not the browser
   let requested = false; // a request is out, unanswered
 
@@ -818,6 +818,24 @@ export function createRouter(o) {
     return true;
   }
 
+  /**
+   * Make `body` the base, the body at the bottom of the stack (the stage's
+   * Look or Edit): every body standing on the old one leaves first, then
+   * the base itself is replaced (its keys let go; "left" told to the old,
+   * "resumed" to nothing: the new base starts on top).
+   * @param {RouterBody} body
+   */
+  function setBase(body) {
+    if (disposed) return;
+    if (stack.length > 1) popBody(stack[1]);
+    const old = stack[0];
+    if (old.id === body?.id && old.input === (body?.input ?? {})) return;
+    releaseKeys(undefined, old);
+    stack[0] = baseEntry(body);
+    call("scene", old.input, "left");
+    settle(old);
+  }
+
   // ─── the held tool ────────────────────────────────────────────────────────
 
   /**
@@ -900,11 +918,12 @@ export function createRouter(o) {
 
   return {
     pushBody,
+    setBase,
     /** the top body: { id, owner } */
     body: () => ({ id: top().id, owner: top().owner }),
     /** the stack, bottom first: [{ id, owner }] */
     bodies: () => stack.map((x) => ({ id: x.id, owner: x.owner })),
-    /** pop the top body (never orbit). @returns whether one went */
+    /** pop the top body (never the base). @returns whether one went */
     leave: () => popBody(top()),
     hold,
     putDown,

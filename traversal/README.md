@@ -54,7 +54,7 @@ One verb, its own (**[F] Go below**, or "Go"), on every surface: the use
 prompt, the menu, the inspector and the key map. It says `reach: true`, so
 the stage measures it from the body's eye against the body's reach
 (scene/TOOLS.md §4): walking, within 2 m of the point looked at (out of
-reach it shows disabled, "too far"); in orbit, anywhere.
+reach it shows disabled, "too far"); in Look or Edit (the orbit camera), anywhere.
 
 Using it sends Patchwork's `patchwork:open-document` event, `{ url: to }`,
 bubbling and composed out of the stage's element: what openDocument in

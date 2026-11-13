@@ -194,7 +194,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   const s = {
     ship,
     contents,
-    bodies: [{ id: "orbit", sitting: null }], // the stage's body stack, orbit at the bottom
+    bodies: [{ id: "look", sitting: null }], // the stage's body stack, its Look at the bottom
     pointer: { locked: true, released: false, refused: false },
     loops: [],
     presence: {},
@@ -284,7 +284,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   };
   s.body = () => {
     const t = s.bodies.at(-1);
-    return { id: t.id, label: t.sitting?.label ?? t.def?.label ?? "Orbit", depth: s.bodies.length - 1, lock: !!t.def?.lock, reach: t.def?.reach ?? Infinity, keys: t.sitting?.keys ?? [] };
+    return { id: t.id, label: t.sitting?.label ?? t.def?.label ?? "Look", depth: s.bodies.length - 1, lock: !!t.def?.lock, reach: t.def?.reach ?? Infinity, keys: t.sitting?.keys ?? [] };
   };
   // a key the top body declares reaches it; any other goes on (the router's key order)
   s.declared = () => (s.bodies.at(-1).sitting?.keys ?? []).map((k) => k.code);
@@ -305,7 +305,7 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(crew.me().playing).toBe(false);
     expect(s.bodies.length).toBe(1);
     expect(crew.input.click({})).toBe(true);
-    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard"]);
+    expect(s.bodies.map((b) => b.id)).toEqual(["look", "aboard"]);
     expect(s.body()).toMatchObject({ id: "aboard", label: "Aboard", lock: true, reach: 2.5 });
     expect(s.held).toBe(1);
     expect(s.rate).toBe(null); // play.js sets the rate, not the crew
@@ -402,7 +402,7 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.presence.crew).toBe(undefined);
     expect(crew.me().playing).toBe(false);
     expect(close(s.cam.position, [12, 6.5, 16], 1e-9)).toBe(true);
-    expect(s.cam.fov).toBe(50); // the orbit's own, not first person's
+    expect(s.cam.fov).toBe(50); // the orbit camera's own, not first person's
   });
 
   it("after leaving, a view someone else sets isn't taken back to her quarter", () => {
@@ -481,7 +481,7 @@ describe("the crew", { timeout: 60_000 }, () => {
       hint: () => "A / D steer · F leave",
     };
     const leave = crew.take("wheel", handlers);
-    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard", "station"]);
+    expect(s.bodies.map((b) => b.id)).toEqual(["look", "aboard", "station"]);
     expect(s.body()).toMatchObject({ id: "station", label: "Helm", reach: 2.5 });
     expect(s.held).toBe(1); // the crew's camera still: a station is ours
     expect(crew.me().station).toBe("wheel");
@@ -503,7 +503,7 @@ describe("the crew", { timeout: 60_000 }, () => {
     // F (the station's) leaves: the station body comes off, walking where you stood
     leave();
     expect(handlers.left).toHaveBeenCalledTimes(1);
-    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard"]);
+    expect(s.bodies.map((b) => b.id)).toEqual(["look", "aboard"]);
     expect(s.held).toBe(1);
     leave();
     expect(handlers.left).toHaveBeenCalledTimes(1);
@@ -539,13 +539,13 @@ describe("the crew", { timeout: 60_000 }, () => {
     s.crew.bodies.push({ id: "seat", label: "Seated", enter: () => ({ input: {}, leave() {} }) });
     s.api.body.enter("seat", "p1");
     crew.start();
-    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat", "aboard"]);
+    expect(s.bodies.map((b) => b.id)).toEqual(["look", "seat", "aboard"]);
     s.frames(2);
     const sets = s.sets.length;
     s.api.body.leave();
     expect(crew.me().playing).toBe(false);
     expect(s.sets.length).toBe(sets); // nothing set: the seat's resumed puts its view back
-    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+    expect(s.bodies.map((b) => b.id)).toEqual(["look", "seat"]);
   });
 
   it("a station's body needs its verb: the chip can't offer it, and entering it bare does nothing", () => {
@@ -637,7 +637,7 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(seatedView(s.api)).toBe(true);
     expect(crew.input.click({ hit: { id: "hull" } })).toBe(false);
     expect(crew.me().playing).toBe(false);
-    // in orbit: not seated
+    // in Look: not seated
     s.bodies.pop();
     expect(seatedView(s.api)).toBe(false);
     expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);

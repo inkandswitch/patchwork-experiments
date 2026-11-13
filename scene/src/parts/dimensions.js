@@ -7,11 +7,16 @@
 // (the object was rebuilt with another shape) is "off surface". The
 // Dimensions panel lists them, to select and delete.
 //
+// Saved dimensions are the doc's, drawn in every body (an author's
+// annotation, like a label); measuring them, their panel, selecting one by
+// its label and deleting it are the editor's (../stage/bodies.js): only in
+// Edit.
+//
 // A dimension is selectable though it isn't a scene object: selecting one
 // sets local.selected, the one selection, to its ref "dimension:<id>"
 // (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
 // lets go of it with nothing to reconcile. Delete is a command on that ref;
-// Escape (the stage's ladder) and a click elsewhere in the view (orbit's
+// Escape (the stage's ladder) and a click elsewhere in the view (Edit's
 // default press) clear it, as they clear any selection. This
 // extension lets go of a ref whose dimension went.
 
@@ -22,6 +27,7 @@ import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { own } from "../stage/own.js";
+import { editing } from "../stage/bodies.js";
 
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
 export const KIND = "dimension";
@@ -315,7 +321,8 @@ export function create(api) {
         className: "dimension-label",
         rank: 3,
         data: { id: d.id, selected: d.selected, detached: d.detached, offsurface: d.offSurface },
-        onPointerDown: () => select(d.id),
+        // selecting one is the editor's (../stage/bodies.js): only in Edit
+        onPointerDown: () => editing(api.local.get()) && select(d.id),
       })),
     );
     api.invalidate();
@@ -436,6 +443,7 @@ export function create(api) {
     {
       // a measuring tool's way to save what it measured: run(null, { a, b, id?, label? })
       id: "add",
+      edit: true,
       name: "Add dimension",
       show: [],
       state: (target) => (target == null ? { title: "Save a dimension between two anchors" } : null),
@@ -443,6 +451,7 @@ export function create(api) {
     },
     {
       id: "delete",
+      edit: true,
       name: "Delete dimension",
       key: ["Delete", "Backspace"],
       show: [],

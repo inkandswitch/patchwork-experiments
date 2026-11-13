@@ -39,7 +39,7 @@ people lists this package in its `packages`, like any other.
   at, so the table holds still in front of you however the ship rolls. It
   reserves no keys (D draws), locks nothing, reaches 2 m, and needs a seat
   (`here: false`: the body chip doesn't offer it). Sitting pushes it over
-  whatever body you're in (walking her deck, or orbit); standing up, the
+  whatever body you're in (walking her deck, or Look); standing up, the
   chip's Leave or watching pops it, and that body carries on.
 - **"Sat down"**, told to the others (`api.send`, the seat id only).
 

@@ -15,17 +15,25 @@ finite cases, permissions left to Keyhive.
 
 - **Brought by the user, or part of the scene?** The scene holds content,
   traits and the behaviours they call for, its **processes** (sea, wind,
-  door timers) and its **clock**. The viewer has a **body** (orbit, walk,
-  seat, station), a **held tool** (none, or one), a selection and prefs.
-  Tools and bodies come with packages; which you hold or are in is yours.
-  A scene may suggest where to start, never a tool.
-- **How do play sessions relate to edit sessions?** There are none.
-  Playing is the empty hand. Editing is selecting a thing (its halo shows
-  handles where you may write) or holding a tool. Both at once, by one
-  person or many, is ordinary.
-- **How does a user move between them?** They don't. They pick up a tool
-  (the bar, or its key) and Esc puts it down. They change body with a
-  thing's verb ("Sit", "Take the helm"), the body chip, or Leave.
+  door timers) and its **clock**. The viewer has a **body** (Look, Edit,
+  walk, seat, station), a **held tool** (none, or one), a selection and
+  prefs. Tools and bodies come with packages; which you hold or are in is
+  yours. A scene may suggest where to start, never a tool.
+- **How do play sessions relate to edit sessions?** There are none: the
+  world runs the same for everyone. **Editing is a body** (Decisions 6,
+  reversing this note's first answer, "Editing is the selection's halo,
+  with no switch and no pref"): Edit is the orbit camera with the editor
+  on it, where a click selects and the selection's halo shows handles where
+  you may write, the inspector follows the selection and the toolbar,
+  grid, axes and bounds show. Look is the same camera without any of it.
+  Playing is any other body, or Look, with the empty hand. One person
+  editing while another plays is ordinary; one person can't do both at
+  once.
+- **How does a user move between them?** By body: the body chip's Look and
+  Edit, a thing's verb ("Sit", "Take the helm"), or Leave. Entering any
+  body from Edit leaves Edit (nothing stands on it), and Leave never comes
+  back to it. They pick up a tool (its key, the bar in Edit) and Esc puts
+  it down.
 - **When does the sea model run?** When its doc's clock runs and a view
   present can compute it: one holds the doc's clock claim and steps every
   process, the others follow. Nobody present, no time passes. Editing never
@@ -63,7 +71,8 @@ runs on a private clock while the ships stop.
   "author"` is "edit" as a field. But **can** (the thing) is not **may**.
 
 **Recommendation: a hybrid.** Editing is the selection's halo, with no
-switch and no pref; bodies, the clock, the Escape ladder, `api.dock` and
+switch and no pref (*reversed 2026-11-13*, Decisions 6: editing is the Edit
+body); bodies, the clock, the Escape ladder, `api.dock` and
 the end of `requires` come from tools in hand; can versus may, with "can be
 carried" a trait. Rejected: grants, act classes, belt digits, Tab, `with`.
 
@@ -97,9 +106,11 @@ for passing states (a die under a cup). Flip is carry's verb.
 **Chrome follows attention, never the doc.** Twenty edit-only parts are
 what keep the outline, grid and axes out of a game today. Instead the
 inspector is a drawer tab while something is selected, the outline a tab
-the viewer opens, and grid, axes and bounds are the orbit body's (§4). A
+the viewer opens, and grid, axes and bounds are the Edit body's (§4). A
 doc may still suggest display prefs (grid, units, snap), as it suggests
-atmosphere; no game needs one to work.
+atmosphere; no game needs one to work. Since Decisions 6 the editor's
+chrome is the Edit body's alone (§3, "What is Edit's"): the parts still
+run in every body (what runs is the doc's), and show nothing outside it.
 
 ## 2. Part of the scene, brought by the viewer
 
@@ -123,22 +134,53 @@ one surface over it, and keys go to it (§5): what is shown is what keys do.
 
 **A press** runs COMPOSITION §5's chain: the held tool, the widget owner
 (handles), the holders nearest first along the hit's path, then the body's
-default: orbit's selects (its drag orbits); walk, seat and station have
-none. So in CAD a click selects a crate, and at a card table it draws. A
-holder's `cursor(ev)` may name its click ("Draw"), shown at the pointer.
+default: Edit's selects (its drag orbits); Look, walk, seat and station
+have none (Look's drag orbits too). So in CAD a click selects a crate, and
+at a card table it draws. A holder's `cursor(ev)` may name its click
+("Draw"), shown at the pointer.
 
 **Select** is also the first entry of every target's menu (right-click,
 long-press, the context-menu key; under lock, at the crosshair): the
-deliberate select in a game. The outline is the keyboard's. Alt keeps its
-one meaning: place freely during a carry.
+deliberate select in a game, in every body. The outline is the keyboard's,
+in Edit. Alt keeps its one meaning: place freely during a carry.
 
-**The halo.** A selection shows its verbs and, where its doc is writable,
-handles: move arrows, rotate rings and scale corners around its box,
+**The halo.** A selection shows its verbs and, in Edit where its doc is
+writable, handles: move arrows, rotate rings and scale corners around its box,
 screen-sized as in Morphic, plus build-param knobs, in the parent's drawn
 frame, so a winch's handles heel with the hull. This is new work:
 TransformControls is world-space and one mode at a time (`gizmo.js:45,113`);
 the drag converts as the hand does (`hand.js:63-98`). G, R and H stop being
 keys; move, rotate and "no gizmo" stop being tools; there is no pref.
+
+**What is Edit's** (Decisions 6). The rule: *the stage's authoring is
+Edit's: everything that writes through the edit stack (what undo takes
+back), the tools that make those writes, and the aids drawn for them.
+Everything packages bring (verbs, carries, bodies, seats, processes) and
+how you look and get about is everyone's, in every body.* So someone at a
+table or walking a level sees no editor.
+
+| Edit's (shows and runs only in Edit) | Everyone's (every body) |
+|---|---|
+| a plain click selecting (Edit's default press) | Select in every target's menu, Esc to deselect; the selection's box |
+| the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
+| the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
+| the toolbar, all of it (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
+| grid, axes and bounds | the seat picker, the clock chip (Pause is anyone's: Decisions 5) |
+| Measure; selecting and deleting a dimension (saved ones are drawn everywhere: the doc's annotation) | notices and HUD pills, legends, the packages prompt |
+| Remove (Delete), Group, Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste | Frame (`.`) and a double-click to frame |
+| dropping or pasting documents in, the empty scene's start screen | the orbit camera's drag, pan and zoom (in Look and Edit) |
+| Undo and Redo (⌘Z, ⇧⌘Z) | |
+
+A command says `edit: true` to be Edit's: `commandState` (the one every
+surface and `api.run` ask) answers null for it outside Edit, so it is on
+no surface, no key reaches it and it doesn't run; a package may mark its
+own. A drawer tab (`parts/tab.js`) opens only in Edit and shuts when the
+body leaves it. A tool held through an Edit command (Measure) is put down
+when the body leaves Edit. The selection itself is yours in every body: it
+survives a change of body, and Edit shows its chrome again on coming back.
+A package's command meant for the toolbar (arena's Play and Gun, the cups'
+Lift all) shows there only in Edit; elsewhere it's in the menu and on its
+key, until §6's bar of tools exists for games.
 
 **Focus scopes selection only.** Selection lives at the focus (COMPOSITION
 §3): with the focus on the boat, selecting a card aboard selects the link.
@@ -150,10 +192,14 @@ the focus verbs and carries still work; a Select there does nothing.
 
 **One stack, one slot.** The router's stack (once the arm stack; now
 `stack`, `pushBody` and `popBody` in router.js, keeping the old mechanism:
-suspended, resumed) holds only bodies, orbit
-always at the bottom. Entering a body pushes it; Leave pops it (standing up
-returns to walking); a body whose stage closes is popped; focus moves don't
-touch it. Over the stack is one slot, the held tool `{ stage, ext, command }`:
+suspended, resumed) holds only bodies, the stage's Look or Edit
+always at the bottom (the base). Entering a body pushes it; Leave pops it
+(standing up returns to walking); a body whose stage closes is popped;
+focus moves don't touch it. Nothing stands on Edit: entering any body from
+Edit turns the base to Look first, so Leave from a walk, a seat or a
+station entered there comes back to Look, never to Edit. Choosing Look or
+Edit (the body chip, or `api.body.enter("look" | "edit")`) leaves every
+body over the base and makes that one the base (router `setBase`). Over the stack is one slot, the held tool `{ stage, ext, command }`:
 picking one replaces it, Esc empties it. `local.tool`, `effectiveTool` and
 `view.tool` go; the add chooser becomes a focused DOM dialog.
 
@@ -163,9 +209,24 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
 ```
 
-- **orbit**, the stage's: OrbitControls, `frame`, `autoframe` and the aids.
-  Reach ∞. It rides the focus stage's latest base ride (sailing's follow on
-  her hull). `.` frames the selection, Home goes home; F is free.
+- **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
+  *orbit*, Decisions 6): both the orbit camera, OrbitControls, `frame` and
+  `autoframe`. Reach ∞. Each rides the focus stage's latest base ride
+  (sailing's follow on her hull). `.` frames the selection; F is free.
+  **Look** has no default press, like walk, seat and station; **Edit**'s
+  default press selects, and the editor's chrome is its alone (§3, "What
+  is Edit's"). Labels say what each is: "Look", "Edit".
+- **Where people start** (`view.start.body`, §2): `"edit"` starts them in
+  Edit; anything else, or nothing, starts them in Look, and a package's body
+  named there (walk, seat) is entered over Look once it's on offer. A
+  scene made new starts people in Edit, because they came to build: the
+  scene datatype's `init` writes `view.start = { body: "edit" }` (and the
+  `emptyScene` copies every package keeps of it), so the doc says so, not a
+  guess from its being empty. A template or publisher that makes something
+  to look at, play or walk writes its own `view.start`, replacing it: a
+  table seats people, a level walks them, a ship, Cadboro Bay or a
+  showcase names no body (Look). The inspector's Starts in offers Look (no
+  key), Edit, then the bodies on offer.
 - **walk**, one package's, replacing arena's and sailing's walkers. It
   starts at the eye, else the spawn; its floor is whatever the ray hits.
   (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as
@@ -177,8 +238,8 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
 frame; the view converts the eye. The body's ride is the only ride. The
 body is the source of `from` and `reach`, and every surface (prompt, menu,
 key map) passes both to `state` and `run`; with no hit, distance is from
-the eye to the target's box. Reach is ergonomics, not permission: orbit
-reaches everything.
+the eye to the target's box. Reach is ergonomics, not permission: Look and
+Edit reach everything.
 
 **The pointer.** The top body asks for lock; the view grants it while
 nothing else wants the pointer (a held tool with `pointer: true`, a
@@ -209,16 +270,31 @@ the focus (Leave). Never the body, never the clock. The Esc hint names the
 next layer. Escape is handled in eleven files today; the ladder is the one
 place it is decided.
 
+**Against the split** (Decisions 6). The ladder is unchanged: Escape never
+pops the body, so it never leaves Edit (or enters it); the chip and Leave
+do. Its selection rung stands in every body, since Select is everyone's.
+Its tool rung puts down whatever is held; leaving Edit has already put
+down a tool held through an Edit command. Keys: an `edit: true` command's
+key reaches it only in Edit (Delete, M for Measure, ⌘C and ⌘V), so walking
+or seated those keys are free for the game, and its hint shows nowhere
+else. **Undo** (⌘Z, ⇧⌘Z / Ctrl+Y, the toolbar's Undo and Redo) is the
+stage's edit undo, so it is Edit's: outside Edit the keys pass by. The
+steps recorded in Edit stay on this view's stack (per focus doc) while it
+looks, walks or sits; back in Edit ⌘Z takes the last one back if the doc
+still holds what it wrote (undo's compare-and-set, Decisions 2), else
+it's refused and said, as for any later write.
+
 ## 6. The interface
 
 ```
 +-- Harbour > Wanderer -- ▶ sea -- o Ana · helm  o Ben · walk -- | [Walk v] [View v] -+
 |              ~ ~ ~   Wanderer heels, the sea runs   ~ ~ ~        + (eye ray)          |
 |                  .- Winch ---- [Q] Haul  [E] Ease -.   the prompt: attention's verbs  |
-| [ Measure | Dimensions | Paint ]                              Esc: release pointer   |
+|                                                               Esc: release pointer   |
 +--------------------------------------------------------------------------------------+
 ```
-*Walking aboard, empty hand. Left of the bar is the world's, right is yours.*
+*Walking aboard, empty hand. Left of the bar is the world's, right is yours.
+No editor: the bar of tools (Measure, Dimensions…) is Edit's.*
 
 ```
 +-- Harbour > Wanderer -- ▶ sea -- o Ana · helm  o Ben · walk -- | [Walk v] [View v] -+
@@ -227,7 +303,10 @@ place it is decided.
 |  hull, on hover: "moving: sailing, Ana at the helm"   pointer free   Esc: deselect   |
 +--------------------------------------------------------------------------------------+
 ```
-*Ben edits while walking: right-click, Select. The pointer frees; WASD still walk.*
+*As first drawn: Ben edits while walking. Since Decisions 6 he can't: he
+picks Edit on the body chip (he stops walking; the camera is the orbit
+camera), clicks the winch, and the handles and inspector show. Walking,
+right-click Select still selects it (no handles, no inspector).*
 
 ```
 +-- Wanderer -- ▶ sea -- o Cara · p1  o Dan · p2 ----------------------- | [Seat p1 v] -+
@@ -238,7 +317,7 @@ place it is decided.
 *Seated: D reaches Draw; the game has no processes, so no clock of its own.*
 
 ```
-+-- Wanderer > [Lost Cities] (Leave) -- ⏸ Paused by Ben [Resume] -- o Eve -- | [Orbit v] -+
++-- Wanderer > [Lost Cities] (Leave) -- ⏸ Paused by Ben [Resume] -- o Eve --  | [Edit v] -+
 |  (tinted) the boat, as it is: verbs and carries reach it; selection does not            |
 |        .-- table felt (selected, the game's object) --.            Felt [green v]       |
 +------------------------------------------------------------------------------------------+
@@ -246,7 +325,11 @@ place it is decided.
 *A linked scene entered while the boat is paused: the focus moves in; tools and body stay.*
 
 - **The bar of tools** holds the general tools and those of the stages on
-  the focus path. **Who's here** shows each person's body and held tool,
+  the focus path. *Built* as the toolbar, which is Edit's (Decisions 6):
+  outside Edit there is no bar, and a package's toolbar command is in the
+  menu and on its key.
+- **The body chip** offers Look and Edit first, then the bodies that can
+  start here (Walk), then Leave while a body stands over the base. **Who's here** shows each person's body and held tool,
   from presence (today only selection and hover, `select.js:143-146`).
 - **The clock chip** is ▶ or ⏸ for each doc on the focus path that has a
   process, outermost first; its Pause acts on that doc. Who computes shows
@@ -467,7 +550,7 @@ Had he dragged the hull, it would not have yielded: Ana steers.
 
 **2. Lost Cities aboard while Eve repaints the table.** Cara and Dan sit at
 linked game G in G's seat bodies; cards carry in G's stage, on G's channel.
-Eve, in orbit at focus Wanderer, clicks the table rim (the boat's) and
+Eve, in Edit at focus Wanderer, clicks the table rim (the boat's) and
 recolours it. For the felt (G's) she double-clicks G to enter it, where G's
 rule and audience run unchanged: she sees backs.
 
@@ -479,7 +562,7 @@ Shape. Trial T sails two copies of C fixed at heads h1 and h2 meanwhile.
 walk body's package. Dee picks up the gun by its key: a click shoots, R
 reloads, so a die's Roll there shows without R. F opens a door, reach from
 her body; joints' step closes it once the wait has passed in world t. Eli,
-in orbit, clicks a wall and fixes its material; if he pauses, doors hold
+in Edit, clicks a wall and fixes its material; if he pauses, doors hold
 and Dee still walks. To try his changes, he plays a copy.
 
 ## Invariants
@@ -800,11 +883,41 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Words, marked as what step 8 removes. Examples aren't republished.
   Step 8 brought the notes up to date for itself: Activity left Words,
   Start and Edit arrived, and STAGE.md has "Arriving" and "Undo".
+- **Editing is a body** (Decisions 6, after step 8). *Built:*
+  `src/stage/bodies.js` has `LOOK`, `EDIT`, `editing(local)` (the one
+  question every piece of editing chrome asks), `inBody` (the `edit: true`
+  rule `commandState` applies) and the stack's model (`enterStep`,
+  `leaveStep`, `startBase`). The router's bottom entry is the base, and
+  `setBase` replaces it after every body over it leaves; the stage keeps
+  `base` (Look or Edit), enters a stage body by `setBase`, turns Edit to
+  Look before pushing any other, and on arrival sets the base from
+  `view.start.body` at once (`startBase`). The halo (`haloTarget`), the
+  knobs (`knobsShown`), the inspector's follow, the drawer tabs, grid, axes
+  and bounds, the toolbar (`toolbarShown`), add, transfer, undo's keys and
+  dimensions' label select ask `editing`; the stage's editing commands say
+  `edit: true`. The scene datatype's `init` writes `view.start = { body:
+  "edit" }`, and so does every package's copy of `emptyScene`. Packages
+  that asked "is this orbit?" ask the body's depth now (`depth === 0`: the
+  stage's base): seats' walking, sailing's `seatedView` and `overOrbit`,
+  the use prompt's loop. Also: a notice saying what one still showing says
+  replaces it (`withNotice`), so three tables laid at once prompt "Pick a
+  seat" once. *Proves* (finite, exhaustive): every body (Look, Edit, walk,
+  seat, station) × nothing, an object or a ref selected × writable or not,
+  on the real parts mounted together: handles, knobs, inspector on select,
+  grid, axes, bounds and the toolbar show exactly in Edit (handles and
+  knobs only where writable, the inspector only on an object; 30 cases,
+  `parts/edit-body.test.js`); a click on an object or on nothing in each
+  body from each selection (30, `parts/select.test.js`); every sequence of
+  ≤5 enters and leaves from Look and from Edit on the model (18,662) and ≤4
+  on the stage itself (3,110), the bottom always Look or Edit, nothing
+  standing on Edit, Leave never landing in it, and the fall-back after
+  Leave from every body (`stage/bodies.test.js`).
 
 ## What it costs
 
 - Every piece carries a trait; a plain CAD scene moves things by handle
-  until someone ticks Carryable. Selecting in a game takes the menu.
+  until someone ticks Carryable. Selecting in a game takes the menu, and
+  editing takes the Edit body (Decisions 6).
 - Keyboard bodies have no touch controls yet (`keys` carry labels for one).
 - One computer per doc: a weak machine slows everyone; a crash freezes the
   world up to 15 s; a running world adds a checkpoint every 30 s while
@@ -869,3 +982,31 @@ The project lead decided the five open questions on 2026-11-12.
    sought: game integrity is not secured beyond the secret-keeping work
    (the audience, the veil and keepers). Pauses and moves are attributed
    by name.
+6. **Editing is a body** (the project lead, 2026-11-13). This **reverses**
+   the hybrid's first answer, "Editing is the selection's halo, with no
+   switch and no pref". In a game, selecting a piece gave it big
+   translate, rotate and scale handles and, since step 8, opened the
+   inspector; the lead: "a game shouldn't do that unless we've opted into
+   some kind of editing view". Of three ways offered to opt in, the lead
+   chose this one: split orbit into **Look** (the orbit camera, no select
+   on click, no handles) and **Edit** (orbit as it was). You switch by the
+   body chip, like Sit or Walk. Published scenes start in Look. Editing
+   while walking or seated isn't possible. So:
+   - The id `orbit` goes, with no back-compat; examples are republished.
+   - The editor's chrome is Edit's alone, by one rule (§3, "What is
+     Edit's"): the stage's authoring, whatever writes through the edit
+     stack, the tools that make those writes and the aids drawn for them.
+     Packages' verbs, carries, bodies and seats, menus with Select, and
+     looking about are everyone's.
+   - Nothing stands on Edit: entering any body from it turns the base to
+     Look, and Leave falls back to Look, never to Edit (§4).
+   - A doc names Edit to start people in it; naming nothing is Look. A scene
+     made new names Edit (the datatype's `init`); a published example names
+     its own: tables and rooms seat, levels walk, ships, terrain and
+     showcases name nothing (Look).
+   - Undo stays the stage's edit undo, so it is Edit's; steps recorded
+     before leaving Edit stay, to take back on returning (§5).
+   What it costs: editing a thing in a running game is a body change (Ben
+   stops walking to move the winch, §6), and a package's toolbar command
+   (arena's Play, the cups' Lift all) is in the menu and on its key outside
+   Edit, until there is a bar of tools for games.

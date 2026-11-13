@@ -53,6 +53,7 @@ import { createEdits } from "../undo.js";
 import { isOwn } from "./own.js";
 import { selectionStep } from "../selection.js";
 import { escapeHint } from "./ladder.js";
+import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
 import { lookChain } from "../keymap.js";
 import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
@@ -94,13 +95,10 @@ const EDGES = ["top", "right", "bottom", "left"];
 
 const noop = () => {};
 
-/**
- * The orbit body (TOOLS.md §4), the stage's own and always at the bottom of
- * the stack: OrbitControls, with Select as its default press. Reach is
- * everything; it locks nothing and reserves no keys.
- */
-export const ORBIT = Object.freeze({ id: "orbit", label: "Orbit", keys: Object.freeze([]), lock: false, reach: Infinity });
-const ORBIT_LOCAL = Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
+// The stage's own bodies, Look and Edit (./bodies.js, TOOLS.md §4): the
+// orbit camera, one of them always at the bottom of the stack. As local.body:
+const baseLocal = (b) => Object.freeze({ id: b.id, label: b.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
+const BASE_LOCAL = Object.freeze({ [LOOK.id]: baseLocal(LOOK), [EDIT.id]: baseLocal(EDIT) });
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 const now = () => globalThis.performance?.now?.() ?? Date.now();
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
@@ -236,15 +234,15 @@ export function cleanCamera(c) {
 
 /**
  * Where the doc starts people (TOOLS.md §2): `view.start = { body, place,
- * home }`, read once on arrival. `body` is a body's id (orbit, the stage's,
- * is none: it is always there), `place` what its enter is given (a spawn
- * point's object id, a seat's id), `home` the camera. Pure.
+ * home }`, read once on arrival. `body` is a body's id ("look" and "edit"
+ * are the stage's, ./bodies.js; none is Look), `place` what its enter is
+ * given (a spawn point's object id, a seat's id), `home` the camera. Pure.
  * @returns {{ body: string | null, place: string | null, home: object | null }}
  */
 export function startOf(doc) {
   const s = doc?.view?.start;
   if (!s || typeof s !== "object") return { body: null, place: null, home: null };
-  const body = typeof s.body === "string" && s.body && s.body !== "orbit" ? s.body : null;
+  const body = typeof s.body === "string" && s.body ? s.body : null;
   const place = typeof s.place === "string" && s.place ? s.place : null;
   return { body, place, home: cleanCamera(s.home) };
 }
@@ -256,6 +254,16 @@ export function startOf(doc) {
  */
 export function initialCamera({ stored = null, doc = null } = {}) {
   return cleanCamera(stored) ?? startOf(doc).home ?? null;
+}
+
+/**
+ * The notices after one more: a notice saying what one still showing says
+ * (the same text and kind) replaces it, so it shows once (three tables laid
+ * at once each saying "Pick a seat" is one prompt), timed from now. Pure.
+ * @param {readonly object[] | undefined} list  @param {{ text: string, kind: string }} n
+ */
+export function withNotice(list, n) {
+  return Object.freeze([...(list ?? []).filter((x) => x.text !== n.text || x.kind !== n.kind), n]);
 }
 
 const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
@@ -430,8 +438,9 @@ export default function Stage(handle, element) {
   const cameraKey = `scene-camera:${sceneUrl}`;
   const local = createAtom({
     hovered: null,
-    // the body on top of the stack (TOOLS.md §4): orbit until another is entered
-    body: ORBIT_LOCAL,
+    // the body on top of the stack (TOOLS.md §4): Look or Edit, the stage's,
+    // until another is entered; Look until arriving says otherwise
+    body: BASE_LOCAL.look,
     // the held tool: { ext, command, name, keys, pointer }, or null
     held: null,
     // the open gesture's declared keys ({ owner, keys }), or null
@@ -1703,7 +1712,7 @@ export default function Stage(handle, element) {
   function notify(text, kind = "info", from = null) {
     if (dead) return null;
     const n = Object.freeze({ id: `n${++noticeSeq}`, text: String(text ?? ""), kind: kind ?? "info", at: Date.now(), from });
-    local.swap((m) => ({ ...m, notices: Object.freeze([...(m.notices ?? []), n]) }));
+    local.swap((m) => ({ ...m, notices: withNotice(m.notices, n) }));
     later(() => {
       if (!dead) local.swap((m) => (m.notices?.includes(n) ? { ...m, notices: Object.freeze(m.notices.filter((x) => x !== n)) } : m));
     }, NOTICE_MS);
@@ -1781,8 +1790,11 @@ export default function Stage(handle, element) {
 
   // ─── bodies, attention and the command context (TOOLS.md §3, §4) ──────────
 
-  // The bodies entered, bottom first, over orbit: { ext, def, sitting, pop }.
+  // The bodies entered, bottom first, over the base: { ext, def, sitting, pop }.
   const sittings = [];
+  // The base, at the bottom of the stack: Look or Edit (./bodies.js). Nothing
+  // stands on Edit: entering any other body turns it to Look first.
+  let base = LOOK;
   const topSitting = () => sittings.at(-1) ?? null;
 
   /** Every running extension's bodies, by id (the first to offer an id has it). */
@@ -1790,7 +1802,7 @@ export default function Stage(handle, element) {
     const out = new Map();
     for (const { id: ext, value } of host.collect("bodies")) {
       for (const def of Array.isArray(value) ? value : []) {
-        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === ORBIT.id) continue;
+        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || isStageBody(def.id)) continue;
         if (out.has(def.id)) {
           console.warn(`[scene] body “${def.id}” is offered by both ${out.get(def.id).ext} and ${ext}; ${out.get(def.id).ext}'s is used`);
           continue;
@@ -1818,16 +1830,48 @@ export default function Stage(handle, element) {
     const p = viewport.camera.getWorldPosition(new THREE.Vector3());
     return { position: p.toArray(), direction: viewport.forward().toArray() };
   }
-  const bodyReach = () => reachOf(topSitting()?.def ?? ORBIT);
+  const bodyReach = () => reachOf(topSitting()?.def ?? base);
+
+  /**
+   * Make Look or Edit the base (./bodies.js): every body standing on it
+   * leaves, and leaving Edit puts down a tool held through an editing
+   * command (Measure), whose input is the editor's.
+   */
+  function setBase(b) {
+    if (dead || !router) return;
+    base = b;
+    router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [] });
+    if (b !== EDIT) putDownEditTool();
+  }
+  function putDownEditTool() {
+    const held = router?.held();
+    if (!held?.command) return;
+    let c = null;
+    try {
+      c = (host.instanceOf(held.owner)?.commands ?? []).find((k) => k?.id === held.command) ?? null;
+    } catch {
+      c = null;
+    }
+    if (c?.edit === true) router.putDown();
+  }
 
   /**
    * Enter body `id` at `place` (TOOLS.md §2: the object a body is given, a
    * seat or a station, or null for "here"): its enter runs, and what it
    * answers ({ input, eye(), ride?, keys?, label?, leave() }) goes on top of the
-   * stack. False when no running extension offers it or it can't enter.
+   * stack, over Look (entered from Edit, the base turns to Look first: no
+   * editing while walking or seated). "look" and "edit" are the stage's:
+   * every body leaves and that one is the base. False when no running
+   * extension offers it or it can't enter.
    */
   function enterBody(id, place = null) {
     if (dead || !router) return false;
+    const stage = stageBody(id);
+    if (stage) {
+      arrival = null; // they went somewhere themselves
+      setBase(stage);
+      return true;
+    }
     const found = bodyDefs().get(id);
     if (!found) return false;
     const own = owned.get(found.ext);
@@ -1841,6 +1885,7 @@ export default function Stage(handle, element) {
     }
     if (!sitting || typeof sitting !== "object") return false;
     const rec = { ext: found.ext, def: found.def, sitting, pop: null, place: place ?? null };
+    if (base === EDIT) setBase(LOOK); // nothing stands on Edit
     own.bodies.add(rec);
     sittings.push(rec);
     const input = withSessions(own, sitting.input ?? {}, {
@@ -1865,7 +1910,7 @@ export default function Stage(handle, element) {
     applyBodyRide();
   }
 
-  /** Leave the top body (never orbit): the one under it carries on. */
+  /** Leave the top body (never the base, Look or Edit): the one under it carries on. */
   const leaveBody = () => (sittings.length ? !!router?.leave() : false);
 
   // ─── arriving: view.start (TOOLS.md §2) ───────────────────────────────────
@@ -1879,10 +1924,13 @@ export default function Stage(handle, element) {
   // viewer entering a body first, or everything the doc calls for here and
   // started (or failed to) with no extension offering that body, ends the
   // wait: nothing is entered.
+  // The base is set at once (Edit only where the doc says "edit": ./bodies.js
+  // startBase); a package's body is entered over Look when it comes.
   let arrival = null; // { body, place, offered } still to enter; offered: when the body was first on offer
   function arrive() {
     const { body, place } = startOf(doc());
-    arrival = body ? { body, place, offered: null } : null;
+    setBase(startBase(body));
+    arrival = body && !isStageBody(body) ? { body, place, offered: null } : null;
     requestFlush();
   }
   /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
@@ -1928,7 +1976,7 @@ export default function Stage(handle, element) {
     else if (host.starting() || packages.coming()) requestFlushSoon();
   }
 
-  /** The camera rides the top body's ride, if it has one; else orbit's base rides apply. */
+  /** The camera rides the top body's ride, if it has one; else the orbit camera's base rides apply. */
   function applyBodyRide() {
     const r = topSitting()?.sitting?.ride ?? null;
     viewport.bodyRide?.(r && typeof r === "object" && typeof r.id === "string" ? r : null);
@@ -2589,13 +2637,13 @@ export default function Stage(handle, element) {
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => local.get().body,
-        /** enter body `id` (any running extension's) at `place`: false if none offers it or it can't */
+        /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
-        /** leave the top body (never orbit) */
+        /** leave the top body (never the base: Look or Edit) */
         leave: () => (live() ? leaveBody() : false),
         /** the eye: { position, direction } in the world, or null */
         eye: () => bodyEye(),
-        /** the top body's reach (m; orbit's is Infinity) */
+        /** the top body's reach (m; Look's and Edit's are Infinity) */
         reach: () => bodyReach(),
       }),
       /**
@@ -2742,12 +2790,15 @@ export default function Stage(handle, element) {
     });
   }
 
-  // The orbit body's input: its default press is Select, offered after the
-  // held tool and the whole chain, so structurally last. A click on an
-  // object selects it; on nothing, it clears whatever is selected (a group is
-  // never hit: groups are selected from the outline). Its drag is
+  // The base bodies' input (./bodies.js). Edit's default press is Select,
+  // offered after the held tool and the whole chain, so structurally last. A
+  // click on an object selects it; on nothing, it clears whatever is
+  // selected (a group is never hit: groups are selected from the outline).
+  // Look has no default press, like walk, seat and station: a plain click
+  // there selects nothing (the menu's Select still does). Either's drag is
   // OrbitControls', which hears what nobody claimed.
-  const orbitInput = {
+  const lookInput = {};
+  const editInput = {
     click(ev) {
       const oid = ev?.hit?.id ?? null;
       const on = oid != null && !!doc().objects?.[oid];
@@ -2767,7 +2818,7 @@ export default function Stage(handle, element) {
     centerRay: () => viewport.centerRay(),
     chainFor,
     inputOf,
-    orbit: { id: ORBIT.id, lock: false, keys: [], input: orbitInput },
+    base: { id: base.id, lock: false, keys: [], input: base === EDIT ? editInput : lookInput },
     cameraHeld: () => viewport.held,
     onHover: (ev) => {
       const h = ev?.hit ?? null;
@@ -2799,7 +2850,7 @@ export default function Stage(handle, element) {
     const s = topSitting();
     const body = s && s.def.id === st.body.id
       ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.ext, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
-      : ORBIT_LOCAL;
+      : BASE_LOCAL[base.id];
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const held = st.held ? Object.freeze({ ...st.held }) : null;
     const pointer = Object.freeze({ ...st.pointer });

@@ -4,11 +4,16 @@
 // doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
 // a process's save is never on it. ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Y redoes,
 // unless a field has the keys (its own text undo) or they come from a docked
-// pane; the toolbar has both, named for the step they'd take.
+// pane; the toolbar has both, named for the step they'd take. Both are the
+// editor's (../stage/bodies.js): only in the Edit body. A step recorded
+// there stays on the stack while the viewer looks, walks or sits, and is
+// there to take back on coming back to Edit (if the doc still holds what it
+// wrote: undo's compare-and-set).
 
 import { fromEmbed } from "../embed.js";
 import { isTyping } from "../stage/router.js";
 import { own } from "../stage/own.js";
+import { editing } from "../stage/bodies.js";
 
 /** Which of undo and redo a keydown asks for, or null. Pure. */
 export function undoKey(e) {
@@ -26,7 +31,8 @@ function create(api) {
 
   api.listen(root, "keydown", (e) => {
     const which = undoKey(e);
-    if (!which || e.defaultPrevented || fromEmbed(e, root)) return;
+    // undo is the editor's (../stage/bodies.js): only in Edit
+    if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.local.get())) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
     e.preventDefault();
     if (!e.repeat) take(which);
@@ -35,6 +41,7 @@ function create(api) {
   const command = (which, name) => ({
     id: which,
     name,
+    edit: true,
     show: ["toolbar"],
     state: (target) => {
       if (target != null) return null;

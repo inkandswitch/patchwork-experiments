@@ -27,8 +27,11 @@
 //     duplicate beside the original, on the same parent, each repeat one
 //     more width along.
 // Keys, pastes and drops inside an embedded document are that document's.
+// Copying and pasting are the editor's (../stage/bodies.js): the commands,
+// ⌘C / ⌘V and a dropped row are taken only in the Edit body.
 
 import { isGroup } from "../groups.js";
+import { editing } from "../stage/bodies.js";
 import { fromEmbed } from "../embed.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
@@ -179,8 +182,9 @@ function create(api) {
     return fromScene(dt, api.url);
   }
 
+  const on = () => editing(api.local.get());
   api.listen(root, "dragover", (e) => {
-    if (e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
+    if (!on() || e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
     if (!inPort(e) || ownRow(e.dataTransfer) === true) return hideRing();
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -196,7 +200,7 @@ function create(api) {
   api.listen(root, "drop", (e) => {
     if (!isRowDrag(e.dataTransfer)) return;
     hideRing();
-    if (e.defaultPrevented || fromEmbed(e, root) || !inPort(e)) return;
+    if (!on() || e.defaultPrevented || fromEmbed(e, root) || !inPort(e)) return;
     let raw = "";
     try {
       raw = e.dataTransfer.getData(ROW_MIME);
@@ -268,7 +272,7 @@ function create(api) {
   }
 
   api.listen(root, "copy", (e) => {
-    if (e.defaultPrevented || fromEmbed(e, root)) return;
+    if (!on() || e.defaultPrevented || fromEmbed(e, root)) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target) || textSelected()) return;
     const sel = selectedTarget();
     if (sel == null || !e.clipboardData) return;
@@ -281,7 +285,7 @@ function create(api) {
     root,
     "paste",
     (e) => {
-      if (e.defaultPrevented || fromEmbed(e, root)) return;
+      if (!on() || e.defaultPrevented || fromEmbed(e, root)) return;
       if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
       const cd = e.clipboardData;
       let payload = readRowPayload(cd?.getData?.(ROW_MIME) ?? "");
@@ -300,6 +304,7 @@ function create(api) {
   const commands = [
     {
       id: "copy",
+      edit: true,
       name: "Copy",
       show: ["menu"],
       state: (target, { scene }) => (target != null && scene?.objects?.[target] ? { title: "Copy this, to paste here or into another scene" } : null),
@@ -318,6 +323,7 @@ function create(api) {
     },
     {
       id: "paste",
+      edit: true,
       name: "Paste",
       show: ["menu"],
       state: (target) => {

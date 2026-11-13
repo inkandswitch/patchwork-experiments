@@ -248,7 +248,7 @@ node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--gpu] [--show] [--p
 ```
 
 A pastes the WAD's URL into an empty scene; both views play, each in one
-walker (the walk body, the only body over orbit) with the gun in hand; A and B walk
+walker (the walk body, the only body over Look) with the gun in hand; A and B walk
 from the player 1 start through the great hall to door 100 (about 38 m); B
 walks into the shut door, moves over a metre and is stopped; A presses F at
 it; both see it rise 3.44 m and rest open; B walks through; C joins while it
@@ -256,8 +256,8 @@ is open and draws every door where the doc has it; it closes itself after
 its wait; the doc's history shows two writes for the cycle; Escape puts the
 gun down and the body chip's Leave stops walking; the door is
 copied into another scene (⌘C, ⌘V), which has no game and so offers only
-editing, and opens there from its menu (right-click; in orbit, which reaches
-everything) and closes itself; draw calls
+editing, and opens there from its menu (right-click; in Look or Edit, which
+reach everything) and closes itself; draw calls
 and frame times are measured. It prints a JSON report and exits non-zero if
 any check fails.
 

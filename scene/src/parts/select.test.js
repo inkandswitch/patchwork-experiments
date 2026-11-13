@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
+import { commandState } from "./toolbar-commands.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
@@ -54,7 +55,7 @@ describe("scene.select: clicking", () => {
     expect(sel()).toBeNull();
   });
 
-  it("is the orbit body's default press: after every extension down the chain", async () => {
+  it("is the Edit body's default press: after every extension down the chain", async () => {
     const log = [];
     const after = { meta: { id: "t.after" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), false) } }) } };
     await mount({ extensions: [after] });
@@ -289,7 +290,7 @@ describe("scene.select: commands", () => {
 });
 
 describe("scene.select: by body", () => {
-  it("in orbit a plain click selects, as Select does", async () => {
+  it("in Edit a plain click selects, as Select does", async () => {
     await mount();
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -303,7 +304,7 @@ describe("scene.select: by body", () => {
     await until(() => mineSent().selected === "a");
   });
 
-  it("a body other than orbit has no default press: a plain click selects nothing; Select still does", async () => {
+  it("a body other than Edit has no default press: a plain click selects nothing; Select still does", async () => {
     const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) }] }) } };
     await mount({ extensions: [walker] });
     expect(s.api("t.walk").body.enter("walk")).toBe(true);
@@ -316,8 +317,55 @@ describe("scene.select: by body", () => {
     expect(sel()).toBe("a");
     s.api("t.walk").body.leave();
     await settle();
-    expect(s.local.get().body.id).toBe("orbit");
+    // walking was entered from Edit, so over Look: leaving it is Look
+    expect(s.local.get().body.id).toBe("look");
   });
+
+  // Every body (the stage's Look and Edit; a walk and a seat over Look; a
+  // station over a walk) × a click on an object or on nothing × what was
+  // selected before (nothing, an object, a ref): only Edit's click selects
+  // (on nothing, it clears); every other body's leaves the selection be.
+  // Select from the menu selects in every one, and Remove is Edit's.
+  it("a click on an object or on nothing, in each body, from each selection", async () => {
+    const bodies = { meta: { id: "t.bodies" }, module: { create: () => ({ bodies: [
+      { id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) },
+      { id: "seat", label: "Seat", reach: 2, here: false, enter: () => ({ input: {}, leave() {} }) },
+      { id: "station", label: "Station", reach: 2.5, here: false, enter: () => ({ input: {}, leave() {} }) },
+    ] }) } };
+    await mount({ extensions: [bodies] });
+    const api = s.api("t.bodies");
+    // how to be in each: [stage base, ...bodies entered over it]
+    const BODIES = { look: ["look"], edit: ["edit"], walk: ["look", "walk"], seat: ["look", "seat"], station: ["look", "walk", "station"] };
+    let cases = 0;
+    for (const [name, path] of Object.entries(BODIES)) {
+      for (const before of [null, "a", "dimension:d1"]) {
+        for (const on of ["b", null]) {
+          for (const id of path) expect(api.body.enter(id)).toBe(true);
+          await settle();
+          expect(s.local.get().body.id).toBe(name);
+          s.local.swap((m) => ({ ...m, selected: before }));
+          hitOn(on);
+          s.click(20, 20);
+          await settle();
+          const want = name === "edit" ? on : before;
+          expect([name, before, on, sel()]).toEqual([name, before, on, want]);
+          // Select is everyone's; Remove (Delete) is Edit's
+          const pick = sel() === "a" ? "b" : "a";
+          expect(run("select", pick)).toBe(true);
+          expect(sel()).toBe(pick);
+          const remove = s.instance("scene.select").commands.find((c) => c.id === "remove");
+          expect(commandState(remove, "a", s.api("scene.select").context()) != null).toBe(name === "edit");
+          // back to Look, nothing standing (the next case starts clean)
+          expect(api.body.enter("look")).toBe(true);
+          s.local.swap((m) => ({ ...m, selected: null }));
+          await settle();
+          cases++;
+        }
+      }
+    }
+    expect(cases).toBe(5 * 3 * 2);
+    expect(s.doc().objects.a).toBeTruthy(); // nothing was removed
+  }, 60_000);
 });
 
 describe("select-peers", () => {

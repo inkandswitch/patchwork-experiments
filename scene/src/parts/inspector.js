@@ -19,8 +19,9 @@
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
-// (doc.view.start.body, read once on arrival: TOOLS.md §2), Orbit or one of
-// the bodies on offer here; each viewer can still change body for themselves.
+// (doc.view.start.body, read once on arrival: TOOLS.md §2), Look (no body
+// named), Edit or one of the bodies on offer here; each viewer can still
+// change body for themselves.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -47,6 +48,7 @@ import { EMBED_ATTR } from "../embed.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
+import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
@@ -85,15 +87,18 @@ function openDocument(from, url, toolId = null) {
 }
 
 /**
- * The bodies Starts in offers: Orbit, then each body on offer here (by its
- * label, once per id), then the doc's own choice if nothing here offers it
- * (so it still shows as chosen). Pure.
+ * The bodies Starts in offers: the stage's Look and Edit, then each body on
+ * offer here (by its label, once per id), then the doc's own choice if
+ * nothing here offers it (so it still shows as chosen). Pure.
  * @param {{ id: string, value: any }[]} collected  api.collect("bodies")
- * @param {string} want  the doc's view.start.body, or "orbit"
+ * @param {string} want  the doc's view.start.body, or "look"
  * @returns {[string, string][]}  [id, label]
  */
-export function startBodies(collected, want = "orbit") {
-  const out = [["orbit", "Orbit"]];
+export function startBodies(collected, want = LOOK.id) {
+  const out = [
+    [LOOK.id, LOOK.label],
+    [EDIT.id, EDIT.label],
+  ];
   for (const { value } of collected ?? []) {
     for (const def of Array.isArray(value) ? value : []) {
       if (!def || typeof def.id !== "string" || out.some(([id]) => id === def.id)) continue;
@@ -249,18 +254,18 @@ function create(api) {
 
   /**
    * Start everyone who opens the scene in this body: doc.view.start.body
-   * (orbit, the default, is no key). A new body drops the old one's place;
+   * (Look, the default, is no key). A new body drops the old one's place;
    * the home camera stays.
    */
   function startIn(body) {
     api.edit((d) => {
       if (!isMap(d.view)) d.view = {};
       const was = isMap(d.view.start) ? d.view.start : null;
-      if ((was?.body ?? "orbit") === body) return;
+      if ((was?.body ?? LOOK.id) === body) return;
       if (!was) d.view.start = {};
       const start = d.view.start;
       if ("place" in start) delete start.place;
-      if (body === "orbit") {
+      if (body === LOOK.id) {
         if ("body" in start) delete start.body;
       } else start.body = body;
     }, { label: "Starts in" });
@@ -535,7 +540,7 @@ function create(api) {
       { class: "inspector", dataset: { kind: "scene" } },
       el("div", { class: "inspector-kind" }, "Scene"),
       behaviours.section,
-      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: orbiting it, or in a body (walking, seated)" }, "Starts in"), starts, note),
+      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: looking at it, editing it, or in a body (walking, seated)" }, "Starts in"), starts, note),
     );
     body.replaceChildren(root);
     view = { id: null, scene: true, root, behaviours, starts, note, startsKey: null };
@@ -543,7 +548,7 @@ function create(api) {
 
   function fillScene(scene, local) {
     view.behaviours.update(scene);
-    const want = typeof scene.d?.view?.start?.body === "string" ? scene.d.view.start.body : "orbit";
+    const want = typeof scene.d?.view?.start?.body === "string" ? scene.d.view.start.body : LOOK.id;
     const bodies = startBodies(api.collect("bodies"), want);
     const key = JSON.stringify(bodies);
     if (key !== view.startsKey) {
@@ -558,9 +563,9 @@ function create(api) {
         }),
       );
       view.note.textContent =
-        bodies.length > 1
+        bodies.length > 2
           ? "Everyone who opens this scene starts here, once. Each viewer can change body for themselves."
-          : "Orbit is the only body here. A package that brings one (walking, seats) adds a choice.";
+          : "Everyone who opens this scene starts here, once: Look shows it, Edit is the editor. A package that brings a body (walking, seats) adds a choice.";
     }
     for (const radio of view.starts.querySelectorAll("input[data-body]")) radio.checked = radio.dataset.body === want;
   }
@@ -777,6 +782,7 @@ function create(api) {
   const commands = [
     {
       id: "fix-version",
+      edit: true,
       name: "Fix at this version",
       show: ["menu"],
       state: (target, { scene }) => {
@@ -789,6 +795,7 @@ function create(api) {
     },
     {
       id: "follow-latest",
+      edit: true,
       name: "Follow latest",
       show: ["menu"],
       state: (target, { scene }) => {
@@ -810,6 +817,7 @@ function create(api) {
     },
     {
       id: "group",
+      edit: true,
       name: "Group",
       show: ["inspector", "menu"],
       state: (target, { scene }) => {
@@ -823,6 +831,7 @@ function create(api) {
     },
     {
       id: "ungroup",
+      edit: true,
       name: "Ungroup",
       show: ["inspector", "menu"],
       state: (target, { scene }) => (isGroup(objectOf(target, scene)) ? { title: "Move what's in this group up a level, where it is, and remove the group" } : null),
@@ -871,7 +880,10 @@ function create(api) {
       lastSel = sel;
       dismissed = null;
     }
-    const want = asked || (shows(scene, sel) && dismissed !== sel);
+    // the inspector is the editor's (../stage/bodies.js): only in Edit, where
+    // it follows the selection
+    if (!editing(local)) asked = false;
+    const want = editing(local) && (asked || (shows(scene, sel) && dismissed !== sel));
     // following the selection, it comes in behind a tab the viewer is using (the parts bin)
     if (want) tab.open({ show: asked });
     else tab.close();
@@ -881,6 +893,7 @@ function create(api) {
   commands.push({
     id: "inspector",
     name: "Inspector",
+    edit: true,
     show: ["toolbar"],
     state: (target) => (target == null ? { checked: tab.isOpen(), title: "The selection's fields and behaviours; with nothing selected, the scene's" } : null),
     run(_target, value) {

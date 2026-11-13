@@ -22,7 +22,7 @@
 // test ticks the world. A peer's held pose shows at once (worldOf is what's
 // drawn: holds included). camera.ride is recorded in view.rides, as is the
 // ride of the body on top (a seat's). Bodies stack as the stage stacks them
-// (scene/TOOLS.md §4): view.bodies, orbit at the bottom; the defs come from
+// (scene/TOOLS.md §4): view.bodies, the stage's Look at the bottom; the defs come from
 // the attached instance's `bodies` and view.collected.bodies. scene() is a
 // snapshot like the stage's: { d, objects, ids, parents, traits, world(id),
 // toLocal(id, p) }, its matrices column-major, Euler XYZ.
@@ -215,7 +215,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
   };
 
   function join(session, { viewer = `viewer-${session}`, local = {}, ext = "ext" } = {}) {
-    let localState = Object.freeze({ body: Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] }), ...local });
+    let localState = Object.freeze({ body: Object.freeze({ id: "look", label: "Look", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] }), ...local });
     const view = {
       session,
       viewer,
@@ -233,16 +233,16 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       abort: new AbortController(),
       camera: null,
       rides: [],
-      bodies: [{ id: "orbit", sitting: null }], // the body stack, orbit at the bottom
+      bodies: [{ id: "look", sitting: null }], // the body stack, the stage's Look at the bottom
       collected: null, // { [field]: value }: what api.collect finds on the other extensions
     };
     views.set(session, view);
     gone.delete(session);
-    const ORBIT = Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] });
+    const LOOK = Object.freeze({ id: "look", label: "Look", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] });
     const topBody = () => view.bodies.at(-1);
     const bodyLocal = () => {
       const t = topBody();
-      return t.id === "orbit" ? ORBIT : Object.freeze({ id: t.id, label: t.sitting?.label ?? t.def.label ?? t.id, ext: t.ext, depth: view.bodies.length - 1, lock: !!t.def.lock, reach: t.def.reach ?? Infinity, keys: t.def.keys ?? [] });
+      return t.id === "look" ? LOOK : Object.freeze({ id: t.id, label: t.sitting?.label ?? t.def.label ?? t.id, ext: t.ext, depth: view.bodies.length - 1, lock: !!t.def.lock, reach: t.def.reach ?? Infinity, keys: t.def.keys ?? [] });
     };
     const setBody = () => {
       localState = Object.freeze({ ...localState, body: bodyLocal() });
@@ -270,7 +270,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       newId: (p) => `${p}${Math.random().toString(36).slice(2, 8)}`,
       registry: async (type) => registries[type] ?? null,
       body: {
-        current: () => localState.body ?? ORBIT,
+        current: () => localState.body ?? LOOK,
         enter(id, place = null) {
           const found = defs().find((d) => d.def.id === id);
           if (!found) return false;
@@ -289,7 +289,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           return true;
         },
         eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null),
-        reach: () => (localState.body ?? ORBIT).reach,
+        reach: () => (localState.body ?? LOOK).reach,
       },
       local: {
         get: () => localState,
