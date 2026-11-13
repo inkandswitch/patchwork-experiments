@@ -237,15 +237,20 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
           expect(forgedOn(st, cup), what).toBe(isForged);
           const isFit = isOurs && !isForged && (!c.blind || sealers === null || sealers.some((v) => v !== c.holder));
           expect(fits(st, cup), what).toBe(isFit);
-          // whose word its holder's client draws again for: its own, and that of anyone who couldn't know the roll; never
-          // that of someone who could (they'd choose among rolls by saying so), so a cup that's public is never redrawn
-          // for anyone else's
-          for (const knew of ["all", [], ["ana"], ["ben"], ["ben", "cy"]]) {
+          // whose word its holder's client draws again for: that of anyone who couldn't know the roll, and its own while
+          // nobody else could; never anyone's once someone else could (they'd choose among rolls by saying so, or, for the
+          // holder's own word, by writing over its commit so its client says so), so a cup that's public is never redrawn
+          const alone = (knew) => knew !== "all" && knew.every((x) => x === "ana"); // nobody but Ana could know it
+          for (const knew of ["all", [], ["ana"], ["ben"], ["ben", "cy"], ["ana", "ben"]]) {
             const said = redrawFor({ ...st, knew }, cup, "ana");
             const words = [...new Set([...forged, ...(fault?.why === "forged" ? ["ana"] : [])])].sort();
-            expect(said, `${what} knew ${knew}`).toEqual(isForged ? words.filter((v) => v === "ana" || (knew !== "all" && !knew.includes(v))) : []);
-            for (const v of said) expect(v === "ana" || (knew !== "all" && !knew.includes(v))).toBe(true);
+            const heard = (v) => knew !== "all" && (v === "ana" ? alone(knew) : !knew.includes(v));
+            expect(said, `${what} knew ${knew}`).toEqual(isForged ? words.filter(heard) : []);
+            for (const v of said) expect(heard(v)).toBe(true);
             if (isForged && forged.includes("ben") && knew !== "all" && !knew.includes("ben")) expect(said).toContain("ben");
+            // the holder's own word, once someone else could know the roll (Ben, a blind cup up): only stops it
+            if (knew !== "all" && knew.some((x) => x !== "ana")) expect(said).not.toContain("ana");
+            if (isForged && words.includes("ana") && alone(knew)) expect(said).toContain("ana");
           }
         }
       const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers, forged: [] };

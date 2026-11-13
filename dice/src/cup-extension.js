@@ -44,8 +44,10 @@
 // draw would be refused as a reroll (its holder, the sole sealer, could have
 // known it), so the holder's client shakes again in place instead: a new
 // draw of the same dice, its roll saying who said so (`forged`). Only for
-// the word of someone who couldn't know the roll (cup.js `redrawFor`): one
-// who could would get to choose among rolls; its word only stops this one.
+// the word of someone who couldn't know the roll (cup.js `redrawFor`), and
+// the holder's own while nobody else could: one who could would get to
+// choose among rolls (by saying so, or by writing over the holder's commit
+// so its client does); its word only stops this one.
 // Each view says when a cup was shaken from the doc itself (a new draw on
 // it), not from anyone's word, so a reshake can't go untold.
 
@@ -257,10 +259,12 @@ function create(api) {
    * dice, written with a roll that says who said so (`forged`), which every
    * view tells ("Ana's cup was drawn again: Ben says…"). A holder may shake
    * again whenever it likes, told; this gives nobody anything more. Only for
-   * the word of someone who couldn't know the roll (`redrawFor`): a seated
-   * other who can see a blind cup's dice, drawing them again by saying so,
-   * could choose among them. Its word only stops this roll (nothing turns up
-   * by it, and every HUD says who said so); I may shake again, told.
+   * the word of someone who couldn't know the roll (`redrawFor`), and my own
+   * while nobody else could: a seated other who can see a blind cup's dice,
+   * drawing them again by saying so (or by writing over my commit, so my
+   * client says so), could choose among them. That word only stops this
+   * roll (nothing turns up by it, and every HUD says who said so); I may
+   * shake again, told.
    */
   function heal() {
     const lots = lotsApi();

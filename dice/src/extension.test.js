@@ -477,6 +477,26 @@ describe("a throw is the doc's", () => {
     t.w.done();
   });
 
+  it("still waiting when its time is up, and then drawn: it lands as its seed says, in both views, and its thrower, told it didn't land, is told it was drawn after all", () => {
+    const t = world();
+    const from = structuredClone(t.doc.objects.d1.transform);
+    t.run("roll", "d1");
+    t.w.tick(1 / 10, Math.ceil(THROW_MS / 100) + 2);
+    t.w.tick(1 / 60, 2);
+    expect(t.notices("A").at(-1)).toMatch(/^That roll didn't land: its lots are still waiting for 1 more\. Nothing was rolled\.$/);
+    expect(t.doc.objects.d1.transform).toEqual(from);
+    t.draw(5);
+    vi.advanceTimersByTime(LAND_GRACE_MS + 100);
+    t.sync();
+    expect(t.doc.objects.d1.transform).toEqual(rollPlan(5, { built: built("d6"), from }).to);
+    vi.advanceTimersByTime(TOLD_MS);
+    t.sync();
+    expect(t.notices("A").at(-1)).toBe(`You rolled ${t.label("d1")} (drawn after all, after you were told it didn't land)`);
+    // (nobody else was told anything of it)
+    expect(t.notices("B").at(-1)).toBe(`Someone rolled ${t.label("d1")}`);
+    t.w.done();
+  });
+
   it("one its thrower's client gave up because it was asked in their name by someone else (forged) isn't told as given up: the forgery is said instead", () => {
     const t = world();
     t.run("roll", "d1");

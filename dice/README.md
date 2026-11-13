@@ -378,13 +378,21 @@ which every view tells ("Ana's cup was drawn again: Ben says its lots were
 written in their name by someone else."). A holder may always shake again,
 told, so this gives the holder nothing more. It does so only for the word
 of someone who couldn't know the roll from the doc (lots' `knew`; cup.js
-`redrawFor`), and for its own client's: a seated other who can already see
-a blind cup's dice (it's up), or anyone once a roll is public, would get to
-choose among the holder's rolls by saying "forged" until one suited them.
-Their word only stops the roll: nothing turns up by it, every HUD says who
-said so, and the holder may shake again, told. An honest client says so
-the moment it sees a part in its name it didn't make, which is at the
-commits, long before anything is released to it.
+`redrawFor`), and for its own client's only while nobody else could: a
+seated other who can already see a blind cup's dice (it's up), or anyone
+once a roll is public, would get to choose among the holder's rolls by
+saying "forged" until one suited them, or, as surely, by writing over the
+holder's commit, which makes the holder's own client say "forged". Their
+word only stops the roll: nothing turns up by it, every HUD says who said
+so (an overwritten commit, as "someone wrote its lots in your name"), and
+the holder may shake again, told. An honest client says so the moment it
+sees a part in its name it didn't make, which is at the commits, long
+before anything is released to it, so its word draws the dice again if it
+reaches the holder's client in time. Who could know the roll is read when
+the holder's client handles the word, not when it was said: if the holder's
+client only gets to it after the parts have been released (it was busy, or
+a forger released "their" part as well), it only stops the roll, like
+anyone else's.
 
 **Who may see what** (the cup's `audience` policy, merged by the stage), for
 the cup and every die it covers or whose shake isn't turned up yet:
@@ -431,10 +439,12 @@ cup.
   place (above). If the holder's client isn't here, nothing can tell (Lots,
   "Forgeries"), until its holder is back and sees the round in its name.
 - It can't choose among another's rolls by saying "forged" (anyone can, in
-  their own name). Said before it could know the roll, it gets the cup
+  their own name), nor by writing over the holder's commit so the holder's
+  client says it. Said before it could know the roll, it gets the cup
   drawn again, aloud, a roll it knows no more of than the last; said once it
   could know it (a seated other, a blind cup up), it only stops that roll,
-  told under its name, and the holder decides whether to shake again.
+  told under its name (or, for an overwritten commit, as a part written in
+  the holder's name), and the holder decides whether to shake again.
 - Shaken blind, no one other player's client knows the roll early, or can
   keep it from the rest: each seated part is sealed. (So any one of them
   being away keeps it from everyone until they're back.)
@@ -598,7 +608,8 @@ part is due, the result waits for it, and the HUD says for whom. Several
 sealers are several such waits: a cup shaken blind can't be shown to anyone
 while any seated player who took part is away. A thrower's client gives up
 on its tumble after 15 s and says so; a draw that finishes after that still
-lands (anyone lands a drawn throw).
+lands (anyone lands a drawn throw), and its thrower's view tells it "(drawn
+after all, after you were told it didn't land)".
 
 Only the asker moves an attempt on (it closes the commits, opens first and
 draws again without whoever stalls), so one whose asker left mid-way would
@@ -780,8 +791,8 @@ checked over every case, never sampled at random (`pnpm test`):
   throw of a die whose last throw never came down told; a throw given up (someone didn't
   see its thrower here, its thrower lost its part, or a `gone` forged in its
   name) landing nothing and saying why, one whose thrower left given up and
-  said once by the other view, and one given up and then drawn after all
-  landed as its seed says and told so in both views (`extension.test.js`);
+  said once by the other view, and one given up, or past its 15 s, and then
+  drawn after all landed as its seed says and told so (`extension.test.js`);
 - the panel: Roll alone a draw of one member, at once, landing its seed's
   face; two panels on one doc drawing together, the seed the hash of both
   openings, both showing the same face; the asker gone, the other writing it
@@ -807,7 +818,8 @@ checked over every case, never sampled at random (`pnpm test`):
   contributors × {nobody, Ben, Ana} saying a part is forged × this client
   refusing it as forged or not × who could know it): whether it is the
   shake's, whether it is forged, whose word its holder draws it again for
-  (its own, and only those who couldn't know it), and that a round a client
+  (only those who couldn't know it, and its own only while nobody else
+  could), and that a round a client
   uses
   was knowable early by the holder alone (open) or by nobody (blind)
   (`cup.test.js`);
@@ -821,8 +833,9 @@ checked over every case, never sampled at random (`pnpm test`):
   holder's own draw (said by another, or by the holder's own client) never
   used, shaken again in place once as a new draw of the same dice, nothing
   moved, told by every view with who said so, and only by the holder's
-  client; one said forged by someone who could know it (public, or seen)
-  only stopped, never drawn again; a shake given up while its holder was away asked again for once,
+  client; one said forged by someone who could know it (public, or seen),
+  or by the holder's own client once someone else could (a commit written
+  over under a lifted blind cup), only stopped, never drawn again; a shake given up while its holder was away asked again for once,
   its HUD line when lifted; blind: Shake blind
   refused with nobody else here, a blind round drawn alone refused, lifted
   (veiled for the holder and the spectator), Show me; the carry veto; peeks

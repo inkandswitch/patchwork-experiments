@@ -293,13 +293,35 @@ describe("the cup's verbs and what the doc says", () => {
     t.shake();
     const draw = t.cup().roll.draw;
     // her client refuses it: its fault is hers before her protest is in the doc
-    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: [], fault: { of: "rforged", why: "forged" } }));
+    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: [], fault: { of: "rforged", why: "forged" }, knew: ["alice"] }));
     t.w.change(() => {});
     t.w.flush();
     expect(t.cup().roll.forged).toEqual(["alice"]);
     t.w.flush();
     expect(t.notices("A").at(-1)).toBe("Your cup was drawn again: your client says its lots were written in your name by someone else.");
     expect(t.notices("B").at(-1)).toBe("Alice's cup was drawn again: Alice says its lots were written in their name by someone else.");
+    t.w.done();
+  });
+
+  it("a forgery Alice's own client finds once someone else could know the roll (Bob, a blind cup up, wrote over her commit): only stopped, never drawn again, else Bob could draw her dice again until a roll suited him", () => {
+    const t = table();
+    t.shake(true);
+    const draw = t.cup().roll.draw;
+    t.run("A", "lift");
+    t.w.flush();
+    const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
+    for (const knew of [["bob"], ["alice", "bob"], "all"]) {
+      t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice", "bob"], sealers: ["alice", "bob"], forged: [], fault: { of: "rforged", why: "forged" }, knew }));
+      for (let i = 0; i < 3; i++) {
+        t.w.change(() => {});
+        t.w.flush();
+      }
+      expect(t.lots.draws.length).toBe(1);
+      expect(t.cup().roll).toMatchObject({ draw, done: false });
+      expect(t.cup().roll.forged ?? []).toEqual([]);
+      for (const [id, pose] of Object.entries(poses)) expect(t.doc.objects[id].transform).toEqual(pose);
+      for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
+    }
     t.w.done();
   });
 
