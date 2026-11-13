@@ -209,7 +209,7 @@ describe("polars against published targets", () => {
       const target = 3600 / (3600 / vj + dPhrf);
       const v = b.vmg / KNOT;
       const ok = within(v, target, P.tol);
-      // 16 kn was a known gap (16.5% over, 2026-11-06) until windage (2026-11-12): now 10.0%, within the target's ±15%
+      // 16 kn was a known gap (16.5% over, 2026-11-06) until windage (2026-11-12): now 9.5%, within the target's ±15%
       if (!ok) fails.push(`${kn} kn`);
       lines.push(`  ${kn} kn: ours ${v.toFixed(2)} kn at ${b.twa.toFixed(1)}°  target ${target.toFixed(2)} (J/24 ORC ${vj} + ${dPhrf} s/mile)  Δ ${(100 * (v / target - 1)).toFixed(1)}%  ${ok ? "ok" : "FAIL"}`);
     });

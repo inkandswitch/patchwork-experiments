@@ -21,10 +21,14 @@
 //               Cd 0.8, at its middle. The width is the contract's
 //               `rig.mast.sectionM` (a drawing's rule, 0.0055·L + 0.01 m:
 //               an estimate, not a section).
-//   rigging     a stayed rig: I × 2·d (eq. 5.32, ORC's "factor of 2 means
-//               four stays"), Cd 1.0 × (1 + 0.2) for the spreaders (eq. 5.33),
-//               at half I. ORC sizes d from a default rigging weight it
-//               doesn't publish; here d is the cap shroud's: a 1×19 wire
+//   rigging     a stayed rig: four stays of diameter d, I × 4·d, Cd 1.0 ×
+//               (1 + 0.2) for the spreaders (eq. 5.33), at half I. ORC's
+//               eqs. 5.31–5.32 take the diameter D of one wire holding all
+//               the rigging's steel and give it a width of 2·D ("the factor
+//               of 2 means four stays": four stays of d are one wire of
+//               D = 2·d, so 2·D = 4·d, each stay's own width). ORC sizes D
+//               from a default rigging weight it doesn't publish; here d is
+//               the cap shroud's (four stays of its size): a 1×19 wire
 //               whose breaking load is 2.5 × the chainplate load at RM30
 //               (RM30 over the chainplate base, §3.10), at a nominal
 //               breaking stress of 1.0 GPa (6 mm 1×19 316 breaks at about
@@ -68,6 +72,7 @@ export const WINDAGE_RULES = Object.freeze({
   mastSailCd: Object.freeze([0.4, 0.6]),
   mastBareCd: 0.8,
   riggingCd: 1.0,
+  stays: 4,
   spreaderFactor: 0.2,
   wireBreakFactor: 2.5,
   wireStressPa: 1.0e9,
@@ -144,9 +149,9 @@ export function windageElements({ plan, loa, beam, stemX, sternX, sheerAt, mastL
   }
   if (plan.type !== "cat" && plan.I > 0 && rm30Nm > 0 && chainplateBaseM > 0) {
     const d = wireDiameter(rm30Nm / chainplateBaseM);
-    const A = plan.I * 2 * d;
+    const A = plan.I * W.stays * d;
     const cd = W.riggingCd * (1 + W.spreaderFactor);
-    out.push({ id: "rigging", shape: "spar", lengthM: plan.I, widthM: 2 * d, wireDiameterM: d, areaFrontM2: A, areaSideM2: A, sidePerSinHeelM2: 0, cdFront: cd, cdSide: cd, at: along(plan.I / 2), zPerSinHeelM: 0 });
+    out.push({ id: "rigging", shape: "spar", lengthM: plan.I, widthM: W.stays * d, wireDiameterM: d, areaFrontM2: A, areaSideM2: A, sidePerSinHeelM2: 0, cdFront: cd, cdSide: cd, at: along(plan.I / 2), zPerSinHeelM: 0 });
   }
   return out;
 }

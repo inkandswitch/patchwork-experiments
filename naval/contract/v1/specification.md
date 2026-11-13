@@ -325,8 +325,10 @@ sin φ). The elements are ORC's (ORC VPP Documentation 2023, §5.3, Table
   `rig.mast.sectionM` × P, Cd 0.4 head-on, 0.6 abeam, at its middle.
 - `mast-bare`: the rest of the mast above the partners, Cd 0.8, at its
   length-weighted middle.
-- `rigging` (a stayed rig): I × 2·d (eq. 5.32), Cd 1.0 × 1.2 for the
-  spreaders (eq. 5.33), at half I; d the cap shroud's, a 1×19 wire breaking
+- `rigging` (a stayed rig): four stays, I × 4·d (eqs. 5.31–5.32: ORC's
+  width 2·D on the one wire D holding all four stays' steel, D = 2·d), Cd
+  1.0 × 1.2 for the spreaders (eq. 5.33), at half I; d the cap shroud's
+  (each of the four its size), a 1×19 wire breaking
   at 2.5 × the chainplate load at RM30 (§3.10's), at a nominal 1.0 GPa
   (estimated: ORC sizes it from a rigging weight it doesn't publish).
 

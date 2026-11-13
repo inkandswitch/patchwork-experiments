@@ -49,9 +49,9 @@ profile drawing and the numbers on the right. Units (m / ft) are per viewer.
   masthead is capped at 1.60 × LOA (the tallest real boat's) and, where
   that cuts the SA/D, the guess says so; under SA/D 12.8 (the least real
   boat's) it refuses, as it does a hull no mast position balances. It
-  reports the helm and doesn't solve for it: the VPP reads the real boats
-  from 3° lee to 5.5° weather, so a helm target would place masts against
-  them.
+  reports the helm and doesn't solve for it: the VPP reads the real boats,
+  on their own masts and keels, from 5.8° lee to 5.5° weather, so a helm
+  target would place masts against them.
 - **Helpers** (`src/helpers.js`): move the rig for a helm angle or a lead,
   scale it to an SA/D. Each is one change.
 - **Export contract JSON** builds and validates the contract below.

@@ -432,23 +432,23 @@
         "ratchetPoints": 2,
         "ratchetDeg": 1.5,
         "cells": {
-          "8kn 52°": -5.5,
-          "8kn 75°": -2.7,
-          "8kn 90°": -2.7,
-          "12kn 52°": -4.7,
-          "12kn 75°": -2.2,
-          "12kn 90°": -1.1,
-          "16kn 52°": -4.4,
-          "16kn 75°": -3.7,
-          "16kn 90°": -2.5,
-          "8kn beatVMG": -7.3,
-          "8kn beatAngle": -0.1,
-          "12kn beatVMG": -6.1,
-          "12kn beatAngle": 2.4,
-          "16kn beatVMG": -7.2,
-          "16kn beatAngle": 1.8
+          "8kn 52°": -5.6,
+          "8kn 75°": -2.8,
+          "8kn 90°": -2.8,
+          "12kn 52°": -4.9,
+          "12kn 75°": -2.3,
+          "12kn 90°": -1.2,
+          "16kn 52°": -4.7,
+          "16kn 75°": -3.9,
+          "16kn 90°": -2.6,
+          "8kn beatVMG": -7.7,
+          "8kn beatAngle": 0,
+          "12kn beatVMG": -6.6,
+          "12kn beatAngle": 2.5,
+          "16kn beatVMG": -7.8,
+          "16kn beatAngle": 2.3
         },
-        "why": "every speed within 7.3% of ORC, now under it: beat VMG 6–7% slow, the angle within 2.4°. Windage cost her 2–8 points of beat VMG; without it (2026-11-10) every speed was within 4%, pointing 3–5° higher. Farr's own VPP is 4–6% under ORC's upwind, as she now is."
+        "why": "every speed within 7.8% of ORC, now under it: beat VMG 6.6–7.8% slow, the angle within 2.5°. Windage cost her 2–8 points of beat VMG; without it (2026-11-10) every speed was within 4%, pointing 3–5° higher. Farr's own VPP is 4–6% under ORC's upwind, as she now is."
       }
     },
     "balance": {

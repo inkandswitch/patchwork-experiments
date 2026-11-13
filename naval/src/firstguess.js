@@ -35,8 +35,10 @@
 //   millimetre.
 //
 // Not solved: the helm. The VPP's helm at the reference point reads the
-// real boats from 3.0° lee to 5.5° weather (validation-fleet.test.js; it
-// has no heel-induced hull yaw, spec §6.4), so a mast placed for a helm
+// real boats, each with its own mast and keel, from 5.8° lee (J/24) to 5.5°
+// weather (Folkboat), and 3.1° lee to 5.5° weather on the five whose keels
+// are sourced well (validation-fleet.test.js PINNED; it has no heel-induced
+// hull yaw, spec §6.4), so a mast placed for a helm
 // angle would be placed against the boats; the lead band is the rule that
 // the fleet disagrees with least. The helm is reported, and the Helm helper
 // moves the rig for one, as the designer's call.
@@ -317,7 +319,7 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
   // ── the mast: where the lead is its band's middle (see the header); a cat's stays by its rule;
   //    then the masthead against its cap, P cut to fit and the mast placed again until it holds
   const band = targetBand(type, keel.kind);
-  let rig = rig0, mast = null;
+  let rig = rig0, mast = null, settled = false;
   for (let pass = 0; pass < 12; pass++) {
     rig0 = rigOf(P);
     rig = rig0;
@@ -341,11 +343,14 @@ export function firstGuess(doc, ctx = {}, opts = {}) {
     }
     const top = computeNumbers(candidate(keel, rig), { linked: ctx.linked }).plan.mast.aboveDatumZ;
     // done when the masthead is under the cap at the designer's SA/D, or on it (to a millimetre) when cut
-    if (P >= pSaD - 1e-9 ? top <= capZ + 1e-3 : Math.abs(top - capZ) <= 1e-3) break;
+    settled = P >= pSaD - 1e-9 ? top <= capZ + 1e-3 : Math.abs(top - capZ) <= 1e-3;
+    if (settled) break;
     // P for the masthead on the cap over the sheer where the mast now stands
     const sheer = top - kHeight * P;
     P = Math.min(pSaD, (capZ - sheer) / kHeight);
   }
+  // never a rig over its cap: if the mast and P didn't settle, say so rather than guess
+  if (!settled) return { ok: false, why: `the masthead cap (${RULES.mastHeight.maxOverLoa}·LOA, ${capZ.toFixed(2)} m) and the mast's place didn't settle on this hull in 12 passes` };
   const capped = P < pSaD - 1e-9;
   const areaReached = 0.5 * rig.P * rig.E + 0.5 * rig.I * J;
   const saDReached = areaReached / Math.pow(vol, 2 / 3);
