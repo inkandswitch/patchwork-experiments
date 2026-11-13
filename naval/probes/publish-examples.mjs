@@ -39,7 +39,7 @@
 //    LOA, the masthead cap, windage and each sail's CE swung in the VPP)
 //    stands with a lead of 7.0% (the middle of its 5–9% band, the
 //    forestay's tack 1.56 m aft of her long stem, a 1.50 m draft), 2.2° of
-//    weather helm and 5.17 kn at 12 kn true, 45°, at her 25° heel limit;
+//    weather helm and 5.14 kn at 12 kn true, 45°, at her 25° heel limit;
 //    her masthead is under the cap, so SA/D is the rules' 17. The example
 //    published before this (in the shared folder) is the first guess of
 //    2026-11-10, before the keel rule: republish it, and swap its link.
