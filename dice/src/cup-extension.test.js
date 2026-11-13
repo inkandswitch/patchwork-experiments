@@ -230,13 +230,13 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.done();
   });
 
-  it("a forgery in Alice's own draw (Bob says the part in his name isn't his): no client uses its seed even once it's public; Alice's client shakes again in place, once, as a new draw of the same dice (never a new attempt of the old one, which every client that saw it would refuse as her reroll), the roll saying who said so; every view tells it", () => {
+  it("a forgery in Alice's own draw (Bob says the part in his name isn't his, before he could know the roll): no client uses its seed; Alice's client shakes again in place, once, as a new draw of the same dice (never a new attempt of the old one, which every client that saw it would refuse as her reroll), the roll saying who said so; every view tells it", () => {
     const t = table();
     t.shake();
     const draw = t.cup().roll.draw;
     const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
     expect(t.lots.draws.length).toBe(1);
-    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"], phase: "open", public: true }));
+    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"], knew: ["alice"] }));
     t.w.change(() => {});
     t.w.flush();
     // a new draw (no `draw` given: not the old one asked again), of the same dice, sealed as the shake was
@@ -265,6 +265,26 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.flush();
     expect(t.lots.draws.length).toBe(2);
     expect(t.hud("B")).toEqual([]);
+    t.w.done();
+  });
+
+  it("a forgery said by someone who could already know the roll (here: it's public) only stops it: nothing turns up and nothing is drawn again for them, since saying so would let them choose among rolls", () => {
+    const t = table();
+    t.shake();
+    const draw = t.cup().roll.draw;
+    const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
+    for (const knew of ["all", ["alice", "bob"]]) {
+      t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"], knew, ...(knew === "all" ? { phase: "open", public: true } : {}) }));
+      for (let i = 0; i < 3; i++) {
+        t.w.change(() => {});
+        t.w.flush();
+      }
+      expect(t.lots.draws.length).toBe(1);
+      expect(t.cup().roll).toMatchObject({ draw, done: false });
+      expect(t.cup().roll.forged ?? []).toEqual([]);
+      for (const [id, pose] of Object.entries(poses)) expect(t.doc.objects[id].transform).toEqual(pose);
+      for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
+    }
     t.w.done();
   });
 

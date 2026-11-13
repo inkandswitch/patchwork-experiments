@@ -289,6 +289,23 @@ export function ours(st, cup) {
 export const forgedOn = (st, cup) => ours(st, cup) && (st.forged?.length > 0 || st.fault?.why === "forged");
 
 /**
+ * Whose word that the shake's draw is forged its holder's client (`me`)
+ * draws it again for: its own, and that of anyone who couldn't know the roll
+ * from the doc (lots' `knew`). Someone who could (a seated other once a
+ * blind cup is up; anyone once it's public) gains a choice among rolls if
+ * its word drew them again, so it only stops this one: nothing turns up by
+ * it, every HUD says who said so, and its holder may shake again, told. An
+ * honest client says so as soon as it sees a part in its name it didn't
+ * make, which is at the commits, long before anything is released to it.
+ */
+export function redrawFor(st, cup, me) {
+  if (!forgedOn(st, cup)) return [];
+  const knew = st.knew ?? "all";
+  const said = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [me] : [])])].sort();
+  return said.filter((v) => v === me || (knew !== "all" && !knew.includes(v)));
+}
+
+/**
  * Is its seed this cup's roll: ours, nobody saying a part of it is forged,
  * and, shaken blind, drawn with somebody besides the holder keeping a part
  * sealed (else the holder's client holds every part, and it's no blind

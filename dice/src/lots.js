@@ -111,7 +111,15 @@
 // still under way (committing or opening) whose asker can't move it on is
 // ended by anyone who sees that, in the doc, so every client agrees: each
 // writes its own key in `gone` (`goneOf`), and `derive` says "ended" for
-// every viewer once any is in. A client says so when
+// every viewer once any is in, while nobody but its asker could know its
+// seed (`endable`: committing; opening, the asker's own part not in, or
+// only the asker's still out). Past that, `gone` ends nothing: the one
+// contributor still to open could work the seed out from the others'
+// openings, and a `gone` it wrote then would be a veto it chose, knowing the
+// face, told as an absence ("not seeing you here"). So the attempt waits
+// on it, by name, and its asker, if here, draws again without it at its
+// deadline, as ever.
+// A client says so when
 //   - the asker is someone else, isn't here (by its presence), and this
 //     client has watched the attempt for STALE_MS (both deadlines: an asker
 //     that's here has closed it or drawn again by then); or
@@ -119,12 +127,18 @@
 //     it waits on its opening and this client doesn't hold its part
 //     (another browser's, or lost), or this client refuses it as forged (it
 //     never asked it, so it neither closes nor opens it).
+// A key in my name I didn't write is a part in my name I didn't make: my
+// client refuses the attempt as forged (lots-run.js), like any other.
 // An attempt drawn, or waiting only on sealed parts (a cup lifted while its
 // holder is away), is never ended: it isn't stuck, it waits for someone by
-// design. The consumer asks again if it still wants the draw (a cup's
-// holder, back), and nobody refuses that: the attempt it replaces was under
-// way, so its asker couldn't have known it; save an asker that had closed
-// out everyone else and then lost its own part, which from the doc is
+// design. Nor is "ended" final: it is what the doc says now, so an opening
+// that crossed a `gone` can bring it past `endable` (one contributor, not
+// its asker, still to open), and then it waits on that one again, who opens
+// as it would have; drawn after all, its consumer lands it like any drawn
+// throw. The consumer asks again if it still wants the draw
+// (a cup's holder, back), and nobody refuses that: the attempt it replaces
+// was under way, so its asker couldn't have known it; save an asker that had
+// closed out everyone else and then lost its own part, which from the doc is
 // withholding (lots.test.js, "gone").
 
 // WHAT IT GUARANTEES (each a property of the rules below, checked over
@@ -151,7 +165,9 @@
 //     the open deadline. Each retry has fewer members, so a round finishes
 //     (with `by` alone, at worst: then it is `by`'s own draw, and says so).
 //     A round with one member (someone alone) finishes at once. One whose
-//     asker is gone is ended (GONE), the same for everyone.
+//     asker is gone is ended (GONE), the same for everyone with the same
+//     doc, while nobody but its asker could know its seed; past that it
+//     waits on the one still to open, by name.
 
 import { sha256 } from "./sha256.js";
 
@@ -345,6 +361,18 @@ export function couldKnow(r, alsoOpened = null) {
 }
 
 /**
+ * Can a `gone` end this attempt (GONE)? Only while nobody but its asker
+ * could know its seed: committing; opening, before the asker has opened
+ * (nobody else has: the asker opens first), or with only the asker's part
+ * still out (its own, lost). Past that, the one still to open could know it,
+ * and a `gone` would be its veto, knowing the face.
+ */
+export function endable(r) {
+  const knew = couldKnow(r);
+  return knew !== "all" && knew.every((v) => v === r.by);
+}
+
+/**
  * Is a new attempt of a draw one `me`'s client must refuse? Given the
  * attempt of the same draw it saw before (`prev`, as it last saw it) and
  * whether it opened its part of that one:
@@ -394,7 +422,8 @@ export function faultOf(prev, next, me, { opened = false } = {}) {
  *   protests: { by: string, of: string, why: string }[],
  *   fault: null | { of, why },  // my client refuses this attempt
  *   forged: string[],           // who says a part of it in their name isn't theirs (their "forged" protest): land nothing by it
- *   gone: string[],             // who gave it up (GONE): while it was under way, that ends it ("ended"), for everyone
+ *   gone: string[],             // who gave it up (GONE): while nobody but its asker could know it, that ends it ("ended"), for everyone
+ *   knew: "all" | string[],     // who could know its seed, from the doc (knewOf)
  *   mustCommit: boolean, mustOpen: boolean,
  *   own: boolean,               // my commit is in it, and it's the one I made (with `by` me: my own attempt)
  *   overwritten: boolean,       // my commit in the doc isn't the one I made
@@ -424,6 +453,7 @@ export function derive(r, me, { mine = null, learned = null, fault = null } = {}
     fault,
     forged: Object.keys(r.protests).filter((v) => r.protests[v].why === "forged"),
     gone: Object.keys(r.gone),
+    knew: knewOf(r),
     mustCommit: false,
     mustOpen: false,
     own: false,
@@ -440,10 +470,11 @@ export function derive(r, me, { mine = null, learned = null, fault = null } = {}
       return out;
     }
   }
-  // under way and given up: ended, for everyone alike (nothing more to do, nobody to wait for)
+  // under way and given up while nobody but its asker could know it: ended, for everyone alike (nothing more to do,
+  // nobody to wait for)
   const ended = () => ((out.phase = "ended"), (out.waiting = []), (out.mustCommit = out.mustOpen = false), out);
   if (!contributors) {
-    if (out.gone.length) return ended();
+    if (out.gone.length && endable(r)) return ended();
     out.waiting = r.members.filter((v) => !r.commits[v]);
     out.mustCommit = !fault && r.members.includes(me) && !r.commits[me] && !mine;
     return out;
@@ -461,7 +492,7 @@ export function derive(r, me, { mine = null, learned = null, fault = null } = {}
   const askerFirst = openers.length > 1 && openers.includes(r.by) && !r.opens[r.by];
   out.mustOpen = !fault && openers.includes(me) && !r.opens[me] && myCommitOk && (!askerFirst || me === r.by);
   if (missing.length) {
-    if (out.gone.length) return ended();
+    if (out.gone.length && endable(r)) return ended();
     out.phase = "opening";
     out.waiting = askerFirst ? [r.by] : missing;
     return out;
@@ -513,7 +544,8 @@ export function due(r, me, now, { openingSince = null } = {}) {
 
 /**
  * Must `me`'s client give this attempt up (GONE, above)? Only one still
- * under way that it hasn't given up already; and
+ * under way that a `gone` can end (`endable`) and it hasn't given up
+ * already; and
  *   - asked by someone else, who isn't here (`present`), that my client
  *     has watched for STALE_MS (`watched`, ms); or
  *   - asked in my name, and my client refuses it as forged (`fault`), or it
@@ -523,7 +555,7 @@ export function due(r, me, now, { openingSince = null } = {}) {
 export function goneOf(r, me, { present, watched, mine, fault = null }) {
   if (!isViewer(me) || r.gone[me]) return false;
   const d = derive(r, me);
-  if (d.phase !== "committing" && d.phase !== "opening") return false;
+  if ((d.phase !== "committing" && d.phase !== "opening") || !endable(r)) return false;
   if (r.by === me) return fault?.why === "forged" || (d.phase === "opening" && d.waiting.includes(me) && !mine);
   return !present.includes(r.by) && watched >= STALE_MS;
 }

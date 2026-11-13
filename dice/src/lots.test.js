@@ -7,7 +7,7 @@
 // opens only when it's addressed to it (seal.test.js checks the real ones).
 
 import { createHash } from "node:crypto";
-import { COMMIT_MS, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, faultOf, goneOf, knewOf, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
+import { COMMIT_MS, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
 import { sha256 } from "./sha256.js";
 
 const nonceOf = (v, id) => sha256(`nonce|${v}|${id}`);
@@ -516,12 +516,27 @@ describe("lots: gone", () => {
         }
       }
   const VIEWERS = ["a", "b", "c", "s"];
+  // could anyone but its asker know it? (nothing here is sealed to anyone: only the contributors' own parts) Some
+  // contributor besides a whose part is the only one not in the clear: it can work the seed out from the others'
+  const otherKnows = (raw) => {
+    const contributors = contributorsOf(roundOf({ round: raw }));
+    return !!contributors && contributors.some((v) => v !== "a" && contributors.every((u) => u === v || raw.opens[u]));
+  };
+  const underWay = (raw) => ["committing", "opening"].includes(derive(roundOf({ round: raw }), null).phase);
   it("has the cases it means to", () => {
     // ab, open to all: a alone (not closed; closed with a, a opened or not) 3, both (none, a, b, ab opened) 4; sealed
     // by a: 2 + 2. abc, open to all: a alone 3, with b 5, with c 5, all 8; sealed: 2 + 3 + 3 + 4. 11 + 33.
     expect(attempts.length).toBe(44);
     // what honest clients can't reach: b (or c, or both) opened before a, in a draw open to all: 1 among two, 5 among three
     expect(attempts.filter((x) => x.honest).length).toBe(38);
+    // under way with someone besides the asker able to know it: open to all, every contributor's part in but one, not
+    // a's. ab: both committed, a opened (1). abc: all committed, a and c or a and b opened (2); closed with ab or ac,
+    // a opened (2)
+    const known = attempts.filter((x) => underWay(x.raw) && otherKnows(x.raw));
+    expect(known.length).toBe(5);
+    for (const x of known) expect(x.sealers).toEqual([]);
+    // endable is exactly "nobody but the asker could know it", over every attempt under way
+    for (const { raw } of attempts) if (underWay(raw)) expect(endable(roundOf({ round: raw }))).toBe(!otherKnows(raw));
   });
 
   const heldBy = (v, has) => (has ? { mine: { nonce: nonceOf(v, id), key: null } } : {});
@@ -538,7 +553,8 @@ describe("lots: gone", () => {
                 n++;
                 const g = goneOf(r, me, { present: aHere ? ["a", ...members.filter((v) => v !== "a"), "s"] : [...members.filter((v) => v !== "a"), "s"], watched, mine, fault });
                 const waitsOnMyOpening = derive(r, null).phase === "opening" && derive(r, null).waiting.includes(me);
-                const want = !underWay ? false : me === "a" ? !!fault || (waitsOnMyOpening && !mine) : !aHere && watched >= STALE_MS;
+                // (never once someone besides the asker could know it: a `gone` then would be its veto, knowing the face)
+                const want = !underWay || otherKnows(raw) ? false : me === "a" ? !!fault || (waitsOnMyOpening && !mine) : !aHere && watched >= STALE_MS;
                 expect(g, `${JSON.stringify(raw.commits && Object.keys(raw.commits))} closed ${raw.closed} opened ${Object.keys(raw.opens)} sealers ${raw.sealers}; ${me} judges, a ${aHere ? "here" : "gone"}, watched ${watched}, mine ${mine}, fault ${!!fault}`).toBe(want);
                 // an honest asker that's here holding its part never gives up its own attempt: it moves it on
                 if (me === "a" && mine && !fault) expect(g).toBe(false);
@@ -549,10 +565,11 @@ describe("lots: gone", () => {
     expect(n).toBe(44 * 4 * 2 * 2 * 2 * 2);
   });
 
-  it("given up by anyone, it's ended for everyone alike: nobody waits on it, nobody commits or opens, the asker's deadlines are done, and nobody gives it up again", () => {
+  it("given up by anyone while nobody but its asker could know it, it's ended for everyone alike: nobody waits on it, nobody commits or opens, the asker's deadlines are done, and nobody gives it up again", () => {
+    let n = 0;
     for (const { members, raw } of attempts) {
-      const r0 = roundOf({ round: raw });
-      if (!["committing", "opening"].includes(derive(r0, null).phase)) continue;
+      if (!underWay(raw) || otherKnows(raw)) continue;
+      n++;
       for (const giver of VIEWERS) {
         const r = roundOf({ round: { ...structuredClone(raw), gone: { [giver]: true } } });
         for (const v of VIEWERS)
@@ -564,6 +581,34 @@ describe("lots: gone", () => {
         expect(due(r, "a", 1e9, { openingSince: 0 })).toBe(null);
       }
     }
+    expect(n).toBeGreaterThan(0);
+  });
+
+  it("one someone besides its asker could know is never ended by any `gone`, whoever's: it waits on the one still to open, by name, and the asker's deadline draws again without it, as with no `gone` at all", () => {
+    let n = 0;
+    for (const { members, raw } of attempts) {
+      if (!underWay(raw) || !otherKnows(raw)) continue;
+      const plain = roundOf({ round: raw });
+      for (const gone of subsets(VIEWERS).filter((g) => g.length)) {
+        n++;
+        const r = roundOf({ round: { ...structuredClone(raw), gone: Object.fromEntries(gone.map((v) => [v, true])) } });
+        for (const v of VIEWERS)
+          for (const has of [true, false]) {
+            const d = derive(r, v, heldBy(v, has && members.includes(v)));
+            const without = derive(plain, v, heldBy(v, has && members.includes(v)));
+            expect(d.phase).toBe("opening");
+            expect(d.waiting).toHaveLength(1);
+            expect(d.waiting[0]).not.toBe("a");
+            // exactly as if nobody had written `gone`
+            expect({ ...d, gone: [] }).toEqual({ ...without, gone: [] });
+            // and nobody writes one
+            expect(goneOf(r, v, { present: [], watched: STALE_MS, mine: false, fault: { of: id, why: "forged" } })).toBe(false);
+          }
+        expect(due(r, "a", 1e9, { openingSince: 0 })).toEqual(due(plain, "a", 1e9, { openingSince: 0 }));
+        expect(due(r, "a", 1e9, { openingSince: 0 })?.retry?.excluded).toEqual(derive(plain, null).waiting);
+      }
+    }
+    expect(n).toBe(attempts.filter((x) => underWay(x.raw) && otherKnows(x.raw)).length * 15);
   });
 
   it("an attempt drawn, or spoiled, isn't ended by a stale word that crosses it: the openings decide", () => {

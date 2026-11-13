@@ -4,7 +4,7 @@
 // player, a spectator). What each may see is the stage's merge of this one
 // policy (audience = show ∩ only), worked out here as the stage does.
 
-import { COVER, CUP_HEIGHT, DIE_HALF, LIFT_BACK, MAX_UNDER, cupOf, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, ringOf, sealersFor, shakePlan, shaken, spotOf, stoodUp, upright, yawOf } from "./cup.js";
+import { COVER, CUP_HEIGHT, DIE_HALF, LIFT_BACK, MAX_UNDER, cupOf, cupsOf, fits, forgedOn, includes, redrawFor, knocked, lifted, lowered, ours, policy, ringOf, sealersFor, shakePlan, shaken, spotOf, stoodUp, upright, yawOf } from "./cup.js";
 import { builtDie } from "./die-glb.js";
 import { dieOf, presetDoc } from "./die.js";
 import { faceUp, reach, seedFor, seedFromLots, settled } from "./roll.js";
@@ -237,6 +237,16 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
           expect(forgedOn(st, cup), what).toBe(isForged);
           const isFit = isOurs && !isForged && (!c.blind || sealers === null || sealers.some((v) => v !== c.holder));
           expect(fits(st, cup), what).toBe(isFit);
+          // whose word its holder's client draws again for: its own, and that of anyone who couldn't know the roll; never
+          // that of someone who could (they'd choose among rolls by saying so), so a cup that's public is never redrawn
+          // for anyone else's
+          for (const knew of ["all", [], ["ana"], ["ben"], ["ben", "cy"]]) {
+            const said = redrawFor({ ...st, knew }, cup, "ana");
+            const words = [...new Set([...forged, ...(fault?.why === "forged" ? ["ana"] : [])])].sort();
+            expect(said, `${what} knew ${knew}`).toEqual(isForged ? words.filter((v) => v === "ana" || (knew !== "all" && !knew.includes(v))) : []);
+            for (const v of said) expect(v === "ana" || (knew !== "all" && !knew.includes(v))).toBe(true);
+            if (isForged && forged.includes("ben") && knew !== "all" && !knew.includes("ben")) expect(said).toContain("ben");
+          }
         }
       const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers, forged: [] };
       const isFit = fits(st, cup);

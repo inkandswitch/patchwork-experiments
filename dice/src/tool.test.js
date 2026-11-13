@@ -565,6 +565,47 @@ describe("rolling with others who have the die open", () => {
     ana.cleanup();
   });
 
+  it("a `gone` in the asker's name its panel didn't write is a forgery: it says so, not that it lost its part", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    d.peer().broadcast({ type: HERE, session: "sghost", viewer: "ghost" });
+    ana.$("button.roll").click();
+    d.h.change((doc) => (doc.round.gone.ana = true));
+    vi.advanceTimersByTime(300);
+    expect(ana.doc().round.protests.ana).toEqual({ of: ana.doc().round.id, why: "forged" });
+    expect(LINES(ana)).toContain("That roll didn't land: someone wrote its lots in your name. Nothing was rolled.");
+    expect(LINES(ana).join("|")).not.toMatch(/lost its part/);
+    ana.cleanup();
+  });
+
+  it("given up, and then drawn after all (the asker's opening crossed the `gone`): the panel follows the doc, writes the roll, and drops what it said", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    d.peer().broadcast({ type: HERE, session: "sben", viewer: "ben" });
+    ana.$("button.roll").click();
+    const { id, draw, of } = ana.doc().round;
+    const nb = freshNonce();
+    // ben's commit, and someone's `gone` written before ana's opening reached them: ended, for ana too
+    d.h.change((doc) => {
+      doc.round.commits.ben = commitOf(id, "ben", nb, "", [...of]);
+      doc.round.gone.cy = true;
+    });
+    vi.advanceTimersByTime(300);
+    expect(ana.doc().round.opens).toEqual({});
+    expect(LINES(ana)).toContain("That roll didn't land: someone gave its lots up, not hearing from you. Nothing was rolled.");
+    // her opening, written before she saw the `gone` (here: from what her panel keeps), crosses it; ben opens
+    const na = JSON.parse(globalThis.localStorage.getItem(`dice.lots:ana:${id}`)).nonce;
+    d.h.change((doc) => (doc.round.opens.ana = na));
+    d.h.change((doc) => (doc.round.opens.ben = nb));
+    vi.advanceTimersByTime(PANEL_AIR_MS + PANEL_GRACE_MS + 300);
+    const face = faceOfSeed(seedFromLots(seedOf(id, [["ana", na], ["ben", nb]])), 6);
+    expect(ana.doc().rolls.map((r) => [r.draw, r.face])).toEqual([[draw, face]]);
+    expect(LINES(ana).join("|")).not.toMatch(/didn't land/);
+    ana.cleanup();
+  });
+
   it("closing a panel says goodbye: the others count it gone at once", () => {
     vi.useFakeTimers();
     const d = sharedDie("d6");

@@ -162,7 +162,7 @@ export default function DieTool(handle, element) {
 
   // ── rolling: by lots among everyone with this panel open ──
   let pending = null; // this panel's own roll: { draw, at }
-  let note = null; // what to say about it, if it didn't land
+  let note = null; // { draw, text }: what to say about my roll, if it didn't land (until its draw is written after all)
   let drawnSeen = null; // the last attempt this panel saw drawn, until it's written down: { id, draw, by, face }
   const seenAt = new Map(); // draw → when this panel first saw it
   const early = new Set(); // draws this panel saw before they were drawn (only those it may write for someone else)
@@ -198,13 +198,15 @@ export default function DieTool(handle, element) {
     }
     if (st?.public && !forged && !landed(doc, st.draw)) drawnSeen = { id: st.id, draw: st.draw, by: st.by, face: faceOfDraw(st, n) };
     if (pending) {
-      if (st && st.draw !== pending.draw) (pending = null), (note = `${st.by === viewer ? "You" : cap(nameOf(st.by))} rolled it before yours was drawn: that is the roll.`);
-      else if (st?.spoiled) (pending = null), (note = "That roll didn't land: its lots were spoiled.");
+      const say = (text) => ((note = { draw: pending.draw, text }), (pending = null));
+      if (st && st.draw !== pending.draw) say(`${st.by === viewer ? "You" : cap(nameOf(st.by))} rolled it before yours was drawn: that is the roll.`);
+      else if (st?.spoiled) say("That roll didn't land: its lots were spoiled.");
       // only an attempt this panel made is its roll
-      else if (st && !(st.by === viewer && st.own)) (pending = null), (note = st.by === viewer ? "Someone wrote the lots for that roll in your name: nothing was rolled." : `${cap(nameOf(st.by))} drew that roll again: nothing was rolled.`);
-      // given up (lots.js GONE): someone's panel stopped hearing from this one, or this one lost its part
-      else if (st?.phase === "ended") (pending = null), (note = `That roll didn't land: ${st.gone.includes(viewer) ? "this panel lost its part of the lots" : `${list(st.gone.map(nameOf))} gave its lots up, not hearing from you`}. Nothing was rolled.`);
-      else if (now - pending.at > PANEL_THROW_MS && !st?.public) (pending = null), (note = `That roll didn't land: its lots are still waiting for ${list((st?.waiting ?? []).map(nameOf))}. Nothing was rolled.`);
+      else if (st && !(st.by === viewer && st.own)) say(st.by === viewer ? "Someone wrote the lots for that roll in your name: nothing was rolled." : `${cap(nameOf(st.by))} drew that roll again: nothing was rolled.`);
+      // given up (lots.js GONE): someone's panel stopped hearing from this one, or this one lost its part (a `gone`
+      // in my name this panel didn't write is a forgery: said so instead)
+      else if (st?.phase === "ended") say(`That roll didn't land: ${st.fault?.why === "forged" || st.forged.includes(viewer) ? "someone wrote its lots in your name" : st.forged.length ? `${list(st.forged.map(nameOf))} say${st.forged.length === 1 ? "s" : ""} someone wrote its lots in their name` : st.gone.includes(viewer) ? "this panel lost its part of the lots" : `${list(st.gone.map(nameOf))} gave its lots up, not hearing from you`}. Nothing was rolled.`);
+      else if (now - pending.at > PANEL_THROW_MS && !st?.public) say(`That roll didn't land: its lots are still waiting for ${list((st?.waiting ?? []).map(nameOf))}. Nothing was rolled.`);
     }
     const face = faceOfDraw(st, n);
     if (face == null || forged || landed(doc, st.draw)) {
@@ -343,7 +345,8 @@ export default function DieTool(handle, element) {
     }
     const thrownAway = againLine(die, rolls);
     if (thrownAway) lines.push(thrownAway);
-    if (note) lines.push({ text: note, state: "warn" });
+    // (given up, or still waiting, and then drawn after all: written, and the note is past)
+    if (note && !landed(doc, note.draw)) lines.push({ text: note.text, state: "warn" });
     for (const l of lots.hud()) lines.push(l);
     return el(
       "div",

@@ -274,13 +274,16 @@ function create(api) {
       throws.delete(toss);
       for (const id of [...dice.keys()]) drop(id);
     };
-    /** It doesn't land: put back every die still in the air as it lies in the doc, and say why. */
-    const fail = (text) => {
+    /**
+     * It doesn't land: put back every die still in the air as it lies in the doc, and say why. `final`: nothing
+     * will come of its draw (this view said why; it needn't say again that it threw before that one landed);
+     * else (given up, or still waiting) the doc may yet draw it, and then it's landed and told like anyone's.
+     */
+    const fail = (text, final = true) => {
       for (const id of dice.keys()) api.pose.release(id);
       end();
-      // (this view said why; it needn't say again that it threw before that one landed)
       const w = seenThrows.get(draw);
-      if (w) w.done = true;
+      if (w && final) w.done = true;
       if (text) api.notify(text, "warn");
     };
     toss.end = end;
@@ -307,8 +310,12 @@ function create(api) {
         if (st && !(st.by === api.viewer && st.own)) return fail(st.by === api.viewer ? "Someone wrote the lots for that throw in your name: nothing was rolled." : `${capWho(st.by)} drew that throw again: nothing was rolled.`);
         if (st?.spoiled) return fail("That roll didn't land: its lots were spoiled (see above).");
         // given up (lots.js GONE): someone's client didn't see me here, or mine lost my part
-        if (st?.phase === "ended") return fail(`That roll didn't land: ${st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`);
-        if (Date.now() - started > THROW_MS) return fail(`That roll didn't land: its lots are still waiting${st?.waiting?.length ? ` for ${st.waiting.length} more` : ""}. Nothing was rolled.`);
+        // (a `gone` in my name my client didn't write is a forgery: said so instead)
+        if (st?.phase === "ended") {
+          const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [api.viewer] : [])])];
+          return fail(`That roll didn't land: ${forged.length ? forgedLine(forged, false) : st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`, false);
+        }
+        if (Date.now() - started > THROW_MS) return fail(`That roll didn't land: its lots are still waiting${st?.waiting?.length ? ` for ${st.waiting.length} more` : ""}. Nothing was rolled.`, false);
         const seed = st?.public ? seedFromLots(st.seed) : null;
         if (seed == null || t < AIR_SECONDS) {
           for (const [id, d] of dice) api.pose.hold(id, airborne(d.built, d.from, t, d));
@@ -332,7 +339,7 @@ function create(api) {
   }
 
   // ── every throw, as the doc has it: landed by anyone once it's drawn, told from the doc ──
-  const seenThrows = new Map(); // draw → { draw, lead, of, by, from: Map id → transform as first seen, seenAt, publicAt, seed, st, done, told, forgedTold }
+  const seenThrows = new Map(); // draw → { draw, lead, of, by, from: Map id → transform as first seen, seenAt, publicAt, seed, st, done, ended, told, forgedTold }
   /**
    * A throw this view has seen, from when it first saw it: where each of its
    * dice lay then, and whether that was before it was drawn (`early`: only
@@ -349,7 +356,7 @@ function create(api) {
         if (x.seed != null) tellThrow(x, true, by);
         x.done = true;
       }
-    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: Date.now(), publicAt: null, seed: null, st: null, done: past, early, told: false, forgedTold: false };
+    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: Date.now(), publicAt: null, seed: null, st: null, done: past, ended: false, early, told: false, forgedTold: false };
     seenThrows.set(draw, w);
     return w;
   }
@@ -375,9 +382,10 @@ function create(api) {
         w.forgedTold = true;
         api.notify(`${forgedLine(st.forged)}: the roll of ${namesOf(w.of, snap)} told before is no fair roll.`, "warn");
       }
-      // given up before it was drawn (lots.js GONE): nothing was rolled, which every view says once (its thrower's said why)
-      if (!w.done && st.phase === "ended") {
-        w.done = true;
+      // given up before it was drawn (lots.js GONE): nothing was rolled, which every view says once (its thrower's said
+      // why). Not done: an opening that crossed the `gone` can still draw it, and then it lands and is told
+      if (!w.done && !w.ended && st.phase === "ended") {
+        w.ended = true;
         // (one somebody says was forged is said so already)
         if (w.by !== api.viewer && !st.forged?.length) api.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
       }
@@ -477,6 +485,8 @@ function create(api) {
     const left = (st.excluded ?? []).filter((v) => !by.includes(v));
     if (left.length) notes.push(`${list(left.map(whoOf))} didn't open ${left.length === 1 && left[0] === api.viewer ? "your" : "their"} part, and it was drawn again without ${left.length === 1 && left[0] === api.viewer ? "you" : "them"}`);
     if (st.forged?.length) notes.push(`${forgedLine(st.forged, false)}: no fair roll`);
+    // told as given up first (an opening crossed the `gone`): it was drawn after all
+    if (w.ended) notes.push("drawn after all, once given up");
     if (st.forged?.length) w.forgedTold = true;
     const text = `${parts.join("; ")}${notes.length ? ` (${notes.join("; ")})` : ""}`;
     if (astray.length || st.forged?.length || left.length) api.notify(text, "warn");

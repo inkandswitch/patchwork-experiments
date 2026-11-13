@@ -43,11 +43,13 @@
 // "forged"; cup.js `forgedOn`) is no roll either, and asking again for that
 // draw would be refused as a reroll (its holder, the sole sealer, could have
 // known it), so the holder's client shakes again in place instead: a new
-// draw of the same dice, its roll saying who said so (`forged`).
+// draw of the same dice, its roll saying who said so (`forged`). Only for
+// the word of someone who couldn't know the roll (cup.js `redrawFor`): one
+// who could would get to choose among rolls; its word only stops this one.
 // Each view says when a cup was shaken from the doc itself (a new draw on
 // it), not from anyone's word, so a reshake can't go untold.
 
-import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
+import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, redrawFor, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
 import { builtOf, faceOfSeed, faceUp, scaleOf, seedFor, seedFromLots, settled } from "./roll.js";
 import { lookFor } from "./rule.js";
 
@@ -254,7 +256,11 @@ function create(api) {
    * reroll. So my client shakes again in place: a new draw of the same
    * dice, written with a roll that says who said so (`forged`), which every
    * view tells ("Ana's cup was drawn again: Ben says…"). A holder may shake
-   * again whenever it likes, told; this gives nobody anything more.
+   * again whenever it likes, told; this gives nobody anything more. Only for
+   * the word of someone who couldn't know the roll (`redrawFor`): a seated
+   * other who can see a blind cup's dice, drawing them again by saying so,
+   * could choose among them. Its word only stops this roll (nothing turns up
+   * by it, and every HUD says who said so); I may shake again, told.
    */
   function heal() {
     const lots = lotsApi();
@@ -265,7 +271,8 @@ function create(api) {
       const st = lots?.state?.(c.id) ?? null;
       if (forgedOn(st, c.cup)) {
         astray.delete(roll.draw);
-        if (lots && c.cup.holder === viewer && !redrawn.has(roll.draw)) redraw(c, st);
+        const said = redrawFor(st, c.cup, viewer);
+        if (lots && c.cup.holder === viewer && !redrawn.has(roll.draw) && said.length) redraw(c, st, said);
         continue;
       }
       if (ours(st, c.cup)) {
@@ -281,10 +288,9 @@ function create(api) {
   }
 
   /** Shake my cup again in place, its dice where they lie: a new draw, told with who said the last one's lots were forged. */
-  function redraw(c, st) {
+  function redraw(c, st, forged) {
     const roll = c.cup.roll;
     redrawn.add(roll.draw);
-    const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [viewer] : [])])].sort();
     const draw = lotsApi().draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), of: roll.dice });
     if (!draw) return;
     // (its round lands after this write, over the forged one: not a round gone astray)

@@ -445,6 +445,56 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     await w.settle();
     expect(w.round("d1").gone).toEqual({ ana: true });
     for (const v of ["ana", "ben"]) expect(w.lots(v).state("d1").phase).toBe("ended");
+    // her own `gone`, which her client wrote: no forgery
+    expect(w.round("d1").protests).toEqual({});
+    expect(w.lots("ana").state("d1").fault).toBe(null);
+    w.dispose();
+  }, 15_000);
+
+  it("the last to open, knowing the face, writes `gone` in its own name: nothing is ended; everyone waits on it, by name, and the asker draws again without it at its deadline, as if it had only stalled", async () => {
+    const id = "rVETOxxx";
+    const n = { ana: freshNonce(), ben: freshNonce(), cy: freshNonce() };
+    const w = world({ seated: null, present: ["ana", "ben", "cy"] });
+    w.clients.get("cy").ext.dispose(); // cy is here, its client a modified one
+    // ana's and ben's clients made their parts (kept in storage, as a client keeps them)
+    for (const v of ["ana", "ben"]) localStorage.setItem(`dice.lots:${v}:${id}`, JSON.stringify({ nonce: n[v], pub: "" }));
+    const r = newRound({ draw: "dVETOxxx", id, by: "ana", at: now, of: ["d1"], sealers: [], members: ["ana", "ben", "cy"], commit: commitOf(id, "ana", n.ana, "", ["d1"]) });
+    for (const v of ["ben", "cy"]) r.commits[v] = commitOf(id, v, n[v], "", ["d1"]);
+    r.opens = { ana: n.ana, ben: n.ben };
+    // cy could work the seed out now: it gives the round up instead of opening
+    r.gone = { cy: true };
+    w.write((d) => (d.objects.d1.traits["dice.die"].round = r));
+    await w.settle();
+    expect(couldKnow(w.round("d1"))).toEqual(["cy"]);
+    for (const v of ["ana", "ben"]) {
+      expect(w.lots(v).state("d1")).toMatchObject({ phase: "opening", waiting: ["cy"], gone: ["cy"], fault: null });
+      expect(w.hud(v)).toEqual([]);
+    }
+    await later(w, OPEN_MS - 1);
+    expect(w.round("d1").id).toBe(id);
+    expect(w.hud("ben")).toContain("Drawing lots for d1: waiting for cy.");
+    await later(w, 1);
+    // drawn again without cy, who is named for it
+    const again = w.round("d1");
+    expect(again).toMatchObject({ draw: "dVETOxxx", members: ["ana", "ben"], excluded: ["cy"], tries: 1 });
+    expect(again.id).not.toBe(id);
+    w.dispose();
+  }, 15_000);
+
+  it("a `gone` in my name my client didn't write is a forgery: my client refuses the round and says so, and everyone's HUD says who says so", async () => {
+    const w = world({ seated: ["ana", "ben", "cy"], present: ["ana", "ben", "cy"] });
+    w.clients.get("cy").ext.dispose(); // cy's client is here and never commits: the round stays committing
+    w.lots("ana").draw("d1", { sealers: [], of: ["d1"] });
+    await w.settle();
+    expect(w.lots("ben").state("d1").phase).toBe("committing");
+    // someone gives it up in ben's name
+    w.write((d) => (d.objects.d1.traits["dice.die"].round.gone.ben = true));
+    await w.settle();
+    expect(w.round("d1").protests).toEqual({ ben: { of: w.round("d1").id, why: "forged" } });
+    for (const v of ["ana", "ben"]) expect(w.lots(v).state("d1")).toMatchObject({ phase: "ended", forged: ["ben"] });
+    expect(w.lots("ben").state("d1").fault).toEqual({ of: w.round("d1").id, why: "forged" });
+    expect(w.hud("ben")).toContain("Someone wrote the lots for d1 in your name: your client refused them, and nothing lands by them.");
+    expect(w.hud("ana")).toContain("Ben says the lots for d1 were written in their name by someone else: nothing lands by them.");
     w.dispose();
   }, 15_000);
 
