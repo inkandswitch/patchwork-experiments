@@ -12,19 +12,12 @@
 // datatypes and sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
-//
-// To see something stop when this viewer switches activity, give it
-// `activities: ["edit"]`, mount PLAY alongside (it offers "play") and call
-// s.activity("play").
 
 import { FakeRepo, flush } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
 
 export { flush };
-
-/** An extension that does nothing but offer the "play" activity, so a test can switch to it. */
-export const PLAY = Object.freeze({ meta: { id: "t.play", activities: ["play"] }, module: { create: () => ({}) } });
 
 export const settle = async (n = 6) => {
   for (let i = 0; i < n; i++) await flush();
@@ -109,9 +102,9 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
       s.pointer("pointerdown", x, y, extra);
       s.pointer("pointerup", x, y, extra);
     },
-    /** switch this viewer's activity, and let what it starts settle */
-    async activity(id) {
-      s.local.swap((m) => ({ ...m, activity: id }));
+    /** uninstall an extension (it stops at once, in every stage of this test), and let that settle */
+    async uninstall(id) {
+      getRegistry("scene:extension").unregister(id);
       await settle();
     },
     key(key, extra = {}) {

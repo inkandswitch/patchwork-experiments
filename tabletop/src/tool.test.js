@@ -109,7 +109,7 @@ describe("the tabletop-game tool", () => {
     for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect(glbs.has(o.sourceUrl)).toBe(true);
     expect(scene).toMatchObject({ title: "Santorini table 1", assets: {}, dimensions: {} });
     expect(scene.view).not.toHaveProperty("tool");
-    expect(scene.view).not.toHaveProperty("activity");
+    expect(scene.view.start).not.toHaveProperty("body");
     await until(() => element.querySelector(".tables a")?.textContent === "Santorini table 1");
     // made with the packages list the stage fills in; with no scene package
     // registered here, it says only that it's a scene

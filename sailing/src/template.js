@@ -1,10 +1,10 @@
 // The "Ship at sea" and "Ship at anchor" templates: an empty scene's start
-// screen offers them, and each lays out a sloop (layout.js), with the doc set
-// to start in play, so its maker lands aboard. At sea she's under way on a
-// reach; at anchor she lies head to wind off the islet in a moderate breeze,
-// her sail down and her anchor down, somewhere to set things up aboard (a
-// card table in her cockpit) and still get under way from. Editing either is
-// one switch away.
+// screen offers them, and each lays out a sloop (layout.js), the doc starting
+// people off her quarter, where a click comes aboard. At sea she's under way
+// on a reach; at anchor she lies head to wind off the islet in a moderate
+// breeze, her sail down and her anchor down, somewhere to set things up
+// aboard (a card table in her cockpit) and still get under way from. She
+// sails on while anyone edits her; pausing the clock is what stops her.
 
 import { ANCHORAGE_AIR, layOutShip } from "./layout.js";
 

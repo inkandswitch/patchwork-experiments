@@ -14,7 +14,7 @@
 //   - While the scene has nothing in it, it's a start screen: "Start from:"
 //     every registered scene:template (from the registry's metadata, so
 //     nothing is loaded to offer one) and Blank, then how to add something.
-//     A template runs through api.template (it writes the doc, view.activity
+//     A template runs through api.template (it writes the doc, view.start
 //     included, and the stage starts this viewer where it says: an arena's
 //     maker lands in the game). Blank only puts the choice away, for this
 //     view; the drop hint stays.
@@ -230,7 +230,15 @@ function create(api) {
     }
     if (!live()) return null;
     const doc = source?.doc?.();
-    if (await api.drop({ url, doc, handle: source, group: null, at })) return null;
+    // what a drop lays out is one edit, as an added object is: undo takes it out again
+    const dropped = api.edits("Add");
+    let laid = false;
+    try {
+      laid = await api.drop({ url, doc, handle: source, group: null, at }, { edit: dropped });
+    } finally {
+      dropped.end();
+    }
+    if (laid) return null;
     if (!live()) return null;
     const providers = (await api.providersFor(url, doc)) ?? [];
     if (!providers.length) return fail(`Nothing can show ${describeForHumans(describeSource(doc))} in a scene.`);
@@ -239,7 +247,12 @@ function create(api) {
     if (!provider || !live()) return null;
     let id;
     try {
-      id = await api.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}) });
+      const edit = api.edits("Add");
+      try {
+        id = await api.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}), edit });
+      } finally {
+        edit.end();
+      }
     } catch (err) {
       return fail(err?.message ?? String(err));
     }

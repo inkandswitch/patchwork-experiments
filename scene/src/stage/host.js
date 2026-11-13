@@ -1,31 +1,24 @@
 // Starting and stopping extensions (STAGE.md, "Activation" and "Stopping").
 //
-// The running set is a pure function of the registry's metadata, the doc and
-// what this viewer is doing (their activity: activation.js activeSet).
-// sync(doc) recomputes it, starts
-// what's new (load → module.create(api)) and stops what's gone. What an
-// extension acquires through its api is the stage's business: makeApi hands
-// back the api together with a release() that gives all of it back, in the
-// STAGE.md order. The host only decides when.
+// The running set is a pure function of the registry's metadata and the doc
+// (activation.js activeSet): nothing the viewer does changes it (H1).
+// sync(doc) recomputes it, starts what's new (load → module.create(api)) and
+// stops what's gone. What an extension acquires through its api is the
+// stage's business: makeApi hands back the api together with a release()
+// that gives all of it back, in the STAGE.md order. The host only decides
+// when.
 //
-// An extension that leaves because of the doc (a peer's undo took its trait
-// away) lingers for LINGER_MS, and for as long as it's busy (a body entered,
-// the held tool, an open session, a pose hold), so nobody's game is torn down
-// under them. One that
-// leaves because this viewer switched activity stops at once.
-//
-// The activity: local.activity is this viewer's (null until they join: the
-// first doc with a view sets it to where the doc says to start, so a later
-// change to that never moves someone already here). The one that runs is
-// published as local.activities.current, with the ones on offer: it is
-// local.activity when the scene offers it, else "edit" (currentActivity).
-// Everything that needs to know what's being done reads it there.
+// One stop rule (H2): an extension the doc no longer calls for lingers for
+// LINGER_MS, and for as long as it's busy (a body entered, the held tool, an
+// open session, a pose hold), so nobody's game is torn down under them by a
+// peer's edit. One still loading stops at once, having acquired nothing, and
+// so does one whose plugin left the registry (there is no code to keep).
 //
 // Running order (activeSet's order) is the only order anything here reports
 // in: local.running, instances(), collect(). The order extensions finished
 // loading in never counts.
 
-import { DEFAULT_ACTIVITY, activeSet, availableActivities, currentActivity, takesDrop } from "./activation.js";
+import { activeSet, takesDrop } from "./activation.js";
 
 /** How long an extension the doc no longer calls for keeps running. */
 export const LINGER_MS = 2_000;
@@ -65,18 +58,15 @@ export function mergeOrder(prev, want, lingering) {
   return out;
 }
 
-/** The same activities? */
-const sameActivities = (a, b) => !!a && a.current === b.current && a.available.length === b.available.length && a.available.every((x, i) => x === b.available[i]);
-
 /** Same list of { id, scope }? */
 const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.every((r, i) => r.id === b[i].id && r.scope === b[i].scope);
 
 /**
  * @param {{
  *   registry: () => Promise<object | null>,     // the scene:extension registry
- *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.activity in; local.running and local.activities out)
+ *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.running out)
  *   makeApi: (rec: object) => { api: object, release: () => void },
- *   makeDropContext?: (id: string) => object,
+ *   makeDropContext?: (id: string, opts?: { edit? }) => object,
  *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
  *   onChange?: () => void,                      // an extension started or stopped
  *   lingerMs?: number,
@@ -104,7 +94,7 @@ export function createHost({
   let order = []; // running order: every rec's id
   let lastDoc = null; // the doc the running set was last worked out for
   let pending = null; // a doc sync() was given before the registry arrived
-  let syncing = false; // in sync(): a call from inside it (local.activity set on joining) runs after
+  let syncing = false; // in sync(): a call from inside it (an extension's create writing the doc) runs after
   const offs = [];
 
   const ready = Promise.resolve()
@@ -126,13 +116,6 @@ export function createHost({
         sync(d);
       }
     });
-
-  /** What runs for this doc, with this viewer's activity as it is now. */
-  function wanted(metas, doc) {
-    const available = availableActivities(metas, doc);
-    const current = currentActivity(local.get().activity, doc, available);
-    return { activities: { current, available }, set: activeSet({ metas, doc, activity: current }) };
-  }
 
   // ─── starting ─────────────────────────────────────────────────────────────
 
@@ -201,10 +184,7 @@ export function createHost({
       if (dead || recs.get(rec.id) !== rec) return;
       let isBusy = false;
       try {
-        // busy itself, or something it requires is (the hand carrying a card
-        // for the table): a requirer and what it requires are one gesture
-        const group = [rec.id, ...(Array.isArray(rec.meta?.requires) ? rec.meta.requires : [])];
-        isBusy = rec.state === "running" && group.some((id) => busy(id));
+        isBusy = rec.state === "running" && busy(rec.id);
       } catch {
         // can't tell: let it go
       }
@@ -221,10 +201,7 @@ export function createHost({
 
   // ─── the running set ──────────────────────────────────────────────────────
 
-  /**
-   * Recompute the running set for this doc (and the viewer's activity as it
-   * is in local now): start what's new, stop what's gone.
-   */
+  /** Recompute the running set for this doc: start what's new, stop what's gone. */
   function sync(doc) {
     if (dead) return;
     if (!isReady) {
@@ -249,13 +226,9 @@ export function createHost({
   }
 
   function syncNow(d) {
-    // joining: this viewer starts where the doc says (once there is a doc)
-    if (local.get().activity == null && d.view && typeof d.view === "object") {
-      const start = typeof d.view.activity === "string" ? d.view.activity : DEFAULT_ACTIVITY;
-      local.swap((m) => (m.activity != null ? m : { ...m, activity: start }));
-    }
     const metas = listOf(reg);
-    const { activities, set } = wanted(metas, d);
+    const set = activeSet({ metas, doc: d });
+    const registered = new Set(metas.map((m) => m?.id));
     const want = new Map(set.map((w) => [w.id, w]));
     for (const w of set) {
       const rec = recs.get(w.id);
@@ -269,14 +242,13 @@ export function createHost({
         }
       }
     }
-    // Which of the gone ones did the doc send away? Those the previous doc,
-    // with this viewer's activity as it is now, would still run.
-    let docCaused = null;
+    // the one stop rule: what the doc stopped calling for lingers. What's
+    // still loading has nothing to give back, and an extension whose plugin
+    // left the registry (uninstalled) has no code to come back to.
     let stopped = false;
     for (const rec of [...recs.values()]) {
       if (want.has(rec.id) || rec.linger != null) continue;
-      docCaused ??= new Set(wanted(metas, lastDoc ?? {}).set.map((w) => w.id));
-      if (rec.state === "running" && docCaused.has(rec.id)) linger(rec);
+      if (rec.state === "running" && registered.has(rec.id)) linger(rec);
       else {
         stop(rec);
         stopped = true;
@@ -285,7 +257,6 @@ export function createHost({
     const lingering = new Set([...recs.values()].filter((r) => r.linger != null).map((r) => r.id));
     order = mergeOrder(order, set.map((w) => w.id), lingering).filter((id) => recs.has(id));
     lastDoc = d;
-    local.swap((m) => (sameActivities(m.activities, activities) ? m : { ...m, activities: Object.freeze({ current: activities.current, available: Object.freeze(activities.available) }) }));
     publish();
     if (stopped) onChange();
   }
@@ -344,11 +315,13 @@ export function createHost({
    * Lay out a dropped doc: load each module (registry order) whose `drops`
    * match its datatype and call its drop(ctx, info) until one says true.
    * Nothing is added to the running set here: the traits the drop writes
-   * are what start the extension.
+   * are what start the extension. `opts` go to the drop context (`edit`: the
+   * stage's own add, made one undoable step).
    * @param {{ url, doc, handle, group, at }} info
+   * @param {{ edit? }} [opts]
    * @returns {Promise<boolean>}
    */
-  async function drop(info) {
+  async function drop(info, opts = {}) {
     await ready;
     if (dead) return false;
     const type = info?.doc?.["@patchwork"]?.type ?? null;
@@ -365,7 +338,7 @@ export function createHost({
       if (dead) return false;
       if (typeof mod?.drop !== "function") continue;
       try {
-        if (await mod.drop(makeDropContext(meta.id), info)) return true;
+        if (await mod.drop(makeDropContext(meta.id, opts), info)) return true;
       } catch (err) {
         console.warn(`[scene] extension “${meta.id}”: drop failed`, err);
       }
@@ -394,15 +367,14 @@ export function createHost({
    * may be a policy (`audience`), and the stage answers nothing about who
    * may see what until it's in.
    */
-  let settledFor = null; // { doc, n, activity, ids }: what the registry as it is now would run for the last doc
+  let settledFor = null; // { doc, n, ids }: what the registry as it is now would run for the last doc
   function settled() {
     if (!isReady || pending || !lastDoc) return false;
     // (worked out from the registry as it is now, not as it was at the last sync: a plugin
     // registered since, which no "changed" event has told of yet, isn't running either)
     const metas = listOf(reg);
-    const activity = local.get().activity;
-    if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length || settledFor.activity !== activity) {
-      settledFor = { doc: lastDoc, n: metas.length, activity, ids: wanted(metas, lastDoc).set.map((w) => w.id) };
+    if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length) {
+      settledFor = { doc: lastDoc, n: metas.length, ids: activeSet({ metas, doc: lastDoc }).map((w) => w.id) };
     }
     return settledFor.ids.every((id) => recs.get(id)?.state === "running");
   }

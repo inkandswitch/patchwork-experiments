@@ -4,33 +4,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
 import outline, { peerColor, peerMarks, readRowDrag, ROW_MIME } from "./outline.js";
-
-// A stand-in for scene.sidebar: mounts every collected panel in a section of
-// its own and updates them on every pass.
-const sidebar = {
-  create(api) {
-    const edge = api.edge("right");
-    const mounted = new Map();
-    const sync = (scene, local) => {
-      for (const { value } of api.collect("panels")) {
-        for (const p of value ?? []) {
-          if (mounted.has(p.id)) continue;
-          const section = document.createElement("section");
-          section.dataset.panel = p.id;
-          edge.append(section);
-          mounted.set(p.id, p.mount(section) ?? {});
-        }
-      }
-      for (const m of mounted.values()) m.update?.(scene, local);
-    };
-    return {
-      update: (scene, local) => sync(scene, local),
-      dispose: () => {
-        for (const m of mounted.values()) m.dispose?.();
-      },
-    };
-  },
-};
+import { openTabs } from "../test/tabs.js";
 
 // A stand-in for scene.select's Remove command.
 function fakeSelect(calls) {
@@ -65,7 +39,7 @@ function vessel() {
 
 let s = null;
 async function mount(doc, { extra = [], repo } = {}) {
-  const exts = [{ meta: { id: "scene.outline" }, module: outline }, { meta: { id: "t.sidebar" }, module: sidebar }, ...extra];
+  const exts = [{ meta: { id: "scene.outline" }, module: outline }, openTabs(["scene.outline:objects"]), ...extra];
   s = await mountStage({
     repo,
     extensions: exts,
@@ -93,11 +67,18 @@ afterEach(() => {
 });
 
 describe("scene.outline", () => {
-  it("is the sidebar's 'objects' panel", async () => {
-    await mount(vessel());
+  it("is the drawer's Objects tab, opened by the toolbar's Objects and shut by it or its ×", async () => {
+    await mount(vessel(), { extra: [] });
     expect($('[data-panel="objects"] .object-list')).toBeTruthy();
-    const panels = s.instance("scene.outline").panels;
-    expect(panels.map((p) => [p.id, p.title])).toEqual([["objects", "Objects"]]);
+    const tab = s.instance("scene.outline").tab;
+    expect(tab.isOpen()).toBe(true);
+    expect(s.debug.drawer().order).toEqual([tab.body]);
+    const toggle = s.instance("scene.outline").commands.find((c) => c.id === "objects");
+    expect(toggle.show).toEqual(["toolbar"]);
+    expect(toggle.state(null, {})).toMatchObject({ checked: true });
+    s.api("scene.outline").run({ ext: "scene.outline", command: "objects", value: false });
+    expect(tab.isOpen()).toBe(false);
+    expect(s.debug.drawer().order).toEqual([]);
   });
 
   it("roots open, deeper groups closed, per-viewer state in localStorage; ←/→ on a focused row", async () => {

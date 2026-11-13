@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { PLAY, mountStage, object, until, settle } from "../test/stage-harness.js";
+import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND } from "./measure.js";
 import dimensions, { dimensionRef } from "./dimensions.js";
 
@@ -163,11 +163,11 @@ describe("scene.measure", () => {
   });
 
   it("stopping the extension puts it down", async () => {
-    await mount({ extensions: [PLAY] });
+    await mount();
     run();
     await settle();
     expect(s.local.get().held).toMatchObject({ ext: "scene.measure", command: "measure", pointer: true });
-    await s.activity("play");
+    await s.uninstall("scene.measure");
     expect(s.local.get().held).toBeNull();
     expect(s.canvas.style.cursor).toBe("");
   });

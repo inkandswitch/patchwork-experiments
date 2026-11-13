@@ -6,8 +6,8 @@
 //
 // What it contributes:
 // - `audience`: who may see what's under each cup (cup.js policy): pure in
-//   the doc, so it holds whatever anyone is doing (this extension declares
-//   no `activities`).
+//   the doc, and running wherever there's a cup, so it holds whatever
+//   anyone is doing.
 // - `looks()`: for a die of a shake not yet turned up, the one rule keepers
 //   share (rule.js): its own look when it isn't turned toward you, the veil
 //   when it is and you may not (or can't yet) know it, and when you may and
@@ -16,7 +16,7 @@
 //   knows lying as it really lies (the doc has it in a pose that says
 //   nothing), hides the dice under a cup it may not see under, and tilts a
 //   cup its holder is peeking under.
-// - The verbs, in play: Shake (S), Shake blind, Peek (hold P), Lift (L),
+// - The verbs: Shake (S), Shake blind, Peek (hold P), Lift (L),
 //   Cover, Knock over, Stand up, Lift all cups. A cup down over dice can't
 //   be carried (the hand asks `carryable`): picking it up is lifting it.
 //
@@ -124,7 +124,6 @@ function create(api) {
   let dead = false;
   const labels = api.labels?.();
 
-  const inPlay = (local) => (local ?? api.local?.get?.())?.activities?.current === "play";
   const kOf = (s) => (parent) => (parent && s?.world ? scaleOf(s.world(parent)) : 1);
 
   /** This package's lots, as this view runs them (lots-ext.js), or null while they aren't running. */
@@ -427,7 +426,6 @@ function create(api) {
 
   function shakeState(id, ctx, blind) {
     const s = ctx?.scene ?? snap;
-    if (!inPlay(ctx?.local)) return null;
     const c = cupAt(id, s);
     if (!c) return null;
     const n = shaken(c, s.ids ?? []).length;
@@ -506,7 +504,6 @@ function create(api) {
   }
 
   function peekState(id, ctx) {
-    if (!inPlay(ctx?.local)) return null;
     const c = cupAt(id, ctx?.scene ?? snap);
     if (!c || !c.covering || c.cup.holder !== viewer) return null;
     return peek?.cup === id ? { label: "Stop peeking", title: "Put it back down flat" } : { label: "Peek", title: "Tilt it toward you to look under it: the others see that you did, not what (hold P)" };
@@ -543,7 +540,6 @@ function create(api) {
   }
 
   function liftState(id, ctx) {
-    if (!inPlay(ctx?.local)) return null;
     const c = cupAt(id, ctx?.scene ?? snap);
     if (!c) return null;
     if (c.covering) return { label: "Lift", title: c.cup.blind ? `Lift it: everyone but ${c.cup.holder === viewer ? "you" : who(c.cup.holder)} may see what's under it (L)` : "Lift it: everyone sees what's under it (L)" };
@@ -576,7 +572,6 @@ function create(api) {
   }
 
   const liftAllState = (target, ctx) => {
-    if (!inPlay(ctx?.local)) return null;
     const s = ctx?.scene ?? snap;
     if (target != null && !cupAt(target, s)) return null;
     const st = s === snap ? state : cupsOf(s, kOf(s));
@@ -585,7 +580,6 @@ function create(api) {
   };
 
   function simple(id, ctx, test) {
-    if (!inPlay(ctx?.local)) return null;
     const c = cupAt(id, ctx?.scene ?? snap);
     return c && !shaking.has(id) ? test(c) : null;
   }

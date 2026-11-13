@@ -1,5 +1,5 @@
-// The traversal scene extension (scene:extension "traversal"): exits, in any
-// activity. Built only from the scene's extension contract (scene/STAGE.md);
+// The traversal scene extension (scene:extension "traversal"): exits,
+// whatever anyone is doing. Built only from the scene's extension contract (scene/STAGE.md);
 // exit.js is the trait and its rules, go.js the leaving. The verb is one
 // command, F, on every surface (the prompt, the menu, the inspector, the key
 // map), within the body's reach: it says `reach: true`, and the stage

@@ -4,7 +4,6 @@ import { CARD, ZONE, isCard, zones } from "./table/visibility.js";
 
 // The table's traits, as the scene's inspector offers them ("Add behaviour…").
 const table = plugins.find((p) => p.id === "tabletop");
-const rule = plugins.find((p) => p.id === "tabletop.rule");
 const d = table.describes;
 
 /** What the inspector writes for a new trait or entry: its init, then its fields' defaults. */
@@ -14,25 +13,12 @@ const fresh = (desc) => {
   return out;
 };
 
-describe("tabletop: activities", () => {
-  it("the table's verbs run in play and in edit", () => {
-    expect(table.activities).toEqual(["play", "edit"]);
+describe("tabletop: what runs", () => {
+  it("one extension, by its traits alone: the verbs and the policy run wherever there's a hand or a card, whatever anyone is doing", () => {
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["tabletop"]);
+    expect(table.traits).toEqual([ZONE, CARD]);
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in table).toBe(false);
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
-  });
-
-  it("its policy declares no activities, so who may see what holds whatever a viewer is doing", () => {
-    expect(rule.type).toBe("scene:extension");
-    expect(rule.activities).toBeUndefined();
-    // on exactly what the table runs on: wherever there's a hand or a card, there's the rule
-    expect(rule.traits).toEqual(table.traits);
-    expect(rule.requires).toBeUndefined();
-  });
-
-  it("requires the use prompt before the key map, so the prompt hears its verbs' keys first", () => {
-    const r = table.requires;
-    expect(r).toContain("scene.use");
-    expect(r).toContain("scene.keys");
-    expect(r.indexOf("scene.use")).toBeLessThan(r.indexOf("scene.keys"));
   });
 
   it("registers no plugin type of its own for decks, and no deck datatype: what a card is, is a keeper's", () => {

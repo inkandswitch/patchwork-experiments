@@ -26,7 +26,7 @@ id in the registry; it imports none of their code.
 | type | id | for |
 |---|---|---|
 | `scene:source` | `doom-map` | `file` docs with extension `wad`: a part of a map as a GLB (`src/source.js`) |
-| `scene:extension` | `doom` | no traits, so it never runs: it is here for its `drop`, which lays out a dropped `.wad` (`src/layout.js`) |
+| `scene:extension` | `doom` | here for its `drop`, which lays out a dropped `.wad` (`src/layout.js`); its trait `doom.map` is the marker that layout writes on the map's static part, so a scene with a map calls for this package; running, it does nothing more |
 
 ### The provider: `{ map, door, line }`
 

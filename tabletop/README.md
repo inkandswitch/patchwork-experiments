@@ -49,8 +49,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `tabletop-game` | its page: about, pieces, set up a table, the tables set up so far, the game as JSON (checked against the format before it's kept) |
 | `tabletop:game` | `santorini`, `lost-cities`, `draw-dominoes-2`, `-3`, `-4` | the games, as data (`games/*.json`): each loads to the game itself |
 | `scene:template` | `tabletop.lost-cities`, `tabletop.santorini`, `tabletop.dominoes-2`, `-3`, `-4` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
-| `scene:extension` | `tabletop` | what a table's pieces do: hands (private zones), cards, Shuffle, Draw, Wash, Stand on edge / Lay flat, Lay my hand face up (Tables, below). Its metadata says `tables: "tabletop-game"`: its module's `setUp(ctx, gameId, options)` lays a registered game out from any package's template or part |
-| `scene:extension` | `tabletop.rule` | who may see what at a table, as the stage's `audience` policy: hands and face-up cards (Tables, below) |
+| `scene:extension` | `tabletop` | what a table's pieces do: hands (private zones), cards, Shuffle, Draw, Wash, Stand on edge / Lay flat, Lay my hand face up, and who may see what, as the stage's `audience` policy: hands and face-up cards (Tables, below). Its metadata says `tables: "tabletop-game"`: its module's `setUp(ctx, gameId, options)` lays a registered game out from any package's template or part |
 | `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.table`, `tabletop.lost-cities`, `tabletop.dominoes-2`, `-3`, `-4` | the editor's parts bin, under "Tabletop" (Parts, below) |
 
 It registers no plugin type for decks and no deck datatype. Four things at a
@@ -158,7 +157,7 @@ keeps, and the scene it lands in is never set to reading (or, for a joint
 keeper, shuffling) another table's deck. A copied hand keeps its seat's id.
 
 **Who may see what** (`src/table/visibility.js`, contributed as the stage's
-`audience` by `tabletop.rule`; scene/STAGE.md, "Audience"). Two physical
+`audience` by the `tabletop` extension; scene/STAGE.md, "Audience"). Two physical
 things:
 
 | | the policy's answer |
@@ -184,8 +183,8 @@ aboard a ship is face up or down as it lies on the table, whatever she does
 the doc, not the pose drawn this frame, so every peer agrees and nothing
 flickers as she moves. Who sits where comes from the seats' `roster`.
 
-The rule is its own extension with no `activities`, so it holds while
-someone edits and whatever else a viewer is doing. The stage merges it with
+The policy runs wherever there's a hand or a card (by the extension's
+traits, as everything runs), so it holds whatever anyone is doing. The stage merges it with
 any other package's policy; a keeper then draws each card by the one rule
 keepers share (scene/STAGE.md, "Keepers"). At a table with only this
 policy, that comes to:
@@ -322,7 +321,7 @@ Turn and Roll all to any scene, a table included. Nothing here knows a die.
 
 **Carrying is the pieces'.** Every piece a table writes that isn't locked
 (cards, pawns, tiles, a part from the bin) carries the scene's `scene.carry`
-trait, so it can be picked up and flipped in play or editing alike; the
+trait, so it can be picked up and flipped by anyone, whatever they're doing; the
 board and the card table, locked, can't. There is no tool to switch to, so
 nothing here forces one.
 
@@ -350,7 +349,7 @@ package never opens a container. It meets keepers in two places:
   { title, rule, items })` makes the bag doc holding those objects (cards
   among them already bound) and returns `{ url, traits }`. With no bag maker
   the bags are written empty and the maker is told.
-- **in play** (`api.collect("keeper")`): `of(id)` says which container a card
+- **at the table** (`api.collect("keeper")`): `of(id)` says which container a card
   is in (a pile is the overlapping cards of one container), `shuffle(ids)`
   shuffles them, `name(key)` is the container's title for a notice.
 
@@ -407,18 +406,18 @@ link without them is offered them (`probes/arrive.mjs`). A template writes
 the table into the empty scene it was started on, in one `ctx.change`.
 Its view opens with snapping on (its pieces carry by their trait), the
 grid and axes off, units in cm, looking from the game's `camera`
-(`view.home`), and, when it has seats, starts in play (`view.activity:
-"play"`): a table opens with no toolbar or sidebar, just the seat picker, the
-scene's notices and its Play | Edit switch (where a viewer can step into the
-editor for themselves). The table's verbs take part in both activities
-(`activities: ["play", "edit"]`), its rule in every one, and it
-`requires` what playing needs: the scene's use prompt (listed before the
-key map, so it hears its verbs' keys first), key map, right-click menu,
-framing and notices. Carrying needs no requiring: the pieces carry the
-`scene.carry` trait, and the scene's carry runs by it.
+(`view.start.home`), and, when it has seats, starts people in the seat body
+(`view.start.body: "seat"`, read once on arrival: scene/TOOLS.md §2): back
+in your own seat if the doc seats you, else watching from the first seat's
+view (nothing written), where a press on a piece carries it or uses it and
+nothing selects; the seat picker or a seat's verb sits you down. The table's
+verbs, and its policy, run wherever its traits are, whatever anyone is
+doing; the use prompt, key map, menu and notices are the scene's general
+parts, in every scene. Carrying is the scene's, by the `scene.carry` trait
+the pieces carry.
 
-A game nobody sits at (Santorini) writes no `view.activity`, and its table
-opens in the editor, where its pieces carry just the same.
+A game nobody sits at (Santorini) starts people in orbit at its home view,
+where its pieces carry just the same.
 
 ### Templates
 
@@ -499,8 +498,7 @@ are none.
 | `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `makeHolders` |
 | `src/table/template.js` | laying a registered game out in a drop context's scene by its id (`setUp`, the `tables` convention), and the templates |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
-| `src/table/extension.js` | the table's scene extension: Shuffle (through a card's keeper), Draw, a card turning face up over your own hand, where each seat's hands are, telling the others |
-| `src/table/rule.js` | the table's policy as its own extension (`audience`), in every activity |
+| `src/table/extension.js` | the table's scene extension: Shuffle (through a card's keeper), Draw, a card turning face up over your own hand, where each seat's hands are, the table's policy (`audience`), telling the others |
 | `src/table/visibility.js` | who may see what: hands, cards, face up in the card's frame, as an `audience` answer (pure) |
 | `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, card table (their art, and putting one in), and a game as a part (`gamePart(id)`) |
 | `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
@@ -514,7 +512,7 @@ are none.
 | `probes/draw.mjs`, `probes/draw-probe.html` | two players at a Lost Cities table whose deck the joint keeper keeps: A hovers the deck and presses D; the card lands in A's hand, A sees its face, B sees it and A's whole hand as backs (and a close-up shot of it), B is told |
 | `probes/privacy.mjs`, `probes/privacy-probe.html` | what a kept card looks like to each of two people (`--part secure` or `plain`): its back face down or in the other's hand, its face when it's theirs, the stage's veil while a card turned toward them has its keys on their way; that nothing is made or written to hide anything; the plain keeper's HUD line |
 | `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in walking body (`probe-walk`): Sit as Player 1 (the seat body over it), Stand up (popped: walking on from the seat's eye), Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
-| `probes/table.mjs`, `probes/table-probe.html` | two players at a Lost Cities table whose deck a plain keeper keeps: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, a pawn dragged out of the bin; back in play with the hand |
+| `probes/table.mjs`, `probes/table-probe.html` | two players arriving at a Lost Cities table (watching from a seat: view.start) whose deck a plain keeper keeps, then seated: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; seated still, the Parts tab from the toolbar, a pawn dragged out of the bin |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`, or `dominoes-2`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, that its stage lists the package of every plugin the table calls for (the page registers each built package from its pushwork URL, as a host does) and each is one the script states, play, seats and the jointly kept deck reaching play (Lost Cities: 8 faces each; Draw Dominoes: all 28 tiles shuffled once, none dealt, no veil), and publish the table it made. What each game's table must be is data (`TABLES`) |
 | `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A lays two flat (U) and carries them into the line (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again; A carries a standing tile out of the rack onto the felt and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |
 | `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (a watchdog; copied, the same in every package), and a finite check of it |

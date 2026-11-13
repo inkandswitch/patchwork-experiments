@@ -29,7 +29,7 @@ pnpm install && pnpm build && pnpm test
 
 | type | id | for |
 |---|---|---|
-| `scene:extension` | `keep.plain` | the plain keeper (`src/plain-keeper.js`): trait `keep.plain`, `keeper: "plain"`, in every activity |
+| `scene:extension` | `keep.plain` | the plain keeper (`src/plain-keeper.js`): trait `keep.plain`, `keeper: "plain"`, whatever anyone is doing |
 | `patchwork:datatype` | `keep-plain` | its container document (unlisted: setup code makes it) |
 
 ## The container

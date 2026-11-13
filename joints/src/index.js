@@ -14,9 +14,6 @@ export const plugins = [
     id: "joints",
     name: "Joints",
     traits: ["joints.slide"],
-    // no `activities`: it runs whatever the viewer is doing (a drawer is opened
-    // while editing too), and so offers no activity of its own: a scene with a
-    // slide in it offers play only if something else there (a game) does
     describes: {
       "joints.slide": {
         name: "Slide",
@@ -33,8 +30,6 @@ export const plugins = [
         runtime: ["since"],
       },
     },
-    // no `requires`: the use prompt is a game's to bring into play (STAGE.md,
-    // "The use prompt"), and the menu and the inspector are editing's
     async load() {
       return (await import("./extension.js")).default;
     },

@@ -5,7 +5,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import sidebar from "./sidebar.js";
 import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf, readPartDrag } from "./parts.js";
 import { composeMatrix } from "../transform.js";
 
@@ -25,7 +24,6 @@ function partModule(name, calls) {
 }
 
 const EXTS = [
-  { meta: { id: "scene.sidebar" }, module: sidebar },
   { meta: { id: "scene.parts" }, module: parts },
   // says what its traits are called, for the bin's "what it does"
   { meta: { id: "t.sail", traits: ["t.sail"], describes: { "t.sail": { name: "Sail" } } }, module: { create: () => ({}) } },
@@ -37,13 +35,20 @@ afterEach(() => {
   s = null;
 });
 
+/** The toolbar's Parts: its state (null when there are none to offer). */
+const toggle = () => s.instance("scene.parts").commands.find((c) => c.id === "parts").state(null, {});
+
 async function mount(list, doc = {}) {
   s = await mountStage({ extensions: EXTS, parts: list, doc });
+  await settle();
+  // the viewer opens the Parts tab, when there are any
+  if (toggle()) s.api("scene.parts").run({ ext: "scene.parts", command: "parts", value: true });
   await settle();
   return s;
 }
 
-const section = () => s.root.querySelector('section[data-panel="parts"]');
+/** The Parts tab's pane, while it's docked. */
+const section = () => (s.instance("scene.parts").tab.isOpen() ? s.instance("scene.parts").tab.body : null);
 const names = () => [...s.root.querySelectorAll(".part .part-name")].map((e) => e.textContent);
 const button = (id) => s.root.querySelector(`.part[data-part="${id}"]`);
 
@@ -91,9 +96,10 @@ describe("pure", () => {
 });
 
 describe("the bin", () => {
-  it("no parts registered: no panel", async () => {
+  it("no parts registered: no tab, and nothing in the toolbar to open one", async () => {
     await mount([]);
-    expect(section()?.hidden ?? true).toBe(true);
+    expect(toggle()).toBeNull();
+    expect(section()).toBeNull();
   });
 
   it("lists the parts by category, with what their traits are called", async () => {
@@ -102,7 +108,7 @@ describe("the bin", () => {
       { meta: { id: "t.mast", name: "Mast", category: "Rig", traits: ["t.sail"], icon: "Sailboat" }, module: partModule("Mast", calls) },
       { meta: { id: "t.buoy", name: "Buoy" }, module: partModule("Buoy", calls) },
     ]);
-    expect(section().hidden).toBe(false);
+    expect(section().isConnected).toBe(true);
     expect([...s.root.querySelectorAll(".parts-category")].map((e) => e.textContent)).toEqual(["Rig", OTHER]);
     expect(names()).toEqual(["Mast", "Buoy"]);
     expect(button("t.mast").querySelector(".part-does").textContent).toBe("Sail");

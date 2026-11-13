@@ -3,7 +3,7 @@
 // built only from the scene's extension contract (scene/STAGE.md).
 //
 // A die here is a thing, not a rule. It can be:
-// - ROLLED (R, in play): tossed, tumbled and landed on a face nobody chose.
+// - ROLLED (R): tossed, tumbled and landed on a face nobody chose.
 //   Every roll is drawn by lots (lots.js; this package's "dice.lots", which
 //   this reads through api.collect("dice.lots")): the clients of everyone
 //   here commit and open between them, nothing sealed, and the seed is

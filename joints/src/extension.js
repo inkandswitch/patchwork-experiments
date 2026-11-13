@@ -1,5 +1,5 @@
-// The joints' scene extension (scene:extension "joints"): slides, in any
-// activity. Built only from the scene's extension contract (scene/STAGE.md);
+// The joints' scene extension (scene:extension "joints"): slides, whatever
+// anyone is doing. Built only from the scene's extension contract (scene/STAGE.md);
 // slide.js is the joint itself, and this file gives it the stage:
 //
 // - the verb, Open / Close: one command, F, on every surface (the prompt, the

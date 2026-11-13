@@ -1,16 +1,17 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// Sailing is not a datatype or a tool. It is two scene extensions and a
-// template (see the scene package's STAGE.md):
-// - "sailing" plays: in a scene whose doc has a sailing trait (the sea on
-//   the scene; the ship and its stations on objects), the "play" activity
-//   floats the ship, walks its deck and works its stations;
-// - "sailing.edit" draws the sea while editing (following the sailors' clock
-//   when someone is sailing her meanwhile);
-// - the "ship-at-sea" template lays out a sloop under way in an empty scene
-//   and starts it in play, so its maker is aboard at once; "ship-at-anchor"
-//   lays her out lying at anchor off an islet, sail down, in a moderate breeze;
+// Sailing is not a datatype or a tool. It is a scene extension, parts and
+// two templates (see the scene package's STAGE.md):
+// - "sailing" runs in a scene whose doc has a sailing trait (the sea on the
+//   scene; the ship and its stations on objects), whoever is looking and
+//   whatever they hold: it draws the sea, steps the ships as a process of
+//   the doc's clock (editing never stops her; a pause does), walks her deck
+//   (the "aboard" body) and works her stations (the "station" body);
+// - the "ship-at-sea" template lays out a sloop under way in an empty scene,
+//   seen from her quarter (view.start's home), so a click comes aboard;
+//   "ship-at-anchor" lays her out lying at anchor off an islet, sail down,
+//   in a moderate breeze;
 // - parts for the editor's parts bin (scene:part): the sloop whole (she
 //   brings her sea), and her mast and sail, wheel, windlass and anchor,
 //   ladder, mainsheet, jib winches and companionway on their own, to drag
@@ -22,8 +23,9 @@
 const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
-// ship can be rigged without a script. Who's at a station and who simulates
-// are claims, not settings: nothing to describe.
+// ship can be rigged without a script. Who's at a station is a claim, and
+// who computes her is the doc's clock's (scene TOOLS.md §7): neither is a
+// setting, so nothing to describe.
 const DESCRIBES = {
   "sailing.sea": {
     name: "Sea",
@@ -117,25 +119,9 @@ export const plugins = [
     id: "sailing",
     name: "Sailing",
     traits: TRAITS,
-    activities: ["play"],
     describes: DESCRIBES,
-    // playing brings no editor, so it says what it needs: Enter to play
-    // goes through the key map, notices, and the use prompt ("F to take the
-    // helm") over its stations' commands. No framing: the camera opens off
-    // the ship's quarter (crew.js), not fitted to the islet on the horizon.
-    requires: ["scene.use", "scene.keys", "scene.notices"],
     async load() {
       return (await import("./play.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "sailing.edit",
-    name: "Sailing editing",
-    traits: TRAITS,
-    activities: ["edit"],
-    async load() {
-      return (await import("./edit.js")).default;
     },
   },
   // the parts bin's (scene:part): what each is made of is parts.js

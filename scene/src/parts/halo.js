@@ -276,8 +276,9 @@ function create(api) {
       const d = drag;
       drag = null;
       if (d?.poses?.size) {
-        // each moved object's put-down, as one change (a group's members together)
-        api.change(api.ops.setTransform(api.scene(), d.poses));
+        // each moved object's put-down, as one change (a group's members
+        // together): an edit, so undo puts it back (TOOLS.md, Decisions 2)
+        api.edit(api.ops.setTransform(api.scene(), d.poses), { label: { rotate: "Rotate", scale: "Scale" }[d.grab?.handle?.kind] ?? "Move" });
         release(d, true);
       }
       reconcile();

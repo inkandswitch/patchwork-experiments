@@ -330,11 +330,11 @@ describe("setting up a table", () => {
     expect(pieces).toHaveLength(1 + 22 + 18 + 14 + 18 + 6);
     expect(objects.filter((o) => o.kind === "group").map((g) => g.name)).toContain("Level 1 (22)");
     expect(scene.order).toHaveLength(objects.length);
-    expect(scene.view).toMatchObject({ snap: true, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).toMatchObject({ snap: true, start: { home: { position: expect.any(Array), target: expect.any(Array) } } });
     for (const o of pieces) expect([o.name, !!o.traits?.["scene.carry"]]).toEqual([o.name, !o.locked]);
     expect(pieces.some((o) => o.locked)).toBe(true);
-    // Santorini has no seats: nothing to sit at, so the doc doesn't say "play"
-    expect(scene.view).not.toHaveProperty("activity");
+    // Santorini has no seats: nothing to sit at, so people start in orbit
+    expect(scene.view.start).not.toHaveProperty("body");
     const board = pieces.find((o) => o.name === "Island board");
     expect(board).toMatchObject({ locked: true, parent: null, providerId: "file-glb", renderUrl: null, sourceUrl: game.doc().drawn.board.url, infoUrl: game.url });
     for (const p of pieces) {
@@ -461,7 +461,7 @@ describe("Lost Cities", () => {
     const zones = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.zone"]);
     expect(zones.map((o) => [o.name, o.traits["tabletop.zone"].seat])).toEqual([["Player 1's hand", "p1"], ["Player 2's hand", "p2"]]);
     expect(zones.every((o) => o.locked)).toBe(true);
-    expect(scene.view.activity).toBe("play");
+    expect(scene.view.start.body).toBe("seat");
   });
 
   it("tags every card, and nothing else, 'card'", async () => {
@@ -562,7 +562,7 @@ describe("Lost Cities", () => {
     writeTable(fresh, layout, made, { seats: (d, seats) => (asked.push(seats), lay(d, seats)) });
     expect(asked).toEqual([layout.seats]);
     expect(Object.keys(fresh.traits[SEATS])).toEqual(["p1", "p2"]);
-    expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, activity: "play", home: g.camera });
+    expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, start: { body: "seat", home: g.camera } });
     expect(fresh.order).toEqual(layout.order);
     const mine = { north: { name: "North", player: "automerge:ana" } };
     const busy = { ...skeleton(), objects: { x: { name: "Lamp" } }, order: ["x"], traits: { [SEATS]: structuredClone(mine) } };

@@ -31,7 +31,7 @@ describe("a scene made here", () => {
     expect([o.name, o.sourceUrl, o.providerId, o.renderUrl]).toEqual(["Tile bag", "automerge:sackfile", "file-glb", null]);
     // a container, and a thing that can be picked up
     expect(o.traits).toEqual({ [CONTAINER]: { doc: BAG }, "scene.carry": {} });
-    expect(make(null).view.tool).toBeUndefined();
+    for (const k of ["start", "activity", "tool"]) expect(k in make(null).view).toBe(false);
     expect(bagUrlOf(o)).toBe(BAG);
     expect(o.hint.bounds.max[0] - o.hint.bounds.min[0]).toBeCloseTo(0.2, 3);
     expect(file.doc["@patchwork"]).toEqual({ type: "file" });

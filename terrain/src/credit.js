@@ -1,7 +1,7 @@
 // The "terrain.credit" scene extension: a line at the foot of the view
 // crediting the open data a terrain is made from (OpenStreetMap's ODbL asks
 // that whoever sees a work made from it be told), for every shown object
-// with the "terrain.credit" trait, in every activity. The text is the
+// with the "terrain.credit" trait. The text is the
 // terrain GLB's own (extras.terrain.credit, its full attribution as the
 // tooltip), so it is whatever the data's sources say.
 

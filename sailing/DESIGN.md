@@ -42,7 +42,7 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea: the ocean and sky drawn (`drawSea`, which edit.js shares) at the doc's world time (`api.clock.t`), only while the scene has a sea |
+| `sea-view.js` | stage side thin | ctx.sea: the ocean and sky drawn (`drawSea`) at the doc's world time (`api.clock.t`), only while the scene has a sea |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -54,7 +54,6 @@ modules share.
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions) |
 | `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
-| `edit.js` | no | The sea while editing, at the doc's world time (still, alone in edit: editing brings no process) |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
 doc, crewing her together (see its header). Its page seeds `Math.random`
@@ -1676,9 +1675,10 @@ wall's rate, at most a quarter second a frame (a longer stall is skipped;
 the physics skips with it, `catchUp`), and steps the ships' process on a
 fixed grid of it. A follower's is the computer's at the moment whose held
 poses it is drawing, so the hull sits on the waves drawn under it. Paused,
-or with nobody able to compute (only read-only viewers, or editors: editing
-brings no process until activities go), the sea stands still. Nobody
-present, no time passes.
+or with nobody able to compute (only read-only viewers, or viewers missing
+a listed package), the sea stands still; someone editing her runs the same
+extension, so she sails on (scene TOOLS.md step 8). Nobody present, no time
+passes.
 
 **Who computes.** The ships are a process of the doc's clock
 (`api.clock.process({ start, step, save, stop })`): the view holding the

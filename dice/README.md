@@ -29,7 +29,7 @@ or a ship's cockpit alike.
 | `scene:source` | `die` | a die doc → a GLB at real size, its faces drawn, saying what it is |
 | `scene:extension` | `dice` | in a scene: Roll, Roll all, Turn, and the die's panel docked beside the scene |
 | `scene:extension` | `dice.cup` | dice cups (trait `dice.cup`): who may see under each, what's under it as each view may know it, and Shake, Peek, Lift, Knock over (Cups, below) |
-| `scene:extension` | `dice.lots` | every roll's draw (Lots, below): runs wherever there is a die or a cup (traits `dice.die`, `dice.cup`; it describes none), in every activity |
+| `scene:extension` | `dice.lots` | every roll's draw (Lots, below): runs wherever there is a die or a cup (traits `dice.die`, `dice.cup`; it describes none), whatever anyone is doing |
 | `tabletop:game` | `liars-dice` | "Liar's dice" as data (`games/liars-dice.json`, a [tabletop-game](../tabletop/GAME-FORMAT.md)): the traditional cup-dice game at a round table (Cups, below) |
 | `scene:template` | `dice.liars-dice` | "Liar's dice" on an empty scene's start screen: asks whoever lays tabletop games out to lay it out, by its id |
 | `scene:part` | `dice.cup`, `dice.pool` | a dice cup with five dice, and a pool for lost dice |
@@ -236,7 +236,7 @@ against the table, not the horizon.
 - **Reading** works at any orientation: the face whose `up` points most
   nearly along the parent's +Y.
 - **Moving** is the scene's carry: every die and cup is written with the
-  `scene.carry` trait, so it can be picked up, in play or editing.
+  `scene.carry` trait, so it can be picked up by anyone, whatever they're doing.
 
 **A throw is the doc's.** Its draw lives on its first die (`"dice.die": {
 round }`) and is `of` its dice in order, bound into every commit, so which
@@ -442,8 +442,8 @@ the cup and every die it covers or whose shake isn't turned up yet:
 holder: the stage's algebra says "everyone but me" as `show: "all"` cut by
 `only: <everyone seated but me>`, so a spectator, who is in no list, is cut
 too. A cup with any of its shake's dice out from under it keeps nothing (its
-dice share one seed). The policy is its own extension with no `activities`,
-so it holds whatever anyone is doing.
+dice share one seed). The policy runs wherever there's a cup (by its
+trait, as everything runs), so it holds whatever anyone is doing.
 
 **What each view draws**, by the keepers' one rule (`src/rule.js`): a die it
 may see and knows is drawn lying as it really does (the view dresses the

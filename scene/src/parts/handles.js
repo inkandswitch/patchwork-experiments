@@ -10,7 +10,7 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // They are the halo's build-param knobs (TOOLS.md §3): shown for the
-// selection whatever the activity, hidden while another extension holds the tool
+// selection, hidden while another extension holds the tool
 // (measuring, say).
 //
 // Reads local.selected, local.held and local.theme. Writes only the render
@@ -296,10 +296,14 @@ export default {
       const s = sub;
       if (!s || value == null) return;
       pending.set(spec.key, { value, was: spec.value });
-      s.handle.change((d) => {
-        if (!d.params) d.params = {};
-        d.params[spec.key] = value;
-      });
+      // the object's render doc's param: an edit, undone in the scene's stack
+      api.edit(
+        (d) => {
+          if (!d.params) d.params = {};
+          d.params[spec.key] = value;
+        },
+        { handle: s.handle, label: String(spec.label ?? spec.key) },
+      );
     }
 
     const input = {

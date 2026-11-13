@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { assoc, createAtom } from "./atom.js";
-import { activeSet, availableActivities, currentActivity, docReason } from "./activation.js";
+import { activeSet, docReason, ownReason } from "./activation.js";
 import { chainOrder, holdersFor, offer } from "./chain.js";
 
 describe("the local atom", () => {
@@ -16,92 +16,79 @@ describe("the local atom", () => {
   });
 });
 
-describe("activation", () => {
+describe("activation: traits only (TOOLS.md §1)", () => {
   const metas = [
-    { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"], requires: ["hand", "keys"], activities: ["play"] },
-    { id: "arena", traits: ["arena.target"], activities: ["play"] },
-    { id: "arena.edit", traits: ["arena.target"], activities: ["edit"] },
-    { id: "hand", activities: ["edit"] },
+    { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"] },
+    { id: "arena", traits: ["arena.target"] },
     { id: "keys" },
-    { id: "select", activities: ["edit"] },
-    { id: "outline", requires: ["sidebar"], activities: ["edit"] },
-    { id: "sidebar", activities: ["edit"] },
-    { id: "boat", traits: ["boat.hull"], activities: ["sail"] },
-    { id: "switch", always: true },
+    { id: "select" },
+    { id: "boat", traits: ["boat.hull"] },
+    { id: "clock" },
   ];
   const ids = (set) => set.map((r) => [r.id, r.scope]);
   const doc = { traits: { "tabletop.seats": {} }, objects: { c: { traits: { "arena.target": {} } } } };
 
-  it("in play: the scene's, then some objects', then the general ones; requirements follow whatever their activities, lending no scope", () => {
-    expect(ids(activeSet({ metas, doc, activity: "play" }))).toEqual([
+  it("the scene's, then some objects', then the general ones, each in registry order; traits the doc lacks (the boat's) run nothing", () => {
+    expect(ids(activeSet({ metas, doc }))).toEqual([
       ["tabletop", "scene"],
-      ["hand", "general"],
-      ["keys", "general"],
       ["arena", "objects"],
-      ["switch", "general"],
-    ]);
-  });
-
-  it("in edit: the editing parts, in registry order; traits the doc lacks (the boat's) run nothing", () => {
-    expect(ids(activeSet({ metas, doc, activity: "edit" }))).toEqual([
-      ["arena.edit", "objects"],
-      ["hand", "general"],
       ["keys", "general"],
       ["select", "general"],
-      ["outline", "general"],
-      ["sidebar", "general"],
-      ["switch", "general"],
+      ["clock", "general"],
+    ]);
+    expect(ids(activeSet({ metas, doc: {} }))).toEqual([
+      ["keys", "general"],
+      ["select", "general"],
+      ["clock", "general"],
     ]);
   });
 
-  it("a required extension keeps its own scope, and declaring traits it lacks isn't a reason", () => {
-    const m = [
-      { id: "game", traits: ["game.board"], requires: ["rules", "board"] },
-      { id: "rules", traits: ["rules.x"] },
-      { id: "board", traits: ["game.board"], activities: ["edit"] },
-    ];
-    const d = { traits: { "game.board": {} } };
-    expect(ids(activeSet({ metas: m, doc: d, activity: "play" }))).toEqual([
-      ["game", "scene"],
-      ["rules", "general"],
-      ["board", "scene"],
-    ]);
-    expect(ids(activeSet({ metas: m, doc: {}, activity: "edit" }))).toEqual([]);
-  });
-
-  it("general: false — no reason of its own: it runs only when required, and offers nothing", () => {
-    const m = [
-      { id: "game", traits: ["game.board"], activities: ["play"], requires: ["prompt"] },
-      { id: "prompt", general: false, activities: ["play"] },
-    ];
-    expect(ids(activeSet({ metas: m, doc: { traits: { "game.board": {} } }, activity: "play" }))).toEqual([
-      ["game", "scene"],
-      ["prompt", "general"],
-    ]);
-    expect(ids(activeSet({ metas: m, doc: {}, activity: "play" }))).toEqual([]);
-    expect(availableActivities(m, {})).toEqual(["edit"]);
-  });
-
-  it("an object trait is the objects' reason; a scene trait the scene's", () => {
+  it("an object trait is the objects' reason; a scene trait the scene's; none declared is general; declared but absent is nothing", () => {
     expect(docReason(metas[0], { objects: { a: { traits: { "tabletop.hidden": {} } } } })).toBe("objects");
     expect(docReason(metas[0], { traits: { "tabletop.seats": {} }, objects: {} })).toBe("scene");
-    expect(docReason(metas[5], { objects: {} })).toBeNull();
+    expect(ownReason(metas[2], { objects: {} })).toBe("general");
+    expect(ownReason(metas[4], doc)).toBeNull();
   });
 
-  it("available: edit always, then what every extension with a reason takes part in (registry order)", () => {
-    expect(availableActivities(metas, { objects: {} })).toEqual(["edit"]);
-    expect(availableActivities(metas, doc)).toEqual(["edit", "play"]);
-    expect(availableActivities(metas, { traits: { "boat.hull": {} } })).toEqual(["edit", "sail"]);
-    expect(availableActivities([{ id: "review", activities: ["review"] }], {})).toEqual(["edit", "review"]);
+  it("fields that used to route around activities change nothing: activities, requires, always, general: false", () => {
+    const plain = [{ id: "game", traits: ["game.board"] }, { id: "prompt" }];
+    const decorated = [
+      { id: "game", traits: ["game.board"], activities: ["play"], requires: ["prompt", "other"] },
+      { id: "prompt", general: false, always: true, activities: ["edit"] },
+    ];
+    for (const d of [{}, { traits: { "game.board": {} } }]) expect(ids(activeSet({ metas: decorated, doc: d }))).toEqual(ids(activeSet({ metas: plain, doc: d })));
   });
 
-  it("current: this viewer's, else the doc's, else edit; but only one on offer, else edit", () => {
-    const both = ["edit", "play"];
-    expect(currentActivity(null, {}, both)).toBe("edit");
-    expect(currentActivity(null, { view: { activity: "play" } }, both)).toBe("play");
-    expect(currentActivity("edit", { view: { activity: "play" } }, both)).toBe("edit");
-    expect(currentActivity("play", {}, ["edit"])).toBe("edit");
-    expect(currentActivity(null, { view: { activity: "sail" } }, both)).toBe("edit");
+  // Exhaustive over a finite world: every subset of five extensions (one of each
+  // kind: scene trait, object trait, both, none, a trait nobody writes) × every
+  // doc made of {no trait, scene trait, object trait, both}. What runs, and in
+  // what order, is the rule and nothing else.
+  it("over every subset of five extensions × four docs: scope = the rule, order = scene, objects, general, each once", () => {
+    const pool = [
+      { id: "s", traits: ["t.s"] },
+      { id: "o", traits: ["t.o"] },
+      { id: "so", traits: ["t.s", "t.o"] },
+      { id: "g" },
+      { id: "x", traits: ["t.x"] },
+    ];
+    const docs = [{}, { traits: { "t.s": {} } }, { objects: { a: { traits: { "t.o": {} } } } }, { traits: { "t.s": {} }, objects: { a: { traits: { "t.o": {} } } } }];
+    const rank = { scene: 0, objects: 1, general: 2 };
+    let cases = 0;
+    for (let mask = 0; mask < 1 << pool.length; mask++) {
+      const ms = pool.filter((_, i) => mask & (1 << i));
+      for (const d of docs) {
+        const set = activeSet({ metas: ms, doc: d });
+        const want = ms.filter((m) => ownReason(m, d)).map((m) => [m.id, ownReason(m, d)]);
+        expect(new Set(set.map((r) => r.id)).size).toBe(set.length);
+        expect(set.map((r) => [r.id, r.scope]).sort()).toEqual([...want].sort());
+        for (let i = 1; i < set.length; i++) {
+          expect(rank[set[i - 1].scope] <= rank[set[i].scope]).toBe(true);
+          if (set[i - 1].scope === set[i].scope) expect(ms.indexOf(set[i - 1].meta) < ms.indexOf(set[i].meta)).toBe(true);
+        }
+        cases++;
+      }
+    }
+    expect(cases).toBe(128);
   });
 });
 

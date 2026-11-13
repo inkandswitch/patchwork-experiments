@@ -4,7 +4,7 @@
 // The `scene` tool is the stage (src/stage/stage.js): a scene with no UI of
 // its own. Everything you see or do in it comes from `scene:extension`
 // plugins, and the ones this package ships are below: the parts that together
-// make the scene editor (in the "edit" activity). See STAGE.md.
+// make the scene editor and the surfaces every scene has. See STAGE.md.
 
 const SOURCE_UNITS = [
   { value: "mm", label: "Millimetres" },
@@ -88,30 +88,19 @@ export const plugins = [
     },
   },
   // ─── extensions: the parts the scene editor is made of ───
-  // Most declare no traits, so each runs in every scene ("general" scope), in
-  // this order, which is the order input is offered to them; those that say
-  // `activities: ["edit"]` only while someone is editing. Carry runs by
-  // trait, where the doc has something carryable. The key map, notices, the
-  // menu, the selection and its halo serve every activity. The sidebar shows panels in running order:
-  // Objects, Inspector, then Dimensions, so those two come before measure
-  // (which brings dimensions in right after it); neither claims canvas input,
-  // so being early changes nothing else. Parts comes last.
+  // All but carry declare no traits, so each runs in every scene ("general"
+  // scope), in this order, which is the order input is offered to them.
+  // Carry runs by trait, where the doc has something carryable. Chrome
+  // follows attention, never the doc (TOOLS.md §1): the inspector is a
+  // drawer tab while something is selected, the outline, dimensions and
+  // parts are tabs the viewer opens, and the grid, axes and bounds are drawn
+  // only in the orbit body.
   {
     type: "scene:extension",
     id: "scene.toolbar",
     name: "Toolbar",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/toolbar.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "scene.sidebar",
-    name: "Side panel",
-    activities: ["edit"],
-    async load() {
-      return (await import("./parts/sidebar.js")).default;
     },
   },
   {
@@ -123,7 +112,7 @@ export const plugins = [
     },
   },
   // the packages this scene lists and this viewer doesn't have: one prompt to
-  // load them, in every activity (STAGE.md, "Packages")
+  // load them (STAGE.md, "Packages")
   {
     type: "scene:extension",
     id: "scene.packages",
@@ -134,19 +123,16 @@ export const plugins = [
   },
   {
     // the use prompt ("[F] Raise the anchor"): attention's verbs, shown
-    // (scene.keys does them), in play only. Not general: it runs only when a
-    // game requires it, and so never makes a scene offer "play" on its own.
+    // (scene.keys does them)
     type: "scene:extension",
     id: "scene.use",
     name: "Use prompt",
-    general: false,
-    activities: ["play"],
     async load() {
       return (await import("./parts/use.js")).default;
     },
   },
   {
-    // the body chip, who's here and the Esc hint (TOOLS.md §4, §6): in every activity
+    // the body chip, who's here and the Esc hint (TOOLS.md §4, §6)
     type: "scene:extension",
     id: "scene.body",
     name: "Body",
@@ -163,7 +149,7 @@ export const plugins = [
     },
   },
   {
-    // every target's verbs, Select first (TOOLS.md §3): in every activity
+    // every target's verbs, Select first (TOOLS.md §3)
     type: "scene:extension",
     id: "scene.menu",
     name: "Context menu",
@@ -175,18 +161,15 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.frame",
     name: "Frame",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/frame.js")).default;
     },
   },
   {
-    // an untouched camera follows the content in as it loads; no verbs, so
-    // a game can require it without the editor's framing keys
+    // an untouched camera follows the content in as it loads
     type: "scene:extension",
     id: "scene.autoframe",
     name: "Frame on open",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/autoframe.js")).default;
     },
@@ -195,7 +178,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.outline",
     name: "Objects",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/outline.js")).default;
     },
@@ -204,7 +186,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.inspector",
     name: "Inspector",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/inspector.js")).default;
     },
@@ -213,8 +194,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.measure",
     name: "Measure",
-    activities: ["edit"],
-    requires: ["scene.dimensions"],
     async load() {
       return (await import("./parts/measure.js")).default;
     },
@@ -230,7 +209,7 @@ export const plugins = [
   {
     // the selection's handles: move arrows, rotate rings and scale corners
     // outside its box, in its parent's frame (TOOLS.md §3). It follows the
-    // selection, whatever the activity
+    // selection
     type: "scene:extension",
     id: "scene.halo",
     name: "Halo",
@@ -240,8 +219,8 @@ export const plugins = [
   },
   {
     // carrying: whatever has the trait can be picked up and put down, in
-    // every activity, in any stage whose doc has something carryable
-    // (TOOLS.md §1). Not general: the trait is its only reason to run.
+    // any stage whose doc has something carryable (TOOLS.md §1). Not
+    // general: the trait is its only reason to run.
     type: "scene:extension",
     id: "scene.carry",
     name: "Carry",
@@ -261,14 +240,13 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.dimensions",
     name: "Dimensions",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/dimensions.js")).default;
     },
   },
   {
-    // the selection, in every activity: Select is every menu's first entry,
-    // and the orbit view's click (TOOLS.md §3)
+    // the selection: Select is every menu's first entry, and the orbit
+    // body's click (TOOLS.md §3)
     type: "scene:extension",
     id: "scene.select",
     name: "Selection",
@@ -280,7 +258,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.grid",
     name: "Grid",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/grid.js")).default;
     },
@@ -289,7 +266,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.axes",
     name: "Axes",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/axes.js")).default;
     },
@@ -298,7 +274,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.bounds",
     name: "Bounds",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/bounds.js")).default;
     },
@@ -307,7 +282,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.units",
     name: "Units",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/units.js")).default;
     },
@@ -316,7 +290,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.legends",
     name: "Legends",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/legends.js")).default;
     },
@@ -325,7 +298,6 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.add",
     name: "Add documents",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/add.js")).default;
     },
@@ -336,21 +308,29 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.transfer",
     name: "Copy and paste",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/transfer.js")).default;
     },
   },
   // the parts bin: every scene:part, to drag into the view or click to put
-  // where you're looking. Its panel comes last in the sidebar (Objects,
-  // Inspector, Dimensions, Parts), and only when some package offers a part.
+  // where you're looking: a drawer tab the viewer opens (Parts), offered
+  // only when some package offers a part.
   {
     type: "scene:extension",
     id: "scene.parts",
     name: "Parts",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/parts.js")).default;
+    },
+  },
+  // the stage's own edits, undone and redone (TOOLS.md, Decisions 2): this
+  // viewer's, in the focus doc
+  {
+    type: "scene:extension",
+    id: "scene.undo",
+    name: "Undo",
+    async load() {
+      return (await import("./parts/undo.js")).default;
     },
   },
   // the doc's world time: ▶ or ⏸, who paused it, a stall (only for a doc with a process)
@@ -358,19 +338,8 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.clock",
     name: "Clock",
-    always: true,
     async load() {
       return (await import("./parts/clock.js")).default;
-    },
-  },
-  // what this viewer is doing, and switching it (only shown when there's a choice)
-  {
-    type: "scene:extension",
-    id: "scene.activity",
-    name: "Activity",
-    always: true,
-    async load() {
-      return (await import("./parts/activity.js")).default;
     },
   },
 ];

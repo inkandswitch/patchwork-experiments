@@ -11,7 +11,7 @@ pnpm install && pnpm build && pnpm test
 Going somewhere is traversal, not a link (scene/COMPOSITION.md §9): a link
 places one world inside another, and an exit opens another world in place of
 this one. Nothing crosses: the document it leads to opens as itself, where it
-starts and in the activity it starts in, as it would for anyone opening it.
+starts people (its `view.start`), as it would for anyone opening it.
 
 It doesn't depend on the scene package: it reads the trait in the shape below,
 through the stage's contract (scene/STAGE.md), and the scene finds it by its
@@ -23,9 +23,8 @@ trait.
 |---|---|---|
 | `scene:extension` | `traversal` | exits: the verb, on every surface (`src/extension.js`; the rules are `src/exit.js`, the leaving `src/go.js`) |
 
-It declares no `activities`, so it runs whatever the viewer is doing, and
-offers no activity of its own. It `requires` nothing: the use prompt is a
-game's to bring into play.
+It runs by its trait, whatever the viewer is doing; the use prompt that
+shows its verb is the scene's, in every scene.
 
 ## The trait
 

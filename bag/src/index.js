@@ -65,8 +65,6 @@ export const plugins = [
     traits: ["bag.container"],
     // how something setting a scene up makes a bag already holding things: this module's fill (fill.js)
     container: "bag",
-    // a bag is used in play, and while setting a table up
-    activities: ["play", "edit"],
     describes: {
       "bag.container": {
         name: "Container",
@@ -77,12 +75,9 @@ export const plugins = [
       },
     },
     // a bag document dropped into a scene becomes a bag in it
-    drops: ["bag"],
     // carrying is the scene's, by the `scene.carry` trait; the use prompt
-    // shows Draw over a bag in play (before the key map, so it hears D first:
-    // STAGE.md, "The use prompt"); the menu has the verbs without a key;
-    // notices say who drew
-    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
+    // shows Draw over a bag; the menu has the verbs without a key
+    drops: ["bag"],
     async load() {
       return (await import("./extension.js")).default;
     },

@@ -14,7 +14,7 @@ const at = (x, z = 0, y = 0) => ({ position: [x, y, z], rotation: [0, 0, 0], sca
 const token = (name, x, { traits = {}, ...more } = {}) => ({ name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, transform: at(x, 1), hint: { bounds: { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] } }, traits: { "scene.carry": {}, ...traits }, ...more });
 const bagObject = (url, x) => ({ name: "Token bag", sourceUrl: url, providerId: "bag-sack", renderUrl: "automerge:render", parent: null, group: null, transform: at(x), traits: { [CONTAINER]: { doc: url }, "scene.carry": {} } });
 
-async function table({ session = "s-me", activity = "play", rule = "top", carry = false, repo = new FakeRepo() } = {}) {
+async function table({ session = "s-me", rule = "top", carry = false, repo = new FakeRepo() } = {}) {
   if (!repo.handles.has(BAG1)) {
     repo.add(newBag({ title: "Red bag", rule }), BAG1);
     repo.add(newBag({ title: "Blue bag", rule }), BAG2);
@@ -33,7 +33,7 @@ async function table({ session = "s-me", activity = "play", rule = "top", carry 
     },
     order: ["bag1", "bag2", "cube", "disc", "meeple", "g1", "t1", "t2", "rock"],
   };
-  const stage = fakeStage(doc, { session, repo, activity, half: { bag1: 0.1, bag2: 0.1, cube: 0.01, disc: 0.01, meeple: 0.01, t1: 0.01, t2: 0.01, rock: 0.01 } });
+  const stage = fakeStage(doc, { session, repo, half: { bag1: 0.1, bag2: 0.1, cube: 0.01, disc: 0.01, meeple: 0.01, t1: 0.01, t2: 0.01, rock: 0.01 } });
   const carries = [];
   if (carry) {
     stage.rec.contributions.carry = [
@@ -287,10 +287,10 @@ describe("drawing", () => {
     expect(t.state("draw", "bag1").title).toMatch(/copy/);
   });
 
-  it("Empty out is for setting up (edit only): everything set down round the bag", async () => {
-    const play = await filled();
-    expect(play.state("empty", "bag1")).toBeNull();
-    const t = await filled({ activity: "edit" });
+  it("Empty out: everything set down round the bag, by the menu (no key), whoever does it", async () => {
+    const t = await filled();
+    expect(t.cmd("empty").show).toEqual(["menu", "inspector"]);
+    expect(t.cmd("empty").key).toBeUndefined();
     expect(t.state("empty", "bag1")).toMatchObject({ title: "Set all 3 down round the bag" });
     t.run("empty", "bag1");
     expect(t.ids(BAG1)).toEqual([]);

@@ -1,5 +1,5 @@
 // The tabletop's scene extension (`scene:extension` "tabletop"): what a
-// table's pieces do in play. Hands (private zones) and cards are this
+// table's pieces do. Hands (private zones) and cards are this
 // package's; the rest it meets through the stage (scene/STAGE.md):
 //
 //   - who sits where: the `roster` convention (whoever owns seats). A hand
@@ -7,9 +7,12 @@
 //   - what a card really is: a keeper's business (any `scene:extension`
 //     that offers the `keeper` convention). The table never opens a deck:
 //     Shuffle asks the card's keeper to shuffle its pile;
-//   - who may see what: this package's policy is the `tabletop.rule`
-//     extension (rule.js, visibility.js), merged by the stage with any
-//     other's.
+//   - who may see what: this package's policy is its `audience`
+//     (visibility.js): hands show what's in them to their seat and screen
+//     it from the rest; a card lying face up elsewhere shows to everyone.
+//     The stage merges it with any other's. It runs whatever a viewer is
+//     doing (traits decide what runs, nothing else), so it never stops
+//     under anyone and enlarges the audience (scene/STAGE.md, "Audience").
 //
 // What is here: Shuffle (a pile, through its keeper), Draw (a pile's top
 // card into your own hand, face up, or into a rack standing on edge), Wash
@@ -17,17 +20,17 @@
 // their keeper), Stand on edge / Lay flat (a piece thick enough to stand: a
 // domino in your rack, or out on the table, facing you) and Lay my hand face
 // up (everything in your hand, and anything standing facing it, out in front
-// of it for everyone) as verbs on the use prompt and the menu, in play only
-// (Shuffle, as before, in either activity);
-// a card carried into your own hand turning face up; the hand as the tool in
-// play; where each seat's hands are, for whoever shows seats (`seatPlaces`);
+// of it for everyone) as verbs on the use prompt and the menu; a card
+// carried into your own hand turning face up (carrying is the scene's, by
+// the `scene.carry` trait the table writes); where each seat's hands are,
+// for whoever shows seats (`seatPlaces`);
 // and telling the others what happened (shuffled, drew) with api.send, as
 // counts only, never which card: `announce` here, `receive` there.
 //
 // Component physics, not rules: nothing here knows a game, a turn or a
 // legal move. (Dice are their own package, dice/.)
 
-import { facing, isCard, parentOf, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
+import { audienceOf, facing, isCard, parentOf, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
 import { CARD_TAGS, worldSlots } from "./slots.js";
 import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
 import { boxUnder, canStand, isStanding, layPose, spread, standPose, upness } from "./stand.js";
@@ -153,12 +156,12 @@ export default {
 
     /**
      * Whether `id` can be drawn from now, and into where: null when Draw
-     * doesn't apply (not playing, not a card, one in a hand already,
+     * doesn't apply (not a card, one in a hand already,
      * a seat with no tray); { disabled, label?, title } when it can't now;
      * else { slot } (world, yaw).
      */
-    function drawPlan(id, snap = scene, local = api.local?.get?.()) {
-      if (id == null || !snap || local?.activities?.current !== "play") return null;
+    function drawPlan(id, snap = scene) {
+      if (id == null || !snap) return null;
       if (!isCard(snap.objects?.[id])) return null;
       const regions = zones(snap);
       const m = snap.world(id);
@@ -341,14 +344,14 @@ export default {
      * of its container lying out on the table (in nobody's hand, attached to
      * the same thing, not stacked, not held by a peer) within one and a half
      * of its own length of the next (wash.js cluster). null when Wash doesn't
-     * apply: not playing (Edit), not kept, not face down, in a hand, part of
-     * a pile (shuffle that), or alone. Anyone playing may wash, seated or
+     * apply: not kept, not face down, in a hand, part of a pile (shuffle
+     * that), or alone. Anyone at the table may wash, seated or
      * not, as anyone at a table may reach in and stir the tiles (or carry
      * and flip them: the hand asks no seat either).
      */
-    function washPlan(id, snap = scene, local = api.local?.get?.()) {
+    function washPlan(id, snap = scene) {
       const o = snap?.objects?.[id];
-      if (!playing(local) || !isCard(o)) return null;
+      if (!isCard(o)) return null;
       const kept = keptBy(api, id);
       if (typeof kept?.keeper?.shuffle !== "function") return null;
       const regions = zones(snap);
@@ -397,7 +400,7 @@ export default {
 
     // ── standing a piece on edge, and laying it flat ──
     /**
-     * Stand on edge applies, in play, to a piece thick enough to stand
+     * Stand on edge applies to a piece thick enough to stand
      * (stand.js canStand: a domino, never a card) lying flat in your own hand
      * or out on the table, when you're seated: it stands facing you. In your
      * hand that is the hand's +Z (toward its seat); out on the table, the
@@ -408,9 +411,9 @@ export default {
      * or not: anyone can knock a tile over; one in someone's hand stays in
      * it, and stays theirs). null otherwise, or while a peer holds it.
      */
-    function standPlan(id, snap = scene, local = api.local?.get?.()) {
+    function standPlan(id, snap = scene) {
       const o = snap?.objects?.[id];
-      if (!playing(local) || !isCard(o) || o.locked || !canStand(bodyBox(snap, id)) || api.heldBy?.(id) != null || drawing.has(id)) return null;
+      if (!isCard(o) || o.locked || !canStand(bodyBox(snap, id)) || api.heldBy?.(id) != null || drawing.has(id)) return null;
       if (isStanding(localOf(snap, id))) return { lay: true };
       const w = snap.world(id);
       const hands = myHands(snap);
@@ -458,14 +461,14 @@ export default {
 
     // ── laying your hand face up, for everyone ──
     /**
-     * What Lay my hand face up would lay out, in play: the hand (one of
+     * What Lay my hand face up would lay out: the hand (one of
      * yours: the target, the one the target lies in, or the one it stands
      * facing out on the table) and the pieces that are that hand's: in it,
      * or standing out on the table facing it (visibility.js facing), in the
      * order they lie across it.
      */
-    function revealPlan(id, snap = scene, local = api.local?.get?.()) {
-      if (!playing(local) || id == null || !snap?.objects?.[id]) return null;
+    function revealPlan(id, snap = scene) {
+      if (id == null || !snap?.objects?.[id]) return null;
       const hands = myHands(snap);
       const all = zones(snap);
       const out = (x) => {
@@ -517,6 +520,8 @@ export default {
       },
       // where each seat's hands are, for whoever shows seats (a name tag on each; a look at one is a look at its seat)
       seatPlaces: (snap) => zones(snap),
+      // who may see what: hands to their seat, face-up cards to everyone (visibility.js)
+      audience: (snap) => audienceOf(snap, seatsFrom(api, snap)),
       receive(type, data, from) {
         const text = told(type, data, nameOf(from));
         if (text) api.notify(text);
@@ -540,7 +545,7 @@ export default {
           show: ["use", "menu"],
           state(id, ctx) {
             // (walking, D is the body's: the verb shows without its key, and is in the menu)
-            const plan = drawPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
+            const plan = drawPlan(id, ctx?.scene ?? scene);
             if (!plan) return null;
             const { slot, ...shown } = plan;
             return shown;
@@ -555,7 +560,7 @@ export default {
           state(id, ctx) {
             // (walking, W is the body's: the verb shows without its key, and is in the menu)
             if (id == null) return null;
-            const plan = washPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
+            const plan = washPlan(id, ctx?.scene ?? scene);
             return plan ? { label: `Wash (${plan.ids.length})`, title: "Mix the face-down pieces spread out here, where they lie" } : null;
           },
           run: wash,
@@ -567,7 +572,7 @@ export default {
           show: ["use", "menu", "inspector"],
           state(id, ctx) {
             if (id == null) return null;
-            const plan = standPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
+            const plan = standPlan(id, ctx?.scene ?? scene);
             if (!plan) return null;
             return plan.lay ? { label: "Lay flat", title: "Lay it down flat, face up" } : { title: "Stand it on edge, facing you" };
           },
@@ -579,7 +584,7 @@ export default {
           // no key: a slip of the finger shouldn't show your hand
           show: ["menu", "inspector"],
           state(id, ctx) {
-            const plan = revealPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
+            const plan = revealPlan(id, ctx?.scene ?? scene);
             return plan ? { label: `Lay my hand face up (${plan.ids.length})`, title: "Put everything in your hand out in front of it, face up, for everyone to see" } : null;
           },
           run: reveal,
@@ -610,8 +615,6 @@ export default {
   },
 };
 
-/** Is this view playing (not editing)? The verbs of play are play's, as the hand is. */
-const playing = (local) => local?.activities?.current === "play";
 /** How long a drawn card takes to reach your hand (s). */
 const DRAW_SECONDS = 0.35;
 /** How high it rises on the way (m). */

@@ -33,12 +33,12 @@ export function snapshot(doc) {
 }
 
 /**
- * @param {object} sceneDoc  @param {{ session?: string, repo?: FakeRepo, activity?: string, sizes?: Record<string, number> }} [o]
+ * @param {object} sceneDoc  @param {{ session?: string, repo?: FakeRepo, sizes?: Record<string, number> }} [o]
  *   sizes: half-widths (m) of objects that have content; an object with none has no box yet
  */
-export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), activity = "play", half = {} } = {}) {
+export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), half = {} } = {}) {
   const handle = repo.handles.get(SCENE_URL) ?? repo.add(sceneDoc, SCENE_URL);
-  const rec = { notices: [], sends: [], labels: [], arms: [], loops: new Set(), docked: [], added: [], removed: [], held: new Map(), contributions: {}, local: { activities: { current: activity, available: ["edit", "play"] } } };
+  const rec = { notices: [], sends: [], labels: [], arms: [], loops: new Set(), docked: [], added: [], removed: [], held: new Map(), contributions: {}, local: {} };
   let n = 0;
   const boxOf = (id) => {
     const h = half[id];

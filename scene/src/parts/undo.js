@@ -1,0 +1,52 @@
+// scene.undo: Undo and Redo (TOOLS.md, Decisions 2). What they take back is
+// the stage's own editing only (the halo's handles, the inspector, transfer,
+// add, remove: whatever wrote through api.edit), this viewer's, in the focus
+// doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
+// a process's save is never on it. ⌘Z / Ctrl+Z undoes, ⇧⌘Z / Ctrl+Y redoes,
+// unless a field has the keys (its own text undo) or they come from a docked
+// pane; the toolbar has both, named for the step they'd take.
+
+import { fromEmbed } from "../embed.js";
+import { isTyping } from "../stage/router.js";
+
+/** Which of undo and redo a keydown asks for, or null. Pure. */
+export function undoKey(e) {
+  if (!e || e.altKey || !(e.metaKey || e.ctrlKey)) return null;
+  const k = String(e.key ?? "").toLowerCase();
+  if (k === "z") return e.shiftKey ? "redo" : "undo";
+  if (k === "y" && e.ctrlKey && !e.metaKey && !e.shiftKey) return "redo";
+  return null;
+}
+
+function create(api) {
+  const root = api.root;
+  const edits = () => api.local.get().edits ?? { undo: null, redo: null };
+  const take = (which) => (which === "undo" ? api.undo() : api.redo());
+
+  api.listen(root, "keydown", (e) => {
+    const which = undoKey(e);
+    if (!which || e.defaultPrevented || fromEmbed(e, root)) return;
+    if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
+    e.preventDefault();
+    if (!e.repeat) take(which);
+  });
+
+  const command = (which, name) => ({
+    id: which,
+    name,
+    show: ["toolbar"],
+    state: (target) => {
+      if (target != null) return null;
+      const label = edits()[which];
+      if (!api.writable()) return { disabled: true, title: "view only" };
+      return label ? { title: `${name} “${label}”` } : { disabled: true, title: `Nothing to ${which}` };
+    },
+    run: () => void take(which),
+  });
+
+  return {
+    commands: [command("undo", "Undo"), command("redo", "Redo")],
+  };
+}
+
+export default { create };

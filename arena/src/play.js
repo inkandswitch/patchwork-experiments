@@ -22,6 +22,7 @@
 
 import css from "./play.css?inline";
 import { isDown, knockedOver, standTargetsUp } from "./level.js";
+import { resetCommand } from "./reset.js";
 
 const TARGET = "arena.target";
 /** The walk body's spawn point (the walk package's trait; arena's spawn part writes it). */
@@ -341,6 +342,7 @@ export default {
             return gun;
           },
         },
+        resetCommand(api),
       ],
       // only a laid-out level has the arena's look (see the top): adding a
       // target to a boat writes the level trait too, but not its look

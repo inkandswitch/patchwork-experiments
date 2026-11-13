@@ -1,4 +1,5 @@
-// The sailing extension in play: a ship you crew together (DESIGN.md, "Play").
+// The sailing extension: a ship you crew together (DESIGN.md, "Play"). It
+// runs wherever the doc has a sailing trait, whatever anyone is doing.
 // This file only joins the parts; each is its own module with its own tests:
 //
 //   sea-view.js  the sea: its clock, the drawn ocean, the sky        (createSeaView)

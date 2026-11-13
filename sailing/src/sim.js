@@ -1,4 +1,4 @@
-// The ships in play (DESIGN.md, "Play"): the physics as one of the scene's
+// The ships (DESIGN.md, "Play"): the physics as one of the scene's
 // processes, the poses everyone sees, and the stations' controls. ctx.sim is
 // what the other parts read.
 //

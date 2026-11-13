@@ -5,11 +5,16 @@
 // its caller closes it, the × does, or its extension stops. The × is a
 // person closing it, so only the × calls onClose: the caller hears of the
 // closes it didn't make itself. A pane is an embedded document (src/embed.js),
-// so the keys typed in it are its own, never the scene's.
+// so the keys typed in it are its own, never the scene's; unless it's docked
+// with `embed: false` (the stage's own chrome: the inspector, the outline),
+// whose keys are the stage's like any of its parts'.
 //
-// One pane shows at a time. Docking one shows it; closing the one shown shows
-// the one shown before it; the tabs stay in the order they were docked. With
-// nothing docked, the drawer leaves the edge, which then takes no room.
+// One pane shows at a time. Docking one shows it (unless it's docked with
+// `show: false` beside a pane already shown: the inspector following the
+// selection doesn't cover the parts bin the viewer is using); closing the
+// one shown shows the one shown before it; the tabs stay in the order they
+// were docked. With nothing docked, the drawer leaves the edge, which then
+// takes no room.
 //
 // The model is pure and the DOM follows it: `docked`, `shown` and `undocked`
 // below, and createDrawer, which keeps an element per docked key.
@@ -36,6 +41,12 @@ export function docked(s, key) {
   return state([...s.order, key], [key, ...s.recent]);
 }
 
+/** Dock `key` behind what's shown (shown itself only when nothing else is); docking it again changes nothing. Pure. */
+export function dockedBehind(s, key) {
+  if (s.order.includes(key)) return s;
+  return state([...s.order, key], [...s.recent, key]);
+}
+
 /** Undock `key`: the pane shown before it shows, if it was the one shown. Pure. */
 export function undocked(s, key) {
   if (!s.order.includes(key)) return s;
@@ -58,8 +69,11 @@ let paneIds = 0;
  * The drawer's DOM, in `parent` (the stage's right edge) while anything is
  * docked. dock(owner, el, { title, onClose }) → close; closeOwner(owner)
  * closes everything an owner docked, without onClose (it is stopping).
+ * `onChange({ tabs, shown })` hears every change of what's docked or shown
+ * (the stage publishes it as local.drawer, so a surface showing whether a
+ * tab is open, the toolbar's toggles, hears of it too).
  */
-export function createDrawer({ parent }) {
+export function createDrawer({ parent, onChange = () => {} }) {
   const drawer = make("aside", "stage-drawer", { "aria-label": "Drawer" });
   const tabs = make("div", "stage-drawer-tabs", { role: "tablist" });
   const panes = make("div", "stage-drawer-panes");
@@ -78,8 +92,12 @@ export function createDrawer({ parent }) {
       e.name.tabIndex = sel ? 0 : -1;
       e.pane.hidden = !sel;
     }
+    // the stage's own chrome (the inspector, the outline) is as narrow as the side panel was; a docked editor gets room
+    drawer.toggleAttribute("data-narrow", !!on && entries.get(on)?.embed === false);
     if (model.order.length && drawer.parentNode !== parent) parent.append(drawer);
     else if (!model.order.length && drawer.parentNode) drawer.remove();
+    const titles = model.order.map((k) => entries.get(k)?.name.textContent ?? "");
+    onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null });
   }
 
   function remove(key) {
@@ -93,17 +111,17 @@ export function createDrawer({ parent }) {
     return e;
   }
 
-  function dock(owner, content, { title, onClose } = {}) {
+  function dock(owner, content, { title, onClose, embed = true, show = true } = {}) {
     const had = entries.get(content);
     if (had) {
       if (title != null) had.name.textContent = String(title);
       if (typeof onClose === "function") had.onClose = onClose;
-      model = docked(model, content);
+      if (show) model = docked(model, content);
       render();
       return had.close;
     }
     const id = `stage-drawer-pane-${++paneIds}`;
-    const pane = make("section", "stage-drawer-pane", { role: "tabpanel", id, [EMBED_ATTR]: "" });
+    const pane = make("section", "stage-drawer-pane", { role: "tabpanel", id, ...(embed ? { [EMBED_ATTR]: "" } : {}) });
     const tab = make("div", "stage-drawer-tab", { role: "presentation" });
     const name = make("button", "stage-drawer-tab-name", { type: "button", role: "tab", "aria-controls": id });
     const label = String(title ?? "Panel");
@@ -116,7 +134,7 @@ export function createDrawer({ parent }) {
     // (tabs and panes are only ever added at the end, so the DOM keeps the model's order)
     tabs.append(tab);
     panes.append(pane);
-    const e = { owner, pane, tab, name, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
+    const e = { owner, pane, tab, name, embed: !!embed, onClose: typeof onClose === "function" ? onClose : null, close: () => void remove(content) };
     name.addEventListener("click", () => {
       if (!entries.has(content)) return;
       model = shown(model, content);
@@ -131,7 +149,7 @@ export function createDrawer({ parent }) {
       }
     });
     entries.set(content, e);
-    model = docked(model, content);
+    model = show ? docked(model, content) : dockedBehind(model, content);
     render();
     return e.close;
   }

@@ -136,18 +136,18 @@ describe("scene.use", () => {
     vi.restoreAllMocks();
   });
 
-  const GAME = (requires = ["scene.use", "scene.keys"]) => ({
-    meta: { id: "t.game", traits: ["t.level"], activities: ["play"], requires },
+  const GAME = () => ({
+    meta: { id: "t.game", traits: ["t.level"] },
     module: game(log, sessions, walker, () => eye),
   });
 
-  async function mount({ requires } = {}) {
+  async function mount() {
     log = [];
     sessions = [];
     walker = { key: vi.fn((ev) => ev.key === "w") };
     eye = [0, 1.6, 4];
-    s = await mountStage({ extensions: [GAME(requires), USE, KEYS], doc: DOC });
-    await s.activity("play");
+    s = await mountStage({ extensions: [GAME(), USE, KEYS], doc: DOC });
+    await settle();
   }
   const hover = async (id) => {
     s.local.swap((m) => ({ ...m, hovered: id }));
@@ -158,7 +158,7 @@ describe("scene.use", () => {
   const down = (key, extra = {}) => s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}`, ...extra }));
   const up = (key) => s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
 
-  it("runs in play when a game requires it", async () => {
+  it("runs in every scene: general, as the key map is", async () => {
     await mount();
     expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys"]);
   });
@@ -178,6 +178,18 @@ describe("scene.use", () => {
     expect(prompt().hidden).toBe(true);
     s.key("f");
     expect(log.at(-1)).toEqual(["flag"]);
+  });
+
+  it("shows nothing while a gesture is open (a carry: its keys come first), and comes back after", async () => {
+    await mount();
+    await hover("helm");
+    expect(prompt().hidden).toBe(false);
+    s.local.swap((m) => ({ ...m, gesture: { owner: "scene.carry", keys: [{ code: "KeyF", label: "Flip" }] } }));
+    await settle();
+    expect(prompt().hidden).toBe(true);
+    s.local.swap((m) => ({ ...m, gesture: null }));
+    await settle();
+    expect(prompt().hidden).toBe(false);
   });
 
   it("a verb is a button: a click runs it on its target", async () => {
@@ -258,11 +270,11 @@ describe("scene.use", () => {
       log = [];
       sessions = [];
       const probe = {
-        meta: { id: "t.probe", traits: ["t.level"], activities: ["play"], requires: ["scene.use"] },
+        meta: { id: "t.probe", traits: ["t.level"] },
         module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", lock: true, reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [1, 2, 3] }), leave() {} }) }], commands: [{ id: "look", name: "Look", key: "l", state: (t, ctx) => (seen.push(ctx), t === "barrel" ? {} : null), run() {} }] }) },
       };
       s = await mountStage({ extensions: [probe, USE], doc: DOC });
-      await s.activity("play");
+      await settle();
       s.debug.viewport.centerRay = () => ({ origin: [1, 2, 3], dir: [0, 0, -1] });
       s.debug.viewport.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: [0, 1, 0], distance: 2.5 });
       Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });
@@ -354,27 +366,22 @@ describe("scene.use", () => {
       expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
     });
 
-    it("cancels when the extension whose verb it is stops (back to editing)", async () => {
+    it("cancels when the extension whose verb it is stops (uninstalled)", async () => {
       await mount();
       await hover("capstan");
       down("e");
-      await s.activity("edit");
+      await s.uninstall("t.game");
       expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
     });
   });
 
-  it("nothing shows while editing, and the game's verbs aren't there to run", async () => {
+  it("with the game gone, nothing shows and its verbs aren't there to run", async () => {
     await mount();
-    await s.activity("edit");
-    expect(s.instance("scene.use")).toBeNull();
+    await s.uninstall("t.game");
+    expect(s.instance("scene.use")).toBeTruthy();
     await hover("helm");
-    expect(prompt()).toBeNull();
+    expect(prompt()?.hidden ?? true).toBe(true);
     s.key("f");
     expect(log).toEqual([]);
-  });
-
-  it("without a game that requires it, it doesn't run", async () => {
-    await mount({ requires: ["scene.keys"] });
-    expect(s.local.get().running.map((r) => r.id)).not.toContain("scene.use");
   });
 });

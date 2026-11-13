@@ -94,11 +94,18 @@ take over if it goes. Anyone who may write can pause it, by name. Nobody
 present, no time passes. Things that are acts (a die's tumble, a carry) run
 on the wall clock and finish during a pause.
 
-**Activities remain until build step 8.** Each view still has one, `"edit"`
-or `"play"`, and an extension may say which it takes part in: the editor's
-chrome runs only in edit, the use prompt and sailing's physics only in play.
-Step 8 removes them; until then a sailing sim stops for someone editing
-(STAGE.md, "Activities").
+**What runs is the doc's**, nothing else: an extension runs where the doc
+has one of its traits, and one that declares none runs in every scene.
+Nothing a viewer holds, where they stand or the clock changes it, so a
+sailing sim never stops for someone editing her (a pause does, by name).
+The editor's chrome runs everywhere and shows where attention asks: the
+inspector is a drawer tab while something is selected, the outline a tab
+the viewer opens, the grid and axes are the orbit body's. A doc says where
+people **start** (`view.start`: a body, a place, a home camera), read once
+on arrival: a table starts people seated (or watching from a seat), a level
+walking at a spawn point. **Undo** takes back the stage's own edits (the
+halo, the inspector, add, remove, paste), this viewer's, never a verb's:
+undo can't un-roll a die.
 
 ### Arbitration
 
@@ -157,10 +164,12 @@ as on land, riding her frame: face up is the table's up, however she heels.
 
 **Doom's E1M1.** Dropping a WAD lays out its first map: the doom package's
 provider builds a GLB of the static map, one per door and one per exit
-switch, all from the one WAD document. The doors get `joints.slide`, the
+switch, all from the one WAD document. The static part gets the doom
+package's own marker trait (`doom.map`), the doors `joints.slide`, the
 exit switch `traversal.exit`, the player 1 start arena's spawn part
-(`walk.spawn`), and the scene `arena.level` for its sky. You walk it in
-the walk body with arena's gun as the held tool; joints' process closes the
+(`walk.spawn`, which calls for the walk package), and the scene
+`arena.level` for its sky. You arrive walking at that start, with arena's
+gun to pick up as the held tool; joints' process closes the
 doors on world time. Nothing outside the doom package is Doom-shaped, and
 the doom package imports none of the others.
 
@@ -172,15 +181,17 @@ editor in the drawer.
 
 ## Where today's code stands
 
-Build steps 1–7 of [COMPOSITION.md](COMPOSITION.md)'s order are built:
+Build steps 1–8 of [COMPOSITION.md](COMPOSITION.md)'s order are built:
 nearness in the chain, the drawer, selection and carrying by trait, content
-kinds, seats as a package, bodies and the held tool, and the clock.
+kinds, seats as a package, bodies and the held tool, the clock, and the end
+of activities (traits alone decide what runs; chrome follows attention;
+`view.start`; undo of the stage's own edits).
 [STAGE.md](STAGE.md) is the contract for all of it. The stage is
 `src/stage/`; the shared parts are `src/parts/`; the other packages
 (tabletop, seats, dice, bag, keep, card-table, sailing, joints, traversal,
 walk, arena, doom) are top-level folders of this repo, each standalone.
 
-Next are step 8 (activities and `requires` go) and then scenes inside
-scenes: one stage per open document, sharing one view, so a card game on a
+Next are the notes catching up (step 9: examples republished) and then
+scenes inside scenes: one stage per open document, sharing one view, so a card game on a
 ship's table is its own doc, linked onto the table
 ([COMPOSITION.md](COMPOSITION.md)).

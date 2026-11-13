@@ -256,9 +256,9 @@ describe("contain", () => {
 
 describe("the plugin", () => {
   const p = plugins.find((x) => x.type === "scene:extension");
-  it("is an ordinary scene extension, found by `keeper`, attached by its own trait, in every activity; no private registry type", async () => {
+  it("is an ordinary scene extension, found by `keeper`, run by its own trait; no private registry type", async () => {
     expect(p).toMatchObject({ id: "card-table", keeper: "joint", traits: [TRAIT] });
-    expect(p.activities).toBeUndefined();
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in p).toBe(false);
     expect([...new Set(plugins.map((x) => x.type))].sort()).toEqual(["patchwork:datatype", "patchwork:tool", "scene:extension"]);
     for (const x of plugins) expect(() => structuredClone({ ...x, load: undefined })).not.toThrow();
     const mod = await p.load();

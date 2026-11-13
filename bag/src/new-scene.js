@@ -51,7 +51,7 @@ export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = n
     traits: { [CONTAINER]: { doc: bagUrl }, [CARRY]: {} },
   };
   scene.order.push(BAG_OBJECT);
-  // a table with a bag on it is for playing at
-  scene.view.activity = "play";
+  // where people start: in orbit (view.start's home is left to the scene's
+  // own framing); a bag has no seats to start anyone in
   return scene;
 }

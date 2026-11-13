@@ -1,10 +1,11 @@
-// scene.parts: the parts bin, the sidebar panel "parts" (STAGE.md, "Parts").
+// scene.parts: the parts bin, a drawer tab the viewer opens (Parts in the
+// toolbar; STAGE.md, "Parts").
 //
 // It lists every registered scene:part from the registry's metadata (name,
 // icon, category, description, tags, traits; nothing is loaded to offer
 // one), grouped by category, with a search once there are enough of them.
-// With no parts registered there is no panel: what isn't contributed doesn't
-// exist.
+// With no parts registered there is no tab, nor its toggle: what isn't
+// contributed doesn't exist.
 //
 // Putting one in:
 //   - drag it into the view: it lands where the pointer hits. On an object it
@@ -16,8 +17,8 @@
 //     How it stands and faces is ./parts-place.js.
 //   - click it: it goes where the view is looking (the middle of the view,
 //     on whatever is there), by the same rules.
-// Either way the stage's part(id, at) runs the part's create(ctx, at) and
-// selects what it made.
+// Either way the stage's part(id, at) runs the part's create(ctx, at), as
+// one edit (undo takes it out again), and selects what it made.
 //
 // The drag is the browser's own (as the outline's rows and the Patchwork
 // sidebar's documents are), carrying PART_MIME = { part }, so a part can be
@@ -28,6 +29,7 @@ import css from "./parts.css?inline";
 import { isGroup } from "../groups.js";
 import { fromEmbed } from "../embed.js";
 import { partLanding } from "./parts-place.js";
+import { drawerTab, tabToggle } from "./tab.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */
 export const PART_MIME = "application/x-scene-part";
@@ -208,7 +210,8 @@ function create(api) {
 
   async function place(id, land) {
     if (!land || !live()) return null;
-    return api.part(id, land.at);
+    const edit = api.edits("Add part");
+    return Promise.resolve(api.part(id, land.at, { edit })).finally(() => edit.end());
   }
 
   // ── the ring ─────────────────────────────────────────────────────────────
@@ -368,18 +371,22 @@ function create(api) {
     return view;
   }
 
+  // a drawer tab the viewer opens (Parts in the toolbar, while some package offers one)
+  const tab = drawerTab(api, {
+    id: "parts",
+    title: "Parts",
+    mount(body) {
+      const v = mountView(body);
+      return { update: () => v.draw(), dispose: () => v.dispose() };
+    },
+  });
+
   return {
-    panels: [
-      {
-        id: "parts",
-        title: "Parts",
-        mount(body) {
-          const v = mountView(body);
-          return { update: () => v.draw(), dispose: () => v.dispose() };
-        },
-      },
-    ],
+    commands: [tabToggle(tab, { id: "parts", name: "Parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
+    update: (scene, local) => tab.update(scene, local),
+    tab,
     dispose() {
+      tab.dispose();
       for (const v of [...views]) v.dispose();
       ring = null;
       layer = null;

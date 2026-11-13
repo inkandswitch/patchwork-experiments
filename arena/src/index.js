@@ -1,15 +1,15 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// The arena is not a datatype or a tool. It is two scene extensions, a
+// The arena is not a datatype or a tool. It is a scene extension, a
 // template and three parts (see the scene package's STAGE.md):
-// - "arena" plays: in a scene whose doc has an arena trait (the level on the
-//   scene, targets on objects), the "play" activity has the gun (a held
-//   tool) and the targets; walking in is the walk package's walk body,
-//   entered at a spawn point (its trait, `walk.spawn`);
-// - "arena.edit" edits a level: stands knocked-over targets back up;
+// - "arena" runs in a scene whose doc has an arena trait (the level on the
+//   scene, targets on objects): the gun (a held tool), the targets, and
+//   Stand targets up; walking in is the walk package's walk body, entered at
+//   a spawn point (its trait, `walk.spawn`);
 // - the "arena-level" template lays out the sample arena in an empty scene
-//   and starts it in play, so its maker is in the game at once;
+//   and starts people walking at one of its spawn points (view.start), so
+//   its maker is in the game at once;
 // - the parts ("Arena" in the editor's parts bin) put a target, a crate or a
 //   spawn point (a pad carrying the walk package's `walk.spawn`) into any
 //   scene: a boat's deck as well as a level. A target or a spawn point makes
@@ -23,7 +23,6 @@ export const plugins = [
     id: "arena",
     name: "Arena",
     traits: ["arena.level", "arena.target"],
-    activities: ["play"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // level can be made without a script. A target's down/stand are not
     // settings: no fields to edit. `down` (who shot it, when) is play state,
@@ -36,7 +35,7 @@ export const plugins = [
       "arena.level": {
         name: "Arena level",
         on: "scene",
-        blurb: "Walk and shoot in this scene, in Play",
+        blurb: "Walk and shoot in this scene",
         fields: [
           {
             key: "look",
@@ -53,28 +52,8 @@ export const plugins = [
       },
       "arena.target": { name: "Target", on: "object", blurb: "Can be shot down; counts toward the shooter's score", runtime: ["down"] },
     },
-    // playing brings no editor, so it says what it needs: the use prompt,
-    // for what's in the level to use (a door's Open: play takes only its own
-    // keys and passes the rest on, and the prompt is listed before the key
-    // map so it hears them first: STAGE.md, "The use prompt"); Enter to play
-    // goes through the key map; notices; and the camera framing the level as
-    // it loads (a joiner's camera starts untouched, wherever the stage puts
-    // it, which in an arena can be inside a wall). While playing, the game
-    // holds the camera and the pointer, so framing stands aside. Not
-    // scene.frame: Frame all and double-click to frame are editing's.
-    requires: ["scene.use", "scene.keys", "scene.notices", "scene.autoframe"],
     async load() {
       return (await import("./play.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "arena.edit",
-    name: "Arena editing",
-    traits: ["arena.level", "arena.target"],
-    activities: ["edit"],
-    async load() {
-      return (await import("./edit.js")).default;
     },
   },
   {
@@ -93,7 +72,7 @@ export const plugins = [
     name: "Target",
     icon: "Target",
     category: "Arena",
-    description: "A target to shoot down in play. Makes the scene a level",
+    description: "A target to shoot down. Makes the scene a level",
     traits: ["arena.target"],
     async load() {
       return (await import("./parts.js")).target;
@@ -116,7 +95,7 @@ export const plugins = [
     name: "Spawn point",
     icon: "MapPin",
     category: "Arena",
-    description: "Where players start in play, facing the way it faces. Makes the scene a level",
+    description: "Where players start walking, facing the way it faces. Makes the scene a level",
     // the walk body's spawn point (the walk package's trait), drawn as one of the arena's pads
     traits: ["walk.spawn"],
     async load() {

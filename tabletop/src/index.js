@@ -1,11 +1,12 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// What a table's pieces do is two `scene:extension`s (src/table/):
-// "tabletop" (hands, cards, Shuffle, Draw: in play and in edit) and
-// "tabletop.rule" (who may see what, as the stage's `audience`: in every
-// activity). Seats, and what a hidden card really is, are other packages'
-// (the seats' owner; a keeper), met only through the stage.
+// What a table's pieces do is one `scene:extension`, "tabletop"
+// (src/table/): hands, cards, Shuffle, Draw, and who may see what, as the
+// stage's `audience`. It runs wherever a doc has a hand or a card, whatever
+// anyone is doing, so its policy never stops under a viewer. Seats, and what
+// a hidden card really is, are other packages' (the seats' owner; a keeper),
+// met only through the stage.
 //
 // Games are data: a tabletop-game (GAME-FORMAT.md) is one JSON file. This
 // package's are in games/, each a `tabletop:game` plugin: { id, name, icon,
@@ -50,44 +51,21 @@ const TRAITS = {
 
 export const plugins = [
   {
-    // what a table's pieces do: hands, cards, Shuffle and Draw
-    // (src/table/extension.js; the scene's README, "Extensions")
+    // what a table's pieces do: hands, cards, Shuffle and Draw, and who
+    // may see what (src/table/extension.js, visibility.js; the scene's
+    // README, "Extensions")
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
     traits: ["tabletop.zone", "tabletop.card"],
     // how another package's template or part lays a game out: this module's setUp(ctx, gameId, options)
     tables: "tabletop-game",
-    // a table is played, and edited too
-    activities: ["play", "edit"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A hand's box is plain JSON for now.
     describes: TRAITS,
-    // playing needs these and nothing else: the use prompt (hover a pile:
-    // "[F] Flip  [S] Shuffle pile  [D] Draw to my hand"; play only, it does
-    // nothing while editing), keys for verbs, a right-click menu, a camera
-    // that opens on the table, and somewhere for notices (not scene.frame: F
-    // is carry's flip at a table). Carrying pieces is the scene's, by the
-    // `scene.carry` trait the table writes on them. scene.use comes before
-    // scene.keys, so the prompt hears its verbs' keys first (scene/STAGE.md,
-    // "The use prompt").
-    requires: ["scene.use", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     async load() {
       return (await import("./table/extension.js")).default;
-    },
-  },
-  {
-    // who may see what at a table: hands and face-up cards, as the stage's
-    // `audience` (src/table/rule.js, visibility.js). No `activities`: it
-    // holds while editing and whatever else a viewer is doing, since a
-    // policy that stopped would take its screen with it.
-    type: "scene:extension",
-    id: "tabletop.rule",
-    name: "Table rule",
-    traits: ["tabletop.zone", "tabletop.card"],
-    async load() {
-      return (await import("./table/rule.js")).default;
     },
   },
   {

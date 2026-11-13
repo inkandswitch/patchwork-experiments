@@ -4,7 +4,7 @@
 // this viewer doesn't have. Pure. The stage's side is src/stage/packages.js.
 
 import { parseAutomergeLink } from "./dnd.js";
-import { DEFAULT_ACTIVITY, ownReason, traitKeys } from "./stage/activation.js";
+import { traitKeys } from "./stage/activation.js";
 
 const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x) : []);
 
@@ -90,15 +90,15 @@ export function listedPackages(doc) {
  *     for by render docs themselves, which hold their own copy.
  *   - `{ type: "scene:extension", trait }`: a trait key on the scene or on an
  *     object (activation: an extension runs when the doc has one of its
- *     traits).
- *   - `{ type: "scene:extension", activity }`: where the doc starts people
- *     (`view.activity`), unless that's "edit", which every scene offers.
+ *     traits). Where the doc starts people (`view.start`) needs nothing of
+ *     its own: a start body's place carries the trait its package reads (a
+ *     spawn point's `walk.spawn`, a table's `seats`).
  * Parts and templates leave no mark of their own: what they make is objects
  * and traits, found above (the stage notes the part or template itself when
  * one is run: src/stage/packages.js).
  * @param {object} doc
  * @param {{ providerIds?: Iterable<string> }} [extra]
- * @returns {({ type: "scene:source", id: string } | { type: "scene:extension", trait?: string, activity?: string })[]}
+ * @returns {({ type: "scene:source", id: string } | { type: "scene:extension", trait: string })[]}
  */
 export function neededPlugins(doc, extra = {}) {
   const sources = new Set();
@@ -113,17 +113,13 @@ export function neededPlugins(doc, extra = {}) {
   const out = [];
   for (const id of [...sources].sort()) out.push({ type: "scene:source", id });
   for (const trait of [...traits].sort()) out.push({ type: "scene:extension", trait });
-  const activity = doc?.view?.activity;
-  if (typeof activity === "string" && activity && activity !== DEFAULT_ACTIVITY) out.push({ type: "scene:extension", activity });
   return out;
 }
 
 /**
  * The registered plugins that answer the doc's needs: `[{ type, id,
- * importUrl }]`, each once. A source by its id. An extension when the doc
- * has one of its traits (what activation's docReason asks), when it has a
- * reason of its own and offers the activity the doc starts in; and, with each of those, the extensions it
- * `requires`, at any depth (they run whenever it does). What isn't
+ * importUrl }]`, each once. A source by its id; an extension when the doc
+ * has one of its traits (what activation's docReason asks). What isn't
  * registered answers nothing: only a viewer who has a plugin can say where
  * it comes from.
  * @param {object} doc
@@ -135,21 +131,16 @@ export function answeringPlugins(doc, registries, extra = {}) {
   const metasOf = (type) => (Array.isArray(registries?.[type]) ? registries[type].filter((p) => p && typeof p.id === "string") : []);
   const sources = new Map(metasOf("scene:source").map((p) => [p.id, p]));
   const extensions = metasOf("scene:extension");
-  const byId = new Map(extensions.map((p) => [p.id, p]));
   const out = new Map();
   const add = (type, p) => {
     const key = `${type}\u0000${p.id}`;
-    if (out.has(key)) return;
-    out.set(key, { type, id: p.id, importUrl: typeof p.importUrl === "string" ? p.importUrl : null });
-    if (type === "scene:extension") for (const r of strings(p.requires)) if (byId.has(r)) add(type, byId.get(r));
+    if (!out.has(key)) out.set(key, { type, id: p.id, importUrl: typeof p.importUrl === "string" ? p.importUrl : null });
   };
   for (const need of neededPlugins(doc, extra)) {
     if (need.type === "scene:source") {
       if (sources.has(need.id)) add(need.type, sources.get(need.id));
-    } else if (need.trait != null) {
+    } else {
       for (const p of extensions) if (strings(p.traits).includes(need.trait)) add(need.type, p);
-    } else if (need.activity != null) {
-      for (const p of extensions) if (strings(p.activities).includes(need.activity) && ownReason(p, doc)) add(need.type, p);
     }
   }
   return [...out.values()];
