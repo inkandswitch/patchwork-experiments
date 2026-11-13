@@ -63,8 +63,8 @@ export default {
       atmosphere: () => ctx.sea.atmosphere(),
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
-      // what walks, for whoever owns seats (api.collect("firstPerson"): stand up at a seat, sit back down)
-      firstPerson: ctx.crew.firstPerson,
+      // the crew's bodies (scene/TOOLS.md §4): walking her deck, and standing at a station
+      bodies: ctx.crew.bodies,
       receive(type, data, from) {
         for (const p of parts) p.receive?.(type, data, from);
       },
