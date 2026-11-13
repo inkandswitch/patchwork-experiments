@@ -198,10 +198,15 @@ async function publish(docs, roles) {
     sent.set(h.url, doc);
     return h;
   };
+  // each doc suggests the package whose tool opens it (its `pushwork url`), so a
+  // viewer who has nothing installed is offered it: a Rig this one, the hull camber's
+  const pushworkUrl = (dir) => JSON.parse(readFileSync(join(dir, ".pushwork/config.json"), "utf8")).rootUrl;
+  const SUGGEST = { "rig-design": pushworkUrl(PKG), "camber-hull": pushworkUrl(join(CAMBER, "patchwork")) };
+  const suggesting = (doc) => (SUGGEST[doc["@patchwork"]?.type] ? { ...doc, "@patchwork": { ...doc["@patchwork"], suggestedImportUrl: SUGGEST[doc["@patchwork"].type] } } : doc);
   // a doc is only ever named after it exists: the hull, then the rig that links it
-  for (const u of Object.values(roles.fixtures)) await make(u, revive(docs[u]));
-  await make(roles.hull, revive(docs[roles.hull]));
-  await make(roles.rig, rewrite(docs[roles.rig]));
+  for (const u of Object.values(roles.fixtures)) await make(u, suggesting(revive(docs[u])));
+  await make(roles.hull, suggesting(revive(docs[roles.hull])));
+  await make(roles.rig, suggesting(rewrite(docs[roles.rig])));
 
   await repo.flush?.();
   await new Promise((r) => setTimeout(r, SETTLE));
