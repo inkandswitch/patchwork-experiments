@@ -157,7 +157,9 @@ if (TEMPLATE) {
 }
 
 // ─── the game, as TabletopGameDatatype.init writes it, then started from Lost Cities ──
-const init = { "@patchwork": { type: "tabletop-game" } };
+// It suggests this package, so a viewer who has nothing installed is offered
+// the tool that opens it (a scene suggests the scene package the same way).
+const init = { "@patchwork": { type: "tabletop-game", suggestedImportUrl: pushworkUrl("tabletop") } };
 TabletopGameDatatype.init(init);
 const game = await repo.create2(init);
 game.change((d) => writeGame(d, lostCities));
@@ -237,6 +239,7 @@ if (DRY) {
 
 await verify(made, (url, got) => {
   if (url === scene.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
+  if (url === game.url && got["@patchwork"]?.suggestedImportUrl !== pushworkUrl("tabletop")) return "came back without the tabletop package as its suggested import";
   if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
   if (url === game.url && JSON.stringify(got.tables) !== JSON.stringify([scene.url])) return `came back listing tables ${JSON.stringify(got.tables)}, not just its own`;
   if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
