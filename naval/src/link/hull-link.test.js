@@ -300,7 +300,8 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
     getRegistry(CHARTROOM_SOURCE).register(fakeChartroom(upright));
     const r = await acquireHull({ url: urls.hull, repo, getRegistry });
     expect(r).toMatchObject({ ok: true, path: "source", table: { source: null } });
-    expect(r.table.note).toMatch(/its table is for another hull than its GLB \(fingerprint fp:Narrow transom, the GLB's camber-hull-surface\/6:another-hull\)/);
+    expect(r.table.note).toMatch(/Camber: its table is for another hull than the GLB's \(fingerprint fp:Narrow transom, the GLB's camber-hull-surface\/6:another-hull\)/);
+    expect(r.table.offers).toMatchObject([{ id: "camber-hull-chartroom", outcome: "refused", verdict: "different" }]);
     expect(r.mesh.table).toBeNull();
     expect(r.mesh.tableFrame).toBeUndefined();
     expect(hullPathChip(r)).toBe("built by Camber hull (its default params, at its own size)");
@@ -311,19 +312,29 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
     getRegistry(CHARTROOM_SOURCE).register(fakeChartroom({ ...upright, format: "not-a-table" }));
     const r = await acquireHull({ url: urls.hull, repo, getRegistry });
     expect(r).toMatchObject({ ok: true, path: "source", table: { source: null } });
-    expect(r.table.note).toMatch(/Camber: its table doesn't check out: format is not/);
+    expect(r.table.note).toMatch(/no chartroom:source's table was used \(Camber: its table doesn't check out: format is not/);
     expect(r.mesh.table).toBeNull();
   });
 
-  it("a chartroom:source for another datatype, or a wildcard one, isn't asked", async () => {
+  it("a chartroom:source for another datatype isn't asked; a wildcard one is, below the hull's own", async () => {
     getRegistry("scene:source").register(camberSource());
     const calls = [];
     getRegistry(CHARTROOM_SOURCE).register({ ...fakeChartroom(upright, calls), id: "other", supportedDatatypes: ["other-hull"] });
-    getRegistry(CHARTROOM_SOURCE).register({ ...fakeChartroom(upright, calls), id: "wild", supportedDatatypes: "*" });
-    const r = await acquireHull({ url: urls.hull, repo, getRegistry });
-    expect(r).toMatchObject({ ok: true, table: { source: null } });
-    expect(r.table.note).toBeUndefined();
+    const r0 = await acquireHull({ url: urls.hull, repo, getRegistry });
+    expect(r0).toMatchObject({ ok: true, table: { source: null, offers: [] } });
+    expect(r0.table.note).toBeUndefined();
     expect(calls).toHaveLength(0);
+    // a wildcard provider registered FIRST: the hull's own package's still goes first, and the wildcard isn't asked
+    getRegistry(CHARTROOM_SOURCE).register({ ...fakeChartroom(upright, calls), id: "a-wild", name: "Anything", supportedDatatypes: "*" });
+    getRegistry(CHARTROOM_SOURCE).register(fakeChartroom(upright, calls));
+    const r = await acquireHull({ url: urls.hull, repo, getRegistry });
+    expect(r.table).toMatchObject({ source: "chartroom", providerId: "camber-hull-chartroom" });
+    expect(r.table.offers.map((o) => [o.id, o.claim, o.outcome])).toEqual([
+      ["camber-hull-chartroom", "exact", "read"],
+      ["a-wild", "wildcard", "not asked"],
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(hullPathChip(r)).toBe("built by Camber hull (its default params, at its own size; statics from Camber, the first of 2 offered by the rule)");
   });
 
   it("refuses itself and another rig; says when nothing can build a doc", async () => {

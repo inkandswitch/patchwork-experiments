@@ -24,7 +24,7 @@
 import { loadGetRegistry } from "./registry.js";
 import { decodeGLB, glbTriangles } from "./glb-read.js";
 import { fileBytes, isRenderDoc } from "./render-read.js";
-import { chartroomTableFor } from "./chartroom-link.js";
+import { chartroomTableFor, sameHull } from "./chartroom-link.js";
 import { HYDROSTATIC_TABLE_FORMAT } from "../naval/chartroom-types.js";
 
 export const OWN_DATATYPE = "rig-design";
@@ -156,17 +156,7 @@ export function glbFingerprint(json) {
   return null;
 }
 
-/**
- * Do a GLB and a chartroom:source describe the same hull? The two write the
- * same hash differently: the GLB's is its scene provider's
- * ("<provider>/<build version>:<hash>"), the chartroom module's is the bare
- * "<hash>" that one ends in. So: equal, or the GLB's ends in ":<hash>".
- * @returns {"same"|"different"|"unknown"} unknown: one of them states none
- */
-export function sameHull(glbPrint, tablePrint) {
-  if (typeof glbPrint !== "string" || !glbPrint || typeof tablePrint !== "string" || !tablePrint) return "unknown";
-  return glbPrint === tablePrint || glbPrint.endsWith(`:${tablePrint}`) ? "same" : "different";
-}
+export { sameHull };
 
 /** GLB bytes → { triangles (glTF, metres), meshes, units, table, fingerprint }. Throws on a bad GLB. */
 export async function meshFromGlb(bytes) {
@@ -263,44 +253,41 @@ export async function acquireHull({ url, repo, handle, getRegistry, selfUrl } = 
 }
 
 /**
- * The hull's own table, put on the mesh: its package's chartroom:source
- * when one is installed, its table checks out (validateTable) and it
- * describes the hull the GLB was built from, else the GLB's own
- * (findChartroomTable), else none (rig-build.js builds one from the mesh).
- * Never throws.
+ * The hull's own table, put on the mesh: a chartroom:source's, chosen by
+ * chartroom-link.js's RULE (every provider that offers one for the
+ * datatype is a candidate; one naming another hull than the GLB is refused),
+ * else the GLB's own (findChartroomTable), else none (rig-build.js builds
+ * one from the mesh). Never throws.
  *
- * The same hull, by the fingerprints the two state (sameHull):
- *   same      → the table is used, and shares the mesh's frame (mesh.tableFrame "shared": camber builds both
- *               from one document in one authored origin), so LCB and LCF are the table's
- *   unknown   → the table is used, slid onto the mesh by its LCB (mesh.tableFrame "aligned")
- *   different → the table is another hull's: not used, and the note says so
+ * The frame, by the fingerprints the read table and the GLB state:
+ *   same    → the table shares the mesh's frame (mesh.tableFrame "shared": camber builds both from one
+ *             document in one authored origin), so LCB and LCF are the table's
+ *   unknown → the table is slid onto the mesh by its LCB (mesh.tableFrame "aligned")
  */
 async function ownTable(doc, datatype, getRegistry, mesh) {
   let c;
   try {
-    c = await chartroomTableFor({ doc, datatype, getRegistry });
+    c = await chartroomTableFor({ doc, datatype, getRegistry, meshFingerprint: mesh.fingerprint });
   } catch (err) {
-    c = { ok: false, absent: false, why: String(err?.message ?? err) };
+    c = { ok: false, absent: false, why: String(err?.message ?? err), offers: [] };
   }
+  const offers = c.offers ?? [];
   if (c.ok) {
-    const same = sameHull(mesh.fingerprint, c.fingerprint);
-    if (same !== "different") {
-      mesh.table = c.table;
-      mesh.tableFrame = same === "same" ? "shared" : "aligned";
-      mesh.tableName = c.providerName;
-      return { source: "chartroom", providerId: c.providerId, providerName: c.providerName, fingerprint: c.fingerprint, frame: mesh.tableFrame };
-    }
-    c = { ok: false, absent: false, why: `its table is for another hull than its GLB (fingerprint ${c.fingerprint}, the GLB's ${mesh.fingerprint})` };
+    mesh.table = c.table;
+    mesh.tableFrame = c.verdict === "same" ? "shared" : "aligned";
+    mesh.tableName = c.providerName;
+    return { source: "chartroom", providerId: c.providerId, providerName: c.providerName, fingerprint: c.fingerprint, frame: mesh.tableFrame, offers };
   }
-  const note = c.absent ? undefined : `its chartroom:source wasn't used (${c.why})`;
+  const note = c.absent ? undefined : `no chartroom:source's table was used (${c.why})`;
   if (mesh.table) mesh.tableFrame = "aligned";
-  return { source: mesh.table ? "glb" : null, ...(note ? { note } : {}) };
+  return { source: mesh.table ? "glb" : null, offers, ...(note ? { note } : {}) };
 }
 
 /** The chip's few words for the path. */
 export function hullPathChip(r) {
   if (!r?.ok) return "";
   if (r.path === "file") return `GLB file “${r.providerName}”`;
-  const statics = r.table?.source === "chartroom" ? `; statics from ${r.table.providerName ?? r.table.providerId}` : "";
+  const n = r.table?.offers?.length ?? 0;
+  const statics = r.table?.source === "chartroom" ? `; statics from ${r.table.providerName ?? r.table.providerId}${n > 1 ? `, the first of ${n} offered by the rule` : ""}` : "";
   return `built by ${r.providerName} (its default params, at its own size${statics})`;
 }

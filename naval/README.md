@@ -86,11 +86,19 @@ when any of those change here, they are copied again there.
 Hydrostatics cross between packages as Rising Tide's Chartroom
 `hydrostatic-table` v1, and only that:
 
-- A hull whose package registers a `chartroom:source` for its datatype
-  (camber does) is floated and read by its own table, once the table
-  validates; one whose fingerprint differs from its GLB's is refused
-  (`src/link/chartroom-link.js`, `src/link/hull-link.js`). The mesh then gives only what a table has no
-  field for (LWL, BWL, Tc, sections, the profile). The provider computes
+- A hull for whose datatype some `chartroom:source` offers
+  `hydrostatic-table/1` (camber's package does for camber hulls) is floated
+  and read by a provider's table, once the table validates. Any number of
+  providers may offer one, by naming the datatype or by wildcard, and none
+  is "the" provider: one whose fingerprint names another hull than the GLB
+  is refused, and the rest are tried in a fixed order (the datatype named
+  before a wildcard, the GLB's own fingerprint before none, then by id), so
+  which table is read depends on the set of providers alone, never on the
+  order they loaded in. The link reports what every provider did
+  (`src/link/chartroom-link.js` RULE, `src/link/hull-link.js`; exhaustive over
+  every set of up to three provider kinds in `chartroom-link.test.js`).
+  The mesh then gives only what a table has no field for (LWL, BWL, Tc,
+  sections, the profile). The provider computes
   that table on the thread that asks, which here is the main thread.
 - Any other hull gets a table built from its floated mesh, in the worker
   (`src/naval/statics.js`).
