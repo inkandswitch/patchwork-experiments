@@ -35,9 +35,12 @@ profile drawing and the numbers on the right. Units (m / ft) are per viewer.
   tack, the headsail's clew and the keel's and rudder's corners.
 - **The numbers.** Sail plan and ratios, the hull as floated, mass roll-up,
   GM and the righting curve, reef winds, loads, geometric balance (the
-  lead, against a secondhand band), and the performance model: the helm
-  and speed at a reference point on every change, and a polar from a worker
-  once the design has been still. Each row says where it came from, and
+  lead, against a secondhand band), and the performance model: the helm,
+  speed and windage drag at a reference point on every change, and a polar
+  from a worker once the design has been still. The VPP counts the windage
+  of the hull, mast and standing rigging (ORC's elements,
+  `src/naval/windage.js`) and swings each sail's CE out with its sheet,
+  so an eased main carries weather helm. Each row says where it came from, and
   what was estimated is marked "est.".
 - **New from…** loads one of the fixture boats (`src/fixtures/`: sailing's
   stock sloop and eleven real boats from their published figures, the
@@ -124,7 +127,9 @@ camber.
 published boats against their sources (`src/validation.test.js`, and as a
 fleet, the balance model against where their masts and keels really are, in
 `src/validation-fleet.test.js`; the known gaps are stated in
-`src/fixtures/README.md`) and the contract fixtures.
+`src/fixtures/README.md`), the contract fixtures, and the predictions
+against what sailing's sim measured on the same contracts
+(`src/sailing-agreement.test.js`: windage and the Laser's helm running).
 
 The probes drive the built package in headless Chrome (`pnpm build` first;
 they borrow camber's built plugins from `~/dev/camber` at dev time):

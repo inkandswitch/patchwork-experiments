@@ -59,21 +59,23 @@ const OLDER = {
  * lead* are % of LWL over the three CLRs (the extended keel's, or for a long
  * keel the canoe body and keel's centroid; the whole profile's centroid; the
  * foils' hydrodynamic centre); helm is the rudder angle at the reference
- * point, + weather; fgMast is where firstGuess (asked for the boat's own rig
+ * point, + weather (re-measured 2026-11-12, with windage and each sail's CE
+ * swung to its sheet: 0.1–0.6° more lee helm on every keelboat, mostly the
+ * windage's drag acting high on a heeled rig, which bears her away); fgMast is where firstGuess (asked for the boat's own rig
  * type) puts the mast, m aft of the stem, or null where it refuses.
  */
 const PINNED = {
-  "catalina-30": { leadLE: 19.5, leadWhole: 25.5, leadHc: 30.7, helm: -3.5, fgMast: 3.77 },
-  "j24": { leadLE: 16.2, leadWhole: 28.1, leadHc: 29.6, helm: -5.3, fgMast: 3.23 },
-  "laser-ilca7": { leadLE: -10.1, leadWhole: 7.2, leadHc: 3.2, helm: 1.4, fgMast: 1.31 },
-  "j70": { leadLE: 11.5, leadWhole: 21.8, leadHc: 24.8, helm: -2.4, fgMast: 3.1 },
-  "farr40": { leadLE: 5.4, leadWhole: 17.3, leadHc: 23.8, helm: -0.9, fgMast: 5.59 },
-  "soling": { leadLE: 4.6, leadWhole: 19.2, leadHc: 17.1, helm: -0.3, fgMast: 4 },
-  "folkboat": { leadLE: 16.5, leadWhole: 18.8, leadHc: 13.9, helm: 5.2, fgMast: 3.33 },
-  "cal40": { leadLE: 10.4, leadWhole: 22.7, leadHc: 21.7, helm: -2.6, fgMast: 5.42 },
-  "contessa32": { leadLE: 15.9, leadWhole: 28.4, leadHc: 26.9, helm: -2, fgMast: 4.37 },
-  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2.1, fgMast: 4.77 },
-  "dinghy-470": { leadLE: 0.6, leadWhole: 16.6, leadHc: 11.8, helm: -1.6, fgMast: 1.79 },
+  "catalina-30": { leadLE: 19.5, leadWhole: 25.5, leadHc: 30.7, helm: -3.8, fgMast: 3.77 },
+  "j24": { leadLE: 16.2, leadWhole: 28.1, leadHc: 29.6, helm: -5.7, fgMast: 3.23 },
+  "laser-ilca7": { leadLE: -10.1, leadWhole: 7.2, leadHc: 3.2, helm: 1.7, fgMast: 1.31 },
+  "j70": { leadLE: 11.5, leadWhole: 21.8, leadHc: 24.8, helm: -3, fgMast: 3.1 },
+  "farr40": { leadLE: 5.4, leadWhole: 17.3, leadHc: 23.8, helm: -1.3, fgMast: 5.59 },
+  "soling": { leadLE: 4.6, leadWhole: 19.2, leadHc: 17.1, helm: -0.5, fgMast: 4 },
+  "folkboat": { leadLE: 16.5, leadWhole: 18.8, leadHc: 13.9, helm: 5.5, fgMast: 3.33 },
+  "cal40": { leadLE: 10.4, leadWhole: 22.7, leadHc: 21.7, helm: -2.8, fgMast: 5.42 },
+  "contessa32": { leadLE: 15.9, leadWhole: 28.4, leadHc: 26.9, helm: -1.9, fgMast: 4.37 },
+  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2, fgMast: 4.77 },
+  "dinghy-470": { leadLE: 0.6, leadWhole: 16.6, leadHc: 11.8, helm: -1.8, fgMast: 1.79 },
 };
 const RATCHET = { lead: 0.3, helm: 0.5, mast: 0.03 };
 

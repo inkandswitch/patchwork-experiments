@@ -5808,10 +5808,10 @@
       "starboard": 47199.3762
     },
     "mastCompressionN": 47199.3762,
-    "atAwsMs": 15.0394289,
+    "atAwsMs": 14.9187413,
     "sheetN": {
-      "main": 6433.78332,
-      "jib": 6380.83985
+      "main": 6330.93867,
+      "jib": 6278.84151
     },
     "halyardN": {
       "main": null,
@@ -5859,25 +5859,25 @@
       "twsKn": 12,
       "twaDeg": 45,
       "ok": true,
-      "speedMs": 3.88256849,
-      "VMs": 3.88256849,
-      "heelDeg": 10.2593847,
-      "leewayDeg": 4.24612687,
-      "rudderDeg": -0.891664189,
+      "speedMs": 3.28904605,
+      "VMs": 3.28904605,
+      "heelDeg": 9.10289221,
+      "leewayDeg": 5.46166919,
+      "rudderDeg": -1.27152374,
       "flat": 1,
       "set": "full",
       "reef": -1,
       "sheetsDeg": {
-        "main": 1.90981665,
-        "jib": 7
+        "main": 2.82361053,
+        "jib": 7.45184505
       },
-      "awsMs": 9.3317096,
-      "awaDeg": 27.890418,
-      "fn": 0.40743039,
+      "awsMs": 8.81150354,
+      "awaDeg": 29.696033,
+      "fn": 0.345147115,
       "regime": "displacement",
       "planingWeight": 0,
-      "vmgMs": 2.74539051,
-      "residual": 1.77887928e-12,
+      "vmgMs": 2.32570677,
+      "residual": 6.97126554e-14,
       "flags": [
         {
           "id": "dsyhs",
@@ -5888,8 +5888,8 @@
     },
     "helm": {
       "id": "lee",
-      "text": "lee helm 0.9°: out of 0–5° weather",
-      "rudderDeg": -0.891664189
+      "text": "lee helm 1.3°: out of 0–5° weather",
+      "rudderDeg": -1.27152374
     },
     "points": [
       {
@@ -5897,11 +5897,11 @@
         "twsKn": 6,
         "twaDeg": 40,
         "ok": true,
-        "speedMs": 2.16201099,
-        "VMs": 2.16201099,
-        "heelDeg": 1.80414974,
-        "leewayDeg": 4.04013859,
-        "rudderDeg": -1.79853502,
+        "speedMs": 1.91874577,
+        "VMs": 1.91874577,
+        "heelDeg": 1.58094436,
+        "leewayDeg": 4.81165402,
+        "rudderDeg": -2.09716465,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -5909,13 +5909,13 @@
           "main": 0,
           "jib": 7
         },
-        "awsMs": 4.94227233,
-        "awaDeg": 23.668804,
-        "fn": 0.226877899,
+        "awsMs": 4.72048056,
+        "awaDeg": 24.8542396,
+        "fn": 0.201350044,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.65619651,
-        "residual": 1.61192157e-10,
+        "vmgMs": 1.46984454,
+        "residual": 5.68533518e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -5929,427 +5929,11 @@
         "twsKn": 6,
         "twaDeg": 45,
         "ok": true,
-        "speedMs": 2.3290044,
-        "VMs": 2.3290044,
-        "heelDeg": 1.96699182,
-        "leewayDeg": 3.65119504,
-        "rudderDeg": -1.5970088,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 1.04348966,
-          "jib": 7
-        },
-        "awsMs": 5.01182166,
-        "awaDeg": 25.8165374,
-        "fn": 0.244401914,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.64685481,
-        "residual": 1.28700287e-14,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 52,
-        "ok": true,
-        "speedMs": 2.45295514,
-        "VMs": 2.45295514,
-        "heelDeg": 1.89961547,
-        "leewayDeg": 3.21040757,
-        "rudderDeg": -1.38368473,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 4.70963665,
-          "jib": 9.33391593
-        },
-        "awsMs": 4.98672299,
-        "awaDeg": 29.1934921,
-        "fn": 0.257409102,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.51018998,
-        "residual": 1.05898886e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 60,
-        "ok": true,
-        "speedMs": 2.53806185,
-        "VMs": 2.53806185,
-        "heelDeg": 1.68366939,
-        "leewayDeg": 2.78803895,
-        "rudderDeg": -1.19303515,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 8.49899402,
-          "jib": 12.6250924
-        },
-        "awsMs": 4.87887487,
-        "awaDeg": 33.2230099,
-        "fn": 0.266340061,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.26903093,
-        "residual": 2.17065368e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 70,
-        "ok": true,
-        "speedMs": 2.5837538,
-        "VMs": 2.5837538,
-        "heelDeg": 1.31020903,
-        "leewayDeg": 2.35362866,
-        "rudderDeg": -1.01602266,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 14.4331887,
-          "jib": 16.4403201
-        },
-        "awsMs": 4.65388481,
-        "awaDeg": 38.553608,
-        "fn": 0.271134899,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 0.883695845,
-        "residual": 5.2936573e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 75,
-        "ok": true,
-        "speedMs": 2.58333644,
-        "VMs": 2.58333644,
-        "heelDeg": 1.09729624,
-        "leewayDeg": 2.16550803,
-        "rudderDeg": -0.945705213,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 17.5405292,
-          "jib": 18.7942652
-        },
-        "awsMs": 4.5087395,
-        "awaDeg": 41.3967495,
-        "fn": 0.271091102,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 0.668616671,
-        "residual": 1.01720149e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 90,
-        "ok": true,
-        "speedMs": 2.53703862,
-        "VMs": 2.53703862,
-        "heelDeg": 0.446877018,
-        "leewayDeg": 1.64947883,
-        "rudderDeg": -0.759953539,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 27.9968013,
-          "jib": 30
-        },
-        "awsMs": 3.99550698,
-        "awaDeg": 50.5820262,
-        "fn": 0.266232685,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.55348811e-16,
-        "residual": 1.72667522e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 110,
-        "ok": true,
-        "speedMs": 2.06875515,
-        "VMs": 2.06875515,
-        "heelDeg": 0,
-        "leewayDeg": 1.16368368,
-        "rudderDeg": -0.564101344,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 50.7257186,
-          "jib": 30
-        },
-        "awsMs": 3.07234119,
-        "awaDeg": 70.7474157,
-        "fn": 0.217091783,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -0.707555934,
-        "residual": 1.05355324e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 120,
-        "ok": true,
-        "speedMs": 1.88083987,
-        "VMs": 1.88083987,
-        "heelDeg": 0,
-        "leewayDeg": 1.03021866,
-        "rudderDeg": -0.498490462,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 63.0532855,
-          "jib": 30
-        },
-        "awsMs": 2.6943541,
-        "awaDeg": 82.8039777,
-        "fn": 0.197372261,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -0.940419933,
-        "residual": 5.56711994e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 135,
-        "ok": true,
-        "speedMs": 1.65082445,
-        "VMs": 1.65082445,
-        "heelDeg": 0,
-        "leewayDeg": 0.749182738,
-        "rudderDeg": -0.362126135,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": 30
-        },
-        "awsMs": 2.2464514,
-        "awaDeg": 103.692993,
-        "fn": 0.173234819,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.16730917,
-        "residual": 6.09985735e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 150,
-        "ok": true,
-        "speedMs": 1.47960496,
-        "VMs": 1.47960496,
-        "heelDeg": 0,
-        "leewayDeg": 0.638162765,
-        "rudderDeg": -0.307865916,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 77.5816623,
-          "jib": 30
-        },
-        "awsMs": 1.95099563,
-        "awaDeg": 127.71634,
-        "fn": 0.155267326,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.28137549,
-        "residual": 1.06214068e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 165,
-        "ok": true,
-        "speedMs": 1.47462012,
-        "VMs": 1.47462012,
-        "heelDeg": 0,
-        "leewayDeg": 0.0598561753,
-        "rudderDeg": -0.0288844974,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -90
-        },
-        "awsMs": 1.70554456,
-        "awaDeg": 152.069093,
-        "fn": 0.154744224,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.42437365,
-        "residual": 4.96387034e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 3.08666667,
-        "twsKn": 6,
-        "twaDeg": 180,
-        "ok": true,
-        "speedMs": 1.44595148,
-        "VMs": 1.44595148,
-        "heelDeg": 0,
-        "leewayDeg": 0.0457205984,
-        "rudderDeg": -0.0220527093,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -89.9999995
-        },
-        "awsMs": 1.64071518,
-        "awaDeg": 180,
-        "fn": 0.151735785,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.44595148,
-        "residual": 2.47178285e-16,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 40,
-        "ok": true,
-        "speedMs": 2.59517601,
-        "VMs": 2.59517601,
-        "heelDeg": 3.83263054,
-        "leewayDeg": 4.55512007,
-        "rudderDeg": -1.84063376,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 0,
-          "jib": 7
-        },
-        "awsMs": 6.32742846,
-        "awaDeg": 24.7139956,
-        "fn": 0.272333528,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.98802016,
-        "residual": 1.04006614e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 45,
-        "ok": true,
-        "speedMs": 2.74123984,
-        "VMs": 2.74123984,
-        "heelDeg": 3.96761968,
-        "leewayDeg": 4.15794746,
-        "rudderDeg": -1.61367326,
+        "speedMs": 2.08962624,
+        "VMs": 2.08962624,
+        "heelDeg": 1.73288638,
+        "leewayDeg": 4.25928279,
+        "rudderDeg": -1.80355332,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -6357,13 +5941,13 @@
           "main": 1.90981665,
           "jib": 7
         },
-        "awsMs": 6.35664705,
-        "awaDeg": 27.2458875,
-        "fn": 0.287661227,
+        "awsMs": 4.79746783,
+        "awaDeg": 27.0616493,
+        "fn": 0.219281961,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.93834928,
-        "residual": 6.28263408e-10,
+        "vmgMs": 1.47758888,
+        "residual": 6.70313994e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -6373,15 +5957,15 @@
         "hollow": false
       },
       {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 52,
         "ok": true,
-        "speedMs": 2.89936213,
-        "VMs": 2.89936213,
-        "heelDeg": 3.81601476,
-        "leewayDeg": 3.58010739,
-        "rudderDeg": -1.32792861,
+        "speedMs": 2.2859597,
+        "VMs": 2.2859597,
+        "heelDeg": 1.75027577,
+        "leewayDeg": 3.56105937,
+        "rudderDeg": -1.4193116,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -6389,13 +5973,13 @@
           "main": 5.65695255,
           "jib": 10.2798218
         },
-        "awsMs": 6.32746727,
-        "awaDeg": 30.833398,
-        "fn": 0.304254322,
+        "awsMs": 4.84162495,
+        "awaDeg": 30.1574614,
+        "fn": 0.239884873,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.78502557,
-        "residual": 5.62971784e-14,
+        "vmgMs": 1.40737732,
+        "residual": 3.15047577e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -6405,29 +5989,29 @@
         "hollow": false
       },
       {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 60,
         "ok": true,
-        "speedMs": 3.02269655,
-        "VMs": 3.02269655,
-        "heelDeg": 3.47968743,
-        "leewayDeg": 3.05816622,
-        "rudderDeg": -1.09563948,
+        "speedMs": 2.42723505,
+        "VMs": 2.42723505,
+        "heelDeg": 1.61707046,
+        "leewayDeg": 3.00288631,
+        "rudderDeg": -1.10388564,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 10.4246043,
-          "jib": 13.7738921
+          "main": 9.4540947,
+          "jib": 13.1843225
         },
-        "awsMs": 6.20601059,
-        "awaDeg": 35.0513448,
-        "fn": 0.317196834,
+        "awsMs": 4.78654851,
+        "awaDeg": 33.9498808,
+        "fn": 0.254710078,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.51134827,
-        "residual": 7.48487958e-10,
+        "vmgMs": 1.21361752,
+        "residual": 2.70101225e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -6437,29 +6021,29 @@
         "hollow": false
       },
       {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 70,
         "ok": true,
-        "speedMs": 3.08316726,
-        "VMs": 3.08316726,
-        "heelDeg": 2.8670265,
-        "leewayDeg": 2.56048368,
-        "rudderDeg": -0.917361595,
+        "speedMs": 2.49185452,
+        "VMs": 2.49185452,
+        "heelDeg": 1.2834057,
+        "leewayDeg": 2.51026423,
+        "rudderDeg": -0.824504768,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 16.4971341,
-          "jib": 17.9717649
+          "main": 15.4610501,
+          "jib": 17.1881137
         },
-        "awsMs": 5.92650557,
-        "awaDeg": 40.7343419,
-        "fn": 0.323542531,
+        "awsMs": 4.58237521,
+        "awaDeg": 39.2697767,
+        "fn": 0.26149114,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.05450531,
-        "residual": 7.66105551e-11,
+        "vmgMs": 0.852264441,
+        "residual": 1.84476846e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -6469,815 +6053,15 @@
         "hollow": false
       },
       {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 75,
         "ok": true,
-        "speedMs": 3.08274854,
-        "VMs": 3.08274854,
-        "heelDeg": 2.5249939,
-        "leewayDeg": 2.35581804,
-        "rudderDeg": -0.857136172,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 19.6458332,
-          "jib": 20.5740887
-        },
-        "awsMs": 5.74530469,
-        "awaDeg": 43.7827032,
-        "fn": 0.323498592,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 0.797874034,
-        "residual": 1.12908108e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 90,
-        "ok": true,
-        "speedMs": 3.0183064,
-        "VMs": 3.0183064,
-        "heelDeg": 1.41809932,
-        "leewayDeg": 1.76524343,
-        "rudderDeg": -0.700481011,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 31.1597027,
-          "jib": 30
-        },
-        "awsMs": 5.10372129,
-        "awaDeg": 53.744059,
-        "fn": 0.316736139,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.84817963e-16,
-        "residual": 1.88008796e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 110,
-        "ok": true,
-        "speedMs": 2.49354892,
-        "VMs": 2.49354892,
-        "heelDeg": 0.0730602493,
-        "leewayDeg": 1.3520624,
-        "rudderDeg": -0.651502345,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 53.8411916,
-          "jib": 30
-        },
-        "awsMs": 4.01693046,
-        "awaDeg": 74.3153664,
-        "fn": 0.261668946,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -0.852843957,
-        "residual": 2.53831152e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 120,
-        "ok": true,
-        "speedMs": 2.35392755,
-        "VMs": 2.35392755,
-        "heelDeg": 0,
-        "leewayDeg": 1.14116767,
-        "rudderDeg": -0.554309533,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 65.1188786,
-          "jib": 30
-        },
-        "awsMs": 3.57645814,
-        "awaDeg": 85.2501659,
-        "fn": 0.247017308,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.17696377,
-        "residual": 2.71477168e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 135,
-        "ok": true,
-        "speedMs": 2.08628575,
-        "VMs": 2.08628575,
-        "heelDeg": 0,
-        "leewayDeg": 0.812686386,
-        "rudderDeg": -0.394264387,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": 30
-        },
-        "awsMs": 3.02450493,
-        "awaDeg": 105.806665,
-        "fn": 0.218931415,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.4752268,
-        "residual": 1.10853177e-14,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 150,
-        "ok": true,
-        "speedMs": 1.88914454,
-        "VMs": 1.88914454,
-        "heelDeg": 0,
-        "leewayDeg": 0.708587514,
-        "rudderDeg": -0.343047919,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 77.9561957,
-          "jib": 30
-        },
-        "awsMs": 2.6533335,
-        "awaDeg": 129.145589,
-        "fn": 0.198243739,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.63604716,
-        "residual": 9.08013831e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 165,
-        "ok": true,
-        "speedMs": 1.89483625,
-        "VMs": 1.89483625,
-        "heelDeg": 0,
-        "leewayDeg": 0.067331615,
-        "rudderDeg": -0.0326125512,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -90
-        },
-        "awsMs": 2.33731379,
-        "awaDeg": 152.888082,
-        "fn": 0.198841018,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.83027127,
-        "residual": 2.20181599e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 4.11555556,
-        "twsKn": 8,
-        "twaDeg": 180,
-        "ok": true,
-        "speedMs": 1.85516621,
-        "VMs": 1.85516621,
-        "heelDeg": 0,
-        "leewayDeg": 0.0526318289,
-        "rudderDeg": -0.0254881825,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -89.9999995
-        },
-        "awsMs": 2.26038934,
-        "awaDeg": 180,
-        "fn": 0.194678109,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.85516621,
-        "residual": 2.04136954e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 40,
-        "ok": true,
-        "speedMs": 2.97656963,
-        "VMs": 2.97656963,
-        "heelDeg": 6.30904374,
-        "leewayDeg": 5.00651448,
-        "rudderDeg": -1.74493356,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 0,
-          "jib": 7
-        },
-        "awsMs": 7.66719255,
-        "awaDeg": 25.5494685,
-        "fn": 0.31235635,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.28018462,
-        "residual": 2.81737798e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 45,
-        "ok": true,
-        "speedMs": 3.16962438,
-        "VMs": 3.16962438,
-        "heelDeg": 6.50579578,
-        "leewayDeg": 4.4707048,
-        "rudderDeg": -1.42229553,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 2.82361053,
-          "jib": 7.45184505
-        },
-        "awsMs": 7.71828558,
-        "awaDeg": 28.1190821,
-        "fn": 0.3326152,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.24126289,
-        "residual": 1.67437658e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 52,
-        "ok": true,
-        "speedMs": 3.57052519,
-        "VMs": 3.57052519,
-        "heelDeg": 6.64278034,
-        "leewayDeg": 3.5324627,
-        "rudderDeg": -0.972260127,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 5.65695255,
-          "jib": 10.2798218
-        },
-        "awsMs": 7.86329145,
-        "awaDeg": 31.0338646,
-        "fn": 0.374685076,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.19823481,
-        "residual": 1.98248506e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 60,
-        "ok": true,
-        "speedMs": 3.85853829,
-        "VMs": 3.85853829,
-        "heelDeg": 6.34602632,
-        "leewayDeg": 2.87701962,
-        "rudderDeg": -0.693023671,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 10.4246043,
-          "jib": 13.7738921
-        },
-        "awsMs": 7.82327695,
-        "awaDeg": 34.7141491,
-        "fn": 0.4049087,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.92926915,
-        "residual": 8.99615006e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 70,
-        "ok": true,
-        "speedMs": 3.89217155,
-        "VMs": 3.89217155,
-        "heelDeg": 5.27475773,
-        "leewayDeg": 2.429007,
-        "rudderDeg": -0.574032993,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 16.4971341,
-          "jib": 17.9717649
-        },
-        "awsMs": 7.43712901,
-        "awaDeg": 40.5422368,
-        "fn": 0.408438119,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.33120107,
-        "residual": 1.16015587e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 75,
-        "ok": true,
-        "speedMs": 3.89233171,
-        "VMs": 3.89233171,
-        "heelDeg": 4.72949,
-        "leewayDeg": 2.23291781,
-        "rudderDeg": -0.541534008,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 19.6458332,
-          "jib": 20.5740887
-        },
-        "awsMs": 7.20976282,
-        "awaDeg": 43.5688247,
-        "fn": 0.408454926,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.00740958,
-        "residual": 1.70125692e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 90,
-        "ok": true,
-        "speedMs": 3.85976683,
-        "VMs": 3.85976683,
-        "heelDeg": 3.0468247,
-        "leewayDeg": 1.65903566,
-        "rudderDeg": -0.46797265,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 30.0902902,
-          "jib": 30
-        },
-        "awsMs": 6.43141576,
-        "awaDeg": 53.1198858,
-        "fn": 0.405037621,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.36342555e-16,
-        "residual": 1.72271568e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 110,
-        "ok": true,
-        "speedMs": 2.85340472,
-        "VMs": 2.85340472,
-        "heelDeg": 0.762887066,
-        "leewayDeg": 1.52052465,
-        "rudderDeg": -0.660067021,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 56.9143569,
-          "jib": 30
-        },
-        "awsMs": 4.95641758,
-        "awaDeg": 77.2496155,
-        "fn": 0.299431626,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -0.97592189,
-        "residual": 1.09547432e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 120,
-        "ok": true,
-        "speedMs": 2.6874732,
-        "VMs": 2.6874732,
-        "heelDeg": 0.265724223,
-        "leewayDeg": 1.31790953,
-        "rudderDeg": -0.616392165,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 68.2642656,
-          "jib": 30
-        },
-        "awsMs": 4.45671003,
-        "awaDeg": 88.51816,
-        "fn": 0.282019044,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.3437366,
-        "residual": 3.34313152e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 135,
-        "ok": true,
-        "speedMs": 2.4686617,
-        "VMs": 2.4686617,
-        "heelDeg": 0,
-        "leewayDeg": 0.89050872,
-        "rudderDeg": -0.433822292,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": 30
-        },
-        "awsMs": 3.82089497,
-        "awaDeg": 107.815438,
-        "fn": 0.259057322,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.74560743,
-        "residual": 7.72201722e-16,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 150,
-        "ok": true,
-        "speedMs": 2.27133903,
-        "VMs": 2.27133903,
-        "heelDeg": 0,
-        "leewayDeg": 0.778431107,
-        "rudderDeg": -0.378186205,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 78.6923569,
-          "jib": 30
-        },
-        "awsMs": 3.37426457,
-        "awaDeg": 130.332084,
-        "fn": 0.238350604,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.9670373,
-        "residual": 2.57224616e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 165,
-        "ok": true,
-        "speedMs": 2.2908325,
-        "VMs": 2.2908325,
-        "heelDeg": 0,
-        "leewayDeg": 0.0747370435,
-        "rudderDeg": -0.0363328782,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -90
-        },
-        "awsMs": 2.99102549,
-        "awaDeg": 153.566525,
-        "fn": 0.240396218,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.21277428,
-        "residual": 1.16510527e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 5.14444444,
-        "twsKn": 10,
-        "twaDeg": 180,
-        "ok": true,
-        "speedMs": 2.24714216,
-        "VMs": 2.24714216,
-        "heelDeg": 0,
-        "leewayDeg": 0.0588489402,
-        "rudderDeg": -0.0286018076,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -89.9999995
-        },
-        "awsMs": 2.89730228,
-        "awaDeg": 180,
-        "fn": 0.235811424,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.24714216,
-        "residual": 2.71116318e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 40,
-        "ok": true,
-        "speedMs": 3.51549419,
-        "VMs": 3.51549419,
-        "heelDeg": 9.65976004,
-        "leewayDeg": 5.0148209,
-        "rudderDeg": -1.34474414,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 0,
-          "jib": 7
-        },
-        "awsMs": 9.14978816,
-        "awaDeg": 25.7017612,
-        "fn": 0.368910213,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.69302479,
-        "residual": 2.8482446e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 45,
-        "ok": true,
-        "speedMs": 3.88256849,
-        "VMs": 3.88256849,
-        "heelDeg": 10.2593847,
-        "leewayDeg": 4.24612687,
-        "rudderDeg": -0.891664189,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 1.90981665,
-          "jib": 7
-        },
-        "awsMs": 9.3317096,
-        "awaDeg": 27.890418,
-        "fn": 0.40743039,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.74539051,
-        "residual": 8.81060714e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 52,
-        "ok": true,
-        "speedMs": 3.99464927,
-        "VMs": 3.99464927,
-        "heelDeg": 9.59993077,
-        "leewayDeg": 3.69995706,
-        "rudderDeg": -0.581512015,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 6.60677618,
-          "jib": 11.2285413
-        },
-        "awsMs": 9.1886921,
-        "awaDeg": 31.9660962,
-        "fn": 0.419191964,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.45935166,
-        "residual": 5.34578092e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 60,
-        "ok": true,
-        "speedMs": 4.0857565,
-        "VMs": 4.0857565,
-        "heelDeg": 8.65095239,
-        "leewayDeg": 3.17477787,
-        "rudderDeg": -0.368991517,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 11.4090544,
-          "jib": 14.3938292
-        },
-        "awsMs": 8.94573571,
-        "awaDeg": 36.7005342,
-        "fn": 0.428752607,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.04287825,
-        "residual": 2.94691482e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 70,
-        "ok": true,
-        "speedMs": 4.12938096,
-        "VMs": 4.12938096,
-        "heelDeg": 7.2414273,
-        "leewayDeg": 2.65878365,
-        "rudderDeg": -0.282616452,
+        "speedMs": 2.50271538,
+        "VMs": 2.50271538,
+        "heelDeg": 1.09087537,
+        "leewayDeg": 2.2982936,
+        "rudderDeg": -0.706641834,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -7285,13 +6069,13 @@
           "main": 18.5903697,
           "jib": 19.6597727
         },
-        "awsMs": 8.52052917,
-        "awaDeg": 42.9085721,
-        "fn": 0.433330486,
+        "awsMs": 4.44858119,
+        "awaDeg": 42.0834041,
+        "fn": 0.26263086,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.41233147,
-        "residual": 4.79872761e-12,
+        "vmgMs": 0.647750405,
+        "residual": 5.93378706e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -7301,61 +6085,29 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
-        "twaDeg": 75,
-        "ok": true,
-        "speedMs": 4.13212958,
-        "VMs": 4.13212958,
-        "heelDeg": 6.54063065,
-        "leewayDeg": 2.44238922,
-        "rudderDeg": -0.274579846,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 22.838295,
-          "jib": 23.7128972
-        },
-        "awsMs": 8.26976277,
-        "awaDeg": 46.1419351,
-        "fn": 0.433618923,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.06947383,
-        "residual": 2.41313038e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 90,
         "ok": true,
-        "speedMs": 4.07327134,
-        "VMs": 4.07327134,
-        "heelDeg": 4.13704141,
-        "leewayDeg": 1.78676507,
-        "rudderDeg": -0.316031953,
+        "speedMs": 2.49044048,
+        "VMs": 2.49044048,
+        "heelDeg": 0.481328223,
+        "leewayDeg": 1.7113837,
+        "rudderDeg": -0.383703702,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 34.4264865,
+          "main": 27.9968013,
           "jib": 30
         },
-        "awsMs": 7.39605191,
-        "awaDeg": 56.5824862,
-        "fn": 0.427442435,
+        "awsMs": 3.96608181,
+        "awaDeg": 51.102086,
+        "fn": 0.261342753,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.49415935e-16,
-        "residual": 1.17472528e-14,
+        "vmgMs": 1.52495498e-16,
+        "residual": 6.83065042e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -7365,29 +6117,29 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 110,
         "ok": true,
-        "speedMs": 3.24184543,
-        "VMs": 3.24184543,
-        "heelDeg": 1.60424097,
-        "leewayDeg": 1.61680532,
-        "rudderDeg": -0.598114312,
+        "speedMs": 2.04954379,
+        "VMs": 2.04954379,
+        "heelDeg": 0,
+        "leewayDeg": 1.27937341,
+        "rudderDeg": -0.223866071,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 57.9356489,
+          "main": 50.7257186,
           "jib": 30
         },
-        "awsMs": 5.91015339,
-        "awaDeg": 78.9730311,
-        "fn": 0.340193959,
+        "awsMs": 3.0660602,
+        "awaDeg": 71.0863448,
+        "fn": 0.215075774,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.10877644,
-        "residual": 3.57277359e-14,
+        "vmgMs": -0.70098526,
+        "residual": 1.07943511e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -7397,29 +6149,29 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 120,
         "ok": true,
-        "speedMs": 3.04849385,
-        "VMs": 3.04849385,
-        "heelDeg": 0.92132968,
-        "leewayDeg": 1.42197175,
-        "rudderDeg": -0.58964409,
+        "speedMs": 1.87853961,
+        "VMs": 1.87853961,
+        "heelDeg": 0,
+        "leewayDeg": 1.15211816,
+        "rudderDeg": -0.19938788,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 70.4096172,
+          "main": 63.0532855,
           "jib": 30
         },
-        "awsMs": 5.34639977,
-        "awaDeg": 90.4090902,
-        "fn": 0.31990396,
+        "awsMs": 2.69406692,
+        "awaDeg": 82.8525127,
+        "fn": 0.197130876,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.52424692,
-        "residual": 6.33488223e-11,
+        "vmgMs": -0.939269807,
+        "residual": 3.47496795e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -7429,15 +6181,15 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 135,
         "ok": true,
-        "speedMs": 2.77521759,
-        "VMs": 2.77521759,
+        "speedMs": 1.65811743,
+        "VMs": 1.65811743,
         "heelDeg": 0,
-        "leewayDeg": 1.00456877,
-        "rudderDeg": -0.492167723,
+        "leewayDeg": 0.843047807,
+        "rudderDeg": -0.0815506214,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -7445,13 +6197,13 @@
           "main": 85,
           "jib": 30
         },
-        "awsMs": 4.64575989,
-        "awaDeg": 110.013713,
-        "fn": 0.291226797,
+        "awsMs": 2.2447362,
+        "awaDeg": 103.512134,
+        "fn": 0.174000132,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.96237518,
-        "residual": 2.74828738e-15,
+        "vmgMs": -1.17246608,
+        "residual": 8.15164659e-15,
         "flags": [
           {
             "id": "dsyhs",
@@ -7461,29 +6213,29 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 150,
         "ok": true,
-        "speedMs": 2.58476755,
-        "VMs": 2.58476755,
+        "speedMs": 1.49969993,
+        "VMs": 1.49969993,
         "heelDeg": 0,
-        "leewayDeg": 0.884808083,
-        "rudderDeg": -0.432178817,
+        "leewayDeg": 0.625936432,
+        "rudderDeg": 0.0332129022,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 79.0537829,
+          "main": 77.5816623,
           "jib": 30
         },
-        "awsMs": 4.14166283,
-        "awaDeg": 131.817505,
-        "fn": 0.271241281,
+        "awsMs": 1.93876765,
+        "awaDeg": 127.246563,
+        "fn": 0.157376059,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.23847436,
-        "residual": 7.86941926e-12,
+        "vmgMs": -1.29877824,
+        "residual": 3.2326928e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -7493,15 +6245,15 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 165,
         "ok": true,
-        "speedMs": 2.61738558,
-        "VMs": 2.61738558,
+        "speedMs": 1.49984595,
+        "VMs": 1.49984595,
         "heelDeg": 0,
-        "leewayDeg": 0.086851641,
-        "rudderDeg": -0.0424779099,
+        "leewayDeg": 0.0967403753,
+        "rudderDeg": -0.0467246201,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -7509,13 +6261,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 3.70754703,
-        "awaDeg": 154.471984,
-        "fn": 0.274664163,
+        "awsMs": 1.68329867,
+        "awaDeg": 151.666901,
+        "fn": 0.157391382,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.52820033,
-        "residual": 1.86209449e-11,
+        "vmgMs": -1.44873994,
+        "residual": 1.09278104e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -7525,15 +6277,15 @@
         "hollow": false
       },
       {
-        "twsMs": 6.17333333,
-        "twsKn": 12,
+        "twsMs": 3.08666667,
+        "twsKn": 6,
         "twaDeg": 180,
         "ok": true,
-        "speedMs": 2.58055131,
-        "VMs": 2.58055131,
+        "speedMs": 1.47438674,
+        "VMs": 1.47438674,
         "heelDeg": 0,
-        "leewayDeg": 0.0684643013,
-        "rudderDeg": -0.03346081,
+        "leewayDeg": 0.0408834127,
+        "rudderDeg": -0.0157743945,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -7541,13 +6293,13 @@
           "main": 85,
           "jib": -89.9999995
         },
-        "awsMs": 3.59278202,
+        "awsMs": 1.61227993,
         "awaDeg": 180,
-        "fn": 0.270798835,
+        "fn": 0.154719734,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.58055131,
-        "residual": 8.71416375e-16,
+        "vmgMs": -1.47438674,
+        "residual": 4.10408376e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -7557,15 +6309,15 @@
         "hollow": false
       },
       {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
+        "twsMs": 4.11555556,
+        "twsKn": 8,
         "twaDeg": 40,
         "ok": true,
-        "speedMs": 3.94493878,
-        "VMs": 3.94493878,
-        "heelDeg": 13.4911616,
-        "leewayDeg": 5.17394212,
-        "rudderDeg": -0.866853078,
+        "speedMs": 2.38553403,
+        "VMs": 2.38553403,
+        "heelDeg": 3.58851557,
+        "leewayDeg": 5.20913823,
+        "rudderDeg": -2.07712033,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -7573,13 +6325,13 @@
           "main": 0,
           "jib": 7
         },
-        "awsMs": 10.533981,
-        "awaDeg": 26.0708606,
-        "fn": 0.413975426,
+        "awsMs": 6.13761428,
+        "awaDeg": 25.5322432,
+        "fn": 0.250334041,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.02199843,
-        "residual": 6.94203438e-12,
+        "vmgMs": 1.82742509,
+        "residual": 6.13061203e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -7589,413 +6341,29 @@
         "hollow": false
       },
       {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
+        "twsMs": 4.11555556,
+        "twsKn": 8,
         "twaDeg": 45,
         "ok": true,
-        "speedMs": 4.07496264,
-        "VMs": 4.07496264,
-        "heelDeg": 13.5076666,
-        "leewayDeg": 4.71717754,
-        "rudderDeg": -0.452309023,
+        "speedMs": 2.53751984,
+        "VMs": 2.53751984,
+        "heelDeg": 3.73113297,
+        "leewayDeg": 4.70401492,
+        "rudderDeg": -1.76865608,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 2.82361053,
-          "jib": 7.45184505
-        },
-        "awsMs": 10.4872674,
-        "awaDeg": 29.0525598,
-        "fn": 0.427619917,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.88143372,
-        "residual": 2.83701397e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 52,
-        "ok": true,
-        "speedMs": 4.22498757,
-        "VMs": 4.22498757,
-        "heelDeg": 12.6229756,
-        "leewayDeg": 4.00226708,
-        "rudderDeg": -0.0533119706,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 7.55604004,
-          "jib": 12.0963812
-        },
-        "awsMs": 10.3532999,
-        "awaDeg": 33.2419556,
-        "fn": 0.443363288,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.60116208,
-        "residual": 1.68724106e-10,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 60,
-        "ok": true,
-        "speedMs": 4.3094272,
-        "VMs": 4.3094272,
-        "heelDeg": 11.3084691,
-        "leewayDeg": 3.40338069,
-        "rudderDeg": 0.161645936,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 12.4061046,
-          "jib": 15.0444166
-        },
-        "awsMs": 10.073759,
-        "awaDeg": 38.2551001,
-        "fn": 0.452224245,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.1547136,
-        "residual": 6.03203167e-14,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 70,
-        "ok": true,
-        "speedMs": 4.33234369,
-        "VMs": 4.33234369,
-        "heelDeg": 9.44300918,
-        "leewayDeg": 2.85259229,
-        "rudderDeg": 0.180694252,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 20.7061304,
-          "jib": 21.5454265
-        },
-        "awsMs": 9.59087979,
-        "awaDeg": 44.882677,
-        "fn": 0.454629064,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.48174881,
-        "residual": 8.81211193e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 75,
-        "ok": true,
-        "speedMs": 4.33641127,
-        "VMs": 4.33641127,
-        "heelDeg": 8.56335593,
-        "leewayDeg": 2.61676665,
-        "rudderDeg": 0.154888729,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 23.9089765,
-          "jib": 24.955551
-        },
-        "awsMs": 9.31897182,
-        "awaDeg": 48.2899478,
-        "fn": 0.455055909,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 1.12234583,
-        "residual": 5.20792934e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 90,
-        "ok": true,
-        "speedMs": 4.29526727,
-        "VMs": 4.29526727,
-        "heelDeg": 5.4109389,
-        "leewayDeg": 1.88727431,
-        "rudderDeg": -0.0832020468,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 36.631341,
-          "jib": 30
-        },
-        "awsMs": 8.38578117,
-        "awaDeg": 59.1889599,
-        "fn": 0.450738324,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 2.63009265e-16,
-        "residual": 1.53705325e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 110,
-        "ok": true,
-        "speedMs": 3.88925202,
-        "VMs": 3.88925202,
-        "heelDeg": 2.6847251,
-        "leewayDeg": 1.49592873,
-        "rudderDeg": -0.420258973,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 57.9356489,
-          "jib": 30
-        },
-        "awsMs": 6.9164628,
-        "awaDeg": 78.1021726,
-        "fn": 0.408131748,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.33020253,
-        "residual": 1.37650005e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 120,
-        "ok": true,
-        "speedMs": 3.63909287,
-        "VMs": 3.63909287,
-        "heelDeg": 1.73171591,
-        "leewayDeg": 1.32955429,
-        "rudderDeg": -0.456320456,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 69.3310535,
-          "jib": 30
-        },
-        "awsMs": 6.23742305,
-        "awaDeg": 89.6511047,
-        "fn": 0.381880456,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -1.81954643,
-        "residual": 1.13909603e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 135,
-        "ok": true,
-        "speedMs": 3.10206009,
-        "VMs": 3.10206009,
-        "heelDeg": 0.420304371,
-        "leewayDeg": 1.07407979,
-        "rudderDeg": -0.477882521,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": 30
-        },
-        "awsMs": 5.4679804,
-        "awaDeg": 111.349825,
-        "fn": 0.325525114,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.19348773,
-        "residual": 4.64005882e-13,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 150,
-        "ok": true,
-        "speedMs": 2.89252972,
-        "VMs": 2.89252972,
-        "heelDeg": 0.0378512789,
-        "leewayDeg": 0.976427598,
-        "rudderDeg": -0.47489062,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 79.4106331,
-          "jib": 30
-        },
-        "awsMs": 4.91482848,
-        "awaDeg": 132.886496,
-        "fn": 0.30353734,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.50500422,
-        "residual": 5.17517971e-12,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 165,
-        "ok": true,
-        "speedMs": 2.94461202,
-        "VMs": 2.94461202,
-        "heelDeg": 0,
-        "leewayDeg": 0.0968416873,
-        "rudderDeg": -0.0476009021,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -90
-        },
-        "awsMs": 4.42408383,
-        "awaDeg": 155.080373,
-        "fn": 0.309002771,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.8442768,
-        "residual": 4.06063387e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 7.20222222,
-        "twsKn": 14,
-        "twaDeg": 180,
-        "ok": true,
-        "speedMs": 2.90316308,
-        "VMs": 2.90316308,
-        "heelDeg": 0,
-        "leewayDeg": 0.0772904046,
-        "rudderDeg": -0.0379677305,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 85,
-          "jib": -89.9999995
-        },
-        "awsMs": 4.29905914,
-        "awaDeg": 180,
-        "fn": 0.304653187,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": -2.90316308,
-        "residual": 1.28534806e-15,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 8.23111111,
-        "twsKn": 16,
-        "twaDeg": 40,
-        "ok": true,
-        "speedMs": 4.11485651,
-        "VMs": 4.11485651,
-        "heelDeg": 17.2961106,
-        "leewayDeg": 5.73691636,
-        "rudderDeg": -0.328878849,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 0,
+          "main": 1.90981665,
           "jib": 7
         },
-        "awsMs": 11.6865239,
-        "awaDeg": 26.9190627,
-        "fn": 0.431806315,
+        "awsMs": 6.17623401,
+        "awaDeg": 28.1111232,
+        "fn": 0.266283184,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.15216297,
-        "residual": 6.03097689e-10,
+        "vmgMs": 1.79429749,
+        "residual": 7.46763708e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -8005,60 +6373,28 @@
         "hollow": false
       },
       {
-        "twsMs": 8.23111111,
-        "twsKn": 16,
-        "twaDeg": 45,
-        "ok": true,
-        "speedMs": 4.28135911,
-        "VMs": 4.28135911,
-        "heelDeg": 17.3744692,
-        "leewayDeg": 5.1115516,
-        "rudderDeg": 0.25596898,
-        "flat": 1,
-        "set": "full",
-        "reef": -1,
-        "sheetsDeg": {
-          "main": 2.82361053,
-          "jib": 7.45184505
-        },
-        "awsMs": 11.6584131,
-        "awaDeg": 29.949325,
-        "fn": 0.449278825,
-        "regime": "displacement",
-        "planingWeight": 0,
-        "vmgMs": 3.02737806,
-        "residual": 6.93295375e-11,
-        "flags": [
-          {
-            "id": "dsyhs",
-            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
-          }
-        ],
-        "hollow": false
-      },
-      {
-        "twsMs": 8.23111111,
-        "twsKn": 16,
+        "twsMs": 4.11555556,
+        "twsKn": 8,
         "twaDeg": 52,
         "ok": true,
-        "speedMs": 4.35973464,
-        "VMs": 4.35973464,
-        "heelDeg": 15.9184954,
-        "leewayDeg": 4.3471319,
-        "rudderDeg": 0.729892594,
+        "speedMs": 2.71446872,
+        "VMs": 2.71446872,
+        "heelDeg": 3.62908233,
+        "leewayDeg": 3.98449342,
+        "rudderDeg": -1.33940281,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 7.55604004,
-          "jib": 12.0963812
+          "main": 6.60677618,
+          "jib": 11.2285413
         },
-        "awsMs": 11.4431231,
-        "awaDeg": 34.5288502,
-        "fn": 0.457503425,
+        "awsMs": 6.16943433,
+        "awaDeg": 31.7135274,
+        "fn": 0.28485191,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.68412066,
+        "vmgMs": 1.67119382,
         "residual": 1.20656519e-14,
         "flags": [
           {
@@ -8069,15 +6405,1679 @@
         "hollow": false
       },
       {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 60,
+        "ok": true,
+        "speedMs": 2.86968964,
+        "VMs": 2.86968964,
+        "heelDeg": 3.37083315,
+        "leewayDeg": 3.34569029,
+        "rudderDeg": -0.974030767,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 10.4246043,
+          "jib": 13.7738921
+        },
+        "awsMs": 6.08138827,
+        "awaDeg": 35.8792729,
+        "fn": 0.301140539,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.43484482,
+        "residual": 4.97332899e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 70,
+        "ok": true,
+        "speedMs": 2.95888551,
+        "VMs": 2.95888551,
+        "heelDeg": 2.83426192,
+        "leewayDeg": 2.76522688,
+        "rudderDeg": -0.660933898,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 17.5405292,
+          "jib": 18.7942652
+        },
+        "awsMs": 5.83289573,
+        "awaDeg": 41.5310062,
+        "fn": 0.310500608,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.01199845,
+        "residual": 3.57878396e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 75,
+        "ok": true,
+        "speedMs": 2.97544627,
+        "VMs": 2.97544627,
+        "heelDeg": 2.52952971,
+        "leewayDeg": 2.52653152,
+        "rudderDeg": -0.537666292,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 20.7061304,
+          "jib": 21.5454265
+        },
+        "awsMs": 5.66832202,
+        "awaDeg": 44.5331996,
+        "fn": 0.312238467,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 0.770102164,
+        "residual": 8.03855205e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 90,
+        "ok": true,
+        "speedMs": 2.95534105,
+        "VMs": 2.95534105,
+        "heelDeg": 1.48400682,
+        "leewayDeg": 1.84360316,
+        "rudderDeg": -0.21199731,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 31.1597027,
+          "jib": 30
+        },
+        "awsMs": 5.06673843,
+        "awaDeg": 54.3182344,
+        "fn": 0.310128658,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.80962448e-16,
+        "residual": 1.63859151e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 110,
+        "ok": true,
+        "speedMs": 2.48345996,
+        "VMs": 2.48345996,
+        "heelDeg": 0.174517941,
+        "leewayDeg": 1.49088088,
+        "rudderDeg": -0.260980592,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 53.8411916,
+          "jib": 30
+        },
+        "awsMs": 4.01421475,
+        "awaDeg": 74.4540063,
+        "fn": 0.260610228,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -0.849393333,
+        "residual": 3.19136493e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 120,
+        "ok": true,
+        "speedMs": 2.3534287,
+        "VMs": 2.3534287,
+        "heelDeg": 0,
+        "leewayDeg": 1.27851845,
+        "rudderDeg": -0.217837042,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 65.1188786,
+          "jib": 30
+        },
+        "awsMs": 3.57641687,
+        "awaDeg": 85.2581301,
+        "fn": 0.24696496,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.17671435,
+        "residual": 2.37035102e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 135,
+        "ok": true,
+        "speedMs": 2.09744101,
+        "VMs": 2.09744101,
+        "heelDeg": 0,
+        "leewayDeg": 0.907978651,
+        "rudderDeg": -0.0585122384,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": 30
+        },
+        "awsMs": 3.02148539,
+        "awaDeg": 105.603129,
+        "fn": 0.22010203,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.48311476,
+        "residual": 1.93804534e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 150,
+        "ok": true,
+        "speedMs": 1.91865128,
+        "VMs": 1.91865128,
+        "heelDeg": 0,
+        "leewayDeg": 0.685283019,
+        "rudderDeg": 0.0490953343,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 77.9561957,
+          "jib": 30
+        },
+        "awsMs": 2.63480547,
+        "awaDeg": 128.647959,
+        "fn": 0.201340128,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.66160075,
+        "residual": 1.31071137e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 165,
+        "ok": true,
+        "speedMs": 1.92951535,
+        "VMs": 1.92951535,
+        "heelDeg": 0,
+        "leewayDeg": 0.106681122,
+        "rudderDeg": -0.0515384516,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -90
+        },
+        "awsMs": 2.30649944,
+        "awaDeg": 152.495484,
+        "fn": 0.202480186,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.86376871,
+        "residual": 4.17096687e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 4.11555556,
+        "twsKn": 8,
+        "twaDeg": 180,
+        "ok": true,
+        "speedMs": 1.89876234,
+        "VMs": 1.89876234,
+        "heelDeg": 0,
+        "leewayDeg": 0.0465328657,
+        "rudderDeg": -0.0180329932,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -89.9999995
+        },
+        "awsMs": 2.21679321,
+        "awaDeg": 180,
+        "fn": 0.199253016,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.89876234,
+        "residual": 8.83911715e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 40,
+        "ok": true,
+        "speedMs": 2.68926465,
+        "VMs": 2.68926465,
+        "heelDeg": 5.87983158,
+        "leewayDeg": 5.89763286,
+        "rudderDeg": -2.07863746,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 0.203713358,
+          "jib": 7
+        },
+        "awsMs": 7.40901845,
+        "awaDeg": 26.5077541,
+        "fn": 0.282207036,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.06009624,
+        "residual": 8.35329212e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 45,
+        "ok": true,
+        "speedMs": 2.90784257,
+        "VMs": 2.90784257,
+        "heelDeg": 6.134712,
+        "leewayDeg": 5.15740239,
+        "rudderDeg": -1.61846153,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 2.82361053,
+          "jib": 7.45184505
+        },
+        "awsMs": 7.48841835,
+        "awaDeg": 29.0631306,
+        "fn": 0.305144245,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.0561552,
+        "residual": 6.98842558e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 52,
+        "ok": true,
+        "speedMs": 3.14526813,
+        "VMs": 3.14526813,
+        "heelDeg": 6.00281603,
+        "leewayDeg": 4.25754775,
+        "rudderDeg": -1.0777666,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 6.60677618,
+          "jib": 11.2285413
+        },
+        "awsMs": 7.50210869,
+        "awaDeg": 32.7084947,
+        "fn": 0.330059296,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.93642042,
+        "residual": 5.63707257e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 60,
+        "ok": true,
+        "speedMs": 3.39914612,
+        "VMs": 3.39914612,
+        "heelDeg": 5.71328298,
+        "leewayDeg": 3.45192086,
+        "rudderDeg": -0.651652303,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 11.4090544,
+          "jib": 14.3938292
+        },
+        "awsMs": 7.45024975,
+        "awaDeg": 36.7265064,
+        "fn": 0.356700837,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.69957306,
+        "residual": 2.01544649e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 70,
+        "ok": true,
+        "speedMs": 3.82382053,
+        "VMs": 3.82382053,
+        "heelDeg": 5.37161207,
+        "leewayDeg": 2.56924177,
+        "rudderDeg": -0.308389711,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 16.4971341,
+          "jib": 17.9717649
+        },
+        "awsMs": 7.38532087,
+        "awaDeg": 40.8869197,
+        "fn": 0.401265475,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.30782365,
+        "residual": 3.8219352e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 75,
+        "ok": true,
+        "speedMs": 3.83314867,
+        "VMs": 3.83314867,
+        "heelDeg": 4.85324762,
+        "leewayDeg": 2.35375154,
+        "rudderDeg": -0.218521446,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 19.6458332,
+          "jib": 20.5740887
+        },
+        "awsMs": 7.16699801,
+        "awaDeg": 43.8949213,
+        "fn": 0.402244354,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 0.992091878,
+        "residual": 8.85498193e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 90,
+        "ok": true,
+        "speedMs": 3.82539285,
+        "VMs": 3.82539285,
+        "heelDeg": 3.21728938,
+        "leewayDeg": 1.71955801,
+        "rudderDeg": 0.00379026993,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 31.1597027,
+          "jib": 30
+        },
+        "awsMs": 6.41084543,
+        "awaDeg": 53.3656227,
+        "fn": 0.401430472,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.34237756e-16,
+        "residual": 9.20319664e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 110,
+        "ok": true,
+        "speedMs": 2.84324621,
+        "VMs": 2.84324621,
+        "heelDeg": 0.926445793,
+        "leewayDeg": 1.69266711,
+        "rudderDeg": -0.203719213,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 56.9143569,
+          "jib": 30
+        },
+        "awsMs": 4.95418546,
+        "awaDeg": 77.3642029,
+        "fn": 0.298365608,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -0.972447475,
+        "residual": 2.59238977e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 120,
+        "ok": true,
+        "speedMs": 2.68913429,
+        "VMs": 2.68913429,
+        "heelDeg": 0.405586185,
+        "leewayDeg": 1.47866113,
+        "rudderDeg": -0.199388834,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 68.2642656,
+          "jib": 30
+        },
+        "awsMs": 4.45675329,
+        "awaDeg": 88.4968124,
+        "fn": 0.282193356,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.34456714,
+        "residual": 4.27553614e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 135,
+        "ok": true,
+        "speedMs": 2.48005413,
+        "VMs": 2.48005413,
+        "heelDeg": 0,
+        "leewayDeg": 0.990438732,
+        "rudderDeg": -0.0370631778,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": 30
+        },
+        "awsMs": 3.81742484,
+        "awaDeg": 107.652648,
+        "fn": 0.260252825,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.75366309,
+        "residual": 1.28800834e-15,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 150,
+        "ok": true,
+        "speedMs": 2.31047364,
+        "VMs": 2.31047364,
+        "heelDeg": 0,
+        "leewayDeg": 0.743865239,
+        "rudderDeg": 0.0653710635,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 78.3264603,
+          "jib": 30
+        },
+        "awsMs": 3.34906887,
+        "awaDeg": 129.821703,
+        "fn": 0.242457326,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.00092887,
+        "residual": 8.25971861e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 165,
+        "ok": true,
+        "speedMs": 2.33796347,
+        "VMs": 2.33796347,
+        "heelDeg": 0,
+        "leewayDeg": 0.116065514,
+        "rudderDeg": -0.0561079547,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -90
+        },
+        "awsMs": 2.94889662,
+        "awaDeg": 153.158875,
+        "fn": 0.245342064,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.25829929,
+        "residual": 1.48201497e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 5.14444444,
+        "twsKn": 10,
+        "twaDeg": 180,
+        "ok": true,
+        "speedMs": 2.29968299,
+        "VMs": 2.29968299,
+        "heelDeg": 0,
+        "leewayDeg": 0.0521637942,
+        "rudderDeg": -0.0203034886,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -89.9999995
+        },
+        "awsMs": 2.84476145,
+        "awaDeg": 180,
+        "fn": 0.241324974,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.29968299,
+        "residual": 4.52199778e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 40,
+        "ok": true,
+        "speedMs": 3.01077753,
+        "VMs": 3.01077753,
+        "heelDeg": 8.70437066,
+        "leewayDeg": 6.39031526,
+        "rudderDeg": -1.87111157,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 0.203713358,
+          "jib": 7
+        },
+        "awsMs": 8.69776102,
+        "awaDeg": 27.1438262,
+        "fn": 0.315946071,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.30638939,
+        "residual": 2.64661415e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 45,
+        "ok": true,
+        "speedMs": 3.28904605,
+        "VMs": 3.28904605,
+        "heelDeg": 9.10289221,
+        "leewayDeg": 5.46166919,
+        "rudderDeg": -1.27152374,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 2.82361053,
+          "jib": 7.45184505
+        },
+        "awsMs": 8.81150354,
+        "awaDeg": 29.696033,
+        "fn": 0.345147115,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.32570677,
+        "residual": 1.37414369e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 52,
+        "ok": true,
+        "speedMs": 3.86817153,
+        "VMs": 3.86817153,
+        "heelDeg": 9.54877994,
+        "leewayDeg": 4.01263501,
+        "rudderDeg": -0.541420017,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 6.60677618,
+          "jib": 11.2285413
+        },
+        "awsMs": 9.0816401,
+        "awaDeg": 32.3885455,
+        "fn": 0.405919596,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.38148419,
+        "residual": 8.58001913e-15,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 60,
+        "ok": true,
+        "speedMs": 3.97584845,
+        "VMs": 3.97584845,
+        "heelDeg": 8.70013091,
+        "leewayDeg": 3.42524825,
+        "rudderDeg": -0.174886948,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 11.4090544,
+          "jib": 14.3938292
+        },
+        "awsMs": 8.85785827,
+        "awaDeg": 37.1254097,
+        "fn": 0.417219036,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.98792423,
+        "residual": 6.28958302e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 70,
+        "ok": true,
+        "speedMs": 4.0434087,
+        "VMs": 4.0434087,
+        "heelDeg": 7.39972799,
+        "leewayDeg": 2.84495605,
+        "rudderDeg": 0.0838501008,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 18.5903697,
+          "jib": 19.6597727
+        },
+        "awsMs": 8.4577621,
+        "awaDeg": 43.3050947,
+        "fn": 0.424308698,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.38292722,
+        "residual": 1.61330136e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 75,
+        "ok": true,
+        "speedMs": 4.05864646,
+        "VMs": 4.05864646,
+        "heelDeg": 6.744615,
+        "leewayDeg": 2.59889691,
+        "rudderDeg": 0.171940492,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 22.838295,
+          "jib": 23.7128972
+        },
+        "awsMs": 8.219019,
+        "awaDeg": 46.5113069,
+        "fn": 0.425907724,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.050455,
+        "residual": 1.64042592e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 90,
+        "ok": true,
+        "speedMs": 4.03220548,
+        "VMs": 4.03220548,
+        "heelDeg": 4.3955436,
+        "leewayDeg": 1.86988352,
+        "rudderDeg": 0.301128131,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 34.4264865,
+          "jib": 30
+        },
+        "awsMs": 7.37351514,
+        "awaDeg": 56.8488348,
+        "fn": 0.423133051,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.46901377e-16,
+        "residual": 1.48487956e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 110,
+        "ok": true,
+        "speedMs": 3.23187269,
+        "VMs": 3.23187269,
+        "heelDeg": 1.84775637,
+        "leewayDeg": 1.81225193,
+        "rudderDeg": -0.0843239211,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 57.9356489,
+          "jib": 30
+        },
+        "awsMs": 5.90825401,
+        "awaDeg": 79.0679571,
+        "fn": 0.339147436,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.10536556,
+        "residual": 1.09110353e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 120,
+        "ok": true,
+        "speedMs": 3.05146753,
+        "VMs": 3.05146753,
+        "heelDeg": 1.12799072,
+        "leewayDeg": 1.60372051,
+        "rudderDeg": -0.116005392,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 70.4096172,
+          "jib": 30
+        },
+        "awsMs": 5.34637936,
+        "awaDeg": 90.3772228,
+        "fn": 0.320216014,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.52573377,
+        "residual": 6.88825408e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 135,
+        "ok": true,
+        "speedMs": 2.79360892,
+        "VMs": 2.79360892,
+        "heelDeg": 0.100656965,
+        "leewayDeg": 1.10227886,
+        "rudderDeg": -0.00388534117,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": 30
+        },
+        "awsMs": 4.63949773,
+        "awaDeg": 109.800304,
+        "fn": 0.293156752,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.97537981,
+        "residual": 3.75375837e-15,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 150,
+        "ok": true,
+        "speedMs": 2.62156587,
+        "VMs": 2.62156587,
+        "heelDeg": 0,
+        "leewayDeg": 0.841594669,
+        "rudderDeg": 0.0935384956,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 79.0537829,
+          "jib": 30
+        },
+        "awsMs": 4.11721851,
+        "awaDeg": 131.435856,
+        "fn": 0.275102837,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.27034265,
+        "residual": 2.27949658e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 165,
+        "ok": true,
+        "speedMs": 2.66291026,
+        "VMs": 2.66291026,
+        "heelDeg": 0,
+        "leewayDeg": 0.133485483,
+        "rudderDeg": -0.0646830746,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -90
+        },
+        "awsMs": 3.6665192,
+        "awaDeg": 154.165402,
+        "fn": 0.279441449,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.5721738,
+        "residual": 2.85010724e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 6.17333333,
+        "twsKn": 12,
+        "twaDeg": 180,
+        "ok": true,
+        "speedMs": 2.63096983,
+        "VMs": 2.63096983,
+        "heelDeg": 0,
+        "leewayDeg": 0.0616443066,
+        "rudderDeg": -0.0241699795,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -89.9999995
+        },
+        "awsMs": 3.54236351,
+        "awaDeg": 180,
+        "fn": 0.276089672,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.63096983,
+        "residual": 2.16992636e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 40,
+        "ok": true,
+        "speedMs": 3.33215606,
+        "VMs": 3.33215606,
+        "heelDeg": 12.0647951,
+        "leewayDeg": 6.77920261,
+        "rudderDeg": -1.48419436,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 0,
+          "jib": 7
+        },
+        "awsMs": 9.98717981,
+        "awaDeg": 27.6160454,
+        "fn": 0.349671009,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.55257964,
+        "residual": 1.58774129e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 45,
+        "ok": true,
+        "speedMs": 3.89827577,
+        "VMs": 3.89827577,
+        "heelDeg": 13.2933584,
+        "leewayDeg": 5.24393059,
+        "rudderDeg": -0.620161461,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 2.82361053,
+          "jib": 7.45184505
+        },
+        "awsMs": 10.3331684,
+        "awaDeg": 29.5283194,
+        "fn": 0.409078686,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.75649723,
+        "residual": 7.80869292e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 52,
+        "ok": true,
+        "speedMs": 4.06462558,
+        "VMs": 4.06462558,
+        "heelDeg": 12.5547393,
+        "leewayDeg": 4.42245278,
+        "rudderDeg": -0.00713553834,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 7.55604004,
+          "jib": 12.0963812
+        },
+        "awsMs": 10.2195572,
+        "awaDeg": 33.7348084,
+        "fn": 0.426535163,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.50243338,
+        "residual": 3.39743543e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 60,
+        "ok": true,
+        "speedMs": 4.20428521,
+        "VMs": 4.20428521,
+        "heelDeg": 11.4709245,
+        "leewayDeg": 3.6971567,
+        "rudderDeg": 0.419034095,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 12.4061046,
+          "jib": 15.0444166
+        },
+        "awsMs": 9.99140708,
+        "awaDeg": 38.6284198,
+        "fn": 0.441190817,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.10214261,
+        "residual": 1.65955212e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 70,
+        "ok": true,
+        "speedMs": 4.29050554,
+        "VMs": 4.29050554,
+        "heelDeg": 9.80881309,
+        "leewayDeg": 3.03393421,
+        "rudderDeg": 0.663253008,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 20.7061304,
+          "jib": 21.5454265
+        },
+        "awsMs": 9.56128082,
+        "awaDeg": 45.0595957,
+        "fn": 0.450238637,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.46743932,
+        "residual": 4.60213512e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 75,
+        "ok": true,
+        "speedMs": 4.30061247,
+        "VMs": 4.30061247,
+        "heelDeg": 8.96567848,
+        "leewayDeg": 2.76851842,
+        "rudderDeg": 0.74344609,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 23.9089765,
+          "jib": 24.955551
+        },
+        "awsMs": 9.2951911,
+        "awaDeg": 48.454679,
+        "fn": 0.451299241,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 1.11308041,
+        "residual": 4.43474267e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 90,
+        "ok": true,
+        "speedMs": 4.2578033,
+        "VMs": 4.2578033,
+        "heelDeg": 5.81166941,
+        "leewayDeg": 1.99435884,
+        "rudderDeg": 0.669521729,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 36.631341,
+          "jib": 30
+        },
+        "awsMs": 8.36665368,
+        "awaDeg": 59.4093076,
+        "fn": 0.446806917,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.60715259e-16,
+        "residual": 1.65144794e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 110,
+        "ok": true,
+        "speedMs": 3.88295896,
+        "VMs": 3.88295896,
+        "heelDeg": 3.03261714,
+        "leewayDeg": 1.68000619,
+        "rudderDeg": 0.0797888016,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 56.9143569,
+          "jib": 30
+        },
+        "awsMs": 6.91516812,
+        "awaDeg": 78.1531938,
+        "fn": 0.407471365,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.32805018,
+        "residual": 1.15731763e-15,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 120,
+        "ok": true,
+        "speedMs": 3.64513765,
+        "VMs": 3.64513765,
+        "heelDeg": 2.02103043,
+        "leewayDeg": 1.50401175,
+        "rudderDeg": 0.00554908934,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 69.3310535,
+          "jib": 30
+        },
+        "awsMs": 6.23746279,
+        "awaDeg": 89.5955798,
+        "fn": 0.382514786,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -1.82256883,
+        "residual": 1.71026922e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 135,
+        "ok": true,
+        "speedMs": 3.12567478,
+        "VMs": 3.12567478,
+        "heelDeg": 0.606958182,
+        "leewayDeg": 1.17180101,
+        "rudderDeg": 0.0802264175,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": 30
+        },
+        "awsMs": 5.45942751,
+        "awaDeg": 111.119,
+        "fn": 0.328003201,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.21018583,
+        "residual": 4.55181335e-13,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 150,
+        "ok": true,
+        "speedMs": 2.93860007,
+        "VMs": 2.93860007,
+        "heelDeg": 0.127025332,
+        "leewayDeg": 0.914077514,
+        "rudderDeg": 0.133471626,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 79.4106331,
+          "jib": 30
+        },
+        "awsMs": 4.88359205,
+        "awaDeg": 132.490459,
+        "fn": 0.308371887,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.54490232,
+        "residual": 1.96907992e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 165,
+        "ok": true,
+        "speedMs": 3.00083296,
+        "VMs": 3.00083296,
+        "heelDeg": 0,
+        "leewayDeg": 0.146331185,
+        "rudderDeg": -0.0710853966,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -90
+        },
+        "awsMs": 4.37316123,
+        "awaDeg": 154.770012,
+        "fn": 0.314902505,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.89858206,
+        "residual": 8.4802431e-11,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 7.20222222,
+        "twsKn": 14,
+        "twaDeg": 180,
+        "ok": true,
+        "speedMs": 2.96528716,
+        "VMs": 2.96528716,
+        "heelDeg": 0,
+        "leewayDeg": 0.0692851727,
+        "rudderDeg": -0.0273264038,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 85,
+          "jib": -89.9999995
+        },
+        "awsMs": 4.23693507,
+        "awaDeg": 180,
+        "fn": 0.311172386,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": -2.96528716,
+        "residual": 2.20767121e-14,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 8.23111111,
+        "twsKn": 16,
+        "twaDeg": 40,
+        "ok": true,
+        "speedMs": 3.88225653,
+        "VMs": 3.88225653,
+        "heelDeg": 16.8043522,
+        "leewayDeg": 6.52928725,
+        "rudderDeg": -0.740408452,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 0,
+          "jib": 7
+        },
+        "awsMs": 11.4796099,
+        "awaDeg": 27.4446585,
+        "fn": 0.407397653,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.97398104,
+        "residual": 3.57414773e-12,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 8.23111111,
+        "twsKn": 16,
+        "twaDeg": 45,
+        "ok": true,
+        "speedMs": 4.06026454,
+        "VMs": 4.06026454,
+        "heelDeg": 17.0711137,
+        "leewayDeg": 5.82283884,
+        "rudderDeg": 0.00538198427,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 2.82361053,
+          "jib": 7.45184505
+        },
+        "awsMs": 11.4673731,
+        "awaDeg": 30.5008275,
+        "fn": 0.426077523,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.87104059,
+        "residual": 1.1208508e-10,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
+        "twsMs": 8.23111111,
+        "twsKn": 16,
+        "twaDeg": 52,
+        "ok": true,
+        "speedMs": 4.27592201,
+        "VMs": 4.27592201,
+        "heelDeg": 16.1786438,
+        "leewayDeg": 4.7451931,
+        "rudderDeg": 0.796672647,
+        "flat": 1,
+        "set": "full",
+        "reef": -1,
+        "sheetsDeg": {
+          "main": 7.55604004,
+          "jib": 12.0963812
+        },
+        "awsMs": 11.3741741,
+        "awaDeg": 34.7681594,
+        "fn": 0.448708265,
+        "regime": "displacement",
+        "planingWeight": 0,
+        "vmgMs": 2.63252045,
+        "residual": 2.41313038e-15,
+        "flags": [
+          {
+            "id": "dsyhs",
+            "text": "DSYHS residuary extrapolated: Cp 0.737 (fitted 0.519–0.599); BWL / LWL 0.401 (fitted 0.17–0.366); Cm 0.565 (fitted 0.646–0.79)."
+          }
+        ],
+        "hollow": false
+      },
+      {
         "twsMs": 8.23111111,
         "twsKn": 16,
         "twaDeg": 60,
         "ok": true,
-        "speedMs": 4.41705589,
-        "VMs": 4.41705589,
-        "heelDeg": 14.0792596,
-        "leewayDeg": 3.67432985,
-        "rudderDeg": 0.926403335,
+        "speedMs": 4.35236138,
+        "VMs": 4.35236138,
+        "heelDeg": 14.4945905,
+        "leewayDeg": 3.98567817,
+        "rudderDeg": 1.26803234,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8085,13 +8085,13 @@
           "main": 13.4145259,
           "jib": 15.7262508
         },
-        "awsMs": 11.1184014,
-        "awaDeg": 39.8762037,
-        "fn": 0.463518624,
+        "awsMs": 11.0688306,
+        "awaDeg": 40.0909057,
+        "fn": 0.456729687,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.20852795,
-        "residual": 4.46542236e-12,
+        "vmgMs": 2.17618069,
+        "residual": 6.35256573e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -8105,11 +8105,11 @@
         "twsKn": 16,
         "twaDeg": 70,
         "ok": true,
-        "speedMs": 4.44901661,
-        "VMs": 4.44901661,
-        "heelDeg": 11.7681942,
-        "leewayDeg": 3.0522678,
-        "rudderDeg": 0.853588328,
+        "speedMs": 4.39911799,
+        "VMs": 4.39911799,
+        "heelDeg": 12.2909259,
+        "leewayDeg": 3.28133879,
+        "rudderDeg": 1.49127643,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8117,13 +8117,13 @@
           "main": 21.7705112,
           "jib": 22.5857069
         },
-        "awsMs": 10.6110666,
-        "awaDeg": 46.7966852,
-        "fn": 0.466872529,
+        "awsMs": 10.576969,
+        "awaDeg": 46.9937168,
+        "fn": 0.461636249,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.5216533,
-        "residual": 1.52323199e-12,
+        "vmgMs": 1.50458696,
+        "residual": 4.00274231e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8137,11 +8137,11 @@
         "twsKn": 16,
         "twaDeg": 75,
         "ok": true,
-        "speedMs": 4.45936611,
-        "VMs": 4.45936611,
-        "heelDeg": 10.6837675,
-        "leewayDeg": 2.78424101,
-        "rudderDeg": 0.784929697,
+        "speedMs": 4.41654405,
+        "VMs": 4.41654405,
+        "heelDeg": 11.2602294,
+        "leewayDeg": 2.96900743,
+        "rudderDeg": 1.57164212,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8149,13 +8149,13 @@
           "main": 25.973553,
           "jib": 28.0250416
         },
-        "awsMs": 10.3265348,
-        "awaDeg": 50.3470283,
-        "fn": 0.467958589,
+        "awsMs": 10.2992613,
+        "awaDeg": 50.5304424,
+        "fn": 0.463464912,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.15416888,
-        "residual": 6.6639637e-14,
+        "vmgMs": 1.14308571,
+        "residual": 2.45851643e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8169,11 +8169,11 @@
         "twsKn": 16,
         "twaDeg": 90,
         "ok": true,
-        "speedMs": 4.39116954,
-        "VMs": 4.39116954,
-        "heelDeg": 6.71291075,
-        "leewayDeg": 2.03825682,
-        "rudderDeg": 0.217858192,
+        "speedMs": 4.37040881,
+        "VMs": 4.37040881,
+        "heelDeg": 7.29249419,
+        "leewayDeg": 2.17429773,
+        "rudderDeg": 1.13896343,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8181,13 +8181,13 @@
           "main": 39.94498,
           "jib": 30
         },
-        "awsMs": 9.32917789,
-        "awaDeg": 61.9207739,
-        "fn": 0.460802152,
+        "awsMs": 9.31942398,
+        "awaDeg": 62.0333876,
+        "fn": 0.458623555,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.68881586e-16,
-        "residual": 2.62714488e-12,
+        "vmgMs": 2.67610358e-16,
+        "residual": 1.4002189e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8201,11 +8201,11 @@
         "twsKn": 16,
         "twaDeg": 110,
         "ok": true,
-        "speedMs": 4.0774394,
-        "VMs": 4.0774394,
-        "heelDeg": 3.74804241,
-        "leewayDeg": 1.65861308,
-        "rudderDeg": -0.304655084,
+        "speedMs": 4.07175536,
+        "VMs": 4.07175536,
+        "heelDeg": 4.21839137,
+        "leewayDeg": 1.88246949,
+        "rudderDeg": 0.297979362,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8213,13 +8213,13 @@
           "main": 59.9787937,
           "jib": 30
         },
-        "awsMs": 7.83703006,
-        "awaDeg": 80.7315608,
-        "fn": 0.427879825,
+        "awsMs": 7.83611659,
+        "awaDeg": 80.7725786,
+        "fn": 0.42728335,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.39456641,
-        "residual": 1.4248508e-12,
+        "vmgMs": -1.39262235,
+        "residual": 1.23905912e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -8233,11 +8233,11 @@
         "twsKn": 16,
         "twaDeg": 120,
         "ok": true,
-        "speedMs": 3.95861399,
-        "VMs": 3.95861399,
-        "heelDeg": 2.61215629,
-        "leewayDeg": 1.40426215,
-        "rudderDeg": -0.364695122,
+        "speedMs": 3.96011497,
+        "VMs": 3.96011497,
+        "heelDeg": 3.00377906,
+        "leewayDeg": 1.60343702,
+        "rudderDeg": 0.158116466,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8245,13 +8245,13 @@
           "main": 71.5014263,
           "jib": 30
         },
-        "awsMs": 7.13007877,
-        "awaDeg": 91.2612505,
-        "fn": 0.41541048,
+        "awsMs": 7.13004589,
+        "awaDeg": 91.2491919,
+        "fn": 0.41556799,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.97930699,
-        "residual": 1.96436354e-12,
+        "vmgMs": -1.98005748,
+        "residual": 3.12952846e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8265,11 +8265,11 @@
         "twsKn": 16,
         "twaDeg": 135,
         "ok": true,
-        "speedMs": 3.64539168,
-        "VMs": 3.64539168,
-        "heelDeg": 0.939163958,
-        "leewayDeg": 0.992004783,
-        "rudderDeg": -0.380591517,
+        "speedMs": 3.71206259,
+        "VMs": 3.71206259,
+        "heelDeg": 1.18853448,
+        "leewayDeg": 1.06762028,
+        "rudderDeg": 0.1388703,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8277,13 +8277,13 @@
           "main": 85,
           "jib": 30
         },
-        "awsMs": 6.21334936,
-        "awaDeg": 110.489388,
-        "fn": 0.382541443,
+        "awsMs": 6.19032733,
+        "awaDeg": 109.911331,
+        "fn": 0.38953778,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.57768118,
-        "residual": 4.40454435e-10,
+        "vmgMs": -2.62482463,
+        "residual": 6.85457455e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -8297,25 +8297,25 @@
         "twsKn": 16,
         "twaDeg": 150,
         "ok": true,
-        "speedMs": 3.20923076,
-        "VMs": 3.20923076,
-        "heelDeg": 0.467344067,
-        "leewayDeg": 1.02717479,
-        "rudderDeg": -0.448446128,
+        "speedMs": 3.26829542,
+        "VMs": 3.26829542,
+        "heelDeg": 0.584110821,
+        "leewayDeg": 0.950290257,
+        "rudderDeg": 0.217436596,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 79.762805,
+          "main": 79.4106331,
           "jib": 30
         },
-        "awsMs": 5.68307166,
-        "awaDeg": 133.599489,
-        "fn": 0.336771429,
+        "awsMs": 5.64250202,
+        "awaDeg": 133.16515,
+        "fn": 0.342969578,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.77927536,
-        "residual": 5.13318078e-13,
+        "vmgMs": -2.83042686,
+        "residual": 1.56250192e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -8329,11 +8329,11 @@
         "twsKn": 16,
         "twaDeg": 165,
         "ok": true,
-        "speedMs": 3.28475021,
-        "VMs": 3.28475021,
+        "speedMs": 3.37311091,
+        "VMs": 3.37311091,
         "heelDeg": 0,
-        "leewayDeg": 0.10402982,
-        "rudderDeg": -0.051317746,
+        "leewayDeg": 0.152841836,
+        "rudderDeg": -0.0743440647,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8341,13 +8341,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 5.12923219,
-        "awaDeg": 155.459356,
-        "fn": 0.344696316,
+        "awsMs": 5.04898677,
+        "awaDeg": 155.042886,
+        "fn": 0.353968744,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.17282506,
-        "residual": 1.86731135e-10,
+        "vmgMs": -3.25817494,
+        "residual": 2.10594745e-15,
         "flags": [
           {
             "id": "dsyhs",
@@ -8361,11 +8361,11 @@
         "twsKn": 16,
         "twaDeg": 180,
         "ok": true,
-        "speedMs": 3.23566504,
-        "VMs": 3.23566504,
+        "speedMs": 3.3137528,
+        "VMs": 3.3137528,
         "heelDeg": 0,
-        "leewayDeg": 0.0838813418,
-        "rudderDeg": -0.0413626601,
+        "leewayDeg": 0.0746252637,
+        "rudderDeg": -0.0295538125,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8373,13 +8373,13 @@
           "main": 85,
           "jib": -89.9999995
         },
-        "awsMs": 4.99544607,
+        "awsMs": 4.91735831,
         "awaDeg": 180,
-        "fn": 0.339545399,
+        "fn": 0.347739801,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.23566504,
-        "residual": 1.67771862e-15,
+        "vmgMs": -3.3137528,
+        "residual": 1.93100272e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -8393,25 +8393,25 @@
         "twsKn": 20,
         "twaDeg": 40,
         "ok": true,
-        "speedMs": 4.33572633,
-        "VMs": 4.33572633,
-        "heelDeg": 24.9999606,
-        "leewayDeg": 6.75295896,
-        "rudderDeg": 1.30084758,
-        "flat": 0.960126877,
+        "speedMs": 4.08273571,
+        "VMs": 4.08273571,
+        "heelDeg": 24.9999701,
+        "leewayDeg": 8.13078526,
+        "rudderDeg": 0.555091504,
+        "flat": 0.988422394,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
           "main": 0,
           "jib": 7
         },
-        "awsMs": 13.892658,
-        "awaDeg": 28.4275989,
-        "fn": 0.454984032,
+        "awsMs": 13.6707037,
+        "awaDeg": 28.9323676,
+        "fn": 0.428435611,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.32135906,
-        "residual": 3.8461167e-10,
+        "vmgMs": 3.12755701,
+        "residual": 1.86718376e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8425,25 +8425,25 @@
         "twsKn": 20,
         "twaDeg": 45,
         "ok": true,
-        "speedMs": 4.42267079,
-        "VMs": 4.42267079,
-        "heelDeg": 24.9999872,
-        "leewayDeg": 6.0443355,
-        "rudderDeg": 2.3696376,
-        "flat": 0.966535568,
+        "speedMs": 4.30436467,
+        "VMs": 4.30436467,
+        "heelDeg": 24.9999551,
+        "leewayDeg": 6.8408801,
+        "rudderDeg": 1.81314819,
+        "flat": 0.958072662,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 2.82361053,
-          "jib": 7.45184505
+          "main": 1.90981665,
+          "jib": 7
         },
-        "awsMs": 13.7758537,
-        "awaDeg": 31.8787107,
-        "fn": 0.464107842,
+        "awsMs": 13.6755347,
+        "awaDeg": 32.140482,
+        "fn": 0.451692991,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.12730051,
-        "residual": 6.8391474e-10,
+        "vmgMs": 3.04364544,
+        "residual": 2.16795633e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8457,25 +8457,25 @@
         "twsKn": 20,
         "twaDeg": 52,
         "ok": true,
-        "speedMs": 4.54265189,
-        "VMs": 4.54265189,
-        "heelDeg": 23.7245662,
-        "leewayDeg": 4.93747517,
-        "rudderDeg": 3.41330727,
+        "speedMs": 4.43610746,
+        "VMs": 4.43610746,
+        "heelDeg": 24.3211663,
+        "leewayDeg": 5.63516644,
+        "rudderDeg": 3.41925033,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 8.49899402,
-          "jib": 12.6250924
+          "main": 7.55604004,
+          "jib": 12.0963812
         },
-        "awsMs": 13.5664118,
-        "awaDeg": 36.7006651,
-        "fn": 0.476698462,
+        "awsMs": 13.4811381,
+        "awaDeg": 36.9712877,
+        "fn": 0.465517865,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.79673576,
-        "residual": 3.18901454e-11,
+        "vmgMs": 2.73114047,
+        "residual": 3.66985248e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -8489,25 +8489,25 @@
         "twsKn": 20,
         "twaDeg": 60,
         "ok": true,
-        "speedMs": 4.63447676,
-        "VMs": 4.63447676,
-        "heelDeg": 20.7622639,
-        "leewayDeg": 3.94235911,
-        "rudderDeg": 3.49857728,
+        "speedMs": 4.54319939,
+        "VMs": 4.54319939,
+        "heelDeg": 21.6008403,
+        "leewayDeg": 4.448715,
+        "rudderDeg": 4.03997754,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 15.4610501,
-          "jib": 17.1881137
+          "main": 14.4331887,
+          "jib": 16.4403201
         },
-        "awsMs": 13.2296344,
-        "awaDeg": 42.3394175,
-        "fn": 0.486334414,
+        "awsMs": 13.1623086,
+        "awaDeg": 42.6070301,
+        "fn": 0.476755916,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.31723838,
-        "residual": 1.94189428e-11,
+        "vmgMs": 2.27159969,
+        "residual": 5.35768998e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -8521,11 +8521,11 @@
         "twsKn": 20,
         "twaDeg": 70,
         "ok": true,
-        "speedMs": 4.69834374,
-        "VMs": 4.69834374,
-        "heelDeg": 17.320628,
-        "leewayDeg": 3.17024334,
-        "rudderDeg": 3.07845431,
+        "speedMs": 4.62573704,
+        "VMs": 4.62573704,
+        "heelDeg": 18.3345901,
+        "leewayDeg": 3.50722176,
+        "rudderDeg": 4.11647853,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8533,13 +8533,13 @@
           "main": 23.9089765,
           "jib": 24.955551
         },
-        "awsMs": 12.6886831,
-        "awaDeg": 49.6381575,
-        "fn": 0.49303651,
+        "awsMs": 12.6417832,
+        "awaDeg": 49.8889012,
+        "fn": 0.485417283,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.6069282,
-        "residual": 3.76991294e-12,
+        "vmgMs": 1.58209525,
+        "residual": 1.58872782e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -8553,11 +8553,11 @@
         "twsKn": 20,
         "twaDeg": 75,
         "ok": true,
-        "speedMs": 4.72969626,
-        "VMs": 4.72969626,
-        "heelDeg": 15.5382983,
-        "leewayDeg": 2.80798718,
-        "rudderDeg": 2.81891668,
+        "speedMs": 4.66656626,
+        "VMs": 4.66656626,
+        "heelDeg": 16.6141624,
+        "leewayDeg": 3.06154123,
+        "rudderDeg": 4.09617719,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8565,13 +8565,13 @@
           "main": 27.9968013,
           "jib": 30
         },
-        "awsMs": 12.3863332,
-        "awaDeg": 53.356101,
-        "fn": 0.496326593,
+        "awsMs": 12.3487585,
+        "awaDeg": 53.5911215,
+        "fn": 0.489701833,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.22413547,
-        "residual": 2.41389792e-12,
+        "vmgMs": 1.20779622,
+        "residual": 6.21031169e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -8585,11 +8585,11 @@
         "twsKn": 20,
         "twaDeg": 90,
         "ok": true,
-        "speedMs": 4.60003138,
-        "VMs": 4.60003138,
-        "heelDeg": 9.91342194,
-        "leewayDeg": 2.26803351,
-        "rudderDeg": 1.19921496,
+        "speedMs": 4.57320482,
+        "VMs": 4.57320482,
+        "heelDeg": 10.9364542,
+        "leewayDeg": 2.49895888,
+        "rudderDeg": 2.49920737,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8597,13 +8597,13 @@
           "main": 43.2367091,
           "jib": 30
         },
-        "awsMs": 11.2703826,
-        "awaDeg": 65.9111887,
-        "fn": 0.482719772,
+        "awsMs": 11.2594599,
+        "awaDeg": 66.0358123,
+        "fn": 0.479904637,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.81670685e-16,
-        "residual": 1.62061975e-11,
+        "vmgMs": 2.80028032e-16,
+        "residual": 5.37915719e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8617,11 +8617,11 @@
         "twsKn": 20,
         "twaDeg": 110,
         "ok": true,
-        "speedMs": 4.3873014,
-        "VMs": 4.3873014,
-        "heelDeg": 6.27363843,
-        "leewayDeg": 1.93995584,
-        "rudderDeg": 0.178902211,
+        "speedMs": 4.3846453,
+        "VMs": 4.3846453,
+        "heelDeg": 7.08968371,
+        "leewayDeg": 2.24866423,
+        "rudderDeg": 1.04268059,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8629,13 +8629,13 @@
           "main": 64.0838145,
           "jib": 30
         },
-        "awsMs": 9.70730432,
-        "awaDeg": 84.8681768,
-        "fn": 0.460396236,
+        "awsMs": 9.7070671,
+        "awaDeg": 84.8837915,
+        "fn": 0.460117509,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.50054545,
-        "residual": 6.25271039e-12,
+        "vmgMs": -1.49963701,
+        "residual": 3.48778421e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -8649,25 +8649,25 @@
         "twsKn": 20,
         "twaDeg": 120,
         "ok": true,
-        "speedMs": 4.32376274,
-        "VMs": 4.32376274,
-        "heelDeg": 4.65525001,
-        "leewayDeg": 1.642245,
-        "rudderDeg": -0.0462191516,
+        "speedMs": 4.32508627,
+        "VMs": 4.32508627,
+        "heelDeg": 5.32242501,
+        "leewayDeg": 1.9085754,
+        "rudderDeg": 0.689525743,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 76.050351,
+          "main": 74.8849571,
           "jib": 30
         },
-        "awsMs": 8.94815313,
-        "awaDeg": 95.2622893,
-        "fn": 0.453728593,
+        "awsMs": 8.94803184,
+        "awaDeg": 95.2538502,
+        "fn": 0.453867482,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.16188137,
-        "residual": 3.32529366e-13,
+        "vmgMs": -2.16254314,
+        "residual": 4.85714883e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -8681,11 +8681,11 @@
         "twsKn": 20,
         "twaDeg": 135,
         "ok": true,
-        "speedMs": 4.12957417,
-        "VMs": 4.12957417,
-        "heelDeg": 3.19224714,
-        "leewayDeg": 1.43404063,
-        "rudderDeg": -0.255436684,
+        "speedMs": 4.14813863,
+        "VMs": 4.14813863,
+        "heelDeg": 3.42738617,
+        "leewayDeg": 1.50480428,
+        "rudderDeg": 0.424709064,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8693,13 +8693,13 @@
           "main": 71.5093246,
           "jib": 30
         },
-        "awsMs": 7.92631563,
-        "awaDeg": 113.383062,
-        "fn": 0.433350762,
+        "awsMs": 7.91896617,
+        "awaDeg": 113.259775,
+        "fn": 0.435298886,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.9200499,
-        "residual": 2.79510177e-12,
+        "vmgMs": -2.93317695,
+        "residual": 1.19224929e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8713,11 +8713,11 @@
         "twsKn": 20,
         "twaDeg": 150,
         "ok": true,
-        "speedMs": 3.96973677,
-        "VMs": 3.96973677,
-        "heelDeg": 1.46553113,
-        "leewayDeg": 1.00245939,
-        "rudderDeg": -0.308863372,
+        "speedMs": 4.00946868,
+        "VMs": 4.00946868,
+        "heelDeg": 1.66509685,
+        "leewayDeg": 0.939386675,
+        "rudderDeg": 0.397711001,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8725,13 +8725,13 @@
           "main": 79.762805,
           "jib": 30
         },
-        "awsMs": 7.1327308,
-        "awaDeg": 133.842657,
-        "fn": 0.416577686,
+        "awsMs": 7.10526708,
+        "awaDeg": 133.611576,
+        "fn": 0.420747088,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.43789289,
-        "residual": 9.59234156e-10,
+        "vmgMs": -3.47230173,
+        "residual": 9.04533174e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -8745,11 +8745,11 @@
         "twsKn": 20,
         "twaDeg": 165,
         "ok": true,
-        "speedMs": 4.02583785,
-        "VMs": 4.02583785,
+        "speedMs": 4.07717671,
+        "VMs": 4.07717671,
         "heelDeg": 0,
-        "leewayDeg": 0.110194078,
-        "rudderDeg": -0.0545263006,
+        "leewayDeg": 0.166837468,
+        "rudderDeg": -0.0814207582,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8757,13 +8757,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 6.48448981,
-        "awaDeg": 155.753312,
-        "fn": 0.422464842,
+        "awsMs": 6.43771429,
+        "awaDeg": 155.565672,
+        "fn": 0.427852258,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.88866075,
-        "residual": 1.05653846e-11,
+        "vmgMs": -3.93825028,
+        "residual": 9.57458344e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8777,11 +8777,11 @@
         "twsKn": 20,
         "twaDeg": 180,
         "ok": true,
-        "speedMs": 3.99215582,
-        "VMs": 3.99215582,
+        "speedMs": 4.04866353,
+        "VMs": 4.04866353,
         "heelDeg": 0,
-        "leewayDeg": 0.0874761112,
-        "rudderDeg": -0.0432249206,
+        "leewayDeg": 0.0803864552,
+        "rudderDeg": -0.031976735,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8789,13 +8789,13 @@
           "main": 85,
           "jib": -89.9999995
         },
-        "awsMs": 6.29673307,
+        "awsMs": 6.24022535,
         "awaDeg": 180,
-        "fn": 0.418930304,
+        "fn": 0.424860132,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.99215582,
-        "residual": 4.89704302e-10,
+        "vmgMs": -4.04866353,
+        "residual": 6.30522218e-15,
         "flags": [
           {
             "id": "dsyhs",
@@ -8809,27 +8809,27 @@
       {
         "twsMs": 3.08666667,
         "twsKn": 6,
-        "twaDeg": 41.4052689,
+        "twaDeg": 43.5101677,
         "ok": true,
-        "speedMs": 2.21197407,
-        "VMs": 2.21197407,
-        "heelDeg": 1.86771225,
-        "leewayDeg": 3.934538,
-        "rudderDeg": -1.74239241,
+        "speedMs": 2.04143582,
+        "VMs": 2.04143582,
+        "heelDeg": 1.70212283,
+        "leewayDeg": 4.42130293,
+        "rudderDeg": -1.8905565,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 0,
+          "main": 1.04348966,
           "jib": 7
         },
-        "awsMs": 4.96613195,
-        "awaDeg": 24.2725029,
-        "fn": 0.232120942,
+        "awsMs": 4.77859142,
+        "awaDeg": 26.4052015,
+        "fn": 0.214224938,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.65909171,
-        "residual": 4.50772755e-12,
+        "vmgMs": 1.48055583,
+        "residual": 4.98713612e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -8841,13 +8841,13 @@
       {
         "twsMs": 4.11555556,
         "twsKn": 8,
-        "twaDeg": 37.805394,
+        "twaDeg": 39.9102928,
         "ok": true,
-        "speedMs": 2.5225407,
-        "VMs": 2.5225407,
-        "heelDeg": 3.67743005,
-        "leewayDeg": 4.69345741,
-        "rudderDeg": -1.93315518,
+        "speedMs": 2.38264155,
+        "VMs": 2.38264155,
+        "heelDeg": 3.58358998,
+        "leewayDeg": 5.21716722,
+        "rudderDeg": -2.08211385,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8855,13 +8855,13 @@
           "main": 0,
           "jib": 7
         },
-        "awsMs": 6.30127341,
-        "awaDeg": 23.6005006,
-        "fn": 0.264711297,
+        "awsMs": 6.13661127,
+        "awaDeg": 25.4856169,
+        "fn": 0.250030508,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 1.99305262,
-        "residual": 5.34916733e-10,
+        "vmgMs": 1.82760498,
+        "residual": 5.34287325e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -8873,27 +8873,27 @@
       {
         "twsMs": 5.14444444,
         "twsKn": 10,
-        "twaDeg": 39.307293,
+        "twaDeg": 42.3222922,
         "ok": true,
-        "speedMs": 2.94770193,
-        "VMs": 2.94770193,
-        "heelDeg": 6.24862435,
-        "leewayDeg": 5.07459468,
-        "rudderDeg": -1.79113154,
+        "speedMs": 2.79851137,
+        "VMs": 2.79851137,
+        "heelDeg": 6.05675407,
+        "leewayDeg": 5.54633074,
+        "rudderDeg": -1.85743133,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 0,
+          "main": 1.04348966,
           "jib": 7
         },
-        "awsMs": 7.65645367,
-        "awaDeg": 25.1912335,
-        "fn": 0.309327021,
+        "awsMs": 7.45560561,
+        "awaDeg": 27.6833075,
+        "fn": 0.293671208,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.28081261,
-        "residual": 5.71429274e-14,
+        "vmgMs": 2.06913308,
+        "residual": 3.23326384e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -8905,27 +8905,27 @@
       {
         "twsMs": 6.17333333,
         "twsKn": 12,
-        "twaDeg": 41.3466179,
+        "twaDeg": 48.7025624,
         "ok": true,
-        "speedMs": 3.81188985,
-        "VMs": 3.81188985,
-        "heelDeg": 10.3193531,
-        "leewayDeg": 4.49162931,
-        "rudderDeg": -1.09432329,
+        "speedMs": 3.81153664,
+        "VMs": 3.81153664,
+        "heelDeg": 9.84593918,
+        "leewayDeg": 4.29740371,
+        "rudderDeg": -0.747589444,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 0.203713358,
-          "jib": 7
+          "main": 4.70963665,
+          "jib": 9.33391593
         },
-        "awsMs": 9.37938478,
-        "awaDeg": 25.7727442,
-        "fn": 0.400013489,
+        "awsMs": 9.14854103,
+        "awaDeg": 30.4618517,
+        "fn": 0.399976423,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 2.86168819,
-        "residual": 2.78180308e-15,
+        "vmgMs": 2.51549247,
+        "residual": 4.6653854e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -8937,27 +8937,27 @@
       {
         "twsMs": 7.20222222,
         "twsKn": 14,
-        "twaDeg": 35.4994953,
+        "twaDeg": 41.8141917,
         "ok": true,
-        "speedMs": 3.81201378,
-        "VMs": 3.81201378,
-        "heelDeg": 12.6441166,
-        "leewayDeg": 5.38476392,
-        "rudderDeg": -1.28182547,
+        "speedMs": 3.81179501,
+        "VMs": 3.81179501,
+        "heelDeg": 13.3207113,
+        "leewayDeg": 5.59317569,
+        "rudderDeg": -0.949753072,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
-          "main": 0,
+          "main": 0.203713358,
           "jib": 7
         },
-        "awsMs": 10.5407196,
-        "awaDeg": 23.3767582,
-        "fn": 0.400026493,
+        "awsMs": 10.3597497,
+        "awaDeg": 27.6138163,
+        "fn": 0.400003536,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.10343907,
-        "residual": 1.3738099e-12,
+        "vmgMs": 2.8409723,
+        "residual": 7.84124556e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -8969,13 +8969,13 @@
       {
         "twsMs": 8.23111111,
         "twsKn": 16,
-        "twaDeg": 31.8452479,
+        "twaDeg": 38.1892698,
         "ok": true,
-        "speedMs": 3.81233537,
-        "VMs": 3.81233537,
-        "heelDeg": 14.6759349,
-        "leewayDeg": 6.16072971,
-        "rudderDeg": -1.44238886,
+        "speedMs": 3.81222247,
+        "VMs": 3.81222247,
+        "heelDeg": 16.3505359,
+        "leewayDeg": 6.69977619,
+        "rudderDeg": -1.02793355,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -8983,13 +8983,13 @@
           "main": 0,
           "jib": 7
         },
-        "awsMs": 11.6446472,
-        "awaDeg": 21.898111,
-        "fn": 0.400060241,
+        "awsMs": 11.4721416,
+        "awaDeg": 26.3334381,
+        "fn": 0.400048393,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.23848846,
-        "residual": 6.44918143e-11,
+        "vmgMs": 2.99630276,
+        "residual": 5.14901695e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -9001,13 +9001,13 @@
       {
         "twsMs": 10.2888889,
         "twsKn": 20,
-        "twaDeg": 34.8602471,
+        "twaDeg": 37.6630451,
         "ok": true,
-        "speedMs": 4.16845811,
-        "VMs": 4.16845811,
-        "heelDeg": 23.7737027,
-        "leewayDeg": 7.45774943,
-        "rudderDeg": 0.01815313,
+        "speedMs": 3.95895789,
+        "VMs": 3.95895789,
+        "heelDeg": 24.030675,
+        "leewayDeg": 8.58015389,
+        "rudderDeg": -0.177752477,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9015,13 +9015,13 @@
           "main": 0,
           "jib": 7
         },
-        "awsMs": 13.9148113,
-        "awaDeg": 25.0010711,
-        "fn": 0.437431179,
+        "awsMs": 13.6390966,
+        "awaDeg": 27.4471963,
+        "fn": 0.415446568,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": 3.42042265,
-        "residual": 5.94981426e-13,
+        "vmgMs": 3.13398151,
+        "residual": 2.53591045e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -9037,11 +9037,11 @@
         "twsKn": 6,
         "twaDeg": 179.495361,
         "ok": true,
-        "speedMs": 1.44602489,
-        "VMs": 1.44602489,
+        "speedMs": 1.47445363,
+        "VMs": 1.47445363,
         "heelDeg": 0,
-        "leewayDeg": 0.0460131629,
-        "rudderDeg": -0.0221938515,
+        "leewayDeg": 0.0415084092,
+        "rudderDeg": -0.0163075611,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9049,13 +9049,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 1.6407473,
-        "awaDeg": 179.050613,
-        "fn": 0.151743487,
+        "awsMs": 1.61232252,
+        "awaDeg": 179.033874,
+        "fn": 0.154726754,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.4459688,
-        "residual": 7.23991482e-15,
+        "vmgMs": -1.47439645,
+        "residual": 3.8885801e-15,
         "flags": [
           {
             "id": "dsyhs",
@@ -9067,13 +9067,13 @@
       {
         "twsMs": 4.11555556,
         "twsKn": 8,
-        "twaDeg": 179.484977,
+        "twaDeg": 179.495361,
         "ok": true,
-        "speedMs": 1.85527501,
-        "VMs": 1.85527501,
+        "speedMs": 1.89885769,
+        "VMs": 1.89885769,
         "heelDeg": 0,
-        "leewayDeg": 0.0529628589,
-        "rudderDeg": -0.0256485039,
+        "leewayDeg": 0.047220725,
+        "rudderDeg": -0.0186224146,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9081,13 +9081,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 2.26041701,
-        "awaDeg": 179.062264,
-        "fn": 0.194689526,
+        "awsMs": 2.2168346,
+        "awaDeg": 179.063107,
+        "fn": 0.199263021,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -1.85520006,
-        "residual": 3.69655549e-13,
+        "vmgMs": -1.89878404,
+        "residual": 9.62686312e-13,
         "flags": [
           {
             "id": "dsyhs",
@@ -9099,13 +9099,13 @@
       {
         "twsMs": 5.14444444,
         "twsKn": 10,
-        "twaDeg": 179.468175,
+        "twaDeg": 179.484977,
         "ok": true,
-        "speedMs": 2.24727317,
-        "VMs": 2.24727317,
+        "speedMs": 2.29979534,
+        "VMs": 2.29979534,
         "heelDeg": 0,
-        "leewayDeg": 0.0592220766,
-        "rudderDeg": -0.0287831817,
+        "leewayDeg": 0.052930895,
+        "rudderDeg": -0.0209623566,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9113,13 +9113,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 2.89734317,
-        "awaDeg": 179.055676,
-        "fn": 0.235825173,
+        "awsMs": 2.84481713,
+        "awaDeg": 179.068626,
+        "fn": 0.241336763,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.24717636,
-        "residual": 4.91808167e-15,
+        "vmgMs": -2.29970243,
+        "residual": 8.79400897e-10,
         "flags": [
           {
             "id": "dsyhs",
@@ -9131,27 +9131,27 @@
       {
         "twsMs": 6.17333333,
         "twsKn": 12,
-        "twaDeg": 179.468175,
+        "twaDeg": 179.972814,
         "ok": true,
-        "speedMs": 2.58066721,
-        "VMs": 2.58066721,
+        "speedMs": 2.63096918,
+        "VMs": 2.63096918,
         "heelDeg": 0,
-        "leewayDeg": 0.068886869,
-        "rudderDeg": -0.0336674106,
+        "leewayDeg": 0.0616877802,
+        "rudderDeg": -0.0242090065,
         "flat": 1,
         "set": "full",
         "reef": -1,
         "sheetsDeg": {
           "main": 85,
-          "jib": -90
+          "jib": -89.9999995
         },
-        "awsMs": 3.59285715,
-        "awaDeg": 179.086179,
-        "fn": 0.270810998,
+        "awsMs": 3.54236467,
+        "awaDeg": 179.952622,
+        "fn": 0.276089605,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.58055604,
-        "residual": 2.40624799e-12,
+        "vmgMs": -2.63096889,
+        "residual": 2.1658909e-12,
         "flags": [
           {
             "id": "dsyhs",
@@ -9165,11 +9165,11 @@
         "twsKn": 14,
         "twaDeg": 179.468175,
         "ok": true,
-        "speedMs": 2.90329782,
-        "VMs": 2.90329782,
+        "speedMs": 2.9654094,
+        "VMs": 2.9654094,
         "heelDeg": 0,
-        "leewayDeg": 0.0777545574,
-        "rudderDeg": -0.038195818,
+        "leewayDeg": 0.070275958,
+        "rudderDeg": -0.0281837313,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9177,13 +9177,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 4.29913393,
-        "awaDeg": 179.109024,
-        "fn": 0.304667327,
+        "awsMs": 4.23702997,
+        "awaDeg": 179.095964,
+        "fn": 0.311185214,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -2.90317275,
-        "residual": 3.63714251e-10,
+        "vmgMs": -2.96528165,
+        "residual": 8.18929461e-14,
         "flags": [
           {
             "id": "dsyhs",
@@ -9195,13 +9195,13 @@
       {
         "twsMs": 8.23111111,
         "twsKn": 16,
-        "twaDeg": 179.440988,
+        "twaDeg": 179.468175,
         "ok": true,
-        "speedMs": 3.23584509,
-        "VMs": 3.23584509,
+        "speedMs": 3.31390025,
+        "VMs": 3.31390025,
         "heelDeg": 0,
-        "leewayDeg": 0.0844007656,
-        "rudderDeg": -0.0416188516,
+        "leewayDeg": 0.0756747559,
+        "rudderDeg": -0.0304649466,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9209,13 +9209,13 @@
           "main": 85,
           "jib": -90
         },
-        "awsMs": 4.99551979,
-        "awaDeg": 179.078892,
-        "fn": 0.339564293,
+        "awsMs": 4.91744982,
+        "awaDeg": 179.109777,
+        "fn": 0.347755274,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.23569108,
-        "residual": 1.21550603e-11,
+        "vmgMs": -3.31375749,
+        "residual": 3.53802925e-11,
         "flags": [
           {
             "id": "dsyhs",
@@ -9229,11 +9229,11 @@
         "twsKn": 20,
         "twaDeg": 179.972814,
         "ok": true,
-        "speedMs": 3.99215539,
-        "VMs": 3.99215539,
+        "speedMs": 4.04866295,
+        "VMs": 4.04866295,
         "heelDeg": 0,
-        "leewayDeg": 0.0875020292,
-        "rudderDeg": -0.0432377266,
+        "leewayDeg": 0.0804401999,
+        "rudderDeg": -0.0320253491,
         "flat": 1,
         "set": "full",
         "reef": -1,
@@ -9241,13 +9241,13 @@
           "main": 85,
           "jib": -89.9999995
         },
-        "awsMs": 6.29673423,
-        "awaDeg": 179.955578,
-        "fn": 0.41893026,
+        "awsMs": 6.24022669,
+        "awaDeg": 179.955175,
+        "fn": 0.424860071,
         "regime": "displacement",
         "planingWeight": 0,
-        "vmgMs": -3.99215494,
-        "residual": 7.79730382e-15,
+        "vmgMs": -4.0486625,
+        "residual": 5.91894458e-16,
         "flags": [
           {
             "id": "dsyhs",
@@ -9273,6 +9273,71 @@
       7.85663712
     ],
     "ceHeightFrac": 0.38
+  },
+  "windage": {
+    "source": "ORC VPP Documentation 2023, §5.3 Windage Forces (Table 5.10; eqs. 5.27, 5.28, 5.31–5.33), orc.org, retrieved 2026-11-12: the elements, areas, drag coefficients and heights. Resolution: cross flow on the hull, drag along the flow on spars (this package's; ORC resolves every element along the apparent wind).",
+    "elements": [
+      {
+        "id": "hull",
+        "shape": "body",
+        "areaFrontM2": 8.5549144,
+        "areaSideM2": 17.3423086,
+        "sidePerSinHeelM2": 23.3511787,
+        "cdFront": 0.816,
+        "cdSide": 0.816,
+        "atM": [
+          6.33222854,
+          0,
+          1.01874726
+        ],
+        "zPerSinHeelM": 3.65794427
+      },
+      {
+        "id": "mast-sail",
+        "shape": "spar",
+        "areaFrontM2": 1.52831987,
+        "areaSideM2": 1.52831987,
+        "sidePerSinHeelM2": 0,
+        "cdFront": 0.4,
+        "cdSide": 0.6,
+        "atM": [
+          6.97447488,
+          0,
+          10.1094555
+        ],
+        "zPerSinHeelM": 0
+      },
+      {
+        "id": "mast-bare",
+        "shape": "spar",
+        "areaFrontM2": 0.22925618,
+        "areaSideM2": 0.22925618,
+        "sidePerSinHeelM2": 0,
+        "cdFront": 0.8,
+        "cdSide": 0.8,
+        "atM": [
+          6.97447488,
+          0,
+          5.28727212
+        ],
+        "zPerSinHeelM": 0
+      },
+      {
+        "id": "rigging",
+        "shape": "spar",
+        "areaFrontM2": 0.394107494,
+        "areaSideM2": 0.394107494,
+        "sidePerSinHeelM2": 0,
+        "cdFront": 1.2,
+        "cdSide": 1.2,
+        "atM": [
+          6.97447488,
+          0,
+          9.48045548
+        ],
+        "zPerSinHeelM": 0
+      }
+    ]
   },
   "warnings": [],
   "rules": "contract/v1/specification.md §6"

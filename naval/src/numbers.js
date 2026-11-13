@@ -24,6 +24,7 @@ import { buildDesign, CLARKE_SOURCE } from "./naval/design.js";
 import { referencePoint, helmVerdict, HELM_BAND } from "./naval/vpp.js";
 import { envelopeText, envelopeGrade, DSYHS_RESIDUARY_SOURCE, SAVITSKY_SOURCE } from "./naval/resistance.js";
 import { approximately } from "./naval/sails.js";
+import { WINDAGE_SOURCE } from "./naval/windage.js";
 
 export { MODEL_LOA_M };
 
@@ -595,7 +596,7 @@ function loadsSection(doc, a, plan) {
 /** Plain words for the model's scope and the hull's place in it. */
 function performanceNotes(design) {
   const notes = [
-    "Static VPP: flat water, steady wind with no gradient, fixed trim, no windage, no spinnaker, no heel-induced hull yaw. Sails trimmed to their best angle of attack and flattened or reefed to keep within the heel limit.",
+    "Static VPP: flat water, steady wind with no gradient, fixed trim, no spinnaker, no heel-induced hull yaw. Windage of the hull, mast and standing rigging by ORC's elements (no crew windage). Sails trimmed to their best angle of attack, each sail's CE swung out with its sheet, flattened or reefed to keep within the heel limit.",
   ];
   if (!design.ok) return notes;
   const p = design.planing;
@@ -627,6 +628,7 @@ function performanceSection(doc, { design, reference, helm, polar, grade }) {
     row("refHeel", "Heel", r.heel, "angle", { prov: "derived" });
     row("refLeeway", "Leeway", r.leeway, "angle", { prov: "derived" });
     row("refHelm", "Rudder (+ weather helm)", r.rudder, "angle", { prov: "derived", band: { label: helm.text, out: helm.out || undefined }, source: HELM_BAND.source });
+    row("refWindage", "Windage drag (hull, mast, rigging)", r.windageN ?? NaN, "force", { prov: "estimated", note: "ORC's windage elements: each area at its drag coefficient, in the apparent wind; the hull by cross flow, the spars along the flow.", source: WINDAGE_SOURCE });
     row("refAws", "Apparent wind", r.aws, "speed", { prov: "derived" });
     row("refAwa", "Apparent wind angle", r.awa, "angle", { prov: "derived" });
     row("refFlat", "Flat (1 = full power)", r.flat, "ratio", { prov: "derived", note: r.reef >= 0 ? `Reef ${r.reef + 1}.` : "Full sail." });

@@ -30,16 +30,25 @@
 // Resistance R = resistance.js R(V, φ, Y) with Y = Y_k + Y_r + Y_h.
 // Equations (forces in the body frame, the water force perpendicular and
 // the resistance along the track):
-//   surge   Fx_sail − R·cos λ + L·sin λ = 0,          L = Y·cos φ
+//   surge   Fx − R·cos λ + L·sin λ = 0,          L = Y·cos φ
 //   sway    −Fh·cos φ + R·sin λ + L·cos λ = 0
-//   roll    Fh·(z_CE − z_Y) = RM(φ)                   (z_Y: the side force's centre)
-//   yaw     Σ Y_i·cos φ·x_i + N_h − Fh·cos φ·x_CE + Fx_sail·z_CE·sin φ
+//   roll    Σ Fh_j·(z_j − z_Y) = RM(φ)          (z_Y: the side force's centre)
+//   yaw     Σ Y_i·cos φ·x_i + N_h + Σ_j (−Fh_j·cos φ·x_j + Fx_j·(z_j·sin φ + y_j·cos φ))
 //           − (R_app + R_i)·z_Y·sin φ + R·sin λ·x_LCB = 0
+//   j over the sail set and each windage element (windage.js), each with its
+//   own drive Fx_j and heel force Fh_j at its own centre (x_j, y_j, z_j);
+//   Fx = Σ Fx_j, Fh = Σ Fh_j. The set's centre is its CE with each sail
+//   swung to its sheet about its luff (sails.js swungSetCE): y_j to leeward
+//   of the centreplane, so a main eased out drives her from the lee side.
+//   A windage element is on the centreplane (y_j = 0).
 //   (+ yaw = the bow to windward; the drive at a heeled CE, to leeward of
 //   the centreline, rounds her up; drag on a heeled keel, to windward, too.)
 // Righting: RM(φ) = RM_boat(φ) + RM_crew(φ) from the stability curve. When
 // the wind's moment upright is less than the crew's, she sails upright with
 // the crew partly in (φ = 0).
+//
+// Air: the sails (sails.js) and the windage of the hull, mast and rigging
+// (windage.js, ORC's elements), in one apparent wind (no gradient).
 //
 // Method. φ is solved inside, for given (V, λ, δ), by a bracketed root on
 // roll; (V, λ, δ) by damped Newton with a finite-difference Jacobian, warm-
@@ -51,7 +60,8 @@
 
 import { liftSlope } from "./foils.js";
 import { resistanceModel, regime, envelopeText, FN_MAX_DISPLACEMENT } from "./resistance.js";
-import { rigForces, tableOf, FLAT_MIN } from "./sails.js";
+import { rigForces, tableOf, sheetsAt, swungSetCE, FLAT_MIN } from "./sails.js";
+import { windageForces } from "./windage.js";
 import { G } from "./ratios.js";
 import { KNOT } from "./units.js";
 
@@ -152,20 +162,31 @@ export function forcesAt(D, c, s) {
   const R = res.total;
   const L = Y * cphi;
   const cl = Math.cos(lam * RAD), sl = Math.sin(lam * RAD);
-  const [xCE, zCE] = c.set.ce;
-  const surge = sail.drive - R * cl + L * sl;
-  const sway = -sail.heelForce * cphi + R * sl + L * cl;
-  const hm = sail.heelForce * (zCE - zY);
+  // the set's CE with each sail swung to its sheet (§6.6): y' to leeward of the centreplane
+  const [xCE, yCE, zCE] = swungSetCE(c.set, sheetsAt(tableOf(c.set), sail.betaE));
+  // windage: each element a drive and a heel force at its own centre (windage.js, §6.1)
+  const wind = windageForces(D.windage, { awsE: sail.awsE, betaEDeg: sail.betaE, heelDeg: phi, rho: RHO_AIR });
+  let wSurge = 0, wSway = 0, wHm = 0, wYaw = 0;
+  for (const f of wind.list) {
+    wSurge += f.fx;
+    wSway -= f.fh * cphi;
+    wHm += f.fh * (f.z - zY);
+    wYaw += -f.fh * cphi * f.x + f.fx * f.z * sphi;
+  }
+  const surge = sail.drive + wSurge - R * cl + L * sl;
+  const sway = -sail.heelForce * cphi + wSway + R * sl + L * cl;
+  const hm = sail.heelForce * (zCE - zY) + wHm;
   const rm = rmAt(D, phi);
   const xk = D.keel?.qc[0] ?? 0, xr = D.rudder?.qc[0] ?? 0, xh = hs.xMid;
   const yaw =
     (Yk * xk + Yr * xr + Yh * xh) * cphi +
     Nh -
     sail.heelForce * cphi * xCE +
-    sail.drive * zCE * sphi -
+    sail.drive * (zCE * sphi + yCE * cphi) +
+    wYaw -
     (res.appendages + res.induced) * zY * sphi +
     R * sl * D.hull.lcbX;
-  return { aws, awaTrack, beta, sail, q, keel: { alphaDeg: ak, ...k, Y: Yk }, rudder: { alphaDeg: ar, ...r, Y: Yr }, hullY: Yh, hullN: Nh, Y, zY, res, surge, sway, hm, rm, yaw };
+  return { aws, awaTrack, beta, sail, ce: [xCE, yCE, zCE], windage: wind, q, keel: { alphaDeg: ak, ...k, Y: Yk }, rudder: { alphaDeg: ar, ...r, Y: Yr }, hullY: Yh, hullN: Nh, Y, zY, res, surge, sway, hm, rm, yaw };
 }
 
 /** Scales that make the residuals O(1). */
@@ -400,6 +421,9 @@ function describe(D, w, pick, held) {
     regime: reg.id,
     regimeText: reg.text,
     planingWeight: F?.res?.planingWeight ?? 0,
+    // the windage's drag along the boat (N, + astern) and its heel force (N), windage.js
+    windageN: F ? -F.windage.drive : null,
+    windageHeelN: F ? F.windage.heel : null,
     residual: e.residual,
     vmg: e.ok ? e.V * Math.cos(w.twa * RAD) : null,
     flags,

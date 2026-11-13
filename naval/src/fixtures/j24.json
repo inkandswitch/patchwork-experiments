@@ -453,13 +453,13 @@
       "knownGaps": {
         "beatAngle": {
           "measuredDeltaDeg": {
-            "8": 0,
-            "12": -7.8,
-            "16": -9
+            "8": 0.8,
+            "12": -3.5,
+            "16": -5.8
           },
           "ratchetDeg": 1.5,
-          "measuredOn": "2026-11-06",
-          "why": "she points higher than ORC at 12 and 16 kn: the VPP has no heel-induced hull side force, no keel residuary, and the sails' coefficients are generic"
+          "measuredOn": "2026-11-12",
+          "why": "she points higher than ORC at 12 and 16 kn: the VPP has no heel-induced hull side force, no keel residuary, and the sails' coefficients are generic. Windage (ORC's elements, added 2026-11-12) halved it: it was 7.8° and 9.0°"
         }
       }
     },

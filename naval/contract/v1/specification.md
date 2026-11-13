@@ -116,7 +116,7 @@ word for a figure no source or designer gave: a rule of thumb, marked.
 `frame`, `source`, `hull`, `loading`, `appendages`, `sails`, `sailModel`,
 `sets`, `rig`, `resistance`, `hardpoints`, `loads` (null until the
 stability is built), `predicted`, `lumpedSail` (null with no sails),
-`warnings` (the aid's plain-text warnings for this design, e.g. a hull
+`windage` (§3.13), `warnings` (the aid's plain-text warnings for this design, e.g. a hull
 under 2 m "looks like a model, not a boat"), `rules` (where §6 is). No
 other field is allowed.
 
@@ -306,6 +306,34 @@ track), `fn`, `regime` (displacement / transition / planing / beyond),
 
 §6.8: `tackM`, `luffM`, `footM`, `areaM2`, `ceM`, `ceHeightFrac`.
 
+### 3.13 `windage`
+
+What isn't sail, as §6.1 composes it: `source` (where the elements and
+their coefficients come from) and `elements[]`, each `id` (`hull`,
+`mast-sail`, `mast-bare`, `rigging`), `shape` (`body`: cross flow on each
+area; `spar`: drag along the flow), `areaFrontM2` and `areaSideM2` (the
+projected areas head-on and abeam, upright), `sidePerSinHeelM2` (the side
+area's growth per sin φ), `cdFront` and `cdSide`, `atM` (its centre
+upright, on the centreplane) and `zPerSinHeelM` (the centre's rise per
+sin φ). The elements are ORC's (ORC VPP Documentation 2023, §5.3, Table
+5.10):
+
+- `hull`: frontal FBAV·B, side FBAV·LOA + 0.75·(B/2)·LOA·sin φ (eq. 5.28),
+  Cd 0.816, at 0.66·(FBAV + B·sin φ) above the waterplane, at mid-LOA;
+  FBAV the sheer's mean height over the LOA, B the beam overall.
+- `mast-sail`: the mast beside the main's luff (BAS to BAS + P), width
+  `rig.mast.sectionM` × P, Cd 0.4 head-on, 0.6 abeam, at its middle.
+- `mast-bare`: the rest of the mast above the partners, Cd 0.8, at its
+  length-weighted middle.
+- `rigging` (a stayed rig): I × 2·d (eq. 5.32), Cd 1.0 × 1.2 for the
+  spreaders (eq. 5.33), at half I; d the cap shroud's, a 1×19 wire breaking
+  at 2.5 × the chainplate load at RM30 (§3.10's), at a nominal 1.0 GPa
+  (estimated: ORC sizes it from a rigging weight it doesn't publish).
+
+No crew windage, boom, pulpits or dodger. The reef winds of `loads` add
+the windage's heeling moment (its heel forces at an apparent 30°, upright,
+each at its own height over the CLR) to the sails'.
+
 ## 4. What a consumer must and mustn't do
 
 - Read the contract; never write back to the rig doc or the hull. Where it
@@ -371,7 +399,7 @@ h_e (`heM`) and ARe (`are`) are the set's.
 ### 6.1 Air
 
 ρ_air = 1.225 kg/m³ (`sailModel.rhoAirKgM3`). Flat water, steady wind, **no wind gradient**: every
-sail sees the same apparent wind. No windage of hull, mast or crew.
+sail, and every windage element, sees the same apparent wind.
 
 Apparent wind. With the boat at speed V along its track, true wind TWS
 from TWA off the track:
@@ -383,6 +411,24 @@ Heeled sail plane:
 
     β_e   = atan2(sin β·cos φ, cos β)
     AWS_e = AWS·√(cos²β + sin²β·cos²φ)
+
+**Windage** (`windage.elements`, §3.13). Each element is a drive Fx_j
+(along the boat, + ahead) and a heel force Fh_j (square to the mast, + to
+leeward) at its own centre (x_j, z_j(φ) = atM.z + zPerSinHeelM·sin φ), with
+q_e = ½·ρ_air·AWS_e²:
+
+    body   Fx = −q_e·cdFront·areaFrontM2·cos β_e·|cos β_e|
+           Fh =  q_e·cdSide·(areaSideM2 + sidePerSinHeelM2·sin φ)·sin β_e·|sin β_e|
+    spar   D  =  q_e·areaFrontM2·(cdFront·cos²β_e + cdSide·sin²β_e)
+           Fx = −D·cos β_e,   Fh = D·sin β_e
+
+A body (the hull) meets the flow by cross flow: its along-boat drag comes
+from its frontal area and its side force from its side area (ORC takes the
+whole drag along the apparent wind instead, which puts the side area's drag
+along the boat too). A spar (a round mast or wire) has its drag along the
+flow, its Cd interpolated in cos² and sin² so a bare spar's is the same
+from every side. They enter §6.6 exactly as a sail set's drive and heel
+force do at its CE.
 
 ### 6.2 One sail: coefficients against angle of attack
 
@@ -571,18 +617,32 @@ the force scale.
 
 ### 6.6 Balance
 
-At an equilibrium (V, φ, λ, δ), with Fx, Fh from §6.3 and R from §6.5:
+At an equilibrium (V, φ, λ, δ), with R from §6.5, and j over the sail set
+(its Fx_j, Fh_j from §6.3, at its swung CE below) and each windage element
+(§6.1, at its own centre, y_j = 0); Fx = Σ Fx_j, Fh = Σ Fh_j:
 
     surge   Fx − R·cos λ + Y·cos φ·sin λ = 0
     sway    −Fh·cos φ + R·sin λ + Y·cos φ·cos λ = 0
-    roll    Fh·(z_CE − z_Y) = RM(φ)       RM = Δ·g·GZ(φ) + crew·g·arm·cos φ (the stability curve)
-    yaw     (Y_k·x_k + Y_r·x_r + Y_h·x_mid)·cos φ + N_h − Fh·cos φ·x_CE
-            + Fx·z_CE·sin φ − (R_app + R_i)·z_Y·sin φ + R·sin λ·x_LCB = 0
+    roll    Σ Fh_j·(z_j − z_Y) = RM(φ)       RM = Δ·g·GZ(φ) + crew·g·arm·cos φ (the stability curve)
+    yaw     (Y_k·x_k + Y_r·x_r + Y_h·x_mid)·cos φ + N_h + Σ (−Fh_j·cos φ·x_j + Fx_j·(z_j·sin φ + y_j·cos φ))
+            − (R_app + R_i)·z_Y·sin φ + R·sin λ·x_LCB = 0
+
+**The set's CE, swung.** Each sail of the set turns about its luff (the
+line from `tackM`, the gooseneck for the main, to `headM`) by its sheeting
+angle δ_s, to leeward: its CE's part along the luff stays, and its part
+square to the luff (length r⊥, in the centreplane) turns out of it, to
+r⊥·cos δ_s in the centreplane and r⊥·sin δ_s to leeward. The set's centre
+(x, y, z) is the sails' swung CEs (a reefed main's is `reefs[].ceM`),
+area-weighted, as `ceM` is of them unswung; δ_s is the set's
+`trimmed.sheetsDeg` at |β_e|, linear between whole degrees. So a main
+eased out drives her from its lee side and turns her bow to windward (the
+Laser's runs: 1.5–2.2° of weather helm, which sailing's sim, swinging each
+sail the same way, measured first).
 
 Yaw is positive turning the bow to windward. There is no yaw term from
 heel alone (the asymmetric heeled hull, §6.4 "Not modelled"), so δ reads
-toward lee helm as φ grows; a consumer judging helm should say so. x_CE and z_CE are the set's
-`ceM`; x_LCB is `hull.lcbM`. RM(φ) is `loading.righting`: `boatNm` +
+toward lee helm as φ grows; a consumer judging helm should say so.
+x_LCB is `hull.lcbM`. RM(φ) is `loading.righting`: `boatNm` +
 `crewNm`, linear between `heelsDeg` (it includes the appendages' buoyancy,
 the crew's m·g·arm·cos φ, and G from the mass roll-up; nothing beyond its
 last heel). When the heeling moment upright is less than the crew's
@@ -631,7 +691,9 @@ agreement test doesn't use it.
 
 - **Sailing's physics**: `frame` (to put the rig on the hull and convert to
   its own frame), `loading` (mass, CG, gyradii, crew and the righting
-  curve), `appendages`, `sails`, `sailModel`, `sets`, `hull` (its
+  curve), `appendages`, `sails`, `sailModel`, `sets`, `windage` (not yet:
+  sailing applies its own windage rule today, and the naval package's
+  `src/sailing-agreement.test.js` measures the difference), `hull` (its
   particulars, to float her on the hull the contract describes when her
   drawn hull isn't it, and `hull.sideForce`), `resistance`, `lumpedSail`
   (§6.8), and `source.hull` (to warn when the rig is on another

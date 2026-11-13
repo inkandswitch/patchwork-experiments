@@ -37,15 +37,28 @@ band 3–7%).
 
 - **Sail plans and ratios** match by hand to within 0.1%: SA, SA/D, D/L, the ballast ratio and hull speed. The J/24's measured main (15.66 m²) and genoa (18.78 m²) also match.
 - **Round trips** (`roundTrip`): rows whose value is one of the doc's own inputs are printed apart, as checks of the generators, not as validation: the Laser's Cp, Cm, BWL and Tc (all from Day's Table 2, which the synthetic hull is built from) and the J/24's and Catalina 30's draft (their keel spans are estimated to reach it).
-- **J/24 speeds against ORC** are within 8% from 52° to 90° and for beat VMG, at 8, 12 and 16 kn.
-  - Known gap: she points 7.8° (12 kn) and 9.0° (16 kn) higher than ORC. Held by a ratchet of ±1.5° on those measured values.
+- **J/24 speeds against ORC** are within 8% from 52° to 90° and for beat VMG, at 8, 12 and 16 kn (with windage, 2026-11-12: within 4.3%, beat VMG within 1%).
+  - Known gap: she points 3.5° (12 kn) and 5.8° (16 kn) higher than ORC (7.8° and 9.0° before windage). Held by a ratchet of ±1.5° on those measured values.
   - Downwind is printed but not compared, because ORC's figures include a spinnaker and the VPP has none.
 - **Laser against Day's VPP** is within 7.5% at 9 kn. She planes on a reach at 16 kn true, 100°: 13.0 kn at trim 1.5° (below Savitsky's 2°, flagged), against an *estimated* 12 kn ±25% target (no measured figure could be fetched; see `laser-reach-anecdotal`).
-- **Catalina 30 beat VMG** is 11–12% over its PHRF-relative target at 8 and 12 kn. At 16 kn it is 16.5% over, a known gap held by a ±2-point ratchet.
+- **Catalina 30 beat VMG** is 11–12% over its PHRF-relative target at 8 and 12 kn. At 16 kn it is 16.5% over, a known gap held by a ±2-point ratchet. With windage (2026-11-12) it is 4.5%, 5.5% and 10.0% over, and the 16 kn gap is gone.
 - **J/24 righting moment at 1°** is 36.9 kg·m, 37% above ORC's 27 kg·m: a known gap, ratcheted at ±3% of 36.9. GM 1.81 m against ORC's implied 1.22 m. BWL 2.05–2.10 m (−9 to −11%) would close it at the same VCG; closing it with VCG alone would need G 0.59 m higher, which isn't credible, so the estimated BWL is the likelier culprit.
 - **Known gap: helm.** With each keel's quarter chord over the LCB (an estimate, because no source gives keel position), the VPP reads lee helm on the Catalina 30 (3.5°) and the J/24 (5.3°). Their leads are 19.5% and 16.2%, against (estimated, secondhand) bands of 5–9% and 3–7%.
   - Either the real keels sit further forward than the LCB, or the band and CLR convention (quoted secondhand) or the VPP's yaw balance is off. The VPP leaves out the hull's heel-induced side force and yaw moment (spec §6.4), which biases it toward lee helm as heel grows.
   - The Laser, the only fixture whose blade and mast positions come from a source, reads weather helm of 1.4°; the stock 12 m sloop 0.6°.
+
+### Windage (2026-11-12)
+
+The VPP gained the windage of the hull, mast and standing rigging (ORC's
+elements, `src/naval/windage.js`) and swings each sail's CE out with its
+sheet. Against ORC that closed most of what was left: the J/24 above; the
+J/70's and Soling's beat VMG from 4–12% over to within 7%, pointing 3–5°
+higher instead of 7°; the HR 40C's beat VMG from 10–13% over Frers' VPP to
+3–4%; the
+Farr 40 went from within 4% to 6–7% slow upwind (Farr's own VPP is 4–6%
+under ORC's there). The helm on every keelboat reads 0.1–0.6° further to
+lee (windage's drag, high on a heeled rig). The pins were re-measured;
+the PHRF order is unchanged.
 
 ## The 2026-11-10 fleet
 

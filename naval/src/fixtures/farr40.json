@@ -428,27 +428,27 @@
       },
       "note": "ORC rates downwind with the masthead spinnaker (161.97 m²); the VPP has none, so only the beat and 52–90° are compared. Farr's own 1997 VPP gives beat VMG 4.82 / 5.44 / 5.63 kn at 8 / 12 / 16 kn, 4–6% under ORC's.",
       "pinned": {
-        "measuredOn": "2026-11-10",
+        "measuredOn": "2026-11-12",
         "ratchetPoints": 2,
         "ratchetDeg": 1.5,
         "cells": {
-          "8kn 52°": -3.5,
-          "8kn 75°": -1.2,
-          "8kn 90°": -1.7,
-          "12kn 52°": -1.8,
-          "12kn 75°": -0.5,
-          "12kn 90°": 0.1,
-          "16kn 52°": -0.6,
-          "16kn 75°": -0.9,
-          "16kn 90°": 0.1,
-          "8kn beatVMG": -2,
-          "8kn beatAngle": -1.6,
-          "12kn beatVMG": 0.8,
-          "12kn beatAngle": -2.7,
-          "16kn beatVMG": 0.8,
-          "16kn beatAngle": -4.8
+          "8kn 52°": -5.5,
+          "8kn 75°": -2.7,
+          "8kn 90°": -2.7,
+          "12kn 52°": -4.7,
+          "12kn 75°": -2.2,
+          "12kn 90°": -1.1,
+          "16kn 52°": -4.4,
+          "16kn 75°": -3.7,
+          "16kn 90°": -2.5,
+          "8kn beatVMG": -7.3,
+          "8kn beatAngle": -0.1,
+          "12kn beatVMG": -6.1,
+          "12kn beatAngle": 2.4,
+          "16kn beatVMG": -7.2,
+          "16kn beatAngle": 1.8
         },
-        "why": "the closest of the fleet: every speed within 4% of ORC; she still points 3–5° higher at 12 and 16 kn."
+        "why": "every speed within 7.3% of ORC, now under it: beat VMG 6–7% slow, the angle within 2.4°. Windage cost her 2–8 points of beat VMG; without it (2026-11-10) every speed was within 4%, pointing 3–5° higher. Farr's own VPP is 4–6% under ORC's upwind, as she now is."
       }
     },
     "balance": {

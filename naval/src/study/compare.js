@@ -81,6 +81,7 @@ export const CATALOGUE = Object.freeze([
     rows: [
       ["refSpeed", "Speed at the reference point", "speed", "design"],
       ["refHeel", "Heel at the reference point", "angle", "design"],
+      ["refWindage", "Windage drag at the reference point", "force", "design"],
       ["beatVmg", "Best upwind VMG", "speed", "design"],
       ["runVmg", "Best downwind VMG", "speed", "design"],
     ],
