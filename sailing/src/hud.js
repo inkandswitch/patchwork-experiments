@@ -20,7 +20,7 @@ import { trimOf } from "./trim.js";
 
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-const WALK_KEYS = "WASD walk · Shift run · Space jump · F use · Esc leave";
+const WALK_KEYS = "WASD walk · Shift run · Space jump · F use";
 
 /** m/s in knots, to a tenth. */
 export const knots = (ms) => Math.round((Number(ms) || 0) * KNOTS * 10) / 10;

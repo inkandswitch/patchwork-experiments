@@ -33,6 +33,8 @@ const FOV = 60; // vertical: about 90° across at 16:9; wider puts more heaving 
 const SEND_MS = 55; // presence, about 18 Hz
 const EASE = 12; // how fast an avatar closes on its latest record (1/s)
 const STILL = Object.freeze({ forward: 0, strafe: 0 });
+/** How far the crew reaches (m), walking her deck or at a station: the bodies' reach (scene/TOOLS.md §4). */
+export const REACH = 2.5;
 const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
 
 const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -79,8 +81,8 @@ export function placeOf(a, worldOf) {
  * anything not aboard a ship at all (the islet, its lighthouse, a buoy):
  * yes. On something aboard her that isn't hers (a card or the table in her
  * cockpit, which the hand takes a click on), no: it goes on down the chain.
- * `seated`: the viewer's view is riding something (a seat at a table aboard
- * her, the stage's camera.riding()); then only the sea or the sky does (the
+ * `seated`: the viewer is in a body that isn't the crew's or orbit (a seat at
+ * a table aboard her: seatedView); then only the sea or the sky does (the
  * hull round the table is where stray clicks land), or the button, or Enter.
  * @param {{ objects }} scene  @param {{ id?: string } | null} hit  @param {{ seated?: boolean }} [o]
  */
@@ -94,10 +96,10 @@ export function boardsOn(scene, hit, { seated = false } = {}) {
   return ship == null || ship === id || sailingThing(o);
 }
 
-/** Is this viewer's view riding something other than the ship's own follow (a seat at a table aboard her)? */
+/** Is this viewer in a body that is neither orbit nor the crew's own (a seat at a table aboard her: scene/TOOLS.md §4)? */
 export const seatedView = (api) => {
-  const r = api?.camera?.riding?.();
-  return !!r && !r.fallback;
+  const id = api?.body?.current?.()?.id;
+  return id != null && !["orbit", "aboard", "station"].includes(id);
 };
 
 /** A stable hue for a person. */
@@ -292,14 +294,9 @@ export function createCrew(api, ctx) {
   api.style(NAME_CSS);
 
   let playing = false;
-  let paused = false; // the lock was lost (Esc): waiting for a click to take it back
-  // Pointer lock can be refused (a sandboxed frame, a headless browser). Then
-  // play goes on without it: drag to look.
-  let free = false;
-  let disarm = null;
   let releaseCamera = null;
   let orbitFov = null; // the camera's field of view before coming aboard
-  let station = null; // { id, handlers, disarm }
+  let station = null; // { id, handlers }
   let lastSent = 0;
   let eye = null; // world, while playing
   let eyeLag = 0; // the drawn eye's lag behind the true eye along her up, easing a STEP (easeEye): the camera only
@@ -410,7 +407,7 @@ export function createCrew(api, ctx) {
   // ─── each frame ─────────────────────────────────────────────────────────
 
   function wanted() {
-    if (paused || station) return STILL;
+    if (station || suspended) return STILL;
     return {
       forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
       strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
@@ -468,8 +465,8 @@ export function createCrew(api, ctx) {
 
   // Before coming aboard the camera is the orbit's, and it goes where the
   // ship goes (sideways only: no bobbing), so a sailing ship stays in view:
-  // a fallback ride (the stage's camera.ride), so anything else riding (a
-  // seat at a table aboard her) wins over it. A camera nobody has moved (not
+  // a base ride (the stage's camera.ride), which a body with a ride of its
+  // own (a seat at a table aboard her) wins over with no flag. A camera nobody has moved (not
   // even from a saved view) starts off the ship's quarter.
   let riding = null; // { ship, off }
   let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
@@ -483,7 +480,7 @@ export function createCrew(api, ctx) {
     if (!m || riding) return;
     if (!framed && !api.camera.touched?.()) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target) });
     framed = true;
-    riding = { ship, off: api.camera.ride(ship, { turn: false, rise: false, fallback: true }) };
+    riding = { ship, off: api.camera.ride(ship, { turn: false, rise: false }) };
   }
 
   // ─── input ──────────────────────────────────────────────────────────────
@@ -494,9 +491,8 @@ export function createCrew(api, ctx) {
     person.pitch = l.pitch;
   }
 
-  // a bare session: a press while playing is nothing, never an orbit
-  const bare = { move() {}, end() {}, cancel() {}, tap: () => true };
-  // without the lock: a drag looks around
+  // without the lock: a drag looks around, and a tap goes on as a click (down
+  // the chain again: walking has no default press of its own)
   const lookSession = (ev) => {
     let last = [ev.clientX ?? 0, ev.clientY ?? 0];
     return {
@@ -507,93 +503,180 @@ export function createCrew(api, ctx) {
       },
       end() {},
       cancel() {},
-      tap: () => true,
+      tap: () => false,
       cursor: "grabbing",
     };
   };
 
-  // looking and pressing, the same whether walking or at a station
+  // looking and pressing, the same whether walking or at a station: the
+  // body's input, last in the chain for presses (scene/TOOLS.md §5)
   const looking = {
     move(ev) {
-      if (ev.locked && !paused) turn(ev.dx ?? 0, ev.dy ?? 0);
+      if (ev.locked) turn(ev.dx ?? 0, ev.dy ?? 0);
     },
-    press(ev) {
-      if (paused) {
-        Promise.resolve(api.relock()).catch(() => {});
-        return bare;
-      }
-      if (ev.button === 0 && !ev.locked) return lookSession(ev);
-      return bare;
-    },
-    click: () => true,
-    menu: () => true,
+    press: (ev) => (ev.button === 0 && !ev.locked ? lookSession(ev) : null),
     wheel: () => true,
     cursor: (ev) => (ev.locked ? "none" : "grab"),
   };
 
-  const walking = {
-    ...looking,
-    // only the walking keys: F, Q, E and the rest go on to the use prompt
-    key(ev) {
-      if (ev.key === "Escape") {
-        stop();
-        return true;
-      }
-      if (!MOVE_KEYS.has(ev.code)) return false;
-      keys.add(ev.code);
-      return true;
-    },
-    keyup(ev) {
-      keys.delete(ev.code);
-      return true;
-    },
-    lockLost({ refused = false } = {}) {
-      keys.clear();
-      if (refused) {
-        if (playing) (free = true), (paused = false);
-        return;
-      }
-      leave(); // Esc at a station steps away from it too
-      paused = true;
-    },
-    disarmed() {
-      disarm = null;
-      if (playing) stop();
+  // ─── the bodies (scene/TOOLS.md §4) ─────────────────────────────────────
+  //
+  // Walking her deck is the "aboard" body; standing at a station, the
+  // "station" body, pushed over it (stepping away pops it, and you walk on
+  // where you stood). Both are sailing's own: the navmesh walker knows her
+  // deck, her ladder and the water, which the general walk body (the walk
+  // package's, on whatever the rays hit) doesn't. A body pushed over
+  // "aboard" that isn't sailing's (a seat at a table in her cockpit) leaves
+  // the walker waiting, the camera let go; when it goes, you stand up from
+  // where its view was.
+
+  const AB = "aboard";
+  const ST = "station";
+  /** Is the top body one of the crew's (walking her deck, or at a station)? */
+  const ours = () => [AB, ST].includes(api.local.get()?.body?.id);
+  let enteringStation = false; // a station going on over "aboard": not a wait
+  let overOrbit = true; // "aboard" went on over orbit (else over a body that has a view of its own: a seat)
+  let suspended = false; // another body (a seat) is over "aboard"
+
+  const walkKeys = Object.freeze([...MOVE_KEYS].map((code) => ({ code })));
+
+  /** Stand where the view is (a seat's eye, dropped by a seated eye's height), on the ship it's over: the walker after a seat. */
+  function standAtEye() {
+    const cam = api.camera.get();
+    const eyeW = cam?.position;
+    const ship = ctx.sim?.ships?.()[0] ?? null;
+    const m = ship ? frameOfShip(ship) : null;
+    if (!m || !Array.isArray(eyeW) || !env.mesh(ship)) return;
+    const local = apply(invert(m), eyeW);
+    const next = walker.place(env, ship, [local[0], local[1] - walker.WALKER.seatedEye, local[2]]);
+    if (!next || next.mode === "boarding") return;
+    w = next;
+    if (Array.isArray(cam?.target)) {
+      const t = apply(invert(m), cam.target);
+      const d = [t[0] - local[0], t[1] - local[1], t[2] - local[2]];
+      person.yaw = w.mode !== "swimming" ? Math.atan2(-d[0], -d[2]) : Math.atan2(-d[0], -d[2]) + headingOf(m);
+      person.pitch = Math.max(-1.2, Math.min(1.2, Math.atan2(d[1], Math.hypot(d[0], d[2]))));
+    }
+    checked();
+  }
+
+  const aboardBody = {
+    id: AB,
+    label: "Aboard",
+    keys: walkKeys,
+    lock: true,
+    reach: REACH,
+    enter() {
+      if (playing) return null;
+      // the body this one goes over: orbit, or one that takes the camera back when this goes (a seat)
+      overOrbit = (api.local.get()?.body?.id ?? "orbit") === "orbit";
+      playing = true;
+      suspended = false;
+      if (!w || (onShip() && !frameOfShip(w.ship))) spawn();
+      orbitFov = api.camera.get()?.fov ?? null; // given back on leaving: first person sees wider
+      releaseCamera = api.camera.hold();
+      publish(true);
+      return {
+        keys: walkKeys,
+        input: {
+          ...looking,
+          key(ev) {
+            keys.add(ev.code);
+            return true;
+          },
+          keyup(ev) {
+            keys.delete(ev.code);
+            return true;
+          },
+          suspended() {
+            if (enteringStation) return;
+            // a body that isn't ours on top (a seat): wait under it
+            suspended = true;
+            keys.clear();
+            releaseCamera?.();
+            releaseCamera = null;
+            api.presence.set("crew", undefined);
+          },
+          resumed() {
+            if (!suspended) return; // back from a station: you were walking all along
+            suspended = false;
+            standAtEye();
+            releaseCamera = api.camera.hold();
+            publish(true);
+          },
+        },
+        eye: () => (eye ? { position: [...eye], direction: lookDir(person.yaw + (onShip() ? headingOf(frameOfShip(w.ship) ?? matrixOf(null)) : 0), person.pitch) } : null),
+        // off her deck: back off her quarter, unless the body under takes the camera (a seat's view)
+        leave: () => stopped({ keepCamera: !overOrbit }),
+      };
     },
   };
 
-  // the lock was granted, or came back (a click after Esc)
-  api.listen(document, "pointerlockchange", () => {
-    if (playing && document.pointerLockElement) (paused = false), (free = false);
-  });
+  // what a station's verb asked for, read by its body's enter (the place is the station's id)
+  let pendingStation = null; // { id, handlers }
+  const stationBody = {
+    id: ST,
+    label: "At a station",
+    lock: true,
+    reach: REACH,
+    // it needs a station (its verb enters it): the body chip doesn't offer it
+    here: false,
+    enter(id) {
+      const p = pendingStation?.id === id ? pendingStation : null;
+      pendingStation = null;
+      if (!p || !playing) return null;
+      const s = arrive(id, p.handlers);
+      const declared = Object.freeze((p.handlers.keys ?? []).map((code) => ({ code })));
+      return {
+        label: stationLabel(id),
+        keys: declared,
+        input: {
+          ...looking,
+          key: (ev) => !!s.handlers.key?.(ev),
+          keyup: (ev) => !!s.handlers.keyup?.(ev),
+        },
+        eye: () => (eye ? { position: [...eye], direction: null } : null),
+        leave: () => station === s && depart(s),
+      };
+    },
+  };
 
-  function start() {
-    if (playing) return;
-    playing = true;
-    paused = false;
-    free = false;
-    if (!w || (onShip() && !frameOfShip(w.ship))) spawn();
-    orbitFov = api.camera.get()?.fov ?? null; // given back on leaving: first person sees wider
-    releaseCamera = api.camera.hold();
-    // immersive: the editor's decorations stand aside while aboard
-    disarm = api.arm(walking, { lock: true, replace: true, immersive: true });
-    publish(true);
+  /** What a station is called, for the body chip and who's here: its kind ("Helm", "Mainsheet"…). */
+  function stationLabel(id) {
+    const ship = shipOf(api.scene(), id);
+    const kind = ship ? Object.entries(partsOf(api.scene(), ship)).find(([, v]) => v === id || (Array.isArray(v) && v.includes(id)))?.[0] : null;
+    const names = { helm: "Helm", sail: "Mast", anchor: "Windlass", mainsheet: "Mainsheet", winches: "Winch", ladder: "Ladder" };
+    return names[kind] ?? "At a station";
   }
 
-  function stop({ keepCamera = false } = {}) {
+  /** Come aboard: the "aboard" body (or, under a seat, stand up from it). */
+  function start() {
+    if (playing) {
+      // waiting under a seat: stand up from it
+      while (suspended && api.local.get()?.body?.depth > 0 && !ours()) if (!api.body.leave()) break;
+      return;
+    }
+    api.body.enter(AB);
+  }
+
+  /** Off the deck: leave the crew's bodies (a station, then "aboard"). */
+  function stop() {
+    if (!playing) return;
+    while (ours() && api.local.get()?.body?.depth > 0) if (!api.body.leave()) break;
+    if (playing) stopped(); // (not the top: a body over it went with the stage)
+  }
+
+  // "aboard" went off the stack
+  function stopped({ keepCamera = false } = {}) {
     if (!playing) return;
     leave();
     playing = false;
-    paused = false;
-    free = false;
+    suspended = false;
     keys.clear();
-    const d = disarm;
-    disarm = null;
-    d?.();
     releaseCamera?.();
     releaseCamera = null;
     eye = null;
-    // back off the quarter of the ship you were on (unless a seat's view takes over: firstPerson.leave)
+    // back off the quarter of the ship you were on
     const m = onShip() ? frameOfShip(w.ship) : null;
     const fov = orbitFov != null ? { fov: orbitFov } : {};
     if (keepCamera) {
@@ -606,17 +689,31 @@ export function createCrew(api, ctx) {
   // ─── stations ───────────────────────────────────────────────────────────
 
   /**
-   * Stand at a station: an arm over walking that hears keys first. You're
-   * put just aft of it, facing forward; the mouse still turns your head.
+   * Stand at a station: the "station" body over walking, which hears the
+   * keys the station declares first (`keys`: codes). You're put just aft of
+   * it, facing forward; the mouse still turns your head.
    * @param {string} id
-   * @param {{ key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
- *   look: a world point to turn the eye to on arriving (else forward)
+   * @param {{ keys: string[], key?(ev): boolean, keyup?(ev): boolean, tick?(dt), left?(), hint?(): string, look?(): number[] | null }} handlers
+   *   keys: the codes the station takes (scene/TOOLS.md §5: declared, so a shown key works);
+   *   look: a world point to turn the eye to on arriving (else forward)
    * @returns {() => void} leave
    */
   function take(id, handlers = {}) {
     if (!playing) start();
+    if (!playing) return () => {};
     leave();
-    // S1: at the station's stand spot (its link in her mesh), facing forward
+    pendingStation = { id, handlers };
+    enteringStation = true;
+    const ok = api.body.enter(ST, id);
+    enteringStation = false;
+    pendingStation = null;
+    if (!ok) return () => {};
+    const s = station;
+    return () => station === s && leave();
+  }
+
+  // the station body's arrival: S1, at the station's stand spot (its link in her mesh), facing forward
+  function arrive(id, handlers) {
     const ship = shipOf(api.scene(), id);
     const m = ship ? frameOfShip(ship) : null;
     const at = m ? localOf(m, id) : null;
@@ -636,28 +733,17 @@ export function createCrew(api, ctx) {
       }
     }
     keys.clear();
-    const s = { id, handlers, disarm: null };
+    const s = { id, handlers };
     station = s;
-    s.disarm = api.arm(
-      {
-        ...looking,
-        key(ev) {
-          if (s.handlers.key?.(ev)) return true;
-          if (ev.key !== "Escape") return false;
-          leave();
-          return true;
-        },
-        keyup: (ev) => !!s.handlers.keyup?.(ev),
-        disarmed: () => station === s && left(s),
-      },
-      { immersive: true },
-    );
     publish(true);
-    return () => station === s && leave();
+    return s;
   }
 
-  function left(s) {
+  // the station body went off the stack: S2, walking where you stood
+  function depart(s) {
+    if (station !== s) return;
     station = null;
+    w = walker.leaveStation(w);
     try {
       s.handlers.left?.();
     } catch (err) {
@@ -666,14 +752,12 @@ export function createCrew(api, ctx) {
     publish(true);
   }
 
-  /** Step away from the station you're at (S2: walking where you stood). */
+  /** Step away from the station you're at (its body comes off; you walk on where you stood). */
   function leave() {
     const s = station;
     if (!s) return;
-    station = null;
-    w = walker.leaveStation(w);
-    s.disarm?.();
-    left(s);
+    if (api.local.get()?.body?.id === ST) api.body.leave();
+    if (station === s) depart(s); // (the body was already gone)
   }
 
   /** Climb aboard by a ship's ladder (from the water, L1 then L2): on deck at its top, facing inboard. */
@@ -681,6 +765,7 @@ export function createCrew(api, ctx) {
     const m = frameOfShip(shipId);
     if (!m || !env.mesh(shipId)) return false;
     if (!playing) start();
+    if (!playing) return false;
     leave();
     const up = walker.climb(env, shipId);
     if (up) {
@@ -695,41 +780,6 @@ export function createCrew(api, ctx) {
     publish(true);
     return true;
   }
-
-  // ─── seats (firstPerson, a late-bound hand-off to whoever owns seats: scene/STAGE.md, "Seats") ───
-
-  const firstPerson = {
-    /**
-     * First person, standing at a seat: walking at the projection (P1) of
-     * the seat's eye, dropped by a seated eye's height, on the ship its
-     * frame is aboard; facing what its view looks at. false if it can't.
-     */
-    enter({ eye, target, frame } = {}) {
-      const ship = frame ? shipOf(api.scene(), frame) : null;
-      const m = ship ? frameOfShip(ship) : null;
-      if (!m || !Array.isArray(eye) || !env.mesh(ship)) return false;
-      const local = apply(invert(m), eye);
-      const next = walker.place(env, ship, [local[0], local[1] - walker.WALKER.seatedEye, local[2]]);
-      if (!next || next.mode === "boarding") return false;
-      if (!playing) start();
-      leave();
-      w = next;
-      if (Array.isArray(target)) {
-        const t = apply(invert(m), target);
-        const d = [t[0] - local[0], t[1] - local[1], t[2] - local[2]];
-        if (w.mode !== "swimming") person.yaw = Math.atan2(-d[0], -d[2]);
-        else person.yaw = Math.atan2(-d[0], -d[2]) + headingOf(m);
-        person.pitch = Math.max(-1.2, Math.min(1.2, Math.atan2(d[1], Math.hypot(d[0], d[2]))));
-      }
-      checked();
-      publish(true);
-      return true;
-    },
-    /** End first person, the walker left where it was: the seat's view takes the camera. */
-    leave() {
-      stop({ keepCamera: true });
-    },
-  };
 
   // ─── everyone else ──────────────────────────────────────────────────────
 
@@ -832,11 +882,16 @@ export function createCrew(api, ctx) {
     },
     start,
     stop,
+    // the crew's bodies: walking her deck, and standing at a station
+    bodies: [aboardBody, stationBody],
     me() {
+      const ptr = api.local.get()?.pointer ?? {};
       return {
-        playing,
-        paused,
-        free,
+        playing: playing && !suspended,
+        // the browser let the lock go (its Escape): a click takes it back
+        paused: playing && !!ptr.released,
+        // no lock (refused, or something wants the pointer): drag to look
+        free: playing && !ptr.locked && !ptr.released,
         on: onShip(),
         position: feetNow(),
         yaw: person.yaw,
@@ -851,7 +906,6 @@ export function createCrew(api, ctx) {
     take,
     leave,
     board,
-    firstPerson,
     /** For probes and the checks: a ship's navmesh and what it was baked from ({ mesh, input }), and the walker's state. */
     nav: (ship) => {
       const mesh = meshOf(ship);
@@ -865,8 +919,8 @@ export function createCrew(api, ctx) {
       const d = Math.min(dt, 0.05);
       // the walker's step is capped for its own sake; the station's verbs (the wheel, a sheet, the
       // furler, the halyard, the windlass) run in sea time, as far as the ships step this frame
-      if (playing) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
-      else follow();
+      if (playing && !suspended) walk(d, Math.min(Math.max(dt, 0), MAX_SUBSTEPS * SUBSTEP));
+      else if (!playing) follow();
       drawPeers(d);
     },
     /** Put the body somewhere: `position` local to ship `on`, else in the world (a respawn; probes). */

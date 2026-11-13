@@ -205,7 +205,15 @@ try {
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
-    immersive: (w) => !!dbg[w]?.local.get().immersive,
+    // walking her deck: the crew's bodies on top of the stack (scene/TOOLS.md §4)
+    walking: (w) => ["aboard", "station"].includes(dbg[w]?.local.get().body?.id),
+    /** the body on top of view w's stack, and the stack */
+    body: (w) => ({ ...dbg[w].local.get().body, stack: dbg[w].router.bodies().map((x) => x.id) }),
+    /** the body chip's rect, and its menu's item starting `label`, to click */
+    chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },
+    chipItem: (w, label) => { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    /** the prompt's verbs with their keycaps: [{ key, name }] (a key only where pressing it does that) */
+    promptKeys: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => ({ key: e.querySelector(".use-key")?.textContent ?? "", name: e.querySelector(".use-name")?.textContent?.trim() ?? "" })),
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     // a face is a look with a source (what the card really is); a veil (the stage's stand-in) and a back (no look) aren't
@@ -250,7 +258,7 @@ try {
     /** what a view's halo is on, and the frame it's drawn in (its doc parent's) */
     halo: (w) => { const h = dbg[w].host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
     /** why a view's halo is or isn't on what it has selected */
-    haloWhy: (w) => { const l = dbg[w].local.get(); const o = dbg[w].scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), armed: l.armed ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: dbg[w].host.record("scene.halo")?.api?.writable?.() ?? null, dragging: dbg[w].host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
+    haloWhy: (w) => { const l = dbg[w].local.get(); const o = dbg[w].scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: dbg[w].host.record("scene.halo")?.api?.writable?.() ?? null, dragging: dbg[w].host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
     /** a halo arrow's point (a third along it), and `along` frame units further, on a view's page */
     haloAt(w, axis, along = 0) {
       const h = dbg[w].host.instanceOf("scene.halo")?.debug;

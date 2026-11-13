@@ -70,7 +70,7 @@ async function sloop() {
 /** A view in play: play.js's instance on the fake stage, with what the crew and HUD ask of it. */
 function join(w, session, hull) {
   const base = w.join(session);
-  const s = { arms: [], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
+  const s = { bodies: [{ id: "orbit" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
   // what the crew's avatars are made of, beside what the sea asks for
   const T = base.THREE;
   class Group {
@@ -105,15 +105,26 @@ function join(w, session, hull) {
     labels: () => ({ set: (items) => (s.labels = items) }),
     listen: (t, type, fn, o) => t.addEventListener(type, fn, o),
     raycast: rays(base.worldOf, hull),
-    arm(handlers, opts = {}) {
-      const e = { handlers, opts };
-      s.arms.push(e);
-      return () => {
-        const i = s.arms.indexOf(e);
-        if (i >= 0) s.arms.splice(i, 1), handlers.disarmed?.();
-      };
+    // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
+    local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
+    body: {
+      current: () => ({ id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }),
+      enter(id, place = null) {
+        const sitting = s.instance.bodies.find((b) => b.id === id)?.enter(place);
+        if (!sitting) return false;
+        const prev = s.bodies.at(-1);
+        s.bodies.push({ id, sitting });
+        prev.sitting?.input?.suspended?.();
+        return true;
+      },
+      leave() {
+        if (s.bodies.length <= 1) return false;
+        s.bodies.pop().sitting.leave?.();
+        s.bodies.at(-1).sitting?.input?.resumed?.();
+        return true;
+      },
+      eye: () => s.bodies.at(-1).sitting?.eye?.() ?? null,
     },
-    relock: () => Promise.resolve(),
     camera: {
       object: base.camera.object,
       get: () => ({ ...s.cam }),
@@ -125,7 +136,7 @@ function join(w, session, hull) {
   });
   s.api = api;
   s.instance = play.create(api);
-  s.top = () => s.arms.at(-1)?.handlers;
+  s.top = () => s.bodies.at(-1).sitting?.input;
   s.command = (id) => s.instance.commands.find((c) => c.id === id);
   return s;
 }
@@ -146,7 +157,7 @@ describe("aboard, together", () => {
     expect(a.command("aboard").state(null, {})).toBeTruthy();
     a.command("aboard").run(null);
     b.instance.input.click({});
-    expect(a.arms.length).toBe(1);
+    expect(a.bodies.map((x) => x.id)).toEqual(["orbit", "aboard"]);
     w.tick(1 / 60, 30);
     // one owner of the presence rate: the simulator streams, the crew sends where they stand
     expect(w.view("A").rate).toBe(30);
@@ -160,7 +171,7 @@ describe("aboard, together", () => {
 
     // B takes the helm from where it stands: in reach of the wheel
     const eyeB = b.cam.position;
-    const look = { scene: w.scene(), local: {}, from: eyeB, hit: null };
+    const look = { scene: w.scene(), local: {}, from: eyeB, hit: null, reach: 2.5 };
     expect(b.command("helm").state(ids.wheel, look)).toEqual({});
     b.command("helm").run(ids.wheel);
     expect(doc.objects[ids.wheel].claims.station.session).toBe("B");

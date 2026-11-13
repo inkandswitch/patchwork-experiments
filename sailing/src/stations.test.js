@@ -7,13 +7,15 @@
 // lock in to, with which of the sail's keys work there.
 import { describe, it, expect, vi } from "vitest";
 import { FAR, FURL_RATE, RODE, WINCH_RATE, approach, heldTrim, heldWeigh, lookDistance, sheetAtMast, stationCommands, walkTo, wheelStep, within } from "./stations.js";
+import { REACH } from "./crew.js";
 
 describe("reach", () => {
-  it("is within 2.5 m of the eye", () => {
-    expect(within([0, 1.6, 0], [0, 1.6, 2.4])).toBe(true);
-    expect(within([0, 1.6, 0], [0, 0, 2.4])).toBe(false);
-    expect(within(undefined, [0, 0, 0])).toBe(false);
-    expect(within([0, 0, 0], null)).toBe(false);
+  it("is within the body's reach of the eye (the crew's: 2.5 m)", () => {
+    expect(within([0, 1.6, 0], [0, 1.6, 2.4], REACH)).toBe(true);
+    expect(within([0, 1.6, 0], [0, 0, 2.4], REACH)).toBe(false);
+    expect(within([0, 1.6, 0], [0, 0, 2.4], Infinity)).toBe(true);
+    expect(within(undefined, [0, 0, 0], REACH)).toBe(false);
+    expect(within([0, 0, 0], null, REACH)).toBe(false);
   });
 
   it("is measured to where the look lands on the thing (or anything under it), else to its origin", () => {
@@ -233,30 +235,41 @@ function stage({ mainsheet = true, helm = true, rehung = false } = {}) {
   };
   s.commands = stationCommands(s.api, s.ctx);
   s.cmd = (id) => s.commands.find((c) => c.id === id);
-  s.look = (from) => ({ scene: s.scene, local: {}, from, hit: null });
+  // the command context every surface passes (scene/TOOLS.md §4): the eye, the body's reach (the crew's), the look
+  const origin = (id) => (worlds[id] ? [worlds[id][12], worlds[id][13], worlds[id][14]] : null);
+  const context = (from, hit, reach = REACH) => ({ scene: s.scene, local: {}, from, hit, reach, distance: (t) => lookDistance({ scene: s.scene, from, hit }, t, origin(t)) });
+  s.look = (from, reach) => context(from, null, reach);
   /** A look that lands on `id`, `distance` away (from an eye that's wherever, `from`). */
-  s.at = (id, distance, from = [0, 0, 100]) => ({ scene: s.scene, local: {}, from, hit: { id, point: null, distance } });
+  s.at = (id, distance, from = [0, 0, 100], reach) => context(from, { id, point: null, distance }, reach);
+  /** A command's state as the stage gives it: a `reach: true` verb beyond the body's reach is disabled, "too far" (scene's commandState). */
+  s.state = (cmd, target, c) => {
+    const st = cmd.state?.(target, c) ?? null;
+    if (st && cmd.reach === true && target != null && !(c.distance(target) <= c.reach)) return { ...st, disabled: true, title: "too far" };
+    return st;
+  };
   /** The verbs the prompt would offer for a look at `target` (in order; it shows three), as [id, label?, disabled?]. */
   s.offered = (target, c) =>
     s.commands
-      .map((cmd) => [cmd, cmd.state?.(target, c)])
+      .map((cmd) => [cmd, s.state(cmd, target, c)])
       .filter(([, st]) => st)
       .map(([cmd, st]) => [cmd.id, st.label ?? null, !!st.disabled]);
   return s;
 }
 
 describe("the commands", () => {
-  it("each has a key and shows on the use prompt; they apply only within reach, to what they work", () => {
+  it("each has a key and shows on the use prompt; each station's says reach: true (the stage's), and applies only to what it works", () => {
     const s = stage();
     for (const c of s.commands.filter((c) => c.id !== "aboard")) {
       expect(c.key).toBeTruthy();
       expect(c.show).toEqual(["use"]);
     }
+    for (const id of ["helm", "mainsheet", "winch", "halyard", "sail", "haul", "ease", "jibHaul", "jibEase", "weigh", "drop"]) expect(s.cmd(id).reach, id).toBe(true);
     const near = s.look([0, 2.3, 5]);
     const far = s.look([0, 2.3, 9]);
-    expect(s.cmd("helm").state("wheel", near)).toEqual({});
-    expect(s.cmd("helm").state("wheel", far)).toBe(null);
-    expect(s.cmd("helm").state("wheel", { scene: s.scene, local: {} })).toBe(null); // no eye: the key map's
+    expect(s.state(s.cmd("helm"), "wheel", near)).toEqual({});
+    expect(s.state(s.cmd("helm"), "wheel", far)).toEqual({ disabled: true, title: "too far" });
+    // in orbit the body reaches everything
+    expect(s.state(s.cmd("helm"), "wheel", s.look([0, 2.3, 90], Infinity))).toEqual({});
     expect(s.cmd("helm").state("rig", near)).toBe(null);
     expect(s.cmd("sail").state("wheel", near)).toBe(null);
   });
@@ -391,7 +404,13 @@ describe("the commands", () => {
       ["haul", null, false],
       ["ease", null, false],
     ]);
-    expect(s.offered("sheet", s.at("sheet", 3))).toEqual([["far", "Mainsheet · walk to the cockpit", true]]); // out of reach
+    // out of reach: where to go, then its verbs greyed (the stage's "too far")
+    expect(s.offered("sheet", s.at("sheet", 3))).toEqual([
+      ["far", "Mainsheet · walk to the cockpit", true],
+      ["mainsheet", null, true],
+      ["haul", null, true],
+      ["ease", null, true],
+    ]);
     const session = s.cmd("haul").run("sheet");
     session.update(1);
     session.end();
@@ -515,15 +534,15 @@ describe("the commands", () => {
     // …but not by the gooseneck: that's the mast, no place to trim
     expect(t.offered("rig", t.at("rig", 0.8, [0, 2.6, -0.5])).map(([id]) => id)).toEqual(["halyard", "sail"]);
     // the hit's 3.2 m away: out of reach, wherever the gooseneck is; standing by the mast, the mast's where to work it
-    expect(s.offered("rig", s.at("rig", 3.2, [0, 2.6, -0.5]))).toEqual([["far", "Sail · work it at the mast (F)", true]]);
-    expect(s.offered("rig", s.at("rig", 3.2, [0, 3, -5.2]))).toEqual([["far", "Sail · walk to the cockpit", true]]); // from the foredeck
+    expect(s.offered("rig", s.at("rig", 3.2, [0, 2.6, -0.5]))[0]).toEqual(["far", "Sail · work it at the mast (F)", true]);
+    expect(s.offered("rig", s.at("rig", 3.2, [0, 3, -5.2]))[0]).toEqual(["far", "Sail · walk to the cockpit", true]); // from the foredeck
+    expect(s.offered("rig", s.at("rig", 3.2, [0, 3, -5.2])).slice(1).every(([, , disabled]) => disabled)).toBe(true);
   });
 
   it("no hit: reach falls back to the origin (the key map's look, a hover without a point)", () => {
     const s = stage();
-    expect(s.cmd("sail").state("rig", s.look([0, 2.5, 0.4]))).toEqual({ label: "Lower sail" }); // 1.9 m from the gooseneck
-    expect(s.cmd("sail").state("rig", s.look([0, 2.5, 2]))).toBe(null);
-    expect(s.cmd("helm").state("wheel", { scene: s.scene, local: {} })).toBe(null); // no eye
+    expect(s.state(s.cmd("sail"), "rig", s.look([0, 2.5, 0.4]))).toEqual({ label: "Lower sail" }); // 1.9 m from the gooseneck
+    expect(s.state(s.cmd("sail"), "rig", s.look([0, 2.5, 2]))).toEqual({ label: "Lower sail", disabled: true, title: "too far" });
   });
 
   it("the mast: nothing else traitless aboard is it (a table, a board on it), nor the deck, nor another station", () => {
@@ -555,33 +574,40 @@ describe("the commands", () => {
   it("aboard, a station looked at from beyond reach says where to go, greyed; past FAR, at a station, swimming or not aboard, nothing", () => {
     const s = stage();
     s.me.playing = true;
-    expect(s.offered("mast", s.at("mast", 6.45))).toEqual([["far", "Sail · walk to the cockpit", true]]);
-    expect(s.offered("rig", s.at("rig", 4.9))).toEqual([["far", "Sail · walk to the cockpit", true]]);
-    expect(s.offered("wheel", s.at("wheel", 5))).toEqual([["far", "Helm · walk to the wheel", true]]);
-    expect(s.offered("sheet", s.at("sheet", 5))).toEqual([["far", "Mainsheet · walk to the cockpit", true]]);
-    expect(s.offered("windlass", s.at("windlass", 5))).toEqual([["far", "Anchor · walk to the windlass", true]]);
+    // where to go first; the station's own verbs after it, greyed (the stage's "too far")
+    const first = (o) => o[0] ?? null;
+    const greyed = (o) => o.slice(1).every(([, , d]) => d);
+    expect(first(s.offered("mast", s.at("mast", 6.45)))).toEqual(["far", "Sail · walk to the cockpit", true]);
+    expect(first(s.offered("rig", s.at("rig", 4.9)))).toEqual(["far", "Sail · walk to the cockpit", true]);
+    expect(s.offered("wheel", s.at("wheel", 5))).toEqual([["far", "Helm · walk to the wheel", true], ["helm", null, true]]);
+    expect(first(s.offered("sheet", s.at("sheet", 5)))).toEqual(["far", "Mainsheet · walk to the cockpit", true]);
+    expect(first(s.offered("windlass", s.at("windlass", 5)))).toEqual(["far", "Anchor · walk to the windlass", true]);
+    for (const id of ["mast", "rig", "sheet", "windlass"]) expect(greyed(s.offered(id, s.at(id, 5))), id).toBe(true);
     expect(s.offered("table", s.at("table", 5))).toEqual([]);
     expect(s.offered("hull", s.at("hull", 5))).toEqual([]);
-    expect(s.offered("mast", s.at("mast", FAR + 0.1))).toEqual([]);
+    expect(s.offered("mast", s.at("mast", FAR + 0.1)).map(([id]) => id)).not.toContain("far");
     const t = stage({ mainsheet: false });
     t.me.playing = true;
-    expect(t.offered("mast", t.at("mast", 6.45))).toEqual([["far", "Sail · walk to the wheel, or the mast", true]]);
+    expect(first(t.offered("mast", t.at("mast", 6.45)))).toEqual(["far", "Sail · walk to the wheel, or the mast", true]);
     // from the cockpit (standing aft of the wheel), the mast or the sail overhead: take a station there, not "walk to the cockpit"
     const helmEye = [0, 2.32, 4.85];
-    expect(s.offered("mast", s.at("mast", 6.45, helmEye))).toEqual([["far", "Sail · work it at the wheel or the mainsheet (F)", true]]);
-    expect(s.offered("rig", s.at("rig", 4.9, helmEye))).toEqual([["far", "Sail · work it at the wheel or the mainsheet (F)", true]]);
-    expect(t.offered("mast", t.at("mast", 6.45, helmEye))).toEqual([["far", "Sail · work it at the wheel (F)", true]]);
+    expect(first(s.offered("mast", s.at("mast", 6.45, helmEye)))).toEqual(["far", "Sail · work it at the wheel or the mainsheet (F)", true]);
+    expect(first(s.offered("rig", s.at("rig", 4.9, helmEye)))).toEqual(["far", "Sail · work it at the wheel or the mainsheet (F)", true]);
+    expect(first(t.offered("mast", t.at("mast", 6.45, helmEye)))).toEqual(["far", "Sail · work it at the wheel (F)", true]);
+    const noFar = (o) => !o.some(([id]) => id === "far");
     s.me.station = "wheel";
-    expect(s.offered("mast", s.at("mast", 6.45))).toEqual([]);
+    expect(noFar(s.offered("mast", s.at("mast", 6.45)))).toBe(true);
     s.me.station = null;
     s.me.swimming = true;
-    expect(s.offered("mast", s.at("mast", 6.45))).toEqual([]);
+    expect(noFar(s.offered("mast", s.at("mast", 6.45)))).toBe(true);
     s.me.swimming = false;
     s.me.playing = false;
-    expect(s.offered("mast", s.at("mast", 6.45))).toEqual([]);
+    expect(noFar(s.offered("mast", s.at("mast", 6.45)))).toBe(true);
+    // in orbit (the body reaches everything) there's nowhere to go: the verbs themselves
+    expect(noFar(s.offered("mast", s.at("mast", 6.45, [0, 0, 100], Infinity)))).toBe(true);
   });
 
-  it("every command the prompt can show for one look fits in its three", () => {
+  it("every command the prompt can show for one look in reach fits in its three (beyond it, where to go comes first)", () => {
     for (const o of [{ mainsheet: false, helm: false }, {}]) {
       const s = stage(o);
       s.me.playing = true;
@@ -592,7 +618,10 @@ describe("the commands", () => {
               for (const jib of [{ sheet: 0.5, held: null, furl: 0 }, { sheet: 0.5, held: "port", furl: 1 }]) {
                 s.values.rig = v;
                 s.values.jib = jib;
-                expect(s.offered(target, s.at(target, d, from)).length, `${target} ${d} ${from}`).toBeLessThanOrEqual(3);
+                const o = s.offered(target, s.at(target, d, from));
+                const live = o.filter(([id, , disabled]) => id !== "far" && !(disabled && s.state(s.cmd(id), target, s.at(target, d, from))?.title === "too far"));
+                expect(live.length, `${target} ${d} ${from}`).toBeLessThanOrEqual(3);
+                if (o.some(([id]) => id === "far")) expect(o[0][0]).toBe("far");
               }
             }
           }
@@ -615,7 +644,7 @@ describe("the commands", () => {
       ["winch", "Take the starboard jib sheet", false],
       ["jibHaul", "Lazy sheet: the jib's to port", true],
     ]);
-    expect(s.offered("winchP", s.at("winchP", 3))).toEqual([["far", "Jib winch · walk to the cockpit", true]]);
+    expect(s.offered("winchP", s.at("winchP", 3))[0]).toEqual(["far", "Jib winch · walk to the cockpit", true]);
     const session = s.cmd("jibHaul").run("winchP");
     session.update(1);
     session.end();
