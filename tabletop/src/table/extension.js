@@ -30,7 +30,7 @@
 // Component physics, not rules: nothing here knows a game, a turn or a
 // legal move. (Dice are their own package, dice/.)
 
-import { audienceOf, facing, isCard, parentOf, seatAt, seatOf, seatsFrom, zones } from "./visibility.js";
+import { audienceOf, facing, isCard, parentOf, seatAt, seatOf, seatsAroundFrom, seatsFrom, zones } from "./visibility.js";
 import { CARD_TAGS, worldSlots } from "./slots.js";
 import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
 import { boxUnder, canStand, isStanding, layPose, spread, standPose, upness } from "./stand.js";
@@ -175,6 +175,9 @@ export default {
         if (any === LOADING || any === NO_SLOTS) return null;
         return { disabled: true, label: "Sit down to draw", title: "Pick a seat to draw" };
       }
+      // seated at another table in the room: not into that hand
+      const here = seatsAroundFrom(api, snap, [id]);
+      if (here && !here.has(mine)) return { disabled: true, label: "Sit at this table to draw", title: "You're seated at another table" };
       const trays = regions.filter((z) => z.seat === mine);
       if (!trays.length) return null;
       const slot = freeSlot(snap, trays, tags);

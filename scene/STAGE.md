@@ -1337,9 +1337,9 @@ people lists the seats package like any other.
 
 | | |
 |---|---|
-| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. The first four are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's) |
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, around(scene, ids) → [{ id, name, viewer \| null }] }`. All but `who` are pure in the snapshot (the doc alone), so a policy may be built on them. `around` is the seats at the table some objects are at (seats/README.md), so two tables in one scene are two games until a game is its own doc (COMPOSITION.md) `who` is what to call a viewer now (a contact's name once known, else their seat's) |
 | `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
-| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, only where the scene has none; setup code calls it instead of writing seats |
+| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, and returns `{ [given id]: id written }`: added to the scene's seats, an id still at another table written as `<id>-2`…; setup code calls it instead of writing seats, and names its hands by the ids returned |
 
 **Keepers.** A keeper holds what objects really are, away from the scene
 doc, and shows each viewer what `api.audience` allows. It is an ordinary

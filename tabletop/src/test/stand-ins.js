@@ -19,10 +19,17 @@ export function seatsPlugin() {
     traits: [SEATS],
     load: async () => ({
       create: () => ({}),
+      // adds them; an id already there is written as <id>-2, -3, … (another table's); says where each went
       lay(d, seats) {
-        if (d.traits[SEATS] || !Object.keys(seats ?? {}).length) return false;
-        d.traits[SEATS] = Object.fromEntries(Object.entries(seats).map(([id, s]) => [id, { name: s.name || id, player: null, ...(s.camera ? { camera: structuredClone(s.camera) } : {}) }]));
-        return true;
+        const out = {};
+        for (const [id, s] of Object.entries(seats ?? {})) {
+          d.traits[SEATS] ??= {};
+          let to = id;
+          for (let n = 2; d.traits[SEATS][to]; n++) to = `${id}-${n}`;
+          d.traits[SEATS][to] = { name: s.name || id, player: null, ...(s.camera ? { camera: structuredClone(s.camera) } : {}) };
+          out[id] = to;
+        }
+        return out;
       },
     }),
   };
@@ -35,6 +42,20 @@ export const roster = Object.freeze({
   open: (scene) => roster.seats(scene).filter((s) => !s.viewer).map((s) => s.name),
   nameOf: (scene, v) => roster.seats(scene).find((s) => s.viewer === v)?.name ?? null,
   who: (v) => (v ? `<${v}>` : "Someone"),
+  // the seats whose view is in the nearest frame up each object's parents (the world's last)
+  around: (scene, ids) => {
+    const all = Object.entries(scene?.traits?.[SEATS] ?? {});
+    const objects = scene?.objects ?? {};
+    const frame = (s) => (s?.camera?.in && objects[s.camera.in] ? s.camera.in : null);
+    const frames = new Set(all.map(([, s]) => frame(s)));
+    const at = new Set();
+    for (const id of ids) {
+      let f;
+      for (let x = id; x && objects[x]; x = objects[x].parent) if (frames.has(x)) { f = x; break; }
+      at.add(f === undefined ? null : f);
+    }
+    return roster.seats(scene).filter((s) => at.has(frame(scene.traits[SEATS][s.id])));
+  },
 });
 
 /** A keeper's trait key, for a stand-in keeper of `kind`. */

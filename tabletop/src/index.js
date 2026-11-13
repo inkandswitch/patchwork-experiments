@@ -27,7 +27,7 @@
 // package: its own parts, under "Dice".) So are a Card table to
 // play at and the games with hands (Lost Cities, Draw Dominoes), each set
 // down on whatever it's put on (a Card table aboard a ship); a game brings
-// seats if the scene has none.
+// its own seats, so a room can hold several tables.
 
 const TRAITS = {
   "tabletop.zone": {
@@ -141,9 +141,17 @@ export const plugins = [
       game: "lost-cities",
       name: "Lost Cities",
       icon: "Map",
-      description: "The whole two-player table, set down where you put it: board, deck, a private hand each, and seats if the scene has none",
+      description: "The whole two-player table, set down where you put it: board, deck, a private hand each, and its own two seats",
       tags: ["tabletop.game"],
       traits: ["tabletop.zone", "tabletop.card"],
+    },
+    {
+      id: "santorini",
+      game: "santorini",
+      name: "Santorini",
+      icon: "Castle",
+      description: "The island board, its buildings and the workers, set down where you put it, and a seat for each colour",
+      tags: ["tabletop.game"],
     },
     ...[2, 3, 4].map((n) => ({
       id: `dominoes${n}`,
@@ -151,7 +159,7 @@ export const plugins = [
       game: `draw-dominoes-${n}`,
       name: `Draw Dominoes, ${n} players`,
       icon: "Grid2x2",
-      description: `The whole table for ${n}, set down where you put it: the felt, the boneyard face down, a rack each, and seats if the scene has none`,
+      description: `The whole table for ${n}, set down where you put it: the felt, the boneyard face down, a rack each, and a seat for each player`,
       tags: ["tabletop.game"],
       traits: ["tabletop.zone", "tabletop.card"],
     })),
