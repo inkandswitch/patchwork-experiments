@@ -6,8 +6,8 @@
 // package; without it registered there is nothing to say, and the stage
 // fills the field in when someone who has it opens the doc.
 //
-// tabletop and tts-import each carry a copy of this file (packages don't
-// import each other); keep the copies the same. The URL rule is the scene's
+// tabletop and bag each carry a copy of this file (packages don't import
+// each other); keep the copies the same. The URL rule is the scene's
 // own (scene/src/packages.js packageUrl).
 
 /** A host only this machine or this network can reach. */

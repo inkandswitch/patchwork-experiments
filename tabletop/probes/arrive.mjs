@@ -67,7 +67,7 @@ try {
   const made = await F("a", "makeTable");
   await F("a", "open", made.scene);
   mark("A made and opened the table", made);
-  check("A's table: 60 cards, each a tabletop card bound by the joint keeper's own trait", (await F("a", "cards")) === 60 && J(await F("a", "keptBy")) === J(["card-table.kept"]) && made.kinds.main === "joint", { cards: await F("a", "cards"), keptBy: await F("a", "keptBy"), kinds: made.kinds });
+  check("A's table: 60 cards, each a tabletop card bound by the joint keeper's own trait", (await F("a", "cards")) === 60 && J(await F("a", "keptBy")) === J(["card-table.kept"]) && made.kinds.deck0 === "joint", { cards: await F("a", "cards"), keptBy: await F("a", "keptBy"), kinds: made.kinds });
   const traits = await F("a", "traits");
   check("the scene's traits are four packages' own (the scene's carry on its pieces, the seats', the table's, the keeper's), and no old ones", J(traits) === J(["card-table.kept", "scene.carry", "seats", "tabletop.card", "tabletop.zone"]), traits);
   check("A's stage lists the packages the scene is made of: the scene's, the seats', tabletop's and the keeper's", await fUntil("a", `f.listed().length === 4`, 10_000) && J(sorted((await F("a", "listed")).map((u) => name[u]))) === J(["card-table", "scene", "seats", "tabletop"]), (await F("a", "listed")).map((u) => name[u] ?? u));

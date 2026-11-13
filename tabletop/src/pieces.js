@@ -1,110 +1,80 @@
-// Each kind of piece is drawn once, as a GLB `file` doc the game keeps
-// (`glbUrl`); every copy of that piece on every table shows the same doc, as a
-// file object in the scene. Editing a piece rewrites its GLB in place,
-// so the tables already set up change with it.
+// Each kind of piece of a game doc is drawn once (look/look.js), as a GLB
+// `file` doc the game keeps (`drawn[kind] = { url, key, bounds }`); every
+// copy of that piece on every table set up from the game shows the same doc.
+// Editing a piece redraws its GLB in place, so the tables already set up
+// change with it. `drawn` is bookkeeping beside the game, never part of it
+// (GAME-FORMAT.md §10).
+//
+// A GLB drawn from file docs (a card sheet, a model) says where they came
+// from: its `origin.urls` are theirs (the TTS importer's provenance travels
+// with what's drawn from it).
 
-import { encodeGLB } from "./glb.js";
-import { meshesBounds, pieceMeshes } from "./shapes.js";
+import { drawer, glbName, lookKey } from "./look/look.js";
 
-// bump when the way parts become geometry changes, so existing GLBs are redrawn
-// 2: snap points written as the scene's connectors
-const GEOMETRY_VERSION = 2;
-
-/** Everything a piece's GLB is made from, as one string. */
-export function glbKey(piece) {
-  return JSON.stringify({
-    v: GEOMETRY_VERSION,
-    parts: piece?.parts ?? [],
-    snapPoints: piece?.snapPoints ?? null,
-    snapRadius: piece?.snapRadius ?? null,
-  });
-}
-
-/**
- * A piece's snap points ([x, y, z] or { position, yaw?, rotation?, tags? }) as the
- * scene's connectors: { position, rotation?, tags? }. A connector with tags
- * takes only objects with one of them (the hand's rule): a card slot is
- * tagged "card", and so is every card.
- */
-export function connectorsOf(points) {
-  return (points ?? []).map((p) => {
-    const position = [...(Array.isArray(p) ? p : p?.position ?? [0, 0, 0])].map(Number);
-    const rotation = fullRotation(p);
-    const yaw = Array.isArray(p) ? null : p?.yaw;
-    const tags = Array.isArray(p) ? [] : (Array.isArray(p?.tags) ? p.tags : []).filter((t) => typeof t === "string" && t);
-    return { position, ...(rotation ? { rotation } : yaw == null ? {} : { rotation: [0, Number(yaw), 0] }), ...(tags.length ? { tags: [...tags] } : {}) };
-  });
-}
-
-/** A snap point's whole frame, if it gives one (`rotation`, Euler XYZ radians): a place a tile stands on edge in. */
-const fullRotation = (p) => (!Array.isArray(p) && Array.isArray(p?.rotation) && p.rotation.length === 3 && p.rotation.every((v) => Number.isFinite(Number(v))) ? p.rotation.map(Number) : null);
-
-/**
- * The GLB extras key this package writes a piece's places under in full,
- * frame and all, when any has a whole `rotation`. The scene keeps only a
- * connector's yaw when it reads them (content(id).extras.connectors), which
- * is all its hand needs to snap; Draw, which puts a tile into a place
- * standing on edge, needs the rest (table/slots.js reads it back).
- */
-export const SLOTS_EXTRAS = "tabletop.slots";
-
-/** A piece → { glb, bounds }. Snap points go in as the scene's `extras.connectors` (see scene/README). */
-export function pieceGLB(piece) {
-  const meshes = pieceMeshes(piece?.parts);
-  const extras = {};
-  if (Array.isArray(piece?.snapPoints) && piece.snapPoints.length) {
-    extras.connectors = connectorsOf(piece.snapPoints);
-    if (piece.snapPoints.some(fullRotation)) extras[SLOTS_EXTRAS] = connectorsOf(piece.snapPoints);
+/** A file doc as look.js reads it: { content, mimeType, extension, origin } | null. */
+export async function readFile(repo, url) {
+  try {
+    const f = (await repo.find(url))?.doc?.();
+    return f ? { content: f.content, mimeType: f.mimeType, extension: f.extension, origin: f.origin } : null;
+  } catch {
+    return null;
   }
-  if (Number(piece?.snapRadius) > 0) extras.snapRadius = Number(piece.snapRadius);
-  const glb = encodeGLB({
-    generator: "patchwork tabletop",
-    meshes: meshes.map((m) => ({ name: m.name, positions: m.positions, normals: m.normals, indices: m.indices, color: m.color, roughness: 0.6 })),
-    ...(Object.keys(extras).length ? { extras } : {}),
-  });
-  return { glb, bounds: meshesBounds(meshes) };
 }
 
-const fileName = (piece) => `${String(piece?.name || "piece").replace(/[\\/:]/g, "-")}.glb`;
+/** The first image or model a piece is drawn from: kinds drawn in this order read each sheet once. */
+const firstFile = (p) => (p?.parts ?? []).map((x) => x?.top?.file ?? x?.file ?? "").find(Boolean) ?? "";
 
 /**
- * Make sure every piece has a GLB drawn from its current parts: create the
- * file doc the first time, rewrite its content when the piece has changed.
- * Writes `glbUrl`, `glbKey` and `bounds` on the game. Returns how many it drew.
+ * Make sure every piece of the game has a GLB drawn from what it is now:
+ * create the file doc the first time, rewrite it when the piece has changed.
+ * Writes `drawn` on the game.
+ * @param {object} repo
+ * @param {object} handle  the game doc's handle
+ * @param {{ images?: object | null, source?: (type: string) => Promise<object | null> }} [io]
+ * @returns {Promise<{ drawn: number, notes: string[] }>}
  */
-export async function ensurePieceGLBs(repo, handle) {
+export async function ensurePieceGLBs(repo, handle, { images = null, source = async () => null } = {}) {
   const pieces = handle.doc()?.pieces ?? {};
+  const have = handle.doc()?.drawn ?? {};
+  const todo = Object.keys(pieces)
+    .filter((k) => have[k]?.key !== lookKey(pieces[k]) || !have[k]?.url)
+    .sort((a, b) => firstFile(pieces[a]).localeCompare(firstFile(pieces[b])));
+  const d = drawer({ read: (url) => readFile(repo, url), images, source });
+  const notes = [];
   let drawn = 0;
-  for (const [kind, piece] of Object.entries(pieces)) {
-    const key = glbKey(piece);
-    if (piece.glbUrl && piece.glbKey === key) continue;
-    const { glb, bounds } = pieceGLB(piece);
-    let url = piece.glbUrl;
-    if (url) {
-      const file = await repo.find(url);
-      file.change((f) => {
-        f.content = glb;
-        f.name = fileName(piece);
+  try {
+    for (const kind of todo) {
+      const piece = handle.doc()?.pieces?.[kind];
+      if (!piece) continue;
+      const key = lookKey(piece);
+      const out = await d.draw(piece);
+      for (const n of out.notes) notes.push(`${piece.name}: ${n}`);
+      const origin = out.origins.length ? { urls: out.origins } : null;
+      let url = handle.doc()?.drawn?.[kind]?.url ?? null;
+      if (url) {
+        const file = await repo.find(url);
+        file.change((f) => {
+          f.content = out.glb;
+          f.name = glbName(piece);
+          if (origin) f.origin = origin;
+          else delete f.origin;
+        });
+      } else {
+        const file = await repo.create2({ "@patchwork": { type: "file" }, name: glbName(piece), extension: "glb", mimeType: "model/gltf-binary", content: out.glb, ...(origin ? { origin } : {}) });
+        url = file.url;
+      }
+      handle.change((g) => {
+        if (!g.drawn) g.drawn = {};
+        const was = g.drawn[kind];
+        // someone else drew it first: theirs wins, ours is an orphan
+        const entry = { url: was?.url ?? url, key, bounds: out.bounds ?? null };
+        if (!entry.bounds) delete entry.bounds;
+        g.drawn[kind] = entry;
       });
-    } else {
-      const file = await repo.create2({
-        "@patchwork": { type: "file" },
-        name: fileName(piece),
-        extension: "glb",
-        mimeType: "model/gltf-binary",
-        content: glb,
-      });
-      url = file.url;
+      drawn++;
     }
-    handle.change((d) => {
-      const p = d.pieces?.[kind];
-      if (!p) return;
-      // someone else drew it first: theirs wins, ours is an orphan
-      if (!p.glbUrl) p.glbUrl = url;
-      p.glbKey = key;
-      p.bounds = bounds ? { min: bounds.min.map((v) => +v.toFixed(5)), max: bounds.max.map((v) => +v.toFixed(5)) } : null;
-    });
-    drawn++;
+  } finally {
+    d.close();
   }
-  return drawn;
+  return { drawn, notes };
 }

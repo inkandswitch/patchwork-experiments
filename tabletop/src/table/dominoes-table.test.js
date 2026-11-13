@@ -1,5 +1,5 @@
 // A Draw Dominoes table in play (extension.js with the game's own pieces,
-// games/dominoes.js): drawing into a rack where the tile stands facing its
+// games/draw-dominoes-2.json): drawing into a rack where the tile stands facing its
 // player, washing the boneyard, standing and laying tiles, laying a hand face
 // up, and who may see what at each step (visibility.js). Seats and the keeper
 // are stand-ins (test/stand-ins.js), met only through the conventions.
@@ -9,13 +9,23 @@ import Extension from "./extension.js";
 import * as fakes from "../test/fakes.js";
 import { SEATS, keeperOf, keptTrait, roster } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
-import { connectorsOf } from "../pieces.js";
+import { connectorsOf } from "../look/look.js";
 import { boxUnder } from "./stand.js";
 import { composeMatrix } from "./frame.js";
-import { RACK, STANDING, TILE, TILE_TAGS, TILE_TOP, dominoes } from "../games/dominoes.js";
+import { game as builtIn } from "../test/games.js";
 import { yawOfEuler } from "./slots.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
+// the game, as data (games/draw-dominoes-2.json), and what these tests need of it
+const game = builtIn("draw-dominoes-2");
+const body = game.pieces.back.parts.find((p) => p.shape === "box" && p.name === "tile");
+/** A tile's size (m): across, along, thick; and the top of everything on it, face or back. */
+const TILE = { w: body.size[0], l: body.size[2], t: body.size[1] + 2 * body.at[1] };
+const TILE_TOP = Math.max(...game.pieces.back.parts.map((p) => (p.at?.[1] ?? 0) + (p.size?.[1] ?? p.height ?? 0)));
+const TILE_TAGS = game.pieces.back.tags;
+/** Where a rack's front row stands, and the frame a tile stands on edge in there. */
+const RACK = { base: game.pieces.rack.snapPoints[0].position[1] };
+const STANDING = game.pieces.rack.snapPoints[0].rotation;
 const BOX = { min: [-TILE.w / 2, 0, -TILE.l / 2], max: [TILE.w / 2, TILE_TOP, TILE.l / 2] };
 const BONES = "automerge:2BonesBonesBonesBonesBonesBo";
 const FACE_DOWN = (yaw = 0) => [0, yaw, Math.PI];
@@ -27,17 +37,12 @@ const tile = (position, rotation = FACE_DOWN()) => ({
   tags: [...TILE_TAGS],
   hint: { bounds: structuredClone(BOX) },
 });
-const game = (() => {
-  const g = {};
-  dominoes(2).fill(g);
-  return g;
-})();
 const OUT = 0.42;
-const rack = (seat, z, yaw) => ({ name: "Rack", locked: true, transform: T([0, 0, z], [0, yaw, 0]), traits: { [ZONE]: { ...structuredClone(game.pieces.rack1.zone), seat } } });
+const rack = (seat, z, yaw) => ({ name: "Rack", locked: true, transform: T([0, 0, z], [0, yaw, 0]), traits: { [ZONE]: { ...structuredClone(game.pieces.rack.zone), seat } } });
 /** What the scene says a rack's GLB holds: its connectors as the stage reads them (yaw only), and its places whole (this package's extras). */
 const rackContent = () => {
-  const whole = connectorsOf(game.pieces.rack1.snapPoints);
-  return { loaded: true, extras: { connectors: whole.map((c) => ({ position: c.position, yaw: yawOfEuler(c.rotation), tags: c.tags })), snapRadius: game.pieces.rack1.snapRadius, "tabletop.slots": whole } };
+  const whole = connectorsOf(game.pieces.rack.snapPoints);
+  return { loaded: true, extras: { connectors: whole.map((c) => ({ position: c.position, yaw: yawOfEuler(c.rotation), tags: c.tags })), snapRadius: game.pieces.rack.snapRadius, "tabletop.slots": whole } };
 };
 const seats = (p1 = "alice", p2 = "bob") => ({ p1: { name: "Player 1", player: p1 }, p2: { name: "Player 2", player: p2 } });
 const col = (m, k) => [m[4 * k], m[4 * k + 1], m[4 * k + 2]].map((v) => +v.toFixed(7) + 0);
@@ -90,7 +95,7 @@ describe("drawing a tile into your rack", () => {
     expect(col(m, 1)).toEqual([0, 0, 1]); // its face toward Alice (+z)
     expect(col(m, 2)).toEqual([1, 0, 0]); // its length along the rack
     const b = boxUnder(m, BOX);
-    const first = game.pieces.rack1.snapPoints[0].position;
+    const first = game.pieces.rack.snapPoints[0].position;
     expect((b.min[0] + b.max[0]) / 2).toBeCloseTo(first[0], 6);
     expect((b.min[2] + b.max[2]) / 2).toBeCloseTo(OUT + first[2], 6);
     expect(b.min[1]).toBeCloseTo(RACK.base, 6);
@@ -126,7 +131,7 @@ describe("drawing a tile into your rack", () => {
       t.cmd(t.A, "draw").run(id);
       t.w.tick(1 / 60, 40);
     }
-    const places = game.pieces.rack1.snapPoints.map((p) => p.position);
+    const places = game.pieces.rack.snapPoints.map((p) => p.position);
     order.forEach((id, k) => {
       const b = boxUnder(worldOf(t, id), BOX);
       expect((b.min[0] + b.max[0]) / 2).toBeCloseTo(places[k][0], 6);
@@ -418,7 +423,7 @@ describe("laying your hand face up", () => {
       expect(col(worldOf(t, id), 1)).toEqual([0, 1, 0]);
       expect(t.policy()(id)).toEqual({ show: "all" });
       // out past the rack's edge, toward the table
-      expect(boxes[i].max[2]).toBeLessThan(OUT + game.pieces.rack1.zone.min[2]);
+      expect(boxes[i].max[2]).toBeLessThan(OUT + game.pieces.rack.zone.min[2]);
     }
     for (let i = 0; i < 7; i++) for (let j = i + 1; j < 7; j++) {
       const [a, b] = [boxes[i], boxes[j]];
