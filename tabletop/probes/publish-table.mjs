@@ -7,8 +7,8 @@
 // Makes NEW docs on every run (no dedupe).
 //
 // The game page (default): the Lost Cities game, as the package's own UI
-// would make it. A tabletop-game doc filled by the Lost Cities game
-// (games/lost-cities.js fill, as "Start from" does), every piece's GLB drawn
+// would make it. A tabletop-game doc holding the Lost Cities game
+// (games/lost-cities.json, as "Start from" writes it), every piece's GLB drawn
 // into a file doc (pieces.js ensurePieceGLBs, as the game page does while
 // open), then "Set up a table" (tool.js setUpTable): tableLayout with the
 // game's GLBs, a container per deck from a keeper and the seats from their
@@ -67,11 +67,13 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
-import { fill } from "../src/games/lost-cities.js";
+import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
 import { emptyScene } from "../src/empty-scene.js";
-import { containDecks, findSeats } from "../src/table/made-with.js";
+import { findSeats, makeHolders } from "../src/table/made-with.js";
+import { TabletopGameDatatype } from "../src/datatype.js";
+import { gameOf, writeGame } from "../src/game.js";
 import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackages } from "./scene-packages.mjs";
 
 // A published table names the scene package as its suggested import and
@@ -154,17 +156,19 @@ if (TEMPLATE) {
   await new Promise(() => {}); // the browser's stop() exits
 }
 
-// ─── the game, as TabletopGameDatatype.init writes it, then filled ──────────
-const game = await repo.create2({ "@patchwork": { type: "tabletop-game" }, title: "Untitled game", about: "", pieces: {}, order: [], tables: [] });
-game.change((d) => fill(d));
-const drawn = await ensurePieceGLBs(repo, game);
+// ─── the game, as TabletopGameDatatype.init writes it, then started from Lost Cities ──
+const init = { "@patchwork": { type: "tabletop-game" } };
+TabletopGameDatatype.init(init);
+const game = await repo.create2(init);
+game.change((d) => writeGame(d, lostCities));
+const { drawn } = await ensurePieceGLBs(repo, game);
 
 // ─── "Set up a table" (tool.js setUpTable) ──────────────────────────────────
 const g = game.doc();
 const title = `${g.title || "Game"} table ${(g.tables?.length ?? 0) + 1}`;
-const fileOf = (kind) => (g.pieces[kind]?.glbUrl ? { url: g.pieces[kind].glbUrl, hint: g.pieces[kind].bounds ? { bounds: g.pieces[kind].bounds } : null } : null);
-const layout = tableLayout(g, { fileOf, gameUrl: game.url });
-const decks = layout.decks;
+const fileOf = (kind) => (g.drawn?.[kind]?.url ? { url: g.drawn[kind].url, hint: g.drawn[kind].bounds ? { bounds: g.drawn[kind].bounds } : null } : null);
+const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });
+const decks = layout.containers;
 // What's installed, for setting up: the built seats, card-table (the joint
 // keeper) and keep (the plain one), as a registry the game page's own
 // lookups read (src/table/made-with.js).
@@ -180,11 +184,12 @@ const registry = async (type) => {
   return { filter: (fn) => [...all.values()].filter(fn), load: async (id) => { const p = all.get(id); if (p && !p.module) p.module = await p.load(); return p; } };
 };
 // the decks' containers first, so the scene never names one that isn't there
-const { binds, kinds } = await containDecks({ repo, registry }, decks, (deck) => `${title}: ${deck.title}`);
+const made = await makeHolders({ repo, registry }, layout);
+const { binds, kinds } = made;
 const lay = await findSeats(registry);
 if (!lay) throw new Error("nothing built here owns seats (the seats package)");
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, binds, { seats: lay });
+writeTable(table, layout, made, { seats: lay });
 // each deck's container, as its cards name it
 const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
 const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));
@@ -195,7 +200,7 @@ game.change((d) => {
 });
 
 // ─── checks ─────────────────────────────────────────────────────────────────
-const glbs = Object.values(game.doc().pieces).map((p) => p.glbUrl);
+const glbs = Object.keys(game.doc().pieces).map((k) => game.doc().drawn?.[k]?.url);
 const s = scene.doc();
 const problems = [];
 if (drawn !== glbs.length || glbs.some((u) => !u)) problems.push(`${drawn} of ${glbs.length} piece GLBs drawn`);

@@ -5,10 +5,12 @@
 // the keepers' bindings.
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { emptyScene } from "../src/empty-scene.js";
-import { fill } from "../src/games/lost-cities.js";
+import lostCities from "../games/lost-cities.json" with { type: "json" };
 import { ensurePieceGLBs } from "../src/pieces.js";
 import { tableLayout, writeTable } from "../src/setup.js";
-import { containDecks, findSeats } from "../src/table/made-with.js";
+import { findSeats, makeHolders } from "../src/table/made-with.js";
+import { TabletopGameDatatype } from "../src/datatype.js";
+import { gameOf, writeGame } from "../src/game.js";
 
 /** The stub registry, as a drop context's `registry`. */
 export const registry = async (type) => getRegistry(type);
@@ -22,28 +24,30 @@ export async function install(urls) {
 }
 
 /**
- * The game page's table: the game's GLBs, each deck's container from a
- * keeper found in the registry (`secure: false` asks for a plain one), the
- * seats from their owner, then the scene.
+ * The game page's table: the game (games/lost-cities.json) in a game doc, its
+ * GLBs, each container from a keeper found in the registry (`secure: false`
+ * asks for a plain one), the seats from their owner, then the scene.
  * @returns {Promise<{ game, scene, deckUrl: string, kinds: object }>}
  */
 export async function lostCitiesTable(repo, { title = "Probe table", secure = true, edit = null } = {}) {
-  const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
+  const init = { "@patchwork": { type: "tabletop-game" } };
+  TabletopGameDatatype.init(init);
+  const game = repo.add(init);
   game.change((d) => {
-    fill(d);
-    if (!secure) d.decks.main.secure = false;
+    writeGame(d, lostCities);
+    if (!secure) delete d.setup.find((t) => t.deck).deck.secure;
     edit?.(d);
   });
   await ensurePieceGLBs(repo, game);
   const g = game.doc();
-  const fileOf = (k) => (g.pieces[k]?.glbUrl ? { url: g.pieces[k].glbUrl, hint: g.pieces[k].bounds ? { bounds: g.pieces[k].bounds } : null } : null);
-  const layout = tableLayout(g, { fileOf, gameUrl: game.url });
-  const { binds, kinds } = await containDecks({ repo, registry }, layout.decks, (deck) => `${title}: ${deck.title}`);
+  const fileOf = (k) => (g.drawn?.[k]?.url ? { url: g.drawn[k].url, hint: g.drawn[k].bounds ? { bounds: g.drawn[k].bounds } : null } : null);
+  const layout = tableLayout(gameOf(g), { fileOf, gameUrl: game.url });
+  const made = await makeHolders({ repo, registry }, layout);
   const lay = await findSeats(registry);
   const table = emptyScene({ title });
-  writeTable(table, layout, binds, { seats: lay });
+  writeTable(table, layout, made, { seats: lay });
   const scene = repo.add(table);
-  return { game, scene, layout, kinds, deckUrl: deckUrlOf(table.objects) };
+  return { game, scene, layout, kinds: made.kinds, deckUrl: deckUrlOf(table.objects) };
 }
 
 // ── reading the scene ──

@@ -11,8 +11,10 @@ import { SEATS, keeperOf, keeperPlugin, keptIn, keptTrait, registries, roster, s
 import { emptyScene } from "../empty-scene.js";
 import { apply, composeMatrix, multiply } from "./frame.js";
 import { placeLayout, tableLayout, writeTable } from "../setup.js";
-import * as lostCitiesGame from "../games/lost-cities.js";
-import { cardTable, lostCities, PIECES, TABLE, GAME_TAG, partKey, squared } from "./parts.js";
+import { cardTable, gamePart, PIECES, TABLE, GAME_TAG, partKey, squared } from "./parts.js";
+import { game as builtIn, gamePlugins } from "../test/games.js";
+
+const lostCities = gamePart("lost-cities");
 
 afterEach(() => vi.useRealTimers());
 
@@ -64,9 +66,7 @@ async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: n
 
 describe("a layout set down on something", () => {
   const files = { url: "automerge:glb", hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.001, 0.04] } } };
-  const g = {};
-  lostCitiesGame.fill(g);
-  const flat = tableLayout(g, { fileOf: () => files, rng: () => 0.5 });
+  const flat = tableLayout(builtIn("lost-cities"), { fileOf: () => files, rng: () => 0.5 });
 
   it("a plain shift: every piece under the parent, moved up onto its top; each seat's view in its frame", () => {
     const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
@@ -98,8 +98,8 @@ describe("a layout set down on something", () => {
   it("written without the view: the scene's view, home and units stay as they were", () => {
     const d = emptyScene({ view: { units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" } });
     const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
-    const binds = Object.fromEntries(Object.keys(on.decks).map((k) => [k, (s) => ({ [keptTrait("plain")]: { by: DECK, slot: s } })]));
-    writeTable(d, on, binds, { view: false, seats: lay });
+    const binds = Object.fromEntries(Object.keys(on.containers).map((k) => [k, (s) => ({ [keptTrait("plain")]: { by: DECK, slot: s } })]));
+    writeTable(d, on, { binds }, { view: false, seats: lay });
     expect(d.view).toEqual({ units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" });
     expect(d.traits[SEATS].p1.camera.in).toBe("tbl");
     expect(d.order).toHaveLength(on.order.length);
@@ -168,7 +168,7 @@ describe("the Card table and Lost Cities parts", () => {
       view: { units: "m", activity: "play", home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } },
     });
   // what's installed: whoever owns seats, and a keeper of each kind
-  const installed = () => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"));
+  const installed = () => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins());
 
   it("a Card table goes under what it's put on, square to it, locked, with a top that takes a game", async () => {
     const doc = emptyShip();
@@ -182,7 +182,7 @@ describe("the Card table and Lost Cities parts", () => {
     expect(o.transform.rotation[1]).toBeCloseTo(squared({ rotation: [0.06, Math.PI / 2, -0.03] }).rotation[1], 6);
     expect(o.sourceUrl).toBe(doc.assets[partKey("table")].url);
     expect(o.hint.bounds.max[1]).toBeCloseTo(TABLE.h, 2);
-    expect(PIECES.table.snapPoints).toEqual([{ position: [0, TABLE.h + 0.0006, 0], yaw: 0, tags: [GAME_TAG] }]);
+    expect(PIECES.table.snapPoints).toEqual([{ position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], tags: [GAME_TAG] }]);
   });
 
   it("Lost Cities on it: every piece under the table, the seats' views in its frame, and the scene's view and title left alone", async () => {
@@ -202,12 +202,12 @@ describe("the Card table and Lost Cities parts", () => {
     expect(doc.title).toBe("Ship at anchor");
     // the seats' owner was asked to lay them, each view in the table's frame
     expect(doc.traits[SEATS].p1.camera).toEqual({ position: [0, 1.2006, 0.95], target: [0, 0.7006, 0.16], in: tid });
-    // its deck asks for its players to shuffle it: a joint keeper's container, named for the scene, every card bound to it
+    // its deck asks for its players to shuffle it: a joint keeper's container, named for the game (never the ship), every card bound to it
     const cards = Object.values(doc.objects).filter((o) => o.traits?.[CARD]);
     expect(cards).toHaveLength(60);
     expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
     const container = calls.created.find((d) => d?.["@patchwork"]?.type === "t-joint");
-    expect(container.title).toBe("Ship at anchor: Deck");
+    expect(container.title).toBe("Lost Cities: Deck");
     expect(container.items).toHaveLength(60);
   });
 

@@ -1,11 +1,15 @@
-// The tabletop-game datatype. See README.md for the document shape.
+// The tabletop-game datatype: a game (GAME-FORMAT.md), with each piece's GLB
+// (`drawn`) and the tables set up from it (`tables`) beside it (game.js).
 
 export const TabletopGameDatatype = {
   init(doc) {
+    doc.format = "tabletop-game";
+    doc.version = 1;
     doc.title = "Untitled game";
     doc.about = "";
     doc.pieces = {};
-    doc.order = [];
+    doc.setup = [];
+    doc.drawn = {};
     doc.tables = [];
   },
   getTitle(doc) {
@@ -16,11 +20,8 @@ export const TabletopGameDatatype = {
   },
   markCopy(doc) {
     doc.title = `Copy of ${doc.title || "game"}`;
-    // the copy builds its own piece GLBs and sets up its own tables
-    for (const p of Object.values(doc.pieces ?? {})) {
-      p.glbUrl = null;
-      p.glbKey = null;
-    }
+    // the copy draws its own piece GLBs and sets up its own tables
+    doc.drawn = {};
     doc.tables = [];
   },
 };
