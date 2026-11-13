@@ -1,5 +1,5 @@
 .machine-history { --hist-faint: color-mix(in srgb, var(--editor-line, black) 15%, transparent);
-  box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; overflow: auto;
+  box-sizing: border-box; height: 100%; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; overflow: hidden;
   background: var(--editor-fill, white); color: var(--editor-line, black); font: 13px/1.4 var(--studio-font-sans, system-ui, sans-serif); outline: none; }
 .machine-history .note { color: var(--editor-line-offset-30, #555); margin: 0; }
 .machine-history .note[data-error] { color: var(--studio-danger, #b00); }
@@ -13,25 +13,29 @@
 .machine-history button { cursor: pointer; }
 .machine-history button:disabled { opacity: 0.5; cursor: default; }
 
-.machine-history .screens { display: flex; gap: 0.5rem; min-height: 0; flex: 0 0 auto; }
-.machine-history figure { margin: 0; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+/* The screens take what the navigation and the lists leave, and the picture
+   scales to fit it (letterboxed), never the other way round. */
+.machine-history header, .machine-history .controls, .machine-history .overview, .machine-history .strip { flex: none; }
+.machine-history .screens { display: flex; gap: 0.5rem; flex: 1 1 0; min-height: 6rem; }
+.machine-history figure { margin: 0; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 0.2rem; }
 .machine-history figure[hidden] { display: none; }
-.machine-history figure canvas { width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; background: #000; border-radius: var(--studio-radius-sm, 6px); object-fit: contain; }
+.machine-history figure canvas { flex: 1 1 0; min-height: 0; width: 100%; image-rendering: pixelated; background: #000; border-radius: var(--studio-radius-sm, 6px); object-fit: contain; }
+.machine-history figcaption { flex: none; }
 .machine-history figcaption { font-size: 12px; color: var(--editor-line-offset-30, #555); }
 .machine-history figure[data-side="abandoned"] canvas { outline: 2px dashed var(--studio-danger, #c33); outline-offset: -2px; }
 
 .machine-history .strip { width: 100%; display: block; cursor: crosshair; touch-action: none; border-block: 1px solid var(--hist-faint); }
 
-.machine-history .lower { display: grid; grid-template-columns: minmax(14rem, 1fr) 2fr; gap: 0.75rem; min-height: 12rem; }
+.machine-history .lower { display: grid; grid-template-columns: minmax(14rem, 1fr) 2fr; gap: 0.75rem; flex: 0 1 clamp(9rem, 32%, 20rem); min-height: 4rem; }
 .machine-history h3 { margin: 0 0 0.3rem; font-size: 13px; display: flex; align-items: center; gap: 0.5rem; }
 .machine-history h3 input[type="range"] { flex: 1; }
-.machine-history .list { min-height: 0; display: flex; flex-direction: column; }
-.machine-history .items { list-style: none; margin: 0; padding: 0; overflow: auto; max-height: 18rem; font-variant-numeric: tabular-nums; }
+.machine-history .list { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.machine-history .items { list-style: none; margin: 0; padding: 0; overflow: auto; min-height: 0; flex: 1; font-variant-numeric: tabular-nums; }
 .machine-history .items li { padding: 0.15rem 0.35rem; border-radius: var(--studio-radius-sm, 4px); cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }
 .machine-history .items li:hover { background: var(--editor-fill-offset-10, #f2f2f2); }
 .machine-history .items li[data-selected] { background: var(--studio-primary, #2563eb); color: var(--studio-primary-content, white); }
 .machine-history .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
-.machine-history .detail { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.machine-history .detail { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; min-height: 0; overflow: auto; }
 .machine-history .detail p { margin: 0; }
 .machine-history table { border-collapse: collapse; font-size: 12px; }
 .machine-history th, .machine-history td { text-align: left; padding: 0.1rem 0.6rem 0.1rem 0; vertical-align: middle; }
