@@ -19,7 +19,8 @@
 //
 // Every single kind (144), every ordered pair of the 32 candidate kinds
 // in both registration orders, and every ordered triple of them in all six
-// registration orders.
+// registration orders; and singles and pairs again against a GLB that
+// states no fingerprint (then nothing is refused and nothing is "same").
 
 import { describe, it, expect } from "vitest";
 import { chartroomTableFor, chartroomProviders, rankCompare, sameHull, claimOf, offers, TABLE_FORMAT } from "./chartroom-link.js";
@@ -65,10 +66,11 @@ const registryOf = (providers) => () => ({
 });
 
 /** The oracle: what THE RULE says, from the set alone. */
-function oracle(providers) {
+function oracle(providers, meshPrint = MESH_PRINT) {
   const cands = providers.filter((p) => p.kind.claim !== "other" && p.kind.formats === "listed").sort((a, b) => (a.id < b.id ? -1 : 1));
   if (!cands.length) return { absent: true, read: null, offers: [], calls: [] };
-  const verdict = (p) => (p.kind.print === "same" ? "same" : p.kind.print === "different" ? "different" : "unknown");
+  // with no mesh fingerprint there is nothing to match or refuse: every verdict is "unknown"
+  const verdict = (p) => (meshPrint == null ? "unknown" : p.kind.print === "same" ? "same" : p.kind.print === "different" ? "different" : "unknown");
   const refused = cands.filter((p) => verdict(p) === "different");
   const ranked = cands
     .filter((p) => verdict(p) !== "different")
@@ -90,10 +92,10 @@ function oracle(providers) {
   return { absent: false, read: read && { id: read.id, verdict: read.verdict }, offers: out, calls };
 }
 
-async function run(providers) {
+async function run(providers, meshPrint = MESH_PRINT) {
   const calls = [];
   const ps = providers.map((p) => ({ ...p, load: provider(p.kind, p.id, calls).load }));
-  const r = await chartroomTableFor({ doc: { title: "hull" }, datatype: DATATYPE, meshFingerprint: MESH_PRINT, getRegistry: registryOf(ps) });
+  const r = await chartroomTableFor({ doc: { title: "hull" }, datatype: DATATYPE, meshFingerprint: meshPrint, getRegistry: registryOf(ps) });
   return {
     absent: !r.ok && r.absent,
     read: r.ok ? { id: r.providerId, verdict: r.verdict } : null,
@@ -106,12 +108,12 @@ async function run(providers) {
 const describeKind = (k) => `${k.claim}/${k.formats}/${k.print}/${k.table}`;
 const permutations = (xs) => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p])));
 
-async function check(kinds, orders) {
+async function check(kinds, orders, meshPrint = MESH_PRINT) {
   const ids = ["a", "b", "c"];
   const providers = kinds.map((k, i) => provider(k, ids[i], []));
-  const want = oracle(providers);
+  const want = oracle(providers, meshPrint);
   for (const order of orders(providers)) {
-    const got = await run(order);
+    const got = await run(order, meshPrint);
     const label = `${kinds.map(describeKind).join(" + ")} registered ${order.map((p) => p.id).join("")}`;
     expect({ absent: got.absent, read: got.read, offers: got.offers, calls: got.calls }, label).toEqual({ ...want, calls: [...want.calls].sort() });
     if (got.read) expect(got.table, label).toBe(VALID);
@@ -130,6 +132,11 @@ describe("chartroom:source: no provider is the provider", () => {
   it(`every ordered triple of the ${CANDIDATE_KINDS.length} candidate kinds, in all six registration orders (${CANDIDATE_KINDS.length ** 3} sets)`, async () => {
     for (const a of CANDIDATE_KINDS) for (const b of CANDIDATE_KINDS) for (const c of CANDIDATE_KINDS) await check([a, b, c], (ps) => permutations(ps));
   }, 240_000);
+
+  it(`a GLB that states no fingerprint: every single kind, and every ordered pair of candidates in both orders, none refused, ranked by claim then id`, async () => {
+    for (const k of KINDS) await check([k], (ps) => [ps], null);
+    for (const a of CANDIDATE_KINDS) for (const b of CANDIDATE_KINDS) await check([a, b], (ps) => permutations(ps), null);
+  }, 60_000);
 
   it("a candidate that isn't a candidate never changes the answer: each pair of one candidate and one non-candidate is the candidate alone", async () => {
     const non = KINDS.filter((k) => !(k.claim !== "other" && k.formats === "listed"));
@@ -158,8 +165,12 @@ describe("chartroom:source: no provider is the provider", () => {
         if (x !== y) expect(rankCompare(x, y)).not.toBe(0);
         for (const z of items) if (rankCompare(x, y) < 0 && rankCompare(y, z) < 0) expect(rankCompare(x, z)).toBeLessThan(0);
       }
-    const dup = chartroomProviders([{ id: "x", supportedDatatypes: [DATATYPE], formats: [TABLE_FORMAT] }, { id: "x", supportedDatatypes: "*", formats: [TABLE_FORMAT] }], DATATYPE);
-    expect(dup.map((c) => [c.id, c.claim])).toEqual([["x", "exact"]]);
+    // two descriptions under one id are one provider, with the stronger claim, in either order
+    const exact = { id: "x", supportedDatatypes: [DATATYPE], formats: [TABLE_FORMAT] };
+    const wild = { id: "x", supportedDatatypes: "*", formats: [TABLE_FORMAT] };
+    const unlisted = { id: "x", supportedDatatypes: [DATATYPE], formats: ["marine-geometry/1"] };
+    for (const list of permutations([exact, wild, unlisted])) expect(chartroomProviders(list, DATATYPE).map((c) => [c.id, c.claim])).toEqual([["x", "exact"]]);
+    for (const list of permutations([wild, unlisted])) expect(chartroomProviders(list, DATATYPE).map((c) => [c.id, c.claim])).toEqual([["x", "wildcard"]]);
     expect(sameHull(MESH_PRINT, "hull")).toBe("same");
   });
 

@@ -118,19 +118,21 @@ export function rankCompare(a, b) {
 /**
  * The chartroom:source plugins for a datatype that offer a format (step 1),
  * each with its claim, in id order (the fingerprints, which finish the
- * ranking, need the providers' modules).
+ * ranking, need the providers' modules). An id is one provider (the host's
+ * registry is keyed by id, and its module is loaded by id); should a list
+ * hold two descriptions under one id, the id's claim is the stronger of
+ * theirs, so not even that depends on the order they came in.
  */
 export function chartroomProviders(providers, datatype, format = TABLE_FORMAT) {
-  const seen = new Set();
-  const out = [];
+  const byId = new Map();
   for (const p of providers ?? []) {
-    if (!p || typeof p.id !== "string" || !p.id || seen.has(p.id)) continue;
+    if (!p || typeof p.id !== "string" || !p.id) continue;
     const claim = claimOf(p, datatype);
     if (!claim || !offers(p, format)) continue;
-    seen.add(p.id);
-    out.push({ p, id: p.id, claim });
+    const had = byId.get(p.id);
+    if (!had || CLAIM_RANK[claim] < CLAIM_RANK[had.claim]) byId.set(p.id, { p, id: p.id, claim });
   }
-  return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /**
