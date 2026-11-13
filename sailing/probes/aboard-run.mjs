@@ -1,8 +1,8 @@
 // A Lost Cities table aboard the sloop, played by two people in headless
 // Chrome, at anchor and under way.
 //
-//   (in scene/, seats/, sailing/, tabletop/ and card-table/) pnpm build
-//   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick]
+//   (in scene/, seats/, sailing/, tabletop/, card-table/ and keep/) pnpm build
+//   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick] [--port 4781] [--cdp 9781]
 //
 // Mounts the BUILT scene tool with the BUILT seats, sailing, tabletop and
 // card-table plugins twice on one empty scene (aboard-probe.html): A is Ana,
@@ -32,12 +32,15 @@
 //     within 15 s of sailing time (one bounded step: DESIGN.md, "Leaving
 //     the anchor"); A and D onto a reach, over 1 m/s within 90 s; then 3–6 again for A
 //     (still seated), and the name tags stay on their trays;
-//  9. Enter boards: over the deck the prompt shows only Flip, and S and D
-//     walk; with the table in her cockpit the mainsheet is in reach from its
-//     stand spot and offers F; Esc puts A back in the seat view;
-// 10. seated, F at A's own tray (the seats' "Stand up") puts A on her deck
-//     through sailing's firstPerson.enter: walking, beside the table and
-//     facing it, the seat still A's; Esc puts A back in the seat view;
+//  9. Enter boards (the crew's "aboard" body, over the seat): over the deck
+//     the prompt shows Flip with F, Shuffle and Draw without their keys (S
+//     and D walk), and S and D walk; with the table in her cockpit the
+//     mainsheet is in reach from its stand spot and offers F; the body chip's
+//     Leave puts A back in the seat view (Escape never leaves a body);
+// 10. walking up to her own tray (from orbit, Enter): F sits A down (the seat
+//     body over "aboard", the walker waiting); F at it again (the seats'
+//     "Stand up") pops the seat: walking on her deck beside the table and
+//     facing it, the seat still A's; F once more, back in the seat view;
 // 11. screens of both views at anchor and under way.
 // 12. under way, seated (TOOLS.md build step 3): A selects a card on the table
 //     by its menu's Select (the first entry), and drags its halo's X arrow:
@@ -59,7 +62,9 @@ const QUICK = process.argv.includes("--quick");
 /** How far (px) the table's top may wander on a seated view's screen over the sample. */
 const STEADY_PX = 40;
 
-const b = await browser({ root: ROOT, port: 4781, cdp: 9781, page: "/sailing/probes/aboard-probe.html", width: 1416, height: 530, show: process.argv.includes("--show"), gpu: process.argv.includes("--gpu"), timeout: 900_000 });
+// (--port / --cdp: another probe, another lane's, may have the defaults)
+const PORT = Number(arg("--port") ?? 4781);
+const b = await browser({ root: ROOT, port: PORT, cdp: Number(arg("--cdp") ?? PORT + 5000), page: "/sailing/probes/aboard-probe.html", width: 1416, height: 530, show: process.argv.includes("--show"), gpu: process.argv.includes("--gpu"), timeout: 900_000 });
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 60);
@@ -72,6 +77,17 @@ const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels|pointe
 const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `aboard-${name}.png`)));
 const J = JSON.stringify;
 const SAIL_VERBS = /sail|Haul|Ease|helm|anchor|Weigh|Let go/i;
+
+/** Leave the top body of view w through its body chip (its menu's "Leave (<label>)"). */
+async function leaveBody(w, label) {
+  const chip = await P(`chip('${w}')`);
+  if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
+  await b.waitFor(`!!window.__p.chipItem('${w}', 'Leave (${label})')`, 3000, 60);
+  const item = await P(`chipItem('${w}', 'Leave (${label})')`);
+  if (item) await b.click(Math.round(item.x), Math.round(item.y));
+  await sleep(500);
+  return !!item;
+}
 
 /** The spread (px) of a list of page points: the largest distance from their middle. */
 const spread = (pts) => {
@@ -311,7 +327,7 @@ try {
     const before = await P(`transform(${J(target)})`);
     await b.click(at.x, at.y);
     await sleep(300);
-    check("7: a plain click on a card doesn't board, and doesn't move it", !(await P("me('a')")).playing && !(await P("immersive('a')")) && J(await P(`transform(${J(target)})`)) === J(before), { me: await P("me('a')"), before, after: await P(`transform(${J(target)})`) });
+    check("7: a plain click on a card doesn't board, and doesn't move it", !(await P("me('a')")).playing && !(await P("walking('a')")) && J(await P(`transform(${J(target)})`)) === J(before), { me: await P("me('a')"), before, after: await P(`transform(${J(target)})`) });
     // whichever of her fittings is on A's screen from the seat (the wheel is aft, behind the seat's view)
     let fitting = null;
     let spot = null;
@@ -344,7 +360,7 @@ try {
     if (hullSpot) {
       await b.click(hullSpot.x, hullSpot.y);
       await sleep(400);
-      check("7: seated, a plain click on the hull round the table doesn't board", !(await P("me('a')")).playing && !(await P("immersive('a')")), { me: await P("me('a')") });
+      check("7: seated, a plain click on the hull round the table doesn't board", !(await P("me('a')")).playing && !(await P("walking('a')")), { me: await P("me('a')") });
     } else check("7: the hull round the table is on A's screen", false);
     // seated: the HUD offers Enter, not the walking keys, and keeps clear of the hand at the bottom
     const hud = await P("hud('a')");
@@ -470,7 +486,7 @@ try {
   {
     await P("focus('a')");
     await b.key("Enter");
-    check("9: Enter boards", await until("me('a').playing && __p.immersive('a')", 5000), await P("me('a')"));
+    check("9: Enter boards", await until("me('a').playing && __p.walking('a')", 5000), await P("me('a')"));
     // standing in the cockpit aft of the table, looking down at the deck on it
     await P(`place('a', ${J(ids.hull)}, [0, 0.72, 3.65], 0, -0.62)`);
     await sleep(1500); // (the walker settles her feet on the sole, and the eye with them)
@@ -485,8 +501,11 @@ try {
       over = await until(`pile().includes(__p.hovered('a'))`, 2000);
     }
     await sleep(300);
-    const prompt = await P("prompt('a')");
-    check("9: over the deck in first person the prompt shows Flip, and not Shuffle or Draw", over && prompt.some((t) => /Flip/.test(t)) && !prompt.some((t) => /Shuffle|Draw/.test(t)), { prompt, over, hovered: await P("hovered('a')") });
+    const prompt = await P("promptKeys('a')");
+    // a shown key works (TOOLS.md H3): walking, S and D are the body's, so Shuffle and Draw show without them
+    const flip = prompt.find((v) => /Flip/.test(v.name));
+    const keyed = prompt.filter((v) => /Shuffle|Draw/.test(v.name));
+    check("9: over the deck walking, the prompt shows Flip with F, and Shuffle or Draw only without their keys (S and D walk)", over && flip?.key === "F" && keyed.every((v) => v.key === ""), { prompt, over, hovered: await P("hovered('a')") });
     const p0 = (await P("me('a')")).position;
     const told0 = (await P("notices('a')")).length;
     const hand0 = (await P("where()")).p1.length;
@@ -510,8 +529,9 @@ try {
     } else check("9: she has a mainsheet", false, ids);
     await b.key("Escape");
     await sleep(200);
-    if (await P("immersive('a')")) await b.key("Escape");
-    check("9: Esc stops walking", await until("me('a').playing === false && !__p.immersive('a')", 4000), { me: await P("me('a')"), immersive: await P("immersive('a')") });
+    const stillWalking = await P("walking('a')");
+    await leaveBody("a", "Aboard");
+    check("9: Escape never leaves the body; the body chip's Leave stops walking", stillWalking && (await until("me('a').playing === false && !__p.walking('a')", 4000)), { me: await P("me('a')"), body: await P("body('a')") });
     await sleep(600);
     const seat = await P("seatView('p1', 'a')");
     const cam = await P("cam('a')");
@@ -519,20 +539,34 @@ try {
     await shot("back-in-seat");
   }
 
-  // ── 10: Stand up (the seats' verb, through sailing's firstPerson.enter) ──
+  // ── 10: sitting down from her deck, and standing up (the seat body over "aboard") ──
   {
     await P("focus('a')");
+    // off the seat (the chip's Leave: the seat stays A's), then aboard from orbit
+    await leaveBody("a", "Seated");
+    check("10: the chip's Leave stands A up from the seat into orbit, the seat still A's", (await P("body('a')")).id === "orbit" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
+    await b.key("Enter");
+    await until("me('a').playing && __p.walking('a')", 5000);
+    // standing in the cockpit aft of the table, looking at her own tray
+    await P(`place('a', ${J(ids.hull)}, [0, 0.72, 3.65], 0, -0.62)`);
+    await sleep(1500);
+    const back = await hover(ids.hand1, /Back to your seat/);
+    check("10: walking, a look at A's own tray offers Back to your seat (F)", back, { prompt: await P("prompt('a')"), hovered: await P("hovered('a')") });
+    if (back) await b.key("f");
+    await sleep(600);
+    const sat = await P("body('a')");
+    check("10: F sits A down: the seat body over the crew's, the walker waiting", JSON.stringify(sat.stack) === '["orbit","aboard","seat"]' && !(await P("me('a')")).playing, sat);
     const offered = await hover(ids.hand1, /Stand up/);
     check("10: seated, a look at A's own tray offers Stand up (F)", offered, { prompt: await P("prompt('a')"), hovered: await P("hovered('a')") });
     const told0 = (await P("notices('a')")).length;
     if (offered) await b.key("f");
-    const up = await until("me('a').playing && __p.immersive('a')", 5000);
+    const up = await until("me('a').playing && __p.walking('a')", 5000);
     await sleep(600);
     const me = await P("me('a')");
     const wk = await P("walker('a')");
     const tbl = await P(`hullLocal(${J(ids.table)})`);
     const plan = me?.position ? Math.hypot(me.position[0] - tbl[0], me.position[2] - tbl[2]) : null;
-    check("10: F stands A up in first person: walking on her deck (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5, { me, wk, tbl, plan });
+    check("10: Stand up pops the seat: walking on her deck from the seat's eye (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5 && JSON.stringify((await P("body('a')")).stack) === '["orbit","aboard"]', { me, wk, tbl, plan, body: await P("body('a')") });
     // facing the table: the camera looks toward it, across the deck
     const cam = await P("cam('a')");
     const tw = (await P(`worldOf(${J(ids.table)}, 'a')`)).slice(12, 15);
@@ -543,14 +577,15 @@ try {
     const notes = (await P("notices('a')")).slice(told0);
     check("10: …told the seat's still A's, and it is", notes.some((n) => /still yours/.test(n)) && (await P("seats()")).p1?.player === viewers.a, { notes, seats: await P("seats()") });
     await shot("stood-up");
-    await b.key("Escape");
-    await sleep(200);
-    if (await P("immersive('a')")) await b.key("Escape");
-    check("10: Esc stops walking", await until("me('a').playing === false && !__p.immersive('a')", 4000), { me: await P("me('a')") });
+    // (back where she walked up from, looking at her tray again)
+    await P(`place('a', ${J(ids.hull)}, [0, 0.72, 3.65], 0, -0.62)`);
+    await sleep(1500);
+    const again = await hover(ids.hand1, /Back to your seat/);
+    if (again) await b.key("f");
     await sleep(600);
     const seat = await P("seatView('p1', 'a')");
     const cam2 = await P("cam('a')");
-    check("10: …and A is back in the seat view", Math.hypot(...cam2.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam2.position, seat: seat.position });
+    check("10: F at it again: back in the seat view", again && Math.hypot(...cam2.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam2.position, seat: seat.position, body: await P("body('a')") });
   }
 
   check("nothing failed to load", (await P("loading('a')")).errors === 0 && (await P("loading('b')")).errors === 0, { a: await P("loading('a')"), b: await P("loading('b')") });

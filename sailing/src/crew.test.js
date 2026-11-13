@@ -533,6 +533,21 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.bodies.length).toBe(1);
   });
 
+  it("coming aboard from a seat (aboard over it): leaving her leaves the camera to the seat, not her quarter", () => {
+    const s = stage();
+    const crew = s.make();
+    s.crew.bodies.push({ id: "seat", label: "Seated", enter: () => ({ input: {}, leave() {} }) });
+    s.api.body.enter("seat", "p1");
+    crew.start();
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat", "aboard"]);
+    s.frames(2);
+    const sets = s.sets.length;
+    s.api.body.leave();
+    expect(crew.me().playing).toBe(false);
+    expect(s.sets.length).toBe(sets); // nothing set: the seat's resumed puts its view back
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+  });
+
   it("a station's body needs its verb: the chip can't offer it, and entering it bare does nothing", () => {
     const s = stage();
     const crew = s.make();
