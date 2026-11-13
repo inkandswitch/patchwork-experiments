@@ -315,8 +315,9 @@ is not may**: "can" is the thing's (`locked`, `scene.carry`, a door's
 travel), component physics in packages; "may" is the person's, Keyhive's
 to answer. **No grants**: a grant inside a doc is an offer a modified
 client ignores; a boundary that matters is a doc (COMPOSITION's private
-layer, a level's walls in a doc players only link). Until then any writer
-may open a door, move a wall, pause, or take an unsteered ship, by name.
+layer, a level's walls in a doc players only link). Decided (5 below):
+any writer may open a door, move a wall, pause, or take an unsteered ship,
+by name; integrity beyond the secret-keeping work is not sought.
 
 ## 9. Stage changes, and what leaves scene/
 
@@ -443,20 +444,21 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
 - Pausing a host doesn't pause a linked doc's processes.
 - No time passes with nobody present. Churn: ~40 test files change.
 
-## Open questions
+## Decisions
 
-1. **Nobody present: no time, or fast-forward?** Fast-forward means running
-   each process headless over the gap. *Recommend no time*, with
-   fast-forward a process's own option later.
-2. **Undo.** Automerge has no user-level undo. *Recommend* the stage's own
-   editing writes only (handles, inspector, transfer, add, remove), per
-   person and per focus doc, as inverse changes; package verbs, clock acts
-   and process saves are never on it, so undo can't un-roll a die.
-3. **Selecting in a game: the menu only, or an accelerator too?** Alt-click
-   is taken by "place freely" and by Linux window managers. *Recommend the
-   menu and the outline*, adding a modifier only if play-testing asks.
-4. **Outside an entered link: live, or dimmed and inert as in CAD?**
-   *Recommend live*: others still play there, and verbs aren't edits.
-5. **A finer capability from Keyhive**: use versus author, and who may
-   pause. In-doc grants were rejected (§8). *Recommend asking Keyhive*,
-   accepting until then that any writer may pause or move a wall, by name.
+The project lead decided the five open questions on 2026-11-12.
+
+1. **Nobody present: no time passes.** No process fast-forwards over a
+   gap; a process may offer that as its own option later.
+2. **Undo covers the stage's own editing writes only** (handles,
+   inspector, transfer, add, remove), per person and per focus doc, as
+   inverse changes. Package verbs, clock acts and process saves are never
+   on it, so undo can't un-roll a die.
+3. **Selecting in a game is by the menu and the outline.** No modifier
+   key; one may be added if play-testing asks.
+4. **Outside an entered link stays live.** Others still play there, and
+   verbs aren't edits.
+5. **Any writer may pause, and move anything.** No finer capability is
+   sought: game integrity is not secured beyond the secret-keeping work
+   (the audience, the veil and keepers). Pauses and moves are attributed
+   by name.

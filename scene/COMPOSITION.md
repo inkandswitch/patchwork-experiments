@@ -621,8 +621,8 @@ The five open questions were put to the project lead and answered:
    couplings across a link are space and published frames.
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
-   [TOOLS.md](TOOLS.md)**, pending the project lead's decisions on that
-   note: there are no activities, and the focus scopes selection, not
+   [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on
+   2026-11-12: there are no activities, and the focus scopes selection, not
    input.
 3. **A piece set down outside its doc stays in its doc.** Accepted. Moving
    between docs goes through a container placed in both, until two direct
