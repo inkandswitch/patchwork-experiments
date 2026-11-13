@@ -84,7 +84,7 @@ export function readObject(o, path = "0") {
   return node;
 }
 
-/** A save / mod JSON (object or text) → { saveName, gameMode, table, tableURL, snapPoints, objects }. Throws if it isn't one. */
+/** A save / mod JSON (object or text) → { saveName, gameMode, table, tableURL, note, rules, snapPoints, objects }. Throws if it isn't one. */
 export function readSave(input) {
   const j = typeof input === "string" ? JSON.parse(input) : input;
   if (!j || typeof j !== "object" || !Array.isArray(j.ObjectStates)) throw new Error("not a Tabletop Simulator save: no ObjectStates");
@@ -93,6 +93,9 @@ export function readSave(input) {
     gameMode: str(j.GameMode),
     table: str(j.Table),
     tableURL: str(j.TableURL),
+    // the save's own words: its notebook's note and its rules text (plain text, if any)
+    note: str(j.Note),
+    rules: str(j.Rules),
     snapPoints: Array.isArray(j.SnapPoints) ? j.SnapPoints.map(readSnapPoint) : [],
     objects: j.ObjectStates.map((o, i) => readObject(o, String(i))),
   };

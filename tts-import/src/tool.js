@@ -1,6 +1,7 @@
 // patchwork:tool "tts-import" — drop a Tabletop Simulator mod (its .json and
 // the cached assets: files, a folder such as TTS's Mods/, or a .zip), watch it
-// import, read the report, open the scene.
+// import, read the report, open the game it made (a tabletop-game: its page
+// sets up tables).
 
 import css from "./styles.css?inline";
 import { DEFAULT_SETTINGS } from "./settings.js";
@@ -20,7 +21,6 @@ const el = (tag, props = {}, ...children) => {
   return n;
 };
 
-const kb = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`);
 
 /** Copy plain data out of an automerge doc (for settings passed to the importer). */
 const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
@@ -67,24 +67,21 @@ export default function TtsImportTool(handle, element) {
         d.error = null;
         d.progress = { phase: `Dropped ${sources.length} files`, done: 0, total: 0 };
       });
-      const [{ runImport }, { canvasImages }] = await Promise.all([import("./importer.js"), import("./images.js")]);
-      const { sceneUrl, report } = await runImport({
+      const { runImport } = await import("./importer.js");
+      const { gameUrl, report } = await runImport({
         sources,
         repo,
-        images: canvasImages(),
         fetch: globalThis.fetch?.bind(globalThis),
         settings: settings(),
         onProgress: (p) => write(p, p.phase === "Done"),
-        infoUrl: handle.url,
-        infoToolId: "tts-import",
       });
       handle.change((d) => {
         d.status = "done";
         d.progress = null;
         d.report = report;
-        d.sceneUrl = sceneUrl;
-        if (!Array.isArray(d.scenes)) d.scenes = [];
-        d.scenes.push(sceneUrl);
+        d.gameUrl = gameUrl;
+        if (!Array.isArray(d.games)) d.games = [];
+        d.games.push(gameUrl);
         if (!d.title || d.title === "TTS import") d.title = `${report.mod.saveName} (TTS)`;
       });
     } catch (err) {
@@ -177,14 +174,7 @@ export default function TtsImportTool(handle, element) {
         "div",
         { class: "grid" },
         el("label", { class: "field" }, el("span", {}, "One TTS unit is"), el("input", { type: "number", step: "0.0001", min: "0.001", value: String(s.metresPerUnit), disabled: busy, onchange: (e) => Number(e.target.value) > 0 && set("metresPerUnit", Number(e.target.value)) }), el("small", {}, "metres (0.0254: an inch)")),
-        el(
-          "label",
-          { class: "field" },
-          el("span", {}, "Card faces up to"),
-          el("select", { disabled: busy, onchange: (e) => set("cardTexture", Number(e.target.value)) }, ...[256, 512, 1024].map((v) => el("option", { value: String(v), selected: s.cardTexture === v }, `${v} px`))),
-        ),
-        check("includeContents", "Bring in what's in bags", "as hidden groups beside each bag"),
-        check("hideFaceDown", "Face-down cards are hidden", "the scene shows their backs"),
+        check("includeContents", "Bring in what's in bags", "each bag holds what it held in TTS"),
         check("fetchMissing", "Fetch what wasn't dropped", "from the web; many hosts refuse (CORS)"),
         check("flipObjX", "Mirror OBJ models in x", "as TTS (Unity) does when it loads them"),
       ),
@@ -216,12 +206,11 @@ export default function TtsImportTool(handle, element) {
 
   const table = (head, rows) => el("table", {}, el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))), el("tbody", {}, ...rows.map((r) => el("tr", {}, ...r.map((c) => el("td", {}, c))))));
 
-  function reportView(r, sceneUrl) {
+  function reportView(r, gameUrl) {
     const c = r.counts ?? {};
     const a = c.assets ?? {};
-    const missing = Object.values(r.assets ?? {}).filter((x) => !x.source);
+    const missing = Object.values(r.assets ?? {}).filter((x) => !x.source || x.error);
     const stat = (n, label) => el("div", { class: "stat" }, el("b", {}, String(n ?? 0)), el("span", {}, label));
-    const kinds = Object.values(r.kinds ?? {}).sort((x, y) => (y.copies ?? 0) - (x.copies ?? 0));
     const byName = Object.entries(c.byName ?? {}).sort((x, y) => y[1] - x[1]);
     return el(
       "div",
@@ -230,15 +219,17 @@ export default function TtsImportTool(handle, element) {
         "div",
         { class: "row" },
         el("div", { class: "mod" }, el("div", { class: "mod-name" }, r.mod?.saveName ?? "Mod"), el("div", { class: "muted" }, r.mod?.fileName ?? "")),
-        sceneUrl ? el("button", { class: "primary", onclick: () => open(sceneUrl, "scene") }, "Open the table") : null,
+        gameUrl ? el("button", { class: "primary", onclick: () => open(gameUrl, "tabletop-game") }, "Open the game") : null,
       ),
       el(
         "div",
         { class: "stats" },
         stat(r.mod?.objects, "objects in the mod"),
-        stat(c.placed, "on the table"),
-        stat(c.hidden, "hidden cards"),
-        stat(c.kinds, `pieces drawn (${kb(c.glbBytes ?? 0)})`),
+        stat(c.placed, "in the game"),
+        stat(c.pieces, "kinds of piece"),
+        stat(c.cards, `cards (${c.decks ?? 0} decks)`),
+        stat(c.bags, "bags"),
+        stat(c.dice, "dice"),
         stat(a.cache, "assets from the cache"),
         stat(a.fetched, "fetched"),
         stat(a.missing, "missing"),
@@ -268,16 +259,7 @@ export default function TtsImportTool(handle, element) {
           )
         : null,
       r.warnings?.length ? el("section", {}, el("h3", {}, "Warnings"), el("ul", {}, ...r.warnings.map((w) => el("li", {}, w)))) : null,
-      Object.keys(r.notes ?? {}).length ? el("details", {}, el("summary", {}, `Notes (${Object.keys(r.notes).length})`), el("ul", {}, ...Object.entries(r.notes).map(([n, k]) => el("li", {}, `${n} (${k}×)`)))) : null,
-      el(
-        "details",
-        {},
-        el("summary", {}, `Pieces drawn (${kinds.length})`),
-        table(
-          ["piece", "type", "copies", "size"],
-          kinds.map((k) => [k.glbUrl ? el("a", { href: "#", onclick: (e) => (e.preventDefault(), open(k.glbUrl)) }, k.name) : `${k.name} ✕`, k.type, String(k.copies ?? 0), k.bytes ? kb(k.bytes) : k.error ?? ""]),
-        ),
-      ),
+
       el("details", {}, el("summary", {}, `Objects in the mod, by type (${byName.length})`), table(["TTS name", "count"], byName.map(([k, n]) => [k, String(n)]))),
     );
   }
@@ -293,9 +275,9 @@ export default function TtsImportTool(handle, element) {
       parts.push(progressEl);
     }
     if (d.status === "error" && d.error && !busy) parts.push(el("div", { class: "error" }, d.error));
-    if (d.report && !busy) parts.push(reportView(d.report, d.sceneUrl));
+    if (d.report && !busy) parts.push(reportView(d.report, d.gameUrl));
     if (!importing) parts.push(dropZone());
-    if (d.report && Array.isArray(d.scenes) && d.scenes.length > 1) parts.push(el("details", {}, el("summary", {}, `Earlier imports (${d.scenes.length - 1})`), el("ul", {}, ...d.scenes.slice(0, -1).map((u, i) => el("li", {}, el("a", { href: "#", onclick: (e) => (e.preventDefault(), open(u, "scene")) }, `Table ${i + 1}`))))));
+    if (d.report && Array.isArray(d.games) && d.games.length > 1) parts.push(el("details", {}, el("summary", {}, `Earlier imports (${d.games.length - 1})`), el("ul", {}, ...d.games.slice(0, -1).map((u, i) => el("li", {}, el("a", { href: "#", onclick: (e) => (e.preventDefault(), open(u, "tabletop-game")) }, `Game ${i + 1}`))))));
     parts.push(settingsPanel());
     root.replaceChildren(...parts);
     renderProgress();

@@ -4,10 +4,13 @@
 <!-- Driven by probes/import-run.mjs. Mounts the BUILT tts-import tool (dist/)
      on a fresh tts-import doc in an in-memory repo, drops the mod's files on it
      (a real DataTransfer of Files, as a drop from the desktop would be), waits
-     for the import, then mounts the BUILT scene tool (../scene/dist, with the
-     seats from ../seats/dist, which lays the import's seats; loaded at
-     runtime by URL — verification only, not a dependency) on the scene it made.
-     window.__probe collects what the runner checks. -->
+     for the import, presses "Open the game", mounts the BUILT tabletop-game
+     tool (../tabletop/dist) on the game it made, lets it draw every piece,
+     presses "Set up a table", and mounts the BUILT scene tool on the table that
+     opens, with the seats, keep, bag and dice packages installed (each from
+     its own dist, loaded at runtime by URL: verification only, not a
+     dependency). Nothing here is importer-specific past the drop: the table
+     is set up as any game's is. window.__probe collects what the runner checks. -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -32,7 +35,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
 
 try {
-  for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
+  for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js", "/tabletop/dist/index.js", "/keep/dist/index.js", "/bag/dist/index.js", "/dice/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -41,7 +44,6 @@ try {
   const Datatype = (await getRegistry("patchwork:datatype").load("tts-import")).module;
   const seed = { "@patchwork": { type: "tts-import" } };
   Datatype.init(seed);
-  if (params.get("cardTexture")) seed.settings.cardTexture = Number(params.get("cardTexture"));
   seed.settings.fetchMissing = params.get("fetch") === "1";
   if (params.get("contents") === "0") seed.settings.includeContents = false;
   const importDoc = repo.add(seed);
@@ -50,7 +52,7 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("tts-import")).module;
   const opened = [];
   toolHost.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-  Tool(importDoc, toolHost);
+  const unmountImport = Tool(importDoc, toolHost);
 
   probe.phase = "fetching files";
   const manifest = await (await fetch("/manifest.json")).json();
@@ -58,7 +60,7 @@ try {
   probe.files = files.length;
   const dt = new DataTransfer();
   for (const f of files) dt.items.add(f);
-  const t0 = performance.now();
+  let t0 = performance.now();
   probe.phase = "importing";
   toolHost.querySelector(".tts-import").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
   for (let i = 0; i < 6000; i++) {
@@ -70,43 +72,64 @@ try {
   probe.importMs = Math.round(performance.now() - t0);
   probe.status = d.status;
   probe.error = d.error;
-  probe.report = d.report && { counts: d.report.counts, warnings: d.report.warnings, notes: d.report.notes, missing: Object.values(d.report.assets).filter((a) => !a.source).map((a) => ({ url: a.url, usedBy: a.usedBy, error: a.error })) };
-  probe.docs = repo.handles.size;
-  probe.bytes = [...repo.handles.values()].reduce((n, h) => n + (h.doc()?.content?.byteLength ?? h.doc()?.content?.length ?? 0), 0);
-
-  // the "Open the table" button
-  toolHost.querySelector("button.primary")?.click();
-  probe.opened = opened;
+  probe.report = d.report && { counts: d.report.counts, warnings: d.report.warnings, missing: Object.values(d.report.assets).filter((a) => !a.source).map((a) => ({ url: a.url, usedBy: a.usedBy, error: a.error })) };
   if (d.status !== "done") throw new Error(`import ${d.status}: ${d.error}`);
 
+  // "Open the game": the tabletop-game tool on the game it made
+  toolHost.querySelector("button.primary")?.click();
+  probe.opened = [...opened];
+  const gameHandle = await repo.find(d.gameUrl);
+  probe.game = { pieces: Object.keys(gameHandle.doc().pieces).length, things: gameHandle.doc().setup.length, origin: gameHandle.doc().origin, seats: Object.keys(gameHandle.doc().seats ?? {}) };
+  unmountImport();
+  const gameOpened = [];
+  toolHost.addEventListener("patchwork:open-document", (e) => gameOpened.push(e.detail));
+  const GameTool = (await getRegistry("patchwork:tool").load("tabletop-game")).module;
+  GameTool(gameHandle, toolHost);
+  probe.phase = "drawing pieces";
+  t0 = performance.now();
+  for (let i = 0; i < 12000; i++) {
+    const g = gameHandle.doc();
+    if (Object.keys(g.drawn ?? {}).length >= Object.keys(g.pieces).length && !/Drawing/.test(toolHost.querySelector(".status")?.textContent ?? "")) break;
+    await sleep(50);
+  }
+  probe.drawMs = Math.round(performance.now() - t0);
+  probe.drawn = Object.keys(gameHandle.doc().drawn ?? {}).length;
+  probe.drawStatus = toolHost.querySelector(".status")?.textContent ?? "";
+  probe.drawnOrigins = Object.values(gameHandle.doc().drawn ?? {}).filter((f) => repo.handles.get(f.url)?.doc()?.origin?.urls?.length).length;
+
+  probe.phase = "setting up a table";
+  [...toolHost.querySelectorAll("button")].find((b) => b.textContent === "Set up a table").click();
+  for (let i = 0; i < 2400 && !gameOpened.length; i++) await sleep(50);
+  probe.tableOpened = gameOpened[0] ?? null;
+  probe.setUpStatus = toolHost.querySelector(".status")?.textContent ?? "";
+  if (!gameOpened.length) throw new Error(`no table: ${probe.setUpStatus}`);
+
   probe.phase = "mounting scene";
-  const sceneHandle = await repo.find(d.sceneUrl);
+  const sceneHandle = await repo.find(gameOpened[0].url);
   const scene = sceneHandle.doc();
+  const objs = Object.values(scene.objects);
+  const cards = objs.filter((o) => o.traits?.["tabletop.card"]);
   probe.scene = {
-    objects: Object.keys(scene.objects).length,
-    groups: Object.values(scene.objects).filter((o) => o.kind === "group").length,
-    hiddenGroups: Object.values(scene.objects).filter((o) => o.kind === "group" && !o.visible).length,
-    hiddenCards: Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]).length,
-    locked: Object.values(scene.objects).filter((o) => o.locked).length,
-    // what can be picked up: everything placed that isn't locked (the scene's carry trait)
-    carryable: Object.values(scene.objects).filter((o) => o.kind !== "group" && o.traits?.["scene.carry"]).length,
-    placed: Object.values(scene.objects).filter((o) => o.kind !== "group").length,
+    objects: objs.length,
+    placed: objs.filter((o) => o.kind !== "group").length,
+    locked: objs.filter((o) => o.locked).length,
+    carryable: objs.filter((o) => o.kind !== "group" && o.traits?.["scene.carry"]).length,
+    cards: cards.length,
+    keptCards: cards.filter((o) => o.traits?.["keep.plain"]?.by).length,
+    hands: objs.filter((o) => o.traits?.["tabletop.zone"]).map((o) => o.traits["tabletop.zone"].seat),
+    bags: objs.filter((o) => o.traits?.["bag.container"]?.doc).length,
+    dice: objs.filter((o) => o.traits?.["dice.die"]).length,
     seats: Object.keys(scene.traits.seats ?? {}),
+    origin: scene.origin ?? null,
     view: scene.view,
-    // what the scene datatype's init makes that the importer leaves as it is
-    assets: scene.assets,
-    packages: scene.packages,
-    dimensions: scene.dimensions,
     patchwork: scene["@patchwork"],
   };
   const sceneHost = document.getElementById("scene");
   sceneHost.repo = repo;
   sceneHost.viewerId = "viewer:probe";
   const SceneTool = (await getRegistry("patchwork:tool").load("scene")).module;
-  // the same handle shape the hand probe uses (broadcast goes nowhere)
   SceneTool(sceneHandle, sceneHost);
   const dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
-  // shown: neither it, nor a group it's filed in (at any depth), nor anything it's attached to, is hidden
   const shown = (id, seen = new Set()) => {
     const o = scene.objects[id];
     if (!o || seen.has(id)) return true;
@@ -114,7 +137,7 @@ try {
     return o.visible !== false && (o.group == null || shown(o.group, seen)) && (o.parent == null || shown(o.parent, seen));
   };
   const visible = Object.entries(scene.objects).filter(([id, o]) => o.kind !== "group" && shown(id)).length;
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 2400; i++) {
     const st = dbg.stats();
     if (st.loaded >= visible && st.pending === 0) break;
     await sleep(50);

@@ -1,7 +1,8 @@
-// Import a mod in headless Chrome with the BUILT tool, then show the scene it
-// made with the BUILT scene tool, and screenshot both.
+// Import a mod in headless Chrome with the BUILT tool, open the game it made
+// in the BUILT tabletop-game tool, set up a table, show it with the BUILT
+// scene tool, and screenshot it.
 //
-//   pnpm build && (cd ../scene && pnpm install && pnpm build)
+//   pnpm build && for p in scene seats tabletop keep bag dice; do (cd ../$p && pnpm install && pnpm build); done
 //   node probes/import-run.mjs                                   # the tiny fixture
 //   node probes/import-run.mjs --mod "<…>/Mods/Workshop/3477136430.json" --cache "<…>/Mods" [--out dir] [--show]
 //
@@ -27,7 +28,7 @@ const arg = (name, d = null) => {
 const SHOW = process.argv.includes("--show");
 const OUT = resolve(arg("out", join(process.env.TMPDIR || tmpdir(), "tts-import-probe")));
 mkdirSync(OUT, { recursive: true });
-for (const need of [join(PKG, "dist/index.js"), join(ROOT, "scene/dist/index.js"), join(ROOT, "seats/dist/index.js")]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
+for (const need of [join(PKG, "dist/index.js"), ...["scene", "seats", "tabletop", "keep", "bag", "dice"].map((p) => join(ROOT, `${p}/dist/index.js`))]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
 
 // ─── what to drop ────────────────────────────────────────────────────────────
 const fixture = join(PKG, "fixtures/tiny-mod");
@@ -37,7 +38,7 @@ const drop = [{ path: modPath, name: basename(modPath) }];
 {
   const save = readSave(readFileSync(modPath, "utf8"));
   const index = new AssetIndex();
-  for (const sub of ["Images", "Models", "PDF"]) {
+  for (const sub of ["Images", "Models", "Images Raw", "Models Raw", "PDF"]) {
     const dir = join(cacheDir, sub);
     if (existsSync(dir)) for (const f of readdirSync(dir)) index.add(join(dir, f), join(dir, f));
   }
@@ -53,7 +54,7 @@ const drop = [{ path: modPath, name: basename(modPath) }];
 const manifest = drop.map((d, i) => ({ url: `/drop/${i}`, name: d.name }));
 
 // ─── serve ───────────────────────────────────────────────────────────────────
-const PORT = 4493, CDP = 9493;
+const PORT = Number(arg("port", 4493)), CDP = PORT + 5000;
 const MIME = { ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css", ".html": "text/html" };
 const server = createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
@@ -106,13 +107,20 @@ const check = (name, ok) => { report.checks[name] = !!ok; if (!ok) failed = true
 try {
   const probe = await js("window.__probe");
   Object.assign(report, { probe });
+  const sc = probe.scene ?? {};
   check("no page errors", probe.errors.length === 0);
   check("import finished", probe.status === "done");
-  check("Open the table opened the scene with the scene tool", probe.opened?.[0]?.toolId === "scene");
+  check("Open the game opened the game it made with the tabletop-game tool", probe.opened?.[0]?.toolId === "tabletop-game");
+  check("the game says which mod it came from", !!probe.game?.origin?.tts?.saveName);
+  check("the game page drew every piece", probe.drawn === probe.game?.pieces && !/couldn't/i.test(probe.drawStatus));
+  check("a GLB drawn from the mod's assets says which of its URLs it came from", probe.drawnOrigins > 0 || (probe.report?.counts?.assets?.cache ?? 0) === 0);
+  check("Set up a table opened a scene with the scene tool", probe.tableOpened?.toolId === "scene");
+  check("every card on the table is kept, by the plain keeper", sc.cards === sc.keptCards);
+  check("a hand for every seat, the seats laid, and it starts in play", sc.seats?.length === probe.game?.seats?.length && probe.game.seats.every((s) => sc.hands.includes(s)) && (sc.seats.length === 0 || sc.view?.activity === "play"));
+  check("a mod with bags has bags on the table, each holding its things in a bag document", (probe.report?.counts?.bags ?? 0) === 0 || sc.bags > 0);
+  check("the table says which mod it came from", !!sc.origin?.tts?.saveName);
+  check("every placed piece not locked can be carried (the scene's carry trait)", sc.carryable === sc.placed - sc.locked && sc.carryable > 0);
   check("every visible object loaded", probe.sceneStats && probe.sceneStats.loaded >= probe.sceneStats.visible);
-  check("every placed piece not locked can be carried (the scene's carry trait), and the view names no tool", probe.scene && probe.scene.carryable === probe.scene.placed - probe.scene.locked && probe.scene.carryable > 0 && !("tool" in (probe.scene.view ?? {})));
-  // (the fixture has a hand, so a seat, so it starts in play)
-  check("the scene is a whole scene doc: the maps and lists the scene's init makes, seats as a trait, starting in play", probe.scene?.patchwork?.type === "scene" && probe.scene.assets && typeof probe.scene.assets === "object" && Array.isArray(probe.scene.packages) && probe.scene.dimensions && probe.scene.seats.length > 0 && probe.scene.view?.activity === "play" && probe.scene.view?.bounds === false);
   report.shots.push(await shoot("overview.png"));
   // closer looks, from the near side (+Z), at the middle of the table
   const cam = probe.camera;
