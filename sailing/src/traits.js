@@ -37,8 +37,6 @@ export const EXIT = "traversal.exit";
 /** The stations' traits, and what each is called on a ship (ctx.sim.stationsOf). */
 export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET, jib: JIB });
 
-/** The scene-wide claim of the view that simulates the sea and its ships. */
-export const SIM = "sim";
 /** A station's claim: who is working it. */
 export const STATION = "station";
 /**
@@ -48,9 +46,6 @@ export const STATION = "station";
  * stop the helmsman trimming the sheet.
  */
 export const HALYARD = "halyard";
-
-/** The extension that publishes the sea's clock in presence (edit.js runs as another id and reads it there). */
-export const PLAY_ID = "sailing";
 
 /** A station's trait fields when the doc leaves them out (index.js describes them). */
 export const DEFAULTS = Object.freeze({

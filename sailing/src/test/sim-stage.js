@@ -36,9 +36,9 @@ export function play(api) {
   ctx.sim = createSim(api, ctx);
   ctx.looks = createLooks(api, ctx);
   ctx.looks.update(api.scene());
-  api.loop((dt, now) => {
-    ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator());
-    ctx.sim.tick(dt);
+  api.loop((dt) => {
+    ctx.sea.tick();
+    ctx.sim.tick();
     ctx.looks.tick(dt);
   });
   return ctx;

@@ -627,8 +627,8 @@ describe("on a stage: the stock sloop the templates lay out sails her contract; 
       ctx.sea = createSeaView(api);
       ctx.sim = createSim(api, ctx);
       api.loop((dt, now) => {
-        ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator());
-        ctx.sim.tick(dt);
+        ctx.sea.tick();
+        ctx.sim.tick();
       });
       w.tick(1 / 60, 120);
       const r = ctx.sim.read(id);
@@ -649,8 +649,8 @@ describe("on a stage: the stock sloop the templates lay out sails her contract; 
     ctx.sea = createSeaView(api);
     ctx.sim = createSim(api, ctx);
     api.loop((dt, now) => {
-      ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator());
-      ctx.sim.tick(dt);
+      ctx.sea.tick();
+      ctx.sim.tick();
     });
     w.tick(1 / 60, 60);
     let r = ctx.sim.read(id);
