@@ -32,6 +32,7 @@ export const plugins = [
 		// render engine it calls starts its own worker for OpenSCAD.
 		type: "scene:source",
 		id: "openscad-model",
+		content: "built",
 		name: "OpenSCAD model",
 		icon: "Box",
 		supportedDatatypes: ["openscad"],

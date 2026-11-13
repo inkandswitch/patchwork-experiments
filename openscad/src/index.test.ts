@@ -4,8 +4,9 @@ import {plugins} from "./index"
 describe("plugin metadata", () => {
 	const source = plugins.find(p => p.type === "scene:source") as Record<string, any>
 
-	it("declares the scene provider's cost and an integer version", () => {
+	it("declares the scene provider's content kind, cost and an integer version", () => {
 		expect(source.id).toBe("openscad-model")
+		expect(source.content).toBe("built")
 		expect(source.cost).toBe("expensive")
 		expect(Number.isInteger(source.version)).toBe(true)
 		expect(source.version).toBeGreaterThanOrEqual(1)
