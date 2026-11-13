@@ -28,7 +28,7 @@ import { mergeSpec } from "./hull-model.js";
 import { apply, eulerFromQuat, invert, matrixOf, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
 import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
 import { trimModelOf } from "./trim.js";
-import { ANCHOR, CLOCK, DEFAULTS as STATION_DEFAULTS, SHIP, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
+import { ANCHOR, DEFAULTS as STATION_DEFAULTS, SHIP, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
 import { contractOn, rigKey, rigSpecParts } from "./rig-contract.js";
 
 /** How often the simulator publishes each ship's diagnostics (ms). */
@@ -354,6 +354,7 @@ export function createSim(api, ctx) {
   let savedSinceStep = false; // a checkpoint wrote the ships since the last step: let go of them landed
   const ships = new Map(); // id → { model, key, state, good, read, seen, at, frame }
   const holding = new Set(); // ids this view holds poses on (holds that stood)
+  const taken = new Set(); // hulls whose hold was refused last frame: someone else has her, so she isn't stepped
   const shown = new Map(); // id → the hull's matrix as last seen held by the computer (following)
   let inputs = {}; // this view's live input, by station
   let streamed = {}; // the computer's last published ships
@@ -402,7 +403,7 @@ export function createSim(api, ctx) {
 
   /** The session computing the doc's clock, if it's someone else. */
   function simulator() {
-    const c = api.claimedBy(null, CLOCK);
+    const c = api.clock.computer();
     return c && !c.mine ? c.session : null;
   }
 
@@ -429,6 +430,7 @@ export function createSim(api, ctx) {
     ships.clear();
     for (const id of shipsOf(sc)) ships.set(id, track(id, sc.objects[id], t, shown.get(id) ?? null, streamed[id]));
     shown.clear();
+    taken.clear();
   }
 
   /** It doesn't any more (paused, hidden, gone, or someone else computes): let go of what it holds, landed where a checkpoint just wrote it. */
@@ -436,6 +438,7 @@ export function createSim(api, ctx) {
     computing = false;
     for (const id of holding) api.pose.release(id, savedSinceStep ? { landed: true } : undefined);
     holding.clear();
+    taken.clear();
     ships.clear();
     api.presence.set("ships", undefined);
   }
@@ -485,6 +488,15 @@ export function createSim(api, ctx) {
         s.at = null;
       }
       s.seen = { transform: doc, saved: stampOf(o) };
+      if (taken.has(id)) {
+        // someone holds her (a person carrying or dragging her, or a hold ranked ahead of ours): the
+        // process doesn't step her. She waits where she was, with her motion, and goes on from there
+        // when her hold stands again: put back, she's where she was taken; put down (landed), the
+        // move above starts her again at rest where she landed.
+        s.state = { ...s.state, t, acc: 0 };
+        s.good = s.state;
+        continue;
+      }
 
       const v = { helm: p.helm && value(p.helm, sc), sail: p.sail && value(p.sail, sc), anchor: p.anchor && value(p.anchor, sc), jib: p.jib && value(p.jib, sc) };
       anchorSpot(s, p.anchor, v.anchor, sc, spec);
@@ -516,7 +528,10 @@ export function createSim(api, ctx) {
       const hull = toObject(s.state, s.frame ?? IDENTITY, doc.scale);
       // her hull yields to a person (someone may carry it) unless someone is at the helm: then she's driven
       const steered = !!(p.helm && api.claimedBy(p.helm, STATION));
-      hold(id, transformOf(hull, doc.scale), !steered);
+      if (api.pose.hold(id, transformOf(hull, doc.scale), { yields: !steered })) {
+        held.add(id);
+        taken.delete(id);
+      } else taken.add(id);
       // the boom swung about the mast from where the rig was put
       if (p.sail && sc.objects[p.sail]) hold(p.sail, rigTransform(plainTransform(sc.objects[p.sail].transform), s.read.boom));
       // the jib swung about its luff from where it was put, when her physics flies one

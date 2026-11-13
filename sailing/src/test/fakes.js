@@ -37,6 +37,7 @@ export function emptyScene() {
     traits: {},
     assets: {},
     packages: [],
+    clock: { running: true, t: 0 },
     view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
   };
 }
@@ -243,12 +244,15 @@ export function fakeWorld(doc, { content = {} } = {}) {
   const clock = { t: Number(doc.clock?.t) || 0, computer: null, nextSave: Infinity };
   const running = () => doc.clock?.running !== false;
   const kept = (v) => v.processes.filter((p) => !p.replicated);
+  // the clock's fields, one by one (the stage never writes the map whole)
+  const setClock = (d, fields) => {
+    if (!d.clock) d.clock = { running: true, t: 0 };
+    Object.assign(d.clock, fields);
+  };
   const tkey = (t) => JSON.stringify([t?.position, t?.rotation, t?.scale ?? 1]);
   function checkpoint(list, write = null) {
     change((d) => {
-      if (write) d.clock = { ...write, t: clock.t };
-      else if (!d.clock) d.clock = { running: true, t: clock.t };
-      else d.clock.t = clock.t;
+      setClock(d, { ...write, t: clock.t });
       const before = new Map(Object.entries(d.objects ?? {}).map(([id, o]) => [id, tkey(o.transform)]));
       for (const p of list) p.save?.(d);
       for (const [id, o] of Object.entries(d.objects ?? {})) if (before.has(id) && before.get(id) !== tkey(o.transform)) o.saved = clock.t;
@@ -395,6 +399,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
       clock: {
         t: () => clock.t,
         running,
+        computer: () => api.claimedBy(null, "clock"),
         pause() {
           if (!running()) return;
           const write = { running: false, by: viewer };
@@ -403,10 +408,10 @@ export function fakeWorld(doc, { content = {} } = {}) {
             clock.computer = null;
             for (const p of kept(view)) p.stop?.();
             change((d) => delete d.claims.clock);
-          } else change((d) => (d.clock = { ...write, t: clock.t }));
+          } else change((d) => setClock(d, { ...write, t: clock.t }));
         },
         resume() {
-          if (!running()) change((d) => (d.clock = { running: true, t: clock.t, by: viewer }));
+          if (!running()) change((d) => setClock(d, { running: true, t: clock.t, by: viewer }));
         },
         process(spec) {
           const p = { ...spec, k: Math.floor(clock.t / STEP + 1e-9) };
