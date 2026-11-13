@@ -207,6 +207,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     group: new Obj(),
     lockRefusal: false,
     rides: [], // the stage's camera rides, as asked: { id, opts }
+    now: 0, // the stage's time (ms), moved by the frames
   };
   s.api = {
     id: "sailing",
@@ -270,6 +271,14 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
       s.loops.push(fn);
       return () => (s.loops = s.loops.filter((f) => f !== fn));
     },
+    // the stage's time (scene/src/stage/time.js): now() moves with the frames; after() is the event loop's
+    clock: {
+      now: () => s.now,
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
+      },
+    },
   };
   s.ctx = {
     sea: { ocean: { heightAt: () => 0 }, clock: () => 0, wind: null },
@@ -289,7 +298,10 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   // a key the top body declares reaches it; any other goes on (the router's key order)
   s.declared = () => (s.bodies.at(-1).sitting?.keys ?? []).map((k) => k.code);
   s.frames = (n, dt = 1 / 60) => {
-    for (let i = 0; i < n; i++) for (const f of s.loops) f(dt);
+    for (let i = 0; i < n; i++) {
+      s.now += dt * 1000;
+      for (const f of s.loops) f(dt);
+    }
   };
   s.top = () => s.bodies.at(-1).sitting?.input;
   s.key = (code, key = code) => (s.declared().includes(code) ? s.top().key({ type: "key", code, key }) : false);
