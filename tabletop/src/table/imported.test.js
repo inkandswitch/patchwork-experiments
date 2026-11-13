@@ -113,7 +113,7 @@ describe("an imported game, set up as any game is", () => {
     expect(keeper.calls.map((ids) => [...ids].sort())).toEqual([[...pile].sort()]);
 
     const draw = x.commands.find((c) => c.id === "draw");
-    expect(draw.state(bottom, { scene: api.scene(), local: api.local.get() })).toEqual({ title: "Draw the top card into your hand (D)" });
+    expect(draw.state(bottom, { scene: api.scene(), local: api.local.get() })).toEqual({ title: "Draw the top card into your hand" });
     draw.run(bottom);
     w.tick(1 / 60, 30);
     const [hand] = byName(w.doc, "White's hand");
