@@ -1,0 +1,1255 @@
+diff --git a/src/doom/CMakeLists.txt b/src/doom/CMakeLists.txt
+index 6e878a0..aa49967 100644
+--- a/src/doom/CMakeLists.txt
++++ b/src/doom/CMakeLists.txt
+@@ -48,6 +48,7 @@ add_library(doom STATIC
+             p_switch.c
+             p_telept.c
+             p_tick.c        p_tick.h
++            p_trace.c       p_trace.h
+             p_user.c
+             r_bsp.c         r_bsp.h
+             r_data.c        r_data.h
+diff --git a/src/doom/Makefile.am b/src/doom/Makefile.am
+index 1f4e8c4..05afe4f 100644
+--- a/src/doom/Makefile.am
++++ b/src/doom/Makefile.am
+@@ -56,6 +56,7 @@ p_spec.c           p_spec.h     \
+ p_switch.c                      \
+ p_telept.c                      \
+ p_tick.c           p_tick.h     \
++p_trace.c          p_trace.h    \
+ p_user.c                        \
+ r_bsp.c            r_bsp.h      \
+ r_data.c           r_data.h     \
+diff --git a/src/doom/d_main.c b/src/doom/d_main.c
+index 06aa0ff..bc9c40d 100644
+--- a/src/doom/d_main.c
++++ b/src/doom/d_main.c
+@@ -74,6 +74,9 @@
+ #include "statdump.h"
+ 
+ #include "d_main.h"
++#include "p_trace.h"
++
++extern boolean netdemo;
+ 
+ #include "doom_icon.c"
+ 
+@@ -2004,6 +2007,28 @@ void D_DoomMain (void)
+ 	autostart = true;
+     }
+ 
++    TRACE_Init ();
++
++    // TRACE: -botrecord <name> [-botplayers n]: the bot plays, we record
++    p = M_CheckParmWithArgs("-botrecord", 1);
++    if (p)
++    {
++        int i, np = 1;
++
++        i = M_CheckParmWithArgs("-botplayers", 1);
++        if (i)
++            np = atoi(myargv[i + 1]);
++        for (i = 0; i < MAXPLAYERS; i++)
++            playeringame[i] = i < np;
++        netgame = np > 1;
++        netdemo = np > 1;
++        trace_bot = true;
++        singletics = true;
++        nodrawers = true;
++        G_RecordDemo (myargv[p + 1]);
++        autostart = true;
++    }
++
+     p = M_CheckParmWithArgs("-playdemo", 1);
+     if (p)
+     {
+diff --git a/src/doom/d_net.c b/src/doom/d_net.c
+index f8969fe..1d9d297 100644
+--- a/src/doom/d_net.c
++++ b/src/doom/d_net.c
+@@ -20,6 +20,7 @@
+ #include <stdlib.h>
+ 
+ #include "d_main.h"
++#include "p_trace.h"
+ #include "m_argv.h"
+ #include "m_menu.h"
+ #include "m_misc.h"
+@@ -74,7 +75,7 @@ static void RunTic(ticcmd_t *cmds, boolean *ingame)
+ 
+     for (i = 0; i < MAXPLAYERS; ++i)
+     {
+-        if (!demoplayback && playeringame[i] && !ingame[i])
++        if (!demoplayback && !trace_bot && playeringame[i] && !ingame[i])
+         {
+             PlayerQuitGame(&players[i]);
+         }
+diff --git a/src/doom/g_game.c b/src/doom/g_game.c
+index 17ccf47..be68c2f 100644
+--- a/src/doom/g_game.c
++++ b/src/doom/g_game.c
+@@ -74,6 +74,7 @@
+ 
+ 
+ #include "g_game.h"
++#include "p_trace.h"
+ 
+ 
+ #define SAVEGAMESIZE	0x2c000
+@@ -971,6 +972,8 @@ void G_Ticker (void)
+ 
+ 	    if (demoplayback) 
+ 		G_ReadDemoTiccmd (cmd); 
++	    if (trace_bot)
++		TRACE_BotCmd (i, cmd);
+ 	    if (demorecording) 
+ 		G_WriteDemoTiccmd (cmd);
+ 	    
+@@ -1060,7 +1063,9 @@ void G_Ticker (void)
+     switch (gamestate) 
+     { 
+       case GS_LEVEL: 
++	TRACE_SimStart ();
+ 	P_Ticker (); 
++	TRACE_SimEnd ();
+ 	ST_Ticker (); 
+ 	AM_Ticker (); 
+ 	HU_Ticker ();            
+@@ -1078,6 +1083,9 @@ void G_Ticker (void)
+ 	D_PageTicker (); 
+ 	break;
+     }        
++
++    if (demoplayback || trace_bot)
++	TRACE_EndTic ();
+ } 
+  
+  
+@@ -2314,8 +2322,39 @@ void G_DoPlayDemo (void)
+ 
+     usergame = false; 
+     demoplayback = true; 
++
++    // TRACE: late join. Skip the ticcmds before the save, load it.
++    {
++        char *joinsave;
++        int jointic = TRACE_JoinTic(&joinsave);
++
++        if (jointic >= 0)
++        {
++            int np = 0;
++            for (i = 0; i < MAXPLAYERS; i++)
++                np += playeringame[i];
++            demo_p += jointic * np * (longtics ? 5 : 4);
++            M_StringCopy(savename, joinsave, sizeof(savename));
++            G_DoLoadGame ();
++            demoplayback = true;
++            usergame = false;
++            TRACE_JoinFixups ();
++        }
++        else
++            TRACE_LevelStart ();
++    }
+ } 
+ 
++// TRACE: end a -botrecord run, writing the demo.
++void G_EndBotRecording (void)
++{
++    *demo_p++ = DEMOMARKER;
++    M_WriteFile (demoname, demobuffer, demo_p - demobuffer);
++    demorecording = false;
++    printf ("TRACE: wrote %s\n", demoname);
++    I_Quit ();
++}
++
+ //
+ // G_TimeDemo 
+ //
+diff --git a/src/doom/p_mobj.h b/src/doom/p_mobj.h
+index 90ed764..0b0508c 100644
+--- a/src/doom/p_mobj.h
++++ b/src/doom/p_mobj.h
+@@ -276,6 +276,11 @@ typedef struct mobj_s
+ 
+     // Thing being chased/attacked for tracers.
+     struct mobj_s*	tracer;	
++
++    // TRACE: stable id and per-walk index (not saved, not simulated)
++    int			trace_id;
++    int			trace_idx;
++    unsigned		trace_gen;
+     
+ } mobj_t;
+ 
+diff --git a/src/doom/p_saveg.c b/src/doom/p_saveg.c
+index 1192bff..fad822c 100644
+--- a/src/doom/p_saveg.c
++++ b/src/doom/p_saveg.c
+@@ -1649,6 +1649,8 @@ void P_UnArchiveThinkers (void)
+ 	    saveg_read_pad();
+ 	    mobj = Z_Malloc (sizeof(*mobj), PU_LEVEL, NULL);
+             saveg_read_mobj_t(mobj);
++            mobj->trace_id = 0;
++            mobj->trace_gen = 0;
+ 
+ 	    mobj->target = NULL;
+             mobj->tracer = NULL;
+diff --git a/src/doom/p_trace.c b/src/doom/p_trace.c
+new file mode 100644
+index 0000000..cdc3880
+--- /dev/null
++++ b/src/doom/p_trace.c
+@@ -0,0 +1,1023 @@
++// Research instrumentation, not part of Chocolate Doom (GPL-2, like the
++// rest of this tree).  See traces/FORMAT.md in the spike folder.
++//
++//   -trace <path[.gz]>        per-tic binary state trace (+ <path>.hash text)
++//   -saveevery <tics> -savedir <dir>
++//                             vanilla save game + sidecar every N ticcmds
++//   -botrecord <name> -botplayers <n> -bottics <t> -botseed <s>
++//                             closed-loop bot plays and records <name>.lmp
++//   -join <save.dsg> <tic> -joinfix <mask>
++//                             (with -timedemo) load the save at <tic>, then
++//                             keep reading the demo from that ticcmd
++//
++// Nothing here calls P_Random or M_Random, and nothing here writes game
++// state, except -join's fixups and the bot's ticcmds.
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include <time.h>
++
++#include "doomdef.h"
++#include "doomstat.h"
++#include "d_player.h"
++#include "d_event.h"
++#include "g_game.h"
++#include "i_system.h"
++#include "m_argv.h"
++#include "m_misc.h"
++#include "p_local.h"
++#include "p_saveg.h"
++#include "p_spec.h"
++#include "p_tick.h"
++#include "r_main.h"
++#include "r_state.h"
++#include "z_zone.h"
++#include "p_trace.h"
++
++extern int prndindex;
++void T_FireFlicker(fireflicker_t *flick);
++extern mobj_t *bodyque[];
++#define BODYQUESIZE 32
++
++boolean trace_bot = false;
++int     trace_demotic = 0;
++
++static FILE    *trace_fp = NULL;
++static FILE    *hash_fp = NULL;
++static FILE    *simlog_fp = NULL;       // -simlog: P_Ticker ns per tic only
++static boolean  trace_piped = false;
++static int      save_every = 0;
++static char    *save_dir = NULL;
++static FILE    *savelog_fp = NULL;
++static int      bot_tics = 4200;
++static unsigned bot_seed = 1;
++static char    *join_path = NULL;
++static int      join_tic = -1;
++static int      join_mask = 0;
++
++static int      next_id = 0;
++static unsigned gen = 0;
++
++static uint64_t sim_t0, sim_ns, sim_total_ns;
++static int      sim_count;
++
++static uint64_t NowNs(void)
++{
++#ifdef CLOCK_UPTIME_RAW
++    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);   // macOS: ns resolution
++#else
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (uint64_t) ts.tv_sec * 1000000000ull + ts.tv_nsec;
++#endif
++}
++
++void TRACE_SimStart(void) { sim_t0 = NowNs(); }
++void TRACE_SimEnd(void)
++{
++    sim_ns = NowNs() - sim_t0;
++    sim_total_ns += sim_ns;
++    sim_count++;
++}
++
++// ---------------------------------------------------------------------
++// Canonical walk: live mobjs and specials in thinker-list order.
++// A mobj's index is its position among live mobjs, which is also its
++// position in a vanilla save game, so indices survive save/load.
++
++static mobj_t   **ml;  static int nml, cml;
++static thinker_t **sl; static int nsl, csl;
++static byte      *order; static int norder, corder;
++
++#define GROW(arr, n, cap) \
++    if ((n) >= (cap)) { (cap) = (cap) ? (cap) * 2 : 256; \
++        (arr) = I_Realloc((arr), (cap) * sizeof(*(arr))); }
++
++enum { SP_NONE, SP_CEILING, SP_DOOR, SP_FLOOR, SP_PLAT, SP_FLASH,
++       SP_STROBE, SP_GLOW, SP_FIRE, SP_CEILING_STASIS, SP_PLAT_STASIS };
++
++static int SpecialKind(thinker_t *th)
++{
++    int i;
++    actionf_p1 f = th->function.acp1;
++
++    if (th->function.acv == (actionf_v) NULL)
++    {
++        for (i = 0; i < MAXCEILINGS; i++)
++            if (activeceilings[i] == (ceiling_t *) th) return SP_CEILING_STASIS;
++        for (i = 0; i < MAXPLATS; i++)
++            if (activeplats[i] == (plat_t *) th) return SP_PLAT_STASIS;
++        return SP_NONE;
++    }
++    if (f == (actionf_p1) T_MoveCeiling)  return SP_CEILING;
++    if (f == (actionf_p1) T_VerticalDoor) return SP_DOOR;
++    if (f == (actionf_p1) T_MoveFloor)    return SP_FLOOR;
++    if (f == (actionf_p1) T_PlatRaise)    return SP_PLAT;
++    if (f == (actionf_p1) T_LightFlash)   return SP_FLASH;
++    if (f == (actionf_p1) T_StrobeFlash)  return SP_STROBE;
++    if (f == (actionf_p1) T_Glow)         return SP_GLOW;
++    if (f == (actionf_p1) T_FireFlicker)  return SP_FIRE;
++    return SP_NONE;
++}
++
++static void Walk(void)
++{
++    thinker_t *th;
++
++    nml = nsl = norder = 0;
++    gen++;
++    for (th = thinkercap.next; th != &thinkercap; th = th->next)
++    {
++        if (th->function.acv == (actionf_v) (-1))
++            continue;                           // removed, not yet freed
++        GROW(order, norder, corder);
++        if (th->function.acp1 == (actionf_p1) P_MobjThinker)
++        {
++            mobj_t *mo = (mobj_t *) th;
++            GROW(ml, nml, cml);
++            mo->trace_gen = gen;
++            mo->trace_idx = nml;
++            if (mo->trace_id == 0)
++                mo->trace_id = ++next_id;
++            ml[nml++] = mo;
++            order[norder++] = 0;
++        }
++        else if (SpecialKind(th) != SP_NONE)
++        {
++            GROW(sl, nsl, csl);
++            sl[nsl++] = th;
++            order[norder++] = 1;
++        }
++    }
++}
++
++// -1 = NULL, -2 = points at something that is not a live mobj
++static int MIdx(mobj_t *mo)
++{
++    if (mo == NULL) return -1;
++    return mo->trace_gen == gen ? mo->trace_idx : -2;
++}
++
++static int SIdx(void *th)
++{
++    int i;
++    if (th == NULL) return -1;
++    for (i = 0; i < nsl; i++) if (sl[i] == th) return i;
++    return -2;
++}
++
++static int StateIdx(state_t *st) { return st ? (int) (st - states) : -1; }
++static int SecIdx(sector_t *s)   { return s ? (int) (s - sectors) : -1; }
++
++// ---------------------------------------------------------------------
++// Record buffer and FNV-1a 64 hashing.
++
++static byte    *rb; static size_t nrb, crb;
++static uint64_t h;
++
++#define FNV_OFF 1469598103934665603ull
++#define FNV_PRIME 1099511628211ull
++
++static void Hb(uint32_t v)
++{
++    int i;
++    for (i = 0; i < 4; i++) { h ^= (v >> (8 * i)) & 0xff; h *= FNV_PRIME; }
++}
++
++static void W(int32_t v)
++{
++    if (nrb + 4 > crb) { crb = crb ? crb * 2 : 65536; rb = I_Realloc(rb, crb); }
++    memcpy(rb + nrb, &v, 4);
++    nrb += 4;
++}
++
++static void WH(int32_t v) { W(v); Hb((uint32_t) v); }
++static void W64(uint64_t v) { W((int32_t) (v & 0xffffffff)); W((int32_t) (v >> 32)); }
++
++static uint64_t Combine(uint64_t *hs, int n)
++{
++    int i;
++    h = FNV_OFF;
++    for (i = 0; i < n; i++) { Hb((uint32_t) hs[i]); Hb((uint32_t) (hs[i] >> 32)); }
++    return h;
++}
++
++// ---------------------------------------------------------------------
++// Sections. Fields marked W are traced but not hashed (process-local);
++// WH are traced and hashed; Hb are hashed only.
++
++#define MOBJ_FIELDS 25
++
++static void Mobj(mobj_t *mo)
++{
++    W(mo->trace_id);
++    WH(mo->type); WH(mo->x); WH(mo->y); WH(mo->z); WH((int32_t) mo->angle);
++    WH(mo->momx); WH(mo->momy); WH(mo->momz);
++    WH(StateIdx(mo->state)); WH(mo->tics); WH(mo->health); WH(mo->flags);
++    WH(MIdx(mo->target)); WH(MIdx(mo->tracer));
++    WH(mo->movedir); WH(mo->movecount); WH(mo->reactiontime);
++    WH(mo->threshold); WH(mo->lastlook);
++    WH(mo->floorz); WH(mo->ceilingz); WH(mo->radius); WH(mo->height);
++    WH(mo->player ? (int) (mo->player - players) + 1 : 0);
++    Hb(mo->sprite); Hb(mo->frame);
++    Hb(mo->spawnpoint.x); Hb(mo->spawnpoint.y); Hb(mo->spawnpoint.angle);
++    Hb(mo->spawnpoint.type); Hb(mo->spawnpoint.options);
++}
++
++#define PLAYER_FIELDS 80
++
++static void Player(int pn)
++{
++    player_t *p = &players[pn];
++    int i, n0 = (int) nrb;
++
++    WH(pn); WH(p->playerstate); WH(MIdx(p->mo));
++    WH(p->cmd.forwardmove); WH(p->cmd.sidemove);
++    WH(p->cmd.angleturn); WH(p->cmd.buttons);
++    WH(p->viewz); WH(p->viewheight); WH(p->deltaviewheight); WH(p->bob);
++    WH(p->health); WH(p->armorpoints); WH(p->armortype);
++    for (i = 0; i < NUMPOWERS; i++) WH(p->powers[i]);
++    for (i = 0; i < NUMCARDS; i++) WH(p->cards[i]);
++    WH(p->backpack);
++    for (i = 0; i < MAXPLAYERS; i++) WH(p->frags[i]);
++    WH(p->readyweapon); WH(p->pendingweapon);
++    for (i = 0; i < NUMWEAPONS; i++) WH(p->weaponowned[i]);
++    for (i = 0; i < NUMAMMO; i++) WH(p->ammo[i]);
++    for (i = 0; i < NUMAMMO; i++) WH(p->maxammo[i]);
++    WH(p->attackdown); WH(p->usedown); WH(p->cheats); WH(p->refire);
++    WH(p->killcount); WH(p->itemcount); WH(p->secretcount);
++    WH(p->damagecount); WH(p->bonuscount); WH(MIdx(p->attacker));
++    WH(p->extralight); WH(p->fixedcolormap); WH(p->colormap);
++    for (i = 0; i < NUMPSPRITES; i++)
++    {
++        WH(StateIdx(p->psprites[i].state)); WH(p->psprites[i].tics);
++        WH(p->psprites[i].sx); WH(p->psprites[i].sy);
++    }
++    WH(p->didsecret);
++    while ((int) nrb - n0 < PLAYER_FIELDS * 4) W(0);
++}
++
++#define SECTOR_FIELDS 10
++
++static void Sector(sector_t *s)
++{
++    WH(s->floorheight); WH(s->ceilingheight); WH(s->lightlevel);
++    WH(s->special); WH(s->tag); WH(s->floorpic); WH(s->ceilingpic);
++    WH(s->soundtraversed); WH(MIdx(s->soundtarget)); WH(SIdx(s->specialdata));
++}
++
++#define SPECIAL_FIELDS 12
++
++// Vanilla leaves some thinker fields uninitialized (Z_Malloc does not
++// zero) until they are first needed: they hold heap garbage that differs
++// between processes but is never read. Trace them as 0 while dead.
++#define LIVE(cond, v) ((cond) ? (v) : 0)
++
++static void Special(thinker_t *th)
++{
++    int k = SpecialKind(th), n0 = (int) nrb;
++
++    WH(k);
++    switch (k)
++    {
++      case SP_CEILING: case SP_CEILING_STASIS: {
++        ceiling_t *c = (ceiling_t *) th;
++        WH(SecIdx(c->sector)); WH(c->type);
++        WH(LIVE(c->type != raiseToHighest, c->bottomheight));
++        WH(LIVE(c->type != lowerToFloor && c->type != lowerAndCrush,
++                c->topheight)); WH(c->speed); WH(c->crush); WH(c->direction);
++        WH(c->tag); WH(LIVE(k == SP_CEILING_STASIS, c->olddirection));
++        break; }
++      case SP_DOOR: {
++        vldoor_t *d = (vldoor_t *) th;
++        WH(SecIdx(d->sector)); WH(d->type); WH(d->topheight); WH(d->speed);
++        WH(d->direction); WH(d->topwait);
++        WH(LIVE(d->direction == 0 || d->direction == 2, d->topcountdown));
++        break; }
++      case SP_FLOOR: {
++        floormove_t *f = (floormove_t *) th;
++        WH(SecIdx(f->sector)); WH(f->type); WH(f->crush); WH(f->direction);
++        WH(LIVE(f->type == donutRaise || f->type == lowerAndChange,
++                f->newspecial));
++        WH(LIVE(f->type == donutRaise || f->type == lowerAndChange,
++                f->texture));
++        WH(f->floordestheight);
++        WH(f->speed);
++        break; }
++      case SP_PLAT: case SP_PLAT_STASIS: {
++        plat_t *p = (plat_t *) th;
++        WH(SecIdx(p->sector)); WH(p->speed);
++        WH(LIVE(p->type == perpetualRaise || p->type == downWaitUpStay
++                || p->type == blazeDWUS, p->low));
++        WH(p->high);
++        WH(p->wait);
++        WH(LIVE(p->status == waiting
++                || (p->status == in_stasis && p->oldstatus == waiting),
++                p->count));
++        WH(p->status); WH(LIVE(p->status == in_stasis, p->oldstatus));
++        WH(p->crush); WH(p->tag); WH(p->type);
++        break; }
++      case SP_FLASH: {
++        lightflash_t *l = (lightflash_t *) th;
++        WH(SecIdx(l->sector)); WH(l->count); WH(l->maxlight);
++        WH(l->minlight); WH(l->maxtime); WH(l->mintime);
++        break; }
++      case SP_STROBE: {
++        strobe_t *s = (strobe_t *) th;
++        WH(SecIdx(s->sector)); WH(s->count); WH(s->minlight);
++        WH(s->maxlight); WH(s->darktime); WH(s->brighttime);
++        break; }
++      case SP_GLOW: {
++        glow_t *g = (glow_t *) th;
++        WH(SecIdx(g->sector)); WH(g->minlight); WH(g->maxlight);
++        WH(g->direction);
++        break; }
++      case SP_FIRE: {
++        fireflicker_t *f = (fireflicker_t *) th;
++        WH(SecIdx(f->sector)); WH(f->count); WH(f->maxlight);
++        WH(f->minlight);
++        break; }
++    }
++    while ((int) nrb - n0 < SPECIAL_FIELDS * 4) W(0);
++}
++
++// ---------------------------------------------------------------------
++
++static void WriteFileHeader(void)
++{
++    int i;
++    nrb = 0;
++    W(0x43525444);                      // "DTRC"
++    W(1);                               // version
++    W(numsectors); W(numlines); W(numsides); W(MAXPLAYERS);
++    W(MOBJ_FIELDS); W(PLAYER_FIELDS); W(SECTOR_FIELDS); W(SPECIAL_FIELDS);
++    for (i = 0; i < MAXPLAYERS; i++) W(playeringame[i]);
++    W(gameskill); W(gameepisode); W(gamemap);
++    fwrite(rb, 1, nrb, trace_fp);
++}
++
++static void WriteTic(void)
++{
++    enum { H_MOBJ, H_PLAYER, H_SECTOR, H_SPECIAL, H_WORLD, H_MISC,
++           H_ORDER, H_LINKS, H_RND, H_VIEW, NH };
++    uint64_t hs[NH], hall, hstrict;
++    size_t hdr;
++    int i, j, nbuttons = 0, np = 0;
++    static boolean header_done = false;
++
++    if (!header_done && trace_fp) { WriteFileHeader(); header_done = true; }
++
++    Walk();
++    nrb = 0;
++    // fixed header, patched below
++    W(0); W(trace_demotic); W(gametic); W(leveltime); W(gamestate);
++    W(prndindex); W(rndindex); W((int32_t) sim_ns);
++    hdr = nrb;
++    for (i = 0; i < 2 + NH; i++) W64(0);
++    for (i = 0; i < MAXPLAYERS; i++) if (playeringame[i]) np++;
++    for (i = 0; i < MAXBUTTONS; i++) if (buttonlist[i].btimer) nbuttons++;
++    W(np); W(nml); W(numsectors); W(nsl); W(nbuttons);
++
++    h = FNV_OFF;
++    for (i = 0; i < MAXPLAYERS; i++) if (playeringame[i]) Player(i);
++    hs[H_PLAYER] = h;
++
++    h = FNV_OFF;
++    for (i = 0; i < nml; i++) Mobj(ml[i]);
++    hs[H_MOBJ] = h;
++
++    h = FNV_OFF;
++    for (i = 0; i < numsectors; i++) Sector(&sectors[i]);
++    hs[H_SECTOR] = h;
++
++    h = FNV_OFF;
++    for (i = 0; i < nsl; i++) Special(sl[i]);
++    hs[H_SPECIAL] = h;
++
++    // world: lines and sides (hash only), active switch buttons (traced)
++    h = FNV_OFF;
++    for (i = 0; i < numlines; i++)
++    {
++        Hb(lines[i].flags); Hb(lines[i].special); Hb(lines[i].tag);
++    }
++    for (i = 0; i < numsides; i++)
++    {
++        Hb(sides[i].textureoffset); Hb(sides[i].rowoffset);
++        Hb(sides[i].toptexture); Hb(sides[i].bottomtexture);
++        Hb(sides[i].midtexture);
++    }
++    for (i = 0; i < MAXBUTTONS; i++)
++    {
++        button_t *b = &buttonlist[i];
++        int li = b->line ? (int) (b->line - lines) : -1;
++        if (b->btimer)
++        {
++            WH(i); WH(li); WH(b->where); WH(b->btexture); WH(b->btimer);
++        }
++        else
++        {
++            Hb(i); Hb(li); Hb(b->where); Hb(b->btexture); Hb(b->btimer);
++        }
++    }
++    hs[H_WORLD] = h;
++
++    h = FNV_OFF;
++    Hb(leveltime); Hb(prndindex); Hb(gamestate);
++    Hb(gameskill); Hb(gameepisode); Hb(gamemap);
++    Hb(totalkills); Hb(totalitems); Hb(totalsecret);
++    Hb(bodyqueslot);
++    for (i = 0; i < BODYQUESIZE; i++) Hb(MIdx(bodyque[i]));
++    hs[H_MISC] = h;
++
++    // not in the semantic hash: list/link order and the M_Random index
++    h = FNV_OFF;
++    for (i = 0; i < norder; i++) Hb(order[i]);
++    hs[H_ORDER] = h;
++
++    h = FNV_OFF;
++    for (i = 0; i < numsectors; i++)
++    {
++        mobj_t *m;
++        Hb(0xfffffff0u);
++        for (m = sectors[i].thinglist; m; m = m->snext) Hb(MIdx(m));
++    }
++    if (blocklinks)
++        for (j = 0; j < bmapwidth * bmapheight; j++)
++        {
++            mobj_t *m;
++            if (!blocklinks[j]) continue;
++            Hb(j);
++            for (m = blocklinks[j]; m; m = m->bnext) Hb(MIdx(m));
++        }
++    hs[H_LINKS] = h;
++
++    h = FNV_OFF;
++    Hb(rndindex);
++    hs[H_RND] = h;
++
++    // what a viewer sees: things, sectors, player status (not in all/strict)
++    h = FNV_OFF;
++    for (i = 0; i < nml; i++)
++    {
++        mobj_t *m = ml[i];
++        Hb(m->type); Hb(m->x); Hb(m->y); Hb(m->z); Hb(m->angle);
++        Hb(StateIdx(m->state)); Hb(m->health);
++    }
++    for (i = 0; i < numsectors; i++)
++    {
++        Hb(sectors[i].floorheight); Hb(sectors[i].ceilingheight);
++        Hb(sectors[i].lightlevel);
++    }
++    for (i = 0; i < MAXPLAYERS; i++)
++        if (playeringame[i])
++        {
++            Hb(players[i].health); Hb(players[i].armorpoints);
++            Hb(players[i].readyweapon);
++            for (j = 0; j < NUMAMMO; j++) Hb(players[i].ammo[j]);
++        }
++    hs[H_VIEW] = h;
++
++    hall = Combine(hs, H_ORDER);
++    hstrict = Combine(hs, H_VIEW);
++
++    // patch header: size and hashes
++    memcpy(rb, &(int32_t){ (int32_t) nrb }, 4);
++    {
++        uint64_t all[2 + NH];
++        all[0] = hall; all[1] = hstrict;
++        for (i = 0; i < NH; i++) all[2 + i] = hs[i];
++        memcpy(rb + hdr, all, sizeof(all));
++    }
++
++    if (trace_fp)
++        fwrite(rb, 1, nrb, trace_fp);
++    if (hash_fp)
++    {
++        fprintf(hash_fp, "%d %d %d %016llx %016llx", trace_demotic, leveltime,
++                gamestate, (unsigned long long) hall,
++                (unsigned long long) hstrict);
++        for (i = 0; i < NH; i++)
++            fprintf(hash_fp, " %016llx", (unsigned long long) hs[i]);
++        fprintf(hash_fp, " %d %d %d %llu\n", nml, nsl, (int) nrb,
++                (unsigned long long) sim_ns);
++    }
++}
++
++// ---------------------------------------------------------------------
++// Save game (vanilla format, same calls as G_DoSaveGame) + sidecar of
++// what vanilla leaves out. Sidecar: int32 little-endian throughout.
++
++static void S32(FILE *f, int32_t v) { fwrite(&v, 4, 1, f); }
++
++static void WriteSidecar(const char *path)
++{
++    FILE *f = M_fopen(path, "wb");
++    int i, j;
++    mobj_t *m;
++
++    if (!f) I_Error("TRACE: cannot write %s", path);
++    // the save's own order: mobjs then specials (stasis plats are not saved)
++    S32(f, 0x52414353);                                 // "SCAR"
++    S32(f, prndindex); S32(f, rndindex);
++    S32(f, nml);
++    for (i = 0; i < nml; i++)
++    {
++        S32(f, MIdx(ml[i]->target)); S32(f, MIdx(ml[i]->tracer));
++        S32(f, ml[i]->floorz); S32(f, ml[i]->ceilingz);
++    }
++    for (i = 0; i < MAXPLAYERS; i++) S32(f, MIdx(players[i].attacker));
++    S32(f, norder);
++    for (i = 0; i < norder; i++) S32(f, order[i]);
++    // link order: per sector and per blockmap cell, the chain as indices
++    for (i = 0; i < numsectors; i++)
++    {
++        int n = 0;
++        for (m = sectors[i].thinglist; m; m = m->snext) n++;
++        S32(f, n);
++        for (m = sectors[i].thinglist; m; m = m->snext) S32(f, MIdx(m));
++    }
++    for (j = 0; j < bmapwidth * bmapheight; j++)
++    {
++        int n = 0;
++        for (m = blocklinks[j]; m; m = m->bnext) n++;
++        S32(f, n);
++        for (m = blocklinks[j]; m; m = m->bnext) S32(f, MIdx(m));
++    }
++    for (i = 0; i < numsectors; i++)
++    {
++        S32(f, sectors[i].soundtraversed);
++        S32(f, MIdx(sectors[i].soundtarget));
++    }
++    for (i = 0; i < MAXBUTTONS; i++)
++    {
++        button_t *b = &buttonlist[i];
++        S32(f, b->line ? (int) (b->line - lines) : -1);
++        S32(f, b->where); S32(f, b->btexture); S32(f, b->btimer);
++    }
++    S32(f, bodyqueslot);
++    for (i = 0; i < BODYQUESIZE; i++) S32(f, MIdx(bodyque[i]));
++    fclose(f);
++}
++
++static long FileSize(const char *path)
++{
++    FILE *f = M_fopen(path, "rb");
++    long n;
++    if (!f) return -1;
++    fseek(f, 0, SEEK_END);
++    n = ftell(f);
++    fclose(f);
++    return n;
++}
++
++static void SaveNow(void)
++{
++    char path[512], ext[512];
++    int i, nstasisplats = 0;
++
++    M_snprintf(path, sizeof(path), "%s/t%06d.dsg", save_dir, trace_demotic);
++    M_snprintf(ext, sizeof(ext), "%s/t%06d.ext", save_dir, trace_demotic);
++    save_stream = M_fopen(path, "wb");
++    if (!save_stream) I_Error("TRACE: cannot write %s", path);
++    savegame_error = false;
++    P_WriteSaveGameHeader("TRACE");
++    P_ArchivePlayers();
++    P_ArchiveWorld();
++    P_ArchiveThinkers();
++    P_ArchiveSpecials();
++    P_WriteSaveGameEOF();
++    fclose(save_stream);
++    save_stream = NULL;
++
++    Walk();
++    WriteSidecar(ext);
++    for (i = 0; i < nsl; i++)
++        if (SpecialKind(sl[i]) == SP_PLAT_STASIS) nstasisplats++;
++    if (savelog_fp)
++        fprintf(savelog_fp, "%d %d %ld %ld %d %d %d\n", trace_demotic,
++                leveltime, FileSize(path), FileSize(ext), nml, nsl,
++                nstasisplats);
++}
++
++// ---------------------------------------------------------------------
++// Late join: -join <save> <tic>. G_DoPlayDemo positions the demo and
++// calls G_DoLoadGame; then these fixups apply the sidecar.
++
++enum {
++    FIX_RNG = 1, FIX_POINTERS = 2, FIX_FLOORZ = 4, FIX_ORDER = 8,
++    FIX_LINKS = 16, FIX_SOUND = 32, FIX_BUTTONS = 64, FIX_BODYQUE = 128
++};
++
++int TRACE_JoinTic(char **savepath)
++{
++    *savepath = join_path;
++    return join_tic;
++}
++
++static int32_t R32(FILE *f)
++{
++    int32_t v;
++    if (fread(&v, 4, 1, f) != 1) I_Error("TRACE: short sidecar");
++    return v;
++}
++
++static mobj_t *ML(int i) { return i >= 0 && i < nml ? ml[i] : NULL; }
++
++void TRACE_JoinFixups(void)
++{
++    char ext[512];
++    FILE *f;
++    int i, j, n, prnd, rnd, *seq;
++    int32_t *tgt;
++
++    M_StringCopy(ext, join_path, sizeof(ext));
++    M_StringCopy(ext + strlen(ext) - 4, ".ext", 5);
++    f = M_fopen(ext, "rb");
++    if (!f) I_Error("TRACE: no sidecar %s", ext);
++
++    Walk();                     // post-load: mobjs, then specials
++    if (R32(f) != 0x52414353) I_Error("TRACE: bad sidecar");
++    prnd = R32(f); rnd = R32(f);
++    n = R32(f);
++    if (n != nml) I_Error("TRACE: sidecar has %d mobjs, save %d", n, nml);
++    if (join_mask & FIX_RNG) { prndindex = prnd; rndindex = rnd; }
++
++    tgt = malloc(sizeof(int32_t) * 4 * (nml + 1));
++    for (i = 0; i < nml; i++)
++        for (j = 0; j < 4; j++) tgt[i * 4 + j] = R32(f);
++    for (i = 0; i < nml; i++)
++    {
++        if (join_mask & FIX_POINTERS)
++        {
++            ml[i]->target = ML(tgt[i * 4]);
++            ml[i]->tracer = ML(tgt[i * 4 + 1]);
++        }
++        if (join_mask & FIX_FLOORZ)
++        {
++            ml[i]->floorz = tgt[i * 4 + 2];
++            ml[i]->ceilingz = tgt[i * 4 + 3];
++        }
++    }
++    free(tgt);
++    for (i = 0; i < MAXPLAYERS; i++)
++    {
++        int a = R32(f);
++        if (join_mask & FIX_POINTERS) players[i].attacker = ML(a);
++    }
++
++    n = R32(f);
++    seq = malloc(sizeof(int) * (n + 1));
++    for (i = 0; i < n; i++) seq[i] = R32(f);
++    if (join_mask & FIX_ORDER)
++    {
++        // relink thinkercap: the k-th 0 is ml[k], the k-th 1 is sl[k]
++        int a = 0, b = 0;
++        thinker_t *prev = &thinkercap;
++        if (n != nml + nsl) I_Error("TRACE: order has %d, have %d", n, nml + nsl);
++        for (i = 0; i < n; i++)
++        {
++            thinker_t *t = seq[i] ? sl[b++] : &ml[a++]->thinker;
++            prev->next = t;
++            t->prev = prev;
++            prev = t;
++        }
++        prev->next = &thinkercap;
++        thinkercap.prev = prev;
++    }
++    free(seq);
++
++    for (i = 0; i < numsectors; i++)
++    {
++        mobj_t *prev = NULL;
++        n = R32(f);
++        if (join_mask & FIX_LINKS) sectors[i].thinglist = NULL;
++        for (j = 0; j < n; j++)
++        {
++            mobj_t *m = ML(R32(f));
++            if (!(join_mask & FIX_LINKS) || !m) continue;
++            m->sprev = prev;
++            m->snext = NULL;
++            if (prev) prev->snext = m; else sectors[i].thinglist = m;
++            prev = m;
++        }
++    }
++    for (i = 0; i < bmapwidth * bmapheight; i++)
++    {
++        mobj_t *prev = NULL;
++        n = R32(f);
++        if (join_mask & FIX_LINKS) blocklinks[i] = NULL;
++        for (j = 0; j < n; j++)
++        {
++            mobj_t *m = ML(R32(f));
++            if (!(join_mask & FIX_LINKS) || !m) continue;
++            m->bprev = prev;
++            m->bnext = NULL;
++            if (prev) prev->bnext = m; else blocklinks[i] = m;
++            prev = m;
++        }
++    }
++    for (i = 0; i < numsectors; i++)
++    {
++        int st = R32(f), tg = R32(f);
++        if (join_mask & FIX_SOUND)
++        {
++            sectors[i].soundtraversed = st;
++            sectors[i].soundtarget = ML(tg);
++        }
++    }
++    for (i = 0; i < MAXBUTTONS; i++)
++    {
++        int li = R32(f), wh = R32(f), tex = R32(f), tim = R32(f);
++        if (join_mask & FIX_BUTTONS)
++        {
++            button_t *b = &buttonlist[i];
++            b->line = li >= 0 ? &lines[li] : NULL;
++            b->where = wh;
++            b->btexture = tex;
++            b->btimer = tim;
++            b->soundorg = li >= 0 ? &lines[li].frontsector->soundorg : NULL;
++        }
++    }
++    n = R32(f);
++    if (join_mask & FIX_BODYQUE) bodyqueslot = n;
++    for (i = 0; i < BODYQUESIZE; i++)
++    {
++        int b = R32(f);
++        if (join_mask & FIX_BODYQUE) bodyque[i] = ML(b);
++    }
++    fclose(f);
++    trace_demotic = join_tic;
++    printf("TRACE: joined at ticcmd %d from %s, fix mask %d\n",
++           join_tic, join_path, join_mask);
++}
++
++// ---------------------------------------------------------------------
++// Bot: steers from game state, never touches the RNGs or any game state
++// (R_PointToAngle2 writes viewx/viewy, so they are put back).
++// Priorities: shoot a visible live monster; else walk to a visible item
++// (unless it was given up on); else wander. Stuck while walking: press
++// use (doors, lifts, switches), then turn away and give up on the item.
++
++typedef struct {
++    uint32_t rng;
++    int wanderturn, wandertics;     // wander: turn for a few tics, then run
++    int escapeturn, escapetics;     // escape: turn hard, then run
++    int stucktics, strafe, strafetics, usecool;
++    mobj_t *ignore; int ignoretics; // item given up on
++    fixed_t lx, ly;
++} bot_t;
++
++static bot_t bots[MAXPLAYERS];
++
++static uint32_t BotRand(bot_t *b)
++{
++    b->rng = b->rng * 1103515245u + 12345u;
++    return (b->rng >> 16) & 0x7fff;
++}
++
++static angle_t AngleTo(mobj_t *a, mobj_t *b)
++{
++    fixed_t vx = viewx, vy = viewy;
++    angle_t r = R_PointToAngle2(a->x, a->y, b->x, b->y);
++    viewx = vx; viewy = vy;
++    return r;
++}
++
++static int TurnToward(angle_t from, angle_t to, int maxstep)
++{
++    int32_t delta = (int32_t) (to - from);
++    int units = delta / (1 << 24);          // 256 turn units per circle
++    if (units == 0 && delta > (1 << 23)) units = 1;
++    if (units == 0 && delta < -(1 << 23)) units = -1;
++    if (units > maxstep) units = maxstep;
++    if (units < -maxstep) units = -maxstep;
++    return units;
++}
++
++static int BestWeapon(player_t *p)
++{
++    static const int pref[] = { wp_chaingun, wp_shotgun, wp_plasma,
++                                wp_pistol, wp_chainsaw, wp_fist };
++    int i;
++    for (i = 0; i < 6; i++)
++    {
++        int w = pref[i];
++        ammotype_t a = weaponinfo[w].ammo;
++        if (p->weaponowned[w] && (a == am_noammo || p->ammo[a] > 0))
++            return w;
++    }
++    return wp_fist;
++}
++
++void TRACE_BotCmd(int pnum, ticcmd_t *cmd)
++{
++    player_t *p = &players[pnum];
++    mobj_t *mo = p->mo, *enemy = NULL, *item = NULL;
++    bot_t *b = &bots[pnum];
++    fixed_t ed = 1200 * FRACUNIT, idist = 1000 * FRACUNIT;
++    int turn = 0, fwd = 0, side = 0, buttons = 0, i;
++    thinker_t *th;
++
++    memset(cmd, 0, sizeof(*cmd));
++    if (!b->rng)
++        b->rng = bot_seed * 2654435761u + (uint32_t) pnum * 40503u + 1;
++
++    if (gamestate != GS_LEVEL || !mo)
++    {
++        if ((BotRand(b) & 15) == 0) cmd->buttons = BT_USE;   // skip screens
++        return;
++    }
++    if (p->playerstate == PST_DEAD)
++    {
++        if ((BotRand(b) % 20) == 0) cmd->buttons = BT_USE;   // respawn
++        return;
++    }
++    if (b->ignoretics > 0 && --b->ignoretics == 0) b->ignore = NULL;
++
++    for (th = thinkercap.next; th != &thinkercap; th = th->next)
++    {
++        mobj_t *m;
++        fixed_t d;
++        if (th->function.acp1 != (actionf_p1) P_MobjThinker) continue;
++        m = (mobj_t *) th;
++        if (m == mo) continue;
++        d = P_AproxDistance(m->x - mo->x, m->y - mo->y);
++        if ((m->flags & MF_COUNTKILL) && m->health > 0 && d < ed
++            && P_CheckSight(mo, m))
++        {
++            enemy = m; ed = d;
++        }
++        else if ((m->flags & MF_SPECIAL) && m != b->ignore && d < idist
++                 && P_CheckSight(mo, m))
++        {
++            item = m; idist = d;
++        }
++    }
++
++    if (--b->strafetics <= 0)
++    {
++        b->strafe = (int) (BotRand(b) % 3) - 1;
++        b->strafetics = 20 + BotRand(b) % 50;
++    }
++
++    if (b->escapetics > 0)
++    {
++        b->escapetics--;
++        turn = b->escapetics > 14 ? b->escapeturn : 0;
++        fwd = 50;
++        if (enemy && ed < 300 * FRACUNIT) b->escapetics = 0;
++    }
++    else if (enemy)
++    {
++        turn = TurnToward(mo->angle, AngleTo(mo, enemy), 6);
++        if (turn >= -1 && turn <= 1) buttons |= BT_ATTACK;
++        fwd = ed > 400 * FRACUNIT ? 25 : (ed < 160 * FRACUNIT ? -25 : 0);
++        side = b->strafe * 24;
++    }
++    else if (item)
++    {
++        turn = TurnToward(mo->angle, AngleTo(mo, item), 5);
++        fwd = turn > 3 || turn < -3 ? 15 : 50;
++    }
++    else
++    {
++        if (--b->wandertics <= 0)
++        {
++            b->wanderturn = (int) (BotRand(b) % 13) - 6;
++            b->wandertics = 30 + BotRand(b) % 70;
++        }
++        turn = b->wandertics % 50 < 10 ? b->wanderturn : 0;
++        fwd = 50;
++    }
++
++    // stuck: press use (doors, lifts, switches), then escape
++    if (fwd > 0 && P_AproxDistance(mo->x - b->lx, mo->y - b->ly) < 3 * FRACUNIT)
++        b->stucktics++;
++    else
++        b->stucktics = 0;
++    if (b->usecool > 0) b->usecool--;
++    if (b->stucktics > 3 && b->usecool == 0)
++    {
++        buttons |= BT_USE;
++        b->usecool = 10;
++    }
++    if (b->stucktics > 16)
++    {
++        if (item) { b->ignore = item; b->ignoretics = 350; }
++        b->escapeturn = (BotRand(b) & 1) ? 8 : -8;
++        b->escapetics = 14 + 4 + BotRand(b) % 12 + 30;
++        b->stucktics = 0;
++    }
++    if ((BotRand(b) % 70) == 0 && b->usecool == 0)
++    {
++        buttons |= BT_USE;
++        b->usecool = 10;
++    }
++
++    i = BestWeapon(p);
++    if (i != (int) p->readyweapon && p->pendingweapon == wp_nochange
++        && (trace_demotic % 35) == pnum * 7)
++    {
++        // weapon slots: fist/chainsaw share 0
++        int slot = (i == wp_chainsaw) ? wp_fist : i;
++        buttons |= BT_CHANGE | (slot << BT_WEAPONSHIFT);
++    }
++
++    b->lx = mo->x; b->ly = mo->y;
++    cmd->forwardmove = fwd;
++    cmd->sidemove = side;
++    cmd->angleturn = (short) (turn << 8);
++    cmd->buttons = buttons;
++}
++
++// ---------------------------------------------------------------------
++
++extern void G_EndBotRecording(void);
++
++// The state before the first ticcmd (demo playback, level just loaded).
++void TRACE_LevelStart(void)
++{
++    if (trace_fp || hash_fp)
++        WriteTic();
++    if (save_every && gamestate == GS_LEVEL)
++        SaveNow();
++}
++
++void TRACE_EndTic(void)
++{
++    trace_demotic++;
++    if (simlog_fp)
++        fprintf(simlog_fp, "%d %llu\n", trace_demotic, (unsigned long long) sim_ns);
++    if (trace_fp || hash_fp)
++        WriteTic();
++    sim_ns = 0;
++    if (save_every && gamestate == GS_LEVEL
++        && trace_demotic % save_every == 0)
++        SaveNow();
++    if (trace_bot && trace_demotic >= bot_tics)
++        G_EndBotRecording();
++}
++
++static void Shutdown(void)
++{
++    if (trace_fp)
++    {
++        if (trace_piped) pclose(trace_fp); else fclose(trace_fp);
++        trace_fp = NULL;
++    }
++    if (hash_fp) { fclose(hash_fp); hash_fp = NULL; }
++    if (simlog_fp) { fclose(simlog_fp); simlog_fp = NULL; }
++    if (savelog_fp) { fclose(savelog_fp); savelog_fp = NULL; }
++    fprintf(stderr, "TRACE: %d tics simulated, P_Ticker total %.3f ms, "
++            "mean %.2f us/tic\n", sim_count, sim_total_ns / 1e6,
++            sim_count ? sim_total_ns / 1e3 / sim_count : 0.0);
++}
++
++void TRACE_Init(void)
++{
++    int p;
++    char path[600];
++
++    if ((p = M_CheckParmWithArgs("-trace", 1)))
++    {
++        const char *t = myargv[p + 1];
++        if (M_StringEndsWith(t, ".gz"))
++        {
++            M_snprintf(path, sizeof(path), "gzip -1 > '%s'", t);
++            trace_fp = popen(path, "w");
++            trace_piped = true;
++        }
++        else
++            trace_fp = M_fopen(t, "wb");
++        if (!trace_fp) I_Error("TRACE: cannot open %s", t);
++        M_snprintf(path, sizeof(path), "%s.hash", t);
++        hash_fp = M_fopen(path, "w");
++    }
++    if ((p = M_CheckParmWithArgs("-hashonly", 1)))
++        hash_fp = M_fopen(myargv[p + 1], "w");
++    if ((p = M_CheckParmWithArgs("-simlog", 1)))
++        simlog_fp = M_fopen(myargv[p + 1], "w");
++    if ((p = M_CheckParmWithArgs("-saveevery", 1)))
++        save_every = atoi(myargv[p + 1]);
++    if ((p = M_CheckParmWithArgs("-savedir", 1)))
++    {
++        save_dir = myargv[p + 1];
++        M_snprintf(path, sizeof(path), "%s/saves.log", save_dir);
++        if (save_every) savelog_fp = M_fopen(path, "w");
++    }
++    if (save_every && !save_dir) I_Error("TRACE: -saveevery needs -savedir");
++    if ((p = M_CheckParmWithArgs("-bottics", 1)))
++        bot_tics = atoi(myargv[p + 1]);
++    if ((p = M_CheckParmWithArgs("-botseed", 1)))
++        bot_seed = (unsigned) atoi(myargv[p + 1]);
++    if ((p = M_CheckParmWithArgs("-join", 2)))
++    {
++        join_path = myargv[p + 1];
++        join_tic = atoi(myargv[p + 2]);
++    }
++    if ((p = M_CheckParmWithArgs("-joinfix", 1)))
++        join_mask = atoi(myargv[p + 1]);
++    I_AtExit(Shutdown, true);
++}
+diff --git a/src/doom/p_trace.h b/src/doom/p_trace.h
+new file mode 100644
+index 0000000..8d7cbe5
+--- /dev/null
++++ b/src/doom/p_trace.h
+@@ -0,0 +1,22 @@
++// Research instrumentation, not part of Chocolate Doom.
++// Per-tic state trace + hash, periodic save games with a sidecar,
++// a closed-loop input bot that records a .lmp, and a late-join loader.
++
++#ifndef __P_TRACE__
++#define __P_TRACE__
++
++#include "d_ticcmd.h"
++
++extern boolean trace_bot;       // -botrecord: bot writes every ticcmd
++extern int     trace_demotic;   // ticcmds consumed so far
++
++void TRACE_Init(void);          // parse -trace / -saveevery / -botrecord ...
++void TRACE_BotCmd(int pnum, ticcmd_t *cmd);
++void TRACE_SimStart(void);
++void TRACE_SimEnd(void);
++void TRACE_EndTic(void);        // end of G_Ticker: count, trace, save
++void TRACE_LevelStart(void);    // demo start: record + save for ticcmd 0
++int  TRACE_JoinTic(char **savepath);  // -join <save> <tic>: tic or -1
++void TRACE_JoinFixups(void);    // apply -joinfix mask from the sidecar
++
++#endif
