@@ -240,15 +240,7 @@
       "tol": {
         "rel": 0.15
       },
-      "note": "PHRF is a relative handicap with no absolute speed in it. The target is the J/24's ORC beat VMG slowed by the 14 s/mile PHRF difference: V = 3600 / (3600/V_J24 + 14). A weak, stated target: PHRF averages over courses and conditions, and both ratings assume a spinnaker, which the VPP doesn't model, so only beat VMG is compared.",
-      "knownGaps": {
-        "beatVmg16": {
-          "measuredRel": 0.165,
-          "ratchetRel": 0.02,
-          "measuredOn": "2026-11-06",
-          "why": "16.5% over the PHRF-relative target at 16 kn: she points too high (31°), as the J/24 does against ORC"
-        }
-      }
+      "note": "PHRF is a relative handicap with no absolute speed in it. The target is the J/24's ORC beat VMG slowed by the 14 s/mile PHRF difference: V = 3600 / (3600/V_J24 + 14). A weak, stated target: PHRF averages over courses and conditions, and both ratings assume a spinnaker, which the VPP doesn't model, so only beat VMG is compared."
     },
     "disagreements": [
       {

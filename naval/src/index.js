@@ -10,8 +10,9 @@
 /**
  * Bump when a build makes different output from the same doc and params.
  * 1: the first rig GLB (contract v1).
+ * 2: the contract's windage (§6.1) and each sail's CE swung to its sheet (§6.6): new predictions.
  */
-const VERSION = 1;
+const VERSION = 2;
 
 export const plugins = [
   {

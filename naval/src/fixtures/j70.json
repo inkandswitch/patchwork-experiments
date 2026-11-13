@@ -443,27 +443,27 @@
       },
       "note": "ORC rates downwind with the asymmetric spinnaker (45.64 m²); the VPP has none, so only the beat and 52–90° are compared.",
       "pinned": {
-        "measuredOn": "2026-11-10",
+        "measuredOn": "2026-11-12",
         "ratchetPoints": 2,
         "ratchetDeg": 1.5,
         "cells": {
-          "8kn 52°": 4.1,
-          "8kn 75°": 2.5,
-          "8kn 90°": -3.4,
-          "12kn 52°": 1.7,
-          "12kn 75°": 6.4,
-          "12kn 90°": 2.6,
-          "16kn 52°": 2.8,
-          "16kn 75°": 0.4,
-          "16kn 90°": 6.8,
-          "8kn beatVMG": 10.5,
-          "8kn beatAngle": -1.7,
-          "12kn beatVMG": 3.9,
-          "12kn beatAngle": -7.3,
-          "16kn beatVMG": 4.9,
-          "16kn beatAngle": -7
+          "8kn 52°": 1.6,
+          "8kn 75°": 1,
+          "8kn 90°": -4.3,
+          "12kn 52°": -0.8,
+          "12kn 75°": 4.7,
+          "12kn 90°": 1.7,
+          "16kn 52°": -1,
+          "16kn 75°": -2.6,
+          "16kn 90°": 2.3,
+          "8kn beatVMG": 4.3,
+          "8kn beatAngle": 0.8,
+          "12kn beatVMG": -1.3,
+          "12kn beatAngle": -4,
+          "16kn beatVMG": -2,
+          "16kn beatAngle": -4.7
         },
-        "why": "she points 7° higher than ORC at 12 and 16 kn and her beat VMG is 4–11% over, as the J/24's is: the VPP has no heel-induced hull side force and generic sail coefficients. Reaching speeds are within 7%."
+        "why": "with the windage of hull, mast and rigging (ORC's elements) she points 4–5° higher than ORC at 12 and 16 kn and her beat VMG is within 4.3%; reaching within 5%. Without windage (2026-11-10) she pointed 7° higher and beat 4–11% over. What's left: no heel-induced hull side force, and generic sail coefficients."
       }
     },
     "balance": {

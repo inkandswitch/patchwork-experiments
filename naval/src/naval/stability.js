@@ -42,8 +42,10 @@
 // near 90°).
 //
 // Heeling. The stability view's wind heeling moment is the classical form
-// (Skene's; Marchaj):
-//   HM(φ) = ½·ρ_air·AWS²·A·C_H·h·cos²φ,  ρ_air = 1.225 kg/m³,
+// (Skene's; Marchaj), with the windage of hull, mast and rigging added
+// (windage.js, its heel forces at CH_BETA upright, each at its own height):
+//   HM(φ) = ½·ρ_air·AWS²·(A·C_H·h + Σ_j fh_j·(z_j − z_CLR))·cos²φ,  ρ_air = 1.225 kg/m³,
+// fh_j an element's heel force per unit ½ρ·AWS² at CH_BETA, upright,
 // A the sail area set and h the height of its CE above the whole underwater
 // profile's centroid (the geometric CLR). C_H is the sail model's (sails.js)
 // heeling-force coefficient for that set trimmed for drive close-hauled, at
@@ -307,10 +309,13 @@ export function sailSets(plan) {
   return sets.filter((s) => s.areaM2 > 0 && s.ce);
 }
 
-/** Wind heeling moment (N·m) at an apparent wind (m/s) and heel, for a sail set over a CLR height (C_H the set's, else 1.0). */
+/**
+ * Wind heeling moment (N·m) at an apparent wind (m/s) and heel, for a sail set over a CLR height (C_H the set's, else 1.0),
+ * plus the windage's (set.windHm: Σ Fh·(z − z_CLR) per unit ½ρ·AWS², windage.js, at CH_BETA upright), both × cos²φ.
+ */
 export function heelingMoment(awsMs, heelDeg, set, clrZ, ch = set.ch ?? C_HEEL) {
   const h = set.ce[1] - clrZ;
-  return 0.5 * RHO_AIR * awsMs * awsMs * set.areaM2 * ch * h * Math.cos(heelDeg * RAD) ** 2;
+  return 0.5 * RHO_AIR * awsMs * awsMs * (set.areaM2 * ch * h + (set.windHm ?? 0)) * Math.cos(heelDeg * RAD) ** 2;
 }
 
 /**

@@ -375,27 +375,27 @@
       },
       "note": "The designer's VPP, not measured speeds: a check that two VPPs agree. Its true wind is at the masthead (19.75 m), the tool's at its own reference height. Downwind is with the A2 and is not compared.",
       "pinned": {
-        "measuredOn": "2026-11-10",
+        "measuredOn": "2026-11-12",
         "ratchetPoints": 2,
         "ratchetDeg": 1.5,
         "cells": {
-          "8kn 52°": 7,
-          "8kn 70°": 3.6,
-          "8kn 90°": -5.2,
-          "12kn 52°": 3.6,
-          "12kn 70°": 1.5,
-          "12kn 90°": -1.6,
-          "16kn 52°": 4.6,
-          "16kn 70°": 3,
-          "16kn 90°": 1.4,
-          "8kn beatVMG": 12.4,
-          "8kn beatAngle": -1.1,
-          "12kn beatVMG": 9.9,
-          "12kn beatAngle": -5.9,
-          "16kn beatVMG": 12.7,
-          "16kn beatAngle": -4
+          "8kn 52°": 3.1,
+          "8kn 70°": 0.8,
+          "8kn 90°": -6.7,
+          "12kn 52°": 1.6,
+          "12kn 70°": 0,
+          "12kn 90°": -2.4,
+          "16kn 52°": 1.6,
+          "16kn 70°": 1.4,
+          "16kn 90°": 0.6,
+          "8kn beatVMG": 4,
+          "8kn beatAngle": -0.3,
+          "12kn beatVMG": 2.8,
+          "12kn beatAngle": -3.5,
+          "16kn beatVMG": 3.3,
+          "16kn beatAngle": 0.3
         },
-        "why": "beat VMG 10–13% over Frers' VPP at every wind (she points 4–6° higher at 12 and 16 kn); reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
+        "why": "with windage her beat VMG is 3–4% over Frers' VPP (10–13% without it, 2026-11-10), pointing 3.5° higher at 12 kn; reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
       }
     },
     "balance": {

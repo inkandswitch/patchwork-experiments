@@ -38,6 +38,7 @@ import { dsyhsHull, dsyhsParams, resistanceModel, planingCapability, DSYHS_ENVEL
 import { deadriseOf } from "../naval/design.js";
 import { dL as dLOf, G as GRAV } from "../naval/ratios.js";
 import { LE_SOURCE } from "../naval/balance.js";
+import { WINDAGE_SOURCE } from "../naval/windage.js";
 import { RHO_SEA, formatText } from "../naval/units.js";
 import { DEFAULT_FRAME } from "../naval/hull-frame.js";
 import { figure, gradeParams, combineProvenance, worstEnvelope } from "./figures.js";
@@ -313,6 +314,14 @@ function designFigures(n, put, { hp, tableFrom, hullParams }) {
   pointFig("refSpeed", `Boat speed at ${at} (VPP)`, ref, ref?.speed, "speed");
   pointFig("refHeel", `Heel at ${at} (VPP)`, ref, ref?.heel, "angle");
   pointFig("refHelm", `Rudder angle at ${at}, + weather (VPP)`, ref, ref?.rudder, "angle");
+  put("refWindage", {
+    value: D.ok && ref?.ok ? ref.windageN : null,
+    unit: "force",
+    method: `Windage drag of hull, mast and rigging at ${at} (ORC's elements; the hull by cross flow, the spars along the flow)`,
+    cite: WINDAGE_SOURCE,
+    provenance: combineProvenance(mp, "estimated"),
+    why: D.ok ? "no equilibrium at this point" : D.why,
+  });
   const pol = D.ok ? runPolar(D, { tws: [c.tws] }) : null;
   pointFig("beatVmg", `Best upwind VMG at ${(c.tws / 0.514444).toFixed(0)} kn true (VPP)`, pol?.beat[0], pol?.beat[0]?.vmg, "speed");
   pointFig("runVmg", `Best downwind VMG at ${(c.tws / 0.514444).toFixed(0)} kn true (VPP)`, pol?.run[0], pol?.run[0] ? -pol.run[0].vmg : null, "speed");

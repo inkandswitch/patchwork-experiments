@@ -18,6 +18,7 @@ import { rigSails, rigSpan, coeffTable, tableOf, SAIL_KINDS, INTERACTION, FLAT_M
 import { combineCE } from "./naval/sailplan.js";
 import { resistanceOf } from "./naval/vpp.js";
 import { CLARKE_SOURCE } from "./naval/design.js";
+import { mastSection, WINDAGE_SOURCE } from "./naval/windage.js";
 import { froudeOf, PLANING_FN, FN_MAX_DISPLACEMENT, RESIDUARY_FN, RESIDUARY_A, HEEL_FN, HEEL_U, TE_UPRIGHT } from "./naval/resistance.js";
 import { NU_SEA } from "./naval/foils.js";
 import { RHO_AIR } from "./naval/stability.js";
@@ -428,10 +429,27 @@ export function buildContract({ doc, n, polar = null, source = {}, options = {} 
     loads,
     predicted,
     lumpedSail,
+    windage: windageOf(D),
     warnings: n.warnings.map((w) => formatText(w, "metric")),
     rules: RULES,
   };
   return { ok: true, contract };
+}
+
+/** §6.1's windage elements, from the design (windage.js), in the contract frame. */
+function windageOf(D) {
+  const elements = (D.ok ? D.windage : []).map((e) => ({
+    id: e.id,
+    shape: e.shape,
+    areaFrontM2: e.areaFrontM2,
+    areaSideM2: e.areaSideM2,
+    sidePerSinHeelM2: e.sidePerSinHeelM2,
+    cdFront: e.cdFront,
+    cdSide: e.cdSide,
+    atM: lift(e.at),
+    zPerSinHeelM: e.zPerSinHeelM,
+  }));
+  return { source: WINDAGE_SOURCE, elements };
 }
 
 /** A sail's tack, head and clew, lifted. */
@@ -530,8 +548,7 @@ function rigGeometry({ doc, plan, mastItem, deckAt, half, form, sails }) {
   return { rig, mast: rig.mast, standing, chainplates, mainHeadAtMastM: main ? along(plan.BAS + plan.P) : head };
 }
 
-/** The mast's drawn diameter (drawing only, not a scantling): 0.0055·L + 0.01 m. */
-export const mastSection = (L) => 0.0055 * L + 0.01;
+export { mastSection };
 
 /** R(V, φ) sampled for the contract (§6.5), from the design's own model. */
 function resistanceTable(D, options) {

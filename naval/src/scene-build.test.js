@@ -138,7 +138,7 @@ describe("the rig GLB", () => {
 describe("the scene source", () => {
   it("registers as a scene:source for rig-design docs, with a version, params and a lazy load", () => {
     const p = plugins.find((x) => x.type === "scene:source");
-    expect(p).toMatchObject({ id: "rig-design", supportedDatatypes: ["rig-design"], cost: "expensive", version: 1 });
+    expect(p).toMatchObject({ id: "rig-design", supportedDatatypes: ["rig-design"], cost: "expensive", version: 2 });
     expect(p.params.map((x) => x.key)).toEqual(["sails", "hull"]);
     expect(structuredClone({ ...p, load: undefined }).id).toBe("rig-design");
   });
