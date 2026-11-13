@@ -151,14 +151,19 @@ The browser probe plays it with a real mouse and keyboard in headless
 Chrome, two views of one doc:
 
 ```
-pnpm build && (cd ../scene && pnpm install && pnpm build)
+pnpm build && (cd ../scene && pnpm install && pnpm build) && (cd ../walk && pnpm install && pnpm build)
 node probes/arena-run.mjs [--show] [--shots <dir>]
 ```
 
 A picks **Arena level** on an empty scene's start screen and is in the game;
-B joins after. A switches to Edit and back, walks, runs into a wall, climbs
-the ramp onto the tower, jumps, shoots a target over and stops; B must see
-A's avatar move and A's tracer. Then a scene that knows nothing of arenas (a
-tilted deck GLB): the inspector offers the arena's level, a target is put on
-the deck from the parts bin, and the deck is walked and played on. It prints
+B joins after. A switches to Edit and back, presses Play (the walk body at a
+spawn point, the gun in hand), walks, runs into a wall, climbs the ramp onto
+the tower, jumps and shoots a target over; Escape puts the gun down and the
+body chip's Leave stops walking; B must see A's avatar move and A's tracer.
+Then a scene that knows nothing of arenas (a tilted deck GLB): the inspector
+offers the arena's level, a target is put on the deck from the parts bin, and
+the deck is walked (from the eye: it has no spawn point) and played on; under
+a simulated lock (headless Chrome refuses one) the mouse turns and a press
+shoots, and after the browser's Escape releases it the next press only
+relocks. It prints
 a JSON report and exits non-zero if any check fails.

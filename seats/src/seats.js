@@ -380,13 +380,22 @@ function create(api) {
     },
   });
   const seated = () => api.local.get()?.body?.id === body.id;
+  /** Down to the seat body, if it's in the stack under another (walking her deck from it). */
+  function downToSeat() {
+    for (let n = 0; sitting != null && !seated() && n < 8; n++) if (!api.body.leave()) break;
+  }
   function getUp() {
+    downToSeat();
     const was = sitting;
     sitting = null;
     if (was != null && seated()) api.body.leave();
   }
-  /** Into seat `sid`'s view (the seat body). */
+  /** Into seat `sid`'s view (the seat body); back down to it if it's under something already. */
   function seatView(sid) {
+    if (sitting === sid) {
+      downToSeat();
+      if (seated()) return;
+    }
     getUp();
     // (a seat with no camera, or one in a frame that's gone: the view stays as it is)
     if (api.body.enter(body.id, sid)) sitting = sid;

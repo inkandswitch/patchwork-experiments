@@ -60,7 +60,15 @@ export function seatBody(api, { left } = {}) {
       let gone = false;
       return {
         seat: sid,
-        input: {},
+        input: {
+          // a body over it went (walking her deck, from here): the seat's view again, as it is drawn now
+          resumed() {
+            const snapNow = api.scene();
+            const camNow = seatsOf(snapNow)[sid]?.camera;
+            const again = seatPose(camNow, camNow?.in ? drawn(snapNow, camNow.in) : null);
+            if (again) api.camera.set(again);
+          },
+        },
         // the body's ride: the only one while seated
         ride: frame ? { id: cam.in, at: [...(cam.target ?? [0, 0, 0])] } : null,
         leave() {

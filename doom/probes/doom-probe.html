@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>doom probe</title>
 <!-- Driven by probes/doom.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT arena, joints, traversal and doom plugins in a stub registry, on REAL Automerge
+     BUILT arena, walk, joints, traversal and doom plugins in a stub registry, on REAL Automerge
      documents: two peers, each with its own replica of every doc
      (probes/real-repo.js), a change reaching the other 25 ms later by a real
      merge. A WAD file doc (the runner serves the WAD at /wad) waits in A's
@@ -38,7 +38,7 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 try {
   // every build the map provider does, in either view (a part built twice is a rebuild)
   const builds = [];
-  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../arena/dist/index.js", "../../walk/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) {
       if (p.type === "scene:source" && p.id === "doom-map") {
@@ -226,12 +226,18 @@ try {
     },
     locked: () => !!document.pointerLockElement,
     useText: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.textContent.trim()),
-    /** the avatars a view draws (arena's world layer) */
+    /** the avatars a view draws (the walk package's world layer) */
     avatars(w) {
       const out = [];
-      for (const g of dbg[w].viewport.layers.get("arena") ?? []) for (const c of g.children) if (c.isGroup) out.push(c.position.toArray().map((v) => +v.toFixed(2)));
+      for (const g of dbg[w].viewport.layers.get("walk") ?? []) for (const c of g.children) if (c.isGroup) out.push(c.position.toArray().map((v) => +v.toFixed(2)));
       return out;
     },
+    /** the body on top of view w's stack, and the stack (TOOLS.md §4) */
+    body: (w) => ({ ...dbg[w].local.get().body, stack: dbg[w].router.bodies().map((b) => b.id) }),
+    held: (w) => dbg[w].local.get().held?.command ?? null,
+    /** the body chip's rect, and its menu's item called `label`, to click */
+    chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },
+    chipItem: (w, label) => { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
   };
   window.__ready = true;
 } catch (err) {

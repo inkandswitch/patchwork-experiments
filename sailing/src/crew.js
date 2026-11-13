@@ -535,6 +535,7 @@ export function createCrew(api, ctx) {
   /** Is the top body one of the crew's (walking her deck, or at a station)? */
   const ours = () => [AB, ST].includes(api.local.get()?.body?.id);
   let enteringStation = false; // a station going on over "aboard": not a wait
+  let overOrbit = true; // "aboard" went on over orbit (else over a body that has a view of its own: a seat)
   let suspended = false; // another body (a seat) is over "aboard"
 
   const walkKeys = Object.freeze([...MOVE_KEYS].map((code) => ({ code })));
@@ -567,6 +568,8 @@ export function createCrew(api, ctx) {
     reach: REACH,
     enter() {
       if (playing) return null;
+      // the body this one goes over: orbit, or one that takes the camera back when this goes (a seat)
+      overOrbit = (api.local.get()?.body?.id ?? "orbit") === "orbit";
       playing = true;
       suspended = false;
       if (!w || (onShip() && !frameOfShip(w.ship))) spawn();
@@ -603,7 +606,8 @@ export function createCrew(api, ctx) {
           },
         },
         eye: () => (eye ? { position: [...eye], direction: lookDir(person.yaw + (onShip() ? headingOf(frameOfShip(w.ship) ?? matrixOf(null)) : 0), person.pitch) } : null),
-        leave: () => stopped(),
+        // off her deck: back off her quarter, unless the body under takes the camera (a seat's view)
+        leave: () => stopped({ keepCamera: !overOrbit }),
       };
     },
   };

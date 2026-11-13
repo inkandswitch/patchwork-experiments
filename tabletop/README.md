@@ -189,14 +189,15 @@ arrives, so you see what you drew, and back over if you carry it out again
 (F decides for yourself). A revealed name shows in the outline and inspector
 and is never written back.
 
-**Seats** are the scene's (scene/STAGE.md, "Conventions"; scene/README):
-the picker at the top right, who sits where, the seat's view riding a table
-aboard a ship, sitting down from first person and standing up. This package
+**Seats** are the seats package's (seats/README.md; scene/STAGE.md,
+"Conventions"): the picker at the top right, who sits where, the seat's view
+riding a table aboard a ship, sitting down from walking and standing up. This package
 tells the seats' owner where each seat's hands are (`seatPlaces`: each
 `tabletop.zone`), which gets a name tag on each tray ("Player 1 · Ana
 (away)") and makes a look at a tray a look at its seat; and it reads who
-sits where from the `roster`. Shuffle and Draw aren't offered in first
-person (S and D walk); play from your seat.
+sits where from the `roster`. Walking, S and D are the walk body's keys, so
+Shuffle and Draw show without them (buttons, and in the menu: scene/TOOLS.md
+§5); seated, S shuffles and D draws.
 
 **Shuffle** (`S` over a card: the scene's use prompt shows it, with the
 hand's Flip, under the pointer; or *Shuffle pile* in its right-click menu)
@@ -543,7 +544,7 @@ are none.
 | `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome (the seats are the scene's part): a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |
 | `probes/draw.mjs`, `probes/draw-probe.html` | two players at a Lost Cities table whose deck the joint keeper keeps: A hovers the deck and presses D; the card lands in A's hand, A sees its face, B sees it and A's whole hand as backs (and a close-up shot of it), B is told |
 | `probes/privacy.mjs`, `probes/privacy-probe.html` | what a kept card looks like to each of two people (`--part secure` or `plain`): its back face down or in the other's hand, its face when it's theirs, the stage's veil while a card turned toward them has its keys on their way; that nothing is made or written to hide anything; the plain keeper's HUD line |
-| `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in for something that walks in first person: Sit as Player 1, Stand up, Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
+| `probes/stations.mjs`, `probes/stations-probe.html` | seats as stations on the use prompt, with a stand-in walking body (`probe-walk`): Sit as Player 1 (the seat body over it), Stand up (popped: walking on from the seat's eye), Back to your seat, a present player's seat refused, an away one taken on a second F, a card still Flip |
 | `probes/table.mjs`, `probes/table-probe.html` | two players at a Lost Cities table whose deck a plain keeper keeps: the use prompt over the pile (Flip, Shuffle) and S shuffling the container and telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, a pawn dragged out of the bin; back in play with the hand |
 | `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`, or `dominoes-2`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, that its stage lists the package of every plugin the table calls for (the page registers each built package from its pushwork URL, as a host does) and each is one the script states, play, seats and the jointly kept deck reaching play (Lost Cities: 8 faces each; Draw Dominoes: all 28 tiles shuffled once, none dealt, no veil), and publish the table it made. What each game's table must be is data (`TABLES`) |
 | `probes/dominoes.mjs`, `probes/dominoes-probe.html`, `probes/real-repo.js` | Draw Dominoes for two on REAL Automerge docs (two peers, each its own replica, merged 25 ms late; `real-repo.js` a copy of bag's), with a real mouse and keys: A starts the template from the start screen, both sit, the joint keeper shuffles; A washes (W); each draws 7 (D) and each tile stands in its drawer's rack facing them; each sees their own faces and the other's backs, no veil; A lays two flat (U) and carries them into the line (the second turned a quarter with Q Q, then nudged by hand until it lies flush against the first's end, within 1 mm, on the felt), and B sees both faces; B draws again; A carries a standing tile out of the rack onto the felt and B stands a boneyard tile up with U, each facing its player: each sees their own and the other's back; both replicas hold the 28 tiles on 28 slots, every tile is accounted for, no face is seen twice and the views agree on every face; A lays their hand face up (right-click), the standing one with it, and B sees all five. `--players 3` or `4` checks only those tables' layout |

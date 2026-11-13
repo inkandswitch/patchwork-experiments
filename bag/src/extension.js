@@ -286,7 +286,7 @@ export default {
 
     // ── drawing ──
     // A draw this view made, until it is settled: { key, take, id, fresh, copy,
-    // url, bagId, carry, session, disarm }. `session` is the hand's carry.
+    // url, bagId, carry, session, putDown }. `session` is the hand's carry.
     let pendings = [];
     let recent = []; // finished draws, watched a while longer: { key, take, id, fresh, url, bagId, until }
     let stopLoop = null;
@@ -389,7 +389,7 @@ export default {
     }
 
     function track(drawn) {
-      const p = { key: drawn.key, take: drawn.take ?? null, id: drawn.id, fresh: drawn.fresh, copy: drawn.copy, url: drawn.url, bagId: drawn.bagId, carry: !!drawn.carry, session: null, disarm: null };
+      const p = { key: drawn.key, take: drawn.take ?? null, id: drawn.id, fresh: drawn.fresh, copy: drawn.copy, url: drawn.url, bagId: drawn.bagId, carry: !!drawn.carry, session: null, putDown: null };
       // one piece in the hand at a time: the one before is set down where it came out
       if (p.carry) for (const q of pendings) if (q.carry) letGo(q, "back");
       pendings.push(p);
@@ -401,8 +401,8 @@ export default {
     function letGo(p, how, ev = null) {
       const s = p.session;
       p.session = null;
-      p.disarm?.();
-      p.disarm = null;
+      p.putDown?.();
+      p.putDown = null;
       if (s) {
         try {
           if (how === "down") s.end(ev ?? pointerNow());
@@ -424,8 +424,8 @@ export default {
           // already over
         }
       }
-      p.disarm?.();
-      p.disarm = null;
+      p.putDown?.();
+      p.putDown = null;
       pendings = pendings.filter((x) => x !== p);
       if (!quietly && !p.copy) recent.push({ key: p.key, take: p.take, id: p.id, fresh: p.fresh, copy: false, url: p.url, bagId: p.bagId, until: Date.now() + RECENT_MS });
       if (!pendings.some((x) => x.carry) && stopLoop) {
@@ -444,7 +444,7 @@ export default {
       // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
       // every press until it's put down; Escape (the stage's ladder) or
       // another tool picked up puts it back where it came out
-      p.disarm = api.hold("carry", {
+      p.putDown = api.hold("carry", {
         move: (ev) => void (mine() && s.move(ev)),
         press(ev) {
           if (!mine() || (ev.button != null && ev.button !== 0)) return null;
@@ -486,8 +486,8 @@ export default {
           if (p.session) {
             const s = p.session;
             p.session = null;
-            p.disarm?.();
-            p.disarm = null;
+            p.putDown?.();
+            p.putDown = null;
             try {
               s.cancel();
             } catch {

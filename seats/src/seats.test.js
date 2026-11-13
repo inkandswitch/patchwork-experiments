@@ -616,6 +616,19 @@ describe("standing up", () => {
     t.w.done();
   });
 
+  it("walking from your seat (a body over it), F at your place goes back down to the seat: its view again, never a second seat body", async () => {
+    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
+    await t.pickSeat("C", "p1");
+    t.api.C.body.enter("walk"); // up out of it, walking (sailing's Enter does this from a seat)
+    t.api.C.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat", "walk"]);
+    expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
+    await t.press("C", "hand1");
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+    near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
+    t.w.done();
+  });
+
   it("from a seat entered from orbit, standing up is orbit again; not offered at a seat with no view", async () => {
     const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
     await t.pickSeat("C", "p1");

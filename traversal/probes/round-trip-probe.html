@@ -49,7 +49,7 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../doom/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../walk/dist/index.js", "../../doom/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -192,6 +192,8 @@ try {
       return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
     },
     canvasRect() { const r = dbg().viewport.canvas.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
+    /** the body on top of the stack, its stack and the held tool's command (scene/TOOLS.md §4) */
+    body: () => ({ id: dbg().local.get().body?.id ?? null, stack: dbg().router.bodies().map((b) => b.id), tool: dbg().local.get().held?.command ?? null }),
     rect(sel) {
       const e = [...host.querySelectorAll(sel)].find((x) => x.getBoundingClientRect().width > 0);
       if (!e) return null;

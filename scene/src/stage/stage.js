@@ -2544,7 +2544,7 @@ export default function Stage(handle, element) {
     atmosphere: () => atmosphere,
     /** the drawer: the docked elements in tab order, and the one shown */
     drawer: () => drawer.state(),
-    /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
+    /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
     busy,
     /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */
     tickPoses,

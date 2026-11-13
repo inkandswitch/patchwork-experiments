@@ -147,12 +147,12 @@ describe("scene.handles on the stage", () => {
     current = s;
     await select(s, "a");
     expect(labelTexts(s)).toHaveLength(1);
-    const disarm = s.api("t.arm").hold("tool", {});
+    const putDown = s.api("t.arm").hold("tool", {});
     await settle();
     expect(s.local.get().held?.ext).toBe("t.arm");
     expect(labelTexts(s)).toEqual([]);
     expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
-    disarm();
+    putDown();
     await settle();
     expect(labelTexts(s)).toHaveLength(1);
   });

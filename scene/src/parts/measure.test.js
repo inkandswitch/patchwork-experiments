@@ -143,7 +143,7 @@ describe("scene.measure", () => {
     // leaving the view drops the hover point
     s.port.dispatchEvent(new PointerEvent("pointerleave"));
     expect(preview()).toBeNull();
-    // disarming clears everything
+    // putting it down clears everything
     run();
     expect(layer()).toEqual([]);
   });
