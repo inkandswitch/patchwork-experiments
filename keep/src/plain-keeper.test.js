@@ -2,7 +2,7 @@
 // what the stage says of each object, its HUD, the `keeper` convention, and
 // `contain`.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import Keeper, { TRAIT, contain, openly } from "./plain-keeper.js";
+import Keeper, { TRAIT, contain, openly, openlyAll } from "./plain-keeper.js";
 import { plugins } from "./index.js";
 import { newPlain } from "./plain.js";
 
@@ -119,6 +119,18 @@ describe("the plain keeper", () => {
   it("says, at every scene that uses one, that it isn't secret", async () => {
     const t = await mount();
     expect(t.x.hud()).toEqual([{ text: openly("Deck"), state: "info" }]);
+  });
+
+  it("says it once for a scene with several containers, not once each", async () => {
+    const t = await mount();
+    for (let n = 2; n <= 5; n++) {
+      const more = t.repo.add(newPlain({ title: `Deck ${n}`, items: ["x"] }));
+      t.objects[`m${n}`] = { name: "Card", sourceUrl: "automerge:back", traits: { [TRAIT]: { by: more.url, slot: 0 } } };
+      t.update();
+      await settle();
+      t.update();
+      expect(t.x.hud()).toEqual([{ text: openlyAll(n), state: "info" }]);
+    }
   });
 
   it("the keeper convention: which container, its name, and a shuffle of what the objects are", async () => {

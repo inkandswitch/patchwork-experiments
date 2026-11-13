@@ -29,6 +29,8 @@ export const TRAIT = "keep.plain";
 
 /** What everyone at a scene with a plain container is told. */
 export const openly = (title) => `${title ? `“${title}”` : "A container here"} is kept in the open: anyone who opens its document can read everything in it.`;
+/** The same, once, for a scene with several (an imported game's many decks): one line, not one per container. */
+export const openlyAll = (n) => `${n} containers here are kept in the open: anyone who opens their documents can read everything in them.`;
 
 /**
  * Make a container for `items` and say how to bind objects to it.
@@ -119,11 +121,14 @@ function create(api) {
     looks: () => looks,
     hud() {
       const out = [];
+      const open = [];
       for (const [key, c] of containers) {
         if (c.problem) out.push({ text: `Some things here can't be shown: ${c.problem}`, state: "error" });
         else if (c.handle && !ready(key)) out.push({ text: `${titleOf(key) ? `“${titleOf(key)}”` : "A container here"} can't be read: its slots don't match its items.`, state: "error" });
-        else if (c.handle) out.push({ text: openly(titleOf(key)), state: "info" });
+        else if (c.handle) open.push(key);
       }
+      if (open.length === 1) out.push({ text: openly(titleOf(open[0])), state: "info" });
+      else if (open.length > 1) out.push({ text: openlyAll(open.length), state: "info" });
       if (bound.clashes.length) out.push({ text: `${bound.clashes.length === 1 ? "An object claims" : `${bound.clashes.length} objects claim`} a slot something else already has: ${bound.clashes.length === 1 ? "it stays" : "they stay"} closed.`, state: "error" });
       return out;
     },
