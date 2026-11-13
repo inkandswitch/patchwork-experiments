@@ -69,8 +69,8 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
   ctx.change((d) => {
     d.traits[SEA] = { wind: { speed: WIND.speed, from: WIND.from }, seed, scale: WIND.scale };
-    d.view.home = { position: [...HOME.position], target: [...HOME.target] };
-    d.view.activity = "play";
+    // people start in orbit over the bay (view.start: TOOLS.md §2); a click on the sloop comes aboard
+    d.view.start = { home: { position: [...HOME.position], target: [...HOME.target] } };
     if (!d.title || /^untitled/i.test(d.title)) d.title = "Cadboro Bay";
   });
   let hull = null;

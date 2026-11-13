@@ -18,7 +18,7 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **From the template.** In an empty scene, pick **Ship at sea** on the start
   screen. It lays out a sloop under way on a beam reach (sail up, anchor
   up), a sea with a north-easterly breeze, two buoys and an islet upwind,
-  and opens in Play. Or **Ship at anchor**: the same sloop lying head to
+  and starts people off her quarter (orbit: a click comes aboard). Or **Ship at anchor**: the same sloop lying head to
   wind at anchor off the islet in a moderate breeze, sail down, anchor down,
   somewhere still to set things up aboard (a card table in her cockpit:
   tabletop's *Card table* and *Lost Cities* parts) and to get under way
@@ -35,8 +35,8 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   hand of cards. Nothing of hers can be picked up: what can be carries the
   scene's `scene.carry` trait (a game's cards and pieces), and the ship and
   her fittings don't, so a game aboard her can't dismast her.
-- **From the parts bin, in any scene.** While editing, the sidebar's parts
-  list a *Sailing* group: drag **Sloop** onto the view and she's on the
+- **From the parts bin, in any scene.** The toolbar's Parts opens the bin,
+  with a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
   gets a sea if it had none). The rest are her parts on their own: **Mast
   and sail**, **Wheel**, **Mainsheet**, **Jib winches**, **Windlass and

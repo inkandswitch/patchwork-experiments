@@ -94,7 +94,7 @@ export const rigTransform = (t, boom) => turnedAbout(t, 1, boom);
 /** The jib's transform for its chord's angle (radians, + to starboard): swung about its own Y (the luff, tack to head) from where it was put. */
 export const jibTransform = (t, jib) => turnedAbout(t, 1, jib);
 
-/** Off a ship's starboard quarter, looking at her deck, in her frame: the template's home view, and where the orbit opens in play. */
+/** Off a ship's starboard quarter, looking at her deck, in her frame: the template's home view (view.start.home), and where an untouched orbit opens. */
 export const QUARTER = Object.freeze({ position: Object.freeze([12, 6.5, 16]), target: Object.freeze([0, 2.5, 0]) });
 
 // ─── the tree, as the stage resolves it ────────────────────────────────────

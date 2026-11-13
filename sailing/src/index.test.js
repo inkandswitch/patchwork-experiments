@@ -7,10 +7,9 @@ const byId = (id) => plugins.find((p) => p.id === id);
 const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.jib", "sailing.winch", "sailing.anchor", "sailing.mainsheet", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
-  it("are two scene extensions, parts for the bin and two templates, and nothing else", () => {
+  it("are one scene extension, parts for the bin and two templates, and nothing else", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
       ["scene:extension", "sailing"],
-      ["scene:extension", "sailing.edit"],
       ...["sloop", "mast", "wheel", "windlass", "ladder", "mainsheet", "winches", "companionway", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
       ["scene:template", "ship-at-sea"],
       ["scene:template", "ship-at-anchor"],
@@ -48,16 +47,9 @@ describe("sailing's plugins", () => {
     }
   });
 
-  it("plays only in play and edits only in edit, on the same traits", () => {
+  it("runs by its traits alone: nothing about who's looking (no activities, nothing required)", () => {
     expect(byId("sailing").traits).toEqual(TRAITS);
-    expect(byId("sailing").activities).toEqual(["play"]);
-    expect(byId("sailing.edit").traits).toEqual(TRAITS);
-    expect(byId("sailing.edit").activities).toEqual(["edit"]);
-  });
-
-  it("brings what playing needs without the editor: keys, notices, framing and the use prompt", () => {
-    expect(byId("sailing").requires).toEqual(["scene.use", "scene.keys", "scene.notices"]);
-    expect(byId("sailing.edit").requires).toBeUndefined();
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in byId("sailing")).toBe(false);
   });
 
   it("describes every trait it runs on, the sea on the scene and the rest on objects", () => {
