@@ -1,14 +1,18 @@
 // patchwork:tool "tabletop-game" — the game's page: what it is, its pieces,
-// and "Set up a table", which lays the pieces out in a new scene and opens it.
-// While open it keeps each piece's GLB drawn from its parts (pieces.js). An
-// empty game offers every registered `tabletop:game` to start from.
+// and "Set up a table", which lays the game out in a new scene and opens it.
+// While open it keeps each piece's GLB drawn from what it is (pieces.js). An
+// empty game offers every registered `tabletop:game` to start from, and the
+// whole game is editable as JSON (GAME-FORMAT.md), checked before it's kept.
 
 import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
-import { orderedKinds, tableLayout, writeTable } from "./setup.js";
+import { isCard, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
-import { containDecks, findSeats, hostRegistry } from "./table/made-with.js";
+import { findSeats, findSource, hostRegistry, makeHolders } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
+import { gameOf, writeGame } from "./game.js";
+import { defaultImages } from "./look/images.js";
+import { errorText, validate } from "../contract/v1/validate.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -27,6 +31,34 @@ const el = (tag, props = {}, ...children) => {
 };
 
 const colorsOf = (piece) => [...new Set((piece.parts ?? []).map((p) => p.color).filter((c) => /^#[0-9a-f]{6}$/i.test(c ?? "")))];
+/** A game's piece kinds, in the order they're written. */
+const kindsOf = (d) => Object.keys(d?.pieces ?? {});
+/** Every deck in a game's setup, contents too: [{ deck, at }]. */
+function decksOf(things, out = []) {
+  for (const t of things ?? []) {
+    if (t.deck) out.push(t);
+    decksOf(t.contents, out);
+  }
+  return out;
+}
+/** What a thing of the setup is called (its id's): its own name, else its piece's. */
+function thingName(d, id, things = d.setup) {
+  for (const t of things ?? []) {
+    if (t.id === id) return t.name ?? d.pieces?.[t.piece]?.name ?? id;
+    const inner = thingName(d, id, t.contents ?? []);
+    if (inner !== id) return inner;
+  }
+  return id;
+}
+/** How many copies of each kind a fresh table has: { [kind]: n } (a deck's cards counted, contents too). */
+function copiesOf(things, out = {}) {
+  for (const t of things ?? []) {
+    if (t.deck) for (const k of t.deck.cards ?? []) out[k] = (out[k] ?? 0) + 1;
+    else out[t.piece] = (out[t.piece] ?? 0) + Math.max(1, Number(t.count) || 1);
+    copiesOf(t.contents, out);
+  }
+  return out;
+}
 
 export default function TabletopGameTool(handle, element) {
   const repo = element.repo ?? globalThis.repo;
@@ -65,9 +97,10 @@ export default function TabletopGameTool(handle, element) {
   async function startFrom(game) {
     try {
       const plugin = await (await import("@inkandswitch/patchwork-plugins")).getRegistry("tabletop:game").load(game.id);
-      const fill = plugin?.module?.fill;
-      if (typeof fill !== "function") throw new Error("it can't fill a game in");
-      handle.change((d) => fill(d));
+      const g = plugin?.module?.default ?? plugin?.module;
+      const checked = validate(g);
+      if (!checked.ok) throw new Error(errorText(checked));
+      handle.change((d) => writeGame(d, g));
     } catch (err) {
       status = `Couldn't start from ${game.name}: ${err?.message ?? err}`;
       render();
@@ -79,11 +112,15 @@ export default function TabletopGameTool(handle, element) {
   let drawing = null;
   let drawTimer = null;
   let drawError = null;
+  let drawNotes = [];
   function draw() {
     if (dead) return Promise.resolve();
     if (drawing) return drawing.then(draw);
-    drawing = ensurePieceGLBs(repo, handle)
-      .then(() => (drawError = null))
+    drawing = ensurePieceGLBs(repo, handle, { images: defaultImages(), source: (type) => findSource(hostRegistry, type) })
+      .then(({ notes }) => {
+        drawError = null;
+        drawNotes = notes;
+      })
       .catch((err) => {
         drawError = err?.message ?? String(err);
         console.warn("[tabletop] drawing pieces failed", err);
@@ -111,28 +148,32 @@ export default function TabletopGameTool(handle, element) {
       await draw();
       if (drawError) throw new Error(drawError);
       const d = doc();
+      const checked = validate(gameOf(d));
+      if (!checked.ok) throw new Error(`the game isn't valid: ${errorText(checked)}`);
       const n = (d.tables?.length ?? 0) + 1;
       const title = `${d.title || "Game"} table ${n}`;
       // each kind shows the game's own GLB, which redraws when the game changes
       const fileOf = (kind) => {
-        const p = d.pieces?.[kind];
-        return p?.glbUrl ? { url: p.glbUrl, hint: p.bounds ? { bounds: p.bounds } : null } : null;
+        const f = d.drawn?.[kind];
+        return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
       };
-      const layout = tableLayout(d, { fileOf, gameUrl: handle.url });
-      // the decks' containers first (each from a keeper, found in the registry by kind:
-      // table/made-with.js), so the scene never names one that isn't there
-      const { binds } = await containDecks({ repo, registry: hostRegistry }, layout.decks, (deck) => `${title}: ${deck.title}`);
+      const layout = tableLayout(gameOf(d), { fileOf, gameUrl: handle.url });
+      // the decks' containers and the bags first (from a keeper and a bag maker, found in the
+      // registry by what they are: table/made-with.js), so the scene never names one that isn't there
+      const made = await makeHolders({ repo, registry: hostRegistry }, layout);
       // the seats are their owner's to write (none where nothing installed owns seats)
       const lay = Object.keys(layout.seats).length ? await findSeats(hostRegistry) : null;
       // an empty scene as the scene makes one (every map and list it has;
       // the stage fills `packages` in), and where the scene package comes
       // from, for a viewer who doesn't have it
       const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title });
-      writeTable(table, layout, binds, { seats: lay });
+      writeTable(table, layout, made, { seats: lay });
       const scene = await repo.create2(table);
       handle.change((g) => {
+        if (!g.tables) g.tables = [];
         g.tables.push(scene.url);
       });
+      if (made.notes.length) status = made.notes.join(" ");
       open(scene.url, "scene");
     } catch (err) {
       status = `Couldn't set up a table: ${err?.message ?? err}`;
@@ -158,50 +199,58 @@ export default function TabletopGameTool(handle, element) {
   }
 
   function piecesSection(d) {
-    const kinds = orderedKinds(d);
+    const kinds = kindsOf(d);
+    const copies = copiesOf(d.setup);
+    const what = (p) =>
+      [
+        p.back ? `a card (its back: ${d.pieces[p.back]?.name ?? p.back})` : "",
+        p.zone ? "a hand" : "",
+        p.bag ? `a bag (${p.bag.rule})` : "",
+        p.doc ? `drawn as a ${p.doc?.["@patchwork"]?.type ?? "document"}` : "",
+        p.snapPoints?.length ? `${p.snapPoints.length} spaces` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
     const row = (kind) => {
       const p = d.pieces[kind];
-      const name = el("input", { type: "text", value: p.name ?? kind, "aria-label": "Name", onchange: (e) => handle.change((g) => (g.pieces[kind].name = e.target.value)) });
-      const count = el("input", {
-        type: "number",
-        min: "0",
-        step: "1",
-        value: String(p.count ?? 0),
-        "aria-label": "How many",
-        onchange: (e) => handle.change((g) => (g.pieces[kind].count = Math.max(0, Math.round(Number(e.target.value) || 0)))),
-      });
-      const locked = el("input", { type: "checkbox", checked: !!p.locked, onchange: (e) => handle.change((g) => (g.pieces[kind].locked = e.target.checked)) });
+      const name = el("input", { type: "text", value: p.name ?? kind, "aria-label": "Name", onchange: (e) => handle.change((g) => (g.pieces[kind].name = e.target.value || kind)) });
+      const locked = el("input", { type: "checkbox", checked: !!p.locked, onchange: (e) => handle.change((g) => (e.target.checked ? (g.pieces[kind].locked = true) : delete g.pieces[kind].locked)) });
       return el(
         "tr",
         {},
         el("td", { class: "swatches" }, colorsOf(p).map((c) => el("span", { class: "swatch", style: `background:${c}`, title: c }))),
         el("td", {}, name),
-        el("td", {}, count),
+        el("td", { class: "muted" }, String(copies[kind] ?? 0)),
         el("td", {}, el("label", { class: "toggle", title: "Set up locked in place (a board)" }, locked, " fixed")),
-        el("td", { class: "muted" }, [p.zone?.seat ? `${d.seats?.[p.zone.seat]?.name ?? p.zone.seat}'s private zone` : "", p.snapPoints?.length ? `${p.snapPoints.length} spaces` : ""].filter(Boolean).join(", ")),
+        el("td", { class: "muted" }, what(p)),
       );
     };
     const table = (list) =>
-      el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, "Name"), el("th", {}, "Count"), el("th", {}, ""), el("th", {}, ""))), el("tbody", {}, list.map(row)));
-    // hidden kinds go in their deck's own fold: a deck of cards is a long list
-    const decks = Object.entries(d.decks ?? {}).map(([deckId, deck]) => {
-      const inDeck = kinds.filter((k) => d.pieces[k].hidden && (d.pieces[k].deck ?? null) === deckId);
-      const total = inDeck.reduce((n, k) => n + (Number(d.pieces[k].count) || 0), 0);
-      const deals = (deck.deal ?? []).map((x) => `${x.count} to ${d.pieces[x.to]?.name ?? x.to}`).join(", ");
+      el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, ""), el("th", {}, "Name"), el("th", {}, "On a table"), el("th", {}, ""), el("th", {}, ""))), el("tbody", {}, list.map(row)));
+    // a deck of cards is a long list: each in its own fold
+    const decks = decksOf(d.setup).map((t, i) => {
+      const deck = t.deck;
+      const inDeck = [...new Set(deck.cards ?? [])];
+      const deals = (deck.deal ?? []).map((x) => `${x.count} to ${thingName(d, x.to)}`).join(", ");
+      const path = deckPath(d.setup, t);
       return el(
         "details",
         { class: "deck" },
-        el("summary", {}, `${deck.name || deckId}: ${total} cards of ${inDeck.length} kinds, shuffled${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
+        el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${deck.shuffle ? ", shuffled" : ""}${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
         el(
           "label",
           { class: "toggle", title: "With a keeper whose players shuffle installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without one, the cards are hidden from the table but listed in an ordinary document." },
-          el("input", { type: "checkbox", checked: !!deck.secure, onchange: (e) => handle.change((g) => (g.decks[deckId].secure = e.target.checked)) }),
+          el("input", { type: "checkbox", checked: !!deck.secure, onchange: (e) => handle.change((g) => {
+            const dk = path.reduce((x, k) => x[k], g.setup).deck;
+            if (e.target.checked) dk.secure = true;
+            else delete dk.secure;
+          }) }),
           " The players shuffle it between them (needs every player at the table)",
         ),
-        table(inDeck),
+        table(inDeck.filter((k) => d.pieces[k])),
       );
     });
-    const shown = kinds.filter((k) => !d.pieces[k].hidden || !d.decks?.[d.pieces[k].deck]);
+    const shown = kinds.filter((k) => !isCard(d, k));
     const seats = Object.values(d.seats ?? {}).map((s) => s.name).filter(Boolean);
     return el(
       "section",
@@ -212,71 +261,61 @@ export default function TabletopGameTool(handle, element) {
       decks,
     );
   }
+  /** Where a deck thing is in the setup, as keys into it ([i] or [i, "contents", j, …]). */
+  function deckPath(setup, target, path = []) {
+    for (const [i, t] of (setup ?? []).entries()) {
+      if (t === target) return [...path, i];
+      const inner = deckPath(t.contents, target, [...path, i, "contents"]);
+      if (inner) return inner;
+    }
+    return null;
+  }
 
   function definitionSection(d) {
-    const text = JSON.stringify(
-      {
-        order: d.order ?? [],
-        pieces: Object.fromEntries(orderedKinds(d).map((k) => [k, strip(d.pieces[k])])),
-        ...(d.seats ? { seats: d.seats } : {}),
-        ...(d.decks ? { decks: d.decks } : {}),
-        ...(d.camera ? { camera: d.camera } : {}),
-      },
-      null,
-      2,
-    );
     const area = el("textarea", { class: "json", spellcheck: "false", rows: "16" });
-    area.value = text;
+    area.value = JSON.stringify(gameOf(d), null, 2);
     const msg = el("span", { class: "muted" }, definitionMsg);
     const say = (text) => (msg.textContent = definitionMsg = text);
-    const apply = el("button", {
-      type: "button",
-      class: "button",
-      onclick: () => {
-        let next;
-        try {
-          next = JSON.parse(area.value);
-          if (!next || typeof next.pieces !== "object") throw new Error("expected { order, pieces }");
-        } catch (err) {
-          say(`Not applied: ${err.message}`);
-          return;
-        }
-        definitionMsg = "Applied.";
-        handle.change((g) => {
-          const old = g.pieces ?? {};
-          const pieces = {};
-          for (const [k, p] of Object.entries(next.pieces)) {
-            // keep each kind's GLB doc, so tables already set up redraw in place
-            pieces[k] = { ...p, glbUrl: old[k]?.glbUrl ?? null, glbKey: old[k]?.glbKey ?? null };
+    const apply = el(
+      "button",
+      {
+        type: "button",
+        class: "button",
+        onclick: () => {
+          let next;
+          try {
+            next = JSON.parse(area.value);
+          } catch (err) {
+            say(`Not applied: ${err.message}`);
+            return;
           }
-          g.pieces = pieces;
-          g.order = Array.isArray(next.order) ? next.order.filter((k) => typeof k === "string") : Object.keys(pieces);
-          for (const key of ["seats", "decks", "camera"]) {
-            if (next[key] && typeof next[key] === "object") g[key] = next[key];
-            else delete g[key];
+          const checked = validate(next);
+          if (!checked.ok) {
+            say(`Not applied: ${errorText(checked)}`);
+            return;
           }
-        });
-        say("Applied.");
+          definitionMsg = "Applied.";
+          // each kind keeps its GLB doc, so tables already set up redraw in place
+          handle.change((g) => writeGame(g, next));
+          say("Applied.");
+        },
       },
-    }, "Apply");
-    return el("details", { class: "definition", open: definitionOpen, ontoggle: (e) => (definitionOpen = e.target.open) }, el("summary", {}, "Definition (JSON)"), area, el("div", { class: "cluster" }, apply, msg));
+      "Apply",
+    );
+    return el("details", { class: "definition", open: definitionOpen, ontoggle: (e) => (definitionOpen = e.target.open) }, el("summary", {}, "Definition (JSON: the tabletop-game format)"), area, el("div", { class: "cluster" }, apply, msg));
   }
-  const strip = (p) => {
-    const { glbUrl, glbKey, bounds, ...rest } = JSON.parse(JSON.stringify(p));
-    return rest;
-  };
 
   function render() {
     if (dead) return;
     const d = doc();
-    const kinds = orderedKinds(d);
+    const kinds = kindsOf(d);
     const focused = root.contains(document.activeElement) ? document.activeElement : null;
     // don't rebuild under someone typing in a field of ours
     if (focused && /^(INPUT|TEXTAREA)$/.test(focused.tagName) && rendered) return void updateStatus();
     rendered = true;
 
     const title = el("input", { type: "text", class: "title", value: d.title ?? "", "aria-label": "Title", onchange: (e) => handle.change((g) => (g.title = e.target.value)) });
-    const setUp = el("button", { type: "button", class: "button primary", disabled: settingUp || !kinds.length, onclick: setUpTable }, settingUp ? "Setting up…" : "Set up a table");
+    const setUp = el("button", { type: "button", class: "button primary", disabled: settingUp || !(d.setup ?? []).length, onclick: setUpTable }, settingUp ? "Setting up…" : "Set up a table");
     const about = el("textarea", { class: "about", rows: "8", placeholder: "What the game is, and how it's played…", onchange: (e) => handle.change((g) => (g.about = e.target.value)) });
     about.value = d.about ?? "";
 
@@ -307,6 +346,7 @@ export default function TabletopGameTool(handle, element) {
 
     const tables = (d.tables ?? []).filter((u) => typeof u === "string");
     root.replaceChildren(
+      ...[
       el("header", { class: "head" }, title, setUp),
       el("p", { class: "status muted" }),
       empty,
@@ -321,6 +361,7 @@ export default function TabletopGameTool(handle, element) {
           )
         : null,
       definitionSection(d),
+      ].filter(Boolean),
     );
     updateStatus();
   }
@@ -329,11 +370,12 @@ export default function TabletopGameTool(handle, element) {
     const s = root.querySelector(".status");
     if (!s) return;
     const d = doc();
-    const kinds = orderedKinds(d);
-    const total = kinds.reduce((n, k) => n + (Number(d.pieces[k].count) || 0), 0);
+    const kinds = kindsOf(d);
+    const total = Object.values(copiesOf(d.setup)).reduce((n, k) => n + k, 0);
+    const notes = drawNotes.length ? ` ${drawNotes.length} note${drawNotes.length === 1 ? "" : "s"} on drawing them: ${drawNotes.slice(0, 3).join("; ")}${drawNotes.length > 3 ? "; …" : ""}` : "";
     s.textContent =
       status ??
-      (drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? "Drawing pieces…" : kinds.length ? `${total} pieces of ${kinds.length} kinds.` : "");
+      (drawError ? `Pieces couldn't be drawn: ${drawError}` : drawing ? "Drawing pieces…" : kinds.length ? `${total} pieces of ${kinds.length} kinds.${notes}` : "");
   }
 
   const onChange = () => {
@@ -343,7 +385,7 @@ export default function TabletopGameTool(handle, element) {
   };
   handle.on("change", onChange);
   render();
-  if (orderedKinds(doc()).length) draw();
+  if (kindsOf(doc()).length) draw();
 
   return () => {
     dead = true;

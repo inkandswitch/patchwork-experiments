@@ -62,8 +62,50 @@ export function keeperPlugin(kind) {
   };
 }
 
-/** The registries a drop context or the game page finds these in. */
-export const registries = (...plugins) => ({ "scene:extension": fakeRegistry(plugins) });
+/** The stand-in bag maker's trait: what makes an object one of its bags. */
+export const BAG = "t.bag";
+
+/**
+ * A bag maker, as a `scene:extension` plugin: found by `container: "bag"`,
+ * its module's `fill({ repo }, { title, rule, items })` making a bag doc
+ * ({ title, rule, items }) and returning the trait that makes an object it.
+ */
+export function bagPlugin() {
+  return {
+    type: "scene:extension",
+    id: "t.bag",
+    container: "bag",
+    traits: [BAG],
+    load: async () => ({
+      create: () => ({}),
+      async fill({ repo }, { title, rule, items }) {
+        const h = await repo.create2({ "@patchwork": { type: "t-bag" }, title, rule, items: structuredClone(items) });
+        return { url: h.url, traits: { [BAG]: { doc: h.url } } };
+      },
+    }),
+  };
+}
+
+/** What draws documents of `type` in a scene, as a `scene:source` plugin: a GLB that says which doc it drew. */
+export function sourcePlugin(type, glb = (doc) => new TextEncoder().encode(`glb of ${JSON.stringify(doc)}`)) {
+  return {
+    type: "scene:source",
+    id: `t.source-${type}`,
+    supportedDatatypes: [type],
+    load: async () => ({
+      async build({ doc }) {
+        return { kind: "glb", glb: glb(doc), meta: { bounds: { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] } } };
+      },
+    }),
+  };
+}
+
+/** The registries a drop context or the game page finds these in, each plugin under its own type. */
+export function registries(...plugins) {
+  const byType = {};
+  for (const p of plugins) (byType[p.type] ??= []).push(p);
+  return Object.fromEntries(Object.entries(byType).map(([t, list]) => [t, fakeRegistry(list)]));
+}
 
 /** Which container and slot an object is kept in, whichever stand-in keeper keeps it: { kind, by, slot } | null. */
 export function keptIn(o) {

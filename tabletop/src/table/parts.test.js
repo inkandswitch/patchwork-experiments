@@ -56,12 +56,12 @@ describe("the parts", () => {
     const b = await parts.pawn.create(ctx, at([0.3, 0, 0]));
     await parts.token.create(ctx, at());
     expect(doc.objects[a].sourceUrl).toBe(doc.objects[b].sourceUrl);
-    expect(calls.made.map((m) => m.key)).toEqual(["tabletop/pawn@1", "tabletop/token@1"]);
+    expect(calls.made.map((m) => m.key)).toEqual(["tabletop/pawn@2", "tabletop/token@2"]);
     for (const m of calls.made) {
       expect(m.mimeType).toBe("model/gltf-binary");
       expect(m.bytes).toBeInstanceOf(Uint8Array);
     }
-    expect(Object.keys(doc.assets).sort()).toEqual(["tabletop/pawn@1", "tabletop/token@1"]);
+    expect(Object.keys(doc.assets).sort()).toEqual(["tabletop/pawn@2", "tabletop/token@2"]);
   });
 
   it("goes under what it was put on, filed in that one's group", async () => {
@@ -94,7 +94,7 @@ describe("the parts", () => {
 
 describe("the card spot", () => {
   it("has one card slot, tagged card, with a snap radius", async () => {
-    const gltf = await loadGLB(makeFile("card-spot").bytes);
+    const gltf = await loadGLB((await makeFile("card-spot")).bytes);
     const { connectors, snapRadius } = gltf.scene.userData;
     expect(connectors).toHaveLength(1);
     expect(connectors[0].tags).toEqual(["card"]);
@@ -104,7 +104,7 @@ describe("the card spot", () => {
   it("takes a card dropped near it, squared to the mat; a pawn doesn't fit it", () => {
     const piece = PIECES["card-spot"];
     // as the stage normalises a connector: its rotation's yaw
-    const extras = { connectors: piece.snapPoints.map((p) => ({ position: p.position, yaw: p.yaw, tags: p.tags })), snapRadius: piece.snapRadius };
+    const extras = { connectors: piece.snapPoints.map((p) => ({ position: p.position, yaw: p.rotation[1], tags: p.tags })), snapRadius: piece.snapRadius };
     const m = composeMatrix({ position: [0.4, 0, 0.1], rotation: [0, 0.7, 0], scale: 1 });
     const slot = nearestSlot(worldSlots(m, extras, CARD_TAGS), [0.42, 0, 0.11]);
     expect(slot.world[0]).toBeCloseTo(0.4, 9);

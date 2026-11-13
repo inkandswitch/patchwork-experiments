@@ -3,20 +3,22 @@
 // module, so the two can't drift apart. The file for a key is the stage's
 // ctx.file (the scene's one doc per key, doc.assets; scene/STAGE.md "Parts").
 
-import { pieceGLB } from "../pieces.js";
+import { drawer, glbName, lookKey, shortHash } from "../look/look.js";
 
-/** Bounds rounded to 10 µm, as an importer's hint writes them. */
-export const round = (b) => (b ? { min: b.min.map((v) => +v.toFixed(5)), max: b.max.map((v) => +v.toFixed(5)) } : null);
+/** The scene's assets key for a piece's GLB: one per look, whatever game or part it's from ("tabletop/look@…"). */
+export const lookFileKey = (piece) => `tabletop/look@${shortHash(lookKey(piece))}`;
 
-/** A piece's GLB, as ctx.file's make() wants it: its bytes, and the hint an importer would write. */
-export function glbFile(piece) {
-  const { glb, bounds } = pieceGLB(piece);
-  const b = round(bounds);
-  return {
-    name: `${String(piece?.name || "piece").replace(/[\\/:]/g, "-")}.glb`,
-    bytes: glb,
-    extension: "glb",
-    mimeType: "model/gltf-binary",
-    ...(b ? { hint: { bounds: b } } : {}),
-  };
+/**
+ * A piece's GLB, as ctx.file's make() wants it: its bytes, and the hint an
+ * importer would write. `io` is look.js's drawer's (how files are read,
+ * images decoded, documents drawn); plain parts need none of it.
+ */
+export async function glbFile(piece, io = {}) {
+  const d = drawer(io);
+  try {
+    const { glb, bounds } = await d.draw(piece);
+    return { name: glbName(piece), bytes: glb, extension: "glb", mimeType: "model/gltf-binary", ...(bounds ? { hint: { bounds } } : {}) };
+  } finally {
+    d.close();
+  }
 }

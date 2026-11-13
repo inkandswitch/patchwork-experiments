@@ -9,12 +9,18 @@ const labels = (id) => dieOf(PRESETS[id].make()).faces.map((f) => f.label);
 const numbers = (id) => labels(id).map(Number);
 
 describe("a die doc, read", () => {
-  it("anything at all reads as a whole die: a d6 at its usual size, in the usual colours, every face blank", () => {
+  it("anything at all reads as a whole die: a d6 at its usual size, in the usual colours, numbered as a d6 is", () => {
     for (const doc of [undefined, null, {}, { shape: "d7" }, { shape: "constructor", faces: "no", size: -1, body: "red" }]) {
       const d = dieOf(doc);
       expect(d).toMatchObject({ shape: "d6", size: USUAL_SIZE.d6, body: DEFAULT_BODY, ink: DEFAULT_INK, turnOnly: false, underline: false });
-      expect(d.faces).toHaveLength(6);
-      for (const f of d.faces) expect(f).toEqual({ marks: [], name: null, color: null, ink: null, turn: 0, label: "blank" });
+      expect(d.faces.map((f) => f.label)).toEqual(labels("d6"));
+    }
+  });
+
+  it("a doc that gives no faces is numbered the usual way for its shape, every shape; one that gives an empty list is blank", () => {
+    for (const shape of SHAPES) {
+      expect(dieOf({ shape }).faces).toEqual(dieOf(presetDoc(SHAPE_PRESET[shape])).faces);
+      expect(dieOf({ shape, faces: [] }).faces.every((f) => f.label === "blank")).toBe(true);
     }
   });
 

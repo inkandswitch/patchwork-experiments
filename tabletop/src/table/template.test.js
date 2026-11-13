@@ -1,24 +1,23 @@
-// The Lost Cities and Santorini templates against a stand-in for the stage's
-// drop context: the art they file, the decks they make and when, and the
-// table they write.
+// The templates against a stand-in for the stage's drop context: each loads
+// its game by id from the registry (this package's games/*.json, registered
+// as index.js registers them), and these check the art it files, the
+// containers it makes and when, and the table it writes.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { lostCities, santorini, layOutTable, gameFileKey, fnv } from "./template.js";
-import * as lostCitiesGame from "../games/lost-cities.js";
+import { setUp, template } from "./template.js";
+import { lookFileKey } from "./files.js";
 import { kindsUsed } from "../setup.js";
-import { glbKey } from "../pieces.js";
+import { lookKey, shortHash } from "../look/look.js";
 import { fakeDrop } from "../test/fakes.js";
 import { SEATS, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
+import { game as builtIn, gamePlugins } from "../test/games.js";
 import { emptyScene } from "../empty-scene.js";
 
-/** What's installed where a table is usually made: whoever owns seats, and a keeper of each kind (stand-ins). */
-const installed = () => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"));
-
-const game = () => {
-  const g = {};
-  lostCitiesGame.fill(g);
-  return g;
-};
+/** What's installed where a table is usually made: whoever owns seats, a keeper of each kind (stand-ins), and the games. */
+const installed = (...more) => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins(), ...more);
+const lostCities = template("lost-cities");
+const santorini = template("santorini");
+const game = () => builtIn("lost-cities");
 
 describe("the Lost Cities template", () => {
   it("files one GLB per kind under a versioned key, and every object shows one of them", async () => {
@@ -26,9 +25,9 @@ describe("the Lost Cities template", () => {
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
     const g = game();
-    const keys = kindsUsed(g).map((k) => gameFileKey("lost-cities", k, g.pieces[k]));
-    expect(Object.keys(doc.assets).sort()).toEqual([...keys].sort());
-    for (const k of Object.keys(doc.assets)) expect(k).toMatch(/^tabletop\/lost-cities\/[\w-]+@[0-9a-f]{8}$/);
+    const keys = kindsUsed(g).map((k) => lookFileKey(g.pieces[k]));
+    expect(Object.keys(doc.assets).sort()).toEqual([...new Set(keys)].sort());
+    for (const k of Object.keys(doc.assets)) expect(k).toMatch(/^tabletop\/look@[0-9a-z]+$/);
     expect(calls.made).toHaveLength(keys.length);
     for (const f of calls.made) {
       expect(f.mimeType).toBe("model/gltf-binary");
@@ -45,13 +44,24 @@ describe("the Lost Cities template", () => {
     expect(doc.order).toHaveLength(Object.keys(doc.objects).length);
   });
 
-  it("the key changes with the art: it hashes what the GLB is drawn from", () => {
+  it("the key changes with the art, and only with it: it hashes what the GLB is drawn from", () => {
     const g = game();
-    const a = gameFileKey("lost-cities", "back", g.pieces.back);
-    expect(a).toBe(`tabletop/lost-cities/back@${fnv(glbKey(g.pieces.back))}`);
+    const a = lookFileKey(g.pieces.back);
+    expect(a).toBe(`tabletop/look@${shortHash(lookKey(g.pieces.back))}`);
+    expect(lookFileKey({ ...g.pieces.back, name: "Another" })).toBe(a);
     g.pieces.back.parts[0].color = "#123456";
-    expect(gameFileKey("lost-cities", "back", g.pieces.back)).not.toBe(a);
-    expect(fnv("")).toBe("811c9dc5");
+    expect(lookFileKey(g.pieces.back)).not.toBe(a);
+  });
+
+  it("with no such game installed, or one that isn't valid, lays nothing out and says why", async () => {
+    const doc = emptyScene();
+    const { ctx, calls } = fakeDrop(doc, { registries: installed() });
+    await template("no-such-game").create(ctx);
+    expect(calls.notices.at(-1)).toEqual({ kind: "error", text: "There's no game “no-such-game” installed here." });
+    const bad = { ...game(), setup: [{ piece: "nowhere" }] };
+    await setUp(ctx, bad);
+    expect(calls.notices.at(-1)).toMatchObject({ kind: "error", text: expect.stringMatching(/isn't a game this can lay out: unknown-piece at \$\.setup\[0\]\.piece/) });
+    expect([calls.changes, calls.made.length]).toEqual([0, 0]);
   });
 
   it("makes the deck's container before the one change that writes the table", async () => {
@@ -72,7 +82,8 @@ describe("the Lost Cities template", () => {
     const i = calls.created.findIndex((d) => d["@patchwork"].type === "t-joint");
     const deckUrl = `automerge:file${i + 1}`;
     const deck = calls.created[i];
-    expect(deck.title).toBe("Lost Cities table: Deck");
+    // titled by the game and its deck: never by the scene it's in
+    expect(deck.title).toBe("Lost Cities: Deck");
     const cards = Object.entries(doc.objects).filter(([, o]) => o.traits?.["tabletop.card"]);
     expect(cards).toHaveLength(60);
     for (const [, o] of cards) {
@@ -91,7 +102,7 @@ describe("the Lost Cities template", () => {
 
   it("with only a plain keeper installed, the deck is kept in the open and the maker is told the hands aren't secret", async () => {
     const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc, { registries: registries(seatsPlugin(), keeperPlugin("plain")) });
+    const { ctx, calls } = fakeDrop(doc, { registries: registries(seatsPlugin(), keeperPlugin("plain"), ...gamePlugins()) });
     await lostCities.create(ctx);
     const decks = calls.created.filter((d) => d["@patchwork"].type !== "file");
     expect(decks.map((d) => d["@patchwork"].type)).toEqual(["t-plain"]);
@@ -101,7 +112,7 @@ describe("the Lost Cities template", () => {
   });
 
   it("with no keeper installed at all, lays nothing out and says why: it never writes a card nothing keeps", async () => {
-    for (const reg of [{}, registries(seatsPlugin())]) {
+    for (const reg of [registries(...gamePlugins()), registries(seatsPlugin(), ...gamePlugins())]) {
       const doc = emptyScene();
       const { ctx, calls } = fakeDrop(doc, { registries: reg });
       await lostCities.create(ctx);
@@ -113,7 +124,7 @@ describe("the Lost Cities template", () => {
 
   it("with nothing that owns seats, the table has none, and says so; it writes no seats of its own", async () => {
     const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc, { registries: registries(keeperPlugin("joint")) });
+    const { ctx, calls } = fakeDrop(doc, { registries: registries(keeperPlugin("joint"), ...gamePlugins()) });
     await lostCities.create(ctx);
     expect(Object.keys(doc.objects).length).toBeGreaterThan(60);
     expect(doc.traits).toEqual({});
@@ -141,16 +152,16 @@ describe("the Lost Cities template", () => {
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
     expect(doc.title).toBe("Friday night");
-    expect(calls.created.find((d) => d["@patchwork"].type === "t-joint").title).toBe("Friday night: Deck");
+    expect(calls.created.find((d) => d["@patchwork"].type === "t-joint").title).toBe("Lost Cities: Deck");
   });
 
   it("reuses the scene's files: a second table makes no new GLBs", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
-    await layOutTable(ctx, "lost-cities", lostCitiesGame);
+    await setUp(ctx, "lost-cities");
     const made = calls.made.length;
     const assets = structuredClone(doc.assets);
-    await layOutTable(ctx, "lost-cities", lostCitiesGame);
+    await setUp(ctx, "lost-cities");
     expect(calls.made).toHaveLength(made);
     expect(doc.assets).toEqual(assets);
   });
@@ -159,16 +170,16 @@ describe("the Lost Cities template", () => {
 describe("the Santorini template", () => {
   it("lays the island out with its own art, no decks, no seats", async () => {
     const doc = emptyScene();
-    const { ctx, calls } = fakeDrop(doc);
+    const { ctx, calls } = fakeDrop(doc, { registries: registries(...gamePlugins()) });
     await santorini.create(ctx);
     expect(calls.created.every((d) => d["@patchwork"].type === "file")).toBe(true);
-    expect(Object.keys(doc.assets).every((k) => k.startsWith("tabletop/santorini/"))).toBe(true);
+    expect(Object.keys(doc.assets).every((k) => k.startsWith("tabletop/look@"))).toBe(true);
     const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
     expect(objects).toHaveLength(79);
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) expect(urls.has(o.sourceUrl)).toBe(true);
     expect(doc.traits).toEqual({});
-    // nothing here starts the table extension, so play isn't on offer: the doc doesn't claim it
+    // nobody sits at it, so it doesn't open in play
     expect(doc.view).not.toHaveProperty("tool");
     expect(doc.view).not.toHaveProperty("activity");
     expect(calls.changes).toBe(1);
@@ -181,7 +192,7 @@ describe("in a real automerge change", () => {
     const plain = emptyScene();
     const { ctx } = fakeDrop(plain, { registries: installed() });
     const rng = () => 0.25;
-    await layOutTable(ctx, "lost-cities", lostCitiesGame, { rng });
+    await setUp(ctx, "lost-cities", { rng });
     // the same again, through a change on an automerge doc
     let real = Automerge.from(emptyScene());
     const live = emptyScene();
@@ -192,7 +203,7 @@ describe("in a real automerge change", () => {
         fn(d);
       });
     };
-    await layOutTable(c2, "lost-cities", lostCitiesGame, { rng });
+    await setUp(c2, "lost-cities", { rng });
     expect(Automerge.toJS(real)).toEqual(plain);
   });
 });
@@ -200,14 +211,13 @@ describe("in a real automerge change", () => {
 describe("the Draw Dominoes templates", () => {
   for (const n of [2, 3, 4]) {
     it(`(${n} players) lay the felt, ${n} racks, ${n} seats and the 28 tiles face down, kept by a keeper whose players shuffle, in one change, in play`, async () => {
-      const { dominoes2, dominoes3, dominoes4 } = await import("./template.js");
-      const template = { 2: dominoes2, 3: dominoes3, 4: dominoes4 }[n];
       const doc = emptyScene();
       const { ctx, calls } = fakeDrop(doc, { registries: installed() });
-      await template.create(ctx);
+      await template(`draw-dominoes-${n}`).create(ctx);
       expect(calls.changes).toBe(1);
-      // one file per kind, the tiles' shared between counts (the art is "dominoes")
-      for (const k of Object.keys(doc.assets)) expect(k).toMatch(/^tabletop\/dominoes\/[\w-]+@[0-9a-f]{8}$/);
+      // one file per look: the racks are one kind, and the art is the same whatever the count
+      const two = builtIn("draw-dominoes-2");
+      expect(Object.keys(doc.assets).sort()).toEqual(kindsUsed(two).map((k) => lookFileKey(two.pieces[k])).sort());
       const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
       const tiles = objects.filter((o) => o.traits?.["tabletop.card"]);
       expect(tiles).toHaveLength(28);

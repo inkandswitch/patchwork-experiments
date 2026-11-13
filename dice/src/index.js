@@ -10,8 +10,14 @@
 //
 // Cups (scene:extension "dice.cup", src/cup-extension.js): a cup covers the
 // dice under it, is shaken over them, peeked under by its holder, lifted,
-// knocked over. A template lays out a table of cup dice ("Liar's dice",
-// src/table.js); the bin offers a cup with its dice, and a pool.
+// knocked over. The bin offers a cup with its dice, and a pool
+// (src/table.js).
+//
+// Liar's dice is a game, as data: games/liars-dice.json, a tabletop-game
+// (tabletop/GAME-FORMAT.md) registered as a `tabletop:game`. Its template
+// asks whoever lays tabletop games out (the `tables` convention: a
+// scene:extension whose metadata says `tables: "tabletop-game"`, the
+// tabletop package's) to lay it out by its id; nothing here lays a table.
 //
 // Every roll, of a die in the open, of a cup's dice, and in a die's own
 // panel, is drawn by lots: a seed the clients of those present draw between
@@ -122,13 +128,25 @@ export const plugins = [
     },
   },
   {
+    // the game, as data: a tabletop-game, which the tabletop package's game page lists and lays out
+    type: "tabletop:game",
+    id: "liars-dice",
+    name: "Liar's dice",
+    icon: "Dices",
+    players: "2–6",
+    blurb: "The traditional cup-dice game: shake under your cup, peek, bid on all the dice, call a lie, lift.",
+    async load() {
+      return (await import("../games/liars-dice.json", { with: { type: "json" } })).default;
+    },
+  },
+  {
     type: "scene:template",
     id: "dice.liars-dice",
     name: "Liar's dice",
     icon: "Dices",
     description: "The traditional cup-dice game (dudo, cacho): six seats, a cup and five dice each, a pool for lost dice. Shake, peek, bid, call, lift",
     async load() {
-      return (await import("./table.js")).liarsDice;
+      return (await import("./table.js")).template("liars-dice");
     },
   },
   // the usual dice, in the editor's parts bin (src/parts.js)

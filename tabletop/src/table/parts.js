@@ -20,20 +20,18 @@
 // - the Card table: a table to play at, 0.76 × 1.20 m on a pedestal, its top
 //   0.70 m up, origin at its foot. Locked (a table isn't carried about in
 //   play), with one connector at the middle of its top that takes a game.
-// - Lost Cities: the whole game's table (template.js layOutTable), set down
-//   on what it was dropped on, every piece under that in its frame and each
-//   seat's view in it too (`camera.in`), so it all rides along. A game is
-//   the one part that brings seats, and only to a scene that has none (a
-//   table's seats are made once).
+// - a game (Lost Cities, Draw Dominoes): the whole game's table, loaded by
+//   its id (template.js setUp), set down on what it was dropped on, every
+//   piece under that in its frame and each seat's view in it too
+//   (`camera.in`), so it all rides along. A game is the one part that brings
+//   seats, and only to a scene that has none (a table's seats are made once).
 // Either one put on something squares itself to it: upright in its frame,
 // turned only about its +Y, wherever it was put (on a heeling deck it stands
 // square to the deck, not plumb).
 
 import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
-import { layOutTable } from "./template.js";
-import * as lostCitiesGame from "../games/lost-cities.js";
-import { dominoes } from "../games/dominoes.js";
+import { setUp } from "./template.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
 
@@ -56,12 +54,12 @@ export const TABLE = Object.freeze({ w: 0.76, l: 1.2, h: 0.7, t: 0.03 });
 /** The tag a game's table fits: the Card table's top takes it. */
 export const GAME_TAG = "tabletop.game";
 
-/** A card spot's size: a little more than a card (lost-cities.js CARD). */
+/** A card spot's size: a little more than a card (games/lost-cities.json's are 56 × 87 mm). */
 const SPOT = { w: 0.066, l: 0.097, t: 0.0015 };
 
 /**
- * What each part is drawn as, in the games' piece vocabulary (pieces.js):
- * parts, and a card spot's one snap point.
+ * What each part is drawn as, in the games' piece vocabulary (GAME-FORMAT.md
+ * §4): parts, and a card spot's one snap point.
  */
 export const PIECES = Object.freeze({
   pawn: { name: "Pawn", parts: [{ shape: "lathe", profile: pawnProfile(), segments: 32, color: "#c0392b" }] },
@@ -79,7 +77,7 @@ export const PIECES = Object.freeze({
       { shape: "box", size: [SPOT.w - 0.006, 0.0002, SPOT.l - 0.006], at: [0, SPOT.t, 0], color: "#3d6150", name: "inset" },
     ],
     // one slot for cards only: a card lies on it squared to the mat
-    snapPoints: [{ position: [0, SPOT.t + 0.0002, 0], yaw: 0, tags: ["card"] }],
+    snapPoints: [{ position: [0, SPOT.t + 0.0002, 0], rotation: [0, 0, 0], tags: ["card"] }],
     snapRadius: 0.04,
   },
   table: tableDrawing(),
@@ -99,7 +97,7 @@ function tableDrawing() {
       { shape: "box", size: [w - 0.04, 0.0006, l - 0.04], at: [0, h, 0], color: "#2f5a45", name: "baize" },
     ],
     // where a game's table goes: the middle of the top, square to it
-    snapPoints: [{ position: [0, h + 0.0006, 0], yaw: 0, tags: [GAME_TAG] }],
+    snapPoints: [{ position: [0, h + 0.0006, 0], rotation: [0, 0, 0], tags: [GAME_TAG] }],
     snapRadius: 0.6,
   };
 }
@@ -109,8 +107,8 @@ const LOCKED = new Set(["table"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
 
-/** The scene's assets key for a part's GLB. Bump its version when its drawing changes. (A game's: template.js gameFileKey.) */
-export const partKey = (kind) => `tabletop/${kind}@1`;
+/** The scene's assets key for a part's GLB. Bump its version when its drawing changes. (A game's: files.js lookFileKey.) */
+export const partKey = (kind) => `tabletop/${kind}@2`;
 
 /** A part's GLB, as ctx.file's make() wants it (files.js). */
 export const makeFile = (kind) => glbFile(PIECES[kind]);
@@ -182,17 +180,17 @@ export function squared(t) {
 }
 
 /**
- * A game's whole table as a part: laid out (template.js layOutTable) where
- * it was put, under what it was put on, squared to it. Its seats only where
- * the scene has none; the scene's view, title and home are left alone. The
- * board is what's selected.
+ * A game's whole table as a part: a registered game, by its id, laid out
+ * (template.js setUp) where it was put, under what it was put on, squared to
+ * it. Its seats only where the scene has none; the scene's view, title and
+ * home are left alone. The board (its first locked piece) is what's selected.
  */
-export function gamePart(gameId, game) {
+export function gamePart(gameId) {
   return {
     async create(ctx, at) {
       const parent = at?.parent ?? null;
       const transform = parent ? squared(at?.transform) : (at?.transform ?? null);
-      const layout = await layOutTable(ctx, gameId, game, { parent, transform, view: false });
+      const layout = await setUp(ctx, gameId, { parent, transform, view: false });
       if (!layout) return null;
       return layout.order.find((oid) => layout.objects[oid]?.kind !== "group" && layout.objects[oid]?.locked) ?? null;
     },
@@ -203,7 +201,3 @@ export const pawn = part("pawn");
 export const token = part("token");
 export const cardSpot = part("card-spot");
 export const cardTable = part("table", { square: true });
-export const lostCities = gamePart("lost-cities", lostCitiesGame);
-export const dominoes2 = gamePart("dominoes", dominoes(2));
-export const dominoes3 = gamePart("dominoes", dominoes(3));
-export const dominoes4 = gamePart("dominoes", dominoes(4));

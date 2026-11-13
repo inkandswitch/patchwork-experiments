@@ -30,7 +30,8 @@ or a ship's cockpit alike.
 | `scene:extension` | `dice` | in a scene: Roll, Roll all, Turn, and the die's panel docked beside the scene |
 | `scene:extension` | `dice.cup` | dice cups (trait `dice.cup`): who may see under each, what's under it as each view may know it, and Shake, Peek, Lift, Knock over (Cups, below) |
 | `scene:extension` | `dice.lots` | every roll's draw (Lots, below): runs wherever there is a die or a cup (traits `dice.die`, `dice.cup`; it describes none), in every activity |
-| `scene:template` | `dice.liars-dice` | "Liar's dice": the traditional cup-dice game laid out at a round table (Cups, below) |
+| `tabletop:game` | `liars-dice` | "Liar's dice" as data (`games/liars-dice.json`, a [tabletop-game](../tabletop/GAME-FORMAT.md)): the traditional cup-dice game at a round table (Cups, below) |
+| `scene:template` | `dice.liars-dice` | "Liar's dice" on an empty scene's start screen: asks whoever lays tabletop games out to lay it out, by its id |
 | `scene:part` | `dice.cup`, `dice.pool` | a dice cup with five dice, and a pool for lost dice |
 | `scene:part` | `dice.die`, `dice.d4`, `dice.d8`, `dice.d10`, `dice.percentile`, `dice.d12`, `dice.d20`, `dice.coin`, `dice.plus-minus`, `dice.doubling` | the editor's parts bin, under "Dice" |
 
@@ -49,7 +50,7 @@ that die leads (`{ round }`, Lots, below), which a copy leaves behind
   size: 0.016,                 // metres across: how high it stands at rest; a coin's diameter
   body: "#f4efe2", ink: "#1f2328",
   turnOnly: false,             // true: turned by hand, never rolled (a doubling cube)
-  faces: [                     // one per face, in the solid's own order
+  faces: [                     // one per face, in the solid's own order; absent: numbered the usual way for its shape
     { marks: [{ kind: "pips", value: 1 }],   // any number of marks, side by side (up to 6)
       name?: "one",            // what it's called when read out; else its marks in order; else "blank"
       color?: "#aa0000",       // the face's own colour
@@ -463,16 +464,24 @@ cup.
 **Spectators** (anyone not seated) see the cups, never what's under one, and
 the veil on a blind cup's dice. They draw nothing.
 
-**The table.** "Liar's dice" on an empty scene's start screen lays out the
-traditional South American cup-dice game (dudo, cacho) with its real
-components: a round table 1.2 m across with its top at 75 cm, six seats, and
-for each a cup and five standard 16 mm dice (opposite faces adding to 7) in
-that set's colour (red, blue, green, yellow, purple, black), the cup lifted
-beside its dice; and a pool in the middle for dice out of play. Everything
-is the scene's own files (`ctx.file`), drawn by this package's code. Each
-cup's draws live in its own trait, so a fair shake needs nothing more of
-setup; seats need the seats package, which setup finds by its plugin's
-metadata (`roster: true`) and says so if they're missing.
+**The table.** "Liar's dice" is a game, as data: `games/liars-dice.json`,
+in the [tabletop-game format](../tabletop/GAME-FORMAT.md), the traditional
+South American cup-dice game (dudo, cacho) with its real components: a round
+table 1.2 m across with its top at 75 cm, six seats, and for each a cup and
+five standard 16 mm dice (opposite faces adding to 7) in that set's colour
+(red, blue, green, yellow, purple, black), the cup lifted beside its dice;
+and a pool in the middle for dice out of play. Each die is a die document
+(`doc` in the format), drawn by this package's own source; each cup carries
+a fresh `dice.cup` trait; the table, the pool and the cups are turned shapes.
+The template on the start screen lays it out through whoever lays tabletop
+games out: the `scene:extension` whose metadata says `tables:
+"tabletop-game"` (the tabletop package's), its module's `setUp(ctx,
+"liars-dice")`. Without one installed it lays nothing out and says the
+tabletop package is missing; no code here lays a table. Each cup's draws live
+in its own trait, so a fair shake needs nothing more of setup; seats need the
+seats package, which the tabletop finds by its plugin's metadata (`roster:
+true`) and says so if they're missing. The tabletop package's game page lists
+Liar's dice among its games too.
 
 ## Lots
 
@@ -890,11 +899,11 @@ draw of the same dice; Ben takes part, protesting nothing, is told why,
 and never learns her roll).
 
 ```sh
-(in scene/ and dice/) pnpm build
+(in scene/, seats/, tabletop/ and dice/) pnpm build
 node probes/liars-dice.mjs [--shots <dir>] [--show]
 ```
 
-`probes/publish-liars.mjs` (with `liars-template-probe.html`) publishes a
+`probes/publish-liars.mjs` (with `liars-template-probe.html`; the page also installs tabletop, which lays the game out and leaves nothing of its own in the scene) publishes a
 Liar's dice table to a sync server, made as a person makes it: the BUILT
 scene and dice on an empty scene, Ana picks "Liar's dice" on the start
 screen, and it checks the table (6 cups, 30 dice, 14 files, six empty seats,
@@ -936,8 +945,10 @@ node probes/publish-liars.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--
 | `src/extension.js` | the scene:extension |
 | `src/cup.js` | cups: what one covers, who may see under it, lifting, knocking over, a shake's layout (pure) |
 | `src/cup-extension.js` | the cups' scene:extension: the policy, the looks and dressing, the verbs, putting a shake's draw right |
-| `src/cup-glb.js` | the cup, the table and the pool as GLBs (pure) |
-| `src/table.js` | the Liar's dice template, the cup and pool parts |
+| `src/cup-glb.js` | the cup and the pool as GLBs, for the parts (pure) |
+| `src/table.js` | the cup and pool parts, and the template that lays a tabletop game out by its id |
+| `games/liars-dice.json` | Liar's dice, as data (a tabletop-game) |
+| `src/test/contract/` | a copy of the tabletop-game format's validator, for the game's test |
 | `src/rule.js` | the keepers' look rule (pure; the same file in every keeper package) |
 | `src/own-package.js` | this package's URL on the die docs it makes (the scene's URL rule, copied) |
 | `src/ids.js` | the trait and provider ids |

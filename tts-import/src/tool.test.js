@@ -34,7 +34,8 @@ describe("the datatype", () => {
   it("starts empty with default settings", () => {
     const d = {};
     TtsImportDatatype.init(d);
-    expect(d).toMatchObject({ status: "empty", report: null, sceneUrl: null, scenes: [] });
+    expect(d).toMatchObject({ status: "empty", report: null, gameUrl: null, games: [] });
+    expect(d.settings).toEqual({ metresPerUnit: 0.0254, includeContents: true, fetchMissing: true, flipObjX: true, maxObjects: 5000, maxStoredBytes: 32e6 });
     expect(d.settings.metresPerUnit).toBe(0.0254);
     expect(TtsImportDatatype.getTitle(d)).toBe("TTS import");
   });
@@ -54,21 +55,20 @@ describe("the tool", () => {
     expect(element.querySelector("style")).toBeNull();
   });
 
-  it("shows a report with what's missing, and opens the table with the scene tool", () => {
+  it("shows a report with what's missing, and opens the game it made with the tabletop-game tool", () => {
     const report = {
       mod: { saveName: "Tiny", fileName: "x.json", objects: 17 },
-      counts: { placed: 15, hidden: 3, kinds: 15, glbBytes: 120000, assets: { cache: 8, fetched: 0, missing: 1 }, seats: 1, skipped: { "3DText (not drawn)": 1 }, approximated: {}, byName: { Card: 4 } },
+      counts: { placed: 15, pieces: 16, cards: 4, decks: 1, bags: 1, dice: 1, assets: { cache: 7, fetched: 0, missing: 1 }, seats: 1, skipped: { "3DText": 1 }, approximated: {}, byName: { Card: 4 } },
       assets: { a: { url: "https://example.invalid/x.obj", usedBy: ["Lost model"], source: null, error: "not in the dropped files" } },
-      kinds: { k: { name: "Board", type: "tile", copies: 1, glbUrl: "automerge:glb", bytes: 2000 } },
-      notes: {},
       warnings: [],
     };
-    const { element, opened } = mount({ status: "done", report, sceneUrl: "automerge:scene", scenes: ["automerge:scene"] });
+    const { element, opened } = mount({ status: "done", report, gameUrl: "automerge:game", games: ["automerge:game"] });
     expect(element.textContent).toContain("Missing assets (1)");
     expect(element.textContent).toContain("https://example.invalid/x.obj");
-    expect(element.textContent).toContain("3DText (not drawn)");
+    expect(element.textContent).toContain("3DText");
+    expect(element.textContent).toContain("kinds of piece");
     element.querySelector("button.primary").click();
-    expect(opened).toEqual([{ url: "automerge:scene", toolId: "scene" }]);
+    expect(opened).toEqual([{ url: "automerge:game", toolId: "tabletop-game" }]);
   });
 
   it("shows an import's failure", () => {

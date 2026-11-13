@@ -22,7 +22,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `bag` | its 2D panel: contents by kind with counts, the total, the rule, Draw / Draw several / Empty, and what was taken out. Useful on its own, outside any scene |
 | `scene:source` | `bag-sack` | the bag built as a GLB at real size: a plain drawstring sack (20 cm by default) |
 | `scene:part` | `bag.token-bag` | the parts bin's "Token bag" (under Containers): makes a new bag doc and adds it |
-| `scene:extension` | `bag` | the container verbs in a scene, in play and in edit (trait `bag.container`) |
+| `scene:extension` | `bag` | the container verbs in a scene, in play and in edit (trait `bag.container`). Its metadata says `container: "bag"`: its module's `fill` makes a bag already holding things (below) |
 
 ## The verbs
 
@@ -231,6 +231,23 @@ It needs `scene/` built beside this package; nothing else here does.
   the stage for a render doc, so that bag is shown from a GLB file of the
   sack as it looked then.
 
+## A bag made already holding things
+
+Whatever sets a scene up with things in bags (tabletop's table writer, from a
+game's setup: a TTS import's bags among them) finds this package by its
+plugin's metadata, `container: "bag"`, never by name, and calls its module's
+`fill` (`src/fill.js`):
+
+```js
+const { url, traits } = await fill({ repo }, { title, rule, items: [{ id, object }] });
+```
+
+It makes a new bag doc whose contents are those scene objects, put in through
+`contents.js` from no scene (`from: null`: each comes out under its own id,
+wherever it's drawn), each whole but for where it was, its scale beside it.
+`traits` (`{ "bag.container": { doc: url } }`) are what make an object that
+bag; the object itself, its look and where it stands, are the caller's.
+
 ## What the stage lacks (worked round here)
 
 The bag is built only from the scene's extension contract
@@ -256,6 +273,7 @@ container needs, this is what it does instead:
 | `src/object.js` | a scene object as the bag keeps it, and as it goes back |
 | `src/place.js` | where things are set down round a bag |
 | `src/datatype.js`, `src/sack.js`, `src/source.js`, `src/part.js` | the doc, its GLB, its provider, the part and the drop |
+| `src/fill.js` | a bag made already holding things, for whatever sets a scene up (the `container: "bag"` convention) |
 | `src/extension.js` | the stage side |
 | `src/tool.js`, `src/styles.css` | the panel |
 | `src/new-scene.js`, `src/empty-scene.js`, `src/scene-package.js`, `src/own-package.js` | scene docs made here, and where packages come from |

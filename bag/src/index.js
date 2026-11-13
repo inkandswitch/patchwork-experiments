@@ -63,6 +63,8 @@ export const plugins = [
     id: "bag",
     name: "Bag",
     traits: ["bag.container"],
+    // how something setting a scene up makes a bag already holding things: this module's fill (fill.js)
+    container: "bag",
     // a bag is used in play, and while setting a table up
     activities: ["play", "edit"],
     describes: {

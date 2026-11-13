@@ -137,12 +137,12 @@ describe("the die tool, mounted alone", () => {
     expect(t.$$(".die-face")).toHaveLength(20);
   });
 
-  it("draws a doc that's hardly a die at all as a blank d6", () => {
+  it("draws a doc that's hardly a die at all as a d6, numbered the usual way", () => {
     const handle = fakeRepo().add({ title: "?" });
     const host = document.createElement("div");
     Tool(handle, host);
     expect(host.querySelectorAll(".die-face")).toHaveLength(6);
-    expect(host.querySelector(".die-table .reads").textContent).toBe("Shows blank");
+    expect(host.querySelector(".die-table .reads").textContent).toBe("Shows 1");
   });
 });
 

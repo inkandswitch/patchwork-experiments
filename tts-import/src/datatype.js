@@ -1,5 +1,6 @@
 // The tts-import datatype: one import of a Tabletop Simulator mod — its
-// settings, how far it got, and the report. See README.md for the shape.
+// settings, how far it got, the report, and the tabletop-game it made. See
+// README.md for the shape.
 
 import { DEFAULT_SETTINGS } from "./settings.js";
 
@@ -11,8 +12,8 @@ export const TtsImportDatatype = {
     doc.progress = null;
     doc.settings = { ...DEFAULT_SETTINGS };
     doc.report = null;
-    doc.sceneUrl = null;
-    doc.scenes = [];
+    doc.gameUrl = null;
+    doc.games = [];
   },
   getTitle(doc) {
     return doc?.title || "TTS import";
