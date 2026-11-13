@@ -122,7 +122,7 @@ export default function MachineHistory(handle, element) {
       if (hashSnapshot(snap) !== cp.hash) throw new Error("a checkpoint that does not match its hash");
       return snap;
     };
-    const travel = new Travel(machine, content, record, { load: loadCheckpoint });
+    const travel = new Travel(machine, content, record, { load: loadCheckpoint, budget: 96e6 });
     const memo = { changes: new Map(), spelled: new Map() };
     let events = [], eventsDirty = true, eventsAt = 0;
     watchSeats();

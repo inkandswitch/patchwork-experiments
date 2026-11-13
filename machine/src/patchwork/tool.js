@@ -13,6 +13,12 @@ import { traced } from "./traced.js";
 import css from "./tool.css?inline";
 
 const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
+// Seconds between checkpoints, per engine. Every checkpoint document stays in
+// the writer's memory (host.js #write says why): a Doom one is about 7.5 MB
+// held. Doom steps in microseconds, so a joiner replaying ten minutes from a
+// checkpoint is done in about a second; an emulated SNES takes 1.4 ms a tick,
+// so its checkpoints stay a minute apart (a minute's replay is ~5 s).
+const CHECKPOINT_SECONDS = { doom: 600, snes: 60 };
 const create = async (repo, value) => (repo.create2 ? await repo.create2(value) : repo.create(value));
 
 // Content records (doom.js content()): u32 length + bytes, the first the
@@ -83,7 +89,7 @@ export default function MachineTool(handle, element) {
         const wasm = await bytes(WASM[kind]);
         await compile(wasm); // refuses a broken engine before anything is written
         const c = await create(repo, { title, bytes: content });
-        const session = await createSession(repo, { wasm, content });
+        const session = await createSession(repo, { wasm, content, seconds: { every: CHECKPOINT_SECONDS[kind] } });
         // Time starts stopped: it runs while someone holds a port.
         session.change((d) => void (d.clock = { t: 0, at: Date.now(), until: 0 }));
         handle.change((d) => {

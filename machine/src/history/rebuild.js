@@ -12,15 +12,19 @@ export class Rebuilder {
   #cache = new Map(); // node -> snapshot, least recently used first
   #keep;
   #every;
+  #bytes;
+  #held = 0;
 
   /**
    * @param machine  compile(wasm)
    * @param content  what it boots
-   * @param o.keep   snapshots kept (most recently used)
+   * @param o.keep   snapshots kept (most recently used), within o.bytes
+   * @param o.bytes  bytes of snapshots kept, at most
    * @param o.every  on the way to a node, keep the state at ticks that are
    *                 multiples of this, so the next look nearby is short
    */
-  constructor(machine, content, { keep = 24, every = 64 } = {}) {
+  constructor(machine, content, { keep = 24, every = 64, bytes = 64e6 } = {}) {
+    this.#bytes = bytes;
     this.#machine = machine;
     this.#content = content;
     this.#keep = keep;
@@ -64,8 +68,14 @@ export class Rebuilder {
   // Marks a snapshot as just used (taking one of the engine if snap is null).
   #use(node, snap) {
     snap ??= this.#cache.get(node) ?? this.#engine.snapshot();
+    if (this.#cache.has(node)) this.#held -= this.#cache.get(node).length;
     this.#cache.delete(node);
     this.#cache.set(node, snap);
-    while (this.#cache.size > this.#keep) this.#cache.delete(this.#cache.keys().next().value);
+    this.#held += snap.length;
+    while (this.#cache.size > 1 && (this.#cache.size > this.#keep || this.#held > this.#bytes)) {
+      const [old, s] = this.#cache.entries().next().value;
+      this.#cache.delete(old);
+      this.#held -= s.length;
+    }
   }
 }

@@ -35,6 +35,9 @@ export const SECONDS = {
 };
 
 const BEAT_MS = 250;
+// Bytes of rollback snapshots a timeline may hold at most (it holds a few,
+// normally; many only while the frontier is stuck behind a silent seat).
+const SNAPSHOT_BYTES = 128e6;
 const SEND_MS = 1000 / 30;
 
 const ticksOf = (seconds, [num, den]) => Math.max(1, Math.round((seconds * num) / den));
@@ -348,6 +351,7 @@ export class Host {
       this.#timeline = new Timeline(engine, {
         tick: base.tick,
         before: Array.from({ length: this.#ports }, () => this.#vacant),
+        max: Math.max(8, Math.min(64, Math.floor(SNAPSHOT_BYTES / base.snapshot.length))),
         marks: (t) => t > 0 && t % this.#every === 0,
         confirmed: (t, snap) => this.#confirmedQueue.push([t, snap]),
         trace: this.#trace,
@@ -682,6 +686,11 @@ export class Host {
         d.checkpoints[t] = { url: cp.url, hash, seating };
       });
       this.status.written.checkpoints++;
+      // The repo holds this document (megabytes) for as long as it runs:
+      // automerge-repo has no safe way yet to let one go (DocHandle.unload is
+      // a no-op, and a document removed from the cache can't be found again
+      // from a peer that already sent it). So checkpoints should be few: the
+      // Machine view sets the period per engine (patchwork/tool.js).
     } finally {
       this.#writing.delete(t);
     }
