@@ -113,21 +113,91 @@ describe("the input chain", () => {
     { id: "gizmo", meta: {}, scope: "general" },
   ];
   const traits = { card: ["tabletop.hidden"], crate: ["arena.target"], table: [] };
-  const holders = (chain) => holdersFor(running, chain, (id) => traits[id] ?? []);
+  const sceneTraits = ["tabletop.seats"];
+  const holders = (chain) => holdersFor(running, chain, (id) => (id === null ? sceneTraits : (traits[id] ?? [])));
 
-  it("an objects-scope extension hears only events on its objects", () => {
-    expect(chainOrder({ running })).toEqual(["tabletop", "select", "gizmo"]);
+  it("an extension placed only on objects hears only events on its objects", () => {
+    expect(chainOrder({ running, holders: holders([]) })).toEqual(["tabletop", "select", "gizmo"]);
     expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "gizmo"]);
   });
 
-  it("armed, then the widget's owner, then the hit chain's holders, then the scene's, then the general ones — each once", () => {
+  it("armed, then the widget's owner, then the holders nearest first, then the general ones — each once", () => {
     expect(chainOrder({ running, armed: "select", widgetOwner: "gizmo", holders: holders(["card"]) })).toEqual(["select", "gizmo", "tabletop"]);
-    expect(chainOrder({ running, armed: "gone" })).toEqual(["tabletop", "select", "gizmo"]);
+    expect(chainOrder({ running, armed: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "gizmo"]);
   });
 
-  it("holders: the nearest object up the hit chain with one of the extension's traits", () => {
-    expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", "card"], ["arena", "crate"]]);
-    expect(holders([]).size).toBe(0);
+  it("holders: the nearest link up the hit chain with one of the extension's traits, the scene last (id null)", () => {
+    expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", { id: "card", depth: 1 }], ["arena", { id: "crate", depth: 2 }]]);
+    expect([...holders([])]).toEqual([["tabletop", { id: null, depth: 0 }]]);
+    expect([...holders(["crate"])]).toEqual([["tabletop", { id: null, depth: 1 }], ["arena", { id: "crate", depth: 0 }]]);
+  });
+
+  // SCOPE.md's sailing case: a card on the saloon table of a boat in an arena level.
+  it("a card on a table aboard a boat in an arena: the table's, then the boat's, then the scene's", () => {
+    const sim = [
+      { id: "arena", meta: { traits: ["arena.level", "arena.target"] }, scope: "scene" },
+      { id: "sailing", meta: { traits: ["sailing.boat", "sailing.tiller"] }, scope: "objects" },
+      { id: "tabletop", meta: { traits: ["tabletop.seats", "tabletop.hidden"] }, scope: "objects" },
+      { id: "select", meta: {}, scope: "general" },
+    ];
+    const on = { card: ["tabletop.hidden"], table: ["tabletop.seats"], sole: [], hull: ["sailing.boat"], tiller: ["sailing.tiller"], wall: [] };
+    const of = (chain) => {
+      const h = holdersFor(sim, chain, (id) => (id === null ? ["arena.level"] : on[id]));
+      return { order: chainOrder({ running: sim, holders: h }), holder: Object.fromEntries([...h].map(([k, v]) => [k, v.id])) };
+    };
+    expect(of(["card", "table", "sole", "hull"])).toEqual({ order: ["tabletop", "sailing", "arena", "select"], holder: { tabletop: "card", sailing: "hull", arena: null } });
+    expect(of(["tiller", "hull"])).toEqual({ order: ["sailing", "arena", "select"], holder: { sailing: "tiller", arena: null } });
+    expect(of(["wall"])).toEqual({ order: ["arena", "select"], holder: { arena: null } });
+  });
+
+  it("two extensions on one object: running order breaks the tie, and only that tie", () => {
+    const two = [
+      { id: "b", meta: { traits: ["b.t"] }, scope: "objects" },
+      { id: "a", meta: { traits: ["a.t"] }, scope: "objects" },
+      { id: "c", meta: { traits: ["c.t"] }, scope: "objects" },
+    ];
+    const on = { x: ["a.t", "b.t"], y: ["c.t"] };
+    const h = (chain) => holdersFor(two, chain, (id) => on[id] ?? []);
+    expect(chainOrder({ running: two, holders: h(["x", "y"]) })).toEqual(["b", "a", "c"]);
+    expect(chainOrder({ running: two, holders: h(["y", "x"]) })).toEqual(["c", "b", "a"]);
+  });
+
+  // Every placement of three extensions' traits over a hit chain of up to
+  // three objects plus the scene, in every running order, against the spec
+  // read literally: walk up the chain, and at each link offer whoever holds
+  // it (running order) and hasn't been offered yet; then the general ones.
+  it("is the walk up the chain, exhaustively", () => {
+    const exts = ["p", "q", "r"];
+    const perms = (xs) => (xs.length ? xs.flatMap((x) => perms(xs.filter((y) => y !== x)).map((p) => [x, ...p])) : [[]]);
+    const general = { id: "g", meta: {}, scope: "general" };
+    let cases = 0;
+    for (let len = 0; len <= 3; len++) {
+      const chain = ["o0", "o1", "o2"].slice(0, len);
+      const links = [...chain, null];
+      const subsets = 1 << links.length;
+      for (let mask = 0; mask < subsets ** exts.length; mask++) {
+        // which links carry each extension's trait
+        const placed = Object.fromEntries(exts.map((e, i) => [e, links.filter((_, j) => (Math.floor(mask / subsets ** i) >> j) & 1)]));
+        const traitsOf = (id) => exts.filter((e) => placed[e].includes(id)).map((e) => `${e}.t`);
+        for (const order of perms(exts)) {
+          const run = [...order.map((e) => ({ id: e, meta: { traits: [`${e}.t`] }, scope: "objects" })), general];
+          const h = holdersFor(run, chain, traitsOf);
+          const want = [];
+          links.forEach((link, depth) => {
+            for (const e of order) {
+              if (placed[e].includes(link) && !want.includes(e)) {
+                want.push(e);
+                expect(h.get(e)).toEqual({ id: link, depth });
+              }
+            }
+          });
+          expect([...h.keys()].sort()).toEqual([...want].sort());
+          expect(chainOrder({ running: run, holders: h })).toEqual([...want, "g"]);
+          cases++;
+        }
+      }
+    }
+    expect(cases).toBe(6 * (2 ** 3 + 4 ** 3 + 8 ** 3 + 16 ** 3));
   });
 
   it("offers until something claims it; a failing handler is skipped", () => {

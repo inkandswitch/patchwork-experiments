@@ -112,9 +112,9 @@ An extension runs when both of these hold:
 
 | Scope | Reason | Offered input at |
 |---|---|---|
-| `scene` | a scene trait | step 5, every event |
+| `scene` | a scene trait | step 4, every event: at its nearest holder, which is the scene unless the hit chain reaches one of its objects first |
 | `objects` | only object traits | step 4, and only when the event's hit chain reaches one of its objects (one with its trait) |
-| `general` | it declares no traits at all (a general-purpose part: the editor's toolbar, the key map, notices), or `always` | step 6 |
+| `general` | it declares no traits at all (a general-purpose part: the editor's toolbar, the key map, notices), or `always` | step 5 |
 
 An extension that declares traits the doc doesn't have has no reason, and
 doesn't run. Nor does one that says `general: false`: a shared part that
@@ -561,13 +561,17 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
 1. **the armed extension** (top of the arm stack);
 2. **the open session**, for keys (`session.key`);
 3. **the widget's owner**, for the widget under the pointer;
-4. **`objects` scope**: extensions holding an object in the hit chain. The
-   hit chain is the hit object, then what it's attached to (nearest first),
-   then its groups (nearest first). The event gets `holder`, the nearest such
-   object;
-5. **`scene` scope**, in running order;
-6. **`general` scope**, in running order;
-7. **the stage default**. An unclaimed press orbits (left button) or pans
+4. **the holders, nearest first** (precedence is nearness: SCOPE.md §2).
+   The hit chain is the hit object, then what it's attached to (nearest
+   first), then its groups (nearest first), and last the scene; with nothing
+   hit, it is the scene alone. An extension's holder is the nearest link
+   carrying one of its traits, and the event it gets has `holder` set to
+   that object (`null` for the scene). Nearer holders go first, and running
+   order breaks ties only between extensions holding the same link: a card
+   on a table aboard a boat goes to the table's extension, then the boat's,
+   then the scene's;
+5. **`general` scope**, in running order;
+6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held.
 
@@ -584,7 +588,7 @@ event = {
   ray: { origin, dir },
   hit,                        // lazy: { id, point, normal, distance } | null, the nearest shown object (no vertex snap)
   widget,                     // lazy: { owner, onTop, distance, ...data } | null
-  holder,                     // step 4 only
+  holder,                     // step 4: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
   shift, alt, ctrl, meta,
   key, code, repeat,          // key events

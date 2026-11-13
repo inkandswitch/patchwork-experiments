@@ -1,14 +1,22 @@
-// Who is offered an input event, in order (STAGE.md, "The input chain"). Pure:
-// the router asks each in turn until one claims it.
+// Who is offered an input event, in order (STAGE.md, "The input chain";
+// SCOPE.md §2). Pure: the router asks each in turn until one claims it.
+//
+// Precedence is nearness. The hit chain runs from the hit object outward (what
+// it's attached to, then its groups) and ends at the scene, its last link. An
+// extension's holder is the nearest link carrying one of its traits, and the
+// holders are offered in that order: an object's holder goes before the holder
+// of what it's attached to, and both before the scene's. Running order breaks
+// ties only between extensions holding the same link.
 
 /**
  * @param {{
  *   running: { id: string, meta: object, scope: "scene" | "objects" | "general" }[],  // running order
  *   armed?: string | null,          // the top of the arm stack
  *   widgetOwner?: string | null,    // the extension whose widget is under the pointer
- *   holders?: Map<string, string>,  // extension id → the nearest object in the hit chain carrying one of its traits
+ *   holders?: Map<string, { id: string | null, depth: number }>,  // holdersFor(…)
  * }} o
- * @returns {string[]} extension ids, each once, at its earliest step
+ * @returns {string[]} extension ids, each once, at its earliest step: armed,
+ *   the widget's owner, the holders nearest first, then the general ones
  */
 export function chainOrder({ running, armed = null, widgetOwner = null, holders = new Map() }) {
   const ids = new Set(running.map((r) => r.id));
@@ -18,29 +26,34 @@ export function chainOrder({ running, armed = null, widgetOwner = null, holders 
   };
   push(armed);
   push(widgetOwner);
-  for (const r of running) if (holders.has(r.id)) push(r.id);
-  for (const r of running) if (r.scope === "scene") push(r.id);
+  // a stable sort, so equal depths keep running order
+  const held = running.filter((r) => holders.has(r.id));
+  held.sort((a, b) => holders.get(a.id).depth - holders.get(b.id).depth);
+  for (const r of held) push(r.id);
   for (const r of running) if (r.scope === "general") push(r.id);
   return out;
 }
 
 /**
- * For each running extension with traits, the nearest object in the hit chain
- * (the hit object, what it's attached to, then its groups, nearest first)
- * that carries one of them.
+ * For each running extension with traits, its holder: the nearest link of the
+ * hit chain (the hit object, what it's attached to, then its groups, nearest
+ * first, and last the scene) that carries one of them, with that link's depth
+ * (0 for the hit object; the scene's is the chain's length). The scene's id
+ * is null.
  * @param {{ id: string, meta: object }[]} running
- * @param {string[]} hitChain  object ids, nearest first
- * @param {(id: string) => string[]} traitsOf  an object's trait keys
- * @returns {Map<string, string>} extension id → object id
+ * @param {string[]} hitChain  object ids, nearest first; empty when nothing is hit
+ * @param {(id: string | null) => string[]} traitsOf  a link's trait keys (null: the scene's own)
+ * @returns {Map<string, { id: string | null, depth: number }>} extension id → its holder
  */
 export function holdersFor(running, hitChain, traitsOf) {
+  const links = [...(hitChain ?? []), null];
+  const keys = links.map((id) => traitsOf(id));
   const out = new Map();
-  if (!hitChain?.length) return out;
   for (const r of running) {
     const mine = Array.isArray(r.meta?.traits) ? r.meta.traits : [];
     if (!mine.length) continue;
-    const oid = hitChain.find((id) => traitsOf(id).some((t) => mine.includes(t)));
-    if (oid != null) out.set(r.id, oid);
+    const depth = keys.findIndex((ks) => ks.some((t) => mine.includes(t)));
+    if (depth >= 0) out.set(r.id, { id: links[depth], depth });
   }
   return out;
 }

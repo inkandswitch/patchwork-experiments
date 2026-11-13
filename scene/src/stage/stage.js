@@ -2061,9 +2061,9 @@ export default function Stage(handle, element) {
     const widget = ev.widget;
     const hit = ev.hit;
     const chain = hit?.id && m.objects[hit.id] ? hitChain(hit.id, m.parents, m.groups, m.objects) : [];
-    const holders = holdersFor(running, chain, (oid) => traitKeys(m.objects[oid]));
+    const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? m.d : m.objects[oid]));
     const order = chainOrder({ running, widgetOwner: widgetWins(widget, hit) ? widget.owner : null, holders });
-    return { order, holderOf: (id) => holders.get(id) ?? null };
+    return { order, holderOf: (id) => holders.get(id)?.id ?? null };
   }
 
   router = createRouter({

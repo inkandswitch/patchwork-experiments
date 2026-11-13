@@ -78,6 +78,9 @@ function recorder(id, instance = () => ({}), moduleExtra = {}) {
 const EXT_PLUGINS = [
   { id: "t.scene", traits: ["t.scene"] },
   { id: "t.obj", traits: ["t.obj"] },
+  // registered far before near, so nearness (not running order) has to put near first
+  { id: "t.far", traits: ["t.far"] },
+  { id: "t.near", traits: ["t.near"] },
   { id: "t.edit", activities: ["edit"] },
   { id: "t.play", activities: ["play"] },
   { id: "t.always", always: true },
@@ -634,6 +637,41 @@ describe("the stage, mounted", () => {
     ]);
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "k", code: "KeyK", bubbles: true }));
     expect(clicks.at(-1)).toEqual(["key", "k"]);
+  });
+
+  it("offers the holders nearest first, the scene last of them, then the general ones (SCOPE.md §2)", async () => {
+    const offered = [];
+    const pass = (id) => () => ({ input: { click: (ev) => (offered.push([id, ev.holder, ev.hit?.id ?? null]), null) } });
+    for (const id of ["t.scene", "t.far", "t.near", "t.always"]) exts[id] = recorder(id, pass(id));
+    const h = newScene({
+      traits: { "t.scene": {} },
+      objects: { p: card({ traits: { "t.far": {} } }), c: card({ parent: "p", traits: { "t.near": {} } }) },
+      order: ["p", "c"],
+    });
+    const m = mount(h);
+    await settle();
+    // running order puts the scene's first and far before near: the chain mustn't
+    expect(running(m).filter((r) => r !== "t.edit:general")).toEqual(["t.scene:scene", "t.far:objects", "t.near:objects", "t.always:general"]);
+    const canvas = m.root.querySelector(".canvas");
+    const vp = m.debug.viewport;
+    const click = (id) => {
+      vp.pick = () => (id ? { id, point: [0, 0, 0], normal: null, distance: 1, snapped: false } : null);
+      const opts = { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 0, pointerId: 1, pointerType: "mouse" };
+      canvas.dispatchEvent(new PointerEvent("pointerdown", { ...opts, buttons: 1 }));
+      canvas.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0 }));
+    };
+    click("c");
+    expect(offered.splice(0)).toEqual([
+      ["t.near", "c", "c"],
+      ["t.far", "p", "c"],
+      ["t.scene", null, "c"],
+      ["t.always", null, "c"],
+    ]);
+    click(null);
+    expect(offered.splice(0)).toEqual([
+      ["t.scene", null, null],
+      ["t.always", null, null],
+    ]);
   });
 
   it("an armed extension is local.armed and has the input first; stopping it disarms", async () => {

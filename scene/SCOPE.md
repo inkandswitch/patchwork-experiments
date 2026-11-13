@@ -13,9 +13,9 @@ Today an extension's scope comes from its own reasons (`activeSet` in
 
 | Scope | Reason | Hears input |
 |---|---|---|
-| `scene` | a trait on the scene | step 5, every pointer event; step 4 as well when one of its objects is in the hit chain |
+| `scene` | a trait on the scene | step 5, every pointer event; step 4 as well when one of its objects is in the hit chain (now settled by §2: step 4 only, its holder the nearest link carrying its trait, the scene itself last) |
 | `objects` | only traits on objects | step 4, and only when the hit chain reaches one of its objects, with `ev.holder` set to the nearest |
-| `general` | no traits declared at all, `always`, or only `requires` | step 6 |
+| `general` | no traits declared at all, `always`, or only `requires` | step 6 (now step 5, since §2 merged the old steps 4 and 5) |
 
 `requires` makes an extension run but lends it no scope. Three details of
 the code matter below:
@@ -23,7 +23,8 @@ the code matter below:
 - **Holders come in running order, not by nearness.** Step 4 offers every
   extension with a holder in the chain in running order. So when the table
   and the boat both hold something under the pointer, it's registry order
-  that picks between them, not which one is nearer.
+  that picks between them, not which one is nearer. (Now settled by §2:
+  holders go nearest first.)
 - **Key events have no hit** (`noHit` in `router.js`). An `objects`
   extension never hears a key unless it has armed or has a session open.
 - **A scope is one per extension.** Tabletop keeps its seats in one scene
@@ -107,6 +108,15 @@ with the same holder.
 scene placement as depth = chain length. That merges steps 4 and 5 into a
 single walk up the chain. It's a few lines in `chain.js`, plus tests: a card
 on a table on a boat, and two extensions on one object.
+
+**Done.** One difference from the plan above: the scene's placement is found
+by `holdersFor`, which walks the hit chain with the scene appended as its last
+link (`traitsOf(null)` is the scene's traits, holder id `null`), rather than by
+`chainOrder` reading the `scene` label. So input reads no scope label but
+`general`, and a scene-placed extension's `holder` is `null`, as `api.holderOf`
+will have it. The tests check the order against the literal walk over every
+placement of three extensions on chains of up to three objects plus the scene,
+in every running order.
 
 ## 3. An object in several scopes
 
@@ -374,7 +384,7 @@ the shared part `scene.use` (`src/parts/use.js`). The rest still stand.
 
 | Where | Change |
 |---|---|
-| `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge |
+| `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge: done |
 | `stage/router.js` | `ev.holders` for armed handlers |
 | `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` |
 | `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
