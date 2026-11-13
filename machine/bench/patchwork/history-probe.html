@@ -78,7 +78,7 @@ try {
   await sleep(7000);
   const source = hroot.querySelector(".source")?.textContent;
   const statsText = hroot.querySelector(".stats")?.textContent;
-  const items = [...hroot.querySelectorAll(".conflicts li")];
+  const items = [...hroot.querySelectorAll(".items li")];
   const listText = items.slice(0, 5).map((li) => li.textContent);
   const shots = {};
   shots.strip = hroot.querySelector(".strip").toDataURL();
@@ -106,11 +106,56 @@ try {
   await sleep(600);
   tickDetail = hroot.querySelector(".detail").innerText;
   shots.tick = hroot.querySelector('figure[data-side="kept"] canvas').toDataURL();
+
+  // Time travel, where this peer's tree can't help: play on past the first
+  // checkpoint (a minute), then open the player again, so that its peer
+  // starts from that checkpoint and everything before it is the record's.
+  const key = (k) => hroot.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+  const cap = () => hroot.querySelector('figure[data-side="kept"] figcaption').textContent;
+  const sessionHandle = await repo.find(doc.session);
+  await until(() => Object.keys(sessionHandle.doc().checkpoints ?? {}).length, 90000, "a checkpoint");
+  stopPlayer();
+  await sleep(500);
+  const stopPlayer2 = player(handle, el);
+  (await until(() => [...el.querySelectorAll(".seats button")].find((b) => /P1: play/.test(b.textContent)), 30000, "P1 again")).click();
+  await sleep(3000);
+  const treeFrom = hroot.querySelector(".strip") && (await until(() => hroot.querySelector(".stats").textContent, 1000, "stats"));
+  key("Home");
+  const travelled = await until(() => /^Tick 0 /.test(cap()) && cap(), 20000, "travel to tick 0");
+  const startDetail = hroot.querySelector(".detail").innerText.split("\n").slice(0, 2).join(" / ");
+  // The overview: a click a quarter of the way in.
+  const ov = hroot.querySelector(".overview"), orc = ov.getBoundingClientRect();
+  const oat = { clientX: orc.left + orc.width * 0.25, clientY: orc.top + 4, pointerId: 2, bubbles: true };
+  ov.dispatchEvent(new PointerEvent("pointerdown", oat));
+  ov.dispatchEvent(new PointerEvent("pointerup", oat));
+  const t0 = performance.now();
+  const quarter = await until(() => /^Tick [1-9]\d* · from the record/.test(cap()) && cap(), 30000, "travel by the overview");
+  const quarterMs = Math.round(performance.now() - t0);
+  shots.quarter = hroot.querySelector('figure[data-side="kept"] canvas').toDataURL();
+  key(" ");
+  await sleep(2000);
+  key(" ");
+  await sleep(300);
+  const played = cap();
+  // The record's events.
+  [...hroot.querySelectorAll(".tabs button")].find((b) => /Record/.test(b.textContent)).click();
+  await sleep(300);
+  const recordList = [...hroot.querySelectorAll(".items li")].map((li) => li.textContent).slice(0, 12);
+  const claim = [...hroot.querySelectorAll(".items li")].find((li) => /took P2/.test(li.textContent));
+  claim?.click();
+  await sleep(1500);
+  const eventDetail = hroot.querySelector(".detail .event")?.innerText;
+  // Zoomed out to all of it.
+  [...hroot.querySelectorAll(".zooms button")].find((b) => b.textContent === "All").click();
+  await sleep(300);
+  shots.all = hroot.querySelector(".strip").toDataURL();
+  shots.overview = hroot.querySelector(".overview").toDataURL();
+  const travel = { treeFrom, travelled, startDetail, quarter, quarterMs, played, recordList, eventDetail };
   const errors = [...document.querySelectorAll("[data-error]")].map((x) => x.textContent);
   const info = el.querySelector(".info")?.textContent;
   clearInterval(tick2);
   stopHist();
-  stopPlayer();
-  report({ ok: true, kind, source, statsText, conflicts: items.length, listText, detail, captions, stepped, tickDetail, errors, info, host2: { tick: host2.tick, rewinds: host2.stats.rewinds }, pngs: shots });
+  stopPlayer2();
+  report({ ok: true, kind, travel, source, statsText, conflicts: items.length, listText, detail, captions, stepped, tickDetail, errors, info, host2: { tick: host2.tick, rewinds: host2.stats.rewinds }, pngs: shots });
 } catch (err) { report({ ok: false, fatal: String(err.stack ?? err) }); }
 </script>

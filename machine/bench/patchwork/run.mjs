@@ -82,7 +82,7 @@ const browser = spawn(chrome, [
 let log = "";
 browser.stderr.on("data", (d) => (log += d));
 const exited = new Promise((r) => browser.on("exit", r));
-const timeout = setTimeout(() => finish({ ok: false, fatal: "no report within 120 s" }), 120_000);
+const timeout = setTimeout(() => finish({ ok: false, fatal: "no report within 240 s" }), 240_000);
 const report = await reported;
 clearTimeout(timeout);
 browser.kill();
