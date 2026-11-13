@@ -40,6 +40,14 @@ function world({ seated, present: arrived, running = arrived }) {
       collect: (name) => (name === "roster" ? [{ id: "seats", value: { viewers: () => seated, who: (x) => x } }] : []),
       local: { swap: (fn) => ((c.local = fn(c.local)), queueMicrotask(flush)) },
       nameOf: (id) => (id === "cup" ? "Cup" : id),
+      // the stage's time (scene/src/stage/time.js): the event loop's wall, here
+      clock: {
+        now: () => Date.now(),
+        after(ms, fn) {
+          const h = setTimeout(fn, ms);
+          return () => clearTimeout(h);
+        },
+      },
     };
     c.api = api;
     c.ext = Lots.create(api);

@@ -24,6 +24,7 @@ import { fromEmbed } from "../embed.js";
 import { reservedBy } from "../keymap.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
+import { realTime } from "./time.js";
 
 /** How far (px) a press may wander and still be a tap / click. */
 export const SLOP = 4;
@@ -194,6 +195,7 @@ function call(owner, obj, name, ...args) {
  */
 export function createRouter(o) {
   const { port, canvas, keyRoot, chainFor, inputOf } = o;
+  const time = o.time ?? realTime(); // the stage's (time.js): hover waits a frame, a touch hold its HOLD_MS
   const mac = o.mac ?? isMac();
   const doc = canvas.ownerDocument ?? document;
   const win = doc.defaultView ?? globalThis;
@@ -272,17 +274,17 @@ export function createRouter(o) {
   // ─── hover ────────────────────────────────────────────────────────────────
 
   let hoverQueued = null; // the latest DOM move waiting for the next frame
-  let hoverFrame = 0;
+  let hoverFrame = null; // its cancel
   function queueHover(e) {
     if (hoverQueued) {
       hoverQueued = e;
       return;
     }
     hoverQueued = e;
-    hoverFrame = requestAnimationFrame(() => {
+    hoverFrame = time.frame(() => {
       const de = hoverQueued;
       hoverQueued = null;
-      hoverFrame = 0;
+      hoverFrame = null;
       if (disposed || (gesture?.session && !gesture.dead)) return;
       const ev = make("move", de);
       o.onHover?.(ev);
@@ -290,8 +292,8 @@ export function createRouter(o) {
     });
   }
   function cancelHover() {
-    if (hoverFrame) cancelAnimationFrame(hoverFrame);
-    hoverFrame = 0;
+    hoverFrame?.();
+    hoverFrame = null;
     hoverQueued = null;
   }
 
@@ -314,8 +316,8 @@ export function createRouter(o) {
   };
 
   function release(g) {
-    clearTimeout(g.holdTimer);
-    g.holdTimer = 0;
+    g.holdTimer?.();
+    g.holdTimer = null;
     if (!g.session) return;
     try {
       if (canvas.hasPointerCapture?.(g.pointerId)) canvas.releasePointerCapture(g.pointerId);
@@ -330,8 +332,8 @@ export function createRouter(o) {
     if (!g || g.dead) return;
     const had = !!g.session;
     g.dead = true;
-    clearTimeout(g.holdTimer);
-    g.holdTimer = 0;
+    g.holdTimer?.();
+    g.holdTimer = null;
     if (g.session) call(g.owner, g.session, "cancel");
     if (had) changed();
   }
@@ -349,7 +351,7 @@ export function createRouter(o) {
     if (gesture && !gesture.dead && gesture.pointerId !== e.pointerId) {
       if (gesture.session) return claim(e);
       gesture.moved = true;
-      clearTimeout(gesture.holdTimer);
+      gesture.holdTimer?.();
       return;
     }
     if (gesture) {
@@ -380,7 +382,7 @@ export function createRouter(o) {
       session: null,
       owner: null,
       dead: false,
-      holdTimer: 0,
+      holdTimer: null,
     };
     gesture = g;
     cancelHover();
@@ -400,12 +402,12 @@ export function createRouter(o) {
       changed();
     }
     if (g.pointerType === "touch") {
-      g.holdTimer = setTimeout(() => {
-        g.holdTimer = 0;
+      g.holdTimer = time.after(HOLD_MS, () => {
+        g.holdTimer = null;
         if (gesture !== g || g.dead || g.moved) return;
         killGesture();
         offerRelease("menu", ev);
-      }, HOLD_MS);
+      });
     }
   }
 
@@ -432,8 +434,8 @@ export function createRouter(o) {
       }
       if (!g.moved && travelled(g, e) > SLOP) {
         g.moved = true;
-        clearTimeout(g.holdTimer);
-        g.holdTimer = 0;
+        g.holdTimer?.();
+        g.holdTimer = null;
       }
       if (g.session && g.moved) {
         call(g.owner, g.session, "move", evNow());

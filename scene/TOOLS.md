@@ -274,7 +274,13 @@ place it is decided.
 |---|---|---|---|---|
 | **World** | yes | one t per doc | sea and wind phase, ship physics, float bob, a door's `since` and `wait`, respawns | `api.clock` |
 | **Actor** | no | the actor's view | dice tumble, cup shake, card glide, flip, carry, walking, station input | `api.loop(dt)` |
-| **Liveness** | never | per view | presence TTL, claim grace, LINGER, HEAR_MS, lots deadlines, dice THROW/TOLD, bag RECENT | `Date.now` |
+| **Liveness** | never | per view | presence TTL, claim grace, LINGER, HEAR_MS, lots deadlines, dice THROW/TOLD, bag RECENT | `api.clock.now()`, `api.clock.after(ms, fn)` |
+
+Actor time and liveness both run on the stage's one source of time
+(STAGE.md "Time"; `src/stage/time.js`): the browser's in a browser, a
+manual clock a probe steps in a probe, so every frame, timer and stamp in
+a stage moves together and nothing reads `Date.now` or `setTimeout` itself.
+World time ticks once a frame at that source's now.
 
 An act begun during a pause finishes. Lots never sees the clock, so a
 pause can't deadlock a roll. Station input is actor time, read from

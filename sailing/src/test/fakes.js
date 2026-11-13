@@ -397,6 +397,12 @@ export function fakeWorld(doc, { content = {} } = {}) {
         watch: () => () => {},
       },
       clock: {
+        // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
+        now: () => Date.now(),
+        after(ms, fn) {
+          const h = setTimeout(fn, ms);
+          return () => clearTimeout(h);
+        },
         t: () => clock.t,
         running,
         computer: () => api.claimedBy(null, "clock"),

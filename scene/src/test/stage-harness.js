@@ -15,6 +15,7 @@
 
 import { FakeRepo, flush } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
+import { realTime } from "../stage/time.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
 
 export { flush };
@@ -50,7 +51,13 @@ export const object = (extra = {}) => ({
 /**
  * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], parts?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string, packageSettleMs?: number }} o
  */
-export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0 } = {}) {
+/** A stage's time (stage/time.js) whose now() is `get()`: the browser's frames and timers, a wall the test sets. */
+export function wallAt(get) {
+  const real = realTime();
+  return Object.freeze({ manual: false, now: get, frame: real.frame, after: real.after });
+}
+
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
@@ -65,6 +72,7 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
   const element = document.createElement("div");
   element.repo = repo;
   if (viewerId) element.viewerId = viewerId;
+  if (time) element.time = time;
   // (no waiting for the registry to go quiet before packages are offered, unless a test asks)
   element.packageSettleMs = packageSettleMs;
   document.body.append(element);

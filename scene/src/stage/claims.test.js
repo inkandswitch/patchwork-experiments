@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as Automerge from "@automerge/automerge";
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { CLAIM_GRACE_MS } from "./stage.js";
 
 const CREW = { meta: { id: "t.crew" }, module: { create: () => ({}) } };
@@ -27,11 +27,11 @@ async function met(A, B) {
 }
 
 /** Two views of one doc on one handle, each hearing the other's broadcasts. */
-async function twoViews(doc = {}) {
-  const A = await mountStage({ extensions: EXTENSIONS, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice" });
+async function twoViews(doc = {}, { time = null } = {}) {
+  const A = await mountStage({ extensions: EXTENSIONS, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice", time });
   mounted.push(A);
   A.handle.broadcast = (message) => A.handle.emit("ephemeral-message", { message });
-  const B = await mountStage({ handle: A.handle, repo: A.repo, viewerId: "viewer:bob" });
+  const B = await mountStage({ handle: A.handle, repo: A.repo, viewerId: "viewer:bob", time });
   mounted.push(B);
   await met(A, B);
   return { A, B, a: A.api("t.crew"), b: B.api("t.crew") };
@@ -228,8 +228,7 @@ describe("claims between views", () => {
   it("a claim by a session not yet in presence counts for a grace period from when this view first read it", async () => {
     let now = Date.now();
     const ghost = { viewer: "viewer:ghost", session: "ghost" };
-    const { a } = await twoViews({ objects: { ...objects(), helm: object({ name: "Helm", claims: { station: ghost } }) } });
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { a } = await twoViews({ objects: { ...objects(), helm: object({ name: "Helm", claims: { station: ghost } }) } }, { time: wallAt(() => now) });
     expect(a.claimedBy("helm", "station")).toEqual({ ...ghost, mine: false });
     expect(a.claim("helm", "station")).toBeNull();
     now += CLAIM_GRACE_MS - 1;
@@ -241,8 +240,7 @@ describe("claims between views", () => {
 
   it("a just-joined holder whose hello arrives within the grace period keeps its claim", async () => {
     let now = Date.now();
-    const { A, a } = await twoViews({ objects: { ...objects(), helm: object({ name: "Helm", claims: { station: { viewer: "viewer:new", session: "new" } } }) } });
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { A, a } = await twoViews({ objects: { ...objects(), helm: object({ name: "Helm", claims: { station: { viewer: "viewer:new", session: "new" } } }) } }, { time: wallAt(() => now) });
     expect(a.claimedBy("helm", "station").session).toBe("new");
     now += 500;
     A.handle.emit("ephemeral-message", { message: { type: "scene:presence", session: "new", viewer: "viewer:new", seq: 1, at: now, keys: {} } });

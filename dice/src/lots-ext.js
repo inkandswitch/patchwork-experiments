@@ -94,6 +94,9 @@ function create(api) {
       }
     },
     what: (id) => api.nameOf?.(id) || api.scene()?.objects?.[id]?.name || "this",
+    // the stage's time (scene STAGE.md "Time"): a round's waits and stamps move with the scene's frames
+    now: () => api.clock.now(),
+    after: (ms, fn) => api.clock.after(ms, fn),
     storage: (() => {
       try {
         return globalThis.localStorage ?? null;

@@ -42,6 +42,7 @@ import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "..
 import { defaultSnapRadius } from "../carry-rules.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
 import { createRides } from "./ride.js";
+import { realTime } from "./time.js";
 
 const DEFAULT_THEME = {
   bg: [0.96, 0.96, 0.96],
@@ -807,10 +808,12 @@ export class Viewport {
    * @param {object} o
    * @param {HTMLElement} o.port       the element the canvas and labels fill (position: relative); port-local px are its
    * @param {HTMLElement} o.themeRoot  element whose CSS variables define colours
+   * @param {import("./time.js").Time} [o.time]  where frames come from (time.js): the browser's unless given
    */
-  constructor({ port, themeRoot }) {
+  constructor({ port, themeRoot, time = realTime() }) {
     this.port = port;
     this.themeRoot = themeRoot;
+    this.time = time;
     this.initState();
 
     const tc0 = performance.now();
@@ -859,8 +862,12 @@ export class Viewport {
     this.disposers.push(onThemeChange(() => this.applyTheme()));
     this.resize();
 
-    const tick = (now) => {
-      this.raf = requestAnimationFrame(tick);
+    // A frame: the loops, the ride, the orbit, the picture. A frame its time
+    // says not to draw (a manual clock's steps between pictures) moves all
+    // the same and only skips the render, keeping the matrices it would have
+    // updated current for picking.
+    const tick = (now, draw = true) => {
+      this.raf = time.frame(tick);
       // dt from the last frame, whatever ran in it; clamped so a backgrounded
       // tab (or a debugger pause) doesn't come back as one enormous step
       const dt = this.lastTick == null ? 0 : Math.min(0.1, Math.max(0, (now - this.lastTick) / 1000));
@@ -876,12 +883,16 @@ export class Viewport {
       this.stepRide();
       // while held, the orbit neither moves the camera nor re-aims it
       const moved = this.holds > 0 ? false : this.controls.update();
-      if (moved || this.needsRender || this.loops.size) {
-        this.needsRender = false;
-        this.render();
+      if (!(moved || this.needsRender || this.loops.size)) return;
+      if (!draw) {
+        this.needsRender = true;
+        this.skipRender();
+        return;
       }
+      this.needsRender = false;
+      this.render();
     };
-    this.raf = requestAnimationFrame(tick);
+    this.raf = time.frame(tick);
     /** what building the viewport cost (ms), for probes */
     this.perf.construct = { renderer: +(tc1 - tc0).toFixed(1), environment: +(tc2 - tc1).toFixed(1), total: +(performance.now() - tc0).toFixed(1) };
   }
@@ -1134,20 +1145,33 @@ export class Viewport {
     return Number.isFinite(clear) ? { clear, known: true } : { clear: 0, known: false };
   }
 
-  render() {
-    if (!this.ok) return;
-    const tStart = performance.now();
-    const r = this.renderer;
+  /** The camera's depth range for this frame: what a render sets first, and a frame not drawn sets too (picks use it). */
+  fitDepth() {
     if (this.depthDirty) this.updateDepth();
     const held = this.holds > 0 ? this.heldDepth : null;
     const { clear, known } = held?.near != null ? { clear: 0, known: false } : this.nearestClear(this.camera.position);
     const { near, far } = depthRange({ dist: this.focusDistance(), radius: this.sceneRadius, clear, known, held });
-    if (this.shadows) this.fitSun();
     if (this.camera.near !== near || this.camera.far !== far) {
       this.camera.near = near;
       this.camera.far = far;
       this.camera.updateProjectionMatrix();
     }
+  }
+
+  /** A frame not drawn (time.js: a manual clock between pictures): everything a render updates that picking reads. */
+  skipRender() {
+    if (!this.ok) return;
+    this.fitDepth();
+    this.scene.updateMatrixWorld();
+    this.camera.updateMatrixWorld();
+  }
+
+  render() {
+    if (!this.ok) return;
+    const tStart = performance.now();
+    const r = this.renderer;
+    this.fitDepth();
+    if (this.shadows) this.fitSun();
 
     r.setScissorTest(false);
     r.setViewport(0, 0, this.size.w, this.size.h);
@@ -2322,7 +2346,7 @@ export class Viewport {
       return;
     }
     this.ok = false;
-    cancelAnimationFrame(this.raf);
+    this.raf?.();
     if (this.bvhTimer) this.bvhTimer.cancel(this.bvhTimer.id);
     this.bvhQueue.clear();
     for (const d of this.disposers) d();

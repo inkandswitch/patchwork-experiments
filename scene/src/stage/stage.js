@@ -40,6 +40,7 @@ import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
 import { createRouter } from "./router.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
+import { realTime } from "./time.js";
 import { createHolds } from "./holds.js";
 import { CLOCK, PRESENCE_KEY, PRESENCE_NS, createClock, eligibility } from "./clock.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
@@ -102,7 +103,8 @@ const noop = () => {};
 export const ORBIT = Object.freeze({ id: "orbit", label: "Orbit", keys: Object.freeze([]), lock: false, reach: Infinity });
 const ORBIT_LOCAL = Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
-const now = () => globalThis.performance?.now?.() ?? Date.now();
+/** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
+const cpuNow = () => globalThis.performance?.now?.() ?? Date.now();
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
@@ -378,18 +380,21 @@ export default function Stage(handle, element) {
   const sceneUrl = handle.url ?? "scene";
   let dead = false;
   const cleanups = [];
-  const timers = new Set();
+  // the one source of time everything here moves with (time.js): the
+  // browser's, unless the host element brings its own (a probe's manual clock)
+  const time = element.time ?? realTime();
+  const timers = new Set(); // cancels of what later() set
   const later = (fn, ms) => {
-    const t = setTimeout(() => {
-      timers.delete(t);
+    const cancel = time.after(ms, () => {
+      timers.delete(cancel);
       fn();
-    }, ms);
-    timers.add(t);
-    return t;
+    });
+    timers.add(cancel);
+    return cancel;
   };
   const perf = { sync: timings(), flush: timings() };
-  const raf = globalThis.requestAnimationFrame ? (f) => globalThis.requestAnimationFrame(f) : (f) => setTimeout(f, 16);
-  const caf = globalThis.cancelAnimationFrame ? (h) => globalThis.cancelAnimationFrame(h) : (h) => clearTimeout(h);
+  const raf = (f) => time.frame(f);
+  const caf = (cancel) => cancel?.();
 
   // ─── the mount ────────────────────────────────────────────────────────────
 
@@ -468,7 +473,7 @@ export default function Stage(handle, element) {
 
   // ─── the viewport ─────────────────────────────────────────────────────────
 
-  const viewport = new Viewport({ port, themeRoot: root });
+  const viewport = new Viewport({ port, themeRoot: root, time });
   local.swap(assoc("theme", viewport.theme));
   cleanups.push(viewport.onTheme((t) => local.swap(assoc("theme", t))));
   // Without WebGL there's still a canvas-sized element for the router, so
@@ -497,8 +502,8 @@ export default function Stage(handle, element) {
   let cameraTimer = null;
   cleanups.push(
     viewport.onCameraEnd(() => {
-      clearTimeout(cameraTimer);
-      cameraTimer = setTimeout(() => {
+      cameraTimer?.();
+      cameraTimer = later(() => {
         cameraTimer = null;
         if (dead || viewport.held) return;
         const cam = cleanCamera(viewport.getCamera());
@@ -1071,7 +1076,7 @@ export default function Stage(handle, element) {
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  const presence = createPresence({ handle, viewer, now: () => Date.now() });
+  const presence = createPresence({ handle, viewer, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
   const remotePosed = new Set(); // object ids showing another view's pose
   const playing = new Set(); // of those, the ones still playing back (smooth.js)
   let poseLoopOff = null;
@@ -1098,7 +1103,7 @@ export default function Stage(handle, element) {
         playing.delete(id);
         if (sameTransform(o.transform, h.landed)) return void presence.settle(id); // its watcher puts the doc's back
         t = h.landed;
-      } else ({ transform: t, settled } = playback(h, Date.now()));
+      } else ({ transform: t, settled } = playback(h, time.now()));
     }
     if (t) {
       viewport.setPose(id, t);
@@ -1122,7 +1127,7 @@ export default function Stage(handle, element) {
    * drawn. It doesn't wake every extension's update: a pose moving between
    * samples isn't news, its samples were (applyRemoteHold).
    */
-  function tickPoses(t = Date.now()) {
+  function tickPoses(t = time.now()) {
     if (dead) return;
     const remote = presence.remoteHolds();
     for (const id of [...playing]) {
@@ -1293,10 +1298,10 @@ export default function Stage(handle, element) {
       const key = `${claimKey(oid, kind)}\u0000${c.session}`;
       let first = claimSeen.get(key);
       if (first == null) {
-        claimSeen.set(key, (first = Date.now()));
+        claimSeen.set(key, (first = time.now()));
         if (claimSeen.size > CLAIM_SEEN_MAX) claimSeen.delete(claimSeen.values().next().value);
       }
-      if (Date.now() - first >= CLAIM_GRACE_MS) return null; // lapsed
+      if (time.now() - first >= CLAIM_GRACE_MS) return null; // lapsed
     }
     return Object.freeze({ viewer: viewerOf, session: c.session, mine: false });
   }
@@ -1435,6 +1440,7 @@ export default function Stage(handle, element) {
     eligible: () => eligibility({ acts: true, writable: writable(), visible: visible(), settled: hostMade && host.settled(), complete: packages.complete() }),
     writable,
     viewer,
+    now: time.now,
     onStatus: (status) => {
       if (!dead) local.swap(assoc("clock", status));
     },
@@ -1446,12 +1452,12 @@ export default function Stage(handle, element) {
     if (dead) return;
     const want = clock.live();
     if (want && !clockLoopOff) {
-      if (viewport.ok) clockLoopOff = viewport.addLoop(() => clock.tick(Date.now()), { first: true });
+      if (viewport.ok) clockLoopOff = viewport.addLoop(() => clock.tick(time.now()), { first: true });
       else {
         let frame = null;
         const off = () => caf(frame);
         const step = () => {
-          clock.tick(Date.now());
+          clock.tick(time.now());
           if (clockLoopOff === off) frame = raf(step);
         };
         frame = raf(step);
@@ -1485,7 +1491,10 @@ export default function Stage(handle, element) {
   let scheduled = []; // [{ rec, fn }] (api.schedule)
 
   function spend(ms) {
-    uiSpent += ms;
+    // (a manual clock's frames have no budget: what a pass cost on this CPU
+    // mustn't decide which frame the next one runs in, or a probe's run
+    // would depend on the machine; the pass count still spreads them)
+    uiSpent += time.manual ? 0 : ms;
     uiPasses++;
     if (uiResetReq == null)
       uiResetReq = raf(() => {
@@ -1507,7 +1516,7 @@ export default function Stage(handle, element) {
     flushFrame = null;
     if (!flushQueued || dead) return;
     flushQueued = false;
-    const t0 = now();
+    const t0 = cpuNow();
     if (statusDirty) {
       statusDirty = false;
       const objects = derive().objects;
@@ -1589,7 +1598,7 @@ export default function Stage(handle, element) {
       atmosphere = atm;
       viewport.setAtmosphere(atm);
     }
-    const ms = now() - t0;
+    const ms = cpuNow() - t0;
     spend(ms);
     perf.flush.add(ms);
   }
@@ -1702,7 +1711,7 @@ export default function Stage(handle, element) {
   let noticeSeq = 0;
   function notify(text, kind = "info", from = null) {
     if (dead) return null;
-    const n = Object.freeze({ id: `n${++noticeSeq}`, text: String(text ?? ""), kind: kind ?? "info", at: Date.now(), from });
+    const n = Object.freeze({ id: `n${++noticeSeq}`, text: String(text ?? ""), kind: kind ?? "info", at: time.now(), from });
     local.swap((m) => ({ ...m, notices: Object.freeze([...(m.notices ?? []), n]) }));
     later(() => {
       if (!dead) local.swap((m) => (m.notices?.includes(n) ? { ...m, notices: Object.freeze(m.notices.filter((x) => x !== n)) } : m));
@@ -1915,8 +1924,8 @@ export default function Stage(handle, element) {
       return;
     }
     if (bodyDefs().has(a.body)) {
-      a.offered ??= now();
-      if (!contentIn() && now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
+      a.offered ??= time.now();
+      if (!contentIn() && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
       arrival = null;
       enterBody(a.body, a.place);
       return;
@@ -2343,6 +2352,20 @@ export default function Stage(handle, element) {
     owned.set(id, own);
     const live = () => !signal.aborted && !dead;
     // Acquire something, unless stopped; the returned off gives it back once.
+    /** A one-shot callback set through `set` (time.after or time.frame), cancelled if the extension stops first. */
+    const timed = (o, set, fn) => {
+      if (!live() || typeof fn !== "function") return noop;
+      let cancel = null;
+      const off = () => {
+        if (o.offs.delete(off)) cancel();
+      };
+      cancel = set((...args) => {
+        if (!o.offs.delete(off) || !live()) return;
+        fn(...args);
+      });
+      o.offs.add(off);
+      return off;
+    };
     const acquire = (bag, take) => {
       if (!live()) return noop;
       const give = take();
@@ -2564,9 +2587,15 @@ export default function Stage(handle, element) {
       /**
        * World time (TOOLS.md §7): this view's t (s), running, pause and
        * resume (anyone who may write), and process({ start?, step, save?,
-       * stop?, replicated? }) → remove.
+       * stop?, replicated? }) → remove. And the stage's own time (time.js),
+       * which acts and liveness run on: now() (ms), after(ms, fn) → cancel,
+       * frame(fn) → cancel (fn(now) once, at the next frame); what they set
+       * is cancelled when the extension stops.
        */
       clock: Object.freeze({
+        now: () => time.now(),
+        after: (ms, fn) => timed(own, (cb) => time.after(ms, cb), fn),
+        frame: (fn) => timed(own, (cb) => time.frame(cb), fn),
         t: () => clock.t(),
         running: () => clock.running(),
         /** who computes this doc's world time: { viewer, session, mine }, or null (nobody: no time passes) */
@@ -2685,6 +2714,8 @@ export default function Stage(handle, element) {
     makeDropContext,
     busy,
     onChange: resync,
+    setTimer: (fn, ms) => time.after(ms, fn),
+    clearTimer: (cancel) => cancel?.(),
   });
   hostMade = true;
 
@@ -2758,6 +2789,7 @@ export default function Stage(handle, element) {
   };
 
   router = createRouter({
+    time,
     port,
     canvas,
     keyRoot: root,
@@ -2836,7 +2868,7 @@ export default function Stage(handle, element) {
   // left for the page.
   let pressedOutside = -Infinity;
   const onPressAnywhere = (e) => {
-    if (!root.contains(e.target)) pressedOutside = performance.now();
+    if (!root.contains(e.target)) pressedOutside = time.now();
   };
   document.addEventListener("pointerdown", onPressAnywhere, true);
   const refocus = (e) => {
@@ -2847,7 +2879,7 @@ export default function Stage(handle, element) {
       const a = document.activeElement;
       if (a && a !== document.body) return;
       if (e.type === "focusout") {
-        if (performance.now() - pressedOutside < 1000) return; // left for the page
+        if (time.now() - pressedOutside < 1000) return; // left for the page
         if (typeof document.hasFocus === "function" && !document.hasFocus()) return; // the window went
       }
       root.focus({ preventScroll: true });
@@ -2897,7 +2929,7 @@ export default function Stage(handle, element) {
   function sync() {
     if (dead) return;
     const d = doc();
-    const t0 = now();
+    const t0 = cpuNow();
     const m = derive();
     host.sync(d);
     applyDoc(m);
@@ -2908,7 +2940,7 @@ export default function Stage(handle, element) {
     packages.check();
     clockCheck();
     requestFlush();
-    perf.sync.add(now() - t0);
+    perf.sync.add(cpuNow() - t0);
   }
   handle.on("change", sync);
   cleanups.push(() => handle.off("change", sync));
@@ -2944,7 +2976,7 @@ export default function Stage(handle, element) {
     drawer: () => drawer.state(),
     /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
     busy,
-    /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */
+    /** one frame of remote pose playback at `t` (ms, this stage's time.now()), for tests */
     tickPoses,
     /** the doc's clock here (clock.js): t, status, tick(at), check() */
     clock,
@@ -2975,8 +3007,7 @@ export default function Stage(handle, element) {
     presence.dispose();
     if (flushFrame != null) caf(flushFrame);
     if (uiResetReq != null) caf(uiResetReq);
-    clearTimeout(cameraTimer);
-    for (const t of timers) clearTimeout(t);
+    for (const cancel of timers) cancel();
     timers.clear();
     for (const c of cleanups) {
       try {

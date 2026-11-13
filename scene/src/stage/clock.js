@@ -28,7 +28,7 @@
 //   moved an object (the halo, the inspector, a paste: transform changed,
 //   stamp not) from a checkpoint landing late (both changed): STAGE.md,
 //   "World time"; sailing's movedByEditor is one reading of it.
-// - **Followers.** The computer puts `{ t, at }` (its t at its Date.now) in
+// - **Followers.** The computer puts `{ t, at }` (its t at its now()) in
 //   presence at CLOCK_HZ. A follower runs its t toward the computer's at the
 //   moment whose holds this view is drawing (presence.shownAt), so a hull
 //   sits on the waves drawn under it; it slews, jumps only forward, and never
@@ -167,7 +167,7 @@ function transformKey(t) {
  *   eligible: () => { ok: boolean, why: string | null },   // eligibility(), but for having a process
  *   writable: () => boolean,
  *   viewer: string | null,
- *   now?: () => number,                   // the wall clock, ms (Date.now: presence samples are stamped with it)
+ *   now?: () => number,                   // the stage's time, ms (time.js: presence samples are stamped with it)
  *   onStatus?: (status: object) => void,  // what the chip shows changed
  * }} env
  */

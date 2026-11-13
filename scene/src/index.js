@@ -6,6 +6,13 @@
 // plugins, and the ones this package ships are below: the parts that together
 // make the scene editor and the surfaces every scene has. See STAGE.md.
 
+/**
+ * The stage's time source (src/stage/time.js), loaded on asking: for a host
+ * that runs the stage on a clock of its own (`element.time`), as the probes
+ * do with `manualTime()`, stepping frames as fast as the CPU allows.
+ */
+export const loadTime = () => import("./stage/time.js");
+
 const SOURCE_UNITS = [
   { value: "mm", label: "Millimetres" },
   { value: "cm", label: "Centimetres" },

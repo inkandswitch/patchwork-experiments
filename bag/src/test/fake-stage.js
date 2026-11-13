@@ -81,6 +81,14 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     },
     notify: (text, kind) => rec.notices.push(kind ? `${kind}: ${text}` : text),
     send: (type, data) => rec.sends.push([type, JSON.parse(JSON.stringify(data))]),
+    // the stage's time (scene/src/stage/time.js): the event loop's wall, here
+    clock: {
+      now: () => Date.now(),
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
+      },
+    },
     collect: (name) => (rec.contributions[name] ?? []).map((value, i) => ({ id: `other${i}`, value })),
     box: boxOf,
     content: (id) => (half[id] != null && handle.doc().objects[id] ? { loaded: true, box: { min: [-half[id], 0, -half[id]], max: [half[id], 2 * half[id], half[id]] } } : null),

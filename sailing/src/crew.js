@@ -340,11 +340,11 @@ export function createCrew(api, ctx) {
       const made = bakeFor(ship);
       if (made) Object.assign(n, { key: made.input.key, mesh: made.mesh, input: made.input });
     } else if (n.want !== n.key && !n.timer) {
-      n.timer = setTimeout(() => {
+      n.timer = api.clock.after(0, () => {
         n.timer = null;
         const made = bakeFor(ship);
         if (made) Object.assign(n, { key: made.input.key, mesh: made.mesh, input: made.input });
-      }, 0);
+      });
     }
     return n.mesh;
   }
@@ -457,7 +457,7 @@ export function createCrew(api, ctx) {
   }
 
   function publish(now = false) {
-    const ms = performance.now();
+    const ms = api.clock.now();
     if (!playing || !w || w.mode === "boarding" || (!now && ms - lastSent < SEND_MS)) return;
     lastSent = ms;
     api.presence.set("crew", { on: onShip(), position: feetNow().map(r3), yaw: r3(person.yaw), pitch: r3(person.pitch), station: station?.id ?? null });
@@ -942,7 +942,7 @@ export function createCrew(api, ctx) {
     },
     dispose() {
       stop();
-      for (const n of navs.values()) clearTimeout(n.timer);
+      for (const n of navs.values()) n.timer?.();
       riding?.off?.();
       riding = null;
       for (const a of avatars.values()) a.mat.dispose();

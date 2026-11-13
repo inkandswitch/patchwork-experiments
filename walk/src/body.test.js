@@ -55,7 +55,9 @@ function fakeApi({ objects = {}, camera = { position: [0, 1.6, 5], target: [0, 1
   const calls = { holds: 0, released: 0, presence: {}, rate: [], camera: [] };
   const loops = [];
   let deck = M(0, [0, 0, 0]);
+  let now = 0; // the stage's time (ms), moved by the frames
   const api = {
+    clock: { now: () => now },
     scene: () => ({ objects }),
     worldOf: (id) => (id === "deck" ? deck : objects[id]?.m ?? null),
     sceneBox: () => ({ min: [-10, 0, -10], max: [10, 1, 10] }),
@@ -76,7 +78,7 @@ function fakeApi({ objects = {}, camera = { position: [0, 1.6, 5], target: [0, 1
       return () => loops.splice(loops.indexOf(fn), 1);
     },
   };
-  return { api, calls, frames: (n = 1) => { for (let i = 0; i < n; i++) for (const fn of [...loops]) fn(1 / 60); }, loops, moveDeck: (m) => (deck = m) };
+  return { api, calls, frames: (n = 1) => { for (let i = 0; i < n; i++) { now += 1000 / 60; for (const fn of [...loops]) fn(1 / 60); } }, loops, moveDeck: (m) => (deck = m) };
 }
 
 describe("the walk body", () => {

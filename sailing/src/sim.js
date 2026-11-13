@@ -552,7 +552,7 @@ export function createSim(api, ctx) {
     holding.clear();
     for (const id of held) holding.add(id);
 
-    const now = Date.now();
+    const now = api.clock.now();
     if (now - publishedAt >= PUBLISH_EVERY_MS) {
       publishedAt = now;
       const out = {};

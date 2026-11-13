@@ -1,9 +1,10 @@
 // H8 (scene/TOOLS.md §7, "Three times"): a pause changes no actor or
 // liveness outcome. Dice, lots and the cup run on actor time (their loops)
-// and liveness (Date.now: THROW, TOLD, lots' deadlines), never on the doc's
-// world time, so pausing the world can't reach any of their protocols: by
-// construction, as long as nothing here reads the world clock. This holds
-// them to that. The one channel a pause does use, a doc change (the clock's
+// and liveness (the stage's time, api.clock.now and api.clock.after: THROW,
+// TOLD, lots' deadlines), never on the doc's world time, so pausing the world
+// can't reach any of their protocols: by construction, as long as nothing
+// here reads the world clock (api.clock's t, running, pause, resume,
+// process, computer). This holds them to that. The one channel a pause does use, a doc change (the clock's
 // fields) that runs every view's update() again, is run for real on a roll
 // in extension.test.js ("H8: a pause, at every frame of a roll").
 import { describe, it, expect } from "vitest";
@@ -11,9 +12,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = join(process.cwd(), "src"); // (vitest runs from the package)
-const WORLD_CLOCK = [/\bapi\.clock\b/, /\.clock\s*\.\s*(t|running|pause|resume|process)\s*\(/, /claims\??\.\s*clock\b/, /\bclaims\[\s*["']clock["']\s*\]/, /\b(doc|d)\(?\)?\??\.clock\b/];
+// (api.clock.now, .after and .frame are the stage's time, which never pauses: allowed)
+const WORLD_CLOCK = [/\bapi\.clock\b(?!\s*\.\s*(now|after|frame)\b)/, /\.clock\s*\.\s*(t|running|pause|resume|process)\s*\(/, /claims\??\.\s*clock\b/, /\bclaims\[\s*["']clock["']\s*\]/, /\b(doc|d)\(?\)?\??\.clock\b/];
 
 describe("H8: dice, lots and the cup never read the world's clock", () => {
+  it("tells the world's clock from the stage's time", () => {
+    const flagged = (text) => WORLD_CLOCK.some((re) => re.test(text));
+    for (const yes of ["api.clock.t()", "api.clock.running()", "api.clock.process({})", "api.clock.computer()", "const c = api.clock;", "doc.clock.t"]) expect(flagged(yes), yes).toBe(true);
+    for (const no of ["api.clock.now()", "api.clock.after(250, act)", "api.clock.frame(fn)"]) expect(flagged(no), no).toBe(false);
+  });
   const files = readdirSync(SRC).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"));
   it(`in all ${files.length} source files`, () => {
     expect(files).toEqual(expect.arrayContaining(["extension.js", "cup-extension.js", "lots.js", "lots-ext.js", "lots-run.js", "roll.js"]));

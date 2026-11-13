@@ -267,7 +267,7 @@ function create(api) {
    */
   function heal() {
     const lots = lotsApi();
-    const now = Date.now();
+    const now = api.clock.now();
     for (const c of state.cups.values()) {
       const roll = c.cup.roll;
       if (!roll || roll.done) continue;
@@ -410,7 +410,7 @@ function create(api) {
     return null;
   }
   function settleWaiting() {
-    const now = Date.now();
+    const now = api.clock.now();
     for (const w of [...waiting]) {
       if (now - w.at > TRUST_MS) waiting.delete(w);
       else if (borneOut(w)) {
@@ -618,14 +618,14 @@ function create(api) {
     carryable: (id) => !(state.covered.has(id) || shaking.has(id) || state.cups.get(id)?.under.length > 0),
     receive(type, data, from) {
       if (!data || typeof data !== "object" || !Object.hasOwn(MESSAGES, type) || !MESSAGES[type](data)) return;
-      waiting.add({ type, data, from, at: Date.now() });
+      waiting.add({ type, data, from, at: api.clock.now() });
       settleWaiting();
     },
     hud() {
       const out = [];
       if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken yet: rolls are drawn by lots, which aren't running here.", state: "warn" });
       const lots = lotsApi();
-      const now = Date.now();
+      const now = api.clock.now();
       const list = listOf;
       for (const c of state.cups.values()) {
         const roll = c.cup.roll;

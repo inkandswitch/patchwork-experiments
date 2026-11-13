@@ -166,6 +166,7 @@ export default {
               })
               .catch(() => null)
           : Promise.resolve(null);
+        // (a contact doc from the network: the wall's timeout, not the stage's time)
         names.set(who, Promise.race([asked, new Promise((r) => setTimeout(() => r(null), NAME_MS))]));
       }
       return names.get(who);
@@ -432,7 +433,7 @@ export default {
       p.putDown?.();
       p.putDown = null;
       pendings = pendings.filter((x) => x !== p);
-      if (!quietly && !p.copy) recent.push({ key: p.key, take: p.take, id: p.id, fresh: p.fresh, copy: false, url: p.url, bagId: p.bagId, until: Date.now() + RECENT_MS });
+      if (!quietly && !p.copy) recent.push({ key: p.key, take: p.take, id: p.id, fresh: p.fresh, copy: false, url: p.url, bagId: p.bagId, until: api.clock.now() + RECENT_MS });
       if (!pendings.some((x) => x.carry) && stopLoop) {
         stopLoop();
         stopLoop = null;
@@ -541,7 +542,7 @@ export default {
           lose(p);
         }
         // one already put down: the same, and the one drawn instead is set down beside the bag
-        const now = Date.now();
+        const now = api.clock.now();
         const lost = [];
         recent = recent.filter((r) => {
           if (r.until < now) return false;

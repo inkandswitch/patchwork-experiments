@@ -137,7 +137,7 @@ export function walkBody(api) {
         api.camera.set({ position: e, target: [e[0] + d[0], e[1] + d[1], e[2] + d[2]], fov: FOV, near: 0.05, far: 800 });
       }
       function publish(now = false) {
-        const ms = performance.now();
+        const ms = api.clock.now();
         if (!now && ms - lastSent < SEND_MS) return;
         lastSent = ms;
         api.presence.set("avatar", { feet: body.feet.map((v) => +v.toFixed(3)), yaw: +body.yaw.toFixed(3), pitch: +body.pitch.toFixed(3) });

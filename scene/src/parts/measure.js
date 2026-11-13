@@ -70,10 +70,7 @@ export function create(api) {
   let a = null; // the first point's anchor
   let hover = null; // { world, snapped } under the pointer
   let pending = null; // the latest pointer position waiting for a frame
-  let frame = 0;
-
-  const raf = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((fn) => setTimeout(fn, 16));
-  const caf = globalThis.cancelAnimationFrame?.bind(globalThis) ?? clearTimeout;
+  let frame = null; // the cancel of the frame it waits for
 
   const units = () => api.pref("units", "m");
   const worldOf = (id) => api.worldOf(id);
@@ -165,8 +162,8 @@ export function create(api) {
   }
 
   function cancelFrame() {
-    if (frame) caf(frame);
-    frame = 0;
+    frame?.();
+    frame = null;
     pending = null;
   }
 
@@ -204,8 +201,8 @@ export function create(api) {
       if (ev.locked || ev.buttons) return; // orbiting: keep the preview where it was
       pending = { x: ev.x, y: ev.y };
       if (frame) return;
-      frame = raf(() => {
-        frame = 0;
+      frame = api.clock.frame(() => {
+        frame = null;
         const p = pending;
         pending = null;
         if (!holding || !p) return;

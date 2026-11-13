@@ -94,12 +94,12 @@ function create(api) {
   // ── the seat this view claims ──
   let held = null; // { sid, release, at }
   const heard = new Set(); // sessions whose claims have had their lapse timer
-  const timers = new Set();
+  const timers = new Set(); // cancels (the stage's time: api.clock.after)
   function later(fn, ms) {
-    const t = setTimeout(() => {
+    const t = api.clock.after(ms, () => {
       timers.delete(t);
       if (!dead) fn();
-    }, ms);
+    });
     timers.add(t);
   }
   /** Seat `sid`'s live claim, if any: { viewer, session, mine }. */
@@ -294,7 +294,7 @@ function create(api) {
       const mine = seatOf(seats, viewer);
       if (!mine || claimOf(mine)) return;
       const release = api.claim(null, SEAT_CLAIM(mine), { onLost: () => lost(mine) });
-      if (release) held = { sid: mine, release, at: Date.now() };
+      if (release) held = { sid: mine, release, at: api.clock.now() };
     });
   }
   /** In a draft: this viewer in seat `sid` (or none) and in no other. */
@@ -318,7 +318,7 @@ function create(api) {
       const seat = seatsOf(api.scene())[sid];
       // (a holder this view can't hear from reads as nobody: the doc's player says who)
       const name = someone(by?.viewer ?? (seat?.player !== viewer ? seat?.player : null));
-      const race = since == null || Date.now() - since < RACE_MS;
+      const race = since == null || api.clock.now() - since < RACE_MS;
       api.notify(race ? `${name} sat in ${seat?.name || sid} first; you're watching` : `${name} took ${seat?.name || sid} while you were away; you're watching`);
       // sat down from walking and lost the race for it: back on your feet there
       if (race && since != null && walkedUp?.sid === sid && walkedUp.at === since) {
@@ -343,7 +343,7 @@ function create(api) {
         return drawSeats();
       }
       if (held && held.sid !== seatId) held.release();
-      held = release ? { sid: seatId, release, at: Date.now() } : null;
+      held = release ? { sid: seatId, release, at: api.clock.now() } : null;
     } else if (held && held.sid !== seatId) {
       held.release();
       held = null;
@@ -454,7 +454,7 @@ function create(api) {
       who: name,
       walking: walking(),
       seated: seated() && sitting === sid,
-      confirming: confirming?.sid === sid && Date.now() < confirming.until,
+      confirming: confirming?.sid === sid && api.clock.now() < confirming.until,
     });
     if (!v) return null;
     const { verb, ...shown } = v;
@@ -470,8 +470,8 @@ function create(api) {
     if (a.verb === "stand") return standUp(a.sid);
     const { by, seat, state } = stateOf(a.sid);
     if (state === "taken") return api.notify(`${someone(by?.viewer)} is sitting there.`);
-    if (state === "away" && !(confirming?.sid === a.sid && Date.now() < confirming.until)) {
-      confirming = { sid: a.sid, until: Date.now() + CONFIRM_MS };
+    if (state === "away" && !(confirming?.sid === a.sid && api.clock.now() < confirming.until)) {
+      confirming = { sid: a.sid, until: api.clock.now() + CONFIRM_MS };
       return api.notify(`${contactName(seat?.player) ?? "Whoever sat there"} is away. Press F again to take their seat; you'll see what's theirs.`);
     }
     confirming = null;
@@ -535,7 +535,7 @@ function create(api) {
       tagLoop?.();
       tagLoop = null;
       getUp();
-      for (const t of timers) clearTimeout(t);
+      for (const cancel of timers) cancel();
       timers.clear();
     },
   };

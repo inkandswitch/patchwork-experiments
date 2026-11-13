@@ -23,6 +23,12 @@ function fakeApi() {
     pose: { hold: (id, t, o) => (calls.holds.push([id, t, o ?? null]), true), release: (id, o) => calls.releases.push([id, o ?? null]) },
     heldBy: () => null,
     clock: {
+      // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
+      now: () => Date.now(),
+      after(ms, fn) {
+        const h = setTimeout(fn, ms);
+        return () => clearTimeout(h);
+      },
       t: () => clock.now,
       process(spec) {
         calls.processes.push(spec);

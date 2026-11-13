@@ -9,9 +9,9 @@
 //   orbit anywhere;
 // - the motion: an act, a pose hold each frame while this view moves a part
 //   (a loop, only then, to draw it), released as landed after the one write;
-//   the landing itself is timed by the wall clock (a timer), so a view that
-//   draws no frames (a hidden tab) still lands and writes on time, and a
-//   pause doesn't stop it halfway;
+//   the landing itself is timed by the stage's time (api.clock.after: the
+//   wall, in a browser), so a view that draws no frames (a hidden tab) still
+//   lands and writes on time, and a pause doesn't stop it halfway;
 // - closing: the scene's process (api.clock.process), registered while any
 //   part closes itself: its step closes each part once the doc's world time
 //   is its wait past `since`. Only the view computing the clock steps it, so
@@ -26,7 +26,7 @@ import { KEY, createSlides, selfClosing } from "./slide.js";
 
 function create(api) {
   const slides = createSlides({
-    now: () => Date.now(),
+    now: () => api.clock.now(), // the stage's time: the motion is an act (STAGE.md "Three times")
     t: () => api.clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),
@@ -68,14 +68,14 @@ function create(api) {
   let dead = false;
   function look() {
     if (dead) return;
-    clearTimeout(timer);
+    timer?.();
     timer = null;
     slides.frame();
     const next = slides.review();
     animate();
     // (a write above may have looked again already, re-entrantly: one timer)
-    clearTimeout(timer);
-    timer = next != null ? setTimeout(look, Math.max(16, next - Date.now())) : null;
+    timer?.();
+    timer = next != null ? api.clock.after(Math.max(16, next - api.clock.now()), look) : null;
   }
   processes(api.doc());
 
@@ -109,7 +109,7 @@ function create(api) {
     ],
     dispose() {
       dead = true;
-      clearTimeout(timer);
+      timer?.();
       removeProcess?.();
       slides.stop();
     },

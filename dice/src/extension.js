@@ -287,7 +287,7 @@ function create(api) {
       if (text) api.notify(text, "warn");
     };
     toss.end = end;
-    const started = Date.now();
+    const started = api.clock.now();
     let t = 0;
     let down = null; // once the seed is known: { u, paths: Map id → path, landed: Map id → { to, face } }
     toss.stop = api.loop((dt) => {
@@ -315,7 +315,7 @@ function create(api) {
           const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [api.viewer] : [])])];
           return fail(`That roll didn't land: ${forged.length ? forgedLine(forged, false) : st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`, false);
         }
-        if (Date.now() - started > THROW_MS) {
+        if (api.clock.now() - started > THROW_MS) {
           // (should the doc draw it after all, it lands and is told so, saying this view was told it didn't)
           const w = seenThrows.get(draw);
           if (w) w.late = true;
@@ -361,7 +361,7 @@ function create(api) {
         if (x.seed != null) tellThrow(x, true, by);
         x.done = true;
       }
-    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: Date.now(), publicAt: null, seed: null, st: null, done: past, ended: false, late: false, early, told: false, forgedTold: false };
+    const w = { draw, lead, of: [...of], by, from: new Map(of.map((d) => [d, copyOf(snap.objects?.[d]?.transform)])), seenAt: api.clock.now(), publicAt: null, seed: null, st: null, done: past, ended: false, late: false, early, told: false, forgedTold: false };
     seenThrows.set(draw, w);
     return w;
   }
@@ -373,7 +373,7 @@ function create(api) {
   /** Note every throw on the doc's dice, and what has become of it. */
   function watchThrows(snap, first) {
     if (!lotsApi()) return;
-    const now = Date.now();
+    const now = api.clock.now();
     for (const [id, o] of Object.entries(snap.objects ?? {})) {
       // (a die with no draw on it leads no throw: nothing to ask)
       if (!isDie(o) || !o.traits?.[DIE]?.round) continue;
@@ -536,12 +536,12 @@ function create(api) {
   const seenAt = new Map(); // die id → its doc transform as this view last saw it (a copy)
   const moved = new Map(); // die id → when this view saw its doc transform change (ms), until something is told for it
   const waiting = new Set(); // { type, data, from }: said, and not yet borne out by the doc
-  const timers = new Set();
+  const timers = new Set(); // cancels (the stage's time: api.clock.after)
   function later(fn, ms) {
-    const t = setTimeout(() => {
+    const t = api.clock.after(ms, () => {
       timers.delete(t);
       if (!dead) fn();
-    }, ms);
+    });
     timers.add(t);
   }
   const itemsOf = (type, data) => [data];
@@ -549,14 +549,14 @@ function create(api) {
   function look(id, o) {
     const was = seenAt.get(id);
     seenAt.set(id, copyOf(o.transform));
-    if (was !== undefined && !sameTransform(o.transform, was)) moved.set(id, Date.now());
+    if (was !== undefined && !sameTransform(o.transform, was)) moved.set(id, api.clock.now());
   }
   /** Tell it if the doc bears every die of it out: each moved lately, to the face named. Those moves are then spent. */
   function tell(w) {
     const s = api.scene();
     const items = itemsOf(w.type, w.data);
     for (const it of items) {
-      if (Date.now() - (moved.get(it.die) ?? -Infinity) > TRUST_MS) return false;
+      if (api.clock.now() - (moved.get(it.die) ?? -Infinity) > TRUST_MS) return false;
       if (shows(it.die, s)?.face !== it.face) return false;
     }
     // (by name as it's known now: a contact's name may have arrived since they spoke)
@@ -695,7 +695,7 @@ function create(api) {
       dead = true;
       // (the stage puts back any die still in the air: its holds are released as it stops)
       for (const toss of [...throws]) toss.end();
-      for (const t of timers) clearTimeout(t);
+      for (const cancel of timers) cancel();
       timers.clear();
       waiting.clear();
       closeDock();

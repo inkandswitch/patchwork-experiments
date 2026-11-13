@@ -292,6 +292,14 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         if (f.session === session) return { viewer: f.viewer, session, mine: true };
         return live(f, session) ? { viewer: f.viewer, session: f.session, mine: false } : null;
       },
+      // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
+      clock: {
+        now: () => Date.now(),
+        after(ms, fn) {
+          const h = setTimeout(fn, ms);
+          return () => clearTimeout(h);
+        },
+      },
       presence: {
         set(key, value) {
           const mine = { ...view.keys[ext] };

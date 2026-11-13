@@ -827,7 +827,7 @@ that extension.
 |---|---|
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
-| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its `Date.now`), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
+| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its stage's `time.now()`: "Time"), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
 | `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
 | `notify(text, kind?)` | |
 | `packages` | `{ load(urls?) → Promise, dismiss(urls?) }`: the viewer's answer to the packages prompt (see "Packages"). `load` is a yes: it loads what's asked about or failed (all, or those of `urls` among them) and remembers what loads. `dismiss` asks no more in this view |
@@ -909,7 +909,7 @@ How the camera parts behave:
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
-| `clock` | `{ t(), running(), computer(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time; `computer()` is who computes it (`{ viewer, session, mine }` or null). See "World time" |
+| `clock` | `{ t(), running(), computer(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time; `computer()` is who computes it (`{ viewer, session, mine }` or null). See "World time". And the stage's own time, which acts and liveness run on and which never pauses: `now()` (ms), `after(ms, fn) → cancel`, `frame(fn(now)) → cancel` (once, at the next frame); what they set is cancelled when the extension stops. See "Time" |
 
 How poses and loops behave:
 - **Holding a pose.** `pose.hold(id, transform)` shows an object at that
@@ -993,6 +993,55 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
   right now. The view computing the doc's clock holds `"clock"` and its
   processes stream the hull with `pose.hold`.
 
+### Time
+
+Everything in a stage that moves with time takes it from one source
+(`src/stage/time.js`): the frame loop (and with it every `loop`, the bodies'
+walking and looking, a ride, peers' poses played back), world time (the
+clock ticks once a frame at the source's now), the timers that wait (a
+pose's keepalive and TTL, an extension's linger, arriving's polling and its
+content wait, a claim's grace, a notice's life) and the stamps (presence
+samples). An extension reads it as `api.clock.now()` and sets timers with
+`api.clock.after(ms, fn)` and `api.clock.frame(fn)`: a die's tumble, a
+door's motion, a seat's confirm, a gun's reload, lots' deadlines. Never
+`Date.now`, `performance.now`, `setTimeout` or `requestAnimationFrame` for
+anything that moves or waits in the scene.
+
+- **Real** (the default): `now()` is `Date.now()` (peers compare their
+  stamps on it), frames are `requestAnimationFrame`, timers `setTimeout`.
+- **Manual** (`manualTime()`): the host element's `time` (beside `repo` and
+  `viewerId`) replaces it. Nothing moves until it's stepped: `tick()` runs
+  one frame of exactly `frameMs` (1/60 s): the timers due by its end, in
+  due order (`now()` reads each one's due time while it runs), then the frame
+  callbacks asked for before it. `step(n)` runs n back to back, an
+  event-loop turn after each (promises and loading land between frames), and
+  only the last draws: a frame not drawn moves everything and skips only the
+  picture (the viewport keeps the matrices and depth range picking reads).
+  `until(pred, { frames, what, state })` steps until `pred` holds, or throws
+  saying what it waited for and what it saw. Several stages given one
+  manual clock run in lockstep. Its now() starts at 1,000,000 ms, small
+  enough that a frame's length survives subtraction. A manual clock has no
+  frame budget: the update flush coalesces by pass count alone, never by
+  what a pass cost on this CPU.
+- **Who uses manual time.** The browser probes (`probes/cdp.mjs`, "Simulated
+  time"): their pages mount every stage on one `manualTime()` (from the
+  built bundle's `loadTime()`) as `window.__time`, and step frames as fast
+  as the CPU allows, so a run is the same run every time. Tests use it, or
+  `wallAt(get)` (`src/test/stage-harness.js`) for a wall they set.
+- **What stays on the wall,** because it waits on the world outside:
+  loading (a package's load timeout, the registry settling, content builds
+  and their retries, a contact's name from the network) and the cost of
+  work (`perf`, CPU time). A die's own panel outside any stage (the dice
+  package's tool) has no stage, so its lots run on the wall.
+- **Checked.** `time.test.js`: N frames move now() by exactly N frame
+  lengths; nothing reads the wall, sets a real timer or asks for a real
+  frame in manual mode; timers fire in due order in the frame they fall in,
+  over every order of setting them; processes see the same grid steps at
+  60, 24 and 7 Hz and on the browser's frames. `time-stage.test.js`: a
+  mounted stage on a manual clock moves only when stepped (its process, a
+  timer, a frame, a notice's life) and calls none of `Date.now`,
+  `setTimeout`, `setInterval` or `requestAnimationFrame` while it runs.
+
 ### World time
 
 The doc has one clock, `doc.clock = { running, t, by? }` (absent: running
@@ -1009,7 +1058,8 @@ extensions in its stage register with
   process; the others follow. Nobody present, no time passes. It lets go
   when hidden, paused, no longer eligible, or on `pagehide`.
 - **t.** `api.clock.t()` is this view's world time (s), which never goes
-  back. The computer's runs with the wall, at most a quarter second a frame.
+  back. The computer's runs with the stage's time ("Time": the wall, in a
+  browser), at most a quarter second a frame.
   A follower's runs toward the computer's at the moment whose holds it is
   drawing (`presence.shownAt`), never past the newest the computer has said
   (its `{ t, at }` under the presence key `scene.clock`, at 10 Hz): so a
@@ -1050,9 +1100,10 @@ extensions in its stage register with
   this, not the claim.
 - **Three times.** World time is only for what pauses with the world
   (processes, a door's wait). An *act* (a die's tumble, a carry, a door's
-  motion once begun) runs on the wall, and finishes during a pause;
-  *liveness* (presence TTLs, claim grace, a lots deadline) is the wall's
-  too, and never pauses.
+  motion once begun) runs on the stage's time ("Time": `api.clock.now`,
+  `after`, `frame`), and finishes during a pause; *liveness* (presence
+  TTLs, claim grace, a lots deadline) is the stage's time too, and never
+  pauses.
 - **Its numbers.** `clock.t` is written on a microsecond grid, rounded up:
   Automerge 3.3.0 stores 0.9999999999999999 assigned inside a new map as 0.
 
@@ -1442,6 +1493,7 @@ atmosphere() → null | {
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples, and the one order holds go in (`ranksAhead`) |
 | `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
+| `stage/time.js` | the one source of time: the browser's (`realTime`) or one that moves only when stepped (`manualTime`) ("Time") |
 | `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions (the one linger rule), `collect`, drops; it asks the stage for each extension's api |
@@ -1449,7 +1501,7 @@ atmosphere() → null | {
 | `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, arriving (view.start), the edit recorder, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the orbit body and its Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
-**Viewport** (`new Viewport({ port, themeRoot })`). This is the old
+**Viewport** (`new Viewport({ port, themeRoot, time })`: its frames come from `time`, `stage/time.js`). This is the old
 `viewport.js` with the transform gizmo (now the halo), triad, grid, axes, bounds, selection boxes,
 handles, dimensions, measure, carry, caption and every `wire*` input listener
 taken out. It keeps the following:

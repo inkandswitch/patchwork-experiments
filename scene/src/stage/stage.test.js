@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
+import { wallAt } from "../test/stage-harness.js";
 import { bestWidget, hitChain, initialCamera, mergeAtmosphere, mergeLooks, sameTransform, startOf, statusOf, widgetWins } from "./stage.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
@@ -134,10 +135,11 @@ async function until(fn, ms = 1000) {
 
 let repo;
 const mounted = [];
-function mount(handle, viewerId) {
+function mount(handle, viewerId, { time = null } = {}) {
   const element = document.createElement("div");
   element.repo = repo;
   if (viewerId) element.viewerId = viewerId;
+  if (time) element.time = time;
   document.body.append(element);
   const cleanup = Stage(handle, element);
   const debug = element.querySelector(".scene-stage").__sceneDebug;
@@ -1037,10 +1039,9 @@ describe("another view's hold, played back", () => {
 
   it("plays a peer's stream back between its samples; worldOf (and what's attached) follows what's shown", async () => {
     const h = newScene({ objects: { hull: card({ name: "Hull" }), deck: card({ name: "Deck", parent: "hull", transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["hull", "deck"] });
-    const M = mount(h, "viewer:me");
+    const M = mount(h, "viewer:me", { time: wallAt(() => clockNow) });
     await settle();
     const api = exts["t.edit"].api;
-    vi.spyOn(Date, "now").mockImplementation(() => clockNow);
     // the sender's clock reads 0 when ours reads 1000; it sends every 50 ms
     let seq = 0;
     const pose = (at, transform) => {
@@ -1082,10 +1083,9 @@ describe("another view's hold, played back", () => {
 
   it("our own hold wins over a peer's playback when it ranks ahead (a person's over a yielding one), and is refused when it doesn't", async () => {
     const h = newScene({ objects: { a: card(), b: card() }, order: ["a", "b"] });
-    const M = mount(h, "viewer:me");
+    const M = mount(h, "viewer:me", { time: wallAt(() => clockNow) });
     await settle();
     const api = exts["t.edit"].api;
-    vi.spyOn(Date, "now").mockImplementation(() => clockNow);
     clockNow = 1000;
     // a peer's process moves `a` (yielding), and a peer's person holds `b`
     h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50, yields: true } });

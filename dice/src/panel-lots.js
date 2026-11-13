@@ -73,6 +73,12 @@ export function panelLots(handle, { viewer, onChange = () => {}, name, storage =
     name: name ?? ((v) => (v === viewer ? "you" : "someone")),
     what: () => handle.doc()?.title || "this die",
     storage,
+    // a die's own panel is outside any stage: the wall
+    now: () => Date.now(),
+    after(ms, fn) {
+      const h = setTimeout(fn, ms);
+      return () => clearTimeout(h);
+    },
   });
   function onMessage(e) {
     const m = e?.message;

@@ -72,10 +72,10 @@ function create(api) {
       if (ids.has(id)) continue;
       shown.delete(id);
       el.dataset.leaving = "";
-      const t = setTimeout(() => {
+      const t = api.clock.after(FADE_MS, () => {
         timers.delete(t);
         el.remove();
-      }, FADE_MS);
+      });
       timers.add(t);
     }
     for (const n of list) {
@@ -139,7 +139,7 @@ function create(api) {
       if (prev?.scene !== scene || localChanged(prev?.local, local)) renderHud(scene, local);
     },
     dispose() {
-      for (const t of timers) clearTimeout(t);
+      for (const cancel of timers) cancel();
       timers.clear();
     },
   };
