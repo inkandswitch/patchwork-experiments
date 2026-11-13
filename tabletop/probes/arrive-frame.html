@@ -82,7 +82,7 @@ try {
     registered: () => ["scene:extension", "scene:source", "scene:part", "scene:template", "patchwork:tool", "patchwork:datatype", "tabletop:game"].flatMap((t) => getRegistry(t).all().map((p) => `${t}/${p.id}`)),
     hasPlugin: (type, id) => getRegistry(type).has(id),
     running: () => (dbg?.local.get().running ?? []).map((r) => r.id),
-    activity: () => dbg?.local.get().activities ?? null,
+    bodyLabel: () => dbg?.local.get().body?.label ?? null,
     packages: () => JSON.parse(JSON.stringify(dbg?.local.get().packages ?? null)),
     listed: () => (scene?.doc().packages ?? []).map((e) => e.url),
     suggested: () => scene?.doc()["@patchwork"]?.suggestedImportUrl ?? null,

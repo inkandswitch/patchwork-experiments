@@ -43,7 +43,7 @@ const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `seats-$
 try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const viewers = await P("viewers");
-  check("A's picker is up, playing", await until("options('a')?.length === 3 && __p.activity('a') === 'play'"), { options: await P("options('a')") });
+  check("A's picker is up", await until("options('a')?.length === 3"), { options: await P("options('a')"), body: await P("bodyLabel('a')") });
 
   // ── A sits in Player 1 ──
   await P("pick('a', 'p1')");

@@ -9,7 +9,7 @@
 // the doc is what a maker gets from New → scene → Arena level: the sample
 // arena in a group, one GLB file doc per kind of block (kept in the scene's
 // assets, as the stage's ctx.file keeps them), the arena's look, and
-// `view.activity` "play", so whoever opens it is in the game.
+// `view.start` walking at a spawn point, so whoever opens it is in the game.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -74,12 +74,13 @@ const ctx = {
 };
 await template.create(ctx);
 
-// ─── checks: it opens in play, and every block shows a GLB made here ─────────
+// ─── checks: it starts people walking at a spawn point, and every block shows a GLB made here ──
 const d = scene.doc();
 const assets = d.assets ?? {};
 const glbs = Object.values(assets).map((a) => a.url);
 const problems = [];
-if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(d.view?.activity)}, not "play"`);
+const startsWalking = (v) => v?.start?.body === "walk" && !!d.objects?.[v.start.place]?.traits?.["walk.spawn"] && !("activity" in v) && !("tool" in v);
+if (!startsWalking(d.view)) problems.push(`view is ${JSON.stringify(d.view)}: it doesn't start people walking at a spawn point`);
 if ("kits" in (d.view ?? {})) problems.push("view still has kits");
 problems.push(...packageProblems(d, PACKAGES));
 for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.url) problems.push(`no GLB for ${kind}`);
@@ -99,7 +100,7 @@ if (problems.length) {
   process.exit(1);
 }
 const made = [scene.url, ...glbs];
-console.log(`scene ${scene.url}: ${blocks.length} blocks (${targets} targets, ${spawns} spawn points), ${glbs.length} GLBs, starts in ${d.view.activity}`);
+console.log(`scene ${scene.url}: ${blocks.length} blocks (${targets} targets, ${spawns} spawn points), ${glbs.length} GLBs, starts people ${JSON.stringify(d.view.start)}`);
 
 if (DRY) {
   console.log(`dry run: ${made.length} docs (nothing published)`);
@@ -117,7 +118,7 @@ for (const url of made) {
     const got = (await within(30000, checker.find(url))).doc();
     if (!got || !Object.keys(got).length) missing.push(`${url} (empty)`);
     else if (url === scene.url && packageProblems(got, PACKAGES).length) missing.push(`${url} (came back wrong: ${packageProblems(got, PACKAGES).join("; ")})`);
-    else if (url === scene.url && got.view?.activity !== "play") missing.push(`${url} (came back without view.activity "play")`);
+    else if (url === scene.url && got.view?.start?.body !== "walk") missing.push(`${url} (came back without view.start walking)`);
     else if (url !== scene.url && !(got.content?.byteLength > 0)) missing.push(`${url} (a GLB doc with no bytes)`);
   } catch (err) {
     missing.push(`${url} (${err?.message ?? err})`);

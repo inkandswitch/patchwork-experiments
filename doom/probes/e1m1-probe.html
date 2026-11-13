@@ -98,9 +98,9 @@ try {
       const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
       const r4 = (v) => Math.round(v * 1e4) / 1e4;
       const home = { position: eye.map(r4), target: [eye[0] - 2 * Math.sin(yaw), eye[1], eye[2] - 2 * Math.cos(yaw)].map(r4) };
+      // people start walking at the player 1 start (view.start: scene TOOLS.md §2), the camera there first
       scene.change((d) => {
-        d.view.activity = "play";
-        d.view.home = home;
+        d.view.start = { body: "walk", place: id, home };
       });
       return home;
     },

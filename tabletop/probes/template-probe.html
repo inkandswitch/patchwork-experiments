@@ -94,7 +94,7 @@ try {
   hosts.a.repo = repo; hosts.b.repo = repo;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   // A opens the empty scene; B opens it once there is a table (a view joins
-  // where the doc says, and a later change to view.activity moves nobody)
+  // where the doc says, view.start, read once)
   Tool(A, hosts.a);
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
   const told = { a: [], b: [] };
@@ -154,7 +154,8 @@ try {
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     phase: () => deck()?.phase ?? null,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** the cards a view sees as what they really are (a look with a source) */

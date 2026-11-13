@@ -6,11 +6,10 @@
 // Mounts the BUILT scene tool with the BUILT arena and walk plugins on an empty scene
 // (two views of one doc: A makes it and plays, B joins and watches), picks
 // "Arena level" on the empty scene's start screen, which lays out the sample
-// arena and starts the scene in play: A, and B joining after, are both in the
-// game, with no editor, each camera framing the whole level.
-// A switches to Edit (the editor, the arena's edit command and the parts bin)
-// and back to Play, presses Play (the walk body at a spawn, the gun in hand:
-// scene/TOOLS.md §4), walks with W/A/S/D, runs into a wall, climbs the ramp
+// arena and starts people walking at a spawn point (view.start): A, and B
+// joining after, both arrive walking there. A leaves walking and opens the
+// parts bin (a drawer tab: no mode), shuts it, presses Play (the walk body at
+// a spawn, the gun in hand: scene/TOOLS.md §4), walks with W/A/S/D, runs into a wall, climbs the ramp
 // onto the tower, jumps, turns to a target and shoots it with a click; Esc
 // puts the gun down (never the body) and the body chip's Leave stops walking.
 // B must see A's avatar move and A's tracer. Then a "hybrid"
@@ -188,7 +187,7 @@ try {
   const startBtn = `.add-template[data-template="arena-level"]`;
   const haveStart = (await until(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
   check("an empty scene's start screen offers the Arena level template, and Blank", haveStart && (await shown(startBtn)) && (await shown('.add-template[data-template=""]')), await P("text('.add-template')"));
-  check("an empty scene offers only editing, so no Play | Edit switch", JSON.stringify(await P("activities('a')")) === '["edit"]' && (await P("activity('a')")) === "edit" && !(await shown(".activity-switch")), { activities: await P("activities('a')"), running: await P("running('a')") });
+  check("an empty scene: A in orbit, nowhere to start", (await P("body('a')")) === "orbit" && !(await P("doc()")).view?.start, { body: await P("body('a')"), view: (await P("doc()")).view });
   await shot("start");
   await click(await P(`rect('${startBtn}')`));
   await until("window.__p.objects().length >= 29");
@@ -198,58 +197,44 @@ try {
   const lv = await P("loaded('a')");
   const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().assets ?? {}).filter((k) => k.startsWith("arena/")), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["walk.spawn"]).length }; })()`);
   check("Arena level lays out the level (a level trait, 8 targets, 4 spawns, a GLB per kind in the scene's assets)", traits.level && traits.targets === 8 && traits.spawns === 4 && traits.kinds.length === 7, traits);
-  check("and starts the scene in play (doc.view.activity)", (await P("doc()")).view?.activity === "play", (await P("doc()")).view);
+  const start = (await P("doc()")).view?.start;
+  const startPad = start?.place ? (await P("doc()")).objects[start.place] : null;
+  check("and starts people walking at a spawn point (doc.view.start)", start?.body === "walk" && !!startPad?.traits?.["walk.spawn"] && !("activity" in ((await P("doc()")).view ?? {})), (await P("doc()")).view);
   check("every block's GLB loads in both views", allLoaded, { a: lv, b: await P("loaded('b')") });
   await until("window.__p.running('a').includes('arena') && window.__p.running('b').includes('arena')");
-  check("the arena runs in both views (play, and the level trait)", (await P("running('a')")).includes("arena") && (await P("running('b')")).includes("arena"), { a: await P("running('a')"), b: await P("running('b')") });
-  check("the HUD shows Play and 8 standing (and nothing stray)", (await P("text('.arena-count')"))[0] === "8 of 8 targets standing" && !!(await P("rect('.arena-play')")) && !/null/.test((await P("text('.arena-hud')"))[0]), await P("text('.arena-hud')"));
+  check("the arena runs in both views (its level trait), and so do the walk body and the spawn points' part", (await P("running('a')")).includes("arena") && (await P("running('b')")).includes("walk.spawn") && (await P("running('a')")).includes("walk"), { a: await P("running('a')"), b: await P("running('b')") });
 
-  // ─── a level opens as a game ─────────────────────────────────────────────
-  // Both views start where the doc says, in play: A, who chose the template
-  // (a template starts its maker as joining does), and B, who joined the
-  // level. Each runs only what playing calls for: the arena, what it requires
-  // (keys, notices, framing), the scene's packages part and the switcher, and
-  // the selection's parts every activity has (scene/TOOLS.md build step 3:
-  // Select, the menu, the halo and the knobs), the body chip (scene.body), the
-  // world clock (scene.clock) and the walk body's package (general: it runs
-  // wherever it's installed).
-  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.body", "scene.clock", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use", "walk"];
-  const inGame = async (w) => {
-    const ok = (await until(`!window.__p.running('${w}').includes('scene.toolbar')`, 6000)) && (await settled(w));
-    return { ok, activity: await P(`activity('${w}')`), run: await sorted(w) };
-  };
-  const aGame = await inGame("a");
-  check("creator A is in play: only the game, its requires, the switcher and the selection's parts", aGame.ok && aGame.activity === "play" && JSON.stringify(aGame.run) === JSON.stringify(GAME), aGame);
-  const bGame = await inGame("b");
-  check("player B is in play too: the same", bGame.ok && bGame.activity === "play" && JSON.stringify(bGame.run) === JSON.stringify(GAME), bGame);
-  const bChrome = await P("chrome('b')");
-  const bView = { toolbar: !!(await P("rect('.toolbar', 'b')")), sidebar: !!(await P("rect('.sidebar', 'b')")), start: await shown(".add-start", "b"), switch: await P("rect('.activity-switch', 'b')"), play: !!(await P("rect('.arena-play', 'b')")), layers: await P("layers('b')"), chrome: bChrome };
-  check("player B sees no toolbar, sidebar or start screen, no grid or axes: the level, the HUD's Play and a small Play | Edit switch", !bView.toolbar && !bView.sidebar && !bView.start && bView.play && !!bView.switch && bView.switch.w > 0 && bView.switch.w < 200 && bView.switch.h < 44 && !bView.layers.some((l) => /grid|axes|bounds|halo|handles/.test(l)), bView);
-  const options = await js(`[...window.__p.hostA.querySelectorAll(".activity-option")].map((b) => [b.dataset.activity, b.textContent.trim(), b.getAttribute("aria-pressed")])`);
-  check("the switch offers Play and Edit, with Play pressed", JSON.stringify(options) === JSON.stringify([["play", "Play", "true"], ["edit", "Edit", "false"]]), options);
-  // and neither opens staring into a wall: framing came with the arena, so
-  // each untouched camera frames the level as it loads (from outside it,
-  // every corner of the level on screen)
-  const framed = (w) => js(`(() => { const v = window.__p.${w}.viewport, b = v.sceneBox(), c = v.getCamera().position; if (b.isEmpty()) return { box: null }; const lo = b.min.toArray(), hi = b.max.toArray(); const inside = [0, 1, 2].every((i) => c[i] > lo[i] && c[i] < hi[i]); const corners = []; for (const x of [lo[0], hi[0]]) for (const z of [lo[2], hi[2]]) corners.push(v.project([x, lo[1], z])?.visible ?? false); return { inside, corners, camera: c.map((n) => +n.toFixed(2)) }; })()`);
-  await until("(() => { const v = window.__p.B.viewport, b = v.sceneBox(), c = v.getCamera().position; return !b.isEmpty() && ![0, 1, 2].every((i) => c[i] > b.min.toArray()[i] && c[i] < b.max.toArray()[i]); })()", 4000);
-  const fA = await framed("A"), fB = await framed("B");
-  check("both open framing the whole level, not inside it", [fA, fB].every((f) => f.inside === false && f.corners.length === 4 && f.corners.every(Boolean)), { A: fA, B: fB });
+  // ─── a level opens as a game: both arrive walking, at the doc's spawn point ─
+  // Arriving (scene/TOOLS.md §2): A, who chose the template, and B, who
+  // joined the level, each enter the walk body at view.start's place once its
+  // content is in. What runs is the doc's alone (H1): the same in both views.
+  const arrived = await until("window.__p.body('a') === 'walk' && window.__p.body('b') === 'walk'", 25_000);
+  const padAt = await P(`world(${JSON.stringify(start?.place)})`);
+  const eA = (await P("cam('a')")).position, eB = (await P("cam('b')")).position;
+  check("both arrive walking (the walk body, the only body over orbit), at the start's spawn point", arrived && JSON.stringify(await P("stack()")) === '["orbit","walk"]' && [eA, eB].every((e) => !!padAt && Math.hypot(e[0] - padAt[0], e[2] - padAt[2]) < 0.6), { a: await P("body('a')"), b: await P("body('b')"), padAt, eA: r3(eA), eB: r3(eB) });
+  await settled("a");
+  await settled("b");
+  check("what runs is the same in both views: the doc's", JSON.stringify(await sorted("a")) === JSON.stringify(await sorted("b")), { a: await sorted("a"), b: await sorted("b") });
+  check("the HUD shows the gun to pick up and 8 standing (and nothing stray)", (await P("text('.arena-count')"))[0] === "8 of 8 targets standing" && /Pick up the gun/.test((await P("text('.arena-play')"))[0] ?? "") && !/null/.test((await P("text('.arena-hud')"))[0]), await P("text('.arena-hud')"));
+  const bView = { start: await shown(".add-start", "b"), layers: await P("layers('b')"), chrome: await P("chrome('b')") };
+  check("walking, B sees no start screen, and no grid, axes or bounds (they're orbit's)", !bView.start && !bView.layers.some((l) => /grid|axes|bounds|halo|handles/.test(l)), bView);
   await shot("game");
 
-  // ─── the designer edits, and comes back ──────────────────────────────────
-  await click(await P(`rect('.activity-option[data-activity="edit"]')`));
-  await until(`window.__p.running('a').includes('scene.toolbar') && window.__p.running('a').includes('arena.edit')`, 6000);
+  // ─── the designer edits, in the same running level ───────────────────────
+  // There's no Edit to switch to: A leaves walking (orbit), opens the parts
+  // bin from the toolbar, and B goes on walking.
+  const leftToEdit = await leaveBody("a");
   await settled("a");
-  const aEdit = { activity: await P("activity('a')"), run: await P("running('a')"), toolbar: await shown(".toolbar"), play: !!(await P("rect('.arena-play')")) };
-  check("switched to Edit, A has the editor, the arena's editing and the parts bin (toolbar, sidebar, grid, scene.parts), not the game", aEdit.activity === "edit" && ["scene.toolbar", "scene.sidebar", "scene.grid", "scene.parts", "arena.edit"].every((id) => aEdit.run.includes(id)) && !aEdit.run.includes("arena") && aEdit.toolbar && !aEdit.play, aEdit);
+  check("A leaves walking: orbit, where the axes are drawn (orbit's aids)", leftToEdit && (await P("body('a')")) === "orbit" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  check("Parts, from the toolbar: a drawer tab", await until("window.__p.tab('a', 'parts')", 4000), await P("running('a')"));
   const binParts = await js(`[...window.__p.hostA.querySelectorAll('.scene-parts .parts-group[data-category="Arena"] .part')].map((b) => b.dataset.part)`);
   check("the bin offers the arena's parts, under Arena", JSON.stringify(binParts) === JSON.stringify(["arena.target", "arena.crate", "arena.spawn"]), binParts);
-  check("only for A: B is still playing", (await P("activity('b')")) === "play" && JSON.stringify(await sorted("b")) === JSON.stringify(GAME), await P("running('b')"));
-  check("the doc still starts people in play", (await P("doc()")).view?.activity === "play");
+  check("only for A: B is still walking, and runs what A runs", (await P("body('b')")) === "walk" && JSON.stringify(await sorted("b")) === JSON.stringify(await sorted("a")), { b: await P("body('b')"), running: await P("running('b')") });
+  check("the doc still starts people walking", (await P("doc()")).view?.start?.body === "walk");
   await shot("edit");
-  await click(await P(`rect('.activity-option[data-activity="play"]')`));
-  const backInPlay = (await until("window.__p.running('a').includes('arena') && !window.__p.running('a').includes('scene.toolbar')", 6000)) && (await settled("a"));
-  check("switching back to Play: the game again, and no editor", backInPlay && (await P("activity('a')")) === "play" && JSON.stringify(await sorted("a")) === JSON.stringify(GAME) && !!(await P("rect('.arena-play')")) && !(await P("rect('.toolbar')")), await P("running('a')"));
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  check("Parts shut again", await until("window.__p.tab('a', 'parts') === false", 4000));
 
   // the level's look: the arena's atmosphere, in both views (a sky, haze, a sun casting shadows on every block)
   const look = (w) => js(`(() => { const v = window.__p.${w}.viewport; let meshes = 0, cast = 0; v.content.traverse((o) => { if (o.isMesh) { meshes++; if (o.castShadow && o.receiveShadow) cast++; } }); return { atmosphere: v.atmosphere, sky: !!v.sky?.visible, fog: !!v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, sunCasts: v.keyLight.castShadow, meshes, cast }; })()`);
@@ -373,7 +358,10 @@ try {
   check("B sees one avatar, where A stands", seen1.avatars.length === 1 && Math.hypot(seen1.avatars[0][0] - pos1[0], seen1.avatars[0][2] - pos1[2]) < 0.05 && Math.abs(seen1.avatars[0][1] - (pos1[1] - 1.6)) < 0.05, { avatar: seen1.avatars, eye: r3(pos1) });
   check("and sees it move while A walks (several updates in 0.5 s)", distinct >= 4 && Math.hypot(seen1.avatars[0][0] - seen0.avatars[0]?.[0], seen1.avatars[0][2] - seen0.avatars[0]?.[2]) > 0.5, { distinct, from: seen0.avatars, to: seen1.avatars, eyeFrom: r3(pos0) });
   check("B labels the avatar", (await P("labels('b')")).length > 0, await P("labels('b')"));
-  check("A draws no avatar of its own", (await P("drawn('a')")).avatars.length === 0, await P("drawn('a')"));
+  // (B walks too, standing at the spawn point it arrived at: A draws B, never itself)
+  const aDraws = (await P("drawn('a')")).avatars;
+  const posA = await eye();
+  check("A draws no avatar of its own (only B's, where B stands)", aDraws.length === 1 && Math.hypot(aDraws[0][0] - posA[0], aDraws[0][2] - posA[2]) > 1, { aDraws, eye: r3(posA) });
 
   // Esc puts the gun down (the ladder's tool rung), never the body
   if (await P("locked()")) {
@@ -425,7 +413,8 @@ try {
   await sleep(800);
   const bRect = await P("viewRect('b')");
   const bCan = await js("(() => { const r = window.__p.B.viewport.canvas.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()");
-  check("player B's view follows its new size", Math.abs(bCan[0] - 1060) < 4 && Math.abs(bCan[1] - vh) < 4, { bCan, vh });
+  // (its canvas fills the width; the toolbar along the top takes some of the height)
+  check("player B's view follows its new size", Math.abs(bCan[0] - 1060) < 4 && bCan[1] <= vh && bCan[1] > vh - 120, { bCan, vh });
   await js("window.__p.B.viewport.frame(window.__p.B.viewport.sceneBox())");
   await sleep(500);
   await shot("player-lobby", bRect);
@@ -453,7 +442,7 @@ try {
   const aSees = await P("drawn('a')");
   check("B shoots (a tracer, 11 rounds), and A sees B's avatar", bTr1 > bTr0 && /11 \/ 12/.test((await P("text('.arena-hud', 'b')"))[0]) && aSees.avatars.length === 1, { bTr0, bTr1, hud: await P("text('.arena-hud', 'b')"), aSees });
   report.steps.playerPlaying = { chrome: await P("chrome('b')"), layers: await P("layers('b')") };
-  check("playing, B still shows no editor (no toolbar, sidebar, grid)", !(await P("rect('.toolbar', 'b')")) && !(await P("rect('.sidebar', 'b')")) && !(await P("layers('b')")).some((l) => /grid|axes/.test(l)), report.steps.playerPlaying);
+  check("playing, B's view draws no grid or axes (orbit's), and no drawer is open", !(await P("layers('b')")).some((l) => /grid|axes/.test(l)) && !(await P("rect('.stage-drawer', 'b')")), report.steps.playerPlaying);
   await hold("Escape", 50);
   await sleep(300);
   const bDown = { tool: await P("tool('b')"), body: await P("body('b')") };
@@ -469,9 +458,9 @@ try {
   await until("window.__ready === true", 20_000);
   await until("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
   check("hybrid: the arena isn't running before any arena trait", !(await P("running('a')")).includes("arena"), await P("running('a')"));
-  check("hybrid: a deck offers only editing, and none of the arena's commands", JSON.stringify(await P("activities('a')")) === '["edit"]' && !(await P("running('a')")).includes("arena.edit") && !(await shown(".activity-switch")), { activities: await P("activities('a')"), running: await P("running('a')") });
-  // nothing selected: the inspector's Scene section, whose "Add behaviour…"
-  // offers what the arena describes for a scene (the level)
+  // nothing selected: the inspector (opened from the toolbar) on the Scene,
+  // whose "Add behaviour…" offers what the arena describes for a scene (the level)
+  await click(await P(`rect('.toolbar [data-command="inspector"]')`));
   await until("!!window.__p.hostA.querySelector('.behaviour-add')");
   check("hybrid: the inspector's Add behaviour… offers the arena level", (await P("behaviours()")).includes("arena.level"), await P("behaviours()"));
   // the bin's Target, clicked while looking at a spot on the deck: it goes
@@ -480,22 +469,23 @@ try {
   await js(`window.__p.A.viewport.setCamera({ position: [8, 9, 12], target: ${JSON.stringify(deckTop)} })`);
   await sleep(200);
   const binTarget = `.scene-parts .part[data-part="arena.target"]`;
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await until("window.__p.tab('a', 'parts')", 4000);
   await js(`window.__p.hostA.querySelector('${binTarget}')?.scrollIntoView({ block: "center" })`);
   check("hybrid: the parts bin offers the arena's target in a scene that isn't a level", await shown(binTarget), await P("text('.scene-parts')"));
   await click(await P(`rect('${binTarget}')`));
   await until("window.__p.objects().length === 3", 5000);
   const htid = await js("window.__p.objects().find((id) => window.__p.doc().objects[id].traits?.['arena.target']) ?? null");
   check("hybrid: the target part makes the scene a level, with the scene's own look", !!htid && JSON.stringify((await P("doc()")).traits?.["arena.level"]) === "{}", { htid, traits: (await P("doc()")).traits });
-  check("hybrid: the level brings the arena's editing, and offers Play", (await until("window.__p.running('a').includes('arena.edit')")) && JSON.stringify(await P("activities('a')")) === '["edit","play"]' && (await P("activity('a')")) === "edit", { activities: await P("activities('a')"), running: await P("running('a')") });
+  check("hybrid: the level's trait starts the arena (its Play, its gun)", (await until("window.__p.running('a').includes('arena')")) && !!(await until("!!window.__p.hostA.querySelector('.arena-play')", 4000)), { running: await P("running('a')") });
   check("hybrid: the new target is selected", !!htid && (await P("A.local.get().selected")) === htid, await P("A.local.get().selected"));
+  // the inspector and the bin put away: an open drawer wants the pointer (no lock while it's open)
+  await click(await P(`rect('.toolbar [data-command="inspector"]')`));
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
   await until("(() => { const a = window.__p.loaded('a'); return a.total === 3 && a.loaded === a.total; })()", 10_000);
   const ht = await P(`world('${htid}')`);
   const htUp = await js(`(() => { const m = window.__p.A.viewport.worldOf('${htid}'); return m && [m[4], m[5], m[6]].map((v) => v / Math.hypot(m[4], m[5], m[6])); })()`);
   check("hybrid: it goes under the deck, on it where you're looking, upright", (await P("doc()")).objects[htid]?.parent === "deck" && !!ht && Math.hypot(ht[0] - deckTop[0], ht[1] - deckTop[1], ht[2] - deckTop[2]) < 0.05 && htUp?.[1] > 0.999, { ht, deckTop, up: htUp });
-  check("hybrid: editing, the arena's game isn't running", !(await P("running('a')")).includes("arena"), await P("running('a')"));
-  await click(await P(`rect('.activity-option[data-activity="play"]')`));
-  await until("window.__p.running('a').includes('arena')");
-  check("hybrid: switching to Play starts the arena", (await P("running('a')")).includes("arena") && (await P("activity('a')")) === "play", await P("running('a')"));
   const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.keyLight.intensity, v.keyLight.position.toArray()] }; })()");
   check("hybrid: a deck with a target keeps the stage's own look (no arena sky, haze or sun)", hv.atmosphere === null && !hv.sky && hv.fog === null && !hv.shadowMap && hv.key[0] === 1.5, hv);
   // Escape lets the new target go (in orbit, holding nothing: the ladder's selection rung), so nothing wants the pointer

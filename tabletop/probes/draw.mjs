@@ -40,7 +40,8 @@ const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `draw-${
 try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const viewers = await P("viewers");
-  check("both views playing", await until("activity('a') === 'play' && __p.activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3"));
+  // the table starts people in the seat body (view.start): watching from the first seat, writing nothing
+  check("both views arrive watching from a seat, the pickers up", await until("body('a') === 'Watching' && __p.body('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3"), { a: await P("body('a')"), b: await P("body('b')") });
   await P("pick('a', 'p1')");
   await P("pick('b', 'p2')");
   check("A in Player 1, B in Player 2", await until(`seats().p1.player === ${JSON.stringify(viewers.a)} && __p.seats().p2.player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
