@@ -14,3 +14,6 @@ How the rig aid gets a hull mesh from another document. Copied, not imported
 - `vendor/meshopt_decoder.module.js` — meshoptimizer (MIT), via flow-field.
 - `hull-link.js` — the source / file paths (a scene render is refused: real size only) and provider matching
   from flow-field's `section.js`, returning a mesh instead of a section.
+- `chartroom-link.js` — a hull's Chartroom hydrostatic table from whichever
+  `chartroom:source` providers offer one for its datatype, by one stated
+  rule (its RULE), with every provider's outcome reported.

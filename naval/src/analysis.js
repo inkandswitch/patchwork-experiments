@@ -26,6 +26,8 @@ import { hullSpeed } from "./naval/ratios.js";
 import { isEstimated } from "./doc.js";
 import { rigSails, rigSpan, tableOf, rigForces } from "./naval/sails.js";
 import { CH_BETA } from "./naval/stability.js";
+import { windageElements, windageForces } from "./naval/windage.js";
+import { G } from "./naval/ratios.js";
 
 /** A sail set's heeling-force coefficient from the sail model, close-hauled at CH_BETA. */
 export function heelCoefficient(plan, reef) {
@@ -113,8 +115,31 @@ export function analyse({ doc, hull, form, plan, displacementKg, statics }) {
     );
   const gm = mass && form ? uprightGM(form.hydro, mass, app) : null;
   const clrZ = balance.clrWhole?.[1] ?? -(doc.hull.dims.tc / 2);
-  const sets = sailSets(plan).map((s) => ({ ...s, ch: heelCoefficient(plan, s.id === "full" ? -1 : Number(s.id.slice(4)) - 1) ?? undefined }));
+  const sets0 = sailSets(plan).map((s) => ({ ...s, ch: heelCoefficient(plan, s.id === "full" ? -1 : Number(s.id.slice(4)) - 1) ?? undefined }));
   const heelLimit = doc.conditions.heelLimitDeg;
+
+  // windage (windage.js): its rigging is sized for RM30, so it waits for a righting moment: the table's, else upright GM's
+  const windageFor = (rm30Nm) => {
+    if (!form) return [];
+    const mastItem = mass?.items?.find((i) => i.id === "mast");
+    const mastX = plan.mast.partners[0];
+    return windageElements({
+      plan,
+      loa: form.loa,
+      beam: form.beam,
+      stemX: form.stem[0],
+      sternX: form.stern[0],
+      sheerAt: geo.sheerAt,
+      mastLengthM: mastItem?.lengthM ?? plan.mast.heightM,
+      rm30Nm,
+      chainplateBaseM: plan.type === "cat" ? null : 0.9 * geo.halfBreadthAt(mastX),
+    });
+  };
+  /** The windage's heeling moment per unit ½ρ·AWS², at CH_BETA upright (the reef winds' form): Σ Fh·(z − z_CLR). */
+  const windHmOf = (els) => windageForces(els, { awsE: 1, betaEDeg: CH_BETA, heelDeg: 0, rho: 2 }).list.reduce((t, f) => t + f.fh * (f.z - clrZ), 0);
+  const gmRm30 = mass && gm?.GM > 0 ? mass.massKg * G * gm.GM * Math.sin(Math.PI / 6) + mass.crew.massKg * G * mass.crew.arm * Math.cos(Math.PI / 6) : null;
+  let windage = windageFor(gmRm30);
+  let sets = sets0.map((s) => ({ ...s, windHm: windHmOf(windage) }));
 
   let stab = null;
   if (mass && form && statics?.status === "ready" && statics.table) {
@@ -126,6 +151,8 @@ export function analyse({ doc, hull, form, plan, displacementKg, statics }) {
       const c = stabilityCurve(statics.table, { toTable: map.map, trimDeg: map.trimDeg, mass, app, heels: want.length ? want : heels });
       // the canoe body's wetted skin at each heel, for the resistance (undefined where the table doesn't say)
       for (const p of c.points) if (p.available) p.wsa = interpolate(statics.table, { heelDeg: p.heelDeg, trimDeg: p.trimDeg ?? map.trimDeg, h: p.h }).wettedAreaM2;
+      windage = windageFor(curveAt(c.points, 30));
+      sets = sets0.map((s) => ({ ...s, windHm: windHmOf(windage) }));
       const winds = doc.conditions.aws.map((aws) => {
         const full = sets[0];
         const hm = (phi) => heelingMoment(aws, phi, full, clrZ);
@@ -164,5 +191,5 @@ export function analyse({ doc, hull, form, plan, displacementKg, statics }) {
   const heelingArm = designerSet.ce ? designerSet.ce[1] - clrZ : NaN;
   const dell = mass && gm ? dellenbaugh({ saM2: designerSet.areaM2, heelingArmM: heelingArm, massKg: mass.massKg, gm: stab?.gmTable ?? gm.GM }) : null;
 
-  return { geo, app, balance, mass, gm, clrZ, sets, heelLimit, stab, loads, heelingArm, dellenbaugh: dell, warnings, notes };
+  return { geo, app, balance, mass, gm, clrZ, sets, windage, heelLimit, stab, loads, heelingArm, dellenbaugh: dell, warnings, notes };
 }

@@ -50,6 +50,14 @@ export function hullDerivatives(h, lateralCentroid) {
   };
 }
 
+/** A sail's luff in the profile plane: its pivot (a main's gooseneck, a headsail's tack) and its head (sailplan.js's corners). */
+export function luffOf(plan, id) {
+  const s = plan.sails.find((x) => x.id === id);
+  if (!s) return { pivot: null, head: null };
+  const poly = s.id === "main" && s.triangle ? s.triangle.polygon : s.polygon;
+  return { pivot: poly[0], head: poly[1] };
+}
+
 /** The foil numbers the VPP needs (the heel-dependent ones it recomputes). */
 const foilData = (f, extra = {}) =>
   f && {
@@ -151,7 +159,7 @@ export function buildDesign({ doc, n }) {
       ce,
       he: span.he,
       are: span.are,
-      sails: sails.map((s) => ({ id: s.id, kind: s.kind, areaM2: s.areaM2, ce: s.ce, luffM: s.luffM, ar: s.ar, slope: s.slope, sheet: SAIL_KINDS[s.kind].sheet })),
+      sails: sails.map((s) => ({ id: s.id, kind: s.kind, areaM2: s.areaM2, ce: s.ce, luffM: s.luffM, ar: s.ar, slope: s.slope, sheet: SAIL_KINDS[s.kind].sheet, ...luffOf(plan, s.id) })),
     });
   }
   if (!sets.length) return { ok: false, why: "no sails" };
@@ -173,6 +181,7 @@ export function buildDesign({ doc, n }) {
     downwash: a.balance.downwashGradient,
     hullSide: hullDerivatives(h, form.lateral.centroid),
     sets,
+    windage: a.windage,
     heelLimitDeg: c.heelLimitDeg,
     conditions: { tws: [...c.tws], twa: [...c.twa], reference: { ...c.reference } },
     notes,

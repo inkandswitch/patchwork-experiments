@@ -1247,9 +1247,9 @@
     "chainplateBaseM": null,
     "chainplatesN": {},
     "mastCompressionN": null,
-    "atAwsMs": 8.61653343,
+    "atAwsMs": 8.56598976,
     "sheetN": {
-      "main": 408.72075
+      "main": 403.939789
     },
     "halyardN": {
       "main": null
@@ -1296,24 +1296,24 @@
       "twsKn": 12,
       "twaDeg": 45,
       "ok": true,
-      "speedMs": 2.92666776,
-      "VMs": 2.92666776,
-      "heelDeg": 14.9998282,
-      "leewayDeg": 3.41872941,
-      "rudderDeg": 1.41568241,
-      "flat": 0.911905289,
+      "speedMs": 2.81951557,
+      "VMs": 2.81951557,
+      "heelDeg": 14.9995819,
+      "leewayDeg": 3.74909053,
+      "rudderDeg": 1.68310091,
+      "flat": 0.917030334,
       "set": "full",
       "reef": -1,
       "sheetsDeg": {
         "main": 11.0917246
       },
-      "awsMs": 8.49861419,
-      "awaDeg": 30.9064185,
-      "fn": 0.478796093,
+      "awsMs": 8.40685698,
+      "awaDeg": 31.2815208,
+      "fn": 0.461266242,
       "regime": "displacement",
       "planingWeight": 0,
-      "vmgMs": 2.06946662,
-      "residual": 4.87120792e-10,
+      "vmgMs": 1.99369858,
+      "residual": 1.39326006e-10,
       "flags": [
         {
           "id": "dsyhs",
@@ -1328,8 +1328,8 @@
     },
     "helm": {
       "id": "weather",
-      "text": "weather helm 1.4°, within 0–5° weather",
-      "rudderDeg": 1.41568241
+      "text": "weather helm 1.7°, within 0–5° weather",
+      "rudderDeg": 1.68310091
     },
     "points": [],
     "beat": [],
@@ -1350,6 +1350,56 @@
       2.56387035
     ],
     "ceHeightFrac": 0.38
+  },
+  "windage": {
+    "source": "ORC VPP Documentation 2023, §5.3 Windage Forces (Table 5.10; eqs. 5.27, 5.28, 5.31–5.33), orc.org, retrieved 2026-11-12: the elements, areas, drag coefficients and heights. Resolution: cross flow on the hull, drag along the flow on spars (this package's; ORC resolves every element along the apparent wind).",
+    "elements": [
+      {
+        "id": "hull",
+        "shape": "body",
+        "areaFrontM2": 0.3836,
+        "areaSideM2": 1.1844,
+        "sidePerSinHeelM2": 2.1731625,
+        "cdFront": 0.816,
+        "cdSide": 0.816,
+        "atM": [
+          0.042,
+          0,
+          0.1848
+        ],
+        "zPerSinHeelM": 0.9042
+      },
+      {
+        "id": "mast-sail",
+        "shape": "spar",
+        "areaFrontM2": 0.2121255,
+        "areaSideM2": 0.2121255,
+        "sidePerSinHeelM2": 0,
+        "cdFront": 0.4,
+        "cdSide": 0.6,
+        "atM": [
+          0.852,
+          0,
+          3.415
+        ],
+        "zPerSinHeelM": 0
+      },
+      {
+        "id": "mast-bare",
+        "shape": "spar",
+        "areaFrontM2": 0.0235695,
+        "areaSideM2": 0.0235695,
+        "sidePerSinHeelM2": 0,
+        "cdFront": 0.8,
+        "cdSide": 0.8,
+        "atM": [
+          0.852,
+          0,
+          0.565
+        ],
+        "zPerSinHeelM": 0
+      }
+    ]
   },
   "warnings": [
     "The given Tc (0.094 m) and the displacement don't agree with Cp 0.552 and Cm 0.757: the synthetic hull floats 6% shallower, at 0.088 m, so that it displaces what was given."

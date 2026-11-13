@@ -193,7 +193,7 @@ describe("polars against published targets", () => {
     expect(fails).toEqual([]);
   }, 60_000);
 
-  it("Catalina 30 beat VMG against the J/24's ORC beat slowed by the PHRF difference: ±15% (a weak target), 16 kn a ratcheted known gap", () => {
+  it("Catalina 30 beat VMG against the J/24's ORC beat slowed by the PHRF difference: ±15% (a weak target)", () => {
     const fx = byId["catalina-30"];
     const P = fx.published.polar;
     const j = byId.j24.published.polar;
@@ -209,11 +209,9 @@ describe("polars against published targets", () => {
       const target = 3600 / (3600 / vj + dPhrf);
       const v = b.vmg / KNOT;
       const ok = within(v, target, P.tol);
-      // 16 kn: a known gap (she points too high, as the J/24 does against ORC), held by a ratchet on the measured miss
-      const kg = kn === 16 ? P.knownGaps.beatVmg16 : null;
-      const known = kg && !ok && Math.abs(v / target - 1 - kg.measuredRel) <= kg.ratchetRel;
-      if (!ok && !known) fails.push(`${kn} kn`);
-      lines.push(`  ${kn} kn: ours ${v.toFixed(2)} kn at ${b.twa.toFixed(1)}°  target ${target.toFixed(2)} (J/24 ORC ${vj} + ${dPhrf} s/mile)  Δ ${(100 * (v / target - 1)).toFixed(1)}%  ${ok ? "ok" : known ? `KNOWN GAP (ratchet: within ±${100 * kg.ratchetRel} points of the +${(100 * kg.measuredRel).toFixed(1)}% measured ${kg.measuredOn})` : "FAIL"}`);
+      // 16 kn was a known gap (16.5% over, 2026-11-06) until windage (2026-11-12): now 9.5%, within the target's ±15%
+      if (!ok) fails.push(`${kn} kn`);
+      lines.push(`  ${kn} kn: ours ${v.toFixed(2)} kn at ${b.twa.toFixed(1)}°  target ${target.toFixed(2)} (J/24 ORC ${vj} + ${dPhrf} s/mile)  Δ ${(100 * (v / target - 1)).toFixed(1)}%  ${ok ? "ok" : "FAIL"}`);
     });
     console.log(`\nCatalina 30 beat VMG, PHRF-relative (${P.note})\nEstimated: ${estimatedOf(doc).join(", ")}\n${lines.join("\n")}`);
     expect(fails).toEqual([]);

@@ -58,6 +58,8 @@ describe("contract/v1: types.js's shared constants are the schema's own enums", 
     REGIMES: [`$defs/point/${P}/regime`, `${P}/resistance/${P}/regime/items`],
     FLAG_IDS: [`$defs/flag/${P}/id`],
     STAY_IDS: [`${P}/rig/${P}/standing/items/${P}/id`],
+    WINDAGE_IDS: [`${P}/windage/${P}/elements/items/${P}/id`],
+    WINDAGE_SHAPES: [`${P}/windage/${P}/elements/items/${P}/shape`],
   };
   it("covers every list types.js exports", () => {
     const lists = Object.entries(T).filter(([, v]) => Array.isArray(v)).map(([k]) => k);

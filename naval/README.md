@@ -35,16 +35,23 @@ profile drawing and the numbers on the right. Units (m / ft) are per viewer.
   tack, the headsail's clew and the keel's and rudder's corners.
 - **The numbers.** Sail plan and ratios, the hull as floated, mass roll-up,
   GM and the righting curve, reef winds, loads, geometric balance (the
-  lead, against a secondhand band), and the performance model: the helm
-  and speed at a reference point on every change, and a polar from a worker
-  once the design has been still. Each row says where it came from, and
+  lead, against a secondhand band), and the performance model: the helm,
+  speed and windage drag at a reference point on every change, and a polar
+  from a worker once the design has been still. The VPP counts the windage
+  of the hull, mast and standing rigging (ORC's elements,
+  `src/naval/windage.js`) and swings each sail's CE out with its sheet,
+  so an eased main carries weather helm. Each row says where it came from, and
   what was estimated is marked "est.".
 - **New from…** loads one of the fixture boats (`src/fixtures/`: sailing's
   stock sloop and eleven real boats from their published figures, the
   Catalina 30 and Laser to the Farr 40 and Nordic Folkboat), or a **first guess from this hull** (`src/firstguess.js`): a whole boat by rules of thumb, with P
-  solved for SA/D and the mast placed for the middle of the lead band. It
-  refuses, with the reason, a hull no mast position balances or that is too
-  heavy to rig by the rules.
+  solved for SA/D and the mast placed for the middle of the lead band. The
+  masthead is capped at 1.60 × LOA (the tallest real boat's) and, where
+  that cuts the SA/D, the guess says so; under SA/D 12.8 (the least real
+  boat's) it refuses, as it does a hull no mast position balances. It
+  reports the helm and doesn't solve for it: the VPP reads the real boats,
+  on their own masts and keels, from 5.8° lee to 5.5° weather, so a helm
+  target would place masts against them.
 - **Helpers** (`src/helpers.js`): move the rig for a helm angle or a lead,
   scale it to an SA/D. Each is one change.
 - **Export contract JSON** builds and validates the contract below.
@@ -86,11 +93,19 @@ when any of those change here, they are copied again there.
 Hydrostatics cross between packages as Rising Tide's Chartroom
 `hydrostatic-table` v1, and only that:
 
-- A hull whose package registers a `chartroom:source` for its datatype
-  (camber does) is floated and read by its own table, once the table
-  validates; one whose fingerprint differs from its GLB's is refused
-  (`src/link/chartroom-link.js`, `src/link/hull-link.js`). The mesh then gives only what a table has no
-  field for (LWL, BWL, Tc, sections, the profile). The provider computes
+- A hull for whose datatype some `chartroom:source` offers
+  `hydrostatic-table/1` (camber's package does for camber hulls) is floated
+  and read by a provider's table, once the table validates. Any number of
+  providers may offer one, by naming the datatype or by wildcard, and none
+  is "the" provider: one whose fingerprint names another hull than the GLB
+  is refused, and the rest are tried in a fixed order (the datatype named
+  before a wildcard, the GLB's own fingerprint before none, then by id), so
+  which table is read depends on the set of providers alone, never on the
+  order they loaded in. The link reports what every provider did
+  (`src/link/chartroom-link.js` RULE, `src/link/hull-link.js`; exhaustive over
+  every set of up to three provider kinds in `chartroom-link.test.js`).
+  The mesh then gives only what a table has no field for (LWL, BWL, Tc,
+  sections, the profile). The provider computes
   that table on the thread that asks, which here is the main thread.
 - Any other hull gets a table built from its floated mesh, in the worker
   (`src/naval/statics.js`).
@@ -116,7 +131,9 @@ camber.
 published boats against their sources (`src/validation.test.js`, and as a
 fleet, the balance model against where their masts and keels really are, in
 `src/validation-fleet.test.js`; the known gaps are stated in
-`src/fixtures/README.md`) and the contract fixtures.
+`src/fixtures/README.md`), the contract fixtures, and the predictions
+against what sailing's sim measured on the same contracts
+(`src/sailing-agreement.test.js`: windage and the Laser's helm running).
 
 The probes drive the built package in headless Chrome (`pnpm build` first;
 they borrow camber's built plugins from `~/dev/camber` at dev time):

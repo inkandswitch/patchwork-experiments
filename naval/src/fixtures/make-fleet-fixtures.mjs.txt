@@ -768,27 +768,27 @@ function solve(boat) {
 const PINS = {
   "j70": {
     "polar": {
-      "measuredOn": "2026-11-10",
+      "measuredOn": "2026-11-12",
       "ratchetPoints": 2,
       "ratchetDeg": 1.5,
       "cells": {
-        "8kn 52°": 4.1,
-        "8kn 75°": 2.5,
-        "8kn 90°": -3.4,
-        "12kn 52°": 1.7,
-        "12kn 75°": 6.4,
-        "12kn 90°": 2.6,
-        "16kn 52°": 2.8,
-        "16kn 75°": 0.4,
-        "16kn 90°": 6.8,
-        "8kn beatVMG": 10.5,
-        "8kn beatAngle": -1.7,
-        "12kn beatVMG": 3.9,
-        "12kn beatAngle": -7.3,
-        "16kn beatVMG": 4.9,
-        "16kn beatAngle": -7
+        "8kn 52°": 1.4,
+        "8kn 75°": 0.9,
+        "8kn 90°": -4.3,
+        "12kn 52°": -1,
+        "12kn 75°": 4.6,
+        "12kn 90°": 1.6,
+        "16kn 52°": -1.2,
+        "16kn 75°": -2.8,
+        "16kn 90°": 2.1,
+        "8kn beatVMG": 3.9,
+        "8kn beatAngle": 0.9,
+        "12kn beatVMG": -1.6,
+        "12kn beatAngle": -3.7,
+        "16kn beatVMG": -2.4,
+        "16kn beatAngle": -4.3
       },
-      "why": "she points 7° higher than ORC at 12 and 16 kn and her beat VMG is 4–11% over, as the J/24's is: the VPP has no heel-induced hull side force and generic sail coefficients. Reaching speeds are within 7%."
+      "why": "with the windage of hull, mast and rigging (ORC's elements) she points 3.7–4.3° higher than ORC at 12 and 16 kn and her beat VMG is within 3.9%; reaching within 4.6%. Without windage (2026-11-10) she pointed 7° higher and beat 4–11% over. What's left: no heel-induced hull side force, and generic sail coefficients."
     },
     "figures": {
       "avsDeg": {
@@ -803,52 +803,52 @@ const PINS = {
   },
   "farr40": {
     "polar": {
-      "measuredOn": "2026-11-10",
+      "measuredOn": "2026-11-12",
       "ratchetPoints": 2,
       "ratchetDeg": 1.5,
       "cells": {
-        "8kn 52°": -3.5,
-        "8kn 75°": -1.2,
-        "8kn 90°": -1.7,
-        "12kn 52°": -1.8,
-        "12kn 75°": -0.5,
-        "12kn 90°": 0.1,
-        "16kn 52°": -0.6,
-        "16kn 75°": -0.9,
-        "16kn 90°": 0.1,
-        "8kn beatVMG": -2,
-        "8kn beatAngle": -1.6,
-        "12kn beatVMG": 0.8,
-        "12kn beatAngle": -2.7,
-        "16kn beatVMG": 0.8,
-        "16kn beatAngle": -4.8
+        "8kn 52°": -5.6,
+        "8kn 75°": -2.8,
+        "8kn 90°": -2.8,
+        "12kn 52°": -4.9,
+        "12kn 75°": -2.3,
+        "12kn 90°": -1.2,
+        "16kn 52°": -4.7,
+        "16kn 75°": -3.9,
+        "16kn 90°": -2.6,
+        "8kn beatVMG": -7.7,
+        "8kn beatAngle": 0,
+        "12kn beatVMG": -6.6,
+        "12kn beatAngle": 2.5,
+        "16kn beatVMG": -7.8,
+        "16kn beatAngle": 2.3
       },
-      "why": "the closest of the fleet: every speed within 4% of ORC; she still points 3–5° higher at 12 and 16 kn."
+      "why": "every speed within 7.8% of ORC, now under it: beat VMG 6.6–7.8% slow, the angle within 2.5°. Windage cost her 2–8 points of beat VMG; without it (2026-11-10) every speed was within 4%, pointing 3–5° higher. Farr's own VPP is 4–6% under ORC's upwind, as she now is."
     }
   },
   "soling": {
     "polar": {
-      "measuredOn": "2026-11-10",
+      "measuredOn": "2026-11-12",
       "ratchetPoints": 2,
       "ratchetDeg": 1.5,
       "cells": {
-        "8kn 52°": 3.6,
-        "8kn 75°": 0.9,
-        "8kn 90°": -3.6,
-        "12kn 52°": 3,
-        "12kn 75°": 5.4,
-        "12kn 90°": 2.6,
-        "16kn 52°": 4.9,
-        "16kn 75°": 7.9,
-        "16kn 90°": 5.8,
-        "8kn beatVMG": 11.7,
-        "8kn beatAngle": -2.3,
-        "12kn beatVMG": 5.1,
-        "12kn beatAngle": -7,
-        "16kn beatVMG": 5.6,
-        "16kn beatAngle": -7.3
+        "8kn 52°": 1.9,
+        "8kn 75°": -0.1,
+        "8kn 90°": -4.2,
+        "12kn 52°": 1.1,
+        "12kn 75°": 4.1,
+        "12kn 90°": 1.9,
+        "16kn 52°": 1.8,
+        "16kn 75°": 5,
+        "16kn 90°": 3.5,
+        "8kn beatVMG": 6.5,
+        "8kn beatAngle": -1.6,
+        "12kn beatVMG": 0.5,
+        "12kn beatAngle": -3.1,
+        "16kn beatVMG": 0.4,
+        "16kn beatAngle": -4.7
       },
-      "why": "as the J/70: 7° higher than ORC at 12 and 16 kn, beat VMG 5–12% over; reaching within 8%."
+      "why": "with windage her beat VMG is within 6.5% of ORC (0.4–0.5% at 12 and 16 kn), pointing 3–5° higher at 12 and 16 kn; reaching within 5%. Without it (2026-11-10), 7° higher and 5–12% over."
     },
     "figures": {
       "avsDeg": {
@@ -863,27 +863,27 @@ const PINS = {
   },
   "hr40c": {
     "polar": {
-      "measuredOn": "2026-11-10",
+      "measuredOn": "2026-11-12",
       "ratchetPoints": 2,
       "ratchetDeg": 1.5,
       "cells": {
-        "8kn 52°": 7,
-        "8kn 70°": 3.6,
-        "8kn 90°": -5.2,
-        "12kn 52°": 3.6,
-        "12kn 70°": 1.5,
-        "12kn 90°": -1.6,
-        "16kn 52°": 4.6,
-        "16kn 70°": 3,
-        "16kn 90°": 1.4,
-        "8kn beatVMG": 12.4,
-        "8kn beatAngle": -1.1,
-        "12kn beatVMG": 9.9,
-        "12kn beatAngle": -5.9,
-        "16kn beatVMG": 12.7,
-        "16kn beatAngle": -4
+        "8kn 52°": 2.8,
+        "8kn 70°": 0.6,
+        "8kn 90°": -6.8,
+        "12kn 52°": 1.4,
+        "12kn 70°": -0.1,
+        "12kn 90°": -2.5,
+        "16kn 52°": 1.4,
+        "16kn 70°": 1.3,
+        "16kn 90°": 0.5,
+        "8kn beatVMG": 3.4,
+        "8kn beatAngle": -0.2,
+        "12kn beatVMG": 2.3,
+        "12kn beatAngle": -3.4,
+        "16kn beatVMG": 2.7,
+        "16kn beatAngle": 0.4
       },
-      "why": "beat VMG 10–13% over Frers' VPP at every wind (she points 4–6° higher at 12 and 16 kn); reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
+      "why": "with windage her beat VMG is 2–3.5% over Frers' VPP (10–13% without it, 2026-11-10), pointing 3.4° higher at 12 kn; reaching within 7%. Her I and P are ±0.5 m estimates, and Frers' wind is at the masthead."
     }
   },
   "contessa32": {

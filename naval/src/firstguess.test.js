@@ -228,19 +228,55 @@ describe("a first guess on the fixtures' hulls, against the real boats (the rule
     expect(g.why).toMatch(/isn't read yet/);
   });
 
-  it("says so, and guesses nothing, when no mast position balances the hull or the rig doesn't fit it", () => {
-    // cuvature-kink at 12 m floated at 20 t: SA/D 17's J and boom leave the mast 4.27–4.30 m, the tack at the
-    // stem, and the keel (by its rule) is too far forward of that for the band: the nearest position still reads 3.9%
-    const a = firstGuess(linkedDoc(20000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
+  it("says so, and guesses nothing, when the hull is too heavy to rig by the rules", () => {
+    // cuvature-kink at 12 m floated at 14 t: SA/D 17 would want a masthead over 1.6·LOA, and at the cap the sails reach only 12.4
+    const a = firstGuess(linkedDoc(14000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
     expect(a.ok).toBe(false);
-    expect(a.why).toMatch(/^no mast position balances this hull: .* 5\.0%–9\.0% band nowhere from 4\.27 m .* to 4\.30 m aft of the stem .*; the nearest, at 4\.27 m, gives 3\.9%$/);
+    expect(a.why).toMatch(/^this hull is too heavy to rig by the rules: at 14\.0 t, with the masthead at its cap \(1\.6·LOA, 17\.98 m\) the sails reach SA\/D 12\.\d\d, under the least of the real boats \(12\.8\)$/);
     expect(a.doc).toBeUndefined();
-    // the same hull at 24 t (it floats at 23.7 t as drawn): J and the boom together are longer than the hull
+    // the same hull at 24 t (it floats at 23.7 t as drawn)
     const b = firstGuess(linkedDoc(24000), { linked: camber("cuvature-kink-with-unmodified-pchip") });
     expect(b.ok).toBe(false);
-    expect(b.why).toMatch(/^this hull is too heavy to rig by the rules: at 24\.0 t, SA\/D 17 is \d+ m², whose J 4\.27 m and boom \d\.\d\d m are together longer than her 11\.24 m overall$/);
-    expect(b.doc).toBeUndefined();
+    expect(b.why).toMatch(/^this hull is too heavy to rig by the rules: at 24\.0 t/);
     console.log(`refusals:\n  ${a.why}\n  ${b.why}`);
+  });
+
+  // The masthead cap, on every camber hull from light to too heavy, each rig type the rules choose among: the
+  // guess is SA/D 17 exactly with the masthead under the cap, or the masthead on the cap (to a millimetre) with
+  // the SA/D it reached at or over the floor, or a refusal because that SA/D is under the floor. Nothing else.
+  const HULLS = ["cuvature-kink-with-unmodified-pchip", "narrow-transom", "flat-bottom", "hull-default"];
+  const MASSES = [2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000];
+  it(`the masthead cap and the SA/D floor, on ${HULLS.length} hulls × ${MASSES.length} displacements × 2 rig types`, () => {
+    const seen = { full: 0, capped: 0, refused: 0 };
+    for (const name of HULLS) {
+      const linked = camber(name);
+      for (const kg of MASSES)
+        for (const type of ["masthead", "fractional"]) {
+          const label = `${name} ${kg} kg ${type}`;
+          const g = firstGuess(linkedDoc(kg), { linked }, { type });
+          if (!g.ok) {
+            expect(g.why, label).toMatch(/too heavy to rig by the rules/);
+            seen.refused++;
+            continue;
+          }
+          const r = g.report;
+          const n = computeNumbers(g.doc, { linked });
+          const top = n.plan.mast.aboveDatumZ;
+          expect(r.mastheadCapM, label).toBeCloseTo(RULES.mastHeight.maxOverLoa * n.form.loa, 9);
+          expect(top, label).toBeLessThanOrEqual(r.mastheadCapM + 1e-3);
+          if (r.capped) {
+            expect(Math.abs(top - r.mastheadCapM), label).toBeLessThanOrEqual(1e-3);
+            expect(r.saDReached, label).toBeGreaterThanOrEqual(RULES.mastHeight.minSaD);
+            expect(r.saDReached, label).toBeLessThan(r.saD);
+            seen.capped++;
+          } else {
+            expect(r.saDReached, label).toBeCloseTo(r.saD, 3);
+            seen.full++;
+          }
+        }
+    }
+    console.log(`masthead cap: ${seen.full} at SA/D 17 under the cap, ${seen.capped} capped, ${seen.refused} refused`);
+    expect(seen.full * seen.capped * seen.refused).toBeGreaterThan(0);
   });
 
   it("replaces only the design: the hull, its link, the conditions and the title stay", () => {

@@ -366,3 +366,50 @@ export const ORC_JIB_2026 = {
   cl: [0.0, 1.0, 1.375, 1.45, 1.45, 1.25, 0.4, 0.0, -0.1],
   cdv: [0.05, 0.032, 0.031, 0.037, 0.25, 0.35, 0.73, 0.95, 0.9],
 };
+
+/**
+ * Where a sail's CE is when it is sheeted δ (deg, + to leeward) about its
+ * luff, the line from its tack (`pivot`, the gooseneck for a main) to its
+ * head, in the profile plane [x, z]: the CE's part along the luff stays, its
+ * part square to it swings out of the centreplane by δ (Rodrigues about the
+ * luff; sailing's rig-sails.js swungCE, the same rotation).
+ * @returns {[number, number, number]} [x, y to leeward, z]
+ */
+export function swingCE(ce, pivot, head, deg) {
+  const ux0 = head[0] - pivot[0], uz0 = head[1] - pivot[1];
+  const L = Math.hypot(ux0, uz0);
+  const rx = ce[0] - pivot[0], rz = ce[1] - pivot[1];
+  if (!(L > 0)) return [ce[0], 0, ce[1]];
+  const ux = ux0 / L, uz = uz0 / L;
+  const d = rx * ux + rz * uz;
+  const px = rx - d * ux, pz = rz - d * uz;
+  const n = Math.hypot(px, pz);
+  const c = Math.cos(deg * RAD), s = Math.sin(deg * RAD);
+  return [pivot[0] + d * ux + px * c, n * s, pivot[1] + d * uz + pz * c];
+}
+
+/** A table's per-sail sheets at β (deg), linear between whole degrees as the coefficients are. */
+export function sheetsAt(table, betaDeg) {
+  const b = Math.min(180, Math.max(0, Math.abs(betaDeg)));
+  const i = Math.min(179, Math.floor(b));
+  const t = b - i;
+  return Object.fromEntries(Object.entries(table.sheets).map(([id, arr]) => [id, arr[i] + t * (arr[i + 1] - arr[i])]));
+}
+
+/**
+ * A set's CE with each sail swung to its sheet: the sails' swung CEs,
+ * area-weighted, as the set's own CE is of theirs unswung (§6.6).
+ * @param {{ sails: { id, areaM2, ce: [x, z], pivot: [x, z], head: [x, z] }[] }} set
+ * @returns {[number, number, number]} [x, y to leeward, z]
+ */
+export function swungSetCE(set, sheets) {
+  let A = 0, x = 0, y = 0, z = 0;
+  for (const s of set.sails) {
+    const p = swingCE(s.ce, s.pivot, s.head, sheets[s.id] ?? 0);
+    A += s.areaM2;
+    x += s.areaM2 * p[0];
+    y += s.areaM2 * p[1];
+    z += s.areaM2 * p[2];
+  }
+  return A > 0 ? [x / A, y / A, z / A] : [set.ce[0], 0, set.ce[1]];
+}
