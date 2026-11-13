@@ -16,7 +16,7 @@ export function emptyScene(over = {}) {
     assets: {},
     packages: [],
     clock: { running: true, t: 0 },
-    view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
+    view: { units: "m", grid: true, axes: true, bounds: false, snap: true, start: { body: "edit" } },
     ...over,
   };
 }

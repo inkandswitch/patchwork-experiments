@@ -310,7 +310,7 @@ describe("the verbs have no mode", () => {
   afterEach(() => vi.useRealTimers());
 
   // What a verb applies to is the table's state, never the viewer's: in
-  // orbit, seated, holding a tool or with something selected, Wash, Stand,
+  // Look or Edit, seated, holding a tool or with something selected, Wash, Stand,
   // Lay flat, Lay my hand face up and Draw say the same.
   it("Wash, Stand, Lay flat, Lay my hand face up and Draw say the same whatever the viewer is in, holds or has selected", async () => {
     const t = table();
@@ -324,7 +324,7 @@ describe("the verbs have no mode", () => {
     expect(base[0]).toMatchObject({ label: "Wash (5)" });
     expect(base[2]).toMatchObject({ label: "Lay flat" });
     for (const b of base) expect(b).not.toBeNull();
-    const locals = [{ body: { id: "orbit" } }, { body: { id: "seat" } }, { body: { id: "walk" }, held: { name: "Measure" } }, { selected: "b3" }];
+    const locals = [{ body: { id: "look" } }, { body: { id: "edit" } }, { body: { id: "seat" } }, { body: { id: "walk" }, held: { name: "Measure" } }, { selected: "b3" }];
     for (const extra of locals) {
       const local = { ...t.A.api.local.get(), ...extra };
       cases.forEach(([id, target], i) => expect(t.cmd(t.A, id).state(target, { scene: t.A.api.scene(), local }), `${id} ${target} ${JSON.stringify(extra)}`).toEqual(base[i]));

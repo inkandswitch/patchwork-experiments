@@ -458,7 +458,7 @@ describe("sitting down from walking", () => {
     expect(t.notices("B")).toContain("Someone sat down as Player 1");
     expect(t.w.sent.filter((s) => s.type === "sat")).toEqual([{ session: "C", viewer: "carol", type: "sat", data: { seat: "p1" } }]);
     // the seat body over the walk, which waits under it
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "walk", "seat"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "walk", "seat"]);
     expect(t.walker.C.suspended).toHaveBeenCalledOnce();
     near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
@@ -468,7 +468,7 @@ describe("sitting down from walking", () => {
     t.w.done();
   });
 
-  it("only walking, and never at a loose piece: in orbit it isn't offered", async () => {
+  it("only walking, and never at a loose piece: in Look it isn't offered", async () => {
     const t = await cockpit(SEATS0(), { views: [["C", "carol", { walking: true }], ["D", "dan"]] });
     expect(t.look("C", "card", t.at([0.1, 0.703, 0.5]))).toBeNull();
     expect(t.look("D", "hand1")).toBeNull();
@@ -624,19 +624,19 @@ describe("standing up", () => {
     await t.pickSeat("C", "p1");
     t.api.C.body.enter("walk"); // up out of it, walking (sailing's Enter does this from a seat)
     t.api.C.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat", "walk"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat", "walk"]);
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
     await t.press("C", "hand1");
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat"]);
     near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
     t.w.done();
   });
 
-  it("from a seat entered from orbit, standing up is orbit again; not offered at a seat with no view", async () => {
+  it("from a seat entered from Look, standing up is Look again; not offered at a seat with no view", async () => {
     const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
     await t.pickSeat("C", "p1");
     await t.press("C", "hand1", null, t.at([0, 1.2, 0.95]));
-    expect(t.body("C")).toBe("orbit");
+    expect(t.body("C")).toBe("look");
     const u = await cockpit({ p1: { name: "Player 1", player: "dan" }, p2: { name: "Player 2", player: null } }, { views: [["D", "dan"]] });
     expect(u.look("D", "hand1", null, u.at([0, 1.2, 0.95]))).toBeNull();
     u.w.done();
@@ -937,7 +937,7 @@ describe("arriving seated (view.start = { body: \"seat\" }, no seat named)", () 
     expect(t.claim("p2")).toMatchObject({ viewer: BEN });
     // standing up (Watching in the picker) leaves the seat body
     await t.pickSeat("B", "");
-    expect(t.api.B.local.get().body.id).toBe("orbit");
+    expect(t.api.B.local.get().body.id).toBe("look");
   });
 });
 

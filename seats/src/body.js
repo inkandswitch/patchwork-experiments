@@ -5,7 +5,9 @@
 // keys, so D draws; it doesn't lock the pointer; and it needs a place (a
 // seat), so the body chip doesn't offer it: the picker and the seat's verb
 // enter it. Sitting pushes it over whatever body you had (walking her deck,
-// or orbit); standing up pops it, and that body carries on.
+// or Look: from Edit the stage turns to Look first, as nothing stands on
+// Edit); standing up pops it, and that body carries on (from a seat entered
+// in Edit, Look).
 
 import { applyMatrix } from "./transform.js";
 import { seatsOf } from "./model.js";

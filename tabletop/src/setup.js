@@ -42,8 +42,9 @@
 //   locked carries the scene's `scene.carry`, so it can be picked up.
 // - The seats are laid by their owner, which adds them to the scene's
 //   (under other ids where another table's seats have these; each hand
-//   follows its seat's id). A game with seats starts people in the seat body
-//   (view.start); one without (Santorini) in orbit.
+//   follows its seat's id). A game with seats (every built-in one) starts
+//   people in the seat body (view.start); one without in Look (the stage's
+//   orbit camera, no body named), never in Edit.
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";
@@ -316,7 +317,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       // where people start (scene TOOLS.md §2): at a game with seats (every
       // built-in one), the seat body (back in your own seat, else watching
       // from the first seat's view), where pressing a piece picks it up or
-      // uses it; a game laid out with none starts in orbit at the home view
+      // uses it; a game laid out with none starts in Look (no body named) at the home view
       start: {
         ...(Object.keys(seats).length ? { body: "seat" } : {}),
         home: game?.camera ? copy(game.camera) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
