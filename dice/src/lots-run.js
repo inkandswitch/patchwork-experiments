@@ -343,6 +343,7 @@ export function createRunner(place) {
       if (d.mustOpen) {
         const n = mineOf(r.id).nonce;
         opened.add(r.id);
+        release(r.draw, "all"); // my part in the clear: anyone could know this draw now, whatever the doc says later
         into(id, r.id, (round) => void (round.opens[viewer] || (round.opens[viewer] = n)));
       }
       if (r.opens[viewer]) opened.add(r.id);

@@ -583,6 +583,27 @@ describe("dice.lots, who could know a cup's roll, as its holder's client tells i
     w.dispose();
   });
 
+  it("Ben strips Ana from the sealers so her client opens her part in the clear, puts them back, deletes her opening and says forged: her client knows it opened, so nothing is drawn again", async () => {
+    const w = world({ seated: ["ana", "ben"], present: ["ana", "ben"] });
+    w.setAudience(() => []); // down, blind: nobody
+    const draw = w.lots("ana").draw("cup", { sealers: ["ana", "ben"], of: ["d1"] });
+    await w.settle();
+    const cup = cupOf({ traits: { [CUP]: { holder: "ana", up: false, blind: true, roll: { draw, dice: ["d1"], blind: true, done: false } } } });
+    w.write((d) => void (d.objects.cup.traits[CUP].round.sealers = ["ben"])); // Ana is now an opener, not a sealer
+    await w.settle();
+    expect(w.round().opens.ana).toBeTruthy(); // her client opened her part in the clear
+    w.write((d) => {
+      const round = d.objects.cup.traits[CUP].round;
+      round.sealers = ["ana", "ben"];
+      delete round.opens.ana;
+      round.protests.ben = { of: round.id, why: "forged" };
+    });
+    const st = w.lots("ana").state("cup");
+    expect(st.knew).toBe("all");
+    expect(redrawFor(st, cup, "ana")).toEqual([]);
+    w.dispose();
+  });
+
   it("after a reload, Ana's client can't say whom her part went to: anyone could know it, so nothing is ever drawn again", async () => {
     const { w, cup } = await lifted();
     w.rejoin("ana");
