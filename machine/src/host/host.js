@@ -690,7 +690,7 @@ export class Host {
       // automerge-repo has no safe way yet to let one go (DocHandle.unload is
       // a no-op, and a document removed from the cache can't be found again
       // from a peer that already sent it). So checkpoints should be few: the
-      // Machine view sets the period per engine (patchwork/tool.js).
+      // Machine view sets the period per engine (patchwork/datatype.js).
     } finally {
       this.#writing.delete(t);
     }
