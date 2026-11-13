@@ -30,6 +30,10 @@ export const FLAG_IDS = ["no-equilibrium", "over-heel", "helm", "rudder-stall", 
 /** The standing rigging's ids (§3.8). */
 export const STAY_IDS = ["forestay", "backstay", "inner-forestay", "cap-shroud-port", "cap-shroud-starboard", "lower-shroud-port", "lower-shroud-starboard"];
 
+/** The windage elements (§6.1), and how each meets the air. */
+export const WINDAGE_IDS = ["hull", "mast-sail", "mast-bare", "rigging"];
+export const WINDAGE_SHAPES = ["body", "spar"];
+
 /** @typedef {[number, number, number]} Vec3 */
 
 /**
@@ -51,6 +55,7 @@ export const STAY_IDS = ["forestay", "backstay", "inner-forestay", "cap-shroud-p
  * @property {Loads|null} loads
  * @property {Predicted} predicted
  * @property {LumpedSail|null} lumpedSail
+ * @property {Windage} windage
  * @property {string[]} warnings
  * @property {string} rules
  */
@@ -223,4 +228,19 @@ export const STAY_IDS = ["forestay", "backstay", "inner-forestay", "cap-shroud-p
 /**
  * @typedef {object} LumpedSail §6.8, in the contract frame (the GLB's extras.sail.plan carries it in glTF coordinates)
  * @property {Vec3} tackM @property {number} luffM @property {number} footM @property {number} areaM2 @property {Vec3} ceM @property {number} ceHeightFrac
+ */
+
+/**
+ * @typedef {object} Windage §6.1: what isn't sail, each element a drive and a heel force at its own centre
+ * @property {string} source
+ * @property {WindageElement[]} elements
+ */
+
+/**
+ * @typedef {object} WindageElement
+ * @property {"hull"|"mast-sail"|"mast-bare"|"rigging"} id
+ * @property {"body"|"spar"} shape body: cross flow on each area; spar: drag along the flow
+ * @property {number} areaFrontM2 @property {number} areaSideM2 @property {number} sidePerSinHeelM2 the side area's growth per sin φ
+ * @property {number} cdFront @property {number} cdSide
+ * @property {Vec3} atM its centre upright (y 0) @property {number} zPerSinHeelM the centre's rise per sin φ
  */

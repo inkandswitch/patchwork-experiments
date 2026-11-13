@@ -443,27 +443,27 @@
       },
       "note": "ORC rates downwind with the spinnaker (36.38 m²); the VPP has none, so only the beat and 52–90° are compared.",
       "pinned": {
-        "measuredOn": "2026-11-10",
+        "measuredOn": "2026-11-12",
         "ratchetPoints": 2,
         "ratchetDeg": 1.5,
         "cells": {
-          "8kn 52°": 3.6,
-          "8kn 75°": 0.9,
-          "8kn 90°": -3.6,
-          "12kn 52°": 3,
-          "12kn 75°": 5.4,
-          "12kn 90°": 2.6,
-          "16kn 52°": 4.9,
-          "16kn 75°": 7.9,
-          "16kn 90°": 5.8,
-          "8kn beatVMG": 11.7,
-          "8kn beatAngle": -2.3,
-          "12kn beatVMG": 5.1,
-          "12kn beatAngle": -7,
-          "16kn beatVMG": 5.6,
-          "16kn beatAngle": -7.3
+          "8kn 52°": 1.9,
+          "8kn 75°": -0.1,
+          "8kn 90°": -4.2,
+          "12kn 52°": 1.1,
+          "12kn 75°": 4.1,
+          "12kn 90°": 1.9,
+          "16kn 52°": 1.8,
+          "16kn 75°": 5,
+          "16kn 90°": 3.5,
+          "8kn beatVMG": 6.5,
+          "8kn beatAngle": -1.6,
+          "12kn beatVMG": 0.5,
+          "12kn beatAngle": -3.1,
+          "16kn beatVMG": 0.4,
+          "16kn beatAngle": -4.7
         },
-        "why": "as the J/70: 7° higher than ORC at 12 and 16 kn, beat VMG 5–12% over; reaching within 8%."
+        "why": "with windage her beat VMG is within 6.5% of ORC (0.4–0.5% at 12 and 16 kn), pointing 3–5° higher at 12 and 16 kn; reaching within 5%. Without it (2026-11-10), 7° higher and 5–12% over."
       }
     },
     "balance": {

@@ -6,7 +6,7 @@
 // and is the authority. Added there and not here: `roundTrip` on figures that
 // are the doc's own inputs (Laser Cp, Cm, BWL, Tc; J/24 and Catalina 30 draft),
 // `knownGap` as { measured, ratchet, measuredOn, why, toClose? } (J/24 RM1),
-// `published.polar.knownGaps` (J/24 beat angle, Catalina 30 16 kn beat VMG),
+// `published.polar.knownGaps` (J/24 beat angle; the Catalina 30's 16 kn beat VMG gap, since closed),
 // the Laser's estimated planing-speed target (`published.planing.speedKn`,
 // `speedTol`, `speedSource`) and its `laser-reach-anecdotal` source. Running
 // this as it stands would drop them.
