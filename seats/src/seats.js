@@ -13,7 +13,8 @@
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
 //     (Sit as …, Stand up: model.js);
-//   - telling the others when someone sits down (api.send: the seat id only).
+//   - telling the others when someone sits down (api.send: the seat id only);
+//   - who the parties are, for undo (`parties`): the people seated.
 //
 // Who sits where is the doc's (`player`), and lasts. Whether that player is
 // here now is a claim on the scene, `seat:<id>` (scene/STAGE.md, "Claims"):
@@ -507,6 +508,13 @@ function create(api) {
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
     }),
+    // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
+    // the people seated at it, here or away; not those watching. Asked when
+    // someone takes back an edit that showed or decided something here.
+    parties: (snap) => {
+      const seated = rosterOf(snap).map((s) => s.viewer).filter(Boolean);
+      return () => seated;
+    },
     // the seat body (body.js): entered by the picker and the seat's verb
     bodies: [body],
     commands: [

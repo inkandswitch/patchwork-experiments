@@ -54,9 +54,10 @@ might reasonably want it otherwise.
    COMPOSITION.md §11).
 6. **A hand is a piece with a `zone`, placed for a `seat`.** The seat moved
    from the piece to the thing, so two players' trays are one kind.
-7. **A game with seats opens in play**; one without (Santorini) in the
-   editor. (The old rule was "hands or cards"; Liar's dice, with seats and
-   neither, needed play.) This goes with the activities at core step 8.
+7. **A game with seats starts people in the seat body** (`view.start`,
+   scene/TOOLS.md §2), where a press picks a piece up; one without starts
+   them in orbit. (Activities went at core step 8; Santorini gained seats
+   then, so every built-in game has some.)
 8. **Pieces drawn by another package are documents.** A die is `doc: { "@patchwork": { type: "die" }, … }`, drawn by whatever `scene:source`
    supports that type; `traits` on a piece say what it does there
    (`dice.die`). The format names another package's datatype and trait only

@@ -310,10 +310,10 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       axes: false,
       bounds: false,
       snap: true,
-      // where people start (scene TOOLS.md §2): at a game with seats, the
-      // seat body (back in your own seat, else watching from the first
-      // seat's view), where pressing a piece picks it up or uses it; a game
-      // with none (Santorini) starts in orbit at the home view
+      // where people start (scene TOOLS.md §2): at a game with seats (every
+      // built-in one), the seat body (back in your own seat, else watching
+      // from the first seat's view), where pressing a piece picks it up or
+      // uses it; a game laid out with none starts in orbit at the home view
       start: {
         ...(Object.keys(seats).length ? { body: "seat" } : {}),
         home: game?.camera ? copy(game.camera) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },

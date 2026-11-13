@@ -769,6 +769,21 @@ describe("the roster (pure in the snapshot)", () => {
     w.done();
   });
 
+  it("parties, for undo: whoever is seated, here or away, for every object at the table, by the snapshot it's given", async () => {
+    const w = fakes.fakeWorld(sceneOf(objects(), { [SEATS]: seats("ann", null) }));
+    const { x } = withSeats(w, "A", "ann");
+    for (const [s, want] of [
+      [snap(seats(null, null)), []],
+      [snap(seats("ann", null)), ["ann"]],
+      [snap(seats(null, "bob")), ["bob"]],
+      [snap(seats("ann", "bob")), ["ann", "bob"]],
+    ]) {
+      const of = x.parties(s);
+      for (const id of ["card", "anything", null]) expect(of(id)).toEqual(want);
+    }
+    w.done();
+  });
+
   it("reads the doc alone: claims and presence change nothing", () => {
     const base = snap(seats("ann", null));
     for (const claims of [undefined, { [KIND("p2")]: { viewer: "bob", session: "S" } }]) expect(rosterOf({ ...base, d: { claims } })).toEqual(rosterOf(base));
@@ -814,11 +829,9 @@ describe("lay: seats written into a scene being set up", () => {
     expect(d.traits[SEATS].p2.camera.position).toEqual([0, 1, -1]);
   });
 
-  it("the plugin says where to find it: `roster: true`, its trait described, in every activity", async () => {
+  it("the plugin says where to find it: `roster: true`, its trait described", async () => {
     const p = plugins.find((x) => x.id === "seats");
     expect(p).toMatchObject({ type: "scene:extension", roster: true, traits: [SEATS] });
-    // no `activities`: who sits where is read while editing too, and by whatever else is being done
-    expect(p.activities).toBeUndefined();
     expect(p.describes[SEATS].entries.init).toEqual({ player: null });
     expect(() => structuredClone({ ...p, load: undefined })).not.toThrow();
     const mod = await p.load();

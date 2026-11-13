@@ -168,7 +168,7 @@ describe("the Lost Cities template", () => {
 });
 
 describe("the Santorini template", () => {
-  it("lays the island out with its own art, no decks, no seats", async () => {
+  it("lays the island out with its own art, no decks; its seats are the seat owner's to lay (none installed here)", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: registries(...gamePlugins()) });
     await santorini.create(ctx);
@@ -179,9 +179,9 @@ describe("the Santorini template", () => {
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) expect(urls.has(o.sourceUrl)).toBe(true);
     expect(doc.traits).toEqual({});
-    // nobody sits at it: people start in orbit, at its home view
+    // people start in the seat body, at its home view until a seat is there to watch from
     expect(doc.view).not.toHaveProperty("tool");
-    expect(Object.keys(doc.view.start)).toEqual(["home"]);
+    expect(doc.view.start).toEqual({ body: "seat", home: expect.any(Object) });
     expect(calls.changes).toBe(1);
     expect(calls.notices.at(-1).text).toMatch(/Santorini is laid out/);
   });
