@@ -19,7 +19,11 @@ The layout is naval's rig contract's (a structural schema, a specification
 of the rules it can't express, valid and invalid fixtures each naming the
 stage and error code it fails with). Other packages keep copies of
 `schema.json` and `validate.js` for their tests (dice, tts-import), since
-packages never import each other.
+packages never import each other. One fixture goes the other way:
+`valid/tts-tiny-mod.json` is what tts-import translates its tiny fixture mod
+into (its tests check the translation still is that file, kept beside its
+copies), and this package's tests set it up and play it
+(`src/table/imported.test.js`).
 
 ## Choices to revisit
 
@@ -74,6 +78,12 @@ might reasonably want it otherwise.
     kind's GLB) and `tables`; the game page's JSON shows only the game.
 14. **Dice docs without `faces` are numbered the usual way** (a change to the
     dice package's `dieOf`), so a game or an importer can say `shape: "d6"`.
+15. **An imported deck is never `secure`.** At a TTS table anyone can search
+    a deck, and a mod's decks are often in an order that matters (a scenario
+    deck); a secure deck also waits for every seat to be taken. So the
+    importer writes none, and making one secure is the game page's tick on
+    that deck. The other way round, every face-down deck secure, is one line
+    in tts-import's translate.js.
 
 ## 1. Smallest useful document
 
@@ -131,7 +141,8 @@ Piece = {
   snapPoints?: { position: Vec3, rotation?: Vec3, tags?: string[] }[],
                               // places other pieces snap to, in its frame; a whole `rotation` is the frame a
                               // drawn card lies in there (a domino rack's places stand a tile on edge)
-  snapRadius?: number,
+  snapRadius?: number,        // how near a snap point a thing snaps to it (and how far a hand's card slot reaches);
+                              // without it the scene guesses from the points' spacing, and one point alone has none
   zone?: { min: Vec3, max: Vec3 },   // a hand, when a thing places it for a seat: a box in its frame, +Z toward the seat
   bag?: { rule: "random" | "random-replace" | "top" },   // a bag: things placed with `contents` go in it
   traits?: { [key]: object }  // traits every copy carries, as the scene documents them (a die's `dice.die`)

@@ -415,6 +415,8 @@ export function translate(save, { file = () => null, imageSize = () => null, uni
       locked: true,
       zone: { min: v3([-w / 2, 0, -d / 2]), max: v3([w / 2, hgt, d / 2]) },
       snapPoints: Array.from({ length: slots }, (_, k) => ({ position: v3([-w / 2 + pitch * (k + 0.5), 0.002, 0]), rotation: [0, 0, 0], tags: ["card"] })),
+      // each slot reaches halfway to the next: a card drawn or set down lands in the one it's over
+      snapRadius: r6(pitch / 2),
     });
     setup.push({ id: `hand-${sid}`, piece: hand, name: `${node.handColor}'s hand`, seat: sid, at: pose({ position: [p[0], 0, p[2]], rotation: [0, yaw, 0] }) });
     const eye = [p[0] + (out[0] / len) * 6 * u, 28 * u, p[2] + (out[1] / len) * 6 * u];

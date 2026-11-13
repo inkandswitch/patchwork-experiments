@@ -7,7 +7,8 @@ bags, dice and seats, every one where TTS had it — becomes a game in the
 images and models it uses becomes a `file` doc that says which of the mod's
 URLs it came from. It writes no scene: a table is set up from the game by
 the tabletop package, exactly as for a built-in game, so shuffling, drawing,
-private hands, the secure deck, bags and dice work on an imported game with
+private hands, the secure deck (a deck ticked *secure* on the game page),
+bags and dice work on an imported game with
 no code here. Scripting is left behind on purpose: `LuaScript`,
 `LuaScriptState` and `XmlUI` are never read.
 
@@ -151,7 +152,7 @@ d12, d20 matches the saves seen (`Type: 1` on six-sided dice with six
 | TTS | in the game |
 |---|---|
 | `Card`, `CardCustom` | a card: a slab, its cell of the face sheet on top, the back (or its cell, `UniqueBack`) underneath, naming its back piece (the back image on both sides, tagged `card`). Kept wherever it lies |
-| `Deck`, `DeckCustom` | a deck listing its cards, top first (`ContainedObjects[0]`), where the deck is; face down: level and `faceDown` |
+| `Deck`, `DeckCustom` | a deck listing its cards, top first (`ContainedObjects[0]`), where the deck is; face down: level and `faceDown`. Never `secure` (anyone at a TTS table can search a deck): ticking a deck *secure* on the game page is all it takes for its players to shuffle it between them |
 | `Custom_Tile`, `Custom_Board` | a slab (rect, hex, circle or rounded by `Type`), `ImageURL` on top, `ImageSecondaryURL` underneath, else the top again; sides in `ColorDiffuse` |
 | `Custom_Token` | a `cutout` slab: the tabletop's drawer makes a round image a disc, any other transparent shape alpha-masked faces without sides |
 | `*_Stack` (`Number`) | one thing of that many copies, stacked by its thickness (`count` and `grid`) |
@@ -161,7 +162,7 @@ d12, d20 matches the saves seen (`Type: 1` on six-sided dice with six
 | `Figurine_Custom` | a standee: its image (and its back) on a slab stood up facing +Z, on a round base |
 | `Custom_PDF` | a blank sheet (the PDF isn't stored) |
 | chess / checkers / blocks / pawns | simple stand-in shapes |
-| `HandTrigger` | a seat (with a camera from that hand), and its hand: a tray in the seat's colour with card slots across it, its zone the trigger's box, +Z toward its player |
+| `HandTrigger` | a seat (with a camera from that hand), and its hand: a tray in the seat's colour with card slots across it (each reaching halfway to the next, its `snapRadius`), its zone the trigger's box, +Z toward its player |
 | `AttachedSnapPoints`, `SnapPoints` | the pieces' snap points, and the table's: position, rotation (converted like any other) and tags |
 | `Tags` | the piece's `tags`: a tagged snap point takes only objects with one of its tags, as in TTS |
 | `Locked` | the piece's `locked` |
@@ -254,13 +255,19 @@ fixture (also from a zip) against an in-memory repo, each game checked against
 the format; and five real mods from this machine's TTS cache when it's there
 (`src/real-mods.test.js`: the two Earthborne Rangers and Frosthaven Enhanced,
 whose assets the cache holds, and Planet X and Mantis Falls, whose it
-doesn't), each imported whole and its game checked.
+doesn't), each imported whole and its game checked. The fixture's game is
+also checked to be, whole, the format's fixture of it (`src/test/contract/`),
+which tabletop's tests set up and play: Shuffle, Draw into the seat's hand,
+a deck ticked secure, the bag and the die, with nothing of the importer's.
 
 The browser probe imports with the **built** tool in headless Chrome, as a drop
 of real `File`s, presses *Open the game*, lets the **built** tabletop-game tool
 draw every piece and set up a table, and mounts the **built** scene tool on it
 (with seats, keep, bag and dice installed, each from its own `dist`, loaded at
-runtime by URL for verification only), then screenshots it:
+runtime by URL for verification only), then plays it as anyone would: sits
+in the game's first seat, hovers the top card of the biggest pile the pointer
+can reach, presses D, and checks the card lands in that seat's hand where only
+the one sitting there may see it. It screenshots each step:
 
 ```
 pnpm build && for p in scene seats tabletop keep bag dice; do (cd ../$p && pnpm install && pnpm build); done

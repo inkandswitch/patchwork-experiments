@@ -122,6 +122,44 @@ try {
   check("every placed piece not locked can be carried (the scene's carry trait)", sc.carryable === sc.placed - sc.locked && sc.carryable > 0);
   check("every visible object loaded", probe.sceneStats && probe.sceneStats.loaded >= probe.sceneStats.visible);
   report.shots.push(await shoot("overview.png"));
+  // play it, with no importer code: sit in the first seat, hover a pile's top card, press D. (The biggest
+  // pile the pointer can reach: a mod may leave something over one, as Earthborne's splash screen, which
+  // its script would have taken away, lies over its Challenge Deck.)
+  if (probe.game?.seats?.length) {
+    const P = (expr) => js(`window.__play.${expr}`);
+    const until = async (expr, ms = 10_000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) if (await P(expr).catch(() => false)) return true; return false; };
+    const seat = await P("seat()");
+    const piles = await P("piles()");
+    let pile = null, at = null;
+    const covered = [];
+    for (const p of piles.slice(0, 6)) {
+      await P(`look(${JSON.stringify(p[0])})`);
+      await sleep(800);
+      if (await until(`aimAt(${JSON.stringify(p[0])})`, 8000)) {
+        pile = p;
+        at = await P(`aimAt(${JSON.stringify(p[0])})`);
+        break;
+      }
+      covered.push(p.length);
+    }
+    if (pile) {
+      const top = pile[0];
+      await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+      await until(`hovered() === ${JSON.stringify(top)}`, 3000);
+      check(`seated in ${seat}, the use prompt over a pile of ${pile.length} offers Draw to my hand`, await until("prompt().some((t) => /Draw to my hand/.test(t))", 5000));
+      report.shots.push(await shoot("prompt.png"));
+      await P("focus()");
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key: "d", code: "KeyD", text: "d", windowsVirtualKeyCode: 68 });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key: "d", code: "KeyD", windowsVirtualKeyCode: 68 });
+      check("D draws the pile's top card into that seat's hand", await until(`handOf(${JSON.stringify(top)}) !== null`, 15_000));
+      check("which only the one sitting there may see", await until(`audience(${JSON.stringify(top)})?.join() === "viewer:probe"`, 5000));
+      report.drawn = { seat, top, pile: pile.length, covered, audience: await P(`audience(${JSON.stringify(top)})`) };
+      report.shots.push(await shoot("drawn.png"));
+    } else {
+      check("a pile out on the table the pointer can reach, if there are any", piles.length === 0);
+      report.drawn = { seat, piles: piles.length, covered };
+    }
+  }
   // closer looks, from the near side (+Z), at the middle of the table
   const cam = probe.camera;
   if (cam) {

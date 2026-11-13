@@ -12,6 +12,7 @@ import { sourcesFromZip } from "./inputs.js";
 import { FakeRepo } from "./test/fake-repo.js";
 import { FIXTURE, fixtureSources } from "./test/fixture.js";
 import { validate, errorText } from "./test/contract/validate.js";
+import tinyGame from "./test/contract/tts-tiny-mod.json" with { type: "json" };
 
 const U = 0.0254;
 const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
@@ -65,6 +66,23 @@ describe("runImport on the tiny fixture", () => {
     expect(game.about).toMatch(/^Imported from Tabletop Simulator: “Tiny Test Mod”/);
     const types = repo.created.map((h) => h.doc()["@patchwork"].type);
     expect(types.filter((t) => t !== "file")).toEqual(["tabletop-game"]);
+  });
+
+  it("is, whole, the format's own fixture of it (tabletop's valid/tts-tiny-mod.json, copied here), up to the names the repo gave it", async () => {
+    // file docs' URLs are whatever the repo made, and a kind's id is a hash of its look, URLs and all:
+    // name both by the order they're first met
+    const named = (g) => {
+      const kinds = new Map(Object.keys(g.pieces).map((k, i) => [k, `kind${i}`]));
+      const urls = new Map();
+      return JSON.parse(JSON.stringify(g), (key, v) => {
+        if (typeof v !== "string") return v;
+        if (kinds.has(v)) return kinds.get(v);
+        return v.startsWith("automerge:") ? `automerge:${urls.get(v) ?? urls.set(v, urls.size).get(v)}` : v;
+      });
+    };
+    const rekeyed = (g) => ({ ...named(g), pieces: Object.fromEntries(Object.entries(named(g).pieces).map(([, p], i) => [`kind${i}`, p])) });
+    const { game } = await importFixture();
+    expect(rekeyed(game)).toEqual(rekeyed(tinyGame));
   });
 
   it("every image and model a piece names is one of the stored file docs", async () => {
@@ -144,6 +162,9 @@ describe("runImport on the tiny fixture", () => {
     expect(piece.zone.min.every((v, i) => v < piece.zone.max[i])).toBe(true);
     expect(piece.snapPoints.length).toBeGreaterThan(0);
     for (const s of piece.snapPoints) expect(s.tags).toEqual(["card"]);
+    // each slot reaches halfway to the next, so a hand of one slot still takes a card
+    const pitch = piece.snapPoints.length > 1 ? piece.snapPoints[1].position[0] - piece.snapPoints[0].position[0] : piece.zone.max[0] - piece.zone.min[0];
+    expect(piece.snapRadius).toBeCloseTo(pitch / 2, 6);
     // +Z away from the table's middle: toward the near side
     expect(Math.cos(hand.at.rotation[1])).toBeGreaterThan(0.9);
   });
