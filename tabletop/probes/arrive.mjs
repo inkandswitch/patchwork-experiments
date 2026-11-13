@@ -67,7 +67,7 @@ try {
   mark("A made and opened the table", made);
   check("A's table: 60 cards, each a tabletop card bound by the joint keeper's own trait", (await F("a", "cards")) === 60 && J(await F("a", "keptBy")) === J(["card-table.kept"]) && made.kinds.main === "joint", { cards: await F("a", "cards"), keptBy: await F("a", "keptBy"), kinds: made.kinds });
   const traits = await F("a", "traits");
-  check("the scene's traits are three packages' own, and no old ones", J(traits) === J(["card-table.kept", "scene.seats", "tabletop.card", "tabletop.zone"]), traits);
+  check("the scene's traits are three packages' own (the scene's: seats, and carry on its pieces), and no old ones", J(traits) === J(["card-table.kept", "scene.carry", "scene.seats", "tabletop.card", "tabletop.zone"]), traits);
   check("A's stage lists the packages the scene is made of: the scene's, tabletop's and the keeper's", await fUntil("a", `f.listed().length === 3`, 10_000) && J(sorted((await F("a", "listed")).map((u) => name[u]))) === J(["card-table", "scene", "tabletop"]), (await F("a", "listed")).map((u) => name[u] ?? u));
   check("…and names the scene package as the doc's suggested import", (await F("a", "suggested")) === urls.scene, await F("a", "suggested"));
   check("A is playing, with the table and the keeper running", await fUntil("a", `f.activity()?.current === "play" && ["tabletop", "tabletop.rule", "card-table", "scene.seats"].every((id) => f.running().includes(id))`, 10_000), { activity: await F("a", "activity"), running: await F("a", "running") });

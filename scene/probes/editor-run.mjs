@@ -8,10 +8,11 @@
 // B small; each one's broadcasts reach only the other), a locked board with a
 // 5×5 grid of connectors, three blocks and two pawns. Then, with real CDP mouse
 // and key events: the layout (toolbar top, sidebar right, canvas the rest);
-// click to select (outline row, inspector, B's box); Escape; G / R / H; a
-// gizmo drag (B sees the pose mid-drag, then the landed transform); the hand
-// (snaps to a connector, Q turns, Esc puts back, Alt places freely); orbit on
-// the locked board; Measure; Delete; F; P; double-click; the context menu; no
+// click to select (outline row, inspector, B's box); Escape; no tools to pick
+// (G, R and H do nothing); a halo drag (B sees the pose mid-drag, then the
+// landed transform); carrying by the trait (snaps to a connector, Q turns,
+// Esc puts back, Alt places freely); orbit on
+// the locked board; Measure; Delete; . (Frame); P; double-click; the context menu; no
 // activity switcher (a plain model offers only editing); a pasted automerge
 // URL; a dimension selected by its label and deleted; the inspector's Scene
 // section (Starts in) and "Add behaviour…" (an arena Target on a block starts
@@ -60,7 +61,6 @@ const round = (v, n = 4) => (Array.isArray(v) ? v.map((x) => round(x, n)) : type
 const scr = async (id, off = [0, 0, 0], who = "A") => P(`screen(${JSON.stringify(id)}, ${JSON.stringify(off)}, __p.${who})`);
 const world = async (w, who = "A") => P(`worldScreen(${JSON.stringify(w)}, __p.${who})`);
 const selected = (who = "A") => b.js(`__p.${who}.local.get().selected ?? null`);
-const tool = () => A(`d.local.get().tool ?? null`);
 const pressed = () => P(`text('.toolbar button[aria-pressed=true]')`);
 const camera = (who = "A") => b.js(`(() => { const c = __p.${who}.viewport.getCamera(); return { position: c.position, target: c.target }; })()`);
 const heads = () => b.js(`JSON.stringify(__p.doc() && window.sceneHandle.heads?.())`);
@@ -89,8 +89,8 @@ try {
         rows: [...h.querySelectorAll('.object-row')].map((e) => e.textContent.replace('×','').trim()) };
     })()`);
     report.layout = L;
-    const want = ["Panel", "Frame all", "Measure", "Move", "Rotate", "No gizmo", "Hand", "Grid", "Axes", "Bounds"];
-    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
+    const want = ["Panel", "Frame all", "Measure", "Snap", "Grid", "Axes", "Bounds"];
+    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && !["Move", "Rotate", "No gizmo", "Hand"].some((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
     const t = L.toolbar, s = L.sidebar, c = L.canvas, st = L.stage;
     check("toolbarAlongTop", t && Math.abs(t.y - st.y) < 1 && Math.abs(t.w - st.w) < 1 && L.oneRow === 1, { t, st, rows: L.oneRow });
     check("sidebarAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
@@ -123,24 +123,18 @@ try {
     check("peerBoxGoneAfterEscape", await b.waitFor(`(() => { let f = false; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:')) f = true; }); return !f; })()`, 3000));
   }
 
-  // ── G / R / H and the toolbar ─────────────────────────────────────────────
+  // ── no tools to pick: G, R and H are nobody's; the toolbar ────────────────
   {
     const seen = {};
-    for (const [k, want, label] of [["r", "rotate", "Rotate"], ["h", "hand", "Hand"], ["g", "move", "Move"]]) {
+    for (const k of ["r", "h", "g"]) {
       await b.key(k);
       await sleep(100);
-      const t = await tool(), pr = await pressed();
-      seen[k] = { tool: t, pressed: pr };
-      check(`key${k.toUpperCase()}`, t === want && pr.includes(label) && !["Move", "Rotate", "Hand", "No gizmo"].filter((x) => x !== label).some((x) => pr.includes(x)), seen[k]);
+      seen[k] = { pressed: await pressed(), objects: JSON.stringify((await doc()).objects) };
     }
+    check("noToolKeys", Object.values(seen).every((s) => !["Move", "Rotate", "Hand", "No gizmo"].some((x) => s.pressed.includes(x))) && new Set(Object.values(seen).map((s) => s.objects)).size === 1, seen);
     // the toolbar's own buttons, clicked
     const btn = async (label) => A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-    let q = await btn("No gizmo");
-    await b.click(q.x, q.y);
-    check("toolbarNoGizmo", (await tool()) === "select" && (await pressed()).includes("No gizmo"), await pressed());
-    q = await btn("Move");
-    await b.click(q.x, q.y);
-    check("toolbarMove", (await tool()) === "move", await tool());
+    let q;
     // Grid / Axes / Bounds toggles
     const tog = {};
     for (const label of ["Grid", "Axes", "Bounds"]) {
@@ -156,32 +150,29 @@ try {
     check("togglesNotInDoc", (await doc()).view.grid === true && (await doc()).view.bounds === false, (await doc()).view);
   }
 
-  // ── a gizmo drag: B sees the pose mid-drag, then the landed transform ───────
+  // ── a halo drag: B sees the pose mid-drag, then the landed transform ───────
   {
     const p = await scr("b1", [0, 0.016, 0]);
     await b.click(p.x, p.y);
-    await b.key("g");
     await sleep(200);
-    check("gizmoOnSelection", await A(`(() => { const g = d.host.instanceOf("scene.gizmo").debug; return g.target?.id === "b1" && g.tc?.object === g.proxy; })()`));
-    // find the X arrow by hovering along the projected +X direction
-    const o = await A(`(() => { const g = d.host.instanceOf("scene.gizmo").debug; g.proxy.updateMatrixWorld(); const w = g.proxy.getWorldPosition(new g.proxy.position.constructor()); return [w.x, w.y, w.z]; })()`);
-    const c0 = await world(o), c1 = await world([o[0] + 0.05, o[1], o[2]]);
-    const len = Math.hypot(c1.x - c0.x, c1.y - c0.y), ux = (c1.x - c0.x) / len, uy = (c1.y - c0.y) / len;
-    let handle = null;
-    for (let s = 20; s <= 160 && !handle; s += 6) {
-      const x = c0.x + ux * s, y = c0.y + uy * s;
-      await b.move(x, y);
-      await sleep(30);
-      if ((await A(`d.host.instanceOf("scene.gizmo").debug.tc?.axis ?? null`)) === "X") handle = { x, y, s };
+    check("haloOnSelection", (await P("halo()"))?.id === "b1", await P("halo()"));
+    // the X arrow, and which way on screen +X runs
+    const h0 = await P('haloAt("move", 0)'), h1 = await P('haloAt("move", 0, 0.05)');
+    const len = h0 && h1 ? Math.hypot(h1.x - h0.x, h1.y - h0.y) : 0;
+    const ux = len ? (h1.x - h0.x) / len : 0, uy = len ? (h1.y - h0.y) / len : 0;
+    const handle = h0 && len ? { x: h0.x, y: h0.y } : null;
+    if (handle) {
+      await b.move(handle.x, handle.y);
+      await sleep(60);
     }
-    check("gizmoHandleFoundByHover", !!handle, { origin: c0, dir: [ux, uy] });
+    check("haloArrowOnScreen", !!handle, { h0, h1 });
     if (handle) {
       const before = (await obj("b1")).transform.position;
       const mid = await b.drag([handle.x, handle.y], [handle.x + ux * 90, handle.y + uy * 90], {
         steps: 14,
         beforeRelease: async () => {
           await sleep(250); // the pose goes out throttled; give it a beat
-          await shot("2-gizmo-mid-drag");
+          await shot("2-halo-mid-drag");
           return {
             doc: (await obj("b1")).transform.position,
             bShown: await Bv(`d.viewport.worldOf("b1").slice(12, 15)`),
@@ -191,20 +182,19 @@ try {
         },
       });
       const after = (await obj("b1")).transform.position;
-      check("gizmoDocUnchangedMidDrag", near(mid.doc, before), mid);
+      check("haloDocUnchangedMidDrag", near(mid.doc, before), mid);
       check("peerSeesPoseMidDrag", mid.bShown[0] - before[0] > 0.01 && Math.abs(mid.bShown[0] - mid.aShown[0]) < 0.01, round(mid));
-      check("gizmoMovesBlock", after[0] - before[0] > 0.02 && Math.abs(after[1] - before[1]) < 1e-6 && Math.abs(after[2] - before[2]) < 1e-6, { before, after });
+      check("haloMovesBlock", after[0] - before[0] > 0.02 && Math.abs(after[1] - before[1]) < 1e-6 && Math.abs(after[2] - before[2]) < 1e-6, { before, after });
       await sleep(400);
       const bLanded = await Bv(`d.viewport.worldOf("b1").slice(12, 15)`);
       check("peerSeesLandedTransform", near(bLanded, after, 1e-5), { bLanded, after });
     }
   }
 
-  // ── the hand ─────────────────────────────────────────────────────────────
+  // ── carrying: by the trait, no tool to pick ──────────────────────────────
   {
     await b.key("Escape");
-    await b.key("h");
-    check("handTool", (await tool()) === "hand");
+    check("carryRunsByTrait", (await P("running()")).includes("scene.carry"), await P("running()"));
     const carry = async (id, to, { mods = 0, during } = {}) => {
       // grabbed at the middle of its top face, so the grab offset is ~0 and
       // it lands where the pointer is (a grab on a side face keeps that offset)
@@ -261,17 +251,16 @@ try {
     const cam1 = await camera();
     check("lockedBoardOrbits", !near(cam0.position, cam1.position, 1e-3) && JSON.stringify((await doc()).objects) === was, { cam0: round(cam0), cam1: round(cam1) });
     await shot("5-orbited");
-    // F frames everything again
-    await b.key("f");
+    // . frames everything again (nothing is selected; F is carry's Flip now)
+    await b.key(".");
     await sleep(400);
     const cam2 = await camera();
     const inView = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); return ["board","b0","b1","b2","p0","p1"].every((id) => { const s = p.screen(id); return s && s.x > r.left && s.x < r.right && s.y > r.top && s.y < r.bottom; }); })()`);
-    check("fFramesAll", !near(cam1.position, cam2.position, 1e-3) && inView, { cam2: round(cam2), inView });
+    check("periodFramesAll", !near(cam1.position, cam2.position, 1e-3) && inView, { cam2: round(cam2), inView });
   }
 
   // ── measure: M, two clicks on the board ─────────────────────────────────
   {
-    await b.key("g");
     await b.key("m");
     check("measureArmed", (await A(`d.local.get().armed`)) === "scene.measure" && (await pressed()).includes("Measure"), await A(`d.local.get().armed`));
     const p1 = await world([-0.12, 0.04, -0.13]), p2 = await world([0.12, 0.04, -0.13]);
@@ -305,9 +294,9 @@ try {
     if (lab) await b.click(lab.x + lab.w / 2, lab.y + lab.h / 2);
     await sleep(150);
     const sel = await selected();
-    const marks = await A(`({ dimRow: !!p.hostA.querySelector('.dimension-row[data-selected]'), objRows: [...p.hostA.querySelectorAll('.object-row[data-selected]')].map((e) => e.dataset.id), gizmo: d.host.instanceOf("scene.gizmo")?.debug?.target?.id ?? null })`);
+    const marks = await A(`({ dimRow: !!p.hostA.querySelector('.dimension-row[data-selected]'), objRows: [...p.hostA.querySelectorAll('.object-row[data-selected]')].map((e) => e.dataset.id), halo: p.halo()?.id ?? null })`);
     // selecting the dimension let go of the block: there is one selection
-    check("dimensionLabelSelects", first === "b2" && ids0.length === 1 && sel === `dimension:${ids0[0]}` && marks.dimRow && !marks.objRows.length && !marks.gizmo, { ids0, first, lab, sel, marks });
+    check("dimensionLabelSelects", first === "b2" && ids0.length === 1 && sel === `dimension:${ids0[0]}` && marks.dimRow && !marks.objRows.length && !marks.halo, { ids0, first, lab, sel, marks });
     const peer = await b.waitFor(`Object.values(__p.B.presence.get()).some((s) => s.keys?.['scene.select']?.selected === ${JSON.stringify(sel)})`, 2000);
     check("peerHearsDimensionSelected", peer);
     await shot("7b-dimension-selected");
@@ -353,7 +342,9 @@ try {
     const span = Math.hypot(...cam.position.map((v, i) => v - cam.target[i]));
     check("dblclickFramesObject", dist < 0.01 && span < 0.3, { target: round(cam.target), pawn: t, span: round(span) });
     await shot("9-framed-pawn");
-    await b.key("f");
+    // the double-click's first click selected the pawn: let it go, then . frames everything
+    await b.key("Escape");
+    await b.key(".");
     await sleep(400);
   }
 
@@ -436,7 +427,7 @@ try {
     }
   }
 
-  // ── attachment: a child follows its parent's gizmo drag, keeping its local transform ──
+  // ── attachment: a child follows its parent's halo drag, keeping its local transform ──
   {
     await b.key("Escape");
     // attach Block 1 (b0) to Block 3 (b2) through the inspector's "Attached to"
@@ -448,7 +439,7 @@ try {
     const c0 = await obj("b0");
     const w0 = await A(`d.viewport.worldOf("b0").slice(12, 15)`);
     check("attachKeepsWorldPose", attached && c0.parent === "b2" && near(w0, wBefore, 1e-6) && !near(c0.transform.position, wBefore, 1e-4), { attached, parent: c0?.parent, local: c0?.transform.position, wBefore, w0 });
-    // move the parent with the gizmo (deselect first: Block 1's gizmo can lie over Block 3)
+    // move the parent with its halo (deselect first: Block 1's halo can lie over Block 3)
     // attaching re-filed Block 1's outline row (it was focused, from the click):
     // focus must come back to the stage, or no key reaches it
     const focus = await A(`(() => { const a = document.activeElement; return { tag: a?.tagName ?? null, inStage: !!a && p.hostA.contains(a) }; })()`);
@@ -459,17 +450,12 @@ try {
     const p2 = await scr("b2", [0, 0.0319, 0]);
     report.underB2 = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); const h = d.viewport.pick(${p2.x} - r.left, ${p2.y} - r.top); return h && h.id; })()`);
     await b.click(p2.x, p2.y);
-    await b.key("g");
+    await sleep(150);
     check("parentSelected", (await selected()) === "b2", await selected());
-    const o = await A(`(() => { const g = d.host.instanceOf("scene.gizmo").debug; g.proxy.updateMatrixWorld(); const e = g.proxy.matrixWorld.elements; return [e[12], e[13], e[14]]; })()`);
-    const s0 = await world(o), s1 = await world([o[0] + 0.05, o[1], o[2]]);
-    const L = Math.hypot(s1.x - s0.x, s1.y - s0.y), u = [(s1.x - s0.x) / L, (s1.y - s0.y) / L];
-    let h = null;
-    for (let s = 20; s <= 160 && !h; s += 6) {
-      await b.move(s0.x + u[0] * s, s0.y + u[1] * s);
-      await sleep(30);
-      if ((await A(`d.host.instanceOf("scene.gizmo").debug.tc?.axis ?? null`)) === "X") h = [s0.x + u[0] * s, s0.y + u[1] * s];
-    }
+    const s0 = await P('haloAt("move", 0)'), s1 = await P('haloAt("move", 0, 0.05)');
+    const L = s0 && s1 ? Math.hypot(s1.x - s0.x, s1.y - s0.y) : 0;
+    const u = L ? [(s1.x - s0.x) / L, (s1.y - s0.y) / L] : [0, 0];
+    const h = L ? [s0.x, s0.y] : null;
     if (h) {
       const pBefore = (await obj("b2")).transform.position;
       await b.drag(h, [h[0] + u[0] * 70, h[1] + u[1] * 70]);
@@ -479,7 +465,7 @@ try {
       const dx = pAfter[0] - pBefore[0];
       check("childFollowsParent", dx > 0.01 && JSON.stringify(c1.transform) === JSON.stringify(c0.transform) && Math.abs(w1[0] - w0[0] - dx) < 1e-6 && Math.abs(w1[2] - w0[2]) < 1e-6, { dx, w0, w1, local: c1.transform.position });
       await shot("16-attached-moved");
-    } else check("childFollowsParent", false, "no gizmo handle found");
+    } else check("childFollowsParent", false, "no halo arrow found");
   }
 
   // ── the inspector: the Scene (Starts in), and "Add behaviour…" on a block ──
@@ -540,7 +526,8 @@ try {
       const opt = async (a) => A(`p.rect('.activity-switch button[data-activity="${a}"]')`);
       const play = await opt("play");
       await b.click(play.x + play.w / 2, play.y + play.h / 2);
-      const inPlay = await b.waitFor(`__p.running().includes("arena") && !__p.running().includes("scene.select")`, 8000);
+      // the editor's chrome goes; the selection and its halo stay (they serve every activity)
+      const inPlay = await b.waitFor(`__p.running().includes("arena") && !__p.running().includes("scene.toolbar") && __p.running().includes("scene.select")`, 8000);
       await sleep(300);
       const off = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), sidebar: !!p.hostA.querySelector('.sidebar'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), running: p.running(), pressed: p.text('.activity-switch button[aria-pressed=true]'), peer: p.running(p.B).includes("scene.select") && !!p.hostB.querySelector('.toolbar') })`);
       check("playTakesTheEditorAway", inPlay && !off.toolbar && !off.sidebar && Math.abs(off.canvas.w - off.stage.w) < 1 && Math.abs(off.canvas.h - off.stage.h) < 1 && JSON.stringify(off.pressed) === '["Play"]' && off.peer, off);
@@ -558,6 +545,8 @@ try {
       const row2 = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row2.x, row2.y);
       await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`, 2000);
+      // (the block's Carryable card is above it now: bring it into the sidebar's view)
+      await A(`p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove').scrollIntoView({ block: "center" })`);
       const x = await A(`p.rect('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`);
       if (x) await b.click(x.x + x.w / 2, x.y + x.h / 2);
       const gone = (await obj("b2"))?.traits?.["arena.target"] === undefined;

@@ -64,7 +64,8 @@ describe("the dice package's plugins", () => {
     expect(ext.describes[DIE]).toMatchObject({ name: "Die", on: "object" });
     // the trait holds nothing: no fields to write
     expect(ext.describes[DIE].fields).toBeUndefined();
-    expect(ext.requires).toEqual(["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"]);
+    // carrying is by the scene.carry trait, never required
+    expect(ext.requires).toEqual(["scene.use", "scene.keys", "scene.menu", "scene.notices"]);
     expect(ext.requires.indexOf("scene.use")).toBeLessThan(ext.requires.indexOf("scene.keys"));
   });
 

@@ -77,7 +77,7 @@ describe("scene.activity", () => {
 });
 
 describe("the scene package's own extensions", () => {
-  it("edit runs the editor in its order; play keeps only the key map, notices, the packages prompt and the switcher; none offers play", async () => {
+  it("edit runs the editor in its order; play keeps the key map, notices, the packages prompt, the menu, the selection and its halo, and the switcher; none offers play", async () => {
     const { plugins } = await import("../index.js");
     const { activeSet, availableActivities } = await import("../stage/activation.js");
     const metas = plugins.filter((p) => p.type === "scene:extension");
@@ -96,8 +96,7 @@ describe("the scene package's own extensions", () => {
       "scene.measure",
       "scene.dimensions",
       "scene.handles",
-      "scene.gizmo",
-      "scene.hand",
+      "scene.halo",
       "scene.select",
       "scene.grid",
       "scene.axes",
@@ -109,9 +108,24 @@ describe("the scene package's own extensions", () => {
       "scene.parts",
       "scene.activity",
     ]);
-    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["scene.notices", "scene.packages", "scene.keys", "scene.activity"]);
+    const PLAYING = ["scene.notices", "scene.packages", "scene.keys", "scene.menu", "scene.handles", "scene.halo", "scene.select", "scene.activity"];
+    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(PLAYING);
     expect(availableActivities(metas, doc)).toEqual(["edit"]);
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
+  });
+
+  it("carrying runs by its trait, in every activity, wherever the doc has something carryable", async () => {
+    const { plugins } = await import("../index.js");
+    const { activeSet, availableActivities } = await import("../stage/activation.js");
+    const metas = plugins.filter((p) => p.type === "scene:extension");
+    for (const traits of [{}, { "scene.carry": {} }])
+      for (const activity of ["edit", "play"]) {
+        const doc = { objects: { a: { traits } }, traits: {} };
+        const set = activeSet({ metas, doc, activity });
+        expect([traits, activity, set.find((r) => r.id === "scene.carry")?.scope ?? null]).toEqual([traits, activity, Object.keys(traits).length ? "objects" : null]);
+      }
+    // and offers no activity of its own
+    expect(availableActivities(metas, { objects: { a: { traits: { "scene.carry": {} } } }, traits: {} })).toEqual(["edit"]);
   });
 
   it("the use prompt runs only in play, and only when a game requires it, ahead of the key map", async () => {
@@ -120,7 +134,7 @@ describe("the scene package's own extensions", () => {
     const game = { id: "t.game", traits: ["t.level"], activities: ["play"], requires: ["scene.use", "scene.keys"] };
     const metas = [game, ...plugins.filter((p) => p.type === "scene:extension")];
     const doc = { objects: {}, traits: { "t.level": {} } };
-    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys", "scene.notices", "scene.packages", "scene.activity"]);
+    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys", "scene.notices", "scene.packages", "scene.menu", "scene.handles", "scene.halo", "scene.select", "scene.activity"]);
     expect(activeSet({ metas, doc, activity: "edit" }).map((r) => r.id)).not.toContain("scene.use");
     // installing it offers play nowhere it isn't already
     expect(availableActivities(metas, doc)).toEqual(["edit", "play"]);

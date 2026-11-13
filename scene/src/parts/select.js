@@ -1,7 +1,15 @@
-// scene.select: the selection.
+// scene.select: the selection, in every activity (TOOLS.md §3).
 //
-// - A click on an object selects it; a click on nothing clears the selection
-//   (a group is never hit: groups are selected from the outline).
+// - Select is the first entry of every target's menu (scene.menu puts it
+//   there): the deliberate select, in a game too.
+// - A plain click is the orbit view's default press, offered last, after
+//   whatever holds what was hit: on an object it selects it, on nothing it
+//   clears whatever is selected (a group is never hit: groups are selected
+//   from the outline). Until bodies (TOOLS.md §4, build step 6) the orbit
+//   view is the editor's: in another activity, or first person, a plain
+//   click selects nothing.
+// - Where a selection may be is ../selection.js (H10): an element of the
+//   focus stage. With one stage that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets
 //   and refs"), an object or group id, or a ref such as "dimension:<id>" that
 //   another extension made selectable, or null. A click on nothing clears
@@ -14,6 +22,8 @@
 // - Commands: Deselect (Escape), Remove (Delete, Backspace; objects only), Select.
 
 import { peerColor, peerSelections } from "../peers.js";
+import { selectionStep } from "../selection.js";
+import { DEFAULT_ACTIVITY } from "../stage/activation.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 const REMOTE = [0.6, 0.4, 0.9];
@@ -47,10 +57,24 @@ export function create(api) {
 
   const selected = () => api.local.get().selected ?? null;
 
-  function select(id) {
-    const next = id ?? null;
-    api.local.swap((m) => ((m.selected ?? null) === next ? m : { ...m, selected: next }));
+  // One stage, so the focus is the scene's own ([]) and a selection is [id].
+  const FOCUS = Object.freeze([]);
+  const stateOf = (m) => ({ focus: FOCUS, selected: m.selected != null ? [m.selected] : null });
+
+  /** Apply a selection event (../selection.js) to this view's selection. */
+  function step(ev) {
+    api.local.swap((m) => {
+      const was = stateOf(m);
+      const next = selectionStep(was, ev);
+      if (next === was) return m;
+      const id = next.selected?.[0] ?? null;
+      return (m.selected ?? null) === id ? m : { ...m, selected: id };
+    });
   }
+  const select = (id) => step(id == null ? { type: "escape" } : { type: "select", path: [id] });
+
+  /** Is this view orbiting, so a plain click selects? (The editor's, until bodies: see the top.) */
+  const orbiting = (local) => !local.immersive && (local.activities?.current ?? DEFAULT_ACTIVITY) === DEFAULT_ACTIVITY;
 
   function computeTargets() {
     const loc = api.local.get();
@@ -123,7 +147,7 @@ export function create(api) {
 
   // Peers' selections come and go without a doc or local change.
   api.presence.watch(() => api.schedule(refresh));
-  // Held poses (a gizmo drag, a carry, a peer's hand) move objects without a
+  // Held poses (a halo drag, a carry, a peer's carry) move objects without a
   // doc change: check the boxes after each frame; a moved one draws next frame.
   api.afterRender(() => {
     if (targets.length) drawBoxes();
@@ -199,17 +223,18 @@ export function create(api) {
   }
 
   const input = {
+    // the orbit view's default press. It comes after the holders and is the
+    // last of the scene's own general extensions, but only registration order
+    // puts it there: a general extension registered later is offered the
+    // click after it. Bodies (TOOLS.md build step 6) make the default press
+    // structurally last.
     click(ev) {
+      if (!orbiting(api.local.get())) return false;
       const id = ev?.hit?.id ?? null;
-      if (id != null && api.scene().objects?.[id]) {
-        select(id);
-        return true;
-      }
-      if (selected() != null) {
-        select(null);
-        return true;
-      }
-      return false;
+      const on = id != null && api.scene().objects?.[id];
+      if (!on && selected() == null) return false;
+      step({ type: "press", path: on ? [id] : [] });
+      return true;
     },
   };
 

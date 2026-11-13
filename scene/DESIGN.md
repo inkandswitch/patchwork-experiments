@@ -14,7 +14,7 @@ The scene core is a **stage**. It holds:
 - a camera rig that can be driven and limited;
 - a world-space layer and a screen-space layer to draw into;
 - drag helpers that can be called on: carry with connector snapping, drag
-  along an axis, the transform gizmo, handles;
+  along an axis, the selection's halo, handles;
 - presence;
 - the lens (how an object looks to this viewer).
 
@@ -58,7 +58,7 @@ offer; a scene with an arena's traits also offers play.
 Activities choose among **shared parts** without bundling them:
 
 - selection;
-- the transform gizmo and numeric transforms;
+- the selection's halo and numeric transforms;
 - the outline and the inspector;
 - snapping;
 - measure and dimensions;
@@ -66,8 +66,9 @@ Activities choose among **shared parts** without bundling them:
 
 Those parts are common infrastructure. Each is written once as a
 contribution, takes part in editing, and anything can pull it into another
-activity by requiring it: a card table in play brings the hand and the key
-map, and nothing else of the editor.
+activity by requiring it: a card table in play brings the use prompt and the
+key map, and nothing else of the editor. Carrying needs no requiring: it runs
+by the `scene.carry` trait on what can be carried (TOOLS.md §1).
 
 The doc says where people **start** (`view.activity`), and a template that
 makes a level says "play", so whoever opens it, its maker included, is in
@@ -112,7 +113,7 @@ The other kinds of contribution combine as follows:
 All of the above is built, and [STAGE.md](STAGE.md) is its contract. The
 stage is `src/stage/`; activation has all three scopes; input goes down one
 claiming chain; widgets sit in the stage's layers; commands take a target;
-and the toolbar, outline, inspector, gizmo, hand, measure and dimensions are
+and the toolbar, outline, inspector, halo, carry, measure and dimensions are
 shared parts (`src/parts/`) that together, while editing, make the editor.
 
 ## Use cases that prove it's general
@@ -123,7 +124,7 @@ without any of them being the default the others are measured against.
 
 1. **Building (CAD, boats).** Editing, over the shared parts:
    - select then edit;
-   - gizmo and handles;
+   - the halo and handles;
    - snapping to grid, vertices and connectors;
    - numeric transforms with units;
    - view cube, standard views, ortho, section plane;

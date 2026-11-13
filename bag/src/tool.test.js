@@ -120,7 +120,7 @@ describe("the bag's panel on its own", () => {
     expect(file["@patchwork"]).toEqual({ type: "file" });
     expect(scene["@patchwork"]).toEqual({ type: "scene", suggestedImportUrl: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" });
     expect(scene.packages).toEqual([]);
-    expect(Object.values(scene.objects).map((o) => o.traits)).toEqual([{ "bag.container": { doc: "automerge:bag" } }]);
+    expect(Object.values(scene.objects).map((o) => o.traits)).toEqual([{ "bag.container": { doc: "automerge:bag" }, "scene.carry": {} }]);
     expect(opened[0]).toEqual({ url: repo.created[1].url, toolId: "scene" });
     t.cleanup();
   });

@@ -418,12 +418,45 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
 
 - **2. `api.dock`.** Camber, dice and bag move onto it. *Built:* the
   drawer holds docked panes only; the inspector and outline stay in the
-  sidebar until step 3 makes them tabs. One width for every pane (Camber
-  had its own, wider); a pane gets no resize handle yet.
+  sidebar for now (step 3 left them: see its note). One width for every
+  pane (Camber had its own, wider); a pane gets no resize handle yet.
 - **3. Selection and carrying.** The halo; Select in the menu and as
   orbit's default; `scene.carry`; `local.tool` and the forced-hand
   workarounds go; activities remain. *Proves:* dice's R rolls; a drag
-  under a moving parent; H10, H11.
+  under a moving parent; H10, H11. *Built:* `scene.halo` replaces the
+  gizmo (`parts/halo.js`, its maths `halo-math.js`): arrows, rings and
+  corners along the parent frame's axes, scale uniform about the box's
+  middle, a handle 2% of its distance from the eye; drawn in the main pass
+  and offered as a widget at its distance, so a handle behind the thing
+  loses to it; an arrow seen end on or a ring edge on is neither drawn nor
+  offered (an edge-on ring would lie across the thing's middle). It
+  follows the frame after each frame drawn, and before every frame while
+  what it's on is moving. Handles only: verbs stay in the menu and the use
+  prompt. `api.writable()` (§9) arrived with it. `scene.carry` is a trait
+  part with `describes` (*Carryable*); a press carries `ev.holder`, the
+  nearest link with the trait; `carry(id)` carries only what has it.
+  Tabletop, tts-import, dice (dice, cups) and bag write it; only what has it
+  goes into a bag, so what comes out can be carried. Sailing's veto went
+  (her fittings lack the trait); the cup's stays. `view.tool`, `local.tool`,
+  `effectiveTool`, G, R and H went, and with Flip carry's on every surface,
+  Frame moved to `.` now (the selection, else everything), not at step 6.
+  Select, the menu, the halo and the knobs run in every activity; until
+  bodies, "the orbit view" whose plain click selects is the editor's
+  activity, not first person. H10's model is `src/selection.js`, with
+  Enter and Leave in it though the focus is the scene's own until step 14.
+  H11 is checked at focus `[]` only, there being one stage until step 12;
+  its "× focus" cases follow at step 12/14. Select's plain click comes
+  after the holders and last of the scene's own general extensions by
+  registration order alone; step 6's bodies make the default press
+  structurally last. Carry now holds a piece at its own depth, so where a
+  game's extension holds the same object, running order puts carry's Flip
+  ahead of the game's verbs: on a boneyard domino the prompt's three are
+  Flip, Draw and Wash, and Stand on edge is U's and the menu's. That is
+  the queued three-verb cap; ordering generic holders after the others at
+  a tie is left to it.
+  The inspector and outline stay sidebar panels of the editor's activity:
+  making them drawer tabs that follow attention waits for step 8, when the
+  editor's chrome stops following the activity.
 - **6. Bodies and the held tool.** Stack and slot, four bodies, `from` and
   `reach` everywhere, declared keys, attention, the pointer, the Escape
   ladder; rides by body. *Proves:* H3-H5, H9; Doom with one walker.

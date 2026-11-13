@@ -64,7 +64,7 @@
 // keys typed in it are its own (STAGE.md, "Keys").
 
 import { cupsOf } from "./cup.js";
-import { DIE, PROVIDER } from "./ids.js";
+import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { AIR_SECONDS, LAND_SECONDS, ROLL_SKID, airborne, builtOf, faceOfSeed, faceUp, landing, rollPlan, scaleOf, seedFromLots, seedOfThrow, turnTo } from "./roll.js";
 
 /** How far apart a peer's word and the doc change that bears it out may arrive (ms). */
@@ -105,7 +105,6 @@ function create(api) {
   const builtFor = (id) => builtOf(api.content?.(id)?.extras?.dice);
   /** Has this object's content arrived and turned out not to be a die's (the trait put on something else)? Then no verb applies to it. */
   const notADie = (id) => api.content?.(id)?.loaded === true && !builtFor(id);
-  const inPlay = (local) => (local ?? api.local?.get?.())?.activities?.current === "play";
   /** Dice a cup keeps (under one, or shaken and not yet turned up): what they show isn't the doc's to say, so nobody rolls, turns or reads them. */
   const keptBy = new WeakMap();
   const kept = (id, snap) => {
@@ -201,8 +200,8 @@ function create(api) {
   const rollable = (id, snap) => isDie(snap.objects[id]) && !snap.objects[id].locked && !notADie(id) && !kept(id, snap) && builtFor(id)?.turnOnly !== true;
 
   /** Roll's state for a target: a die, or a group of them. */
-  function rollState(target, snap = scene, local) {
-    if (target == null || !snap || !inPlay(local)) return null;
+  function rollState(target, snap = scene) {
+    if (target == null || !snap) return null;
     const ids = diceOf(target, snap).filter((id) => rollable(id, snap));
     if (!ids.length) return null;
     const several = snap.objects[target].kind === "group";
@@ -210,8 +209,8 @@ function create(api) {
     return { ...(several ? { label: `Roll ${ids.length} dice` } : {}), ...(why ? { disabled: true, title: why } : { title: several ? "Roll every die in this group together (R)" : "Roll the die (R)" }) };
   }
   /** Roll all's state: on a die filed in a group with other dice. */
-  function rollAllState(id, snap = scene, local) {
-    if (id == null || !snap || !inPlay(local) || !isDie(snap.objects[id])) return null;
+  function rollAllState(id, snap = scene) {
+    if (id == null || !snap || !isDie(snap.objects[id])) return null;
     const ids = handful(id, snap).filter((x) => rollable(x, snap));
     if (ids.length < 2 || !ids.includes(id)) return null;
     const why = ids.map(busy).find(Boolean);
@@ -599,15 +598,6 @@ function create(api) {
 
   return {
     update(snapshot, local, prev) {
-      // Playing with dice is done with the hand. A tool picked while editing
-      // (G, R, the toolbar) is this view's local state and outlives the
-      // switch to play, and a scene with only dice suggests no tool, so the
-      // stage's default is Move: in play nothing offers a way to the hand,
-      // and without this a die could not be picked up. (A stage-wide gap, an
-      // Edit tool outliving the switch to Play; tabletop does the same.)
-      if (inPlay(local) && (local.tool ?? snapshot?.d?.view?.tool ?? "move") !== "hand") {
-        if (api.run?.({ ext: "scene.hand", command: "hand" }) !== true) api.local?.swap?.((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
-      }
       meetPeers();
       // content arriving (a die's GLB) comes as an update with the same scene: something may now be readable
       if (snapshot === prev?.scene) {
@@ -629,10 +619,10 @@ function create(api) {
       {
         id: "roll",
         name: "Roll",
-        // play only (state): R is the gizmo's Rotate while editing
+        // R rolls on every surface, editing too: the halo has no keys
         key: "r",
         show: ["use", "menu", "inspector"],
-        state: (target, ctx) => rollState(target, ctx?.scene ?? scene, ctx?.local),
+        state: (target, ctx) => rollState(target, ctx?.scene ?? scene),
         run(target) {
           const snap = api.scene();
           if (!rollState(target, snap)) return;
@@ -642,10 +632,9 @@ function create(api) {
       {
         id: "roll-all",
         name: "Roll all",
-        // play only (state): G is the gizmo's Move while editing
         key: "g",
         show: ["use", "menu"],
-        state: (id, ctx) => rollAllState(id, ctx?.scene ?? scene, ctx?.local),
+        state: (id, ctx) => rollAllState(id, ctx?.scene ?? scene),
         run(id) {
           const snap = api.scene();
           if (!rollAllState(id, snap)) return;
@@ -698,7 +687,8 @@ async function drop(ctx, info) {
   const id = await ctx.addObject(info.url, {
     providerId: PROVIDER,
     group: info.group ?? null,
-    fields: { traits: { [DIE]: {} } },
+    // a die is picked up and thrown: it can be carried
+    fields: { traits: { [DIE]: {}, [CARRY]: {} } },
     ...(Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? { transform: { position: [...p], rotation: [0, 0, 0], scale: 1 } } : {}),
   });
   ctx.local?.swap?.((m) => ((m.selected ?? null) === id ? m : { ...m, selected: id }));

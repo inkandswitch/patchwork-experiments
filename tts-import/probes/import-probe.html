@@ -87,6 +87,9 @@ try {
     hiddenGroups: Object.values(scene.objects).filter((o) => o.kind === "group" && !o.visible).length,
     hiddenCards: Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]).length,
     locked: Object.values(scene.objects).filter((o) => o.locked).length,
+    // what can be picked up: everything placed that isn't locked (the scene's carry trait)
+    carryable: Object.values(scene.objects).filter((o) => o.kind !== "group" && o.traits?.["scene.carry"]).length,
+    placed: Object.values(scene.objects).filter((o) => o.kind !== "group").length,
     seats: Object.keys(scene.traits["scene.seats"] ?? {}),
     view: scene.view,
     // what the scene datatype's init makes that the importer leaves as it is

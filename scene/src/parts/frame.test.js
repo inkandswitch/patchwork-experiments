@@ -39,15 +39,21 @@ describe("scene.frame (pure)", () => {
 });
 
 describe("scene.frame: commands and double-click", () => {
-  it("Frame all (F) frames the scene's box", async () => {
+  it("Frame (.) frames the selection, else the scene's box; F is left to carry's Flip", async () => {
     const { s, world, camera } = await mount();
-    const c = s.instance("scene.frame").commands.find((k) => k.id === "frame-all");
-    expect(c.key).toBe("f");
+    const c = s.instance("scene.frame").commands.find((k) => k.id === "frame");
+    expect(c.key).toBe(".");
     expect(c.name).toBe("Frame all");
     expect(c.state("a", {})).toBe(null);
+    expect(c.state(null, { local: {} })).toEqual({ title: "Frame everything (.)" });
     world.box = B2;
-    expect(run(s, "frame-all")).toBe(true);
+    expect(run(s, "frame")).toBe(true);
     expect(camera.frames.at(-1)).toEqual(B2);
+    world.boxes = { a: B1 };
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    expect(c.state(null, { local: s.local.get() })).toMatchObject({ label: "Frame selection" });
+    expect(run(s, "frame")).toBe(true);
+    expect(camera.frames.at(-1)).toEqual(B1);
     s.unmount();
   });
 
@@ -85,13 +91,15 @@ describe("scene.frame: commands and double-click", () => {
 });
 
 describe("scene.frame with the key map", () => {
-  it("F frames everything", async () => {
+  it(". frames everything with nothing selected; F is no longer Frame's", async () => {
     const { default: keys } = await import("./keys.js");
     const s = await mountStage({ extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.frame" }, module: frame }] });
     const camera = fakeCamera();
     s.api("scene.frame").camera = camera.rig;
     s.api("scene.frame").sceneBox = () => B3;
     s.key("f");
+    expect(camera.frames).toEqual([]);
+    s.key(".", { code: "Period" });
     expect(camera.frames).toEqual([B3]);
     s.unmount();
   });

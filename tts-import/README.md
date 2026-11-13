@@ -217,9 +217,10 @@ shape.
 - the `scene`: an empty scene as the scene's own datatype makes one (`src/empty-scene.js`, a copy of its
   init: `dimensions: {}`, `assets: {}`, `packages: []` and the rest), with passthrough objects
   (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with `hint.bounds`, groups for decks /
-  stacks / bag contents / states, `locked`, `tags`, traits (`tabletop.card` and the keeper's binding on hidden cards;
+  stacks / bag contents / states, `locked`, `tags`, traits (`scene.carry` on everything not locked, so it can be picked
+  up; `tabletop.card` and the keeper's binding on hidden cards;
   the seats, laid by their owner, on the scene), `infoUrl` = the import doc (the PDF's file doc for a `Custom_PDF`), and
-  `view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity?, home }`:
+  `view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, activity?, home }`:
   `home` is a view over the table from the near side, and `activity: "play"` is written when the mod has
   seats (a table with seats is for playing: it opens in play, and the scene's activity switcher gets
   anyone into editing); without seats there is no `activity`, and it opens in the editor.

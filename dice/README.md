@@ -198,8 +198,8 @@ against the table, not the horizon.
 
 | | key | where | |
 |---|---|---|---|
-| Roll | R | use prompt, menu, inspector; play only (R is the gizmo's Rotate while editing) | on a die: toss it. On a group: toss every die filed in it together |
-| Roll all | G | use prompt, menu; play only | on a die filed in a group with other dice: toss them all together |
+| Roll | R | use prompt, menu, inspector; editing too (the scene's halo has no keys) | on a die: toss it. On a group: toss every die filed in it together |
+| Roll all | G | use prompt, menu | on a die filed in a group with other dice: toss them all together |
 | Turn | T | use prompt, menu, inspector | T: to its next face. The menu and the inspector: to any face. Its label says what the die shows ("Turn (shows 4)") |
 | Edit die | | menu, inspector | dock the die's panel in the stage's drawer |
 
@@ -228,7 +228,8 @@ against the table, not the horizon.
   cube to 64". A `turnOnly` die offers Turn and never Roll.
 - **Reading** works at any orientation: the face whose `up` points most
   nearly along the parent's +Y.
-- **Moving** is the scene's hand, which this requires.
+- **Moving** is the scene's carry: every die and cup is written with the
+  `scene.carry` trait, so it can be picked up, in play or editing.
 
 **A throw is the doc's.** Its draw lives on its first die (`"dice.die": {
 round }`) and is `of` its dice in order, bound into every commit, so which
@@ -283,10 +284,6 @@ document, so its keys are its own. Its tab's ×, "Close die panel", the die
 going or the extension stopping close it. It edits the die's doc; the
 scene rebuilds the die and every view reads the new one.
 
-**The hand, in play.** As tabletop does, and for the same stage-wide gap (an
-Edit tool outliving the switch to Play): while a view plays and the tool in
-force isn't the hand, the extension runs the hand's own Hand command.
-
 ## Cups
 
 A **dice cup** is a thing on the table: 9 cm tall, its mouth 8.6 cm across,
@@ -304,8 +301,8 @@ trait `dice.cup` (`src/cup.js`):
 
 Down, it covers every die whose origin lies within 38 mm of its own, on the
 same parent, at its height. That is geometry, from the doc: lift it or knock
-it over and it covers nothing. The hand won't pick up a cup that is down over
-dice (`carryable`): picking a cup up is lifting it, so it can't be slid a
+it over and it covers nothing. A cup that is down over dice can't be picked up
+just now (`carryable`, a passing state's veto): picking a cup up is lifting it, so it can't be slid a
 couple of centimetres off part of a hand (which would turn the whole roll
 up, since the dice share one seed: cup.js's policy still says so for a doc
 where it happens anyway, written by edit mode or a modified client, which is

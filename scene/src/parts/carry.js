@@ -1,27 +1,33 @@
-// scene.hand: carrying objects like pieces on a table (README, "Hand").
+// scene.carry: carrying objects like pieces on a table (README, "Carry").
 //
-// With the hand as the tool, a press on an object that can be carried (not
-// locked, not a group, not in a peer's hand) picks it up once the pointer
-// has moved a few pixels; a press that doesn't move is still a click (the
-// session's tap says no, so the click goes on to selection). While carried
-// it follows the pointer over whatever is under it, floating a little above
-// where it would land, and a ring on the table shows the spot: accent when
-// it will go to a connector (another object's, that takes its tags), muted
-// when it will go down where it is. Alt, or the Snap pref off, places
-// freely. Q / E turn it 45°, F turns it over (in the air: it rises and
-// turns, rather than snapping); Escape puts it back. Every
-// running extension's `landing` may ask for it face up where it's going (a
-// card carried into your own hand). Put down, it rests on the highest
-// surface under its footprint, and only that final pose is written.
+// "Can be carried" is data: the `scene.carry` trait on an object (TOOLS.md
+// §1). This part declares that trait, so it runs, with object scope, in any
+// stage whose doc has something carryable, and the input chain offers it a
+// press when the nearest link of the hit's chain that carries the trait is
+// its holder: press a card, or anything attached to a card, and the card is
+// what's carried. There is no tool to pick first: a press that moves a few
+// pixels lifts it; a press that doesn't move is still a click (the session's
+// tap says no, so the click goes on: a holder's verb, or the selection).
+// While carried it follows the pointer over whatever is under it, floating a
+// little above where it would land, and a ring on the table shows the spot:
+// accent when it will go to a connector (another object's, that takes its
+// tags), muted when it will go down where it is. Alt, or the Snap pref off,
+// places freely. Q / E turn it 45°, F turns it over (in the air: it rises
+// and turns, rather than snapping); Escape puts it back. Every running
+// extension's `landing` may ask for it face up where it's going (a card
+// carried into your own hand). Put down, it rests on the highest surface
+// under its footprint, and only that final pose is written.
 //
-// Flip (F over a piece, or the menu) turns one over where it lies: it rises,
-// turns over in the air and comes back down on whatever is under it, peers
-// seeing it turn through the pose hold, and only where it lands is written.
+// Flip (F over a piece, or the menu) is carry's verb: it turns one over where
+// it lies: it rises, turns over in the air and comes back down on whatever is
+// under it, peers seeing it turn through the pose hold, and only where it
+// lands is written.
 //
 // Other extensions can start a carry too: `carry(id, ev, opts)` (collect
-// "carry") returns the session to give back from their press.
+// "carry") returns the session to give back from their press. It carries
+// only what has the trait, like a press.
 //
-// The maths is ./hand-carry.js (plain arrays): this file is the stage side —
+// The maths is ./carry-math.js (plain arrays): this file is the stage side —
 // rays and raycasts, the pose hold peers see, the ring, the doc write.
 //
 // It all happens in the frame of what the object is attached to (its doc
@@ -31,77 +37,20 @@
 // go through that frame as drawn this frame, "down" is the parent's −Y, the
 // snap points are in it, and the ring is drawn from it each frame.
 //
-// Any running extension may veto a carry: `carryable(id)` returning false
-// (collected each time) means the hand neither picks it up nor flips it (a
-// ship that's sailing; the things aboard her a game shouldn't move).
+// What can be carried is the trait's; a passing state is any running
+// extension's to veto: `carryable(id)` returning false (collected each time)
+// means it is neither picked up nor flipped just now (a die under a cup).
 
 import { isGroup } from "../groups.js";
-import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./hand-carry.js";
-import { applyMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
-import { effectiveTool } from "../current-tool.js";
+import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./carry-math.js";
+import { decomposeMatrix, frameConversions } from "../transform.js";
+import { CARRY, carryable } from "../carry-rules.js";
 
-export { effectiveTool };
+export { CARRY, carryable };
 
 const TURN = Math.PI / 4;
 const TURN_OVER = 0.3; // seconds to turn something over
 const RING_SEGMENTS = 48;
-
-/** Can the hand pick this up: there, not a group, not locked? (A peer's hold is checked separately.) */
-export function carryableObject(o) {
-  return !!o && !isGroup(o) && !o.locked;
-}
-
-// ─── a frame: the parent's, as drawn now (null: the world) ─────────────────
-
-const rotateDir = (m, d) => {
-  const v = [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
-  const len = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / len, v[1] / len, v[2] / len];
-};
-
-/**
- * Conversions between the world and a frame whose world matrix is `P()`
- * (asked each time: it moves). With no frame (P() null) every one is the
- * identity, so a carry at the root is exactly what it always was.
- */
-export function frameConversions(P) {
-  const inv = () => {
-    const m = P();
-    return m ? invertMatrix(m) : null;
-  };
-  return {
-    /** a world matrix in the frame */
-    matrixIn: (W) => {
-      const i = inv();
-      return i ? multiplyMatrices(i, W) : W;
-    },
-    /** a frame matrix in the world */
-    matrixOut: (L) => {
-      const m = P();
-      return m ? multiplyMatrices(m, L) : L;
-    },
-    pointIn: (p) => {
-      const i = inv();
-      return i ? applyMatrix(i, p) : p;
-    },
-    pointOut: (p) => {
-      const m = P();
-      return m ? applyMatrix(m, p) : p;
-    },
-    /** a world ray { origin, dir } in the frame (dir unit) */
-    rayIn: (ray) => {
-      const i = ray ? inv() : null;
-      return i ? { origin: applyMatrix(i, ray.origin), dir: rotateDir(i, ray.dir) } : ray;
-    },
-    /** a world raycast, asked in the frame: its hit's point comes back in the frame */
-    raycastIn: (raycast) => (origin, dir) => {
-      const m = P();
-      if (!m) return raycast(origin, dir);
-      const hit = raycast(applyMatrix(m, origin), rotateDir(m, dir));
-      return hit?.point ? { ...hit, point: applyMatrix(invertMatrix(m), hit.point) } : hit;
-    },
-  };
-}
 
 export default {
   create(api) {
@@ -112,20 +61,20 @@ export default {
     let ring = null;
 
     const doc = () => api.doc() ?? {};
-    const toolNow = () => effectiveTool(api.local.get(), doc());
-    /** Does a running extension say this may not be carried (carryable(id) → false)? */
+    /** Does a running extension say this may not be carried just now (carryable(id) → false)? */
     function vetoed(id) {
       for (const { value } of api.collect("carryable")) {
         if (typeof value !== "function") continue;
         try {
           if (value(id) === false) return true;
         } catch (err) {
-          console.warn("[scene.hand] a carryable rule failed", err);
+          console.warn("[scene.carry] a carryable rule failed", err);
         }
       }
       return false;
     }
-    const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id) && !vetoed(id);
+    /** H11: it says it can be carried (the trait), nobody holds it, it isn't turning over, and nothing vetoes it now. */
+    const canCarry = (id) => id != null && carryable(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id) && !vetoed(id);
 
     /** The frame `id` is carried in: its doc parent now, as drawn (null at the root). */
     function frameFor(id) {
@@ -195,7 +144,7 @@ export default {
           const l = value(id, point, hitId);
           if (l && typeof l === "object") out = { ...out, ...l };
         } catch (err) {
-          console.warn("[scene.hand] a landing rule failed", err);
+          console.warn("[scene.carry] a landing rule failed", err);
         }
       }
       return out;
@@ -244,9 +193,7 @@ export default {
      * @returns {object | null} the session, or null if it can't be carried
      */
     function carry(id, ev = null, opts = {}) {
-      if (api.signal.aborted) return null;
-      const o = doc().objects?.[id];
-      if (!o || isGroup(o)) return null;
+      if (api.signal.aborted || !canCarry(id)) return null;
       const Ww = api.worldOf(id);
       const box = api.content(id)?.box ?? null;
       if (!Ww || !box) return null;
@@ -428,25 +375,12 @@ export default {
 
     const commands = [
       {
-        id: "hand",
-        name: "Hand",
-        key: "h",
-        state(target, { scene, local }) {
-          if (target != null) return null;
-          return { checked: effectiveTool(local, scene?.d) === "hand", title: "Hand: pick objects up and put them down (H)" };
-        },
-        run() {
-          api.local.swap((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
-        },
-      },
-      {
         id: "flip",
         name: "Flip",
         key: "f",
         show: ["menu", "use"],
-        // the hand's verb, so only while the hand is the tool (in the editor F is Frame all)
-        state(target, { scene, local }) {
-          if (target == null || effectiveTool(local, scene?.d) !== "hand" || !canCarry(target)) return null;
+        state(target) {
+          if (target == null || !canCarry(target)) return null;
           return { title: "Turn it over (F)" };
         },
         run: (id) => flip(id),
@@ -456,7 +390,7 @@ export default {
         name: "Snap",
         show: ["toolbar"],
         state(target, { scene, local }) {
-          if (target != null || effectiveTool(local, scene?.d) !== "hand") return null;
+          if (target != null) return null;
           return {
             checked: (local?.prefs?.snap ?? scene?.d?.view?.snap ?? true) !== false,
             title: "Put pieces down on the nearest snap point (hold Alt to place freely)",
@@ -471,17 +405,18 @@ export default {
     return {
       commands,
       carry,
+      // ev.holder: the nearest link of the hit's chain with the trait (the
+      // stage's holdersFor), so a press on what's attached to a piece carries
+      // the piece
       input: {
         press(ev) {
           if (ev.button != null && ev.button !== 0) return null;
-          if (toolNow() !== "hand" || api.local.get().armed != null) return null;
-          const id = ev.hit?.id;
-          if (!canCarry(id)) return null;
-          return carry(id, ev);
+          if (api.local.get().armed != null) return null;
+          return carry(ev.holder, ev);
         },
         cursor(ev) {
-          if (open || toolNow() !== "hand" || api.local.get().armed != null) return null;
-          return canCarry(ev.hit?.id) ? "grab" : null;
+          if (open || api.local.get().armed != null) return null;
+          return canCarry(ev.holder) ? "grab" : null;
         },
       },
       dispose() {

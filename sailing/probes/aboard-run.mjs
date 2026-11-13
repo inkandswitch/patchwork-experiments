@@ -39,6 +39,11 @@
 //     through sailing's firstPerson.enter: walking, beside the table and
 //     facing it, the seat still A's; Esc puts A back in the seat view;
 // 11. screens of both views at anchor and under way.
+// 12. under way, seated (TOOLS.md build step 3): A selects a card on the table
+//     by its menu's Select (the first entry), and drags its halo's X arrow:
+//     the handles are in the card's parent's frame as drawn, so while she
+//     heels and sails on the card moves along the table's X only, and that
+//     is what's written, local to the same parent.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -415,6 +420,50 @@ try {
     const near1 = tray1 ? tags.filter((t) => /Player 1/.test(t.text)).map((t) => Math.hypot(t.x - tray1.x, t.y - tray1.y)) : [];
     check("8: the name tags stay on their trays", near1.length === 1 && near1[0] < 30, { tags, tray1 });
     await shot("under-way-played");
+  }
+
+  // ── 12: a halo drag under a moving parent, under way ──
+  {
+    const lying = (await P("where()")).table[0] ?? null;
+    const target = card ?? lying;
+    const at = target ? await until(`aimAt(${J(target)}, 'a')`, 5000) : null;
+    if (at) {
+      await b.click(at.x, at.y, { button: "right" });
+      await sleep(200);
+      const items = await P("menu('a')");
+      check("12: the menu on a card, seated and playing, has Select first", items[0]?.label === "Select" && !items[0].disabled, items.map((i) => i.label));
+      if (items[0]?.label === "Select") await b.click(items[0].x, items[0].y);
+      // (extensions hear the selection at the stage's next flush: a frame, slow on two software-rendered views)
+      await until(`halo('a')?.id === ${J(target)}`, 5000);
+      const halo = await P("halo('a')");
+      check("12: Select selects it, and its halo is on it, in its parent's frame", (await P("selected('a')")) === target && halo?.id === target && halo.parent === (await P(`parentOf(${J(target)})`)), { selected: await P("selected('a')"), halo, why: await P("haloWhy('a')") });
+      const h0 = await P("haloAt('a', 0)"), h1 = await P("haloAt('a', 0, 0.02)");
+      if (h0 && h1) {
+        const len = Math.hypot(h1.x - h0.x, h1.y - h0.y);
+        const u = [(h1.x - h0.x) / len, (h1.y - h0.y) / len];
+        const before = await P(`transform(${J(target)})`);
+        const parent = await P(`parentOf(${J(target)})`);
+        const hull0 = await P(`worldOf(${J(ids.hull)}, 'a')`);
+        const mid = await b.drag([h0.x, h0.y], [h0.x + u[0] * 40, h0.y + u[1] * 40], {
+          steps: 12,
+          beforeRelease: async () => {
+            await sleep(600); // she sails on under the held arrow
+            return { hull: await P(`worldOf(${J(ids.hull)}, 'a')`) };
+          },
+        });
+        await sleep(300);
+        const after = await P(`transform(${J(target)})`);
+        const hullMoved = Math.hypot(mid.hull[12] - hull0[12], mid.hull[13] - hull0[13], mid.hull[14] - hull0[14]);
+        const d = after.position.map((v, i) => v - before.position[i]);
+        // not turned: the same rotation, whichever way round a half turn is written (π or −π)
+        const sameTurn = before.rotation.every((v, i) => Math.abs(Math.atan2(Math.sin(v - after.rotation[i]), Math.cos(v - after.rotation[i]))) < 1e-6);
+        report.numbers.haloUnderWay = { before: before.position, after: after.position, hullMovedM: +hullMoved.toFixed(3), parent };
+        check("12: she moved under the drag (the parent is moving)", hullMoved > 0.05, report.numbers.haloUnderWay);
+        check("12: the card moved along its parent's X only, written local to the same parent, not turned", d[0] > 0.003 && Math.abs(d[1]) < 1e-6 && Math.abs(d[2]) < 1e-6 && sameTurn && (await P(`parentOf(${J(target)})`)) === parent, { d, before, after });
+      } else check("12: the card's X arrow is on A's screen", false, { h0, h1 });
+      await P("focus('a')");
+      await b.key("Escape");
+    } else check("12: a card lies on the table on A's screen", false, { card, lying });
   }
 
   // ── 9: first person ──

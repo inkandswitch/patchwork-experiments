@@ -24,7 +24,7 @@ import { CUP, LIFT_BACK, ringOf } from "./cup.js";
 import { TABLE_TOP, cupGLB, poolGLB, tableGLB } from "./cup-glb.js";
 import { dieGLB } from "./die-glb.js";
 import { presetDoc } from "./die.js";
-import { DIE } from "./ids.js";
+import { CARRY, DIE } from "./ids.js";
 import { eulerMatrix } from "./m3.js";
 import { squared } from "./parts.js";
 import { scaleOf } from "./roll.js";
@@ -76,9 +76,9 @@ export const freshCup = () => ({ [CUP]: { up: true, blind: false, holder: null, 
 export function setOut({ set, files: f, at, yaw, k = 1, n = DICE_EACH }) {
   // lifted: beside its dice, to the player's right (cup.js lifted)
   const back = [Math.cos(yaw) * (LIFT_BACK / k), 0, -Math.sin(yaw) * (LIFT_BACK / k)];
-  const cup = objectOf(`${set.name} cup`, f.cup, { position: at.map((v, i) => tidy(v + back[i])), rotation: [0, tidy(yaw), 0], scale: 1 }, { traits: freshCup() });
+  const cup = objectOf(`${set.name} cup`, f.cup, { position: at.map((v, i) => tidy(v + back[i])), rotation: [0, tidy(yaw), 0], scale: 1 }, { traits: { ...freshCup(), [CARRY]: {} } });
   const dice = ringOf(n, yaw).map(({ at: d, yaw: y }, i) =>
-    objectOf(`${set.name} die ${i + 1}`, f.die, { position: [tidy(at[0] + d[0] / k), tidy(at[1]), tidy(at[2] + d[2] / k)], rotation: [0, y, 0], scale: 1 }, { traits: { [DIE]: {} } }),
+    objectOf(`${set.name} die ${i + 1}`, f.die, { position: [tidy(at[0] + d[0] / k), tidy(at[1]), tidy(at[2] + d[2] / k)], rotation: [0, y, 0], scale: 1 }, { traits: { [DIE]: {}, [CARRY]: {} } }),
   );
   return { cup, dice };
 }
@@ -153,7 +153,6 @@ export async function layOutTable(ctx, { players = SETS.length } = {}) {
     }
     if (lay) lay(d, seats);
     d.view.activity = "play";
-    d.view.tool = "hand";
     d.view.grid = false;
     d.view.axes = false;
     d.view.home = { position: [0, TABLE_TOP + 0.9, 1.1], target: [0, TABLE_TOP, 0] };

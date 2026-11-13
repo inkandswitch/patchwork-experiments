@@ -49,7 +49,7 @@ describe("the slide's verb and motion, on the stage", () => {
   it("on the use prompt: F, within arm's reach", () => {
     expect(cmd.key).toBe("f");
     expect(cmd.show).toEqual(["use"]);
-    expect(cmd.state("door", {})).toBe(null); // the key map: no eye, so F while editing stays Frame all
+    expect(cmd.state("door", {})).toBe(null); // the key map: no eye, so F elsewhere stays carry's Flip
     expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: REACH + 0.01 } })).toBe(null);
     expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: REACH } })).toEqual({ label: "Open" });
     expect(cmd.state("door", { from: [1, 1, 1], hit: { id: "door", point: [1, 1, 2] } })).toEqual({ label: "Open" });

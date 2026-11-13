@@ -4,7 +4,7 @@ import { Box3, Vector3 } from "three";
 import { PLAY, mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
-import handles, { effectiveTool, handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
+import handles, { handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
 
 const SLICE = {
   type: "scene:source",
@@ -67,11 +67,6 @@ afterEach(() => {
 });
 
 describe("scene.handles: pure helpers", () => {
-  it("reads the effective tool, the doc's suggestion under the viewer's choice", () => {
-    expect(effectiveTool({}, {})).toBe("move");
-    expect(effectiveTool({}, { view: { tool: "hand" } })).toBe("hand");
-    expect(effectiveTool({ tool: "hand" }, { view: { tool: "move" } })).toBe("hand");
-  });
   it("finds the provider by id", () => {
     const reg = { filter: (fn) => [SLICE, { id: "x" }].filter(fn) };
     expect(providerOf(reg, "slice-test")).toBe(SLICE);
@@ -146,33 +141,17 @@ describe("scene.handles on the stage", () => {
     expect(labelTexts(s)).toEqual(["Height: 0.2"]);
   });
 
-  it("stands down for the hand and while anything is armed", async () => {
+  it("stands down while another extension is armed, and only then", async () => {
     const { s } = await setup();
     current = s;
     await select(s, "a");
-    expect(labelTexts(s)).toHaveLength(1);
-    s.local.swap((l) => ({ ...l, tool: "hand" }));
-    await settle();
-    expect(labelTexts(s)).toEqual([]);
-    expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
-    s.local.swap((l) => ({ ...l, tool: "move" }));
-    await settle();
     expect(labelTexts(s)).toHaveLength(1);
     const disarm = s.api("t.arm").arm({});
     await settle();
     expect(s.local.get().armed).toBe("t.arm");
     expect(labelTexts(s)).toEqual([]);
+    expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
     disarm();
-    await settle();
-    expect(labelTexts(s)).toHaveLength(1);
-  });
-
-  it("the doc's suggested tool counts too", async () => {
-    const { s } = await setup({ view: { tool: "hand" } });
-    current = s;
-    await select(s, "a");
-    expect(labelTexts(s)).toEqual([]);
-    s.local.swap((l) => ({ ...l, tool: "rotate" }));
     await settle();
     expect(labelTexts(s)).toHaveLength(1);
   });

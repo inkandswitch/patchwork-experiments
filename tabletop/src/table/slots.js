@@ -2,7 +2,7 @@
 // tile: a slot takes whatever has one of its tags; a rack's places hold a
 // domino standing on edge, a frame this package writes in full beside the
 // scene's connectors, pieces.js SLOTS_EXTRAS). The rule is
-// the scene hand's (scene/src/hand.js `accepts`, scene/src/parts/hand-carry.js
+// the scene carry's (scene/src/carry-rules.js `accepts`, scene/src/parts/carry-math.js
 // `snapCandidates`), copied rather than imported, since packages stand alone:
 // a connector that lists tags takes only objects with one of them, it reaches
 // as far as its object's `snapRadius` (scaled with the object), in plan.
@@ -22,7 +22,7 @@ export const yawOfMatrix = (m) => Math.atan2(m[8], m[10]);
 /**
  * The yaw (radians about +Y) a rotation turns +Z to, seen from above (Euler
  * XYZ radians, R = Rx·Ry·Rz); null if it turns +Z straight up or down. (The
- * scene hand's yawOfEuler, copied.)
+ * scene carry's yawOfEuler, copied.)
  */
 export function yawOfEuler(rotation) {
   const [x, y] = rotation.map(Number);

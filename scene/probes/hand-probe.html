@@ -69,16 +69,18 @@ try {
   const blockGLB = file("block.glb", { meshes: [box(0.05, 0.032, 0.05, "#f1ede3")] });
   const pawnGLB = file("pawn.glb", { meshes: [box(0.016, 0.03, 0.016, "#3a78d8")] });
   const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  // what can be picked up says so: the scene's carry trait (the board and the tray, locked, don't)
+  const CARRY = { "scene.carry": {} };
   const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
-  for (let i = 0; i < 4; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.06, 0, -0.1]);
-  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
+  for (let i = 0; i < 4; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.06, 0, -0.1], { traits: { ...CARRY } });
+  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25], { traits: { ...CARRY } });
   // hidden objects: a tray that is seat 1's private zone, and two cards that are really "Red 7"
   const trayGLB = file("tray.glb", { meshes: [box(0.2, 0.002, 0.08, "#2f4a3a")] });
   const backGLB = file("back.glb", { meshes: [box(0.04, 0.002, 0.06, "#6b3e26")] });
   const faceGLB = file("red-7.glb", { meshes: [box(0.04, 0.002, 0.06, "#c4452f")] });
   objects.tray = obj("Seat 1's tray", trayGLB, [-0.25, 0, 0.25], { locked: true });
   const blueGLB = file("blue-3.glb", { meshes: [box(0.04, 0.002, 0.06, "#2f6db5")] });
-  const secret = (sourceUrl, name) => ({ traits: { "probe.secret": { sourceUrl, name } } });
+  const secret = (sourceUrl, name) => ({ traits: { ...CARRY, "probe.secret": { sourceUrl, name } } });
   objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25], secret(faceGLB.url, "Red 7"));
   // a pile of two, face down, on the table: "under" and "faceDown" on top
   objects.under = obj("Card", backGLB, [0.25, 0.002, 0.15], secret(blueGLB.url, "Blue 3"));
@@ -92,7 +94,7 @@ try {
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
     // played as well as edited, needing what a game table does (tabletop's own list)
     activities: ["play", "edit"],
-    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
+    requires: ["scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     load: async () => ({
       create(api) {
         let looks = new Map();
@@ -135,7 +137,7 @@ try {
   });
   const scene = repo.add(emptyScene({
     title: "Hand probe", objects, order: Object.keys(objects),
-    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true,
             home: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] } },
   }));
   try { localStorage.clear(); } catch {}
@@ -173,7 +175,7 @@ try {
     },
     pos: (id) => scene.doc().objects[id].transform.position,
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
-    carrying: () => dbgA.host.instanceOf("scene.hand") && dbgA.local.get().armed,
+    carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().armed,
     camera: () => vp.getCamera(),
     /** switch a viewer's activity; what each is running */
     activity: (who, id) => (who === "a" ? dbgA : dbgB).local.swap((m) => ({ ...m, activity: id })),
@@ -205,8 +207,17 @@ try {
       return [p0, p1];
     },
     row: (id) => { const e = hostA.querySelector(`.object-row[data-id="${id}"] .row-main`) ?? hostA.querySelector(`.object-row[data-id="${id}"]`); const r = e?.getBoundingClientRect(); return r && [r.x + Math.min(40, r.width / 2), r.y + r.height / 2]; },
-    /** where the gizmo's proxy is (world) and the axis it's hovering */
-    gizmo: () => { const g = dbgA.host.instanceOf("scene.gizmo")?.debug; if (!g?.tc || g.tc.object !== g.proxy) return null; g.proxy.updateMatrixWorld(); const e = g.proxy.matrixWorld.elements; return { at: [e[12], e[13], e[14]], axis: g.tc.axis ?? null, target: g.target }; },
+    /** what A's halo is on, or null */
+    halo: () => dbgA.host.instanceOf("scene.halo")?.debug?.target ?? null,
+    /** page coords of one of A's halo handles: a third of the way along an arrow, the point of a corner; and of `along` frame units further along an arrow's axis */
+    haloAt: (kind, axis, along = 0) => {
+      const h = dbgA.host.instanceOf("scene.halo")?.debug;
+      const x = h?.handles.find((k) => k.kind === kind && (axis == null || k.axis === axis));
+      if (!x) return null;
+      const p = kind === "move" ? x.from.map((v, i) => v + (x.to[i] - v) / 3) : x.at;
+      if (along) p[axis] += along;
+      return pageOf(vp, h.frame.pointOut(p));
+    },
     hover: (id) => {
       const b = vp.objectBox(id, { hints: false });
       return pageOf(vp, [(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);

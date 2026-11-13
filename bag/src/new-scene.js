@@ -13,7 +13,7 @@
 
 import { DEFAULT_TITLE, lookOf } from "./datatype.js";
 import { emptyScene } from "./empty-scene.js";
-import { CONTAINER } from "./part.js";
+import { CARRY, CONTAINER } from "./part.js";
 import { roundBounds, sackGLB } from "./sack.js";
 import { scenePatchwork } from "./scene-package.js";
 
@@ -48,11 +48,10 @@ export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = n
     wireframe: false,
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
     hint: JSON.parse(JSON.stringify(hint)),
-    traits: { [CONTAINER]: { doc: bagUrl } },
+    traits: { [CONTAINER]: { doc: bagUrl }, [CARRY]: {} },
   };
   scene.order.push(BAG_OBJECT);
   // a table with a bag on it is for playing at
   scene.view.activity = "play";
-  scene.view.tool = "hand";
   return scene;
 }

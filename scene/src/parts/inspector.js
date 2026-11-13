@@ -436,7 +436,7 @@ function create(api) {
         { class: "cluster" },
         el("label", { class: "toggle" }, visible, " Visible"),
         wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null,
-        locked ? el("label", { class: "toggle", title: "A locked object can't be moved with the hand or the gizmo (a game board, say)" }, locked, " Locked") : null,
+        locked ? el("label", { class: "toggle", title: "A locked object can't be carried or moved with the halo (a game board, say)" }, locked, " Locked") : null,
       ),
       group ? null : el("div", { class: "cluster" }, el("label", { class: "toggle" }, "Colour ", colorIn), resetColor),
       el("label", { class: "field" }, el("span", {}, "Opacity"), opacity),

@@ -137,6 +137,12 @@ two peers order the same pair differently, nothing diverges in the doc.
 
 ## 4. Scene traits versus traits on an object
 
+*Superseded in part by [TOOLS.md](TOOLS.md) (build step 3): `view.tool`,
+`local.tool`, `effectiveTool` and `parts/hand.js` are gone. Carrying is
+the `scene.carry` trait, run by `parts/carry.js`, so the per-scope view
+default for `tool` below has nothing left to choose; step 9 rewrites this
+section.*
+
 The rule: **anything that belongs to a thing lives on that object, in its
 frame.** Scene traits are for what really is about the whole document:
 rules of the world, catalogues and scoreboards.
@@ -254,7 +260,17 @@ and with no opinion from anyone it behaves as it does today. **Code:** the
 hand collects `carryable` and checks it beside `canCarry`; tabletop and
 arena each add a few lines.
 
+**Built otherwise** (TOOLS.md §1, its build step 3): "can be carried" is the
+`scene.carry` trait on the object, declared by the carry part (`scene.hand`
+renamed `scene.carry`), so it runs by trait and nothing requires it; a wall
+or a hull simply lacks it. `carryable(id)` stays as a veto for passing states
+only (a die under a cup), and `view.tool` is gone.
+
 ## 8. What the sailing sim needs, in short
+
+*The `view.tool`, `pref(…, at)` and `parts/hand.js` rows below are superseded
+by [TOOLS.md](TOOLS.md): "the tool fits the place" is now which objects carry
+the `scene.carry` trait, and `carryable` is a veto for passing states only.*
 
 | Need | Comes from |
 |---|---|

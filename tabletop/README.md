@@ -300,16 +300,11 @@ message says ever changes the doc or what anyone sees.
 package (`dice/`): its parts are under "Dice" in the bin, and it brings Roll,
 Turn and Roll all to any scene, a table included. Nothing here knows a die.
 
-**The hand, always, in play.** A tool picked while editing (G, R, the
-toolbar's Move or Rotate) is the view's own local state and would outlive the
-switch back to Play, where nothing offers a way back: the table could no
-longer be carried or flipped. And a scene that became a table through a part
-(Lost Cities set down in it) suggests no tool (`view.tool`), so the stage's default, Move,
-is in force. So whenever a view is playing at a table and the tool in force
-(the view's, else the doc's `view.tool`, else Move: the scene's
-`effectiveTool`, copied) isn't the hand, the extension runs the hand's own
-Hand command. This patches a stage-wide gap, an Edit tool outliving the
-switch to Play, which belongs in `scene.activity` in time.
+**Carrying is the pieces'.** Every piece a table writes that isn't locked
+(cards, pawns, tiles, a part from the bin) carries the scene's `scene.carry`
+trait, so it can be picked up and flipped in play or editing alike; the
+board and the card table, locked, can't. There is no tool to switch to, so
+nothing here forces one.
 
 **Card slots.** A card slot is a connector tagged `"card"`, and every card on
 a table is tagged `"card"` (its back's tags: one tag for every card, never one
@@ -440,7 +435,7 @@ are its part), this package's (hands and cards) and the keeper's (its trait
 on every card), so someone arriving by link with only the scene package is
 offered the other two (`probes/arrive.mjs`). A template writes
 the table into the empty scene it was started on, in one `ctx.change`.
-Its view opens in the hand (`view.tool: "hand"`) with snapping on, the
+Its view opens with snapping on (its pieces carry by their trait), the
 grid and axes off, units in cm, looking from the game's `camera`
 (`view.home`), and, when it has hands or cards, starts in
 play (`view.activity: "play"`): a

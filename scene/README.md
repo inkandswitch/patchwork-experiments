@@ -16,7 +16,7 @@ The tool itself is a **stage** with no UI of its own: it keeps the doc,
 loads and builds content, renders, picks and routes input. Everything you
 see or do in a scene comes from **extensions** (`scene:extension` plugins),
 and the editor described under "Using it" is 20 of them that this package
-ships (selection, gizmo, hand, outline, inspector, toolbar…), each its own
+ships (selection, halo, carry, outline, inspector, toolbar…), each its own
 module in `src/parts/`, which run while you **edit**. Other packages add more
 (tabletop's game table, arena's first-person level) and the activities they
 take part in, such as **play**; each viewer switches between the ones a
@@ -177,13 +177,23 @@ notice says what to add. See STAGE.md, "Copying objects".
   the object itself and anything attached to it, so a loop can't be made.
   Hiding an object doesn't hide what's attached to it. Removing an object
   leaves its attachments where they were, now at the scene root.
-- **Viewport**: orbit/pan/zoom, click to select, move/rotate gizmo (`G` / `R`),
-  **Frame all** (`F`; editing only — a game table keeps F for flipping, and
-  takes just the camera framing the scene as it loads). The gizmo on a selected group sits at the middle of
-  what's in it and moves all of it (what's attached to a member follows the
-  member; locked members stay), written as one change.
-- **Hand** (`H`, or *Hand* in the gizmo menu): pick objects up and put them
-  down elsewhere, like pieces on a table. Press on an object and drag: it
+- **Viewport**: orbit/pan/zoom, click to select (editing; anywhere, *Select*,
+  first in every right-click menu), **Frame** (`.`: the selection, else
+  everything; editing only — a game table takes just the camera framing the
+  scene as it loads). There are no tools to pick and no modes.
+- **Halo**: what's selected shows handles round its box, after Morphic's: a
+  move arrow along each axis, a rotate ring about each, a scale handle at
+  each corner (uniform scale, about its middle), all outside the box and the
+  same size on screen at any zoom, plus a provider's build-param knobs
+  (below). Drag one; a press on the thing itself is still the thing's. They
+  are in the frame of what it's attached to, so a fitting's handles heel with
+  the hull and drag along her deck while she sails. A group's halo moves all
+  of it (what's attached to a member follows the member; locked members
+  stay), written as one change. No handles on a locked object, a read-only
+  doc, or while something is armed (measuring).
+- **Carry**: what has the `scene.carry` trait (*Carryable* in the inspector's
+  "Add behaviour…"; a game's pieces have it) can be picked up and put
+  down elsewhere, like pieces on a table. Press on it and drag: it
   floats just above the spot under the pointer (the table, or the top of a
   stack) and a ring shows where it will land. Let go and it rests on the
   highest surface under its footprint, or on the ground. If another object
@@ -195,21 +205,19 @@ notice says what to add. See STAGE.md, "Copying objects".
   face down, turning in the air rather than snapping); **Esc** puts it back.
   **F** over a piece that's lying there (or *Flip* in its right-click menu)
   turns it over where it lies: it rises, turns and comes back down on
-  whatever is under it, and only where it lands is written. With the hand as
-  the tool, a selected piece takes F before **Frame all** does. A press that doesn't move
-  is still a click (select), and a press on empty space or on a **locked**
-  object orbits. There is no physics: nothing tips or slides, and only the
+  whatever is under it, and only where it lands is written. A press that
+  doesn't move is still a click (select), and a press on empty space, on
+  something without the trait or on a **locked** object orbits. There is no physics: nothing tips or slides, and only the
   final pose is written. While it's carried, other people see it move (over
   `handle.broadcast`, below). An extension can ask for the piece to go
   down another way where it's put (tabletop turns a card face up in your
-  hand), or say something can't be carried at all (sailing: the ship and
-  her fittings). A piece attached to something is carried in that thing's
+  hand), or say it can't be picked up just now (dice: a die under a cup).
+  A piece attached to something is carried in that thing's
   frame: a card on a table aboard a moving ship goes with the table, snaps
   to its slots and goes down square to it, however she heels and swings.
-  A scene can open in the hand (`view.tool`); after that the
-  menu is yours alone.
-- **Locked** (inspector): a locked object can't be carried or given the
-  gizmo — a game board, say. Everything else about it still works.
+  Carrying runs in every activity, wherever the doc has something carryable.
+- **Locked** (inspector): a locked object can't be carried or moved by its
+  halo — a game board, say. Everything else about it still works.
 - **Panels**: the sidebar's panels fold from their titles; any extension
   can contribute one.
 
@@ -240,7 +248,7 @@ room environment, kept near 1 in total so light baked colours don't clip.
 
 Selection and hover are shared with other people in the scene over
 `handle.broadcast`; nothing about presence is written to the doc. So is an
-object in someone's hand or on their gizmo (and each member of a group being
+object someone is carrying or moving with the halo (and each member of a group being
 moved): `{ type: "scene:carry", id, transform }` (its local transform, at
 most every 50 ms) while it moves, and `transform: null` when it is put down,
 let go or the carry is cancelled. Peers show it there instead of where
@@ -256,7 +264,7 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 { type: "scene:extension", id: "tabletop", name: "Tabletop",
   traits: ["tabletop.zone", "tabletop.card"],                        // trait keys that start it
   drops: ["*"],                                                      // datatypes it may lay out when dropped
-  requires: ["scene.hand", "scene.keys"],                            // what must run with it
+  requires: ["scene.use", "scene.keys"],                             // what must run with it
   always: false,
   activities: ["play"],                                              // the activities it takes part in (absent = all)
   describes: { "tabletop.card": { name: "Card", on: "object", … } },  // for "Add behaviour…" (STAGE.md)
@@ -331,7 +339,7 @@ the object (a slice's height, a rake's) can be dragged in place:
 type Handle = { param: string, axis: [x, y, z], label?: string }  // axis: in the object's (GLB's) frame
 ```
 
-While the object is selected (not in the hand, not measuring), the scene
+While the object is selected (and nothing is armed: measuring), the scene
 draws a knob for each on the line through the middle of its geometry along
 `axis`, at the param's value (from its render doc, else the default), with
 its label, and a track over its range. Drag the knob: it follows the pointer
@@ -459,7 +467,7 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
 - Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
   rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
   scene), in that node's frame: places where something goes. `rotation`
-  (Euler XYZ, radians) is the connector's frame; the hand turns whatever it
+  (Euler XYZ, radians) is the connector's frame; a carry turns whatever it
   puts there to face where that frame turns +Z, seen from above (so a card in
   the far player's column reads right for them), and keeps the rest for
   whatever comes to use a whole frame (a CAD mate, say). A connector with
@@ -467,12 +475,12 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
   Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
   [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as
   untagged connectors. Optionally `extras.snapRadius` (metres, in the GLB's
-  frame). When the hand puts something down near one — the centre of its
+  frame). When a carry puts something down near one — the centre of its
   footprint within the radius, in plan — it goes there; height is still
   decided by what is underneath, so pieces stack on a board's spaces. Without
   a radius it is 0.71 × the closest spacing between the points, so every part
   of a square grid's cell, corners included, snaps to that cell. A lone
-  connector has no spacing to take one from, so with no `snapRadius` the hand
+  connector has no spacing to take one from, so with no `snapRadius` a carry
   doesn't snap to it. Malformed connectors are ignored.
 - Optional colour legend: put `extras.legend = { title, unit, min, max, stops }`
   on a mesh, `stops` being 2–32 `#rrggbb` colours spaced evenly from `min` to
@@ -600,10 +608,9 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   objects: { [objectId]: Object | Group },
   order: string[],                  // objects and groups, as the outline lists them
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
-  // defaults for each viewer (each can change their own): display, snapping, the starting tool
+  // defaults for each viewer (each can change their own): display, snapping, where to start
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
-          snap?: boolean,                                  // the hand snaps (absent = true)
-          tool?: "move" | "rotate" | "hand" | "select" | string, // the tool a viewer starts with (absent = move)
+          snap?: boolean,                                  // a carry snaps (absent = true)
           activity?: string,                               // the activity a viewer starts in (absent = "edit")
           home?: { position, target, fov? } },             // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
@@ -622,7 +629,7 @@ Object = {
     group?: string | null,          // the group it's filed in; absent = none
     infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
-    locked?: boolean,               // true: the hand and the gizmo leave it where it is
+    locked?: boolean,               // true: it can't be carried, and its halo has no handles
     tags?: string[],                // what tagged connectors it fits (GLB conventions, below)
     traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number },
@@ -649,12 +656,12 @@ MaterialRule = {
 - **Groups** (`kind: "group"`) organise: no geometry and no transform.
   Hiding a group hides everything filed in it (at any depth), and its opacity
   multiplies into everything filed in it. A group is never picked, never a
-  parent and can't anchor a dimension; its box (Frame, selection, the gizmo's
-  pivot) is the union of what's shown inside it. Moving it with the gizmo
-  writes each member's transform. A loop of groups (two concurrent edits) is
+  parent and can't anchor a dimension; its box (Frame, selection, its halo)
+  is the union of what's shown inside it. Moving it with its halo writes
+  each member's transform. A loop of groups (two concurrent edits) is
   broken the same way on every peer, like an attachment cycle.
 - **Only this shape is read.** Nothing upgrades a scene written in an
-  older one (groups with transforms, `view.defaultGizmo` or
+  older one (groups with transforms, `view.tool`, `view.defaultGizmo` or
   `view.defaultMode`, a top-level `camera`), and extensions read only their
   traits: such a scene is replaced, not read. `traits`, `view`,
   `dimensions`, `assets` and `packages` are made with the doc (STAGE.md,
@@ -685,7 +692,7 @@ MaterialRule = {
   object with the smallest id in the loop is treated as a root). Attaching and
   detaching rewrite `transform` so the world pose is unchanged. Removing an
   object sets each of its children's `parent` to null and their `transform` to
-  their world pose. The move/rotate gizmo edits the local transform.
+  their world pose. The halo edits the local transform.
 - An anchor with an `objectId` whose object still exists resolves through that
   object's current world matrix (so it follows whatever the object is attached
   to); otherwise it uses `world`. Removing an object freezes its anchors at
@@ -758,7 +765,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it), `seats` (the places people take at a scene, and who sits where for whoever asks: `seats-model.js` is its pure side) and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it), `seats` (the places people take at a scene, and who sits where for whoever asks: `seats-model.js` is its pure side) and `activity` (the switcher, always on) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/test/fake-world.js` | a stand-in stage for a part whose tests need several views with claims that lapse and merges written by hand (seats) |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
@@ -779,10 +786,10 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/test/` | test doubles (a repo, the plugin registry, a camera), the stage harness, and `empty-scene.js`: the whole scene doc every test, probe page and publish script starts from, which is the datatype's `init` |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
-| `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
+| `src/carry-rules.js` | carrying's pure parts: what can be carried (the trait), connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces by their trait, a scene extension of the page's own, and the halo; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
 
 ### The editor probe
 
@@ -798,13 +805,13 @@ STL file in the repo. A real mouse and keyboard over CDP check the layout
 the Inspector (showing the Scene: nothing is selected) and Dimensions, the
 canvas filling the rest); a click selects (the outline row is
 marked, the inspector shows it, B draws A's selection box and marks the row);
-Escape and a click on nothing deselect; G / R / H and the toolbar's buttons
-switch tools, Grid / Axes / Bounds toggle (per viewer, never the doc); a drag
-on the gizmo's X arrow (found by hovering) moves a block, B seeing the pose
-mid-drag and then the landed transform; the hand carries a block onto a
-connector, Q turns it 45°, Esc puts it back, Alt puts one down between
-connectors; dragging the locked board orbits and writes nothing; F frames
-everything; M and two clicks on the board write a 24 cm dimension (label on
+Escape and a click on nothing deselect; G / R / H are nobody's (there are no
+tools), Grid / Axes / Bounds toggle (per viewer, never the doc); a drag
+on the halo's X arrow moves a block, B seeing the pose
+mid-drag and then the landed transform; a block (it has the carry trait) is
+carried onto a connector, Q turns it 45°, Esc puts it back, Alt puts one
+down between connectors; dragging the locked board orbits and writes
+nothing; . frames everything; M and two clicks on the board write a 24 cm dimension (label on
 the canvas and in the panel); a click on that label selects the dimension in
 place of a selected block (one selection; B hears it) and Delete removes it,
 and only it; Delete removes a selected object; P hides and shows
@@ -814,7 +821,7 @@ only editing); pasted automerge URLs add a GLB and the STL, which builds,
 shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its
-parent's gizmo drag. With nothing selected the inspector shows the Scene: its
+parent's halo drag. With nothing selected the inspector shows the Scene: its
 "Starts in" offers only Edit. Then, with arena/ built (its plugins are
 registered too; otherwise these are skipped), "Add behaviour…" on a block
 offers Target and Spawn point, not the scene-only Arena level; adding Target
@@ -851,7 +858,7 @@ itself and B still its back; S over a pile of two face-down cards runs its
 command; a face-down card is carried, turned over with F and put down, and
 both show its face; another carried into the tray lands face up, seen by A
 alone.
-Last, the gizmo with a real drag on its X arrow: B sees the block move
+Last, the halo with a real drag on its X arrow: B sees the block move
 before the doc does, then the written pose; and on a group's pivot, both
 pawns move by the same amount. The page's extension is written to
 [STAGE.md](STAGE.md)'s contract (`looks`, `landing`, commands with `state`,

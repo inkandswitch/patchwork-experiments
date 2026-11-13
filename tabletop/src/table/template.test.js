@@ -120,12 +120,12 @@ describe("the Lost Cities template", () => {
     expect(calls.notices.some((n) => n.kind === "warn" && /owns seats/.test(n.text))).toBe(true);
   });
 
-  it("starts in play, in the hand, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
+  it("starts in play, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
     expect(doc.view.activity).toBe("play");
-    expect(doc.view.tool).toBe("hand");
+    expect(doc.view.tool).toBeUndefined();
     expect(doc.view.snap).toBe(true);
     expect(doc.title).toBe("Lost Cities table");
     expect(doc.traits[SEATS]).toEqual({
@@ -169,7 +169,7 @@ describe("the Santorini template", () => {
     for (const o of objects) expect(urls.has(o.sourceUrl)).toBe(true);
     expect(doc.traits).toEqual({});
     // nothing here starts the table extension, so play isn't on offer: the doc doesn't claim it
-    expect(doc.view).toMatchObject({ tool: "hand" });
+    expect(doc.view).not.toHaveProperty("tool");
     expect(doc.view).not.toHaveProperty("activity");
     expect(calls.changes).toBe(1);
     expect(calls.notices.at(-1).text).toMatch(/Santorini is laid out/);

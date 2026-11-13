@@ -21,7 +21,7 @@
 
 import { isGroup } from "../groups.js";
 import { connectorFor, partLanding } from "./parts-place.js";
-import { yawOfMatrix } from "./hand-carry.js";
+import { yawOfMatrix } from "./carry-math.js";
 
 export function landings(api) {
   const objectFor = (id) => {

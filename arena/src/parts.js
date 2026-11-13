@@ -2,7 +2,7 @@
 // spawn point, for the editor's parts bin. Each is one block of its kind,
 // put where the bin says (under the object it was dropped on, if any), from
 // the scene's own GLB for that kind (layout.js). They aren't locked as the
-// laid-out arena's blocks are: a part is placed by hand, so the gizmo may
+// laid-out arena's blocks are: a part is placed by hand, so the halo may
 // move it.
 //
 // A target or a spawn point is a piece of the game, so it makes the scene a

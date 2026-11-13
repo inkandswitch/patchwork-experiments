@@ -56,13 +56,15 @@ export const plugins = [
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A hand's box is plain JSON for now.
     describes: TRAITS,
-    // playing needs these and nothing else: carry pieces, the use prompt
-    // (hover a pile: "[F] Flip  [S] Shuffle pile  [D] Draw to my hand"; play
-    // only, it does nothing while editing), keys for verbs, a right-click menu, a camera that opens
-    // on the table, and somewhere for notices (not scene.frame: F is the
-    // hand's flip at a table). scene.use comes before scene.keys, so the
-    // prompt hears its verbs' keys first (scene/STAGE.md, "The use prompt").
-    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
+    // playing needs these and nothing else: the use prompt (hover a pile:
+    // "[F] Flip  [S] Shuffle pile  [D] Draw to my hand"; play only, it does
+    // nothing while editing), keys for verbs, a right-click menu, a camera
+    // that opens on the table, and somewhere for notices (not scene.frame: F
+    // is carry's flip at a table). Carrying pieces is the scene's, by the
+    // `scene.carry` trait the table writes on them. scene.use comes before
+    // scene.keys, so the prompt hears its verbs' keys first (scene/STAGE.md,
+    // "The use prompt").
+    requires: ["scene.use", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     async load() {
       return (await import("./table/extension.js")).default;
     },

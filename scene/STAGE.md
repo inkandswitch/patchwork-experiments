@@ -33,7 +33,7 @@ joint keeper keeps its player's secret with their account.)
 These rules follow from that:
 
 - **The doc holds what is true for everyone.** Per-viewer things never go in
-  the doc: the camera, display toggles and the current tool.
+  the doc: the camera, display toggles and the selection.
 - **The doc may suggest a default.** It does so through `doc.view.*`, and a
   viewer's local choice overrides it. Read a preference with
   `api.pref(key, fallback)`, which returns
@@ -64,7 +64,6 @@ this view and by the stage.
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | stage | `{ ask, loading, failed, missing }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`), and `missing`: whether any listed package isn't here (whatever was answered about it; true until that is known). See "Packages" and "Audience" |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
-| `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? "move"` |
 
 Private local state lives in the extension's closure, or under a key prefixed
 `<id>.`. Another extension doesn't write it: it runs one of the owner's
@@ -94,7 +93,7 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   async load() { return { create(ctx) → Promise } } }
 
 { type: "scene:part", id, name, icon?, category?, description?,
-  tags?:   string[],                  // the connector tags it fits (as an object's tags, for the hand)
+  tags?:   string[],                  // the connector tags it fits (as an object's tags, for the carry)
   traits?: string[],                  // the traits it brings, shown in the bin as what it does
   async load() { return { create(ctx, at) → Promise<string | null> } } }
 ```
@@ -122,8 +121,9 @@ serves whatever needs it, and exists only when something running requires
 it (the use prompt, which a game brings into play). If several reasons apply, the earliest step wins.
 
 `requires` pulls the required extensions in whenever the requirer runs,
-whatever *their* activities (a table in play brings the hand and the key
-map, which are editing parts too). It never lends scope: a required
+whatever *their* activities (a table in play brings the use prompt and the
+key map). Carrying is never required: `scene.carry` runs by its trait,
+wherever the doc has something that can be picked up. It never lends scope: a required
 extension's own reasons decide it, and with none it's `general`.
 
 **Order:**
@@ -192,7 +192,7 @@ stage knows none of them.
 - **The plugin** is metadata the bin reads without loading anything: `name`,
   `icon` (a lucide name), `category` (the bin's heading), `description`,
   `tags` (the connector tags it fits: a connector that lists tags takes only
-  parts with one of them, as it does the hand's pieces) and `traits` (what
+  parts with one of them, as it does the carry's pieces) and `traits` (what
   it brings, shown as what it does, by the name an extension's `describes`
   gives it).
 - **`api.part(id, at)`** → `Promise<string | null>` loads the part and runs
@@ -228,11 +228,11 @@ stage knows none of them.
   - on an object (locked or not), it goes under that object (`parent`),
     placed at the point in that object's frame; whether it rides along is
     the part's to say (`at.world`);
-  - it snaps by the hand's rule (`snapCandidates`, `nearestSnap`): to the
+  - it snaps by the carry's rule (`snapCandidates`, `nearestSnap`): to the
     nearest of that object's connectors that takes it (one that lists tags
     takes only a part with one of them) within the object's `snapRadius`,
     in plan. Alt, or the Snap pref off, places it freely. A part writes its
-    `tags` on the object it makes, so the hand sees the same fit;
+    `tags` on the object it makes, so the carry sees the same fit;
   - it stands upright in the world, facing a snapped connector's way, else
     its parent's (the parent's +Z, seen from above), else the viewer (its +Z
     toward the eye);
@@ -386,7 +386,7 @@ describes: {
   activity stops at once.
 - One that leaves because of a doc change keeps running for 2 s, and for as
   long as it, or an extension it `requires`, has an arm, an open session or
-  a pose hold (the hand carrying the table's card), so a peer's undo doesn't
+  a pose hold (the carry holding the table's card), so a peer's undo doesn't
   tear down someone's game.
 
 When an extension stops:
@@ -458,7 +458,6 @@ answered by looking in the plugin registry.
 | an object's `providerId` (and the provider its render doc names) | the `scene:source` with that id |
 | a trait key on the scene or on an object | every `scene:extension` whose `traits` include it |
 | `view.activity`, unless `"edit"` | every `scene:extension` that offers it with a reason of its own |
-| `view.tool` of the form `"<ext>:<name>"` | the `scene:extension` with that id |
 
 With each extension come the ones it `requires`, at any depth. A part or a
 template leaves no mark of its own (what it makes is objects and traits,
@@ -571,10 +570,37 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
    order breaks ties only between extensions holding the same link: a card
    on a table aboard a boat goes to the table's extension, then the boat's,
    then the scene's;
-5. **`general` scope**, in running order;
+5. **`general` scope**, in running order. The last of the scene's own is
+   `scene.select`, whose click is the orbit view's default press (below);
 6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held.
+
+**Selection, the halo and carrying** (TOOLS.md §1, §3). There are no tools
+to pick, and no `local.tool` or `view.tool`:
+- **Carrying** is `scene.carry`'s, a trait part: an object with the
+  `scene.carry` trait can be picked up, so the part runs (object scope) in
+  any stage whose doc has one, in every activity, and is offered a press as
+  the holder of the nearest link with the trait (a press on what's attached
+  to a card carries the card). A press that doesn't move is a tap it gives
+  back, so the click goes on. `carryable(id)` vetoes only a passing state.
+  F is carry's Flip on every surface; Frame is `.`.
+- **Select** is the first entry of every target's menu (`scene.menu` puts
+  `scene.select`'s Select first), in every activity: the deliberate select,
+  in a game too. A plain click selects only as the orbit view's default
+  press: until bodies (TOOLS.md §4) that is the editor's activity, not first
+  person. Where a selection may be is `src/selection.js`: an element of the
+  focus stage (H10); with one stage, any object.
+- **The halo** (`scene.halo`) is the selection's handles, where the doc is
+  writable and nothing is armed: a move arrow along each axis, a rotate ring
+  about each and a scale handle at each corner, all outside the thing's box
+  and sized for the screen (`src/parts/halo-math.js`), plus the build-param
+  knobs (`scene.handles`). They are drawn and dragged in the frame of what
+  the object is attached to, as drawn this frame, so a winch's handles heel
+  with the hull and a drag on them is along her deck while she sails. Found
+  on screen and offered as a widget at its distance from the eye, a handle
+  behind the thing loses to the thing; an arrow seen end on, or a ring edge
+  on, isn't offered. A drag holds the pose and writes once, on release.
 
 Each extension is offered an event at most once, at its earliest step. The
 first to claim it wins. The stage then calls `preventDefault` on the DOM
@@ -609,7 +635,7 @@ input = {
   key(ev)      → boolean,
   keyup(ev)    → boolean,
   wheel(ev)    → boolean,
-  widgetAt(ev) → { onTop?, distance?, ...data } | null,  // "I have a widget here", for widgets the stage can't pick (the gizmo)
+  widgetAt(ev) → { onTop?, distance?, ...data } | null,  // "I have a widget here", for widgets the stage can't pick (the halo's handles, found on screen)
   cursor(ev)   → string | null,
 }
 session = {
@@ -697,6 +723,7 @@ that extension.
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal`, `Counter` | `Counter` is the stage's automerge Counter. `session`: this view's presence session, what its claims and holds name (two tabs of one viewer are two sessions; it changes on coming back from the back-forward cache) |
 | `doc()`, `change(fn)`, `newId(prefix)` | |
+| `writable()` | may this view write the doc: false for a handle at fixed heads (Keyhive's to answer, in time). The halo shows no handles where it's false |
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids)` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids |
@@ -781,7 +808,7 @@ How the camera parts behave:
 | `dock(el, { title, onClose? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it; closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform), release(id, { landed? }) }` |
-| `heldBy(id)` | the peer session holding this object, or null. While this view holds it too, only a peer that took hold first counts, so of two that grabbed it at once exactly one is told to let go (the hand and the gizmo put theirs back) |
+| `heldBy(id)` | the peer session holding this object, or null. While this view holds it too, only a peer that took hold first counts, so of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
 
 How poses and loops behave:
@@ -867,9 +894,9 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
 | `commands` | surfaces and key maps |
 | `panels` | sidebars: `[{ id, title, pinned?, mount(body, { head, section }) → { update(scene, local), dispose() } }]`. A body set `hidden` hides its section; a `pinned` panel never folds |
 | `hud()` → `[{ text, state }]` | status surfaces |
-| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the hand. It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
-| `carryable(id)` → `false` to veto | the hand: false from any running extension and it neither picks `id` up nor flips it (anything else allows). Asked each time, so it may depend on what's happening (a ship under sail) |
-| `carry(id, ev, opts)` → session | anything that wants to carry (the hand provides it) |
+| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the carry (`scene.carry`). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
+| `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
+| `carry(id, ev, opts)` → session | anything that wants to carry (`scene.carry` provides it; it carries only what has the trait) |
 | `dispose()` | the stage |
 
 A **command**:
@@ -936,7 +963,7 @@ and selecting an object (or clicking on nothing) replaces the dimension.
   commands' `state` (`scene.dimensions`' Delete and Escape apply to a
   `"dimension:…"` target), and lets go of a selected ref whose thing is gone.
 - Everything that only cares about objects checks `scene.objects[target]`
-  and treats any other target as nothing selected: the gizmo, handles,
+  and treats any other target as nothing selected: the halo, handles,
   bounds, the outline's marks, the inspector, the selection box. Commands on
   objects (Remove) don't apply to refs.
 - `scene.select` prunes a selected object that's gone, and leaves refs to
@@ -1174,7 +1201,7 @@ atmosphere() → null | {
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old
-`viewport.js` with the gizmo, triad, grid, axes, bounds, selection boxes,
+`viewport.js` with the transform gizmo (now the halo), triad, grid, axes, bounds, selection boxes,
 handles, dimensions, measure, carry, caption and every `wire*` input listener
 taken out. It keeps the following:
 

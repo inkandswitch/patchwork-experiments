@@ -9,8 +9,8 @@
 //   scene:send      a one-off message from an extension to the same
 //                   extension on every other peer. Never stored, never
 //                   replayed, delivered at most once.
-//   scene:pose      an object someone is holding (carrying, dragging on the
-//                   gizmo, simulating) and where it is right now, at most
+//   scene:pose      an object someone is holding (carrying, dragging a halo
+//                   handle, simulating) and where it is right now, at most
 //                   once per send interval per object, stamped with the
 //                   sender's clock and its interval. Peers keep the last few
 //                   as timed samples and play them back smoothly (smooth.js).

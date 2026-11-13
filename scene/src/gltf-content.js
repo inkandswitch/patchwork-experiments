@@ -19,7 +19,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { toArrayBuffer } from "./file-content.js";
 import { resolveMaterialSet } from "./material-rules.js";
-import { sanitizeConnectors } from "./hand.js";
+import { sanitizeConnectors } from "./carry-rules.js";
 
 let loader = null;
 

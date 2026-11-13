@@ -1599,10 +1599,10 @@ local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
 ticks them in the order a frame needs, and no part imports another, but
 for hud.js taking crew.js's `seatedView` (what they share of the doc is
-traits.js, of the maths frames.js). play.js also
-answers the hand's `carryable` (traits.js `carryableAboard`): never the ship
-or anything with a sailing trait or tag, so a game played aboard can't carry
-off her mast; anything else aboard is the game's business. And the sail's
+traits.js, of the maths frames.js). Nothing of the ship's can be carried:
+what can says so with the scene's `scene.carry` trait (a game's cards and
+pieces), which the ship and her fittings never have, so a game played aboard
+can't carry off her mast and sailing needs no veto. And the sail's
 verbs on the use prompt come from the sail station or its mast (what it
 hangs from, or what carries the mast's tag), never from
 another traitless thing aboard (a card table): stations.js `sailOf`.

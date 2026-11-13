@@ -157,7 +157,8 @@ try {
   check(`six seats (${SEATS.join(", ")}), each named and with a camera, nobody in them`, Q(Object.keys(seats ?? {}).sort()) === Q(SEATS) && Object.values(seats).every((s) => typeof s.name === "string" && s.name && s.camera?.position?.length === 3 && s.camera?.target?.length === 3 && !s.player), seats);
   check("A is told to pick a seat (the seats' owner was found)", await until("notices('a').some((n) => /^Pick a seat \\(top right\\)\\. Hover your cup/.test(n))", 5000), await P("notices('a')"));
   check("A's seat picker offers every seat", await until(`picker('a').filter((s) => ${Q(SEATS)}.includes(s)).length === ${SEATS.length}`, 10_000), await P("picker('a')"));
-  check(`the doc says it's Liar's dice and starts in "play", in the hand`, d.title === "Liar's dice" && d.view?.activity === "play" && d.view?.tool === "hand", { title: d.title, view: d.view });
+  check(`the doc says it's Liar's dice and starts in "play", with no view.tool`, d.title === "Liar's dice" && d.view?.activity === "play" && !("tool" in (d.view ?? {})), { title: d.title, view: d.view });
+  check(`every die and cup carries scene.carry (${CUPS + DICE})`, c.carried === CUPS + DICE, { carried: c.carried });
   check("A lands in play", await until("activity('a') === 'play'", 5000), await P("activity('a')"));
   const builtA = await until(`built('a').loaded === ${CUPS + DICE + 2} && __p.built('a').diceRead === ${DICE}`, 120_000);
   check(`every piece is built in A (${CUPS + DICE + 2}), every die read from its GLB as a d6`, builtA, await P("built('a')"));

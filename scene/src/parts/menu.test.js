@@ -72,6 +72,15 @@ describe("menuEntries (pure)", () => {
     expect(forScene.map((e) => e.command.id)).toEqual(["paste", "color"]);
     expect(menuEntries(collected, null, ctx).forObject).toEqual([]);
   });
+
+  it("Select (scene.select's) comes first for an object, wherever its extension runs", () => {
+    const sel = { id: "select", name: "Select", show: ["menu"], state: (t) => (t ? {} : null), run() {} };
+    const other = { id: "select", name: "Not the selection's", show: ["menu"], state: (t) => (t ? {} : null), run() {} };
+    const collected = [{ id: "t", value: commandsExt([]).create().commands }, { id: "t.other", value: [other] }, { id: "scene.select", value: [sel] }];
+    const ctx = { scene: { objects: { a: {} } }, local: {} };
+    const { forObject } = menuEntries(collected, "a", ctx);
+    expect(forObject.map((e) => `${e.ext}/${e.command.id}`)).toEqual(["scene.select/select", "t/poke", "t/lock", "t.other/select"]);
+  });
 });
 
 describe("scene.menu", () => {

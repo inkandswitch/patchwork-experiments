@@ -341,7 +341,7 @@ export function create(api) {
     for (const p of panels) p.render();
   }
 
-  // Held poses (a gizmo drag, a carry, a peer's hand) move objects without a
+  // Held poses (a halo drag, a carry, a peer's carry) move objects without a
   // doc change: after each frame, a moved anchor object redraws (next frame).
   api.afterRender(() => {
     if (!list.length) return;

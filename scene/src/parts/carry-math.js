@@ -1,4 +1,4 @@
-// The hand's carry maths (scene.hand, ./hand.js), as plain arrays so it can be
+// The carry's maths (scene.carry, ./carry.js), as plain arrays so it can be
 // tested without three.js or a stage. In place of a three.js group there is
 // a world matrix the carry keeps itself: the part holds
 // that pose on the stage and writes the final one to the doc.
@@ -7,7 +7,7 @@
 // (arrays); `raycast(origin, dir)` → { id, point } | null is the stage's,
 // already told to skip the carried object and what's attached to it.
 
-import { accepts, footprintSamples, liftFor, nearestSnap, yawDelta } from "../hand.js";
+import { accepts, footprintSamples, liftFor, nearestSnap, yawDelta } from "../carry-rules.js";
 import { decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 
 const Y = [0, 1, 0];

@@ -28,7 +28,8 @@ describe("the parts", () => {
       expect(o.hint.bounds.min).toHaveLength(3);
       // stands on y = 0
       expect(o.hint.bounds.min[1]).toBeCloseTo(0, 3);
-      expect(o.traits).toBeUndefined();
+      // it can be picked up (a card table, locked, can't)
+      expect(o.traits).toEqual(o.locked ? undefined : { "scene.carry": {} });
       // nothing it fits: only a card fits a card slot
       expect(o.tags).toBeUndefined();
       expect(calls.changes).toBe(1);

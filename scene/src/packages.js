@@ -93,14 +93,12 @@ export function listedPackages(doc) {
  *     traits).
  *   - `{ type: "scene:extension", activity }`: where the doc starts people
  *     (`view.activity`), unless that's "edit", which every scene offers.
- *   - `{ type: "scene:extension", id }`: the extension a `view.tool` of the
- *     form "<ext>:<name>" belongs to.
  * Parts and templates leave no mark of their own: what they make is objects
  * and traits, found above (the stage notes the part or template itself when
  * one is run: src/stage/packages.js).
  * @param {object} doc
  * @param {{ providerIds?: Iterable<string> }} [extra]
- * @returns {({ type: "scene:source", id: string } | { type: "scene:extension", trait?: string, activity?: string, id?: string })[]}
+ * @returns {({ type: "scene:source", id: string } | { type: "scene:extension", trait?: string, activity?: string })[]}
  */
 export function neededPlugins(doc, extra = {}) {
   const sources = new Set();
@@ -117,9 +115,6 @@ export function neededPlugins(doc, extra = {}) {
   for (const trait of [...traits].sort()) out.push({ type: "scene:extension", trait });
   const activity = doc?.view?.activity;
   if (typeof activity === "string" && activity && activity !== DEFAULT_ACTIVITY) out.push({ type: "scene:extension", activity });
-  const tool = doc?.view?.tool;
-  const colon = typeof tool === "string" ? tool.indexOf(":") : -1;
-  if (colon > 0) out.push({ type: "scene:extension", id: tool.slice(0, colon) });
   return out;
 }
 
@@ -127,8 +122,7 @@ export function neededPlugins(doc, extra = {}) {
  * The registered plugins that answer the doc's needs: `[{ type, id,
  * importUrl }]`, each once. A source by its id. An extension when the doc
  * has one of its traits (what activation's docReason asks), when it has a
- * reason of its own and offers the activity the doc starts in, or by the id
- * a `view.tool` names; and, with each of those, the extensions it
+ * reason of its own and offers the activity the doc starts in; and, with each of those, the extensions it
  * `requires`, at any depth (they run whenever it does). What isn't
  * registered answers nothing: only a viewer who has a plugin can say where
  * it comes from.
@@ -156,7 +150,7 @@ export function answeringPlugins(doc, registries, extra = {}) {
       for (const p of extensions) if (strings(p.traits).includes(need.trait)) add(need.type, p);
     } else if (need.activity != null) {
       for (const p of extensions) if (strings(p.activities).includes(need.activity) && ownReason(p, doc)) add(need.type, p);
-    } else if (byId.has(need.id)) add(need.type, byId.get(need.id));
+    }
   }
   return [...out.values()];
 }

@@ -113,7 +113,7 @@ try {
   const ids = {};
   /** any running extension's api in a view: the stage's public calls (api.part) */
   const apiOf = (w) => {
-    for (const id of ["sailing", "tabletop", "scene.use", "scene.hand", "scene.add"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
+    for (const id of ["sailing", "tabletop", "scene.use", "scene.carry", "scene.add"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
     return null;
   };
   const ctx = (w) => dbg[w]?.host.record("sailing")?.instance?.debug ?? null;
@@ -244,6 +244,22 @@ try {
       return { local: s.toLocal(ids.table, m.slice(12, 15)).map((v) => +v.toFixed(4)), up: +dot.toFixed(4), parent: objects()[id]?.parent ?? null };
     },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    /** the right-click menu's items on a view's page: label and middle */
+    menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { label: e.querySelector(".menu-label")?.textContent.trim() ?? "", x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; }),
+    /** what a view's halo is on, and the frame it's drawn in (its doc parent's) */
+    halo: (w) => { const h = dbg[w].host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
+    /** why a view's halo is or isn't on what it has selected */
+    haloWhy: (w) => { const l = dbg[w].local.get(); const o = dbg[w].scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), armed: l.armed ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: dbg[w].host.record("scene.halo")?.api?.writable?.() ?? null, dragging: dbg[w].host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
+    /** a halo arrow's point (a third along it), and `along` frame units further, on a view's page */
+    haloAt(w, axis, along = 0) {
+      const h = dbg[w].host.instanceOf("scene.halo")?.debug;
+      const x = h?.handles.find((k) => k.kind === "move" && k.axis === axis);
+      if (!x) return null;
+      const p = x.from.map((v, i) => v + (x.to[i] - v) / 3);
+      p[axis] += along;
+      return page(w, h.frame.pointOut(p));
+    },
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
     worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },

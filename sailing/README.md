@@ -30,9 +30,9 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   into first person; the HUD then offers *Come aboard (Enter)* top left,
   without the walking keys (S and D are the table's Shuffle and Draw), and
   before you're aboard its panel is just the dial, top left, clear of your
-  hand of cards. In play the hand never carries the ship or her fittings
-  (anything with a sailing trait or tag: `carryable`), so a game aboard her
-  can't dismast her; a table and its cards are the game's to move.
+  hand of cards. Nothing of hers can be picked up: what can be carries the
+  scene's `scene.carry` trait (a game's cards and pieces), and the ship and
+  her fittings don't, so a game aboard her can't dismast her.
 - **From the parts bin, in any scene.** While editing, the sidebar's parts
   list a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
@@ -76,7 +76,7 @@ A hull drawn elsewhere (camber's, or any model) sails once she has a rig:
 3. Drag **Mast and sail**, **Wheel**, **Mainsheet** (into her cockpit,
    under the boom's end), **Windlass and anchor** and **Ladder** from the
    parts onto her deck (locked or not), and place them
-   with the gizmo. Each squares itself to her bow.
+   with the halo. Each squares itself to her bow.
 4. Give the scene a sea if it hasn't one (the sloop part brings one; else
    **Sea** on the scene), and play.
 

@@ -5,8 +5,10 @@
 // of turns, hands, seats or limits.
 //
 // It is built only from the scene's extension contract (scene/STAGE.md).
-// Carrying is the hand's (`carry`, collected); what may be picked up is any
-// running extension's to veto (`carryable`); who drew is told with api.send.
+// Carrying is the scene's (`carry`, collected): what can be picked up says so
+// with the `scene.carry` trait, and only that goes into a bag, so whatever
+// comes out of one can be carried again; a passing state is any running
+// extension's to veto (`carryable`); who drew is told with api.send.
 // The contents live in the bag's own document (contents.js), never in the
 // scene doc: that is what "inside" means. The moves and why they merge
 // safely are moves.js and contents.js; this file is the stage side.
@@ -31,7 +33,7 @@ import { DEFAULT_TITLE } from "./datatype.js";
 import { replaces, ruleOf } from "./draw.js";
 import { drawOne, objectOf, pour, putObjects, settleDraw } from "./moves.js";
 import { isGroup } from "./object.js";
-import { CONTAINER, bagUrlOf, dropBag } from "./part.js";
+import { CARRY, CONTAINER, bagUrlOf, dropBag } from "./part.js";
 import { poseBeside } from "./place.js";
 
 /** How long a finished draw is still watched, to say so if a peer turns out to have drawn the same piece (ms). */
@@ -202,6 +204,7 @@ export default {
       const inner = bagUrlOf(o);
       if (inner && (inner === bag.url || bagsWithin(inner).has(bag.url))) return "A bag can't go inside itself.";
       if (o.locked) return `${o.name || "That"} is locked in place.`;
+      if (!o.traits?.[CARRY]) return `${o.name || "That"} can't be picked up.`;
       if (api.heldBy?.(id) != null) return "Someone is holding that.";
       if (vetoed(id)) return `${o.name || "That"} can't be picked up just now.`;
       return null;

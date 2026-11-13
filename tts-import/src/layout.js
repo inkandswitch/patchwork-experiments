@@ -352,7 +352,8 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
       renderUrl: null,
       transform,
       ...info,
-      ...(o.locked ? { locked: true } : {}),
+      // what isn't fixed to the table can be picked up (the scene's carry trait)
+      ...(o.locked ? { locked: true } : { traits: { "scene.carry": {} } }),
       // what a tagged snap point will take (the scene's connectors)
       ...(o.tags ? { tags: [...o.tags] } : {}),
       ...(b.bounds ? { hint: { bounds: b.bounds } } : {}),
@@ -386,11 +387,11 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     order,
     traits: {},
     view: {
-      ...DEFAULT_VIEW, units: "cm", grid: false, axes: false, tool: "hand",
+      ...DEFAULT_VIEW, units: "cm", grid: false, axes: false,
       // a table with cards is for playing: it starts there (the scene's
       // activity switcher gets anyone into editing). Cards are what put play
       // on offer (the table's extension runs on them); a table with none
-      // opens in the editor, in the hand.
+      // opens in the editor, its pieces carried just the same.
       ...(Object.values(objects).some((o) => o.traits?.["tabletop.card"]) ? { activity: "play" } : {}),
       home: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
     },

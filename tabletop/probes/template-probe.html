@@ -134,7 +134,7 @@ try {
     start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
     /** the assets keys the game's every kind should be filed under */
     expectedKeys: () => kindsUsed(game).map((k) => gameFileKey(GAMES[gameId].files, k, game.pieces[k])),
-    doc: () => ({ title: scene.doc().title, view: scene.doc().view, assets: scene.doc().assets, traits: scene.doc().traits, count: Object.values(objects()).filter((o) => o.kind !== "group").length }),
+    doc: () => ({ title: scene.doc().title, view: scene.doc().view, assets: scene.doc().assets, traits: scene.doc().traits, count: Object.values(objects()).filter((o) => o.kind !== "group").length, loose: Object.values(objects()).filter((o) => o.kind !== "group" && !o.locked).length, carried: Object.values(objects()).filter((o) => o.kind !== "group" && !o.locked && o.traits?.["scene.carry"]).length }),
     /** objects whose GLB isn't one of the scene's files, and objects that name a game as About */
     strays() {
       const urls = new Set(Object.values(scene.doc().assets ?? {}).map((a) => a.url));

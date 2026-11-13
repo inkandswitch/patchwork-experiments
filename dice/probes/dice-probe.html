@@ -176,7 +176,6 @@ try {
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
     available: (w) => dbg[w].local.get().activities?.available ?? [],
-    tool: (w) => dbg[w].local.get().tool ?? null,
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     writes: () => writes.map((x) => ({ at: Math.round(x.at), moved: x.moved })),

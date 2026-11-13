@@ -5,7 +5,7 @@
 // - the verb, Open / Close, two ways: on the use prompt with F, from within
 //   arm's reach of the point looked at (only the prompt knows where the eye
 //   is); and on the menu and the inspector, with no key and no reach (F is
-//   Frame all while editing, and a key map has no eye to measure from);
+//   carry's Flip elsewhere, and a key map has no eye to measure from);
 // - the motion: a pose hold each frame while this view moves a part (a
 //   loop, only then, to draw it), released as landed after the one write;
 //   the landing itself is timed by the clock (a timer), so a view that draws

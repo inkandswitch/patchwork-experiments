@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { castClearance, createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./hand-carry.js";
+import { castClearance, createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./carry-math.js";
 import { composeMatrix } from "../transform.js";
 
 const I = composeMatrix({});
@@ -29,7 +29,7 @@ const solids = (...boxes) => (origin, dir) => {
   return best;
 };
 
-describe("hand-carry maths", () => {
+describe("carry maths", () => {
   it("turns about a world axis through the origin, keeping the translation", () => {
     const m = composeMatrix({ position: [1, 2, 3] });
     const r = rotateAbout(m, [0, 1, 0], Math.PI / 2);

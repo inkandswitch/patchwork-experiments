@@ -15,9 +15,9 @@
 // however her hull was modelled, it stands where it was put, and its origin
 // is its own height above that (the wheel's axle). A ladder on her port
 // side turns to hang outboard. Put anywhere else, it stands as the bin put
-// it. A part isn't locked: it's placed by hand, so the gizmo may move it.
+// it. A part isn't locked: it's placed by hand, so the halo may move it.
 // A part that fits a stand carries its tag (ship.js TAGS), as the bin's
-// metadata does, so the hand snaps it to the same stand the bin does.
+// metadata does, so the carry snaps it to the same stand the bin does.
 
 import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
 import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WINCH } from "./traits.js";

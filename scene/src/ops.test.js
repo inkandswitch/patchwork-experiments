@@ -419,7 +419,7 @@ describe("plain writes", () => {
   it("setTransform writes into the existing transform, so a concurrent edit of another number survives the merge", () => {
     let a = Automerge.from({ objects: { hull: leaf("Hull", { x: 1 }) }, order: ["hull"], dimensions: {}, view: {} });
     let b = Automerge.clone(a);
-    // someone types Z while someone else drags it up on the gizmo
+    // someone types Z while someone else drags it up on the halo
     a = Automerge.change(a, setTransformPart(a, "hull", "position", 2, 5));
     b = Automerge.change(b, setTransform(b, "hull", T([1, 1, 0])));
     const merged = Automerge.merge(a, b);

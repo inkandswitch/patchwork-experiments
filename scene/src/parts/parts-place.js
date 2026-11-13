@@ -12,15 +12,15 @@
 //   - else the viewer (its +Z toward the eye), as the arena's "Add target"
 //     did, so a target is put down facing whoever placed it.
 //
-// Snapping is the hand's (./hand-carry.js snapCandidates, ../hand.js
+// Snapping is the carry's (./carry-math.js snapCandidates, ../carry-rules.js
 // nearestSnap), one rule for both: a part goes to the nearest of the object's
 // connectors that takes it (a tagged connector takes only a part with one of
 // its tags, an open one any part) within the object's snap radius, in plan.
 // An object that states no radius isn't snapped to.
 
-import { nearestSnap } from "../hand.js";
+import { nearestSnap } from "../carry-rules.js";
 import { composeMatrix } from "../transform.js";
-import { localTransform, snapCandidates, yawOfMatrix } from "./hand-carry.js";
+import { localTransform, snapCandidates, yawOfMatrix } from "./carry-math.js";
 
 /** The yaw that turns a part's +Z toward the eye, seen from above (0 when the eye is straight overhead). */
 export function facingEye(eye, point) {

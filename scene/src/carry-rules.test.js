@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./hand.js";
+import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./carry-rules.js";
 
 describe("connectors", () => {
   it("keeps finite [x, y, z] and { position, yaw } snap points (the older shape), drops the rest", () => {

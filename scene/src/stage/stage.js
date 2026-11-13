@@ -1781,6 +1781,8 @@ export default function Stage(handle, element) {
       Counter,
       doc,
       change,
+      /** may this view write the doc? (a handle at fixed heads may not: Keyhive's to answer, in time) */
+      writable: () => !(typeof handle.isReadOnly === "function" && handle.isReadOnly()),
       newId,
       scene,
       ops,

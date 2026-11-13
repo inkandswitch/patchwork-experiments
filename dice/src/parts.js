@@ -14,7 +14,7 @@
 // four plus/minus dice.
 
 import { presetDoc, dieOf } from "./die.js";
-import { DIE, PROVIDER } from "./ids.js";
+import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { eulerMatrix } from "./m3.js";
 import { diePatchwork, ownImportUrl } from "./own-package.js";
 import { scaleOf } from "./roll.js";
@@ -61,7 +61,7 @@ async function addDie(ctx, preset, { parent, transform, group }) {
     ...(group === undefined ? {} : { group }),
     transform,
     hint: { bounds: hintBounds(doc) },
-    fields: { traits: { [DIE]: {} } },
+    fields: { traits: { [DIE]: {}, [CARRY]: {} } },
   });
 }
 

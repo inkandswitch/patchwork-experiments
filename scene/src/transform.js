@@ -132,3 +132,55 @@ export function decomposeMatrix(m) {
     scale: tidy(s),
   };
 }
+
+// ─── a frame: a parent's, as drawn now (null: the world) ────────────────────
+
+const rotateDir = (m, d) => {
+  const v = [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+};
+
+/**
+ * Conversions between the world and a frame whose world matrix is `P()`
+ * (asked each time: it moves). With no frame (P() null) every one is the
+ * identity, so a carry at the root is exactly what it always was.
+ */
+export function frameConversions(P) {
+  const inv = () => {
+    const m = P();
+    return m ? invertMatrix(m) : null;
+  };
+  return {
+    /** a world matrix in the frame */
+    matrixIn: (W) => {
+      const i = inv();
+      return i ? multiplyMatrices(i, W) : W;
+    },
+    /** a frame matrix in the world */
+    matrixOut: (L) => {
+      const m = P();
+      return m ? multiplyMatrices(m, L) : L;
+    },
+    pointIn: (p) => {
+      const i = inv();
+      return i ? applyMatrix(i, p) : p;
+    },
+    pointOut: (p) => {
+      const m = P();
+      return m ? applyMatrix(m, p) : p;
+    },
+    /** a world ray { origin, dir } in the frame (dir unit) */
+    rayIn: (ray) => {
+      const i = ray ? inv() : null;
+      return i ? { origin: applyMatrix(i, ray.origin), dir: rotateDir(i, ray.dir) } : ray;
+    },
+    /** a world raycast, asked in the frame: its hit's point comes back in the frame */
+    raycastIn: (raycast) => (origin, dir) => {
+      const m = P();
+      if (!m) return raycast(origin, dir);
+      const hit = raycast(applyMatrix(m, origin), rotateDir(m, dir));
+      return hit?.point ? { ...hit, point: applyMatrix(invertMatrix(m), hit.point) } : hit;
+    },
+  };
+}

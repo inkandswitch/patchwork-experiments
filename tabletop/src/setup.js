@@ -94,6 +94,8 @@ export function shuffle(list, rng = Math.random) {
 
 /** The trait of a card: two-sided, piled, shuffled and drawn (table/visibility.js CARD). */
 const CARD = "tabletop.card";
+/** The scene's trait for what can be picked up (scene/TOOLS.md §1). */
+const CARRY = "scene.carry";
 
 /** The piece kinds a table of this game shows: every visible kind it has copies of, and each card of a deck with its back. */
 export function kindsUsed(game) {
@@ -166,7 +168,8 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       renderUrl: null,
       transform,
       ...(gameUrl ? { infoUrl: gameUrl, infoToolId: "tabletop-game" } : {}),
-      ...(piece.locked ? { locked: true } : {}),
+      // what isn't fixed to the table can be picked up (the scene's carry trait)
+      ...(piece.locked ? { locked: true } : { traits: { [CARRY]: {} } }),
       // what connectors it fits (a card: the card slots); public, so only ever a kind's, never a card's own
       ...(Array.isArray(piece.tags) && piece.tags.length ? { tags: [...piece.tags] } : {}),
       ...(file.bounds ? { hint: { bounds: copyBounds(file.bounds) } } : {}),
@@ -191,7 +194,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
         transform: { position: supplySpot(piece.supply, i), rotation: [0, yaw, 0], scale: 1 },
       });
       const z = piece.zone;
-      if (z?.seat && Array.isArray(z.min) && Array.isArray(z.max)) objects[oid].traits = { "tabletop.zone": { seat: z.seat, min: [...z.min], max: [...z.max] } };
+      if (z?.seat && Array.isArray(z.min) && Array.isArray(z.max)) objects[oid].traits = { ...objects[oid].traits, "tabletop.zone": { seat: z.seat, min: [...z.min], max: [...z.max] } };
     }
   }
 
@@ -215,7 +218,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
     const items = []; // slot k: what card k really is
     const card = (kind, transform) => {
       const oid = place(backKind, { name: back.name || "Card", parent, transform });
-      objects[oid].traits = { [CARD]: { deck: deckId, slot: items.length } };
+      objects[oid].traits = { ...objects[oid].traits, [CARD]: { deck: deckId, slot: items.length } };
       items.push({ sourceUrl: drawn(kind).url, name: pieces[kind].name || kind });
     };
     // dealt face up onto the first copy of each target's snap points
@@ -263,8 +266,8 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
   // Play only where the table has something to play with: hands or cards
   // are what start the table extension and so put play on offer. A table
   // with none (Santorini: everything in plain sight) opens in the editor,
-  // with the hand as its tool, rather than claiming a play it can't start
-  // ("Starts in: Play" over an editor).
+  // where its pieces carry just the same (by their trait), rather than
+  // claiming a play it can't start ("Starts in: Play" over an editor).
   const playable = Object.values(objects).some((o) => o?.traits?.["tabletop.zone"] || o?.traits?.[CARD]);
   return {
     objects,
@@ -272,7 +275,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
     seats,
     decks: deckDocs,
     view: {
-      units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
+      units: "cm", grid: false, axes: false, bounds: false, snap: true,
       ...(playable ? { activity: "play" } : {}),
       home: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
     },

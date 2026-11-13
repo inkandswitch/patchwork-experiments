@@ -3,7 +3,7 @@ import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, V
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { encodeGLB } from "../glb.js";
 import { prepareGLB } from "../gltf-content.js";
-import { defaultSnapRadius } from "../hand.js";
+import { defaultSnapRadius } from "../carry-rules.js";
 import {
   LIGHTS,
   LabelLayer,
@@ -522,9 +522,9 @@ describe("widget layers", () => {
   it("picks the nearest widget, an onTop one over any other", () => {
     const vp = headless();
     lookFrom(vp, [0, 0, 10]);
-    const near = vp.worldLayer("gizmo");
+    const near = vp.worldLayer("halo");
     near.add(ball(3, { axis: "x" }));
-    expect(vp.pickWidget(100, 50)).toMatchObject({ owner: "gizmo", onTop: false, userData: { axis: "x" } });
+    expect(vp.pickWidget(100, 50)).toMatchObject({ owner: "halo", onTop: false, userData: { axis: "x" } });
     const top = vp.worldLayer("handles", { onTop: true });
     const holder = new Group();
     holder.userData.param = "length";

@@ -87,10 +87,11 @@ export const plugins = [
     },
   },
   // ─── extensions: the parts the scene editor is made of ───
-  // None declares traits, so each runs in every scene ("general" scope), in
+  // Most declare no traits, so each runs in every scene ("general" scope), in
   // this order, which is the order input is offered to them; those that say
-  // `activities: ["edit"]` only while someone is editing. The key map and
-  // notices serve every activity. The sidebar shows panels in running order:
+  // `activities: ["edit"]` only while someone is editing. Carry and seats run
+  // by trait, where the doc has what they're for. The key map, notices, the
+  // menu, the selection and its halo serve every activity. The sidebar shows panels in running order:
   // Objects, Inspector, then Dimensions, so those two come before measure
   // (which brings dimensions in right after it); neither claims canvas input,
   // so being early changes nothing else. Parts comes last.
@@ -153,10 +154,10 @@ export const plugins = [
     },
   },
   {
+    // every target's verbs, Select first (TOOLS.md §3): in every activity
     type: "scene:extension",
     id: "scene.menu",
     name: "Context menu",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/menu.js")).default;
     },
@@ -213,27 +214,38 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.handles",
     name: "Handles",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/handles.js")).default;
     },
   },
   {
+    // the selection's handles: move arrows, rotate rings and scale corners
+    // outside its box, in its parent's frame (TOOLS.md §3). It follows the
+    // selection, whatever the activity
     type: "scene:extension",
-    id: "scene.gizmo",
-    name: "Transform gizmo",
-    activities: ["edit"],
+    id: "scene.halo",
+    name: "Halo",
     async load() {
-      return (await import("./parts/gizmo.js")).default;
+      return (await import("./parts/halo.js")).default;
     },
   },
   {
+    // carrying: whatever has the trait can be picked up and put down, in
+    // every activity, in any stage whose doc has something carryable
+    // (TOOLS.md §1). Not general: the trait is its only reason to run.
     type: "scene:extension",
-    id: "scene.hand",
-    name: "Hand",
-    activities: ["edit"],
+    id: "scene.carry",
+    name: "Carry",
+    traits: ["scene.carry"],
+    describes: {
+      "scene.carry": {
+        name: "Carryable",
+        on: "object",
+        blurb: "Can be picked up and put down: drag it, Q / E to turn it, F to turn it over",
+      },
+    },
     async load() {
-      return (await import("./parts/hand.js")).default;
+      return (await import("./parts/carry.js")).default;
     },
   },
   {
@@ -246,10 +258,11 @@ export const plugins = [
     },
   },
   {
+    // the selection, in every activity: Select is every menu's first entry,
+    // and the orbit view's click (TOOLS.md §3)
     type: "scene:extension",
     id: "scene.select",
     name: "Selection",
-    activities: ["edit"],
     async load() {
       return (await import("./parts/select.js")).default;
     },

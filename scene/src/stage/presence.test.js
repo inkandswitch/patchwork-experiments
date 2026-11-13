@@ -358,7 +358,7 @@ describe("pose holds", () => {
 
   it("only the extension holding an object releases it", () => {
     a.hold("hand", "o1", null, T(1));
-    a.release("gizmo", "o1");
+    a.release("halo", "o1");
     expect(b.heldBy("o1")).toBe("sa");
   });
 
@@ -456,7 +456,7 @@ describe("pose holds", () => {
 
   it("clearing an extension puts its holds back", () => {
     a.hold("hand", "o1", null, T(1));
-    a.hold("gizmo", "o2", null, T(1));
+    a.hold("halo", "o2", null, T(1));
     a.clear("hand");
     expect(b.heldBy("o1")).toBe(null);
     expect(b.heldBy("o2")).toBe("sa");

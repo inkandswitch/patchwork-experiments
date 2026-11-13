@@ -139,6 +139,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     Enter: { code: "Enter", vk: 13 },
     Alt: { code: "AltLeft", vk: 18 },
     Shift: { code: "ShiftLeft", vk: 16 },
+    ".": { code: "Period", vk: 190, text: "." },
   };
   const keyInfo = (key) => KEYS[key] ?? (key.length === 1 ? { code: /[a-z]/i.test(key) ? `Key${key.toUpperCase()}` : "", vk: key.toUpperCase().charCodeAt(0), text: key } : { code: key, vk: 0 });
   async function keyDown(key, mods = 0) {

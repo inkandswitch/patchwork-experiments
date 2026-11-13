@@ -11,7 +11,7 @@
 //   is a new die doc, built at real size by the scene's own render pipeline
 //   in both views, lying on the table; a plus/minus die DOC dropped on the
 //   ground becomes a die too; a percentile pair lands as two dice in a group;
-//   R over a die is the gizmo's Rotate, not a roll;
+//   R over a die rolls it, editing too (the halo has no keys: TOOLS.md §10);
 // - the die's own panel: selecting the d20, the inspector's "Edit die" docks
 //   its 2D tool in the stage's drawer; naming a face there rebuilds the die, and
 //   both views' built content says the new name;
@@ -148,7 +148,7 @@ try {
     const d = await P("doc()");
     const o = d.objects[d20];
     report.d20 = d20;
-    check("a d20 dragged onto the table is a die on it: built by the dice source, its own doc, the trait, under the table, square to it", !!o && o.providerId === "die" && !!o.renderUrl && o.parent === "table" && J(o.traits) === J({ "dice.die": {} }) && o.transform.rotation[0] === 0 && o.transform.rotation[2] === 0 && Math.abs(o.transform.position[1] - TOP) < 1e-3, o);
+    check("a d20 dragged onto the table is a die on it: built by the dice source, its own doc, the trait and the scene's carry trait, under the table, square to it", !!o && o.providerId === "die" && !!o.renderUrl && o.parent === "table" && J(o.traits) === J({ "dice.die": {}, "scene.carry": {} }) && o.transform.rotation[0] === 0 && o.transform.rotation[2] === 0 && Math.abs(o.transform.position[1] - TOP) < 1e-3, o);
     const src = await js(`(async () => (await window.repo.find(${J(o?.sourceUrl)})).doc())()`);
     check("…its source is a new die doc: a d20, 20 mm, twenty faces", src?.["@patchwork"]?.type === "die" && src.shape === "d20" && src.size === 0.02 && src.faces.length === 20, { type: src?.["@patchwork"], shape: src?.shape });
     check("the scene builds it in both views, and each view's built content says what it is", await until(`built(${J(d20)}, 'a')?.labels.length === 20 && __p.built(${J(d20)}, 'b')?.labels.length === 20`, 30_000), { a: await P(`status(${J(d20)}, 'a')`), b: await P(`status(${J(d20)}, 'b')`) });
@@ -173,7 +173,7 @@ try {
     [sym] = (await ids()).filter((id) => !before.has(id));
     const o = (await P("doc()")).objects[sym];
     report.symbol = sym;
-    check("a die doc dropped on the ground becomes a die there: the dropped doc itself, built by the dice source, the trait, where it was dropped, selected", !!o && o.sourceUrl === (await P("symbolDie")) && o.providerId === "die" && J(o.traits) === J({ "dice.die": {} }) && o.parent == null && plan(o.transform.position, g.hit.point) < 2e-3 && (await P("selected('a')")) === sym, { o, at: g.hit.point });
+    check("a die doc dropped on the ground becomes a die there: the dropped doc itself, built by the dice source, the trait and the carry trait, where it was dropped, selected", !!o && o.sourceUrl === (await P("symbolDie")) && o.providerId === "die" && J(o.traits) === J({ "dice.die": {}, "scene.carry": {} }) && o.parent == null && plan(o.transform.position, g.hit.point) < 2e-3 && (await P("selected('a')")) === sym, { o, at: g.hit.point });
     check("…and is built in both views as a plus/minus die", await until(`built(${J(sym)}, 'a')?.labels.join() === 'plus,minus,blank,minus,blank,plus' && __p.built(${J(sym)}, 'b')?.labels.join() === 'plus,minus,blank,minus,blank,plus'`, 30_000), await P(`built(${J(sym)}, 'a')`));
   }
   // a percentile pair
@@ -192,13 +192,16 @@ try {
   }
   await shot("1-dice-out");
 
-  // ── R while editing is Rotate ──
+  // ── R while editing rolls: no halo has it ──
   {
-    const t = await P(`transform(${J(d20)})`);
-    const { hovering } = await pressOver(d20, "r");
-    await sleep(900);
-    check("R over a die while editing is the gizmo's Rotate: the tool changes, the die doesn't, nothing is told", hovering && (await P("tool('a')")) === "rotate" && J(await P(`transform(${J(d20)})`)) === J(t) && !(await P("notices('a')")).some((n) => /rolled/.test(n)), { tool: await P("tool('a')"), notices: await P("notices('a')") });
+    // (the pair is selected, and a key goes to the selection first: let it go)
+    await P("focus('a')");
     await b.key("Escape");
+    check("Escape lets the selection go", await until("selected('a') === null", 2000), await P("selected('a')"));
+    const { hovering, before } = await pressOver(d20, "r");
+    const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled /.test(n))`, 8000);
+    const said = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n));
+    check("R over a die while editing rolls it: A is told, and so is B", hovering && rolled && (await until(`notices('b').includes(${J(said?.replace(/^You/, "Ana"))})`, 4000)), { said, a: await P("notices('a')"), b: await P("notices('b')") });
   }
 
   // ── the die's own panel, docked in the stage's drawer ──
@@ -218,11 +221,15 @@ try {
     // name face 0 in the panel: the die doc changes, the scene rebuilds it, and both views read the new name
     check("a face named in the panel", await P(`commit('.dice-panel .die-face[data-face="0"] input.name', 'crit')`));
     check("the scene rebuilds the die from its doc, and both views' built content says the new name", await until(`built(${J(d20)}, 'a')?.labels[0] === 'crit' && __p.built(${J(d20)}, 'b')?.labels[0] === 'crit'`, 30_000), { a: (await P(`built(${J(d20)}, 'a')`))?.labels.slice(0, 3), b: (await P(`built(${J(d20)}, 'b')`))?.labels.slice(0, 3) });
-    // keys typed in the panel are the panel's: R there doesn't change the scene's tool
-    const tool0 = await P("tool('a')");
+    // keys typed in the panel are the panel's: R there doesn't roll the selected d20
+    const told0 = (await P("notices('a')")).length;
+    const t0 = J(await P(`transform(${J(d20)})`));
     await click(await P(`rect('.dice-panel .die-face[data-face="1"] input.name')`));
     await b.key("r");
-    check("a key typed in the panel is the panel's, not the scene's", (await P("tool('a')")) === tool0, { tool0, tool: await P("tool('a')") });
+    await sleep(1500);
+    const rolledHere = (await P("notices('a')")).slice(told0).filter((n) => /^You rolled /.test(n));
+    const t1 = J(await P(`transform(${J(d20)})`));
+    check("a key typed in the panel is the panel's, not the scene's: R there doesn't roll the selected d20", rolledHere.length === 0 && t1 === t0, { rolledHere, before: t0, after: t1 });
     await click(await P(`rect('.stage-drawer-tab-close')`));
     check("its × undocks it, and the drawer goes", await until("count('.dice-panel') === 0 && __p.count('.stage-drawer') === 0", 3000), { panels: await P("count('.dice-panel')"), drawers: await P("count('.stage-drawer')") });
     await sleep(300);
@@ -230,7 +237,7 @@ try {
 
   // ── play ──
   await click(await P(`rect('.activity-option[data-activity="play"]')`));
-  check("A switches to Play, with the hand as the tool", await until("activity('a') === 'play' && (__p.tool('a') == null || __p.tool('a') === 'hand')", 6000), { activity: await P("activity('a')"), tool: await P("tool('a')") });
+  check("A switches to Play", await until("activity('a') === 'play'", 6000), { activity: await P("activity('a')") });
   await settled();
   await sleep(400);
 
@@ -240,14 +247,15 @@ try {
     await P(`watch(${J(d20)})`);
     const { hovering, prompt, before } = await pressOver(d20, "r");
     mark("pressed R over the d20");
-    check("A hovers the d20, and the use prompt offers Roll and Turn", hovering && prompt.some((p) => /Roll/.test(p)) && prompt.some((p) => /Turn \(shows crit\)/.test(p)), prompt);
+    // (which face Turn shows next is whatever the roll while editing left it on)
+    check("A hovers the d20, and the use prompt offers Roll and Turn", hovering && prompt.some((p) => /Roll/.test(p)) && prompt.some((p) => /Turn \(shows .+\)/.test(p)), prompt);
     report.d20Prompt = prompt;
     // the moment both views draw it clear of the table: what does the doc say then?
     const mid = await b.waitFor(`(() => { const p = window.__p, a = p.lies(${J(d20)}, 'a'), c = p.lies(${J(d20)}, 'b'); return a && c && a[0] > ${TOP + 0.005} && c[0] > ${TOP + 0.005} ? { doc: JSON.stringify(p.transform(${J(d20)})), a: a[0], b: c[0], at: p.now() } : false; })()`, 3000, 10);
     check("mid-roll both views draw it in the air (a pose), and the doc hasn't moved", !!mid && mid.doc === J(t), mid);
     const k = await P("pressedAt('r')");
     report.timings.d20 = { bothInAirMs: mid ? Math.round(mid.at - k) : null };
-    const rolled = await until("notices('a').some((n) => /^You rolled /.test(n))", 4000);
+    const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled /.test(n))`, 4000);
     const said = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n));
     const value = said?.replace(/^You rolled /, "");
     report.d20Rolled = value;

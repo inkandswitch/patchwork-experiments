@@ -75,10 +75,11 @@ export const plugins = [
     },
     // a bag document dropped into a scene becomes a bag in it
     drops: ["bag"],
-    // carrying is the hand's; the use prompt shows Draw over a bag in play
-    // (before the key map, so it hears D first: STAGE.md, "The use prompt");
-    // the menu has the verbs without a key; notices say who drew
-    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"],
+    // carrying is the scene's, by the `scene.carry` trait; the use prompt
+    // shows Draw over a bag in play (before the key map, so it hears D first:
+    // STAGE.md, "The use prompt"); the menu has the verbs without a key;
+    // notices say who drew
+    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./extension.js")).default;
     },

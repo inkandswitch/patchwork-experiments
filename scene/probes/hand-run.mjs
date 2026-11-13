@@ -14,9 +14,11 @@
 // flipped (F) and put down shows its face to both, and its landing hook turns
 // a card drawn into the tray face up. Then, playing (the probe's extension
 // takes part in play as a table does), F over a card lying there turns it
-// over in the air where it lies, without moving the view. Last, the gizmo: a real drag on its X
-// arrow (B sees the pose before the doc changes), and on a group's pivot
-// (both members move). Prints a JSON report; exits non-zero on a failure.
+// over in the air where it lies, without moving the view. Every piece carries
+// by the scene's carry trait (there is no hand to pick first). Last, the
+// halo: a real drag on its X arrow (B sees the pose before the doc changes),
+// and on a group's (both members move). Prints a JSON report; exits non-zero
+// on a failure.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -44,21 +46,15 @@ const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `hand-${
 /** press at `from`, move to `to`, maybe do something, release */
 const carry = (from, to, opts = {}) => b.drag(from, to, { steps: 12, ...opts });
 
-/** Hover outwards from the gizmo's centre along world +X until its X arrow lights up. */
-async function gizmoHandle() {
-  const g = await T("gizmo()");
-  if (!g) return null;
-  const c0 = await T(`screen(${JSON.stringify(g.at)})`);
-  const c1 = await T(`screen(${JSON.stringify([g.at[0] + 0.05, g.at[1], g.at[2]])})`);
-  const len = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]);
-  const u = [(c1[0] - c0[0]) / len, (c1[1] - c0[1]) / len];
-  for (let s = 20; s <= 160; s += 6) {
-    const x = c0[0] + u[0] * s, y = c0[1] + u[1] * s;
-    await b.move(x, y);
-    await sleep(30);
-    if ((await T("gizmo()"))?.axis === "X") return { at: [x, y], u };
-  }
-  return null;
+/** A halo arrow on screen (axis 0, 1, 2: X, Y, Z): where to press it, and which way on screen it runs. */
+async function haloArrow(axis = 0) {
+  const at = await T(`haloAt("move", ${axis})`);
+  const on = await T(`haloAt("move", ${axis}, 0.05)`);
+  if (!at || !on) return null;
+  const len = Math.hypot(on[0] - at[0], on[1] - at[1]);
+  await b.move(at[0], at[1]);
+  await sleep(60);
+  return { at, u: [(on[0] - at[0]) / len, (on[1] - at[1]) / len] };
 }
 
 try {
@@ -147,7 +143,7 @@ try {
   const names = await T("secretNames()");
   check("S shuffles the pile under the pointer (2 cards), through its command", /Shuffling 2 cards/.test(await T("toast()")) && names.faceDown === before8.under && names.under === before8.faceDown, { toast: await T("toast()"), names, before8 });
 
-  // flipped (F) while carried: the carry takes F, so Frame all (also F) doesn't run
+  // flipped (F) while carried: the carry takes F, and the view doesn't move
   const camBeforeFlip = await T("camera()");
   await carry(await T('top("faceDown")'), await T("screen([0.25, 0, 0.05])"), { beforeRelease: () => b.key("f") });
   await settle();
@@ -166,7 +162,7 @@ try {
   // playing at the table: F over a card lying there turns it over where it
   // lies, rising and turning in the air (B sees it go up), and nothing frames
   await T('activity("a", "play")');
-  check("playing, A runs the hand and no Frame all", await b.waitFor(`(() => { const r = window.__table.running("a"); return r.includes("scene.hand") && !r.includes("scene.frame") && !r.includes("scene.toolbar"); })()`, 5000), await T('running("a")'));
+  check("playing, A runs carrying (by its trait) and no Frame all", await b.waitFor(`(() => { const r = window.__table.running("a"); return r.includes("scene.carry") && !r.includes("scene.frame") && !r.includes("scene.toolbar"); })()`, 5000), await T('running("a")'));
   await settle();
   const restFlip = await T('worldB("faceDown")');
   const posFlip = await T('pos("faceDown")');
@@ -192,36 +188,36 @@ try {
   await b.waitFor(`window.__table.running("a").includes("scene.toolbar")`, 5000);
   await settle();
 
-  // 9. the gizmo, with a real drag on its X arrow: B sees the pose before the doc changes
-  await b.key("g");
+  // 9. the halo, with a real drag on its Y arrow (the block is near the view's
+  // right edge, where its X arrow runs off it): B sees the pose before the doc changes
   const r4 = await T(`row("${l4}")`);
   await b.click(r4[0], r4[1]);
   await sleep(150);
-  const h = await gizmoHandle();
-  check("the move gizmo is on the selection, and its X arrow is found by hovering", !!h && (await T("gizmo()"))?.target?.id === l4, await T("gizmo()"));
+  const h = await haloArrow(1);
+  check("the halo is on the selection, with its Y arrow on screen", !!h && (await T("halo()"))?.id === l4, { halo: await T("halo()"), h });
   if (h) {
-    const was = (await T(`pos("${l4}")`))[0];
-    const mid = await b.drag(h.at, [h.at[0] + h.u[0] * 80, h.at[1] + h.u[1] * 80], {
+    const was = (await T(`pos("${l4}")`))[1];
+    const mid = await b.drag(h.at, [h.at[0] + h.u[0] * 60, h.at[1] + h.u[1] * 60], {
       beforeRelease: async () => {
         await sleep(200);
-        return { doc: (await T(`pos("${l4}")`))[0], b: (await T(`worldB("${l4}")`))[0] };
+        return { doc: (await T(`pos("${l4}")`))[1], b: (await T(`worldB("${l4}")`))[1] };
       },
     });
-    const after = (await T(`pos("${l4}")`))[0];
+    const after = (await T(`pos("${l4}")`))[1];
     await sleep(300);
-    const bAfter = (await T(`worldB("${l4}")`))[0];
-    check("while the gizmo drags it, the other peer sees it move (the doc doesn't yet)", Math.abs(mid.doc - was) < 1e-9 && mid.b - was > 0.01, { was, mid });
+    const bAfter = (await T(`worldB("${l4}")`))[1];
+    check("while the halo drags it, the other peer sees it move (the doc doesn't yet)", Math.abs(mid.doc - was) < 1e-9 && mid.b - was > 0.01, { was, mid });
     check("let go, it's written, and the other peer shows the doc's pose", after - was > 0.01 && Math.abs(bAfter - after) < 1e-6, { was, after, bAfter });
   }
 
-  // 10. a group moves what's in it: the gizmo holds its pivot, and both pawns move with it
+  // 10. a group moves what's in it: its halo's arrow moves both pawns
   const [g0, g1] = await T("groupPawns()");
   await sleep(200);
   const rg = await T(`row("pawns")`);
   await b.click(rg[0], rg[1]);
   await sleep(150);
-  const hg = await gizmoHandle();
-  check("a selected group gets the move gizmo, on its pivot", !!hg && (await T("gizmo()"))?.target?.kind === "group", await T("gizmo()"));
+  const hg = await haloArrow();
+  check("a selected group gets a halo, round its box", !!hg && (await T("halo()"))?.kind === "group", await T("halo()"));
   if (hg) {
     const before = [await T(`pos("${g0}")`), await T(`pos("${g1}")`)];
     await b.drag(hg.at, [hg.at[0] + hg.u[0] * 80, hg.at[1] + hg.u[1] * 80]);

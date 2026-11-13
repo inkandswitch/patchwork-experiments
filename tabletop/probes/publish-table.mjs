@@ -285,10 +285,11 @@ async function fromTemplate(gameId) {
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
     // play is on offer only where the table extension has a trait to run on
     // (hands, cards); Santorini has none, so its doc doesn't claim play, and
-    // it opens in the editor, in the hand
+    // it opens in the editor, where its pieces carry just the same (by their trait)
     const tabled = (await P("cards()")) > 0;
     const lands = tabled ? "play" : "edit";
-    check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, in the hand`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && d.view?.tool === "hand", d.view);
+    check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, with no view.tool`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && !("tool" in (d.view ?? {})), d.view);
+    check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
     check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
     // lists the package of every plugin the scene calls for (and of the

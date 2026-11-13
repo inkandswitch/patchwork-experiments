@@ -95,11 +95,10 @@ describe("what the doc calls for (neededPlugins)", () => {
     objectTrait: { apply: (d) => (d.objects.b = { ...(d.objects.b ?? {}), traits: { "t.obj": {} } }), need: { type: "scene:extension", trait: "t.obj" } },
     sceneTrait: { apply: (d) => (d.traits["t.scene"] = {}), need: { type: "scene:extension", trait: "t.scene" } },
     activity: { apply: (d) => (d.view.activity = "play"), need: { type: "scene:extension", activity: "play" } },
-    tool: { apply: (d) => (d.view.tool = "t.tool:brush"), need: { type: "scene:extension", id: "t.tool" } },
   };
   const names = Object.keys(MARKS);
 
-  it("finds exactly the marks that are there: all 32 combinations", () => {
+  it("finds exactly the marks that are there: all 16 combinations", () => {
     for (let mask = 0; mask < 1 << names.length; mask++) {
       const d = newScene();
       const on = names.filter((_, i) => mask & (1 << i));
@@ -123,9 +122,9 @@ describe("what the doc calls for (neededPlugins)", () => {
     ]);
   });
 
-  it("the providers render docs ask for count too; editing, and the stage's own tools, call for nothing", () => {
+  it("the providers render docs ask for count too; editing calls for nothing", () => {
     expect(neededPlugins(newScene(), { providerIds: ["p.render", "p.render", null, ""] })).toEqual([{ type: "scene:source", id: "p.render" }]);
-    for (const view of [{ activity: "edit" }, { tool: "move" }, { tool: "hand" }, { tool: ":odd" }, { tool: 7 }, { activity: null }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
+    for (const view of [{ activity: "edit" }, { activity: null }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
     for (const doc of [null, undefined, {}, { objects: null, traits: null, view: null }]) expect(neededPlugins(doc)).toEqual([]);
   });
 });
@@ -181,12 +180,6 @@ describe("who answers (answeringPlugins)", () => {
     expect(answeringPlugins(newScene({ view: { activity: "edit" } }), r)).toEqual([]);
   });
 
-  it("the extension a view.tool names", () => {
-    const r = reg([{ id: "paint", importUrl: A }]);
-    expect(ids(answeringPlugins(newScene({ view: { tool: "paint:brush" } }), r))).toEqual(["scene:extension/paint"]);
-    expect(answeringPlugins(newScene({ view: { tool: "other:brush" } }), r)).toEqual([]);
-  });
-
   it("what isn't registered answers nothing; a plugin without an importUrl answers with none", () => {
     const d = newScene({ traits: { "t.scene": {} }, objects: { a: { providerId: "p.src" } } });
     for (const r of [null, undefined, {}, reg(), { "scene:extension": "x", "scene:source": null }, reg([null, { traits: ["t.scene"] }], [{ name: "no id" }])]) expect(answeringPlugins(d, r)).toEqual([]);
@@ -204,7 +197,6 @@ describe("the reconcile rule (packagesToList)", () => {
     objectTrait: { doc: () => newScene({ objects: { a: { traits: { t: {} } } } }), type: "scene:extension", meta: { id: "x", traits: ["t"] } },
     sceneTrait: { doc: () => newScene({ traits: { t: {} } }), type: "scene:extension", meta: { id: "x", traits: ["t"] } },
     activity: { doc: () => newScene({ view: { ...newScene().view, activity: "play" } }), type: "scene:extension", meta: { id: "x", activities: ["play"] } },
-    tool: { doc: () => newScene({ view: { ...newScene().view, tool: "x:brush" } }), type: "scene:extension", meta: { id: "x" } },
     required: { doc: () => newScene({ traits: { t: {} } }), type: "scene:extension", meta: { id: "x" }, also: { id: "game", traits: ["t"], requires: ["x"] } },
   };
   // every way its plugin can be registered: [importUrl, the package it names]
@@ -253,7 +245,7 @@ describe("the reconcile rule (packagesToList)", () => {
         }
       }
     }
-    expect(cases).toBe(6 * 2 * (3 * 5 - 1 + 5 * 2));
+    expect(cases).toBe(5 * 2 * (3 * 5 - 1 + 5 * 2));
   });
 
   it("never makes the list: a doc without one gets nothing", () => {

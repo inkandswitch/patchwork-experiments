@@ -23,21 +23,21 @@ function fakeTools(log) {
             run: (_t, v) => (log.push(["grid", v]), api.setPref("grid", v)),
           },
           {
-            id: "tool",
-            name: "Tool",
+            id: "shade",
+            name: "Shade",
             key: ["g", "r"],
             state: (t, { local }) =>
               t == null
                 ? {
-                    value: local.tool ?? "move",
+                    value: local.shade ?? "flat",
                     choices: [
-                      { value: "move", label: "Move" },
-                      { value: "rotate", label: "Rotate" },
-                      { value: null, label: "No gizmo" },
+                      { value: "flat", label: "Flat" },
+                      { value: "smooth", label: "Smooth" },
+                      { value: null, label: "None" },
                     ],
                   }
                 : null,
-            run: (_t, v) => (log.push(["tool", v]), api.local.swap((m) => ({ ...m, tool: v }))),
+            run: (_t, v) => (log.push(["shade", v]), api.local.swap((m) => ({ ...m, shade: v }))),
           },
           {
             id: "poke",
@@ -112,12 +112,12 @@ describe("scene.toolbar", () => {
 
   it("shows the scene's toolbar commands in order: buttons, toggles, pickers", () => {
     const ids = [...bar().querySelectorAll("[data-command]")].map((e) => e.dataset.command);
-    expect(ids).toEqual(["frame", "grid", "tool", "off"]);
+    expect(ids).toEqual(["frame", "grid", "shade", "off"]);
     expect(control("frame").tagName).toBe("BUTTON");
     expect(control("frame").title).toBe("Frame all (F)");
     expect(control("grid").getAttribute("aria-pressed")).toBe("true");
-    expect(control("tool").tagName).toBe("SELECT");
-    expect(control("tool").title).toBe("Tool (G)");
+    expect(control("shade").tagName).toBe("SELECT");
+    expect(control("shade").title).toBe("Shade (G)");
     expect(control("off").disabled).toBe(true);
   });
 
@@ -131,13 +131,13 @@ describe("scene.toolbar", () => {
     expect(s.local.get().prefs.grid).toBe(false);
     expect(control("grid")).toBe(grid); // updated in place
     expect(grid.getAttribute("aria-pressed")).toBe("false");
-    const tool = control("tool");
-    tool.selectedIndex = 2;
-    tool.dispatchEvent(new Event("change"));
-    expect(log.at(-1)).toEqual(["tool", null]);
+    const shade = control("shade");
+    shade.selectedIndex = 2;
+    shade.dispatchEvent(new Event("change"));
+    expect(log.at(-1)).toEqual(["shade", null]);
     await s.settle();
-    expect(s.local.get().tool).toBeNull();
-    expect(control("tool").selectedIndex).toBe(2);
+    expect(s.local.get().shade).toBeNull();
+    expect(control("shade").selectedIndex).toBe(2);
     control("off").click();
     expect(log).not.toContain("off");
   });

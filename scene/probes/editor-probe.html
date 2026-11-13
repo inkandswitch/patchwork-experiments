@@ -79,9 +79,10 @@ try {
   };
   window.stlUrl = repo.add({ "@patchwork": { type: "file" }, name: "cube.stl", extension: "stl", mimeType: "model/stl", content: cubeSTL() }).url;
   const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  // blocks and pawns can be picked up (the scene's carry trait); the locked board can't
   const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
-  for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1]);
-  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
+  for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1], { traits: { "scene.carry": {} } });
+  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25], { traits: { "scene.carry": {} } });
   const scene = repo.add(emptyScene({
     title: "Editor probe", objects, order: Object.keys(objects),
     view: { units: "cm", grid: true, axes: true, bounds: false, snap: true,
@@ -114,6 +115,17 @@ try {
       const p = dbg.viewport.project(w);
       const r = dbg.viewport.canvas.getBoundingClientRect();
       return { x: r.left + p.x, y: r.top + p.y };
+    },
+    /** what A's halo is on, or null */
+    halo: (dbg = dbgA) => dbg.host.instanceOf("scene.halo")?.debug?.target ?? null,
+    /** page coords of a halo handle (a third along an arrow; a corner's point), `along` frame units further along an arrow's axis */
+    haloAt(kind, axis, along = 0, dbg = dbgA) {
+      const h = dbg.host.instanceOf("scene.halo")?.debug;
+      const x = h?.handles.find((k) => k.kind === kind && (axis == null || k.axis === axis));
+      if (!x) return null;
+      const p = kind === "move" ? x.from.map((v, i) => v + (x.to[i] - v) / 3) : [...x.at];
+      if (along) p[axis] += along;
+      return this.worldScreen(h.frame.pointOut(p), dbg);
     },
     repo,
     loaded: (dbg = dbgA) => ["board", "b0", "b1", "b2", "p0", "p1"].every((id) => dbg.viewport.contentOf(id)?.loaded),

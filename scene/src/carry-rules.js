@@ -1,7 +1,8 @@
-// The hand: picking an object up and setting it down somewhere else on the
+// Carrying: picking an object up and setting it down somewhere else on the
 // table, the way a piece is moved in a board game. Pure (no three.js), so it
 // can be tested; the viewport supplies the points and the ray hits.
 //
+// - What can be carried says so: the `scene.carry` trait (carryable below).
 // - Connectors come from GLBs (`extras.connectors`, and the older
 //   `extras.snapPoints`; see README). A dropped object's footprint centre goes
 //   to the nearest one within its radius that accepts it (its tags), in plan
@@ -10,6 +11,16 @@
 //   under its footprint (a few rays straight down), or on the ground. No
 //   physics: nothing tips, slides or bounces, and only the final pose is
 //   written to the doc.
+
+/** The trait that says an object can be picked up: "can", as data (TOOLS.md §1). */
+export const CARRY = "scene.carry";
+
+/**
+ * Can this object be carried, by what it is: it has the trait, isn't a
+ * group and isn't locked. (Who holds it and what vetoes it now are the
+ * carry part's to ask.)
+ */
+export const carryable = (o) => !!o && o.kind !== "group" && !o.locked && !!o.traits && typeof o.traits === "object" && Object.hasOwn(o.traits, CARRY) && o.traits[CARRY] != null;
 
 /**
  * The yaw (radians about +Y) a rotation turns +Z to, seen from above: where

@@ -9,19 +9,17 @@
 // go writes the param to the object's render doc, and the stage rebuilds the
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
-// Hidden while the effective tool is the hand and while any extension is armed
+// They are the halo's build-param knobs (TOOLS.md §3): shown for the
+// selection whatever the activity, hidden while another extension is armed
 // (measuring, say).
 //
-// Reads local.selected, local.tool (via the doc's view defaults), local.armed
-// and local.theme. Writes only the render doc's params.
+// Reads local.selected, local.armed and local.theme. Writes only the render
+// doc's params.
 
 import css from "./handles.css?inline";
 import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
-import { effectiveTool } from "../current-tool.js";
-
-export { effectiveTool };
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
@@ -189,11 +187,10 @@ export default {
 
     // ─── drawing ──────────────────────────────────────────────────────────
 
-    /** Is anything else in charge of the pointer (the hand, an armed tool)? */
+    /** Is another extension in charge of the pointer (an armed tool)? */
     function standingDown() {
-      const local = api.local.get();
-      if (local.armed != null && local.armed !== api.id) return true;
-      return effectiveTool(local, api.doc()) === "hand";
+      const armed = api.local.get().armed;
+      return armed != null && armed !== api.id;
     }
 
     /** Each spec's world line, while the object is shown and has its content. */
@@ -259,7 +256,7 @@ export default {
       api.invalidate();
     }
 
-    // an object moved by a held pose (a gizmo or hand drag) moves its handles
+    // an object moved by a held pose (a halo drag or a carry) moves its handles
     // too: nothing else tells us, so look after each frame (cheap when nothing moved)
     api.afterRender(() => {
       if (sub && specs.length) draw();
@@ -355,8 +352,8 @@ export default {
         const pl = prev?.local;
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
-        if (pl && pl !== local && prev.scene === scene && ["selected", "tool", "armed", "theme", "status"].every((k) => pl[k] === local[k])) return;
-        // the selection, its object, the provider, the tool, arming, theme, a move or content arriving
+        if (pl && pl !== local && prev.scene === scene && ["selected", "armed", "theme", "status"].every((k) => pl[k] === local[k])) return;
+        // the selection, its object, the provider, arming, theme, a move or content arriving
         refresh();
       },
       /** The selected object's handles, at the values shown (for probes and tests). */

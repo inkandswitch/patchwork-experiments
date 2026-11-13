@@ -51,8 +51,14 @@ describe("the Liar's dice table", () => {
     expect(d.order.length).toBe(objects.length);
     // one file per kind of thing: a table, a pool, and a cup and a die per set
     expect(ctx.files.size).toBe(2 + 2 * SETS.length);
-    // every cup starts lifted, nobody's, with nothing shaken and no draw; its trait is all it needs to be drawn for
-    for (const o of objects.filter((x) => x.traits?.["dice.cup"])) expect(o.traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null } });
+    // every cup starts lifted, nobody's, with nothing shaken and no draw; its trait is all it needs to be drawn for,
+    // and the scene's carry trait (cups and dice are picked up)
+    for (const o of objects.filter((x) => x.traits?.["dice.cup"])) expect(o.traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null }, "scene.carry": {} });
+    for (const o of objects.filter((x) => x.traits?.["dice.die"])) expect(o.traits).toEqual({ "dice.die": {}, "scene.carry": {} });
+    // the pool and the table are not
+    for (const o of objects.filter((x) => x.locked)) expect(o.traits?.["scene.carry"]).toBeUndefined();
+    // the doc suggests no tool: there are none
+    expect(d.view.tool).toBeUndefined();
     expect(ctx.notices.some((n) => n.kind === "warn")).toBe(false);
   });
 
@@ -90,6 +96,6 @@ describe("the Liar's dice table", () => {
     const c = cupsOf(snap).cups.get(id);
     expect(c.front.length).toBe(5);
     expect(snap.objects[id].parent).toBe("slab");
-    expect(snap.objects[id].traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null } });
+    expect(snap.objects[id].traits).toEqual({ "dice.cup": { up: true, blind: false, holder: null, roll: null, round: null }, "scene.carry": {} });
   });
 });

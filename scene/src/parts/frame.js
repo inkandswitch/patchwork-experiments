@@ -1,5 +1,6 @@
 // scene.frame: the editor's verbs for pointing the camera at things.
-//   - "Frame all" (F): the whole scene.
+//   - "Frame" (.): the selection, or with nothing selected the whole scene
+//     ("Frame all"). Not F: F is carry's Flip, on every surface (TOOLS.md §4).
 //   - a double-click on an object frames it (or the selected group it's in).
 //   - "Set home view" (menu): this camera as the doc's suggested start
 //     (doc.view.home), which a viewer without a saved camera opens at.
@@ -16,16 +17,20 @@ export function frameTarget(scene, hitId, selected) {
 
 export default {
   create(api) {
-    const frameAll = () => api.camera.frame(api.sceneBox());
+    /** What Frame frames: the selection's box, if it has one, else the whole scene's. */
+    const selectedBox = (local) => (local?.selected != null ? api.box(local.selected) : null);
 
     return {
       commands: [
         {
-          id: "frame-all",
+          id: "frame",
           name: "Frame all",
-          key: "f",
-          state: (target) => (target == null ? { title: "Frame all (F)" } : null),
-          run: () => frameAll(),
+          key: ".",
+          state: (target, { local } = {}) => {
+            if (target != null) return null;
+            return selectedBox(local) ? { label: "Frame selection", title: "Frame the selection (.)" } : { title: "Frame everything (.)" };
+          },
+          run: () => api.camera.frame(selectedBox(api.local.get()) ?? api.sceneBox()),
         },
         {
           id: "set-home",

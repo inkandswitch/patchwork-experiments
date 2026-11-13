@@ -10,8 +10,9 @@ import { SCENE_URL, fakeStage, snapshot, FakeRepo } from "./test/fake-stage.js";
 const BAG1 = "automerge:3AAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const BAG2 = "automerge:3BBBBBBBBBBBBBBBBBBBBBBBBBBB";
 const at = (x, z = 0, y = 0) => ({ position: [x, y, z], rotation: [0, 0, 0], scale: 1 });
-const token = (name, x, more = {}) => ({ name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, transform: at(x, 1), hint: { bounds: { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] } }, ...more });
-const bagObject = (url, x) => ({ name: "Token bag", sourceUrl: url, providerId: "bag-sack", renderUrl: "automerge:render", parent: null, group: null, transform: at(x), traits: { [CONTAINER]: { doc: url } } });
+// a token can be picked up (the scene's carry trait), as everything that goes in a bag can
+const token = (name, x, { traits = {}, ...more } = {}) => ({ name, sourceUrl: `automerge:glb-${name}`, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, transform: at(x, 1), hint: { bounds: { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] } }, traits: { "scene.carry": {}, ...traits }, ...more });
+const bagObject = (url, x) => ({ name: "Token bag", sourceUrl: url, providerId: "bag-sack", renderUrl: "automerge:render", parent: null, group: null, transform: at(x), traits: { [CONTAINER]: { doc: url }, "scene.carry": {} } });
 
 async function table({ session = "s-me", activity = "play", rule = "top", carry = false, repo = new FakeRepo() } = {}) {
   if (!repo.handles.has(BAG1)) {
@@ -92,7 +93,7 @@ describe("a bag in a scene", () => {
     expect(t.rec.sends).toEqual([["put", { bag: BAG2, n: 2 }]]);
   });
 
-  it("what mustn't go in doesn't: the bag itself, a bag that holds this one, what is locked, held, or vetoed by a running extension", async () => {
+  it("what mustn't go in doesn't: the bag itself, a bag that holds this one, what can't be carried, is locked, held, or vetoed by a running extension", async () => {
     const t = await table();
     // the bag itself isn't offered itself
     expect(t.state("put", "bag1").choices.map((c) => c.value)).toEqual(["bag2"]);
@@ -107,6 +108,12 @@ describe("a bag in a scene", () => {
     expect(t.handle.doc().objects.bag2).toBeDefined();
     // locked
     expect(t.state("put", "rock")).toBeNull();
+    // without the scene's carry trait: it can't be picked up, so it can't go in a bag
+    t.handle.change((d) => (d.objects.slab = { ...token("Slab", 4), traits: {} }));
+    t.sync();
+    expect(t.state("put", "slab")).toBeNull();
+    t.run("put", "slab", "bag1again");
+    expect(t.handle.doc().objects.slab).toBeDefined();
     // held by a peer
     t.rec.held.set("cube", "s-peer");
     expect(t.state("put", "cube")).toBeNull();

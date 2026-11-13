@@ -4,3 +4,5 @@
 export const DIE = "dice.die";
 /** This package's scene:source, and the datatype it builds. */
 export const PROVIDER = "die";
+/** The scene's trait for what can be picked up (scene/TOOLS.md §1): dice and cups carry it. */
+export const CARRY = "scene.carry";

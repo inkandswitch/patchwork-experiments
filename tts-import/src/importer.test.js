@@ -93,9 +93,11 @@ describe("runImport on the tiny fixture", () => {
     expect(doc(sceneUrl).origin).toEqual({ tts: { saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", workshopId: "1234567890" } });
   });
 
-  it("lays out the table: every object a passthrough GLB at its transform, in the hand", async () => {
+  it("lays out the table: every object a passthrough GLB at its transform, carryable unless locked", async () => {
     const { scene, report, doc } = await importFixture();
-    expect(scene.view).toMatchObject({ tool: "hand", snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).toMatchObject({ snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).not.toHaveProperty("tool");
+    for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect([o.name, !!o.traits?.["scene.carry"]]).toEqual([o.name, !o.locked]);
     expect(scene.camera).toBeUndefined();
     expect(scene.traits).toEqual(expect.any(Object));
     // its seats (this one has White's) were laid by whoever owns seats; with cards on it, it starts in play
@@ -144,7 +146,7 @@ describe("runImport on the tiny fixture", () => {
     expect(group[1].visible).toBe(true);
     const cards = Object.entries(scene.objects).filter(([, o]) => o.group === group[0]);
     expect(cards).toHaveLength(3);
-    for (const [, o] of cards) expect(Object.keys(o.traits).sort()).toEqual([KEPT, "tabletop.card"]);
+    for (const [, o] of cards) expect(Object.keys(o.traits).sort()).toEqual(["scene.carry", KEPT, "tabletop.card"].sort());
     const by = new Set(cards.map(([, o]) => o.traits[KEPT].by));
     expect(by.size).toBe(1);
     const container = doc([...by][0]);
@@ -162,16 +164,16 @@ describe("runImport on the tiny fixture", () => {
     expect(ys[1]).toBeGreaterThan(ys[2]);
     // there is no scene-wide secrets doc any more
     expect(scene.secretsUrl).toBeUndefined();
-    // a face-up lone card is just itself
+    // a face-up lone card is just itself: a thing to pick up, no card of a deck's
     const yellow = Object.values(scene.objects).find((o) => o.name === "Yellow Four");
-    expect(yellow.traits).toBeUndefined();
+    expect(yellow.traits).toEqual({ "scene.carry": {} });
   });
 
   it("with no keeper and nobody who owns seats installed: the cards are only their backs, there are no seats, and the report says so", async () => {
     const { scene, report } = await importFixture({ registry: async () => null });
     const cards = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.card"]);
     expect(cards.length).toBeGreaterThan(0);
-    for (const o of cards) expect(Object.keys(o.traits)).toEqual(["tabletop.card"]);
+    for (const o of cards) expect(Object.keys(o.traits)).toEqual(["scene.carry", "tabletop.card"]);
     expect(scene.traits).toEqual({});
     expect(report.counts).toMatchObject({ seats: 0, secrets: 0 });
     expect(report.warnings.some((w) => /no keeper is installed/.test(w))).toBe(true);

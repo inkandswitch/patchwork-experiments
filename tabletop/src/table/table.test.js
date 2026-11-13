@@ -653,48 +653,17 @@ describe("drawing to your hand", () => {
   });
 });
 
-describe("the hand in play", () => {
-  afterEach(() => vi.useRealTimers());
-  const pawn = () => ({ name: "Pawn", transform: T([0, 0, 0]) });
-
-  it("back in play after editing with Rotate (R) or Move (G), the hand is the tool again", () => {
-    const w = fakes.fakeWorld(sceneOf({ pawn: pawn() }, { [SEATS]: seats("alice", "bob") }));
-    const { api: a } = sit(w, "A", "alice", { local: { tool: "rotate", activities: { current: "edit", available: ["play", "edit"] } } });
+describe("carrying at a table", () => {
+  it("the table forces no tool: there are none, so editing and playing leave local state alone", () => {
+    const w = fakes.fakeWorld(sceneOf({ pawn: { name: "Pawn", transform: T([0, 0, 0]) } }, { [SEATS]: seats("alice", "bob") }));
+    const { api: a } = sit(w, "A", "alice", { local: { activities: { current: "edit", available: ["play", "edit"] } } });
+    const swap = vi.spyOn(a.local, "swap");
     w.flush();
-    expect(a.local.get().tool).toBe("rotate"); // editing: left alone
     a.local.swap((m) => ({ ...m, activities: { ...m.activities, current: "play" } }));
+    swap.mockClear();
     w.flush();
-    expect(a.local.get().tool).toBe("hand");
-    a.local.swap((m) => ({ ...m, tool: "move" }));
-    w.flush();
-    expect(a.local.get().tool).toBe("hand");
-    w.done();
-  });
-
-  it("a table whose doc suggests no tool (no view.tool): in play, the hand is the tool", () => {
-    const doc = sceneOf({ p1: pawn() });
-    const w = fakes.fakeWorld(doc);
-    const { api: a } = sit(w, "A", "alice");
-    expect(a.local.get().tool).toBeUndefined(); // the stage's default, Move, is in force
-    w.flush();
-    expect(a.local.get().tool).toBe("hand");
-    // a doc that suggests the hand already: nothing to do
-    const doc2 = sceneOf({ p1: pawn() }, {}, { view: { ...emptyScene().view, tool: "hand" } });
-    const w2 = fakes.fakeWorld(doc2);
-    const b = w2.join("B", { viewer: "bob" });
-    const swap = vi.spyOn(b.local, "swap");
-    w2.attach("B", Extension.create(b));
-    w2.flush();
     expect(swap).not.toHaveBeenCalled();
-    expect(b.local.get().tool).toBeUndefined();
-    w2.done();
-    w.done();
-  });
-
-  it("has Shuffle, Draw, Wash, Stand and Lay my hand face up and nothing else: no Roll (dice are the dice package's), no Sit (seats are their owner's)", () => {
-    const w = fakes.fakeWorld(sceneOf({ p1: pawn() }));
-    const { x } = sit(w, "A", "alice");
-    expect(x.commands.map((c) => c.id)).toEqual(["shuffle", "draw", "wash", "stand", "reveal"]);
+    expect(a.local.get().tool).toBeUndefined();
     w.done();
   });
 });

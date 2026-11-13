@@ -170,7 +170,7 @@ try {
     const d = await P("doc()");
     const pawn = d.objects[pawnId];
     report.pawn = pawnId;
-    check("a pawn dragged out lands where it was dropped, on nothing, with no tags and no traits", pawn && pawn.parent == null && !pawn.tags?.length && !Object.keys(pawn.traits ?? {}).length && plan(pawn.transform.position, g2.hit.point) < 2e-3, { pawn, at: g2.hit.point });
+    check("a pawn dragged out lands where it was dropped, on nothing, with no tags, and only the trait that it can be picked up", pawn && pawn.parent == null && !pawn.tags?.length && JSON.stringify(pawn.traits) === JSON.stringify({ "scene.carry": {} }) && plan(pawn.transform.position, g2.hit.point) < 2e-3, { pawn, at: g2.hit.point });
     check("its art is one file under its versioned key", d.assets?.["tabletop/pawn@1"]?.url === pawn?.sourceUrl, Object.keys(d.assets ?? {}));
     check("no part made or changed a seat", J(Object.keys(await P("seats()"))) === J(["p1", "p2"]));
   }
@@ -183,7 +183,6 @@ try {
   await snapLooks("back in play");
   const same = (x, y) => Object.keys(x).every((id) => !(id in y) || x[id] === y[id]);
   check("the hands keep their faces throughout (a shuffle of the pile, edit and back)", ["shuffled", "card snapped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
-  check("…with the hand as the tool", (await P("tool('a')")) == null || (await P("tool('a')")) === "hand", { tool: await P("tool('a')") });
   await sleep(400);
   {
     const target = free[0];

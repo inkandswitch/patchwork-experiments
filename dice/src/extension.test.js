@@ -130,7 +130,7 @@ describe("the dice's verbs", () => {
     t.w.done();
   });
 
-  it("Roll applies to a die in play only (R is the gizmo's Rotate while editing), never to what isn't a die, is locked, or is only turned by hand", () => {
+  it("Roll applies to a die, editing as much as playing (R is no gizmo's: the halo has no keys), never to what isn't a die, is locked, or is only turned by hand", () => {
     const t = world({ dice: { d1: "d6", cube: "doubling", locked: "d6" }, objects: {} });
     t.a.change((d) => (d.objects.locked.locked = true));
     expect(t.state("roll", "d1")).toEqual({ title: "Roll the die (R)" });
@@ -139,21 +139,11 @@ describe("the dice's verbs", () => {
     expect(t.state("roll", "cube")).toBeNull();
     expect(t.state("roll", null)).toBeNull();
     expect(t.state("roll", "nope")).toBeNull();
-    expect(t.cmd(t.xa, "roll").state("d1", { scene: t.a.scene(), local: edit })).toBeNull();
-    // and running it there does nothing
+    expect(t.cmd(t.xa, "roll").state("d1", { scene: t.a.scene(), local: edit })).toEqual({ title: "Roll the die (R)" });
+    // and running it there throws it
     t.a.local.swap((m) => ({ ...m, ...edit }));
     t.run("roll", "d1");
-    expect(t.w.holds.size).toBe(0);
-    t.w.done();
-  });
-
-  it("back in play after editing with Rotate (R) or Move (G), the hand is the tool again; while editing it's left alone", () => {
-    const t = world({ local: { tool: "rotate", ...edit } });
-    t.w.flush();
-    expect(t.a.local.get().tool).toBe("rotate");
-    t.a.local.swap((m) => ({ ...m, ...play }));
-    t.w.flush();
-    expect(t.a.local.get().tool).toBe("hand");
+    expect(t.w.holds.size).toBe(1);
     t.w.done();
   });
 
@@ -563,7 +553,8 @@ describe("rolling several together", () => {
     expect(t.state("roll", "g")).toEqual({ label: "Roll 2 dice", title: "Roll every die in this group together (R)" });
     // each can still be rolled alone
     expect(t.state("roll", "tens")).toEqual({ title: "Roll the die (R)" });
-    expect(t.cmd(t.xa, "roll-all").state("tens", { scene: t.a.scene(), local: edit })).toBeNull();
+    // G is no gizmo's either: Roll all is offered editing too
+    expect(t.cmd(t.xa, "roll-all").state("tens", { scene: t.a.scene(), local: edit })).toEqual(t.state("roll-all", "tens"));
     t.w.done();
   });
 
@@ -920,12 +911,12 @@ describe("a die's own panel, docked", () => {
 });
 
 describe("a die doc dropped in a scene", () => {
-  it("becomes a die there: built by this package, carrying the trait, where it was dropped, selected", async () => {
+  it("becomes a die there: built by this package, with its trait and the scene's carry trait, where it was dropped, selected", async () => {
     const doc = emptyScene();
     const { ctx, calls, local } = fakes.fakeDrop(doc);
     const info = { url: "automerge:mydie", doc: { "@patchwork": { type: "die" }, ...PRESETS.d12.make() }, group: null, at: { point: [0.2, 0.7, -0.1], hitId: "table" } };
     expect(await Extension.drop(ctx, info)).toBe(true);
-    expect(calls.added).toEqual([{ url: "automerge:mydie", opts: { providerId: PROVIDER, group: null, fields: { traits: { [DIE]: {} } }, transform: T([0.2, 0.7, -0.1]) } }]);
+    expect(calls.added).toEqual([{ url: "automerge:mydie", opts: { providerId: PROVIDER, group: null, fields: { traits: { [DIE]: {}, "scene.carry": {} } }, transform: T([0.2, 0.7, -0.1]) } }]);
     const [id] = doc.order;
     expect(local().selected).toBe(id);
     // nothing is made: the die's doc is the one dropped

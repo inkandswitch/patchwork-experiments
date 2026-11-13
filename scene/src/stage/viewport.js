@@ -3,7 +3,7 @@
 // their display, the camera rig (orbit, hold, limits), picking with vertex
 // snap, the extensions' drawing layers (world groups, an on-top pass, DOM
 // labels) and the frame loop. It draws nothing of its own beyond the objects
-// and the sky: no grid, axes, gizmo, selection or dimensions
+// and the sky: no grid, axes, halo, selection or dimensions
 // (those are extensions now), and it listens to no input but the orbit's.
 // It knows nothing about automerge; the stage drives it from the scene doc.
 
@@ -39,7 +39,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { applyMaterialRules, prepareGLB } from "../gltf-content.js";
 import { rulesKey, sanitizeRules } from "../material-rules.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
-import { defaultSnapRadius } from "../hand.js";
+import { defaultSnapRadius } from "../carry-rules.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
 import { createRides } from "./ride.js";
 
@@ -822,7 +822,7 @@ export class Viewport {
     } catch (err) {
       this.error = err;
       // no renderer, but still a scene and a camera: extensions that only
-      // need the camera's maths (the gizmo) still work, and tests run
+      // need the camera's maths (the halo) still work, and tests run
       this.initScene();
       return;
     }

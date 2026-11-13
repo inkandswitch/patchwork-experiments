@@ -3,7 +3,7 @@
 // includes "toolbar", or says nothing): a button, a toggle (aria-pressed from
 // `checked`) or a picker (`choices`/`value`), in running order then command
 // order. It owns no verbs of its own; what used to be hard-wired here (frame,
-// measure, grid, units, the gizmo…) is each part's command now.
+// measure, grid, units…) is each part's command now.
 //
 // Each flush it works out every control's state; the DOM is touched only for
 // controls whose state changed, so a picker keeps its focus and a hover costs

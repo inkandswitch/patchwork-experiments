@@ -33,8 +33,8 @@ any game's rule:
 
 | | how | what happens |
 |---|---|---|
-| **Put in** | carry a piece with the hand and let go over the bag; or right-click a piece or a group (or the inspector) → Put in *bag* | it leaves the scene doc in one change and is in the bag doc. A group goes in as its members (and the emptied group goes too). Several bags at a table are told apart by title |
-| **Draw** | hover the bag and press **D** (the use prompt: "Draw from Token bag (3)"), or the menu | one item, by the bag's rule, is an object in the scene again and is in the drawer's hand (the scene hand's `carry`): it follows the pointer until the next click, which puts it down wherever the drawer chooses. With no hand running, it is set down beside the bag |
+| **Put in** | carry a piece and let go over the bag; or right-click a piece or a group (or the inspector) → Put in *bag*. Only what can be picked up (the scene's `scene.carry` trait) goes in, so whatever comes out can be carried again | it leaves the scene doc in one change and is in the bag doc. A group goes in as its members (and the emptied group goes too). Several bags at a table are told apart by title |
+| **Draw** | hover the bag and press **D** (the use prompt: "Draw from Token bag (3)"), or the menu | one item, by the bag's rule, is an object in the scene again and is in the drawer's hand (the scene's `carry`): it follows the pointer until the next click, which puts it down wherever the drawer chooses. With no carry running, it is set down beside the bag |
 | **Draw several** | menu or inspector → Draw 2…10 | that many, each drawn on its own, set down in a row round the bag |
 | **Pour into** | menu or inspector on a bag → Pour into *other bag* | everything inside goes into the other bag |
 | **Empty out** | menu or inspector, editing only | everything is set down round the bag |
@@ -46,7 +46,8 @@ how many, never what. Received messages are checked for shape and for naming
 a bag of this scene; anything else is dropped.
 
 What mustn't go in doesn't: the bag itself (through any object of the same
-bag doc), a bag that holds this one at any depth, a locked object, one a peer
+bag doc), a bag that holds this one at any depth, what can't be picked up (no
+`scene.carry`), a locked object, one a peer
 is holding, and anything a running extension vetoes with `carryable`.
 
 **The count is public** (a label on the bag: "Token bag · 3"). **The contents

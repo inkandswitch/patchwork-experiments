@@ -1,6 +1,7 @@
 // scene.menu: the context menu. A right-click (or a touch hold) opens a small
 // menu at the pointer listing the commands that apply to the object under it
-// (show includes "menu", or says nothing), then, under a separator, the
+// (show includes "menu", or says nothing), Select first (the selection's verb,
+// scene.select's: TOOLS.md §3), then, under a separator, the
 // scene's commands that ask for a menu (show includes "menu"). Picking one
 // runs it; Escape, a click outside, or picking closes it. Arrow keys move
 // through it, Enter (or Space) picks. Nothing applies: no menu, and the event
@@ -9,13 +10,19 @@
 import css from "./menu.css?inline";
 import { applicable, cleanChoices, controlKind, flatCommands, keyLabel } from "./toolbar-commands.js";
 
+/** The selection's verb, first in every target's menu. */
+export const SELECT = Object.freeze({ ext: "scene.select", command: "select" });
+const isSelect = (e) => e.ext === SELECT.ext && e.command.id === SELECT.command;
+
 /**
  * The menu's entries for a target: [{ ext, command, state }] for the object,
- * then for the scene. Pure (given the collected commands).
+ * Select first and the rest in running order, then for the scene. Pure
+ * (given the collected commands).
  */
 export function menuEntries(collected, target, ctx) {
   const flat = flatCommands(collected);
-  const forObject = target != null ? applicable(flat, target, ctx, "menu") : [];
+  const all = target != null ? applicable(flat, target, ctx, "menu") : [];
+  const forObject = [...all.filter(isSelect), ...all.filter((e) => !isSelect(e))];
   const forScene = applicable(flat, null, ctx, "menu", { strict: true });
   return { forObject, forScene };
 }

@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, trianglesOf } from "./crew.js";
 import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
-import { carryableAboard, shipOf } from "./traits.js";
+import { shipOf } from "./traits.js";
 import { boxTriangles } from "./navmesh.js";
 import { BODY, DECK, SWIM } from "./walk.js";
 import { meshNode } from "./test/fakes.js";
@@ -720,24 +720,5 @@ describe("the crew's walker", { timeout: 60_000 }, () => {
     expect(crew.me().position).toEqual(me.position); // and the walker is where it was
     // a seat not aboard a ship: no
     expect(crew.firstPerson.enter({ seat: "s2", eye: [0, 1, 0], target: [0, 1, -1], frame: null })).toBe(false);
-  });
-});
-
-describe("the hand aboard (scene.hand's carryable)", () => {
-  it("never the ship nor a fitting of hers; anything else aboard is no business of sailing's", () => {
-    const scene = {
-      objects: {
-        hull: { traits: { "sailing.ship": {} } },
-        mast: { tags: ["sailing.mast"] },
-        rig: { traits: { "sailing.sail": {} } },
-        anchor: { traits: { "sailing.hook": {} } },
-        table: { locked: true },
-        card: { traits: { "tabletop.card": {} }, tags: ["card"] },
-        buoy: { traits: { "sailing.float": {} } },
-      },
-      parents: new Map([["mast", "hull"], ["rig", "mast"], ["anchor", "hull"], ["table", "hull"], ["card", "table"]]),
-    };
-    for (const id of ["hull", "mast", "rig", "anchor", "buoy"]) expect(carryableAboard(scene, id)).toBe(false);
-    for (const id of ["table", "card", "nothing"]) expect(carryableAboard(scene, id)).toBeUndefined();
   });
 });

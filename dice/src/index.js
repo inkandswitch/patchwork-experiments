@@ -66,18 +66,19 @@ export const plugins = [
       "dice.die": {
         name: "Die",
         on: "object",
-        blurb: "Press R over it in play to roll it, T to turn it to its next face; everyone is told what it shows. What it is comes from its own document",
+        blurb: "Press R over it to roll it, T to turn it to its next face; everyone is told what it shows. What it is comes from its own document",
         // the draw of a throw it leads is about now: a copy starts with none
         runtime: ["round"],
       },
     },
     drops: ["die"],
-    // playing with dice needs these and nothing else: carry them, the use
-    // prompt (hover a die: "[R] Roll  [T] Turn"), keys for verbs, a
-    // right-click menu, and somewhere for notices. scene.use comes before
-    // scene.keys, so the prompt hears its verbs' keys first (scene/STAGE.md,
-    // "The use prompt").
-    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"],
+    // playing with dice needs these and nothing else: the use prompt (hover
+    // a die: "[R] Roll  [T] Turn"), keys for verbs, a right-click menu, and
+    // somewhere for notices. Carrying them is the scene's, by the
+    // `scene.carry` trait every die and cup is written with. scene.use comes
+    // before scene.keys, so the prompt hears its verbs' keys first
+    // (scene/STAGE.md, "The use prompt").
+    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./extension.js")).default;
     },
@@ -102,7 +103,7 @@ export const plugins = [
         runtime: ["holder", "roll", "round"],
       },
     },
-    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.notices"],
+    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./cup-extension.js")).default;
     },

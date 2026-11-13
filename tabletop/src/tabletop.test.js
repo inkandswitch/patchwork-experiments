@@ -177,7 +177,7 @@ describe("setting up a table", () => {
     expect(supplySpot(s, 4)).toEqual([1.1, 0, 1.8]);
   });
 
-  it("makes a scene with every piece, grouped by kind, opening in the hand", async () => {
+  it("makes a scene with every piece, grouped by kind, everything not fixed carryable", async () => {
     const repo = fakeRepo();
     const game = await newGame(repo);
     await ensurePieceGLBs(repo, game);
@@ -187,7 +187,11 @@ describe("setting up a table", () => {
     expect(pieces).toHaveLength(1 + 22 + 18 + 14 + 18 + 6);
     expect(objects.filter((o) => o.kind === "group").map((g) => g.name)).toContain("Level 1 (22)");
     expect(scene.order).toHaveLength(objects.length);
-    expect(scene.view).toMatchObject({ tool: "hand", snap: true, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).toMatchObject({ snap: true, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).not.toHaveProperty("tool");
+    // what isn't locked can be picked up; what is, can't
+    for (const o of pieces) expect([o.name, !!o.traits?.["scene.carry"]]).toEqual([o.name, !o.locked]);
+    expect(pieces.some((o) => o.locked)).toBe(true);
     // (Santorini has no seats, zones or hidden cards: nothing to play, so the doc doesn't say "play")
     expect(scene.view).not.toHaveProperty("activity");
     expect(scene.camera).toBeUndefined();
@@ -356,7 +360,7 @@ describe("Lost Cities", () => {
     expect(cards).toHaveLength(60);
     for (const o of cards) {
       expect(o.traits["tabletop.card"]).toEqual({});
-      expect(Object.keys(o.traits).sort()).toEqual(["t.plain", "tabletop.card"]);
+      expect(Object.keys(o.traits).sort()).toEqual(["scene.carry", "t.plain", "tabletop.card"]);
       expect(o.name).toBe("Card");
     }
     expect(cards.map((o) => keptIn(o).slot).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
@@ -447,7 +451,7 @@ describe("one table writer: tableLayout + writeTable", () => {
     writeTable(fresh, layout, binds, { seats: (d, seats) => (asked.push(seats), lay(d, seats)) });
     expect(asked).toEqual([layout.seats]);
     expect(Object.keys(fresh.traits[SEATS])).toEqual(["p1", "p2"]);
-    expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity: "play", home: game.doc().camera });
+    expect(fresh.view).toEqual({ units: "cm", grid: false, axes: false, bounds: false, snap: true, activity: "play", home: game.doc().camera });
     expect(fresh.order).toEqual(layout.order);
 
     const mine = { north: { name: "North", player: "automerge:ana" } };

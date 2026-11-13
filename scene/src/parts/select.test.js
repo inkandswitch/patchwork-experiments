@@ -4,7 +4,7 @@ import { PLAY, mountStage, object, until, settle } from "../test/stage-harness.j
 import select from "./select.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 
-const SELECT = { meta: { id: "scene.select", activities: ["edit"] }, module: select };
+const SELECT = { meta: { id: "scene.select" }, module: select };
 const group = (name, parent = null, extra = {}) => ({ kind: "group", name, group: parent, visible: true, opacity: 1, ...extra });
 const layer = (name, grp, extra = {}) => object({ name, group: grp, ...extra });
 
@@ -289,17 +289,33 @@ describe("scene.select: commands", () => {
   });
 });
 
-describe("scene.select: stopping", () => {
-  it("takes its boxes and presence keys with it when this viewer switches to an activity it isn't in", async () => {
+describe("scene.select: in every activity", () => {
+  it("in play it keeps running and keeps the selection; a plain click selects nothing (it isn't the orbit view's), Select does", async () => {
     await mount({ extensions: [PLAY] });
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
-    await until(() => mineSent().selected === "a");
     await s.activity("play");
-    expect(s.instance("scene.select")).toBeFalsy();
-    expect(s.debug.viewport.layers.get("scene.select")).toBeUndefined();
-    await until(() => !("scene.select" in (lastPresence()?.keys ?? {})));
+    expect(s.instance("scene.select")).toBeTruthy();
+    expect(sel()).toBe("a");
+    hitOn("b");
+    s.click(20, 20);
+    expect(sel()).toBe("a");
+    hitOn(null);
+    s.click(20, 20);
+    expect(sel()).toBe("a");
+    expect(run("select", "b")).toBe(true);
+    expect(sel()).toBe("b");
+    await until(() => mineSent().selected === "b");
+  });
+
+  it("first person (immersive) is no orbit view either: a click selects nothing", async () => {
+    await mount();
+    s.local.swap((m) => ({ ...m, immersive: true }));
+    hitOn("a");
+    s.click(20, 20);
+    expect(sel()).toBeNull();
+    expect(s.instance("scene.select").input.click({ hit: { id: "a" } })).toBe(false);
   });
 });
 

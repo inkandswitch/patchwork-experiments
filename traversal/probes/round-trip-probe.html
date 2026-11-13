@@ -97,7 +97,7 @@ try {
   const objects = () => doc().objects ?? {};
   const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
   const apiOf = () => {
-    for (const id of ["sailing", "arena", "tabletop", "traversal", "scene.use", "scene.hand", "scene.add"]) { const a = dbg()?.host.record(id)?.api; if (a) return a; }
+    for (const id of ["sailing", "arena", "tabletop", "traversal", "scene.use", "scene.carry", "scene.add"]) { const a = dbg()?.host.record(id)?.api; if (a) return a; }
     return null;
   };
   const crew = () => dbg()?.host.record("sailing")?.instance?.debug?.crew ?? null;

@@ -307,7 +307,7 @@ export function attachTo(snapshot, id, parent) {
  * object's group). A group goes only into another group.
  *
  * A reorder within the same place leaves parent and transform alone, so it
- * can't win last-writer-wins over a peer's gizmo move; only `order` changes,
+ * can't win last-writer-wins over a peer's halo move; only `order` changes,
  * spliced so a peer's concurrent insert survives.
  *
  * @param {object} snapshot
@@ -410,7 +410,7 @@ export function writeTransform(o, t) {
 /**
  * Write whole local transforms: one (`id`, `transform`), or several at once as
  * a Map, an object or entries of id → transform (a group moved with the
- * gizmo). Each is normalised and written field by field (writeTransform). Ids
+ * halo). Each is normalised and written field by field (writeTransform). Ids
  * that aren't there are skipped.
  * @returns plan with `ids` (those written), or null when none is there
  */

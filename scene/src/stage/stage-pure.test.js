@@ -110,20 +110,20 @@ describe("the input chain", () => {
     { id: "tabletop", meta: { traits: ["tabletop.seats", "tabletop.hidden"] }, scope: "scene" },
     { id: "arena", meta: { traits: ["arena.target"] }, scope: "objects" },
     { id: "select", meta: {}, scope: "general" },
-    { id: "gizmo", meta: {}, scope: "general" },
+    { id: "halo", meta: {}, scope: "general" },
   ];
   const traits = { card: ["tabletop.hidden"], crate: ["arena.target"], table: [] };
   const sceneTraits = ["tabletop.seats"];
   const holders = (chain) => holdersFor(running, chain, (id) => (id === null ? sceneTraits : (traits[id] ?? [])));
 
   it("an extension placed only on objects hears only events on its objects", () => {
-    expect(chainOrder({ running, holders: holders([]) })).toEqual(["tabletop", "select", "gizmo"]);
-    expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "gizmo"]);
+    expect(chainOrder({ running, holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
+    expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "halo"]);
   });
 
   it("armed, then the widget's owner, then the holders nearest first, then the general ones — each once", () => {
-    expect(chainOrder({ running, armed: "select", widgetOwner: "gizmo", holders: holders(["card"]) })).toEqual(["select", "gizmo", "tabletop"]);
-    expect(chainOrder({ running, armed: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "gizmo"]);
+    expect(chainOrder({ running, armed: "select", widgetOwner: "halo", holders: holders(["card"]) })).toEqual(["select", "halo", "tabletop"]);
+    expect(chainOrder({ running, armed: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
   });
 
   it("holders: the nearest link up the hit chain with one of the extension's traits, the scene last (id null)", () => {
