@@ -195,10 +195,11 @@ export default function MachineTool(handle, element) {
       }
       await sound.resume();
     } }, "🔊 Sound");
-    const pause = el("button", { onclick: () => (host.clock?.running?.() ? host.pause() : host.resume()) }, "Pause");
-    root.append(
+    const pause = el("button", { onclick: () => (host.clock?.running?.() ? host.pause() : host.resume()) }, "⏸ Pause");
+    const stopped = el("div", { class: "stopped" });
+    root.replaceChildren(
       el("header", {}, el("strong", {}, doc.title ?? "Machine"), seats, el("span", { class: "grow" }), soundBtn, pause),
-      el("div", { class: "stage" }, canvas),
+      el("div", { class: "stage" }, canvas, stopped),
       el("footer", {}, el("span", { class: "help" }, HELP[kind]), info),
     );
     canvas.addEventListener("click", () => {
@@ -272,10 +273,12 @@ export default function MachineTool(handle, element) {
         lastInfo = now;
         const s = host.status, st = host.stats ?? {};
         const running = host.clock?.running?.();
-        pause.textContent = running ? "Pause" : "Paused";
+        pause.textContent = running ? "⏸ Pause" : "▶ Resume";
+        const anyone = holders().some(Boolean);
+        stopped.hidden = !!running;
+        stopped.textContent = anyone ? "Paused" : "Stopped while nobody plays: take a port above (P1: play) to start";
         info.textContent = [
           `tick ${host.tick}`,
-          running ? null : "time stands still until someone plays",
           host.loading ? "catching up…" : null,
           st.rewinds ? `${st.rewinds} rollbacks` : null,
           s.fault ? `engine fault at ${s.fault.tick}` : null,
