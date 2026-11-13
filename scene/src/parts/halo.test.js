@@ -203,7 +203,9 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   };
   s.holds = [];
   s.releases = [];
-  api.pose = { hold: (id, t) => s.holds.push([id, t]), release: (id, o) => s.releases.push([id, o ?? {}]) };
+  // `s.refuse`: ids something here holds ahead of the halo (holds.js), whose holds don't stand
+  s.refuse = new Set();
+  api.pose = { hold: (id, t) => (s.holds.push([id, t]), !s.refuse.has(id)), release: (id, o) => s.releases.push([id, o ?? {}]) };
   s.halo = () => s.instance("scene.halo");
   s.select = async (id) => {
     s.local.swap((m) => ({ ...m, selected: id }));
@@ -331,6 +333,24 @@ describe("scene.halo on the stage", () => {
     await settle();
     expect(s.holds).toEqual([]);
     expect(s.doc().objects.a.transform.position).toEqual([0, 0, 0]);
+  });
+
+  it("something here holding it ahead (a roll, a glide): refused at the first or a later move, it goes back and writes nothing", async () => {
+    for (const at of [0, 1]) {
+      await mount({ objects: { a: object() } });
+      await s.select("a");
+      const { session, p } = pressOn(handle("move", 0));
+      for (let i = 0; i < 2; i++) {
+        if (i === at) s.refuse.add("a");
+        session.move(ev("move", p.x + 10 * (i + 1), p.y));
+      }
+      session.end(ev("move", p.x + 20, p.y));
+      await settle();
+      expect(s.doc().objects.a.transform.position).toEqual([0, 0, 0]);
+      expect(s.releases).toEqual([["a", {}]]);
+      s.unmount();
+      s = null;
+    }
   });
 
   it("a group: its members move together from its box, in one change", async () => {

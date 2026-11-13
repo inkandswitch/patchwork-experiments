@@ -251,7 +251,7 @@ export default {
             stopSpin?.();
             stopSpin = null;
           }
-          api.pose.hold(id, frame.pose(held()));
+          if (!api.pose.hold(id, frame.pose(held()))) refused();
         });
       }
 
@@ -260,8 +260,17 @@ export default {
         if (!l || done) return;
         land = l;
         spinning();
-        api.pose.hold(id, frame.pose(held()));
+        if (!api.pose.hold(id, frame.pose(held()))) return refused();
         showRing(l, frame);
+      }
+
+      // Something here holds it ahead of the carry (another extension's act,
+      // a roll or a glide: not a process, which gives way): the hold is
+      // refused, so it was never in our hands. It goes back, nothing written.
+      function refused() {
+        if (done) return;
+        session.cancel();
+        api.notify("Something else is moving that.", "info");
       }
 
       // A peer picked it up before we did (both grabbed it at once): theirs
@@ -364,11 +373,13 @@ export default {
           if (!doc().objects?.[id] || api.heldBy(id) != null) return end(null);
           t += dt / TURN_OVER;
           if (t >= 1) return end(to);
-          api.pose.hold(id, frame.pose(flipAt(W0, to, t, lift)));
+          // something here holds it ahead of the flip: theirs, nothing written
+          if (!api.pose.hold(id, frame.pose(flipAt(W0, to, t, lift)))) end(null);
         }),
       );
-      api.pose.hold(id, frame.pose(W0));
-      return true;
+      if (api.pose.hold(id, frame.pose(W0))) return true;
+      end(null);
+      return false;
     }
 
     // ─── commands ───────────────────────────────────────────────────────────

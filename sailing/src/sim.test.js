@@ -424,6 +424,29 @@ describe("createSim on a stage", () => {
     expect(a.sim.read(ids.hull).speed).toBeLessThan(0.3);
   });
 
+  it("held by a person, she isn't stepped: put back (not landed), she goes on from where she was taken, still moving", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const a = play(w.join("A"));
+    const bApi = w.join("B");
+    play(bApi);
+    w.tick(1 / 60, 6 * 60);
+    const before = heldAt(w, ids.hull).position;
+    const speed = a.sim.read(ids.hull).speed;
+    expect(speed).toBeGreaterThan(0.5); // under way: three seconds stepped would move her metres
+    expect(bApi.pose.hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(true);
+    w.tick(1 / 60, 3 * 60);
+    expect(w.holds.get(ids.hull).session).toBe("B");
+    // Escape: put back, the doc unchanged (no move for movedByEditor to see)
+    bApi.pose.release(ids.hull);
+    w.tick(1 / 60, 1);
+    expect(w.holds.get(ids.hull).session).toBe("A");
+    const after = heldAt(w, ids.hull).position;
+    // at most the frame before the refusal was heard and the frame after the release: a few centimetres
+    expect(Math.hypot(after[0] - before[0], after[2] - before[2])).toBeLessThan(3 * speed / 60 + 0.01);
+    expect(a.sim.read(ids.hull).speed).toBeGreaterThan(speed * 0.7);
+  });
+
   it("a hull at the helm doesn't yield: nobody takes it from her helmsman's ship", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });

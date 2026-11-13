@@ -1,7 +1,10 @@
 // World time for one doc (TOOLS.md §7, "World time and processes").
 //
 // A doc has one clock, `doc.clock = { running, t, by? }` (absent: running
-// from 0), and the processes the extensions in its stage register: a sea, a
+// from 0), made with the doc (the scene datatype's init, STAGE.md "Shared
+// maps") and only ever written field by field, so a pause and a checkpoint
+// made at once both keep what they wrote; and the processes the extensions
+// in its stage register: a sea, a
 // ship's physics, a door closing itself. World time passes only while a view
 // computes it: one holds the doc's "clock" claim, under the usual claim rules
 // (STAGE.md, "Claims"), and steps every process; the others follow. Nobody
@@ -23,7 +26,8 @@
 //   process saves only what it still holds. Each object whose transform a
 //   save wrote is stamped `saved: t`, so a process can tell a write that
 //   moved an object (the halo, the inspector, a paste: transform changed,
-//   stamp not) from a checkpoint landing late (both changed): `movedBy`.
+//   stamp not) from a checkpoint landing late (both changed): STAGE.md,
+//   "World time"; sailing's movedByEditor is one reading of it.
 // - **Followers.** The computer puts `{ t, at }` (its t at its Date.now) in
 //   presence at CLOCK_HZ. A follower runs its t toward the computer's at the
 //   moment whose holds this view is drawing (presence.shownAt), so a hull
@@ -32,7 +36,11 @@
 //   With no computer a view's t is `clock.t`, still.
 // - **Paused.** t is the larger of this view's and `clock.t`: once the
 //   computer's checkpoint arrives, every view has the same t (none has passed
-//   it, above). Kept processes aren't stepped; no view computes.
+//   it, above). Kept processes aren't stepped; no view computes. Two pauses
+//   made at once (the computer's and a follower's) each write their t, and
+//   the merge keeps one: if it kept the follower's, the view that computed
+//   writes what it wrote again, so every view meets at the computer's t,
+//   which none has passed.
 // - **Replicated processes** (`replicated: true`) are stepped by every view
 //   that runs them, at its own t, on the same grid: a deterministic engine
 //   every present peer runs from a shared input log (machine/HOST.md). They
@@ -127,26 +135,24 @@ export function docTime(t) {
   return k / 1e6 >= t ? k / 1e6 : (k + 1) / 1e6;
 }
 
+/**
+ * Write these fields of the doc's clock into a draft, one by one (never the
+ * map whole: a pause and a checkpoint at once both keep theirs). The map is
+ * made with the doc; making it here is a fallback for a doc made without it,
+ * which two views could do at once and lose one's write.
+ */
+function setClock(d, fields) {
+  if (!d.clock || typeof d.clock !== "object") d.clock = { running: true, t: 0 };
+  for (const [k, v] of Object.entries(fields)) if (d.clock[k] !== v) d.clock[k] = v;
+}
+
 /** The index of the last grid point at or before t. Pure. */
 export const gridIndex = (t) => Math.floor(t / STEP_S + 1e-9);
 /** The world time of grid point k. Pure. */
 export const gridTime = (k) => k * STEP_S;
 
-/**
- * Was this object moved by something other than a checkpoint since `seen`
- * (its transform and `saved` stamp as a process last saw them)? A
- * checkpoint writes both; a move (the halo, the inspector, a paste, a carry)
- * only the transform. So a late checkpoint, landing after another view took
- * over, isn't taken for a move. Pure.
- * @param {{ transform?: object, saved?: number } | null | undefined} o  the object as the doc has it now
- * @param {{ transform: string, saved: number | null }} seen  transformKey(o.transform) and o.saved as last seen
- */
-export function movedBy(o, seen) {
-  return transformKey(o?.transform) !== seen.transform && (fin(o?.saved) ? o.saved : null) === seen.saved;
-}
-
 /** A doc transform as a comparable string. Pure. */
-export function transformKey(t) {
+function transformKey(t) {
   const v = (a, n) => [0, 1, 2].map((i) => Math.round((Number(a?.[i]) || 0) * n) / n);
   return JSON.stringify([v(t?.position, 1e6), v(t?.rotation, 1e6), Math.round((Number(t?.scale) || 1) * 1e6) / 1e6]);
 }
@@ -172,6 +178,7 @@ export function createClock(env) {
   let t = readClock(env.doc()).t;
   let lastNow = null;
   let nextCheckpoint = Infinity;
+  let wrote = null; // the t this view's last checkpoint wrote (only a computer checkpoints)
   let heard = null; // { session, t, at, heardAt }: the newest sample from the computer
   let followingSince = null; // when this view began following the current computer (ms)
   let status = null;
@@ -195,12 +202,12 @@ export function createClock(env) {
 
   // ─── checkpoints ──────────────────────────────────────────────────────────
 
-  /** Write t and these processes' saves into a draft, stamping what they moved. */
-  function writeCheckpoint(d, list, clock = null) {
+  /** Write t and these processes' saves into a draft, stamping what they moved; with `fields`, those too (a pause). */
+  function writeCheckpoint(d, list, fields = null) {
     t = docTime(t);
-    if (clock) d.clock = { ...clock, t };
-    else if (!d.clock || typeof d.clock !== "object") d.clock = { running: true, t };
-    else if (!(fin(d.clock.t) && d.clock.t >= t)) d.clock.t = t;
+    wrote = t;
+    if (fields) setClock(d, { ...fields, t });
+    else if (!(fin(d.clock?.t) && d.clock.t >= t)) setClock(d, { t });
     if (!list.length) return;
     const objects = d.objects && typeof d.objects === "object" ? d.objects : null;
     const before = new Map();
@@ -209,9 +216,9 @@ export function createClock(env) {
     if (objects) for (const [id, o] of Object.entries(objects)) if (o && before.has(id) && before.get(id) !== transformKey(o.transform)) o.saved = t;
   }
 
-  function checkpoint(list = [...processes], clock = null) {
+  function checkpoint(list = [...processes], fields = null) {
     try {
-      env.change((d) => writeCheckpoint(d, list, clock));
+      env.change((d) => writeCheckpoint(d, list, fields));
     } catch (err) {
       console.warn("[scene] couldn't write the clock's checkpoint", err);
     }
@@ -305,7 +312,12 @@ export function createClock(env) {
       if (holder && !holder.mine) lost();
       else if (!c.running || !able().ok) letGo();
     } else if (c.running && !holder && able().ok) startComputing();
-    if (!release && !(c.running && holder && !holder.mine)) t = Math.max(t, c.t);
+    if (!release && !(c.running && holder && !holder.mine)) {
+      // paused, and the doc's t is short of what this view wrote computing (it paused as someone
+      // else did, and the merge kept their t): ours again
+      if (!c.running && wrote != null && wrote > c.t && env.writable()) checkpoint([]);
+      t = Math.max(t, readClock(env.doc()).t);
+    }
   }
 
   /**
@@ -367,19 +379,17 @@ export function createClock(env) {
     const c = readClock(env.doc());
     if (!c.running) return;
     t = docTime(Math.max(t, c.t));
-    const clock = { running: false, t, by: env.viewer ?? null };
+    const fields = { running: false, t, by: env.viewer ?? null };
     if (release) {
       // the computer pauses with its checkpoint, in one change, and lets go
       const r = release;
       release = null;
-      checkpoint([...processes], clock);
+      checkpoint([...processes], fields);
       stopKept();
       r();
     } else
       try {
-        env.change((d) => {
-          d.clock = clock;
-        });
+        env.change((d) => setClock(d, fields));
       } catch (err) {
         console.warn("[scene] couldn't pause the clock", err);
       }
@@ -392,9 +402,7 @@ export function createClock(env) {
     if (c.running) return;
     t = docTime(Math.max(t, c.t));
     try {
-      env.change((d) => {
-        d.clock = { running: true, t, by: env.viewer ?? null };
-      });
+      env.change((d) => setClock(d, { running: true, t, by: env.viewer ?? null }));
     } catch (err) {
       console.warn("[scene] couldn't resume the clock", err);
     }

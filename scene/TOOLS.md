@@ -273,8 +273,8 @@ pause can't deadlock a roll. Station input is actor time, read from
 presence (`sim.js:389-395`); the sim integrates it on world time.
 
 ```js
-doc.clock = { running, t, by? }                  // absent: running from 0
-api.clock = { t(), running(), pause(), resume(),
+doc.clock = { running, t, by? }                  // made with the doc; written field by field
+api.clock = { t(), running(), computer(), pause(), resume(),
               process({ start(t), step(dt, t), save(d), stop(), replicated? }) → remove }
 pose.hold(id, transform, { yields })             // false while a hold ahead of it stands
 ```
@@ -289,6 +289,14 @@ the stage (below). A `step` moves world state only; what a process shows
 where the steps left it: a slow frame is many steps (at 3 fps, fifteen),
 and sailing holding her poses at each step cost as much again as her
 physics and dropped a headless probe from 3.1 to 2.4 frames a second.
+`computer()` (`{ viewer, session, mine }` or null) joined too: sailing's
+followers read the ships the computer publishes from its presence, and
+asking who computes is the clock's to answer, not a reading of the
+stage's claim. `doc.clock` is made with the doc (the scene datatype's
+`init`, STAGE.md "Shared maps") and the stage writes its fields one by
+one: the first checkpoint of a doc without one made the map, and a pause
+made at the same moment made another, so the merge could keep the
+checkpoint's and lose the pause.
 
 - **Computing.** The stage holds one `"clock"` claim per doc, under the
   usual rules. A view is eligible when its stage acts (not a pin or
@@ -337,7 +345,10 @@ physics and dropped a headless probe from 3.1 to 2.4 frames a second.
   step H7 lets a view take after it has seen paused.
 - **One clock per doc.** Pausing the boat doesn't pause a linked game; a
   pin never computes. A concurrent pause and resume settle by last writer
-  on `clock.running`, and the chip names who won.
+  on `clock.running`, and the chip names who won. Two pauses at once (the
+  computer's and a follower's) each write a `t`; if the merge keeps the
+  follower's, the view that was computing writes its own again, so paused,
+  every view still meets at one t.
 
 | Case | What happens |
 |---|---|
@@ -365,7 +376,17 @@ hold by another extension here stands unless it yields and the new one
 doesn't; a peer's that ranks ahead is a refusal, and takes a hold we had,
 so its holder's next `hold` returns false); `presence.js` `ranksAhead` is
 the order, with `yields` on the wire. Sailing's motion-based
-`movedByEditor` reads the `saved` stamp now.
+`movedByEditor` reads the `saved` stamp now. Every holder reads what
+`hold` answers, and a refused hold is an object it doesn't have: sailing
+doesn't step a hull whose hold was refused (she waits where she was
+taken, with her motion: put back she goes on from there, put down the
+stamp rule starts her at rest where she landed); a door's motion lets go
+without writing (a carry or a halo drag in the opener's own view takes the
+door, which `heldBy`, a peer's, never sees); carry and the halo put back
+what something here holds ahead of them (a roll, a glide). Dice, the cup,
+tabletop's glide and the stations' wheel still don't read it: each holds
+first, ahead of a carry, so only one started under a carry would be
+refused unheard.
 
 ## 8. Permissions
 
@@ -483,22 +504,31 @@ and Dee still walks. To try his changes, he plays a copy.
   (writable, read-only, missing the package: 27 configs), each with its own
   Automerge replica merged every frame, the first two joined: every
   sequence of up to 3 of join, leave, crash, hide, pause, resume, save,
-  applied to whichever view each may apply to (17,673 sequences, ~35 s),
+  applied to whichever view each may apply to (17,673 sequences, ~10 s),
   checked after every event: ≤1 computer, only an able one, exactly one
   while the world runs and someone can, none paused, a kept process never
   stepped while paused or by a non-computer, t never back in any view, a
   joiner starting at `clock.t`, and, paused with no crash, every view at
-  `clock.t`. `H7_DEPTH=4` runs every sequence of up to 4 (RESULT4). The
-  note asked for ≤5; each sequence replays real Automerge merges, so the
-  default depth is 3 and depth 5 (some 2 million sequences) is out of a
-  suite's reach: the gap is recorded here rather than closed with random
-  sampling. Plus replicated processes (both views step one on the same
+  `clock.t`. The note asks for ≤5, which is run but not by default:
+  `H7_DEPTH=4` is 131,568 sequences (~95 s) and `H7_DEPTH=5` 961,400
+  (~14 min, one worker), each count pinned, and both pass (2026-11-13).
+  Each world frees its Automerge replicas when it's done (the deep runs
+  used to wear out Automerge's wasm memory and fail on it, not on an
+  invariant), and the search yields to the event loop so vitest's worker
+  stays answerable. Plus pairs made at once, unmerged: every order of
+  every set of the computer's checkpoint, its pause and a follower's pause
+  (15), merged: no pause lost, and paused, every view at the larger t.
+  Plus replicated processes (both views step one on the same
   grid; paused, both end on the same step), a stall, and the cold start.
 - **H8**: dice, lots and the cup run on actor time and liveness only, so a
   pause can't reach them as long as nothing in the package reads the world
   clock; `dice/src/h8.test.js` holds every source file to that (it fails on
-  any `api.clock`, `claims.clock` or `doc.clock`), which makes each of
-  their protocol tests a test paused at every step. Joints' slide is run
+  any `api.clock`, `claims.clock` or `doc.clock`). The one channel a pause
+  does use is a doc change (the clock's fields), which runs every view's
+  `update()` again: a roll is run paused at each of its 76 frames, from the
+  press to the told landing, and lands, writes, lets go and is told the
+  same as unpaused (`dice/src/extension.test.js`). The cup and lots are
+  held only by the static check. Joints' slide is run
   for real: a plain cycle and two pressing at once, both doors, the world
   paused 0.5 s or 3 s from every 250 ms of the first 12 s (392 cases), the
   same writes by the same views as unpaused, each open landing when it
@@ -571,7 +601,14 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   `here` key, the opener's duty and the grace period went: the computer
   closes every door. Activities remain: a view in edit has no sailing
   process, so alone in edit the sea now stands still (it ran on a private
-  clock), and editing still stops the ships until step 8.
+  clock), and editing still stops the ships until step 8. And any process
+  makes a view eligible, but a kept process is stepped only by the
+  computer: an editor whose only process is joints' (a self-closing hatch)
+  who took the claim first computes for a sailor too, and the sailor's
+  ships stand still for as long as the editor is here and visible. That is
+  this step's gap, not the design's: once activities go (step 8) every view
+  with every listed package runs the same extensions and so the same
+  processes, and eligibility already asks for every listed package.
 - **8. Activities and `requires` go**, with `always` and `general: false`.
   Only now does editing stop freezing the sea, with pause to replace it.
   *Proves:* H1, H2.

@@ -97,7 +97,7 @@ function simulate({ door, latency, events, hidden = [], until = 30_000, pauses =
           starts.push({ at: T, W, by: session, to: v.replica.trait.at === "open" ? "closed" : "open" });
         }
         v.shown = t.position;
-        if (T - v.mine.sent < POSE_MS) return;
+        if (T - v.mine.sent < POSE_MS) return true;
         v.mine.sent = T;
         const since = v.mine.since;
         send((o) => {
@@ -106,6 +106,7 @@ function simulate({ door, latency, events, hidden = [], until = 30_000, pauses =
           const was = o.heard.get(session);
           if (!was || was.landed || was.since === since) o.heard.set(session, { since, landed: false });
         });
+        return true;
       },
       release(id, { landed = false } = {}) {
         if (!v.mine) return;
@@ -293,6 +294,51 @@ describe("the bound is real", () => {
     const latency = MAX_LATENCY_MS - 10;
     const { writes } = simulate({ door: FAST, latency, events: [joining("B", 0), press("B", 100), press("A", 100 + latency - 10)] });
     expect(writes.filter((w) => w.to === "open").map((w) => w.by)).toEqual(["A"]);
+  });
+});
+
+describe("taken here (a person's hold in the opener's own view: api.pose.hold refuses the motion's)", () => {
+  // one view, its doc and its holds; the hold stands for the first `stands` calls, then a person has it
+  function one(stands) {
+    let T = 0;
+    let calls = 0;
+    const doc = { objects: { door: { transform: { position: [10, 2, 3], rotation: [0, 0, 0], scale: 1 }, traits: { [KEY]: { ...DOOR } } } } };
+    const log = { changes: 0, releases: [] };
+    const slides = createSlides({
+      now: () => T,
+      t: () => 0,
+      doc: () => doc,
+      change: () => log.changes++,
+      hold: () => calls++ < stands,
+      release: (id, o) => log.releases.push(o?.landed === true),
+      heldBy: () => null, // nobody elsewhere: the taking is this view's own
+    });
+    const started = slides.move("door");
+    while (T < 10_000) {
+      T += TICK;
+      slides.frame();
+    }
+    return { started, log, slides, frames: calls };
+  }
+  const lands = Math.ceil(Math.max(travelTime(readSlide(DOOR)) * 1000, HEAR_MS) / TICK);
+  it("refused from the start: no motion", () => {
+    const { started, log, slides } = one(0);
+    expect(started).toBe(false);
+    expect(log.changes).toBe(0);
+    expect(slides.moving()).toBe(false);
+    expect(slides.verb("door").label).toBe("Open");
+  });
+  it(`taken at every frame before it lands (${lands}): it lets go and writes nothing; untaken, it lands once`, () => {
+    for (let k = 1; k <= lands; k++) {
+      const { started, log, slides } = one(k);
+      expect(started).toBe(true);
+      expect(log.changes).toBe(0);
+      expect(log.releases).toEqual([false]);
+      expect(slides.moving()).toBe(false);
+    }
+    const { log } = one(Infinity);
+    expect(log.changes).toBe(1);
+    expect(log.releases).toEqual([true]);
   });
 });
 

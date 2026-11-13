@@ -3,8 +3,9 @@
 // and liveness (Date.now: THROW, TOLD, lots' deadlines), never on the doc's
 // world time, so pausing the world can't reach any of their protocols: by
 // construction, as long as nothing here reads the world clock. This holds
-// them to that, so every protocol test in this package is a test paused at
-// every step.
+// them to that. The one channel a pause does use, a doc change (the clock's
+// fields) that runs every view's update() again, is run for real on a roll
+// in extension.test.js ("H8: a pause, at every frame of a roll").
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

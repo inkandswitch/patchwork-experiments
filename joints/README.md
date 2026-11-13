@@ -85,8 +85,10 @@ the verb is there but disabled.
   door left open has the rest of its wait to run when someone arrives
   (where it used to slam shut on arrival).
 - **A person first.** The motion's holds yield, as a process's do: someone
-  carrying or dragging the part stops the motion, which lets go without
-  writing.
+  carrying or dragging the part, in another view or this one, stops the
+  motion, which lets go without writing. A peer's hold shows in `heldBy`;
+  one in this view only as `api.pose.hold` refusing the motion's next hold,
+  so the motion reads what every hold answers.
 - **Two at once.** Two views starting at the same moment both hold it; the
   stage ranks the holds the same way in every view (STAGE.md, `heldBy`), and
   the one told that a peer holds it first lets go without writing. The one

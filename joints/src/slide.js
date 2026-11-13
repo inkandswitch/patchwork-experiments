@@ -114,7 +114,7 @@ const same = (a, b) => [0, 1, 2].every((i) => Math.abs(num(a?.[i], 0) - num(b?.[
  * @property {() => number} t            s, the doc's world time as this view has it (api.clock.t)
  * @property {() => { objects: object }} doc     the scene doc as this view has it
  * @property {(fn: (d: object) => void) => void} change
- * @property {(id: string, transform: object) => void} hold
+ * @property {(id: string, transform: object) => boolean} hold   true when the hold stands (false: someone ahead of it holds the part)
  * @property {(id: string, o?: { landed?: boolean }) => void} release
  * @property {(id: string) => string | null} heldBy     a peer holding it ahead of this view
  */
@@ -166,14 +166,16 @@ export function createSlides(env) {
       t0: env.t(),
     };
     moving.set(id, m);
-    hold(id, m);
-    return true;
+    if (hold(id, m)) return true;
+    // someone here holds it ahead of a motion (a person carrying it): no motion
+    abandon(id);
+    return false;
   }
 
-  /** Hold it where it is now, by the clock. */
+  /** Hold it where it is now, by the clock: true when the hold stands. */
   function hold(id, m) {
     const u = m.duration > 0 ? Math.max(0, Math.min(1, (env.now() - m.started) / m.duration)) : 1;
-    env.hold(id, { position: m.fromPos.map((v, i) => v + (m.toPos[i] - v) * u), rotation: m.rotation, scale: m.scale });
+    return env.hold(id, { position: m.fromPos.map((v, i) => v + (m.toPos[i] - v) * u), rotation: m.rotation, scale: m.scale }) === true;
   }
 
   /** Let go of a motion without writing anything: the part is where the doc has it. */
@@ -187,12 +189,16 @@ export function createSlides(env) {
     for (const [id, m] of [...moving]) {
       const o = objectOf(id);
       const s = slideOf(id);
-      // gone, or someone else put it to rest, or a peer holds it ahead of us: theirs
+      // gone, or someone else put it to rest, or a peer's hold is heard ahead of ours: theirs
       if (!o || !s || s.at !== m.from || !same(o.transform?.position, m.fromPos) || env.heldBy(id) != null) {
         abandon(id);
         continue;
       }
-      hold(id, m);
+      // taken (a person carrying or dragging it, here or there, ranks ahead of a motion's hold): theirs, and nothing written
+      if (!hold(id, m)) {
+        abandon(id);
+        continue;
+      }
       if (env.now() < m.lands) continue;
       // there, and long enough for a contest to have been heard: the one write
       moving.delete(id);

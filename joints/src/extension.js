@@ -18,7 +18,8 @@
 //   nobody present, doors stay open (TOOLS.md §7).
 //
 // The motion's holds yield (a process's, giving way to a person's): someone
-// carrying the door stops it, and the act lets go.
+// carrying the door, in this view or another, stops it, and the act lets go
+// without writing (api.pose.hold says the hold no longer stands).
 
 import { KEY, REACH, createSlides, selfClosing } from "./slide.js";
 
@@ -28,7 +29,7 @@ function create(api) {
     t: () => api.clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),
-    hold: (id, t) => api.pose.hold(id, t, { yields: true }),
+    hold: (id, t) => api.pose.hold(id, t, { yields: true }), // false: taken (a person's hold, here or there)
     release: (id, o) => api.pose.release(id, o),
     heldBy: (id) => api.heldBy(id, { yields: true }),
   });

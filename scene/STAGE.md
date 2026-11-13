@@ -418,7 +418,9 @@ is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
-a fallback. `init` makes `assets` too, as do tabletop and the TTS importer, and
+a fallback. The same for `clock` (`{ running: true, t: 0 }`, "World time"):
+made with the doc, written field by field by the stage, which makes it only
+as a fallback for a doc made without it. `init` makes `assets` too, as do tabletop and the TTS importer, and
 nothing else ever does: a scene without one is from before `assets` and is
 republished, not patched. The same goes for the `packages` list (see
 "Packages"): made by `init` and by those two, appended to by the stage,
@@ -814,7 +816,7 @@ How the camera parts behave:
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
-| `clock` | `{ t(), running(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time. See "World time" |
+| `clock` | `{ t(), running(), computer(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time; `computer()` is who computes it (`{ viewer, session, mine }` or null). See "World time" |
 
 How poses and loops behave:
 - **Holding a pose.** `pose.hold(id, transform)` shows an object at that
@@ -829,7 +831,11 @@ How poses and loops behave:
   it yields and the new one doesn't; across views, a hold is refused while
   a peer's ranks ahead, and one this view has goes as soon as a peer's does
   (its holder's next `hold` returns false). `src/stage/holds.js`; the order
-  is `presence.js` `ranksAhead`. There is no silent last-hold-wins.
+  is `presence.js` `ranksAhead`. There is no silent last-hold-wins. A
+  holder reads the answer every time: one whose hold is refused doesn't
+  have the object, so it writes nothing for it (carry and the halo put it
+  back, a door's motion lets go, a ship's hull isn't stepped while someone
+  else holds it).
 - **Peers play holds back smoothly.** A peer doesn't snap to each pose it
   hears. It plays the stream about 1.5 send intervals late (75 ms at 20 Hz),
   drawing the pose between the two either side of that moment (position and
@@ -897,7 +903,8 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
 ### World time
 
 The doc has one clock, `doc.clock = { running, t, by? }` (absent: running
-from 0), and its processes: what the extensions in its stage register with
+from 0; made with the doc, see "Shared maps"), and its processes: what the
+extensions in its stage register with
 `api.clock.process` (a sea and its ships, a door closing itself). TOOLS.md
 §7 is the design; `src/stage/clock.js` the whole of it.
 
@@ -934,11 +941,20 @@ from 0), and its processes: what the extensions in its stage register with
   late checkpoint both, so a process can tell them apart (sailing restarts
   a hull moved by hand at rest). `saved` is the stage's field, like
   `claims`.
-- **Pause and resume.** Anyone who may write: `pause()` writes the whole
-  clock `{ running: false, t, by: viewer }` (the computer in the same change
-  as its checkpoint), `resume()` `{ running: true, t, by }`; two at once
-  settle by last writer, and the chip names who won. One clock per doc:
-  pausing a host doesn't pause a linked doc's processes (step 12).
+- **Pause and resume.** Anyone who may write: `pause()` writes the
+  clock's fields `running: false, t, by: viewer` (the computer in the same
+  change as its checkpoint), `resume()` `running: true, t, by`. The stage
+  writes `doc.clock` field by field, never whole, so a pause made as a
+  checkpoint lands keeps its `running`; two pauses at once each write a t
+  and the merge keeps one, and if it kept the follower's, the view that was
+  computing writes its own again (no view has passed it), so all meet
+  there. Two resumes or two pauses settle `by` by last writer, and the chip
+  names who won. One clock per doc: pausing a host doesn't pause a linked
+  doc's processes (step 12).
+- **Who computes, asked.** `api.clock.computer()` is `{ viewer, session,
+  mine }` for the view computing now, or null: a process that follows
+  (sailing's ships, reading what the computer publishes in presence) asks
+  this, not the claim.
 - **Three times.** World time is only for what pauses with the world
   (processes, a door's wait). An *act* (a die's tumble, a carry, a door's
   motion once begun) runs on the wall, and finishes during a pause;

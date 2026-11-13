@@ -2088,6 +2088,8 @@ export default function Stage(handle, element) {
       clock: Object.freeze({
         t: () => clock.t(),
         running: () => clock.running(),
+        /** who computes this doc's world time: { viewer, session, mine }, or null (nobody: no time passes) */
+        computer: () => claimedBy(null, CLOCK),
         pause: () => clock.pause(),
         resume: () => clock.resume(),
         process: (spec) => {

@@ -1699,8 +1699,11 @@ them (peers keep showing her there until their doc agrees).
 **A person and a process on one hull.** The hull's hold yields (a
 process's, giving way to a person's) unless someone is at the helm: so
 someone may carry or drag a ship nobody steers, the process's holds are
-refused meanwhile, and she starts again at rest where she's put down; one
-at the helm is driven, and nobody takes her. A transform that changes in
+refused meanwhile and her physics isn't stepped (she waits where she was
+taken, with her motion), and she starts again at rest where she's put
+down; put back instead (Escape), she goes on from where she was taken, not
+from where hidden physics would have drifted her. One at the helm is
+driven, and nobody takes her. A transform that changes in
 the doc without the stage's `saved` stamp changing with it was moved by
 something other than a checkpoint (the halo, the inspector, a carry): she
 starts again from there, at rest, and her anchor is dropped again. One

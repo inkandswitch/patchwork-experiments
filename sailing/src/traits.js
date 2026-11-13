@@ -37,8 +37,6 @@ export const EXIT = "traversal.exit";
 /** The stations' traits, and what each is called on a ship (ctx.sim.stationsOf). */
 export const STATIONS = Object.freeze({ helm: HELM, sail: SAIL, anchor: ANCHOR, mainsheet: MAINSHEET, jib: JIB });
 
-/** The doc's clock claim, the stage's: the view holding it computes world time and steps the ships (scene TOOLS.md §7). */
-export const CLOCK = "clock";
 /** A station's claim: who is working it. */
 export const STATION = "station";
 /**

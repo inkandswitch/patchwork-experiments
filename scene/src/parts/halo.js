@@ -262,7 +262,14 @@ function create(api) {
         return;
       }
       drag.poses = poses;
-      for (const [id, t] of poses) api.pose.hold(id, t);
+      // something here holds one ahead of us (another extension's act, not a process giving way): it goes back
+      let refused = false;
+      for (const [id, t] of poses) if (!api.pose.hold(id, t)) refused = true;
+      if (refused) {
+        session.cancel();
+        api.notify("Something else is moving that.", "info");
+        return;
+      }
       api.invalidate();
     },
     end() {

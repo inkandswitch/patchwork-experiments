@@ -16,6 +16,9 @@ export const SceneDatatype = {
     // the packages its contents come from, as { url } (STAGE.md, "Packages"):
     // the stage adds to it, and offers a viewer the ones they don't have
     doc.packages = [];
+    // world time (TOOLS.md §7): the stage only ever writes its fields, so a
+    // pause and a checkpoint made at once both keep theirs
+    doc.clock = { running: true, t: 0 };
     doc.view = { ...DEFAULT_VIEW };
   },
   getTitle(doc) {
