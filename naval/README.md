@@ -45,9 +45,13 @@ profile drawing and the numbers on the right. Units (m / ft) are per viewer.
 - **New from…** loads one of the fixture boats (`src/fixtures/`: sailing's
   stock sloop and eleven real boats from their published figures, the
   Catalina 30 and Laser to the Farr 40 and Nordic Folkboat), or a **first guess from this hull** (`src/firstguess.js`): a whole boat by rules of thumb, with P
-  solved for SA/D and the mast placed for the middle of the lead band. It
-  refuses, with the reason, a hull no mast position balances or that is too
-  heavy to rig by the rules.
+  solved for SA/D and the mast placed for the middle of the lead band. The
+  masthead is capped at 1.60 × LOA (the tallest real boat's) and, where
+  that cuts the SA/D, the guess says so; under SA/D 12.8 (the least real
+  boat's) it refuses, as it does a hull no mast position balances. It
+  reports the helm and doesn't solve for it: the VPP reads the real boats
+  from 3° lee to 5.5° weather, so a helm target would place masts against
+  them.
 - **Helpers** (`src/helpers.js`): move the rig for a helm angle or a lead,
   scale it to an SA/D. Each is one change.
 - **Export contract JSON** builds and validates the contract below.

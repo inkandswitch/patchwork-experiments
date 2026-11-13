@@ -22,7 +22,7 @@ import { computeNumbers } from "./numbers.js";
 import { buildTable } from "./naval/statics.js";
 import { buildDesign } from "./naval/design.js";
 import { polar } from "./naval/vpp.js";
-import { firstGuess } from "./firstguess.js";
+import { firstGuess, RULES } from "./firstguess.js";
 import { LEAD_BANDS, keelFamily } from "./naval/balance.js";
 import { KNOT } from "./naval/units.js";
 
@@ -74,7 +74,7 @@ const PINNED = {
   "folkboat": { leadLE: 16.5, leadWhole: 18.8, leadHc: 13.9, helm: 5.5, fgMast: 3.33 },
   "cal40": { leadLE: 10.4, leadWhole: 22.7, leadHc: 21.7, helm: -2.8, fgMast: 5.42 },
   "contessa32": { leadLE: 15.9, leadWhole: 28.4, leadHc: 26.9, helm: -1.9, fgMast: 4.37 },
-  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2, fgMast: 4.77 },
+  "hr40c": { leadLE: 3.8, leadWhole: 12.7, leadHc: 14.1, helm: 2, fgMast: 4.81 }, // 4.77 before the masthead cap, which binds on her hull (1.60·LOA)
   "dinghy-470": { leadLE: 0.6, leadWhole: 16.6, leadHc: 11.8, helm: -1.8, fgMast: 1.79 },
 };
 const RATCHET = { lead: 0.3, helm: 0.5, mast: 0.03 };
@@ -187,6 +187,23 @@ describe("balance on every real boat: the model's lead and helm beside the real 
       else expect(Math.abs(r.fgMast - p.fgMast), `${r.id} first-guess mast`).toBeLessThanOrEqual(RATCHET.mast);
     }
   }, 120_000);
+
+  it("the first guess's masthead cap and SA/D floor are the fleet's own extremes: every real boat is within both, and each is met by one", () => {
+    const rows = REAL_BOATS.map((f) => {
+      const { n } = numbersOf(f);
+      const saD = n.sections.flatMap((s) => s.rows).find((r) => r.id === "saD").value;
+      return { id: f.id, ratio: n.plan.mast.aboveDatumZ / n.form.loa, saD };
+    });
+    const tallest = rows.reduce((a, b) => (b.ratio > a.ratio ? b : a));
+    const least = rows.reduce((a, b) => (b.saD < a.saD ? b : a));
+    console.log(`masthead/LOA ${rows.map((r) => `${r.id} ${r.ratio.toFixed(3)}`).join(", ")}\nSA/D ${rows.map((r) => `${r.id} ${r.saD.toFixed(1)}`).join(", ")}`);
+    expect(tallest.id).toBe("hr40c");
+    expect(Math.abs(tallest.ratio - RULES.mastHeight.maxOverLoa)).toBeLessThan(0.005);
+    expect(rows.every((r) => r.ratio <= RULES.mastHeight.maxOverLoa)).toBe(true);
+    expect(least.id).toBe("folkboat");
+    expect(Math.abs(least.saD - RULES.mastHeight.minSaD)).toBeLessThan(0.05);
+    expect(rows.every((r) => r.saD >= RULES.mastHeight.minSaD - 0.05)).toBe(true);
+  });
 
   it("the synthetic hull's waterline against the drawings: its forward end is 0.6·(LOA − LWL) aft of the stem, whatever the boat's is", () => {
     // hull.dims has no field for the bow overhang. It doesn't enter the extended-keel lead (CE and CLR are both
