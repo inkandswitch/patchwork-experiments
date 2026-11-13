@@ -180,6 +180,13 @@ describe("the manual clock", () => {
     expect(time.frames()).toBe(7);
     await expect(time.until(() => false, { frames: 3, what: "the door open", state: () => ({ door: "shut" }) })).rejects.toThrow(/not the door open after 3 frames \(0\.05 s\) — \{"door":"shut"\}/);
     expect(time.frames()).toBe(10);
+    // its frames draw only when asked to
+    const drawn = [];
+    const loop = (t, draw) => (drawn.push(draw), time.frame(loop));
+    time.frame(loop);
+    await time.until(() => drawn.length >= 2);
+    await time.until(() => drawn.length >= 4, { draw: true });
+    expect(drawn).toEqual([false, false, true, true]);
     // a condition that throws is not yet true
     let n = 0;
     expect(

@@ -460,6 +460,19 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.done();
   });
 
+  it("the others see who is peeking as soon as the peek reaches them by presence, though the doc doesn't change; and stop seeing it when she stops", () => {
+    const t = table();
+    t.shake();
+    const tags = (s) => t.w.view(s).labels.map((l) => l.text);
+    expect(tags("B")).not.toContain("Alice is peeking");
+    t.run("A", "peek"); // (no flush: nothing in the doc changes, only A's presence)
+    expect(tags("B")).toContain("Alice is peeking");
+    expect(tags("S")).toContain("Alice is peeking");
+    expect(tags("A")).not.toContain("Alice is peeking");
+    t.run("A", "peek"); // Stop peeking
+    expect(tags("B")).not.toContain("Alice is peeking");
+  });
+
   it("a peek is told to the others when the doc bears it out (the holder's cup, down) within a while, never otherwise, and a message saying more than which cup is dropped", () => {
     const t = table();
     t.views.B.x.receive("peeked", { cup: "cup" }, { viewer: "alice", session: "A" });

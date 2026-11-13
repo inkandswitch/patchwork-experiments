@@ -392,6 +392,11 @@ function create(api) {
     }
     labels.set(items);
   }
+  // who is peeking comes by presence, not the doc: draw again whenever it changes, not only on a doc
+  // or local change (which needn't come: a peek writes nothing)
+  api.presence?.watch?.(() => {
+    if (!dead) drawLabels();
+  });
 
   // ── telling the others (ids only; each view words it from its own doc) ──
   function borneOut(w) {

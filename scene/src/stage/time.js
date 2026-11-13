@@ -176,12 +176,13 @@ export function manualTime({ start = MANUAL_EPOCH, frameMs = FRAME_MS, yieldTo =
     },
     /**
      * Step one frame at a time until `pred()` is truthy (asked before each
-     * frame, and after the last) → its value. None of those frames draws (a
-     * picture wants a step(1) after). After `frames` frames it throws, with
+     * frame, and after the last) → its value. Its frames don't draw unless
+     * `draw` (a condition on what's drawn: a label's place on the page);
+     * a picture after wants a step(1). After `frames` frames it throws, with
      * `what` and `state()` in the message: a wait that fails says so, and
      * says what it saw.
      */
-    async until(pred, { frames: most = 600, what = "the condition", state = null } = {}) {
+    async until(pred, { frames: most = 600, what = "the condition", state = null, draw = false } = {}) {
       for (let i = 0; ; i++) {
         let v;
         try {
@@ -199,7 +200,7 @@ export function manualTime({ start = MANUAL_EPOCH, frameMs = FRAME_MS, yieldTo =
           }
           throw new Error(`not ${what} after ${most} frames (${((most * frameMs) / 1000).toFixed(2)} s)${seen}`);
         }
-        time.tick({ draw: false });
+        time.tick({ draw });
         await yieldTo();
       }
     },
@@ -215,5 +216,5 @@ export function manualTime({ start = MANUAL_EPOCH, frameMs = FRAME_MS, yieldTo =
 
 /**
  * @typedef {{ manual: boolean, now(): number, frame(fn: (now: number, draw: boolean) => void): () => void, after(ms: number, fn: () => void): () => void }} Time
- * @typedef {Time & { frameMs: number, tick(o?: { draw?: boolean, still?: boolean }): number, step(n?: number, o?: { draw?: boolean, still?: boolean }): Promise<number>, advance(ms: number, o?: { draw?: boolean }): Promise<number>, until<T>(pred: () => T | Promise<T>, o?: { frames?: number, what?: string, state?: () => any }): Promise<T>, frames(): number, pending(): { frames: number, timers: number }, errors(): any[] }} ManualTime
+ * @typedef {Time & { frameMs: number, tick(o?: { draw?: boolean, still?: boolean }): number, step(n?: number, o?: { draw?: boolean, still?: boolean }): Promise<number>, advance(ms: number, o?: { draw?: boolean }): Promise<number>, until<T>(pred: () => T | Promise<T>, o?: { frames?: number, what?: string, state?: () => any, draw?: boolean }): Promise<T>, frames(): number, pending(): { frames: number, timers: number }, errors(): any[] }} ManualTime
  */
