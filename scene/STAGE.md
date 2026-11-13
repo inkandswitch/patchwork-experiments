@@ -415,10 +415,10 @@ is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer's games among them, and bag's "Put it in a new scene"), so an extension's `if (!d.traits) d.traits = {}` is only ever
-a fallback. `init` makes `assets` too, as does tabletop, and
-nothing else ever does: a scene without one is from before `assets` and is
+a fallback. `init` makes `assets` too, as do tabletop and bag (each
+writing a scene doc whole), and nothing else ever does: a scene without one is from before `assets` and is
 republished, not patched. The same goes for the `packages` list (see
-"Packages"): made by `init` and by those two, appended to by the stage,
+"Packages"): made by `init` and by those, appended to by the stage,
 never created by it.
 
 ## Packages

@@ -60,15 +60,6 @@ async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
 }
 
 /**
- * Run an import. Returns { sceneUrl, report }. Never throws for a missing
- * asset — only for no save at all, or a repo that won't take documents.
- *
- * @param {{ sources: ReturnType<typeof source>[], repo, images, fetch?, settings?, onProgress?, infoUrl?, infoToolId?, now?, sceneImportUrl?, registry? }} o
- *   sceneImportUrl: () → the scene package's importUrl (default: the registry's), for the scene doc's suggestedImportUrl
- *   registry: (type) → the plugin registry of that type (default: the host's), where a keeper for
- *   face-down cards and whoever owns seats are found (made-with.js)
- */
-/**
  * Run an import. Returns { gameUrl, report, game }. Never throws for a
  * missing asset (whatever uses it is drawn without it), only for no save at
  * all, or a repo that won't take documents.
