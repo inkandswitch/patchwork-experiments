@@ -35,8 +35,14 @@
 //    waterline at 2.2 m it is a light, long-ended sloop (LWL 6.39 m of
 //    9.92 m): 2.28 t, D/L 244, Cp 0.558, LCB −4.7% of LWL, one DSYHS
 //    parameter just outside (Cm 0.575 for 0.646: "near"), and the first
-//    guess stands with a lead of 7.0% (the middle of its 5–9% band, the
-//    forestay's tack 2.6 m aft of her long stem) and 3.3° of weather helm.
+//    guess (as of 2026-11-12: the keel by the sourced boats' rule, J 0.38 ×
+//    LOA, the masthead cap, windage and each sail's CE swung in the VPP)
+//    stands with a lead of 7.0% (the middle of its 5–9% band, the
+//    forestay's tack 1.56 m aft of her long stem, a 1.50 m draft), 2.2° of
+//    weather helm and 5.17 kn at 12 kn true, 45°, at her 25° heel limit;
+//    her masthead is under the cap, so SA/D is the rules' 17. The example
+//    published before this (in the shared folder) is the first guess of
+//    2026-11-10, before the keel rule: republish it, and swap its link.
 //    Only the waterline was moved: the geometry is camber's example,
 //    untouched. (Still no production yacht: the lowest freeboard is 1.5 m,
 //    and she is tender, at the 25° heel limit at the reference point.)
