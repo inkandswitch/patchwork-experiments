@@ -1,5 +1,6 @@
-// A piece's parts → triangle meshes, in metres, Y up, the piece standing on
-// y = 0. Pure, no three.js.
+// The plain parts of a look → triangles, in metres, Y up, standing on y = 0.
+// Pure, no three.js. (Slabs and models are look/slab.js's and look/look.js's;
+// look.js places every part at its `at`, turned by its `rotation`.)
 //
 //   { shape: "box", size: [w, h, d], at?, color }
 //   { shape: "frustum", bottom: [w, d], top: [w, d], height, at?, color }   a box that tapers
@@ -129,47 +130,4 @@ export function partGeometry(part) {
     default:
       return { positions: [], normals: [] };
   }
-}
-
-/**
- * A piece's parts as meshes, one per colour (parts that share a colour share
- * a mesh: fewer draw calls for a board of twenty-five tiles).
- * @returns {{ name: string, color: string, positions: Float32Array, normals: Float32Array, indices: Uint32Array }[]}
- */
-export function pieceMeshes(parts) {
-  const byColor = new Map();
-  for (const part of parts ?? []) {
-    const g = partGeometry(part);
-    if (!g.positions.length) continue;
-    const color = /^#[0-9a-f]{6}$/i.test(part.color ?? "") ? part.color.toLowerCase() : "#cccccc";
-    let m = byColor.get(color);
-    if (!m) byColor.set(color, (m = { name: part.name ?? color, color, positions: [], normals: [], indices: [] }));
-    const base = m.positions.length / 3;
-    m.positions.push(...g.positions);
-    m.normals.push(...g.normals);
-    const idx = g.indices ?? Array.from({ length: g.positions.length / 3 }, (_, i) => i);
-    for (const i of idx) m.indices.push(base + i);
-  }
-  return [...byColor.values()].map((m) => ({
-    ...m,
-    positions: new Float32Array(m.positions),
-    normals: new Float32Array(m.normals),
-    indices: new Uint32Array(m.indices),
-  }));
-}
-
-/** The box around some meshes: { min, max }, or null. */
-export function meshesBounds(meshes) {
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const m of meshes) {
-    for (let i = 0; i < m.positions.length; i += 3) {
-      for (let k = 0; k < 3; k++) {
-        const v = m.positions[i + k];
-        if (v < min[k]) min[k] = v;
-        if (v > max[k]) max[k] = v;
-      }
-    }
-  }
-  return Number.isFinite(min[0]) ? { min, max } : null;
 }

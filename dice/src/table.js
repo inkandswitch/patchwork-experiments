@@ -1,27 +1,24 @@
-// A table of cup dice, as a template and as parts.
-//
-// "Liar's dice" (scene:template `dice.liars-dice`) lays out the traditional
-// South American cup-dice game (dudo, cacho) as its real components: a
-// round table, six seats, and for each a cup and five standard six-sided
-// dice in that set's own colour, the cup lifted beside its dice; and a pool
-// in the middle for dice a player has lost. Nothing else: who bids what,
-// whose turn it is, who loses a die and when is the players' business. The
-// art is this package's own (cup-glb.js, die-glb.js).
+// Cup dice on a table: the parts, and the template that lays a game out.
 //
 // Parts (the editor's bin, under "Dice"): a dice cup with its five dice, and
-// a pool.
+// a pool. Every GLB is the scene's own file (ctx.file, STAGE.md "Parts"),
+// shared by every object drawn from it, under a key that names what it's
+// drawn from. A die here is a GLB carrying `extras.dice` (as the die source
+// builds), not a die doc: a set's five dice are one kind of thing. What each
+// cup can do comes from its trait (`dice.cup`), which is also where its
+// shakes' draws live (lots-ext.js): nothing more to write for fair rolls.
 //
-// Every GLB is the scene's own file (ctx.file, STAGE.md "Parts"), shared by
-// every object drawn from it, under a key that names what it's drawn from.
-// A die here is a GLB carrying `extras.dice` (as the die source builds), not
-// a die doc: a set's five dice are one kind of thing, and the table is laid
-// out in one change. What each cup can do comes from its trait (`dice.cup`),
-// which is also where its shakes' draws live (lots-ext.js): nothing more to
-// write for fair rolls. Seats come from whoever owns them, found by its
-// plugin's metadata (`roster: true`), never by package.
+// "Liar's dice" (scene:template `dice.liars-dice`) is a game, as data
+// (games/liars-dice.json: the traditional South American cup-dice game,
+// dudo or cacho, as its real components: a round table, six seats, and for
+// each a cup and five standard six-sided dice in that set's own colour, the
+// cup lifted beside its dice; and a pool in the middle for dice a player has
+// lost). Its template asks whoever lays tabletop games out to lay it out
+// (`template` below): no code here lays a table. Who bids what, whose turn
+// it is, who loses a die and when is the players' business.
 
 import { CUP, LIFT_BACK, ringOf } from "./cup.js";
-import { TABLE_TOP, cupGLB, poolGLB, tableGLB } from "./cup-glb.js";
+import { cupGLB, poolGLB } from "./cup-glb.js";
 import { dieGLB } from "./die-glb.js";
 import { presetDoc } from "./die.js";
 import { CARRY, DIE } from "./ids.js";
@@ -40,8 +37,6 @@ export const SETS = Object.freeze([
 ]);
 /** Dice per player. */
 export const DICE_EACH = 5;
-/** How far from the table's middle a seat's dice lie (m). */
-export const SPOT_RADIUS = 0.3;
 
 const GLB = { extension: "glb", mimeType: "model/gltf-binary" };
 const file = (name, { glb, bounds }) => ({ name: `${name}.glb`, bytes: glb, ...GLB, hint: { bounds } });
@@ -49,7 +44,6 @@ const hex = (c) => c.replace("#", "");
 
 /** The scene's file for each thing, made once. */
 export const files = {
-  table: (ctx) => ctx.file("dice/table@1", () => file("Table", tableGLB())),
   pool: (ctx) => ctx.file("dice/pool@1", () => file("Pool", poolGLB())),
   cup: (ctx, set) => ctx.file(`dice/cup-${hex(set.body)}@1`, () => file(`${set.name} cup`, cupGLB(set.body))),
   die: (ctx, set) => ctx.file(`dice/d6-${hex(set.body)}-${hex(set.ink)}@1`, () => file(`${set.name} die`, dieGLB({ ...presetDoc("d6"), body: set.body, ink: set.ink }))),
@@ -83,87 +77,43 @@ export function setOut({ set, files: f, at, yaw, k = 1, n = DICE_EACH }) {
   return { cup, dice };
 }
 
-// ── what a table is made with, found by metadata (never by package) ──
-const listOf = (reg) => {
-  try {
-    return reg?.filter?.(() => true) ?? [];
-  } catch {
-    return [];
-  }
-};
-async function moduleWith(registry, test) {
+// ── a game's table, laid out by whoever lays tabletop games out ──
+/** The module of the plugin whose metadata says `tables: "tabletop-game"` (the tabletop package's), or null. */
+async function tableLayer(registry) {
   const reg = typeof registry === "function" ? await Promise.resolve(registry("scene:extension")).catch(() => null) : null;
-  for (const p of listOf(reg)) {
-    if (!test(p) || typeof p.id !== "string") continue;
+  let list = [];
+  try {
+    list = reg?.filter?.((p) => p?.tables === "tabletop-game" && typeof p.id === "string") ?? [];
+  } catch {
+    list = [];
+  }
+  for (const p of list) {
     try {
       const loaded = await reg.load(p.id);
       const mod = loaded?.module?.default ?? loaded?.module ?? null;
-      if (mod) return mod;
+      if (typeof mod?.setUp === "function") return mod;
     } catch (err) {
       console.warn(`[dice] couldn't load “${p.id}”`, err);
     }
   }
   return null;
 }
-/** How to write seats into a scene doc (the seats owner's `lay`), or null. */
-export async function findSeats(registry) {
-  const mod = await moduleWith(registry, (p) => p?.roster === true);
-  return typeof mod?.lay === "function" ? mod.lay : null;
-}
 
 /**
- * The whole table, written in one change: objects, seats, the view.
- * @returns {Promise<{ seats: object, ids: object } | null>}
+ * A template that lays a registered tabletop-game out by its id (Liar's
+ * dice: games/liars-dice.json), through whoever lays tabletop games out.
+ * Without one installed, it lays nothing and says what's missing.
  */
-export async function layOutTable(ctx, { players = SETS.length } = {}) {
-  const sets = SETS.slice(0, players);
-  const f = { table: await files.table(ctx), pool: await files.pool(ctx) };
-  const per = [];
-  for (const set of sets) per.push({ set, f: { cup: await files.cup(ctx, set), die: await files.die(ctx, set) } });
-  const lay = await findSeats(ctx.registry);
-
-  const objects = {};
-  const order = [];
-  const put = (o) => {
-    const id = ctx.newId("o");
-    objects[id] = o;
-    order.push(id);
-    return id;
-  };
-  const ids = { table: put(objectOf("Table", f.table, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, { locked: true })), pool: put(objectOf("Pool", f.pool, { position: [0, TABLE_TOP, 0], rotation: [0, 0, 0], scale: 1 }, { locked: true })), seats: [] };
-  const seats = {};
-  per.forEach(({ set, f: sf }, i) => {
-    const yaw = (2 * Math.PI * i) / sets.length;
-    const dir = [Math.sin(yaw), 0, Math.cos(yaw)];
-    const at = [tidy(dir[0] * SPOT_RADIUS), TABLE_TOP, tidy(dir[2] * SPOT_RADIUS)];
-    const { cup, dice } = setOut({ set, files: sf, at, yaw });
-    const seat = `seat${i + 1}`;
-    ids.seats.push({ seat, cup: put(cup), dice: dice.map(put) });
-    seats[seat] = {
-      name: `${set.name} (Player ${i + 1})`,
-      camera: { position: [tidy(dir[0] * 0.95), tidy(TABLE_TOP + 0.45), tidy(dir[2] * 0.95)], target: [tidy(dir[0] * 0.12), TABLE_TOP, tidy(dir[2] * 0.12)] },
-    };
-  });
-
-  const title = ctx.doc?.()?.title;
-  ctx.change((d) => {
-    for (const id of order) {
-      d.objects[id] = objects[id];
-      d.order.push(id);
+export const template = (gameId) => ({
+  async create(ctx) {
+    const layer = await tableLayer(ctx.registry);
+    if (!layer) {
+      ctx.notify?.("This table is laid out by the tabletop package, which isn't installed here.", "error");
+      return null;
     }
-    if (lay) lay(d, seats);
-    d.view.activity = "play";
-    d.view.grid = false;
-    d.view.axes = false;
-    d.view.home = { position: [0, TABLE_TOP + 0.9, 1.1], target: [0, TABLE_TOP, 0] };
-    if (!title || title === "Untitled scene") d.title = "Liar's dice";
-  });
-  if (!lay) ctx.notify?.("Nothing installed here owns seats, so this table has none.", "warn");
-  else ctx.notify?.("Pick a seat (top right). Hover your cup: S shakes it, hold P to peek, L lifts it.", "info");
-  return { seats, ids };
-}
-
-export const liarsDice = { create: (ctx) => layOutTable(ctx) };
+    return layer.setUp(ctx, gameId);
+  },
+});
 
 /** Where a part goes: its parent, a transform squared to it, and that frame's scale. */
 function placeOf(ctx, at) {

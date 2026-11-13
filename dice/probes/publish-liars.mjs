@@ -40,6 +40,9 @@
 // lists the three packages it is made of: the scene's, the seats' and
 // dice's (the dice, the cups, their draws and the template). Nothing of
 // keep's: a liar's dice table has no deck, and the dice draw their own lots.
+// The page also installs tabletop, which lays the game out (games/
+// liars-dice.json, through the `tables` convention) and leaves nothing of
+// its own in the scene, so it isn't listed.
 // Each package's URL is its `pushwork url` (probes/scene-packages.mjs). The
 // list is stated here (PACKAGES) and must be the one A's stage made from
 // what the table calls for: a table that needs a package not stated here
@@ -60,6 +63,8 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 // the packages the published scene lists (scene/STAGE.md, "Packages")
 const PACKAGES = ["scene", "seats", "dice"];
+// what the page installs: those, and whoever lays tabletop games out
+const INSTALLED = [...PACKAGES, "tabletop"];
 const TEMPLATE = "dice.liars-dice";
 const CUPS = 6;
 const DICE = 30;
@@ -100,7 +105,7 @@ const SETTLE = Number(args.settle ?? 8000);
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of PACKAGES) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of INSTALLED) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 // every package's URL is known before anything is made (this throws if one isn't synced)
 withPackages({ "@patchwork": { type: "scene" } }, PACKAGES);
 const STATED = scenePackages(PACKAGES).map((e) => e.url);
@@ -109,7 +114,7 @@ const SCENE_URL = pushworkUrl("scene");
 const sameSet = (a, b) => new Set(a).size === a.length && JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "liars-template"));
 
-const b = await browser({ root: ROOT, port: 4894, cdp: 9894, page: `/dice/probes/liars-template-probe.html?${PACKAGES.map((p) => `${p}=${encodeURIComponent(pushworkUrl(p))}`).join("&")}`, width: 1416, height: 530, show: !!args.show, timeout: 600_000 });
+const b = await browser({ root: ROOT, port: 4894, cdp: 9894, page: `/dice/probes/liars-template-probe.html?${INSTALLED.map((p) => `${p}=${encodeURIComponent(pushworkUrl(p))}`).join("&")}`, width: 1416, height: 530, show: !!args.show, timeout: 600_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 // (an expression for until() starts with one of __p's own: it is read as window.__p.<expr>)
@@ -157,7 +162,7 @@ try {
   check(`six seats (${SEATS.join(", ")}), each named and with a camera, nobody in them`, Q(Object.keys(seats ?? {}).sort()) === Q(SEATS) && Object.values(seats).every((s) => typeof s.name === "string" && s.name && s.camera?.position?.length === 3 && s.camera?.target?.length === 3 && !s.player), seats);
   check("A is told to pick a seat (the seats' owner was found)", await until("notices('a').some((n) => /^Pick a seat \\(top right\\)\\. Hover your cup/.test(n))", 5000), await P("notices('a')"));
   check("A's seat picker offers every seat", await until(`picker('a').filter((s) => ${Q(SEATS)}.includes(s)).length === ${SEATS.length}`, 10_000), await P("picker('a')"));
-  check(`the doc says it's Liar's dice and starts in "play", with no view.tool`, d.title === "Liar's dice" && d.view?.activity === "play" && !("tool" in (d.view ?? {})), { title: d.title, view: d.view });
+  check(`the doc says it's Liar's dice and starts in "play", with no view.tool`, d.title === "Liar's dice table" && d.view?.activity === "play" && !("tool" in (d.view ?? {})), { title: d.title, view: d.view });
   check(`every die and cup carries scene.carry (${CUPS + DICE})`, c.carried === CUPS + DICE, { carried: c.carried });
   check("A lands in play", await until("activity('a') === 'play'", 5000), await P("activity('a')"));
   const builtA = await until(`built('a').loaded === ${CUPS + DICE + 2} && __p.built('a').diceRead === ${DICE}`, 120_000);

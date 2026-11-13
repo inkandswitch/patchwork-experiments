@@ -24,6 +24,7 @@ describe("the dice package's plugins", () => {
     // nothing here is anyone else's: no plugin, trait or metadata of another package's
     expect(JSON.stringify(plugins.map(({ load, ...m }) => m))).not.toMatch(/keep\.|"lots":/);
     expect(of("scene:template").map((p) => p.id)).toEqual(["dice.liars-dice"]);
+    expect(of("tabletop:game").map((p) => p.id)).toEqual(["liars-dice"]);
     expect(new Set(plugins.map((p) => `${p.type}/${p.id}`)).size).toBe(plugins.length);
   });
 

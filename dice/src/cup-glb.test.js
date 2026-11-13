@@ -3,7 +3,7 @@
 // wound the wrong way would be a hole you could see under the cup through).
 
 import { CUP_HEIGHT, CUP_MOUTH } from "./cup.js";
-import { POOL_RADIUS, TABLE_RADIUS, TABLE_TOP, cupGLB, poolGLB, shade, tableGLB } from "./cup-glb.js";
+import { POOL_RADIUS, cupGLB, poolGLB, shade } from "./cup-glb.js";
 import { parseGLB } from "./glb.js";
 
 /** An accessor's numbers, from the GLB's binary chunk. */
@@ -35,8 +35,8 @@ const sub = (a, b) => a.map((x, i) => x - b[i]);
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-describe("the cup, the table and the pool", () => {
-  for (const [name, made] of [["cup", cupGLB("#884422")], ["table", tableGLB()], ["pool", poolGLB()]]) {
+describe("the cup and the pool", () => {
+  for (const [name, made] of [["cup", cupGLB("#884422")], ["pool", poolGLB()]]) {
     it(`${name}: every triangle is wound the way its normals face`, () => {
       const tris = triangles(made.glb);
       expect(tris.length).toBeGreaterThan(50);
@@ -56,10 +56,6 @@ describe("the cup, the table and the pool", () => {
     expect(cup.max[1]).toBeCloseTo(CUP_HEIGHT, 6);
     expect(cup.max[0]).toBeGreaterThanOrEqual(CUP_MOUTH);
     expect(cup.max[0]).toBeLessThan(CUP_MOUTH + 0.002);
-    const table = tableGLB().bounds;
-    expect(table.max[1]).toBeCloseTo(TABLE_TOP + 0.004, 6);
-    expect(table.max[0]).toBeCloseTo(TABLE_RADIUS, 6);
-    expect(table.min[1]).toBe(0);
     const pool = poolGLB().bounds;
     expect(pool.max[0]).toBeCloseTo(POOL_RADIUS, 6);
     expect(pool.min[1]).toBe(0);

@@ -35,6 +35,7 @@ import { drawOne, objectOf, pour, putObjects, settleDraw } from "./moves.js";
 import { isGroup } from "./object.js";
 import { CARRY, CONTAINER, bagUrlOf, dropBag } from "./part.js";
 import { poseBeside } from "./place.js";
+import { fill } from "./fill.js";
 
 /** How long a finished draw is still watched, to say so if a peer turns out to have drawn the same piece (ms). */
 const RECENT_MS = 30_000;
@@ -59,6 +60,8 @@ const apply = (m, p) => [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] *
 const poseKey = (t) => JSON.stringify([t?.position ?? null, t?.rotation ?? null]);
 
 export default {
+  // the `container: "bag"` convention (this plugin's metadata): a new bag doc already holding things (fill.js)
+  fill,
   create(api) {
     const { repo } = api;
     let dead = false;

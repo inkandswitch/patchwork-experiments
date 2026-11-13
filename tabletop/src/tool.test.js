@@ -102,9 +102,9 @@ describe("the tabletop-game tool", () => {
     expect(scene["@patchwork"].type).toBe("scene");
     expect(Object.values(scene.objects).filter((o) => o.kind !== "group")).toHaveLength(79);
     expect(game.doc().tables).toEqual([url]);
-    expect(Object.values(game.doc().pieces).every((p) => p.glbUrl)).toBe(true);
+    expect(Object.keys(game.doc().drawn).sort()).toEqual(Object.keys(game.doc().pieces).sort());
     // every object shows the game's own GLB (it redraws with the game), the game its About
-    const glbs = new Set(Object.values(game.doc().pieces).map((p) => p.glbUrl));
+    const glbs = new Set(Object.values(game.doc().drawn).map((f) => f.url));
     for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect(o).toMatchObject({ sourceUrl: expect.any(String), infoUrl: game.url });
     for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect(glbs.has(o.sourceUrl)).toBe(true);
     expect(scene).toMatchObject({ title: "Santorini table 1", assets: {}, dimensions: {} });
@@ -133,7 +133,7 @@ describe("the tabletop-game tool", () => {
     expect(element.children).toHaveLength(0);
   });
 
-  it("applies an edited definition, keeping each kind's GLB doc", async () => {
+  it("applies an edited definition that's a valid game, keeping each kind's GLB doc; refuses one that isn't, saying why", async () => {
     const repo = fakeRepo();
     const init = {};
     TabletopGameDatatype.init(init);
@@ -143,21 +143,29 @@ describe("the tabletop-game tool", () => {
     const cleanup = TabletopGameTool(game, element);
     await until(() => button(element, "Santorini"));
     button(element, "Santorini").click();
-    await until(() => game.doc().pieces?.dome?.glbUrl);
-    const glb = game.doc().pieces.dome.glbUrl;
+    await until(() => game.doc().drawn?.dome?.url);
+    const glb = game.doc().drawn.dome.url;
 
     const area = element.querySelector(".json");
     const def = JSON.parse(area.value);
-    def.pieces.dome.count = 20;
+    // the definition is the game, and only the game: GAME-FORMAT.md
+    expect(Object.keys(def).sort()).toEqual(["about", "format", "pieces", "players", "setup", "title", "version"]);
+    def.setup.find((t) => t.piece === "dome").count = 20;
     area.value = JSON.stringify(def);
     button(element, "Apply").click();
-    expect(game.doc().pieces.dome.count).toBe(20);
-    expect(game.doc().pieces.dome.glbUrl).toBe(glb);
+    expect(game.doc().setup.find((t) => t.piece === "dome").count).toBe(20);
+    expect(game.doc().drawn.dome.url).toBe(glb);
     expect(element.querySelector(".definition .muted").textContent).toBe("Applied.");
 
     element.querySelector(".json").value = "{ nope";
     button(element, "Apply").click();
     expect(element.querySelector(".definition .muted").textContent).toMatch(/Not applied/);
+
+    def.setup.push({ piece: "teapot" });
+    element.querySelector(".json").value = JSON.stringify(def);
+    button(element, "Apply").click();
+    expect(element.querySelector(".definition .muted").textContent).toMatch(/Not applied: unknown-piece at \$\.setup\[8\]\.piece: no piece "teapot"/);
+    expect(game.doc().setup).toHaveLength(8);
     cleanup();
   });
 
@@ -184,7 +192,7 @@ describe("the tabletop-game tool", () => {
     expect(urls.size).toBe(1);
     expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
     const deck = (await repo.find([...urls][0])).doc();
-    expect(deck.title).toBe("Lost Cities table 1: Deck");
+    expect(deck.title).toBe("Lost Cities: Deck");
     expect(deck.items).toHaveLength(60);
     for (const o of cards) expect(o.name).toBe("Card");
     expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2"]);

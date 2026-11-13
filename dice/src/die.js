@@ -108,7 +108,8 @@ export function dieOf(doc) {
   const shape = solid(doc?.shape) ? doc.shape : "d6";
   const n = shapeSides(shape);
   const size = Number.isFinite(doc?.size) && doc.size > 0 ? Math.min(MAX_SIZE, Math.max(MIN_SIZE, doc.size)) : USUAL_SIZE[shape];
-  const given = Array.isArray(doc?.faces) ? doc.faces : [];
+  // a die whose doc gives no faces is numbered the usual way for its shape (a d6's pips, opposite faces adding to 7)
+  const given = Array.isArray(doc?.faces) ? doc.faces : presetDoc(SHAPE_PRESET[shape]).faces;
   const faces = Array.from({ length: n }, (_, i) => cleanFace(given[i]));
   const lone = (v) => faces.some((f) => f.marks.length === 1 && f.marks[0].kind === "number" && f.marks[0].value === v);
   return {

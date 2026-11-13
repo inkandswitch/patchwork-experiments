@@ -469,8 +469,9 @@ Besides what the sections above delete: input's scope classes and the
 `local.running` labels (nearness within segments replaces them), both
 `url === handle.url` checks (the cycle rule), and seats, the roster and
 `lay`, to a `seats/` package (open question 5). In the consumers, when they
-choose: tabletop drops `placeLayout`, the `view` flag, the title guard and
-host-titled decks; every package's `requires` goes (TOOLS.md §1); sailing
+choose: tabletop drops `placeLayout`, the `view` flag and the title guard
+(host-titled decks went with games as data: a container is titled by its
+game and deck, tabletop/GAME-FORMAT.md); every package's `requires` goes (TOOLS.md §1); sailing
 drops telling a game's pieces from hers, since only carryable things carry;
 publish-aboard walks the link graph. Once this note is accepted, SCOPE.md
 shrinks to nearness within one doc.

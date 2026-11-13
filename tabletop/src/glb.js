@@ -1,15 +1,12 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v3]
+ * glb.js (a fork, not a kit copy: check-kit leaves it alone) — a dependency-free
+ * glTF 2.0 binary (GLB) encoder.
  *
- * COPY THIS FILE into your package; do not import it across packages. It has no
- * imports and no DOM use, so it runs anywhere (main thread, worker, node).
- * The canonical copy is patchwork-experiments/scene/src/glb.js; copy it whole,
- * never edit a copy (`node scripts/check-kit.mjs` fails on a copy that differs).
- *
- * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
- * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
- * so a consumer reading the GLB outside a scene knows it is in metres.
- * v3 (from terrain's fork): `copyright` (asset.copyright), written only when given.
+ * Copied from scene/src/glb.js and extended with textures (embedded images,
+ * TEXCOORD_0, baseColorTexture, KHR_texture_transform, alpha modes and
+ * KHR_materials_unlit), first for tts-import, now for any piece's look
+ * (look/look.js). Everything the original accepts encodes exactly as it
+ * did. It has no imports and no DOM use, so it runs anywhere.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
@@ -18,10 +15,9 @@
  *   scene = {
  *     meshes: Mesh[],               // required (may be empty)
  *     nodes?: Node[],               // optional; default = one root node per mesh
+ *     images?: Image[],             // embedded images, referenced by Primitive.texture
  *     extras?: object,              // copied onto the glTF scene's `extras`
  *     generator?: string,           // asset.generator (default "patchwork glb.js")
- *     copyright?: string,           // asset.copyright: the credit for what it's made from; written only when given
- *     units?: string,               // asset.extras.units (default "m", the scene convention)
  *   }
  *
  *   Mesh = {
@@ -34,9 +30,6 @@
  *   Primitive = {
  *     positions: Float32Array | number[],   // xyz xyz …  (Y-up, metres, by convention)
  *     normals?:  Float32Array | number[],   // xyz per vertex, unit length
- *     colors?:   Float32Array | number[] | { array, itemSize: 3 | 4 },
- *                                           // COLOR_0, LINEAR rgb(a) 0..1 per vertex
- *                                           // (a bare array is rgb)
  *     indices?:  Uint32Array | Uint16Array | number[],  // stored as u16 when they fit
  *     mode?:     number,                    // MODE.TRIANGLES (default), LINES, LINE_STRIP…
  *     attributes?: { [name]: Float32Array | number[] | { array, itemSize } },
@@ -49,9 +42,18 @@
  *     metallic?: number,                    // default 0
  *     roughness?: number,                   // default 0.8
  *     doubleSided?: boolean,                // default true
+ *     uvs?: Float32Array | number[],        // uv per vertex → TEXCOORD_0 (glTF: v = 0 is the image's top)
+ *     texture?: number | {                  // baseColorTexture: an index into scene.images
+ *       image: number,
+ *       wrap?: "repeat" | "clamp",          // default "repeat"
+ *       transform?: { offset?: [u, v], scale?: [u, v], rotation?: number },  // KHR_texture_transform
+ *     },
+ *     alphaMode?: "OPAQUE" | "MASK" | "BLEND",  // default: BLEND if the colour's alpha < 1, else OPAQUE
+ *     alphaCutoff?: number,                 // for MASK (default 0.5)
  *     unlit?: boolean,                      // KHR_materials_unlit
- *     blend?: boolean,                      // alphaMode BLEND, e.g. for COLOR_0 alpha
  *   }
+ *
+ *   Image = { bytes: Uint8Array, mimeType: "image/png" | "image/jpeg", name?: string }
  *
  *   Node = {
  *     name?: string,
@@ -100,7 +102,13 @@ const ARRAY_BUFFER = 34962;
 const ELEMENT_ARRAY_BUFFER = 34963;
 const TYPE_BY_SIZE = { 1: "SCALAR", 2: "VEC2", 3: "VEC3", 4: "VEC4" };
 
-const PRIMITIVE_KEYS = ["positions", "normals", "colors", "indices", "mode", "attributes", "color"];
+const PRIMITIVE_KEYS = ["positions", "normals", "indices", "mode", "attributes", "color", "uvs", "texture", "alphaMode", "alphaCutoff", "unlit"];
+const SAMPLERS = {
+  // LINEAR (9729), LINEAR_MIPMAP_LINEAR (9987); REPEAT (10497), CLAMP_TO_EDGE (33071)
+  repeat: { magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 },
+  clamp: { magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 },
+};
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg"]);
 
 /** sRGB channel (0..1) → linear. */
 export function srgbToLinear(c) {
@@ -231,7 +239,7 @@ function normalizeMesh(mesh, i) {
   if (Array.isArray(mesh.primitives)) return mesh;
   if (mesh.positions) {
     const prim = {};
-    for (const k of PRIMITIVE_KEYS.concat(["metallic", "roughness", "doubleSided", "unlit", "blend"])) {
+    for (const k of PRIMITIVE_KEYS.concat(["metallic", "roughness", "doubleSided"])) {
       if (mesh[k] !== undefined) prim[k] = mesh[k];
     }
     return { name: mesh.name, extras: mesh.extras, primitives: [prim] };
@@ -252,9 +260,58 @@ export function encodeGLB(scene) {
   const gltfMeshes = [];
   const meshRemap = new Map(); // input mesh index → output mesh index
 
-  const material = (prim) => {
+  const images = scene.images ?? [];
+  const imageViews = new Map(); // image index → bufferView, written on first use
+  const gltfImages = [];
+  const imageIndex = new Map(); // input image index → output image index
+  const samplers = [];
+  const samplerIndex = new Map();
+  const textures = [];
+  const textureKeys = new Map();
+  const extensionsUsed = new Set();
+
+  const imageRef = (i, where) => {
+    if (!Number.isInteger(i) || i < 0 || i >= images.length) throw new Error(`glb: ${where} texture points at image ${i}, which does not exist`);
+    if (!imageIndex.has(i)) {
+      const img = images[i];
+      if (!img || !(img.bytes instanceof Uint8Array) || !img.bytes.byteLength) throw new Error(`glb: image ${i} has no bytes`);
+      if (!IMAGE_TYPES.has(img.mimeType)) throw new Error(`glb: image ${i} is ${img.mimeType}; only image/png and image/jpeg can be embedded`);
+      if (!imageViews.has(i)) imageViews.set(i, bin.add(img.bytes));
+      imageIndex.set(i, gltfImages.length);
+      gltfImages.push({ bufferView: imageViews.get(i), mimeType: img.mimeType, ...(img.name ? { name: String(img.name) } : {}) });
+    }
+    return imageIndex.get(i);
+  };
+  const textureInfo = (spec, where) => {
+    const t = typeof spec === "number" ? { image: spec } : spec;
+    const wrap = t.wrap === "clamp" ? "clamp" : "repeat";
+    if (!samplerIndex.has(wrap)) {
+      samplerIndex.set(wrap, samplers.length);
+      samplers.push(SAMPLERS[wrap]);
+    }
+    const key = `${t.image}/${wrap}`;
+    if (!textureKeys.has(key)) {
+      textureKeys.set(key, textures.length);
+      textures.push({ source: imageRef(t.image, where), sampler: samplerIndex.get(wrap) });
+    }
+    const info = { index: textureKeys.get(key) };
+    const tr = t.transform;
+    if (tr) {
+      const ext = {};
+      if (tr.offset) ext.offset = tr.offset.map(Number);
+      if (tr.scale) ext.scale = tr.scale.map(Number);
+      if (tr.rotation) ext.rotation = Number(tr.rotation);
+      if (Object.values(ext).flat().some((v) => !Number.isFinite(v))) throw new Error(`glb: ${where} texture transform has a non-number`);
+      info.extensions = { KHR_texture_transform: ext };
+      extensionsUsed.add("KHR_texture_transform");
+    }
+    return info;
+  };
+
+  const material = (prim, where) => {
     const color = toColor(prim.color);
-    if (!color && prim.metallic == null && prim.roughness == null && !prim.unlit && !prim.blend) return undefined;
+    const textured = prim.texture != null;
+    if (!color && !textured && prim.metallic == null && prim.roughness == null && !prim.alphaMode && !prim.unlit) return undefined;
     const m = {
       pbrMetallicRoughness: {
         baseColorFactor: color ?? [1, 1, 1, 1],
@@ -263,8 +320,17 @@ export function encodeGLB(scene) {
       },
       doubleSided: prim.doubleSided ?? true,
     };
-    if (m.pbrMetallicRoughness.baseColorFactor[3] < 1 || prim.blend) m.alphaMode = "BLEND";
-    if (prim.unlit) m.extensions = { KHR_materials_unlit: {} };
+    if (textured) m.pbrMetallicRoughness.baseColorTexture = textureInfo(prim.texture, where);
+    const alphaMode = prim.alphaMode ?? (m.pbrMetallicRoughness.baseColorFactor[3] < 1 ? "BLEND" : null);
+    if (alphaMode && alphaMode !== "OPAQUE") {
+      if (alphaMode !== "MASK" && alphaMode !== "BLEND") throw new Error(`glb: ${where} alphaMode must be OPAQUE, MASK or BLEND`);
+      m.alphaMode = alphaMode;
+      if (alphaMode === "MASK" && prim.alphaCutoff != null) m.alphaCutoff = Number(prim.alphaCutoff);
+    }
+    if (prim.unlit) {
+      m.extensions = { KHR_materials_unlit: {} };
+      extensionsUsed.add("KHR_materials_unlit");
+    }
     const key = JSON.stringify(m);
     if (!materialKeys.has(key)) {
       materialKeys.set(key, materials.length);
@@ -306,24 +372,14 @@ export function encodeGLB(scene) {
         attributes.NORMAL = accessors.length - 1;
       }
 
-      // per-vertex colours as the standard COLOR_0
-      if (prim.colors) {
-        const spec = prim.colors;
-        const isObj = !Array.isArray(spec) && !ArrayBuffer.isView(spec);
-        const itemSize = isObj ? spec.itemSize ?? 3 : 3;
-        if (itemSize !== 3 && itemSize !== 4) throw new Error(`glb: ${where} colors itemSize must be 3 or 4`);
-        const arr = asFloat32(isObj ? spec.array : spec, `${where} colors`);
-        if (arr.length !== count * itemSize) {
-          throw new Error(`glb: ${where} colors has ${arr.length} values, expected ${count * itemSize}`);
-        }
-        checkFinite(arr, `${where} colors`);
-        accessors.push({
-          bufferView: bin.add(arr, ARRAY_BUFFER),
-          componentType: FLOAT,
-          count,
-          type: TYPE_BY_SIZE[itemSize],
-        });
-        attributes.COLOR_0 = accessors.length - 1;
+      if (prim.uvs) {
+        const uvs = asFloat32(prim.uvs, `${where} uvs`);
+        if (uvs.length !== count * 2) throw new Error(`glb: ${where} uvs has ${uvs.length} values, expected ${count * 2}`);
+        checkFinite(uvs, `${where} uvs`);
+        accessors.push({ bufferView: bin.add(uvs, ARRAY_BUFFER), componentType: FLOAT, count, type: "VEC2" });
+        attributes.TEXCOORD_0 = accessors.length - 1;
+      } else if (prim.texture != null) {
+        throw new Error(`glb: ${where} has a texture but no uvs`);
       }
 
       for (const [name, spec] of Object.entries(prim.attributes ?? {})) {
@@ -367,7 +423,7 @@ export function encodeGLB(scene) {
           out.indices = accessors.length - 1;
         }
       }
-      const mat = material(prim);
+      const mat = material(prim, where);
       if (mat !== undefined) out.material = mat;
       prims.push(out);
     });
@@ -409,14 +465,19 @@ export function encodeGLB(scene) {
   const roots = nodes.map((_, i) => i).filter((i) => !childOf.has(i));
 
   const gltf = {
-    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js", ...(scene.copyright ? { copyright: String(scene.copyright) } : {}), extras: { units: scene.units ?? "m" } },
+    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js" },
     scene: 0,
     scenes: [{ nodes: roots, ...(scene.extras ? { extras: scene.extras } : {}) }],
   };
   if (nodes.length) gltf.nodes = nodes;
   if (gltfMeshes.length) gltf.meshes = gltfMeshes;
   if (materials.length) gltf.materials = materials;
-  if (materials.some((m) => m.extensions?.KHR_materials_unlit)) gltf.extensionsUsed = ["KHR_materials_unlit"];
+  if (textures.length) {
+    gltf.textures = textures;
+    gltf.samplers = samplers;
+    gltf.images = gltfImages;
+  }
+  if (extensionsUsed.size) gltf.extensionsUsed = [...extensionsUsed].sort();
   if (accessors.length) gltf.accessors = accessors;
   const binBytes = bin.bytes();
   if (bin.views.length) {

@@ -414,8 +414,8 @@ object's `claims` map is made by its first claim, and a claim lost that way
 is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
-TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
-a fallback. `init` makes `assets` too, as do tabletop and the TTS importer, and
+TTS importer's games among them, and bag's "Put it in a new scene"), so an extension's `if (!d.traits) d.traits = {}` is only ever
+a fallback. `init` makes `assets` too, as does tabletop, and
 nothing else ever does: a scene without one is from before `assets` and is
 republished, not patched. The same goes for the `packages` list (see
 "Packages"): made by `init` and by those two, appended to by the stage,
@@ -497,7 +497,8 @@ is the scene package, bare (no `frozenImportUrl`: versions aren't pinned
 yet). Every scene doc carries it:
 - one made through the host (the sidebar's New) gets it from the scene
   datatype's `importUrl` (`createDocOfDatatype2`);
-- one written whole by another tool (tabletop's tables, the TTS importer)
+- one written whole by another tool (tabletop's tables, bag's new scene; the
+  TTS importer makes games, whose tables are tabletop's)
   gets it from the registry's `scene` datatype, by the URL rule
   (`src/scene-package.js` in each);
 - a publish script states it (`probes/scene-packages.mjs`: the scene

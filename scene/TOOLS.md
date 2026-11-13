@@ -436,7 +436,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   prompt. `api.writable()` (§9) arrived with it. `scene.carry` is a trait
   part with `describes` (*Carryable*); a press carries `ev.holder`, the
   nearest link with the trait; `carry(id)` carries only what has it.
-  Tabletop, tts-import, dice (dice, cups) and bag write it; only what has it
+  Tabletop (every table, an imported game's included), dice (dice, cups) and bag write it; only what has it
   goes into a bag, so what comes out can be carried. Sailing's veto went
   (her fittings lack the trait); the cup's stays. `view.tool`, `local.tool`,
   `effectiveTool`, G, R and H went, and with Flip carry's on every surface,
