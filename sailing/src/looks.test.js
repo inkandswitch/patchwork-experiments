@@ -137,10 +137,11 @@ describe("createLooks", () => {
     const rock = fakeNode();
     w = fakeWorld(doc, { content: { buoy: { loaded: true, root }, rock: { loaded: true, root: rock } } });
     const api = w.join("A");
+    api.clock.process({ step() {} }); // a view with a process: the doc's clock runs
     const sea = createSeaView(api);
     const looks = createLooks(api, { sea, sim: { ships: () => [] } });
     api.loop((dt, now) => {
-      sea.tick(dt, now, false, null);
+      sea.tick();
       looks.tick(dt);
     });
     w.tick(1 / 60, 45);

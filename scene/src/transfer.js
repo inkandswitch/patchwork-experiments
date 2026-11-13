@@ -10,8 +10,8 @@
 //     attachments and group membership among themselves are kept, and so is
 //     every transform below the top (the top-level ones are placed);
 //   - everything about them but runtime state: name, colour, tags, traits,
-//     hint, locked, infoUrl, `at`… The stage's own runtime field (`claims`)
-//     is never copied, nor any trait field an extension's `describes` marks
+//     hint, locked, infoUrl, `at`… The stage's own runtime fields (`claims`,
+//     and `saved`, the world clock's checkpoint stamp) are never copied, nor any trait field an extension's `describes` marks
 //     as runtime (`runtime: true` for the whole trait, `runtime: ["motion"]`
 //     for some of its keys, or a field spec with `runtime: true`). Pose holds
 //     and presence are never in the doc, so never copied;
@@ -53,7 +53,7 @@ export const SIZE_TYPE = "application/x-scene-object-size";
  */
 export const FROM_TYPE = "application/x-scene-object-from";
 /** Fields the stage keeps that are about now, not about the object: never copied. */
-export const RUNTIME_FIELDS = Object.freeze(["claims"]);
+export const RUNTIME_FIELDS = Object.freeze(["claims", "saved"]);
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string" && s) : []);
@@ -527,7 +527,7 @@ export function planCopy({ objects, order = [], roots, runtime = new Map(), targ
 // ─── doing it ──────────────────────────────────────────────────────────────
 
 /** The fields addObject writes itself; the rest of a copied object goes through `fields`. */
-const OWN_FIELDS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims"]);
+const OWN_FIELDS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
 
 async function extensionMetas(api) {
   try {

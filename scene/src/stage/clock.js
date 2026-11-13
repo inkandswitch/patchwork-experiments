@@ -1,0 +1,471 @@
+// World time for one doc (TOOLS.md §7, "World time and processes").
+//
+// A doc has one clock, `doc.clock = { running, t, by? }` (absent: running
+// from 0), and the processes the extensions in its stage register: a sea, a
+// ship's physics, a door closing itself. World time passes only while a view
+// computes it: one holds the doc's "clock" claim, under the usual claim rules
+// (STAGE.md, "Claims"), and steps every process; the others follow. Nobody
+// present, no time passes.
+//
+// - **Eligible.** A view may compute when its stage acts (not a pin or a
+//   mirror), its doc is writable, its tab is visible, everything the doc
+//   calls for is running (settled, every listed package here) and it has a
+//   process. The first eligible view to find the claim free takes it.
+// - **Computing.** The computer's t runs on with the wall clock, at most
+//   MAX_FRAME_S of world time a frame (a longer stall is skipped), and its
+//   processes are stepped on a fixed grid of world time, STEP_S apart, so
+//   two views stepping the same process from the same t step it alike. It
+//   starts each kept process at its t (`start(t)`: warm from what it has
+//   followed, else cold from the doc, the process's call), and lets go when
+//   it's hidden, paused or no longer eligible, or loses the claim.
+// - **Checkpoints.** On pause, on letting go and every CHECKPOINT_MS while
+//   computing, one change writes `clock.t` and every process's `save(d)`. A
+//   process saves only what it still holds. Each object whose transform a
+//   save wrote is stamped `saved: t`, so a process can tell a write that
+//   moved an object (the halo, the inspector, a paste: transform changed,
+//   stamp not) from a checkpoint landing late (both changed): `movedBy`.
+// - **Followers.** The computer puts `{ t, at }` (its t at its Date.now) in
+//   presence at CLOCK_HZ. A follower runs its t toward the computer's at the
+//   moment whose holds this view is drawing (presence.shownAt), so a hull
+//   sits on the waves drawn under it; it slews, jumps only forward, and never
+//   passes the newest t it has heard, so it never runs ahead of the world.
+//   With no computer a view's t is `clock.t`, still.
+// - **Paused.** t is the larger of this view's and `clock.t`: once the
+//   computer's checkpoint arrives, every view has the same t (none has passed
+//   it, above). Kept processes aren't stepped; no view computes.
+// - **Replicated processes** (`replicated: true`) are stepped by every view
+//   that runs them, at its own t, on the same grid: a deterministic engine
+//   every present peer runs from a shared input log (machine/HOST.md). They
+//   make a view eligible like any process, so someone moves t; only the
+//   computer calls their `save`. While paused they are stepped only up to
+//   `clock.t`, which catches a follower up to the pause point everyone has.
+//
+// t per view never decreases. createClock is the whole of it against an env
+// the stage provides (claims, presence, the doc, eligibility, the wall
+// clock), so tests drive it with in-memory docs and frames of their choosing.
+
+/** The claim kind the computer holds, on the doc (id null). */
+export const CLOCK = "clock";
+/** Processes are stepped at every multiple of this much world time (s). */
+export const STEP_S = 1 / 60;
+/** The most world time one frame moves on (s): a longer stall is skipped. */
+export const MAX_FRAME_S = 0.25;
+/** How often the computer checkpoints while running (ms). */
+export const CHECKPOINT_MS = 30_000;
+/** How often the computer's t goes out in presence (Hz). */
+export const CLOCK_HZ = 10;
+/** With no held pose of the computer's to line up with, a follower runs this far behind what it last heard (ms). */
+export const LAG_MS = 1500 / CLOCK_HZ;
+/** No word from the computer for this long (ms): stalled ("waiting for Ben's machine"). */
+export const STALL_MS = 1000;
+/** A follower works an error off over about this long (s). */
+export const SLEW_S = 1;
+/** Further behind than this (s), a follower jumps forward instead of slewing. */
+export const RESYNC_S = 0.5;
+/** The presence namespace and key the computer's t goes out under. */
+export const PRESENCE_NS = "scene";
+export const PRESENCE_KEY = "clock";
+
+const fin = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** The doc's clock, as it means: running unless it says not, t ≥ 0, who last paused or resumed it. Pure. */
+export function readClock(d) {
+  const c = d?.clock;
+  const ok = c && typeof c === "object";
+  return {
+    running: !(ok && c.running === false),
+    t: ok && fin(c.t) && c.t > 0 ? c.t : 0,
+    by: ok && typeof c.by === "string" ? c.by : null,
+  };
+}
+
+/**
+ * Why this view may or may not compute, but for having a process (the
+ * clock's own to know): `{ ok, why }`, `why` null when it may, else what
+ * stops it. Pure.
+ * @param {{ acts: boolean, writable: boolean, visible: boolean, settled: boolean, complete: boolean }} v
+ */
+export function eligibility({ acts, writable, visible, settled, complete }) {
+  const why = !acts ? "pinned" : !writable ? "view only" : !complete ? "missing a package" : !settled ? "starting" : !visible ? "hidden" : null;
+  return { ok: why === null, why };
+}
+
+/**
+ * The shown time one frame on: `dt` later, nudged toward `target` by at most
+ * dt either way, so it never runs backwards and never more than twice as
+ * fast. Pure.
+ */
+export function slew(shown, target, dt) {
+  const free = shown + dt;
+  const nudge = ((target - free) * dt) / SLEW_S;
+  return free + Math.max(-dt, Math.min(dt, nudge));
+}
+
+/**
+ * A follower's t one frame on: slewed toward `target`, or put there if it is
+ * more than RESYNC_S ahead; never back, and never past `cap` (the newest t
+ * heard from the computer) unless it was already there. Pure.
+ * @param {number} shown @param {number} target @param {number} dt s @param {number | null} [cap]
+ */
+export function follow(shown, target, dt, cap = null) {
+  let next = target - (shown + dt) > RESYNC_S ? target : slew(shown, target, dt);
+  if (fin(cap) && next > cap) next = Math.max(shown, cap);
+  return Math.max(shown, next);
+}
+
+/** The computer's t at `at` (its clock, ms), from a sample of it. Pure. */
+export const sampleTime = (sample, at) => sample.t + (at - sample.at) / 1000;
+
+/**
+ * t as the doc keeps it: on a microsecond grid, rounded up (so writing it
+ * never puts anyone's t back). Short decimals only: Automerge 3.3.0 stores
+ * 0.9999999999999999 assigned inside a new map as 0 (measured), and a
+ * world time that read back as 0 would undo the world. Pure.
+ */
+export function docTime(t) {
+  const k = Math.ceil(t * 1e6);
+  return k / 1e6 >= t ? k / 1e6 : (k + 1) / 1e6;
+}
+
+/** The index of the last grid point at or before t. Pure. */
+export const gridIndex = (t) => Math.floor(t / STEP_S + 1e-9);
+/** The world time of grid point k. Pure. */
+export const gridTime = (k) => k * STEP_S;
+
+/**
+ * Was this object moved by something other than a checkpoint since `seen`
+ * (its transform and `saved` stamp as a process last saw them)? A
+ * checkpoint writes both; a move (the halo, the inspector, a paste, a carry)
+ * only the transform. So a late checkpoint, landing after another view took
+ * over, isn't taken for a move. Pure.
+ * @param {{ transform?: object, saved?: number } | null | undefined} o  the object as the doc has it now
+ * @param {{ transform: string, saved: number | null }} seen  transformKey(o.transform) and o.saved as last seen
+ */
+export function movedBy(o, seen) {
+  return transformKey(o?.transform) !== seen.transform && (fin(o?.saved) ? o.saved : null) === seen.saved;
+}
+
+/** A doc transform as a comparable string. Pure. */
+export function transformKey(t) {
+  const v = (a, n) => [0, 1, 2].map((i) => Math.round((Number(a?.[i]) || 0) * n) / n);
+  return JSON.stringify([v(t?.position, 1e6), v(t?.rotation, 1e6), Math.round((Number(t?.scale) || 1) * 1e6) / 1e6]);
+}
+
+/**
+ * The clock of one stage's doc.
+ * @param {{
+ *   doc: () => object,
+ *   change: (fn: (d: object) => void) => void,
+ *   claim: { take(onLost: () => void): (() => void) | null, holder(): { viewer: string | null, session: string, mine: boolean } | null },
+ *   presence: { set(sample: { t: number, at: number } | undefined): void, sample(session: string): { t: number, at: number } | null, shownAt(session: string): number | null, rate(hz: number | null): void },
+ *   eligible: () => { ok: boolean, why: string | null },   // eligibility(), but for having a process
+ *   writable: () => boolean,
+ *   viewer: string | null,
+ *   now?: () => number,                   // the wall clock, ms (Date.now: presence samples are stamped with it)
+ *   onStatus?: (status: object) => void,  // what the chip shows changed
+ * }} env
+ */
+export function createClock(env) {
+  const now = env.now ?? (() => Date.now());
+  const processes = new Set(); // { spec, replicated, k: last grid index stepped | null }
+  let release = null; // our claim's release, while this view computes
+  let t = readClock(env.doc()).t;
+  let lastNow = null;
+  let nextCheckpoint = Infinity;
+  let heard = null; // { session, t, at, heardAt }: the newest sample from the computer
+  let followingSince = null; // when this view began following the current computer (ms)
+  let status = null;
+  let dead = false;
+
+  const warn = (what, err) => console.warn(`[scene] a process's ${what} failed`, err);
+  const call = (fn, what, ...args) => {
+    if (typeof fn !== "function") return;
+    try {
+      fn(...args);
+    } catch (err) {
+      warn(what, err);
+    }
+  };
+  const kept = () => [...processes].filter((p) => !p.replicated);
+  /** May this view compute: eligible, and with a process. */
+  const able = () => {
+    const el = env.eligible();
+    return !el.ok ? el : processes.size ? { ok: true, why: null } : { ok: false, why: "no process" };
+  };
+
+  // ─── checkpoints ──────────────────────────────────────────────────────────
+
+  /** Write t and these processes' saves into a draft, stamping what they moved. */
+  function writeCheckpoint(d, list, clock = null) {
+    t = docTime(t);
+    if (clock) d.clock = { ...clock, t };
+    else if (!d.clock || typeof d.clock !== "object") d.clock = { running: true, t };
+    else if (!(fin(d.clock.t) && d.clock.t >= t)) d.clock.t = t;
+    if (!list.length) return;
+    const objects = d.objects && typeof d.objects === "object" ? d.objects : null;
+    const before = new Map();
+    if (objects) for (const [id, o] of Object.entries(objects)) before.set(id, transformKey(o?.transform));
+    for (const p of list) call(p.spec.save, "save", d);
+    if (objects) for (const [id, o] of Object.entries(objects)) if (o && before.has(id) && before.get(id) !== transformKey(o.transform)) o.saved = t;
+  }
+
+  function checkpoint(list = [...processes], clock = null) {
+    try {
+      env.change((d) => writeCheckpoint(d, list, clock));
+    } catch (err) {
+      console.warn("[scene] couldn't write the clock's checkpoint", err);
+    }
+    nextCheckpoint = now() + CHECKPOINT_MS;
+  }
+
+  // ─── computing ────────────────────────────────────────────────────────────
+
+  function startComputing() {
+    const r = env.claim.take(lost);
+    if (!r) return false;
+    release = r;
+    t = Math.max(t, readClock(env.doc()).t);
+    heard = null;
+    followingSince = null;
+    nextCheckpoint = now() + CHECKPOINT_MS;
+    env.presence.rate(CLOCK_HZ);
+    for (const p of kept()) {
+      p.k = gridIndex(t);
+      call(p.spec.start, "start", t);
+    }
+    return true;
+  }
+
+  function stopKept() {
+    for (const p of kept()) {
+      p.k = null;
+      call(p.spec.stop, "stop");
+    }
+    env.presence.set(undefined);
+    env.presence.rate(null);
+  }
+
+  /** Someone else won the claim: they compute now, so nothing is saved. */
+  function lost() {
+    if (!release) return;
+    release = null;
+    stopKept();
+  }
+
+  /**
+   * Stop computing: a checkpoint, the processes told, the claim let go. (Not
+   * computing from the start: the checkpoint's change event may look again,
+   * re-entrantly, and must find this view letting go.)
+   */
+  function letGo() {
+    if (!release) return;
+    const r = release;
+    release = null;
+    checkpoint();
+    stopKept();
+    r();
+  }
+
+  // ─── following ────────────────────────────────────────────────────────────
+
+  function followFrame(holder, frameS) {
+    const n = now();
+    const sample = env.presence.sample(holder.session);
+    if (heard?.session !== holder.session) {
+      heard = null;
+      followingSince = n;
+    }
+    if (sample && fin(sample.t) && fin(sample.at) && (!heard || heard.at !== sample.at)) heard = { session: holder.session, t: sample.t, at: sample.at, heardAt: n };
+    if (!heard) return;
+    const shownAt = env.presence.shownAt(holder.session);
+    const target = fin(shownAt) ? sampleTime(heard, shownAt) : heard.t + (n - heard.heardAt - LAG_MS) / 1000;
+    t = follow(t, target, frameS, heard.t);
+  }
+
+  // ─── the frame ────────────────────────────────────────────────────────────
+
+  /** Grid steps for the processes this view steps, up to `to`. */
+  function stepTo(list, to) {
+    const k1 = gridIndex(to);
+    for (const p of list) {
+      if (p.k == null) continue;
+      while (p.k < k1 && processes.has(p)) {
+        p.k++;
+        call(p.spec.step, "step", STEP_S, gridTime(p.k));
+      }
+    }
+  }
+
+  /** Who computes, eligibility, the claim: take it, keep it or let it go. No time passes here. */
+  function transitions() {
+    if (dead) return;
+    const c = readClock(env.doc());
+    const holder = env.claim.holder();
+    if (release) {
+      if (holder && !holder.mine) lost();
+      else if (!c.running || !able().ok) letGo();
+    } else if (c.running && !holder && able().ok) startComputing();
+    if (!release && !(c.running && holder && !holder.mine)) t = Math.max(t, c.t);
+  }
+
+  /**
+   * One frame. `at` is the wall clock (ms); the world moves on by the time
+   * since the last frame, at most MAX_FRAME_S.
+   */
+  function tick(at = now()) {
+    if (dead) return;
+    const frameS = lastNow == null ? 0 : Math.min(MAX_FRAME_S, Math.max(0, (at - lastNow) / 1000));
+    lastNow = at;
+    transitions();
+    const c = readClock(env.doc());
+    const replicated = [...processes].filter((p) => p.replicated);
+    if (release) {
+      t += frameS;
+      stepTo([...processes], t);
+      env.presence.set({ t, at: now() });
+      if (now() >= nextCheckpoint) checkpoint();
+    } else {
+      const holder = env.claim.holder();
+      if (c.running && holder && !holder.mine) followFrame(holder, frameS);
+      else {
+        heard = null;
+        followingSince = null;
+      }
+      stepTo(replicated, c.running ? t : Math.min(t, c.t));
+    }
+    publish();
+  }
+
+  function publish() {
+    const c = readClock(env.doc());
+    const holder = env.claim.holder();
+    const el = able();
+    const following = c.running && holder && !holder.mine;
+    const stalled = !!following && (heard ? now() - heard.heardAt > STALL_MS : followingSince != null && now() - followingSince > STALL_MS);
+    // nothing to show in a doc with no process anyone here knows of
+    if (!(processes.size > 0 || !!holder || !c.running)) {
+      if (status !== null) env.onStatus?.((status = null));
+      return;
+    }
+    const next = {
+      running: c.running,
+      by: c.by,
+      computer: holder ? { viewer: holder.viewer, session: holder.session, mine: holder.mine } : null,
+      stalled,
+      able: el.ok,
+      why: el.why,
+    };
+    if (status && JSON.stringify(status) === JSON.stringify(next)) return;
+    status = Object.freeze(next);
+    env.onStatus?.(status);
+  }
+
+  // ─── the api ──────────────────────────────────────────────────────────────
+
+  function pause() {
+    if (dead || !env.writable()) return;
+    const c = readClock(env.doc());
+    if (!c.running) return;
+    t = docTime(Math.max(t, c.t));
+    const clock = { running: false, t, by: env.viewer ?? null };
+    if (release) {
+      // the computer pauses with its checkpoint, in one change, and lets go
+      const r = release;
+      release = null;
+      checkpoint([...processes], clock);
+      stopKept();
+      r();
+    } else
+      try {
+        env.change((d) => {
+          d.clock = clock;
+        });
+      } catch (err) {
+        console.warn("[scene] couldn't pause the clock", err);
+      }
+    publish();
+  }
+
+  function resume() {
+    if (dead || !env.writable()) return;
+    const c = readClock(env.doc());
+    if (c.running) return;
+    t = docTime(Math.max(t, c.t));
+    try {
+      env.change((d) => {
+        d.clock = { running: true, t, by: env.viewer ?? null };
+      });
+    } catch (err) {
+      console.warn("[scene] couldn't resume the clock", err);
+    }
+    transitions();
+    publish();
+  }
+
+  /**
+   * Register a process: `{ start?(t), step(dt, t), save?(d), stop?(), replicated? }`.
+   * A kept process is stepped by the computer alone, between start and stop;
+   * a replicated one by every view that has it, from now on. Returns its
+   * removal: a kept one being computed is saved first.
+   */
+  function process(spec) {
+    if (dead || !spec || typeof spec !== "object") return () => {};
+    const p = { spec, replicated: spec.replicated === true, k: null };
+    processes.add(p);
+    if (p.replicated || release) {
+      p.k = gridIndex(t);
+      call(spec.start, "start", t);
+    }
+    transitions();
+    publish();
+    return () => {
+      if (!processes.has(p)) return;
+      if (release && !p.replicated) {
+        checkpoint([p]);
+        call(spec.stop, "stop");
+      } else if (p.replicated) call(spec.stop, "stop");
+      processes.delete(p);
+      if (!dead) {
+        transitions();
+        publish();
+      }
+    };
+  }
+
+  /** This view's t: the computer's own; a follower's, following; else clock.t. */
+  function readT() {
+    if (!release && !dead) {
+      const c = readClock(env.doc());
+      const holder = env.claim.holder();
+      if (!(c.running && holder && !holder.mine)) t = Math.max(t, c.t);
+    }
+    return t;
+  }
+
+  return {
+    t: readT,
+    running: () => readClock(env.doc()).running,
+    pause,
+    resume,
+    process,
+    /** a frame: the stage calls it every frame while anything moves (`live`) */
+    tick,
+    /** something changed (the doc, who's here, visibility): take, keep or let go, without a frame */
+    check() {
+      transitions();
+      publish();
+    },
+    /** is a frame loop wanted: this view has a process, or someone computes */
+    live: () => !dead && (processes.size > 0 || !!env.claim.holder()),
+    computing: () => !!release,
+    status: () => status,
+    /** stop computing now (the page going away): checkpoint and let go */
+    letGo,
+    dispose() {
+      if (dead) return;
+      letGo();
+      dead = true;
+      processes.clear();
+    },
+  };
+}

@@ -5,8 +5,8 @@
 // - joints.slide: a part that moves along a line between two stops, closed
 //   and open: a door rising into its frame, a drawer, a hatch on a deck.
 //   Opened and closed with a verb (the use prompt's F within reach, or the
-//   menu and the inspector), it may close itself after a wait (slide.js; the
-//   extension is extension.js).
+//   menu and the inspector), it may close itself after a wait, in the doc's
+//   world time (slide.js; the extension is extension.js).
 
 export const plugins = [
   {
@@ -28,9 +28,9 @@ export const plugins = [
           { key: "speed", label: "Speed (m/s)", kind: "number", default: 1, min: 0.01, max: 20, step: 0.1 },
           { key: "wait", label: "Closes itself after (s; 0: stays open)", kind: "number", default: 0, min: 0, max: 600, step: 0.5 },
         ],
-        // `at` (which stop the transform is at) is about the object, and goes with a copy; when and by whom it was opened is not
+        // `at` (which stop the transform is at) is about the object, and goes with a copy; when it was opened (world time) is not
         init: { axis: [0, 1, 0], stops: { closed: 0, open: 1 }, at: "closed" },
-        runtime: ["since", "by"],
+        runtime: ["since"],
       },
     },
     // no `requires`: the use prompt is a game's to bring into play (STAGE.md,

@@ -1,73 +1,12 @@
-// The sea in play: the shared clock (pure), floating, the sea from the doc,
-// and createSeaView and the editor's sea on a fake stage (test/fakes.js).
+// The sea in play: the sea from the doc, the water's extent, and
+// createSeaView and the editor's sea on a fake stage (test/fakes.js), drawn
+// at the doc's world time (the clock is the stage's: scene/src/stage/clock.js).
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
-import { ATMOSPHERE, MAX_STEP_S, RESYNC_S, WATER_REACH, createClock, createSeaView, follow, seaClock, seaParams, seaTime, slew, waterExtent } from "./sea-view.js";
+import { ATMOSPHERE, WATER_REACH, createSeaView, seaParams, waterExtent } from "./sea-view.js";
 import { FLOAT, SEA } from "./traits.js";
 import edit from "./edit.js";
 import { emptyScene, fakeWorld } from "./test/fakes.js";
-
-describe("the followed time", () => {
-  it("is the simulator's clock run on to the moment its poses are drawn at", () => {
-    const sample = { t: 10, at: 5000 };
-    expect(seaTime(sample, 5000)).toBe(10);
-    expect(seaTime(sample, 5950)).toBeCloseTo(10.95);
-  });
-});
-
-describe("slewing", () => {
-  it("never runs backwards and never more than twice as fast", () => {
-    expect(slew(10, 0, 0.1)).toBe(10);
-    expect(slew(10, 100, 0.1)).toBeCloseTo(10.2);
-    expect(slew(10, 10.1, 0.1)).toBeCloseTo(10.1); // on time: just dt
-  });
-
-  it("works an error off smoothly", () => {
-    let shown = 0;
-    let target = 0.5;
-    for (let i = 0; i < 300; i++) {
-      target += 1 / 60;
-      const next = slew(shown, target, 1 / 60);
-      expect(next).toBeGreaterThan(shown);
-      shown = next;
-    }
-    expect(Math.abs(target - shown)).toBeLessThan(0.01);
-  });
-});
-
-describe("the sea clock", () => {
-  it("runs its own time while nobody's to follow", () => {
-    const c = createClock();
-    for (let i = 0; i < 60; i++) c.tick(1 / 60, null);
-    expect(c.now()).toBeCloseTo(1);
-  });
-
-  it("catches on to the simulator's at once, then follows it through jitter without going back", () => {
-    const c = createClock();
-    c.tick(0.5, null); // nobody yet: its own
-    expect(c.now()).toBeCloseTo(0.5);
-    let target = 100;
-    let shown = null;
-    for (let i = 0; i < 300; i++) {
-      target += 1 / 60 + (((i * 7) % 5) - 2) * 0.002; // the followed time, a little ragged
-      const t = c.tick(1 / 60, target);
-      if (shown != null) expect(t).toBeGreaterThanOrEqual(shown);
-      shown = t;
-    }
-    expect(shown).toBeCloseTo(target, 1);
-  });
-
-  it("slews a small error away, and jumps a big one (back from a hidden tab, or a stalled simulator)", () => {
-    expect(follow(10, 10.2, 1 / 60)).toBeLessThan(10.03); // slewed: never more than twice as fast
-    expect(follow(10, 70, 1 / 60)).toBe(70); // a minute behind: put right at once
-    expect(follow(10, 9, 1 / 60)).toBe(9); // a second ahead of it, too
-    // a follower hidden for a minute catches up in a frame, not a minute
-    const c = createClock();
-    c.tick(1 / 60, 100);
-    c.tick(1, 160 + RESYNC_S * 2);
-    expect(c.now()).toBe(160 + RESYNC_S * 2);
-  });
-});
 
 describe("the sea from the doc", () => {
   it("fills in what the trait leaves out", () => {
@@ -111,10 +50,11 @@ describe("createSeaView", () => {
   let w;
   afterEach(() => w?.done());
 
-  /** A sea view, ticked as play.js ticks it, with whoever this view says simulates. */
-  function seaOn(api, sim) {
+  /** A sea view, ticked as play.js ticks it, with a process of its own (so its view can compute the clock). */
+  function seaOn(api) {
     const sea = createSeaView(api);
-    api.loop((dt, now) => sea.tick(dt, now, sim.own(), sim.other?.() ?? null));
+    api.clock.process({ step() {} });
+    api.loop(() => sea.tick());
     return sea;
   }
 
@@ -144,7 +84,7 @@ describe("createSeaView", () => {
     const sea = createSeaView(api);
     expect(sea.ocean).toBe(null);
     expect(sea.atmosphere()).toBe(null);
-    sea.tick(1 / 60, 1000, true, null); // draws nothing, and doesn't throw
+    sea.tick(); // draws nothing, and doesn't throw
     w.change((d) => (d.traits[SEA] = {}));
     sea.update(w.scene());
     expect(sea.ocean).not.toBe(null);
@@ -154,40 +94,19 @@ describe("createSeaView", () => {
     expect(sea.ocean).toBe(null);
   });
 
-  it("keeps the clock while simulating and publishes it; else follows and publishes nothing", () => {
+  it("is drawn at the doc's world time, the same on every view, and keeps nothing of its own in presence", () => {
     const doc = scene();
     w = fakeWorld(doc);
-    const a = w.join("A");
-    const b = w.join("B");
-    let simulating = false;
-    const sa = seaOn(a, { own: () => simulating });
-    const sb = seaOn(b, { own: () => false, other: () => (simulating ? "A" : null) });
-    w.tick(1 / 60, 30);
-    expect(w.view("A").keys.sailing?.clock).toBeUndefined();
-    simulating = true;
+    const sa = seaOn(w.join("A"));
+    const sb = seaOn(w.join("B"));
     w.tick(1 / 60, 60);
-    expect(w.view("A").keys.sailing.clock.t).toBeCloseTo(sa.clock());
-    expect(w.view("B").keys.sailing?.clock).toBeUndefined();
-    // the fake stage draws a peer's poses as they come (shownAt is now): so does the sea
-    expect(sb.clock()).toBeCloseTo(sa.clock(), 1);
-    simulating = false;
-    w.tick(1 / 60, 1);
-    expect(w.view("A").keys.sailing.clock).toBeUndefined();
-  });
-
-  it("keeps the wall's time at a slow frame rate (the stage clamps dt), skipping only a stall", () => {
-    const doc = scene();
-    w = fakeWorld(doc);
-    const a = w.join("A");
-    const sea = seaOn(a, { own: () => true });
-    const loops = w.view("A").loops;
-    // three frames a second: the stage says dt = 0.1, the frame clock moves 333 ms
-    for (let i = 0; i <= 9; i++) for (const fn of loops) fn(0.1, 5000 + i * 333);
-    expect(sea.clock()).toBeCloseTo(0.1 + 9 * 0.333, 6); // (the first frame has only the stage's dt)
-    // a hidden tab comes back after a minute: a second of it, at most
-    const t = sea.clock();
-    for (const fn of loops) fn(0.1, 5000 + 9 * 333 + 60_000);
-    expect(sea.clock() - t).toBeCloseTo(MAX_STEP_S, 6);
+    expect(sa.clock()).toBeCloseTo(1, 6);
+    expect(sb.clock()).toBe(sa.clock());
+    expect(w.view("A").keys.sailing?.clock).toBeUndefined();
+    // paused, the sea stands still
+    w.join("C").clock.pause();
+    w.tick(1 / 60, 60);
+    expect(sa.clock()).toBeCloseTo(1, 6);
   });
 });
 
@@ -195,7 +114,7 @@ describe("the sea while editing", () => {
   let w;
   afterEach(() => w?.done());
 
-  it("draws the same sea and sky at its own clock, holding nothing and saying nothing", () => {
+  it("draws the same sea and sky, holding nothing, saying nothing and computing nothing: alone, its sea stands still", () => {
     const doc = scene();
     w = fakeWorld(doc);
     const api = w.join("E");
@@ -205,25 +124,20 @@ describe("the sea while editing", () => {
     expect(w.holds.size).toBe(0);
     expect(w.view("E").keys).toEqual({});
     expect(doc.claims).toBeUndefined();
+    expect(api.clock.t()).toBe(0);
     part.dispose();
   });
 
-  it("follows the sailors' clock while someone sails her (the clock edit.js keeps)", () => {
+  it("while someone sails her, it's at the world time their view computes", () => {
     const doc = scene();
     w = fakeWorld(doc);
     const p = w.join("P");
-    const sailor = createSeaView(p);
-    p.loop((dt, now) => sailor.tick(dt, now, true, null));
-    w.tick(1 / 60, 120); // two seconds of sailing before the editor opens
+    p.clock.process({ step() {} }); // the sailor's view has the ships' process
+    w.tick(1 / 60, 120);
     const e = w.join("E");
-    const clock = seaClock(e);
-    e.loop((dt, now) => clock.tick(dt, now, "P"));
+    edit.create(e);
     w.tick(1 / 60, 30);
-    expect(clock.now()).toBeGreaterThan(2);
-    expect(clock.now()).toBeCloseTo(sailor.clock(), 1);
-    // nobody sailing: its own
-    const alone = seaClock(e);
-    alone.tick(0.5, null, null);
-    expect(alone.now()).toBe(0.5);
+    expect(e.clock.t()).toBeCloseTo(2.5, 6);
+    expect(w.clock.computer.session).toBe("P");
   });
 });

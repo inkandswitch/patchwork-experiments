@@ -19,7 +19,7 @@ describe("createSim on a stage", () => {
     w.tick(1 / 60, 1);
     expect(a.sim.simulating()).toBe(true);
     expect(b.sim.simulating()).toBe(false);
-    expect(doc.claims.sim.session).toBe("A");
+    expect(doc.claims.clock.session).toBe("A");
     expect(w.holds.get(ids.hull).session).toBe("A");
 
     const start = [...doc.objects[ids.hull].transform.position];
@@ -37,28 +37,30 @@ describe("createSim on a stage", () => {
     expect(rb.speed).toBeGreaterThan(0.3);
     // (streamed at 5 Hz: up to 200 ms behind a ship that's gathering way)
     expect(Math.abs(rb.speed - ra.speed)).toBeLessThan(0.35);
-    // and runs the sea's clock at the moment its poses are drawn (on this fake stage, as they come)
-    expect(b.sea.clock()).toBeCloseTo(a.sea.clock(), 1);
+    // and draws the sea at the same world time (on this fake stage, a follower's has no lag)
+    expect(b.sea.clock()).toBe(a.sea.clock());
     // the physics' time is the sea's
     expect(a.sea.clock()).toBeGreaterThan(7.9);
   });
 
-  it("writes the ship to the doc now and then, not every frame", async () => {
+  it("is written to the doc at the clock's checkpoints (every 30 s), not every frame, each stamped as a save", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });
     play(w.join("A"));
     let writes = 0;
     let last = JSON.stringify(doc.objects[ids.hull].transform);
-    for (let i = 0; i < 25 * 60; i++) {
+    for (let i = 0; i < 61 * 60; i++) {
       w.tick(1 / 60);
       const now = JSON.stringify(doc.objects[ids.hull].transform);
       if (now !== last) writes++;
       last = now;
     }
-    expect(writes).toBeGreaterThanOrEqual(2);
-    expect(writes).toBeLessThanOrEqual(4);
+    expect(writes).toBe(2);
     expect(doc.objects[ids.hull].traits[SHIP].motion.velocity).toHaveLength(3);
-  }, 30_000); // 25 s of her at 60 Hz: about 4.5 s alone, more beside the rest of the suite
+    // the stage's stamp: the world t of the checkpoint that wrote her (so a late one isn't taken for a move)
+    expect(doc.objects[ids.hull].saved).toBeCloseTo(doc.clock.t, 6);
+    expect(doc.clock.t).toBeGreaterThan(59);
+  }, 60_000); // a minute of her at 60 Hz
 
   it("the station holder's input reaches the physics: hard to starboard turns her to starboard", async () => {
     const headingAfter = async (angle) => {

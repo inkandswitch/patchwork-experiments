@@ -12,9 +12,11 @@
 //   scene:pose      an object someone is holding (carrying, dragging a halo
 //                   handle, simulating) and where it is right now, at most
 //                   once per send interval per object, stamped with the
-//                   sender's clock and its interval. Peers keep the last few
-//                   as timed samples and play them back smoothly (smooth.js).
-//                   A release either puts it back or says where it landed.
+//                   sender's clock and its interval, and `yields` when it is
+//                   a process's hold that gives way to a person's. Peers keep
+//                   the last few as timed samples and play them back
+//                   smoothly (smooth.js). A release either puts it back or
+//                   says where it landed.
 //
 // Every message carries the sending view's `session`, a random id made when
 // the presence is, so two tabs of the same viewer are two peers. Messages
@@ -95,26 +97,37 @@ export function cleanKeys(keys) {
 }
 
 /**
- * Which of several peers' holds on one object counts: one still held beats a
- * landed one, then the lower `since`, then the lower session id. `since` is a
- * Lamport stamp, not a time: a hold begun after its holder heard of another
- * gets a higher one, so the order follows what each holder knew, and
- * concurrent holds fall to the session id. Every view sees the same stamps,
- * so every view picks the same winner, the way Automerge settles concurrent
- * writes by operation id rather than by anyone's clock.
- * @param {{ session: string, since: number, landed: object | null }[]} holds
+ * Does hold `a` rank ahead of hold `b` on one object? One still held beats a
+ * landed one; then a person's beats a yielding one (a process's that gives
+ * way: TOOLS.md §7); then the lower `since`, then the lower session id. One
+ * total order, the same in every view.
+ * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} a
+ * @param {{ session: string, since: number, landed?: object | null, yields?: boolean }} b
+ */
+export function ranksAhead(a, b) {
+  const la = a.landed ? 1 : 0;
+  const lb = b.landed ? 1 : 0;
+  if (la !== lb) return la < lb;
+  const ya = a.yields ? 1 : 0;
+  const yb = b.yields ? 1 : 0;
+  if (ya !== yb) return ya < yb;
+  if (a.since !== b.since) return a.since < b.since;
+  return a.session < b.session;
+}
+
+/**
+ * Which of several peers' holds on one object counts: the first by
+ * ranksAhead. `since` is a Lamport stamp, not a time: a hold begun after its
+ * holder heard of another gets a higher one, so the order follows what each
+ * holder knew, and concurrent holds fall to the session id. Every view sees
+ * the same stamps and flags, so every view picks the same winner, the way
+ * Automerge settles concurrent writes by operation id rather than by anyone's
+ * clock.
+ * @param {{ session: string, since: number, landed: object | null, yields?: boolean }[]} holds
  */
 export function winningHold(holds) {
   let best = null;
-  for (const h of holds) {
-    if (!best) {
-      best = h;
-      continue;
-    }
-    const a = h.landed ? 1 : 0;
-    const b = best.landed ? 1 : 0;
-    if (a !== b ? a < b : h.since !== best.since ? h.since < best.since : h.session < best.session) best = h;
-  }
+  for (const h of holds) if (!best || ranksAhead(h, best)) best = h;
   return best;
 }
 
@@ -335,7 +348,9 @@ export function createPresence({
     h.dirty = false;
     h.sentAt = now();
     // stamped when it was held, not when it went: a trailing send carries a pose from a frame ago
-    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq, at: h.heldAt ?? h.sentAt, every: poseInterval(rates.values()) });
+    const msg = { type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq, at: h.heldAt ?? h.sentAt, every: poseInterval(rates.values()) };
+    if (h.yields) msg.yields = true;
+    broadcast(msg);
   }
 
   // A pose that stays still still has to reach peers often enough that they
@@ -349,15 +364,26 @@ export function createPresence({
     keepalive = setTimer(tickKeepalive, HOLD_KEEPALIVE_MS);
   }
 
-  function hold(ext, id, parent, transform) {
+  /**
+   * Hold an object's pose for an extension (`yields`: a process's hold that
+   * gives way to a person's). Another extension's hold here on the same
+   * object is replaced, as a new hold with a new stamp: which extension may
+   * hold it is the stage's to say (holds.js), this only says it to peers.
+   */
+  function hold(ext, id, parent, transform, yields = false) {
     if (dead || !isStr(ext) || !isStr(id) || !isObj(transform)) return;
     let h = held.get(id);
+    if (h && h.ext !== ext) {
+      clearTimer(h.timer);
+      held.delete(id);
+      h = null;
+    }
     if (!h) {
       // since: this hold's Lamport stamp, after every hold we've heard of; every peer ranks holds by it
-      h = { ext, id, parent: null, transform: null, since: ++lamport, sentAt: -Infinity, heldAt: null, timer: null, dirty: false };
+      h = { ext, id, parent: null, transform: null, yields: false, since: ++lamport, sentAt: -Infinity, heldAt: null, timer: null, dirty: false };
       held.set(id, h);
     }
-    h.ext = ext; // the latest holder owns the release
+    h.yields = !!yields;
     h.parent = isStr(parent) ? parent : null;
     h.transform = transform;
     h.heldAt = now();
@@ -412,6 +438,7 @@ export function createPresence({
               transform: w.transform,
               landed: w.landed,
               since: w.since,
+              yields: w.yields,
               // for playing it back: the timed samples (sender's clock), its
               // send interval, and our clock minus the sender's
               samples: w.samples,
@@ -437,17 +464,25 @@ export function createPresence({
   }
 
   /**
-   * The peer session holding this object, or null. While this view holds it
-   * too, only a peer whose hold began first counts (winningHold), so of two
-   * views that grabbed it at once, exactly one is told the other has it.
+   * The peer session whose hold on this object ranks ahead of this view's,
+   * or null (ranksAhead). This view's hold is the one it has, or else one it
+   * would begin now, ranking after every hold it has heard of; `yields` says
+   * which kind (by default what it holds, else a person's). So a person
+   * isn't kept off by a peer's yielding hold, a yielding hold is by a
+   * person's, and of two views that grabbed it at once exactly one is told
+   * the other has it.
+   * @param {string} id
+   * @param {{ yields?: boolean }} [o]
    */
-  function heldBy(id) {
+  function heldBy(id, { yields } = {}) {
     const bySession = holds.get(id);
     if (!bySession) return null;
     const theirs = [...bySession.values()].filter((h) => !h.landed);
+    if (!theirs.length) return null;
     const mine = held.get(id);
-    const w = winningHold(mine ? [...theirs, { session, since: mine.since, landed: null }] : theirs);
-    return w && w.session !== session ? w.session : null;
+    const me = { session, since: mine ? mine.since : Infinity, landed: null, yields: yields ?? mine?.yields ?? false };
+    const w = winningHold([...theirs, me]);
+    return w && w !== me ? w.session : null;
   }
 
   function holdsChanged(ids) {
@@ -508,9 +543,11 @@ export function createPresence({
     // the hold's stamp, as its holder says (so every view ranks it the same)
     observe(msg.since);
     const since = msg.since;
-    const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null, samples: null, every: POSE_MS };
+    // a new stamp from the same session is a new hold (another of its extensions took it over)
+    const h = prev && !prev.landed && prev.since === since ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, yields: false, since, timer: null, samples: null, every: POSE_MS };
     if (prev && prev !== h) clearTimer(prev.timer);
     h.viewer = typeof msg.viewer === "string" ? msg.viewer : null;
+    h.yields = msg.yields === true;
     const parent = isStr(msg.parent) ? msg.parent : null;
     // a new parent is a new frame: the old samples aren't comparable
     if (parent !== h.parent) h.samples = null;

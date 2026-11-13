@@ -63,6 +63,7 @@ this view and by the stage.
 | `activities` | stage | `{ current, available }`: the activity that runs and the ones this scene offers. **Read the activity here**: `current` is `activity` when it's available, else `"edit"` |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | stage | `{ ask, loading, failed, missing }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`), and `missing`: whether any listed package isn't here (whatever was answered about it; true until that is known). See "Packages" and "Audience" |
+| `clock` | stage | the doc's world time as the clock chip shows it (see "World time"), or null for a doc with no process anyone here knows of: `{ running, by, computer: { viewer, session, mine } \| null, stalled, able, why }` |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
 
 Private local state lives in the extension's closure, or under a key prefixed
@@ -296,7 +297,7 @@ view's side is `scene.transfer`, editing only).
     rests on its base: a crate whose origin is its middle sits on the floor.
     A connector is made for an origin at the base, so a snapped copy isn't
     raised.
-  - **Every field but runtime state.** Not copied: `claims` (the stage's), and
+  - **Every field but runtime state.** Not copied: `claims` and `saved` (the stage's), and
     any trait key an extension marks as runtime in `describes` (below). Pose
     holds and presence were never in the doc.
   - **Files are shared, renders aren't.** A file object keeps its
@@ -392,7 +393,9 @@ describes: {
 When an extension stops:
 1. cancel its open session;
 2. pop its arms (unlock, release camera holds);
-3. release its pose holds as put-backs, and let go of its claims (no `onLost`);
+3. remove its processes (a kept one this view computes is saved first, in a
+   checkpoint, then stopped), release its pose holds as put-backs, and let
+   go of its claims (no `onLost`);
 4. clear its presence keys;
 5. stop its loops, `afterRender` hooks and scheduled work;
 6. remove its world groups, disposing their geometry and materials;
@@ -728,7 +731,7 @@ that extension.
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids)` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids |
-| `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims" |
+| `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims". The scene's `"clock"` claim is the stage's own (see "World time") |
 | `claimedBy(id, kind)` → `{ viewer, session, mine }` \| null | who holds it, if they're still here. `mine`: this view (any of its extensions) |
 | `registry(type)` | |
 | `port`, `root` | the element the canvas fills, and the stage's root (for DOM listeners: drops, pastes; focus) |
@@ -756,7 +759,7 @@ that extension.
 | `focus(ids)` | load these first |
 | `audience(id)` → `"all"` \| viewer[] \| `null` | who may see what this object is: every running extension's `audience` answer for it, merged. `null`: unknown, tell nobody. See "Audience" |
 | `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, not built content). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |
@@ -808,15 +811,25 @@ How the camera parts behave:
 | `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
 | `dock(el, { title, onClose? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it; closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
-| `pose` | `{ hold(id, transform), release(id, { landed? }) }` |
-| `heldBy(id)` | the peer session holding this object, or null. While this view holds it too, only a peer that took hold first counts, so of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
+| `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
+| `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
+| `clock` | `{ t(), running(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time. See "World time" |
 
 How poses and loops behave:
 - **Holding a pose.** `pose.hold(id, transform)` shows an object at that
   local transform while it's held, under its doc parent. Peers see it: at
   most one pose per object goes out every 50 ms, or faster when this view's
   presence rate is higher (`presence.rate(60)` streams at 60 Hz).
+- **One holder, in one order.** An object has one holder, the same in every
+  view: holds rank a person's before a *yielding* one (`{ yields: true }`:
+  a process's, which gives way to a person, as a hull nobody steers or a
+  door closing itself does), then the first begun (`since`, a Lamport
+  stamp), then the session. Here, a hold by another extension stands unless
+  it yields and the new one doesn't; across views, a hold is refused while
+  a peer's ranks ahead, and one this view has goes as soon as a peer's does
+  (its holder's next `hold` returns false). `src/stage/holds.js`; the order
+  is `presence.js` `ranksAhead`. There is no silent last-hold-wins.
 - **Peers play holds back smoothly.** A peer doesn't snap to each pose it
   hears. It plays the stream about 1.5 send intervals late (75 ms at 20 Hz),
   drawing the pose between the two either side of that moment (position and
@@ -845,7 +858,7 @@ Who is at the helm, who simulates the ship, whose hands a bucket is in: facts
 about the shared world, so they're in the doc. A claim is a field on what's
 claimed, `objects[id].claims[kind] = { viewer, session }`, or
 `doc.claims[kind]` for the scene (`id` null). `kind` is any string
-(`"station"`, `"sim"`, `"held"`); kinds are independent.
+(`"station"`, `"held"`, `"seat:<id>"`); kinds are independent. `"clock"` on the scene is the stage's (see "World time").
 
 - **Taking** (`api.claim(id, kind, { onLost })`) writes the field and returns
   a release, which deletes it if it's still this view's. It returns null when
@@ -878,8 +891,61 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
   before its bye; back from the back-forward cache, as a new session, it
   writes them again, or calls `onLost` for any someone took meanwhile.
 - **Motion stays in presence.** A claim says who; a pose hold says where,
-  right now. The ship's simulator claims `"sim"` and streams the hull with
-  `pose.hold`.
+  right now. The view computing the doc's clock holds `"clock"` and its
+  processes stream the hull with `pose.hold`.
+
+### World time
+
+The doc has one clock, `doc.clock = { running, t, by? }` (absent: running
+from 0), and its processes: what the extensions in its stage register with
+`api.clock.process` (a sea and its ships, a door closing itself). TOOLS.md
+§7 is the design; `src/stage/clock.js` the whole of it.
+
+- **Who computes.** World time passes only while one view computes it: the
+  one holding the doc's `"clock"` claim (on the doc, under the claim rules
+  above), which the stage takes for a view that is eligible (its stage acts,
+  its doc is writable, its tab visible, everything the doc calls for running
+  and every listed package here) and has a process. It steps every kept
+  process; the others follow. Nobody present, no time passes. It lets go
+  when hidden, paused, no longer eligible, or on `pagehide`.
+- **t.** `api.clock.t()` is this view's world time (s), which never goes
+  back. The computer's runs with the wall, at most a quarter second a frame.
+  A follower's runs toward the computer's at the moment whose holds it is
+  drawing (`presence.shownAt`), never past the newest the computer has said
+  (its `{ t, at }` under the presence key `scene.clock`, at 10 Hz): so a
+  hull sits on the waves drawn under it. Paused, every view's t is
+  `clock.t` once the computer's checkpoint arrives. With nobody computing,
+  `clock.t`, still.
+- **Processes.** `process({ start(t), step(dt, t), save(d), stop() })`: the
+  computer calls `start` at its t (warm from what the process has followed,
+  else cold from the doc: the process's call), `step` on a fixed grid of
+  world time (1/60 s), `save` at checkpoints, `stop` when it lets go (or
+  another view wins the claim: then nothing is saved). A `replicated: true`
+  process is stepped by every view that runs it, at its own t, on the same
+  grid: a deterministic engine every present peer runs from a shared input
+  log (machine/HOST.md). It makes a view eligible like any process, so
+  someone moves t; only the computer calls its `save`; paused, it's stepped
+  only up to `clock.t`, the pause point every view has.
+- **Checkpoints.** On pause, on letting go and every 30 s while computing,
+  one change writes `clock.t` and every process's `save(d)`. A process
+  saves only what it still holds. Each object whose transform a save wrote
+  is stamped `saved: t`: a write that moved it otherwise (the halo, the
+  inspector, a paste, a carry) changes the transform and not the stamp, a
+  late checkpoint both, so a process can tell them apart (sailing restarts
+  a hull moved by hand at rest). `saved` is the stage's field, like
+  `claims`.
+- **Pause and resume.** Anyone who may write: `pause()` writes the whole
+  clock `{ running: false, t, by: viewer }` (the computer in the same change
+  as its checkpoint), `resume()` `{ running: true, t, by }`; two at once
+  settle by last writer, and the chip names who won. One clock per doc:
+  pausing a host doesn't pause a linked doc's processes (step 12).
+- **Three times.** World time is only for what pauses with the world
+  (processes, a door's wait). An *act* (a die's tumble, a carry, a door's
+  motion once begun) runs on the wall, and finishes during a pause;
+  *liveness* (presence TTLs, claim grace, a lots deadline) is the wall's
+  too, and never pauses.
+- **Its numbers.** `clock.t` is written on a microsecond grid, rounded up:
+  Automerge 3.3.0 stores 0.9999999999999999 assigned inside a new map as 0.
 
 ## `instance`
 
@@ -1196,7 +1262,9 @@ atmosphere() → null | {
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
-| `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples |
+| `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples, and the one order holds go in (`ranksAhead`) |
+| `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
+| `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
 | `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, the activity, templates, parts and the scene's files, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
@@ -1248,14 +1316,14 @@ taken out. It keeps the following:
     counting this session's sends, so one delivered twice is told once;
   - `scene:pose` carries `{ session, viewer, id, parent, transform, since, seq, at, every }`
     while held and `{ session, viewer, id, parent, transform: null, seq, landed? }`
-    on release; `seq` counting this session's poses, so a late one can't
-    undo a release;
+    on release, and `yields: true` on a hold that gives way to a person's;
+    `seq` counting this session's poses, so a late one can't undo a release;
     `at` being the sender's clock when it was held and `every` its pose interval
     (ms), which a peer plays the stream back by (`smooth.js`); `since` being
     the hold's Lamport stamp: one past every stamp its holder had seen. Of
-    two holds on one object the lower stamp wins, then the lower session
-    id, so every view agrees, and a hold begun after hearing of another
-    always ranks after it. No clock is involved in ranking (`at` only times
+    two holds on one object a person's beats a yielding one, then the lower
+    stamp wins, then the lower session id, so every view agrees, and a hold
+    begun after hearing of another of its kind always ranks after it. No clock is involved in ranking (`at` only times
     playback); it's the same kind of rule Automerge uses to settle
     concurrent writes;
 - **behaviour:** each presence message is this view's whole state. There is
@@ -1270,7 +1338,7 @@ taken out. It keeps the following:
   sender's clock, with an offset from ours per sender that follows the
   fastest delivery, and the sender's interval as its last pose said;
 - **exposes:** `set(ext, key, value)`, `clear(ext)`, `get()`, `watch`,
-  `rate(ext, hz)`, `send`, `onReceive`, `hold(ext, id, parent, transform)`,
+  `rate(ext, hz)`, `send`, `onReceive`, `hold(ext, id, parent, transform, yields?)`,
   `release(ext, id, landedTransform?)`, `remoteHolds()` (each with
-  `samples`, `every`, `offset` for playback), `shownAt(session, t?)`, `heldBy(id)`,
+  `samples`, `every`, `offset` and `yields`), `shownAt(session, t?)`, `heldBy(id, { yields? })`,
   `watchHolds`, `settle(id)`, `goodbye()`, `hello()`, `dispose`.

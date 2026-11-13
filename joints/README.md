@@ -26,6 +26,9 @@ It declares no `activities`, so it runs whatever the viewer is doing (a
 drawer is opened while editing as well as while walking) and offers no
 activity of its own: a slide doesn't make a scene offer Play; a game in it
 does. It `requires` nothing: the use prompt is a game's to bring into play.
+While any part in the scene closes itself (a `wait`), it registers a
+**process** on the scene's world clock (`api.clock.process`, scene
+TOOLS.md §7): the closing.
 
 ## The trait
 
@@ -36,14 +39,14 @@ does. It `requires` nothing: the use prompt is a game's to bring into play.
   speed: m/s,
   wait?: s,                      // > 0: it closes itself this long after it opened
   at:    "closed" | "open",      // the stop the object's transform is at
-  since?: ms, by?: session,      // runtime: when it came to rest open, and whose view opened it
+  since?: s,                     // runtime: when it came to rest open, in the scene's world time
 }
 ```
 
 - The base of the line isn't stored: it's the position less `axis × stops[at]`.
   Moving the part in the editor moves its line with it.
 - `at` is about the object (its transform is at that stop), so a copy keeps
-  it; `since` and `by` are about now, `runtime`, and a copy leaves them.
+  it; `since` is about now, `runtime`, and a copy leaves it.
 - Positions are written to the micrometre, so a part opened and shut comes
   back exactly where it was.
 - The inspector's "Add behaviour…" offers it (axis, stops, speed, wait).
@@ -68,18 +71,22 @@ the verb is there but disabled.
 - **The doc holds only where it rests.** The view that moves a part shows the
   motion as a pose hold, every frame (everyone sees it, and the stage's
   raycasts and `worldOf` see it too, so a door blocks a walker as it's
-  drawn); it writes the stop it reaches **once**, with `since` (when it got
-  there) and `by`. A cycle (open, wait, close) is **two writes**.
-- **By the clock.** A motion is timed from when it started: where it's drawn
-  is the fraction of its travel time gone by, and its write is due at a
-  fixed time (below), set on a timer. Frames only draw it, so a view that
-  draws none (a hidden tab) still lands and writes on time, and closes what
-  it opened after its wait.
-- **Closing.** The view that opened it closes it when its wait is up. If that
-  view has gone (or stopped running this: each view says it's here with a
-  presence key, `here`), any view closes it, a grace period (1.5 s) after the
-  later of when it should have closed and when that view noticed. A view that
-  joins later and finds a part open with nobody to close it does the same.
+  drawn); it writes the stop it reaches **once**, with `since` (the world
+  time it got there). A cycle (open, wait, close) is **two writes**.
+- **Three times** (scene TOOLS.md §7). A motion is an *act*: timed by the
+  wall clock from when it started. Where it's drawn is the fraction of its
+  travel time gone by, and its write is due at a fixed time (below), set on
+  a timer. Frames only draw it, so a view that draws none (a hidden tab)
+  still lands and writes on time, and a pause never stops a door halfway.
+  The *wait* is world time: closing is the scene's process, stepped only by
+  the view computing the world's clock, which starts the close once
+  `t ≥ since + wait`. So exactly one view closes a part, whoever opened it;
+  a pause holds a door open; and with nobody present no time passes, so a
+  door left open has the rest of its wait to run when someone arrives
+  (where it used to slam shut on arrival).
+- **A person first.** The motion's holds yield, as a process's do: someone
+  carrying or dragging the part stops the motion, which lets go without
+  writing.
 - **Two at once.** Two views starting at the same moment both hold it; the
   stage ranks the holds the same way in every view (STAGE.md, `heldBy`), and
   the one told that a peer holds it first lets go without writing. The one
@@ -132,7 +139,9 @@ or be worked from a distance (a switch, a wire: a trigger that names the part).
   finite set of events, run on the real `createSlides` against a simulated
   network (each view its own replica of the door's rest, writes merged
   last-writer-wins as concurrent Automerge writes settle, holds ranked as
-  the stage ranks them, a pose stream every 50 ms, hellos and byes):
+  the stage ranks them, a pose stream every 50 ms, hellos and byes) and a
+  world clock as the stage keeps it (the first drawing view computes it,
+  handing over when it goes or hides; only it steps the closing):
   2 doors (1.8 s and 0.2 s of travel) × 4 latencies (5–440 ms) × the second
   view pressing at none of or one of 12 moments (440, 200, 60 or 20 ms
   BEFORE the first, so the view that loses the ranking pressed first; with
@@ -142,16 +151,29 @@ or be worked from a distance (a switch, a wire: a trigger that names the part).
   open × neither, the first or the second view hidden (no frames, timers
   rounded up to the whole second as a browser throttles them): 1,536 cases.
   In every one: writes alternate open, closed (so no cycle has more than
-  two), every view left agrees, nobody still holds it, it ends shut exactly
-  where it started with its runtime state gone, and every write is one of
-  the two stops. Plus the plain cycle, two at once, the opener gone after
-  opening, the opener gone mid-motion, a late joiner, a hidden opener, and
-  that the bound is real: at 600 ms of latency, the loser pressing first,
-  both write an open; at 440 ms, the same presses write one.
+  two), every view left agrees, nobody still holds it, every write is one
+  of the two stops, every close the world started began once its wait had
+  passed in world time, and, with anyone still drawing, it ends shut exactly
+  where it started with its runtime state gone (with only hidden views left
+  no time passes, and it may stay open, on its stop). Plus the plain cycle,
+  two at once, the opener gone (the computer closes it on time), whoever
+  opened it the computer closing it, the opener gone mid-motion, nobody
+  present (the wait resumes where it stood), a hidden tab alone (it lands,
+  and the door stays open), and that the bound is real: at 600 ms of
+  latency, the loser pressing first, both write an open; at 440 ms, the
+  same presses write one.
+- **H8** (scene TOOLS.md): a plain cycle and two pressing at once, for both
+  doors, with the world paused for 0.5 s or 3 s from every 250 ms of the
+  first 12 s: 392 cases. In every one the same writes by the same views as
+  unpaused, each open landing when it would have (acts aren't paused),
+  every write after HEAR_MS, no close started while paused, and every close
+  at the first tick its wait had passed in world time.
 - `src/extension.test.js`: the prompt's verb (F, 2 m) and the menu's (no
-  key, no reach), the hold each frame by the clock, the one write after it
-  has been heard, the close after the wait, a hidden tab landing and closing
-  on its timers alone, letting go on stopping, the metadata.
+  key, no reach), the hold each frame by the clock (yielding), the one
+  write after it has been heard, the process while something closes itself
+  and none otherwise, the close by the process's step once world time is
+  its wait past `since` (and not while the world stands still), a hidden
+  tab landing on its timers alone, letting go on stopping, the metadata.
 
 A browser probe elsewhere in this repo works a slide between two real views
 on real Automerge docs and checks the two writes in the doc's history.

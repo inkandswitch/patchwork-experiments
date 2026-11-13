@@ -40,7 +40,7 @@ async function sloop({ turned: isTurned = false, yaw = headTo(45 - 90) } = {}) {
     // her model's +X is her bow: the hull object turns a quarter less, so her body heads where the stock one's does
     doc.objects[hull].transform.rotation = [0, yaw + Math.PI / 2, 0];
     // and each part aboard is put on her again, at its stand on her, as the bin would (squared to her frame)
-    const part = { Mast: "mast", Wheel: "wheel", Windlass: "windlass", Ladder: "ladder", Mainsheet: "mainsheet", "Port jib winch": "winches" };
+    const part = { Mast: "mast", Wheel: "wheel", Windlass: "windlass", Ladder: "ladder", Mainsheet: "mainsheet", "Port jib winch": "winches", Companionway: "companionway" };
     for (const o of Object.values(doc.objects)) {
       if (o.parent !== hull) continue;
       o.transform = placement(doc, { parent: hull, transform: { position: quarter(STAND[part[o.name]]) } }, part[o.name], turned).transform;
@@ -55,8 +55,8 @@ function play(api) {
   ctx.sea = createSeaView(api);
   ctx.sim = createSim(api, ctx);
   api.loop((dt, now) => {
-    ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator());
-    ctx.sim.tick(dt);
+    ctx.sea.tick();
+    ctx.sim.tick();
   });
   return ctx;
 }

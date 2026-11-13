@@ -1,36 +1,36 @@
-// The ships in play (DESIGN.md, "Play"): who simulates, the physics, the
-// poses everyone sees, and the stations' controls. ctx.sim is what the
-// other parts read.
+// The ships in play (DESIGN.md, "Play"): the physics as one of the scene's
+// processes, the poses everyone sees, and the stations' controls. ctx.sim is
+// what the other parts read.
 //
-// One view holds the scene's "sim" claim. It steps every ship's physics at
-// the sea's clock, holds each hull's pose and its moving parts' (the boom,
-// the wheel, the anchor on the bottom), and publishes what a sailor would
-// read off each ship in presence, so the HUD reads the same on every view.
-// Everyone else follows: the stage plays the poses back, and a follower
-// checks the claim each frame, taking over from the poses it last saw held
-// when the simulator has gone. A simulator whose tab is hidden (its frames
-// stop) writes the ships down and lets the claim go, so a visible peer
-// carries on.
+// The ships are a process on the doc's clock (api.clock, scene TOOLS.md §7):
+// the view that computes the clock starts it (`start`: warm from the poses
+// it last saw held and the motion last published, else cold from the doc),
+// steps every ship's physics in world time, and once a frame holds each
+// hull's pose and its moving parts' (the boom, the jib, the wheel, the
+// anchor on the bottom) where the steps left her, and publishes what a
+// sailor would read off each ship in presence, so the HUD reads the same on
+// every view. (A slow frame takes many steps of 1/60 s; holding poses at
+// each would cost as much again as the physics, for nothing anyone sees.) Everyone else follows: the stage plays
+// the poses back, and each follower remembers the poses it saw held, so
+// that if it comes to compute it carries on from them. Who computes, and
+// when they hand over (hidden, leaving, paused), is the stage's.
 //
-// A station's lasting setting is its trait; whoever holds its "station"
-// claim may put live input over it in presence (the wheel while it turns).
-// The doc hears of the ships only now and then: each hull's transform and
-// motion every ten seconds or so when it has moved, and when the simulator
-// stops or hides.
+// A process's holds give way to a person's: a hull nobody steers yields
+// (someone may carry or drag it, and the ship starts again at rest where
+// they put it down), one at the helm doesn't. A station's lasting setting
+// is its trait; whoever holds its "station" claim may put live input over
+// it in presence (the wheel while it turns). The doc hears of the ships at
+// the clock's checkpoints (`save`: each hull's transform and motion, only
+// those this view still holds).
 
 import { createShip, specFromBox, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 import { mergeSpec } from "./hull-model.js";
 import { apply, eulerFromQuat, invert, matrixOf, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
 import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
 import { trimModelOf } from "./trim.js";
-import { ANCHOR, DEFAULTS as STATION_DEFAULTS, SHIP, SIM, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
+import { ANCHOR, CLOCK, DEFAULTS as STATION_DEFAULTS, SHIP, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
 import { contractOn, rigKey, rigSpecParts } from "./rig-contract.js";
 
-/** How often the simulator writes the ships to the doc (ms), if they've moved. */
-export const SAVE_EVERY_MS = 10000;
-/** Moved this far (m), or turned this far (rad), since the last save: worth another. */
-export const SAVE_MOVED = 0.25;
-export const SAVE_TURNED = 0.02;
 /** How often the simulator publishes each ship's diagnostics (ms). */
 export const PUBLISH_EVERY_MS = 200;
 /** The sea floor under a dropped anchor (m). */
@@ -224,17 +224,6 @@ export function controlsOf(v, at, spec) {
 }
 
 /**
- * Who simulates, from the scene's "sim" claim (claimedBy's answer) and
- * whether this view holds it:
- * "run" (it's ours), "yield" (we held it and someone else has it now),
- * "take" (nobody holds a live one), "follow" (someone else simulates).
- */
-export function simRole(claim, holding) {
-  if (holding) return claim && !claim.mine ? "yield" : "run";
-  return claim ? "follow" : "take";
-}
-
-/**
  * A state ready to step to sea time `t`: when it's further behind than one
  * step catches up (MAX_SUBSTEPS: a stall, or frames too slow), the rest is
  * skipped, as the sea's clock skips it, so she stays on the waves drawn.
@@ -250,16 +239,6 @@ export function catchUp(state, t) {
 /** Is every number in a ship's state a number? */
 export const finiteState = (s) => [s.position, s.quaternion, s.velocity, s.spin].every((v) => Array.isArray(v) && v.every(Number.isFinite));
 
-/** Should the ship be written to the doc: long enough since the last time, and moved or turned since? */
-export function shouldSave({ now, lastAt, last, pose, every = SAVE_EVERY_MS }) {
-  if (!last) return true;
-  if (now - lastAt < every) return false;
-  const moved = Math.hypot(pose.position[0] - last.position[0], pose.position[2] - last.position[2]);
-  const dot = Math.abs(pose.quaternion.reduce((s, v, i) => s + v * last.quaternion[i], 0));
-  const turned = 2 * Math.acos(clamp(dot, 0, 1));
-  return moved > SAVE_MOVED || turned > SAVE_TURNED;
-}
-
 /** Do two doc transforms say the same thing (within a hair)? */
 export function sameTransform(a, b, eps = 1e-6) {
   if (!a || !b) return !a && !b;
@@ -268,19 +247,20 @@ export function sameTransform(a, b, eps = 1e-6) {
   return near(a.scale ?? 1, b.scale ?? 1);
 }
 
-const motionKey = (m) => JSON.stringify(m ? { velocity: m.velocity ?? null, spin: m.spin ?? null } : null);
-
 /**
- * Did someone move the hull (the editor), as against a simulator saving
- * where she was? A save writes her motion with her transform; a move
- * writes only the transform. So a late save, landing after another view
- * took over, isn't taken for a move.
- * @param {object} doc  the doc's transform now  @param {object | undefined} motion  sailing.ship.motion now
- * @param {{ transform, motion: string }} seen  both, as last seen
+ * Did something move the hull (the halo, the inspector, a paste, a carry),
+ * as against a checkpoint writing where she was? The stage stamps each
+ * object a checkpoint's save moved with `saved` (the world t it was saved
+ * at: scene STAGE.md, "World time"); a move writes only the transform. So
+ * a late checkpoint, landing after another view took over, isn't taken for
+ * a move.
+ * @param {object} doc  the doc's transform now  @param {number | undefined} saved  the object's `saved` stamp now
+ * @param {{ transform, saved: number | null }} seen  both, as last seen
  */
-export function movedByEditor(doc, motion, seen) {
-  return !sameTransform(doc, seen.transform) && motionKey(motion) === seen.motion;
+export function movedByEditor(doc, saved, seen) {
+  return !sameTransform(doc, seen.transform) && (Number.isFinite(saved) ? saved : null) === seen.saved;
 }
+const stampOf = (o) => (Number.isFinite(o?.saved) ? o.saved : null);
 
 /** A doc transform, plain and filled in. */
 export function plainTransform(t) {
@@ -362,18 +342,21 @@ export function published(diag, state) {
 // ─── the stage side ─────────────────────────────────────────────────────────
 
 /**
- * ctx.sim. Reads ctx.sea (ocean, wind, clock) at every step; play.js ticks
- * it after the sea, each frame.
+ * ctx.sim. Reads ctx.sea (ocean, wind) at every step; the doc's clock steps
+ * it (api.clock.process); play.js ticks it each frame for what every view
+ * does (inputs, following) and, computing, to hold the poses the steps
+ * reached.
  * @param {any} api
- * @param {{ sea: { ocean, wind, clock(): number } }} ctx
+ * @param {{ sea: { ocean, wind } }} ctx
  */
 export function createSim(api, ctx) {
-  let release = null; // our "sim" claim, while we simulate
-  const ships = new Map(); // id → { model, key, state, good, read, seen, at, savedAt, saved }
-  const holding = new Set(); // ids this view holds poses on
-  const shown = new Map(); // id → the hull's matrix as last seen held by the simulator (following)
+  let computing = false; // between the process's start and stop
+  let savedSinceStep = false; // a checkpoint wrote the ships since the last step: let go of them landed
+  const ships = new Map(); // id → { model, key, state, good, read, seen, at, frame }
+  const holding = new Set(); // ids this view holds poses on (holds that stood)
+  const shown = new Map(); // id → the hull's matrix as last seen held by the computer (following)
   let inputs = {}; // this view's live input, by station
-  let streamed = {}; // the simulator's last published ships
+  let streamed = {}; // the computer's last published ships
   let publishedAt = -Infinity;
 
   let memo = { scene: null, map: new Map() };
@@ -417,13 +400,13 @@ export function createSim(api, ctx) {
     api.presence.set("input", Object.keys(next).length ? next : undefined);
   }
 
-  /** The simulating session, if it's someone else. */
+  /** The session computing the doc's clock, if it's someone else. */
   function simulator() {
-    const c = api.claimedBy(null, SIM);
+    const c = api.claimedBy(null, CLOCK);
     return c && !c.mine ? c.session : null;
   }
 
-  // ─── simulating ──────────────────────────────────────────────────────────
+  // ─── the process ─────────────────────────────────────────────────────────
 
   /**
    * A ship to simulate from her hull's world matrix (as shown; else the
@@ -435,57 +418,41 @@ export function createSim(api, ctx) {
     const frame = shipFrame(api, id);
     const pose = m ? poseOfMatrix(m) : { position: doc.position, quaternion: quatFromEuler(doc.rotation) };
     const state = stateOf(toBody(pose, frame, doc.scale), motion ?? o.traits[SHIP]?.motion, t);
-    return { frame, state, good: state, seen: { transform: doc, motion: motionKey(o.traits[SHIP]?.motion) }, savedAt: Date.now(), saved: { position: state.position, quaternion: state.quaternion } };
+    return { frame, state, good: state, seen: { transform: doc, saved: stampOf(o) } };
   }
 
-  function start(sc) {
-    release = api.claim(null, SIM, { onLost: stop });
-    if (!release) return;
+  /** This view computes from world time t: warm from what it followed, else cold from the doc. */
+  function start(t) {
+    computing = true;
+    savedSinceStep = false;
+    const sc = api.scene();
     ships.clear();
-    // from the poses it last saw the simulator hold, and the last motion it knew
-    for (const id of shipsOf(sc)) ships.set(id, track(id, sc.objects[id], ctx.sea.clock(), shown.get(id) ?? api.worldOf(id), streamed[id]));
+    for (const id of shipsOf(sc)) ships.set(id, track(id, sc.objects[id], t, shown.get(id) ?? null, streamed[id]));
     shown.clear();
   }
 
-  /** We're not simulating any more: someone else won the claim (they hold the poses now). */
+  /** It doesn't any more (paused, hidden, gone, or someone else computes): let go of what it holds, landed where a checkpoint just wrote it. */
   function stop() {
-    release = null;
-    for (const id of holding) api.pose.release(id);
+    computing = false;
+    for (const id of holding) api.pose.release(id, savedSinceStep ? { landed: true } : undefined);
     holding.clear();
     ships.clear();
     api.presence.set("ships", undefined);
   }
 
   /**
-   * We're going (the view stops, or hides): the doc gets where the ships
-   * are, and peers keep showing them there until their doc does, so nobody
-   * sees her jump back to the last save.
+   * One step of world time: every ship's physics to t. What she looks like
+   * (her pose held, her readings published) is drawn once a frame (pose()),
+   * not at every step: a slow frame takes many steps.
    */
-  function letGo() {
-    if (!release) return;
-    save(api.scene(), true);
-    for (const id of holding) api.pose.release(id, { landed: true });
-    holding.clear();
-    const r = release;
-    release = null;
-    ships.clear();
-    api.presence.set("ships", undefined);
-    r();
-  }
-
-  function step(sc) {
-    const t = ctx.sea.clock();
+  function step(_dt, t) {
+    savedSinceStep = false;
+    const sc = api.scene();
     const env = { water: ctx.sea.ocean, wind: ctx.sea.wind };
-    const held = new Set();
-    const hold = (id, transform) => {
-      api.pose.hold(id, transform);
-      held.add(id);
-    };
     const ids = env.water ? shipsOf(sc) : []; // no sea, nothing sails
     for (const id of ids) {
       const o = sc.objects[id];
       const doc = plainTransform(o.transform);
-      const motion = o.traits[SHIP]?.motion;
       const frame = shipFrame(api, id);
       const p = parts(sc, id);
       const rigExtras = p.sail ? api.content(p.sail)?.extras : null;
@@ -511,13 +478,13 @@ export function createSim(api, ctx) {
         // what her rig's contract can't vouch for, said once per spec
         for (const w of spec.rig?.warnings ?? []) console.warn(`sailing: ${w}`);
       }
-      if (movedByEditor(doc, motion, s.seen)) {
-        // someone moved it (the editor): start again from there, at rest, and drop the anchor again
+      if (movedByEditor(doc, o.saved, s.seen)) {
+        // someone moved it (the halo, the inspector, a carry put down): start again from there, at rest, and drop the anchor again
         const body = toBody({ position: doc.position, quaternion: quatFromEuler(doc.rotation) }, frame, doc.scale);
         s.state = s.model.rest({ position: body.position, yaw: yawOf(body.quaternion), t });
         s.at = null;
       }
-      s.seen = { transform: doc, motion: motionKey(motion) };
+      s.seen = { transform: doc, saved: stampOf(o) };
 
       const v = { helm: p.helm && value(p.helm, sc), sail: p.sail && value(p.sail, sc), anchor: p.anchor && value(p.anchor, sc), jib: p.jib && value(p.jib, sc) };
       anchorSpot(s, p.anchor, v.anchor, sc, spec);
@@ -528,18 +495,37 @@ export function createSim(api, ctx) {
       s.state = finiteState(next) ? next : { ...s.good, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0, boom: undefined };
       s.good = s.state;
       s.read = published(s.model.read(s.state, controls, env), s.state);
+      s.drawn = { p, controls };
+    }
+    for (const id of ships.keys()) if (!ids.includes(id)) ships.delete(id);
+  }
 
-      const hull = toObject(s.state, frame, doc.scale);
-      hold(id, transformOf(hull, doc.scale));
+  /** This frame's poses, held from where the steps left each ship, and her readings published. */
+  function pose() {
+    const sc = api.scene();
+    const held = new Set();
+    const hold = (id, transform, yields = true) => {
+      if (api.pose.hold(id, transform, { yields })) held.add(id);
+    };
+    // (what the steps saw may have gone since: only what's still in the doc is held)
+    for (const [id, s] of ships) {
+      const o = sc.objects[id];
+      if (!o || !s.drawn || !finiteState(s.state)) continue;
+      const { p, controls } = s.drawn;
+      const doc = plainTransform(o.transform);
+      const hull = toObject(s.state, s.frame ?? IDENTITY, doc.scale);
+      // her hull yields to a person (someone may carry it) unless someone is at the helm: then she's driven
+      const steered = !!(p.helm && api.claimedBy(p.helm, STATION));
+      hold(id, transformOf(hull, doc.scale), !steered);
       // the boom swung about the mast from where the rig was put
-      if (p.sail) hold(p.sail, rigTransform(plainTransform(sc.objects[p.sail].transform), s.read.boom));
+      if (p.sail && sc.objects[p.sail]) hold(p.sail, rigTransform(plainTransform(sc.objects[p.sail].transform), s.read.boom));
       // the jib swung about its luff from where it was put, when her physics flies one
-      if (p.jib && Number.isFinite(s.read.jib)) hold(p.jib, jibTransform(plainTransform(sc.objects[p.jib].transform), s.read.jib));
-      // the wheel is its helmsman's to hold (stations.js), so it turns as their key does; else ours
+      if (p.jib && sc.objects[p.jib] && Number.isFinite(s.read.jib)) hold(p.jib, jibTransform(plainTransform(sc.objects[p.jib].transform), s.read.jib));
+      // the wheel is its helmsman's to hold (stations.js, a person's hold), so it turns as their key does; else ours
       const at = p.helm && api.claimedBy(p.helm, STATION);
-      if (p.helm && (!at || at.mine)) hold(p.helm, wheelTransform(plainTransform(sc.objects[p.helm].transform), controls.rudder));
+      if (p.helm && sc.objects[p.helm] && (!at || at.mine)) hold(p.helm, wheelTransform(plainTransform(sc.objects[p.helm].transform), controls.rudder), !at);
       // the anchor lies on the bottom while it's down, and hangs at the bow (the doc's place) when it's up
-      if (p.hook && controls.anchor) {
+      if (p.hook && sc.objects[p.hook] && controls.anchor) {
         // upright on the bottom, in the frame of whatever it hangs from aboard
         const under = placeIn(sc, parentOf(sc, p.hook), id);
         const back = invert(multiply(matrixOfPose(hull.position, hull.quaternion, doc.scale), under));
@@ -550,7 +536,6 @@ export function createSim(api, ctx) {
     for (const id of holding) if (!held.has(id)) api.pose.release(id);
     holding.clear();
     for (const id of held) holding.add(id);
-    for (const id of ships.keys()) if (!ids.includes(id)) ships.delete(id);
 
     const now = Date.now();
     if (now - publishedAt >= PUBLISH_EVERY_MS) {
@@ -560,7 +545,6 @@ export function createSim(api, ctx) {
       streamed = out;
       api.presence.set("ships", out);
     }
-    save(sc, false);
   }
 
   /**
@@ -592,45 +576,25 @@ export function createSim(api, ctx) {
     }
   }
 
-  /** Write the ships that are due (or all, `force`) to the doc: transform and motion. */
-  function save(sc, force) {
-    const now = Date.now();
-    const due = [];
+  /** The checkpoint's: write each ship this view still holds into the draft, transform and motion (a process saves only what it holds). */
+  function save(d) {
     for (const [id, s] of ships) {
-      if (!s.model || !sc.objects[id] || !finiteState(s.state)) continue;
-      if (force || shouldSave({ now, lastAt: s.savedAt, last: s.saved, pose: s.state })) due.push([id, s]);
+      const o = d.objects?.[id];
+      if (!o || !s.model || !holding.has(id) || !finiteState(s.state)) continue;
+      const scale = plainTransform(o.transform).scale;
+      writeTransform(o, transformOf(toObject(s.state, s.frame ?? IDENTITY, scale), scale));
+      if (o.traits?.[SHIP]) o.traits[SHIP].motion = motionOf(s.state);
     }
-    if (!due.length) return;
-    const writes = due.map(([id, s]) => {
-      const scale = plainTransform(sc.objects[id].transform).scale;
-      const t = transformOf(toObject(s.state, s.frame ?? IDENTITY, scale), scale);
-      const motion = motionOf(s.state);
-      s.seen = { transform: t, motion: motionKey(motion) };
-      s.savedAt = now;
-      s.saved = { position: [...s.state.position], quaternion: [...s.state.quaternion] };
-      return [id, t, motion];
-    });
-    api.change((d) => {
-      for (const [id, t, motion] of writes) {
-        const o = d.objects?.[id];
-        if (!o) continue;
-        writeTransform(o, t);
-        if (o.traits?.[SHIP]) o.traits[SHIP].motion = motion;
-      }
-    });
+    savedSinceStep = true;
   }
 
-  // stopping (the activity switched), hiding or closing the tab: write the ships down and let go
-  api.signal?.addEventListener?.("abort", letGo);
-  const doc = globalThis.document;
-  if (doc) api.listen?.(doc, "visibilitychange", () => doc.visibilityState === "hidden" && letGo());
-  api.listen?.(globalThis, "pagehide", letGo);
+  const removeProcess = api.clock.process({ start, step, save, stop });
 
   return {
     ships: () => shipsOf(api.scene()),
-    /** What a sailor reads off a ship (published()): as simulated here, else as the simulator last published it. */
+    /** What a sailor reads off a ship (published()): as simulated here, else as the computer last published it. */
     read(id) {
-      if (release) return ships.get(id)?.read ?? null;
+      if (computing) return ships.get(id)?.read ?? null;
       return streamed[id] ?? null;
     },
     /**
@@ -672,29 +636,24 @@ export function createSim(api, ctx) {
         }
       });
     },
-    simulating: () => !!release,
+    /** Does this view compute the ships (the doc's clock)? */
+    simulating: () => computing,
     simulator,
-    /** One frame: take over, follow or step. */
+    /** One frame, every view: drop stale inputs; computing, hold the poses the steps reached; following, keep what the computer publishes and the poses it holds. */
     tick() {
       const sc = api.scene();
       // what this view put in for stations it no longer holds goes
       const stale = Object.keys(inputs).filter((id) => !api.claimedBy(id, STATION)?.mine);
       if (stale.length) setInputs(Object.fromEntries(Object.entries(inputs).filter(([id]) => !stale.includes(id))));
-
-      const role = simRole(api.claimedBy(null, SIM), !!release);
-      if (role === "yield") stop();
-      else if (role === "take") start(sc);
-      else if (role === "follow") {
-        const c = api.claimedBy(null, SIM);
-        const latest = api.presence.get()?.[c.session]?.keys?.[api.id]?.ships;
-        if (latest) streamed = latest;
-        // where the simulator last held each hull: a successor starts there, not at the last save
-        for (const id of shipsOf(sc)) if (api.heldBy?.(id)) shown.set(id, api.worldOf(id));
-      }
-      if (release) step(sc);
+      if (computing) return pose();
+      const c = simulator();
+      const latest = c ? api.presence.get()?.[c]?.keys?.[api.id]?.ships : null;
+      if (latest) streamed = latest;
+      // where the computer last held each hull (its hold, or a person's ahead of it): a successor starts there, not at the last save
+      for (const id of shipsOf(sc)) if (api.heldBy?.(id, { yields: true })) shown.set(id, api.worldOf(id));
     },
     dispose() {
-      api.signal?.removeEventListener?.("abort", letGo);
+      removeProcess?.();
     },
   };
 }

@@ -589,6 +589,8 @@ ships alone and proves something.
 6. [T] **Bodies and the held tool**; rides by body, so `fallback` and
    `riding()` go.
 7. [T] **The clock**: one `"clock"` claim per doc, processes, ordered holds.
+   *Built:* see TOOLS.md step 7 and §7's *Built* notes. One clock, one
+   stage, until step 12 gives each linked doc its own.
 8. [T] **Activities and `requires` go**, with `always` and `general:
    false`. *Proves:* every suite passes with less stage.
 9. [T] **STAGE.md, DESIGN.md and SCOPE.md** follow; old docs ditched,

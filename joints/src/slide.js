@@ -8,7 +8,7 @@
 //     speed: m/s,                    // how fast it moves
 //     wait?: s,                      // if > 0, it closes itself this long after it opened
 //     at:    "closed" | "open",      // the stop the transform is at
-//     since?: ms, by?: session,      // when it came to rest open, and whose view opened it (runtime)
+//     since?: s,                     // when it came to rest open, in the doc's world time (runtime)
 //   }
 //
 // The base of the line isn't stored: it is the position less axis × the
@@ -18,14 +18,20 @@
 // holds only where it rests: the view that moves it shows the motion as a
 // pose hold (everyone sees it; the stage's raycasts and worldOf see it, so it
 // blocks a walker as drawn), and writes the stop it reaches once. So a cycle
-// (open, wait, close) is two writes. The view that opened it closes it when
-// its wait is up; if that view has gone, any view does, a grace period later.
+// (open, wait, close) is two writes.
 //
-// A motion is timed by the wall clock from when it started, not by frames:
-// where the part is drawn is (now − started) / travel time along the line,
-// and the write is due at a fixed time, started + max(travel time, HEAR_MS),
-// whether or not any frame was drawn in between (a hidden tab draws none, but
-// its timers still run, so it still lands and writes).
+// THREE TIMES (scene/TOOLS.md §7). A motion is an act: timed by the wall
+// clock from when it started, not by frames and not by the world's clock,
+// so a pause never stops one halfway. Where the part is drawn is
+// (now − started) / travel time along the line, and the write is due at a
+// fixed time, started + max(travel time, HEAR_MS), whether or not any frame
+// was drawn in between (a hidden tab draws none, but its timers still run,
+// so it still lands and writes). HEAR_MS is liveness, on the wall clock too.
+// The wait is world time: `since` is the doc's world t when it came to rest
+// open, and closing is a step of the scene's process (`due`), run by
+// whichever view computes the doc's clock, once t ≥ since + wait. So a pause
+// holds a door open, nobody present holds it open (no time passes), and the
+// view that closes it is never a matter of who opened it.
 //
 // TWO AT ONCE. Two views starting at once both hold it; the stage ranks their
 // holds the same way everywhere (STAGE.md, `heldBy`), and the one that is
@@ -53,8 +59,6 @@ export const MAX_LATENCY_MS = 450;
  * latency after its own (above): 2 × (latency + pose interval).
  */
 export const HEAR_MS = 2 * (MAX_LATENCY_MS + POSE_MS);
-/** How long, past when it should have closed, other views leave an absent opener's part before closing it (ms). */
-export const GRACE_MS = 1500;
 /** Arm's reach: how far from the eye a use can be (m). */
 export const REACH = 2;
 
@@ -78,8 +82,13 @@ export function readSlide(trait) {
     wait: wait > 0 ? wait : 0,
     at: trait.at === "open" ? "open" : "closed",
     since: Number.isFinite(trait.since) ? trait.since : null,
-    by: typeof trait.by === "string" ? trait.by : null,
   };
+}
+
+/** Does any part in this doc close itself (a wait)? Then the scene has a process: the closing. */
+export function selfClosing(doc) {
+  for (const o of Object.values(doc?.objects ?? {})) if (o && o.kind !== "group" && (readSlide(o.traits?.[KEY])?.wait ?? 0) > 0) return true;
+  return false;
 }
 
 /** The other stop. */
@@ -101,14 +110,13 @@ const same = (a, b) => [0, 1, 2].every((i) => Math.abs(num(a?.[i], 0) - num(b?.[
 
 /**
  * @typedef {object} SlideEnv
- * @property {string} session            this view
- * @property {() => number} now          ms (a wall clock: `since` is compared across views)
+ * @property {() => number} now          ms, the wall clock (acts and liveness)
+ * @property {() => number} t            s, the doc's world time as this view has it (api.clock.t)
  * @property {() => { objects: object }} doc     the scene doc as this view has it
  * @property {(fn: (d: object) => void) => void} change
  * @property {(id: string, transform: object) => void} hold
  * @property {(id: string, o?: { landed?: boolean }) => void} release
  * @property {(id: string) => string | null} heldBy     a peer holding it ahead of this view
- * @property {(session: string) => boolean} present     is that view here?
  */
 
 /**
@@ -116,10 +124,8 @@ const same = (a, b) => [0, 1, 2].every((i) => Math.abs(num(a?.[i], 0) - num(b?.[
  * @param {SlideEnv} env
  */
 export function createSlides(env) {
-  /** id → { from, to, fromPos, toPos, rotation, scale, duration (ms), started (ms), lands (ms) } */
+  /** id → { from, to, fromPos, toPos, rotation, scale, duration (ms), started (ms), lands (ms), t0 (s, world) } */
   const moving = new Map();
-  /** id → when this view first saw it open with nobody here to close it */
-  const orphaned = new Map();
 
   const objectOf = (id) => env.doc()?.objects?.[id] ?? null;
   const slideOf = (id) => {
@@ -157,6 +163,7 @@ export function createSlides(env) {
       duration,
       started,
       lands: started + Math.max(duration, HEAR_MS),
+      t0: env.t(),
     };
     moving.set(id, m);
     hold(id, m);
@@ -195,57 +202,34 @@ export function createSlides(env) {
         if (!od || !tr || (tr.at === "open" ? "open" : "closed") !== m.from) return;
         for (let i = 0; i < 3; i++) if (od.transform.position[i] !== m.toPos[i]) od.transform.position[i] = m.toPos[i];
         tr.at = m.to;
-        if (m.to === "open") {
-          // when it got there (the write may come later: HEAR_MS, or a hidden tab's late timer)
-          tr.since = Math.round(m.started + m.duration);
-          tr.by = env.session;
-        } else {
-          delete tr.since;
-          delete tr.by;
-        }
+        // when it got there, in world time: no later than now, nor than its start and its travel
+        // (the write may come later: HEAR_MS, a hidden tab's late timer, or the world paused meanwhile)
+        if (m.to === "open") tr.since = Math.round(Math.min(env.t(), m.t0 + m.duration / 1000) * 1e6) / 1e6;
+        else delete tr.since;
       });
       env.release(id, { landed: true });
     }
   }
 
   /**
-   * When this view should close a part that's open, or null: its opener at
-   * since + wait; anyone else, once the opener is gone, a grace period after
-   * the later of that and when they noticed it gone.
+   * The world's step (the computing view's alone): close every part open at
+   * least its wait by world time `t`. A part someone is moving is left be (a
+   * later step tries again). Returns how many it started closing.
    */
-  function closeAt(id, s) {
-    if (s.at !== "open" || !(s.wait > 0)) return null;
-    if (s.by === env.session && s.since != null) return s.since + s.wait * 1000;
-    if (s.by && env.present(s.by)) {
-      orphaned.delete(id);
-      return null;
-    }
-    if (!orphaned.has(id)) orphaned.set(id, env.now());
-    return Math.max(s.since != null ? s.since + s.wait * 1000 : 0, orphaned.get(id)) + GRACE_MS;
-  }
-
-  /**
-   * Start the closes that are this view's to do now. Returns when to look
-   * again (ms, wall clock), or null: the next close due, or the next landing
-   * (so a view that draws no frames still lands what it moves on time).
-   */
-  function review() {
+  function due(t) {
     const objects = env.doc()?.objects ?? {};
-    let next = null;
+    let n = 0;
     for (const id of Object.keys(objects)) {
       const s = slideOf(id);
-      if (!s || s.at !== "open") {
-        orphaned.delete(id);
-        continue;
-      }
-      if (moving.has(id)) continue;
-      const at = closeAt(id, s);
-      if (at == null) continue;
-      if (env.now() >= at) {
-        // a peer already at it (closing early, or another view's close): leave it be, and look again
-        if (!move(id, "closed")) next = Math.min(next ?? Infinity, env.now() + 250);
-      } else next = Math.min(next ?? Infinity, at);
+      if (!s || s.at !== "open" || !(s.wait > 0) || moving.has(id)) continue;
+      if (t >= (s.since ?? -Infinity) + s.wait && move(id, "closed")) n++;
     }
+    return n;
+  }
+
+  /** When to look again (ms, wall clock) to land what this view moves, or null: so a view that draws no frames still lands on time. */
+  function review() {
+    let next = null;
     for (const m of moving.values()) next = Math.min(next ?? Infinity, m.lands);
     return next;
   }
@@ -255,5 +239,5 @@ export function createSlides(env) {
     for (const id of [...moving.keys()]) abandon(id);
   }
 
-  return { verb, move, frame, review, stop, moving: () => moving.size > 0, isMoving: (id) => moving.has(id) };
+  return { verb, move, frame, due, review, stop, moving: () => moving.size > 0, isMoving: (id) => moving.has(id) };
 }

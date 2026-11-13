@@ -1,21 +1,17 @@
 // The sea while editing (DESIGN.md, edit.js): the same water and sky as in
-// play (sea-view.js draws both). When someone is sailing her while you
-// edit, its clock is the one the play extension publishes, followed as in
-// play, so the hull you see them sail rides the waves you see; else a clock
-// of this view's own. Ships stay where the doc (or the sailor's pose) puts
-// them.
+// play (sea-view.js draws both), at the doc's world time (api.clock.t), so
+// the hull someone sails meanwhile rides the waves you see. Editing brings
+// no process: alone in edit, nobody computes the clock, and the sea stands
+// still until someone plays (scene TOOLS.md §7; editing stops freezing the
+// world when activities go). Ships stay where the doc (or the sailor's
+// pose) puts them.
 
-import { drawSea, seaClock } from "./sea-view.js";
-import { SIM } from "./traits.js";
+import { drawSea } from "./sea-view.js";
 
 export default {
   create(api) {
     const sea = drawSea(api);
-    const clock = seaClock(api);
-    const off = api.loop((dt, now) => {
-      const c = api.claimedBy(null, SIM);
-      sea.draw(clock.tick(dt, now, c && !c.mine ? c.session : null));
-    });
+    const off = api.loop(() => sea.draw(api.clock.t()));
     return {
       update: (scene) => sea.update(scene),
       atmosphere: sea.atmosphere,

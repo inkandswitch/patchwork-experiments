@@ -18,8 +18,11 @@
 //     routeOf): the render manager for "built", the GLB queue for "file";
 //     their state → local.status.
 //   - presence, and other views' pose holds shown on the viewport, played
-//     back smoothly (smooth.js); claims, which are doc fields that count only
-//     while their holder's session is in presence.
+//     back smoothly (smooth.js); this view's holds in the one order
+//     (holds.js); claims, which are doc fields that count only while their
+//     holder's session is in presence.
+//   - the doc's world time (clock.js): the "clock" claim, processes,
+//     checkpoints, following; what the chip shows → local.clock.
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
 //   - the router (router.js): DOM input → events, down the chain.
@@ -36,6 +39,8 @@ import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
 import { createRouter } from "./router.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
+import { createHolds } from "./holds.js";
+import { CLOCK, PRESENCE_KEY, PRESENCE_NS, createClock, eligibility } from "./clock.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
@@ -231,7 +236,7 @@ const CONTESTED_TEXT = "A collaborator built it differently (another provider ve
  * @param {object} o  the object  @param {object} s  what the render manager or GLB queue last said
  */
 /** What addObject settles itself, which its `fields` never override. */
-const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims"]);
+const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
 
 /**
  * A new render doc started from another's (a copied object's): its params,
@@ -395,6 +400,8 @@ export default function Stage(handle, element) {
     // this viewer's activity: null until the host has the doc and starts them where it says
     activity: null,
     activities: Object.freeze({ current: DEFAULT_ACTIVITY, available: Object.freeze([DEFAULT_ACTIVITY]) }),
+    // the doc's clock as the chip shows it (clock.js status), once known
+    clock: null,
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
     // (`missing`: a listed package isn't here, or that isn't known yet: the audience is unknown meanwhile)
@@ -878,7 +885,6 @@ export default function Stage(handle, element) {
   // ─── presence ─────────────────────────────────────────────────────────────
 
   const presence = createPresence({ handle, viewer, now: () => Date.now() });
-  const localHolds = new Map(); // object id → the extension holding its pose here
   const remotePosed = new Set(); // object ids showing another view's pose
   const playing = new Set(); // of those, the ones still playing back (smooth.js)
   let poseLoopOff = null;
@@ -894,7 +900,7 @@ export default function Stage(handle, element) {
   // A live hold is played back between its samples, every frame, until it
   // has caught up with the last one (tickPoses).
   function applyRemoteHold(id) {
-    if (dead || localHolds.has(id)) return;
+    if (dead || holds.has(id)) return;
     const h = presence.remoteHolds().get(id);
     const m = derive();
     const o = m.objects[id];
@@ -931,10 +937,10 @@ export default function Stage(handle, element) {
    */
   function tickPoses(t = Date.now()) {
     if (dead) return;
-    const holds = presence.remoteHolds();
+    const remote = presence.remoteHolds();
     for (const id of [...playing]) {
-      const h = holds.get(id);
-      if (!h || h.landed || localHolds.has(id) || !remotePosed.has(id)) {
+      const h = remote.get(id);
+      if (!h || h.landed || holds.has(id) || !remotePosed.has(id)) {
         playing.delete(id);
         continue;
       }
@@ -989,7 +995,13 @@ export default function Stage(handle, element) {
     }
     return out;
   }
-  cleanups.push(presence.watchHolds((_holds, ids) => ids.forEach(applyRemoteHold)));
+  cleanups.push(
+    presence.watchHolds((_holds, ids) => {
+      // a peer's hold that now ranks ahead of one here takes it (holds.js), then each is shown as it stands
+      holds.reconcile(ids);
+      ids.forEach(applyRemoteHold);
+    }),
+  );
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
       const x = host.instanceOf(ext);
@@ -1002,30 +1014,39 @@ export default function Stage(handle, element) {
     }),
   );
 
-  function holdPose(extId, own, id, transform) {
-    const m = derive();
-    if (!m.objects[id] || isGroup(m.objects[id])) return;
-    const t = normalizeTransform(transform);
-    const was = localHolds.get(id);
-    if (was && was !== extId) owned.get(was)?.holds.delete(id);
-    localHolds.set(id, extId);
+  // This view's pose holds, in the one order (holds.js): a person's before a
+  // yielding one, then the first; a peer's that ranks ahead takes it.
+  const holds = createHolds({
+    presence,
+    exists: (id) => {
+      const o = derive().objects[id];
+      return !!o && !isGroup(o);
+    },
+    parentOf: (id) => derive().parents.get(id) ?? null,
+    shown: (id, t) => {
+      remotePosed.delete(id);
+      playing.delete(id);
+      viewport.setPose(id, t);
+      displayChanged();
+    },
+    unshown: (id) => {
+      viewport.setPose(id, null);
+      applyRemoteHold(id);
+      displayChanged();
+    },
+    lost: (ext, id) => owned.get(ext)?.holds.delete(id),
+  });
+
+  /** Hold an object's pose for an extension: true when the hold stands. */
+  function holdPose(extId, own, id, transform, yields) {
+    if (!holds.hold(extId, id, normalizeTransform(transform), { yields })) return false;
     own.holds.add(id);
-    remotePosed.delete(id);
-    playing.delete(id);
-    presence.hold(extId, id, m.parents.get(id) ?? null, t);
-    viewport.setPose(id, t);
-    displayChanged();
+    return true;
   }
 
   function releasePose(extId, own, id, landed) {
-    if (localHolds.get(id) !== extId) return;
-    localHolds.delete(id);
-    own.holds.delete(id);
     const t = landed ? doc().objects?.[id]?.transform : null;
-    presence.release(extId, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined);
-    viewport.setPose(id, null);
-    applyRemoteHold(id);
-    displayChanged();
+    if (holds.release(extId, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined)) own.holds.delete(id);
   }
 
   // ─── claims ───────────────────────────────────────────────────────────────
@@ -1198,6 +1219,73 @@ export default function Stage(handle, element) {
       }
     });
   }
+
+  // ─── the clock ────────────────────────────────────────────────────────────
+  //
+  // World time for this doc (clock.js; TOOLS.md §7): one "clock" claim, held
+  // by the view that computes it and steps every process; the others
+  // follow. The stage holds the claim itself, under the usual rules. What
+  // the chip shows is local.clock.
+
+  const clockOwn = { claims: new Set() };
+  let hostMade = false; // (the host is made below, once makeApi exists)
+  const visible = () => globalThis.document?.visibilityState !== "hidden";
+  const writable = () => !(typeof handle.isReadOnly === "function" && handle.isReadOnly());
+  const clock = createClock({
+    doc,
+    change: (fn) => handle.change(fn),
+    claim: {
+      take: (onLost) => (away || dead ? null : takeClaim("scene:clock", clockOwn, null, CLOCK, onLost)),
+      holder: () => claimedBy(null, CLOCK),
+    },
+    presence: {
+      set: (sample) => presence.set(PRESENCE_NS, PRESENCE_KEY, sample),
+      sample: (s) => presence.get()[s]?.keys?.[PRESENCE_NS]?.[PRESENCE_KEY] ?? null,
+      shownAt: (s) => presence.shownAt(s),
+      rate: (hz) => presence.rate(PRESENCE_NS, hz),
+    },
+    // (no pins or mirrors yet: every stage acts)
+    eligible: () => eligibility({ acts: true, writable: writable(), visible: visible(), settled: hostMade && host.settled(), complete: packages.complete() }),
+    writable,
+    viewer,
+    onStatus: (status) => {
+      if (!dead) local.swap(assoc("clock", status));
+    },
+  });
+
+  // Frames while anything moves: this view has a process, or someone computes.
+  let clockLoopOff = null;
+  function clockFrames() {
+    if (dead) return;
+    const want = clock.live();
+    if (want && !clockLoopOff) {
+      if (viewport.ok) clockLoopOff = viewport.addLoop(() => clock.tick(Date.now()), { first: true });
+      else {
+        let frame = null;
+        const off = () => caf(frame);
+        const step = () => {
+          clock.tick(Date.now());
+          if (clockLoopOff === off) frame = raf(step);
+        };
+        frame = raf(step);
+        clockLoopOff = off;
+      }
+    } else if (!want && clockLoopOff) {
+      const off = clockLoopOff;
+      clockLoopOff = null;
+      off();
+    }
+  }
+  /** Something the clock depends on changed: take, keep or let go now, and run frames if wanted. */
+  function clockCheck() {
+    if (dead) return;
+    clock.check();
+    clockFrames();
+  }
+  cleanups.push(presence.watch(() => clockCheck()));
+  const onVisibility = () => clockCheck();
+  globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
+  cleanups.push(() => globalThis.document?.removeEventListener?.("visibilitychange", onVisibility));
 
   // ─── the update flush ─────────────────────────────────────────────────────
 
@@ -1498,7 +1586,7 @@ export default function Stage(handle, element) {
    *   group: file in that group; before: its place in the order; heads (or
    *   heads in the URL itself): add it fixed at that version of its source (`at`);
    *   fields: more of the object, written in the same change (a copy's traits,
-   *   tags, colour…; never the fields above, nor `claims`); render: a render
+   *   tags, colour…; never the fields above, nor `claims` or `saved`); render: a render
    *   doc to start the new one from (a copy's: its params, and its build when
    *   it was of this source by this provider; transfer.js renderSeed)
    * @returns {Promise<string>} the new object's id; rejects with a sentence to show
@@ -1793,6 +1881,7 @@ export default function Stage(handle, element) {
       arms: new Set(), // live arm tokens
       sessions: 0, // open press sessions
       holds: new Set(), // object ids whose pose it holds
+      processes: new Set(), // its processes' removals (api.clock.process)
       claims: new Set(), // the claims it holds (entries in `claims`)
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
@@ -1978,12 +2067,11 @@ export default function Stage(handle, element) {
         applyCursor();
       },
       pose: Object.freeze({
-        hold: (oid, transform) => {
-          if (live()) holdPose(id, own, oid, transform);
-        },
+        /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
+        hold: (oid, transform, { yields = false } = {}) => live() && holdPose(id, own, oid, transform, yields),
         release: (oid, { landed = false } = {}) => releasePose(id, own, oid, landed),
       }),
-      heldBy: (oid) => presence.heldBy(oid),
+      heldBy: (oid, opts) => presence.heldBy(oid, opts),
       claim: (oid, kind, { onLost } = {}) => (live() ? takeClaim(id, own, oid ?? null, kind, onLost) : null),
       claimedBy: (oid, kind) => claimedBy(oid ?? null, kind),
       extent: (box) => {
@@ -1992,6 +2080,22 @@ export default function Stage(handle, element) {
       invalidate: () => viewport.invalidate(),
       loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
+      /**
+       * World time (TOOLS.md §7): this view's t (s), running, pause and
+       * resume (anyone who may write), and process({ start?, step, save?,
+       * stop?, replicated? }) → remove.
+       */
+      clock: Object.freeze({
+        t: () => clock.t(),
+        running: () => clock.running(),
+        pause: () => clock.pause(),
+        resume: () => clock.resume(),
+        process: (spec) => {
+          const off = acquire(own.processes, () => clock.process(spec));
+          clockFrames();
+          return off;
+        },
+      }),
       schedule: (fn) => {
         if (!live() || typeof fn !== "function") return;
         scheduled.push({ rec, fn });
@@ -2040,7 +2144,11 @@ export default function Stage(handle, element) {
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
-      // 3: its pose holds, put back, and its claims, let go
+      // 3: its processes (saved first, where this view computes them), its
+      // pose holds, put back, and its claims, let go
+      for (const give of [...own.processes]) give();
+      own.processes.clear();
+      clockFrames();
       for (const oid of [...own.holds]) releasePose(id, own, oid, false);
       for (const e of [...own.claims]) releaseClaim(e);
       // 4: its presence keys (and its rate)
@@ -2089,6 +2197,7 @@ export default function Stage(handle, element) {
     busy,
     onChange: resync,
   });
+  hostMade = true;
 
   // ─── the router ───────────────────────────────────────────────────────────
 
@@ -2209,6 +2318,8 @@ export default function Stage(handle, element) {
   // anyway; deleting them only tells peers sooner, if the write gets out.
   const onPageHide = () => {
     if (away) return;
+    // world time stops here first: a checkpoint, and the clock let go
+    clock.letGo();
     eraseClaims([...claims.values()]);
     away = true;
     presence.goodbye();
@@ -2218,6 +2329,7 @@ export default function Stage(handle, element) {
     away = false;
     presence.hello();
     recheckClaims();
+    clockCheck();
   };
   globalThis.addEventListener?.("pagehide", onPageHide);
   globalThis.addEventListener?.("pageshow", onPageShow);
@@ -2240,6 +2352,7 @@ export default function Stage(handle, element) {
     for (const id of [...presence.remoteHolds().keys()]) applyRemoteHold(id);
     recheckClaims();
     packages.check();
+    clockCheck();
     requestFlush();
     perf.sync.add(now() - t0);
   }
@@ -2277,6 +2390,8 @@ export default function Stage(handle, element) {
     busy,
     /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */
     tickPoses,
+    /** the doc's clock here (clock.js): t, status, tick(at), check() */
+    clock,
     /** the claims this view holds: [{ id, kind, ext }] */
     claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     stats: () => ({
@@ -2292,8 +2407,12 @@ export default function Stage(handle, element) {
 
   return () => {
     if (dead) return;
-    // the extensions first, while everything they hold is still there to give back
+    // world time stops first (one checkpoint, with every process's save), then
+    // the extensions, while everything they hold is still there to give back
+    clock.dispose();
     host.dispose();
+    clockLoopOff?.();
+    clockLoopOff = null;
     stopPoseLoop();
     dead = true;
     router.dispose();

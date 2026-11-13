@@ -368,7 +368,9 @@ the shared part `scene.use` (`src/parts/use.js`). The rest still stand.
 4. **Who owns time.** The ship's motion (wind, heel, leeway, buoyancy) is
    simulated by one peer and followed by the rest. *Recommendation:* the
    simulating peer **claims the ship's simulation** in the doc (item 1,
-   kind `"sim"`) and streams its pose continuously (section 5). The others
+   kind `"sim"`) and streams its pose continuously (section 5). (Built
+   so, then generalised by TOOLS.md §7: the doc's world clock, whose
+   `"clock"` claim the stage holds for whoever computes every process.) The others
    render the pose stream and send their inputs (the helm's angle, the
    sails' trim) as presence of whoever is at that station; the simulator
    reads them. When the simulating peer leaves, its claim lapses (its
