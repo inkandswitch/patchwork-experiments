@@ -18,6 +18,8 @@ people lists this package in its `packages`, like any other.
   describes it (*Seats*, a map of entries), so the inspector can add, name
   and remove seats.
 - **The picker**, over the view at the top right: pick a seat, or watch.
+  Seats at more than one table (several frames) are grouped by table, each
+  group named for the object their views are in (`pickerGroups`).
 - **Who sits where is the doc's** (`player`) and lasts. Whether that player
   is here now is a claim on the scene, `seat:<id>` (scene/STAGE.md,
   "Claims"): it lapses when they go, so a seat whose player has gone can be
@@ -45,9 +47,9 @@ people lists this package in its `packages`, like any other.
 
 | | |
 |---|---|
-| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. The first four are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone" |
+| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, around(scene, ids) → [{ id, name, viewer \| null }] }`. All but `who` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `around` is the seats at the table these objects are at (a deck's cards): for each, the seats in the nearest frame up its parents that is some seat's (`camera.in`), else those in the world. With one table that is every seat; with several, each its own, so a keeper waits only on its own table's players. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone" |
 | `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). A name tag goes on each, and a look at one is a look at its seat |
-| `lay(d, seats)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, only where the scene has none (a seat whose camera's frame is gone takes the new one); setup code calls it instead of writing seats |
+| `lay(d, seats)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, and returns `{ [given id]: id written }`. The map is made once; a scene that has seats gets these added: a seat whose camera's frame is gone takes the new view, and an id still at another table is written as `<id>-2`, `-3`… (a second table in one room). Setup code calls it instead of writing seats, and names its hands by the ids it returns |
 
 These are also listed in scene/STAGE.md, "Conventions", with the keepers'.
 Where this package isn't loaded there is no roster: a hand is nobody's and

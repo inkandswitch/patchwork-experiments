@@ -1,0 +1,310 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>games room probe</title>
+<!-- Driven by probes/publish-office.mjs. The BUILT scene tool (scene/dist)
+     with the BUILT seats, tabletop, keeper and walk plugins (seats/dist,
+     tabletop/dist, card-table/dist: the joint keeper; keep/dist; walk/dist:
+     the entrance mat is a spawn point) in a stub registry, each registered
+     from its package's URL (?urls=), on an in-memory repo, on an EMPTY scene.
+     Two views of one doc, A (Ana) and B (Ben), each view's broadcasts
+     reaching only the other, a few ms late (?w=, ?h=: each view's size;
+     ?solo: A alone).
+     build() makes the room the way an importer does (its pieces are GLB
+     files the scene keeps, office/room.js, written into the doc as objects),
+     then sets the tables the way a person does, through the stage's own
+     calls: the parts bin's Card table on a tatami square, and a game on each
+     table (api.part), Lost Cities first. B opens it after. Nothing here
+     imports another package's source: each package's built dist is loaded
+     as its plugins. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "../src/empty-scene.js";
+import { PICKER, cardIds, kept, seatsOf, shownAs } from "./table-setup.js";
+import lostCities from "../games/lost-cities.json" with { type: "json" };
+import santorini from "../games/santorini.json" with { type: "json" };
+import dominoes2 from "../games/draw-dominoes-2.json" with { type: "json" };
+import { ENTRANCE, LOW_TABLE, MAT_TOP, ROOM, SPOTS, chairMeshes, cushionMeshes, entranceMat, lowTableMeshes, pieceGLB, roomPieces, setTables } from "./office/room.js";
+
+const q = new URLSearchParams(location.search);
+const W = Number(q.get("w") || 700), H = Number(q.get("h") || 520);
+for (const id of ["a", "b"]) Object.assign(document.getElementById(id).style, { width: `${W}px`, height: `${H}px` });
+if (q.has("solo")) document.getElementById("b").style.display = "none";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+
+/** The tables set: the game on each (a part's id), on which square, and the table's name. Lost Cities first: the seats arriving watches from are its. */
+/** The middle of the Card table's top, in its frame (tabletop's TABLE.h, and the baize). */
+const TABLE_TOP = [0, 0.7006, 0];
+// Santorini's island and its piles of buildings are wider than the Card table
+// (0.76 m): it's played kneeling at a low table of the room's own, a little
+// off centre so the domes stay on it, with cushions for its three seats.
+const TABLES = [
+  { part: "tabletop.lost-cities", spot: 1, name: "Lost Cities table", game: lostCities, at: TABLE_TOP },
+  { part: "tabletop.santorini", spot: 0, name: "Santorini table", game: santorini, at: [0, LOW_TABLE.h, 0.07], low: true },
+  { part: "tabletop.dominoes-2", spot: 2, name: "Dominoes table", game: dominoes2, at: TABLE_TOP },
+];
+/** Where the scene's home view is: standing just inside the doors, looking across the room to the window. */
+const HOME = { position: [-1.35, 1.45, 4.2], target: [0.45, 0.85, -3.0] };
+
+/** A chair (a cushion, at the low table) for a seat: on the floor under its eye, pulled back from the table's edge, facing the table. In the table's frame. */
+function chairFor(cam, low = false) {
+  const [x, , z] = cam.position;
+  const along = Math.abs(z) >= Math.abs(x);
+  const r = low ? (along ? LOW_TABLE.d / 2 + 0.2 : LOW_TABLE.w / 2 + 0.2) : along ? 0.8 : 0.62;
+  const d = Math.hypot(x, z) || 1;
+  return { position: [+(x / d * r).toFixed(4), 0, +(z / d * r).toFixed(4)], rotation: [0, +Math.atan2(x, z).toFixed(6), 0], scale: 1 };
+}
+
+try {
+  const urls = JSON.parse(q.get("urls") || "{}");
+  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["walk", "../../walk/dist/index.js"]]) {
+    registerPlugins((await import(path)).plugins, urls[dir]);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const scene = repo.add(emptyScene());
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(A, hosts.a);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const objects = () => scene.doc().objects ?? {};
+  const select = (w) => hosts[w].querySelector(PICKER);
+  const decks = () => [...new Set(cardIds(objects()).map((id) => kept(objects()[id])?.by).filter(Boolean))];
+  const deckOf = (tableId) => {
+    const s = dbg.a.scene();
+    const under = (id) => { for (let x = id; x; x = s.parents.get(x)) if (x === tableId) return true; return false; };
+    const id = cardIds(objects()).find(under);
+    const url = id ? kept(objects()[id])?.by : null;
+    return url ? repo.handles.get(url)?.doc() ?? null : null;
+  };
+  const apiOf = (w) => {
+    for (const id of ["scene.add", "scene.use", "scene.carry", "tabletop", "seats"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
+    return null;
+  };
+  const ids = {};
+
+  const P = (window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, ids,
+    get A() { return dbg.a; },
+    get B() { return dbg.b; },
+
+    /** The room, then the tables. → the ids, or { error }. */
+    async build({ title = "Quiet games room" } = {}) {
+      const api = apiOf("a");
+      if (!api) return { error: "no stage api running", running: dbg.a.local.get().running?.map((r) => r.id) };
+      // where the tables go (so the floor's shadows are under them), then the room's files
+      setTables(TABLES.map((t) => {
+        const [x, z] = SPOTS[t.spot];
+        const chairs = Object.values(t.game.seats ?? {}).filter((s) => s.camera).map((s) => chairFor({ position: s.camera.position.map((v, i) => v + t.at[i]) }, t.low).position).map(([cx, , cz]) => [x + cx, z + cz]);
+        return { x, z, chairs };
+      }));
+      const made = {};
+      const file = async (key, name, meshes) => {
+        const g = pieceGLB(meshes);
+        const h = await repo.create2({ "@patchwork": { type: "file" }, name: `${name}.glb`, extension: "glb", mimeType: "model/gltf-binary", content: g.bytes });
+        made[key] = { url: h.url, hint: { bounds: g.bounds } };
+        return made[key];
+      };
+      const pieces = roomPieces();
+      for (const p of pieces) await file(p.key, p.name, p.meshes);
+      await file("office/entrance-mat@1", "Entrance mat", entranceMat);
+      await file("office/chair@1", "Chair", chairMeshes);
+      await file("office/cushion@1", "Cushion", cushionMeshes);
+      await file("office/low-table@1", "Low table", lowTableMeshes);
+      const object = (name, f, { transform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, parent = null, group = null, traits = null } = {}) => ({
+        name, sourceUrl: f.url, providerId: "file-glb", renderUrl: null, parent, group, visible: true, color: null, opacity: 1, wireframe: false, locked: true,
+        transform, hint: JSON.parse(JSON.stringify(f.hint)), ...(traits ? { traits } : {}),
+      });
+      const room = api.newId("g");
+      api.change((d) => {
+        d.title = title;
+        for (const [k, f] of Object.entries(made)) d.assets[k] = { url: f.url, hint: JSON.parse(JSON.stringify(f.hint)) };
+        d.objects[room] = { kind: "group", name: "Room", group: null, visible: true, opacity: 1 };
+        d.order.push(room);
+        for (const p of pieces) {
+          const id = api.newId("o");
+          ids[p.name] = id;
+          d.objects[id] = object(p.name, made[p.key], { group: room });
+          d.order.push(id);
+        }
+        const mat = api.newId("o");
+        ids.mat = mat;
+        d.objects[mat] = object("Entrance mat", made["office/entrance-mat@1"], { group: room, transform: { position: [...ENTRANCE.position], rotation: [0, ENTRANCE.yaw, 0], scale: 1 }, traits: { "walk.spawn": {} } });
+        d.order.push(mat);
+        // how it's shown: no grid or axes (a room, not a workbench), centimetres, snapping
+        Object.assign(d.view, { units: "cm", grid: false, axes: false, bounds: false, snap: true });
+      });
+      // the tables: a Card table on its square, a game on the table, as the parts bin puts them
+      ids.tables = [];
+      for (const t of TABLES) {
+        const [x, z] = SPOTS[t.spot];
+        const at = { position: [x, MAT_TOP, z], rotation: [0, 0, 0], scale: 1 };
+        let table;
+        if (t.low) {
+          table = api.newId("o");
+          api.change((d) => {
+            d.objects[table] = object("Low table", made["office/low-table@1"], { parent: ids.Tatami, group: d.objects[ids.Tatami].group ?? null, transform: at });
+            d.order.push(table);
+          });
+        } else table = await api.part("tabletop.table", { parent: ids.Tatami, transform: at });
+        if (!table) return { error: `no Card table for ${t.part}`, notices: P.notices("a") };
+        const before = new Set(Object.keys(seatsOf(scene.doc())));
+        const board = await api.part(t.part, { parent: table, transform: { position: t.at, rotation: [0, 0, 0], scale: 1 } });
+        if (!board) return { error: `no ${t.part}`, notices: P.notices("a") };
+        const seats = Object.entries(seatsOf(scene.doc())).filter(([sid]) => !before.has(sid));
+        api.change((d) => {
+          d.objects[table].name = t.name;
+          for (const [sid, s] of seats) {
+            if (!s.camera || s.camera.in !== table) continue;
+            const id = api.newId("o");
+            d.objects[id] = t.low ? object("Cushion", made["office/cushion@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(s.camera, true) }) : object("Chair", made["office/chair@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(s.camera) });
+            d.order.push(id);
+          }
+        });
+        ids.tables.push({ table, board, part: t.part, seats: seats.map(([sid]) => sid) });
+      }
+      // where the scene starts people: watching from a seat at the first table (the seat body), the home view across the room
+      api.change((d) => {
+        d.view.start = { body: "seat", home: { position: [...HOME.position], target: [...HOME.target] } };
+      });
+      dbg.a.local.swap((l) => ({ ...l, selected: null }));
+      return { ...ids };
+    },
+    /** the chairs' floor positions in the world, per table, to bake shadows: [{ x, z, chairs: [[x, z]] }] */
+    tablesForShadows() {
+      const s = dbg.a.scene();
+      return ids.tables.map(({ table }) => {
+        const m = s.world(table);
+        const chairs = Object.entries(objects()).filter(([, o]) => o.parent === table && o.name === "Chair").map(([id]) => { const w = s.world(id); return [w[12], w[14]]; });
+        return { x: m[12], z: m[14], chairs };
+      });
+    },
+    openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
+    shape() {
+      const d = scene.doc();
+      return {
+        title: d.title, start: d.view?.start ?? null, view: { grid: d.view.grid, axes: d.view.axes },
+        seats: Object.fromEntries(Object.entries(seatsOf(d)).map(([sid, s]) => [sid, { name: s.name, in: s.camera?.in ?? null }])),
+        zones: Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).map((o) => o.traits["tabletop.zone"].seat).sort(),
+        decks: decks().map((u) => ({ type: repo.handles.get(u)?.doc()?.["@patchwork"]?.type ?? null, title: repo.handles.get(u)?.doc()?.title ?? null })),
+        spawn: Object.values(objects()).filter((o) => o.traits?.["walk.spawn"]).length,
+        chairs: Object.values(objects()).filter((o) => o.name === "Chair" || o.name === "Cushion").length,
+        locked: Object.values(objects()).filter((o) => o.kind !== "group" && o.locked).length,
+        count: Object.values(objects()).filter((o) => o.kind !== "group").length,
+      };
+    },
+    /** what the scene calls for in a view's stage, who answers, what the doc lists */
+    packages(w) {
+      const i = dbg[w].packages.inspect();
+      return { answering: i.answering.map((p) => ({ id: p.id, importUrl: p.importUrl })), listed: i.listed, suggested: scene.doc()["@patchwork"]?.suggestedImportUrl ?? null };
+    },
+    strays() {
+      const urls = new Set(Object.values(scene.doc().assets ?? {}).map((a) => a.url));
+      return Object.entries(objects()).filter(([, o]) => o.kind !== "group" && !urls.has(o.sourceUrl)).map(([id]) => id);
+    },
+    seats: () => seatsOf(scene.doc()),
+    /** the picker's groups and options: [{ group, options }] */
+    pickerShape(w) {
+      const s = select(w);
+      if (!s) return null;
+      return [...s.children].map((c) => (c.tagName === "OPTGROUP" ? { group: c.label, options: [...c.children].map((o) => o.value) } : { option: c.value }));
+    },
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
+    body: (w) => ({ id: dbg[w]?.local.get().body?.id ?? null, label: dbg[w]?.local.get().body?.label ?? null, stack: dbg[w].router.bodies().map((x) => x.id) }),
+    phaseAt: (i) => deckOf(ids.tables[i].table)?.phase ?? null,
+    participantsAt: (i) => deckOf(ids.tables[i].table)?.participants?.length ?? 0,
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    /** cards a view sees as faces, at table i */
+    facesAt(w, i) {
+      const s = dbg.a.scene();
+      const t = ids.tables[i].table;
+      const under = (id) => { for (let x = id; x; x = s.parents.get(x)) if (x === t) return true; return false; };
+      return cardIds(objects()).filter((id) => under(id) && shownAs(dbg[w], id) === "face");
+    },
+    loaded(w) {
+      const vp = dbg[w].viewport;
+      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
+      return { total: all.length, loaded: all.filter((id) => vp.contentOf(id)?.loaded).length };
+    },
+    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+    cam: (w) => dbg[w].viewport.getCamera(),
+    /** put view w's camera somewhere (an orbit view, for a picture) */
+    look(w, position, target) { apiOf(w).camera.set({ position, target }); return true; },
+    enter: (w, id, place = null) => apiOf(w).body.enter(id, place),
+    leave: (w) => apiOf(w).body.leave(),
+    /** the doc's pose of a thing, in the world */
+    worldOf: (id) => { const m = dbg.a.scene().world(id); return [m[12], m[13], m[14]]; },
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    parentOf: (id) => objects()[id]?.parent ?? null,
+    /** the use prompt's verbs in a view */
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
+    /** the doc snapshot to publish: the scene, its containers and its files */
+    snapshot() {
+      const urls = [scene.url, ...decks(), ...Object.values(scene.doc().assets ?? {}).map((a) => a.url)].filter(Boolean);
+      return { scene: scene.url, holders: decks(), docs: Object.fromEntries(urls.map((u) => [u, portable(repo.handles.get(u).doc())])) };
+    },
+    objectsNamed: (n) => Object.entries(objects()).filter(([, o]) => o.name === n).map(([id]) => id),
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

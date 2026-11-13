@@ -81,15 +81,15 @@ describe("tabletop: templates", () => {
 describe("tabletop: parts", () => {
   const parts = plugins.filter((p) => p.type === "scene:part");
 
-  it("offers a pawn, a token, a card spot, a card table, Lost Cities and Draw Dominoes for 2, 3 and 4 under Tabletop, as metadata the bin reads without loading anything", () => {
-    expect(parts.map((p) => p.id)).toEqual(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]);
+  it("offers a pawn, a token, a card spot, a card table, Lost Cities, Santorini and Draw Dominoes for 2, 3 and 4 under Tabletop, as metadata the bin reads without loading anything", () => {
+    expect(parts.map((p) => p.id)).toEqual(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]);
     for (const p of parts) {
       const { load, ...meta } = p;
       expect(typeof load).toBe("function");
       expect(structuredClone(meta)).toEqual(meta);
       expect(meta).toMatchObject({ category: "Tabletop", name: expect.any(String), icon: expect.any(String), description: expect.any(String) });
       // only a game fits a connector by tag (a card table's top); only cards fit card slots
-      if (/^tabletop\.(lost-cities|dominoes-\d)$/.test(p.id)) expect(meta.tags).toEqual(["tabletop.game"]);
+      if (/^tabletop\.(lost-cities|santorini|dominoes-\d)$/.test(p.id)) expect(meta.tags).toEqual(["tabletop.game"]);
       else expect(meta.tags).toBeUndefined();
     }
   });
