@@ -35,7 +35,7 @@ const origWarn = console.warn, origError = console.error;
 console.warn = (...a) => { say("warn", a); origWarn(...a); };
 console.error = (...a) => { say("error", a); origError(...a); };
 
-const DIST = { scene: "../../scene/dist/index.js", tabletop: "../dist/index.js", "card-table": "../../card-table/dist/index.js" };
+const DIST = { scene: "../../scene/dist/index.js", seats: "../../seats/dist/index.js", tabletop: "../dist/index.js", "card-table": "../../card-table/dist/index.js" };
 try {
   for (const [pkg, path] of Object.entries(DIST)) {
     if (has.has(pkg)) registerPlugins((await import(path)).plugins, shared.urls[pkg]);

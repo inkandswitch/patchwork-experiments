@@ -1,21 +1,23 @@
-// Arriving by link with only the scene package: a Lost Cities table made by
-// A, opened by B who has neither tabletop nor the keeper's package.
+// Arriving by link without the table's packages: a Lost Cities table made
+// by A, opened by B who has neither tabletop nor the keeper's package.
 //
-//   (in scene/, tabletop/ and card-table/) pnpm build
+//   (in scene/, seats/, tabletop/ and card-table/) pnpm build
 //   node probes/arrive.mjs [--shots <dir>] [--show]
 //
 // Two viewers with different packages installed (arrive-probe.html: an
 // iframe each, so a plugin registry each; one set of documents):
-// - A, who has the scene, tabletop and card-table packages, sets a Lost
-//   Cities table up as the game page does and opens it. A's stage lists the
-//   packages the scene is made of: the scene's, tabletop's (hands, cards)
-//   and card-table's (the joint keeper, through its trait on every card),
-//   and names the scene package as the doc's suggested import.
-// - B, who has the scene package only, opens the table's URL. The one
+// - A, who has the scene, seats, tabletop and card-table packages, sets a
+//   Lost Cities table up as the game page does and opens it. A's stage
+//   lists the packages the scene is made of: the scene's, the seats',
+//   tabletop's (hands, cards) and card-table's (the joint keeper, through
+//   its trait on every card), and names the scene package as the doc's
+//   suggested import.
+// - B, who has the scene and seats packages only (so B can sit before
+//   loading anything: what fail-closed is about), opens the table's URL. The one
 //   packages card offers tabletop and card-table by name. Until B answers:
 //   B's stage runs neither; every card is its own back to B; the stage
 //   tells B's extensions nothing about who may see what (unknown).
-// - FAIL CLOSED: A sits, and B sits too (seats are the scene's own), still
+// - FAIL CLOSED: A sits, and B sits too (B has the seats), still
 //   without the packages. The deck can't be dealt without B's client: it
 //   stays waiting, with A alone joined and NO key handed over by anyone to
 //   anyone; A is told who it waits for; B sees sixty backs.
@@ -34,7 +36,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-arrive"));
 
@@ -58,24 +60,24 @@ try {
   check("the page set up", (await until("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const urls = await js("window.__p.urls");
   const viewers = await js("window.__p.viewers");
-  const name = { [urls.scene]: "scene", [urls.tabletop]: "tabletop", [urls["card-table"]]: "card-table" };
+  const name = { [urls.scene]: "scene", [urls.seats]: "seats", [urls.tabletop]: "tabletop", [urls["card-table"]]: "card-table" };
 
   // ── A: has everything; makes the table and opens it ──
-  await js(`window.__p.start("a", ["scene", "tabletop", "card-table"])`);
+  await js(`window.__p.start("a", ["scene", "seats", "tabletop", "card-table"])`);
   const made = await F("a", "makeTable");
   await F("a", "open", made.scene);
   mark("A made and opened the table", made);
   check("A's table: 60 cards, each a tabletop card bound by the joint keeper's own trait", (await F("a", "cards")) === 60 && J(await F("a", "keptBy")) === J(["card-table.kept"]) && made.kinds.main === "joint", { cards: await F("a", "cards"), keptBy: await F("a", "keptBy"), kinds: made.kinds });
   const traits = await F("a", "traits");
-  check("the scene's traits are three packages' own (the scene's: seats, and carry on its pieces), and no old ones", J(traits) === J(["card-table.kept", "scene.carry", "scene.seats", "tabletop.card", "tabletop.zone"]), traits);
-  check("A's stage lists the packages the scene is made of: the scene's, tabletop's and the keeper's", await fUntil("a", `f.listed().length === 3`, 10_000) && J(sorted((await F("a", "listed")).map((u) => name[u]))) === J(["card-table", "scene", "tabletop"]), (await F("a", "listed")).map((u) => name[u] ?? u));
+  check("the scene's traits are four packages' own (the scene's carry on its pieces, the seats', the table's, the keeper's), and no old ones", J(traits) === J(["card-table.kept", "scene.carry", "seats", "tabletop.card", "tabletop.zone"]), traits);
+  check("A's stage lists the packages the scene is made of: the scene's, the seats', tabletop's and the keeper's", await fUntil("a", `f.listed().length === 4`, 10_000) && J(sorted((await F("a", "listed")).map((u) => name[u]))) === J(["card-table", "scene", "seats", "tabletop"]), (await F("a", "listed")).map((u) => name[u] ?? u));
   check("…and names the scene package as the doc's suggested import", (await F("a", "suggested")) === urls.scene, await F("a", "suggested"));
-  check("A is playing, with the table and the keeper running", await fUntil("a", `f.activity()?.current === "play" && ["tabletop", "tabletop.rule", "card-table", "scene.seats"].every((id) => f.running().includes(id))`, 10_000), { activity: await F("a", "activity"), running: await F("a", "running") });
+  check("A is playing, with the table and the keeper running", await fUntil("a", `f.activity()?.current === "play" && ["tabletop", "tabletop.rule", "card-table", "seats"].every((id) => f.running().includes(id))`, 10_000), { activity: await F("a", "activity"), running: await F("a", "running") });
   check("A's deck waits for players", await fUntil("a", `f.hud().some((t) => /is shuffled once someone sits as Player 1 and Player 2/.test(t))`, 10_000), await F("a", "hud"));
 
   // ── B: has only the scene package; opens the URL ──
-  await js(`window.__p.start("b", ["scene"])`);
-  check("B has the scene package and nothing of tabletop's or card-table's", (await F("b", "hasPlugin", "patchwork:tool", "scene")) && !(await F("b", "registered")).some((p) => /tabletop|card-table|secure-deck/.test(p)), (await F("b", "registered")).filter((p) => !/scene/.test(p)));
+  await js(`window.__p.start("b", ["scene", "seats"])`);
+  check("B has the scene and seats packages and nothing of tabletop's or card-table's", (await F("b", "hasPlugin", "patchwork:tool", "scene")) && !(await F("b", "registered")).some((p) => /tabletop|card-table|secure-deck/.test(p)), (await F("b", "registered")).filter((p) => !/scene/.test(p)));
   await F("b", "open", made.scene);
   mark("B opened the URL");
   const asked = await fUntil("b", `f.packages()?.ask?.length === 2 && f.packages().ask.every((e) => e.name) && f.card() && !f.card().hidden`, 15_000);
@@ -83,7 +85,7 @@ try {
   check("B is offered both packages on the one packages card, by name, with Load", asked && J(sorted(card.rows.map((r) => r.name))) === J(["@tiny-patchwork/card-table", "@tiny-patchwork/tabletop"]) && J(sorted(card.rows.map((r) => name[r.url]))) === J(["card-table", "tabletop"]) && card.actions.includes("Load them"), card);
   check("nothing was imported before a yes", (await F("b", "imported")).length === 0, await F("b", "imported"));
   check("B's stage runs neither the table nor the keeper", !(await F("b", "running")).some((id) => /tabletop|card-table/.test(id)), await F("b", "running"));
-  check("B's seats are there all the same (the scene's own part): the picker is up", await fUntil("b", `f.picker()?.length === 3`, 5000), await F("b", "picker"));
+  check("B's seats are there all the same (B has the seats package): the picker is up", await fUntil("b", `f.picker()?.length === 3`, 5000), await F("b", "picker"));
   await fUntil("b", `f.loading().loading === 0`, 30_000);
   const b0 = await F("b", "tally");
   check("to B every card is its own back: no face, no veil", Object.values(b0).every((t) => t.face === 0 && t.veil === 0) && Object.values(b0).reduce((n, t) => n + t.back, 0) === 60, b0);

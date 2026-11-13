@@ -50,8 +50,8 @@ pnpm install && pnpm build && pnpm test
 
 It registers no plugin type for decks and no deck datatype. Two things at a
 table are other packages', met only through the stage (scene/STAGE.md,
-"Conventions"): **seats** (the scene's own `scene.seats` part: the picker,
-who sits where) and **what a hidden card really is** (a *keeper*: `keep`'s
+"Conventions"): **seats** (the `seats` package: the picker, who sits
+where) and **what a hidden card really is** (a *keeper*: `keep`'s
 plain one, `card-table`'s joint one). This package names neither.
 
 ## Adding a game
@@ -331,7 +331,7 @@ package never opens a container. It meets keepers in two places:
   shuffles them, `name(key)` is the container's title for a notice.
 
 The seats are written the same way: the plugin with `roster: true` (the
-scene's seats part) has a module `lay(d, seats)`.
+`seats` package's) has a module `lay(d, seats)`.
 
 A deck document dropped on a table is no longer laid out: a container isn't
 something you drop; a table is made with its decks.
@@ -430,10 +430,10 @@ creates that: an empty scene as the scene's own datatype makes one
 `@patchwork.suggestedImportUrl` when the registry has it from somewhere
 another viewer can load (`src/scene-package.js`; scene/STAGE.md,
 "Packages"), so someone with nothing installed is offered the scene tool.
-The stage fills `packages` in when the table is opened: the scene's (seats
-are its part), this package's (hands and cards) and the keeper's (its trait
-on every card), so someone arriving by link with only the scene package is
-offered the other two (`probes/arrive.mjs`). A template writes
+The stage fills `packages` in when the table is opened: the scene's, the
+seats' (their trait, where the table has seats), this package's (hands and
+cards) and the keeper's (its trait on every card), so someone arriving by
+link without them is offered them (`probes/arrive.mjs`). A template writes
 the table into the empty scene it was started on, in one `ctx.change`.
 Its view opens with snapping on (its pieces carry by their trait), the
 grid and axes off, units in cm, looking from the game's `camera`
@@ -538,8 +538,8 @@ are none.
 | `src/table/wash.js` | washing: which face-down pieces are swept together, and the jumble they're laid out in (pure) |
 | `src/table/stand.js` | standing a piece on edge facing a way, laying it flat, resting where it was, and a hand laid out face up (pure) |
 | `src/table/test-scene.js` | for tests: a scene snapshot like the extension api's, from a plain objects map |
-| `probes/table-setup.js` | for the probe pages: a Lost Cities table set up as the game page does, and how a probe reads what the three packages put in the scene |
-| `probes/arrive.mjs`, `probes/arrive-probe.html`, `probes/arrive-frame.html`, `probes/frame-repo.js` | arriving by link with only the scene package: A (scene, tabletop, card-table) makes a table; B (scene only, in its own iframe and so its own plugin registry) opens its URL, is offered tabletop and card-table on the one packages card, sits without them (the deck stays undealt and no key is handed over: fail closed), clicks Load, and the joint shuffle completes and deals 8 each |
+| `probes/table-setup.js` | for the probe pages: a Lost Cities table set up as the game page does, and how a probe reads what the packages put in the scene |
+| `probes/arrive.mjs`, `probes/arrive-probe.html`, `probes/arrive-frame.html`, `probes/frame-repo.js` | arriving by link without the table's packages: A (scene, seats, tabletop, card-table) makes a table; B (scene and seats only, in its own iframe and so its own plugin registry) opens its URL, is offered tabletop and card-table on the one packages card, sits without them (the deck stays undealt and no key is handed over: fail closed), clicks Load, and the joint shuffle completes and deals 8 each |
 | `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome (the seats are the scene's part): a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |
 | `probes/draw.mjs`, `probes/draw-probe.html` | two players at a Lost Cities table whose deck the joint keeper keeps: A hovers the deck and presses D; the card lands in A's hand, A sees its face, B sees it and A's whole hand as backs (and a close-up shot of it), B is told |
 | `probes/privacy.mjs`, `probes/privacy-probe.html` | what a kept card looks like to each of two people (`--part secure` or `plain`): its back face down or in the other's hand, its face when it's theirs, the stage's veil while a card turned toward them has its keys on their way; that nothing is made or written to hide anything; the plain keeper's HUD line |

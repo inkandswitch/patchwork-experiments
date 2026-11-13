@@ -3,8 +3,8 @@
 <title>tabletop arrive probe</title>
 <!-- Driven by probes/arrive.mjs. Two viewers with different packages
      installed, so two iframes (arrive-frame.html), each with its own plugin
-     registry: A has the scene, tabletop and card-table packages; B has the
-     scene package only. The documents are this page's (one FakeRepo; each
+     registry: A has the scene, seats, tabletop and card-table packages; B
+     has the scene and seats packages only. The documents are this page's (one FakeRepo; each
      frame reads its own copies: frame-repo.js), and each package is a folder
      doc here with a package.json, as pushwork lays one out, served to a
      frame that doesn't have it from the BUILT dist when it says Load. -->
@@ -28,7 +28,7 @@ try {
     const pj = repo.add({ "@patchwork": { type: "file" }, name: "package.json", content: JSON.stringify({ name }) });
     return repo.add({ title: name, docs: [{ name: "package.json", type: "file", url: pj.url }] }, fakeUrl()).url;
   };
-  const urls = { scene: folder("@tiny-patchwork/scene"), tabletop: folder("@tiny-patchwork/tabletop"), "card-table": folder("@tiny-patchwork/card-table") };
+  const urls = { scene: folder("@tiny-patchwork/scene"), seats: folder("@tiny-patchwork/seats"), tabletop: folder("@tiny-patchwork/tabletop"), "card-table": folder("@tiny-patchwork/card-table") };
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
   window.shared = { repo, urls, viewers: { a: ana.url, b: ben.url }, listeners: { a: new Set(), b: new Set() }, errors };

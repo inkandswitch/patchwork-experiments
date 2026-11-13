@@ -6,7 +6,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as parts from "./parts.js";
 import { PIECES, partKey, makeFile } from "./parts.js";
 import { CARD_TAGS, accepts, nearestSlot, worldSlots } from "./slots.js";
-import { SEATS } from "./visibility.js";
+import { SEATS } from "../test/stand-ins.js";
 import { composeMatrix, fakeDrop } from "../test/fakes.js";
 import { emptyScene } from "../empty-scene.js";
 

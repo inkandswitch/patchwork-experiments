@@ -1,8 +1,8 @@
 // For the probe pages: a Lost Cities table set up as the game page does
 // (src/tool.js setUpTable), and how a probe reads what several packages put
 // in the scene. A probe is where the packages meet, so unlike any package it
-// names them all: the scene's seats, tabletop's hands and cards, and the
-// keepers' bindings.
+// names them all: the seats package's seats, tabletop's hands and cards, and
+// the keepers' bindings.
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { emptyScene } from "../src/empty-scene.js";
 import { fill } from "../src/games/lost-cities.js";
@@ -47,8 +47,8 @@ export async function lostCitiesTable(repo, { title = "Probe table", secure = tr
 }
 
 // ── reading the scene ──
-export const SEATS = "scene.seats";
-export const seatClaim = (sid) => `scene.seat:${sid}`;
+export const SEATS = "seats";
+export const seatClaim = (sid) => `seat:${sid}`;
 export const PICKER = ".seats-pick";
 export const SEAT_TAG = ".label.seat-tag";
 export const seatsOf = (doc) => doc?.traits?.[SEATS] ?? {};

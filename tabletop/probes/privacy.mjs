@@ -4,7 +4,7 @@
 // stage's veil only when it's turned toward them and not shown yet (its keys
 // on their way).
 //
-//   (in scene/, tabletop/, card-table/ and keep/) pnpm build
+//   (in scene/, seats/, tabletop/, card-table/ and keep/) pnpm build
 //   node probes/privacy.mjs --part secure|plain [--shots <dir>] [--show]
 //
 // privacy-probe.html, two views A (Ana) and B (Ben) of one doc, real mouse
@@ -32,7 +32,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const PART = arg("--part") ?? "secure";
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-privacy"));
