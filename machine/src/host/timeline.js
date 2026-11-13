@@ -25,6 +25,15 @@
 // change to either, by a late input or a rewind, lets it try again: a trap
 // met only on a predicted input goes away when the real input arrives. A trap
 // below the frontier is confirmed: every peer with these inputs meets it.
+//
+// A trace, if given, is told what the timeline does to the engine, and
+// nothing else: { start: tick, snapshot } once, then { step: tick, row } for
+// every step (re-steps included), { rewind: tick, from } for every restore,
+// and { confirmed: tick, snapshot } as a marked tick's state is confirmed.
+// That is enough to rebuild every state the engine passed through
+// (history/), since a state is the start's with the rows stepped since.
+// Snapshots and rows are lent: a snapshot is valid only during the call; a
+// row is never written again.
 
 export class Timeline {
   #engine;
@@ -44,6 +53,7 @@ export class Timeline {
   #stepped;
   #trap = null; // { tick, row, snap, error }: the step that trapped, from that state with that row
   #aim = 0; // the last target
+  #trace;
 
   /**
    * @param engine   from compile(wasm).boot(content), at `tick`
@@ -55,8 +65,9 @@ export class Timeline {
    * @param o.confirmed (tick, snapshot) called once a marked tick's state is confirmed
    * @param o.stepped (tick) called after every step of tick, the engine then at
    *                 tick + 1 (so its output() is tick's), re-steps included
+   * @param o.trace  (event) told of every start, step and rewind (above)
    */
-  constructor(engine, { tick = 0, before, every = 4, max = 64, marks = () => false, confirmed = () => {}, stepped = () => {} } = {}) {
+  constructor(engine, { tick = 0, before, every = 4, max = 64, marks = () => false, confirmed = () => {}, stepped = () => {}, trace = null } = {}) {
     this.#engine = engine;
     this.#ports = engine.players;
     this.#width = engine.inputBytes;
@@ -67,10 +78,12 @@ export class Timeline {
     this.#marks = marks;
     this.#confirmed = confirmed;
     this.#stepped = stepped;
+    this.#trace = trace;
     this.now = tick;
     this.floor = tick;
     this.#frontier = tick;
     this.#snaps.set(tick, engine.snapshot());
+    trace?.({ start: tick, snapshot: this.#snaps.get(tick) });
   }
 
   /** Counts: rewinds, ticks stepped again because of them, and all steps. */
@@ -188,6 +201,7 @@ export class Timeline {
     this.#engine.step(row);
     this.now = t + 1;
     this.stats.steps++;
+    this.#trace?.({ step: t, row });
     this.#stepped(t);
   }
 
@@ -228,6 +242,7 @@ export class Timeline {
     this.#engine.restore(this.#snaps.get(best));
     for (const s of [...this.#snaps.keys()]) if (s > best) this.#drop(s);
     for (const t of [...this.#used.keys()]) if (t >= best) this.#used.delete(t);
+    this.#trace?.({ rewind: best, from: this.now });
     this.now = best;
   }
 
@@ -257,7 +272,10 @@ export class Timeline {
   #settle() {
     const f = Math.min(this.#frontier, this.now);
     for (const [s, snap] of this.#snaps)
-      if (s <= f && s !== this.floor && this.#marks(s)) this.#confirmed(s, snap);
+      if (s <= f && s !== this.floor && this.#marks(s)) {
+        this.#confirmed(s, snap);
+        this.#trace?.({ confirmed: s, snapshot: snap });
+      }
     let base = this.floor;
     for (const s of this.#snaps.keys()) if (s <= f && s > base) base = s;
     if (base > this.floor) {

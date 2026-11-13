@@ -1,0 +1,116 @@
+<!doctype html><meta charset="utf-8"><title>machine history probe</title>
+<style>html,body{margin:0} #tool{width:640px;height:520px} #hist{width:1100px;height:900px}</style>
+<div id="tool"></div><div id="hist"></div>
+<script type="module">
+// The history view, with a real conflict to show: this page's player (the
+// Machine view, on the page's repo) and a second peer on a repo of its own,
+// linked to the page's by a channel that delays every message 150 ms each
+// way, longer than the input delay; the second peer's input changes every
+// 300 ms, so this page's player keeps predicting it wrong.
+const report = (r) => fetch("/report", { method: "POST", body: JSON.stringify(r) });
+const log = (...a) => fetch("/log", { method: "POST", body: a.join(" ") });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (f, ms, what) => { const end = performance.now() + ms; while (performance.now() < end) { const v = f(); if (v) return v; await sleep(50); } throw new Error(`timed out: ${what}`); };
+window.onerror = (m) => log("onerror", m);
+function delayed(ms) {
+  const ends = [0, 1].map(() => ({ ls: new Set(), other: null }));
+  const port = (me) => ({
+    postMessage: (m) => { const c = structuredClone(m); setTimeout(() => me.other.ls.forEach((f) => f({ data: c })), ms); },
+    addEventListener: (_, f) => me.ls.add(f), removeEventListener: (_, f) => me.ls.delete(f), start() {},
+  });
+  ends[0].other = ends[1]; ends[1].other = ends[0];
+  return [port(ends[0]), port(ends[1])];
+}
+try {
+  const { Repo, initSubduction, Host, PortAdapter } = await import("/bench/patchwork/out/repo.js");
+  await initSubduction?.();
+  const [pa, pb] = delayed(150);
+  const repo = new Repo({ peerId: "page", network: [new PortAdapter(pa)] });
+  const other = new Repo({ peerId: "other", network: [new PortAdapter(pb)] });
+  window.repo = repo;
+  const { plugins } = await import("/dist/index.js");
+  const tools = plugins.filter((p) => p.type === "patchwork:tool");
+  const player = await tools.find((p) => p.id === "machine").load();
+  const history = await tools.find((p) => p.id === "machine-history").load();
+  const kind = new URL(location.href).searchParams.get("kind");
+  const file = kind === "doom" ? ["/iwad", "freedoom1.wad"] : ["/engines/snes/test/unarmed.sfc", "unarmed.sfc"];
+  const handle = repo.create({ title: "Machine" });
+  const el = document.getElementById("tool");
+  const stopPlayer = player(handle, el);
+  const input = await until(() => el.querySelectorAll('input[type="file"]')[kind === "doom" ? 0 : 1], 10000, "setup");
+  const rom = new Uint8Array(await (await fetch(file[0])).arrayBuffer());
+  const dt = new DataTransfer();
+  dt.items.add(new File([rom], file[1]));
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change"));
+  await until(() => el.querySelector("canvas.screen"), 60000, "the screen");
+  (await until(() => [...el.querySelectorAll(".seats button")].find((b) => /P1: play/.test(b.textContent)), 10000, "P1")).click();
+  await until(() => el.querySelector(".seats button[data-mine]"), 5000, "seated");
+
+  // The other peer: same session, port 2, an input that keeps changing.
+  const doc = handle.doc();
+  await sleep(1000);
+  const sh = await other.find(doc.session);
+  const e = sh.doc().engine;
+  const wasm = new Uint8Array(await (await fetch(kind === "doom" ? "/engines/doom/dist/doom.wasm" : "/engines/snes/dist/snes.wasm")).arrayBuffer());
+  const content = (await other.find(doc.content)).doc().bytes;
+  const SNES = [0x80, 0x40, 0x100, 0x80 | 0x100, 0];
+  const script = () => {
+    const b = new Uint8Array(e.inputBytes);
+    const k = Math.floor(performance.now() / 300) % SNES.length;
+    // Doom: forward, turn left, forward, turn right (a ticcmd: forward, side, turn lo/hi).
+    if (kind === "doom") { b[0] = [50, 0, 50, 0][k % 4]; b[3] = [0, 0x06, 0, 0xfa][k % 4]; }
+    else { b[0] = SNES[k] & 0xff; b[1] = SNES[k] >> 8; }
+    return b;
+  };
+  const host2 = await Host.open(other, doc.session, { wasm, content: new Uint8Array(content), by: "the other peer", input: script });
+  host2.sit(1);
+  const tick2 = setInterval(() => host2.frame(), 16);
+
+  // The history view, on the page's repo: it follows this tab's player.
+  const hel = document.getElementById("hist");
+  const stopHist = history(handle, hel);
+  const hroot = await until(() => hel.querySelector(".machine-history .strip") && hel.querySelector(".machine-history"), 30000, "the history view");
+  // Watch through the other peer's eyes (Doom draws a view per player).
+  const vs = hroot.querySelector("header select");
+  vs.value = "1";
+  vs.dispatchEvent(new Event("change"));
+  await sleep(7000);
+  const source = hroot.querySelector(".source")?.textContent;
+  const statsText = hroot.querySelector(".stats")?.textContent;
+  const items = [...hroot.querySelectorAll(".conflicts li")];
+  const listText = items.slice(0, 5).map((li) => li.textContent);
+  const shots = {};
+  shots.strip = hroot.querySelector(".strip").toDataURL();
+  shots.follow = hroot.querySelector('figure[data-side="kept"] canvas').toDataURL();
+  let detail = null, captions = null, stepped = null, tickDetail = null;
+  const real = items.find((li) => /tick \d+/.test(li.textContent));
+  if (real) {
+    real.click();
+    await sleep(800);
+    detail = hroot.querySelector(".detail").innerText;
+    captions = [...hroot.querySelectorAll("figcaption")].map((f) => f.textContent);
+    for (const side of ["kept", "abandoned", "diff"]) shots[side] = hroot.querySelector(`figure[data-side="${side}"] canvas`).toDataURL();
+    shots.stripSelected = hroot.querySelector(".strip").toDataURL();
+    hroot.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    await sleep(400);
+    stepped = [...hroot.querySelectorAll("figcaption")].map((f) => f.textContent);
+  }
+  // A plain tick: click the strip's left third.
+  hroot.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await sleep(200);
+  const strip = hroot.querySelector(".strip"), r = strip.getBoundingClientRect();
+  const at = { clientX: r.left + r.width * 0.3, clientY: r.top + 10, pointerId: 1, bubbles: true };
+  strip.dispatchEvent(new PointerEvent("pointerdown", at));
+  strip.dispatchEvent(new PointerEvent("pointerup", at));
+  await sleep(600);
+  tickDetail = hroot.querySelector(".detail").innerText;
+  shots.tick = hroot.querySelector('figure[data-side="kept"] canvas').toDataURL();
+  const errors = [...document.querySelectorAll("[data-error]")].map((x) => x.textContent);
+  const info = el.querySelector(".info")?.textContent;
+  clearInterval(tick2);
+  stopHist();
+  stopPlayer();
+  report({ ok: true, kind, source, statsText, conflicts: items.length, listText, detail, captions, stepped, tickDetail, errors, info, host2: { tick: host2.tick, rewinds: host2.stats.rewinds }, pngs: shots });
+} catch (err) { report({ ok: false, fatal: String(err.stack ?? err) }); }
+</script>

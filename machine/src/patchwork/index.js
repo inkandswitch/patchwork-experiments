@@ -20,4 +20,17 @@ export const plugins = [
       return (await import("./tool.js")).default;
     },
   },
+  {
+    // A second view of the same machine: every state one peer's engine was
+    // in, the inputs it stepped them with, and where its predictions proved
+    // wrong and were rolled back.
+    type: "patchwork:tool",
+    id: "machine-history",
+    name: "Machine history",
+    icon: "GitFork",
+    supportedDatatypes: ["machine"],
+    async load() {
+      return (await import("./history-tool.js")).default;
+    },
+  },
 ];

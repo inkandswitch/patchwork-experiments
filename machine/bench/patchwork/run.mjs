@@ -77,7 +77,7 @@ const browser = spawn(chrome, [
   "--no-default-browser-check",
   `--user-data-dir=${profile}`,
   "--enable-logging=stderr",
-  `http://localhost:${port}/bench/patchwork/probe.html?kind=${kind}`,
+  `http://localhost:${port}/bench/patchwork/${process.argv[4] === "history" ? "history-probe" : "probe"}.html?kind=${kind}`,
 ], { stdio: ["ignore", "ignore", "pipe"] });
 let log = "";
 browser.stderr.on("data", (d) => (log += d));

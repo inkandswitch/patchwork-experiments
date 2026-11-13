@@ -5,3 +5,6 @@ import init from "@automerge/automerge-subduction/slim";
 import { wasmBase64 } from "@automerge/automerge-subduction/wasm-base64";
 export { Repo } from "@automerge/automerge-repo";
 export const initSubduction = () => init({ module_or_path: Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0)) });
+// For the history probe: a second peer in the page, with a host of its own.
+export { Host } from "../../src/host/host.js";
+export { PortAdapter } from "../../src/worker/port.js";
