@@ -234,7 +234,8 @@ everyone sees it travel, and lands face up, turned the slot's way, in one
 write; the hand's rule then makes it yours alone to see (and a joint keeper's
 other players hand your client its key). Watching, it's greyed out ("Sit down to draw"); with
 every slot taken, "Your hand is full". (At a table where no hand has a card
-slot, a TTS import say, Draw isn't offered at all, seated or not.) Draw only
+slot, Draw isn't offered at all, seated or not; a TTS import's hands have
+them, each reaching halfway to the next.) Draw only
 takes cards out on the table: a card in someone's hand stays theirs even
 where a pile overlaps it. If a peer takes hold of the top card
 first, yours lets go and takes the card under it (once; then "Someone drew
@@ -490,7 +491,7 @@ are none.
 | `src/look/slab.js`, `src/look/obj.js`, `src/look/alpha.js`, `src/look/images.js` | slabs and their image frames, OBJ parsing, an image's opaque shape, the browser's image backend (moved here from tts-import) |
 | `src/pieces.js` | a game doc's pieces → GLB file docs (`drawn`), redrawn when they change, carrying their files' origins |
 | `src/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the game page, the tests and the probe pages start a scene doc from |
-| `src/scene-package.js` | where the scene package comes from, for a new table's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as tts-import's) |
+| `src/scene-package.js` | where the scene package comes from, for a new table's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as bag's) |
 | `src/setup.js` | the one table writer: a game → a layout and what its containers and bags hold (shuffle, deal, stack, spread; pure), set down on something (`placeLayout`), and writing it into a scene doc |
 | `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `makeHolders` |
 | `src/table/template.js` | laying a registered game out in a drop context's scene by its id (`setUp`, the `tables` convention), and the templates |

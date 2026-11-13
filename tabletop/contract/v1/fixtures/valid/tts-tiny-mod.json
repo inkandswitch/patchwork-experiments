@@ -217,7 +217,7 @@
         {"shape":"slab","outline":"rect","size":[0.056134,0.072644],"thickness":0.001016,"at":[0,-0.000508,0],"color":"#fbfaf6","side":"#d8d4c8"}
       ]
     },
-    "p1x54ejy1qyowb3": {
+    "p18scfhiambkim": {
       "name": "White hand",
       "parts": [
         {"shape":"box","size":[0.254,0.002,0.0762],"color":"#8c8c8c"}
@@ -229,7 +229,8 @@
         {"position":[-0.03175,0.002,0],"rotation":[0,0,0],"tags":["card"]},
         {"position":[0.03175,0.002,0],"rotation":[0,0,0],"tags":["card"]},
         {"position":[0.09525,0.002,0],"rotation":[0,0,0],"tags":["card"]}
-      ]
+      ],
+      "snapRadius": 0.03175
     }
   },
   "setup": [
@@ -281,7 +282,7 @@
     },
     {
       "id": "hand-white",
-      "piece": "p1x54ejy1qyowb3",
+      "piece": "p18scfhiambkim",
       "name": "White's hand",
       "seat": "white",
       "at": {"position":[0,0,0.3048],"rotation":[0,0.15264932839526518,0]}
