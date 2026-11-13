@@ -285,7 +285,8 @@ try {
   const shape = await P("shape()");
   // ── 1 ──
   check("1: every piece under the table, the table under the hull, locked", shape.pieces === 63 && shape.piecesUnderTable === 63 && shape.tableParent === ids.hull && shape.tableLocked, shape);
-  check("1: a secure deck, named for the scene", shape.deckType === "secure-deck" && /Lost Cities aboard/.test(shape.deckTitle ?? ""), { deckType: shape.deckType, deckTitle: shape.deckTitle });
+  // titled by the game and its deck, never by the scene it was set down in (tabletop/GAME-FORMAT.md)
+  check("1: a secure deck, named for the game, not the ship", shape.deckType === "secure-deck" && shape.deckTitle === "Lost Cities: Deck", { deckType: shape.deckType, deckTitle: shape.deckTitle });
   check("1: in play, sail down, anchor down, a home view over the cockpit", shape.activity === "play" && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { activity: shape.activity, sail: shape.sail, anchor: shape.anchor, home: shape.home });
   check("1: the seats' views are in the table's frame", Object.values(shape.seats ?? {}).length === 2 && Object.values(shape.seats).every((s) => s.camera?.in === ids.table), shape.seats);
   check("A is playing", await until("activity('a') === 'play'", 10_000), await P("activity('a')"));

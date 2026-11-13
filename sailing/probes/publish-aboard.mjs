@@ -118,7 +118,8 @@ try {
   check("a secure deck", s.deckType === "secure-deck", s.deckType);
   check("in play, sail down, anchor down, a home view over the cockpit", s.activity === "play" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { activity: s.activity, sail: s.sail, anchor: s.anchor, home: s.home });
   check("each seat's view is in the table's frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera?.in === ids.table), s.seats);
-  check(`titled “${TITLE}”`, s.title === TITLE && s.deckTitle === `${TITLE}: Deck`, { title: s.title, deck: s.deckTitle });
+  // the scene is titled as asked; its deck by the game and the deck, never by the scene (tabletop/GAME-FORMAT.md)
+  check(`titled “${TITLE}”, its deck “Lost Cities: Deck”`, s.title === TITLE && s.deckTitle === "Lost Cities: Deck", { title: s.title, deck: s.deckTitle });
   check("her companionway is under her, an exit that leads nowhere (\"Go below\"), the only exit; its hatch under it, shut", s.companionway?.parent === ids.hull && JSON.stringify(s.companionway.exit) === JSON.stringify({ verb: "Go below" }) && s.exits === 1 && s.hatch?.parent === ids.companionway && s.hatch.slide?.at === "closed", { companionway: s.companionway, hatch: s.hatch, exits: s.exits });
   check("everything loads", await until("loaded('a').loaded === __p.loaded('a').total", 120_000), await P("loaded('a')"));
   const snap = await P("snapshot()");
