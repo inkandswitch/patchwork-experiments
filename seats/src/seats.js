@@ -1,17 +1,18 @@
 // seats: the places people take at a scene, and who is in them. It runs
 // wherever the scene has seats (scene trait "seats"), in every activity, and
 // names nothing that uses it. A table reads who sits where to say whose hand
-// is whose; a keeper reads who is playing; whatever walks hands the view
-// over when someone sits down.
+// is whose; a keeper reads who is playing. Sitting down pushes the seat
+// body over whatever body you were in; standing up pops it.
 //
 // What it is:
 //   - the seat picker, over the view at the top right (pick your seat, or
-//     watch; a seat with a `camera` puts you in the seat body, body.js: your
-//     view there, riding the object the camera is `in`);
+//     watch; a seat with a `camera` puts you in the seat body, body.js,
+//     contributed as `bodies`: your view there, riding the object the
+//     camera is `in`);
 //   - a name tag on each of a seat's places ("Player 1 · Ana (away)"),
 //     wherever something contributes places (`seatPlaces`);
-//   - a seat as a station on the use prompt, for whoever walks up to it in
-//     first person (Sit as …, Stand up: model.js);
+//   - a seat as a station on the use prompt, for whoever walks up to it
+//     (Sit as …, Stand up: model.js);
 //   - telling the others when someone sits down (api.send: the seat id only).
 //
 // Who sits where is the doc's (`player`), and lasts. Whether that player is
@@ -318,10 +319,10 @@ function create(api) {
       const name = someone(by?.viewer ?? (seat?.player !== viewer ? seat?.player : null));
       const race = since == null || Date.now() - since < RACE_MS;
       api.notify(race ? `${name} sat in ${seat?.name || sid} first; you're watching` : `${name} took ${seat?.name || sid} while you were away; you're watching`);
-      // sat down from first person and lost the race for it: back on your feet there
+      // sat down from walking and lost the race for it: back on your feet there
       if (race && since != null && walkedUp?.sid === sid && walkedUp.at === since) {
         walkedUp = null;
-        standAt(sid);
+        getUp();
       }
     }
     drawSeats();
@@ -329,7 +330,7 @@ function create(api) {
 
   /** Sit in a seat (null: watch): claim it, let go of the last one, then write it down. */
   function sit(seatId) {
-    // (sat from first person: seatVerbRun says so again once this has sat)
+    // (sat from walking: seatVerbRun says so again once this has sat)
     walkedUp = null;
     const before = seatsOf(api.scene());
     if (seatId && !before[seatId]) return drawSeats();
@@ -369,72 +370,52 @@ function create(api) {
   }
 
   // ── the seat's view: the seat body (body.js) ──
-  // In first person (local.immersive: walking her deck) the camera is the
-  // walker's: the seat body waits until that ends, and whoever is seated is
-  // put back in their seat when it does. (At build step 6 the stage's body
-  // stack does this: sitting pushes the seat body over the walk body.)
-  const body = seatBody(api);
-  let sitting = null; // the seat body entered: { seat, leave }
-  let waiting = false;
+  // Sitting enters it (the stage pushes it over the body you're in: walking
+  // her deck, or orbit); standing up, watching or moving pops it, and
+  // whatever is under it carries on (walking resumes from the eye).
+  let sitting = null; // the seat this view sits in, as a body: its seat id
+  const body = seatBody(api, {
+    left: (sid) => {
+      if (sitting === sid) sitting = null;
+    },
+  });
+  const seated = () => api.local.get()?.body?.id === body.id;
   function getUp() {
-    sitting?.leave();
+    const was = sitting;
     sitting = null;
-    waiting = false;
+    if (was != null && seated()) api.body.leave();
   }
-  /** Into seat `sid`'s view (the seat body), now or once first person ends. */
+  /** Into seat `sid`'s view (the seat body). */
   function seatView(sid) {
     getUp();
-    if (api.local.get()?.immersive) {
-      waiting = true;
-      return;
-    }
     // (a seat with no camera, or one in a frame that's gone: the view stays as it is)
-    sitting = body.enter(sid);
-  }
-  /** Back from first person: in your seat again, if you have one. */
-  function backInSeat(local, prev) {
-    if (!(prev?.immersive && !local?.immersive) && !(waiting && !local?.immersive)) return;
-    waiting = false;
-    const mine = seatOf(seatsOf(api.scene()), viewer);
-    if (mine) seatView(mine);
+    if (api.body.enter(body.id, sid)) sitting = sid;
   }
 
   // ── a seat as a station: walk up to it and sit ──
-  // In first person, a look at a seat's place within reach offers "Sit as
-  // <name>" (F), which sits you exactly as the picker does (the same claim,
-  // notices and refusals; an away seat asks first, by a second F rather
-  // than a dialog, since the pointer is locked) and then hands the view
-  // over: whatever you walk with (a running extension's `firstPerson`) is
-  // asked to leave first person, and the seat's view takes over as it ends
-  // (backInSeat). Sitting there, a look at your own place offers "Stand up"
-  // when there's something to walk with: it's asked to put you on your feet
-  // at the seat (firstPerson.enter), the seat staying yours; Esc, or F at
-  // it, sits you back down.
-  //
-  // `firstPerson`, on the instance of whatever walks (api.collect):
-  //   enter({ seat, eye, target, frame }) → boolean: first person, standing
-  //     at the seat (eye: where the seated eye is, world, as drawn; target:
-  //     the point its view looks at; frame: the object the seat's camera is
-  //     in, or null); false if it can't
-  //   leave(): end first person (the seat's view then takes the camera)
+  // Walking, a look at a seat's place within reach offers "Sit as <name>"
+  // (F), which sits you exactly as the picker does (the same claim, notices
+  // and refusals; an away seat asks first, by a second F rather than a
+  // dialog, since the pointer is locked): the seat body goes on over the
+  // walk. Sitting there, a look at your own place offers "Stand up": the
+  // seat body comes off, and you walk on from the eye, the seat staying
+  // yours.
   let aimed = null; // { target, sid, verb }: what the seat verb's state last said, for its run
-  let walkedUp = null; // { sid, at }: the seat this view sat in from first person, and its claim's time (held.at); cleared by any other sit
+  let walkedUp = null; // { sid, at }: the seat this view sat in from walking, and its claim's time (held.at); cleared by any other sit
   let confirming = null; // { sid, until }: an away seat's first F
   const drawnIn = (snap) => (id) => api.worldOf(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
-  const walkers = () =>
-    api
-      .collect("firstPerson")
-      .map((r) => r?.value)
-      .filter((v) => v && typeof v === "object" && typeof v.enter === "function" && typeof v.leave === "function");
+  /** Walking: in a body that is neither orbit nor the seat. */
+  const walking = () => {
+    const id = api.local.get()?.body?.id;
+    return id != null && id !== "orbit" && id !== body.id;
+  };
 
   function seatVerbState(target, ctx) {
     aimed = null;
     const snap = ctx?.scene ?? scene;
-    const local = ctx?.local ?? api.local.get();
-    // the prompt's alone: it says where the eye is
-    if (!snap || !Array.isArray(ctx?.from) || local?.activities?.current !== "play") return null;
+    if (!snap) return null;
     const seats = seatsOf(snap);
-    const sid = seatLookedAt({ snap, target, point: ctx.hit?.point ?? null, from: ctx.from, seats, places: placesOf(snap), drawn: drawnIn(snap) });
+    const sid = seatLookedAt({ snap, target, point: ctx?.hit?.point ?? null, seats, places: placesOf(snap), drawn: drawnIn(snap) });
     if (!sid) return null;
     const st = stateOf(sid, seats);
     const name = st.state === "taken" ? contactName(st.by?.viewer) : st.state === "away" ? contactName(st.seat?.player) : null;
@@ -442,8 +423,8 @@ function create(api) {
       name: seats[sid]?.name || sid,
       state: st.state,
       who: name,
-      immersive: !!local?.immersive,
-      canStand: Array.isArray(seats[sid]?.camera?.position) && walkers().length > 0,
+      walking: walking(),
+      seated: seated() && sitting === sid,
       confirming: confirming?.sid === sid && Date.now() < confirming.until,
     });
     if (!v) return null;
@@ -468,52 +449,17 @@ function create(api) {
     if (seatOf(seatsOf(api.scene()), viewer) !== a.sid) return; // refused, or lost the race: told already
     // (this sitting's claim, so a later one from the picker is never taken for it)
     walkedUp = { sid: a.sid, at: held?.sid === a.sid ? held.at : null };
-    handOff();
   }
 
-  /** Out of first person, so the seat's view (waiting for it: seatView) takes over. */
-  function handOff() {
-    if (!api.local.get()?.immersive) return;
-    const ws = walkers();
-    if (!ws.length) return api.notify("Leave first person (Esc) to take your seat.");
-    for (const w of ws) {
-      try {
-        w.leave();
-      } catch (err) {
-        console.warn("[seats] firstPerson.leave failed", err);
-      }
-    }
-  }
-
-  /** Up from your seat into first person, standing there; the seat stays yours. */
+  /** Up from your seat: the seat body comes off; the seat stays yours. */
   function standUp(sid) {
-    if (standAt(sid)) api.notify(`You got up from ${seatsOf(api.scene())[sid]?.name || sid}; it's still yours.`);
-  }
-  /** First person, standing at seat `sid` (firstPerson.enter); false (the seat's view kept) if nothing walks or it can't. */
-  function standAt(sid) {
-    const snap = api.scene();
-    const cam = seatsOf(snap)[sid]?.camera;
-    const w = walkers()[0];
-    if (!w || !Array.isArray(cam?.position)) return false;
-    const m = cam.in ? drawnIn(snap)(cam.in) : null;
-    if (cam.in && !m) return false;
-    const at = (p) => (m ? applyMatrix(m, p) : [...p]).map(Number);
-    const spot = { seat: sid, eye: at(cam.position), target: at(cam.target ?? [0, 0, 0]), frame: cam.in ?? null };
-    const was = sitting;
+    if (!seated()) return;
     getUp();
-    let ok = false;
-    try {
-      ok = w.enter(spot) !== false;
-    } catch (err) {
-      console.warn("[seats] firstPerson.enter failed", err);
-    }
-    if (!ok && was) seatView(sid);
-    return ok;
+    api.notify(`You got up from ${seatsOf(api.scene())[sid]?.name || sid}; it's still yours.`);
   }
 
   return {
     update(snapshot, local, prev) {
-      backInSeat(local, prev?.local);
       // (what's running changed: someone who gives seats places may have come or gone)
       if (snapshot === prev?.scene && local?.running === prev?.local?.running) return followTags(snapshot, local);
       scene = snapshot;
@@ -532,15 +478,17 @@ function create(api) {
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
     }),
+    // the seat body (body.js): entered by the picker and the seat's verb
+    bodies: [body],
     commands: [
       {
-        // a seat as a station: "Sit as Player 1" in first person, "Stand up"
-        // from your seat; the use prompt's alone (it needs the eye), so F
-        // elsewhere stays whatever else F is
+        // a seat as a station: "Sit as Player 1" walking, "Stand up" from
+        // your seat; within the body's reach (the stage measures it)
         id: "seat",
         name: "Sit down",
         key: "f",
         show: ["use"],
+        reach: true,
         state: seatVerbState,
         run: seatVerbRun,
       },

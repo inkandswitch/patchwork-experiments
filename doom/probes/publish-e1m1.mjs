@@ -45,7 +45,7 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 // scene, the map's (doom), the doors' (joints), the exit's (traversal) and
 // play's (arena). The probe page has no registry that says where its plugins
 // come from, so they're stated here.
-const PACKAGES = ["scene", "doom", "joints", "traversal", "arena"];
+const PACKAGES = ["scene", "doom", "joints", "traversal", "arena", "walk"];
 
 // --flag (no value), --flag <value>, and --set-exit <scene> <url>
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, exit: 1, "set-exit": 2 };
@@ -94,7 +94,7 @@ if (args["set-exit"]) {
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
 const WAD = join(PKG, "src/test/e1m1.wad");
-for (const p of ["scene/dist/index.js", "arena/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js", "doom/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "arena/dist/index.js", "walk/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js", "doom/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "doom-e1m1"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
@@ -120,7 +120,7 @@ try {
   const root = statics[0]?.[0];
   const doors = parts.filter(([, o]) => o.traits?.["joints.slide"]);
   const exits = parts.filter(([, o]) => o.traits?.[EXIT]);
-  const spawns = parts.filter(([, o]) => o.traits?.["arena.spawn"]);
+  const spawns = parts.filter(([, o]) => o.traits?.["walk.spawn"]);
   const renders = {};
   for (const [id, o] of parts) if (o.renderUrl) renders[id] = await P(`find(${J(o.renderUrl)})`);
   report.details.layout = parts.map(([id, o]) => `${o.name}: ${o.providerId} ${J(renders[id]?.params ?? null)}`);

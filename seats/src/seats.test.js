@@ -6,7 +6,7 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, SEAT_REACH, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -351,23 +351,19 @@ async function cockpit(seats, { claims, views = [] } = {}) {
     }
   };
   t.step = step;
-  t.join = async (session, viewer, { walking = false, walker = true } = {}) => {
-    const api = (t.api[session] = w.join(session, { viewer, local: walking ? { immersive: true } : {}, ext: "seats" }));
-    // what walks: sailing's crew, as far as a table knows it (firstPerson on its instance)
-    if (walker) {
-      const fp = (t.walker[session] = {
-        enter: vi.fn(() => {
-          api.local.swap((l) => ({ ...l, immersive: true }));
-          return true;
-        }),
-        leave: vi.fn(() => api.local.swap((l) => ({ ...l, immersive: false }))),
-      });
-      w.view(session).collected = { seatPlaces, firstPerson: fp };
-    } else w.view(session).collected = { seatPlaces };
+  t.join = async (session, viewer, { walking = false } = {}) => {
+    const api = (t.api[session] = w.join(session, { viewer, ext: "seats" }));
+    // a body to walk in: as far as a table knows one (scene/TOOLS.md §4), entered here as a walker would be
+    const input = (t.walker[session] = { suspended: vi.fn(), resumed: vi.fn() });
+    const walk = { id: "walk", label: "Walk", lock: true, reach: 2.5, enter: () => ({ input, leave() {} }) };
+    w.view(session).collected = { seatPlaces, bodies: [walk] };
     t.x[session] = w.attach(session, Seats.create(api));
+    if (walking) api.body.enter("walk");
     await step();
   };
-  /** The use prompt in `session`, looking at `id` (at `point`, world) from `from`: the seat verb's state. */
+  /** The body on top of a view's stack. */
+  t.body = (session) => t.api[session].local.get().body.id;
+  /** The use prompt in `session`, looking at `id` (at `point`, world) from `from`: the seat verb's state (reach is the stage's: the command says `reach: true`). */
   t.look = (session, id, point = null, from = t.eye(session)) => {
     const api = t.api[session];
     const ctx = { scene: api.scene(), local: api.local.get(), from, hit: { id, point, distance: null } };
@@ -406,17 +402,13 @@ describe("which seat a look is at (pure)", () => {
   const drawn = (id) => w.scene().world(id);
   const tbl = (p) => apply(snap.world("tbl"), p);
   const from = tbl([0.3, 1.5, 1.1]);
-  const at = (target, point, f = from) => seatLookedAt({ snap, target, point, from: f, seats, places: cleanPlaces(seatPlaces(snap), snap.objects), drawn });
+  const at = (target, point) => seatLookedAt({ snap, target, point, seats, places: cleanPlaces(seatPlaces(snap), snap.objects), drawn });
   afterEach(() => w.done?.());
 
-  it("a tray: its seat, with or without a point; out of reach, none", () => {
+  it("a tray: its seat, with or without a point (reach is the stage's: the verb says reach: true)", () => {
     expect(at("hand1", null)).toBe("p1");
     expect(at("hand1", tbl([0.1, 0.7, 0.5]))).toBe("p1");
     expect(at("hand2", tbl([0, 0.7, -0.5]), tbl([0, 1.5, -1.1]))).toBe("p2");
-    const far = tbl([0, 1.5, 1.1 + SEAT_REACH + 0.6]);
-    expect(at("hand1", null, far)).toBeNull();
-    // the prompt alone: no eye, nothing
-    expect(seatLookedAt({ snap, target: "hand1", point: null, from: null, seats, drawn })).toBeNull();
   });
 
   it("the table just past a tray's edge, and the bench under a seat's eye, aboard a heeled ship", () => {
@@ -424,7 +416,7 @@ describe("which seat a look is at (pure)", () => {
     expect(at("tbl", tbl([0, 0.7, 0.05]))).toBeNull(); // the middle of the table: nobody's
     expect(at("ship", tbl([0.1, 0.45, 0.95 + BENCH_RADIUS * 0.6]))).toBe("p1"); // the bench, part of her hull
     expect(at("ship", tbl([0.1, 0.45, 0.95 + BENCH_RADIUS * 1.5]))).toBeNull(); // past it
-    expect(at("ship", tbl([0, 0.45, -0.95]), tbl([0, 1.5, -1.2]))).toBe("p2");
+    expect(at("ship", tbl([0, 0.45, -0.95]))).toBe("p2");
   });
 
   it("never a loose piece (F over it is the hand's), nor anything unlocked that isn't a seat's frame", () => {
@@ -432,22 +424,28 @@ describe("which seat a look is at (pure)", () => {
     expect(at("pawn", tbl([0.35, 0.72, 0.55]))).toBeNull();
   });
 
-  it("the seat verb: refused, asked, yours, free; standing only seated, with something to walk in", () => {
-    const v = (state, o = {}) => seatVerb({ name: "Player 1", state, who: "Ben", immersive: true, canStand: false, confirming: false, ...o });
+  it("the seat verb: walking, refused, asked, yours, free; seated in your own, standing up", () => {
+    const v = (state, o = {}) => seatVerb({ name: "Player 1", state, who: "Ben", walking: true, seated: false, confirming: false, ...o });
     expect(v("taken")).toEqual({ verb: "sit", label: "Ben is sitting there", disabled: true });
     expect(v("away")).toMatchObject({ verb: "confirm", label: "Sit as Player 1 (Ben is away)" });
     expect(v("away", { confirming: true })).toMatchObject({ verb: "sit", label: "Take Player 1: F again" });
     expect(v("mine")).toMatchObject({ verb: "sit", label: "Back to your seat" });
     expect(v("free")).toMatchObject({ verb: "sit", label: "Sit as Player 1" });
     expect(v("mine-elsewhere")).toMatchObject({ verb: "sit", label: "Sit as Player 1" });
-    expect(v("mine", { immersive: false, canStand: true })).toMatchObject({ verb: "stand", label: "Stand up" });
-    expect(v("mine", { immersive: false, canStand: false })).toBeNull();
-    for (const s of ["free", "taken", "away", "mine-elsewhere"]) expect(v(s, { immersive: false, canStand: true })).toBeNull();
+    expect(v("mine", { walking: false, seated: true })).toMatchObject({ verb: "stand", label: "Stand up" });
+    expect(v("mine", { walking: false, seated: false })).toBeNull();
+    for (const s of ["free", "taken", "away", "mine-elsewhere"]) expect(v(s, { walking: false, seated: true })).toBeNull();
+  });
+
+  it("the seat body: a seat's own, entered with a place, never offered by the chip; its verb needs reach", () => {
+    const x = Seats.create(w.join("Z", { ext: "seats" }));
+    expect(x.bodies.map((b) => [b.id, b.here, b.lock, b.reach, b.keys])).toEqual([["seat", false, false, 2, []]]);
+    expect(x.commands.find((c) => c.id === "seat").reach).toBe(true);
   });
 });
 
-describe("sitting down from first person", () => {
-  it("F at a free seat: the picker's sit (claim, player, notices), then out of first person and into its view", async () => {
+describe("sitting down from walking", () => {
+  it("F at a free seat: the picker's sit (claim, player, notices), then the seat body on top of the walk, in its view", async () => {
     const t = await cockpit(SEATS0(), { views: [["B", BEN], ["C", "carol", { walking: true }]] });
     expect(t.look("C", "hand1")).toEqual({ label: "Sit as Player 1", title: expect.any(String) });
     await t.press("C", "hand1");
@@ -456,24 +454,21 @@ describe("sitting down from first person", () => {
     expect(t.notices("C")).toContain("You sat down as Player 1");
     expect(t.notices("B")).toContain("Someone sat down as Player 1");
     expect(t.w.sent.filter((s) => s.type === "sat")).toEqual([{ session: "C", viewer: "carol", type: "sat", data: { seat: "p1" } }]);
-    // handed over: whatever walks was asked to stop, and the seat's view took the camera when it did
-    expect(t.walker.C.leave).toHaveBeenCalledOnce();
-    expect(t.api.C.local.get().immersive).toBe(false);
+    // the seat body over the walk, which waits under it
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "walk", "seat"]);
+    expect(t.walker.C.suspended).toHaveBeenCalledOnce();
     near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
-    // seated now, out of first person: the place offers standing up, not sitting
+    // seated now: the place offers standing up, not sitting
     expect(t.look("C", "hand1", null, t.at([0, 1.2, 0.95]))).toMatchObject({ label: "Stand up" });
     expect(t.look("C", "hand2", null, t.at([0, 1.2, 0.95]))).toBeNull();
     t.w.done();
   });
 
-  it("only from the prompt, in play: no eye (the key map, the menu), editing, or a loose piece, and it isn't offered", async () => {
-    const t = await cockpit(SEATS0(), { views: [["C", "carol", { walking: true }]] });
-    const api = t.api.C;
-    expect(t.cmd("C").state("hand1", { scene: api.scene(), local: api.local.get() })).toBeNull();
+  it("only walking, and never at a loose piece: in orbit it isn't offered", async () => {
+    const t = await cockpit(SEATS0(), { views: [["C", "carol", { walking: true }], ["D", "dan"]] });
     expect(t.look("C", "card", t.at([0.1, 0.703, 0.5]))).toBeNull();
-    api.local.swap((l) => ({ ...l, activities: { current: "edit", available: ["play", "edit"] } }));
-    expect(t.look("C", "hand1")).toBeNull();
+    expect(t.look("D", "hand1")).toBeNull();
     t.w.done();
   });
 
@@ -488,7 +483,7 @@ describe("sitting down from first person", () => {
     expect(t.notices("C")).toEqual(["Ben is sitting there."]);
     expect(writes).not.toHaveBeenCalled();
     expect(t.player("p1")).toBe(BEN);
-    expect(t.walker.C.leave).not.toHaveBeenCalled();
+    expect(t.body("C")).toBe("walk");
     t.w.done();
   });
 
@@ -509,7 +504,7 @@ describe("sitting down from first person", () => {
     await t.press("C", "hand1");
     expect(t.player("p1")).toBe("carol");
     expect(t.claim("p1")).toEqual({ viewer: "carol", session: "C" });
-    expect(t.walker.C.leave).toHaveBeenCalledOnce();
+    expect(t.body("C")).toBe("seat");
     t.w.done();
   });
 
@@ -531,23 +526,23 @@ describe("sitting down from first person", () => {
     expect(t.notices("C").filter((n) => /first/.test(n))).toEqual(["Ben sat in Player 1 first; you're watching"]);
     expect(writes).not.toHaveBeenCalled();
     expect(t.player("p1")).toBe(BEN);
-    // she was handed over to the seat's view, and is put back on her feet there
-    expect(t.walker.C.leave).toHaveBeenCalledOnce();
-    expect(t.walker.C.enter).toHaveBeenCalledOnce();
-    expect(t.walker.C.enter.mock.calls[0][0].seat).toBe("p1");
-    expect(t.api.C.local.get().immersive).toBe(true);
+    // she sat, and is put back on her feet there: the seat body comes off, the walk carries on
+    expect(t.walker.C.suspended).toHaveBeenCalledOnce();
+    expect(t.walker.C.resumed).toHaveBeenCalledOnce();
+    expect(t.body("C")).toBe("walk");
     expect(t.look("C", "hand1")).toMatchObject({ label: "Ben is sitting there", disabled: true });
     t.w.done();
   });
 
-  it("sat from first person once, later from the picker: losing that race leaves you watching, not on your feet", async () => {
+  it("sat from walking once, later from the picker: losing that race leaves you watching, not on your feet", async () => {
     const t = await cockpit(SEATS0(), { views: [["B", BEN], ["C", "carol", { walking: true }]] });
     await t.press("C", "hand1");
     expect(t.player("p1")).toBe("carol");
-    expect(t.api.C.local.get().immersive).toBe(false);
+    expect(t.body("C")).toBe("seat");
     // up out of it by the picker, and back to it the same way, as Ben takes it too
     await t.pickSeat("C", "");
     expect(t.player("p1")).toBe(null);
+    expect(t.body("C")).toBe("walk");
     await vi.advanceTimersByTimeAsync(7000);
     await t.pickSeat("C", "p1");
     t.w.change((d) => {
@@ -558,9 +553,9 @@ describe("sitting down from first person", () => {
     await vi.advanceTimersByTimeAsync(7000);
     await t.step();
     expect(t.notices("C").filter((n) => /first/.test(n))).toEqual(["Ben sat in Player 1 first; you're watching"]);
-    // she sat from the picker this time: nothing puts her in first person
-    expect(t.walker.C.enter).not.toHaveBeenCalled();
-    expect(t.api.C.local.get().immersive).toBe(false);
+    // she sat from the picker this time: she stays in the seat's view, watching
+    expect(t.body("C")).toBe("seat");
+    expect(t.walker.C.resumed).toHaveBeenCalledOnce();
     t.w.done();
   });
 
@@ -575,7 +570,7 @@ describe("sitting down from first person", () => {
     await t.step();
     expect(t.notices("C")).toEqual(["Ben is sitting there."]);
     expect(t.player("p1")).toBe(BEN);
-    expect(t.walker.C.leave).not.toHaveBeenCalled();
+    expect(t.body("C")).toBe("walk");
     t.w.done();
   });
 
@@ -586,43 +581,28 @@ describe("sitting down from first person", () => {
     const sent = t.w.sent.length;
     await t.press("C", "hand1");
     expect(t.w.sent.length).toBe(sent); // nothing to tell: she was sitting there
-    expect(t.walker.C.leave).toHaveBeenCalledOnce();
-    t.walker.C.enter();
+    expect(t.body("C")).toBe("seat");
+    // up again (Leave), and over to the other seat
+    t.api.C.body.leave();
     await t.step();
     await t.press("C", "hand2", null, t.at([0, 1.5, -1.1]));
     expect([t.player("p1"), t.player("p2")]).toEqual([null, "carol"]);
     expect([t.claim("p1"), t.claim("p2")?.session]).toEqual([null, "C"]);
     t.w.done();
   });
-
-  it("with nothing that walks to hand over to: seated, and told how to get there", async () => {
-    const t = await cockpit(SEATS0(), { views: [["C", "carol", { walking: true, walker: false }]] });
-    await t.press("C", "hand1");
-    expect(t.player("p1")).toBe("carol");
-    expect(t.notices("C")).toContain("Leave first person (Esc) to take your seat.");
-    // first person ends some other way: in the seat's view
-    t.api.C.local.swap((l) => ({ ...l, immersive: false }));
-    await t.step();
-    near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
-    t.w.done();
-  });
 });
 
 describe("standing up", () => {
-  it("F at your place: on your feet at the seat in first person, the seat still yours; back out, back in it", async () => {
-    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
-    await t.pickSeat("C", "p1"); // (in the seat's view)
+  it("F at your place: the seat body comes off, the seat still yours; what you sat from carries on", async () => {
+    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol", { walking: true }]] });
+    await t.pickSeat("C", "p1"); // (in the seat's view, over the walk)
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
     const eye = t.at([0, 1.2, 0.95]);
     expect(t.look("C", "hand1", null, eye)).toMatchObject({ label: "Stand up" });
     const writes = vi.spyOn(t.api.C, "change");
     await t.press("C", "hand1", null, eye);
-    expect(t.walker.C.enter).toHaveBeenCalledOnce();
-    const spot = t.walker.C.enter.mock.calls[0][0];
-    expect(spot.seat).toBe("p1");
-    expect(spot.frame).toBe("tbl");
-    near(spot.eye, eye);
-    near(spot.target, t.at([0, 0.7, 0.95 * 0.17]));
+    expect(t.body("C")).toBe("walk");
+    expect(t.walker.C.resumed).toHaveBeenCalledOnce();
     expect(writes).not.toHaveBeenCalled();
     expect(t.player("p1")).toBe("carol");
     expect(t.claim("p1")?.session).toBe("C");
@@ -630,28 +610,20 @@ describe("standing up", () => {
     expect(t.w.view("C").rides).toEqual([]);
     // walking now: the place offers sitting back down
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
-    // first person ends (Esc): back in the seat's view
-    t.walker.C.leave();
-    await t.step();
+    await t.press("C", "hand1");
+    expect(t.body("C")).toBe("seat");
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
     t.w.done();
   });
 
-  it("not offered with nothing to walk in (the picker is the way out), nor at a seat with no view", async () => {
-    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol", { walker: false }]] });
-    expect(t.look("C", "hand1", null, t.at([0, 1.2, 0.95]))).toBeNull();
+  it("from a seat entered from orbit, standing up is orbit again; not offered at a seat with no view", async () => {
+    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
+    await t.pickSeat("C", "p1");
+    await t.press("C", "hand1", null, t.at([0, 1.2, 0.95]));
+    expect(t.body("C")).toBe("orbit");
     const u = await cockpit({ p1: { name: "Player 1", player: "dan" }, p2: { name: "Player 2", player: null } }, { views: [["D", "dan"]] });
     expect(u.look("D", "hand1", null, u.at([0, 1.2, 0.95]))).toBeNull();
     u.w.done();
-  });
-
-  it("whatever walks can't: the seat's view stays", async () => {
-    const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
-    await t.pickSeat("C", "p1");
-    t.walker.C.enter.mockReturnValue(false);
-    await t.press("C", "hand1", null, t.at([0, 1.2, 0.95]));
-    expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
-    expect(t.notices("C").filter((n) => /got up/.test(n))).toEqual([]);
     t.w.done();
   });
 });
@@ -724,22 +696,16 @@ describe("the seat's view aboard", () => {
     t.w.done();
   });
 
-  it("in first person, waits until it ends; and whoever is seated is put back in their seat when it does", async () => {
-    const t = await aboard({ local: { immersive: true } });
+  it("leaving the seat body some other way (the chip's Leave) is standing up: the view rides nothing, the seat stays yours", async () => {
+    const t = await aboard();
     await t.pick("A", "p1");
-    expect(t.w.view("A").camera).toBe(null); // the walker has the camera
-    expect(t.w.view("A").rides).toEqual([]);
-    t.a.local.swap((m) => ({ ...m, immersive: false }));
-    t.w.flush();
-    near(t.w.view("A").camera.position, apply(t.a.worldOf("tbl"), [0, 1.2, 0.95]));
     expect(t.w.view("A").rides).toHaveLength(1);
-    // walks again (Enter), and the walker leaves the camera off her quarter
-    t.a.local.swap((m) => ({ ...m, immersive: true }));
+    t.a.body.leave();
     t.w.flush();
-    t.a.camera.set({ position: [30, 6, 30], target: [0, 2, 0] });
-    t.a.local.swap((m) => ({ ...m, immersive: false }));
-    t.w.flush();
-    near(t.w.view("A").camera.position, apply(t.a.worldOf("tbl"), [0, 1.2, 0.95]));
+    expect(t.w.view("A").rides).toEqual([]);
+    expect(t.w.doc.traits[SEATS].p1.player).toBe("alice");
+    // the picker again: back in it
+    await t.pick("A", "p1");
     expect(t.w.view("A").rides).toHaveLength(1);
     t.w.done();
   });

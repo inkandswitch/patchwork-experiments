@@ -91,7 +91,7 @@ try {
      * they'll stand, and pressing Play doesn't move the view.
      */
     startHere() {
-      const [id] = Object.entries(objects()).find(([, o]) => o.traits?.["arena.spawn"]) ?? [];
+      const [id] = Object.entries(objects()).find(([, o]) => o.traits?.["walk.spawn"]) ?? [];
       if (!id) return { error: "no spawn point" };
       const m = dbg.scene().world(id);
       const yaw = Math.atan2(m[8], m[10]);

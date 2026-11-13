@@ -91,7 +91,7 @@ for (const [id, o] of blocks) {
   if (o.traits?.["arena.target"]?.down) problems.push(`${id} (${o.name}) starts knocked down`);
 }
 const targets = blocks.filter(([, o]) => o.traits?.["arena.target"]).length;
-const spawns = blocks.filter(([, o]) => o.traits?.["arena.spawn"]).length;
+const spawns = blocks.filter(([, o]) => o.traits?.["walk.spawn"]).length;
 if (!targets || !spawns) problems.push(`${targets} targets and ${spawns} spawn points`);
 if (problems.length) {
   for (const p of problems) console.error(`  ${p}`);

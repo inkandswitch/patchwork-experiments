@@ -167,7 +167,7 @@ try {
   const renders = await Promise.all(parts.map(([, o]) => (o.renderUrl ? P(`find(${JSON.stringify(o.renderUrl)})`) : null)));
   const doors = parts.filter(([, o]) => o.traits?.["joints.slide"]);
   const exits = parts.filter(([, o]) => o.traits?.["traversal.exit"]);
-  const spawn = parts.find(([, o]) => o.traits?.["arena.spawn"]);
+  const spawn = parts.find(([, o]) => o.traits?.["walk.spawn"]);
   const staticObj = parts.find(([, o]) => !o.parent);
   const maps = parts.filter(([, o]) => o.providerId === "doom-map");
   const mapRenders = renders.filter((_, i) => parts[i][1].providerId === "doom-map");
