@@ -8,6 +8,7 @@
 // Following the content as it loads is scene.autoframe's.
 
 import { groupChain, isGroup } from "../groups.js";
+import { own } from "../stage/own.js";
 
 /** What a double-click on `hitId` frames: the selected group it's in, else the object itself. Pure. */
 export function frameTarget(scene, hitId, selected) {
@@ -16,7 +17,7 @@ export function frameTarget(scene, hitId, selected) {
   return hitId;
 }
 
-export default {
+export default own({
   create(api) {
     /** What Frame frames: the selection's box, if it has one, else the whole scene's. */
     const selectedBox = (local) => (local?.selected != null ? api.box(local.selected) : null);
@@ -66,4 +67,4 @@ export default {
       },
     };
   },
-};
+});

@@ -8,12 +8,16 @@ import { DEPTH, EMPTY, createEdits, fold, inverse, leafPaths, moved, plain, push
 
 /** A DocHandle stand-in over a real Automerge doc: change(fn, { patchCallback }) as automerge-repo passes it on. */
 function amHandle(init, url = "automerge:scene") {
-  let doc = Automerge.from(init);
+  let doc = Automerge.isAutomerge(init) ? init : Automerge.from(init);
   return {
     url,
     doc: () => doc,
     change(fn, opts = {}) {
       doc = Automerge.change(doc, opts, fn);
+    },
+    /** take in another replica's changes, as a sync does (never through change: no patches for an edit to record) */
+    merge(other) {
+      doc = Automerge.merge(doc, Automerge.clone(other.doc()));
     },
     free: () => Automerge.free(doc),
   };
@@ -132,6 +136,24 @@ describe("createEdits on real Automerge", () => {
     expect(e.take("redo")).toBe(true);
     expect(plain(h.doc().objects.die.transform.position)).toEqual([2, 0, 0]);
     expect(e.take("redo")).toBe(false);
+    h.free();
+  });
+
+  it("judge sees the doc before a step's first change and after its last, readable when the step ends; what it says rides on the step", () => {
+    const h = amHandle(init());
+    const seen = [];
+    const judge = ({ before, after }) => {
+      seen.push([plain(before.objects.die.transform.position), plain(after.objects.die.transform.position)]);
+      return { shows: ["die"], kept: ["Die"] };
+    };
+    const e = createEdits({ handle: h, judge });
+    const g = e.begin("Move");
+    g.change((d) => (d.objects.die.transform.position = [1, 0, 0]));
+    h.change((d) => (d.clock.t = 5)); // something else in between: a newer doc
+    g.change((d) => (d.objects.die.transform.position = [2, 0, 0]));
+    g.end();
+    expect(seen).toEqual([[[0, 0, 0], [2, 0, 0]]]);
+    expect(e.stacks()[h.url].undo[0]).toMatchObject({ shows: ["die"], kept: ["Die"] });
     h.free();
   });
 
@@ -304,6 +326,145 @@ describe("createEdits on real Automerge", () => {
         prevName = name;
       }
       h.free();
+    }
+  }, 300_000);
+
+  // The same guarantee with two people, each on their own replica with their
+  // own stack: A's edits (move the die, move the hull, delete the die), a
+  // package's verb (roll the die) and a process's save (the hull) on A's
+  // replica, B's edits (move the die: the same field as A's and the roll's;
+  // move a card: a different one) on B's, each one's undo and redo, and a
+  // sync (both ways), so B's edits reach A merged at once, after several
+  // steps, or concurrently with A's own writes to the same field. Every
+  // value written is the writer's own (no two writes write the same value),
+  // and each leaf's every value remembers who wrote it (`by`; a value a
+  // merge made, such as a list both changed, is the merge's). Over every
+  // sequence of up to UNDO_PAIR_DEPTH (default 4) of those 12 (20,736 at
+  // 4, with the shorter ones 22,620): an undo or
+  // redo of A's changes only leaves that hold a value A wrote (by an edit,
+  // an undo or a redo), and B's likewise; neither stack holds a leaf only a
+  // verb or a save writes; and on both replicas the order lists exactly the
+  // objects.
+  it("two people on two replicas, merged at once, later or concurrently: undo reverts only my own edits, whole", () => {
+    const depth = Number(globalThis.process?.env?.UNDO_PAIR_DEPTH ?? 4);
+    const LEAVES = [
+      ["objects", "die"],
+      ["objects", "die", "transform", "position"],
+      ["objects", "die", "transform", "rotation"],
+      ["objects", "c1", "transform", "position"],
+      ["objects", "hull", "transform", "position"],
+      ["objects", "hull", "saved"],
+      ["order"],
+    ];
+    const VERB_ONLY = new Set([JSON.stringify(["objects", "die", "transform", "rotation"]), JSON.stringify(["objects", "hull", "saved"])]);
+    const key = (p) => JSON.stringify(p);
+    // the die itself is there or not (its fields are their own leaves: a merge mixes them)
+    const look = (doc, p) => (p.length === 2 ? valueAt(doc, p) !== undefined : valueAt(doc, p));
+    const vkey = (v) => JSON.stringify(v === undefined ? "∅" : v);
+    const EVENTS = {
+      moveDie: { who: "A", run: (w, k) => w.edit("A", "Move", (d) => d.objects.die && (d.objects.die.transform.position = [k, 0, 0])) },
+      moveHull: { who: "A", run: (w, k) => w.edit("A", "Move", (d) => (d.objects.hull.transform.position = [k, 0, 5])) },
+      removeDie: {
+        who: "A",
+        run: (w) =>
+          w.edit("A", "Delete", (d) => {
+            if (!d.objects.die) return;
+            delete d.objects.die;
+            d.order.splice(d.order.indexOf("die"), 1);
+          }),
+      },
+      undo: { who: "A", run: (w) => w.take("A", "undo") },
+      redo: { who: "A", run: (w) => w.take("A", "redo") },
+      roll: {
+        who: "verb",
+        run: (w, k) =>
+          w.write("A", (d) => {
+            if (!d.objects.die) return;
+            d.objects.die.transform.position = [k, 0.5, 1];
+            d.objects.die.transform.rotation = [k, k, 0];
+          }),
+      },
+      save: {
+        who: "verb",
+        run: (w, k) =>
+          w.write("A", (d) => {
+            d.objects.hull.transform.position = [0, 0.5, 5 + k];
+            d.objects.hull.saved = k;
+          }),
+      },
+      bMoveDie: { who: "B", run: (w, k) => w.edit("B", "Move", (d) => d.objects.die && (d.objects.die.transform.position = [k, 1, 0])) },
+      bMoveCard: { who: "B", run: (w, k) => w.edit("B", "Move", (d) => (d.objects.c1.transform.position = [3, 1, k])) },
+      bUndo: { who: "B", run: (w) => w.take("B", "undo") },
+      bRedo: { who: "B", run: (w) => w.take("B", "redo") },
+      sync: { who: "merge", run: (w) => w.sync() },
+    };
+    const names = Object.keys(EVENTS);
+    const takes = new Set(["undo", "redo", "bUndo", "bRedo"]);
+    let seqs = [[]];
+    let all = 0;
+    for (let n = 1; n <= depth; n++) {
+      seqs = seqs.flatMap((q) => names.map((e) => [...q, e]));
+      all += seqs.length;
+      for (const seq of seqs) run(seq);
+    }
+    expect(all).toBe([...Array(depth)].reduce((a, _, i) => a + names.length ** (i + 1), 0));
+
+    function run(seq) {
+      const a = amHandle(init());
+      const b = amHandle(Automerge.load(Automerge.save(a.doc())));
+      const h = { A: a, B: b };
+      const e = { A: createEdits({ handle: a }), B: createEdits({ handle: b }) };
+      // leaf → value → who wrote it
+      const by = new Map(LEAVES.map((p) => [key(p), new Map()]));
+      const wrote = (p, v, who) => {
+        const m = by.get(key(p));
+        if (!m.has(vkey(v))) m.set(vkey(v), new Set());
+        m.get(vkey(v)).add(who);
+      };
+      for (const p of LEAVES) wrote(p, look(plain(a.doc()), p), "init");
+      const w = {
+        edit: (who, label, fn) => {
+          const g = e[who].begin(label);
+          g.change(fn);
+          g.end();
+        },
+        write: (who, fn) => h[who].change(fn),
+        take: (who, which) => e[who].take(which),
+        sync: () => {
+          a.merge(b);
+          b.merge(a);
+        },
+      };
+      let k = 0;
+      for (const name of seq) {
+        k++;
+        const { who, run } = EVENTS[name];
+        const before = { A: plain(a.doc()), B: plain(b.doc()) };
+        run(w, k);
+        const after = { A: plain(a.doc()), B: plain(b.doc()) };
+        const where = `${seq.join(",")} @${name}#${k}`;
+        for (const r of ["A", "B"]) {
+          const changed = LEAVES.filter((p) => !same(look(before[r], p), look(after[r], p)));
+          if (takes.has(name) && r === who) {
+            // an undo or redo of mine only ever changes a leaf that holds a value I wrote
+            for (const p of changed) expect(by.get(key(p)).get(vkey(look(before[r], p))) ?? new Set(), `${where}: ${key(p)}`).toContain(who);
+          }
+          for (const p of changed) {
+            const v = look(after[r], p);
+            // a sync brings values someone wrote; one nobody wrote (a list both changed) is the merge's
+            if (name === "sync") {
+              if (!by.get(key(p)).has(vkey(v))) wrote(p, v, "merge");
+            } else wrote(p, v, who);
+          }
+          // never half an edit: the order lists exactly the objects there are
+          expect([...after[r].order].sort(), `${where} on ${r}`).toEqual(Object.keys(after[r].objects).sort());
+        }
+        for (const r of ["A", "B"])
+          for (const st of Object.values(e[r].stacks()))
+            for (const step of [...st.undo, ...st.redo]) for (const part of step.parts) for (const l of part.leaves) expect(VERB_ONLY.has(key(l.path)), `${where}: ${key(l.path)} on ${r}'s stack`).toBe(false);
+      }
+      a.free();
+      b.free();
     }
   }, 300_000);
 });

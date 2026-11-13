@@ -709,16 +709,20 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   prompt), showing what attention asks for. **`view.start = { body, place,
   home }`** (`view.home` went into it): read once on arrival and after a
   template, entered once a running extension offers the body and the
-  content is in (or after 20 s), never again (`startOf`, `tryArrive` in
-  `stage.js`); the inspector's Starts in picks the body (Orbit, or one on
+  content is in (or after 20 s), never again; a body still not on offer
+  after 20 s (a package declined, an extension failed) ends the wait too
+  (`startOf`, `tryArrive` in `stage.js`); the inspector's Starts in picks the body (Orbit, or one on
   offer). Publishers: tables start people in the seat body with no place,
   which seats/ reads as your own seat if the doc seats you, else watching
   from the first seat's view, labelled "Watching", writing nothing (a press
   on a piece there carries it or uses it; nothing selects; the picker or a
   seat's verb sits you down over it); a level starts them walking at a
-  spawn point; ships, Cadboro Bay, Santorini and a bag's new scene start in
-  orbit at their home (a click on the ship comes aboard: sailing's holder
-  takes it before orbit's Select). The four notes-pass issues: a sitting's
+  spawn point; ships, Cadboro Bay and a bag's new scene start in orbit at
+  their home (a click on the ship comes aboard: sailing's holder takes it
+  before orbit's Select; a bag's new scene is an empty scene to build on,
+  not a table). Santorini gained three seats (Blue, Cream, Grey, by its
+  workers' colours, each looking across from its workers' side), so every
+  built-in game starts people where a press picks a piece up. The four notes-pass issues: a sitting's
   `label` is read (the chip says "Helm"); `walk.spawn` calls for walk; the
   stale comments went; `always` went.
   *Undo, built* (Decisions 2): `api.edit(fn, { label, handle })` and
@@ -730,7 +734,22 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   else does. `api.undo()`/`redo()` write a step's inverse in one change only
   when the doc still holds everything the step wrote (else it's dropped
   whole, and said), so undo never reverts a later write and never half an
-  edit; the undo is the redo step. Per view, keyed by the focus doc. ⌘Z /
+  edit; the undo is the redo step. Per view, keyed by the focus doc. Only
+  the stage's own parts have `edit`, `edits`, `undo` and `redo` on their
+  api: a module this package marks (`src/stage/own.js`, a set only this
+  package's code can reach), not an id, so a package's verb can't put
+  itself on a stack. **Reveals and decides**: a step is judged when
+  recorded, from the doc before and after it (`judgeEdit` in `stage.js`):
+  it showed an object when that object's audience grew (unknown counts as
+  grown), and decided one a running extension's `decided(before, after)`
+  names (nothing answers it yet: no stage edit draws or rolls). Taking it
+  back asks every running extension's `parties(scene)` (seats: whoever is
+  seated, here or away) and is refused with a reason while anyone else has
+  a stake; it stays on the stack, so a party standing up frees it. Nothing
+  answering: free (a CAD scene). **Kept contents**: a step that removed
+  objects bound by a keeper's trait (a plugin saying `keeper`) is undone as
+  the doc held them, saying the kept part comes back as its keeper has it
+  now. Bag contents (their own doc, not a keeper's) aren't named by this. ⌘Z /
   Ctrl+Z and ⇧⌘Z / Ctrl+Y (not in a field) and the toolbar's Undo and Redo
   (`scene.undo`). Checked exhaustively on real Automerge
   (`src/undo.test.js`): every sequence of up to 4 of five edits (move a die,
@@ -740,7 +759,17 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   stack ever holds a leaf only a verb, a save or a pause writes, the order
   always lists exactly the objects, and an undo straight after an edit
   restores the doc. Making `inverse` skip its "still as left" check fails it
-  at once (move the die, roll it, undo).
+  at once (move the die, roll it, undo). Again with two people on two
+  replicas (`UNDO_PAIR_DEPTH`, default 4: 22,620 sequences, ~23 s): A's
+  edits, a roll and a save on A's, B's edits to the same field and to
+  another on B's, each one's undo and redo, and a sync both ways, so B's
+  edits arrive merged at once, later, or concurrent with A's own write to
+  that field; every value is its writer's own, and an undo or redo of
+  mine only ever changes a leaf holding a value I wrote. The agreement
+  rule over every move of a card among four states (each hand, face up,
+  face down) × who is seated (nobody, me, me and another): refused exactly
+  when the move widened who may see it and someone else is seated (36
+  cases, `parts/undo.test.js`).
   *H1* (`stage.test.js`): over three fixture docs, entering and leaving a
   body, holding and putting down a tool, selecting, a pref, pausing and
   resuming start and stop nothing; and `activeSet` over every subset of

@@ -16,12 +16,11 @@ const SHIP = {
   meta: {
     id: "t.ship",
     traits: ["t.ship", "t.sea"],
-    activities: ["play"],
     describes: { "t.ship": { name: "Ship", runtime: ["motion"], needs: ["t.sea"] }, "t.sea": { name: "Sea", on: "scene" } },
   },
   module: { create: () => ({}) },
 };
-const EXTS = [{ meta: { id: "scene.transfer", activities: ["edit"] }, module: transfer }, SHIP];
+const EXTS = [{ meta: { id: "scene.transfer" }, module: transfer }, SHIP];
 
 let s = null;
 beforeEach(() => {
@@ -335,8 +334,7 @@ describe("references", () => {
     meta: {
       id: "t.lever",
       traits: ["t.lever", "t.zone", "t.seats"],
-      activities: ["play"],
-      describes: {
+        describes: {
         "t.lever": { name: "Lever", fields: [{ key: "target", label: "Target", kind: "object" }] },
         "t.zone": { name: "Private zone", fields: [{ key: "seat", label: "Seat", kind: "entry", of: "t.seats" }] },
         "t.seats": { name: "Seats", on: "scene", entries: { noun: "seat", prefix: "seat", fields: [] } },

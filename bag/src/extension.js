@@ -677,7 +677,7 @@ export default {
           id: "draw",
           name: "Draw",
           key: "d",
-          // on the use prompt, so hovering a bag in play says it can be drawn from
+          // on the use prompt, so hovering a bag says it can be drawn from
           show: ["use", "menu", "inspector"],
           state: (target) =>
             onBag(target, (bag, n) => {

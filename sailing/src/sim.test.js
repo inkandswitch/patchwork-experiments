@@ -345,7 +345,7 @@ describe("createSim on a stage", () => {
     play(w.join("B"));
     w.tick(1 / 60, 6 * 60);
     const shown = heldAt(w, ids.hull);
-    w.view("A").abort.abort(); // the activity switched: the stage removes its process, saved first
+    w.view("A").abort.abort(); // her extension stopped (the doc stopped calling for it): the stage removes its process, saved first
     // written down, then let go as landed there (not put back to the last save)
     expect(sameTransform(doc.objects[ids.hull].transform, shown)).toBe(true);
     expect(w.released.filter((r) => r.session === "A" && r.id === ids.hull).at(-1)?.landed).toBe(true);

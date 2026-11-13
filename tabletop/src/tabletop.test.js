@@ -267,7 +267,7 @@ describe("piece GLBs", () => {
     game.change((d) => (d.pieces.blue.name = "Azure worker"));
     expect((await ensurePieceGLBs(repo, game)).drawn).toBe(0);
     // the game itself is untouched by drawing: drawn is beside it
-    expect(Object.keys(gameOf(game.doc())).sort()).toEqual(["about", "format", "pieces", "players", "setup", "title", "version"]);
+    expect(Object.keys(gameOf(game.doc())).sort()).toEqual(["about", "format", "pieces", "players", "seats", "setup", "title", "version"]);
   });
 
   it("a GLB drawn from file docs carries their origin: provenance travels with what's drawn", async () => {
@@ -333,8 +333,8 @@ describe("setting up a table", () => {
     expect(scene.view).toMatchObject({ snap: true, start: { home: { position: expect.any(Array), target: expect.any(Array) } } });
     for (const o of pieces) expect([o.name, !!o.traits?.["scene.carry"]]).toEqual([o.name, !o.locked]);
     expect(pieces.some((o) => o.locked)).toBe(true);
-    // Santorini has no seats: nothing to sit at, so people start in orbit
-    expect(scene.view.start).not.toHaveProperty("body");
+    // Santorini's three seats: people start in the seat body (watching from Blue's, until they sit)
+    expect(scene.view.start.body).toBe("seat");
     const board = pieces.find((o) => o.name === "Island board");
     expect(board).toMatchObject({ locked: true, parent: null, providerId: "file-glb", renderUrl: null, sourceUrl: game.doc().drawn.board.url, infoUrl: game.url });
     for (const p of pieces) {
@@ -366,11 +366,20 @@ describe("setting up a table", () => {
     expect(() => tableLayout(builtIn("santorini"), { fileOf: () => null })).toThrow(/no GLB/);
   });
 
-  it("Santorini is untagged and holds nothing: no containers, bags or seats", () => {
+  it("Santorini is untagged and holds nothing: no containers or bags; three seats, by the workers' colours, each looking across the island from its workers' side", () => {
     const g = builtIn("santorini");
     const t = setUp(g, fakeFiles(g));
     expect(Object.values(t.scene.objects).some((o) => "tags" in o)).toBe(false);
-    expect([t.containers, t.layout.bags, t.layout.seats, t.scene.traits]).toEqual([{}, {}, {}, {}]);
+    expect([t.containers, t.layout.bags]).toEqual([{}, {}]);
+    expect(Object.fromEntries(Object.entries(t.layout.seats).map(([id, s]) => [id, s.name]))).toEqual({ p1: "Blue", p2: "Cream", p3: "Grey" });
+    // each seat's camera is on the side its workers start, looking at the island
+    const start = (piece) => g.setup.find((x) => x.piece === piece).at.position;
+    for (const [sid, piece] of [["p1", "blue"], ["p2", "cream"], ["p3", "grey"]]) {
+      const { position, target } = t.layout.seats[sid].camera;
+      const side = start(piece);
+      expect(position[0] * side[0] + position[2] * side[2], sid).toBeGreaterThan(0);
+      expect(Math.hypot(target[0], target[2]), sid).toBeLessThan(0.1);
+    }
   });
 
   it("asks for each kind it shows, the backs included, and no other", () => {

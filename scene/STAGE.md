@@ -809,8 +809,8 @@ that extension.
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids, { edit? })` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids. With `edit` (an `edits` step), the change is that edit's |
-| `edit(fn, { label?, handle? })`, `edits(label)` → `{ change(fn, handle?), end() }` | the stage's own editing (TOOLS.md, Decisions 2; "Undo" below): `edit` writes `fn` as one undoable step of this viewer's, on the scene or on `handle` (an object's render doc); `edits` opens a step of several writes, passed as `{ edit }` to `addObject`, `remove`, `drop` and `part` or made with its `change`, closed by `end()`. The halo, the handles, the inspector, the outline, transfer, add, the parts bin, dimensions and Set home view write through it; a package's verb, a clock act or a process's save never does |
-| `undo()`, `redo()` → boolean | take back (or again) this viewer's last edit in the focus doc: false when there's none, the doc isn't writable, or something it wrote has been written since (then it's dropped, whole, and said). `scene.undo` binds ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y and the toolbar's Undo and Redo to them |
+| `edit(fn, { label?, handle? })`, `edits(label)` → `{ change(fn, handle?), end() }` | the stage's own editing (TOOLS.md, Decisions 2; "Undo" below): `edit` writes `fn` as one undoable step of this viewer's, on the scene or on `handle` (an object's render doc); `edits` opens a step of several writes, passed as `{ edit }` to `addObject`, `remove`, `drop` and `part` or made with its `change`, closed by `end()`. The halo, the handles, the inspector, the outline, transfer, add, the parts bin, dimensions and Set home view write through it. **Only the stage's own parts' api has these four** (`stage/own.js`: a module this package marks); a package's api has none, so its verbs, clock acts and process saves can't be on a stack |
+| `undo()`, `redo()` → boolean | take back (or again) this viewer's last edit in the focus doc: false when there's none, the doc isn't writable, something it wrote has been written since (then it's dropped, whole, and said), or it showed or decided something others have a stake in (then it stays, and that's said). `scene.undo` binds ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y and the toolbar's Undo and Redo to them |
 | `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims". The scene's `"clock"` claim is the stage's own (see "World time") |
 | `claimedBy(id, kind)` → `{ viewer, session, mine }` \| null | who holds it, if they're still here. `mine`: this view (any of its extensions) |
 | `registry(type)` | |
@@ -1076,6 +1076,23 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
   “Move” has been changed since."). So undo never reverts anyone's later
   write, and never half an edit. The undo is recorded the same way, as the
   redo step; a new edit clears redo. 100 steps a stack.
+- **Reveals and decides need the others' agreement.** Recording a step,
+  the stage judges it from the doc before and after (`judgeEdit`): it
+  *showed* an object when who may see what it is grew (every running
+  audience policy, on both sides; unknown on either side counts), and it
+  *decided* one a running extension's `decided(before, after)` names. Taking
+  such a step back asks every running extension's `parties(scene)` who has
+  a stake in those objects now; if anyone but this viewer does, it is
+  refused ("Can't undo “Move”: it showed or decided something, and taking
+  it back needs the others' agreement.") and stays on the stack, so a party
+  who stands up frees it. Nothing answering: no parties, free (two people
+  editing a CAD scene). How agreement is asked and given is designed after
+  step 8 (TOOLS.md, Decisions 2).
+- **Kept contents don't come back.** A step that removed objects bound to a
+  keeper (by the trait of an extension whose plugin says `keeper`) is
+  undone as the doc held them, and says so: "what is kept for “Deck” comes
+  back as its keeper has it now, not as it was". Undo never invents state
+  it didn't see.
 - **Per person, per focus doc.** The stacks are this view's
   (`local.edits` says what they'd take), keyed by the focus doc's url (one
   stage until links: its own).
@@ -1087,6 +1104,8 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name?, veil? }` | the stage (lenses combine in running order; later wins per field). `veil: true`: the stage draws its stand-in instead of the object's content. See "The veil" |
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
+| `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). None answering: nobody |
+| `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |

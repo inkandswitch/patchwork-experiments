@@ -20,6 +20,7 @@ import css from "./handles.css?inline";
 import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
+import { own } from "../stage/own.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
@@ -83,7 +84,7 @@ const rgbKey = (c) => (Array.isArray(c) ? c.join(",") : "");
 
 // ─── the part ───────────────────────────────────────────────────────────────
 
-export default {
+export default own({
   create(api) {
     const THREE = api.THREE;
     api.style(css);
@@ -371,4 +372,4 @@ export default {
       },
     };
   },
-};
+});

@@ -89,7 +89,7 @@ export function createHost({
   let isReady = false;
   let reg = null;
   // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
-  //        instance, api, release, controller, signal, linger: timer | null }
+  //        module (the loaded one, once loaded), instance, api, release, controller, signal, linger: timer | null }
   const recs = new Map();
   let order = []; // running order: every rec's id
   let lastDoc = null; // the doc the running set was last worked out for
@@ -120,13 +120,14 @@ export function createHost({
   // ─── starting ─────────────────────────────────────────────────────────────
 
   function start(w) {
-    const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", instance: null, api: null, release: null, controller: null, signal: null, linger: null };
+    const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
     recs.set(w.id, rec);
     (async () => {
       const loaded = await reg?.load?.(w.id);
       const mod = loaded?.module?.default ?? loaded?.module;
       if (dead || rec.state !== "loading") return;
       if (typeof mod?.create !== "function") throw new Error("its module has no create()");
+      rec.module = mod;
       rec.controller = new AbortController();
       rec.signal = rec.controller.signal;
       const made = makeApi(rec);

@@ -22,6 +22,7 @@
 
 import { peerColor, peerSelections } from "../peers.js";
 import { selectionStep } from "../selection.js";
+import { own } from "../stage/own.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 const REMOTE = [0.6, 0.4, 0.9];
@@ -221,4 +222,4 @@ export function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

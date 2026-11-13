@@ -22,6 +22,7 @@
 import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
+import { own } from "../stage/own.js";
 
 const AXIS_FALLBACK = [
   [0.9, 0.25, 0.25],
@@ -352,4 +353,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

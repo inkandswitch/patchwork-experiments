@@ -18,6 +18,21 @@
 // later write, and never half an edit (an object back without its place in
 // the order). The undo is recorded the same way, and is the redo step; redo
 // is undo of that.
+//
+// Two more rules, from what the stage judges a step to have done when it is
+// recorded (`judge`, stage.js):
+// - Reveals and decides need the others' agreement. A step that widened
+//   who may see something (its audience, before and after), or whose
+//   outcome a package says came from shared randomness or hidden state, is
+//   taken back only with the agreement of that thing's parties other than
+//   me (`parties`, asked when it is taken: parties are current). Until the
+//   take-back protocol exists, that is a refusal, and the step stays where
+//   it is: a party who leaves frees it. Where nothing answers, there are no
+//   parties, and undo stays free.
+// - Kept contents don't come back. A step that removed something a keeper
+//   holds the contents of (outside the doc) is undone as the doc held it,
+//   and the undo says what it couldn't put back: what is kept comes back as
+//   the keeper has it now. Undo never invents state it didn't see.
 
 /** A plain copy of a doc value (Automerge's are frozen, and a value can be written into a doc only once). */
 export function plain(v) {
@@ -161,7 +176,9 @@ export const DEPTH = 100;
 
 /**
  * One viewer's stacks, per focus doc: { [docUrl]: { undo: step[], redo: step[] } }.
- * A step is { label, parts: [{ handle, leaves }] }. Pure updates.
+ * A step is { label, parts: [{ handle, leaves }], shows?: string[], kept?:
+ * string[] }: the objects it revealed or decided, and the names of the kept
+ * things it removed (`judge`). Pure updates.
  */
 export const EMPTY = Object.freeze({});
 
@@ -191,6 +208,16 @@ export function moved(s, url, which, done) {
 
 // ─── the recorder: what the stage runs (stage.js) ───────────────────────────
 
+/** The kept things a step removed, said: up to three by name, else how many. */
+export const keptNames = (names) => (names.length <= 3 ? names.map((n) => `“${n}”`).join(", ") : `${names.length} things`);
+
+/** Why a step can't be taken back now, by the agreement rule; null when it can. */
+export function needsAgreement(step, parties) {
+  if (!step?.shows?.length) return null;
+  const others = parties(step.shows);
+  return others == null || others.length ? "needs the others' agreement" : null;
+}
+
 /**
  * One viewer's edits: begin(label) opens a step, whose change(fn, handle?)
  * writes and records (from the change's own patches: handle.change(fn, {
@@ -198,9 +225,15 @@ export function moved(s, url, which, done) {
  * the focus doc's undo stack; take("undo" | "redo") applies the top step's
  * inverse, recorded the same way onto the other stack. Nothing written
  * except through a step is ever on a stack.
- * @param {{ handle: object, focus?: () => string, writable?: () => boolean, notify?: (text: string) => void, changed?: (labels: { undo, redo }) => void }} o
+ *
+ * `judge({ handle, before, after })` says what a step did to one doc (the doc
+ * before its first change and after its last): { shows?: id[] (objects it
+ * revealed or decided), kept?: name[] (kept things it removed) }.
+ * `parties(ids)` says who, other than this viewer, has a stake in those
+ * objects now ([]: nobody; null: can't tell).
+ * @param {{ handle: object, focus?: () => string, writable?: () => boolean, notify?: (text: string) => void, changed?: (labels: { undo, redo }) => void, judge?: (part: { handle, before, after }) => { shows?: string[], kept?: string[] } | null, parties?: (ids: string[]) => string[] | null }} o
  */
-export function createEdits({ handle, focus = () => handle.url, writable = () => true, notify = () => {}, changed = () => {} }) {
+export function createEdits({ handle, focus = () => handle.url, writable = () => true, notify = () => {}, changed = () => {}, judge = () => null, parties = () => [] }) {
   let stacks = EMPTY;
   let dead = false;
   const labels = () => {
@@ -209,15 +242,35 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
   };
   /** A step being made: change(fn, handle?) records into it; step() is what it holds. */
   function recording(label) {
-    const parts = new Map(); // handle → leaves
+    const parts = new Map(); // handle → { leaves, before, after }
     return {
       change(fn, h = handle) {
         if (typeof fn !== "function" || fn.ok === false || !h) return;
-        h.change(fn, { patchCallback: (patches, info) => parts.set(h, fold(parts.get(h) ?? [], patches, info.before, info.after)) });
+        h.change(fn, {
+          patchCallback: (patches, info) => {
+            const p = parts.get(h) ?? { leaves: [], before: info.before, after: null };
+            p.leaves = fold(p.leaves, patches, info.before, info.after);
+            p.after = info.after;
+            parts.set(h, p);
+          },
+        });
       },
       step() {
-        const list = [...parts].filter(([, leaves]) => leaves.length).map(([h, leaves]) => ({ handle: h, leaves }));
-        return list.length ? { label: String(label ?? "Edit"), parts: list } : null;
+        const list = [...parts].filter(([, p]) => p.leaves.length);
+        if (!list.length) return null;
+        const shows = new Set();
+        const kept = [];
+        for (const [h, p] of list) {
+          const j = judge({ handle: h, before: p.before, after: p.after });
+          for (const id of j?.shows ?? []) shows.add(id);
+          for (const n of j?.kept ?? []) if (!kept.includes(n)) kept.push(n);
+        }
+        return {
+          label: String(label ?? "Edit"),
+          parts: list.map(([h, p]) => ({ handle: h, leaves: p.leaves })),
+          ...(shows.size ? { shows: [...shows].sort() } : {}),
+          ...(kept.length ? { kept } : {}),
+        };
       },
     };
   }
@@ -244,8 +297,10 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
     },
     /**
      * Undo ("undo") or redo ("redo") the last step in the focus doc: false
-     * when there's none, the doc isn't writable, or something it wrote has
-     * been written since (then it's dropped, whole, and said).
+     * when there's none, the doc isn't writable, something it wrote has
+     * been written since (then it's dropped, whole, and said), or it
+     * revealed or decided something others have a stake in (then it stays,
+     * and that's said).
      */
     take(which) {
       const url = focus();
@@ -253,12 +308,20 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
       if (!step || dead || !writable()) return false;
       const plans = step.parts.map(({ handle: h, leaves }) => ({ h, inv: inverse(leaves, h.doc()) }));
       const ok = plans.every((p) => !p.inv.changed.length);
+      if (ok) {
+        const why = needsAgreement(step, parties);
+        if (why) {
+          notify(`Can't ${which} “${step.label}”: it showed or decided something, and taking it back ${why}.`);
+          return false;
+        }
+      }
       const rec = recording(step.label);
       if (ok) for (const { h, inv } of plans) rec.change((d) => apply(d, inv.writes), h);
       const done = ok ? rec.step() : null;
       stacks = moved(stacks, url, which, done);
       changed(labels());
       if (!done) notify(`Nothing to ${which}: “${step.label}” has been changed since.`);
+      else if (step.kept?.length) notify(`${which === "undo" ? "Undid" : "Redid"} “${step.label}”: what is kept for ${keptNames(step.kept)} comes back as its keeper has it now, not as it was.`);
       return !!done;
     },
     labels,

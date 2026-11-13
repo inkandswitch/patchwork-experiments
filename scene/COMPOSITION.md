@@ -585,7 +585,7 @@ ships alone and proves something.
    part, CSS, fake world and README section went; STAGE.md's
    "Conventions" names the package). Every publisher of a table people sit
    at lists `seats` in `packages` (tabletop's tables, Lost Cities aboard,
-   Liar's dice; a Santorini table, with no seats, doesn't), and every probe
+   Liar's dice, Santorini since step 8 gave it seats), and every probe
    page that seats people installs it; in a shell the stage lists it
    itself, from the trait. *Proves:* the scene suite passes with no seats
    in it; `seats/` installs, builds and passes its suite copied out of the

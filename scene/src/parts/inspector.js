@@ -49,6 +49,7 @@ import { createParamForm } from "../param-form.js";
 import { drawerTab } from "./tab.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { own } from "../stage/own.js";
 
 const ID = "scene.inspector";
 // each inspector's own radio group: two views of one scene on a page mustn't share one
@@ -904,4 +905,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

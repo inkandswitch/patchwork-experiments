@@ -8,6 +8,7 @@
 
 import { fromEmbed } from "../embed.js";
 import { isTyping } from "../stage/router.js";
+import { own } from "../stage/own.js";
 
 /** Which of undo and redo a keydown asks for, or null. Pure. */
 export function undoKey(e) {
@@ -49,4 +50,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

@@ -105,7 +105,10 @@ people **start** (`view.start`: a body, a place, a home camera), read once
 on arrival: a table starts people seated (or watching from a seat), a level
 walking at a spawn point. **Undo** takes back the stage's own edits (the
 halo, the inspector, add, remove, paste), this viewer's, never a verb's:
-undo can't un-roll a die.
+undo can't un-roll a die. Only the stage's own parts can edit, and an edit
+that showed or decided something is taken back only with its parties'
+agreement (refused, until that protocol is designed): undo can't un-show a
+card either.
 
 ### Arbitration
 

@@ -416,8 +416,10 @@ doing; the use prompt, key map, menu and notices are the scene's general
 parts, in every scene. Carrying is the scene's, by the `scene.carry` trait
 the pieces carry.
 
-A game nobody sits at (Santorini) starts people in orbit at its home view,
-where its pieces carry just the same.
+Every built-in game has seats, Santorini's three by its workers' colours
+(Blue, Cream, Grey), so every table starts people where a press picks a
+piece up. A game laid out with none would start people in orbit at its home
+view, where a press-and-drag still carries a piece but a click selects it.
 
 ### Templates
 

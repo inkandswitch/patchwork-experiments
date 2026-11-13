@@ -4,7 +4,7 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
 
-const ADD = { meta: { id: "scene.add", activities: ["edit"] }, module: add };
+const ADD = { meta: { id: "scene.add" }, module: add };
 
 /** A drag event carrying `data` ({ mime: value }) and `files`. */
 function dragEvent(type, data = {}, files = []) {

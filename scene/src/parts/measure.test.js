@@ -4,7 +4,7 @@ import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND } from "./measure.js";
 import dimensions, { dimensionRef } from "./dimensions.js";
 
-const MEASURE = { meta: { id: "scene.measure", activities: ["edit"] }, module: measure };
+const MEASURE = { meta: { id: "scene.measure" }, module: measure };
 const DIMENSIONS = { meta: { id: "scene.dimensions" }, module: dimensions };
 
 let s = null;

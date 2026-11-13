@@ -28,6 +28,7 @@ import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
 import { drawerTab, tabToggle } from "./tab.js";
+import { own } from "../stage/own.js";
 
 /** The filter field appears once there are this many objects. */
 export const SEARCH_FROM = 8;
@@ -113,7 +114,7 @@ function el(tag, attrs = {}, ...children) {
 
 // ─── the part ──────────────────────────────────────────────────────────────
 
-export default {
+export default own({
   create(api) {
     api.style(css);
 
@@ -729,4 +730,4 @@ export default {
       },
     };
   },
-};
+});

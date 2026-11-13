@@ -30,6 +30,7 @@ import { isGroup } from "../groups.js";
 import { fromEmbed } from "../embed.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
+import { own } from "../stage/own.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */
 export const PART_MIME = "application/x-scene-part";
@@ -401,4 +402,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

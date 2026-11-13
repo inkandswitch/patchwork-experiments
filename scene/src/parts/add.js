@@ -25,6 +25,7 @@ import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
+import { own } from "../stage/own.js";
 
 export { fromEmbed };
 
@@ -377,4 +378,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

@@ -21,6 +21,7 @@ import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
+import { own } from "../stage/own.js";
 
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
 export const KIND = "dimension";
@@ -472,4 +473,4 @@ export function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });
