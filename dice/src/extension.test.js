@@ -387,6 +387,45 @@ describe("rolling a die", () => {
   });
 });
 
+describe("H8: a pause, at every frame of a roll, changes nothing (scene/TOOLS.md §7)", () => {
+  // The one way a pause reaches dice: the doc changes (the clock's fields), so every view's update()
+  // runs again. Paused at each frame of a throw, from the press to the told landing, the roll lands
+  // the same, in the same writes, released and told the same, as unpaused.
+  const AIR = 30;
+  const total = AIR + FRAMES;
+  function roll(pauseAt) {
+    const t = world();
+    let f = 0;
+    const frames = (n) => {
+      for (let i = 0; i < n; i++) {
+        if (f++ === pauseAt) {
+          t.w.change((d) => Object.assign(d.clock, { running: false, t: d.clock.t + 1.5, by: "carol" }));
+          t.w.flush();
+        }
+        t.w.tick(1 / 60, 1);
+      }
+    };
+    t.run("roll", "d1");
+    frames(AIR);
+    t.draw(9);
+    frames(FRAMES);
+    t.sync();
+    const out = { to: structuredClone(t.doc.objects.d1.transform), writes: t.writes.length, released: t.w.released, a: t.notices("A"), b: t.notices("B"), paused: t.doc.clock.running === false };
+    t.w.done();
+    return out;
+  }
+  it(`paused at each of its ${total} frames: the same landing, writes, release and telling`, () => {
+    const { paused: running, ...plain } = roll(-1);
+    expect(plain.writes).toBe(1);
+    expect(running).toBe(false);
+    for (let k = 0; k < total; k++) {
+      const { paused, ...out } = roll(k);
+      expect(paused).toBe(true);
+      expect(out, `paused at frame ${k}`).toEqual(plain);
+    }
+  });
+});
+
 describe("a roll whose draw doesn't come", () => {
   it("spoiled, taken by another throw, or still waiting when its time is up: nothing lands, it's put back as it lay, and the thrower is told why", () => {
     for (const how of ["spoiled", "taken", "waiting"]) {

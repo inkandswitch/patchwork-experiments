@@ -58,7 +58,8 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.heldBy = () => null;
   api.pose = {
-    hold: (id, t) => holds.push([id, t]),
+    // `stub.refuse`: something here holds it ahead of the carry (holds.js), so the hold doesn't stand
+    hold: (id, t) => (holds.push([id, t]), !stub.refuse),
     release: (id, opts) => releases.push([id, opts ?? {}]),
   };
   // frame loops, run by hand: stub.tick(dt)
@@ -204,6 +205,23 @@ describe("scene.carry carrying", () => {
     await settle();
     expect(transformOf("a").position).toEqual([0, 0, 0]);
     expect(stub.releases).toEqual([["a", {}]]);
+  });
+
+  it("refused by something here that holds it ahead (a roll, a glide): it goes back at whichever move, and nothing is written", async () => {
+    for (const at of [0, 1, 2]) {
+      const { x, stub } = await mount({ doc: {} });
+      const session = x().input.press(press("a"));
+      for (let i = 0; i < 3; i++) {
+        stub.refuse = i >= at;
+        session.move(move(1 + i, 1));
+      }
+      session.end(move(3, 1));
+      await settle();
+      expect(transformOf("a").position).toEqual([0, 0, 0]);
+      expect(stub.releases).toEqual([["a", {}]]);
+      s.unmount();
+      s = null;
+    }
   });
 
   it("snaps to another object's connector, turning to its yaw; Alt and the pref place freely", async () => {
@@ -452,6 +470,25 @@ describe("Flip: turning a piece over where it lies", () => {
     expect(transformOf("a").position[2]).toBeCloseTo(0.2);
     expect(transformOf("a").position[1]).toBeCloseTo(0.1); // its box is below its origin now: resting on the ground
     expect(stateOf("flip", "a")).not.toBe(null);
+  });
+
+  it("refused by something here that holds it ahead, at the start or partway: nothing is written", async () => {
+    for (const at of [0, 1, 2, 3]) {
+      const { stub } = await mount({ doc: { objects: { a: piece({ transform: lying }) } } });
+      stub.refuse = at === 0;
+      run();
+      for (let i = 1; i <= 3; i++) {
+        if (i === at) stub.refuse = true;
+        stub.tick(0.05);
+      }
+      stub.tick(0.05, 4);
+      await settle();
+      expect(stub.loops.size).toBe(0);
+      expect(stub.releases.at(-1)).toEqual(["a", {}]);
+      expect(transformOf("a")).toEqual(lying);
+      s.unmount();
+      s = null;
+    }
   });
 
   it("gives way to a peer who picks it up meanwhile: nothing is written", async () => {

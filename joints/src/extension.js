@@ -7,31 +7,49 @@
 //   `reach: true`, and the stage measures from the body's eye against its
 //   reach (scene/TOOLS.md §4), so walking you open a door within 2 m and in
 //   orbit anywhere;
-// - the motion: a pose hold each frame while this view moves a part (a
-//   loop, only then, to draw it), released as landed after the one write;
-//   the landing itself is timed by the clock (a timer), so a view that draws
-//   no frames (a hidden tab) still lands and writes on time;
-// - closing: a timer for the next close or landing this view owes, and a
-//   look again whenever the doc or who's here changes;
-// - who's here: a presence key, `here`, so the others know this view will
-//   close what it opened (a view that stops running this has no key, and
-//   counts as gone).
+// - the motion: an act, a pose hold each frame while this view moves a part
+//   (a loop, only then, to draw it), released as landed after the one write;
+//   the landing itself is timed by the wall clock (a timer), so a view that
+//   draws no frames (a hidden tab) still lands and writes on time, and a
+//   pause doesn't stop it halfway;
+// - closing: the scene's process (api.clock.process), registered while any
+//   part closes itself: its step closes each part once the doc's world time
+//   is its wait past `since`. Only the view computing the clock steps it, so
+//   exactly one view closes a part, whoever opened it; paused, or with
+//   nobody present, doors stay open (TOOLS.md §7).
+//
+// The motion's holds yield (a process's, giving way to a person's): someone
+// carrying the door, in this view or another, stops it, and the act lets go
+// without writing (api.pose.hold says the hold no longer stands).
 
-import { KEY, createSlides } from "./slide.js";
+import { KEY, createSlides, selfClosing } from "./slide.js";
 
 function create(api) {
-  const present = (session) => !!api.presence.get()?.[session]?.keys?.[api.id]?.here;
   const slides = createSlides({
-    session: api.session,
     now: () => Date.now(),
+    t: () => api.clock.t(),
     doc: () => api.doc(),
     change: (fn) => api.change(fn),
-    hold: (id, t) => api.pose.hold(id, t),
+    hold: (id, t) => api.pose.hold(id, t, { yields: true }), // false: taken (a person's hold, here or there)
     release: (id, o) => api.pose.release(id, o),
-    heldBy: (id) => api.heldBy(id),
-    present,
+    heldBy: (id) => api.heldBy(id, { yields: true }),
   });
-  api.presence.set("here", true);
+
+  // the closing: a process while anything here closes itself
+  let removeProcess = null;
+  function processes(doc) {
+    const want = selfClosing(doc);
+    if (want && !removeProcess)
+      removeProcess = api.clock.process({
+        step(_dt, t) {
+          if (slides.due(t)) look();
+        },
+      });
+    else if (!want && removeProcess) {
+      removeProcess();
+      removeProcess = null;
+    }
+  }
 
   let stopLoop = null;
   function animate() {
@@ -59,7 +77,7 @@ function create(api) {
     clearTimeout(timer);
     timer = next != null ? setTimeout(look, Math.max(16, next - Date.now())) : null;
   }
-  api.presence.watch(() => look());
+  processes(api.doc());
 
   /** The verb for a target: Open, Close, or (disabled) Opening, Closing, someone else moving it. */
   function verbOf(target) {
@@ -73,7 +91,9 @@ function create(api) {
 
   return {
     update(scene, local, prev) {
-      if (scene !== prev?.scene) look();
+      if (scene === prev?.scene) return;
+      processes(scene.d);
+      look();
     },
     commands: [
       {
@@ -90,6 +110,7 @@ function create(api) {
     dispose() {
       dead = true;
       clearTimeout(timer);
+      removeProcess?.();
       slides.stop();
     },
   };

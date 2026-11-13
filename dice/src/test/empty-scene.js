@@ -24,6 +24,7 @@ export function emptyScene(over = {}) {
     traits: {},
     assets: {},
     packages: [],
+    clock: { running: true, t: 0 },
     view: { ...DEFAULT_VIEW },
     ...over,
   };

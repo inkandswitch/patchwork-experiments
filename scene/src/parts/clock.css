@@ -1,0 +1,35 @@
+/* scene.clock: the clock chip, in a slim bar on the stage's top edge (the
+   world bar's seed): ▶ or ⏸ for the doc's world time, who paused it, and who
+   computes it only when that's news (a stall, or nobody here able to). */
+
+.scene-stage .clock-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: center;
+  padding: 3px var(--studio-space-xs, 0.375rem);
+  border-bottom: 1px solid var(--scene-border);
+  background: var(--scene-bg);
+}
+
+.scene-stage .clock-bar[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .clock-bar > .clock-chip:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.scene-stage .clock-chip > .clock-text:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-stage .clock-chip > .clock-toggle:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 12px;
+  padding: 1px 10px;
+  border-radius: var(--studio-radius-round, 9999px);
+}

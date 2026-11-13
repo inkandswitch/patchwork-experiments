@@ -1,0 +1,27 @@
+// H8 (scene/TOOLS.md §7, "Three times"): a pause changes no actor or
+// liveness outcome. Dice, lots and the cup run on actor time (their loops)
+// and liveness (Date.now: THROW, TOLD, lots' deadlines), never on the doc's
+// world time, so pausing the world can't reach any of their protocols: by
+// construction, as long as nothing here reads the world clock. This holds
+// them to that. The one channel a pause does use, a doc change (the clock's
+// fields) that runs every view's update() again, is run for real on a roll
+// in extension.test.js ("H8: a pause, at every frame of a roll").
+import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const SRC = join(process.cwd(), "src"); // (vitest runs from the package)
+const WORLD_CLOCK = [/\bapi\.clock\b/, /\.clock\s*\.\s*(t|running|pause|resume|process)\s*\(/, /claims\??\.\s*clock\b/, /\bclaims\[\s*["']clock["']\s*\]/, /\b(doc|d)\(?\)?\??\.clock\b/];
+
+describe("H8: dice, lots and the cup never read the world's clock", () => {
+  const files = readdirSync(SRC).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"));
+  it(`in all ${files.length} source files`, () => {
+    expect(files).toEqual(expect.arrayContaining(["extension.js", "cup-extension.js", "lots.js", "lots-ext.js", "lots-run.js", "roll.js"]));
+    const found = [];
+    for (const f of files) {
+      const text = readFileSync(join(SRC, f), "utf8");
+      for (const re of WORLD_CLOCK) if (re.test(text)) found.push(`${f}: ${re}`);
+    }
+    expect(found).toEqual([]);
+  });
+});

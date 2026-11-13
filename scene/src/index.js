@@ -353,6 +353,16 @@ export const plugins = [
       return (await import("./parts/parts.js")).default;
     },
   },
+  // the doc's world time: ▶ or ⏸, who paused it, a stall (only for a doc with a process)
+  {
+    type: "scene:extension",
+    id: "scene.clock",
+    name: "Clock",
+    always: true,
+    async load() {
+      return (await import("./parts/clock.js")).default;
+    },
+  },
   // what this viewer is doing, and switching it (only shown when there's a choice)
   {
     type: "scene:extension",

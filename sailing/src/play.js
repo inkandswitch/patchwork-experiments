@@ -13,12 +13,13 @@
 // (but for hud.js, which takes crew.js's seatedView): what they share of the
 // doc is in traits.js, of the maths in frames.js.
 //
-// One loop runs them, in the order a frame needs: the sea's clock first (the
-// time the ships are stepped to and the waves drawn at), then the ships,
-// then the people standing on them as they now are, then what's dressed and
-// read off them. This is also the one place the presence rate is set: the
-// simulator streams poses at RATE, someone aboard at 20 Hz, a watcher not
-// at all.
+// The ships step as a process of the doc's clock (sim.js), before any of
+// this. Then one loop runs the rest, in the order a frame needs: the sea
+// drawn at the world's time, the ships' following (what the computer
+// publishes), then the people standing on them as they now are, then what's
+// dressed and read off them. This is also the one place the presence rate
+// is set: the computer streams poses at RATE, someone aboard at 20 Hz, a
+// watcher not at all.
 
 import { createSeaView } from "./sea-view.js";
 import { createSim } from "./sim.js";
@@ -27,7 +28,7 @@ import { createLooks } from "./looks.js";
 import { stationCommands } from "./stations.js";
 import { createHud } from "./hud.js";
 
-/** The simulator's presence rate (Hz): its clock and its poses go out this often. */
+/** The computer's presence rate (Hz): its poses and its ships' readings go out this often. */
 export const RATE = 30;
 /** Someone aboard: where they stand goes out this often. */
 export const CREW_RATE = 20;
@@ -46,9 +47,9 @@ export default {
     const parts = [ctx.sea, ctx.sim, ctx.crew, looks, hud];
 
     let rate = null;
-    const off = api.loop((dt, now) => {
-      ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator());
-      ctx.sim.tick(dt);
+    const off = api.loop((dt) => {
+      ctx.sea.tick();
+      ctx.sim.tick();
       ctx.crew.tick(dt);
       looks.tick(dt);
       hud.tick(dt);

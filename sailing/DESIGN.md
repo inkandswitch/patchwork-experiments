@@ -42,8 +42,8 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea: the shared sea clock (pure: `seaTime`, `slew`, `follow`), the ocean and sky drawn (`drawSea`, which edit.js shares, with `seaClock`) only while the scene has a sea |
-| `sim.js` | stage side thin | ctx.sim: the "sim" claim and handoff, physics per ship, the holds, the stations' values, saving (pure helpers exported and tested) |
+| `sea-view.js` | stage side thin | ctx.sea: the ocean and sky drawn (`drawSea`, which edit.js shares) at the doc's world time (`api.clock.t`), only while the scene has a sea |
+| `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
 | `navmesh.js` | yes | The bake: a ship's triangles (her body frame) to a navmesh of 5 cm cells, every cell side one record (STEP, WALL, OPEN), her D_r and where a swimmer is put out of it, and links (spawn, stand spots, the ladder). See "Walking" |
@@ -54,7 +54,7 @@ modules share.
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions) |
 | `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
-| `edit.js` | no | The sea while editing, at the sailors' clock when someone is sailing her meanwhile |
+| `edit.js` | no | The sea while editing, at the doc's world time (still, alone in edit: editing brings no process) |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
 doc, crewing her together (see its header). Its page seeds `Math.random`
@@ -496,7 +496,8 @@ the deck. The cloth is one camber, scaled. This section makes every one of
 those cues a **pure function of the physics' own state**: the fields
 `riggedSails` already computes, read out by `read()`. Nothing is animated
 on its own clock, so nothing can disagree with the forces. The one time
-input is the sea clock, which every view shares (`ctx.sea.clock()`). It
+input is the doc's world time, which every view shares (`ctx.sea.clock()`,
+`api.clock.t()`). It
 only sets the phase of a flutter whose amplitude the physics gives.
 
 It covers five things, each below:
@@ -1562,15 +1563,16 @@ them in play, a click on them comes aboard, and her navmesh bakes them (the
 hatch where it rests: a hatch that comes to rest open changes her bake key,
 and she is baked again off the frame loop, as for any part moved).
 
-Who is at a station, and who simulates the sea, are **claims** in the doc
-(`claims: { station | halyard | sim: { viewer, session } }` on the object),
-lapsing when the holder's session leaves presence. `halyard`, on the sail
+Who is at a station is a **claim** in the doc (`claims: { station | halyard:
+{ viewer, session } }` on the object), lapsing when the holder's session
+leaves presence; who computes the sea and the ships is the doc's clock's
+claim, the stage's (`claims.clock`, scene TOOLS.md §7). `halyard`, on the sail
 station, is who stands at the mast; the sail's own `station` claim is held
 only while a key works it, from wherever, so someone at the mast doesn't
 stop the helmsman trimming. The ship's motion is a
-**continuous pose hold** by the simulating peer, which every other peer
-shows interpolated; it is written to the doc only now and then and when the
-sim stops.
+**continuous pose hold** by the computing peer, which every other peer
+shows interpolated; it is written to the doc only at the clock's
+checkpoints (every 30 s, on pause, on letting go).
 
 The stage's names: `api.claim(id, kind, { onLost })` → release | null,
 `api.claimedBy(id, kind)` → `{ viewer, session, mine } | null` (STAGE.md,
@@ -1579,9 +1581,8 @@ to take over checks `claimedBy` in its loop. There is no `continuous` flag:
 every peer's hold is played back interpolated (about 1.5 send intervals
 behind), and `api.presence.rate(hz)` raises the pose rate too.
 
-Presence keys under "sailing": `clock: { t, at }` from the simulator (the
-sea's time at its `Date.now`), `ships: { [id]: published diagnostics +
-{ velocity, spin } }` from the simulator at 5 Hz, `input: { [stationId]:
+Presence keys under "sailing": `ships: { [id]: published diagnostics +
+{ velocity, spin } }` from the computing view at 5 Hz, `input: { [stationId]:
 fields }` from whoever works a station, and `crew: { on, position, yaw,
 pitch, station }` from everyone aboard. The presence rate is play.js's to
 set: 30 Hz while simulating, 20 aboard, else the stage's default.
@@ -1608,9 +1609,10 @@ hangs from, or what carries the mast's tag), never from
 another traitless thing aboard (a card table): stations.js `sailOf`.
 
 ```js
-api.loop((dt, now) => {
-  ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator()); // the clock first: what the ships step to
-  ctx.sim.tick(dt);   // take over, follow, or step and hold the ships
+// before this, the stage's clock steps the ships (sim.js's process) on the computing view
+api.loop((dt) => {
+  ctx.sea.tick();     // the surface drawn at the doc's world time
+  ctx.sim.tick();     // inputs; computing: the poses the steps reached; following: what the computer publishes, the poses it holds
   ctx.crew.tick(dt);  // walk on the deck as it now is; draw everyone else; not aboard, follow: the orbit rides
                       //   the first ship sideways (api.camera.ride, a base ride, so a seat at a table
                       //   aboard, whose body rides it, wins), or is moved each frame on a stage without rides
@@ -1624,9 +1626,9 @@ api.loop((dt, now) => {
 // sea-view.js — createSeaView(api) → ctx.sea
 ctx.sea.ocean            // the current createOcean(...) (rebuilt when sailing.sea changes), null with no sea trait
 ctx.sea.wind             // the current createWind(...), or null
-ctx.sea.clock()          // the sea's time t (s), the same on every peer (the simulating peer's clock)
+ctx.sea.clock()          // the sea's time t (s): the doc's world time, api.clock.t()
 ctx.sea.atmosphere()     // { sky, fog, sun, exposure } for the stage, or null with no sea
-ctx.sea.tick(dt, now, own, simulator)   // the clock on (its own, or following `simulator`'s), published if own, the surface drawn
+ctx.sea.tick()           // the surface drawn at that time
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
@@ -1635,9 +1637,9 @@ ctx.sim.stationsOf(shipId) → { helm, sail, anchor, mainsheet, jib, ladder, win
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }
 ctx.sim.commit(stationId, fields)   // a lasting change to a station's trait (doc), e.g. { raised: 0 }
-ctx.sim.simulating()     // is this view the one simulating (holds the scene's "sim" claim)?
-ctx.sim.simulator()      // the simulating session, when it's someone else, else null
-ctx.sim.tick()
+ctx.sim.simulating()     // is this view the one computing the ships (between the process's start and stop)?
+ctx.sim.simulator()      // the computing session (the doc's "clock" claim), when it's someone else, else null
+ctx.sim.tick()           // every view, every frame: stale inputs; computing, the poses held where the steps left them; following, what the computer publishes and holds
 
 // crew.js — createCrew(api, ctx) → ctx.crew
 ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). Only a click on
@@ -1667,46 +1669,50 @@ The play instance also carries `debug: ctx`, which nothing in the stage
 reads: the browser probe (`probes/sailing-run.mjs`) reads and nudges the
 parts through it.
 
-**The sea's clock is the wall's.** The simulator's sea time runs at the
-frame clock's real rate (the loop's `now`), not the stage's `dt`, which is
-clamped to 0.1 s: followers run its clock on at wall rate between samples,
-and the stage plays the hull back by the wall too, so at a slow frame rate
-the three would drift apart. Only a stall longer than a second (a hidden
-tab) is skipped; the physics skips with it (`catchUp`: what one step of 30
-substeps can't make up is dropped, so she stays on the waves drawn).
+**The sea's time is the world's.** The sea, the wind's gusts, the ships'
+physics and the floats' bob all read one time, the doc's world time
+(`api.clock.t()`, scene TOOLS.md §7). The view computing it runs it at the
+wall's rate, at most a quarter second a frame (a longer stall is skipped;
+the physics skips with it, `catchUp`), and steps the ships' process on a
+fixed grid of it. A follower's is the computer's at the moment whose held
+poses it is drawing, so the hull sits on the waves drawn under it. Paused,
+or with nobody able to compute (only read-only viewers, or editors: editing
+brings no process until activities go), the sea stands still. Nobody
+present, no time passes.
 
-**A follower's sea is shown when its hull is.** The simulator publishes
-`{ t, at }`; a follower shows `t + (shownAt − at)`, where `shownAt` is the
-stage's `api.presence.shownAt(simulator)`: the moment on the simulator's
-clock whose held poses this view is drawing now. So the hull sits on the
-waves drawn under it whatever rate either peer streams at, and nothing here
-copies the stage's playout delay. The clock slews toward that (never
-backwards, never more than twice as fast) and jumps when it's more than
-half a second off: back from a hidden tab, or after the simulator stalled.
-edit.js keeps the same clock, so an editor watching someone sail sees the
-hull on the right waves.
+**Who computes.** The ships are a process of the doc's clock
+(`api.clock.process({ start, step, save, stop })`): the view holding the
+doc's `"clock"` claim, the stage's, steps their physics on the clock's
+grid. Once a frame (`ctx.sim.tick`), not at every step, it holds each
+hull's pose and its moving parts' poses (rig, jib, wheel, anchor) where
+the steps left her, for everyone, and raises the presence rate: a slow
+frame takes many steps of 1/60 s, and holding poses at each cost as much
+again as the physics, for nothing anyone sees; everyone else follows, poses played back by the
+stage. A follower keeps each hull's matrix as it last saw it held; when it
+comes to compute (the computer left, crashed, hid, or was paused and
+resumed), `start(t)` carries on from that pose and the last motion
+streamed, never from the doc's older save (warm), and from the doc only
+when it has followed nothing (cold). The clock's checkpoints (every 30 s,
+on pause, on letting go) call `save(d)`: each hull it still holds, its
+transform and its motion (`sailing.ship.motion`), stamped by the stage
+`saved`; `stop()` lets the holds go *landed* when a checkpoint just wrote
+them (peers keep showing her there until their doc agrees).
 
-
-**Who simulates.** One peer holds the scene-wide claim `"sim"`
-(`api.claim(null, "sim")`): it steps every ship's physics in `api.loop`,
-holds each hull's pose and its moving parts' poses (rig, wheel, anchor) for
-everyone, raises the presence rate, and publishes the sea clock in presence.
-Everyone else follows: poses come played back by the stage, the clock from
-the simulator's presence. A follower keeps each hull's matrix as it last
-saw the simulator hold it. When the claim lapses (a bye, a crash), any peer
-still here claims, Automerge settles who won, and the winner carries on from
-that pose and the last motion streamed, never from the doc's older save.
-The simulator writes each hull's transform (and its motion, in
-`sailing.ship.motion`) to the doc now and then, and when it stops or its
-tab is hidden or closing; then it lets the holds go as *landed* (peers keep
-showing her there until their doc agrees) and lets go of the claim, so a
-visible peer carries on (a hidden tab gets no frames). Back, it follows.
-A transform that changes in the doc without her motion changing with it is
-an editor's move: she starts again from there, at rest, and her anchor is
-dropped again. One written with her motion is a simulator's save (perhaps
-a late one, landing after a handoff) and changes nothing. A state that goes
-to NaN is never shown, published or saved: she's put back at her last good
-pose, still. Physics runs at the object's scale.
+**A person and a process on one hull.** The hull's hold yields (a
+process's, giving way to a person's) unless someone is at the helm: so
+someone may carry or drag a ship nobody steers, the process's holds are
+refused meanwhile and her physics isn't stepped (she waits where she was
+taken, with her motion), and she starts again at rest where she's put
+down; put back instead (Escape), she goes on from where she was taken, not
+from where hidden physics would have drifted her. One at the helm is
+driven, and nobody takes her. A transform that changes in
+the doc without the stage's `saved` stamp changing with it was moved by
+something other than a checkpoint (the halo, the inspector, a carry): she
+starts again from there, at rest, and her anchor is dropped again. One
+written with a new stamp is a checkpoint (perhaps a late one, landing after
+a handoff) and changes nothing. A state that goes to NaN is never shown,
+published or saved: she's put back at her last good pose, still. Physics
+runs at the object's scale.
 
 **Controls.** A station's lasting setting is its trait (the sail raised,
 where the wheel was left, the anchor down). While someone works a station,

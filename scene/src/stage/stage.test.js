@@ -987,19 +987,27 @@ describe("another view's hold, played back", () => {
     expect(M.debug.viewport.poses.has("hull")).toBe(false);
   });
 
-  it("our own hold wins over a peer's playback", async () => {
-    const h = newScene({ objects: { a: card() }, order: ["a"] });
+  it("our own hold wins over a peer's playback when it ranks ahead (a person's over a yielding one), and is refused when it doesn't", async () => {
+    const h = newScene({ objects: { a: card(), b: card() }, order: ["a", "b"] });
     const M = mount(h, "viewer:me");
     await settle();
     const api = exts["t.edit"].api;
     vi.spyOn(Date, "now").mockImplementation(() => clockNow);
     clockNow = 1000;
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50 } });
+    // a peer's process moves `a` (yielding), and a peer's person holds `b`
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50, yields: true } });
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "b", parent: null, transform: T(0), since: 2, seq: 2, at: 0, every: 50 } });
     clockNow = 1050;
-    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(1), since: 1, seq: 2, at: 50, every: 50 } });
-    api.pose.hold("a", T(9));
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(1), since: 1, seq: 3, at: 50, every: 50, yields: true } });
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "b", parent: null, transform: T(1), since: 2, seq: 4, at: 50, every: 50 } });
+    expect(api.heldBy("a")).toBeNull(); // a person isn't kept off by a process
+    expect(api.heldBy("a", { yields: true })).toBe("peer");
+    expect(api.pose.hold("a", T(9))).toBe(true);
+    expect(api.heldBy("b")).toBe("peer");
+    expect(api.pose.hold("b", T(9))).toBe(false);
     M.debug.tickPoses(1100);
     expect(M.debug.viewport.poses.get("a").position).toEqual([9, 0, 0]);
+    expect(M.debug.viewport.poses.get("b").position[0]).toBeLessThan(2);
   });
 });
 

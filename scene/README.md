@@ -38,13 +38,15 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `content: "file"`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` — `content: "built"` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (26) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `scene:extension` | `scene.*` (27) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
 All but three of the editor's parts take part only in the `"edit"` activity;
 the key map (`scene.keys`), notices and the packages prompt (`scene.packages`:
 STAGE.md, "Packages") serve every activity. `scene.activity`
 (the switcher: Play | Edit at the bottom left, shown only when a scene offers
-more than editing) runs in every scene.
+more than editing) and `scene.clock` (the clock chip: ▶ or ⏸ for the doc's
+world time, in a slim bar on the top edge, shown only for a doc with a process: TOOLS.md §7)
+run in every scene.
 
 The stage also answers **who may see what** (`api.audience`, from every
 package's `audience` policy) and draws **the veil** for a look that says
@@ -781,8 +783,8 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
-| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on), `body` (the body chip, who's here and the Esc hint) |
+| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it), `activity` (the switcher, always on), `clock` (the clock chip, always on) and `body` (the body chip, who's here and the Esc hint) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |

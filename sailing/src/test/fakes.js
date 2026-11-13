@@ -6,6 +6,14 @@
 // tests need. scene().parents is a Map, resolved as the stage resolves it (a
 // missing parent, or a group, is none).
 //
+// The doc's clock (api.clock, scene/TOOLS.md §7) as the stage keeps it: the
+// first view here, drawing and with a process computes it (the doc's
+// "clock" claim) and steps its processes on a grid of 1/60 s of world time;
+// every view reads the same t (a follower's lag is the stage's business);
+// it checkpoints on pause, on letting go (hidden, leaving, stopping) and
+// every 30 s, stamping what each save moved (`saved`). Holds are ranked as
+// the stage ranks them: a person's before a yielding one, then the first.
+//
 //   const w = fakeWorld(doc, { content });
 //   const a = w.join("A");  const b = w.join("B");
 //   w.tick(1 / 60, 120);  w.leave("A");  // a bye: abort, claims and holds let go
@@ -29,6 +37,7 @@ export function emptyScene() {
     traits: {},
     assets: {},
     packages: [],
+    clock: { running: true, t: 0 },
     view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
   };
 }
@@ -230,6 +239,66 @@ export function fakeWorld(doc, { content = {} } = {}) {
   const claims = []; // { session, id, kind, onLost }
   let now = null; // the frame clock (ms), as the loops get it
 
+  // ─── the doc's clock ───
+  const STEP = 1 / 60;
+  const clock = { t: Number(doc.clock?.t) || 0, computer: null, nextSave: Infinity };
+  const running = () => doc.clock?.running !== false;
+  const kept = (v) => v.processes.filter((p) => !p.replicated);
+  // the clock's fields, one by one (the stage never writes the map whole)
+  const setClock = (d, fields) => {
+    if (!d.clock) d.clock = { running: true, t: 0 };
+    Object.assign(d.clock, fields);
+  };
+  const tkey = (t) => JSON.stringify([t?.position, t?.rotation, t?.scale ?? 1]);
+  function checkpoint(list, write = null) {
+    change((d) => {
+      setClock(d, { ...write, t: clock.t });
+      const before = new Map(Object.entries(d.objects ?? {}).map(([id, o]) => [id, tkey(o.transform)]));
+      for (const p of list) p.save?.(d);
+      for (const [id, o] of Object.entries(d.objects ?? {})) if (before.has(id) && before.get(id) !== tkey(o.transform)) o.saved = clock.t;
+    });
+    clock.nextSave = Date.now() + 30_000;
+  }
+  function stopComputing(v, { save }) {
+    if (clock.computer !== v) return;
+    if (save) checkpoint(v.processes);
+    clock.computer = null;
+    for (const p of kept(v)) p.stop?.();
+    if (doc.claims?.clock?.session === v.session) change((d) => delete d.claims.clock);
+  }
+  function clockFrame(dt) {
+    const c = clock.computer;
+    // the claim taken from us by someone else: lost, nothing saved
+    if (c && doc.claims?.clock?.session !== c.session) {
+      clock.computer = null;
+      for (const p of kept(c)) p.stop?.();
+    }
+    if (clock.computer && (!running() || !clock.computer.processes.length)) stopComputing(clock.computer, { save: true });
+    if (!clock.computer && running()) {
+      const held = doc.claims?.clock?.session;
+      const next = held && present(held) ? null : [...views.values()].find((v) => v.here && !v.hidden && v.processes.length);
+      if (next) {
+        clock.t = Math.max(clock.t, Number(doc.clock?.t) || 0);
+        change((d) => {
+          if (!d.claims) d.claims = {};
+          d.claims.clock = { viewer: next.viewer, session: next.session };
+        });
+        clock.computer = next;
+        clock.nextSave = Date.now() + 30_000;
+        for (const p of kept(next)) {
+          p.k = Math.floor(clock.t / STEP + 1e-9);
+          p.start?.(clock.t);
+        }
+      }
+    }
+    if (clock.computer && running()) {
+      clock.t += Math.min(0.25, dt);
+      const k1 = Math.floor(clock.t / STEP + 1e-9);
+      for (const p of [...clock.computer.processes]) while (p.k < k1 && clock.computer?.processes.includes(p)) p.step(STEP, ++p.k * STEP);
+      if (Date.now() >= clock.nextSave) checkpoint(clock.computer.processes);
+    }
+  }
+
   const holderOf = (id) => (id == null ? doc : doc.objects?.[id]);
   const present = (s) => !!views.get(s)?.here;
 
@@ -274,7 +343,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
   }
 
   function join(session, { viewer = `viewer-${session}` } = {}) {
-    const view = { session, viewer, here: true, keys: {}, at: Date.now(), loops: [], listeners: [], abort: new AbortController(), rate: null };
+    const view = { session, viewer, here: true, keys: {}, at: Date.now(), loops: [], listeners: [], abort: new AbortController(), rate: null, processes: [] };
     views.set(session, view);
     const ext = "sailing";
     const api = {
@@ -327,9 +396,47 @@ export function fakeWorld(doc, { content = {} } = {}) {
         shownAt: (s) => (present(s) ? Date.now() : null),
         watch: () => () => {},
       },
+      clock: {
+        t: () => clock.t,
+        running,
+        computer: () => api.claimedBy(null, "clock"),
+        pause() {
+          if (!running()) return;
+          const write = { running: false, by: viewer };
+          if (clock.computer === view) {
+            checkpoint(view.processes, write);
+            clock.computer = null;
+            for (const p of kept(view)) p.stop?.();
+            change((d) => delete d.claims.clock);
+          } else change((d) => setClock(d, { ...write, t: clock.t }));
+        },
+        resume() {
+          if (!running()) change((d) => setClock(d, { running: true, t: clock.t, by: viewer }));
+        },
+        process(spec) {
+          const p = { ...spec, k: Math.floor(clock.t / STEP + 1e-9) };
+          view.processes.push(p);
+          if (clock.computer === view && !p.replicated) p.start?.(clock.t);
+          const remove = () => {
+            if (!view.processes.includes(p)) return;
+            if (clock.computer === view && !p.replicated) {
+              checkpoint([p]);
+              p.stop?.();
+            }
+            view.processes.splice(view.processes.indexOf(p), 1);
+          };
+          // the extension stopping takes its processes with it (saved first, where this view computes them)
+          view.abort.signal.addEventListener("abort", remove);
+          return remove;
+        },
+      },
       pose: {
-        hold(id, transform) {
-          holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
+        hold(id, transform, { yields = false } = {}) {
+          const cur = holds.get(id);
+          // a person's before a yielding one, then the first (scene's holds.js)
+          if (cur && !cur.landed && cur.session !== session && !(cur.yields && !yields)) return false;
+          holds.set(id, { session, transform: structuredClone(transform), at: Date.now(), yields });
+          return true;
         },
         release(id, { landed = false } = {}) {
           released.push({ session, id, landed });
@@ -339,9 +446,10 @@ export function fakeWorld(doc, { content = {} } = {}) {
           else holds.delete(id);
         },
       },
-      heldBy(id) {
+      heldBy(id, { yields = false } = {}) {
         const h = holds.get(id);
-        return h && !h.landed && h.session !== session ? h.session : null;
+        if (!h || h.landed || h.session === session) return null;
+        return !h.yields || yields ? h.session : null;
       },
       listen(target, type, fn) {
         view.listeners.push({ target, type, fn });
@@ -368,6 +476,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
     doc,
     holds,
     released,
+    clock,
     join,
     scene,
     change,
@@ -379,6 +488,7 @@ export function fakeWorld(doc, { content = {} } = {}) {
         now = (now ?? Date.now()) + dt * 1000;
         vi.setSystemTime(Math.round(now));
         for (const [id, h] of [...holds]) if (h.landed && Date.now() - h.at > 3000) holds.delete(id);
+        clockFrame(dt);
         // a hidden tab gets no frames
         for (const v of views.values()) if (v.here && !v.hidden) for (const fn of [...v.loops]) fn(dt, now);
       }
@@ -391,7 +501,10 @@ export function fakeWorld(doc, { content = {} } = {}) {
     leave(session, { bye = true } = {}) {
       const v = views.get(session);
       if (bye) {
+        // the stage stops: world time first (a checkpoint, the claim let go), then the extensions
+        stopComputing(v, { save: true });
         v.abort.abort();
+        v.processes.length = 0;
         for (const c of claims.filter((c) => c.session === session)) {
           claims.splice(claims.indexOf(c), 1);
           if (holderOf(c.id)?.claims?.[c.kind]?.session === session) change(() => delete holderOf(c.id).claims[c.kind]);
@@ -399,11 +512,14 @@ export function fakeWorld(doc, { content = {} } = {}) {
         for (const [id, h] of [...holds]) if (h.session === session) holds.delete(id);
       }
       v.here = false;
+      if (!bye && clock.computer === v) clock.computer = null; // a crash: no checkpoint; presence drops it
     },
     /** A view's tab is hidden (or shown again): what its visibilitychange listeners hear. */
     hide(session, hidden = true) {
       const v = views.get(session);
       v.hidden = hidden;
+      // hidden, it can't compute: a checkpoint, and the claim let go
+      if (hidden) stopComputing(v, { save: true });
       const was = Object.getOwnPropertyDescriptor(document, "visibilityState");
       Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
       try {
