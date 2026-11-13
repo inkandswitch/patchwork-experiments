@@ -204,7 +204,7 @@ try {
         })(),
       };
     },
-    /** this viewer's camera at the doc's home view (view.start.home), in orbit; what its body chip says */
+    /** this viewer's camera at the doc's home view (view.start.home), in Look; what its body chip says */
     async atHome() {
       const h = scene.doc().view.start.home;
       dbg.viewport.setCamera({ position: h.position, target: h.target });

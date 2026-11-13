@@ -1643,13 +1643,13 @@ ctx.sim.tick()           // every view, every frame: stale inputs; computing, th
 // crew.js — createCrew(api, ctx) → ctx.crew
 ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). Only a click on
                          //   the sea, the sky, a ship, a fitting of hers or anything not aboard a ship (the islet) (boardsOn): one on
-                         //   anything else aboard (a card) goes on. Seated (seatedView: a body that is neither orbit nor the crew's,
+                         //   anything else aboard (a card) goes on. Seated (seatedView: a body over the stage's Look or Edit, not the crew's,
                          //   a seat), only the sea or sky; the HUD (hudModel's `seated`) then offers Enter, no walking keys
 ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
                          //   (the navmesh walker), the walking keys, the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
                          //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
                          //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
-ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to the orbit off the quarter
+ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to Look off the quarter
 ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
                          //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
@@ -1727,7 +1727,7 @@ it only while nobody's at the helm.
 **Stations** (stations.js). Each verb says `reach: true`: the stage
 measures from the body's eye to the point looked at (on the target or
 anything under it), else the target's box, against the body's reach (the
-crew's 2.5 m, `crew.js` `REACH`; orbit's everything): the boom over the cockpit is in reach however far its
+crew's 2.5 m, `crew.js` `REACH`; Look's and Edit's everything): the boom over the cockpit is in reach however far its
 gooseneck is. Where you lock in (crew.take: at the station's stand spot, a
 link of her navmesh; F leaves):
 

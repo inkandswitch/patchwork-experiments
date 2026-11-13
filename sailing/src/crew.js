@@ -81,7 +81,7 @@ export function placeOf(a, worldOf) {
  * anything not aboard a ship at all (the islet, its lighthouse, a buoy):
  * yes. On something aboard her that isn't hers (a card or the table in her
  * cockpit, which the hand takes a click on), no: it goes on down the chain.
- * `seated`: the viewer is in a body that isn't the crew's or orbit (a seat at
+ * `seated`: the viewer is in a body that isn't the crew's or the stage's Look or Edit (a seat at
  * a table aboard her: seatedView); then only the sea or the sky does (the
  * hull round the table is where stray clicks land), or the button, or Enter.
  * @param {{ objects }} scene  @param {{ id?: string } | null} hit  @param {{ seated?: boolean }} [o]
@@ -96,10 +96,10 @@ export function boardsOn(scene, hit, { seated = false } = {}) {
   return ship == null || ship === id || sailingThing(o);
 }
 
-/** Is this viewer in a body that is neither orbit nor the crew's own (a seat at a table aboard her: scene/TOOLS.md §4)? */
+/** Is this viewer in a body over the stage's Look or Edit (depth 0) that isn't the crew's own (a seat at a table aboard her: scene/TOOLS.md §4)? */
 export const seatedView = (api) => {
-  const id = api?.body?.current?.()?.id;
-  return id != null && !["orbit", "aboard", "station"].includes(id);
+  const b = api?.body?.current?.();
+  return (b?.depth ?? 0) > 0 && !["aboard", "station"].includes(b.id);
 };
 
 /** A stable hue for a person. */
@@ -535,7 +535,7 @@ export function createCrew(api, ctx) {
   /** Is the top body one of the crew's (walking her deck, or at a station)? */
   const ours = () => [AB, ST].includes(api.local.get()?.body?.id);
   let enteringStation = false; // a station going on over "aboard": not a wait
-  let overOrbit = true; // "aboard" went on over orbit (else over a body that has a view of its own: a seat)
+  let overOrbit = true; // "aboard" went on over the stage's orbit camera, Look (else over a body that has a view of its own: a seat)
   let suspended = false; // another body (a seat) is over "aboard"
 
   const walkKeys = Object.freeze([...MOVE_KEYS].map((code) => ({ code })));
@@ -568,8 +568,8 @@ export function createCrew(api, ctx) {
     reach: REACH,
     enter() {
       if (playing) return null;
-      // the body this one goes over: orbit, or one that takes the camera back when this goes (a seat)
-      overOrbit = (api.local.get()?.body?.id ?? "orbit") === "orbit";
+      // the body this one goes over: the stage's Look (from Edit the stage turns to Look first; depth 0), or one that takes the camera back when this goes (a seat)
+      overOrbit = (api.local.get()?.body?.depth ?? 0) === 0;
       playing = true;
       suspended = false;
       if (!w || (onShip() && !frameOfShip(w.ship))) spawn();

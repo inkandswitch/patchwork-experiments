@@ -47,7 +47,7 @@ On an empty scene's start screen, **Cadboro Bay (RVYC)**:
    never imported) on the mooring field, head to wind, main down, jib
    rolled away, anchor down with 25 m of chain (sailing has no mooring buoy, so her anchor
    holds her), in ~8 m of water;
-5. starts people in orbit at its home view (`view.start.home`), above the
+5. starts people in Look (no body named) at its home view (`view.start.home`), above the
    clubhouse looking out over the docks to the moorings; a click on the
    sloop comes aboard.
 
