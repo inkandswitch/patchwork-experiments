@@ -59,10 +59,9 @@
 // before or soon after (the message and the doc change travel apart), to a
 // pose showing that face as built here, once per move.
 //
-// A selected die also offers its own panel (tool.js) docked beside the scene,
-// "Edit die": the stage's right edge, marked as an embedded document so its
-// keys are its own (STAGE.md, "Keys"). The stage has no general way to dock
-// a document's own tool, so this follows camber.shape's dock.
+// A selected die also offers its own panel (tool.js), "Edit die", docked in
+// the stage's drawer (api.dock), whose panes are embedded documents: the
+// keys typed in it are its own (STAGE.md, "Keys").
 
 import { cupsOf } from "./cup.js";
 import { DIE, PROVIDER } from "./ids.js";
@@ -99,7 +98,6 @@ const fromOf = (o) => {
 };
 
 function create(api) {
-  api.style?.(CSS);
   let scene = null;
   let dead = false;
   const isDie = (o) => !!o && o.kind !== "group" && !!o.traits && Object.hasOwn(o.traits, DIE);
@@ -562,44 +560,32 @@ function create(api) {
     later(() => waiting.delete(w), TRUST_MS);
   }
 
-  // ── the die's own panel, docked beside the scene ──
-  let dock = null; // { id, edge, unmount }
+  // ── the die's own panel, in the stage's drawer ──
+  let dock = null; // { id, close, unmount }
   function closeDock() {
     const d = dock;
     dock = null;
     if (!d) return;
+    d.close();
     try {
       d.unmount?.();
     } catch (err) {
       console.warn("[dice] the die's panel didn't close cleanly", err);
     }
-    d.edge.remove();
     api.schedule?.(() => {});
   }
   async function openDock(id) {
     const o = api.scene()?.objects?.[id];
     if (!isDie(o) || typeof o.sourceUrl !== "string") return;
     closeDock();
-    const edge = api.edge("right");
-    edge.classList.add("dice-dock");
-    // keys typed in the panel are the panel's, never the scene's (STAGE.md, "Keys")
-    edge.setAttribute("data-stage-embed", "");
-    const header = document.createElement("header");
-    const title = document.createElement("span");
-    title.className = "name";
-    title.textContent = o.name || "Die";
-    const done = document.createElement("button");
-    done.type = "button";
-    done.textContent = "Close";
-    done.addEventListener("click", closeDock);
-    header.append(title, done);
     const body = document.createElement("div");
-    body.className = "body";
+    body.className = "dice-panel";
     // the panel rolls among whoever has this die's panel open, as this scene's viewer
     body.viewerId = api.viewer;
     body.repo = api.repo;
-    edge.append(header, body);
-    const mine = (dock = { id, edge, unmount: null });
+    const mine = (dock = { id, close: null, unmount: null });
+    // its × is someone closing it
+    mine.close = api.dock(body, { title: o.name || "Die", onClose: () => dock === mine && closeDock() });
     try {
       const [handle, tool] = await Promise.all([api.repo.find(o.sourceUrl), import("./tool.js")]);
       if (dock !== mine || dead) return;
@@ -718,16 +704,5 @@ async function drop(ctx, info) {
   ctx.local?.swap?.((m) => ((m.selected ?? null) === id ? m : { ...m, selected: id }));
   return true;
 }
-
-const CSS = `
-.scene-stage .dice-dock { flex: 0 0 auto; width: clamp(300px, 36cqw, 460px); height: 100%; min-height: 0; display: flex; flex-direction: column;
-  border-left: 1px solid var(--scene-line, #8884); background: var(--scene-bg, #fff); color: var(--scene-fg, #222); }
-.scene-stage .dice-dock > header { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 10px;
-  border-bottom: 1px solid var(--scene-line, #8884); font: 600 13px/1.3 var(--scene-family, system-ui, sans-serif); }
-.scene-stage .dice-dock > header .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scene-stage .dice-dock > header button { font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer; }
-.scene-stage .dice-dock > .body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.scene-stage .dice-dock > .body > * { flex: 1 1 auto; min-height: 0; }
-`;
 
 export default { create, drop };

@@ -8,7 +8,7 @@
 //
 // The parts, in the order they're wired:
 //   - the mount: four edges around a port (a CSS grid; an empty edge takes no
-//     room). The port holds the viewport's canvas and labels, and the
+//     room), and the drawer at the right while anything is docked (dock.js). The port holds the viewport's canvas and labels, and the
 //     extensions' overlays. The root is focusable and hears the keys.
 //   - local state (atom.js): one frozen value shared by the stage and every
 //     extension; prefs are kept per scene in localStorage. What this viewer
@@ -40,6 +40,7 @@ import { createPackages } from "./packages.js";
 import { mergeAudience, mergeShown } from "./audience.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
+import { createDrawer } from "./dock.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
@@ -369,6 +370,8 @@ export default function Stage(handle, element) {
   port.className = "viewport";
   root.append(edges.top, edges.left, port, edges.right, edges.bottom);
   element.append(style, root);
+  // the drawer: what extensions dock (api.dock), outermost at the right
+  const drawer = createDrawer({ parent: edges.right });
 
   const doc = () => handle.doc() ?? {};
   // Who is looking (extensions' business: seats, say): the account's contact,
@@ -1757,7 +1760,9 @@ export default function Stage(handle, element) {
     const ownEl = (el, parent) => {
       if (!live()) return el;
       own.els.add(el);
-      parent.append(el);
+      // (the drawer stays outermost: an edge part started while it's open goes inside it)
+      if (drawer.el.parentNode === parent) parent.insertBefore(el, drawer.el);
+      else parent.append(el);
       return el;
     };
 
@@ -1896,6 +1901,8 @@ export default function Stage(handle, element) {
         el.dataset.owner = id;
         return ownEl(el, edges[EDGES.includes(side) ? side : "right"]);
       },
+      /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
+      dock: (el, { title, onClose } = {}) => (live() && el ? acquire(own.offs, () => drawer.dock(id, el, { title, onClose })) : noop),
       style: (text) => {
         const el = document.createElement("style");
         el.textContent = String(text ?? "");
@@ -1987,8 +1994,9 @@ export default function Stage(handle, element) {
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       viewport.removeLayers(id);
-      // 7: labels, overlays, edges, styles, listeners and watchers, cursor, extent, focus
+      // 7: labels, overlays, edges, docked panes, styles, listeners and watchers, cursor, extent, focus
       for (const key of own.labelKeys ?? []) viewport.labels.clear(key);
+      drawer.closeOwner(id);
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
@@ -2205,6 +2213,8 @@ export default function Stage(handle, element) {
     audience: audienceOf,
     shown: shownTo,
     atmosphere: () => atmosphere,
+    /** the drawer: the docked elements in tab order, and the one shown */
+    drawer: () => drawer.state(),
     /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
     busy,
     /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */

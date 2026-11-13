@@ -1,7 +1,7 @@
 // The bag's scene extension (`scene:extension` "bag"): what makes an object a
 // container in a scene. Things dropped on it go in, Draw takes one out into
-// the drawer's hand, a label says how many it holds, and its 2D panel opens
-// beside the scene. A bag is a physical thing, not a rule: it knows nothing
+// the drawer's hand, a label says how many it holds, and its 2D panel docks
+// in the stage's drawer (api.dock). A bag is a physical thing, not a rule: it knows nothing
 // of turns, hands, seats or limits.
 //
 // It is built only from the scene's extension contract (scene/STAGE.md).
@@ -581,18 +581,18 @@ export default {
       labels.set(items);
     }
 
-    // ── the bag's own panel, docked beside the scene ──
-    let dock = null; // { bagId, url, edge, unmount, refresh }
+    // ── the bag's own panel, in the stage's drawer ──
+    let dock = null; // { bagId, url, close, unmount, refresh }
     function closeDock() {
       if (!dock) return;
       const d = dock;
       dock = null;
+      d.close();
       try {
         d.unmount?.();
       } catch (err) {
         console.warn("[bag] the panel didn't close cleanly", err);
       }
-      d.edge.remove();
       api.schedule(() => {});
     }
     function openDock(bagId) {
@@ -600,14 +600,12 @@ export default {
       const handle = bag ? handleOf(bag.url) : null;
       if (!bag || !handle) return;
       closeDock();
-      const edge = api.edge("right");
-      edge.classList.add("bag-dock");
-      // keys typed in the panel are the panel's, never the scene's (STAGE.md, "Keys")
-      edge.setAttribute("data-stage-embed", "");
-      const body = el("div", { class: "bag-dock-body" });
-      edge.append(el("header", {}, el("span", { class: "bag-dock-name" }, titleOf(bag.url)), el("button", { type: "button", onclick: closeDock, title: "Close the bag's panel" }, "Close")), body);
-      const d = { bagId, url: bag.url, edge, unmount: null, refresh: null };
+      // (a pane of the drawer is an embedded document: keys typed in it are the panel's, never the scene's)
+      const body = el("div", { class: "bag-panel" });
+      const d = { bagId, url: bag.url, close: null, unmount: null, refresh: null };
       dock = d;
+      // its × is someone closing it
+      d.close = api.dock(body, { title: titleOf(bag.url), onClose: () => dock === d && closeDock() });
       // the panel is this package's own tool, on the bag's document; in a
       // scene it reads by the scene's rule and its Draw sets pieces down here
       const host = {
@@ -774,15 +772,4 @@ const STAGE_CSS = `
   padding: 1px 7px; border-radius: 6px; font-size: 12px; text-shadow: 0 1px 1px rgb(0 0 0 / 0.4);
 }
 .scene-stage .label.bag-count[data-empty]:where(:not(.about-embed *), .about-embed .scene-tool *) { opacity: 0.7; }
-.scene-stage .bag-dock:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  flex: 0 0 auto; width: clamp(240px, 30cqw, 380px); height: 100%; min-height: 0; display: flex; flex-direction: column;
-  border-left: 1px solid var(--scene-border, rgb(0 0 0 / 0.15)); background: var(--scene-panel-bg, #fff); color: var(--scene-fg, #222);
-}
-.scene-stage .bag-dock > header:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 10px; font: 600 13px system-ui, sans-serif;
-  border-bottom: 1px solid var(--scene-border, rgb(0 0 0 / 0.15));
-}
-.scene-stage .bag-dock .bag-dock-name:where(:not(.about-embed *), .about-embed .scene-tool *) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scene-stage .bag-dock > header button:where(:not(.about-embed *), .about-embed .scene-tool *) { font: inherit; padding: 2px 10px; border-radius: 6px; cursor: pointer; }
-.scene-stage .bag-dock-body:where(:not(.about-embed *), .about-embed .scene-tool *) { flex: 1 1 auto; min-height: 0; overflow: auto; }
 `;

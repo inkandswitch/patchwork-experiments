@@ -287,3 +287,99 @@
   }
 }
 
+
+/* ─── the drawer: what extensions dock (api.dock), one pane shown ─────────── */
+
+.scene-stage .stage-drawer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 0 auto;
+  width: clamp(300px, 40cqw, 720px);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--scene-border);
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+}
+
+/* a narrow view keeps some of its width for the scene */
+@container (max-width: 640px) {
+  .scene-stage .stage-drawer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+    width: 70cqw;
+  }
+}
+
+.scene-stage .stage-drawer-tabs:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 0 auto;
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--scene-border);
+  background: var(--scene-surface);
+}
+
+.scene-stage .stage-drawer-tab:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--scene-border);
+}
+
+.scene-stage .stage-drawer-tab[aria-selected="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-bg);
+  box-shadow: inset 0 -2px 0 var(--scene-accent);
+}
+
+.scene-stage .stage-drawer-tab > button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.scene-stage .stage-drawer-tab-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.scene-stage .stage-drawer-tab-close:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding: 6px 8px 6px 2px;
+  color: var(--scene-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.scene-stage .stage-drawer-tab-close:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-fg);
+}
+
+.scene-stage .stage-drawer-panes:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* a docked element fills its pane; the pane with the keys shows a ring */
+.scene-stage .stage-drawer-pane:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.scene-stage .stage-drawer-pane:focus-within:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  outline: 2px solid var(--scene-accent);
+  outline-offset: -2px;
+}
+
+.scene-stage .stage-drawer-pane > *:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1 1 auto;
+  min-height: 0;
+}

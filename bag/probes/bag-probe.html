@@ -154,7 +154,10 @@ try {
     /** the page point of a world point in a view */
     pageOf(w, p) { const v = dbg[w].viewport; const r = v.canvas.getBoundingClientRect(); const q = v.project(p); return q && { x: r.left + q.x, y: r.top + q.y }; },
     canvas: (w) => rectOf(dbg[w].viewport.canvas),
-    panel: (w) => { const e = hosts[w].querySelector(".bag-dock .bag-tool"); return e ? { total: e.querySelector(".total")?.dataset.count ?? null, kinds: [...e.querySelectorAll(".kinds li")].map((li) => li.textContent), note: e.querySelector(".note")?.textContent ?? "" } : null; },
+    panel: (w) => { const e = hosts[w].querySelector(".stage-drawer .bag-panel .bag-tool"); return e ? { tab: hosts[w].querySelector(".stage-drawer-tab-name")?.textContent ?? null, total: e.querySelector(".total")?.dataset.count ?? null, kinds: [...e.querySelectorAll(".kinds li")].map((li) => li.textContent), note: e.querySelector(".note")?.textContent ?? "" } : null; },
+    /** the drawer in a view, and its first tab's × */
+    drawer: (w) => !!hosts[w].querySelector(".stage-drawer"),
+    closeRect: (w) => rectOf(hosts[w].querySelector(".stage-drawer-tab-close")),
     /** the open context menu's items in a view: [{ text, x, y }] */
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rectOf(e) })),
     run: (w, command, target, value) => { dbg[w].host.instanceOf("bag").commands.find((c) => c.id === command).run(target, value); return true; },

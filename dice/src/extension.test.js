@@ -860,33 +860,32 @@ describe("a die's own panel, docked", () => {
     t.w.done();
   });
 
-  it("docks the die's 2D tool in the stage's right edge on the die's own doc, as an embedded document; again, or Close, undocks it", async () => {
+  it("docks the die's 2D tool in the stage's drawer on the die's own doc, under its name; again, or its ×, undocks it", async () => {
     const t = withDoc();
     t.run("open", "d1");
     await settled();
-    const edge = t.w.view("A").edge;
-    expect(edge.children).toHaveLength(1);
-    const dock = edge.firstElementChild;
-    expect(dock.classList.contains("dice-dock")).toBe(true);
-    expect(dock.hasAttribute("data-stage-embed")).toBe(true);
-    expect(dock.querySelector("header .name").textContent).toBe("d1");
-    expect(dock.querySelector(".body .die-tool")).toBeTruthy();
-    expect(dock.querySelectorAll(".die-face")).toHaveLength(6);
+    const view = t.w.view("A");
+    expect(view.docked.map((d) => d.title)).toEqual(["d1"]);
+    const panel = view.docked[0].el;
+    expect(panel.querySelector(".die-tool")).toBeTruthy();
+    expect(panel.querySelectorAll(".die-face")).toHaveLength(6);
     expect(t.state("open", "d1")).toMatchObject({ label: "Close die panel" });
     // it edits the die's own doc
-    const body = dock.querySelector(".die-tool input.body");
+    const body = panel.querySelector(".die-tool input.body");
     body.value = "#123456";
     body.dispatchEvent(new Event("change"));
     expect(t.h.doc().body).toBe("#123456");
     // only this view docked it
-    expect(t.w.view("B").edge.children).toHaveLength(0);
+    expect(t.w.view("B").docked).toHaveLength(0);
     t.run("open", "d1");
-    expect(edge.children).toHaveLength(0);
+    expect(view.docked).toHaveLength(0);
     t.run("open", "d1");
     await settled();
-    edge.querySelector("header button").click();
-    expect(edge.children).toHaveLength(0);
+    view.docked[0].x();
+    expect(view.docked).toHaveLength(0);
     expect(t.state("open", "d1").label).toBeUndefined();
+    // and the panel was let go: its tool unmounted
+    expect(panel.querySelector(".die-tool")).toBeNull();
   });
 
   it("opening another die's replaces it; the die going, or the extension stopping, undocks it", async () => {
@@ -898,24 +897,24 @@ describe("a die's own panel, docked", () => {
     await settled();
     t.run("open", "d2");
     await settled();
-    const edge = t.w.view("A").edge;
-    expect(edge.children).toHaveLength(1);
-    expect(edge.querySelectorAll(".die-face")).toHaveLength(20);
+    const view = t.w.view("A");
+    expect(view.docked.map((d) => d.title)).toEqual(["d20"]);
+    expect(view.docked[0].el.querySelectorAll(".die-face")).toHaveLength(20);
     t.a.change((d) => delete d.objects.d2);
     t.w.flush();
-    expect(edge.children).toHaveLength(0);
+    expect(view.docked).toHaveLength(0);
     t.run("open", "d1");
     await settled();
-    expect(edge.children).toHaveLength(1);
+    expect(view.docked).toHaveLength(1);
     t.xa.dispose();
-    expect(edge.children).toHaveLength(0);
+    expect(view.docked).toHaveLength(0);
   });
 
   it("a die whose doc can't be opened says so, and docks nothing", async () => {
     const t = world();
     t.run("open", "d1"); // sourceUrl "automerge:die": not in the repo
     await settled();
-    expect(t.w.view("A").edge.children).toHaveLength(0);
+    expect(t.w.view("A").docked).toHaveLength(0);
     expect(t.notices("A")).toEqual(["Couldn't open that die: unavailable"]);
   });
 });

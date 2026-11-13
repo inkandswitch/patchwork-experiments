@@ -38,7 +38,7 @@ any game's rule:
 | **Draw several** | menu or inspector → Draw 2…10 | that many, each drawn on its own, set down in a row round the bag |
 | **Pour into** | menu or inspector on a bag → Pour into *other bag* | everything inside goes into the other bag |
 | **Empty out** | menu or inspector, editing only | everything is set down round the bag |
-| **Look inside** | menu or inspector on a bag | the bag's own panel docks beside the scene. This is the only way to see what is inside without drawing, **anyone can**, and the others are told that you looked |
+| **Look inside** | menu or inspector on a bag | the bag's own panel docks in the stage's drawer (`api.dock`), under the bag's name; its tab's × closes it. This is the only way to see what is inside without drawing, **anyone can**, and the others are told that you looked |
 
 Everyone else is told what was done, with `api.send`: "*Ana* drew from *Token
 bag*", "put 2 things in", "poured … into …", "looked inside". Which bag and
@@ -243,7 +243,6 @@ container needs, this is what it does instead:
 | "is my own hand still holding this?" | `heldBy(id)`: peers only | infers that the hand gave way from a peer's hold appearing |
 | put an object back as it was | `addObject` (a new id, a new render doc, asynchronous) and `remove`; no insert | writes `objects[id]` and `order` itself, in one change |
 | what a copy leaves behind (runtime traits) | the rule is in `scene/src/transfer.js`, not on `api` | keeps every trait (a move, not a copy), dropping only `claims` |
-| dock a document's own tool beside the scene | `api.edge` (camber.shape mounts its own app there) | mounts this package's own tool in the edge; there is no generic "dock this doc's tool" |
 | two docs changed together | nothing | the doc shape above |
 
 ## Files

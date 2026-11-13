@@ -13,7 +13,7 @@
 //   ground becomes a die too; a percentile pair lands as two dice in a group;
 //   R over a die is the gizmo's Rotate, not a roll;
 // - the die's own panel: selecting the d20, the inspector's "Edit die" docks
-//   its 2D tool beside the scene; naming a face there rebuilds the die, and
+//   its 2D tool in the stage's drawer; naming a face there rebuilds the die, and
 //   both views' built content says the new name;
 // - play: R over the d20 rolls it. Every roll is drawn by lots between the
 //   clients here: R puts the die in the air at once (a pose, drawn by both
@@ -201,7 +201,7 @@ try {
     await b.key("Escape");
   }
 
-  // ── the die's own panel, docked beside the scene ──
+  // ── the die's own panel, docked in the stage's drawer ──
   {
     const at = await P(`aimAt(${J(d20)}, 'a')`);
     await b.click(at.x, at.y);
@@ -210,21 +210,21 @@ try {
     check("the inspector offers Edit die", !!button && (await P(`text('button[data-ext="dice"][data-command="open"]')`)) === "Edit die", await P(`text('button[data-ext="dice"][data-command="open"]')`));
     const canvas0 = await P("canvas('a')");
     await click(await P(`rect('button[data-ext="dice"][data-command="open"]')`));
-    check("it docks the die's 2D tool beside the scene: twenty faces, in A's view only", await until("count('.dice-dock .die-tool .die-face') === 20", 6000) && (await P("count('.dice-dock', 'b')")) === 0, { a: await P("count('.dice-dock .die-tool .die-face')"), b: await P("count('.dice-dock', 'b')") });
+    check("it docks the die's 2D tool in the drawer under the die's name: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P("text('.stage-drawer-tab-name')")) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P("text('.stage-drawer-tab-name')"), b: await P("count('.stage-drawer', 'b')") });
     await sleep(300);
     const canvas1 = await P("canvas('a')");
     check("the canvas gives it room", canvas1.w < canvas0.w - 200, { before: canvas0.w, after: canvas1.w });
     await shot("2-docked");
     // name face 0 in the panel: the die doc changes, the scene rebuilds it, and both views read the new name
-    check("a face named in the panel", await P(`commit('.dice-dock .die-face[data-face="0"] input.name', 'crit')`));
+    check("a face named in the panel", await P(`commit('.dice-panel .die-face[data-face="0"] input.name', 'crit')`));
     check("the scene rebuilds the die from its doc, and both views' built content says the new name", await until(`built(${J(d20)}, 'a')?.labels[0] === 'crit' && __p.built(${J(d20)}, 'b')?.labels[0] === 'crit'`, 30_000), { a: (await P(`built(${J(d20)}, 'a')`))?.labels.slice(0, 3), b: (await P(`built(${J(d20)}, 'b')`))?.labels.slice(0, 3) });
     // keys typed in the panel are the panel's: R there doesn't change the scene's tool
     const tool0 = await P("tool('a')");
-    await click(await P(`rect('.dice-dock .die-face[data-face="1"] input.name')`));
+    await click(await P(`rect('.dice-panel .die-face[data-face="1"] input.name')`));
     await b.key("r");
     check("a key typed in the panel is the panel's, not the scene's", (await P("tool('a')")) === tool0, { tool0, tool: await P("tool('a')") });
-    await click(await P(`rect('.dice-dock > header button')`));
-    check("Close undocks it", await until("count('.dice-dock') === 0", 3000));
+    await click(await P(`rect('.stage-drawer-tab-close')`));
+    check("its × undocks it, and the drawer goes", await until("count('.dice-panel') === 0 && __p.count('.stage-drawer') === 0", 3000), { panels: await P("count('.dice-panel')"), drawers: await P("count('.stage-drawer')") });
     await sleep(300);
   }
 

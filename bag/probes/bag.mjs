@@ -20,7 +20,8 @@
 // 5. Each clicks to put theirs down; the docs are the same on both peers.
 // 6. A draws the last one and lets go of it over the bag: it is back inside.
 // 7. From the right-click menu: A puts a piece in, then looks inside: the
-//    bag's panel docks beside the scene, and B is told.
+//    bag's panel docks in the stage's drawer under its name, and B is told;
+//    its × closes it, and the drawer goes.
 //
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -188,14 +189,17 @@ try {
     const verbs = await until("menu('a').length && __p.menu('a')", 3000);
     const texts = (verbs || []).map((m) => m.text);
     check("right-click the bag: Draw from Token bag (2), Draw 2, Look inside; no Empty out in play", texts.includes("Draw from Token bag (2)") && texts.includes("Draw 2") && texts.includes("Look inside") && !texts.includes("Empty out"), texts);
-    // ── looking inside: the bag's own panel, docked beside the scene ──
+    // ── looking inside: the bag's own panel, docked in the stage's drawer ──
     const look = (verbs || []).find((m) => m.text === "Look inside");
     if (look) await b.click(look.x, look.y);
     const panel = await until("panel('a')", 5000);
-    check("Look inside docks the bag's panel in A's view: 2 inside, by kind, and it says it's no secret", panel?.total === "2" && panel.kinds.length === 2 && /Not a secret/.test(panel.note), panel);
+    check("Look inside docks the bag's panel in A's drawer under its name: 2 inside, by kind, and it says it's no secret", panel?.tab === "Token bag" && panel?.total === "2" && panel.kinds.length === 2 && /Not a secret/.test(panel.note), panel);
     check("B is told Ana looked", await until("notices('b').includes('Ana looked inside Token bag')", 3000), await P("notices('b')"));
     await mark("menu and panel");
     await shot("panel");
+    const x = await P("closeRect('a')");
+    if (x) await b.click(x.x, x.y);
+    check("its × closes it, and the drawer goes", await until("drawer('a') === false && __p.panel('a') === null", 3000), { panel: await P("panel('a')") });
   }
 
   report.net = await P("net.stats()");

@@ -283,6 +283,43 @@ describe("the stage, mounted", () => {
     expect(typeof r.api.camera.limit({ minPolar: 0 })).toBe("function");
   });
 
+  it("docks an extension's element in the drawer, outermost at the right; its stopping closes its panes without onClose, and docking after is a no-op", async () => {
+    const closed = [];
+    exts["t.edit"] = recorder("t.edit", (api) => {
+      api.edge("right").textContent = "edit edge";
+      const el = document.createElement("div");
+      el.className = "edit-panel";
+      api.dock(el, { title: "Edit panel", onClose: () => closed.push("edit") });
+      return {};
+    });
+    exts["t.always"] = recorder("t.always");
+    const m = mount(newScene());
+    await settle();
+    const right = m.root.querySelector('[data-edge="right"]');
+    const drawer = right.querySelector(".stage-drawer");
+    expect(drawer.querySelector(".stage-drawer-tab-name").textContent).toBe("Edit panel");
+    expect(drawer.querySelector(".stage-drawer-pane").hasAttribute("data-stage-embed")).toBe(true);
+    // an edge part made while the drawer is open goes inside it
+    const late = exts["t.always"].api.edge("right");
+    expect(right.lastElementChild).toBe(drawer);
+    expect(late.nextElementSibling).toBe(drawer);
+    // a second dock, by the other extension: a second tab, shown
+    const mine = document.createElement("div");
+    const close = exts["t.always"].api.dock(mine, { title: "Mine" });
+    expect(m.debug.drawer().order.map((el) => el.className)).toEqual(["edit-panel", ""]);
+    expect(m.debug.drawer().shown).toBe(mine);
+    // the edit extension stops: its pane goes, without onClose, and the other's shows
+    m.local.swap((v) => ({ ...v, activity: "play" }));
+    expect(closed).toEqual([]);
+    expect(m.root.querySelector(".edit-panel")).toBeNull();
+    expect(m.debug.drawer().order).toEqual([mine]);
+    // its api docks nothing now
+    expect(typeof exts["t.edit"].api.dock(document.createElement("div"), { title: "Late" })).toBe("function");
+    expect(m.debug.drawer().order).toEqual([mine]);
+    close();
+    expect(right.querySelector(".stage-drawer")).toBeNull();
+  });
+
   it("calls update(scene, local, prev) after a doc change and after a local swap", async () => {
     const h = newScene({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] });
     const m = mount(h);

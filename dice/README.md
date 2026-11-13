@@ -201,7 +201,7 @@ against the table, not the horizon.
 | Roll | R | use prompt, menu, inspector; play only (R is the gizmo's Rotate while editing) | on a die: toss it. On a group: toss every die filed in it together |
 | Roll all | G | use prompt, menu; play only | on a die filed in a group with other dice: toss them all together |
 | Turn | T | use prompt, menu, inspector | T: to its next face. The menu and the inspector: to any face. Its label says what the die shows ("Turn (shows 4)") |
-| Edit die | | menu, inspector | dock the die's panel beside the scene |
+| Edit die | | menu, inspector | dock the die's panel in the stage's drawer |
 
 - **A roll** asks lots for a draw on the die, of that die, nothing sealed,
   and the die is in the air from the next frame: a pose hold, tossed up and
@@ -277,11 +277,11 @@ of the message, to a pose showing the face named, once per move.
 by its place (`seedOfThrow`), as a cup's dice are (`seedFor`); the face is
 the remainder by its number of faces (`faceOfSeed`).
 
-**The panel, docked.** "Edit die" puts the die's own tool in the stage's
-right edge (`api.edge("right")`), marked `data-stage-embed` so its keys are
-its own. It edits the die's doc; the scene rebuilds the die and every view
-reads the new one. The stage has no general way to dock a document's own
-tool, so this follows camber.shape's dock.
+**The panel, docked.** "Edit die" docks the die's own tool in the stage's
+drawer (`api.dock`), under the die's name; a pane there is an embedded
+document, so its keys are its own. Its tab's ×, "Close die panel", the die
+going or the extension stopping close it. It edits the die's doc; the
+scene rebuilds the die and every view reads the new one.
 
 **The hand, in play.** As tabletop does, and for the same stage-wide gap (an
 Edit tool outliving the switch to Play): while a view plays and the tool in

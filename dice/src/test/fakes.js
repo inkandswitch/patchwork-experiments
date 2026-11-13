@@ -3,7 +3,7 @@
 // as scene/STAGE.md says. Copied from tabletop/src/test/fakes.js (packages
 // stand alone: never import another package's tests), with what dice need
 // added: scene().members (who is filed in each group), ops.setTransform for
-// several objects at once, an edge to dock in, and a drop context whose
+// several objects at once, a drawer to dock in, and a drop context whose
 // addObject makes the object.
 //
 //   const w = fakeWorld(doc, { content, repo });
@@ -237,7 +237,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       watchers: [],
       notices: [], // { text, kind }
       labels: [], // the last labels().set(items)
-      edge: document.createElement("div"), // where api.edge() parts go
+      docked: [], // the drawer: { el, title, x() } per api.dock() still open, in docking order (x() is its ×)
       instance: null,
       seen: null, // the snapshot last flushed to its instance
       seenLocal: null,
@@ -323,11 +323,13 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       notify: (text, kind) => view.notices.push({ text, kind }),
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
-      // an edge part: each call its own element, in view.edges while it's in the page
-      edge() {
-        const e = document.createElement("div");
-        view.edge.append(e);
-        return e;
+      // the stage's drawer, as STAGE.md says: close() and the × close it, and only the × calls onClose
+      dock(el, { title, onClose } = {}) {
+        const had = view.docked.find((d) => d.el === el);
+        if (had) return had.close;
+        const d = { el, title, close: () => void (view.docked = view.docked.filter((x) => x !== d)), x: () => (d.close(), onClose?.()) };
+        view.docked.push(d);
+        return d.close;
       },
       style() {},
       cursor() {},

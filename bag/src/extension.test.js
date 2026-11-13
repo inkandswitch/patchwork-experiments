@@ -307,23 +307,33 @@ describe("pouring", () => {
 });
 
 describe("looking inside", () => {
-  it("docks the bag's own panel beside the scene, marked as an embed, and tells the others", async () => {
+  it("docks the bag's own panel in the stage's drawer under the bag's name, and tells the others; again, or its ×, closes it", async () => {
     const t = await table();
     t.run("put", "cube", "bag1");
     t.rec.sends.length = 0;
     expect(t.state("inside", "bag1")).toMatchObject({ checked: false });
     t.run("inside", "bag1");
-    const edge = t.rec.edges.at(-1);
-    expect([edge.dataset.side, edge.hasAttribute("data-stage-embed")]).toEqual(["right", true]);
-    await vi.waitFor(() => expect(edge.querySelector(".bag-tool")).not.toBeNull());
-    expect(edge.querySelector(".bag-tool .total").dataset.count).toBe("1");
+    const dock = t.rec.docked.at(-1);
+    expect([dock.title, dock.open]).toEqual(["Red bag", true]);
+    const panel = dock.el;
+    await vi.waitFor(() => expect(panel.querySelector(".bag-tool")).not.toBeNull());
+    expect(panel.querySelector(".bag-tool .total").dataset.count).toBe("1");
     expect(t.state("inside", "bag1")).toMatchObject({ checked: true });
     expect(t.rec.sends).toEqual([["looked", { bag: BAG1 }]]);
     // its Draw sets the piece down in the scene
-    [...edge.querySelectorAll("button")].find((b) => b.textContent === "Draw").click();
+    [...panel.querySelectorAll("button")].find((b) => b.textContent === "Draw").click();
     expect(t.handle.doc().objects.cube).toBeDefined();
     t.run("inside", "bag1");
-    expect(edge.isConnected).toBe(false);
+    expect(dock.open).toBe(false);
+    expect(panel.querySelector(".bag-tool")).toBeNull();
+    // the ×: closed, and the bag knows it
+    t.run("inside", "bag1");
+    const again = t.rec.docked.at(-1);
+    await vi.waitFor(() => expect(again.el.querySelector(".bag-tool")).not.toBeNull());
+    again.x();
+    expect(again.open).toBe(false);
+    expect(again.el.querySelector(".bag-tool")).toBeNull();
+    expect(t.state("inside", "bag1")).toMatchObject({ checked: false });
   });
 });
 
@@ -387,6 +397,6 @@ describe("stopping", () => {
     expect(t.bag(BAG1).listenerCount("change")).toBeGreaterThan(0);
     t.instance.dispose();
     expect([t.bag(BAG1).listenerCount("change"), t.bag(BAG2).listenerCount("change")]).toEqual([0, 0]);
-    expect(t.rec.edges.at(-1).isConnected).toBe(false);
+    expect(t.rec.docked.at(-1).open).toBe(false);
   });
 });

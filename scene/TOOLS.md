@@ -322,8 +322,10 @@ by name; integrity beyond the secret-keeping work is not sought.
 ## 9. Stage changes, and what leaves scene/
 
 **New.** `api.body` (`current`, `enter(id, place)`, `leave`, `eye`,
-`reach`); `api.clock`; `api.dock(el, { title }) → close`, replacing
-Camber's, dice's and bag's copies; `api.writable`. The `bodies`
+`reach`); `api.clock`; `api.dock(el, { title, onClose }) → close`,
+replacing Camber's, dice's and bag's copies (built: `onClose` is how a
+caller hears its pane's × — Camber's Shape ends, a die's panel unmounts —
+and only the × calls it); `api.writable`. The `bodies`
 contribution; `keys` and `pointer` on tools; `reach: true` on commands;
 `yields` on holds, on the wire and in `winningHold` (`presence.js:107-119`).
 Doc: `clock`, `claims.clock`, `view.start`, the `scene.carry` trait. Local:
@@ -414,7 +416,10 @@ loses "nothing outside the focus"; I10 follows attention.
 The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
 8 and 9, each shipping alone.
 
-- **2. `api.dock`.** Camber, dice and bag move onto it.
+- **2. `api.dock`.** Camber, dice and bag move onto it. *Built:* the
+  drawer holds docked panes only; the inspector and outline stay in the
+  sidebar until step 3 makes them tabs. One width for every pane (Camber
+  had its own, wider); a pane gets no resize handle yet.
 - **3. Selection and carrying.** The halo; Select in the menu and as
   orbit's default; `scene.carry`; `local.tool` and the forced-hand
   workarounds go; activities remain. *Proves:* dice's R rolls; a drag

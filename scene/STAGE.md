@@ -396,7 +396,8 @@ When an extension stops:
 4. clear its presence keys;
 5. stop its loops, `afterRender` hooks and scheduled work;
 6. remove its world groups, disposing their geometry and materials;
-7. remove its labels, overlays, edges, styles, cursor and extent;
+7. remove its labels, overlays, edges, docked panes (without `onClose`),
+   styles, cursor and extent;
 8. call `dispose()`.
 
 `api.signal` aborts at the start of this. After that, every call through its
@@ -655,7 +656,7 @@ a selected dimension too, whatever order the two run in.
 - Keys, pastes and drops inside a document embedded in the stage (another
   tool, such as the inspector's About) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
-  `src/embed.js`).
+  `src/embed.js`); every pane of the drawer (`dock`) is marked so.
 - A field being typed in keeps its keys; Escape blurs it.
 - A `keyup` goes to whoever claimed its `keydown`.
 - On blur, a hidden page or lost pointer lock, the stage sends a `keyup` for
@@ -777,6 +778,7 @@ How the camera parts behave:
 | `world({ onTop? })` | a `Group` owned by the extension. Its meshes are widgets the owner gets first refusal of. `onTop` groups are drawn in a second pass over everything (depth-tested among themselves, lit) |
 | `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The editor's: dimensions 3, axes 2, bounds 1, grid 0 |
 | `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
+| `dock(el, { title, onClose? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it; closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform), release(id, { landed? }) }` |
 | `heldBy(id)` | the peer session holding this object, or null. While this view holds it too, only a peer that took hold first counts, so of two that grabbed it at once exactly one is told to let go (the hand and the gizmo put theirs back) |
@@ -1160,6 +1162,7 @@ atmosphere() → null | {
 | `stage/atom.js` | the local value |
 | `stage/activation.js` | the running set, scopes and activities (pure) |
 | `stage/chain.js` | the chain order (pure) |
+| `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/viewport.js` | the renderer |

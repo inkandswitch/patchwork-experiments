@@ -1,7 +1,7 @@
 // For tests: the part of the stage's extension api (scene/STAGE.md, "api")
 // that the bag's extension uses, over FakeHandles. Each thing the stage would
 // do is recorded so a test can read it back: notices, sends, labels, arms,
-// loops, edges, addObject calls.
+// loops, docked panels, addObject calls.
 import { FakeHandle, FakeRepo } from "./fake-repo.js";
 
 export const SCENE_URL = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
@@ -38,7 +38,7 @@ export function snapshot(doc) {
  */
 export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), activity = "play", half = {} } = {}) {
   const handle = repo.handles.get(SCENE_URL) ?? repo.add(sceneDoc, SCENE_URL);
-  const rec = { notices: [], sends: [], labels: [], arms: [], loops: new Set(), edges: [], added: [], removed: [], held: new Map(), contributions: {}, local: { activities: { current: activity, available: ["edit", "play"] } } };
+  const rec = { notices: [], sends: [], labels: [], arms: [], loops: new Set(), docked: [], added: [], removed: [], held: new Map(), contributions: {}, local: { activities: { current: activity, available: ["edit", "play"] } } };
   let n = 0;
   const boxOf = (id) => {
     const h = half[id];
@@ -88,12 +88,14 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), a
     heldBy: (id) => rec.held.get(id) ?? null,
     labels: () => ({ set: (items) => (rec.labels = items) }),
     style: () => {},
-    edge(side) {
-      const el = document.createElement("div");
-      el.dataset.side = side;
+    // the stage's drawer: every api.dock() in order, each { el, title, open, x() } (x() is its ×: it closes and calls onClose)
+    dock(el, { title, onClose } = {}) {
+      const d = { el, title, open: true };
+      const close = () => void (d.open = false);
+      d.x = () => (close(), onClose?.());
       document.body.append(el);
-      rec.edges.push(el);
-      return el;
+      rec.docked.push(d);
+      return close;
     },
     arm(handlers) {
       const a = { handlers, on: true };
