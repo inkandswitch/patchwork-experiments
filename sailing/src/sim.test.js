@@ -1,13 +1,12 @@
-// Who simulates, the ships' physics on the stage, and the stations'
+// The ships' physics as a process of the doc's clock, and the stations'
 // controls: the pure parts, then createSim with createSeaView on a fake
-// stage (test/fakes.js) with two views on one doc.
+// stage (test/fakes.js, whose clock is the stage's) with two views on one doc.
 import { describe, it, expect, afterEach } from "vitest";
 import { SLOOP, createShip, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 import { headTo } from "./layout.js";
 import { createSeaView } from "./sea-view.js";
 import {
   DEPTH,
-  SAVE_EVERY_MS,
   SLACK,
   anchorReaches,
   bowOf,
@@ -18,8 +17,6 @@ import {
   finiteState,
   movedByEditor,
   sameTransform,
-  shouldSave,
-  simRole,
   specFor,
   transformOf,
 } from "./sim.js";
@@ -105,19 +102,6 @@ describe("controls", () => {
   });
 });
 
-describe("who simulates", () => {
-  it("takes a lapsed claim, keeps its own, follows another's, yields when it's taken", () => {
-    expect(simRole(null, false)).toBe("take");
-    expect(simRole({ mine: false }, false)).toBe("follow");
-    expect(simRole({ mine: true }, true)).toBe("run");
-    // the stage writes a missing field of ours again: still ours
-    expect(simRole(null, true)).toBe("run");
-    expect(simRole({ mine: false }, true)).toBe("yield");
-    // another extension of this view holds it: not ours to run
-    expect(simRole({ mine: true }, false)).toBe("follow");
-  });
-});
-
 describe("stepping", () => {
   it("skips what one step can't catch up, as the sea's clock does, so she stays on the waves drawn", () => {
     const cap = MAX_SUBSTEPS * SUBSTEP;
@@ -147,16 +131,6 @@ describe("stepping", () => {
 });
 
 describe("saving", () => {
-  const pose = (x, yaw = 0) => ({ position: [x, 0, 0], quaternion: quatFromEuler([0, yaw, 0]) });
-
-  it("saves at once the first time, then only every so often and only if it moved or turned", () => {
-    expect(shouldSave({ now: 0, lastAt: 0, last: null, pose: pose(0) })).toBe(true);
-    expect(shouldSave({ now: SAVE_EVERY_MS - 1, lastAt: 0, last: pose(0), pose: pose(50) })).toBe(false);
-    expect(shouldSave({ now: SAVE_EVERY_MS, lastAt: 0, last: pose(0), pose: pose(1) })).toBe(true);
-    expect(shouldSave({ now: SAVE_EVERY_MS, lastAt: 0, last: pose(0), pose: pose(0.1) })).toBe(false);
-    expect(shouldSave({ now: SAVE_EVERY_MS, lastAt: 0, last: pose(0), pose: pose(0, 0.1) })).toBe(true);
-  });
-
   it("knows its own writes: a transform as written reads back the same", () => {
     const s = { position: [1.23456, 0.1, -2], quaternion: quatFromEuler([0.01, 2, -0.03]) };
     const t = transformOf(s, 1);
@@ -165,13 +139,14 @@ describe("saving", () => {
     expect(sameTransform(null, null)).toBe(true);
   });
 
-  it("a transform written with her motion is a save (perhaps a late one); without, a move", () => {
+  it("a transform written with the checkpoint's stamp is a save (perhaps a late one); without, a move", () => {
     const t = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
     const moved = { ...t, position: [5, 0, 0] };
-    const seen = { transform: t, motion: JSON.stringify({ velocity: [1, 0, 0], spin: [0, 0, 0] }) };
-    expect(movedByEditor(t, { velocity: [1, 0, 0], spin: [0, 0, 0] }, seen)).toBe(false);
-    expect(movedByEditor(moved, { velocity: [1, 0, 0], spin: [0, 0, 0] }, seen)).toBe(true);
-    expect(movedByEditor(moved, { velocity: [2, 0, 0], spin: [0, 0, 0] }, seen)).toBe(false);
+    const seen = { transform: t, saved: 30 };
+    expect(movedByEditor(t, 30, seen)).toBe(false);
+    expect(movedByEditor(moved, 30, seen)).toBe(true);
+    expect(movedByEditor(moved, 60, seen)).toBe(false);
+    expect(movedByEditor(moved, undefined, { transform: t, saved: null })).toBe(true);
   });
 });
 
@@ -194,6 +169,30 @@ describe("createSim on a stage", () => {
     expect(a.sim.value(ids.wheel).angle).toBe(0);
   });
 
+  it("steps on the clock's grid but holds each pose once a frame: a frame of fifteen steps is one hold each, where fifteen frames of one step would leave her", async () => {
+    const run = async (dt, frames) => {
+      const { doc, ids, content } = await sloop();
+      w = fakeWorld(doc, { content });
+      const api = w.join("A");
+      const holds = [];
+      const hold = api.pose.hold;
+      api.pose = { ...api.pose, hold: (id, t, o) => (holds.push(id), hold(id, t, o)) };
+      play(api);
+      w.tick(1 / 60, 2);
+      holds.length = 0;
+      w.tick(dt, frames);
+      const out = { t: w.clock.t, hull: holds.filter((h) => h === ids.hull).length, rig: holds.filter((h) => h === ids.rig).length, at: structuredClone(w.holds.get(ids.hull).transform) };
+      w.done();
+      w = null;
+      return out;
+    };
+    const slow = await run(0.25, 1);
+    const fast = await run(1 / 60, 15);
+    expect(slow.t).toBeCloseTo(fast.t, 9);
+    expect([slow.hull, slow.rig, fast.hull, fast.rig]).toEqual([1, 1, 15, 15]);
+    for (const k of ["position", "rotation"]) for (let i = 0; i < 3; i++) expect(slow.at[k][i]).toBeCloseTo(fast.at[k][i], 9);
+  });
+
   it("the follower takes over when the simulator leaves, from where the ship was, still moving", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });
@@ -207,7 +206,7 @@ describe("createSim on a stage", () => {
     expect(sameTransform(doc.objects[ids.hull].transform, heldAt(w, ids.hull) ?? doc.objects[ids.hull].transform)).toBe(true);
     w.tick(1 / 60, 1);
     expect(b.sim.simulating()).toBe(true);
-    expect(doc.claims.sim.session).toBe("B");
+    expect(doc.claims.clock.session).toBe("B");
     const after = heldAt(w, ids.hull).position;
     expect(Math.hypot(after[0] - before[0], after[2] - before[2])).toBeLessThan(0.1);
     w.tick(1 / 60, 30);
@@ -234,10 +233,12 @@ describe("createSim on a stage", () => {
     const a = play(w.join("A"));
     w.tick(1 / 60, 10);
     expect(a.sim.simulating()).toBe(true);
-    // the merge settled on someone else
-    w.change((d) => (d.claims.sim = { viewer: "x", session: "Z" }));
+    // the merge settled on someone else (a view that's here)
+    w.join("Z");
+    w.change((d) => (d.claims.clock = { viewer: "x", session: "Z" }));
+    w.tick(1 / 60, 1);
     expect(a.sim.simulating()).toBe(false);
-    expect(w.holds.has(ids.hull)).toBe(false);
+    expect(w.holds.get(ids.hull)?.session).not.toBe("A");
   });
 
   it("a ship someone moved in the editor starts again from there", async () => {
@@ -327,10 +328,11 @@ describe("createSim on a stage", () => {
     const a = play(w.join("A"));
     w.tick(1 / 60, 6 * 60);
     const speed = a.sim.read(ids.hull).speed;
-    // a save of where she was a few seconds ago (motion and all) lands now
+    // a checkpoint of where she was a few seconds ago (stamped, motion and all) lands now
     w.change((d) => {
       d.objects[ids.hull].transform.position[0] -= 8;
       d.objects[ids.hull].traits[SHIP].motion = { velocity: [0.5, 0, 0.5], spin: [0, 0, 0] };
+      d.objects[ids.hull].saved = 1.5;
     });
     w.tick(1 / 60, 1);
     expect(a.sim.read(ids.hull).speed).toBeGreaterThan(speed * 0.8);
@@ -343,11 +345,12 @@ describe("createSim on a stage", () => {
     play(w.join("B"));
     w.tick(1 / 60, 6 * 60);
     const shown = heldAt(w, ids.hull);
-    w.view("A").abort.abort(); // the activity switched: the stage aborts first
+    w.view("A").abort.abort(); // the activity switched: the stage removes its process, saved first
     // written down, then let go as landed there (not put back to the last save)
     expect(sameTransform(doc.objects[ids.hull].transform, shown)).toBe(true);
     expect(w.released.filter((r) => r.session === "A" && r.id === ids.hull).at(-1)?.landed).toBe(true);
-    expect(doc.claims.sim).toBeUndefined();
+    w.tick(1 / 60, 1);
+    expect(doc.claims.clock.session).toBe("B");
   });
 
   it("a simulator whose tab is hidden writes her down and lets go; a visible peer carries on from there", async () => {
@@ -359,7 +362,7 @@ describe("createSim on a stage", () => {
     const before = heldAt(w, ids.hull).position;
     w.hide("A");
     expect(a.sim.simulating()).toBe(false);
-    expect(doc.claims.sim).toBeUndefined();
+    expect(doc.claims.clock).toBeUndefined();
     w.tick(1 / 60, 1);
     expect(b.sim.simulating()).toBe(true);
     const after = heldAt(w, ids.hull).position;
@@ -368,7 +371,71 @@ describe("createSim on a stage", () => {
     w.hide("A", false);
     w.tick(1 / 60, 2);
     expect(a.sim.simulating()).toBe(false);
-    expect(doc.claims.sim.session).toBe("B");
+    expect(doc.claims.clock.session).toBe("B");
+  });
+
+  it("paused, she stops where she is: written down, let go landed, nobody computing; resumed, she carries on from there", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const a = play(w.join("A"));
+    const bApi = w.join("B");
+    const b = play(bApi);
+    w.tick(1 / 60, 4 * 60);
+    const shown = heldAt(w, ids.hull);
+    const speed = a.sim.read(ids.hull).speed;
+    bApi.clock.pause(); // anyone may pause; the computer hears of it and lets go
+    w.tick(1 / 60, 1);
+    expect(doc.clock).toMatchObject({ running: false, by: "viewer-B" });
+    expect(a.sim.simulating()).toBe(false);
+    expect(sameTransform(doc.objects[ids.hull].transform, shown)).toBe(true);
+    expect(w.released.filter((r) => r.session === "A" && r.id === ids.hull).at(-1)?.landed).toBe(true);
+    const t = doc.clock.t;
+    w.tick(1 / 60, 3 * 60);
+    expect(bApi.clock.t()).toBe(t); // no time passes
+    expect(a.sim.simulating() || b.sim.simulating()).toBe(false);
+    bApi.clock.resume();
+    w.tick(1 / 60, 1);
+    expect(a.sim.simulating()).toBe(true); // (the first here takes it again)
+    const p = heldAt(w, ids.hull).position;
+    expect(Math.hypot(p[0] - shown.position[0], p[2] - shown.position[2])).toBeLessThan(0.1);
+    w.tick(1 / 60, 30);
+    expect(a.sim.read(ids.hull).speed).toBeGreaterThan(speed * 0.7);
+  });
+
+  it("a hull nobody steers yields to a person: carried, it's theirs, and put down it starts again at rest there", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const a = play(w.join("A"));
+    const bApi = w.join("B");
+    play(bApi);
+    w.tick(1 / 60, 3 * 60);
+    expect(w.holds.get(ids.hull)).toMatchObject({ session: "A", yields: true });
+    expect(bApi.heldBy(ids.hull)).toBeNull(); // a person isn't kept off by a process
+    const put = { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 };
+    expect(bApi.pose.hold(ids.hull, put)).toBe(true);
+    w.tick(1 / 60, 10);
+    expect(w.holds.get(ids.hull).session).toBe("B"); // the process's holds are refused meanwhile
+    // put down: written where it landed, then the process starts her again from there
+    w.change((d) => Object.assign(d.objects[ids.hull].transform, put));
+    bApi.pose.release(ids.hull, { landed: true });
+    w.tick(1 / 60, 2);
+    const p = heldAt(w, ids.hull).position;
+    expect(Math.hypot(p[0] - 40, p[2] + 30)).toBeLessThan(0.5);
+    expect(a.sim.read(ids.hull).speed).toBeLessThan(0.3);
+  });
+
+  it("a hull at the helm doesn't yield: nobody takes it from her helmsman's ship", async () => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    play(w.join("A"));
+    const bApi = w.join("B");
+    play(bApi);
+    w.tick(1 / 60, 30);
+    bApi.claim(ids.wheel, "station");
+    w.tick(1 / 60, 2);
+    expect(w.holds.get(ids.hull)).toMatchObject({ session: "A", yields: false });
+    expect(bApi.heldBy(ids.hull)).toBe("A");
+    expect(bApi.pose.hold(ids.hull, { position: [40, 0, -30], rotation: [0, 0, 0], scale: 1 })).toBe(false);
   });
 
   it("the wheel is its helmsman's to hold while someone's at the helm; the simulator holds it otherwise", async () => {

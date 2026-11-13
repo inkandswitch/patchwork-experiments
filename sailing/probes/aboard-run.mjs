@@ -12,7 +12,7 @@
 //  1. the doc: pieces under the table, the table under the hull, a secure
 //     deck, play, sail down and anchor down;
 //  2. A simulates; A sits in Player 1, B in Player 2; both seats' claims
-//     and the sim's are live, and the secure deck reaches "playing";
+//     and the doc's clock claim are live, and the secure deck reaches "playing";
 //  3. over 10 s on the waves, the table's top stays put on both screens
 //     (the seat views ride the table), though it moves in the world;
 //  4. hovering the deck shows Flip, Shuffle and Draw and no sail verb; D
@@ -284,7 +284,7 @@ try {
   await P("pick('b', 'p2')");
   const viewers = await P("viewers");
   check("2: A in Player 1, B in Player 2", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
-  check("2: the sim's claim and both seats' claims are live", await until("claims('a').includes('sim') && __p.claims('a').includes('seat:p1') && __p.claims('b').includes('seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
+  check("2: the doc's clock claim (A computes the world) and both seats' claims are live", await until("claims('a').includes('clock') && __p.claims('a').includes('seat:p1') && __p.claims('b').includes('seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
   const dealt = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 180_000);
   mark("dealt");
   check("2: the secure deck reaches playing, each hand's faces delivered", dealt, { phase: await P("phase()"), a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });

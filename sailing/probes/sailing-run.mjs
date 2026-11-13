@@ -10,7 +10,9 @@
 // Mounts the BUILT scene tool with the BUILT sailing plugins on an empty
 // scene, twice on one doc (A and B, with real presence between them). A picks
 // "Ship at sea" on the start screen and B joins. Then the two crew her:
-// - who simulates (the "sim" claim), and the other following;
+// - who computes the world (the doc's "clock" claim), and the other following;
+// - A pauses the world from the clock chip: both views' sea and ship stop,
+//   B's chip says who paused it, and B resumes it from its own;
 // - the hull floating and rocking on the waves, played back smoothly;
 // - at anchor, from the cockpit, the boom over B's head is in reach though
 //   its gooseneck isn't, and offers to raise the sail;
@@ -189,11 +191,12 @@ try {
   };
 
   // both in play, running only the sailing extension and what it requires
-  const PLAY = ["sailing", "scene.activity", "scene.keys", "scene.notices", "scene.packages", "scene.use"];
+  // (and the selection's parts every activity has: scene/TOOLS.md build step 3)
+  const PLAY = ["sailing", "scene.activity", "scene.clock", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   await sleep(2500); // lingering parts each stop on their own timer
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in play", (await P("activity('a')")) === "play" && (await P("activity('b')")) === "play");
-  check("only sailing, what it requires and the Play | Edit switch run: no editor parts", ["a", "b"].every((w) => JSON.stringify(run[w]) === JSON.stringify(PLAY)), run);
+  check("only sailing, what it requires, the clock chip and the Play | Edit switch run: no editor parts", ["a", "b"].every((w) => JSON.stringify(run[w]) === JSON.stringify(PLAY)), run);
   check("the HUD offers to come aboard in both views", (await P("text('.sail-hint button', 'a')"))[0] === "Click to come aboard" && (await P("text('.sail-hint button', 'b')"))[0] === "Click to come aboard");
   const looks = { a: await P("look('a')"), b: await P("look('b')") };
   check("the sea's sky, haze and sun in both views", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && !!looks[w].atmosphere), looks);
@@ -202,9 +205,9 @@ try {
   // ─── who simulates ───────────────────────────────────────────────────────
   if (section("opening")) throw new Done();
   const sess = { a: await P("session('a')"), b: await P("session('b')") };
-  const simClaim = (await P("doc()")).claims?.sim ?? null;
+  const simClaim = (await P("doc()")).claims?.clock ?? null;
   const simA = await P("simulating('a')"), simB = await P("simulating('b')");
-  check("exactly one view simulates, and the doc's sim claim names its session", simA !== simB && simClaim?.session === (simA ? sess.a : sess.b), { simA, simB, simClaim, sess });
+  check("exactly one view computes the ships, and the doc's clock claim names its session", simA !== simB && simClaim?.session === (simA ? sess.a : sess.b), { simA, simB, simClaim, sess });
   const SIM = simA ? "a" : "b", FOL = simA ? "b" : "a";
   report.measured.simulator = SIM;
   // the clock: how fast sea time runs against the wall, and the follower's lag
@@ -216,6 +219,26 @@ try {
   check("the follower's sea clock runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
   const frames = { a: await P(`sampleFrames('${hull}', 'a', 1000)`), b: await P(`sampleFrames('${hull}', 'b', 1000)`) };
   report.measured.fps = { a: frames.a.length, b: frames.b.length };
+
+  // ─── pausing the world (the clock chip) ──────────────────────────────────
+  const chipText = async (w) => (await P(`text('.clock-chip .clock-text', '${w}')`))[0] ?? null;
+  check("both views show the clock chip running", (await chipText("a")) === "▶ Running" && (await chipText("b")) === "▶ Running", { a: await chipText("a"), b: await chipText("b") });
+  const chipA = await P("rect('.clock-chip .clock-toggle', 'a')");
+  await b.click(chipA.x, chipA.y);
+  await until(`window.__p.doc().clock?.running === false`, 5000);
+  await sleep(800);
+  const paused0 = { a: await P("clock('a')"), b: await P("clock('b')"), hull: await P(`worldOf('${hull}', 'b')`) };
+  await sleep(1500);
+  const paused1 = { a: await P("clock('a')"), b: await P("clock('b')"), hull: await P(`worldOf('${hull}', 'b')`) };
+  const pausedDoc = (await P("doc()")).clock;
+  report.measured.paused = { t: pausedDoc?.t, a: paused1.a, b: paused1.b };
+  check("A pauses from its chip: nobody computes, both views' world time stands at the doc's, and the hull stands still", !(await P("simulating('a')")) && !(await P("simulating('b')")) && !(await P("doc()")).claims?.clock && paused1.a === paused0.a && paused1.b === paused0.b && paused1.a === pausedDoc.t && paused1.b === pausedDoc.t && Math.hypot(paused1.hull[12] - paused0.hull[12], paused1.hull[14] - paused0.hull[14]) < 1e-6, { paused0, paused1, pausedDoc });
+  check("B's chip says who paused it, and offers Resume", /^⏸ Paused by /.test((await chipText("b")) ?? "") && (await P("text('.clock-chip .clock-toggle', 'b')"))[0] === "Resume", { b: await chipText("b") });
+  const chipB = await P("rect('.clock-chip .clock-toggle', 'b')");
+  await b.click(chipB.x, chipB.y);
+  await until(`window.__p.simulating('a') || window.__p.simulating('b')`, 5000);
+  await sleep(1500);
+  check("B resumes from its chip: one view computes again, from where it stood", (await P("doc()")).clock?.running === true && (await P("simulating('a')")) !== (await P("simulating('b')")) && (await P("clock('b')")) > pausedDoc.t, { t: await P("clock('b')") });
 
   // ─── the template starts her under way ───────────────────────────────────
   const way = { s: await P(`read('${hull}', '${SIM}')`), f: await P(`read('${hull}', '${FOL}')`) };
@@ -774,10 +797,10 @@ try {
   await keyUp("r");
   await P(`watchDoc('${hull}')`);
   const wall0 = Date.now();
-  await sleep(25_000);
+  await sleep(35_000);
   const seen = await P("docSeen");
   const fps = report.measured.fps[SIM];
-  check("the doc gets the hull's transform now and then, not every frame", seen.n >= 1 && seen.n <= 5, { changes: seen.n, writes: seen.writes, seconds: n2((Date.now() - wall0) / 1000), framesPerSecond: fps });
+  check("the doc gets the hull's transform at the clock's checkpoints (every 30 s), not every frame", seen.n >= 1 && seen.n <= 3, { changes: seen.n, writes: seen.writes, seconds: n2((Date.now() - wall0) / 1000), framesPerSecond: fps });
 
   // ─── handoff: the simulator leaves ───────────────────────────────────────
   if (section("doc")) throw new Done();
@@ -791,13 +814,13 @@ try {
   const stepsH = across.slice(1).map((f, i) => Math.max(0, Math.hypot(f[1] - across[i][1], f[3] - across[i][3]) - (Math.abs(before.speed) * Math.max(0, f[0] - across[i][0])) / 1000));
   const longest = Math.max(...across.slice(1).map((f, i) => f[0] - across[i][0]));
   const took = await until(`window.__p.simulating('${FOL}')`, 8000);
-  const claim2 = (await P("doc()")).claims?.sim;
+  const claim2 = (await P("doc()")).claims?.clock;
   const p0 = await P(`worldOf('${hull}', '${FOL}')`);
   await sleep(3000);
   const p1 = await P(`worldOf('${hull}', '${FOL}')`);
   const after = await P(`read('${hull}', '${FOL}')`);
   const moved = Math.hypot(p1[12] - p0[12], p1[14] - p0[14]);
-  check("the simulator closes: the other view claims sim", took && claim2?.session === sess[FOL], { claim2, sess });
+  check("the computing view closes: the other takes the clock", took && claim2?.session === sess[FOL], { claim2, sess });
   check("and she carries on from where she was: no jump in the drawn hull, the same way on, still moving", Math.max(...stepsH) < 0.5 && Math.abs(after.speed - before.speed) < 1 && moved > Math.min(0.3, 0.4 * 3 * Math.abs(before.speed)), { maxStep: n2(Math.max(...stepsH)), longestFrameMs: Math.round(longest), before: n2(before.speed), after: n2(after.speed), movedIn3s: n2(moved) });
 
   check("no errors in either console", (await errorsNow()).length === 0, await errorsNow());
