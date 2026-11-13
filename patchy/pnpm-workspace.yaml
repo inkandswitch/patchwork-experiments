@@ -1,0 +1,14 @@
+# pnpm 11 reads its settings from this file. There is no root workspace, so
+# every package carries the settings it needs rather than inheriting them.
+minimumReleaseAge: 0
+verifyDepsBeforeRun: false
+allowBuilds:
+  "@swc/core": true
+  cbor-extract: true
+  core-js: true
+  esbuild: true
+# One automerge for everything: automerge-repo would otherwise bring its own,
+# and two wasm instances on one document fail ("recursive use of an object").
+overrides:
+  "@automerge/automerge": 3.5.0
+  "@automerge/automerge-repo": 2.6.0-subduction.49
