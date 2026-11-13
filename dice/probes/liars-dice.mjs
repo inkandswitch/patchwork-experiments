@@ -250,12 +250,13 @@ try {
   sf.b = await P(`lots('b', ${Q(cup.a)})`);
   const sealedTo = Object.fromEntries(Object.entries((await P(`round('b', ${Q(cup.a)})`)).sealed).map(([k, v]) => [k, Object.keys(v)]));
   check("lifted: A's part was sealed to B (and to nobody else); B's to nobody; B's client knows it, A's doesn't", !!sf.b.seed && Q(sealedTo) === Q({ [V.a]: [V.b] }) && (await P(`lots('a', ${Q(cup.a)})`)).seed === null, { sealedTo, b: sf.b });
-  await sleep(600);
+  // each view draws what it now knows on its next flush: wait for it (a loaded machine can hold frames back a while)
+  const wantBlind = sf.b.seed ? await P(`expected(${Q(sf.b.seed)}, 6, 4)`) : [];
+  await until(`${Q(four)}.every((d, i) => !__p.veiled('b', d) && __p.drawnFace('b', d)?.face === ${Q(wantBlind)}[i] && __p.veiled('a', d))`, 10_000);
   const aView = [];
   const bView = [];
   for (const d of four) aView.push({ veiled: await P(`veiled('a', ${Q(d)})`), face: await P(`drawnFace('a', ${Q(d)})`) });
   for (const d of four) bView.push({ veiled: await P(`veiled('b', ${Q(d)})`), face: await P(`drawnFace('b', ${Q(d)})`) });
-  const wantBlind = (await P(`expected(${Q(sf.b.seed)}, 6, 4)`));
   check("A lifted her blind cup: the audience is Ben alone", up && Q(await P(`audience('a', ${Q(four[0])})`)) === Q([V.b]), { up, audience: await P(`audience('a', ${Q(four[0])})`), cup: await P(`cup('a', ${Q(cup.a)})`), V });
   check("B sees A's four dice as their seed says", bView.every((v, i) => !v.veiled && v.face?.face === wantBlind[i]), { want: wantBlind, bView, dbgB: await P("cupDebug('b')"), lotsB: await P(`lots('b', ${Q(cup.a)})`), audB: await P(`audience('b', ${Q(four[0])})`), whyB: await P(`whyNotDrawn('b', ${Q(four[0])})`), bViewNow: await Promise.all(four.map((d) => P(`drawnFace('b', ${Q(d)})`))) });
   check("A sees the stage's veil on each (face up, kept from her), never the dice", aView.every((v) => v.veiled), aView);
@@ -266,7 +267,7 @@ try {
   check("A's prompt now offers Show me", await until("prompt('a').some((t) => /Show me/.test(t))", 3000), await P("prompt('a')"));
   await b.key("l");
   const shown = await until(`cup('a', ${Q(cup.a)}).roll.done && !__p.veiled('a', ${Q(four[0])})`, 15_000);
-  await sleep(500);
+  await until(`${Q(four)}.every((d, i) => __p.drawnFace('a', d)?.face === ${Q(bView.map((v) => v.face?.face ?? null))}[i])`, 10_000);
   const aNow = [];
   for (const d of four) aNow.push(await P(`drawnFace('a', ${Q(d)})`));
   check("Show me: B's part is opened, and A sees exactly what B saw", shown && aNow.every((f, i) => f?.face === bView[i].face.face), { bSaw: bView.map((v) => v.face?.label), aSees: aNow.map((f) => f?.label) });
