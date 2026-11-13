@@ -12,7 +12,7 @@ set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 commit=a2dfd51fcc00d272dc8a17a97ccd6683333ff4ea
 repo="${CHOCOLATE_DOOM:-${TMPDIR:-/tmp}/chocolate-doom}"
-tree="${OBJ:-${TMPDIR:-/tmp}/machine-doom-src}"
+tree="${DOOM_TREE:-${TMPDIR:-/tmp}/machine-doom-src}"  # deleted and remade on every build
 
 if ! git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null; then
   git clone --quiet https://github.com/chocolate-doom/chocolate-doom.git "$repo"
@@ -45,4 +45,15 @@ emcc -O2 -Wno-everything -ffile-prefix-map="$tree"=chocolate-doom -ffile-prefix-
   -I"$here/include" -I"$tree/src" -I"$tree/src/doom" $sources -o "$here/dist/doom.wasm" \
   -sSTANDALONE_WASM --no-entry -sFILESYSTEM=0 \
   -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=1mb -sSTACK_SIZE=64kb -Wl,--stack-first \
-  -sEXPORTED_FUNCTIONS=_machine_info,_machine_init,_machine_input,_machine_step,_machine_output,_machine_frame,_machine_fault,_doom_trace
+  -sEXPORTED_FUNCTIONS=_machine_info,_machine_init,_machine_input,_machine_step,_machine_output,_machine_frame,_machine_query,_machine_fault,_doom_trace,_doom_camera
+
+# The music player (music/music.c): Chocolate Doom's OPL music driver and
+# OPL emulator, unmodified, as a module of its own. It is presentation, not
+# simulation, so it is not part of the engine or its snapshots.
+music="$here/music/music.c $tree/src/i_oplmusic.c $tree/src/mus2mid.c $tree/src/midifile.c
+  $tree/src/memio.c $tree/opl/opl.c $tree/opl/opl_sdl.c $tree/opl/opl_queue.c $tree/opl/opl3.c"
+emcc -O2 -DNDEBUG -Wno-everything -ffile-prefix-map="$tree"=chocolate-doom -ffile-prefix-map="$here"=doom \
+  -I"$here/music" -I"$here/include" -I"$tree/src" -I"$tree/opl" $music -o "$here/dist/music.wasm" \
+  -sSTANDALONE_WASM --no-entry -sFILESYSTEM=0 \
+  -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=1mb -sSTACK_SIZE=64kb -Wl,--stack-first \
+  -sEXPORTED_FUNCTIONS=_music_buffer,_music_init,_music_play,_music_stop,_music_pause,_music_render,_music_fault

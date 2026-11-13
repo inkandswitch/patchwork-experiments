@@ -42,8 +42,12 @@ export async function rig({ wasm, content, input }) {
     return p.host;
   }
 
-  /** n peers (a, b, c, d) with skewed clocks, on one new session. */
+  /**
+   * n peers (a, b, c, d) with skewed clocks, on one new session. On a network
+   * with a hub, the hub is a repo with no host, as a sync server is.
+   */
   async function session(net, n, { seconds, ...o } = {}) {
+    if (net.hub) new Repo({ peerId: net.hub, network: [net.adapter(net.hub)] });
     const peers = Array.from({ length: n }, (_, i) => peer(net, "abcd"[i], SKEWS[i]));
     const handle = await createSession(peers[0].repo, { wasm, content, wall: peers[0].now(), seconds });
     for (const p of peers) await open(p, handle.url, o);
@@ -52,8 +56,8 @@ export async function rig({ wasm, content, input }) {
 
   // The states the session's documents say it should be in at ticks 0..n:
   // genesis, stepped with each port's durable inputs (vacant where nobody
-  // sat). Returns their hashes, by tick.
-  async function replay(p, n) {
+  // sat). Returns their hashes, by tick; each(t, engine) sees every step.
+  async function replay(p, n, each = () => {}) {
     const doc = (await p.repo.find(p.host.url)).doc();
     const seated = seating(doc.seats, doc.engine.players);
     const inputs = new Map();
@@ -79,6 +83,7 @@ export async function rig({ wasm, content, input }) {
         row.set(b, port * w);
       }
       e.step(row);
+      each(t, e);
       hashes.push(e.hash());
     }
     return hashes;
@@ -87,9 +92,10 @@ export async function rig({ wasm, content, input }) {
   // Pauses, lets everything land, and checks that every peer is at the same
   // tick, has every input below it, and has the state the documents give,
   // there and at every tick it confirmed on the way (from where it started).
-  async function settle(peers) {
+  // `others` run along without being checked.
+  async function settle(peers, others = []) {
     peers[0].host.pause();
-    await run(peers, 1500);
+    await run([...peers, ...others], 1500);
     const ticks = peers.map((p) => p.host.tick);
     expect(new Set(ticks).size).toBe(1);
     for (const p of peers) expect(p.host.frontier).toBeGreaterThanOrEqual(ticks[0]);
@@ -99,7 +105,14 @@ export async function rig({ wasm, content, input }) {
     expect([...hashes][0]).toBe(truth[ticks[0]]);
     for (const p of peers) {
       const wrong = [];
-      for (let t = p.host.status.start; t <= ticks[0]; t++) if (p.hashes.get(t) !== truth[t]) wrong.push(t);
+      const start = p.host.status.start;
+      for (let t = start; t <= ticks[0]; t++) {
+        // A rebase restores its start from a checkpoint rather than stepping
+        // to it, so it is traced only if stepped to before; the host checks a
+        // checkpoint against its hash, and the next state is checked here.
+        if (t === start && !p.hashes.has(t)) continue;
+        if (p.hashes.get(t) !== truth[t]) wrong.push(t);
+      }
       expect(wrong, `${p.name}'s states that differ from the documents'`).toEqual([]);
     }
     for (const p of peers) expect(p.host.status.desync).toEqual([]);

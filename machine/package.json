@@ -8,14 +8,18 @@
     "build:engines": "sh engines/toy/build.sh && sh engines/snes/build.sh && sh engines/doom/build.sh",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench:integration": "vitest run --config bench/vitest.config.js",
-    "check:browser": "node bench/browser/run.mjs"
+    "bench:integration": "vitest run --config bench/vitest.config.js bench/integration.test.js",
+    "bench:output": "vitest run --config bench/vitest.config.js bench/output.test.js",
+    "bench:traffic": "vitest run --config bench/vitest.config.js bench/traffic.test.js",
+    "check:browser": "node bench/browser/run.mjs",
+    "check:worker": "node bench/worker/run.mjs"
   },
   "dependencies": {
     "@automerge/automerge": "3.3.0-fragments.2",
     "@automerge/automerge-repo": "2.6.0-subduction.43"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "vitest": "^3.2.4"
   }
 }

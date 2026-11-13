@@ -24,6 +24,11 @@ typedef struct {
   const uint8_t *rgba;             /* width * height * 4 */
 } machine_frame_t;
 
+typedef struct {
+  uint32_t len;
+  const uint8_t *bytes;            /* len bytes, engine-defined per kind */
+} machine_query_t;
+
 /* Required. */
 const machine_info_t *machine_info(void);
 int32_t machine_init(void);             /* 0 on success */
@@ -34,6 +39,7 @@ void machine_step(void);
 uint8_t *machine_content(uint32_t len); /* where the host copies the content in */
 const machine_output_t *machine_output(void); /* the last step's; a pure read */
 const machine_frame_t *machine_frame(int32_t view); /* may write memory */
+const machine_query_t *machine_query(uint32_t kind); /* NULL: no such kind; may write memory */
 const char *machine_fault(void);        /* why the last call trapped, NUL-terminated */
 
 /* Imported: the content, read where the engine wants it, so that content

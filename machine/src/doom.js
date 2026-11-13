@@ -1,6 +1,8 @@
 // The host's side of the Doom engine (engines/doom): its content, its
-// input, its events, its sounds, and reading a vanilla demo as inputs.
-// Everything here is plain data in and out; nothing touches an engine.
+// input, its events, its sounds, reading a vanilla demo as inputs, and
+// reading the engine's state (queries). Everything here is plain data in
+// and out, except camera(), which asks an engine to draw.
+import { picture } from "./engine.js";
 
 export const PLAYERS = 4;
 export const INPUT_BYTES = 6;
@@ -155,4 +157,155 @@ export function sounds(...wads) {
     out.set(name, { rate, samples: Float32Array.from(pcm, (s) => (s - 128) / 128) });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------
+// The engine's state, read: engine.query(QUERY.things) and the rest, each
+// decoded by the function of the same name below. Positions are map units
+// (16.16 fixed in the engine), angles radians counterclockwise from east
+// (the map's +x), as Doom has them. Doom has no pitch.
+
+export const QUERY = { level: 0, players: 1, things: 2, sectors: 3, sides: 4 };
+
+const FIXED = 65536;
+const TURN = (2 * Math.PI) / 2 ** 32;
+const GAMESTATE = ["level", "intermission", "finale", "demoscreen"];
+const PLAYERSTATE = ["alive", "dead", "reborn"];
+
+function name8(bytes, at, len = 8) {
+  const raw = bytes.subarray(at, at + len);
+  const end = raw.indexOf(0);
+  return new TextDecoder().decode(end < 0 ? raw : raw.subarray(0, end)) || null;
+}
+
+function records(bytes, size, read) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Array.from({ length: bytes.length / size }, (_, i) => read(v, i * size));
+}
+
+/** Where the game is: { state, skill, episode, map, paused, deathmatch, ingame: [bool x4], leveltime, gametic }. */
+export function level(bytes) {
+  return records(bytes, 16, (v, at) => ({
+    state: GAMESTATE[v.getUint8(at)],
+    skill: v.getUint8(at + 1),
+    episode: v.getUint8(at + 2),
+    map: v.getUint8(at + 3),
+    paused: v.getUint8(at + 4) === 1,
+    deathmatch: v.getUint8(at + 5),
+    ingame: [0, 1, 2, 3].map((p) => ((v.getUint8(at + 6) >> p) & 1) === 1),
+    leveltime: v.getUint32(at + 8, true),
+    gametic: v.getUint32(at + 12, true),
+  }))[0];
+}
+
+/**
+ * Each of the four players: { ingame, state, thing (its body's id, 0 if
+ * none), x, y, z, angle, health, armor, weapon, extralight }. x, y, z,
+ * angle are the player's eyes: what frame(view) draws from, and where the
+ * player hears from.
+ */
+export function players(bytes) {
+  return records(bytes, 32, (v, at) => ({
+    ingame: v.getUint8(at + 28) === 1,
+    state: PLAYERSTATE[v.getUint8(at + 29)],
+    thing: v.getUint32(at, true),
+    x: v.getInt32(at + 4, true) / FIXED,
+    y: v.getInt32(at + 8, true) / FIXED,
+    z: v.getInt32(at + 12, true) / FIXED,
+    angle: v.getUint32(at + 16, true) * TURN,
+    health: v.getInt32(at + 20, true),
+    armor: v.getInt32(at + 24, true),
+    weapon: v.getUint8(at + 30),
+    extralight: v.getUint8(at + 31),
+  }));
+}
+
+// Mobj flags (p_mobj.h) a view of the things is likely to want.
+export const MF = {
+  SPECIAL: 0x1, SOLID: 0x2, SHOOTABLE: 0x4, NOSECTOR: 0x8, NOBLOCKMAP: 0x10,
+  MISSILE: 0x10000, SHADOW: 0x40000, CORPSE: 0x100000, COUNTKILL: 0x400000,
+};
+
+/**
+ * Every thing (mobj) in the level, in the game's thinker order: { id, type
+ * (mobjtype_t), doomednum (the map's thing number, -1 for none), x, y, z
+ * (its feet), angle, radius, height, flags (MF bits), health, sprite (4
+ * letters), frame (0 is A), fullbright, player (whose body, -1 if none),
+ * translation (a player body's colour, 0-3) }. id is stable while the thing
+ * exists and is the origin handle of its sounds (events()). A thing whose
+ * flags have NOSECTOR is not drawn by Doom.
+ */
+export function things(bytes) {
+  return records(bytes, 48, (v, at) => {
+    const flags = v.getUint32(at + 28, true);
+    const frame = v.getUint16(at + 44, true);
+    return {
+      id: v.getUint32(at, true),
+      type: v.getUint16(at + 36, true),
+      doomednum: v.getInt16(at + 38, true),
+      x: v.getInt32(at + 4, true) / FIXED,
+      y: v.getInt32(at + 8, true) / FIXED,
+      z: v.getInt32(at + 12, true) / FIXED,
+      angle: v.getUint32(at + 16, true) * TURN,
+      radius: v.getInt32(at + 20, true) / FIXED,
+      height: v.getInt32(at + 24, true) / FIXED,
+      flags,
+      health: v.getInt32(at + 32, true),
+      sprite: name8(bytes, at + 40, 4),
+      frame: frame & 0x7fff,
+      fullbright: (frame & 0x8000) !== 0,
+      player: v.getInt8(at + 46),
+      translation: (flags >>> 26) & 3,
+    };
+  });
+}
+
+/** Every sector, in the map's order (its SECTORS lump): { floor, ceiling, floorpic, ceilingpic, light, special, tag }. */
+export function sectors(bytes) {
+  return records(bytes, 32, (v, at) => ({
+    floor: v.getInt32(at, true) / FIXED,
+    ceiling: v.getInt32(at + 4, true) / FIXED,
+    floorpic: name8(bytes, at + 8),
+    ceilingpic: name8(bytes, at + 16),
+    light: v.getInt16(at + 24, true),
+    special: v.getInt16(at + 26, true),
+    tag: v.getInt16(at + 28, true),
+  }));
+}
+
+/** Every sidedef, in the map's order (its SIDEDEFS lump): { xoffset, yoffset, top, middle, bottom } (null: no texture). */
+export function sides(bytes) {
+  return records(bytes, 32, (v, at) => ({
+    xoffset: v.getInt32(at, true) / FIXED,
+    yoffset: v.getInt32(at + 4, true) / FIXED,
+    top: name8(bytes, at + 8),
+    middle: name8(bytes, at + 16),
+    bottom: name8(bytes, at + 24),
+  }));
+}
+
+/**
+ * Where `view` hears from: { x, y, z, angle } of that player's eyes, the
+ * same view frame(view) draws (a view not in the game is player 0's). A
+ * host places each sound event's origin relative to it, as Doom does
+ * (README, Output).
+ */
+export function listener(playersBytes, view) {
+  const all = players(playersBytes);
+  const { x, y, z, angle } = all[view]?.ingame ? all[view] : all[0];
+  return { x, y, z, angle };
+}
+
+/**
+ * A picture from anywhere in the level: the engine's renderer at eyes x, y,
+ * z (map units, z absolute) looking along angle (radians), full screen,
+ * 320x200, through the plain palette. Doom cannot look up or down. Outside
+ * a level the picture is 0 by 0. Drawn on a copy of the state, as frames
+ * are.
+ */
+export function camera(engine, { x, y, z, angle }) {
+  const fixed = (u) => Math.round(u * FIXED) | 0;
+  const bam = Math.round(((angle / (2 * Math.PI)) % 1) * 2 ** 32) | 0;
+  const { result, memory } = engine.inspect("doom_camera", fixed(x), fixed(y), fixed(z), bam);
+  return picture(memory, result);
 }

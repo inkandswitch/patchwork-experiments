@@ -140,13 +140,22 @@ class Engine {
    */
   frame(view = 0) {
     if (!this.#live.exports.machine_frame) return null;
-    const { result: at, memory } = this.inspect("machine_frame", view);
-    const buf = memory.buffer; // after drawing, which may grow it
-    const f = new DataView(buf, at, 12);
-    const width = f.getUint32(0, true);
-    const height = f.getUint32(4, true);
-    const rgba = new Uint8ClampedArray(buf, f.getUint32(8, true), width * height * 4).slice();
-    return { width, height, rgba };
+    const { result, memory } = this.inspect("machine_frame", view);
+    return picture(memory, result);
+  }
+
+  /**
+   * What the engine says of its current state under `kind` (engine-defined:
+   * the things in a level, a console's RAM), as bytes copied out; null if
+   * the engine has no such kind. Like frame, it runs on a copy of the
+   * state, so the live state is never touched.
+   */
+  query(kind) {
+    if (!this.#live.exports.machine_query) return null;
+    const { result: at, memory } = this.inspect("machine_query", kind >>> 0);
+    if (!at) return null;
+    const q = new DataView(memory.buffer, at, 8);
+    return new Uint8Array(memory.buffer, q.getUint32(4, true), q.getUint32(0, true)).slice();
   }
 
   /**
@@ -161,6 +170,20 @@ class Engine {
     state.copy(this.#live, this.#viewer);
     return { result: call(this.#viewer, name, ...args), memory: this.#viewer.memory };
   }
+}
+
+/**
+ * The picture a frame-shaped result points at ({u32 width, height, *u8
+ * rgba}, machine_frame's), copied out of `memory`: for engine-specific
+ * drawings made through inspect (Doom's doom_camera).
+ */
+export function picture(memory, at) {
+  const buf = memory.buffer; // after drawing, which may grow it
+  const f = new DataView(buf, at, 12);
+  const width = f.getUint32(0, true);
+  const height = f.getUint32(4, true);
+  const rgba = new Uint8ClampedArray(buf, f.getUint32(8, true), width * height * 4).slice();
+  return { width, height, rgba };
 }
 
 // A trap becomes an error that says why, if the engine can.

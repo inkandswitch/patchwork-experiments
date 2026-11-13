@@ -1,5 +1,6 @@
 // An in-memory network for automerge-repo peers, for tests and probes. Every
-// peer is linked to every other. A link delivers in order (as a WebSocket
+// peer is linked to every other, or, with a hub, only to the hub (as Patchwork
+// peers are to a sync server). A link delivers in order (as a WebSocket
 // does), each message after a latency taken from a fixed table, cycling;
 // ephemeral messages can also be dropped by a fixed pattern, cycling. Nothing
 // is random, so with fake timers a run is the same every time. Document sync
@@ -12,15 +13,26 @@ export class SimNet {
   #links = new Map(); // "a>b" -> { n, last }
   latency;
   loss;
+  hub;
   sent = { sync: 0, ephemeral: 0, dropped: 0 };
+  /** Per peer name: messages and ephemeral bytes it sent and received. */
+  by = new Map();
 
   /**
    * @param latency ms per message, a table cycled per link (or a number)
    * @param loss    for ephemeral messages, a table of booleans cycled per link
+   * @param hub     a peer name: if given, every other peer is linked to it alone
    */
-  constructor({ latency = [10], loss = [false] } = {}) {
+  constructor({ latency = [10], loss = [false], hub = null } = {}) {
     this.latency = [].concat(latency);
     this.loss = [].concat(loss);
+    this.hub = hub;
+  }
+
+  #count(name) {
+    let c = this.by.get(name);
+    if (!c) this.by.set(name, (c = { sync: 0, ephemeral: 0, bytes: 0, received: 0, receivedBytes: 0 }));
+    return c;
   }
 
   /** A network adapter for one peer; pass it to new Repo({ network: [...] }). */
@@ -44,6 +56,7 @@ export class SimNet {
   _connected(a) {
     for (const b of this.#adapters.values()) {
       if (b === a || !b.peerId) continue;
+      if (this.hub && a.name !== this.hub && b.name !== this.hub) continue;
       b.emit("peer-candidate", { peerId: a.peerId, peerMetadata: a.peerMetadata });
       a.emit("peer-candidate", { peerId: b.peerId, peerMetadata: b.peerMetadata });
     }
@@ -58,7 +71,16 @@ export class SimNet {
     const i = link.n++;
     const ephemeral = message.type === "ephemeral";
     this.sent[ephemeral ? "ephemeral" : "sync"]++;
+    const bytes = ephemeral ? (message.data?.byteLength ?? 0) : 0;
+    const out = this.#count(from.name);
+    out[ephemeral ? "ephemeral" : "sync"]++;
+    out.bytes += bytes;
     if (ephemeral && this.loss[i % this.loss.length]) return void this.sent.dropped++;
+    if (ephemeral) {
+      const into = this.#count(to.name);
+      into.received++;
+      into.receivedBytes += bytes;
+    }
     const at = Math.max(link.last, Date.now() + this.latency[i % this.latency.length]);
     link.last = at;
     setTimeout(() => {
