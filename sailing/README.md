@@ -26,7 +26,7 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **Coming aboard.** Click the sea, the sky, the ship, a fitting of hers or
   the shore (or press Enter). A click on something else aboard her, a card
   on a table in her cockpit say, isn't a way aboard: it's that thing's (the
-  hand picks the card up). Seated at a table aboard her (the seat body),
+  scene's carry picks the card up). Seated at a table aboard her (the seat body),
   only Enter, the button or a click on the open sea or sky comes
   aboard, so a stray click on the benches round the table doesn't throw you
   into first person; the HUD then offers *Come aboard (Enter)* top left,
