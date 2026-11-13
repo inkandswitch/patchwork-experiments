@@ -8,3 +8,5 @@ dist
 engines/doom/test/*.wad
 # Written by bench/browser/run.mjs.
 bench/browser/out
+# Written by bench/patchwork/run.mjs.
+bench/patchwork/out
