@@ -2,9 +2,10 @@
 
 The places people take at a scene, and who sits in them. One
 `scene:extension`, `seats`, run wherever a scene has the `seats` trait. It
-names nothing that uses it: a table learns whose hand is whose, a keeper
-who is playing and a walker when to hand the view over, all through
-conventions (below), never by this package's name. The stage knows nothing
+names nothing that uses it: a table learns whose hand is whose and a
+keeper who is playing through conventions (below), and the stage's body
+stack takes its seat body as it takes any body, never by this package's
+name. The stage knows nothing
 of seats either (scene/COMPOSITION.md, decision 5): a scene that seats
 people lists this package in its `packages`, like any other.
 
