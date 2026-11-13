@@ -71,6 +71,22 @@ try {
   const hel = document.getElementById("hist");
   const stopHist = history(handle, hel);
   const hroot = await until(() => hel.querySelector(".machine-history .strip") && hel.querySelector(".machine-history"), 30000, "the history view");
+  // The navigation stays on screen whatever the picture does: one screen
+  // (following), then three (a conflict), at a tall and a short height.
+  const fits = () => {
+    const box = hroot.getBoundingClientRect();
+    const part = (q) => hroot.querySelector(q).getBoundingClientRect();
+    const under = (q) => part(q).bottom <= box.bottom + 0.5 && part(q).height > 0;
+    return { h: Math.round(box.height), controls: under(".controls"), overview: under(".overview"), strip: under(".strip"), lists: under(".lower"), screen: Math.round(part('figure[data-side="kept"] canvas').height) };
+  };
+  const layout = [];
+  for (const h of [900, 560]) {
+    hel.style.height = `${h}px`;
+    await sleep(400);
+    layout.push(fits());
+  }
+  hel.style.height = "900px";
+  window.__fits = fits;
   // Watch through the other peer's eyes (Doom draws a view per player).
   const vs = hroot.querySelector("header select");
   vs.value = "1";
@@ -92,6 +108,10 @@ try {
     captions = [...hroot.querySelectorAll("figcaption")].map((f) => f.textContent);
     for (const side of ["kept", "abandoned", "diff"]) shots[side] = hroot.querySelector(`figure[data-side="${side}"] canvas`).toDataURL();
     shots.stripSelected = hroot.querySelector(".strip").toDataURL();
+    hel.style.height = "560px";
+    await sleep(400);
+    layout.push({ conflict: true, ...fits() });
+    hel.style.height = "900px";
     hroot.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     await sleep(400);
     stepped = [...hroot.querySelectorAll("figcaption")].map((f) => f.textContent);
@@ -156,6 +176,6 @@ try {
   clearInterval(tick2);
   stopHist();
   stopPlayer2();
-  report({ ok: true, kind, travel, source, statsText, conflicts: items.length, listText, detail, captions, stepped, tickDetail, errors, info, host2: { tick: host2.tick, rewinds: host2.stats.rewinds }, pngs: shots });
+  report({ ok: true, kind, layout, travel, source, statsText, conflicts: items.length, listText, detail, captions, stepped, tickDetail, errors, info, host2: { tick: host2.tick, rewinds: host2.stats.rewinds }, pngs: shots });
 } catch (err) { report({ ok: false, fatal: String(err.stack ?? err) }); }
 </script>
