@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
+import { fakeUrl } from "../test/fake-repo.js";
 import undo, { undoKey } from "./undo.js";
 import select from "./select.js";
 
@@ -195,6 +196,50 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
     expect(s.doc().objects.card.traits["t.card"].state).toBe("down");
   });
 
+  it("parties' answers, every kind × a reveal: [] and null are no stake (free); a viewer is a stake, and a throw can't be told (both refused)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const boom = () => {
+      throw new Error("broken");
+    };
+    // what parties(snap) is: a function answering each kind, or itself throwing
+    const KINDS = { none: () => () => [], nobody: () => () => null, bob: () => () => ["bob"], throwsPerId: () => boom, throwsWhole: boom };
+    const refusedFor = { none: false, nobody: false, bob: true, throwsPerId: true, throwsWhole: true };
+    let cases = 0;
+    for (const [kind, parties] of Object.entries(KINDS)) {
+      const ASKED = { meta: { id: "t.asked", traits: ["t.card"] }, module: { create: () => ({ audience: TABLE.module.create({ change() {} }).audience, parties }) } };
+      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, ASKED], doc: cardDoc([]) });
+      await settle();
+      const edit = s.api("scene.undo");
+      edit.edit((d) => (d.objects.card.traits["t.card"].state = "up"), { label: "Flip" });
+      expect(edit.undo(), kind).toBe(!refusedFor[kind]);
+      expect(s.doc().objects.card.traits["t.card"].state, kind).toBe(refusedFor[kind] ? "up" : "down");
+      cases++;
+      s.unmount();
+      s = null;
+    }
+    expect(cases).toBe(5);
+  });
+
+  it("a listed package missing: who could see anything can't be told, so a step counts as showing everything; refused while someone else is seated, saying why; free alone", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missing = { packages: [{ url: fakeUrl() }] };
+    for (const seated of [["ann", "bob"], ["ann"]]) {
+      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(seated), ...missing } });
+      await settle();
+      const edit = s.api("scene.undo");
+      // a move on the table, face down: no reveal, were the audience known
+      edit.edit((d) => (d.objects.card.transform.position = [1, 0, 0]), { label: "Move" });
+      const alone = seated.length === 1;
+      expect(edit.undo(), seated.join("+")).toBe(alone);
+      if (!alone)
+        expect(s.local.get().notices.at(-1).text).toBe(
+          "Can't undo “Move”: who could see what it changed can't be told (a package the scene uses is missing or didn't start), and taking it back needs the others' agreement.",
+        );
+      s.unmount();
+      s = null;
+    }
+  });
+
   it("a package's `decided` marks a step as deciding: refused while others have a stake, whatever the audience did", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const DECIDES = {
@@ -244,5 +289,12 @@ describe("undo's agreement and keeper rules, and who may edit", () => {
     s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: { create: (api) => undo.create(api) } }], doc: cardDoc([]) });
     await settle();
     expect(s.api("scene.undo").edit).toBeUndefined();
+    // nor can it swap a part's create for its own: the marked module is frozen
+    const mine = (api) => ({ api });
+    expect(() => {
+      "use strict";
+      undo.create = mine;
+    }).toThrow(TypeError);
+    expect(undo.create).not.toBe(mine);
   });
 });

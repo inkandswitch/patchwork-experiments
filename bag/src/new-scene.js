@@ -34,7 +34,7 @@ export function sackFile(bagDoc) {
  */
 export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = null }) {
   const title = bagDoc?.title || DEFAULT_TITLE;
-  const scene = emptyScene({ "@patchwork": scenePatchwork(sceneImportUrl), title: `${title}: table` });
+  const scene = emptyScene({ "@patchwork": scenePatchwork(sceneImportUrl), title: `${title}: scene` });
   scene.objects[BAG_OBJECT] = {
     name: title,
     sourceUrl: fileUrl,

@@ -709,9 +709,11 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   prompt), showing what attention asks for. **`view.start = { body, place,
   home }`** (`view.home` went into it): read once on arrival and after a
   template, entered once a running extension offers the body and the
-  content is in (or after 20 s), never again; a body still not on offer
-  after 20 s (a package declined, an extension failed) ends the wait too
-  (`startOf`, `tryArrive` in `stage.js`); the inspector's Starts in picks the body (Orbit, or one on
+  content is in (or 20 s after it came on offer), never again; until it's
+  on offer the wait lasts while the body may still come (a package loading,
+  or asked about and accepted however much later), and ends once everything
+  the doc calls for is here and started or failed without it (an extension
+  that failed doesn't hold it open) (`startOf`, `tryArrive` in `stage.js`); the inspector's Starts in picks the body (Orbit, or one on
   offer). Publishers: tables start people in the seat body with no place,
   which seats/ reads as your own seat if the doc seats you, else watching
   from the first seat's view, labelled "Watching", writing nothing (a press
@@ -746,7 +748,12 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   back asks every running extension's `parties(scene)` (seats: whoever is
   seated, here or away) and is refused with a reason while anyone else has
   a stake; it stays on the stack, so a party standing up frees it. Nothing
-  answering: free (a CAD scene). **Kept contents**: a step that removed
+  answering (or `null`): free (a CAD scene); a `parties` that throws: can't
+  be told, refused. With a listed package missing or an extension not
+  started no audience is known and every step counts as showing: a seated
+  table with a declined package can't take back a stage edit while anyone
+  else is seated, and says so ("…can't be told (a package the scene uses
+  is missing or didn't start)…"). **Kept contents**: a step that removed
   objects bound by a keeper's trait (a plugin saying `keeper`) is undone as
   the doc held them, saying the kept part comes back as its keeper has it
   now. Bag contents (their own doc, not a keeper's) aren't named by this. ⌘Z /

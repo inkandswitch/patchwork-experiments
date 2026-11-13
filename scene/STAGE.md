@@ -202,9 +202,14 @@ their own opens at (`startOf`, `initialCamera`); `body` (absent: orbit) is
 entered at `place` (a spawn point's object id, a seat's id, or absent:
 `null`, the body's own "here") as soon as a running extension offers it and
 the content shown has loaded (a walker started before its floor is in falls
-through it), or after `ARRIVE_WAIT_MS` (20 s) whatever is still loading. The
-viewer entering a body first, or everything the doc calls for running with
-no extension offering that body, ends the wait with nothing entered. A later
+through it), or `ARRIVE_WAIT_MS` (20 s) after it came on offer whatever is
+still loading. Until it's on offer the wait lasts as long as the body may
+still come: a package loading, or one asked about and accepted however much
+later (someone a table starts seated, taking their time over the prompt,
+is still seated once they say yes). The viewer entering a body first, or
+everything the doc calls for here and started (or failed to start) with no
+extension offering that body, ends the wait with nothing entered. A package
+declined or failed leaves it waiting, quietly, on the viewer. A later
 change to `view.start` moves nobody already here. The body's package is
 listed the ordinary way, by the trait its place carries (a spawn point's
 `walk.spawn` calls for `walk/`; a table's `seats` for `seats/`): nothing in
@@ -1086,8 +1091,14 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
   refused ("Can't undo “Move”: it showed or decided something, and taking
   it back needs the others' agreement.") and stays on the stack, so a party
   who stands up frees it. Nothing answering: no parties, free (two people
-  editing a CAD scene). How agreement is asked and given is designed after
-  step 8 (TOOLS.md, Decisions 2).
+  editing a CAD scene); a `parties` that throws: can't be told, refused.
+  While a listed package is missing or an extension the doc calls for
+  hasn't started, no audience is known, so every step counts as showing
+  everything: at a seated table with a declined package, no stage edit can
+  be taken back while anyone else is seated, and the refusal says why
+  ("…who could see what it changed can't be told (a package the scene uses
+  is missing or didn't start)…"). How agreement is asked and given is
+  designed after step 8 (TOOLS.md, Decisions 2).
 - **Kept contents don't come back.** A step that removed objects bound to a
   keeper (by the trait of an extension whose plugin says `keeper`) is
   undone as the doc held them, and says so: "what is kept for “Deck” comes
@@ -1104,7 +1115,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name?, veil? }` | the stage (lenses combine in running order; later wins per field). `veil: true`: the stage draws its stand-in instead of the object's content. See "The veil" |
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
-| `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). None answering: nobody |
+| `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). `null`, or no extension answering: no stake. One that throws (`parties(scene)` or its function) can't be told, and the take-back is refused, as a throwing audience policy hides |
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
 | `input` | the stage |

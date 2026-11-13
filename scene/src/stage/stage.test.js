@@ -293,39 +293,24 @@ describe("the stage, mounted", () => {
     expect(other.local.get().body.id).toBe("orbit");
   });
 
-  it("arriving waits at most ARRIVE_WAIT_MS when what the doc calls for never all starts (one failed to)", async () => {
+  it("arriving: an extension that fails to start doesn't hold the wait open; everything else started without the body on offer ends it", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    let t = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => t);
     // what's on offer, read live (the list is the instance's own)
     const bodies = [];
     const LATE = { id: "late", label: "Late", lock: false, enter: () => ({ input: {}, eye: () => null }) };
-    const offer = (on) => bodies.splice(0, bodies.length, ...(on ? [LATE] : []));
     exts["t.edit"] = recorder("t.edit", () => ({ bodies }));
     // the doc calls for t.scene, which fails to start: the host never settles
     exts["t.scene"] = recorder("t.scene", () => {
       throw new Error("broken");
     });
-    const tick = async () => {
-      await new Promise((r) => setTimeout(r, 300)); // the wait looks again every 250 ms
-      await settle();
-    };
-    // offered within the wait: entered
-    const a = mount(newScene({ traits: { "t.scene": {} }, view: { start: { body: "late" } } }));
-    await tick();
-    expect(a.local.get().body.id).toBe("orbit");
-    t = 19_000;
-    offer(true);
-    await tick();
-    expect(a.local.get().body.id).toBe("late");
-    // offered only after it: the wait has ended, and nobody is moved
-    offer(false);
-    const b = mount(newScene({ traits: { "t.scene": {} }, view: { start: { body: "late" } } }));
-    await tick();
-    t = 19_000 + 20_000;
-    await tick();
-    offer(true);
-    await tick();
+    const h = newScene({ traits: { "t.scene": {} }, view: { start: { body: "late" } } });
+    const b = mount(h);
+    await settle();
+    await new Promise((r) => setTimeout(r, 300)); // the wait looks again every 250 ms while something starts
+    await settle();
+    bodies.push(LATE);
+    h.change((d) => (d.title = "Renamed")); // a flush, with the body now on offer
+    await settle();
     expect(b.local.get().body.id).toBe("orbit");
   });
 

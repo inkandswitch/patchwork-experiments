@@ -82,7 +82,7 @@ const CAMERA_SAVE_MS = 500;
 export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
 /** How long a notice stays in local.notices. */
 const NOTICE_MS = 6_000;
-/** How long arriving waits for the content before entering view.start's body anyway (ms). */
+/** How long, once view.start's body is on offer, arriving waits for the content before entering it anyway (ms). */
 export const ARRIVE_WAIT_MS = 20_000;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
@@ -949,7 +949,8 @@ export default function Stage(handle, element) {
   //          `keeper` (STAGE.md, "Keepers").
   // And when a step is taken back, who has a stake in those objects now:
   // every running extension's `parties(scene)(id)`, merged, without this
-  // viewer. Where nothing answers there are no parties.
+  // viewer. Where nothing answers (or answers null) there are no parties;
+  // where one throws, they can't be told.
 
   /** The snapshot of any version of the doc (the current one's is scene()). */
   const snapOf = (d) => (d === doc() ? scene() : snapshotOf(modelOf(d)));
@@ -1006,7 +1007,10 @@ export default function Stage(handle, element) {
     const was = before.objects ?? {};
     const now = after.objects ?? {};
     const shows = new Set();
-    const askAudience = host.instances().some((r) => typeof r.instance.audience === "function") || !packages.complete() || !host.settled();
+    // a listed package missing, or an extension not started: whose policies are missing can't be told,
+    // so every object counts as shown (a hand's `only` among them would hide a reveal); said so on refusal
+    const unknown = !packages.complete() || !host.settled();
+    const askAudience = unknown || host.instances().some((r) => typeof r.instance.audience === "function");
     const askDecided = host.instances().some((r) => typeof r.instance.decided === "function");
     if (askAudience || askDecided) {
       const b = snapOf(before);
@@ -1036,21 +1040,29 @@ export default function Stage(handle, element) {
         if (t && typeof t === "object" && [...traits].some((k) => t[k] != null)) kept.push(String(was[id].name ?? id));
       }
     }
-    return { shows: [...shows], kept };
+    return { shows: [...shows], kept, ...(unknown && shows.size ? { unknown: true } : {}) };
   }
-  /** Who has a stake in these objects now, other than this viewer: every running extension's `parties(scene)` answer, merged. */
+  /**
+   * Who has a stake in these objects now, other than this viewer: every
+   * running extension's `parties(scene)` answer, merged. An answer of null
+   * (or none) is no stake; one that throws can't be told, and nor can the
+   * whole: null (the take-back is refused, as an audience policy that
+   * throws hides).
+   */
   function partiesOf(ids) {
     const snap = scene();
     const out = new Set();
     for (const { id: ext, fn } of policiesOf("parties", [snap])) {
-      if (!fn) continue;
+      if (!fn) return null; // parties(scene) threw (policiesOf said so)
       for (const id of ids) {
+        let list;
         try {
-          const list = fn(id);
-          if (Array.isArray(list)) for (const v of list) if (typeof v === "string" && v) out.add(v);
+          list = fn(id);
         } catch (err) {
           console.warn(`[scene] extension “${ext}”: parties failed for ${id}`, err);
+          return null;
         }
+        if (Array.isArray(list)) for (const v of list) if (typeof v === "string" && v) out.add(v);
       }
     }
     out.delete(viewer);
@@ -1860,14 +1872,17 @@ export default function Stage(handle, element) {
   // Read once: on arrival, and again after a template has written one for
   // its maker. Its body is entered once a running extension offers it and
   // the content is in (a walker started before its floor has loaded falls
-  // through it), or after ARRIVE_WAIT_MS whatever is still loading. The
-  // viewer entering a body first, everything the doc calls for running
-  // without that body on offer, or ARRIVE_WAIT_MS passing without it on offer
-  // (a package declined, or one that failed), ends the wait: nothing is entered.
-  let arrival = null; // { body, place, since } still to enter
+  // through it), or ARRIVE_WAIT_MS after it came on offer whatever is still
+  // loading. Until then it waits as long as the body may still come: a
+  // package loading, or asked about and accepted later (the person a table
+  // starts seated takes their time over the prompt), still enters it. The
+  // viewer entering a body first, or everything the doc calls for here and
+  // started (or failed to) with no extension offering that body, ends the
+  // wait: nothing is entered.
+  let arrival = null; // { body, place, offered } still to enter; offered: when the body was first on offer
   function arrive() {
     const { body, place } = startOf(doc());
-    arrival = body ? { body, place, since: now() } : null;
+    arrival = body ? { body, place, offered: null } : null;
     requestFlush();
   }
   /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
@@ -1900,15 +1915,17 @@ export default function Stage(handle, element) {
       return;
     }
     if (bodyDefs().has(a.body)) {
-      if (!contentIn() && now() - a.since < ARRIVE_WAIT_MS) return requestFlushSoon();
+      a.offered ??= now();
+      if (!contentIn() && now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
       arrival = null;
       enterBody(a.body, a.place);
       return;
     }
-    // nothing here offers it; or what the doc calls for still hasn't all come (a package declined or
-    // failed to load, an extension failed to start) after ARRIVE_WAIT_MS: then nothing is entered either
-    if ((host.settled() && packages.complete()) || now() - a.since >= ARRIVE_WAIT_MS) arrival = null;
-    else requestFlushSoon();
+    // nothing here offers it, and nothing more is coming: the wait is over
+    if (packages.complete() && !host.starting()) arrival = null;
+    // an extension starting (which says nothing when one fails) or a package loading: look again soon. A
+    // package waiting on the viewer (asked, declined, failed) needs no looking: a yes changes the registry
+    else if (host.starting() || packages.coming()) requestFlushSoon();
   }
 
   /** The camera rides the top body's ride, if it has one; else orbit's base rides apply. */

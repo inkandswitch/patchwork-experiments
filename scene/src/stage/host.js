@@ -361,6 +361,18 @@ export function createHost({
     offs.length = 0;
   }
 
+  let settledFor = null; // { doc, n, ids }: what the registry as it is now would run for the last doc
+  /** The ids the doc calls for, of what's registered now; null before there's a registry and a doc. */
+  function activeIds() {
+    if (!isReady || pending || !lastDoc) return null;
+    // (worked out from the registry as it is now, not as it was at the last sync: a plugin
+    // registered since, which no "changed" event has told of yet, isn't running either)
+    const metas = listOf(reg);
+    if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length) {
+      settledFor = { doc: lastDoc, n: metas.length, ids: activeSet({ metas, doc: lastDoc }).map((w) => w.id) };
+    }
+    return settledFor.ids;
+  }
   /**
    * Is everything the doc calls for, of what's registered here, started?
    * False before the registry is here, while a doc waits to be synced, and
@@ -368,22 +380,25 @@ export function createHost({
    * may be a policy (`audience`), and the stage answers nothing about who
    * may see what until it's in.
    */
-  let settledFor = null; // { doc, n, ids }: what the registry as it is now would run for the last doc
   function settled() {
-    if (!isReady || pending || !lastDoc) return false;
-    // (worked out from the registry as it is now, not as it was at the last sync: a plugin
-    // registered since, which no "changed" event has told of yet, isn't running either)
-    const metas = listOf(reg);
-    if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length) {
-      settledFor = { doc: lastDoc, n: metas.length, ids: activeSet({ metas, doc: lastDoc }).map((w) => w.id) };
-    }
-    return settledFor.ids.every((id) => recs.get(id)?.state === "running");
+    return activeIds()?.every((id) => recs.get(id)?.state === "running") ?? false;
+  }
+
+  /**
+   * Is anything the doc calls for, of what's registered here, still on its
+   * way (or the registry, or a doc waiting to be synced)? One that failed to
+   * start isn't: it never settles the host, and nothing more comes of it
+   * until the registry changes.
+   */
+  function starting() {
+    return activeIds()?.some((id) => !["running", "failed"].includes(recs.get(id)?.state)) ?? true;
   }
 
   return {
     ready,
     sync,
     settled,
+    starting,
     running,
     instances,
     instanceOf,

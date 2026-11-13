@@ -26,6 +26,12 @@ describe("a scene made here", () => {
     for (const local of [null, "http://localhost:5173/", "./dist/index.js"]) expect(make(local)["@patchwork"]).toEqual({ type: "scene" });
   });
 
+  it("is a scene named for its bag (an empty scene to build on, not a table), started in orbit", () => {
+    const scene = make(null);
+    expect(scene.title).toBe("Tile bag: scene");
+    expect(scene.view?.start?.body ?? null).toBe(null);
+  });
+
   it("has the bag on it as a container for that bag document, shown from the sack's file", () => {
     const o = make(null).objects[BAG_OBJECT];
     expect([o.name, o.sourceUrl, o.providerId, o.renderUrl]).toEqual(["Tile bag", "automerge:sackfile", "file-glb", null]);

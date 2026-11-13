@@ -176,9 +176,10 @@ export const DEPTH = 100;
 
 /**
  * One viewer's stacks, per focus doc: { [docUrl]: { undo: step[], redo: step[] } }.
- * A step is { label, parts: [{ handle, leaves }], shows?: string[], kept?:
- * string[] }: the objects it revealed or decided, and the names of the kept
- * things it removed (`judge`). Pure updates.
+ * A step is { label, parts: [{ handle, leaves }], shows?: string[],
+ * unknown?: true, kept?: string[] }: the objects it revealed or decided
+ * (unknown: counted so because who could see them couldn't be told), and
+ * the names of the kept things it removed (`judge`). Pure updates.
  */
 export const EMPTY = Object.freeze({});
 
@@ -228,10 +229,11 @@ export function needsAgreement(step, parties) {
  *
  * `judge({ handle, before, after })` says what a step did to one doc (the doc
  * before its first change and after its last): { shows?: id[] (objects it
- * revealed or decided), kept?: name[] (kept things it removed) }.
+ * revealed or decided), unknown?: true (shows counts objects whose audience
+ * couldn't be told), kept?: name[] (kept things it removed) }.
  * `parties(ids)` says who, other than this viewer, has a stake in those
  * objects now ([]: nobody; null: can't tell).
- * @param {{ handle: object, focus?: () => string, writable?: () => boolean, notify?: (text: string) => void, changed?: (labels: { undo, redo }) => void, judge?: (part: { handle, before, after }) => { shows?: string[], kept?: string[] } | null, parties?: (ids: string[]) => string[] | null }} o
+ * @param {{ handle: object, focus?: () => string, writable?: () => boolean, notify?: (text: string) => void, changed?: (labels: { undo, redo }) => void, judge?: (part: { handle, before, after }) => { shows?: string[], unknown?: boolean, kept?: string[] } | null, parties?: (ids: string[]) => string[] | null }} o
  */
 export function createEdits({ handle, focus = () => handle.url, writable = () => true, notify = () => {}, changed = () => {}, judge = () => null, parties = () => [] }) {
   let stacks = EMPTY;
@@ -260,15 +262,18 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
         if (!list.length) return null;
         const shows = new Set();
         const kept = [];
+        let unknown = false;
         for (const [h, p] of list) {
           const j = judge({ handle: h, before: p.before, after: p.after });
           for (const id of j?.shows ?? []) shows.add(id);
           for (const n of j?.kept ?? []) if (!kept.includes(n)) kept.push(n);
+          if (j?.unknown) unknown = true;
         }
         return {
           label: String(label ?? "Edit"),
           parts: list.map(([h, p]) => ({ handle: h, leaves: p.leaves })),
           ...(shows.size ? { shows: [...shows].sort() } : {}),
+          ...(shows.size && unknown ? { unknown: true } : {}),
           ...(kept.length ? { kept } : {}),
         };
       },
@@ -311,7 +316,11 @@ export function createEdits({ handle, focus = () => handle.url, writable = () =>
       if (ok) {
         const why = needsAgreement(step, parties);
         if (why) {
-          notify(`Can't ${which} “${step.label}”: it showed or decided something, and taking it back ${why}.`);
+          notify(
+            step.unknown
+              ? `Can't ${which} “${step.label}”: who could see what it changed can't be told (a package the scene uses is missing or didn't start), and taking it back ${why}.`
+              : `Can't ${which} “${step.label}”: it showed or decided something, and taking it back ${why}.`,
+          );
           return false;
         }
       }
