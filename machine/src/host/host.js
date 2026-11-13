@@ -104,6 +104,7 @@ export class Host {
   #off = [];
   #outputs;
   #revision = 0; // counts steps and restores (see revision)
+  #trace = null;
 
   /**
    * Opens a session and brings this peer to its state: the newest checkpoint,
@@ -124,6 +125,9 @@ export class Host {
    * @param o.reap     seconds of silence after which a holder loses its seat
    * @param o.send     ms between input messages, at least (one a frame if 0)
    * @param o.lag, o.late, o.stale  seconds, for output() (see SECONDS)
+   * @param o.trace    (event) => void: the timeline's trace (timeline.js),
+   *                  and { frame: ms, target, frontier } after each frame;
+   *                  history/ makes a history of states out of it
    */
   static async open(repo, url, o) {
     const handle = await repo.find(url);
@@ -162,6 +166,7 @@ export class Host {
       send: o.send ?? SEND_MS,
     };
     const ticks = (k) => Math.round(((o[k] ?? SECONDS[k]) * this.#rate[0]) / this.#rate[1]);
+    this.#trace = o.trace ?? null;
     this.#outputs = new Outputs({ lag: ticks("lag"), late: ticks("late"), stale: ticks("stale") });
     if (o.clock) this.#clock = o.clock;
     else {
@@ -265,6 +270,7 @@ export class Host {
       this.#loadSeats(this.#timeline.floor);
     }
     if (this.#mine && !this.#clock.running()) this.#flush(true);
+    this.#trace?.({ frame: this.#o.now(), target, frontier: this.#timeline.frontier });
   }
 
   // Steps towards target for at most the budget (and at least one step).
@@ -344,6 +350,7 @@ export class Host {
         before: Array.from({ length: this.#ports }, () => this.#vacant),
         marks: (t) => t > 0 && t % this.#every === 0,
         confirmed: (t, snap) => this.#confirmedQueue.push([t, snap]),
+        trace: this.#trace,
         stepped: (t) => {
           this.#revision++;
           if (this.#outputs.wants(t)) this.#outputs.stepped(t, engine.output());
