@@ -99,29 +99,135 @@ export function cleanPlaces(list, objects) {
 }
 
 /**
+ * The frame a seat is in: the object its camera is given in (`camera.in`,
+ * the table it looks at) while that object is in the scene; else null, the
+ * world (no camera, a camera in the world, or a frame that's gone). Pure.
+ */
+export function seatFrame(seat, objects) {
+  const f = seat?.camera?.in;
+  return typeof f === "string" && objects?.[f] ? f : null;
+}
+
+/**
+ * The seats around some objects (a deck's cards, a card someone would
+ * draw): for each object, the seats in the nearest frame up its chain of
+ * parents (the object itself first) that is some seat's frame, the world's
+ * last. With one table in a scene that is every seat; with several, each
+ * table's own (its seats' views are given in it). Pure in the snapshot.
+ * @param {{ objects: object, traits?: object, parents?: Map<string, string | null> }} snap
+ * @param {Iterable<string>} ids
+ * @returns {string[]} seat ids, in seat order
+ */
+export function seatsAround(snap, ids) {
+  const seats = seatsOf(snap);
+  const objects = snap?.objects ?? {};
+  const frameOf = Object.entries(seats).map(([sid, s]) => [sid, seatFrame(s, objects)]);
+  const frames = new Set(frameOf.map(([, f]) => f));
+  const parent = (id) => (snap?.parents?.get?.(id) ?? (objects[objects[id]?.parent] ? objects[id].parent : null)) || null;
+  const found = new Set();
+  for (const id of ids ?? []) {
+    if (!objects[id]) continue;
+    const seen = new Set();
+    let at = null;
+    for (let x = id; x != null && objects[x] && !seen.has(x); x = parent(x)) {
+      seen.add(x);
+      if (frames.has(x)) {
+        at = x;
+        break;
+      }
+    }
+    if (at != null) found.add(at);
+    else if (frames.has(null)) found.add(null);
+  }
+  return frameOf.filter(([, f]) => found.has(f)).map(([sid]) => sid);
+}
+
+/**
+ * The picker's groups when the seats are at more than one table (more than
+ * one frame, seatFrame): [{ label, seats: [id] }] in seat order of each
+ * group's first seat, labelled by `nameOf(frame)` (the table's name; the
+ * world's "Here"), a name two tables share told apart by " 2", " 3", …; null
+ * when they're all at one (the picker is a plain list). Pure.
+ * @param {object} seats  @param {object} objects  @param {(frame: string) => string | null} nameOf
+ * @returns {{ label: string, seats: string[] }[] | null}
+ */
+export function pickerGroups(seats, objects, nameOf) {
+  const byFrame = new Map();
+  for (const [sid, s] of Object.entries(seats ?? {})) {
+    const f = seatFrame(s, objects);
+    if (!byFrame.has(f)) byFrame.set(f, []);
+    byFrame.get(f).push(sid);
+  }
+  if (byFrame.size < 2) return null;
+  const count = new Map();
+  return [...byFrame].map(([f, ids]) => {
+    const base = (f == null ? null : nameOf(f)) || (f == null ? "Here" : "A table");
+    const n = (count.get(base) ?? 0) + 1;
+    count.set(base, n);
+    return { label: n === 1 ? base : `${base} ${n}`, seats: ids };
+  });
+}
+
+/**
  * Write seats into a scene doc (in a change, or onto a plain doc being
  * made): `seats` is { [seatId]: { name, camera? } }, each written empty
- * (player: null). Only where the scene has none: the seats map is made once
- * (scene/STAGE.md, "Shared maps"). Where it has some, a seat there whose view is
- * in a frame that's gone (the table it looked at, deleted) takes the new
- * view for it. Returns whether the scene's seats are these now.
+ * (player: null). The seats map is made once (scene/STAGE.md, "Shared
+ * maps"); a scene that has one gets these added to it, so a second table
+ * brings its own seats:
+ * - a seat whose id is free is written under it;
+ * - a seat there under that id whose view is in a frame that's gone (the
+ *   table it looked at, deleted) takes the new view, and keeps its player;
+ * - a seat there under that id that's still somewhere (its frame is
+ *   there, or it has none) is left as it is, and the new one is written
+ *   under the first free `<id>-2`, `<id>-3`, …
+ * Returns where each went: { [given id]: id written }, so whoever laid them
+ * can name them (a table's hands); {} when there were none to write.
  * @param {object} d  the scene doc (a draft)
  * @param {{ [seatId]: { name?: string, camera?: object } }} seats
+ * @returns {{ [seatId]: string }}
  */
 export function lay(d, seats) {
   const fresh = {};
   for (const [sid, s] of Object.entries(seats ?? {})) fresh[sid] = { name: s?.name || sid, player: null, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
+  if (!Object.keys(fresh).length) return {};
   if (!d.traits) d.traits = {};
   if (!d.traits[SEATS]) {
-    if (!Object.keys(fresh).length) return false;
     d.traits[SEATS] = fresh;
-    return true;
+    return Object.fromEntries(Object.keys(fresh).map((sid) => [sid, sid]));
   }
-  for (const [sid, s] of Object.entries(d.traits[SEATS])) {
-    const frame = s?.camera?.in;
-    if (frame && !d.objects?.[frame] && fresh[sid]?.camera) s.camera = fresh[sid].camera;
+  const map = d.traits[SEATS];
+  const ids = seatIds(Object.keys(fresh), Object.fromEntries(Object.entries(map).map(([sid, s]) => [sid, !!s?.camera?.in && !d.objects?.[s.camera.in]])));
+  for (const [sid, to] of Object.entries(ids)) {
+    if (!map[to]) map[to] = fresh[sid];
+    else if (fresh[sid].camera) map[to].camera = fresh[sid].camera;
   }
-  return false;
+  return ids;
+}
+
+/**
+ * Where each of `wanted` goes among the seats there (`there`: { [id]:
+ * whether its frame is gone }): its own id when that's free or its seat's
+ * frame is gone (and no other of `wanted` has it), else the first
+ * `<id>-<n>` (n = 2, 3, …) that is neither there nor given to another.
+ * Pure.
+ * @param {string[]} wanted  @param {{ [id: string]: boolean }} there
+ * @returns {{ [id: string]: string }}
+ */
+export function seatIds(wanted, there) {
+  const used = new Set();
+  const out = {};
+  for (const sid of wanted) {
+    let to = sid;
+    if ((Object.hasOwn(there, sid) && !there[sid]) || used.has(sid)) {
+      for (let n = 2; ; n++) {
+        to = `${sid}-${n}`;
+        if (!Object.hasOwn(there, to) && !used.has(to)) break;
+      }
+    }
+    used.add(to);
+    out[sid] = to;
+  }
+  return out;
 }
 
 // ─── a seat as a station ────────────────────────────────────────────────────

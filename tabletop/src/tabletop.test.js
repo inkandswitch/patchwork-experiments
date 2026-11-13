@@ -560,7 +560,7 @@ describe("Lost Cities", () => {
     }
   });
 
-  it("has the seats laid by their owner (which writes them only where the scene has none), and writes the view's every setting", () => {
+  it("has the seats laid by their owner (which adds them beside any there, under ids it says), and writes the view's every setting", () => {
     const g = builtIn("lost-cities");
     const layout = tableLayout(g, { fileOf: fakeFiles(g) });
     expect(Object.keys(layout.seats)).toEqual(["p1", "p2"]);
@@ -576,7 +576,7 @@ describe("Lost Cities", () => {
     const mine = { north: { name: "North", player: "automerge:ana" } };
     const busy = { ...skeleton(), objects: { x: { name: "Lamp" } }, order: ["x"], traits: { [SEATS]: structuredClone(mine) } };
     writeTable(busy, layout, made, { seats: lay });
-    expect(busy.traits[SEATS]).toEqual(mine);
+    expect(busy.traits[SEATS]).toEqual({ ...mine, p1: { name: "Player 1", player: null, camera: layout.seats.p1.camera }, p2: { name: "Player 2", player: null, camera: layout.seats.p2.camera } });
     expect(busy.order[0]).toBe("x");
     expect(busy.order).toHaveLength(1 + layout.order.length);
     const bare = skeleton();
