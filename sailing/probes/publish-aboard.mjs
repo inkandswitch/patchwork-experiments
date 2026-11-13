@@ -1,7 +1,7 @@
 // Publish "Lost Cities aboard" to a real sync server, and print its Patchwork
 // URL: a Lost Cities table in the cockpit of the sloop, lying at anchor.
 //
-//   (in scene/, sailing/, tabletop/, card-table/, keep/, joints/ and traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/ and traversal/) pnpm build
 //   node probes/publish-aboard.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>] [--title "…"] [--below <url>]
 //   node probes/publish-aboard.mjs --set-below <scene url> <url> [--sync wss://…] [--settle 8000] [--dry-run]
 //
@@ -38,11 +38,11 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the ship's, the table's and the secure deck's, and the two her
+// the scene, the seats, the ship's, the table's and the secure deck's, and the two her
 // companionway's traits are for (its hatch's slide, its exit). In a real
 // shell the stage works these out from the registry; the probe page has none
 // that says where its plugins come from, so they're stated here.
-const PACKAGES = ["scene", "sailing", "tabletop", "card-table", "joints", "traversal"];
+const PACKAGES = ["scene", "seats", "sailing", "tabletop", "card-table", "joints", "traversal"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
@@ -93,7 +93,7 @@ if (args["set-below"]) {
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js", "joints/dist/index.js", "traversal/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-aboard"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────

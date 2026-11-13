@@ -1649,7 +1649,7 @@ ctx.crew.me()            // { on: shipId | null, position (local to on, else wor
                          //   playing, paused (the lock lost), free (the lock refused: drag to look), hint (the station's line) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
                          //   pushes an arm over walking; handlers: { key, keyup, tick(dt), left(), hint?() }
-ctx.crew.firstPerson     // { enter({ seat, eye, target, frame }) → boolean, leave() }: tabletop's seats (tabletop/README.md); enter
+ctx.crew.firstPerson     // { enter({ seat, eye, target, frame }) → boolean, leave() }: for whoever owns seats (seats/README.md); enter
                          //   stands you at the projection (P1) of the seat's eye onto her mesh, a seated eye's height down
 ctx.crew.leave()         // step away from the station you're at
 ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
@@ -2118,7 +2118,7 @@ is a capsule (from the gooseneck, along the boom's current angle, radius
 a move or lowers `h` can't break I. A boom swinging into someone standing
 passes through them; it never pushes.
 
-**Seats (tabletop's `firstPerson`).** `enter({ seat, eye, target, frame })`
+**Seats (`firstPerson`, for the seats package).** `enter({ seat, eye, target, frame })`
 puts you `walking` at the projection (P1) of the eye's plan point, dropped
 by the seat's eye height. The ship is the one `frame` is aboard. Your
 `yaw` faces `target`. `leave()` stops first person and leaves the
