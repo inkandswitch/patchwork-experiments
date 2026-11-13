@@ -6,7 +6,7 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, pickerGroups, rosterOf, seatFrame, seatIds, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsAround, seatsOf } from "./model.js";
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -458,7 +458,7 @@ describe("sitting down from walking", () => {
     expect(t.notices("B")).toContain("Someone sat down as Player 1");
     expect(t.w.sent.filter((s) => s.type === "sat")).toEqual([{ session: "C", viewer: "carol", type: "sat", data: { seat: "p1" } }]);
     // the seat body over the walk, which waits under it
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "walk", "seat"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "walk", "seat"]);
     expect(t.walker.C.suspended).toHaveBeenCalledOnce();
     near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
@@ -468,7 +468,7 @@ describe("sitting down from walking", () => {
     t.w.done();
   });
 
-  it("only walking, and never at a loose piece: in orbit it isn't offered", async () => {
+  it("only walking, and never at a loose piece: in Look it isn't offered", async () => {
     const t = await cockpit(SEATS0(), { views: [["C", "carol", { walking: true }], ["D", "dan"]] });
     expect(t.look("C", "card", t.at([0.1, 0.703, 0.5]))).toBeNull();
     expect(t.look("D", "hand1")).toBeNull();
@@ -624,19 +624,19 @@ describe("standing up", () => {
     await t.pickSeat("C", "p1");
     t.api.C.body.enter("walk"); // up out of it, walking (sailing's Enter does this from a seat)
     t.api.C.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat", "walk"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat", "walk"]);
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
     await t.press("C", "hand1");
-    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+    expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat"]);
     near(t.w.view("C").camera.position, t.at([0, 1.2, 0.95]));
     t.w.done();
   });
 
-  it("from a seat entered from orbit, standing up is orbit again; not offered at a seat with no view", async () => {
+  it("from a seat entered from Look, standing up is Look again; not offered at a seat with no view", async () => {
     const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol"]] });
     await t.pickSeat("C", "p1");
     await t.press("C", "hand1", null, t.at([0, 1.2, 0.95]));
-    expect(t.body("C")).toBe("orbit");
+    expect(t.body("C")).toBe("look");
     const u = await cockpit({ p1: { name: "Player 1", player: "dan" }, p2: { name: "Player 2", player: null } }, { views: [["D", "dan"]] });
     expect(u.look("D", "hand1", null, u.at([0, 1.2, 0.95]))).toBeNull();
     u.w.done();
@@ -808,18 +808,64 @@ describe("the roster (pure in the snapshot)", () => {
 });
 
 describe("lay: seats written into a scene being set up", () => {
-  it("writes them empty where the scene has none, and only there", () => {
+  it("writes them empty, making the map where the scene has none; says where each went", () => {
     const d = { traits: {}, objects: {} };
-    expect(lay(d, { p1: { name: "Player 1", camera: { position: [0, 1, 1], target: [0, 0, 0] } }, p2: {} })).toBe(true);
+    expect(lay(d, { p1: { name: "Player 1", camera: { position: [0, 1, 1], target: [0, 0, 0] } }, p2: {} })).toEqual({ p1: "p1", p2: "p2" });
     expect(d.traits[SEATS]).toEqual({ p1: { name: "Player 1", player: null, camera: { position: [0, 1, 1], target: [0, 0, 0] } }, p2: { name: "p2", player: null } });
-    d.traits[SEATS].p1.player = "ann";
-    expect(lay(d, { p1: { name: "Other" }, p3: { name: "Third" } })).toBe(false);
-    expect(d.traits[SEATS].p1).toMatchObject({ name: "Player 1", player: "ann" });
-    expect(d.traits[SEATS].p3).toBeUndefined();
     // no seats to write: no map made
     const e = { traits: {}, objects: {} };
-    expect(lay(e, {})).toBe(false);
+    expect(lay(e, {})).toEqual({});
     expect(e.traits).toEqual({});
+  });
+
+  it("a second table's seats are added beside the first's, under other ids where those are still at a table; the first's are left alone", () => {
+    const d = { traits: {}, objects: { t1: {}, t2: {} } };
+    lay(d, { p1: { name: "Player 1", camera: { position: [0, 1, 1], in: "t1" } }, p2: { name: "Player 2", camera: { position: [0, 1, -1], in: "t1" } } });
+    d.traits[SEATS].p1.player = "ann";
+    expect(lay(d, { p1: { name: "Player 1", camera: { position: [0, 1, 1], in: "t2" } }, p2: { name: "Player 2", camera: { position: [0, 1, -1], in: "t2" } }, p3: { name: "Third" } })).toEqual({ p1: "p1-2", p2: "p2-2", p3: "p3" });
+    expect(d.traits[SEATS].p1).toEqual({ name: "Player 1", player: "ann", camera: { position: [0, 1, 1], in: "t1" } });
+    expect(d.traits[SEATS]["p1-2"]).toEqual({ name: "Player 1", player: null, camera: { position: [0, 1, 1], in: "t2" } });
+    expect(d.traits[SEATS]["p2-2"].camera.in).toBe("t2");
+    expect(d.traits[SEATS].p3).toEqual({ name: "Third", player: null });
+    // a third table: the next free ids
+    expect(lay(d, { p1: { camera: { position: [0, 1, 1], in: "t1" } } })).toEqual({ p1: "p1-3" });
+  });
+
+  it("seatIds, over every case of three wanted ids and what's there under each of four (free, still at a table, its frame gone): one id each, all different, never one still at a table; its own where it can, else the first free <id>-n", () => {
+    const names = ["p1", "p2", "p1-2", "p1-3"];
+    const wants = [];
+    for (const a of names) for (const b of names) for (const c of names) if (new Set([a, b, c]).size === 3) wants.push([a, b, c]);
+    wants.push(["p1"], ["p1", "p2"], []);
+    let cases = 0;
+    for (const want of wants) {
+      for (let m = 0; m < 3 ** names.length; m++) {
+        const there = {};
+        names.forEach((n, i) => {
+          const k = Math.floor(m / 3 ** i) % 3;
+          if (k) there[n] = k === 2; // 1: still at a table, 2: its frame is gone
+        });
+        const got = seatIds(want, there);
+        cases++;
+        expect(Object.keys(got)).toEqual(want);
+        const out = Object.values(got);
+        expect(new Set(out).size).toBe(out.length);
+        const used = new Set();
+        for (const sid of want) {
+          const to = got[sid];
+          expect(Object.hasOwn(there, to) && !there[to]).toBe(false);
+          const own = !(Object.hasOwn(there, sid) && !there[sid]) && !used.has(sid);
+          if (own) expect(to).toBe(sid);
+          else {
+            const n = Number(to.slice(sid.length + 1));
+            expect(to.startsWith(`${sid}-`) && n >= 2).toBe(true);
+            // the first such that's free: every smaller one is there or given already
+            for (let k = 2; k < n; k++) expect(Object.hasOwn(there, `${sid}-${k}`) || used.has(`${sid}-${k}`)).toBe(true);
+          }
+          used.add(to);
+        }
+      }
+    }
+    expect(cases).toBe((24 + 3) * 81);
   });
 
   it("a seat there whose view is in a frame that's gone takes the new view; one whose frame is there keeps its own", () => {
@@ -891,6 +937,90 @@ describe("arriving seated (view.start = { body: \"seat\" }, no seat named)", () 
     expect(t.claim("p2")).toMatchObject({ viewer: BEN });
     // standing up (Watching in the picker) leaves the seat body
     await t.pickSeat("B", "");
-    expect(t.api.B.local.get().body.id).toBe("orbit");
+    expect(t.api.B.local.get().body.id).toBe("look");
+  });
+});
+
+describe("seats at several tables in one scene", () => {
+  // a room: table A at the root, table B on a hull, a table laid at the root (seats in the world), and a gone frame
+  const objects = {
+    hull: { name: "Hull" },
+    tA: { name: "Lost Cities table" },
+    tB: { name: "Card table", parent: "hull" },
+    tC: { name: "Card table" },
+    cardA: { parent: "tA" },
+    deepA: { parent: "cardA" },
+    cardB: { parent: "tB" },
+    loose: {},
+    onHull: { parent: "hull" },
+  };
+  const cam = (inn) => ({ position: [0, 1, 1], target: [0, 0, 0], ...(inn ? { in: inn } : {}) });
+  const snapOf = (seats) => ({ objects, traits: { [SEATS]: seats } });
+
+  it("seatFrame: the camera's frame while it's there, else the world", () => {
+    expect(seatFrame({ camera: cam("tA") }, objects)).toBe("tA");
+    expect(seatFrame({ camera: cam("gone") }, objects)).toBe(null);
+    expect(seatFrame({ camera: cam(null) }, objects)).toBe(null);
+    expect(seatFrame({}, objects)).toBe(null);
+    expect(seatFrame(null, objects)).toBe(null);
+  });
+
+  it("seatsAround, for every object over every way of seating three tables (each table's seats in it, in the world, or none): the nearest seat frame up its parents, else the world's", () => {
+    // each of tA, tB, tC: 0 none, 1 two seats in it, 2 two seats in the world (laid at the root)
+    const objectIds = Object.keys(objects);
+    for (let m = 0; m < 27; m++) {
+      const how = { tA: m % 3, tB: Math.floor(m / 3) % 3, tC: Math.floor(m / 9) % 3 };
+      const seats = {};
+      for (const [t, k] of Object.entries(how)) if (k) for (const p of ["1", "2"]) seats[`${t}${p}`] = { name: p, player: null, camera: cam(k === 1 ? t : null) };
+      const frames = new Set(Object.values(seats).map((s) => seatFrame(s, objects)));
+      for (const id of [...objectIds, "nothing"]) {
+        const got = seatsAround(snapOf(seats), [id]);
+        // what it should be: walk up by hand
+        let want = [];
+        if (objects[id]) {
+          let at;
+          for (let x = id; x; x = objects[x].parent) if (frames.has(x)) { at = x; break; }
+          if (at === undefined && frames.has(null)) at = null;
+          if (at !== undefined) want = Object.keys(seats).filter((sid) => seatFrame(seats[sid], objects) === at);
+        }
+        expect(got, `${JSON.stringify(how)} ${id}`).toEqual(want);
+      }
+      // a deck spread over two tables: both tables' seats, in seat order
+      const both = seatsAround(snapOf(seats), ["cardB", "cardA"]);
+      const one = new Set([...seatsAround(snapOf(seats), ["cardA"]), ...seatsAround(snapOf(seats), ["cardB"])]);
+      expect(both).toEqual(Object.keys(seats).filter((sid) => one.has(sid)));
+    }
+  });
+
+  it("seatsAround: one table (every built-in table, a table aboard) is every seat; a parent cycle ends", () => {
+    const seats = { p1: { name: "P1", player: null, camera: cam("tA") }, p2: { name: "P2", player: null, camera: cam("tA") } };
+    expect(seatsAround(snapOf(seats), ["deepA"])).toEqual(["p1", "p2"]);
+    expect(seatsAround(snapOf(seats), ["loose"])).toEqual([]);
+    const loop = { objects: { a: { parent: "b" }, b: { parent: "a" } }, traits: { [SEATS]: { p1: { camera: cam(null) } } } };
+    expect(seatsAround(loop, ["a"])).toEqual(["p1"]);
+  });
+
+  it("pickerGroups: none at one table; else a group per table in seat order, named for it, a shared name numbered", () => {
+    const nameOf = (f) => objects[f]?.name ?? null;
+    expect(pickerGroups({ p1: { camera: cam("tA") }, p2: { camera: cam("tA") } }, objects, nameOf)).toBe(null);
+    expect(pickerGroups({}, objects, nameOf)).toBe(null);
+    const seats = { a1: { camera: cam("tA") }, b1: { camera: cam("tB") }, a2: { camera: cam("tA") }, c1: { camera: cam("tC") }, w1: {}, g1: { camera: cam("gone") } };
+    expect(pickerGroups(seats, objects, nameOf)).toEqual([
+      { label: "Lost Cities table", seats: ["a1", "a2"] },
+      { label: "Card table", seats: ["b1"] },
+      { label: "Card table 2", seats: ["c1"] },
+      { label: "Here", seats: ["w1", "g1"] },
+    ]);
+  });
+
+  it("the roster's `around`: the seats at those objects' table, with who sits there", () => {
+    const w = fakes.fakeWorld(sceneOf(objects, { [SEATS]: { a1: { name: "Player 1", player: ANA, camera: cam("tA") }, b1: { name: "Player 1", player: null, camera: cam("tB") } } }));
+    const { x } = withSeats(w, "s1", ANA);
+    w.flush();
+    const snap = w.scene();
+    expect(x.roster.around(snap, ["cardA"])).toEqual([{ id: "a1", name: "Player 1", viewer: ANA }]);
+    expect(x.roster.around(snap, ["cardB"])).toEqual([{ id: "b1", name: "Player 1", viewer: null }]);
+    expect(x.roster.viewers(snap)).toEqual([ANA]);
+    w.done();
   });
 });

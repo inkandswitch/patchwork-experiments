@@ -40,15 +40,19 @@
 //   goes into a bag document (layout.bags), never the scene.
 // - A piece's `tags` and `traits` go on each of its copies; whatever isn't
 //   locked carries the scene's `scene.carry`, so it can be picked up.
-// - The seats are laid by their owner, which writes them only where the
-//   scene has none. A game with seats starts people in the seat body
-//   (view.start); one without (Santorini) in orbit.
+// - The seats are laid by their owner, which adds them to the scene's
+//   (under other ids where another table's seats have these; each hand
+//   follows its seat's id). A game with seats (every built-in one) starts
+//   people in the seat body (view.start); one without in Look (the stage's
+//   orbit camera, no body named), never in Edit.
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";
 
 /** The trait of a card: two-sided, piled, shuffled and drawn (table/visibility.js CARD). */
 const CARD = "tabletop.card";
+/** The trait of a hand: a seat's box on the table (table/visibility.js zones). */
+const ZONE = "tabletop.zone";
 /** The scene's trait for what can be picked up (scene/TOOLS.md §1). */
 const CARRY = "scene.carry";
 /** The container the game's loose cards (those in no deck) are kept in. */
@@ -313,7 +317,7 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       // where people start (scene TOOLS.md §2): at a game with seats (every
       // built-in one), the seat body (back in your own seat, else watching
       // from the first seat's view), where pressing a piece picks it up or
-      // uses it; a game laid out with none starts in orbit at the home view
+      // uses it; a game laid out with none starts in Look (no body named) at the home view
       start: {
         ...(Object.keys(seats).length ? { body: "seat" } : {}),
         home: game?.camera ? copy(game.camera) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
@@ -392,7 +396,9 @@ export function bound(oid, o, { binds = {}, bags = {} } = {}) {
 /**
  * Write a layout into a scene doc (inside a change, or onto a plain skeleton):
  * its objects and their order, each bound (above); the seats, through their
- * owner's `lay` (which writes them only where the scene has none); and the
+ * owner's `lay` (which adds them to the scene's, under other ids where
+ * another table's seats have these: each hand is given its seat's id as
+ * written, from what `lay` returns); and the
  * view and the game's origin (not with `view: false`: a table set down in a
  * scene that's already somewhere, such as aboard a ship, leaves that
  * scene's view, home, units and origin as they are). Throws, writing
@@ -409,7 +415,16 @@ export function writeTable(d, layout, made = {}, { view = true, seats = null } =
     d.objects[oid] = o;
     d.order.push(oid);
   }
-  if (typeof seats === "function") seats(d, copy(layout.seats ?? {}));
+  if (typeof seats === "function") {
+    // the owner may seat this table's players under other ids (a scene with
+    // another table already): each hand goes to its seat by the id it got
+    const ids = seats(d, copy(layout.seats ?? {}));
+    for (const [oid, o] of written) {
+      const z = o.traits?.[ZONE];
+      const to = ids && typeof ids === "object" ? ids[z?.seat] : null;
+      if (typeof to === "string" && to !== z.seat) d.objects[oid].traits[ZONE].seat = to;
+    }
+  }
   if (!view) return;
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? copy(v) : v;
   if (layout.origin) d.origin = copy(layout.origin);

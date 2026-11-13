@@ -31,9 +31,11 @@
 //     nameOf(scene, viewer) → string | null           the name of the seat they sit in
 //     who(viewer)    → string                         what to call them: their contact's name once
 //                                                     known, else their seat's, else "Someone"
+//     around(scene, ids) → [{ id, name, viewer | null }]  the seats around these objects (a deck's
+//                                                     cards): those at their table (model.js seatsAround)
 //   }
 //
-// The first four are pure in the snapshot they're given (the doc alone:
+// All but `who` are pure in the snapshot they're given (the doc alone:
 // never presence or claims), so an `audience` policy may be built on them.
 //
 // And the module's `lay(d, seats)` writes seats into a scene doc being set
@@ -42,7 +44,7 @@
 import css from "./seats.css?inline";
 import { applyMatrix, invertMatrix } from "./transform.js";
 import { seatBody } from "./body.js";
-import { CONFIRM_MS, SEATS, SEAT_CLAIM, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { CONFIRM_MS, SEATS, SEAT_CLAIM, arrivalSeat, cleanPlaces, lay, pickerGroups, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsAround, seatsOf } from "./model.js";
 
 /** A little longer than the stage's grace for a claim by a session not yet heard from (6 s). */
 const LAPSE_MS = 6500;
@@ -179,11 +181,14 @@ function create(api) {
     for (const r of Object.values(api.presence.get() ?? {})) contactName(r?.viewer);
     picked = ids.find((id) => st.get(id).state === "mine" || st.get(id).state === "mine-elsewhere") ?? "";
     const note = { taken: " (taken)", away: " (away)" };
-    const options = [["", "Watching"], ...ids.map((id) => [id, `${seats[id]?.name || id}${note[st.get(id).state] ?? ""}`])];
-    const k = JSON.stringify(options);
+    const label = (id) => `${seats[id]?.name || id}${note[st.get(id).state] ?? ""}`;
+    // seats at more than one table: a group for each, named for the table
+    const groups = pickerGroups(seats, scene.objects, (f) => api.nameOf?.(f) || scene.objects?.[f]?.name || null);
+    const k = JSON.stringify([groups, ids.map(label)]);
     if (k !== seatKey) {
       seatKey = k;
-      picker.replaceChildren(...options.map(([v, t]) => el("option", { value: v }, t)));
+      const option = (id) => el("option", { value: id }, label(id));
+      picker.replaceChildren(el("option", { value: "" }, "Watching"), ...(groups ? groups.map((g) => el("optgroup", { label: g.label }, ...g.seats.map(option))) : ids.map(option)));
     }
     if (globalThis.document?.activeElement !== picker) picker.value = picked;
     tagged = [];
@@ -372,7 +377,7 @@ function create(api) {
 
   // ── the seat's view: the seat body (body.js) ──
   // Sitting enters it (the stage pushes it over the body you're in: walking
-  // her deck, or orbit); standing up, watching or moving pops it, and
+  // her deck, or Look: from Edit the stage turns to Look first); standing up, watching or moving pops it, and
   // whatever is under it carries on (walking resumes from the eye).
   let sitting = null; // the seat this view sits in, as a body: its seat id
   const seatDef = seatBody(api, {
@@ -433,10 +438,10 @@ function create(api) {
   let walkedUp = null; // { sid, at }: the seat this view sat in from walking, and its claim's time (held.at); cleared by any other sit
   let confirming = null; // { sid, until }: an away seat's first F
   const drawnIn = (snap) => (id) => api.worldOf(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
-  /** Walking: in a body that is neither orbit nor the seat. */
+  /** Walking: in a body over the stage's Look or Edit (depth 0) that isn't the seat. */
   const walking = () => {
-    const id = api.local.get()?.body?.id;
-    return id != null && id !== "orbit" && id !== body.id;
+    const b = api.local.get()?.body;
+    return (b?.depth ?? 0) > 0 && b.id !== body.id;
   };
 
   /** The seat a look at `target` (in the command context) is on, and what its verb says: { sid, verb, shown } | null. */
@@ -507,6 +512,10 @@ function create(api) {
       open: (snap) => rosterOf(snap).filter((s) => !s.viewer).map((s) => s.name),
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
+      around: (snap, ids) => {
+        const at = new Set(seatsAround(snap, ids));
+        return rosterOf(snap).filter((s) => at.has(s.id));
+      },
     }),
     // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
     // the people seated at it, here or away; not those watching. Asked when

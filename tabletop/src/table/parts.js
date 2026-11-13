@@ -24,7 +24,7 @@
 //   its id (template.js setUp), set down on what it was dropped on, every
 //   piece under that in its frame and each seat's view in it too
 //   (`camera.in`), so it all rides along. A game is the one part that brings
-//   seats, and only to a scene that has none (a table's seats are made once).
+//   seats: its own, beside any other table's (the seats owner's `lay`).
 // Either one put on something squares itself to it: upright in its frame,
 // turned only about its +Y, wherever it was put (on a heeling deck it stands
 // square to the deck, not plumb).
@@ -182,7 +182,7 @@ export function squared(t) {
 /**
  * A game's whole table as a part: a registered game, by its id, laid out
  * (template.js setUp) where it was put, under what it was put on, squared to
- * it. Its seats only where the scene has none; the scene's view, title and
+ * it. Its own seats, beside any other table's; the scene's view, title and
  * home are left alone. The board (its first locked piece) is what's selected.
  */
 export function gamePart(gameId) {

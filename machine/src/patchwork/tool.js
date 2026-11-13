@@ -10,6 +10,7 @@ import { inputs, HELP } from "./input.js";
 import { audio } from "./audio.js";
 import { WASM, bytes, load } from "./load.js";
 import { traced } from "./traced.js";
+import { CHECKPOINT_SECONDS } from "./datatype.js";
 import css from "./tool.css?inline";
 
 const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
@@ -83,7 +84,7 @@ export default function MachineTool(handle, element) {
         const wasm = await bytes(WASM[kind]);
         await compile(wasm); // refuses a broken engine before anything is written
         const c = await create(repo, { title, bytes: content });
-        const session = await createSession(repo, { wasm, content });
+        const session = await createSession(repo, { wasm, content, seconds: { every: CHECKPOINT_SECONDS[kind] } });
         // Time starts stopped: it runs while someone holds a port.
         session.change((d) => void (d.clock = { t: 0, at: Date.now(), until: 0 }));
         handle.change((d) => {

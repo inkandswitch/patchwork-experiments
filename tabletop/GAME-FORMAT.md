@@ -56,7 +56,7 @@ might reasonably want it otherwise.
    from the piece to the thing, so two players' trays are one kind.
 7. **A game with seats starts people in the seat body** (`view.start`,
    scene/TOOLS.md §2), where a press picks a piece up; one without starts
-   them in orbit. (Activities went at core step 8; Santorini gained seats
+   them in Look (the orbit camera, not the editor). (Activities went at core step 8; Santorini gained seats
    then, so every built-in game has some.)
 8. **Pieces drawn by another package are documents.** A die is `doc: { "@patchwork": { type: "die" }, … }`, drawn by whatever `scene:source`
    supports that type; `traits` on a piece say what it does there
