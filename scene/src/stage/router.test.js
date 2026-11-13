@@ -3,7 +3,7 @@ import { buildEvent, createRouter, isMac, isTyping, releaseKind, retype, withHol
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false } = {}) {
+function setup({ held = false, holders = {}, mac = false, orbit = {} } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -25,7 +25,13 @@ function setup({ held = false, holders = {}, mac = false } = {}) {
     chainFor: vi.fn(() => ({ order: Object.keys(inputs), holderOf: (id) => holders[id] ?? null })),
     onHover: vi.fn(),
     onCursor: vi.fn(),
-    onArmed: vi.fn(),
+    onState: vi.fn(),
+    wanted: false,
+    selected: false,
+    deselect: vi.fn(() => {
+      t.selected = false;
+    }),
+    orbitInput: orbit,
     requestLock: vi.fn(() => Promise.resolve()),
     exitLock: vi.fn(),
     orbit: vi.fn(), // a bubble listener on the canvas, where OrbitControls listens
@@ -45,7 +51,11 @@ function setup({ held = false, holders = {}, mac = false } = {}) {
     cameraHeld: () => t.held,
     onHover: t.onHover,
     onCursor: t.onCursor,
-    onArmed: t.onArmed,
+    onState: t.onState,
+    orbit: { id: "orbit", input: t.orbitInput },
+    pointerWanted: () => t.wanted,
+    selection: () => t.selected,
+    deselect: t.deselect,
     requestLock: t.requestLock,
     exitLock: t.exitLock,
     mac,
@@ -238,14 +248,14 @@ describe("sessions", () => {
     expect(session.tap).not.toHaveBeenCalled();
     expect(t.inputs.hand.click).not.toHaveBeenCalled();
   });
-  it("Escape cancels an open session that didn't take the key", () => {
+  it("Escape cancels an open session (the ladder's gesture rung): it never hears the key", () => {
     const t = setup();
-    const session = { move: vi.fn(), end: vi.fn(), cancel: vi.fn(), key: vi.fn(() => false) };
+    const session = { move: vi.fn(), end: vi.fn(), cancel: vi.fn(), key: vi.fn(() => false), keys: [{ code: "Escape" }] };
     t.inputs.hand = { press: () => session };
     down(t);
     move(t, { x: 40 });
     const e = key(t.root, "keydown", "Escape", "Escape");
-    expect(session.key).toHaveBeenCalledTimes(1);
+    expect(session.key).not.toHaveBeenCalled();
     expect(session.cancel).toHaveBeenCalledTimes(1);
     expect(e.defaultPrevented).toBe(true);
     up(t, { x: 40 });
@@ -260,15 +270,15 @@ describe("sessions", () => {
     expect(second.defaultPrevented).toBe(true);
     expect(t.orbit).not.toHaveBeenCalled();
   });
-  it("gives an open session its keys, before the chain", () => {
+  it("gives an open session the keys it declares, before the chain; the rest go on", () => {
     const t = setup();
-    const session = { move() {}, end() {}, cancel() {}, key: vi.fn((ev) => ev.key === "q"), keyup: vi.fn() };
+    const session = { move() {}, end() {}, cancel() {}, keys: [{ code: "KeyQ" }], key: vi.fn((ev) => ev.key === "q"), keyup: vi.fn() };
     t.inputs.hand = { press: () => session };
     t.inputs.keys = { key: vi.fn(() => true), keyup: vi.fn() };
     down(t);
     key(t.root, "keydown", "q");
     key(t.root, "keydown", "x");
-    expect(session.key).toHaveBeenCalledTimes(2);
+    expect(session.key).toHaveBeenCalledTimes(1);
     expect(t.inputs.keys.key).toHaveBeenCalledTimes(1);
     key(t.root, "keyup", "q");
     expect(session.keyup).toHaveBeenCalledTimes(1);
@@ -394,16 +404,17 @@ describe("wheel", () => {
 });
 
 describe("keys", () => {
-  it("a keyup goes to whoever claimed its keydown, even after they disarm", () => {
+  it("a body's declared key is its; a keyup goes to whoever claimed its keydown; a body leaving gets its keyups first", () => {
     const t = setup();
     t.inputs.keys = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
     const armed = { key: vi.fn((ev) => ev.key === "w"), keyup: vi.fn() };
-    const disarm = t.router.arm("fps", armed);
+    const pop = t.router.pushBody("fps", { id: "walk", input: armed, keys: [{ code: "KeyW" }] });
     const kd = key(t.root, "keydown", "w");
     expect(kd.defaultPrevented).toBe(true);
     key(t.root, "keydown", "s");
     expect(t.inputs.keys.key).toHaveBeenCalledTimes(1);
-    disarm();
+    pop();
+    expect(armed.keyup).toHaveBeenCalledTimes(1);
     key(t.root, "keyup", "w");
     key(t.root, "keyup", "s");
     expect(armed.keyup).toHaveBeenCalledTimes(1);
@@ -441,10 +452,29 @@ describe("keys", () => {
     expect(blur).toHaveBeenCalled();
     expect(t.inputs.keys.key).not.toHaveBeenCalled();
   });
+  it("a search field with text: Escape clears it (one input event), the next leaves it; neither reaches the ladder below", () => {
+    const t = setup();
+    t.inputs.keys = { key: vi.fn(() => true) };
+    const field = document.createElement("input");
+    field.type = "search";
+    t.root.append(field);
+    field.focus();
+    field.value = "wind";
+    const inputs = vi.fn();
+    field.addEventListener("input", inputs);
+    const blur = vi.spyOn(field, "blur");
+    for (const [value, cleared, blurred] of [["", 1, 0], ["", 1, 1]]) {
+      key(field, "keydown", "Escape", "Escape");
+      expect(field.value).toBe(value);
+      expect(inputs).toHaveBeenCalledTimes(cleared);
+      expect(blur).toHaveBeenCalledTimes(blurred);
+    }
+    expect(t.inputs.keys.key).not.toHaveBeenCalled();
+  });
   it("on blur and a hidden page, every held key gets its keyup", () => {
     const t = setup();
     const armed = { key: () => true, keyup: vi.fn() };
-    t.router.arm("fps", armed);
+    t.router.pushBody("fps", { id: "walk", input: armed, keys: [{ code: "KeyW" }, { code: "KeyA" }, { code: "KeyD" }] });
     key(t.root, "keydown", "w");
     key(t.root, "keydown", "a");
     window.dispatchEvent(new Event("blur"));
@@ -466,110 +496,261 @@ describe("keys", () => {
   });
 });
 
-describe("the arm stack", () => {
-  it("suspends, resumes and disarms", () => {
+describe("the body stack", () => {
+  it("orbit is always at the bottom; a body pushed is suspended under the next and resumed when it goes; leave never pops orbit", () => {
     const t = setup();
-    const a = { suspended: vi.fn(), resumed: vi.fn(), disarmed: vi.fn() };
-    const b = { suspended: vi.fn(), resumed: vi.fn(), disarmed: vi.fn() };
-    const offA = t.router.arm("measure", a);
-    expect(t.router.armedOwner()).toBe("measure");
-    const offB = t.router.arm("menu", b);
-    expect(a.suspended).toHaveBeenCalledTimes(1);
-    expect(t.router.armedOwner()).toBe("menu");
-    offB();
-    offB(); // twice is once
-    expect(b.disarmed).toHaveBeenCalledTimes(1);
-    expect(a.resumed).toHaveBeenCalledTimes(1);
-    expect(b.suspended).not.toHaveBeenCalled();
-    expect(t.router.armedOwner()).toBe("measure");
-    offA();
-    expect(a.disarmed).toHaveBeenCalledTimes(1);
-    expect(t.router.armedOwner()).toBe(null);
-    expect(t.onArmed.mock.calls.map((c) => c[0])).toEqual(["measure", "menu", "measure", null]);
+    const walk = { suspended: vi.fn(), resumed: vi.fn(), left: vi.fn() };
+    const seat = { left: vi.fn() };
+    expect(t.router.bodies()).toEqual([{ id: "orbit", owner: null }]);
+    expect(t.router.leave()).toBe(false);
+    t.router.pushBody("walker", { id: "walk", input: walk });
+    t.router.pushBody("seats", { id: "seat", input: seat });
+    expect(walk.suspended).toHaveBeenCalledTimes(1);
+    expect(t.router.body()).toEqual({ id: "seat", owner: "seats" });
+    expect(t.router.leave()).toBe(true);
+    expect(seat.left).toHaveBeenCalledTimes(1);
+    expect(walk.resumed).toHaveBeenCalledTimes(1);
+    expect(t.router.leave()).toBe(true);
+    expect(walk.left).toHaveBeenCalledTimes(1);
+    expect(t.router.body().id).toBe("orbit");
+    expect(t.router.leave()).toBe(false);
   });
-  it("replace pops the owner's own earlier arm first", () => {
+  it("a body popped from under another takes those over it with it", () => {
     const t = setup();
-    const first = { disarmed: vi.fn(), suspended: vi.fn() };
-    const second = { disarmed: vi.fn() };
-    t.router.arm("measure", first);
-    t.router.arm("measure", second, { replace: true });
-    expect(first.disarmed).toHaveBeenCalledTimes(1);
-    expect(first.suspended).not.toHaveBeenCalled();
-    t.router.stopOwner("measure");
-    expect(second.disarmed).toHaveBeenCalledTimes(1);
-    expect(t.router.armedOwner()).toBe(null);
+    const walk = { left: vi.fn() };
+    const seat = { left: vi.fn() };
+    const popWalk = t.router.pushBody("walker", { id: "walk", input: walk });
+    t.router.pushBody("seats", { id: "seat", input: seat });
+    popWalk();
+    expect(seat.left).toHaveBeenCalledTimes(1);
+    expect(walk.left).toHaveBeenCalledTimes(1);
+    expect(t.router.bodies().map((b) => b.id)).toEqual(["orbit"]);
   });
-  it("the armed handlers come first, and the armed owner isn't offered again", () => {
-    const t = setup();
-    t.inputs.measure = { press: vi.fn(() => null), click: vi.fn(() => true) };
-    t.inputs.sel = { click: vi.fn(() => true) };
-    const armed = { click: vi.fn(() => false), press: vi.fn(() => null) };
-    t.router.arm("measure", armed);
+  it("a press goes the held tool, the chain, then the top body's default (structurally last)", () => {
+    const order = [];
+    const t = setup({ orbit: { click: () => (order.push("orbit"), true) } });
+    t.inputs.a = { click: () => (order.push("a"), false) };
     down(t);
     up(t);
-    expect(armed.press).toHaveBeenCalled();
-    expect(armed.click).toHaveBeenCalled();
-    expect(t.inputs.measure.press).not.toHaveBeenCalled();
-    expect(t.inputs.measure.click).not.toHaveBeenCalled();
-    expect(t.inputs.sel.click).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["a", "orbit"]);
+    order.length = 0;
+    t.router.pushBody("w", { id: "walk", input: { click: () => (order.push("walk"), true) } });
+    down(t);
+    up(t);
+    expect(order).toEqual(["a", "walk"]);
+    order.length = 0;
+    t.router.hold("m", { command: "measure", input: { click: () => (order.push("tool"), false) } });
+    down(t);
+    up(t);
+    expect(order).toEqual(["tool", "a", "walk"]);
   });
-  it("the armed extension hears every move", () => {
+  it("the top body hears every move, and only the top one", () => {
     const t = setup();
-    const armed = { move: vi.fn() };
-    t.router.arm("fps", armed);
-    move(t, { x: 20, buttons: 0, movementX: 3 });
-    move(t, { x: 25, buttons: 0 });
-    expect(armed.move).toHaveBeenCalledTimes(2);
-    expect(armed.move.mock.calls[0][0].type).toBe("move");
+    const under = { move: vi.fn() };
+    const over = { move: vi.fn() };
+    t.router.pushBody("w", { id: "walk", input: under });
+    t.router.pushBody("s", { id: "station", input: over });
+    move(t, { x: 20, buttons: 0 });
+    move(t, { x: 30, buttons: 1 });
+    expect(over.move).toHaveBeenCalledTimes(2);
+    expect(under.move).not.toHaveBeenCalled();
   });
-  it("locks, reports a lost lock without disarming, relocks, and unlocks on pop", async () => {
+  it("tells the stage the body, the held tool, the gesture's keys, the pointer and the ladder's rung", () => {
     const t = setup();
-    let lockEl = null;
-    Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => lockEl });
-    try {
-      const armed = { lockLost: vi.fn(), keyup: vi.fn(), key: () => true, move: vi.fn() };
-      const off = t.router.arm("fps", armed, { lock: true });
-      expect(t.requestLock).toHaveBeenCalledTimes(1);
-      lockEl = t.canvas;
-      document.dispatchEvent(new Event("pointerlockchange"));
-      move(t, { x: 99, movementX: 7, movementY: 1, buttons: 0 });
-      const ev = armed.move.mock.calls[0][0];
-      expect([ev.locked, ev.dx, ev.dy, ev.ndc]).toEqual([true, 7, 1, [0, 0]]);
-      expect(ev.ray).toEqual({ origin: [0, 0, 0], dir: [0, 0, -1] });
-      key(t.root, "keydown", "w");
-      lockEl = null;
-      document.dispatchEvent(new Event("pointerlockchange"));
-      expect(armed.lockLost).toHaveBeenCalledTimes(1);
-      expect(armed.lockLost).toHaveBeenCalledWith({ refused: false });
-      expect(armed.keyup).toHaveBeenCalledTimes(1);
-      expect(t.router.armedOwner()).toBe("fps");
-      await t.router.relock("fps");
-      expect(t.requestLock).toHaveBeenCalledTimes(2);
-      await t.router.relock("nobody");
-      expect(t.requestLock).toHaveBeenCalledTimes(2);
-      off();
-      expect(t.exitLock).toHaveBeenCalledTimes(1);
-    } finally {
-      delete document.pointerLockElement;
-    }
+    t.router.pushBody("w", { id: "walk", input: {}, keys: [{ code: "KeyW", label: "Forward" }], lock: true });
+    let st = t.onState.mock.calls.at(-1)[0];
+    expect(st.body).toEqual({ id: "walk", owner: "w", depth: 1, lock: true, keys: [{ code: "KeyW", label: "Forward" }] });
+    expect(st.held).toBe(null);
+    t.router.hold("m", { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }], pointer: true });
+    st = t.onState.mock.calls.at(-1)[0];
+    expect(st.held).toEqual({ ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true });
+    expect(st.escape).toBe("tool");
+    expect(st.pointer.wanted).toBe(true);
   });
 });
 
-describe("a refused lock", () => {
-  it("is told once as lockLost({ refused: true }), however the browser says no", async () => {
+describe("the held tool", () => {
+  it("one slot: holding another puts the first down; put() puts down only its own", () => {
     const t = setup();
-    t.requestLock.mockImplementation(() => Promise.reject(new Error("WrongDocumentError")));
+    const a = { put: vi.fn() };
+    const b = { put: vi.fn() };
+    const putA = t.router.hold("x", { command: "a", input: a });
+    t.router.hold("y", { command: "b", input: b });
+    expect(a.put).toHaveBeenCalledTimes(1);
+    expect(t.router.held()).toEqual({ owner: "y", command: "b" });
+    putA();
+    expect(b.put).not.toHaveBeenCalled();
+    t.router.putDown();
+    expect(b.put).toHaveBeenCalledTimes(1);
+    expect(t.router.held()).toBe(null);
+  });
+  it("its declared keys are its, ahead of the body's and the chain", () => {
+    const t = setup();
+    const tool = { key: vi.fn(() => true) };
+    const body = { key: vi.fn(() => true) };
+    t.inputs.keys = { key: vi.fn(() => true) };
+    t.router.pushBody("w", { id: "walk", input: body, keys: [{ code: "KeyR" }, { code: "KeyW" }] });
+    t.router.hold("gun", { command: "gun", input: tool, keys: [{ code: "KeyR" }] });
+    key(t.root, "keydown", "r");
+    key(t.root, "keydown", "w");
+    key(t.root, "keydown", "d");
+    expect(tool.key).toHaveBeenCalledTimes(1);
+    expect(body.key).toHaveBeenCalledTimes(1);
+    expect(t.inputs.keys.key).toHaveBeenCalledTimes(1);
+  });
+  it("a reserved key does nothing else even when its reserver passes", () => {
+    const t = setup();
+    t.inputs.keys = { key: vi.fn(() => true) };
+    t.router.pushBody("w", { id: "walk", input: { key: () => false }, keys: [{ code: "KeyD" }] });
+    const e = key(t.root, "keydown", "d");
+    expect(t.inputs.keys.key).not.toHaveBeenCalled();
+    expect(e.defaultPrevented).toBe(true);
+  });
+});
+
+describe("the Escape ladder", () => {
+  it("pops exactly one layer each press: popover, gesture, tool, selection; never the body", () => {
+    const t = setup();
+    const body = { left: vi.fn() };
+    t.router.pushBody("w", { id: "walk", input: body });
+    const tool = { put: vi.fn() };
+    t.router.hold("m", { command: "measure", input: tool });
+    t.selected = true;
+    const close = vi.fn();
+    t.router.popover("menu", close);
+    const session = { move() {}, end: vi.fn(), cancel: vi.fn() };
+    t.inputs.hand = { press: () => session };
+    t.router.putDown(); // (a tool takes presses first: put it down to open a gesture, then hold it again)
+    down(t);
+    t.router.hold("m", { command: "measure", input: tool });
+    tool.put.mockClear();
+    const esc = () => key(t.root, "keydown", "Escape", "Escape");
+    expect(t.router.state().escape).toBe("popover");
+    esc();
+    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 0, 0, 0]);
+    esc();
+    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 0, 0]);
+    esc();
+    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 1, 0]);
+    esc();
+    expect([close.mock.calls.length, session.cancel.mock.calls.length, tool.put.mock.calls.length, t.deselect.mock.calls.length]).toEqual([1, 1, 1, 1]);
+    const last = esc();
+    expect(last.defaultPrevented).toBe(false); // nothing stood: the key is the page's
+    expect(body.left).not.toHaveBeenCalled();
+    expect(t.router.body().id).toBe("walk");
+  });
+});
+
+describe("the pointer", () => {
+  // A fake lock: granted at once (or refused), released by the browser on demand.
+  function fakeLock(t, { refuse = false } = {}) {
+    let lockEl = null;
+    Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => lockEl });
+    t.requestLock.mockImplementation(() => {
+      if (refuse) return Promise.reject(new Error("refused"));
+      lockEl = t.canvas;
+      document.dispatchEvent(new Event("pointerlockchange"));
+      return Promise.resolve();
+    });
+    t.exitLock.mockImplementation(() => {
+      lockEl = null;
+      document.dispatchEvent(new Event("pointerlockchange"));
+    });
+    cleanups.push(() => delete document.pointerLockElement);
+    return {
+      get locked() {
+        return lockEl === t.canvas;
+      },
+      // the browser's own Escape: unseen by the page but as a lost lock
+      release() {
+        lockEl = null;
+        document.dispatchEvent(new Event("pointerlockchange"));
+      },
+    };
+  }
+  const settleLock = async () => {
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+  };
+
+  it("H5: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused, for all 2⁴ cases × each body × {press, key}; after a release the next press only relocks", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const armed = { lockLost: vi.fn() };
-    t.router.arm("fps", armed, { lock: true });
-    document.dispatchEvent(new Event("pointerlockerror"));
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(armed.lockLost.mock.calls).toEqual([[{ refused: true }]]);
-    // asked again (relock) and refused again: told again; the caller may await it too
-    await expect(t.router.relock("fps")).rejects.toThrow();
-    expect(armed.lockLost).toHaveBeenCalledTimes(2);
+    const bodies = [
+      { id: "orbit", lock: false },
+      { id: "walk", lock: true },
+      { id: "seat", lock: false },
+    ];
+    let cases = 0;
+    for (const body of bodies) {
+      for (let bits = 0; bits < 16; bits++) {
+        const want = { lock: !!(bits & 1), wanted: !!(bits & 2), released: !!(bits & 4), refused: !!(bits & 8) };
+        // the body's own lock decides `lock`: a case asking for lock on a body that doesn't lock is that body's
+        if (want.lock !== body.lock) continue;
+        for (const ev of ["press", "key"]) {
+          const t = setup();
+          const lock = fakeLock(t, { refuse: want.refused });
+          const press = vi.fn(() => true);
+          const keyFn = vi.fn(() => true);
+          if (body.id !== "orbit") t.router.pushBody("b", { id: body.id, input: { click: press, key: keyFn }, lock: body.lock, keys: [{ code: "KeyW" }] });
+          else t.inputs.view = { click: press, key: keyFn };
+          await settleLock();
+          if (want.released && lock.locked) lock.release();
+          if (want.wanted) {
+            t.wanted = true;
+            t.router.refresh();
+          }
+          await settleLock();
+          const st = t.router.state().pointer;
+          const expected = body.lock && !want.wanted && !(want.released && !want.refused) && !want.refused;
+          expect(lock.locked).toBe(expected);
+          expect(st.locked).toBe(expected);
+          // (a release can only happen to a lock that was held: refused, there was none)
+          const released = want.released && body.lock && !want.refused;
+          expect(st.released).toBe(released);
+          if (ev === "press") {
+            down(t);
+            up(t);
+            await settleLock();
+            const relocks = released && !want.wanted;
+            expect(press).toHaveBeenCalledTimes(relocks ? 0 : 1);
+            expect(lock.locked).toBe(body.lock && !want.wanted && !want.refused);
+          } else {
+            key(t.root, "keydown", "w");
+            await settleLock();
+            expect(keyFn).toHaveBeenCalledTimes(1);
+            // a key never relocks
+            expect(lock.locked).toBe(expected);
+          }
+          cases++;
+          while (cleanups.length) cleanups.pop()();
+        }
+      }
+    }
+    // orbit and seat: 8 cases each (lock false) × 2; walk: 8 × 2
+    expect(cases).toBe(48);
     warn.mockRestore();
+  });
+
+  it("wanted frees the pointer and its going back relocks; a body change starts afresh", async () => {
+    const t = setup();
+    const lock = fakeLock(t);
+    t.router.pushBody("w", { id: "walk", input: {}, lock: true });
+    await settleLock();
+    expect(lock.locked).toBe(true);
+    t.wanted = true;
+    t.router.refresh();
+    await settleLock();
+    expect(lock.locked).toBe(false);
+    expect(t.router.state().pointer.released).toBe(false); // the page let go, not the browser
+    t.wanted = false;
+    t.router.refresh();
+    await settleLock();
+    expect(lock.locked).toBe(true);
+    lock.release();
+    expect(t.router.state().pointer.released).toBe(true);
+    t.router.pushBody("s", { id: "station", input: {}, lock: true });
+    await settleLock();
+    expect(lock.locked).toBe(true);
+    expect(t.router.state().pointer.released).toBe(false);
   });
 });
 
@@ -606,19 +787,31 @@ describe("a release that never came", () => {
 });
 
 describe("stopping an owner", () => {
-  it("cancels its session, pops its arms and lets go of its keys", () => {
+  it("cancels its session, pops its body (and any over it), puts down its tool, lets go of its keys and popovers", () => {
     const t = setup();
     const session = { move: vi.fn(), end: vi.fn(), cancel: vi.fn() };
     t.inputs.hand = { press: () => session, keyup: vi.fn() };
-    const armed = { key: () => true, keyup: vi.fn(), disarmed: vi.fn() };
-    down(t); // (pressed first: while armed, its own input isn't offered)
-    t.router.arm("hand", armed);
+    const body = { key: () => true, keyup: vi.fn(), left: vi.fn() };
+    const over = { left: vi.fn() };
+    const tool = { put: vi.fn() };
+    const close = vi.fn();
+    down(t);
+    t.router.pushBody("hand", { id: "walk", input: body, keys: [{ code: "KeyQ" }] });
+    t.router.pushBody("seats", { id: "seat", input: over });
+    t.router.hold("hand", { command: "gun", input: tool });
+    t.router.popover("hand", close);
+    t.router.leave(); // the seat goes; the walk is on top again
+    expect(over.left).toHaveBeenCalledTimes(1);
     key(t.root, "keydown", "q");
     t.router.stopOwner("hand");
     expect(session.cancel).toHaveBeenCalledTimes(1);
-    expect(armed.keyup).toHaveBeenCalledTimes(1);
-    expect(armed.disarmed).toHaveBeenCalledTimes(1);
-    expect(t.router.armedOwner()).toBe(null);
+    expect(body.keyup).toHaveBeenCalledTimes(1);
+    expect(body.left).toHaveBeenCalledTimes(1);
+    expect(tool.put).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+    expect(t.router.body().id).toBe("orbit");
+    expect(t.router.held()).toBe(null);
+    expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });
     expect(session.end).not.toHaveBeenCalled();
   });
@@ -636,9 +829,9 @@ describe("laziness and holders", () => {
     up(t);
     expect(t.pick).toHaveBeenCalledTimes(1);
   });
-  it("an armed claim never works out the chain", () => {
+  it("a held tool's claim never works out the chain", () => {
     const t = setup();
-    t.router.arm("tool", { press: () => ({ move() {}, end() {}, cancel() {} }) });
+    t.router.hold("measure", { command: "measure", input: { press: () => ({ move() {}, end() {}, cancel() {} }) } });
     t.chainFor.mockClear();
     down(t);
     expect(t.chainFor).not.toHaveBeenCalled();
@@ -674,10 +867,10 @@ describe("hover and cursor", () => {
     t.canvas.dispatchEvent(new PointerEvent("pointerleave"));
     expect(t.onHover).toHaveBeenLastCalledWith(null);
   });
-  it("prefers the armed handlers' cursor", async () => {
+  it("prefers the held tool's cursor", async () => {
     const t = setup();
     t.inputs.a = { cursor: () => "pointer" };
-    t.router.arm("measure", { cursor: () => "crosshair" });
+    t.router.hold("measure", { command: "measure", input: { cursor: () => "crosshair" } });
     move(t, { x: 20, buttons: 0 });
     await frame();
     expect(t.onCursor).toHaveBeenLastCalledWith("crosshair");

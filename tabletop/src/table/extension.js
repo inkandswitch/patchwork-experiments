@@ -176,7 +176,7 @@ export default {
       if (slot === NO_SLOTS) return null; // a hand without card slots: carry cards there instead
       if (!slot) return { disabled: true, label: "Your hand is full", title: "Every card slot in your hand has a card" };
       const what = nounOf(snap, id).noun ?? "card";
-      return { slot, title: stackOf(id).length > 1 ? `Draw the top ${what} into your hand (D)` : `Draw this ${what} into your hand (D)` };
+      return { slot, title: stackOf(id).length > 1 ? `Draw the top ${what} into your hand` : `Draw this ${what} into your hand` };
     }
 
     /**
@@ -525,9 +525,9 @@ export default {
           key: "s",
           // on the use prompt, so hovering a pile says it can be shuffled
           show: ["use", "menu", "inspector"],
-          // (not in first person: S walks back there, and playing is done from your seat)
+          // (walking, S is the body's: the verb shows without its key, and is in the menu)
           // (only where there's a pile: a card lying alone has nothing to shuffle with)
-          state: (id, ctx) => (id && isCard(scene?.objects?.[id]) && keptBy(api, id) && !(ctx?.local ?? api.local?.get?.())?.immersive && stackOf(id).length > 1 ? { title: "Shuffle the pile this card is in (S)" } : null),
+          state: (id) => (id && isCard(scene?.objects?.[id]) && keptBy(api, id) && stackOf(id).length > 1 ? { title: "Shuffle the pile this card is in" } : null),
           run: shuffleStack,
         },
         {
@@ -536,8 +536,7 @@ export default {
           key: "d",
           show: ["use", "menu"],
           state(id, ctx) {
-            // (not in first person: D walks right there, and you draw from your seat)
-            if ((ctx?.local ?? api.local?.get?.())?.immersive) return null;
+            // (walking, D is the body's: the verb shows without its key, and is in the menu)
             const plan = drawPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
             if (!plan) return null;
             const { slot, ...shown } = plan;
@@ -551,10 +550,10 @@ export default {
           key: "w",
           show: ["use", "menu", "inspector"],
           state(id, ctx) {
-            // (not in first person: W walks there)
-            if (id == null || (ctx?.local ?? api.local?.get?.())?.immersive) return null;
+            // (walking, W is the body's: the verb shows without its key, and is in the menu)
+            if (id == null) return null;
             const plan = washPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
-            return plan ? { label: `Wash (${plan.ids.length})`, title: "Mix the face-down pieces spread out here, where they lie (W)" } : null;
+            return plan ? { label: `Wash (${plan.ids.length})`, title: "Mix the face-down pieces spread out here, where they lie" } : null;
           },
           run: wash,
         },
@@ -564,10 +563,10 @@ export default {
           key: "u",
           show: ["use", "menu", "inspector"],
           state(id, ctx) {
-            if (id == null || (ctx?.local ?? api.local?.get?.())?.immersive) return null;
+            if (id == null) return null;
             const plan = standPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
             if (!plan) return null;
-            return plan.lay ? { label: "Lay flat", title: "Lay it down flat, face up (U)" } : { title: "Stand it on edge, facing you (U)" };
+            return plan.lay ? { label: "Lay flat", title: "Lay it down flat, face up" } : { title: "Stand it on edge, facing you" };
           },
           run: stand,
         },

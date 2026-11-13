@@ -2,10 +2,11 @@
 // activity. Built only from the scene's extension contract (scene/STAGE.md);
 // slide.js is the joint itself, and this file gives it the stage:
 //
-// - the verb, Open / Close, two ways: on the use prompt with F, from within
-//   arm's reach of the point looked at (only the prompt knows where the eye
-//   is); and on the menu and the inspector, with no key and no reach (F is
-//   carry's Flip elsewhere, and a key map has no eye to measure from);
+// - the verb, Open / Close: one command, F, on every surface (the prompt, the
+//   menu, the inspector, the key map), within the body's reach: it says
+//   `reach: true`, and the stage measures from the body's eye against its
+//   reach (scene/TOOLS.md §4), so walking you open a door within 2 m and in
+//   orbit anywhere;
 // - the motion: a pose hold each frame while this view moves a part (a
 //   loop, only then, to draw it), released as landed after the one write;
 //   the landing itself is timed by the clock (a timer), so a view that draws
@@ -16,7 +17,7 @@
 //   close what it opened (a view that stops running this has no key, and
 //   counts as gone).
 
-import { KEY, REACH, createSlides } from "./slide.js";
+import { KEY, createSlides } from "./slide.js";
 
 function create(api) {
   const present = (session) => !!api.presence.get()?.[session]?.keys?.[api.id]?.here;
@@ -60,17 +61,6 @@ function create(api) {
   }
   api.presence.watch(() => look());
 
-  /**
-   * Is the point looked at within arm's reach of the eye? Only the use prompt
-   * says where the eye is and what it's on (STAGE.md, "Reach"), so only the
-   * prompt's verb asks: F pressed out of reach goes by.
-   */
-  const inReach = (from, hit) => {
-    if (!Array.isArray(from) || !hit) return false;
-    const d = Number.isFinite(hit.distance) ? hit.distance : Array.isArray(hit.point) ? Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]) : Infinity;
-    return d <= REACH;
-  };
-
   /** The verb for a target: Open, Close, or (disabled) Opening, Closing, someone else moving it. */
   function verbOf(target) {
     if (!target || !api.scene().objects?.[target]?.traits?.[KEY]) return null;
@@ -87,19 +77,12 @@ function create(api) {
     },
     commands: [
       {
-        // the use prompt's: F, within reach of the eye
-        id: "use",
-        name: "Open",
-        key: "f",
-        show: ["use"],
-        state: (target, { from, hit } = {}) => (inReach(from, hit) ? verbOf(target) : null),
-        run: start,
-      },
-      {
-        // the menu's and the inspector's: no key, no reach (a drawer opened while editing)
+        // every surface's: F, within the body's reach (the stage measures it)
         id: "slide",
         name: "Open",
-        show: ["menu", "inspector"],
+        key: "f",
+        reach: true,
+        show: ["use", "menu", "inspector"],
         state: (target) => verbOf(target),
         run: start,
       },

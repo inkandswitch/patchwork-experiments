@@ -51,19 +51,25 @@ package's `audience` policy) and draws **the veil** for a look that says
 `veil: true` (STAGE.md, "Audience" and "The veil"); it holds no secrets
 itself.
 
-**Use** (`scene.use`, `src/parts/use.js`) is the use prompt, the
-first-person counterpart of the context menu: in play it shows the verbs
-for what you're looking at (the middle of the view under pointer lock, else
-what's under the pointer, or the nearest thing it's attached to that has
-any), up to three, as "[F] Take the helm", and the key runs one. It shows a
-command with a `key` whose `show` doesn't leave out `"use"`, and calls its
-`state` with two more fields, `from` (the eye, so a verb can need arm's
-reach) and `hit` (`{ id, point, distance }`). A `run` that returns a session
-(`{ end(), cancel(), update?(dt) }`) is held while the key is down
-(`hold: true` shows "hold F"): `update` every frame, `end` on release,
-`cancel` if focus goes, the target goes or the part stops. It runs only
-when a game lists it in `requires`, before `scene.keys`, so the prompt
-hears its keys first.
+**Use** (`scene.use`, `src/parts/use.js`) is the use prompt: in play it
+shows attention's verbs (TOOLS.md §3: the selection, else what you look at,
+the middle of the view under pointer lock, else what's under the pointer,
+or the nearest thing it's attached to that has any), up to three, as
+"[F] Take the helm", each a button. It shows a command with a `key` whose
+`show` doesn't leave out `"use"`, in the context every surface passes
+(`api.context`: the body's eye and reach, the look's hit), and each key is
+the resolver's (`src/keymap.js` `hintFor`): shown only where pressing it
+does that. The key map (`scene.keys`) does the keys: a `run` that returns
+a session (`{ end(), cancel(), update?(dt) }`) is held while the key is
+down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
+`cancel` if focus goes, the target goes or its extension stops. The prompt
+runs only when a game lists it in `requires`.
+
+**Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Orbit ▾",
+"Walk ▾": enter a body that can start here, or Leave the one you're in),
+who's here (each person's body and held tool, from presence) and the Esc
+hint (the layer the next Escape pops). The stage's own body is orbit;
+others come with packages (`walk`, `seats`, sailing's).
 
 ## Using it
 
@@ -183,7 +189,7 @@ notice says what to add. See STAGE.md, "Copying objects".
   the hull and drag along her deck while she sails. A group's halo moves all
   of it (what's attached to a member follows the member; locked members
   stay), written as one change. No handles on a locked object, a read-only
-  doc, or while something is armed (measuring).
+  doc, or while a tool is held (measuring).
 - **Carry**: what has the `scene.carry` trait (*Carryable* in the inspector's
   "Add behaviour…"; a game's pieces have it) can be picked up and put
   down elsewhere, like pieces on a table. Press on it and drag: it
@@ -283,10 +289,12 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   selection, the current tool, display prefs). Extensions talk to each other
   through local keys, commands and contributions, never by importing one
   another.
-- **Input** is offered down a chain: the armed extension (measure, a game),
-  the widget under the pointer, the extensions whose traits are on the object
-  under it, the scene's, then the general ones in registry order. A press
-  nobody claims orbits.
+- **Input** is offered down a chain: the held tool (measure, a gun), the
+  widget under the pointer, the extensions whose traits are on the object
+  under it, the scene's, the general ones in registry order, then the top
+  body's default (orbit's selects). A press nobody claims orbits. Keys go
+  the gesture's, the held tool's and the body's declared keys first, then
+  the key map; Escape is the stage's ladder (TOOLS.md §5).
 - **Commands** are verbs with a target (an object, a ref such as a selected
   dimension's `"dimension:<id>"`, or null for the scene).
   Surfaces (toolbar, inspector, menu, key map) show and run them; the
@@ -341,7 +349,7 @@ the object (a slice's height, a rake's) can be dragged in place:
 type Handle = { param: string, axis: [x, y, z], label?: string }  // axis: in the object's (GLB's) frame
 ```
 
-While the object is selected (and nothing is armed: measuring), the scene
+While the object is selected (and no tool is held: measuring), the scene
 draws a knob for each on the line through the middle of its geometry along
 `axis`, at the param's value (from its render doc, else the default), with
 its label, and a track over its range. Drag the knob: it follows the pointer
@@ -774,7 +782,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on), `body` (the body chip, who's here and the Esc hint) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |

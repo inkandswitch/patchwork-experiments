@@ -17,7 +17,7 @@ import { kindFile, levelObject, makeLevel } from "./layout.js";
 const TRAITS = {
   target: { "arena.target": {} },
   crate: null,
-  spawn: { "arena.spawn": {} },
+  spawn: { "walk.spawn": {} },
 };
 
 const IDENTITY = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };

@@ -7,34 +7,35 @@
 //   └ <map>                  { map, door: null }, locked
 //     ├ Door <sector> × n    { map, door: <sector> }, locked; a slide joint (joints.slide) that opens it
 //     ├ Exit switch × n      { map, line: <line> }, locked; an exit (traversal.exit) leading nowhere yet
-//     └ Spawn point          arena's, at the player 1 start (only when the map is the scene: below)
+//     └ Spawn point          arena's pad (the walk body's spawn), at the player 1 start (only when the map is the scene: below)
 //
 // Doors are attached to the static part, so moving or resizing the map
 // moves and resizes them (the stage composes a parent's transform into its
 // children's), and a door's slide is along its parent's up, in its frame.
 //
 // Dropped into an EMPTY scene, the map is the scene: it becomes a walkable
-// level (arena.level, with just a sky), and the player 1 start an arena
-// spawn point, made by the arena's own part ("arena.spawn", looked up in the
-// registry by id). Dropped into a scene that has something in it already, it
+// level (arena.level, with just a sky), and the player 1 start a spawn
+// point for the walk body (the walk package's `walk.spawn`), made by the
+// arena's own part ("arena.spawn", looked up in the registry by id). Dropped into a scene that has something in it already, it
 // is a piece of that scene, and leaves the scene's game, if any, to it.
 //
 // An exit switch is an exit with no destination: where a map leads is the
 // scene's to say (traversal's `to`, set by whoever makes the scene part of
 // something), and until it says, the switch offers nothing.
 //
-// The doom package depends on none of joints, traversal and arena: it writes
-// the slide in the shape joints documents, the exit in the shape traversal
-// documents and the level trait in the shape arena documents, and asks for
-// arena's spawn part by id; without arena, there is no spawn (and no level to
-// spawn in), which is nothing lost.
+// The doom package depends on none of joints, traversal, arena and walk: it
+// writes the slide in the shape joints documents, the exit in the shape
+// traversal documents and the level trait in the shape arena documents, and
+// asks for arena's spawn part by id; without arena, there is no spawn (and
+// no level to spawn in), which is nothing lost. Walking is the walk body's
+// (the walk package, listed by whoever publishes the scene).
 
 import { freedoomVersion, noticeOf, originOf } from "./freedoom.js";
 import { anchorOf, mapModel, thingAt, UNITS_PER_METRE } from "./parts.js";
 import { wadOf } from "./source.js";
 
 export const PROVIDER = "doom-map";
-/** The part that makes a spawn point (arena's), by id. */
+/** The part that makes a spawn point (arena's pad, carrying the walk package's `walk.spawn`), by id. */
 export const SPAWN_PART = "arena.spawn";
 /** An object that leads elsewhere (traversal's trait): an exit switch's, with its verb and no destination. */
 export const EXIT = "traversal.exit";

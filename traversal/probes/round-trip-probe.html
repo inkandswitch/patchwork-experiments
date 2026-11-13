@@ -49,7 +49,7 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../doom/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../../sailing/dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../dist/index.js", "../../arena/dist/index.js", "../../walk/dist/index.js", "../../doom/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -155,7 +155,7 @@ try {
     },
     /** the Doom scene starts in play, its camera at the spawn point's eye looking its way (as publish-e1m1.mjs sets it) */
     startAtSpawn() {
-      const id = withTrait("arena.spawn");
+      const id = withTrait("walk.spawn");
       const m = dbg().scene().world(id);
       const yaw = Math.atan2(m[8], m[10]);
       const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
@@ -173,7 +173,7 @@ try {
     },
     /** move the Doom scene's spawn point to `local` in the map's frame, facing `yaw` (a probe's shortcut to a far room) */
     moveSpawn(position, yaw) {
-      const id = withTrait("arena.spawn");
+      const id = withTrait("walk.spawn");
       current.handle.change((d) => { d.objects[id].transform.position = position; d.objects[id].transform.rotation = [0, yaw, 0]; });
       return id;
     },
@@ -192,6 +192,8 @@ try {
       return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
     },
     canvasRect() { const r = dbg().viewport.canvas.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
+    /** the body on top of the stack, its stack and the held tool's command (scene/TOOLS.md §4) */
+    body: () => ({ id: dbg().local.get().body?.id ?? null, stack: dbg().router.bodies().map((b) => b.id), tool: dbg().local.get().held?.command ?? null }),
     rect(sel) {
       const e = [...host.querySelectorAll(sel)].find((x) => x.getBoundingClientRect().width > 0);
       if (!e) return null;

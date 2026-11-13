@@ -105,7 +105,7 @@ describe("scene.carry commands", () => {
 });
 
 describe("scene.carry input", () => {
-  it("claims a press on its holder only: with the trait, nothing armed, unlocked, not a group, not a peer's", async () => {
+  it("claims a press on its holder only: with the trait, no tool held, unlocked, not a group, not a peer's", async () => {
     const { api, x } = await mount({ doc: { objects: { l: piece({ locked: true }), g: piece({ kind: "group" }), plain: object() } } });
     expect(x().input.press(press("a"))).toBeTruthy();
     expect(x().input.press(press("l"))).toBe(null);
@@ -116,7 +116,7 @@ describe("scene.carry input", () => {
     api.heldBy = (id) => (id === "a" ? "peer-session" : null);
     expect(x().input.press(press("a"))).toBe(null);
     api.heldBy = () => null;
-    s.local.swap((m) => ({ ...m, armed: "scene.measure" }));
+    s.local.swap((m) => ({ ...m, held: { ext: "scene.measure", command: "measure" } }));
     expect(x().input.press(press("a"))).toBe(null);
   });
 

@@ -3,12 +3,18 @@
 // (show includes "menu", or says nothing), Select first (the selection's verb,
 // scene.select's: TOOLS.md §3), then, under a separator, the
 // scene's commands that ask for a menu (show includes "menu"). Picking one
-// runs it; Escape, a click outside, or picking closes it. Arrow keys move
-// through it, Enter (or Space) picks. Nothing applies: no menu, and the event
-// goes on down the chain.
+// runs it; Escape (the stage's ladder: it is a popover), a click outside, or
+// picking closes it. Arrow keys move through it, Enter (or Space) picks.
+// Nothing applies: no menu, and the event goes on down the chain. Each
+// entry's key is the resolver's (../keymap.js hintFor): shown only when
+// pressing it does that, so a verb whose key the body reserves shows none.
+// States are worked out in the context of the press (its hit, the body's
+// reach), as every surface's are.
 
 import css from "./menu.css?inline";
-import { applicable, cleanChoices, controlKind, flatCommands, keyLabel } from "./toolbar-commands.js";
+import { applicable, cleanChoices, controlKind, flatCommands } from "./toolbar-commands.js";
+import { hintFor } from "../keymap.js";
+import { resolverState } from "./resolver.js";
 
 /** The selection's verb, first in every target's menu. */
 export const SELECT = Object.freeze({ ext: "scene.select", command: "select" });
@@ -31,13 +37,16 @@ function create(api) {
   api.style(css);
   const overlay = api.overlay();
   overlay.classList.add("menu-layer");
-  let open = null; // { el, target, offs: [] }
+  let open = null; // { el, target, hit, offs: [], release }
+  let keys = null; // the resolver's state as the menu opened (hints)
+  let menuHit = null; // what the menu was opened on (its entries run in that context)
 
   function close({ refocus = false } = {}) {
     if (!open) return;
     const o = open;
     open = null;
     for (const off of o.offs) off();
+    o.release?.();
     o.el.remove();
     if (refocus) overlay.closest(".scene-stage")?.focus?.({ preventScroll: true });
   }
@@ -53,6 +62,7 @@ function create(api) {
   }
 
   function item({ ext, command, state }, target, extra = {}) {
+    const hit = menuHit;
     const b = document.createElement("button");
     b.type = "button";
     b.className = "menu-item";
@@ -63,7 +73,9 @@ function create(api) {
     label.className = "menu-label";
     label.textContent = extra.label ?? String(state.label ?? command.name ?? command.id);
     b.append(label);
-    const key = extra.key ?? keyLabel(command);
+    // the key is the key map's, decided in its context (resolver.js keyContext); the
+    // row runs at the point the menu was opened on, so a row disabled there shows none
+    const key = state.disabled ? "" : (extra.key ?? hintFor({ ext, command, target }, keys));
     if (key) {
       const k = document.createElement("kbd");
       k.className = "menu-key";
@@ -76,7 +88,7 @@ function create(api) {
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       close({ refocus: true });
-      api.run({ ext, command: command.id, target, value: extra.value });
+      api.run({ ext, command: command.id, target, value: extra.value, hit });
     });
     return b;
   }
@@ -106,7 +118,7 @@ function create(api) {
             role: "menuitemradio",
             label: ch.label,
             value: ch.value,
-            key: i === 0 ? keyLabel(command) : "",
+            key: i === 0 ? hintFor({ ext: entry.ext, command, target }, keys) : "",
             checked: ch.value === state.value || (ch.value != null && state.value != null && String(ch.value) === String(state.value)),
           }),
         ),
@@ -118,7 +130,10 @@ function create(api) {
   function show(ev) {
     close();
     const target = ev.hit?.id ?? null;
-    const ctx = { scene: api.scene(), local: api.local.get() };
+    const hit = ev.hit ? { id: ev.hit.id, point: ev.hit.point ?? null, distance: ev.hit.distance ?? null } : null;
+    const ctx = api.context(hit);
+    keys = resolverState(api);
+    menuHit = hit;
     const { forObject, forScene } = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
     if (!forObject.length && !forScene.length) return false;
     const el = document.createElement("div");
@@ -153,12 +168,10 @@ function create(api) {
     el.style.top = `${Number.isFinite(y) ? y : 0}px`;
 
     const onKey = (e) => {
-      // the menu's keys are its own, never scene shortcuts
+      // Escape is the ladder's (the stage closes this popover); the rest are the menu's own, never scene shortcuts
+      if (e.key === "Escape") return;
       e.stopPropagation();
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close({ refocus: true });
-      } else if (e.key === "ArrowDown") {
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         move(1);
       } else if (e.key === "ArrowUp") {
@@ -180,18 +193,16 @@ function create(api) {
       if (!open || open.el.contains(e.target)) return;
       close();
     };
-    // Escape while focus is still on the canvas (the menu opened from a press)
-    const onDocKey = (e) => {
-      if (e.key !== "Escape" || !open || open.el.contains(e.target)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    };
     open = {
       el,
       target: forObject.length ? target : null,
-      offs: [api.listen(document, "pointerdown", onOutside, true), api.listen(document, "keydown", onDocKey, true), api.listen(globalThis, "blur", () => close())],
+      hit,
+      offs: [api.listen(document, "pointerdown", onOutside, true), api.listen(globalThis, "blur", () => close())],
+      release: null,
     };
+    // a popover: it wants the pointer, and Escape closes it
+    const mine = open;
+    open.release = api.popover(() => (open === mine ? close({ refocus: true }) : undefined));
     items()[0]?.focus({ preventScroll: true });
     return true;
   }

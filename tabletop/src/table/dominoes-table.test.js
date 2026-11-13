@@ -342,7 +342,7 @@ describe("what Draw says", () => {
   it("names what it draws: this domino, the top card of a pile", async () => {
     const t = table();
     await vi.advanceTimersByTimeAsync(10);
-    expect(t.state(t.A, "draw", "b0")).toMatchObject({ title: "Draw this domino into your hand (D)" });
+    expect(t.state(t.A, "draw", "b0")).toMatchObject({ title: "Draw this domino into your hand" });
     t.w.done();
   });
 

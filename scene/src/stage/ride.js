@@ -8,11 +8,13 @@
 // point (`turn`), and its rise and fall (`rise`). Roll and pitch are never
 // followed (the orbit keeps world up).
 //
-// Only one ride applies at a time: the latest that isn't a `fallback`, else
-// the latest fallback (a ship keeping herself in view gives way to a seat at
-// a table aboard her). A ride starting to apply, or the camera held (first
-// person), re-baselines it: it never moves the camera for a frame it didn't
-// see. Pure: plain arrays, no three.js.
+// Only one ride applies at a time (TOOLS.md §4): the current body's, when
+// it has one (a seat rides its table), else the latest base ride (orbit
+// rides it: a ship keeping herself in view). So a seat at a table aboard a
+// ship wins over the ship's follow with no flag: it is the body's. A ride
+// starting to apply, or the camera held (first person), re-baselines it: it
+// never moves the camera for a frame it didn't see. Pure: plain arrays, no
+// three.js.
 
 /** Where a point of an object (`at`, in its frame; its origin) is and which way it heads, from its world matrix (column-major): what a ride follows. */
 export function rideFrame(m, at = null) {
@@ -44,29 +46,35 @@ export function rideMove(last, now, { turn = true, rise = true } = {}) {
 /**
  * The rides asked for, and the one that applies.
  * @returns {{
- *   add(id: string, opts?: { turn?: boolean, rise?: boolean, fallback?: boolean, at?: number[] }, now?: number[] | null): () => void,
+ *   add(id: string, opts?: { turn?: boolean, rise?: boolean, at?: number[] }, now?: number[] | null): () => void,
+ *   body(spec: { id: string, turn?: boolean, rise?: boolean, at?: number[] } | null, now?: number[] | null): void,
  *   current(): object | null,
  *   step(o: { worldOf: (id: string) => number[] | null, held: boolean, position: number[], target: number[] }): { position: number[], target: number[] } | null,
  * }}
  */
 export function createRides() {
-  const list = [];
+  const list = []; // base rides, latest last
+  let mine = null; // the current body's ride
 
-  function current() {
-    for (let i = list.length - 1; i >= 0; i--) if (!list[i].fallback) return list[i];
-    return list.at(-1) ?? null;
-  }
+  const make = (id, { turn = true, rise = true, at = null } = {}, now = null) => {
+    const point = Array.isArray(at) && at.length === 3 && at.every((v) => Number.isFinite(Number(v))) ? at.map(Number) : null;
+    return { id, turn: turn !== false, rise: rise !== false, at: point, last: now ? rideFrame(now, point) : null };
+  };
+  const current = () => mine ?? list.at(-1) ?? null;
 
   return {
-    /** `now`: the object's world matrix as the view was set from it, the ride's first baseline (else the next frame's) */
-    add(id, { turn = true, rise = true, fallback = false, at = null } = {}, now = null) {
-      const point = Array.isArray(at) && at.length === 3 && at.every((v) => Number.isFinite(Number(v))) ? at.map(Number) : null;
-      const r = { id, turn: turn !== false, rise: rise !== false, fallback: !!fallback, at: point, last: now ? rideFrame(now, point) : null };
+    /** A base ride. `now`: the object's world matrix as the view was set from it, the ride's first baseline (else the next frame's) */
+    add(id, opts, now = null) {
+      const r = make(id, opts, now);
       list.push(r);
       return () => {
         const i = list.indexOf(r);
         if (i >= 0) list.splice(i, 1);
       };
+    },
+    /** The current body's ride (null: it has none, and the latest base ride applies) */
+    body(spec, now = null) {
+      mine = spec && spec.id != null ? make(spec.id, spec, now) : null;
     },
     current,
     /** One frame: where the camera and its target go now, or null to leave them. */

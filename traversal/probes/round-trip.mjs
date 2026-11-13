@@ -1,7 +1,7 @@
 // The round trip, in headless Chrome with real keys and a real mouse: from
 // the sloop's companionway down to E1M1, and from E1M1's exit switch back up.
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, arena/, doom/ and traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, arena/, walk/, doom/ and traversal/) pnpm build
 //   node probes/round-trip.mjs [--shots <dir>] [--show] [--gpu]
 //
 // Mounts the BUILT plugins of every package involved in a small shell
@@ -20,7 +20,8 @@
 //     for that doc, bubbling and composed out of the stage;
 //  5. the shell opens E1M1: the visitor arrives in play, the camera at the
 //     player 1 start's eye, the lobby offering Play; nothing mentions the ship;
-//  6. ▶ Play: first person at the start, the camera where it was;
+//  6. ▶ Play: walking (the walk body) at the start with the gun, the camera
+//     where it was; Esc puts the gun down, the body chip's Leave stops walking;
 //  7. at the exit switch (the spawn moved beside it: the walk there is long,
 //     and doom's tests show it can be walked), walking up to it (W), with
 //     nowhere to go it offers no verb; given the ship, it offers [F] Exit,
@@ -37,7 +38,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
 const WAD = join(ROOT, "doom/src/test/e1m1.wad");
-for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", "joints", "arena", "doom", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", "joints", "arena", "walk", "doom", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name, d = null) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : d;
@@ -136,7 +137,7 @@ try {
   await P("pasteWad()");
   const doomBuilt = await until(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 180_000, 200);
   ids.exit = await P(`withTrait("traversal.exit")`);
-  ids.spawn = await P(`withTrait("arena.spawn")`);
+  ids.spawn = await P(`withTrait("walk.spawn")`);
   ids.home = await P("startAtSpawn()");
   check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts it in play at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
   await P(`show("aboard", "maker")`);
@@ -228,15 +229,25 @@ try {
   await b.click(Math.round(play.x), Math.round(play.y));
   await sleep(1500);
   const eye = (await P("cam()")).position;
-  check("6. ▶ Play: first person at the start, where the view already was", Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position });
+  const walking = await P("body()");
+  check("6. ▶ Play: walking at the start (the walk body over orbit, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["orbit", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
   await shot("6-doom-play");
 
   // ─── 7. the exit switch ───────────────────────────────────────────────────
   // its frame: the middle of its line on its floor; the wall faces +X (Doom's east). Stand 1.6 m off it, facing it.
   const sw = await P(`worldOf(${J(ids.exit)})`);
   const standAt = [sw[12] + 1.6, sw[13] + 0.05, sw[14]];
+  // Esc puts the gun down (never the body); the body chip's Leave stops walking, so Play walks in at the moved spawn
   await b.key("Escape");
   await sleep(400);
+  const chip = await P(`rect(".body-chip")`);
+  if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
+  await until(`!!p.rect(".body-menu .menu-item")`, 3000);
+  const items = await js(`[...document.querySelectorAll(".body-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim() }; })`);
+  const leave = items.find((i) => /^Leave/.test(i.text));
+  if (leave) await b.click(Math.round(leave.x), Math.round(leave.y));
+  await sleep(400);
+  check("6b. Esc puts the gun down; the body chip's Leave stops walking (orbit)", !!leave && (await P("body()")).id === "orbit", { items, body: await P("body()") });
   await P(`moveSpawn(${J(standAt)}, ${Math.PI / 2})`);
   await sleep(300);
   const play2 = await P(`rect(".arena-play")`);

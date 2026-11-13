@@ -1,10 +1,10 @@
 // People aboard: the frame maths (pure), the input adapter (what's baked into
-// her navmesh), and the crew against a stand-in for the stage's api (arms,
+// her navmesh), and the crew against a stand-in for the stage's api (bodies,
 // the camera, presence, her content as triangles). Walking itself is
 // walker.test.js's; here, that the crew drives it: invariant I is asserted
 // after every step (__SAILING_ASSERT__).
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, trianglesOf } from "./crew.js";
+import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, seatedView, trianglesOf } from "./crew.js";
 import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
 import { shipOf } from "./traits.js";
@@ -194,7 +194,8 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   const s = {
     ship,
     contents,
-    arms: [],
+    bodies: [{ id: "orbit", sitting: null }], // the stage's body stack, orbit at the bottom
+    pointer: { locked: true, released: false, refused: false },
     loops: [],
     presence: {},
     peers: {},
@@ -237,18 +238,28 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
         return () => s.rides.splice(s.rides.indexOf(r), 1);
       },
     },
-    arm(handlers, opts = {}) {
-      const e = { handlers, opts };
-      s.arms.push(e);
-      if (opts.lock && s.lockRefusal) queueMicrotask(() => handlers.lockLost?.({ refused: true }));
-      return () => {
-        const i = s.arms.indexOf(e);
-        if (i < 0) return;
-        s.arms.splice(i, 1);
-        handlers.disarmed?.();
-      };
+    local: { get: () => ({ body: s.body(), pointer: { ...s.pointer } }) },
+    // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
+    body: {
+      current: () => s.body(),
+      enter(id, place = null) {
+        const def = s.crew?.bodies.find((b) => b.id === id);
+        const sitting = def?.enter(place);
+        if (!sitting) return false;
+        const prev = s.bodies.at(-1);
+        s.bodies.push({ id, def, sitting });
+        prev.sitting?.input?.suspended?.();
+        return true;
+      },
+      leave() {
+        if (s.bodies.length <= 1) return false;
+        const t = s.bodies.pop();
+        t.sitting.leave?.();
+        s.bodies.at(-1).sitting?.input?.resumed?.();
+        return true;
+      },
+      eye: () => s.bodies.at(-1).sitting?.eye?.() ?? null,
     },
-    relock: () => Promise.resolve(),
     presence: {
       set: (k, v) => (s.presence[k] = v),
       get: () => s.peers,
@@ -267,28 +278,35 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   // play.js runs the crew's tick each frame
   s.make = () => {
     const crew = createCrew(s.api, s.ctx);
+    s.crew = crew;
     s.loops.push((dt) => crew.tick(dt));
     return crew;
   };
+  s.body = () => {
+    const t = s.bodies.at(-1);
+    return { id: t.id, label: t.sitting?.label ?? t.def?.label ?? "Orbit", depth: s.bodies.length - 1, lock: !!t.def?.lock, reach: t.def?.reach ?? Infinity, keys: t.sitting?.keys ?? [] };
+  };
+  // a key the top body declares reaches it; any other goes on (the router's key order)
+  s.declared = () => (s.bodies.at(-1).sitting?.keys ?? []).map((k) => k.code);
   s.frames = (n, dt = 1 / 60) => {
     for (let i = 0; i < n; i++) for (const f of s.loops) f(dt);
   };
-  s.top = () => s.arms.at(-1)?.handlers;
-  s.key = (code, key = code) => s.top().key({ type: "key", code, key });
+  s.top = () => s.bodies.at(-1).sitting?.input;
+  s.key = (code, key = code) => (s.declared().includes(code) ? s.top().key({ type: "key", code, key }) : false);
   s.keyup = (code, key = code) => s.top().keyup({ type: "keyup", code, key });
   return s;
 }
 
 describe("the crew", { timeout: 60_000 }, () => {
-  it("before coming aboard, nothing is held and a click comes aboard: an arm with the lock, the camera held", () => {
+  it("before coming aboard, nothing is held and a click comes aboard: the aboard body, with the lock, the camera held", () => {
     const s = stage();
     const crew = s.make();
     s.ctx.crew = crew;
     expect(crew.me().playing).toBe(false);
-    expect(s.arms.length).toBe(0);
+    expect(s.bodies.length).toBe(1);
     expect(crew.input.click({})).toBe(true);
-    expect(s.arms.length).toBe(1);
-    expect(s.arms[0].opts).toMatchObject({ lock: true, immersive: true });
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard"]);
+    expect(s.body()).toMatchObject({ id: "aboard", label: "Aboard", lock: true, reach: 2.5 });
     expect(s.held).toBe(1);
     expect(s.rate).toBe(null); // play.js sets the rate, not the crew
     expect(crew.input.click({})).toBe(false);
@@ -328,11 +346,12 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(close(s.cam.position, crew.me().eye, 1e-6)).toBe(true);
   });
 
-  it("walks on W only, and lets F, Q and E go on to the use prompt", () => {
+  it("declares the walking keys only: F, Q and E go on to the key map", () => {
     const s = stage();
     const crew = s.make();
     crew.start();
     s.frames(2);
+    expect(s.declared()).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
     expect(s.key("KeyF", "f")).toBe(false);
     expect(s.key("KeyQ", "q")).toBe(false);
     expect(s.key("KeyW", "w")).toBe(true);
@@ -353,25 +372,32 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(Math.atan2(-dir[0], -dir[1])).toBeCloseTo(1.22);
   });
 
-  it("a refused lock plays on without it: drag to look", async () => {
+  it("without the lock (refused, or the browser's Escape) it plays on: drag to look; me() says which", () => {
     const s = stage();
-    s.lockRefusal = true;
+    s.pointer = { locked: false, released: false, refused: true };
     const crew = s.make();
     crew.start();
-    await Promise.resolve();
     expect(crew.me()).toMatchObject({ playing: true, free: true, paused: false });
     const session = s.top().press({ button: 0, locked: false, clientX: 0, clientY: 0 });
     session.move({ clientX: -50, clientY: 0 });
     expect(crew.me().yaw).toBeCloseTo(0.11);
+    // a tap is a click, down the chain again
+    expect(session.tap()).toBe(false);
+    s.pointer = { locked: false, released: true, refused: false };
+    expect(crew.me()).toMatchObject({ playing: true, free: false, paused: true });
+    // under the lock a press is nothing of the body's
+    expect(s.top().press({ button: 0, locked: true })).toBe(null);
   });
 
-  it("Esc lets go: the arm, the camera, presence; and the view goes off the ship's quarter", () => {
+  it("leaving the body (Leave, the chip's) lets go: the camera, presence; and the view goes off the ship's quarter. Escape never does", () => {
     const s = stage();
     const crew = s.make();
     crew.start();
     s.frames(2);
-    s.key("Escape");
-    expect(s.arms.length).toBe(0);
+    expect(s.key("Escape")).toBe(false); // not the body's: the stage's ladder
+    expect(crew.me().playing).toBe(true);
+    s.api.body.leave();
+    expect(s.bodies.length).toBe(1);
     expect(s.held).toBe(0);
     expect(s.presence.crew).toBe(undefined);
     expect(crew.me().playing).toBe(false);
@@ -379,16 +405,40 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.cam.fov).toBe(50); // the orbit's own, not first person's
   });
 
-  it("after Esc, a view someone else sets (a seat at a table aboard) isn't taken back to her quarter", () => {
+  it("after leaving, a view someone else sets isn't taken back to her quarter", () => {
     const s = stage({ touched: false });
     const crew = s.make();
     s.frames(1); // first sight: the quarter, once
     crew.start();
     s.frames(2);
-    s.key("Escape");
+    crew.stop();
     s.api.camera.set({ position: [1, 2, 3], target: [0, 1, 0] });
     s.frames(3);
     expect(close(s.cam.position, [1, 2, 3], 1e-9)).toBe(true);
+  });
+
+  it("a body that isn't the crew's over walking (a seat in her cockpit): the walker waits, the camera let go; when it goes, you stand where its view was", () => {
+    const s = stage();
+    const crew = s.make();
+    crew.start();
+    s.frames(2);
+    // a seat: its own body, pushed over "aboard"
+    s.crew.bodies.push({ id: "seat", label: "Seated", enter: () => ({ input: {}, leave() {} }) });
+    s.api.body.enter("seat", "p1");
+    expect(s.held).toBe(0);
+    expect(crew.me().playing).toBe(false);
+    expect(s.presence.crew).toBe(undefined);
+    // the seat's view: a seated eye (1.15 m) over the deck
+    s.api.camera.set({ position: [0.5, 1.2 + 1.15, 1], target: [0.5, 1.2, -2] });
+    const sets = s.sets.length;
+    s.frames(5);
+    expect(s.sets.length).toBe(sets); // waiting: it doesn't move the camera
+    s.api.body.leave();
+    expect(s.held).toBe(1);
+    expect(crew.me().playing).toBe(true);
+    expect(crew.me().on).toBe("hull");
+    expect(crew.me().position[0]).toBeCloseTo(0.5, 1);
+    expect(crew.me().position[2]).toBeCloseTo(1, 1);
   });
 
   it("over the side you swim, in the world, head above the water; the ladder brings you back aboard", () => {
@@ -416,13 +466,14 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(crew.me().yaw).toBeCloseTo(Math.PI / 2); // facing inboard
   });
 
-  it("at a station: an arm over walking hears keys first, you stand aft of it, and every way out calls left()", () => {
+  it("at a station: its body over walking, with the keys the station declares; you stand aft of it, and every way out calls left()", () => {
     const s = stage();
     const crew = s.make();
     crew.start();
     s.frames(2);
     const seen = [];
     const handlers = {
+      keys: ["KeyA", "KeyD", "KeyF"],
       key: (ev) => (seen.push(ev.code), ev.code === "KeyA"),
       keyup: () => true,
       tick: vi.fn(),
@@ -430,9 +481,12 @@ describe("the crew", { timeout: 60_000 }, () => {
       hint: () => "A / D steer · F leave",
     };
     const leave = crew.take("wheel", handlers);
-    expect(s.arms.length).toBe(2);
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard", "station"]);
+    expect(s.body()).toMatchObject({ id: "station", label: "Helm", reach: 2.5 });
+    expect(s.held).toBe(1); // the crew's camera still: a station is ours
     expect(crew.me().station).toBe("wheel");
     expect(crew.me().hint).toBe("A / D steer · F leave");
+    expect(s.declared()).toEqual(["KeyA", "KeyD", "KeyF"]);
     expect(s.key("KeyA")).toBe(true);
     expect(s.key("KeyW")).toBe(false); // not walking while you're at it
     s.frames(10);
@@ -446,24 +500,19 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(handlers.tick).toHaveBeenLastCalledWith(MAX_SUBSTEPS * SUBSTEP);
     expect(crew.me().position[2]).toBeCloseTo(3.6);
     expect(s.presence.crew.station).toBe("wheel");
-    // F (the station's) leaves
+    // F (the station's) leaves: the station body comes off, walking where you stood
     leave();
     expect(handlers.left).toHaveBeenCalledTimes(1);
-    expect(s.arms.length).toBe(1);
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "aboard"]);
+    expect(s.held).toBe(1);
     leave();
     expect(handlers.left).toHaveBeenCalledTimes(1);
-    // Esc
+    // Leave (the body chip's)
     const h2 = { left: vi.fn() };
     crew.take("wheel", h2);
-    s.key("Escape");
+    s.api.body.leave();
     expect(h2.left).toHaveBeenCalledTimes(1);
     expect(crew.me().playing).toBe(true);
-    // the lock lost
-    const h3 = { left: vi.fn() };
-    crew.take("wheel", h3);
-    s.arms[0].handlers.lockLost({ refused: false });
-    expect(h3.left).toHaveBeenCalledTimes(1);
-    expect(crew.me().paused).toBe(true);
     // the station gone from the doc
     const h4 = { left: vi.fn() };
     crew.take("wheel", h4);
@@ -481,7 +530,30 @@ describe("the crew", { timeout: 60_000 }, () => {
     crew.take("wheel", h5);
     crew.dispose();
     expect(h5.left).toHaveBeenCalledTimes(1);
-    expect(s.arms.length).toBe(0);
+    expect(s.bodies.length).toBe(1);
+  });
+
+  it("coming aboard from a seat (aboard over it): leaving her leaves the camera to the seat, not her quarter", () => {
+    const s = stage();
+    const crew = s.make();
+    s.crew.bodies.push({ id: "seat", label: "Seated", enter: () => ({ input: {}, leave() {} }) });
+    s.api.body.enter("seat", "p1");
+    crew.start();
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat", "aboard"]);
+    s.frames(2);
+    const sets = s.sets.length;
+    s.api.body.leave();
+    expect(crew.me().playing).toBe(false);
+    expect(s.sets.length).toBe(sets); // nothing set: the seat's resumed puts its view back
+    expect(s.bodies.map((b) => b.id)).toEqual(["orbit", "seat"]);
+  });
+
+  it("a station's body needs its verb: the chip can't offer it, and entering it bare does nothing", () => {
+    const s = stage();
+    const crew = s.make();
+    crew.start();
+    expect(crew.bodies.find((b) => b.id === "station").here).toBe(false);
+    expect(s.api.body.enter("station", "wheel")).toBe(false);
   });
 
   it("draws everyone else where they stand, in their frame, never pickable; not yourself", () => {
@@ -507,11 +579,11 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.group.children.length).toBe(1);
   });
 
-  it("before coming aboard, follows the ship by a fallback ride (sideways only), once, and lets go when it stops", () => {
+  it("before coming aboard, follows the ship by a base ride (sideways only), once, and lets go when it stops", () => {
     const s = stage();
     const crew = s.make();
     s.frames(3);
-    expect(s.rides).toEqual([{ id: "hull", opts: { turn: false, rise: false, fallback: true } }]);
+    expect(s.rides).toEqual([{ id: "hull", opts: { turn: false, rise: false } }]);
     // the stage moves the camera: the crew doesn't as well
     s.ship.m = matrix([3, 0.5, -1]);
     s.frames(1);
@@ -553,22 +625,24 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(crew.me().playing).toBe(true);
   });
 
-  it("seated at a table aboard (the view riding it), only the sea or the sky comes aboard: not the hull round the table", () => {
+  it("seated at a table aboard (a body that isn't the crew's), only the sea or the sky comes aboard: not the hull round the table", () => {
     const s = stage();
     s.api.scene().objects.islet = { name: "Islet" };
     expect(boardsOn(s.api.scene(), { id: "hull" }, { seated: true })).toBe(false);
     expect(boardsOn(s.api.scene(), { id: "islet" }, { seated: true })).toBe(false);
     expect(boardsOn(s.api.scene(), null, { seated: true })).toBe(true);
-    let ride = { id: "table", fallback: false };
-    s.api.camera.riding = () => ride;
     const crew = s.make();
     s.ctx.crew = crew;
+    s.bodies.push({ id: "seat", def: { label: "Seated" }, sitting: { input: {} } });
+    expect(seatedView(s.api)).toBe(true);
     expect(crew.input.click({ hit: { id: "hull" } })).toBe(false);
     expect(crew.me().playing).toBe(false);
-    // only the ship's own follow (a fallback): not seated
-    ride = { id: "hull", fallback: true };
+    // in orbit: not seated
+    s.bodies.pop();
+    expect(seatedView(s.api)).toBe(false);
     expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);
     expect(crew.me().playing).toBe(true);
+    expect(seatedView(s.api)).toBe(false); // walking her deck is the crew's own
   });
 
   it("a camera nobody has moved opens off the ship's quarter", () => {
@@ -699,12 +773,17 @@ describe("the crew's walker", { timeout: 60_000 }, () => {
     expect(crew.me().position).toEqual(p);
   });
 
-  it("25: firstPerson.enter: on your feet at the projection of the seat's eye, facing what its view looks at; leave hands the camera back", () => {
+  it("25: standing up from a seat over walking: on your feet at the projection of the seat's eye, facing what its view looks at; sitting again hands the camera to the seat", () => {
     const s = stage({ shipAt: [10, 0, 0], yaw: 0.5 });
     const crew = s.make();
+    crew.start();
+    s.frames(2);
+    s.crew.bodies.push({ id: "seat", label: "Seated", enter: () => ({ input: {}, leave() {} }) });
+    s.api.body.enter("seat", "s1");
     const seatEye = apply(s.ship.m, [1, 1.2 + 1.15, -2]); // a seated eye over her deck, in the world
     const target = apply(s.ship.m, [1, 1.2, -4]); // looking forward along her
-    expect(crew.firstPerson.enter({ seat: "s1", eye: seatEye, target, frame: "hull" })).toBe(true);
+    s.api.camera.set({ position: seatEye, target });
+    s.api.body.leave();
     s.frames(1);
     const me = crew.me();
     expect(me).toMatchObject({ playing: true, on: "hull", swimming: false });
@@ -713,12 +792,12 @@ describe("the crew's walker", { timeout: 60_000 }, () => {
     expect(me.position[2]).toBeCloseTo(-2, 1);
     expect(me.yaw).toBeCloseTo(0, 5); // forward, to her bow
     expect(me.pitch).toBeLessThan(0);
+    // sitting again: the walker waits where it was, the camera is the seat's
+    s.api.body.enter("seat", "s1");
     const sets = s.sets.length;
-    crew.firstPerson.leave();
+    s.frames(2);
     expect(crew.me().playing).toBe(false);
-    expect(s.sets.length).toBe(sets); // the seat's view takes the camera, not her quarter
-    expect(crew.me().position).toEqual(me.position); // and the walker is where it was
-    // a seat not aboard a ship: no
-    expect(crew.firstPerson.enter({ seat: "s2", eye: [0, 1, 0], target: [0, 1, -1], frame: null })).toBe(false);
+    expect(s.sets.length).toBe(sets);
+    expect(crew.me().position).toEqual(me.position);
   });
 });

@@ -11,6 +11,8 @@
 
 import css from "./toolbar.css?inline";
 import { applicable, cleanChoices, controlKey, controlKind, flatCommands, localChanged, tooltip } from "./toolbar-commands.js";
+import { hintFor } from "../keymap.js";
+import { resolverState } from "./resolver.js";
 
 function create(api) {
   api.style(css);
@@ -63,7 +65,7 @@ function create(api) {
     const el = c.el;
     c.sig = sig;
     c.checked = !!state.checked;
-    const title = tooltip(command, state);
+    const title = tooltip(command, state, item.key);
     if (el.title !== title) el.title = title;
     el.disabled = !!state.disabled;
     if (c.kind === "choices") {
@@ -88,7 +90,9 @@ function create(api) {
   }
 
   function render(scene, local) {
-    const items = applicable(flatCommands(api.collect("commands")), null, { scene, local }, "toolbar");
+    const keys = resolverState(api);
+    // (each key is the resolver's: shown only where pressing it does this)
+    const items = applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) }));
     const seen = new Set();
     const els = [];
     for (const item of items) {

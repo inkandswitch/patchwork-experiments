@@ -23,7 +23,7 @@ const fakeSelect = {
   meta: { id: "t.select" },
   module: { create: (api) => ({ input: { click: (ev) => (clicks.push(ev.x), api.local.swap((l) => ({ ...l, selected: null })), true) } }) },
 };
-const fakeArm = { meta: { id: "t.arm" }, module: { create: () => ({}) } };
+const fakeTool = { meta: { id: "t.tool" }, module: { create: () => ({}) } };
 
 // No WebGL in happy-dom: give the viewport an object "a" with content (a 2 m
 // cube at the origin, in a 10 px/m orthographic view centred on (100, 100),
@@ -42,7 +42,7 @@ async function setup({ view = {}, params = { height: 0.2 } } = {}) {
   const render = repo.add({ params });
   const s = await mountStage({
     repo,
-    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles", activities: ["edit"] }, module: handles }, fakeArm, PLAY],
+    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles", activities: ["edit"] }, module: handles }, fakeTool, PLAY],
     doc: { objects: { a: object({ name: "Slice", providerId: "slice-test", renderUrl: render.url }), g: object({ kind: "group", providerId: null }) }, view },
   });
   getRegistry("scene:source").register(SLICE);
@@ -142,17 +142,17 @@ describe("scene.handles on the stage", () => {
     expect(labelTexts(s)).toEqual(["Height: 0.2"]);
   });
 
-  it("stands down while another extension is armed, and only then", async () => {
+  it("stands down while another extension's tool is held, and only then", async () => {
     const { s } = await setup();
     current = s;
     await select(s, "a");
     expect(labelTexts(s)).toHaveLength(1);
-    const disarm = s.api("t.arm").arm({});
+    const putDown = s.api("t.tool").hold({ name: "Tool" }, {});
     await settle();
-    expect(s.local.get().armed).toBe("t.arm");
+    expect(s.local.get().held).toMatchObject({ ext: "t.tool", command: null, name: "Tool" });
     expect(labelTexts(s)).toEqual([]);
     expect(s.instance("scene.handles").input.widgetAt({ x: 100, y: 98 })).toBe(null);
-    disarm();
+    putDown();
     await settle();
     expect(labelTexts(s)).toHaveLength(1);
   });

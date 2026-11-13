@@ -355,13 +355,8 @@ export default {
         renderAll();
       });
       filter.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation(); // ours: the stage would only blur it
-          filter.value = "";
-          query = "";
-          renderAll();
-        } else if (e.key === "Enter") {
+        // (Escape is the ladder's field rung: it clears the text, then leaves the field)
+        if (e.key === "Enter") {
           e.preventDefault();
           e.stopPropagation();
           const first = derive().search?.first;

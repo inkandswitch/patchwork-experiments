@@ -4,16 +4,20 @@
 // contract (STAGE.md, "A command"); held verbs are sessions the prompt keeps
 // open while the key is down.
 //
-// Reach is measured to what you look at: the point the look lands on, when
-// it lands on the thing (or something under it), else its origin. So the
-// boom over the cockpit is in reach when it's over your head, however far
-// its gooseneck is. Looked at from further off (up to FAR), a station still
+// Reach is the stage's (scene/TOOLS.md §4): each verb says `reach: true`,
+// and the stage measures from the body's eye to what you look at (the point
+// the look lands on, when it lands on the thing or something under it, else
+// its box) against the body's reach (the crew's: 2.5 m). So the boom over
+// the cockpit is in reach when it's over your head, however far its
+// gooseneck is; in orbit everything is. Looked at from further off than the
+// body reaches (up to FAR), a station still
 // answers, greyed, with where to go to work it ("Sail · walk to the cockpit"),
 // or, when you're already at one of the sail's stations, which to take
 // ("Sail · work it at the wheel or the mainsheet (F)").
 //
-// The stations you stand at and lock in to (crew.take: an arm over walking,
-// at the station's stand spot in her navmesh; F again leaves):
+// The stations you stand at and lock in to (crew.take: the "station" body
+// over walking, at the station's stand spot in her navmesh, its keys
+// declared; F again leaves):
 // - the helm: A / D steer; the sheet and the halyard are led aft, so Q / E
 //   trim the sheet and hold R raises or lowers the sail from there too;
 // - the mainsheet (a traveller aft in the cockpit, by the boom's end): Q / E
@@ -67,8 +71,6 @@ const JIB_TRIM = {};
 
 export { RODE };
 
-/** How far you can reach a station from (eye to the point you look at on it, m). */
-export const REACH = 2.5;
 /** How far off a station you look at still says where to go to work it (m). */
 export const FAR = 12;
 export const WHEEL_RATE = 0.6; // of the wheel's travel per second, while A or D is held
@@ -96,8 +98,8 @@ export function helmBackSide({ from, alpha0 = 0, wheel = 0, clew = 0 }) {
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
-/** Is `point` within reach of an eye at `from`? */
-export function within(from, point, reach = REACH) {
+/** Is `point` within `reach` (the body's: scene/TOOLS.md §4) of an eye at `from`? */
+export function within(from, point, reach) {
   if (!Array.isArray(from) || !Array.isArray(point)) return false;
   return dist(from, point) <= reach;
 }
@@ -254,7 +256,8 @@ export function stationCommands(api, ctx) {
     return m ? [m[12], m[13], m[14]] : null;
   };
   const distanceTo = (c, target) => lookDistance(c, target, originOf(target));
-  const reach = (c, target) => distanceTo(c, target) <= REACH;
+  // reach is the stage's: a verb that says `reach: true` applies only within the body's reach (from, reach on every surface)
+  const reachOf = (c) => (typeof c?.reach === "number" ? c.reach : Infinity);
   const value = (id) => ctx.sim.value(id) ?? {};
   const someoneElse = (id, kind = STATION) => {
     const by = api.claimedBy(id, kind);
@@ -345,7 +348,7 @@ export function stationCommands(api, ctx) {
   }
 
   /** Is this look at the mast (the mast itself, or the rig within reach of its gooseneck)? Where the halyard is worked. */
-  const atMast = (c, s) => s.mast || within(c?.from, originOf(s.id));
+  const atMast = (c, s) => s.mast || within(c?.from, originOf(s.id), reachOf(c));
 
   /**
    * The sail's keys at a station you stand at: Q / E trim the sheet (one at
@@ -368,6 +371,8 @@ export function stationCommands(api, ctx) {
       if (t) open.set(slot, { code, trim: t });
     };
     return {
+      /** the keys these take (scene/TOOLS.md §5: declared, so a shown key works) */
+      codes: sailId ? [...(sheet ? ["KeyQ", "KeyE"] : []), ...(halyard ? ["KeyR"] : [])] : [],
       key(ev) {
         if (!sailId) return false;
         const k = String(ev.key).toLowerCase();
@@ -433,6 +438,7 @@ export function stationCommands(api, ctx) {
       release();
     };
     leave = ctx.crew.take(stationId, {
+      keys: [...keys.codes, "KeyF"],
       key(ev) {
         if (keys.key(ev)) return true;
         if (String(ev.key).toLowerCase() !== "f") return false;
@@ -554,6 +560,8 @@ export function stationCommands(api, ctx) {
       return { held: sideName(side), label: `${verb}, bow to ${sideName(-side)}` };
     };
     return {
+      /** the keys these take (declared, as the sail's are) */
+      codes: jibId ? [...(winch ? ["KeyQ", "KeyE", "KeyR"] : []), "KeyB"] : [],
       key(ev) {
         if (!jibId) return false;
         const k = String(ev.key).toLowerCase();
@@ -653,6 +661,7 @@ export function stationCommands(api, ctx) {
       release();
     };
     leave = ctx.crew.take(id, {
+      keys: [...keys.codes, "KeyF"],
       // arriving, the eye turns to the jib's luff halfway up, where its middle telltales are
       look: () => jibLuffAt(jibId, 0.5),
       key(ev) {
@@ -681,9 +690,11 @@ export function stationCommands(api, ctx) {
     id: "winch",
     name: "Take the jib sheet",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     state(target, c) {
-      if (!traitOf(c?.scene, target, WINCH) || !reach(c, target)) return null;
+      if (!traitOf(c?.scene, target, WINCH)) return null;
       if (me().station === target) return null;
       const side = sideName(winchSide(c.scene, target));
       return someoneElse(target) ? { disabled: true, label: `Someone's at the ${side} winch` } : { label: `Take the ${side} jib sheet` };
@@ -696,11 +707,13 @@ export function stationCommands(api, ctx) {
     id: cid,
     name,
     key,
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     hold: true,
     state(target, c) {
       const sc = c?.scene;
-      if (!traitOf(sc, target, WINCH) || !reach(c, target)) return null;
+      if (!traitOf(sc, target, WINCH)) return null;
       const jib = stationsOf(sc, target).jib;
       if (!jib) return null;
       if (!working(sc, target)) return goal === 0 ? { disabled: true, label: `Lazy sheet: the jib's to ${sideName(clewSide(sc, target))}` } : null;
@@ -751,6 +764,7 @@ export function stationCommands(api, ctx) {
     };
     ctx.sim.input(id, { angle });
     leave = ctx.crew.take(id, {
+      keys: ["KeyA", "KeyD", "ArrowLeft", "ArrowRight", ...new Set([...keys.codes, ...jib.codes]), "KeyF"],
       key(ev) {
         if (steering(ev.code)) {
           held.add(ev.code);
@@ -796,9 +810,11 @@ export function stationCommands(api, ctx) {
     id: "helm",
     name: "Take the helm",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     state(target, c) {
-      if (!traitOf(c?.scene, target, HELM) || !reach(c, target)) return null;
+      if (!traitOf(c?.scene, target, HELM)) return null;
       if (me().station === target) return null;
       return someoneElse(target) ? { disabled: true, label: "Someone's at the helm" } : {};
     },
@@ -811,9 +827,11 @@ export function stationCommands(api, ctx) {
     id: "mainsheet",
     name: "Take the mainsheet",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     state(target, c) {
-      if (!traitOf(c?.scene, target, MAINSHEET) || !reach(c, target)) return null;
+      if (!traitOf(c?.scene, target, MAINSHEET)) return null;
       if (me().station === target) return null;
       return someoneElse(target) ? { disabled: true, label: "Someone's at the mainsheet" } : {};
     },
@@ -829,10 +847,12 @@ export function stationCommands(api, ctx) {
     id: "halyard",
     name: "Work the halyard",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     state(target, c) {
       const s = sailOf(c?.scene, target);
-      if (!s || !reach(c, target) || !atMast(c, s)) return null;
+      if (!s || !atMast(c, s)) return null;
       if (me().station === s.id) return null;
       return someoneElse(s.id, HALYARD) ? { disabled: true, label: "Someone's at the mast" } : {};
     },
@@ -852,11 +872,13 @@ export function stationCommands(api, ctx) {
     id: "sail",
     name: "Raise sail",
     key: "r",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     hold: true,
     state(target, c) {
       const s = sailOf(c?.scene, target);
-      if (!s || !reach(c, target)) return null;
+      if (!s) return null;
       return busy(s.id) ?? { label: raised(s.id) > 0.5 ? "Lower sail" : "Raise sail" };
     },
     run(target) {
@@ -881,10 +903,12 @@ export function stationCommands(api, ctx) {
     id: cid,
     name,
     key,
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     hold: true,
     state(target, c) {
-      const id = reach(c, target) ? sheetOf(c, target) : null;
+      const id = sheetOf(c, target);
       return id ? (busy(id) ?? {}) : null;
     },
     run(target) {
@@ -901,10 +925,12 @@ export function stationCommands(api, ctx) {
     id: "weigh",
     name: "Raise anchor",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     hold: true,
     state(target, c) {
-      if (!traitOf(c?.scene, target, ANCHOR) || !reach(c, target) || !isDown(target)) return null;
+      if (!traitOf(c?.scene, target, ANCHOR) || !isDown(target)) return null;
       if (someoneElse(target)) return { disabled: true, label: "Someone's at the windlass" };
       const out = Math.round(Number(value(target).rode) || 0);
       return out > 0 ? { label: `Raise anchor · ${out} m of chain out` } : {};
@@ -926,9 +952,11 @@ export function stationCommands(api, ctx) {
     id: "drop",
     name: "Drop anchor",
     key: "f",
+    // within the body's reach (the stage measures it from the eye)
+    reach: true,
     show: ["use"],
     state(target, c) {
-      if (!traitOf(c?.scene, target, ANCHOR) || !reach(c, target) || isDown(target)) return null;
+      if (!traitOf(c?.scene, target, ANCHOR) || isDown(target)) return null;
       return someoneElse(target) ? { disabled: true, label: "Someone's at the windlass" } : {};
     },
     // where it comes to rest is the simulator's to say and write (sim.js:
@@ -950,8 +978,9 @@ export function stationCommands(api, ctx) {
     return sailOf(sc, target) ? "sail" : null;
   }
 
-  // Aboard, walking: a station looked at from beyond reach (but not past
-  // FAR) still answers, greyed, saying where to go. Never at a station (you
+  // Aboard, walking: a station looked at from beyond the body's reach (but
+  // not past FAR) still answers, greyed, saying where to go (and the
+  // station's own verbs show greyed after it, "too far": the stage's). Never at a station (you
   // work it from there), in the water, or before you're aboard.
   const far = {
     id: "far",
@@ -963,8 +992,9 @@ export function stationCommands(api, ctx) {
       if (!m.playing || m.station || m.swimming) return null;
       const kind = kindOf(c?.scene, target);
       if (!kind) return null;
-      const d = distanceTo(c, target);
-      if (!(d > REACH && d <= FAR)) return null;
+      // as the stage measures (from the body's eye: c.distance), else to the look or the origin
+      const d = typeof c?.distance === "function" ? c.distance(target) : distanceTo(c, target);
+      if (!(d > reachOf(c) && d <= FAR)) return null;
       const st = stationsOf(c.scene, target);
       const at = (id) => !!id && within(c?.from, originOf(id), NEAR);
       return { disabled: true, label: walkTo(kind, st, { helm: at(st.helm), mainsheet: at(st.mainsheet), mast: at(st.sail) }) };
@@ -981,7 +1011,7 @@ export function stationCommands(api, ctx) {
     if (!ship) return null;
     const ladder = ctx.sim.stationsOf(ship)?.ladder;
     if (!ladder || (target !== ladder && target !== ship)) return null;
-    return within(c?.from, originOf(ladder)) ? ship : null;
+    return within(c?.from, originOf(ladder), reachOf(c)) ? ship : null;
   }
 
   const climb = {
@@ -1007,6 +1037,8 @@ export function stationCommands(api, ctx) {
     run: () => ctx.crew.start?.(),
   };
 
-  // in the order the prompt shows them (at most three for one look)
-  return [helm, mainsheet, winch, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), jibSheet("jibHaul", "Haul in the jib sheet", "q", 0), jibSheet("jibEase", "Ease the jib sheet", "e", 1), weigh, drop, climb, far, aboard];
+  // in the order the prompt shows them (at most three for one look): where
+  // to go first, for a station beyond the body's reach (whose verbs the
+  // stage then shows greyed, "too far", after it)
+  return [far, helm, mainsheet, winch, halyard, sail, sheet("haul", "Haul in", "q", 0), sheet("ease", "Ease out", "e", 1), jibSheet("jibHaul", "Haul in the jib sheet", "q", 0), jibSheet("jibEase", "Ease the jib sheet", "e", 1), weigh, drop, climb, aboard];
 }

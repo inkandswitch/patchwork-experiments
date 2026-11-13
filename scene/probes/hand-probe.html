@@ -175,7 +175,7 @@ try {
     },
     pos: (id) => scene.doc().objects[id].transform.position,
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
-    carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().armed,
+    carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
     /** switch a viewer's activity; what each is running */
     activity: (who, id) => (who === "a" ? dbgA : dbgB).local.swap((m) => ({ ...m, activity: id })),

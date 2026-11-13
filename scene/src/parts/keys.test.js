@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
-import keys, { invocationFor } from "./keys.js";
+import keys from "./keys.js";
+import { mapInvocation } from "../keymap.js";
 
 /** Commands keyed on k for flagged objects, and on k / Escape / Delete for the scene. */
 function commandsExt(id, log) {
@@ -42,46 +43,29 @@ function commandsExt(id, log) {
   };
 }
 
-describe("invocationFor (pure)", () => {
+describe("the key map's invocation (pure: ../keymap.js mapInvocation)", () => {
   const cmds = (log) => [
     { id: "x", value: commandsExt("x", log).create().commands },
     { id: "y", value: commandsExt("y", log).create().commands },
   ];
-  const scene = { objects: { a: { traits: { "test.flag": {} } }, b: {} } };
-  it("tries the selection, the scene, then the hovered object; first in running order wins", () => {
-    expect(
-      invocationFor(cmds([]), "k", {
-        scene,
-        local: { hovered: "a", selected: "b" },
-      }),
-    ).toEqual({ ext: "x", command: "scene-k", target: null }); // the selection doesn't take it: the scene's does, before the hovered object's
-    expect(
-      invocationFor(cmds([]), "K", {
-        scene,
-        local: { hovered: "b", selected: "a" },
-      }),
-    ).toEqual({ ext: "x", command: "poke", target: "a" });
-    expect(
-      invocationFor(cmds([]), "k", {
-        scene,
-        local: { hovered: "b", selected: null },
-      }),
-    ).toEqual({ ext: "x", command: "scene-k", target: null });
-    expect(
-      invocationFor(cmds([]), "Backspace", {
-        scene,
-        local: { hovered: null, selected: "b" },
-      }),
-    ).toEqual({ ext: "x", command: "remove", target: "b" });
-    expect(invocationFor(cmds([]), "Delete", { scene, local: {} })).toBeNull();
-    expect(invocationFor(cmds([]), "n", { scene, local: {} })).toBeNull();
-    // a selection that isn't an object (a ref) is offered first all the same:
-    // its owner's command answers for it, never the hovered object's
-    expect(invocationFor(cmds([]), "Delete", { scene, local: { hovered: "b", selected: "dimension:d1" } })).toEqual({ ext: "x", command: "remove", target: "dimension:d1" });
+  const scene = { objects: { a: { traits: { "test.flag": {} } }, b: {} }, parents: new Map() };
+  const ctx = { scene, local: {} };
+  it("tries attention's path (the selection, else the look), then the scene; first in running order wins", () => {
+    // the selection doesn't take it: the scene's does (the look plays no part while something is selected)
+    expect(mapInvocation(cmds([]), "k", ctx, { selected: "b", hit: null })).toEqual({ ext: "x", command: "scene-k", target: null });
+    expect(mapInvocation(cmds([]), "K", ctx, { selected: "a", hit: null })).toEqual({ ext: "x", command: "poke", target: "a" });
+    // nothing selected: what is looked at, then the scene
+    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "a" } })).toEqual({ ext: "x", command: "poke", target: "a" });
+    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "b" } })).toEqual({ ext: "x", command: "scene-k", target: null });
+    expect(mapInvocation(cmds([]), "Backspace", ctx, { selected: "b", hit: null })).toEqual({ ext: "x", command: "remove", target: "b" });
+    expect(mapInvocation(cmds([]), "Delete", ctx, {})).toBeNull();
+    expect(mapInvocation(cmds([]), "n", ctx, {})).toBeNull();
+    // a selection that isn't an object (a ref) is offered all the same: its owner's command answers for it
+    expect(mapInvocation(cmds([]), "Delete", ctx, { selected: "dimension:d1", hit: null })).toEqual({ ext: "x", command: "remove", target: "dimension:d1" });
     const objectsOnly = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t, { scene: sc }) => (sc.objects[t] ? {} : null), run() {} }] }];
-    expect(invocationFor(objectsOnly, "Delete", { scene, local: { hovered: "b", selected: "dimension:d1" } })).toEqual({ ext: "z", command: "remove", target: "b" });
-    // a hovered id that isn't in the scene is passed over
-    expect(invocationFor(cmds([]), "k", { scene, local: { hovered: "gone" } })).toEqual({ ext: "x", command: "scene-k", target: null });
+    expect(mapInvocation(objectsOnly, "Delete", ctx, { selected: "dimension:d1", hit: null })).toBeNull();
+    // a looked-at id that isn't in the scene is passed over
+    expect(mapInvocation(cmds([]), "k", ctx, { selected: null, hit: { id: "gone" } })).toEqual({ ext: "x", command: "scene-k", target: null });
   });
 });
 
@@ -103,15 +87,18 @@ describe("scene.keys", () => {
   }, 30_000);
   afterEach(() => s.unmount());
 
-  it("runs the command a key names, for the selection, else the scene, else what's under the pointer", async () => {
+  it("runs the command a key names, on attention's path (the selection, else what's under the pointer), then the scene", async () => {
     s.local.swap((m) => ({ ...m, hovered: "a" }));
-    expect(s.key("k").defaultPrevented).toBe(true); // the scene's k, before the hovered object's
+    expect(s.key("k").defaultPrevented).toBe(true); // the hovered object's k
+    s.local.swap((m) => ({ ...m, hovered: "b" }));
+    s.key("k"); // b has no k: the scene's
     s.local.swap((m) => ({ ...m, hovered: null, selected: "a" }));
     s.key("K");
-    s.local.swap((m) => ({ ...m, selected: "b" }));
-    s.key("k");
+    s.local.swap((m) => ({ ...m, selected: "b", hovered: "a" }));
+    s.key("k"); // the selection is attention: the hovered a plays no part
     s.key("Delete", { code: "Delete" });
     expect(log).toEqual([
+      ["one", "poke", "a"],
       ["one", "scene-k", null],
       ["one", "poke", "a"],
       ["one", "scene-k", null],

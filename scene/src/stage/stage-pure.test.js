@@ -121,9 +121,9 @@ describe("the input chain", () => {
     expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "halo"]);
   });
 
-  it("armed, then the widget's owner, then the holders nearest first, then the general ones — each once", () => {
-    expect(chainOrder({ running, armed: "select", widgetOwner: "halo", holders: holders(["card"]) })).toEqual(["select", "halo", "tabletop"]);
-    expect(chainOrder({ running, armed: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
+  it("the widget's owner, then the holders nearest first, then the general ones — each once", () => {
+    expect(chainOrder({ running, widgetOwner: "halo", holders: holders(["card"]) })).toEqual(["halo", "tabletop", "select"]);
+    expect(chainOrder({ running, widgetOwner: "gone", holders: holders([]) })).toEqual(["tabletop", "select", "halo"]);
   });
 
   it("holders: the nearest link up the hit chain with one of the extension's traits, the scene last (id null)", () => {

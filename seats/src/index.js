@@ -4,8 +4,8 @@
 // Seats: the places people take at a scene, and who sits in them (README.md).
 // One scene:extension, run wherever a scene has the `seats` trait. Others
 // meet it through conventions, never by name: the `roster` it contributes,
-// `seatPlaces` and `firstPerson` it collects, and `lay`, found by this
-// plugin's `roster: true`.
+// the seat body it contributes as `bodies` (the stage's body stack),
+// `seatPlaces` it collects, and `lay`, found by this plugin's `roster: true`.
 
 export const plugins = [
   {

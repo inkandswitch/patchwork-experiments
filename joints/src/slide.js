@@ -55,8 +55,6 @@ export const MAX_LATENCY_MS = 450;
 export const HEAR_MS = 2 * (MAX_LATENCY_MS + POSE_MS);
 /** How long, past when it should have closed, other views leave an absent opener's part before closing it (ms). */
 export const GRACE_MS = 1500;
-/** Arm's reach: how far from the eye a use can be (m). */
-export const REACH = 2;
 
 const STOPS = ["closed", "open"];
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);

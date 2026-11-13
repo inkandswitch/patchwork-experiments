@@ -1,9 +1,9 @@
 // The exit's rules, exhaustively over finite sets of cases: every trait value
-// × every look × every target × both surfaces, against a plain statement of
-// the rule (the oracle), so the cases say what the code must do and nothing
-// is sampled.
+// × every target, against a plain statement of the rule (the oracle), so the
+// cases say what the code must do and nothing is sampled. Reach is the
+// stage's (the command says reach: true): scene's keymap tests cover it.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_VERB, KEY, REACH, destinationOf, docOf, exitVerb, inReach, verbOf } from "./exit.js";
+import { DEFAULT_VERB, KEY, destinationOf, docOf, exitVerb, verbOf } from "./exit.js";
 
 const HERE = "automerge:4NMNnkMhL8jXrdJ9jamS2ix4pTMh";
 const THERE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
@@ -34,20 +34,6 @@ const VERBS = [
   ["Go below", "Go below"],
   ["  Exit  ", "Exit"],
   ["x".repeat(41), "x".repeat(40)],
-];
-const EYE = [0, 1.6, 0];
-// every kind of look the use prompt can pass: [ctx, within reach]
-const LOOKS = [
-  [{}, false], // the key map: no eye
-  [{ from: EYE }, false],
-  [{ hit: { id: "x", distance: 1 } }, false],
-  [{ from: EYE, hit: { id: "x", distance: 0.3 } }, true],
-  [{ from: EYE, hit: { id: "x", distance: REACH } }, true],
-  [{ from: EYE, hit: { id: "x", distance: REACH + 0.001 } }, false],
-  [{ from: EYE, hit: { id: "x", point: [0, 1.6, -1.5] } }, true],
-  [{ from: EYE, hit: { id: "x", point: [0, 1.6, -2.5] } }, false],
-  [{ from: EYE, hit: { id: "x", distance: NaN, point: [1, 1.6, -1] } }, true],
-  [{ from: EYE, hit: { id: "x" } }, false],
 ];
 // every kind of target, in a scene with an exit "e" whose trait each case sets
 const TARGETS = ["e", "plain", "group", "missing", "dimension:d1", null];
@@ -81,30 +67,20 @@ describe("what using it is called", () => {
   });
 });
 
-describe("arm's reach", () => {
-  it.each(LOOKS)("%j: within reach %s", (ctx, want) => {
-    expect(inReach(ctx.from, ctx.hit)).toBe(want);
-  });
-});
-
-describe("the verb, for every trait, look, target and surface", () => {
+describe("the verb, for every trait and target", () => {
   // the rule, stated plainly
-  const oracle = ({ toWant, verbWant, target, surface, reach }) => (target === "e" && toWant != null && (surface === "menu" || reach) ? { label: verbWant, to: toWant } : null);
+  const oracle = ({ toWant, verbWant, target }) => (target === "e" && toWant != null ? { label: verbWant, to: toWant } : null);
   const cases = [];
-  for (const [to, toWant] of TOS)
-    for (const [verb, verbWant] of VERBS)
-      for (const target of TARGETS)
-        for (const surface of ["use", "menu"])
-          for (const [ctx, reach] of surface === "use" ? LOOKS : [[{}, false]]) cases.push({ to, toWant, verb, verbWant, target, surface, ctx, reach });
+  for (const [to, toWant] of TOS) for (const [verb, verbWant] of VERBS) for (const target of TARGETS) cases.push({ to, toWant, verb, verbWant, target });
 
-  it(`agrees with the rule in all ${13 * 8 * 6 * (10 + 1)} cases`, () => {
-    expect(cases.length).toBe(13 * 8 * 6 * 11);
+  it(`agrees with the rule in all ${13 * 8 * 6} cases`, () => {
+    expect(cases.length).toBe(13 * 8 * 6);
     const wrong = [];
     for (const c of cases) {
       const trait = {};
       if (c.to !== undefined) trait.to = c.to;
       if (c.verb !== undefined) trait.verb = c.verb;
-      const got = exitVerb(sceneWith(trait), c.target, { surface: c.surface, here: HERE, ...c.ctx });
+      const got = exitVerb(sceneWith(trait), c.target, { here: HERE });
       const want = oracle(c);
       if (JSON.stringify(got) !== JSON.stringify(want)) wrong.push({ c, got, want });
     }
@@ -112,8 +88,8 @@ describe("the verb, for every trait, look, target and surface", () => {
   });
 
   it("offers nothing on an object whose trait is gone, or in an empty scene", () => {
-    expect(exitVerb({ objects: { e: { traits: {} } } }, "e", { surface: "menu" })).toBe(null);
-    expect(exitVerb(null, "e", { surface: "menu" })).toBe(null);
-    expect(exitVerb({}, "e", { surface: "menu" })).toBe(null);
+    expect(exitVerb({ objects: { e: { traits: {} } } }, "e")).toBe(null);
+    expect(exitVerb(null, "e")).toBe(null);
+    expect(exitVerb({}, "e")).toBe(null);
   });
 });

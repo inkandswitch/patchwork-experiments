@@ -1,72 +1,32 @@
-// scene.use: the use prompt ("[F] Raise the anchor"), the first-person
-// counterpart of the context menu, over the same commands (STAGE.md, "A
-// command"). It takes part in play only, and only when something asks for
-// it: a game lists it in `requires`.
+// scene.use: the use prompt ("[F] Raise the anchor"), attention's verbs
+// shown where attention is (TOOLS.md §3, §5): under the crosshair while the
+// pointer is locked, else at the pointer. It shows; the key map
+// (scene.keys) does. It takes part in play only, and only when something
+// asks for it: a game lists it in `requires`.
 //
-// What you're looking at: while an arm holds pointer lock (first-person
-// play), whatever lies along the middle of the view; otherwise what's under
-// the pointer (local.hovered). Its verbs are the commands that apply to it,
-// or to the nearest thing it's attached to that has any (looking at a spoke
-// of the wheel offers the helm's), shown near the middle of the view, at
-// most three. A verb is offered here unless its `show` leaves "use" out, and
-// only if it has a key: the prompt is the keyboard's.
+// Attention is the selection if any, else the look (api.attention). The
+// prompt is on the selection, or the first object along the look's chain
+// (../keymap.js attentionPath) with any verbs for it (looking at a spoke of
+// the wheel offers the helm's). Its verbs are the keyed commands that apply
+// to it, unless their `show` leaves "use" out, at most three, in the context every
+// surface passes (from, reach, hit), so a verb beyond the body's reach shows
+// disabled, "too far". Each verb's key is the resolver's (hintFor): shown
+// only when pressing it does that, so a verb whose key the body reserves
+// (walking, D) shows without one. Verbs are buttons, for touch; a held verb
+// ("hold F") is the keyboard's.
 //
-// state(target, ctx) gets two more fields here: `from`, the eye ([x, y, z],
-// the camera), so a verb can apply only within arm's reach, and `hit`
-// ({ id, point, distance }, what the look landed on, which may be below the
-// target). The key map and the menu don't pass them, so a verb that needs
-// reach is only ever used from here.
-//
-// Pressing a shown verb's key runs it on its target. A verb whose run()
-// returns a session ({ end(), cancel(), update?(dt) }) is held: it lasts as
-// long as the key is down (winding a capstan). update(dt) runs every frame,
-// end() on the key's release, cancel() when the window or the view loses
-// focus, the target goes, or this part stops. `hold: true` on a command only
-// changes how it's shown ("hold F").
-//
-// A held verb keeps its target until its key comes up. While anything is
-// held the prompt stays on that target, whatever the look has moved to: it
-// shows the held verb (marked held, as it was when pressed, even once it no
-// longer applies from here) and that target's other verbs, and their keys
-// run on it, so a second key (ease while hauling) works the same thing. The
-// held key's auto-repeat is the prompt's, never re-aimed at what you look at
-// now. Once the last key is up the prompt follows the look again.
-//
-// Keys reach this before the key map only if it runs first: a game lists
-// "scene.use" before "scene.keys" in `requires` (else the key map may run a
-// verb that needs no reach on the hovered object, and drop its session).
+// While a verb is held (scene.keys' `keymap`), attention is pinned to its
+// target: the prompt shows the held verb (marked held, as it was when
+// pressed, even once it no longer applies from here) and that target's
+// other verbs, until its key comes up.
 
 import css from "./use.css?inline";
-import { applicable, commandState, controlKind, flatCommands, keyLabel, keyMatches, keysOf } from "./toolbar-commands.js";
+import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
+import { attentionPath, hintFor } from "../keymap.js";
+import { resolverState } from "./resolver.js";
 
 /** How many verbs the prompt shows. */
 export const MAX_VERBS = 3;
-
-/**
- * What a look reaches: the object, then what it's attached to, nearest first.
- * @param {string} id
- * @param {Map<string, string>} parents  scene().parents
- * @returns {string[]}
- */
-export function lookChain(id, parents) {
-  if (id == null) return [];
-  const out = [id];
-  for (let p = parents?.get?.(id); p != null && !out.includes(p); p = parents.get(p)) out.push(p);
-  return out;
-}
-
-/**
- * The verbs for a look: the first target along the chain that has any
- * keyed command shown on "use", and up to `max` of them. Pure (given the
- * collected commands).
- * @param {{ id, value }[]} collected  api.collect("commands")
- * @param {string[]} chain  lookChain()
- * @param {{ scene, local, from, hit }} ctx
- * @returns {{ target: string, entries: { ext, command, state }[] } | null}
- */
-export function useEntries(collected, chain, ctx, max = MAX_VERBS) {
-  return entriesFor(collected, chain, ctx, max);
-}
 
 /**
  * The verbs while something is held: on the held verbs' target, whatever the
@@ -75,81 +35,37 @@ export function useEntries(collected, chain, ctx, max = MAX_VERBS) {
  * target's other verbs as they apply now. Pure (given the collected commands).
  * @param {{ id, value }[]} collected
  * @param {string} target  the held verbs' target
- * @param {{ ext, command, state }[]} heldEntries  heldSessions().entries(target)
- * @param {{ scene, local, from, hit }} ctx  the look now
+ * @param {{ ext, command, state }[]} heldEntries  as they were when pressed
+ * @param {object} ctx  the command context now
  * @returns {{ target: string, entries: { ext, command, state }[] }}
  */
 export function heldEntries(collected, target, heldEntries, ctx, max = MAX_VERBS) {
-  const live = ctx.scene?.objects?.[target] ? (entriesFor(collected, [target], ctx, Infinity)?.entries ?? []) : [];
+  const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx, Infinity) : [];
   const same = (a, b) => a.ext === b.ext && a.command.id === b.command.id;
   const rest = live.filter((e) => !heldEntries.some((h) => same(h, e)));
   return { target, entries: [...heldEntries, ...rest].slice(0, max) };
 }
 
-function entriesFor(collected, chain, ctx, max) {
-  const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
-  if (!flat.length) return null;
-  for (const target of chain) {
-    if (!ctx.scene?.objects?.[target]) continue;
-    const entries = applicable(flat, target, ctx, "use");
-    if (entries.length) return { target, entries: entries.slice(0, max) };
+/**
+ * The prompt's verbs for attention: the first target along its path with
+ * keyed commands shown on "use", and up to `max` of them. Pure (given the collected commands).
+ * @param {{ id, value }[]} collected
+ * @param {{ selected?, hit? }} attention
+ * @param {object} ctx  the command context
+ * @returns {{ target: string, entries: { ext, command, state }[] } | null}
+ */
+export function promptEntries(collected, attention, ctx, max = MAX_VERBS) {
+  for (const target of attentionPath(attention, ctx?.scene?.parents)) {
+    if (attention?.selected == null && !ctx?.scene?.objects?.[target]) continue;
+    const entries = verbsOf(collected, target, ctx, max);
+    if (entries.length) return { target, entries };
   }
   return null;
 }
 
-/** Does this look like a session (something a held verb returns)? */
-const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "function" || typeof r.cancel === "function");
-
-/**
- * The held verbs, by key code: open, tick, and close with end or cancel.
- * Each session's failure is its own.
- */
-export function heldSessions() {
-  const open = new Map(); // code → { session, target, ext, command, entry }
-  const call = (session, name, ...args) => {
-    try {
-      session?.[name]?.(...args);
-    } catch (err) {
-      console.warn(`[scene] scene.use: a held verb's ${name} failed`, err);
-    }
-  };
-  const close = (code, how) => {
-    const h = open.get(code);
-    if (!h) return false;
-    open.delete(code);
-    call(h.session, how);
-    return true;
-  };
-  return {
-    get size() {
-      return open.size;
-    },
-    has: (code) => open.has(code),
-    /** is this extension's command held? */
-    holding: (ext, command) => [...open.values()].some((h) => h.ext === ext && h.command === command),
-    /** the target of the first held verb (what the prompt stays on), or undefined when nothing's held */
-    get target() {
-      return open.values().next().value?.target;
-    },
-    /** the prompt's entries of the verbs held on `target`, as they were when pressed, first held first */
-    entries: (target) => [...open.values()].filter((h) => h.target === target && h.entry).map((h) => h.entry),
-    open(code, session, { target = null, ext = null, command = null, entry = null } = {}) {
-      close(code, "end"); // a press whose release we never heard
-      open.set(code, { session, target, ext, command, entry });
-    },
-    tick(dt) {
-      for (const h of [...open.values()]) call(h.session, "update", dt);
-    },
-    end: (code) => close(code, "end"),
-    cancel: (code) => close(code, "cancel"),
-    /** cancel those whose target this says is gone */
-    cancelWhere(gone) {
-      for (const [code, h] of [...open]) if (gone(h.target)) close(code, "cancel");
-    },
-    cancelAll() {
-      for (const code of [...open.keys()]) close(code, "cancel");
-    },
-  };
+function verbsOf(collected, target, ctx, max) {
+  const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
+  return applicable(flat, target, ctx, "use").slice(0, max);
 }
 
 const verbName = ({ command, state }) => String(state.label ?? command.name ?? command.id);
@@ -164,80 +80,53 @@ function create(api) {
   prompt.hidden = true;
   overlay.append(prompt);
 
-  const held = heldSessions();
-  let current = null; // { target, entries, ctx } | null
+  let current = null; // { target, entries: [{ ext, command, state, key }], hit }
   let shownKey = "";
   let pointer = null; // port-local { x, y }, the last place the pointer was over the view
   let offLoop = null;
+  let offWatch = null;
 
-  const editing = (local) => (local.activities?.current ?? "edit") === "edit";
-
-  const locked = (local) => {
-    if (local.armed == null) return false;
-    const el = document.pointerLockElement;
-    return !!el && api.port.contains(el);
-  };
-
-  function eye() {
-    const cam = api.camera.object;
-    if (!cam?.getWorldPosition) return null;
-    const p = cam.getWorldPosition(new api.THREE.Vector3());
-    return [p.x, p.y, p.z];
-  }
-
-  // What the view is on: { hit: { id, point, distance }, from } or null.
-  function look(local) {
-    if (locked(local)) {
-      const ray = api.ray((api.port.clientWidth || 0) / 2, (api.port.clientHeight || 0) / 2);
-      const hit = ray ? api.raycast(ray.origin, ray.dir) : null;
-      if (!hit?.id) return null;
-      return { hit: { id: hit.id, point: hit.point ?? null, distance: hit.distance ?? null }, from: ray.origin ?? eye() };
-    }
-    const id = local.hovered;
-    if (id == null) return null;
-    const ray = pointer ? api.ray(pointer.x, pointer.y) : null;
-    const at = pointer ? api.pick(pointer.x, pointer.y) : null;
-    const on = at?.id === id ? at : null;
-    return { hit: { id, point: on?.point ?? null, distance: on?.distance ?? null }, from: ray?.origin ?? eye() };
-  }
+  const keymap = () => api.collect("keymap").map((r) => r.value).find((v) => v && typeof v.pinned === "function") ?? null;
+  const locked = () => !!api.local.get().pointer?.locked;
 
   function refresh() {
-    const local = api.local.get();
-    const scene = api.scene();
-    const seen = editing(local) ? null : look(local);
-    const pinned = held.target;
-    if (pinned !== undefined && !editing(local)) {
-      // a held verb keeps its target: the prompt stays on it until the key's up
-      const ctx = { scene, local, from: seen?.from ?? eye(), hit: seen?.hit ?? null };
-      current = { ...heldEntries(api.collect("commands"), pinned, held.entries(pinned), ctx), ctx };
-    } else if (seen) {
-      const ctx = { scene, local, from: seen.from, hit: seen.hit };
-      const found = useEntries(api.collect("commands"), lookChain(seen.hit.id, scene.parents), ctx);
-      current = found ? { ...found, ctx } : null;
+    const km = keymap();
+    if (km && !offWatch) offWatch = km.watch(() => refresh());
+    const pinned = km?.pinned();
+    const keys = resolverState(api);
+    const { collected, ctx, attention } = keys;
+    const found = pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
+    if (found) {
+      current = { target: found.target, hit: ctx.hit, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
     } else current = null;
-    render(locked(local));
+    render();
   }
 
-  function render(centred) {
+  function render() {
+    const km = keymap();
     const entries = current?.entries ?? [];
-    const key = JSON.stringify(entries.map((e) => [e.ext, e.command.id, verbName(e), keyLabel(e.command), !!e.command.hold, !!e.state.disabled, e.state.title ?? null, held.holding(e.ext, e.command.id)]));
+    const key = JSON.stringify(entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)]));
     if (key !== shownKey) {
       shownKey = key;
-      prompt.replaceChildren(...entries.map(row));
+      prompt.replaceChildren(...entries.map((e) => row(e, km)));
       prompt.hidden = !entries.length;
     }
-    place(centred);
+    place();
   }
 
-  // One verb: the key in a keycap (after "hold" for a held one), then its name.
-  function row(entry) {
-    const { ext, command, state } = entry;
-    const el = document.createElement("div");
+  // One verb: the key in a keycap (after "hold" for a held one), then its
+  // name; a button, so a touch can run it (a held verb is the keyboard's).
+  function row(entry, km) {
+    const { ext, command, state, key } = entry;
+    const el = document.createElement("button");
+    el.type = "button";
     el.className = "use-verb";
     el.dataset.ext = ext;
     el.dataset.command = command.id;
+    el.tabIndex = -1;
     if (state.disabled) el.dataset.disabled = "";
-    if (held.holding(ext, command.id)) el.dataset.held = "";
+    el.disabled = !!state.disabled || !!command.hold;
+    if (km?.holding(ext, command.id)) el.dataset.held = "";
     if (state.title) el.title = String(state.title);
     if (command.hold) {
       const h = document.createElement("span");
@@ -245,137 +134,69 @@ function create(api) {
       h.textContent = "hold";
       el.append(h);
     }
-    const k = document.createElement("kbd");
-    k.className = "use-key";
-    k.textContent = keyLabel(command);
+    if (key) {
+      const k = document.createElement("kbd");
+      k.className = "use-key";
+      k.textContent = key;
+      el.append(k);
+    }
     const name = document.createElement("span");
     name.className = "use-name";
     name.textContent = verbName(entry);
-    el.append(k, name);
+    el.append(name);
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const target = current?.target ?? null;
+      // (applies still: the stage's run asks again)
+      if (commandState(command, target, api.context(current?.hit ?? null))) api.run({ ext, command: command.id, target, hit: current?.hit ?? null });
+      api.root.focus?.({ preventScroll: true });
+    });
     return el;
   }
 
-  // Under the crosshair in first person; under the pointer otherwise.
-  function place(centred) {
+  // Under the crosshair when locked; under the pointer otherwise.
+  function place() {
     if (prompt.hidden) return;
-    const at = centred || !pointer ? null : pointer;
+    const at = locked() || !pointer ? null : pointer;
     prompt.style.setProperty("--use-x", at ? `${at.x}px` : "50%");
     prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
   }
 
-  // A loop runs only while it's needed: in first person, locked or not (the
-  // eye moves every frame, so what's in reach does; without the lock the
-  // look is still the hovered object), or while a verb is held (its update).
-  const firstPerson = (local) => locked(local) || !!local.immersive;
-  function tick(dt) {
-    held.tick(dt);
-    if (firstPerson(api.local.get())) refresh();
-  }
+  // A loop runs only while the eye moves on its own: a body other than
+  // orbit (walking, at a station: what's in reach changes every frame).
+  const moving = () => api.local.get().body?.id !== "orbit";
   function wantLoop() {
-    const need = held.size > 0 || firstPerson(api.local.get());
-    if (need && !offLoop) offLoop = api.loop(tick);
+    const need = moving();
+    if (need && !offLoop) offLoop = api.loop(() => refresh());
     else if (!need && offLoop) {
       offLoop();
       offLoop = null;
     }
   }
 
-  // The code a key event is held under (its physical key, as the router keeps it).
-  const codeOf = (ev) => ev.code || ev.key;
-
-  function onKey(ev) {
-    if (ev.ctrl || ev.meta || typeof ev.key !== "string") return false;
-    // the held key's own repeat: still the held verb's, on its target
-    if (ev.repeat && held.has(codeOf(ev))) return true;
-    refresh();
-    if (!current) return false;
-    const entry = current.entries.find(({ command }) => keyMatches(command, ev.key));
-    if (!entry || entry.state.disabled) return false;
-    if (ev.repeat) return true;
-    // what api.run does, keeping what run returns: still applies, then run
-    const ctx = { ...current.ctx, scene: api.scene(), local: api.local.get() };
-    const state = commandState(entry.command, current.target, ctx);
-    if (!state || state.disabled) return false;
-    const value = controlKind(state) === "toggle" ? !state.checked : undefined;
-    let out;
-    try {
-      out = entry.command.run(current.target, value);
-    } catch (err) {
-      console.warn(`[scene] extension “${entry.ext}”: command ${entry.command.id} failed`, err);
-      return true;
-    }
-    if (isSession(out)) {
-      held.open(codeOf(ev), out, { target: current.target, ext: entry.ext, command: entry.command.id, entry: { ...entry, state } });
-      wantLoop();
-      render(locked(api.local.get()));
-    }
-    return true;
-  }
-
-  // A release ends a held verb; one that comes because the window or page
-  // went away (the stage lets go of every key then) cancels it.
-  function onKeyUp(ev) {
-    const code = codeOf(ev);
-    if (!held.has(code)) return false;
-    const away = document.visibilityState === "hidden" || (typeof document.hasFocus === "function" && !document.hasFocus());
-    if (away) held.cancel(code);
-    else held.end(code);
-    wantLoop();
-    // the last key up: the prompt follows the look again
-    refresh();
-    return true;
-  }
-
-  function cancelAll() {
-    if (!held.size) return;
-    held.cancelAll();
-    wantLoop();
-    render(locked(api.local.get()));
-  }
-
-  api.listen(globalThis, "blur", cancelAll);
-  api.listen(document, "visibilitychange", () => {
-    if (document.visibilityState === "hidden") cancelAll();
-  });
-  // focus left the view (for the page, or a field elsewhere): its keys'
-  // releases won't come here. Focus that only passes through nowhere comes
-  // back to the root (the stage sees to that), so look once it has settled.
-  api.listen(api.root, "focusout", (e) => {
-    if (e.relatedTarget && api.root.contains(e.relatedTarget)) return;
-    queueMicrotask(() => {
-      const a = document.activeElement;
-      if (!a || !api.root.contains(a)) cancelAll();
-    });
-  });
-  api.listen(document, "pointerlockchange", () => {
-    wantLoop();
-    refresh();
-  });
   api.listen(api.port, "pointermove", (e) => {
     const r = api.port.getBoundingClientRect();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
-    place(locked(api.local.get()));
+    place();
   });
   api.listen(api.port, "pointerleave", () => {
     pointer = null;
   });
-  // an orbit or zoom moves the eye, and so what's in reach
+  // an orbit or zoom moves the eye, and so what's in reach; a lock taken or
+  // lost moves the look between the pointer and the crosshair
   api.camera.onEnd(() => refresh());
+  api.listen(document, "pointerlockchange", () => refresh());
 
   return {
-    input: {
-      key: onKey,
-      keyup: onKeyUp,
-    },
-    update(scene, _local, prev) {
-      if (prev?.scene !== scene) held.cancelWhere((t) => !scene.objects?.[t]);
+    update() {
       wantLoop();
       refresh();
     },
     dispose() {
-      held.cancelAll();
       offLoop?.();
       offLoop = null;
+      offWatch?.();
+      offWatch = null;
     },
   };
 }

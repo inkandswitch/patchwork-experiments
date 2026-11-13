@@ -66,13 +66,13 @@ describe("the seat body, entered and left", () => {
     return { w, api, view: w.view("A"), body: seatBody(api) };
   }
 
-  it("is the `seat` body", () => {
+  it("is the `seat` body: no keys, no lock, a seat's reach, and not offered by the chip (it needs a seat)", () => {
     const { body } = world(null);
-    expect(body).toMatchObject({ id: "seat", label: "Seated" });
+    expect(body).toMatchObject({ id: "seat", label: "Seated", keys: [], lock: false, reach: 2, here: false });
     expect(typeof body.enter).toBe("function");
   });
 
-  it("every camera, its frame drawn, gone, or none: sets the view and rides exactly when seatPose has a pose and the camera is in a frame", () => {
+  it("every camera, its frame drawn, gone, or none: sets the view, and its sitting rides (the body's ride) exactly when seatPose has a pose and the camera is in a frame", () => {
     for (const cam of CAMS) {
       for (const gone of [false, true]) {
         const { w, api, view, body } = world(cam);
@@ -90,11 +90,11 @@ describe("the seat body, entered and left", () => {
         }
         expect(sat.seat, label).toBe("p1");
         expect(view.camera, label).toEqual(want);
-        expect(view.rides, label).toEqual(cam.in ? [{ id: "tbl", opts: { at: cam.target ?? [0, 0, 0] } }] : []);
+        // the stage applies a body's ride; the body asks for none itself
+        expect(sat.ride, label).toEqual(cam.in ? { id: "tbl", at: cam.target ?? [0, 0, 0] } : null);
+        expect(view.rides, label).toEqual([]);
         sat.leave();
-        expect(view.rides, label).toEqual([]);
         sat.leave(); // twice is once
-        expect(view.rides, label).toEqual([]);
         w.done();
       }
     }

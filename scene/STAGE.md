@@ -53,8 +53,11 @@ this view and by the stage.
 | Key | Written by | Means |
 |---|---|---|
 | `hovered` | stage | the object id under the pointer, or null |
-| `armed` | stage | the extension id on top of the arm stack, or null |
-| `immersive` | stage | true while an `immersive` arm is on (first-person play): decorations (grid, axes, bounds) stand aside |
+| `body` | stage | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; `{ id: "orbit", depth: 0, reach: Infinity }` until another is entered. Grid, axes and bounds show only in orbit |
+| `held` | stage | the held tool, `{ ext, command, name, keys, pointer }`, or null |
+| `gesture` | stage | the open press session's declared keys, `{ owner, keys }`, or null |
+| `pointer` | stage | `{ locked, lock, wanted, released, refused }` (`src/stage/pointer.js`) |
+| `escape` | stage | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`) |
 | `running` | stage | `[{ id, scope }]`, in chain order |
 | `status` | stage | `{ [id]: { state, reason?, text, title } }` load and build state. `text` and `title` are for people; code branches on `state` and, for `"stale"`, `reason`: `"deps"`, `"contested"`, `"pinned"` or `"out-of-date"` |
 | `theme` | stage | the colour tokens (`{ accent: [r,g,b], … }`) |
@@ -385,13 +388,14 @@ describes: {
 - An extension that leaves the running set because this viewer switched
   activity stops at once.
 - One that leaves because of a doc change keeps running for 2 s, and for as
-  long as it, or an extension it `requires`, has an arm, an open session or
-  a pose hold (the carry holding the table's card), so a peer's undo doesn't
-  tear down someone's game.
+  long as it, or an extension it `requires`, has a body entered, the held
+  tool, an open session or a pose hold (the carry holding the table's card),
+  so a peer's undo doesn't tear down someone's game.
 
 When an extension stops:
 1. cancel its open session;
-2. pop its arms (unlock, release camera holds);
+2. pop its bodies (the router unlocks when the top body changes), put its
+   held tool down, and release its camera holds;
 3. release its pose holds as put-backs, and let go of its claims (no `onLost`);
 4. clear its presence keys;
 5. stop its loops, `afterRender` hooks and scheduled work;
@@ -559,10 +563,9 @@ The stage turns DOM input on the canvas into **events**, which are values. It
 routes only events whose target is the canvas; anything else (edges,
 overlays, labels) is left to the DOM. It offers each event down a chain:
 
-1. **the armed extension** (top of the arm stack);
-2. **the open session**, for keys (`session.key`);
-3. **the widget's owner**, for the widget under the pointer;
-4. **the holders, nearest first** (precedence is nearness: SCOPE.md §2).
+1. **the held tool** (TOOLS.md §4: one slot);
+2. **the widget's owner**, for the widget under the pointer;
+3. **the holders, nearest first** (precedence is nearness: SCOPE.md §2).
    The hit chain is the hit object, then what it's attached to (nearest
    first), then its groups (nearest first), and last the scene; with nothing
    hit, it is the scene alone. An extension's holder is the nearest link
@@ -571,8 +574,10 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
    order breaks ties only between extensions holding the same link: a card
    on a table aboard a boat goes to the table's extension, then the boat's,
    then the scene's;
-5. **`general` scope**, in running order. The last of the scene's own is
-   `scene.select`, whose click is the orbit view's default press (below);
+4. **`general` scope**, in running order;
+5. **the top body's default**: orbit's is Select (a click on an object
+   selects it, on nothing clears), structurally last; walk, seat and
+   station have none;
 6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held.
@@ -588,12 +593,12 @@ to pick, and no `local.tool` or `view.tool`:
   F is carry's Flip on every surface; Frame is `.`.
 - **Select** is the first entry of every target's menu (`scene.menu` puts
   `scene.select`'s Select first), in every activity: the deliberate select,
-  in a game too. A plain click selects only as the orbit view's default
-  press: until bodies (TOOLS.md §4) that is the editor's activity, not first
-  person. Where a selection may be is `src/selection.js`: an element of the
+  in a game too. A plain click selects only as the orbit body's default
+  press, the stage's own (`ORBIT` in `stage.js`), offered after the whole
+  chain. Where a selection may be is `src/selection.js`: an element of the
   focus stage (H10); with one stage, any object.
 - **The halo** (`scene.halo`) is the selection's handles, where the doc is
-  writable and nothing is armed: a move arrow along each axis, a rotate ring
+  writable and no tool is held: a move arrow along each axis, a rotate ring
   about each and a scale handle at each corner, all outside the thing's box
   and sized for the screen (`src/parts/halo-math.js`), plus the build-param
   knobs (`scene.handles`). They are drawn and dragged in the frame of what
@@ -684,34 +689,57 @@ a selected dimension too, whatever order the two run in.
   tool, such as the inspector's About) are that tool's. Whoever embeds marks
   the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
   `src/embed.js`); every pane of the drawer (`dock`) is marked so.
-- A field being typed in keeps its keys; Escape blurs it.
+- **One key order** (TOOLS.md §5; `src/keymap.js`): a focused field (the
+  DOM's), the open gesture's declared keys (a carry's Q/E/F), the held
+  tool's, the top body's, then the chain, where the key map (`scene.keys`)
+  is the only `input.key` implementer. Keys are declared as `[{ code,
+  label }]`, so whether one is reserved is known before it is pressed; a
+  reserved key is its reserver's even when it does nothing with it. Inside
+  a menu or a dialog (`role="menu"`, `role="dialog"`) only Escape is the
+  stage's.
+- **Escape pops exactly one layer** (`src/stage/ladder.js`): the lock (the
+  browser's own, unseen by the page), a focused field (it blurs), a popover
+  (`api.popover`'s close), the gesture (put back), the held tool (put
+  down), the selection, the focus. Never the body, never the clock. The
+  next layer is `local.escape`, and `scene.body` shows its hint.
 - A `keyup` goes to whoever claimed its `keydown`.
 - On blur, a hidden page or lost pointer lock, the stage sends a `keyup` for
   every key still down.
-- A keyboard verb is a command's `key`. The extension that turns key events
-  into invocations (the key map) is the one extension expected to implement
-  `input.key` for unclaimed keys; everything else claims keys only through
-  arming or sessions.
 
-**Arming** is a stack:
+**Bodies** (TOOLS.md §4). The router's stack holds only bodies, orbit (the
+stage's) always at the bottom. A body is contributed by an extension:
 
 ```js
-const disarm = api.arm(handlers, { lock?: boolean, replace?: boolean, immersive?: boolean })
-// handlers: the input functions above, plus move(ev) (every pointer move, dx/dy when locked),
-//           leave() (the pointer left the canvas), suspended?(), resumed?(), disarmed?(),
-//           lockLost?({ refused })
-// returns disarm(); also api.relock() → Promise (call it from a press to take the lock again)
+bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, or Infinity
+           here?,                                               // false: it needs a place, so the body chip doesn't offer it
+           enter(place) → { input, eye?() → { position, direction }, ride?: { id, at?, turn?, rise? },
+                            keys?, label?, leave() } | null }]
 ```
 
-- Arming pushes onto the stack. The previous top is `suspended` until this
-  arm is popped, then `resumed`.
-- With `replace`, the extension's own earlier arm is popped first.
-- An unclaimed event falls through to the rest of the chain.
-- Losing pointer lock (Esc) calls `lockLost({ refused: false })` and does
-  not disarm. A lock the browser never granted (a sandboxed frame, a
-  headless browser), from `arm` or `relock`, calls `lockLost({ refused: true })`,
-  once per request, however the browser says no.
-- `immersive` (first-person play) sets `local.immersive` while the arm is on.
+`api.body.enter(id, place)` runs `enter` and pushes what it answers (its
+`keys` and `label` over the body's); `api.body.leave()` pops the top (never
+orbit), and the body under it carries on (`input.resumed`); a body popped
+from under another takes those over it with it; an extension stopping pops
+its bodies. The top body's `input` hears every pointer move and the keys
+it declares, and is offered presses after the chain; one pushed over is
+`suspended`. The body is the source of `from` (its eye) and `reach`, which
+every surface passes (`api.context`). Its ride, if any, is the only ride;
+else orbit's base rides apply.
+
+**The held tool** is one slot, `{ stage, ext, command }`. A command that
+declares `tool: { keys?, pointer? }` is a tool: running it holds the input
+its run returns (running it again puts it down); `api.hold({ name, keys?,
+pointer? }, input)` holds one not picked up through a command (a bag's
+drawn piece; its slot's `command` is null). Holding another, Escape,
+or its extension stopping puts it down (`input.put()`). It is offered every
+event first.
+
+**The pointer** (`src/stage/pointer.js`): the top body asks for lock; the
+view grants it while nothing else wants the pointer (a held tool with
+`pointer: true`, a selection, an open popover or drawer). The browser's
+Escape releases it; the next press on the world only relocks. A refused
+lock leaves the body looking by drag. `locked ⇔ body.lock ∧ ¬wanted ∧
+¬released ∧ ¬refused`.
 
 ## `api`
 
@@ -769,13 +797,23 @@ that extension.
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
 | `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | a raycast hit is `{ id, point, normal, distance, back }`: `normal` faces the ray; `back` says the ray met the face from behind (from inside a closed solid) |
-| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, fallback?, at? }) → off, riding() → { id, fallback } \| null, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
+| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
+
+**Bodies, the held tool, attention** (TOOLS.md §3–§5; "The input chain" above)
+
+| | |
+|---|---|
+| `body` | `{ current() → local.body, enter(id, place) → boolean, leave() → boolean, eye() → { position, direction } \| null, reach() }`: any running extension's body, entered at `place` (an object id, or null for "here") |
+| `hold({ name, keys?, pointer? }, input)` → put | hold a tool not picked up through a command (a bag's drawn piece), declared here, with this input; whatever was held is put down |
+| `popover(close)` → release | an open menu or dialog: it wants the pointer, and Escape closes it (`close()`); release when it closes itself |
+| `context(hit?)` | the command context every surface passes: `{ scene, local, from, reach, hit, distance(target) }` |
+| `attention()`, `look()` | `{ selected, hit }`; the look's hit, `{ id, point, distance }` or null |
 
 How the camera parts behave:
 - **Hold.** While anything holds the camera, orbit is off and not updated,
   nothing auto-fits near and far unless the holder sets them, and nothing is
   saved. The last release re-seats the orbit target in front of the camera.
-- **Riding.** `ride(id, { turn = true, rise = true, fallback = false, at })`
+- **Riding.** `ride(id, { turn = true, rise = true, at })`
   carries the orbit camera with an object, as a passenger: every frame,
   after the loops have moved what's drawn and before the orbit updates, the
   camera and its target move by how the object moved since the last frame
@@ -784,11 +822,11 @@ How the camera parts behave:
   `rise`). Ride the point you look at (a seat rides the spot on the table
   its view is aimed at) and it holds still on screen. It follows from the
   frame it's asked in, so set the view from `worldOf` and ride at once.
-  Roll and pitch are never followed: the orbit keeps world up. One
-  ride applies at a time, the latest that isn't a `fallback`, else the
-  latest fallback (a ship keeping herself in view gives way to a seat at a
-  table aboard her). `riding()` says which applies now (a ship's HUD tells a
-  seated player's view, riding a table, from a spectator's). While the camera is held nothing rides it, and a ride
+  Roll and pitch are never followed: the orbit keeps world up. One ride
+  applies at a time: the top body's own, when it has one (a seat rides its
+  table), else the latest base ride (`camera.ride`: a ship keeping herself
+  in view, which orbit rides), so a seat at a table aboard a ship wins with
+  no flag. While the camera is held nothing rides it, and a ride
   starts again from where the object is then, so first person wins and
   nothing jumps after. It doesn't stop an orbit in progress. Set the view
   first (from `worldOf`, say), then ride. `src/stage/ride.js` is the maths.
@@ -907,8 +945,8 @@ A **command**:
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
   show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
-  state(target, { scene, local, from?, hit? }) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
-  run(target, value?) → void | session }
+  state(target, ctx) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
+  run(target, value?, ctx) → void | session }   // ctx: api.context(hit), the same one state was asked in
 ```
 
 - `state` returning null (or false) means the command doesn't apply to that
@@ -921,35 +959,45 @@ A **command**:
 - A command without `state` applies only to the null target, the scene.
 - A **target** is an object or group id, a ref, or null (the scene). See
   "Targets and refs" below.
-- Surfaces call `api.run({ ext, command, target, value })`.
+- Surfaces call `api.run({ ext, command, target, value, hit? })`. Every
+  surface computes `state` in one context, `api.context(hit)`: `{ scene,
+  local, from, reach, hit, distance(target) }`, `from` the body's eye and
+  `reach` its reach; `run` gets the same context as its third argument.
+  Keys are resolved, and their hints computed, in attention's context
+  (`src/parts/resolver.js` `keyContext`: attention's hit, else the look,
+  so with a selection the look still decides distance and point). A command that says `reach: true` applies only within
+  reach: beyond it, it is disabled with the title "too far", on every
+  surface, and no surface runs it (TOOLS.md §4, H9). `distance` is from the
+  eye to the hit when the look is on the target (or under it), else to the
+  target's box.
 - Toolbars show commands for the null target.
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
-- A key map tries the selection, then the scene, then the hovered object
-  (so Delete removes what you chose, never what you merely passed over),
-  whatever kind of target the selection is.
+- **Attention** is one target per view (TOOLS.md §3): the selection if
+  any, else the look (the pointer's hit, or the eye ray under lock;
+  `api.attention()`, `api.look()`). The key map (`scene.keys`) tries
+  attention's path (the selection; or the look's hit, then what it's
+  attached to, nearest first), then the scene, whatever kind of target the
+  selection is. A key reserved by the gesture, the held tool or the body
+  never reaches it. `src/keymap.js` is the resolver, and every surface that
+  shows a key asks it (`hintFor`): a key is shown only where pressing it
+  does that (H3), so walking, Draw shows without D and is in the menu.
 - **The use prompt** (`scene.use`, in play, when a game requires it) shows
-  the verbs for what this viewer is looking at: the middle of the view while
-  an arm holds pointer lock, else the hovered object. Its target is that
-  object, or the nearest thing it's attached to (`scene().parents`) that has
-  a keyed command shown on `"use"`; it shows at most three, and a shown
-  verb's key runs it on that target. A game lists `"scene.use"` before
-  `"scene.keys"` in `requires`, so the prompt hears its keys first.
-- **Reach.** The use prompt calls `state` with two more fields: `from`, the
-  eye (world `[x, y, z]`), and `hit`, `{ id, point, distance }`, what the
-  look landed on (perhaps a part below the target). The key map and the menu
-  don't pass them, so a verb that needs `from` is used only from the prompt.
+  attention's verbs where attention is (the crosshair under lock, else the
+  pointer): on the selection, or the first object along the look's chain
+  with a keyed command shown on `"use"`, at most three, each a button, its
+  key the resolver's. It shows; the key map does.
 - **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.
-  The use prompt keeps it open while the key is down: `update(dt)` each
-  frame, `end()` when the key is let go, `cancel()` when the window or the
-  view loses focus, the target leaves the doc, or the prompt stops.
+  The key map keeps it open while the key is down: `update(dt)` each frame,
+  `end()` when the key is let go, `cancel()` when the window or the view
+  loses focus, the target leaves the doc, or the command's extension stops.
   `api.run` discards what `run` returns, so elsewhere a held verb is a press.
-  A held verb keeps its target until its key is up: while anything is held
-  the prompt stays on that target wherever the look goes, showing the held
-  verb (marked held, as it was when pressed, even once it no longer applies
-  from where you are) and that target's other verbs, whose keys run on it;
-  the held key's auto-repeat is the prompt's. Once the last key is up the
-  prompt follows the look again.
+  A held verb keeps its target until its key is up: while anything is held,
+  attention is pinned to that target wherever the look goes, and the prompt
+  shows the held verb (marked held, as it was when pressed, even once it no
+  longer applies from where you are) and that target's other verbs, whose
+  keys run on it; the held key's auto-repeat is the key map's. Once the last
+  key is up attention follows the look again.
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;
@@ -961,8 +1009,9 @@ A **command**:
 nothing to reconcile: selecting a dimension replaces the selected object,
 and selecting an object (or clicking on nothing) replaces the dimension.
 - The extension that owns a kind makes its refs, answers for them in its
-  commands' `state` (`scene.dimensions`' Delete and Escape apply to a
-  `"dimension:…"` target), and lets go of a selected ref whose thing is gone.
+  commands' `state` (`scene.dimensions`' Delete applies to a
+  `"dimension:…"` target; Escape deselects it as it deselects anything),
+  and lets go of a selected ref whose thing is gone.
 - Everything that only cares about objects checks `scene.objects[target]`
   and treats any other target as nothing selected: the halo, handles,
   bounds, the outline's marks, the inspector, the selection box. Commands on
@@ -1097,7 +1146,7 @@ people lists the seats package like any other.
 |---|---|
 | `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. The first four are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's) |
 | `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
-| `firstPerson` (contributed by whatever walks) | `{ enter({ seat, eye, target, frame }) → boolean, leave() }`: the hand-off when someone sits down from, or stands up into, first person |
+| `bodies` (contributed: a seat body from `seats`, the walk body from `walk`, sailing's aboard and station) | the stage's body stack (above, "Bodies"); sitting down from walking pushes the seat body over the walk body, standing up pops it |
 | `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, only where the scene has none; setup code calls it instead of writing seats |
 
 **Keepers.** A keeper holds what objects really are, away from the scene
@@ -1195,7 +1244,10 @@ atmosphere() → null | {
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
 | `stage/viewport.js` | the renderer |
-| `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
+| `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
+| `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
+| `stage/ladder.js` | the Escape ladder: which layer one Escape pops, and its hint (pure) |
+| `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
@@ -1233,12 +1285,15 @@ taken out. It keeps the following:
 - **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn, { first? })`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 
-**Router** (`createRouter({ port, canvas, keyRoot, viewport, chainFor, inputOf, onHover, cameraHeld })`):
+**Router** (`createRouter({ port, canvas, keyRoot, chainFor, inputOf, orbit, onHover, onState, pointerWanted, selection, deselect, cameraHeld })`):
 - builds events with lazy `hit` and `widget`;
-- runs the chain through `chainFor(ev)`;
-- owns sessions, the arm stack, pointer lock, key tracking, `menu`
+- runs the chain through `chainFor(ev)`, the held tool before it and the
+  top body after it;
+- owns sessions, the body stack, the held tool, popovers, pointer lock
+  (`pointer.js`), the Escape ladder (`ladder.js`), key tracking, `menu`
   synthesis and the cursor;
-- returns `{ arm, relock, armedOwner, stopOwner(id), dispose }`.
+- returns `{ pushBody, body, bodies, leave, hold, putDown, held, popover,
+  escape, refresh, state, stopOwner(id), dispose }`.
 
 **Presence** (`createPresence({ handle, viewer })`):
 - **messages** (on `handle.broadcast`):

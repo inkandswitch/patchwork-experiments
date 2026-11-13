@@ -2,8 +2,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { plugins } from "../index.js";
-import keys from "./keys.js";
-import use, { heldEntries, heldSessions, lookChain, useEntries } from "./use.js";
+import keys, { heldSessions } from "./keys.js";
+import use, { heldEntries, promptEntries } from "./use.js";
+import { lookChain } from "../keymap.js";
 
 // the real metadata, so these run the way a game would bring them in
 const meta = (id) => {
@@ -13,16 +14,15 @@ const meta = (id) => {
 const USE = { meta: meta("scene.use"), module: use };
 const KEYS = { meta: meta("scene.keys"), module: keys };
 
-const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-
 // A ship: a helm attached to it, a spoke attached to the helm, a capstan and
 // a barrel on deck. The game's verbs are on the helm, the capstan and the
-// barrel; the spoke has none of its own.
-function game(log, sessions) {
+// barrel; the spoke has none of its own. It offers a body to walk in: W is
+// its, and it locks the pointer.
+function game(log, sessions, walker = { key: () => true }, eye = () => [0, 1.6, 4]) {
   return {
-    create(api) {
+    create() {
       return {
-        arm: (handlers = {}) => api.arm(handlers, { lock: true, immersive: true }),
+        bodies: [{ id: "walk", label: "Walk", keys: [{ code: "KeyW", label: "Forward" }], lock: true, reach: 2, enter: () => ({ input: walker, eye: () => ({ position: eye(), direction: [0, 0, -1] }), leave() {} }) }],
         commands: [
           { id: "helm", name: "Take the helm", key: "f", state: (t) => (t === "helm" ? {} : null), run: (t, v) => log.push(["helm", t, v]) },
           { id: "steer-menu", name: "Steer (menu only)", key: "x", show: ["menu"], state: (t) => (t === "helm" ? {} : null), run: () => log.push(["steer-menu"]) },
@@ -42,16 +42,12 @@ function game(log, sessions) {
           },
           // a second verb on the capstan, for while the first is held
           { id: "pawl", name: "Drop the pawl", key: "p", state: (t) => (t === "capstan" ? {} : null), run: (t) => log.push(["pawl", t]) },
-          {
-            // only within arm's reach of the barrel (at the origin)
-            id: "grab",
-            name: "Pick up",
-            key: "g",
-            state: (t, { from }) => (t === "barrel" && from && dist(from, [0, 0, 0]) < 2 ? {} : null),
-            run: (t) => log.push(["grab", t]),
-          },
-          // a scene verb on F: the key map would run it, if the prompt didn't hear F first
+          // only within the body's reach (the stage measures it)
+          { id: "grab", name: "Pick up", key: "g", reach: true, state: (t) => (t === "barrel" ? {} : null), run: (t) => log.push(["grab", t]) },
+          // a scene verb on F: the key map runs it when what's looked at has no F
           { id: "flag", name: "Raise the flag", key: "f", run: () => log.push(["flag"]) },
+          // walking, W is the body's
+          { id: "wave", name: "Wave", key: "w", state: (t) => (t === "barrel" ? {} : null), run: () => log.push(["wave"]) },
         ],
       };
     },
@@ -72,6 +68,7 @@ const DOC = {
 
 describe("scene.use, the pure side", () => {
   const scene = { objects: DOC.objects, parents: new Map([["helm", "ship"], ["spoke", "helm"], ["capstan", "ship"]]) };
+  const collected = [{ id: "t.game", value: game([], []).create().commands }];
 
   it("a look reaches the object, then what it's attached to", () => {
     expect(lookChain("spoke", scene.parents)).toEqual(["spoke", "helm", "ship"]);
@@ -79,25 +76,27 @@ describe("scene.use, the pure side", () => {
     expect(lookChain(null, scene.parents)).toEqual([]);
   });
 
-  it("offers the nearest target with keyed verbs shown on use", () => {
-    const collected = [{ id: "t.game", value: game([], []).create({ arm: () => {} }).commands }];
-    const ctx = { scene, local: {}, from: [0, 0, 5], hit: { id: "spoke" } };
-    const found = useEntries(collected, lookChain("spoke", scene.parents), ctx);
+  it("offers the nearest target with keyed verbs shown on use; a selection is attention's, the look plays no part", () => {
+    const ctx = { scene, local: {}, from: [0, 0, 5], reach: Infinity, hit: { id: "spoke" }, distance: () => 1 };
+    const found = promptEntries(collected, { selected: null, hit: { id: "spoke" } }, ctx);
     expect(found.target).toBe("helm");
     expect(found.entries.map((e) => e.command.id)).toEqual(["helm"]);
-    expect(useEntries(collected, ["ship"], ctx)).toBeNull();
-    // reach: the barrel's verb needs the eye near it
-    expect(useEntries(collected, ["barrel"], ctx)).toBeNull();
-    expect(useEntries(collected, ["barrel"], { ...ctx, from: [0, 1, 1] }).entries.map((e) => e.command.id)).toEqual(["grab"]);
+    expect(promptEntries(collected, { selected: null, hit: { id: "ship" } }, ctx)).toBeNull();
+    expect(promptEntries(collected, { selected: "capstan", hit: null }, ctx).target).toBe("capstan");
+    // reach: beyond it, the verb shows disabled, "too far"
+    const far = promptEntries(collected, { selected: null, hit: { id: "barrel" } }, { ...ctx, reach: 2, distance: () => 3 });
+    expect(far.entries.map((e) => [e.command.id, !!e.state.disabled, e.state.title ?? null])).toEqual([
+      ["grab", true, "too far"],
+      ["wave", false, null],
+    ]);
   });
 
   it("shows at most three", () => {
     const many = Array.from({ length: 5 }, (_, i) => ({ id: `v${i}`, key: `${i}`, state: () => ({}), run() {} }));
-    expect(useEntries([{ id: "x", value: many }], ["barrel"], { scene, local: {} }).entries).toHaveLength(3);
+    expect(promptEntries([{ id: "x", value: many }], { selected: "barrel" }, { scene, local: {} }).entries).toHaveLength(3);
   });
 
   it("while something's held: the held verbs first, as pressed (even where they no longer apply), then the target's others now", () => {
-    const collected = [{ id: "t.game", value: game([], []).create({ arm: () => {} }).commands }];
     const ctx = { scene, local: {}, from: [0, 0, 5], hit: { id: "barrel" } };
     const flat = collected[0].value;
     const wind = { ext: "t.game", command: flat.find((c) => c.id === "wind"), state: { label: "Winding" } };
@@ -109,7 +108,7 @@ describe("scene.use, the pure side", () => {
     expect(gone.entries.map((e) => e.command.id)).toEqual(["wind"]);
   });
 
-  it("held sessions: tick, end, cancel, and a failure stays its own", () => {
+  it("held sessions (scene.keys'): tick, end, cancel, and a failure stays its own", () => {
     const h = heldSessions();
     const a = { end: vi.fn(), cancel: vi.fn(), update: vi.fn(() => { throw new Error("x"); }) };
     const b = { end: vi.fn(), cancel: vi.fn(), update: vi.fn() };
@@ -129,7 +128,7 @@ describe("scene.use, the pure side", () => {
 });
 
 describe("scene.use", () => {
-  let s, log, sessions;
+  let s, log, sessions, walker, eye;
   afterEach(() => {
     s?.unmount();
     s = null;
@@ -139,12 +138,14 @@ describe("scene.use", () => {
 
   const GAME = (requires = ["scene.use", "scene.keys"]) => ({
     meta: { id: "t.game", traits: ["t.level"], activities: ["play"], requires },
-    module: game(log, sessions),
+    module: game(log, sessions, walker, () => eye),
   });
 
   async function mount({ requires } = {}) {
     log = [];
     sessions = [];
+    walker = { key: vi.fn((ev) => ev.key === "w") };
+    eye = [0, 1.6, 4];
     s = await mountStage({ extensions: [GAME(requires), USE, KEYS], doc: DOC });
     await s.activity("play");
   }
@@ -157,12 +158,12 @@ describe("scene.use", () => {
   const down = (key, extra = {}) => s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}`, ...extra }));
   const up = (key) => s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
 
-  it("runs in play when a game requires it, before the key map", async () => {
+  it("runs in play when a game requires it", async () => {
     await mount();
     expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys"]);
   });
 
-  it("hovering something with verbs shows them; its key runs the verb on it", async () => {
+  it("hovering something with verbs shows them; its key (the key map's) runs the verb on it", async () => {
     await mount();
     expect(prompt().hidden).toBe(true);
     await hover("helm");
@@ -172,11 +173,18 @@ describe("scene.use", () => {
     expect(prompt().querySelector("kbd").textContent).toBe("F");
     s.key("f");
     expect(log).toEqual([["helm", "helm", undefined]]);
-    // nothing in view: F is the key map's again
+    // nothing in view: F is the scene's
     await hover(null);
     expect(prompt().hidden).toBe(true);
     s.key("f");
     expect(log.at(-1)).toEqual(["flag"]);
+  });
+
+  it("a verb is a button: a click runs it on its target", async () => {
+    await mount();
+    await hover("helm");
+    prompt().querySelector('[data-command="helm"]').click();
+    expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
   it("looking at a part offers what it's attached to", async () => {
@@ -197,64 +205,75 @@ describe("scene.use", () => {
     expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
-  describe("in first person (an arm holds the pointer lock)", () => {
-    async function firstPerson({ hitId = "spoke", eye = [0, 1.6, 4] } = {}) {
+  describe("walking (a body that locks the pointer)", () => {
+    async function walking({ hitId = "spoke", distance = 1.5 } = {}) {
       await mount();
-      const u = s.api("scene.use");
-      u.ray = () => ({ origin: eye, dir: [0, 0, -1] });
-      u.raycast = () => (hitId ? { id: hitId, point: [0, 1, 0], normal: null, distance: 1.5 } : null);
-      // the walker: it passes every key but W
-      const walker = { key: vi.fn((ev) => ev.key === "w") };
-      s.instance("t.game").arm(walker);
+      const vp = s.debug.viewport;
+      vp.centerRay = () => ({ origin: eye, dir: [0, 0, -1] });
+      vp.raycast = () => (hitId ? { id: hitId, point: [0, 1, 0], normal: null, distance } : null);
       Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });
+      expect(s.api("t.game").body.enter("walk")).toBe(true);
       document.dispatchEvent(new Event("pointerlockchange"));
       await settle();
-      return walker;
+      return vp;
     }
 
-    it("looks along the middle of the view, and hears keys the walker passes", async () => {
-      const walker = await firstPerson();
-      expect(s.local.get().armed).toBe("t.game");
+    it("looks along the middle of the view; the body's declared keys are its, the rest the key map's", async () => {
+      await walking();
+      expect(s.local.get().body.id).toBe("walk");
+      expect(s.local.get().pointer.locked).toBe(true);
       expect(verbs()).toEqual(["FTake the helm"]);
       s.key("w");
       expect(log).toEqual([]);
       s.key("f");
-      expect(walker.key).toHaveBeenCalledTimes(2);
+      expect(walker.key).toHaveBeenCalledTimes(1);
       expect(log).toEqual([["helm", "helm", undefined]]);
     });
 
-    it("passes the eye and the hit, so a verb can ask for reach", async () => {
-      await firstPerson({ hitId: "barrel", eye: [0, 1.6, 4] });
-      expect(prompt().hidden).toBe(true);
+    it("a verb whose key the body reserves shows without it, and no key runs it", async () => {
+      await walking({ hitId: "barrel", distance: 1 });
+      expect(verbs()).toEqual(["GPick up", "Wave"]);
+      s.key("w");
+      expect(log).toEqual([]);
+    });
+
+    it("a reach verb beyond the body's reach shows disabled, too far, and its key does nothing; within reach it runs", async () => {
+      const vp = await walking({ hitId: "barrel", distance: 3 });
+      expect(prompt().querySelector('[data-command="grab"]').hasAttribute("data-disabled")).toBe(true);
+      expect(prompt().querySelector('[data-command="grab"]').title).toBe("too far");
+      expect(prompt().querySelector('[data-command="grab"] kbd')).toBeNull();
       s.key("g");
       expect(log).toEqual([]);
-      // stepping up to it (the next frame would see it; a lock change looks again at once)
-      s.api("scene.use").ray = () => ({ origin: [0, 1.2, 0.8], dir: [0, -1, -1] });
+      // stepping up to it (the prompt looks again every frame while walking; a lock change does at once)
+      vp.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: null, distance: 1.5 });
       document.dispatchEvent(new Event("pointerlockchange"));
-      expect(verbs()).toEqual(["GPick up"]);
+      await settle();
+      expect(verbs()[0]).toBe("GPick up");
       s.key("g");
       expect(log).toEqual([["grab", "barrel"]]);
     });
 
-    it("hands state the hit it looked at", async () => {
+    it("hands state the context: the body's eye and reach, and the hit it looked at", async () => {
       const seen = [];
       log = [];
       sessions = [];
       const probe = {
         meta: { id: "t.probe", traits: ["t.level"], activities: ["play"], requires: ["scene.use"] },
-        module: { create: (api) => ({ arm: (h) => api.arm(h, { lock: true }), commands: [{ id: "look", name: "Look", key: "l", state: (t, ctx) => (seen.push(ctx), t === "barrel" ? {} : null), run() {} }] }) },
+        module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", lock: true, reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [1, 2, 3] }), leave() {} }) }], commands: [{ id: "look", name: "Look", key: "l", state: (t, ctx) => (seen.push(ctx), t === "barrel" ? {} : null), run() {} }] }) },
       };
       s = await mountStage({ extensions: [probe, USE], doc: DOC });
       await s.activity("play");
-      const u = s.api("scene.use");
-      u.ray = () => ({ origin: [1, 2, 3], dir: [0, 0, -1] });
-      u.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: [0, 1, 0], distance: 2.5 });
-      s.instance("t.probe").arm({});
+      s.debug.viewport.centerRay = () => ({ origin: [1, 2, 3], dir: [0, 0, -1] });
+      s.debug.viewport.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: [0, 1, 0], distance: 2.5 });
       Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });
+      s.api("t.probe").body.enter("walk");
       document.dispatchEvent(new Event("pointerlockchange"));
+      await settle();
       const ctx = seen.at(-1);
       expect(ctx.from).toEqual([1, 2, 3]);
+      expect(ctx.reach).toBe(2);
       expect(ctx.hit).toEqual({ id: "barrel", point: [0, 1, 0], distance: 2.5 });
+      expect(ctx.distance("barrel")).toBe(2.5);
       expect(Object.keys(ctx.scene.objects)).toContain("barrel");
     });
   });
@@ -291,7 +310,7 @@ describe("scene.use", () => {
       // the held target's other verb, by its key: on the capstan, not on what's looked at
       s.key("p");
       expect(log.at(-1)).toEqual(["pawl", "capstan"]);
-      // F isn't the capstan's: on to the key map
+      // F isn't the capstan's: the scene's, not the helm looked at
       s.key("f");
       expect(log.some((l) => l[0] === "helm")).toBe(false);
       up("e");
@@ -335,7 +354,7 @@ describe("scene.use", () => {
       expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
     });
 
-    it("cancels when the part stops (back to editing)", async () => {
+    it("cancels when the extension whose verb it is stops (back to editing)", async () => {
       await mount();
       await hover("capstan");
       down("e");
@@ -344,7 +363,7 @@ describe("scene.use", () => {
     });
   });
 
-  it("nothing shows or runs while editing", async () => {
+  it("nothing shows while editing, and the game's verbs aren't there to run", async () => {
     await mount();
     await s.activity("edit");
     expect(s.instance("scene.use")).toBeNull();

@@ -50,6 +50,14 @@ export { CARRY, carryable };
 
 const TURN = Math.PI / 4;
 const TURN_OVER = 0.3; // seconds to turn something over
+/** The keys a carry takes while it's open: Q and E turn it, F turns it over, Alt places it freely. */
+export const CARRY_KEYS = Object.freeze([
+  { code: "KeyQ", label: "Turn left" },
+  { code: "KeyE", label: "Turn right" },
+  { code: "KeyF", label: "Turn over" },
+  { code: "AltLeft", label: "Place freely" },
+  { code: "AltRight", label: "Place freely" },
+]);
 const RING_SEGMENTS = 48;
 
 export default {
@@ -313,6 +321,8 @@ export default {
           finish();
           if (lifted) api.pose.release(id);
         },
+        // the gesture's keys, declared, so the key order knows them before they're pressed (keymap.js)
+        keys: CARRY_KEYS,
         key(ev) {
           if (done || !c) return false;
           const k = String(ev.key ?? "");
@@ -411,11 +421,11 @@ export default {
       input: {
         press(ev) {
           if (ev.button != null && ev.button !== 0) return null;
-          if (api.local.get().armed != null) return null;
+          if (api.local.get().held != null) return null;
           return carry(ev.holder, ev);
         },
         cursor(ev) {
-          if (open || api.local.get().armed != null) return null;
+          if (open || api.local.get().held != null) return null;
           return canCarry(ev.holder) ? "grab" : null;
         },
       },

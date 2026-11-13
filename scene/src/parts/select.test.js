@@ -54,17 +54,20 @@ describe("scene.select: clicking", () => {
     expect(sel()).toBeNull();
   });
 
-  it("an empty click with nothing selected isn't claimed", async () => {
-    await mount();
-    expect(s.instance("scene.select").input.click({ hit: null })).toBe(false);
-    expect(s.instance("scene.select").input.click({ hit: { id: "a" } })).toBe(true);
-    expect(s.instance("scene.select").input.click({ hit: null })).toBe(true);
-    expect(sel()).toBeNull();
+  it("is the orbit body's default press: after every extension down the chain", async () => {
+    const log = [];
+    const after = { meta: { id: "t.after" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), false) } }) } };
+    await mount({ extensions: [after] });
+    hitOn("a");
+    s.click(20, 20);
+    expect(log).toEqual(["a"]); // offered first, though registered after scene.select
+    expect(sel()).toBe("a");
   });
 
   it("a hit on something the doc no longer has selects nothing", async () => {
     await mount();
-    expect(s.instance("scene.select").input.click({ hit: { id: "zzz" } })).toBe(false);
+    hitOn("zzz");
+    s.click(20, 20);
     expect(sel()).toBeNull();
   });
 
@@ -212,21 +215,17 @@ describe("scene.select: presence", () => {
 });
 
 describe("scene.select: commands", () => {
-  it("Deselect applies to the scene only while something is selected", async () => {
+  it("has no Deselect: Escape deselects as the stage's ladder's selection rung", async () => {
     await mount();
-    const c = s.instance("scene.select").commands.find((x) => x.id === "deselect");
-    expect(c.key).toBe("Escape");
-    expect(c.show).toEqual([]);
-    expect(state("deselect")).toBeNull();
-    expect(run("deselect")).toBe(false);
+    expect(s.instance("scene.select").commands.find((x) => x.id === "deselect")).toBeUndefined();
     s.local.swap((m) => ({ ...m, selected: "a" }));
-    expect(state("deselect")).not.toBeNull();
-    expect(state("deselect", "a")).toBeNull();
-    expect(run("deselect")).toBe(true);
+    expect(s.local.get().escape).toEqual({ layer: "selection", hint: "deselect" });
+    s.key("Escape", { code: "Escape" });
     expect(sel()).toBeNull();
     s.local.swap((m) => ({ ...m, selected: "dimension:d1" })); // any target
-    expect(run("deselect")).toBe(true);
+    s.key("Escape", { code: "Escape" });
     expect(sel()).toBeNull();
+    expect(s.local.get().escape).toEqual({ layer: null, hint: "" });
   });
 
   it("Select selects the object it's run on", async () => {
@@ -289,8 +288,8 @@ describe("scene.select: commands", () => {
   });
 });
 
-describe("scene.select: in every activity", () => {
-  it("in play it keeps running and keeps the selection; a plain click selects nothing (it isn't the orbit view's), Select does", async () => {
+describe("scene.select: in every activity, by body", () => {
+  it("in play it keeps running and keeps the selection; in orbit a plain click selects, as Select does", async () => {
     await mount({ extensions: [PLAY] });
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -300,22 +299,26 @@ describe("scene.select: in every activity", () => {
     expect(sel()).toBe("a");
     hitOn("b");
     s.click(20, 20);
-    expect(sel()).toBe("a");
-    hitOn(null);
-    s.click(20, 20);
-    expect(sel()).toBe("a");
-    expect(run("select", "b")).toBe(true);
     expect(sel()).toBe("b");
-    await until(() => mineSent().selected === "b");
+    expect(run("select", "a")).toBe(true);
+    expect(sel()).toBe("a");
+    await until(() => mineSent().selected === "a");
   });
 
-  it("first person (immersive) is no orbit view either: a click selects nothing", async () => {
-    await mount();
-    s.local.swap((m) => ({ ...m, immersive: true }));
+  it("a body other than orbit has no default press: a plain click selects nothing; Select still does", async () => {
+    const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) }] }) } };
+    await mount({ extensions: [walker] });
+    expect(s.api("t.walk").body.enter("walk")).toBe(true);
+    await settle();
+    expect(s.local.get().body).toMatchObject({ id: "walk", label: "Walk", depth: 1, reach: 2 });
     hitOn("a");
     s.click(20, 20);
     expect(sel()).toBeNull();
-    expect(s.instance("scene.select").input.click({ hit: { id: "a" } })).toBe(false);
+    expect(run("select", "a")).toBe(true);
+    expect(sel()).toBe("a");
+    s.api("t.walk").body.leave();
+    await settle();
+    expect(s.local.get().body.id).toBe("orbit");
   });
 });
 

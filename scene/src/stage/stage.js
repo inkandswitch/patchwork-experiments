@@ -43,6 +43,10 @@ import { mergeAudience, mergeShown } from "./audience.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import { createDrawer } from "./dock.js";
+import { selectionStep } from "../selection.js";
+import { escapeHint } from "./ladder.js";
+import { lookChain } from "../keymap.js";
+import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
@@ -79,6 +83,14 @@ const UI_PASSES = 3;
 const EDGES = ["top", "right", "bottom", "left"];
 
 const noop = () => {};
+
+/**
+ * The orbit body (TOOLS.md §4), the stage's own and always at the bottom of
+ * the stack: OrbitControls, with Select as its default press. Reach is
+ * everything; it locks nothing and reserves no keys.
+ */
+export const ORBIT = Object.freeze({ id: "orbit", label: "Orbit", keys: Object.freeze([]), lock: false, reach: Infinity });
+const ORBIT_LOCAL = Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 const now = () => globalThis.performance?.now?.() ?? Date.now();
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
@@ -386,8 +398,16 @@ export default function Stage(handle, element) {
   const cameraKey = `scene-camera:${sceneUrl}`;
   const local = createAtom({
     hovered: null,
-    armed: null,
-    immersive: false,
+    // the body on top of the stack (TOOLS.md §4): orbit until another is entered
+    body: ORBIT_LOCAL,
+    // the held tool: { ext, command, name, keys, pointer }, or null
+    held: null,
+    // the open gesture's declared keys ({ owner, keys }), or null
+    gesture: null,
+    // the pointer: { locked, lock, wanted, released, refused } (stage/pointer.js)
+    pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
+    // the layer the next Escape pops, and what its hint says (stage/ladder.js)
+    escape: Object.freeze({ layer: null, hint: "" }),
     running: Object.freeze([]),
     status: Object.freeze({}),
     theme: null,
@@ -1357,7 +1377,7 @@ export default function Stage(handle, element) {
     return Object.create(s, props);
   }
 
-  // Input or arm handlers whose press sessions are counted.
+  // Input (an extension's, a body's or the held tool's) whose press sessions are counted.
   function withSessions(own, input, extra = {}) {
     return Object.create(input, {
       press: {
@@ -1376,19 +1396,10 @@ export default function Stage(handle, element) {
     return w;
   }
 
-  // Arms that asked for `immersive` (a first-person view): while any is on,
-  // local.immersive says so, and decorations (grid, axes, bounds) stand aside.
-  const immersiveArms = new Set();
-  function setImmersive(token, on) {
-    if (on) immersiveArms.add(token);
-    else if (!immersiveArms.delete(token)) return;
-    const now = immersiveArms.size > 0;
-    if (!dead) local.swap((m) => (m.immersive === now ? m : { ...m, immersive: now }));
-  }
-
+  // (a body it put on the stack, the held tool, an open session or a pose: a doc-caused stop waits)
   const busy = (id) => {
     const own = owned.get(id);
-    return !!own && (own.arms.size > 0 || own.sessions > 0 || own.holds.size > 0);
+    return !!own && (own.bodies.size > 0 || own.tool != null || own.sessions > 0 || own.holds.size > 0);
   };
 
   function change(fn) {
@@ -1443,13 +1454,18 @@ export default function Stage(handle, element) {
   }
 
   /**
-   * Run a command as a value: { ext, command, target, value }. A command
-   * whose state() says null (or disabled) for that target doesn't run; one
-   * without state() only runs for the scene (target null).
+   * Run a command as a value: { ext, command, target, value, hit? }. A
+   * command whose state() says null (or disabled) for that target, in the
+   * context every surface passes (`from` and `reach` from the body: a
+   * `reach: true` command out of reach is disabled), doesn't run; one
+   * without state() only runs for the scene (target null). It runs as
+   * run(target, value, ctx), in the same context its state was asked in. A command that
+   * declares `tool` is held: its run returns the tool's input, which goes in
+   * the slot (running it again while held puts it down).
    * @returns {boolean} whether it ran
    */
   function run(invocation) {
-    const { ext, command, target = null, value } = invocation ?? {};
+    const { ext, command, target = null, value, hit = null } = invocation ?? {};
     const x = host.instanceOf(ext);
     let c = null;
     try {
@@ -1459,16 +1475,193 @@ export default function Stage(handle, element) {
     }
     if (!c || typeof c.run !== "function") return false;
     try {
-      if (typeof c.state === "function") {
-        const st = c.state(target, { scene: scene(), local: local.get() });
-        if (!st || st.disabled) return false;
-      } else if (target != null) return false;
-      c.run(target, value);
+      const ctx = context(hit);
+      const st = commandState(c, target, ctx);
+      if (!st || st.disabled) return false;
+      if (c.tool) {
+        const held = router?.held();
+        if (held && held.owner === ext && held.command === c.id) {
+          if (value !== true) router.putDown();
+          return true;
+        }
+        if (value === false) return true;
+        const input = c.run(target, value, ctx);
+        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, ...(typeof c.tool === "object" ? c.tool : {}) }, input);
+        return true;
+      }
+      c.run(target, value, ctx);
       return true;
     } catch (err) {
       console.warn(`[scene] extension “${ext}”: command ${command} failed`, err);
       return false;
     }
+  }
+
+  // ─── bodies, attention and the command context (TOOLS.md §3, §4) ──────────
+
+  // The bodies entered, bottom first, over orbit: { ext, def, sitting, pop }.
+  const sittings = [];
+  const topSitting = () => sittings.at(-1) ?? null;
+
+  /** Every running extension's bodies, by id (the first to offer an id has it). */
+  function bodyDefs() {
+    const out = new Map();
+    for (const { id: ext, value } of host.collect("bodies")) {
+      for (const def of Array.isArray(value) ? value : []) {
+        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === ORBIT.id) continue;
+        if (out.has(def.id)) {
+          console.warn(`[scene] body “${def.id}” is offered by both ${out.get(def.id).ext} and ${ext}; ${out.get(def.id).ext}'s is used`);
+          continue;
+        }
+        out.set(def.id, { ext, def });
+      }
+    }
+    return out;
+  }
+
+  const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
+
+  /** The eye: the top body's, else the camera's. { position, direction } in the world, or null. */
+  function bodyEye() {
+    const s = topSitting();
+    if (s && typeof s.sitting.eye === "function") {
+      try {
+        const e = s.sitting.eye();
+        if (Array.isArray(e?.position) && e.position.length === 3) return { position: [...e.position], direction: Array.isArray(e.direction) ? [...e.direction] : null };
+      } catch (err) {
+        console.warn(`[scene] body “${s.def.id}”: eye failed`, err);
+      }
+    }
+    if (!viewport.ok || !viewport.camera) return null;
+    const p = viewport.camera.getWorldPosition(new THREE.Vector3());
+    return { position: p.toArray(), direction: viewport.forward().toArray() };
+  }
+  const bodyReach = () => reachOf(topSitting()?.def ?? ORBIT);
+
+  /**
+   * Enter body `id` at `place` (TOOLS.md §2: the object a body is given, a
+   * seat or a station, or null for "here"): its enter runs, and what it
+   * answers ({ input, eye(), ride?, keys?, leave() }) goes on top of the
+   * stack. False when no running extension offers it or it can't enter.
+   */
+  function enterBody(id, place = null) {
+    if (dead || !router) return false;
+    const found = bodyDefs().get(id);
+    if (!found) return false;
+    const own = owned.get(found.ext);
+    if (!own) return false;
+    let sitting;
+    try {
+      sitting = found.def.enter(place ?? null);
+    } catch (err) {
+      console.warn(`[scene] body “${id}”: enter failed`, err);
+      return false;
+    }
+    if (!sitting || typeof sitting !== "object") return false;
+    const rec = { ext: found.ext, def: found.def, sitting, pop: null, place: place ?? null };
+    own.bodies.add(rec);
+    sittings.push(rec);
+    const input = withSessions(own, sitting.input ?? {}, {
+      left: { value: () => leftBody(rec) },
+    });
+    rec.pop = router.pushBody(found.ext, { id, input, lock: !!found.def.lock, keys: sitting.keys ?? found.def.keys ?? [] });
+    applyBodyRide();
+    return true;
+  }
+
+  // A body went off the stack (left, popped with one under it, or its extension stopped).
+  function leftBody(rec) {
+    const i = sittings.indexOf(rec);
+    if (i < 0) return;
+    sittings.splice(i, 1);
+    owned.get(rec.ext)?.bodies.delete(rec);
+    try {
+      rec.sitting.leave?.();
+    } catch (err) {
+      console.warn(`[scene] body “${rec.def.id}”: leave failed`, err);
+    }
+    applyBodyRide();
+  }
+
+  /** Leave the top body (never orbit): the one under it carries on. */
+  const leaveBody = () => (sittings.length ? !!router?.leave() : false);
+
+  /** The camera rides the top body's ride, if it has one; else orbit's base rides apply. */
+  function applyBodyRide() {
+    const r = topSitting()?.sitting?.ride ?? null;
+    viewport.bodyRide?.(r && typeof r === "object" && typeof r.id === "string" ? r : null);
+  }
+
+  /**
+   * Hold a tool: its declaration ({ command?, name, keys, pointer }: the
+   * command it was picked up through, if any) and the given input.
+   */
+  function holdTool(ext, t, input) {
+    const own = owned.get(ext);
+    if (!own || !router) return noop;
+    let put = null;
+    const wrapped = withSessions(own, input, {
+      put: {
+        value: () => {
+          if (own.tool === put) own.tool = null;
+          return input.put?.call(input);
+        },
+      },
+    });
+    put = router.hold(ext, { command: t.command ?? null, name: String(t.name ?? t.command ?? ext), input: wrapped, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
+    own.tool = put;
+    return put;
+  }
+
+  // Where the look is: under lock, the eye ray's hit; else the pointer's (the last hover).
+  let hoverHit = null; // { id, point, distance }
+  function look() {
+    if (local.get().pointer?.locked) {
+      let h = null;
+      try {
+        const r = viewport.centerRay();
+        h = r ? viewport.raycast(r.origin, r.dir) : null;
+      } catch {
+        h = null; // nothing to cast into (no WebGL)
+      }
+      return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+    }
+    const hovered = local.get().hovered ?? null;
+    if (hovered == null) return null;
+    return hoverHit && hoverHit.id === hovered ? hoverHit : { id: hovered, point: null, distance: null };
+  }
+
+  /** Attention (TOOLS.md §3): the selection if any, else the look. */
+  function attention() {
+    const selected = local.get().selected ?? null;
+    return Object.freeze({ selected, hit: selected != null ? null : look() });
+  }
+
+  /** How far a target is from the eye: to the hit when it's on the target (or under it), else to its box. */
+  function distanceFrom(from, hit, target) {
+    if (!Array.isArray(from) || target == null) return Infinity;
+    if (hit?.id != null && lookChain(hit.id, derive().parents).includes(target)) {
+      if (Number.isFinite(hit.distance)) return hit.distance;
+      if (Array.isArray(hit.point)) return Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]);
+    }
+    const b = viewport.ok ? viewport.objectBox(target, { hints: true }) : null;
+    if (b && !b.isEmpty()) {
+      const q = [0, 1, 2].map((i) => Math.max(b.min.getComponent(i), Math.min(from[i], b.max.getComponent(i))));
+      return Math.hypot(q[0] - from[0], q[1] - from[1], q[2] - from[2]);
+    }
+    const m = displayedWorld(target);
+    return m ? Math.hypot(m[12] - from[0], m[13] - from[1], m[14] - from[2]) : Infinity;
+  }
+
+  /**
+   * The context every surface passes to a command's state and run: the
+   * scene, local, the eye (`from`), the body's `reach`, the look's `hit`
+   * (when it's the surface's) and `distance(target)`.
+   */
+  function context(hit = null) {
+    const eye = bodyEye();
+    const from = eye?.position ?? null;
+    return { scene: scene(), local: local.get(), from, reach: bodyReach(), hit: hit ?? null, distance: (target) => distanceFrom(from, hit, target) };
   }
 
   async function providersFor(url, sourceDoc) {
@@ -1790,7 +1983,8 @@ export default function Stage(handle, element) {
     const signal = rec.signal;
     // What it holds. Each bag holds the "give it back" functions.
     const own = {
-      arms: new Set(), // live arm tokens
+      bodies: new Set(), // the bodies it put on the stack (sittings)
+      tool: null, // put(): the held tool is its
       sessions: 0, // open press sessions
       holds: new Set(), // object ids whose pose it holds
       claims: new Set(), // the claims it holds (entries in `claims`)
@@ -1922,10 +2116,8 @@ export default function Stage(handle, element) {
         set: (cam) => viewport.setCamera(cam),
         frame: (box) => viewport.frame(box),
         hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        /** carry the orbit camera with a moving object (STAGE.md): the latest non-fallback ride applies */
+        /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own */
         ride: (oid, opts) => acquire(own.offs, () => viewport.ride(oid, opts)),
-        /** the ride that applies now, as { id, fallback }, or null (a seat's view riding a table: not a fallback) */
-        riding: () => viewport.riding(),
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         touched: () => viewport.touched() || cameraRestored,
         watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),
@@ -1959,7 +2151,16 @@ export default function Stage(handle, element) {
         return ownEl(el, edges[EDGES.includes(side) ? side : "right"]);
       },
       /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
-      dock: (el, { title, onClose } = {}) => (live() && el ? acquire(own.offs, () => drawer.dock(id, el, { title, onClose })) : noop),
+      dock: (el, { title, onClose } = {}) => {
+        if (!live() || !el) return noop;
+        // an open drawer wants the pointer (stage/pointer.js)
+        const close = acquire(own.offs, () => {
+          const off = drawer.dock(id, el, { title, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
+          return () => (off?.(), router?.refresh());
+        });
+        router?.refresh();
+        return close;
+      },
       style: (text) => {
         const el = document.createElement("style");
         el.textContent = String(text ?? "");
@@ -1998,32 +2199,36 @@ export default function Stage(handle, element) {
         requestFlush();
       },
 
-      // input
-      arm: (handlers, opts = {}) => {
-        if (!live() || !router) return noop;
-        const h = handlers ?? {};
-        const token = {};
-        // the router pops this extension's earlier arms itself (and says disarmed)
-        if (opts.replace) own.arms.clear();
-        own.arms.add(token);
-        const wrapped = withSessions(own, h, {
-          disarmed: {
-            value: () => {
-              own.arms.delete(token);
-              setImmersive(token, false);
-              return h.disarmed?.call(h);
-            },
-          },
-        });
-        const disarm = router.arm(id, wrapped, opts);
-        if (opts.immersive) setImmersive(token, true);
-        return () => {
-          own.arms.delete(token);
-          setImmersive(token, false);
-          disarm();
-        };
+      // bodies, the held tool, attention (TOOLS.md §3–§5)
+      body: Object.freeze({
+        /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
+        current: () => local.get().body,
+        /** enter body `id` (any running extension's) at `place`: false if none offers it or it can't */
+        enter: (bid, place) => (live() ? enterBody(bid, place) : false),
+        /** leave the top body (never orbit) */
+        leave: () => (live() ? leaveBody() : false),
+        /** the eye: { position, direction } in the world, or null */
+        eye: () => bodyEye(),
+        /** the top body's reach (m; orbit's is Infinity) */
+        reach: () => bodyReach(),
+      }),
+      /**
+       * Hold a tool not picked up through a command (bag's drawn piece in
+       * hand): its declaration { name, keys?: [{ code, label }], pointer? }
+       * and its input. Whatever was held is put down. @returns put
+       */
+      hold: (tool, input) => {
+        if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
+        return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
-      relock: () => (router ? router.relock(id) : Promise.resolve()),
+      /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
+      popover: (close) => (live() && router && typeof close === "function" ? acquire(own.offs, () => router.popover(id, close)) : noop),
+      /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
+      context: (hit) => context(hit),
+      /** attention: { selected, hit } (the selection, else the look) */
+      attention: () => attention(),
+      /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
+      look: () => look(),
 
       // the others
       collect: (name) => host.collect(name),
@@ -2033,10 +2238,11 @@ export default function Stage(handle, element) {
     };
 
     function release() {
-      // 1–2: its open session and its arms (the router cancels, pops and
-      // unlocks), then its camera holds
+      // 1–2: its open session, its bodies and its held tool (the router
+      // cancels, pops, puts down and unlocks), then its camera holds
       router?.stopOwner(id);
-      own.arms.clear();
+      for (const rec of [...own.bodies]) leftBody(rec);
+      own.tool = null;
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
@@ -2054,6 +2260,7 @@ export default function Stage(handle, element) {
       // 7: labels, overlays, edges, docked panes, styles, listeners and watchers, cursor, extent, focus
       for (const key of own.labelKeys ?? []) viewport.labels.clear(key);
       drawer.closeOwner(id);
+      router?.refresh();
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
@@ -2131,6 +2338,34 @@ export default function Stage(handle, element) {
     return { order, holderOf: (id) => holders.get(id)?.id ?? null };
   }
 
+  // The selection (TOOLS.md §3; ../selection.js is its model, H10): one
+  // stage, so the focus is the scene's own and a selection is [id].
+  const FOCUS = Object.freeze([]);
+  function selectStep(ev) {
+    local.swap((m) => {
+      const was = { focus: FOCUS, selected: m.selected != null ? [m.selected] : null };
+      const next = selectionStep(was, ev);
+      if (next === was) return m;
+      const sid = next.selected?.[0] ?? null;
+      return (m.selected ?? null) === sid ? m : { ...m, selected: sid };
+    });
+  }
+
+  // The orbit body's input: its default press is Select, offered after the
+  // held tool and the whole chain, so structurally last. A click on an
+  // object selects it; on nothing, it clears whatever is selected (a group is
+  // never hit: groups are selected from the outline). Its drag is
+  // OrbitControls', which hears what nobody claimed.
+  const orbitInput = {
+    click(ev) {
+      const oid = ev?.hit?.id ?? null;
+      const on = oid != null && !!doc().objects?.[oid];
+      if (!on && local.get().selected == null) return false;
+      selectStep({ type: "press", path: on ? [oid] : [] });
+      return true;
+    },
+  };
+
   router = createRouter({
     port,
     canvas,
@@ -2141,14 +2376,51 @@ export default function Stage(handle, element) {
     centerRay: () => viewport.centerRay(),
     chainFor,
     inputOf,
+    orbit: { id: ORBIT.id, lock: false, keys: [], input: orbitInput },
     cameraHeld: () => viewport.held,
-    onHover: (ev) => local.swap(assoc("hovered", ev?.hit?.id ?? null)),
+    onHover: (ev) => {
+      const h = ev?.hit ?? null;
+      hoverHit = h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+      local.swap(assoc("hovered", h?.id ?? null));
+    },
     onCursor: (name) => {
       routerCursor = name;
       applyCursor();
     },
-    onArmed: (owner) => local.swap(assoc("armed", owner ?? null)),
+    onState: (st) => {
+      if (dead) return;
+      local.swap((m) => ({ ...m, ...localOfRouter(st, m) }));
+    },
+    // a selection or an open drawer wants the pointer (stage/pointer.js)
+    pointerWanted: () => local.get().selected != null || drawer.state().order.length > 0,
+    selection: () => local.get().selected != null,
+    deselect: () => selectStep({ type: "escape" }),
+    // one stage: the focus is the scene's own (COMPOSITION.md build step 14 moves it)
+    focusDepth: () => 0,
+    leaveFocus: noop,
   });
+
+  // The router's state as local's fields: the body (with its label and
+  // reach, which the stage knows), the held tool, the gesture's keys, the
+  // pointer and the ladder's next rung. A field that didn't change keeps its
+  // value, so a watcher can compare by identity.
+  function localOfRouter(st, m) {
+    const s = topSitting();
+    const body = s && s.def.id === st.body.id
+      ? Object.freeze({ id: s.def.id, label: String(s.def.label ?? s.def.id), ext: s.ext, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
+      : ORBIT_LOCAL;
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const held = st.held ? Object.freeze({ ...st.held }) : null;
+    const pointer = Object.freeze({ ...st.pointer });
+    const escape = Object.freeze({ layer: st.escape, hint: escapeHint(st.escape, { tool: st.held?.name ?? null }) });
+    return {
+      body: same(m.body, body) ? m.body : body,
+      held: same(m.held, held) ? m.held : held,
+      gesture: same(m.gesture, st.gesture) ? m.gesture : st.gesture ? Object.freeze(st.gesture) : null,
+      pointer: same(m.pointer, pointer) ? m.pointer : pointer,
+      escape: same(m.escape, escape) ? m.escape : escape,
+    };
+  }
 
   // ─── local → storage, the running set, the flush ──────────────────────────
 
@@ -2157,6 +2429,8 @@ export default function Stage(handle, element) {
       // switching activity stops what the new one doesn't call for at once
       if (next.activity !== prev.activity) host.sync(doc());
       if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
+      // the selection wants the pointer, and is the ladder's rung
+      if (next.selected !== prev.selected) router?.refresh();
       requestFlush();
     }),
   );
@@ -2273,7 +2547,7 @@ export default function Stage(handle, element) {
     atmosphere: () => atmosphere,
     /** the drawer: the docked elements in tab order, and the one shown */
     drawer: () => drawer.state(),
-    /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
+    /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
     busy,
     /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */
     tickPoses,

@@ -45,7 +45,7 @@ describe("anchors (pure)", () => {
 });
 
 describe("scene.measure", () => {
-  it("Measure is a toggle for the scene that arms and disarms, with a crosshair and a hint", async () => {
+  it("Measure is a toggle for the scene that picks the tool up and puts it down, with a crosshair and a hint", async () => {
     await mount();
     expect(state()).toMatchObject({ checked: false });
     expect(state("measure", "a")).toBeNull(); // the scene's, not an object's
@@ -53,19 +53,19 @@ describe("scene.measure", () => {
     expect(run()).toBe(true);
     await settle();
     expect(state()).toMatchObject({ checked: true });
-    expect(s.local.get().armed).toBe("scene.measure");
+    expect(s.local.get().held).toMatchObject({ ext: "scene.measure", command: "measure", pointer: true });
     expect(s.canvas.style.cursor).toBe("crosshair");
     expect(hint().hidden).toBe(false);
     expect(hint().textContent).toBe(HINT_FIRST);
     run();
     await settle();
     expect(state()).toMatchObject({ checked: false });
-    expect(s.local.get().armed).toBeNull();
+    expect(s.local.get().held).toBeNull();
     expect(s.canvas.style.cursor).toBe("");
     expect(hint().hidden).toBe(true);
   });
 
-  it("two clicks write a dimension (anchored to what was hit) and select it; it stays armed", async () => {
+  it("two clicks write a dimension (anchored to what was hit) and select it; it stays held", async () => {
     await mount();
     run();
     pickAt({ id: "a", point: [1.5, 0, 0], normal: [0, 1, 0], distance: 1, snapped: true });
@@ -89,7 +89,7 @@ describe("scene.measure", () => {
     const other = { meta: { id: "t.other" }, module: { create: () => ({ input: { click: () => (clicks.push(1), true) } }) } };
     await mount({ extensions: [other] });
     s.click();
-    expect(clicks).toEqual([1]); // not armed: it isn't the measure's
+    expect(clicks).toEqual([1]); // not held: it isn't the measure's
     run();
     pickAt(null);
     s.click();
@@ -97,22 +97,21 @@ describe("scene.measure", () => {
     expect(inst().state.a).toBeNull();
   });
 
-  it("Escape clears the first point, then stops measuring", async () => {
+  it("Escape puts it down (the ladder's tool rung), first point and all", async () => {
     await mount();
     run();
     pickAt({ id: null, point: [0, 0, 0], snapped: false, ground: true });
     s.click();
     expect(inst().state.a).not.toBeNull();
+    expect(s.local.get().escape).toMatchObject({ layer: "tool", hint: "put down Measure" });
     s.key("Escape", { code: "Escape" });
     expect(inst().state.a).toBeNull();
-    expect(state()).toMatchObject({ checked: true });
-    s.key("Escape", { code: "Escape" });
     expect(state()).toMatchObject({ checked: false });
     await settle();
-    expect(s.local.get().armed).toBeNull();
+    expect(s.local.get().held).toBeNull();
   });
 
-  it("other keys pass through while armed", async () => {
+  it("other keys pass through while it's held", async () => {
     const keys = [];
     const keymap = { meta: { id: "t.keys" }, module: { create: () => ({ input: { key: (ev) => (keys.push(ev.key), true) } }) } };
     await mount({ extensions: [keymap] });
@@ -144,7 +143,7 @@ describe("scene.measure", () => {
     // leaving the view drops the hover point
     s.port.dispatchEvent(new PointerEvent("pointerleave"));
     expect(preview()).toBeNull();
-    // disarming clears everything
+    // putting it down clears everything
     run();
     expect(layer()).toEqual([]);
   });
@@ -163,13 +162,13 @@ describe("scene.measure", () => {
     await until(() => preview()?.textContent === "2 m");
   });
 
-  it("stopping the extension disarms it", async () => {
+  it("stopping the extension puts it down", async () => {
     await mount({ extensions: [PLAY] });
     run();
     await settle();
-    expect(s.local.get().armed).toBe("scene.measure");
+    expect(s.local.get().held).toMatchObject({ ext: "scene.measure", command: "measure", pointer: true });
     await s.activity("play");
-    expect(s.local.get().armed).toBeNull();
+    expect(s.local.get().held).toBeNull();
     expect(s.canvas.style.cursor).toBe("");
   });
 });

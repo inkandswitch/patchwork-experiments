@@ -2,7 +2,7 @@
 // the hold while it moves, the one write, the presence key.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ext from "./extension.js";
-import { HEAR_MS, KEY, REACH } from "./slide.js";
+import { HEAR_MS, KEY } from "./slide.js";
 import { plugins } from "./index.js";
 
 function fakeApi() {
@@ -35,7 +35,7 @@ describe("the slide's verb and motion, on the stage", () => {
     vi.setSystemTime(1_000_000);
     f = fakeApi();
     x = ext.create(f.api);
-    cmd = x.commands.find((c) => c.id === "use");
+    cmd = x.commands.find((c) => c.id === "slide");
   });
   afterEach(() => {
     x.dispose();
@@ -46,25 +46,18 @@ describe("the slide's verb and motion, on the stage", () => {
     expect(f.calls.presence.here).toBe(true);
   });
 
-  it("on the use prompt: F, within arm's reach", () => {
+  it("one verb on every surface: F, within the body's reach (the stage measures it: reach: true)", () => {
+    expect(x.commands.map((c) => c.id)).toEqual(["slide"]);
     expect(cmd.key).toBe("f");
-    expect(cmd.show).toEqual(["use"]);
-    expect(cmd.state("door", {})).toBe(null); // the key map: no eye, so F elsewhere stays carry's Flip
-    expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: REACH + 0.01 } })).toBe(null);
-    expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: REACH } })).toEqual({ label: "Open" });
-    expect(cmd.state("door", { from: [1, 1, 1], hit: { id: "door", point: [1, 1, 2] } })).toEqual({ label: "Open" });
-    expect(cmd.state("wall", { from: [0, 1.6, 0], hit: { id: "wall", distance: 1 } })).toBe(null);
-  });
-
-  it("on the menu and the inspector: no key, no reach (a drawer opened while editing)", () => {
-    const menu = x.commands.find((c) => c.id === "slide");
-    expect(menu.key).toBeUndefined();
-    expect(menu.show).toEqual(["menu", "inspector"]);
-    expect(menu.state("door", {})).toEqual({ label: "Open" });
-    expect(menu.state("wall", {})).toBe(null);
-    menu.run("door");
+    expect(cmd.reach).toBe(true);
+    expect(cmd.show).toEqual(["use", "menu", "inspector"]);
+    // reach is the stage's: the state is the joint's alone, wherever the eye is
+    expect(cmd.state("door", {})).toEqual({ label: "Open" });
+    expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: 50 } })).toEqual({ label: "Open" });
+    expect(cmd.state("wall", {})).toBe(null);
+    cmd.run("door");
     expect(f.calls.holds[0][0]).toBe("door");
-    expect(menu.state("door", {})).toMatchObject({ label: "Opening", disabled: true });
+    expect(cmd.state("door", {})).toMatchObject({ label: "Opening", disabled: true });
   });
 
   it("opens: held each frame along its axis by the clock, written once where it stops, after it's been heard", () => {

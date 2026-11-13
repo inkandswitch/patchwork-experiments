@@ -145,6 +145,15 @@ async function pointAt(id, w) {
   await sleep(120);
   return at;
 }
+/** Point at `id` once the view has settled (a walker placed settles her feet, and the eye with them): aim again until the look is on it. */
+async function pointAtSettled(id, w) {
+  let at = null;
+  for (let i = 0; i < 6; i++) {
+    at = await pointAt(id, w);
+    if (at && (await until(`window.__p.lookIsAt('${id}', '${w}')`, 800))) break;
+  }
+  return at;
+}
 /** Point at `id` near a world point (the boom's after end, say). */
 async function pointNear(id, w, at) {
   const p = await P(`aimNear('${id}', '${w}', ${JSON.stringify(at)})`);
@@ -189,7 +198,8 @@ try {
   };
 
   // both in play, running only the sailing extension and what it requires
-  const PLAY = ["sailing", "scene.activity", "scene.keys", "scene.notices", "scene.packages", "scene.use"];
+  // (and every activity's: the selection's parts, scene/TOOLS.md build step 3, and the body chip, step 6)
+  const PLAY = ["sailing", "scene.activity", "scene.body", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   await sleep(2500); // lingering parts each stop on their own timer
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in play", (await P("activity('a')")) === "play" && (await P("activity('b')")) === "play");
@@ -345,12 +355,12 @@ try {
   // from the wheel, the mast is out of reach: it says where to go
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, 0.15)`);
   await sleep(500);
-  const aimFar = await pointAt(ids.mast, "b");
+  const aimFar = await pointAtSettled(ids.mast, "b");
   const verbsFar = await P("verbs('b')");
-  check("from the wheel, looking at the mast: 'Sail · work it at the wheel or the mainsheet (F)', greyed (you're in the cockpit already)", !!aimFar && verbsFar.some((v) => v.command === "far" && v.disabled && v.name === "Sail · work it at the wheel or the mainsheet (F)"), { aimFar, verbsFar });
+  check("from the wheel, looking at the mast: 'Sail · work it at the wheel or the mainsheet (F)', greyed (you're in the cockpit already)", !!aimFar && verbsFar.some((v) => v.command === "far" && v.disabled && v.name === "Sail · work it at the wheel or the mainsheet (F)"), { aimFar, verbsFar, hovered: await P("hovered('b')") });
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
   await sleep(500);
-  const aimH = await pointAt(wheel, "b");
+  const aimH = await pointAtSettled(wheel, "b");
   check("at the wheel, B's prompt offers the helm", !!aimH && (await P("verbs('b')")).some((v) => v.command === "helm" && !v.disabled), { aimH, verbs: await P("verbs('b')"), hovered: await P("hovered('b')") });
   await press("f");
   await sleep(300);
@@ -559,11 +569,19 @@ try {
   check("F leaves the mainsheet: its claim goes", (await P("me('b')")).station == null && !(await P("doc()")).objects[ids.mainsheet].claims?.station, await P("me('b')"));
   await sleep(6000);
 
-  // a view from off the quarter, A not aboard: Esc stops A's play
+  // a view from off the quarter, A not aboard: Escape never leaves a body
+  // (scene/TOOLS.md §5); the body chip's Leave stops A walking her deck
   await focus("a", await P("canvasCentre('a')"));
   await press("Escape");
+  await sleep(300);
+  const stillAboard = (await P("me('a')")).playing === true && (await P("body('a')")) === "aboard";
+  const chipA = await P("chip('a')");
+  if (chipA) await b.click(Math.round(chipA.x), Math.round(chipA.y));
+  await until("!!window.__p.chipItem('a', 'Leave')", 3000);
+  const leaveA = await P("chipItem('a', 'Leave')");
+  if (leaveA) await b.click(Math.round(leaveA.x), Math.round(leaveA.y));
   await sleep(2500);
-  check("Esc stops A's play: the camera goes back off the quarter, and follows her", (await P("me('a')")).playing === false && !(await P("held('a')")) && (await quarterDistance("a")) < 30, { me: await P("me('a')"), distance: await quarterDistance("a") });
+  check("Escape leaves A aboard; the body chip's Leave stops A's play: the camera goes back off the quarter, and follows her", stillAboard && !!leaveA && (await P("me('a')")).playing === false && (await P("body('a')")) === "orbit" && !(await P("held('a')")) && (await quarterDistance("a")) < 30, { stillAboard, me: await P("me('a')"), body: await P("body('a')"), distance: await quarterDistance("a") });
   report.measured.heelAtQuarterShot = n2((await P(`read('${hull}', 'a')`)).heel);
   await shot("quarter-heeled", "a");
 

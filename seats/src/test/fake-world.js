@@ -20,7 +20,10 @@
 //
 // Time is Date.now (vitest's fake timers), and each view's loops run when the
 // test ticks the world. A peer's held pose shows at once (worldOf is what's
-// drawn: holds included). camera.ride is recorded in view.rides. scene() is a
+// drawn: holds included). camera.ride is recorded in view.rides, as is the
+// ride of the body on top (a seat's). Bodies stack as the stage stacks them
+// (scene/TOOLS.md §4): view.bodies, orbit at the bottom; the defs come from
+// the attached instance's `bodies` and view.collected.bodies. scene() is a
 // snapshot like the stage's: { d, objects, ids, parents, traits, world(id),
 // toLocal(id, p) }, its matrices column-major, Euler XYZ.
 
@@ -212,7 +215,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
   };
 
   function join(session, { viewer = `viewer-${session}`, local = {}, ext = "ext" } = {}) {
-    let localState = Object.freeze({ activities: Object.freeze({ current: "play", available: ["play", "edit"] }), ...local });
+    let localState = Object.freeze({ activities: Object.freeze({ current: "play", available: ["play", "edit"] }), body: Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] }), ...local });
     const view = {
       session,
       viewer,
@@ -230,10 +233,31 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       abort: new AbortController(),
       camera: null,
       rides: [],
+      bodies: [{ id: "orbit", sitting: null }], // the body stack, orbit at the bottom
       collected: null, // { [field]: value }: what api.collect finds on the other extensions
     };
     views.set(session, view);
     gone.delete(session);
+    const ORBIT = Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] });
+    const topBody = () => view.bodies.at(-1);
+    const bodyLocal = () => {
+      const t = topBody();
+      return t.id === "orbit" ? ORBIT : Object.freeze({ id: t.id, label: t.def.label ?? t.id, ext: t.ext, depth: view.bodies.length - 1, lock: !!t.def.lock, reach: t.def.reach ?? Infinity, keys: t.def.keys ?? [] });
+    };
+    const setBody = () => {
+      localState = Object.freeze({ ...localState, body: bodyLocal() });
+    };
+    const defs = () => [...(view.instance?.bodies ?? []).map((def) => ({ def, ext })), ...(view.collected?.bodies ?? []).map((def) => ({ def, ext: "other" }))];
+    const popTop = () => {
+      const t = view.bodies.pop();
+      if (t.ride) {
+        const i = view.rides.indexOf(t.ride);
+        if (i >= 0) view.rides.splice(i, 1);
+      }
+      t.sitting?.leave?.();
+      view.bodies.at(-1).sitting?.input?.resumed?.();
+      setBody();
+    };
     const api = {
       id: ext,
       session,
@@ -245,6 +269,28 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       scene,
       newId: (p) => `${p}${Math.random().toString(36).slice(2, 8)}`,
       registry: async (type) => registries[type] ?? null,
+      body: {
+        current: () => localState.body ?? ORBIT,
+        enter(id, place = null) {
+          const found = defs().find((d) => d.def.id === id);
+          if (!found) return false;
+          const sitting = found.def.enter(place);
+          if (!sitting) return false;
+          topBody().sitting?.input?.suspended?.();
+          const ride = sitting.ride ? { id: sitting.ride.id, opts: { at: sitting.ride.at ?? null } } : null;
+          if (ride) view.rides.push(ride);
+          view.bodies.push({ id, def: found.def, ext: found.ext, sitting, ride });
+          setBody();
+          return true;
+        },
+        leave() {
+          if (view.bodies.length <= 1) return false;
+          popTop();
+          return true;
+        },
+        eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null),
+        reach: () => (localState.body ?? ORBIT).reach,
+      },
       local: {
         get: () => localState,
         swap(fn) {

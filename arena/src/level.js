@@ -305,7 +305,7 @@ export function sampleArena() {
     add("target", `Target ${i + 1}`, T(at, yaw), { "arena.target": {} });
   });
   for (const [i, [x, z]] of [[-15, 15], [15, 15], [15, -15], [-15, -15]].entries()) {
-    add("spawn", `Spawn ${i + 1}`, T([x, 0, z], Math.atan2(x, z)), { "arena.spawn": {} });
+    add("spawn", `Spawn ${i + 1}`, T([x, 0, z], Math.atan2(x, z)), { "walk.spawn": {} });
   }
   return out;
 }

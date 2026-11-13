@@ -1,0 +1,224 @@
+import { describe, it, expect } from "vitest";
+import { attentionPath, codeOfKey, hintFor, labelOf, lookChain, mapInvocation, reservedBy, resolveKey } from "./keymap.js";
+import { keyContext, resolverState } from "./parts/resolver.js";
+import { TOO_FAR, applicable, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
+import { promptEntries } from "./parts/use.js";
+import { menuEntries } from "./parts/menu.js";
+import { CARRY_KEYS } from "./parts/carry.js";
+
+// A table with a card on it, a wheel's spoke attached to its helm, and a
+// crate: every kind of command the surfaces show, from several extensions.
+const parents = new Map([
+  ["card", "table"],
+  ["spoke", "helm"],
+]);
+const scene = { objects: { table: {}, card: {}, helm: {}, spoke: {}, crate: {} }, parents };
+const on = (...ids) => (t) => (ids.includes(t) ? {} : null);
+const COLLECTED = [
+  { id: "tabletop", value: [
+    { id: "draw", name: "Draw", key: "d", reach: true, state: on("card"), run() {} },
+    { id: "shuffle", name: "Shuffle", key: "s", state: on("card"), run() {} },
+    { id: "reveal", name: "Reveal", state: on("card"), run() {} },
+    { id: "wash", name: "Wash", key: "w", state: (t) => (t === "table" ? { disabled: true } : null), run() {} },
+  ] },
+  { id: "scene.carry", value: [{ id: "flip", name: "Flip", key: "f", state: on("card", "crate"), run() {} }] },
+  { id: "sailing", value: [
+    { id: "helm", name: "Take the helm", key: "f", reach: true, state: on("helm"), run() {} },
+    { id: "aboard", name: "Come aboard", key: "Enter", show: [], state: (t) => (t == null ? {} : null), run() {} },
+  ] },
+  { id: "dice", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
+  { id: "scene.measure", value: [{ id: "measure", name: "Measure", key: "m", tool: { pointer: true }, state: (t) => (t == null ? { checked: false } : null), run() {} }] },
+  { id: "scene.select", value: [{ id: "remove", name: "Remove", key: ["Delete", "Backspace"], show: ["menu"], state: (t) => (t != null && scene.objects[t] ? {} : null), run() {} }] },
+];
+
+const WALK = ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft"].map((code) => ({ code }));
+const BODIES = [
+  { id: "orbit", keys: [], reach: Infinity },
+  { id: "walk", keys: WALK, reach: 2 },
+  { id: "seat", keys: [], reach: 2 },
+  { id: "station", keys: [{ code: "KeyA" }, { code: "KeyD" }], reach: 2.5 },
+];
+const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
+const GESTURES = [null, { keys: CARRY_KEYS }];
+// Attention and the look under it: with a selection, attention's hit is
+// null but the look still decides the distance (and the point), so the
+// cases include a look on the selected card farther than its box.
+const ATTENTIONS = [
+  { name: "selection card", attention: { selected: "card", hit: null }, look: null },
+  { name: "selection card, look on it beyond its box", attention: { selected: "card", hit: null }, look: { id: "card", distance: 2.1 } },
+  { name: "selection crate, look spoke", attention: { selected: "crate", hit: null }, look: { id: "spoke", distance: 1 } },
+  { name: "look spoke", attention: { selected: null, hit: { id: "spoke", distance: 1 } } },
+  { name: "look card", attention: { selected: null, hit: { id: "card", distance: 1 } } },
+  { name: "look card, far", attention: { selected: null, hit: { id: "card", distance: 3 } } },
+  { name: "null", attention: { selected: null, hit: null }, look: null },
+];
+const BOX = [1, 10]; // how far every target's box is
+const ALL_KEYS = [...new Set(flatCommands(COLLECTED).flatMap(({ command }) => keysOf(command)).concat(["q", "e", "a", " ", "x"]))];
+
+/**
+ * A view's api as resolver.js reads it. Its context measures distance as the
+ * stage's does (stage.js distanceFrom): to the hit when it is on the target
+ * or something attached to it, else to the target's box.
+ */
+function apiFor({ body, tool, gesture, attention, look, box }) {
+  return {
+    local: { get: () => ({ gesture, held: tool, body }) },
+    collect: () => COLLECTED,
+    attention: () => attention,
+    look: () => (attention.selected == null ? attention.hit : look),
+    context: (hit = null) => ({
+      scene,
+      local: {},
+      from: [0, 0, 0],
+      reach: body.reach,
+      hit,
+      distance: (t) => (hit?.id != null && lookChain(hit.id, parents).includes(t) && Number.isFinite(hit.distance) ? hit.distance : box),
+    }),
+  };
+}
+
+// Every surface's hints and the key map's dispatch use one state, built from
+// attention by resolverState (keyContext): so the cases build it that way.
+function* cases() {
+  for (const body of BODIES)
+    for (const tool of TOOLS)
+      for (const gesture of GESTURES)
+        for (const { name, attention, look = null } of ATTENTIONS)
+          for (const d of BOX) {
+            const api = apiFor({ body, tool, gesture, attention, look, box: d });
+            yield { body, tool, gesture, name, d, api, state: resolverState(api) };
+          }
+}
+
+/** Every entry a surface shows, with its target: the prompt's, the menu's (object and scene) and the bar's. */
+function shown(state) {
+  const out = [];
+  const p = promptEntries(state.collected, state.attention, state.ctx, Infinity);
+  if (p) for (const e of p.entries) out.push({ ...e, target: p.target, surface: "prompt" });
+  // the menu is on what was pressed: the selection's, or the hit itself
+  const target = attentionPath(state.attention, scene.parents)[0] ?? null;
+  const m = menuEntries(state.collected, target, state.ctx);
+  for (const e of m.forObject) out.push({ ...e, target, surface: "menu" });
+  for (const e of m.forScene) out.push({ ...e, target: null, surface: "menu" });
+  for (const e of applicable(flatCommands(state.collected), null, state.ctx, "toolbar")) out.push({ ...e, target: null, surface: "bar" });
+  return out;
+}
+
+describe("the key resolver (H3), exhaustively", () => {
+  it("a shown key works: every hint dispatches exactly its entry, and every dispatch's entry hints the key; each key reaches ≤1 invocation", () => {
+    let n = 0;
+    let hints = 0;
+    for (const c of cases()) {
+      n++;
+      // hint ⇒ dispatch
+      for (const e of shown(c.state)) {
+        const h = hintFor({ ext: e.ext, command: e.command, target: e.target }, c.state);
+        if (!h) continue;
+        hints++;
+        const k = keysOf(e.command).find((x) => labelOf(x) === h);
+        const r = resolveKey({ key: k, code: codeOfKey(k) }, c.state);
+        expect(r?.layer).toBe("map");
+        expect(r.invocation).toEqual({ ext: e.ext, command: e.command.id, target: e.target });
+        // a disabled entry never shows a key: it doesn't run
+        expect(!!e.state.disabled).toBe(false);
+      }
+      // dispatch ⇒ hint
+      for (const k of ALL_KEYS) {
+        const r = resolveKey({ key: k, code: codeOfKey(k) }, c.state);
+        if (r?.layer !== "map") continue;
+        const entry = flatCommands(COLLECTED).find((x) => x.ext === r.invocation.ext && x.command.id === r.invocation.command);
+        const h = hintFor({ ext: entry.ext, command: entry.command, target: r.invocation.target }, c.state);
+        expect(h).not.toBe("");
+        // and the key that hint names goes to the same invocation
+        const hk = keysOf(entry.command).find((x) => labelOf(x) === h);
+        expect(resolveKey({ key: hk, code: codeOfKey(hk) }, c.state).invocation).toEqual(r.invocation);
+      }
+    }
+    expect(n).toBe(BODIES.length * TOOLS.length * GESTURES.length * ATTENTIONS.length * BOX.length);
+    expect(hints).toBeGreaterThan(0);
+  });
+
+  it("the context is attention's: its hit, else the look, for hints and keys alike", () => {
+    for (const c of cases()) {
+      const { attention } = c.state;
+      const look = c.api.look();
+      // the one place it's built
+      expect(c.state.ctx.hit).toBe(attention.hit ?? look);
+      expect(keyContext(c.api, attention).hit).toBe(c.state.ctx.hit);
+    }
+    // seated (reach 2), a selected card whose box is 1 m off while the look is on it 2.1 m off: too far, for the hint and the key
+    const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
+    const seated = (look) => resolverState(apiFor({ body: BODIES[2], tool: null, gesture: null, attention: { selected: "card", hit: null }, look, box: 1 }));
+    const far = seated({ id: "card", distance: 2.1 });
+    expect(far.ctx.distance("card")).toBe(2.1);
+    expect(hintFor(draw, far)).toBe("");
+    expect(resolveKey({ key: "d", code: "KeyD" }, far)).toBe(null);
+    expect(promptEntries(far.collected, far.attention, far.ctx).entries.find((e) => e.command.id === "draw").state.title).toBe(TOO_FAR);
+    // the look elsewhere: the box decides, and D draws
+    const near = seated({ id: "crate", distance: 5 });
+    expect(hintFor(draw, near)).toBe("D");
+    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card" } });
+  });
+
+  it("what reserves keys comes first: the gesture's, the tool's, then the body's", () => {
+    const gesture = { keys: CARRY_KEYS };
+    const tool = { keys: [{ code: "KeyR" }, { code: "KeyF" }] };
+    const body = { keys: WALK };
+    expect(reservedBy("KeyF", { gesture, tool, body })).toBe("gesture");
+    expect(reservedBy("KeyR", { gesture, tool, body })).toBe("tool");
+    expect(reservedBy("KeyD", { gesture, tool, body })).toBe("body");
+    expect(reservedBy("KeyM", { gesture, tool, body })).toBe(null);
+    expect(reservedBy("KeyF", { tool, body })).toBe("tool");
+  });
+
+  it("walking, Draw shows without D and is in the menu; seated, D draws", () => {
+    const at = (body) => ({ gesture: null, tool: null, body, collected: COLLECTED, ctx: { scene, local: {}, from: [0, 0, 0], reach: 2, distance: () => 1 }, attention: { selected: null, hit: { id: "card", distance: 1 } } });
+    const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
+    expect(hintFor(draw, at(BODIES[1]))).toBe("");
+    expect(menuEntries(COLLECTED, "card", at(BODIES[1]).ctx).forObject.some((e) => e.command.id === "draw")).toBe(true);
+    expect(hintFor(draw, at(BODIES[2]))).toBe("D");
+  });
+
+  it("a look at a spoke reaches the helm's verbs where the spoke has none; a selection is its own path", () => {
+    const ctx = { scene, local: {}, reach: Infinity, distance: () => 0 };
+    expect(attentionPath({ selected: null, hit: { id: "spoke" } }, parents)).toEqual(["spoke", "helm"]);
+    expect(attentionPath({ selected: "table", hit: { id: "spoke" } }, parents)).toEqual(["table"]);
+    expect(mapInvocation(COLLECTED, "f", ctx, { selected: null, hit: { id: "spoke" } })).toEqual({ ext: "sailing", command: "helm", target: "helm" });
+    // Delete removes what is looked at, never what it is attached to
+    expect(mapInvocation(COLLECTED, "Delete", ctx, { selected: null, hit: { id: "spoke" } })).toEqual({ ext: "scene.select", command: "remove", target: "spoke" });
+    expect(promptEntries(COLLECTED, { selected: null, hit: { id: "spoke" } }, ctx).target).toBe("helm");
+    // the path first, then the scene: Enter comes aboard from anywhere
+    expect(mapInvocation(COLLECTED, "Enter", ctx, { selected: "card", hit: null })).toEqual({ ext: "sailing", command: "aboard", target: null });
+  });
+
+  it("Escape is no command's", () => {
+    expect(resolveKey({ key: "Escape", code: "Escape" }, { collected: COLLECTED, ctx: { scene, local: {} }, attention: {} })).toBe(null);
+  });
+});
+
+describe("reach (H9), exhaustively", () => {
+  it("a reach command applies ⇔ its distance ≤ the body's reach; else it shows disabled, too far, on every surface, and no key runs it", () => {
+    let n = 0;
+    for (const body of BODIES) {
+      for (const hit of [{ id: "card", distance: 1.5 }, null]) {
+        for (const d of [1.5, 3, Infinity]) {
+          n++;
+          const ctx = { scene, local: {}, from: [0, 0, 0], reach: body.reach, hit, distance: () => d };
+          const attention = { selected: hit ? null : "card", hit };
+          const inReach = d <= body.reach;
+          const draw = COLLECTED[0].value[0];
+          const st = commandState(draw, "card", ctx);
+          expect(!!st.disabled).toBe(!inReach);
+          expect(st.title === TOO_FAR).toBe(!inReach);
+          // prompt and menu show it either way, disabled out of reach
+          const p = promptEntries(COLLECTED, attention, ctx, Infinity);
+          expect(!!p.entries.find((e) => e.command.id === "draw").state.disabled).toBe(!inReach);
+          expect(!!menuEntries(COLLECTED, "card", ctx).forObject.find((e) => e.command.id === "draw").state.disabled).toBe(!inReach);
+          // the key map runs it only in reach (D is the walk body's, so ask the map itself)
+          expect(mapInvocation(COLLECTED, "d", ctx, attention)).toEqual(inReach ? { ext: "tabletop", command: "draw", target: "card" } : null);
+        }
+      }
+    }
+    expect(n).toBe(BODIES.length * 2 * 3);
+  });
+});

@@ -1,9 +1,18 @@
 // The input router: DOM input on the canvas → event values, offered down the
-// chain until something claims them (STAGE.md, "The input chain" and
-// "Arming"). It owns the open session (one gesture at a time), the arm stack,
-// pointer lock, which keys are down and who claimed them, `menu` synthesis and
-// the cursor. It knows nothing about three.js or the doc: picking, rays, the
-// chain order and each extension's input all come in as functions.
+// chain until something claims them (STAGE.md, "The input chain"; TOOLS.md
+// §4, §5). It owns the open session (one gesture at a time), the body stack
+// (orbit always at the bottom), the held tool (one slot), the open popovers,
+// pointer lock (stage/pointer.js), the Escape ladder (stage/ladder.js),
+// which keys are down and who claimed them, `menu` synthesis and the cursor.
+// It knows nothing about three.js or the doc: picking, rays, the chain order
+// and each extension's input all come in as functions.
+//
+// A press goes: the held tool, the chain (the widget's owner, the holders
+// nearest first, the general extensions), then the top body's default (in
+// orbit, Select). A key goes: the open gesture's declared keys, the held
+// tool's, the top body's, then the chain (where the key map is the only
+// taker). Presses have a position, so the body comes last there; keys have
+// none, so what reserves them comes first.
 //
 // Pointer and wheel listeners sit on the port in the capture phase, so they
 // run before OrbitControls (which listens on the canvas itself): a claimed
@@ -12,6 +21,9 @@
 
 import { offer } from "./chain.js";
 import { fromEmbed } from "../embed.js";
+import { reservedBy } from "../keymap.js";
+import { escapeLayer } from "./ladder.js";
+import { lockedNow, pointerStep } from "./pointer.js";
 
 /** How far (px) a press may wander and still be a tap / click. */
 export const SLOP = 4;
@@ -148,6 +160,13 @@ function call(owner, obj, name, ...args) {
 }
 
 /**
+ * A body on the stack, as the router keeps it: its input (press, click,
+ * menu, move, wheel, key, keyup, cursor, suspended, resumed), whether it
+ * asks for pointer lock, and the keys it declares ([{ code, label }]).
+ * @typedef {{ id: string, input?: object, lock?: boolean, keys?: { code: string, label?: string }[] }} RouterBody
+ */
+
+/**
  * @param {{
  *   port: HTMLElement,                   // the canvas's positioned parent; x, y are relative to it
  *   canvas: HTMLCanvasElement,
@@ -158,21 +177,20 @@ function call(owner, obj, name, ...args) {
  *   centerRay: () => { origin: any, dir: any },
  *   chainFor: (ev: object) => { order: string[], holderOf: (id: string) => string | null },
  *   inputOf: (id: string) => object | undefined,
+ *   orbit: RouterBody,                   // the body at the bottom of the stack, always there
  *   cameraHeld: () => boolean,
  *   onHover: (ev: object | null) => void,
  *   onCursor: (name: string | null) => void,
- *   onArmed?: (owner: string | null) => void,   // the top of the arm stack changed
+ *   onState?: (state: object) => void,   // the body, the held tool, the gesture's keys, the pointer or the ladder changed
+ *   pointerWanted?: () => boolean,       // something of the stage's wants the pointer (a selection, the open drawer)
+ *   selection?: () => boolean,           // is anything selected? (the ladder's selection rung)
+ *   deselect?: () => void,
+ *   focusDepth?: () => number,           // how deep the focus is (the ladder's last rung)
+ *   leaveFocus?: () => void,
  *   requestLock?: () => Promise<void> | void,
  *   exitLock?: () => void,
  *   mac?: boolean,
  * }} o
- * @returns {{
- *   arm(owner: string, handlers: object, opts?: { lock?: boolean, replace?: boolean }): () => void,
- *   relock(owner: string): Promise<void>,
- *   armedOwner(): string | null,
- *   stopOwner(id: string): void,
- *   dispose(): void,
- * }}
  */
 export function createRouter(o) {
   const { port, canvas, keyRoot, chainFor, inputOf } = o;
@@ -199,25 +217,29 @@ export function createRouter(o) {
       ...extra,
     });
 
-  const stack = []; // the arm stack: [{ owner, handlers, lock, suspended }], top last
-  const top = () => stack.at(-1) ?? null;
+  // The body stack, orbit at the bottom; the held tool; the open popovers.
+  const orbit = { owner: null, ...o.orbit, id: o.orbit?.id ?? "orbit", input: o.orbit?.input ?? {}, lock: !!o.orbit?.lock, keys: o.orbit?.keys ?? [], suspended: false };
+  const stack = [orbit]; // [{ owner, id, input, lock, keys, suspended }], top last
+  const top = () => stack.at(-1);
+  let tool = null; // { owner, command, name, input, keys, pointer }
+  const popovers = []; // [{ owner, close }], latest last
 
-  // Offer an event: the armed extension's handlers first, then the chain
-  // (without the armed owner again: each is offered once, at its earliest
-  // step). The chain is only worked out if the armed handlers pass, so an
-  // event the armed tool takes never picks.
+  // An event offered to one handler set under a name that is never an extension's.
+  const offerTo = (name, handlers, type, ev) => offer([name], () => handlers, type, () => withHolder(ev, null));
+
+  // Offer an event: the held tool first, then the chain, then the top body
+  // (its default: in orbit, Select). The chain is only worked out if the
+  // tool passes, so an event the tool takes never picks.
   function dispatch(type, ev) {
-    const t = top();
-    if (t) {
-      const r = offer([t.owner], () => t.handlers, type, () => withHolder(ev, null));
+    if (tool) {
+      const r = offerTo(tool.owner, tool.input, type, ev);
       if (r) return r;
     }
-    return offerChain(type, ev, t?.owner);
+    return offerChain(type, ev) ?? offerTo(top().owner ?? "scene", top().input, type, ev);
   }
-  function offerChain(type, ev, skip) {
+  function offerChain(type, ev) {
     const { order = [], holderOf } = chainFor(ev) ?? {};
-    const ids = order.filter((id) => id !== skip);
-    return offer(ids, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
+    return offer(order, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
   }
 
   // ─── the cursor ───────────────────────────────────────────────────────────
@@ -229,24 +251,22 @@ export function createRouter(o) {
     cursorNow = v;
     o.onCursor?.(v);
   }
-  // The open session's cursor, else the armed handlers', else the first
-  // extension down the chain with an opinion.
+  // The open session's cursor, else the tool's, else the first extension
+  // down the chain with an opinion, else the body's.
   function resolveCursor(ev) {
     const s = gesture && !gesture.dead ? gesture.session : null;
     if (s?.cursor) return setCursor(s.cursor);
     if (!ev) return setCursor(null);
-    const t = top();
-    if (t) {
-      const c = call(t.owner, t.handlers, "cursor", withHolder(ev, null));
+    if (tool) {
+      const c = call(tool.owner, tool.input, "cursor", withHolder(ev, null));
       if (c) return setCursor(c);
     }
     const { order = [], holderOf } = chainFor(ev) ?? {};
     for (const id of order) {
-      if (id === t?.owner) continue;
       const c = call(id, inputOf(id), "cursor", withHolder(ev, holderOf?.(id) ?? null));
       if (c) return setCursor(c);
     }
-    setCursor(null);
+    setCursor(call(top().owner, top().input, "cursor", withHolder(ev, null)) ?? null);
   }
 
   // ─── hover ────────────────────────────────────────────────────────────────
@@ -277,12 +297,13 @@ export function createRouter(o) {
 
   // ─── gestures ─────────────────────────────────────────────────────────────
   //
-  // One press at a time. `session` is set when an extension claimed it; an
+  // One press at a time. `session` is set when something claimed it; an
   // unclaimed press is still watched, so a release under the slop can offer a
   // click (or menu). `dead` means it was cancelled (Escape, a touch hold, the
   // owner stopping): its release does nothing.
 
   let gesture = null; // { pointerId, button, ctrl, pointerType, x0, y0, lx, ly, moved, session, owner, dead, holdTimer }
+  const openSession = () => (gesture && !gesture.dead && gesture.session ? gesture.session : null);
 
   const travelled = (g, e) =>
     isLocked() ? Math.hypot(g.lx, g.ly) : Math.hypot((e.clientX ?? g.x0) - g.x0, (e.clientY ?? g.y0) - g.y0);
@@ -307,10 +328,12 @@ export function createRouter(o) {
   function killGesture() {
     const g = gesture;
     if (!g || g.dead) return;
+    const had = !!g.session;
     g.dead = true;
     clearTimeout(g.holdTimer);
     g.holdTimer = 0;
     if (g.session) call(g.owner, g.session, "cancel");
+    if (had) changed();
   }
 
   // A release (or touch hold) that didn't travel: click, or menu.
@@ -339,6 +362,11 @@ export function createRouter(o) {
     // focus, so bring keys to this view by hand
     if (keyRoot && doc.activeElement !== keyRoot) keyRoot.focus?.({ preventScroll: true });
     lastAt = { clientX: e.clientX, clientY: e.clientY };
+    // after the browser released the lock, a press on the world only takes it back
+    if (pointerEvent({ type: "press" })) {
+      claim(e);
+      return;
+    }
     const g = {
       pointerId: e.pointerId,
       button: e.button,
@@ -369,6 +397,7 @@ export function createRouter(o) {
         // synthetic pointers can't be captured
       }
       if (g.session.cursor) setCursor(g.session.cursor);
+      changed();
     }
     if (g.pointerType === "touch") {
       g.holdTimer = setTimeout(() => {
@@ -392,9 +421,10 @@ export function createRouter(o) {
     if (!locked) lastAt = { clientX: e.clientX, clientY: e.clientY };
     let ev = null;
     const evNow = () => (ev ??= make("move", e));
-    // the armed extension hears every move (mouse-look under lock)
-    const t = top();
-    if (t && typeof t.handlers.move === "function") call(t.owner, t.handlers, "move", withHolder(evNow(), null));
+    // the top body and the held tool hear every move (mouse-look under lock)
+    const b = top();
+    if (typeof b.input.move === "function") call(b.owner ?? "scene", b.input, "move", withHolder(evNow(), null));
+    if (tool && typeof tool.input.move === "function") call(tool.owner, tool.input, "move", withHolder(evNow(), null));
     if (g && !g.dead) {
       if (locked) {
         g.lx += e.movementX ?? 0;
@@ -437,6 +467,7 @@ export function createRouter(o) {
         call(g.owner, g.session, "cancel");
         offerRelease(kind, ev, e);
       }
+      changed();
       resolveCursor(e.target === canvas ? retype(ev, "move") : null);
       return;
     }
@@ -464,8 +495,8 @@ export function createRouter(o) {
   function onPointerLeave() {
     cancelHover();
     o.onHover?.(null);
-    const t = top();
-    if (t) call(t.owner, t.handlers, "leave");
+    call(top().owner ?? "scene", top().input, "leave");
+    if (tool) call(tool.owner, tool.input, "leave");
   }
 
   function onDblClick(e) {
@@ -488,6 +519,53 @@ export function createRouter(o) {
     }
   }
 
+  // ─── the Escape ladder ────────────────────────────────────────────────────
+
+  /** The ladder's state now (stage/ladder.js). The field rung is the DOM's: a typing target blurs before this is asked. */
+  function ladderState() {
+    return {
+      lock: isLocked(),
+      field: false,
+      popover: popovers.length > 0,
+      gesture: !!openSession(),
+      tool: !!tool,
+      selection: !!o.selection?.(),
+      focus: Number(o.focusDepth?.() ?? 0) || 0,
+    };
+  }
+
+  /** Escape: pop the top layer, exactly one. @returns the layer popped, or null */
+  function escape() {
+    const layer = escapeLayer(ladderState());
+    switch (layer) {
+      case "popover": {
+        const p = popovers.at(-1);
+        call(p.owner, p, "close");
+        // (a close that didn't release itself is let go of all the same)
+        const i = popovers.indexOf(p);
+        if (i >= 0) popovers.splice(i, 1);
+        break;
+      }
+      case "gesture":
+        killGesture();
+        break;
+      case "tool":
+        putDown();
+        break;
+      case "selection":
+        o.deselect?.();
+        break;
+      case "focus":
+        o.leaveFocus?.();
+        break;
+      default:
+        // the lock is the browser's own: the page never sees that Escape
+        return null;
+    }
+    changed();
+    return layer;
+  }
+
   // ─── keys ─────────────────────────────────────────────────────────────────
 
   // code → { owner, key, code, up(ev) }: who claimed each key that's down
@@ -499,34 +577,47 @@ export function createRouter(o) {
     if (fromEmbed(e, keyRoot)) return;
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
-      if (e.key === "Escape") target.blur?.();
+      // the field rung: Escape leaves the field, and is nothing else (a search
+      // field with text clears first: its query is a layer of its own)
+      if (e.key === "Escape") {
+        if (target.type === "search" && target.value) {
+          e.preventDefault();
+          target.value = "";
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+        } else target.blur?.();
+      }
       return;
     }
+    if (e.key === "Escape") {
+      if (escape()) e.preventDefault();
+      return;
+    }
+    // a menu's or a dialog's keys are its own (arrows, Enter on a focused choice): only Escape is the ladder's
+    if (target !== keyRoot && target?.closest?.('[role="menu"], [role="dialog"]')) return;
+    pointerEvent({ type: "key" });
     const ev = keyEvent("key", e);
+    const code = e.code || e.key;
     let claimer = null;
-    const t = top();
-    if (t && offer([t.owner], () => t.handlers, "key", () => withHolder(ev, null))) {
-      const h = t.handlers;
-      claimer = { owner: t.owner, up: (kev) => call(t.owner, h, "keyup", kev) };
-    }
+    // what reserves keys first: the gesture's, the held tool's, the body's (keymap.js reservedBy)
     const g = gesture && !gesture.dead && gesture.session ? gesture : null;
-    if (!claimer && g && call(g.owner, g.session, "key", withHolder(ev, null))) {
+    const b = top();
+    const by = reservedBy(code, { gesture: g?.session ?? null, tool, body: b });
+    if (by === "gesture") {
       const s = g.session;
-      claimer = { owner: g.owner, up: (kev) => call(g.owner, s, "keyup", kev) };
-    }
-    if (!claimer && g && e.key === "Escape") {
-      // Escape ends a gesture that didn't want it
-      killGesture();
-      e.preventDefault();
-      return;
-    }
-    if (!claimer) {
-      const r = offerChain("key", ev, t?.owner);
+      if (call(g.owner, s, "key", withHolder(ev, null))) claimer = { owner: g.owner, up: (kev) => call(g.owner, s, "keyup", kev) };
+    } else if (by === "tool") {
+      const t = tool;
+      if (call(t.owner, t.input, "key", withHolder(ev, null))) claimer = { owner: t.owner, up: (kev) => call(t.owner, t.input, "keyup", kev) };
+    } else if (by === "body") {
+      if (call(b.owner ?? "scene", b.input, "key", withHolder(ev, null))) claimer = { owner: b.owner, body: b, up: (kev) => call(b.owner ?? "scene", b.input, "keyup", kev) };
+    } else {
+      const r = offerChain("key", ev);
       if (r) claimer = { owner: r.id, up: (kev) => call(r.id, inputOf(r.id), "keyup", kev) };
     }
-    if (!claimer) return;
+    // a reserved key is its reserver's even when it does nothing with it
+    if (!claimer && !by) return;
     e.preventDefault();
-    const code = e.code || e.key;
+    if (!claimer) return;
     const was = down.get(code);
     if (was && was.owner !== claimer.owner) was.up(retype(ev, "keyup"));
     if (!was || was.owner !== claimer.owner) down.set(code, { ...claimer, key: e.key, code: e.code });
@@ -543,10 +634,11 @@ export function createRouter(o) {
   }
 
   // A keyup for every claimed key still down (blur, hidden page, lost lock),
-  // or only those one extension holds.
-  function releaseKeys(owner = null) {
+  // or only those one extension holds, or one body.
+  function releaseKeys(owner = undefined, body = null) {
     for (const [code, c] of [...down]) {
-      if (owner != null && c.owner !== owner) continue;
+      if (owner !== undefined && c.owner !== owner) continue;
+      if (body && c.body !== body) continue;
       down.delete(code);
       c.up(keyEvent("keyup", { key: c.key, code: c.code }));
     }
@@ -572,24 +664,31 @@ export function createRouter(o) {
     releaseKeys();
   };
 
-  // ─── the arm stack ────────────────────────────────────────────────────────
+  // ─── the pointer (stage/pointer.js) ───────────────────────────────────────
 
-  let lockRequested = false;
-  let wasLocked = isLocked();
-  let refusalTold = true; // has the latest request's refusal been told (once, however the browser says it)
+  let ptr = { lock: !!orbit.lock, wanted: false, released: false, refused: false };
+  let exiting = false; // the lock is going because this page let it go, not the browser
+  let requested = false; // a request is out, unanswered
 
-  // The browser said no to the latest request (pointerlockerror, or the
-  // request's promise rejecting; often both): lockLost({ refused: true }), once.
-  function lockRefused(err) {
-    if (!lockRequested || refusalTold || isLocked()) return;
-    refusalTold = true;
-    if (err) console.warn("[scene] pointer lock refused", err);
-    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost", { refused: true });
+  /** Apply a pointer event to the state, then lock or unlock to match. @returns whether a press was only a relock */
+  function pointerEvent(ev) {
+    const { state, consumed } = pointerStep(ptr, ev);
+    const was = ptr;
+    ptr = state;
+    apply();
+    if (state !== was) changed();
+    return consumed;
+  }
+
+  function apply() {
+    if (disposed) return;
+    const want = lockedNow(ptr);
+    if (want && !isLocked() && !requested) requestLockNow();
+    else if (!want && (isLocked() || requested)) exitLockNow();
   }
 
   function requestLockNow() {
-    lockRequested = true;
-    refusalTold = false;
+    requested = true;
     let p;
     try {
       p = o.requestLock ? o.requestLock() : canvas.requestPointerLock?.();
@@ -597,87 +696,184 @@ export function createRouter(o) {
     } catch (err) {
       p = Promise.reject(err);
     }
-    // the refusal is told through lockLost; the caller may still await it
-    p.catch((err) => lockRefused(err));
-    return p;
+    p.catch((err) => refusedNow(err));
   }
   function exitLockNow() {
-    lockRequested = false;
+    requested = false;
+    if (!isLocked()) return;
+    exiting = true;
     try {
       if (o.exitLock) o.exitLock();
-      else if (isLocked()) doc.exitPointerLock?.();
+      else doc.exitPointerLock?.();
     } catch {
-      // nothing to exit
+      exiting = false;
     }
   }
 
+  // The browser said no (pointerlockerror, or the request's promise
+  // rejecting; often both): refused, once.
+  function refusedNow(err) {
+    if (!requested || isLocked()) return;
+    requested = false;
+    if (err) console.warn("[scene] pointer lock refused", err);
+    pointerEvent({ type: "refuse" });
+  }
+
+  function onLockChange() {
+    const now = isLocked();
+    if (now) {
+      requested = false;
+      // granted after all, but no longer wanted
+      if (!lockedNow(ptr)) exitLockNow();
+      changed();
+      return;
+    }
+    const ours = exiting;
+    exiting = false;
+    releaseKeys();
+    // the browser let go (its Escape): released, until the next press on the world
+    if (!ours) pointerEvent({ type: "release" });
+    else changed();
+  }
+  const onLockError = () => refusedNow(null);
+
+  /** Something of the stage's may want the pointer now (a selection, the drawer): look again. */
+  function refresh() {
+    const wanted = !!tool?.pointer || popovers.length > 0 || !!o.pointerWanted?.();
+    if (wanted !== ptr.wanted) pointerEvent({ type: "want", wanted });
+    else changed();
+  }
+
+  // ─── what the stage is told ───────────────────────────────────────────────
+
+  let stateKey = "";
+  function changed() {
+    if (disposed || !o.onState) return;
+    const st = snapshot();
+    const key = JSON.stringify(st);
+    if (key === stateKey) return;
+    stateKey = key;
+    o.onState(st);
+  }
+  function snapshot() {
+    const b = top();
+    const s = openSession();
+    return {
+      body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])] },
+      bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
+      held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer } : null,
+      gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])] } : null,
+      pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused },
+      escape: escapeLayer(ladderState()),
+    };
+  }
+
+  // ─── the body stack ───────────────────────────────────────────────────────
+
   // After the stack changes: the old top (if still there) is suspended, the
-  // new one resumed (if it had been suspended), the lock let go of if no arm
-  // wants it, and the cursor worked out again.
+  // new one resumed (if it had been), the pointer worked out for it, and the
+  // cursor again.
   function settle(prevTop) {
     const t = top();
     if (t !== prevTop) {
       if (prevTop && stack.includes(prevTop) && !prevTop.suspended) {
         prevTop.suspended = true;
-        call(prevTop.owner, prevTop.handlers, "suspended");
+        releaseKeys(undefined, prevTop);
+        call(prevTop.owner ?? "scene", prevTop.input, "suspended");
       }
-      if (t?.suspended) {
+      if (t.suspended) {
         t.suspended = false;
-        call(t.owner, t.handlers, "resumed");
+        call(t.owner ?? "scene", t.input, "resumed");
       }
-      if ((t?.owner ?? null) !== (prevTop?.owner ?? null)) o.onArmed?.(t?.owner ?? null);
+      pointerEvent({ type: "body", lock: t.lock });
     }
-    if (lockRequested && !stack.some((a) => a.lock)) exitLockNow();
+    changed();
     if (!gesture?.session) resolveCursor(lastAt && !isLocked() ? make("move", null) : null);
   }
 
-  function remove(entry) {
+  /**
+   * Push a body on the stack (its owner's: an extension id).
+   * @param {string} owner  @param {RouterBody} body
+   * @returns {() => void} pop it (wherever it is in the stack; anything over it goes with it)
+   */
+  function pushBody(owner, body) {
+    if (disposed) return () => {};
+    const prevTop = top();
+    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], suspended: false };
+    stack.push(entry);
+    settle(prevTop);
+    return () => popBody(entry);
+  }
+  // A body leaving takes every body over it too: they stood on it.
+  function popBody(entry) {
     const i = stack.indexOf(entry);
-    if (i < 0) return false;
-    stack.splice(i, 1);
-    call(entry.owner, entry.handlers, "disarmed");
+    if (i <= 0) return false;
+    const prevTop = top();
+    const gone = stack.splice(i);
+    for (const x of gone.reverse()) {
+      releaseKeys(undefined, x);
+      call(x.owner ?? "scene", x.input, "left");
+    }
+    settle(prevTop);
     return true;
   }
 
-  function arm(owner, handlers = {}, { lock = false, replace = false } = {}) {
+  // ─── the held tool ────────────────────────────────────────────────────────
+
+  /**
+   * Hold a tool: the slot's one occupant; whatever was held is put down first.
+   * @param {string} owner  @param {{ command: string | null (a tool held directly, not through a command), name?: string, input: object, keys?: object[], pointer?: boolean }} t
+   * @returns {() => void} put it down (if it's still the one held)
+   */
+  function hold(owner, t) {
     if (disposed) return () => {};
-    const prevTop = top();
-    if (replace) for (const a of stack.filter((a) => a.owner === owner)) remove(a);
-    const entry = { owner, handlers: handlers ?? {}, lock: !!lock, suspended: false };
-    stack.push(entry);
-    if (entry.lock) requestLockNow().catch(() => {}); // a refusal reaches it as lockLost({ refused: true })
-    settle(prevTop);
+    putDown();
+    const entry = { owner, command: t.command, name: t.name, input: t.input ?? {}, keys: t.keys ?? [], pointer: !!t.pointer };
+    tool = entry;
+    refresh();
+    changed();
+    if (!gesture?.session) resolveCursor(lastAt && !isLocked() ? make("move", null) : null);
     return () => {
-      const before = top();
-      if (remove(entry)) settle(before);
+      if (tool === entry) putDown();
+    };
+  }
+  function putDown() {
+    const t = tool;
+    if (!t) return;
+    tool = null;
+    releaseKeys(t.owner);
+    call(t.owner, t.input, "put");
+    refresh();
+    changed();
+  }
+
+  // ─── popovers ─────────────────────────────────────────────────────────────
+
+  /** An open menu or dialog: it wants the pointer, and Escape closes it. @returns release (when it closes itself) */
+  function popover(owner, close) {
+    if (disposed) return () => {};
+    const p = { owner, close };
+    popovers.push(p);
+    refresh();
+    return () => {
+      const i = popovers.indexOf(p);
+      if (i < 0) return;
+      popovers.splice(i, 1);
+      refresh();
     };
   }
 
-  function relock(owner) {
-    if (disposed || !stack.some((a) => a.owner === owner && a.lock)) return Promise.resolve();
-    return requestLockNow();
-  }
-
-  function onLockChange() {
-    const now = isLocked();
-    const lost = wasLocked && !now;
-    wasLocked = now;
-    if (now) refusalTold = true; // granted: nothing to refuse
-    if (!lost) return;
-    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost", { refused: false });
-    releaseKeys();
-  }
-  const onLockError = () => lockRefused(null);
-
   // ─── stopping ─────────────────────────────────────────────────────────────
 
+  /** An extension stopped: its open session, keys, bodies, tool and popovers go. */
   function stopOwner(id) {
     if (gesture?.owner === id) killGesture();
     releaseKeys(id);
-    const prevTop = top();
-    let any = false;
-    for (const a of stack.filter((a) => a.owner === id)) any = remove(a) || any;
-    if (any) settle(prevTop);
+    const mine = stack.findIndex((x, i) => i > 0 && x.owner === id);
+    if (mine > 0) popBody(stack[mine]);
+    if (tool?.owner === id) putDown();
+    for (const p of popovers.filter((p) => p.owner === id)) popovers.splice(popovers.indexOf(p), 1);
+    refresh();
   }
 
   // ─── wiring ───────────────────────────────────────────────────────────────
@@ -700,11 +896,24 @@ export function createRouter(o) {
     [doc, "pointerlockerror", onLockError, undefined],
   ];
   for (const [t, type, fn, opts] of listeners) t?.addEventListener(type, fn, opts);
+  changed();
 
   return {
-    arm,
-    relock,
-    armedOwner: () => top()?.owner ?? null,
+    pushBody,
+    /** the top body: { id, owner } */
+    body: () => ({ id: top().id, owner: top().owner }),
+    /** the stack, bottom first: [{ id, owner }] */
+    bodies: () => stack.map((x) => ({ id: x.id, owner: x.owner })),
+    /** pop the top body (never orbit). @returns whether one went */
+    leave: () => popBody(top()),
+    hold,
+    putDown,
+    /** the held tool, as { owner, command }, or null */
+    held: () => (tool ? { owner: tool.owner, command: tool.command } : null),
+    popover,
+    escape,
+    refresh,
+    state: snapshot,
     stopOwner,
     dispose() {
       if (disposed) return;
@@ -717,8 +926,10 @@ export function createRouter(o) {
         gesture = null;
       }
       down.clear();
-      stack.length = 0;
-      if (lockRequested || isLocked()) exitLockNow();
+      stack.length = 1;
+      tool = null;
+      popovers.length = 0;
+      if (requested || isLocked()) exitLockNow();
     },
   };
 }

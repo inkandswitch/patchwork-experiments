@@ -1,17 +1,19 @@
 // The arena, played with a real mouse and keyboard in headless Chrome.
 //
-//   (in scene/ and arena/) pnpm build
+//   (in scene/, walk/ and arena/) pnpm build
 //   node probes/arena-run.mjs [--show] [--shots <dir>]
 //
-// Mounts the BUILT scene tool with the BUILT arena plugins on an empty scene
+// Mounts the BUILT scene tool with the BUILT arena and walk plugins on an empty scene
 // (two views of one doc: A makes it and plays, B joins and watches), picks
 // "Arena level" on the empty scene's start screen, which lays out the sample
 // arena and starts the scene in play: A, and B joining after, are both in the
 // game, with no editor, each camera framing the whole level.
 // A switches to Edit (the editor, the arena's edit command and the parts bin)
-// and back to Play, presses Play, walks with W/A/S/D, runs into a wall, climbs the ramp
-// onto the tower, jumps, turns to a target and shoots it with a click, stops
-// with Esc. B must see A's avatar move and A's tracer. Then a "hybrid"
+// and back to Play, presses Play (the walk body at a spawn, the gun in hand:
+// scene/TOOLS.md §4), walks with W/A/S/D, runs into a wall, climbs the ramp
+// onto the tower, jumps, turns to a target and shoots it with a click; Esc
+// puts the gun down (never the body) and the body chip's Leave stops walking.
+// B must see A's avatar move and A's tracer. Then a "hybrid"
 // scene: a tilted deck GLB that knows nothing of arenas (the inspector's
 // "Add behaviour…" offers the arena's level), a target put on it by clicking
 // it in the parts bin while looking at the deck, which puts it under the deck
@@ -27,15 +29,15 @@ import { fileURLToPath } from "node:url";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["arena/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["arena/dist/index.js", "scene/dist/index.js", "walk/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const SHOW = process.argv.includes("--show");
 const si = process.argv.indexOf("--shots");
 const SHOTS = si > 0 ? resolve(process.argv[si + 1]) : join(process.env.TMPDIR || tmpdir(), "arena-shots");
 mkdirSync(SHOTS, { recursive: true });
 const PORT = 4640, CDP = 9640;
 const MIME = { ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".css": "text/css", ".html": "text/html" };
-// serve only the two packages
-const ALLOWED = [join(ROOT, "scene") + sep, join(ROOT, "arena") + sep];
+// serve only the three packages
+const ALLOWED = [join(ROOT, "scene") + sep, join(ROOT, "arena") + sep, join(ROOT, "walk") + sep];
 const server = createServer((req, res) => {
   const path = join(ROOT, decodeURIComponent(new URL(req.url, "http://x").pathname));
   if (!ALLOWED.some((a) => path.startsWith(a)) || !existsSync(path) || statSync(path).isDirectory()) return void res.writeHead(404).end();
@@ -162,6 +164,17 @@ async function settled(w, ms = 4000) {
   }
 }
 const sorted = async (w) => [...(await P(`running('${w}')`))].sort();
+/** Leave the top body of view w by its body chip's "Leave (…)": true if the chip offered it. */
+async function leaveBody(w = "a") {
+  const chip = await P(`chip('${w}')`);
+  if (!chip) return false;
+  await click(chip);
+  await until(`!!window.__p.chipItem('${w}', 'Leave')`, 3000);
+  const item = await P(`chipItem('${w}', 'Leave')`);
+  if (item) await click(item);
+  await sleep(300);
+  return !!item;
+}
 
 try {
   // ─── the sample arena ────────────────────────────────────────────────────
@@ -183,7 +196,7 @@ try {
   await P("joinB()");
   const allLoaded = await until("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 29 && a.loaded === a.total && b.loaded === b.total; })()", 30_000);
   const lv = await P("loaded('a')");
-  const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().assets ?? {}).filter((k) => k.startsWith("arena/")), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["arena.spawn"]).length }; })()`);
+  const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().assets ?? {}).filter((k) => k.startsWith("arena/")), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["walk.spawn"]).length }; })()`);
   check("Arena level lays out the level (a level trait, 8 targets, 4 spawns, a GLB per kind in the scene's assets)", traits.level && traits.targets === 8 && traits.spawns === 4 && traits.kinds.length === 7, traits);
   check("and starts the scene in play (doc.view.activity)", (await P("doc()")).view?.activity === "play", (await P("doc()")).view);
   check("every block's GLB loads in both views", allLoaded, { a: lv, b: await P("loaded('b')") });
@@ -197,8 +210,9 @@ try {
   // level. Each runs only what playing calls for: the arena, what it requires
   // (keys, notices, framing), the scene's packages part and the switcher, and
   // the selection's parts every activity has (scene/TOOLS.md build step 3:
-  // Select, the menu, the halo and the knobs).
-  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
+  // Select, the menu, the halo and the knobs), the body chip (scene.body) and
+  // the walk body's package (general: it runs wherever it's installed).
+  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.body", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use", "walk"];
   const inGame = async (w) => {
     const ok = (await until(`!window.__p.running('${w}').includes('scene.toolbar')`, 6000)) && (await settled(w));
     return { ok, activity: await P(`activity('${w}')`), run: await sorted(w) };
@@ -252,15 +266,14 @@ try {
   const camBefore = await P("cam()");
   await click(await P("rect('.arena-play')"));
   await sleep(500);
-  const lockState = { locked: await P("locked()"), element: await P("lockElement()"), armed: await P("armed()"), held: await P("held()"), hud: await P("text('.arena-hud')") };
+  const lockState = { locked: await P("locked()"), element: await P("lockElement()"), body: await P("body()"), stack: await P("stack()"), tool: await P("tool()"), held: await P("held()"), pointer: await P("pointer()"), chip: await P("chip()"), hud: await P("text('.arena-hud')") };
   report.steps.lock = lockState;
-  check("Play arms the arena and holds the camera", lockState.armed === "arena" && lockState.held, lockState);
+  check("Play walks in (the walk body, the only body over orbit) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["orbit","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
   if (!lockState.locked) turnMode = "drag";
   report.steps.turnMode = turnMode;
   const e0 = await eye();
   check("you start at a spawn point, eye 1.6 m over its pad", Math.abs(e0[0] + 15) < 0.05 && Math.abs(e0[2] - 15) < 0.05 && Math.abs(e0[1] - (1.6 + 0.05)) < 0.1, r3(e0));
-  check("play isn't paused (no 'carry on' button)", !(await P("rect('.arena-resume')")), await P("text('.arena-hud')"));
-  if (!lockState.locked) check("refused the lock, the HUD says drag to look", /Drag to look/.test((await P("text('.arena-help')"))[0] ?? ""), await P("text('.arena-help')"));
+  if (!lockState.locked) check("refused the lock (headless): the pointer says so, and the body looks by drag", lockState.pointer?.refused === true && lockState.pointer?.lock === true, lockState.pointer);
   await shot("play-start");
 
   // walk forward
@@ -361,26 +374,34 @@ try {
   check("B labels the avatar", (await P("labels('b')")).length > 0, await P("labels('b')"));
   check("A draws no avatar of its own", (await P("drawn('a')")).avatars.length === 0, await P("drawn('a')"));
 
-  // Esc stops play and gives the camera back
+  // Esc puts the gun down (the ladder's tool rung), never the body
   if (await P("locked()")) {
     // a locked browser's Esc takes the lock first (CDP can't do that for us): lose it, then Esc
     await js("document.exitPointerLock()");
     await sleep(200);
     report.steps.afterLockLost = await P("text('.arena-hud')");
   }
+  const escHint = await P("text('.body-escape')");
   await hold("Escape", 50);
   await sleep(300);
-  const after = { armed: await P("armed()"), held: await P("held()"), locked: await P("locked()"), play: !!(await P("rect('.arena-play')")) };
-  check("Esc stops play: disarmed, camera back, Play button again", after.armed === null && !after.held && !after.locked && after.play, after);
+  const putDown = { tool: await P("tool()"), body: await P("body()"), held: await P("held()"), play: await P("text('.arena-play')"), hint: escHint };
+  check("Esc (its hint says so) puts the gun down and leaves A walking: the camera still the body's, the HUD offers the gun again", /put down/.test(escHint[0] ?? "") && putDown.tool === null && putDown.body === "walk" && putDown.held && /Pick up the gun/.test(putDown.play[0] ?? ""), putDown);
+  // the body chip's Leave stops walking and gives the camera back
+  const left = await leaveBody("a");
+  const after = { left, body: await P("body()"), stack: await P("stack()"), held: await P("held()"), locked: await P("locked()"), play: await P("text('.arena-play')") };
+  check("the body chip's Leave stops walking: orbit, camera back, Play button again", left && after.body === "orbit" && JSON.stringify(after.stack) === '["orbit"]' && !after.held && !after.locked && /▶ Play/.test(after.play[0] ?? ""), after);
   await sleep(400);
-  check("B's avatar goes when A stops", (await P("drawn('b')")).avatars.length === 0, await P("drawn('b')"));
-  // Enter plays too (the play command's key, through the key map), and Esc stops it again
+  check("B's avatar goes when A stops walking", (await P("drawn('b')")).avatars.length === 0, await P("drawn('b')"));
+  // Enter plays too (the play command's key, through the key map); Esc puts the gun down, Leave stops walking
+  await click(await P("canvasCentre()")); // (the keys to A's view; in orbit a click on nothing selects nothing)
   await hold("Enter", 50);
   await sleep(300);
-  const byEnter = await P("armed()");
+  const byEnter = { body: await P("body()"), tool: await P("tool()") };
   await hold("Escape", 50);
   await sleep(300);
-  check("Enter starts play (the key map), Esc stops it", byEnter === "arena" && (await P("armed()")) === null, { byEnter });
+  const escAgain = { body: await P("body()"), tool: await P("tool()") };
+  const leftAgain = await leaveBody("a");
+  check("Enter starts play (the key map): walking, the gun in hand; Esc puts it down; Leave stops walking", byEnter.body === "walk" && byEnter.tool === "gun" && escAgain.body === "walk" && escAgain.tool === null && leftAgain && (await P("body()")) === "orbit", { byEnter, escAgain, leftAgain });
   // orbit works again: a drag moves the camera
   const ccam = await P("cam()");
   const cc = await P("canvasCentre()");
@@ -388,7 +409,7 @@ try {
   for (let k = 1; k <= 8; k++) await mouse("mouseMoved", cc.x + k * 15, cc.y, 1);
   await mouse("mouseReleased", cc.x + 120, cc.y, 0);
   await sleep(300);
-  check("orbit works again after Esc", Math.hypot(...(await P("cam()")).position.map((v, i) => v - ccam.position[i])) > 0.05);
+  check("orbit works again after Leave", Math.hypot(...(await P("cam()")).position.map((v, i) => v - ccam.position[i])) > 0.05);
   // stand them up
   await click(await P("rect('.arena-reset')"));
   await sleep(200);
@@ -414,8 +435,8 @@ try {
   await js("Math.random = () => 0");
   await hold("Enter", 50);
   await sleep(500);
-  const bPlay = { armed: await P("armed('b')"), held: await P("held('b')"), aArmed: await P("armed('a')"), focus: await js("document.activeElement?.closest?.('#a, #b')?.id ?? null"), eye: r3((await P("cam('b')")).position) };
-  check("Enter plays in B's view (the key map came with the arena's requires), and not in A's", bPlay.armed === "arena" && bPlay.held && bPlay.aArmed === null, bPlay);
+  const bPlay = { body: await P("body('b')"), tool: await P("tool('b')"), held: await P("held('b')"), aBody: await P("body('a')"), focus: await js("document.activeElement?.closest?.('#a, #b')?.id ?? null"), eye: r3((await P("cam('b')")).position) };
+  check("Enter plays in B's view (the key map came with the arena's requires): walking with the gun, and not in A's", bPlay.body === "walk" && bPlay.tool === "gun" && bPlay.held && bPlay.aBody === "orbit", bPlay);
   const be0 = (await P("cam('b')")).position;
   await hold("KeyW", 700);
   await sleep(300);
@@ -434,7 +455,9 @@ try {
   check("playing, B still shows no editor (no toolbar, sidebar, grid)", !(await P("rect('.toolbar', 'b')")) && !(await P("rect('.sidebar', 'b')")) && !(await P("layers('b')")).some((l) => /grid|axes/.test(l)), report.steps.playerPlaying);
   await hold("Escape", 50);
   await sleep(300);
-  check("Esc stops B's play: Play is back", (await P("armed('b')")) === null && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")));
+  const bDown = { tool: await P("tool('b')"), body: await P("body('b')") };
+  const bLeft = await leaveBody("b");
+  check("Esc puts B's gun down; the chip's Leave stops B walking: Play is back", bDown.tool === null && bDown.body === "walk" && bLeft && (await P("body('b')")) === "orbit" && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")), { bDown, bLeft, body: await P("body('b')") });
   await shot("player-after", bRect);
 
   check("no errors in the arena run", (await errorsNow()).length === 0, await errorsNow());
@@ -474,8 +497,17 @@ try {
   check("hybrid: switching to Play starts the arena", (await P("running('a')")).includes("arena") && (await P("activity('a')")) === "play", await P("running('a')"));
   const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.keyLight.intensity, v.keyLight.position.toArray()] }; })()");
   check("hybrid: a deck with a target keeps the stage's own look (no arena sky, haze or sun)", hv.atmosphere === null && !hv.sky && hv.fog === null && !hv.shadowMap && hv.key[0] === 1.5, hv);
+  // Escape lets the new target go (in orbit, holding nothing: the ladder's selection rung), so nothing wants the pointer
+  await P("focusA()");
+  await hold("Escape", 50);
+  await sleep(200);
+  check("hybrid: Esc deselects (orbit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
   await js("Math.random = () => 0");
   await until("!!window.__p.hostA.querySelector('.arena-play')");
+  // look at the deck from above it: with no spawn point, walking starts at the eye (scene/TOOLS.md §4)
+  await js("window.__p.A.viewport.setCamera({ position: [0, 6, 2], target: [0, 3, -2] })");
+  await sleep(200);
+  const camEye = (await P("cam()")).position;
   await click(await P("rect('.arena-play')"));
   await sleep(500);
   if (!(await P("locked()"))) turnMode = "drag";
@@ -483,7 +515,7 @@ try {
   await sleep(1800);
   const s1 = await eye();
   const under = await js(`window.__p.A.viewport.raycast([${s1[0]}, 50, ${s1[2]}], [0, -1, 0])?.point[1]`);
-  check("hybrid: with no spawn point you start above the scene and land on the deck", s0[1] > s1[1] + 3 && Math.abs(s1[1] - 1.6 - under) < 0.05, { s0: r3(s0), s1: r3(s1), deckY: under });
+  check("hybrid: with no spawn point you start at the eye (where the view was) and land on the deck under it", Math.hypot(s0[0] - camEye[0], s0[2] - camEye[2]) < 0.2 && s0[1] > s1[1] + 2 && Math.abs(s1[1] - 1.6 - under) < 0.05, { cam: r3(camEye), s0: r3(s0), s1: r3(s1), deckY: under });
   // walk along the deck: down its length (it climbs toward -z… or falls; it's tilted 6°)
   const d0 = await eye();
   await walkTo([d0[0], d0[2] + 6], { ms: 3000, tol: 0.3 });
@@ -496,11 +528,22 @@ try {
   await shot("hybrid");
 
   // ─── under the lock (simulated: headless Chrome refuses it) ──────────────
-  // the page says the canvas holds the lock; the router then builds locked
-  // events (movementX/Y as dx/dy, the ray down the middle) and the arena turns by them
-  await js(`(() => { const cv = window.__p.A.viewport.canvas; Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => window.__fakeLock ? cv : null }); window.__fakeLock = true; document.dispatchEvent(new Event("pointerlockchange")); })()`);
-  await sleep(100);
-  check("locked: the HUD goes back to mouse-look help", !/Drag to look/.test((await P("text('.arena-help')"))[0] ?? ""), await P("text('.arena-help')"));
+  // the canvas's requestPointerLock grants and exitPointerLock lets go, as a
+  // browser does; the router then builds locked events (movementX/Y as dx/dy,
+  // the ray down the middle) and the walk body turns by them. The lock was
+  // refused when walking began; a new body starts afresh (TOOLS.md §4), so
+  // leave walking and walk in again from here (the chip's Walk).
+  await js(`(() => { const cv = window.__p.A.viewport.canvas; const changed = () => setTimeout(() => document.dispatchEvent(new Event("pointerlockchange")), 0); Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => window.__fakeLock ? cv : null }); cv.requestPointerLock = () => { window.__fakeLock = true; changed(); return Promise.resolve(); }; document.exitPointerLock = () => { window.__fakeLock = false; changed(); }; })()`);
+  const refusedBefore = (await P("pointer()"))?.refused;
+  await leaveBody("a");
+  const chipW = await P("chip()");
+  if (chipW) await click(chipW);
+  await until("!!window.__p.chipItem('a', 'Walk')", 3000);
+  const walkItem = await P("chipItem('a', 'Walk')");
+  if (walkItem) await click(walkItem);
+  await sleep(300);
+  const lockedNow = await P("pointer()");
+  check("locked: a new body starts afresh: walking again from the chip, the lock granted (lock ∧ ¬wanted ∧ ¬released ∧ ¬refused)", refusedBefore === true && (await P("body()")) === "walk" && lockedNow?.locked === true && lockedNow.refused === false && lockedNow.wanted === false && (await P("locked()")), { refusedBefore, pointer: lockedNow, body: await P("body()"), tool: await P("tool()") });
   turnMode = "nudge";
   const ht2 = await js(`window.__p.world('${htid}')`);
   const me = await eye();
@@ -513,21 +556,22 @@ try {
   const downAtPress = await js(`window.__p.doc().objects['${htid}'].traits['arena.target'].down?.by ?? null`);
   await mouse("mouseReleased", cc2.x, cc2.y, 0);
   check("locked: a press shoots the deck's target over", downAtPress === "viewer:a", { downAtPress });
-  // losing the lock (a browser's Esc) pauses: keys don't walk, a button offers to carry on
+  // losing the lock (the browser's Esc, rung 0 of the ladder, unseen by the
+  // page): released, and the body walks on; the next press on the world only
+  // relocks (no shot)
   await js(`(() => { window.__fakeLock = false; document.dispatchEvent(new Event("pointerlockchange")); })()`);
   await sleep(150);
+  const released = await P("pointer()");
   const pz = await eye();
-  await hold("KeyW", 400);
-  await sleep(150);
-  const pz2 = await eye();
-  check("lost lock: paused, with 'Click to carry on', and W does nothing", !!(await P("rect('.arena-resume')")) && Math.hypot(pz2[0] - pz[0], pz2[2] - pz[2]) < 0.01, { resume: await P("rect('.arena-resume')"), pz: r3(pz), pz2: r3(pz2) });
-  // carrying on is refused here (headless): play goes on without the lock
-  await click(await P("rect('.arena-resume')"));
-  await sleep(300);
   await hold("KeyW", 300); // (backwards is the mast)
   await sleep(150);
-  const pz3 = await eye();
-  check("carry on, refused: plays on without the lock (W walks again)", !(await P("rect('.arena-resume')")) && Math.hypot(pz3[0] - pz2[0], pz3[2] - pz2[2]) > 0.3, { pz3: r3(pz3), focus: await js("document.activeElement.className"), armed: await P("armed()"), hud: await P("text('.arena-hud')"), yp: await P("yawPitch()"), ahead: await js("(() => { const c = window.__p.A.viewport.getCamera(); const d = c.target.map((v, i) => v - c.position[i]); d[1] = 0; return [0.5, 1.25].map((h) => window.__p.A.viewport.raycast([c.position[0], c.position[1] - 1.6 + h, c.position[2]], d)); })()") });
+  const pz2 = await eye();
+  check("lost lock (the browser's Esc): released; still walking with the gun, and W walks", released?.released === true && (await P("body()")) === "walk" && (await P("tool()")) === "gun" && Math.hypot(pz2[0] - pz[0], pz2[2] - pz[2]) > 0.3, { released, pz: r3(pz), pz2: r3(pz2) });
+  const ammo0 = (await P("text('.arena-ammo')"))[0];
+  const cc3 = await P("canvasCentre()");
+  await click(cc3);
+  await sleep(200);
+  check("after a release, the next press only relocks: no shot, locked again", (await P("text('.arena-ammo')"))[0] === ammo0 && (await P("pointer()"))?.released === false && (await P("locked()")), { ammo0, ammo1: (await P("text('.arena-ammo')"))[0], pointer: await P("pointer()") });
   await js("delete document.pointerLockElement");
   await hold("Escape", 50);
   await sleep(200);

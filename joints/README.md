@@ -50,15 +50,11 @@ does. It `requires` nothing: the use prompt is a game's to bring into play.
 
 ## Using it
 
-Two ways, one verb (**Open**, or **Close** when it's open):
-
-- **Walking** (a game that brings the use prompt): look at it from within
-  arm's reach (2 m from the eye to the point looked at) and the prompt
-  offers **[F] Open**. Only the prompt says where the eye is, so only the
-  prompt's verb has a reach, and F pressed out of reach goes by.
-- **Its menu and the inspector**, in any activity: Open, with no key and no
-  reach. No key, because F is Frame all while editing and a key map has no
-  eye to measure from.
+One verb (**Open**, or **Close** when it's open), **F**, on every surface:
+the use prompt, the menu, the inspector and the key map. It says `reach:
+true`, so the stage measures it from the body's eye against the body's
+reach (scene/TOOLS.md §4): walking, within 2 m of the point looked at (out
+of reach it shows disabled, "too far", and F goes by); in orbit, anywhere.
 
 While it moves the verb says Opening / Closing; while someone else moves it,
 the verb is there but disabled.
@@ -148,8 +144,8 @@ or be worked from a distance (a switch, a wire: a trigger that names the part).
   opening, the opener gone mid-motion, a late joiner, a hidden opener, and
   that the bound is real: at 600 ms of latency, the loser pressing first,
   both write an open; at 440 ms, the same presses write one.
-- `src/extension.test.js`: the prompt's verb (F, 2 m) and the menu's (no
-  key, no reach), the hold each frame by the clock, the one write after it
+- `src/extension.test.js`: the one verb (F, `reach: true`, every surface),
+  the hold each frame by the clock, the one write after it
   has been heard, the close after the wait, a hidden tab landing and closing
   on its timers alone, letting go on stopping, the metadata.
 

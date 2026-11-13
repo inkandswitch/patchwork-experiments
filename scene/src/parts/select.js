@@ -2,12 +2,10 @@
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
-// - A plain click is the orbit view's default press, offered last, after
-//   whatever holds what was hit: on an object it selects it, on nothing it
-//   clears whatever is selected (a group is never hit: groups are selected
-//   from the outline). Until bodies (TOOLS.md §4, build step 6) the orbit
-//   view is the editor's: in another activity, or first person, a plain
-//   click selects nothing.
+// - A plain click selecting is the orbit body's default press (the stage's:
+//   stage.js, ORBIT), offered after the held tool and the whole chain, so
+//   structurally last; walk, seat and station have none, so there a plain
+//   click selects nothing (TOOLS.md §3, §4).
 // - Where a selection may be is ../selection.js (H10): an element of the
 //   focus stage. With one stage that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets
@@ -19,11 +17,11 @@
 //   world layer; the boxes follow held poses (checked after each frame).
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
 // - Asks the stage to load the selection first (api.focus), if it's an object.
-// - Commands: Deselect (Escape), Remove (Delete, Backspace; objects only), Select.
+// - Commands: Remove (Delete, Backspace; objects only), Select. Escape
+//   deselects as a rung of the stage's ladder (stage/ladder.js), not a key.
 
 import { peerColor, peerSelections } from "../peers.js";
 import { selectionStep } from "../selection.js";
-import { DEFAULT_ACTIVITY } from "../stage/activation.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 const REMOTE = [0.6, 0.4, 0.9];
@@ -72,9 +70,6 @@ export function create(api) {
     });
   }
   const select = (id) => step(id == null ? { type: "escape" } : { type: "select", path: [id] });
-
-  /** Is this view orbiting, so a plain click selects? (The editor's, until bodies: see the top.) */
-  const orbiting = (local) => !local.immersive && (local.activities?.current ?? DEFAULT_ACTIVITY) === DEFAULT_ACTIVITY;
 
   function computeTargets() {
     const loc = api.local.get();
@@ -176,14 +171,6 @@ export function create(api) {
 
   const commands = [
     {
-      id: "deselect",
-      name: "Deselect",
-      key: "Escape",
-      show: [],
-      state: (target, { local }) => (target == null && local?.selected != null ? { title: "Clear the selection" } : null),
-      run: () => select(null),
-    },
-    {
       id: "select",
       name: "Select",
       show: ["menu"],
@@ -222,25 +209,8 @@ export function create(api) {
     return true;
   }
 
-  const input = {
-    // the orbit view's default press. It comes after the holders and is the
-    // last of the scene's own general extensions, but only registration order
-    // puts it there: a general extension registered later is offered the
-    // click after it. Bodies (TOOLS.md build step 6) make the default press
-    // structurally last.
-    click(ev) {
-      if (!orbiting(api.local.get())) return false;
-      const id = ev?.hit?.id ?? null;
-      const on = id != null && api.scene().objects?.[id];
-      if (!on && selected() == null) return false;
-      step({ type: "press", path: on ? [id] : [] });
-      return true;
-    },
-  };
-
   return {
     update,
-    input,
     commands,
     dispose() {
       for (const key of [...drawn.keys()]) drop(key);

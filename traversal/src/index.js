@@ -3,8 +3,8 @@
 //
 // Going elsewhere from a scene (README.md). One trait:
 // - traversal.exit: an object that leads to another document. Used with its
-//   verb ("Go below", "Exit"; "Go" when it names none) on the use prompt
-//   within reach, or from its menu and the inspector; going there opens that
+//   verb ("Go below", "Exit"; "Go" when it names none), F, on every
+//   surface, within the body's reach; going there opens that
 //   document in Patchwork's own way (go.js). With nowhere to go it offers
 //   nothing.
 
@@ -20,7 +20,7 @@ export const plugins = [
       "traversal.exit": {
         name: "Exit",
         on: "object",
-        blurb: "Leads to another document: its verb opens it, from the menu, or with F within reach while walking. A hatch, a level's exit, a doorway to another scene",
+        blurb: "Leads to another document: its verb (F) opens it, within reach of where you are. A hatch, a level's exit, a doorway to another scene",
         fields: [
           { key: "to", label: "Leads to (a document link)", kind: "url" },
           { key: "verb", label: "Verb (Go, when empty)", kind: "string", default: "" },

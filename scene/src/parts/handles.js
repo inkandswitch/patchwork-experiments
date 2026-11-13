@@ -10,10 +10,10 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // They are the halo's build-param knobs (TOOLS.md §3): shown for the
-// selection whatever the activity, hidden while another extension is armed
+// selection whatever the activity, hidden while another extension holds the tool
 // (measuring, say).
 //
-// Reads local.selected, local.armed and local.theme. Writes only the render
+// Reads local.selected, local.held and local.theme. Writes only the render
 // doc's params.
 
 import css from "./handles.css?inline";
@@ -187,10 +187,10 @@ export default {
 
     // ─── drawing ──────────────────────────────────────────────────────────
 
-    /** Is another extension in charge of the pointer (an armed tool)? */
+    /** Is another extension in charge of the pointer (a held tool)? */
     function standingDown() {
-      const armed = api.local.get().armed;
-      return armed != null && armed !== api.id;
+      const held = api.local.get().held;
+      return held != null && held.ext !== api.id;
     }
 
     /** Each spec's world line, while the object is shown and has its content. */
@@ -352,8 +352,8 @@ export default {
         const pl = prev?.local;
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
-        if (pl && pl !== local && prev.scene === scene && ["selected", "armed", "theme", "status"].every((k) => pl[k] === local[k])) return;
-        // the selection, its object, the provider, arming, theme, a move or content arriving
+        if (pl && pl !== local && prev.scene === scene && ["selected", "held", "theme", "status"].every((k) => pl[k] === local[k])) return;
+        // the selection, its object, the provider, the held tool, theme, a move or content arriving
         refresh();
       },
       /** The selected object's handles, at the values shown (for probes and tests). */

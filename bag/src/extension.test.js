@@ -172,10 +172,14 @@ describe("drawing", () => {
     expect(Math.hypot(transform.position[0], transform.position[2])).toBeGreaterThan(0.1);
     expect(t.ids(BAG1)).toEqual(["cube", "disc"]);
     expect(outside(t.bag(BAG1).doc()).map((x) => [x.entry.id, x.entry.out.by])).toEqual([["meeple", "s-me"]]);
-    // carried: the hand's session, started at once, fed by an arm of the bag's
+    // carried: the hand's session, started at once, fed by the bag's held tool
     expect(t.carries.map((c) => [c.id, c.opts.now])).toEqual([["meeple", true]]);
     const arm = t.rec.arms.at(-1);
     expect(arm.on).toBe(true);
+    expect(arm.tool).toMatchObject({ name: "Drawn piece", pointer: true });
+    expect(arm.tool.keys.map((k) => k.code)).toEqual(["KeyQ", "KeyE", "KeyF", "AltLeft", "AltRight"]);
+    // held directly: no command to pick it up through
+    expect(t.cmd("carry")).toBeUndefined();
     arm.handlers.move({ x: 10, y: 20 });
     expect(t.carries[0].moves).toEqual([{ x: 10, y: 20 }]);
     // the next click puts it down where the drawer chose
@@ -186,6 +190,15 @@ describe("drawing", () => {
     // told: that, from which bag, how many. Never what
     expect(t.rec.sends).toEqual([["drew", { bag: BAG1, n: 1 }]]);
     expect(JSON.stringify(t.rec.sends)).not.toMatch(/eeple/);
+  });
+
+  it("put down (Escape, the stage's ladder, or another tool held): the piece goes back where it came out", async () => {
+    const t = await filled({ carry: true });
+    t.run("draw", "bag1");
+    const arm = t.rec.arms.at(-1);
+    arm.handlers.put();
+    expect(t.carries[0].cancelled).toBe(true);
+    expect(t.carries[0].ended ?? null).toBe(null);
   });
 
   it("with nothing to carry it, the piece is set down beside the bag", async () => {

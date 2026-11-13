@@ -305,15 +305,7 @@ function create(api) {
       query = filter.value.trim();
       view.draw();
     });
-    filter.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && filter.value) {
-        e.preventDefault();
-        e.stopPropagation();
-        filter.value = "";
-        query = "";
-        view.draw();
-      }
-    });
+    // (Escape is the ladder's field rung: it clears the text, then leaves the field)
 
     function item(p) {
       const b = el("button", "button part");

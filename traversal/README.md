@@ -21,7 +21,7 @@ trait.
 
 | type | id | for |
 |---|---|---|
-| `scene:extension` | `traversal` | exits: the verb, on the use prompt and the menu (`src/extension.js`; the rules are `src/exit.js`, the leaving `src/go.js`) |
+| `scene:extension` | `traversal` | exits: the verb, on every surface (`src/extension.js`; the rules are `src/exit.js`, the leaving `src/go.js`) |
 
 It declares no `activities`, so it runs whatever the viewer is doing, and
 offers no activity of its own. It `requires` nothing: the use prompt is a
@@ -51,14 +51,11 @@ game's to bring into play.
 
 ## Using it
 
-Two ways, one verb (joints' pattern, for the same reasons):
-
-- **Walking** (a game that brings the use prompt): look at it from within
-  arm's reach (2 m from the eye to the point looked at) and the prompt
-  offers **[F] Go below** (its verb). Only the prompt says where the eye is,
-  so only the prompt's verb has a reach.
-- **Its menu and the inspector**, in any activity: the verb, with no key and
-  no reach. No key, because F is Frame all while editing.
+One verb, its own (**[F] Go below**, or "Go"), on every surface: the use
+prompt, the menu, the inspector and the key map. It says `reach: true`, so
+the stage measures it from the body's eye against the body's reach
+(scene/TOOLS.md §4): walking, within 2 m of the point looked at (out of
+reach it shows disabled, "too far"); in orbit, anywhere.
 
 Using it sends Patchwork's `patchwork:open-document` event, `{ url: to }`,
 bubbling and composed out of the stage's element: what openDocument in
@@ -90,7 +87,7 @@ The same trait, unchanged, with different verbs:
 | `src/index.js` | plugin metadata only (worker-safe), with the trait's description |
 | `src/exit.js` | the trait and its rules: where it leads, its verb, reach (pure) |
 | `src/go.js` | leaving: the open-document event |
-| `src/extension.js` | the stage's side: the two commands |
+| `src/extension.js` | the stage's side: the one command |
 
 ## Testing
 
@@ -100,11 +97,10 @@ The same trait, unchanged, with different verbs:
   blank, a web link, a bare scheme, not base58, a link, padded, with a
   `#name`, this doc, this doc with a `#name`) × every kind of `verb` (8) ×
   every target (6: the exit, an object without it, a group with it, a missing
-  id, a ref, the scene) × the menu and 10 looks for the use prompt (no eye,
-  no hit, distances either side of 2 m, a hit with only a point): 6,864
-  cases, each against the rule stated plainly.
-- `src/extension.test.js`: the prompt's verb (F, 2 m) and the menu's (no
-  key, no reach); with nowhere to go, nothing offered and nothing sent; using
+  id, a ref, the scene): 624 cases, each against the rule stated plainly.
+  Reach is the stage's, and scene's own tests (H9) cover it.
+- `src/extension.test.js`: the one verb (F, `reach: true`, every surface);
+  with nowhere to go, nothing offered and nothing sent; using
   it sends exactly one event, `{ url }`, bubbling and composed, from the
   stage's root, and writes nothing; it goes where the doc says when used; the
   metadata.

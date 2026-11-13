@@ -500,7 +500,7 @@ art and packages.
   steps the sea and the hull, and holds the hull's pose on B's channel.
   G's stage opens with the link and runs tabletop, its rule, the keeper,
   seats and carry. Cards ride the ship; face up is the table's up.
-- Ana walks the deck (the walk body), looks at p1, and the prompt folds in
+- Ana walks the deck (the walk body; as built, sailing's `aboard`), looks at p1, and the prompt folds in
   G's "Sit as Player 1". F claims `seat:p1` in G and enters G's seat
   body, which rides G's root, over the walk body.
 - The deck waits on G's roster alone. A press on a card goes to G's
@@ -587,7 +587,12 @@ ships alone and proves something.
    in it; `seats/` installs, builds and passes its suite copied out of the
    repo alone.
 6. [T] **Bodies and the held tool**; rides by body, so `fallback` and
-   `riding()` go.
+   `riding()` go. *Built:* see TOOLS.md's build order; the camera is the
+   body's as section 4 says (a seat's ride is the only one while seated,
+   orbit rides sailing's base follow), and sitting from walking pushes the
+   seat body over the walk body, so `firstPerson` went. Sailing walks her
+   deck in a body of its own (`aboard`), not the walk body (TOOLS.md says
+   why).
 7. [T] **The clock**: one `"clock"` claim per doc, processes, ordered holds.
 8. [T] **Activities and `requires` go**, with `always` and `general:
    false`. *Proves:* every suite passes with less stage.

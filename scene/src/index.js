@@ -133,10 +133,9 @@ export const plugins = [
     },
   },
   {
-    // the use prompt ("[F] Raise the anchor"): the first-person menu, in
-    // play only. Not general: it runs only when a game requires it (listed
-    // before scene.keys, so the prompt hears its keys first), and so never
-    // makes a scene offer "play" on its own.
+    // the use prompt ("[F] Raise the anchor"): attention's verbs, shown
+    // (scene.keys does them), in play only. Not general: it runs only when a
+    // game requires it, and so never makes a scene offer "play" on its own.
     type: "scene:extension",
     id: "scene.use",
     name: "Use prompt",
@@ -144,6 +143,15 @@ export const plugins = [
     activities: ["play"],
     async load() {
       return (await import("./parts/use.js")).default;
+    },
+  },
+  {
+    // the body chip, who's here and the Esc hint (TOOLS.md §4, §6): in every activity
+    type: "scene:extension",
+    id: "scene.body",
+    name: "Body",
+    async load() {
+      return (await import("./parts/body.js")).default;
     },
   },
   {
