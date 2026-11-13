@@ -36,6 +36,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "terrain-mesh",
+    content: "built",
     name: "Terrain",
     icon: "Mountain",
     supportedDatatypes: ["terrain"],

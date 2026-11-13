@@ -263,7 +263,7 @@ be the body, by one of three paths, tried in this order:
    (3D render)").
 2. **file**: a Patchwork `file` doc holding a GLB (its `extension`, or its
    name, says `glb`; a file that names no extension is sniffed for the glTF
-   magic). That is what a scene shows directly for a passthrough object
+   magic). That is what a scene shows directly for a file object
    (contract v3 §6: a GLB file gets no render doc), so dragging such a row out
    of the scene's outline links the file. Its bytes are cut as they are; no
    provider and no registry is needed. The dependency is the file doc, keyed
@@ -358,7 +358,7 @@ with its own copy of that cache (and the editor has the main thread's).
 Patchwork `#doc=` link, or a bare id), or you can drop a document onto the
 view: from the sidebar (`text/x-patchwork-dnd`) or a scene's outline row
 (`text/x-patchwork-dnd` / `text/x-patchwork-urls` / `text/plain` carrying the
-row's render doc, or for a passthrough GLB object its file doc). Any document
+row's render doc, or for a GLB file object its file doc). Any document
 is accepted at the drop; what it can be is settled when it is cut. The
 linked body is drawn as a locked outline, and a chip names the doc and the
 section path. The panel sets the plane, the model and the resolution. **Fit

@@ -46,6 +46,7 @@ function registerMesh() {
   getRegistry("scene:source").register({
     type: "scene:source",
     id: "test-hull-surface",
+    content: "built",
     name: "Test hull",
     supportedDatatypes: ["test-hull"],
     params: [],

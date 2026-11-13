@@ -37,6 +37,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "flow-field-streamlines",
+    content: "built",
     name: "Flow streamlines",
     icon: "Wind",
     supportedDatatypes: ["flow-field"],
@@ -55,6 +56,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "flow-field-slice",
+    content: "built",
     name: "Flow slice",
     icon: "Layers",
     supportedDatatypes: ["flow-field"],

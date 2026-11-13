@@ -10,9 +10,10 @@
 //    the build throws on): the host rebuilds the flow when the render gets a
 //    new glbUrl, since the url is in dependencies().
 // 2. file: a Patchwork `file` doc holding a GLB (extension or name `.glb`, or
-//    glTF magic bytes): what a scene shows directly for a passthrough object
-//    (`renderUrl: null`, shown from `sourceUrl`; no render doc: scene/README.md,
-//    "`scene` — the composition"). Its bytes are cut as they are.
+//    glTF magic bytes): what a scene shows directly for an object whose
+//    provider's content is "file" (`renderUrl: null`, shown from `sourceUrl`;
+//    no render doc: scene/README.md, "`scene` — the composition"). Its bytes
+//    are cut as they are.
 // 3. source: any other doc some `scene:source` provider can build (the most
 //    specific match first, as the scene host picks): it is built in memory
 //    (nothing is stored) with the provider's DEFAULT params and the GLB is
@@ -70,10 +71,13 @@ export function providerMatches(p, { datatype, extension }) {
   return true;
 }
 
+/** Copy of the scene host's contentOf: the kind of content a provider makes, "file" or "built", else null. */
+export const contentOf = (provider) => (provider?.content === "file" || provider?.content === "built" ? provider.content : null);
+
 /**
  * Copy of the scene host's matchProviders: the providers for a source, most
  * specific first (datatype + extension, then datatype, then a wildcard),
- * registry order among equals.
+ * registry order among equals; never one that declares no content kind.
  */
 export function matchProviders(providers, source) {
   const score = (p) => {
@@ -83,7 +87,7 @@ export function matchProviders(providers, source) {
     return (wild ? 0 : 2) + (hasExt ? 1 : 0);
   };
   return (providers ?? [])
-    .filter((p) => p && p.id && providerMatches(p, source))
+    .filter((p) => p && p.id && contentOf(p) && providerMatches(p, source))
     .map((p, i) => ({ p, i, s: score(p) }))
     .sort((a, b) => b.s - a.s || a.i - b.i)
     .map(({ p }) => p);
@@ -268,8 +272,9 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
   } catch {
     sources = null;
   }
+  // only a provider whose content is built has a build() to call
   const candidates = matchProviders(list(sources), source).filter(
-    (p) => !isFlowProviderId(p.id) && !(Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(OWN_DATATYPE)),
+    (p) => contentOf(p) === "built" && !isFlowProviderId(p.id) && !(Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(OWN_DATATYPE)),
   );
   const notes = [];
   for (const p of candidates) {

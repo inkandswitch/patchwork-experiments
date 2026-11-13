@@ -220,7 +220,7 @@ describe("subjects: what a dropped doc becomes, and a subject resolved at real s
   beforeEach(() => {
     resetRegistries();
     views.length = 0;
-    getRegistry("scene:source").register({ id: "camber-hull-surface", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async ({ params }) => (expect(params).toEqual({ size: "document" }), { glb: GLB }) }) });
+    getRegistry("scene:source").register({ id: "camber-hull-surface", content: "built", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async ({ params }) => (expect(params).toEqual({ size: "document" }), { glb: GLB }) }) });
   });
 
   it("subjectFor: a hull, a design (its hull never copied: it is the one the design links), and refusals", () => {

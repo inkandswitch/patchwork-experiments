@@ -66,7 +66,7 @@
   });
   if (path === "source") {
     getRegistry("scene:source").register({
-      type: "scene:source", id: "probe-hull-surface", name: "Probe hull", supportedDatatypes: ["probe-hull"], params: [],
+      type: "scene:source", id: "probe-hull-surface", content: "built", name: "Probe hull", supportedDatatypes: ["probe-hull"], params: [],
       async load() { return { build: async ({ doc }) => ({ kind: "glb", glb: prismGLB(loop(doc.scale), { levels: [-1.2, 0.4] }) }) }; },
     });
   }
