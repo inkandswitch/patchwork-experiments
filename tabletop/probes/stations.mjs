@@ -22,6 +22,11 @@
 //   away; F once asks (a notice; the prompt says "F again"), F again takes it:
 //   A sits in Player 2, Player 1 is free, B is told.
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -63,13 +68,13 @@ async function hover(w, id, want) {
     hov = await until(`hovered(${J(w)}) === ${J(id)}`, 2500);
   }
   // (generous: a deal in progress holds up the main thread for seconds at a time)
-  const ok = want ? await until(`prompt(${J(w)}).some((t) => /${want}/.test(t))`, 10_000) : (await sleep(800), true);
+  const ok = want ? await until(`prompt(${J(w)}).some((t) => /${want}/.test(t))`, 10_000) : (await b.rest(800), true);
   return { ok: hov && ok, hovered: await P(`hovered(${J(w)})`), prompt: await P(`prompt(${J(w)})`) };
 }
 async function press(w, key) {
   await P(`focus(${J(w)})`);
   await b.key(key);
-  await sleep(250);
+  await b.rest(250);
 }
 /** walking for view w (the stand-in body), standing over a seat's place (above and behind its eye) */
 async function walkTo(w, sid) {
@@ -79,7 +84,7 @@ async function walkTo(w, sid) {
   const eye = [ex + ((ex - tx) / d) * 0.3, ey + 0.4, ez + ((ez - tz) / d) * 0.3];
   await P(`walk(${J(w)}, ${J(eye)}, ${J(c.target)})`);
   await until(`walking(${J(w)})`, 2000);
-  await sleep(400);
+  await b.rest(400);
   return eye;
 }
 
@@ -113,7 +118,7 @@ try {
   check("…the seat body goes on over the walker, which waits under it (suspended, not left)", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk", "seat"]) && (await P("walker('a')")).suspended === 1 && (await P("walker('a')")).left === 0, await P("walker('a')"));
   const seat1 = await P("seatCam('p1')");
   check("…the camera is the seat's view", await until(`camera('a') && ${J(seat1.position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000), { camera: await P("camera('a')"), seat: seat1 });
-  await sleep(500);
+  await b.rest(500);
   await shot("2-seated");
   mark("A sat from walking");
 
@@ -127,7 +132,7 @@ try {
   check("…walking on from the seat's eye, looking where it looked", near(resumed?.eye, seat1.position) && near(resumed?.target, seat1.target), { resumed, seat1 });
   check("…and the seat is still A's", (await P("seats()")).p1.player === viewers.a && (await P("claim('p1')"))?.session === sessionA, await P("seats()"));
   check("…told so", await until("notices('a').some((n) => /You got up from Player 1; it's still yours/.test(n))", 2000), await P("notices('a')"));
-  await sleep(400);
+  await b.rest(400);
   await shot("4-stood-up");
   const h3 = await hover("a", tray1, "Back to your seat");
   check("walking, A hovers its own tray: \"Back to your seat\"", h3.ok, h3);
@@ -153,13 +158,14 @@ try {
   await shot("5-refused");
   const n0 = (await P("notices('a')")).length;
   await press("a", "f");
-  await sleep(300);
+  await b.rest(300);
   check("F there changes nothing: B keeps Player 2, A keeps Player 1", (await P("seats()")).p2.player === viewers.b && (await P("seats()")).p1.player === viewers.a && (await P("walking('a')")), { seats: await P("seats()"), notices: (await P("notices('a')")).slice(n0) });
 
   // ── an away player's seat: F, then F again ──
   await P("cut('b')");
   mark("B cut off");
-  const away = await until("options('a')[2][1] === 'Player 2 (away)'", PEER_TTL_MS + 8000);
+  // (a wait on the world, the presence TTL: frames of the page's clock, not the wall)
+  const away = await b.soon("window.__p.options('a')[2][1] === 'Player 2 (away)'", { frames: Math.ceil((PEER_TTL_MS + 8000) / (1000 / 60)) });
   mark("A sees p2 away");
   check("after the presence TTL, A sees Player 2 as away", away, await P("options('a')"));
   const h5 = await hover("a", tray2, "Sit as Player 2 \\(Ben is away\\)");
@@ -175,7 +181,7 @@ try {
   check("…Player 1 is let go", (await P("seats()")).p1.player == null, await P("seats()"));
   check("…A sits (one seat body, over the walker), in Player 2's view", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk", "seat"]) && (await until(`camera('a') && ${J((await P("seatCam('p2')")).position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000)), await P("camera('a')"));
   check("B (still hearing the doc) is told its seat was taken while it was away", await until("notices('b').some((n) => /Ana took Player 2 while you were away/.test(n))", 3000), await P("notices('b')"));
-  await sleep(500);
+  await b.rest(500);
   await shot("7-taken-over");
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

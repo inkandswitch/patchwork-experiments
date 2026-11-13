@@ -15,6 +15,11 @@
 //   presence TTL B sees Player 1 as away, and takes it only after confirming;
 // - A, back to hearing the doc, is told its seat was taken, and writes nothing.
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -70,7 +75,7 @@ try {
   check("B chose within a second of opening", pickedAfter < 1000, pickedAfter);
   check("B hadn't heard from A when it chose", heardA === false, heardA);
   check("B saw Player 1 as taken from its first look", firstOptions?.[1]?.[1] === "Player 1 (taken)", firstOptions);
-  await sleep(300);
+  await b.rest(300);
   check("B is refused with a notice naming who sits there", (await P("notices('b')")).includes("Ana is sitting there."), await P("notices('b')"));
   check("B was never asked to confirm", (await P("confirms()")).length === 0, await P("confirms()"));
   check("A keeps Player 1", (await P("seats()")).p1.player === viewers.a && (await P("claim('p1')"))?.session === sessionA, { seats: await P("seats()"), claim: await P("claim('p1')") });
@@ -92,7 +97,8 @@ try {
   await P("cut('a')");
   mark("A cut off");
   check("while A might still be here, B still sees Player 1 taken", (await P("options('b')"))[1][1] === "Player 1 (taken)", await P("options('b')"));
-  const away = await until("options('b')[1][1] === 'Player 1 (away)'", PEER_TTL_MS + 6000);
+  // (a wait on the world, the presence TTL: frames of the page's clock, not the wall)
+  const away = await b.soon("window.__p.options('b')[1][1] === 'Player 1 (away)'", { frames: Math.ceil((PEER_TTL_MS + 6000) / (1000 / 60)) });
   mark("B sees p1 away");
   check("after the presence TTL, B sees Player 1 as away", away, await P("options('b')"));
   check("…and its name tag says so", (await P("tags('b')"))[0] === "Player 1 · Ana (away)", await P("tags('b')"));
@@ -105,7 +111,7 @@ try {
   mark("B took p1");
   // A still hears the doc (only its presence was cut): told, and it writes nothing back
   check("A is told its seat was taken while it was away", await until("notices('a').includes(\"Ben took Player 1 while you were away; you're watching\")", 3000), await P("notices('a')"));
-  await sleep(500);
+  await b.rest(500);
   check("A wrote nothing back: Ben keeps Player 1", (await P("seats()")).p1.player === viewers.b && (await P("claim('p1')"))?.session === sessionB, { seats: await P("seats()"), claim: await P("claim('p1')") });
   check("A's picker shows it watching", (await P("picked('a')")) === "", await P("picked('a')"));
   await shot("taken-over");

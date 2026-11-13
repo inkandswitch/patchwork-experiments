@@ -7,7 +7,10 @@
      has the scene and seats packages only. The documents are this page's (one FakeRepo; each
      frame reads its own copies: frame-repo.js), and each package is a folder
      doc here with a package.json, as pushwork lays one out, served to a
-     frame that doesn't have it from the BUILT dist when it says Load. -->
+     frame that doesn't have it from the BUILT dist when it says Load.
+     Both frames' stages run on this page's one manual clock (scene's
+     manualTime, window.__time = shared.time): nothing in them moves until
+     the probe steps it. -->
 <style>
   html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
   body { display: flex; gap: 8px; }
@@ -31,7 +34,8 @@ try {
   const urls = { scene: folder("@tiny-patchwork/scene"), seats: folder("@tiny-patchwork/seats"), tabletop: folder("@tiny-patchwork/tabletop"), "card-table": folder("@tiny-patchwork/card-table") };
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
-  window.shared = { repo, urls, viewers: { a: ana.url, b: ben.url }, listeners: { a: new Set(), b: new Set() }, errors };
+  const time = (window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime());
+  window.shared = { repo, urls, viewers: { a: ana.url, b: ben.url }, listeners: { a: new Set(), b: new Set() }, errors, time };
   const frames = { a: document.getElementById("a"), b: document.getElementById("b") };
   const ready = { a: null, b: null };
   const start = (w, has) =>

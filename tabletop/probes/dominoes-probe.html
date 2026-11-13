@@ -27,6 +27,8 @@ import { twoPeers } from "./real-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, cardIds, deckUrlOf, install, kept, seatsOf, shownAs } from "./table-setup.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -36,7 +38,8 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 
 try {
   await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
-  const net = twoPeers({ delay: 25 });
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   const repos = { a: net.a, b: net.b };
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
@@ -46,13 +49,16 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   Tool(scene.a, hosts.a);
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
   const told = { a: [], b: [] };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   const select = (w) => hosts[w].querySelector(PICKER);
   const objects = (w = "a") => scene[w].doc().objects ?? {};
   const tiles = (w = "a") => cardIds(objects(w));

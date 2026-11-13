@@ -30,6 +30,8 @@ import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -46,10 +48,10 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => {
+    broadcast: (message) => time.after(5, () => {
       if (p.cut || p.other.cut) return;
       for (const fn of p.other.eph) fn({ message, senderId: "peer" });
-    }, 5),
+    }),
     eph,
     cut: false,
   };
@@ -124,6 +126,7 @@ const walker = {
 
 try {
   await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   getRegistry("scene:extension").register(walker);
   const repo = new FakeRepo();
   window.repo = repo;
@@ -137,15 +140,18 @@ try {
   const peers = { a: A, b: B };
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   const viewerOf = { a: ana.url, b: ben.url };
   const dbg = { a: null, b: null };
   const open = (w) => { if (!dbg[w]) { Tool(peers[w], hosts[w]); dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug; } return true; };
   open("a");
   const told = { a: [], b: [] };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   const confirms = [];
   window.confirm = (q) => (confirms.push(q), false);
   const select = (w) => hosts[w].querySelector(PICKER);

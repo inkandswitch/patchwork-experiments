@@ -77,10 +77,13 @@ class Repo {
 }
 
 /**
- * @param {{ delay?: number }} [o]  how long a change takes to reach the other peer (ms)
+ * @param {{ delay?: number, later?: (ms: number, fn: () => void) => any }} [o]
+ *   `delay`: how long a change takes to reach the other peer (ms); `later`: the timer the
+ *   network's delays run on (setTimeout; a page on a manual clock passes its `time.after`,
+ *   so the network moves with the frames the probe steps, the same every run)
  * @returns {{ a: Repo, b: Repo, hold(): void, release(): void, held(): boolean, stats: object }}
  */
-export function twoPeers({ delay = 25 } = {}) {
+export function twoPeers({ delay = 25, later = (ms, fn) => setTimeout(fn, ms) } = {}) {
   let held = false;
   const dirty = new Set(); // handles with changes the other hasn't had
   const waiting = []; // broadcasts held back
@@ -94,7 +97,7 @@ export function twoPeers({ delay = 25 } = {}) {
     },
     changed(handle) {
       if (held) return void dirty.add(handle);
-      setTimeout(() => (held ? dirty.add(handle) : deliver(handle)), delay);
+      later(delay, () => (held ? dirty.add(handle) : deliver(handle)));
     },
     broadcast(handle, message) {
       const send = () => {
@@ -102,7 +105,7 @@ export function twoPeers({ delay = 25 } = {}) {
         twin(handle).emit("ephemeral-message", { message, senderId: handle.peer.name });
       };
       if (held) waiting.push(send);
-      else setTimeout(() => (held ? waiting.push(send) : send()), 5);
+      else later(5, () => (held ? waiting.push(send) : send()));
     },
   };
   const a = new Repo("a", net);

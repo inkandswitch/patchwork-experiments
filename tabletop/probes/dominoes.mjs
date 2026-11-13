@@ -36,6 +36,11 @@
 //   standing in front of the rack with it, and B sees every one of those
 //   faces.
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -100,7 +105,7 @@ try {
     await until(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`, 10_000);
     for (let k = 0; k < 40; k++) {
       const one = await P(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`);
-      await sleep(250);
+      await b.rest(250);
       btn = await P(`templateAt('a', 'tabletop.dominoes-${PLAYERS}')`);
       if (one && btn && one.x === btn.x && one.y === btn.y) break;
     }
@@ -116,12 +121,12 @@ try {
   const start = await P("where()");
   check("all 28 start face down on the table, none in a rack", start.down.length === 28 && !start.p1.length && !start.p2.length, start);
   check("every tile looks the same to both: its back", await until("backs('a').length === 28 && __p.backs('b').length === 28", 30_000), { a: (await P("backs('a')")).length, b: (await P("backs('b')")).length });
-  await sleep(500);
+  await b.rest(500);
   await shot(PLAYERS === 2 ? "start" : `start-${PLAYERS}`);
   if (PLAYERS !== 2) {
     check(`${PLAYERS} seats on the picker, ${PLAYERS} racks`, await until(`picker('a') === ${PLAYERS + 1}`, 20_000) && (await P("racks()")) === PLAYERS, { picker: await P("picker('a')"), racks: await P("racks()") });
     await P("camera('a', [0, 1.1, 0.0001], [0, 0, 0])");
-    await sleep(800);
+    await b.rest(800);
     await shot(`above-${PLAYERS}`);
     throw Object.assign(new Error("layout only"), { done: true });
   }
@@ -171,7 +176,7 @@ try {
   check("each sees their own seven faces", await until(`(${sees})(${J(racks)})`, 60_000), { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });
   check("…and the other's seven as backs, with no veil anywhere", await until(`${J(racks.p2)}.every((id) => __p.backs('a').includes(id)) && ${J(racks.p1)}.every((id) => __p.backs('b').includes(id)) && __p.veils('a').length === 0 && __p.veils('b').length === 0`, 20_000), { veilsA: await P("veils('a')"), veilsB: await P("veils('b')") });
   check("nobody sees any boneyard tile's face", (await P("faces('a')")).every((id) => racks.p1.includes(id)) && (await P("faces('b')")).every((id) => racks.p2.includes(id)), { a: await P("faces('a')"), b: await P("faces('b')") });
-  await sleep(400);
+  await b.rest(400);
   await shot("hands");
 
   // ── A plays two tiles face up ──
@@ -192,7 +197,7 @@ try {
     const to = await P(`pointAt(${J(spot)}, 'a')`);
     const yaw0 = (await P(`transform(${J(id)})`)).rotation;
     // the second goes down turned a quarter (Q twice while carried): a double, crosswise
-    await b.drag([from.x, from.y], [to.x, to.y], { steps: 16, beforeRelease: k === 1 ? async () => { await b.key("q"); await b.key("q"); await sleep(100); } : undefined, settle: 600 });
+    await b.drag([from.x, from.y], [to.x, to.y], { steps: 16, beforeRelease: k === 1 ? async () => { await b.key("q"); await b.key("q"); await b.rest(100); } : undefined, settle: 600 });
     const up = await until(`where().up.includes(${J(id)})`, 5000);
     const t = await P(`transform(${J(id)})`);
     check(`tile ${k + 1} lies face up on the felt`, up, { t, where: await P("where()") });
@@ -232,7 +237,7 @@ try {
   mark("played two");
   check("B sees both played tiles' faces", await until(`${J(played)}.every((id) => __p.faces('b').includes(id))`, 30_000), { faces: await P("faces('b')"), played });
   check("…and A does", await until(`${J(played)}.every((id) => __p.faces('a').includes(id))`, 10_000), await P("faces('a')"));
-  await sleep(400);
+  await b.rest(400);
   await shot("played");
 
   // ── B draws from the boneyard ──
@@ -269,7 +274,7 @@ try {
   check("U stands it up on the table where it lay, its face level and toward B", await until(`where().stand.includes(${J(standB)}) && __p.faceDir(${J(standB)})[1] === 0 && __p.faceDir(${J(standB)})[2] < -0.7`, 5000), { dir: await P(`faceDir(${J(standB)})`), where: await P("where()") });
   check("…B sees its face (the keys handed over), A its back, no veil", await until(`faces('b').includes(${J(standB)}) && __p.backs('a').includes(${J(standB)}) && __p.veils('a').length === 0 && __p.veils('b').length === 0`, 30_000), { a: await P(`backs('a').includes(${J(standB)})`), b: await P(`faces('b').includes(${J(standB)})`) });
   mark("stood two on the table");
-  await sleep(400);
+  await b.rest(400);
   await shot("standing");
 
   // ── nothing duplicated or lost ──
@@ -303,12 +308,12 @@ try {
   check("B is told", await until("notices('b').some((n) => /^Ana laid 5 dominoes face up/.test(n))", 5000), await P("notices('b')"));
   const handB = [...(await P("where()")).p2, standB];
   check("B's own hand, and the tile standing facing B, are still B's alone: A sees their backs", await until(`${J(handB)}.every((id) => __p.backs('a').includes(id))`, 5000), await P("backs('a')"));
-  await sleep(500);
+  await b.rest(500);
   await shot("end");
   // close-ups: B's view over A's laid-out hand; A's view over B's rack (backs)
   await P("camera('b', [0, 0.3, 0.05], [0, 0, 0.34])");
   await P("camera('a', [0, 0.22, -0.2], [0, 0.02, -0.42])");
-  await sleep(800);
+  await b.rest(800);
   await shot("closeups");
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

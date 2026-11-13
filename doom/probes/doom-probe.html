@@ -28,6 +28,8 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
 import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -51,7 +53,8 @@ try {
       getRegistry(p.type).register(p);
     }
   }
-  const net = twoPeers({ delay: 25 });
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
   const cy = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Cy" });
@@ -68,6 +71,8 @@ try {
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c"), d: document.getElementById("d") };
   hosts.a.repo = net.a; hosts.b.repo = net.b; hosts.c.repo = net.b; hosts.d.repo = net.a;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url; hosts.c.viewerId = cy.url; hosts.d.viewerId = ana.url;
+  // every view on the page's one manual clock: nothing moves until the probe steps it (the two repos still sync on the wall)
+  for (const h of Object.values(hosts)) h.time = time;
   Tool(scene1.a, hosts.a);
   Tool(scene1.b, hosts.b);
   Tool(scene2, hosts.d);
@@ -97,11 +102,6 @@ try {
   watch(scene1.a, writes[1]);
   watch(scene2, writes[2]);
 
-  // frame timing: requestAnimationFrame intervals and each view's render time
-  const frames = [];
-  let timing = false;
-  const tick = (t) => { if (timing) frames.push(t); requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
 
   const rootOf = (w) => hosts[w].querySelector(".scene-stage");
   window.__p = {
@@ -202,18 +202,22 @@ try {
     /** show only view w (the others stop drawing), for timing one view's frames alone */
     solo(w) { for (const k of ["a", "b", "c", "d"]) hosts[k].style.display = k === w ? "" : "none"; hosts[w].style.gridColumn = "1 / 3"; hosts[w].style.gridRow = "1 / 3"; },
     atmosphere: (w) => JSON.parse(JSON.stringify(dbg[w].atmosphere() ?? null)),
-    /** frame timing over `ms`: rAF intervals (ms) and the render calls of view w */
-    async timeFrames(w, ms = 3000) {
-      frames.length = 0;
+    /**
+     * What a drawn frame costs: `n` frames of the page's clock stepped one at
+     * a time, each drawn (every view shown draws), timed on the wall (ms), and
+     * the render calls of view w.
+     */
+    async timeFrames(w, n = 20) {
       const slow0 = dbg[w].viewport.perf.slowFrames.length;
       const f0 = dbg[w].viewport.stats.frames;
-      timing = true;
-      // keep it drawing: each frame asks for another
-      const keep = setInterval(() => dbg[w].viewport.invalidate(), 8);
-      await new Promise((r) => setTimeout(r, ms));
-      clearInterval(keep);
-      timing = false;
-      const d = frames.slice(1).map((t, i) => t - frames[i]).sort((a, b) => a - b);
+      const d = [];
+      for (let i = 0; i < n; i++) {
+        dbg[w].viewport.invalidate();
+        const t = performance.now();
+        await time.step(1);
+        d.push(performance.now() - t);
+      }
+      d.sort((a, b) => a - b);
       const q = (p) => +(d[Math.min(d.length - 1, Math.floor(p * d.length))] ?? 0).toFixed(1);
       return { frames: dbg[w].viewport.stats.frames - f0, intervals: d.length, median: q(0.5), p90: q(0.9), max: q(1), calls: dbg[w].viewport.stats.calls, triangles: dbg[w].viewport.stats.triangles, textures: dbg[w].viewport.stats.textures, slow: dbg[w].viewport.perf.slowFrames.slice(slow0).length };
     },

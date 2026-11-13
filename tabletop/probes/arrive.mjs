@@ -28,6 +28,11 @@
 //   sees the 8 cards of their own hand, the other's as backs, the pile as
 //   backs; keys were handed over only for the two hands.
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -99,7 +104,7 @@ try {
   check("A sits in Player 1 and B in Player 2 (B without the packages)", await until(`(() => { const s = window.__p.f("a").seats(); return s.p1?.player === ${J(viewers.a)} && s.p2?.player === ${J(viewers.b)}; })()`, 5000), await F("a", "seats"));
   mark("both seated, B without packages");
   check("A is told who it waits for", await fUntil("a", `f.hud().some((t) => /Waiting for Player 2 to shuffle/.test(t))`, 10_000), await F("a", "hud"));
-  await sleep(3000);
+  await b.rest(3000);
   const waiting = await js(`window.__p.docOf(${J(made.deck)})`);
   check("the deck is not dealt: still waiting, A alone joined", waiting.phase === "waiting" && waiting.cards === null && J(waiting.participants.map((p) => p.id)) === J([viewers.a]), { phase: waiting.phase, participants: waiting.participants.map((p) => p.id) });
   check("A's client has released nothing, to B or anyone: no key handed over", J(waiting.shares) === "{}" && J(waiting.epochs) === "{}", { shares: waiting.shares });
@@ -138,7 +143,7 @@ try {
   check("keys were handed over for the two hands only (16 cards), each sealed to its owner, none in the open", shares.length === 16 && sealed, { n: shares.length, sealed });
   check("the deck's status lines are gone from both HUDs", !(await F("a", "hud")).some((t) => /Waiting|shuffl/i.test(t)) && !(await F("b", "hud")).some((t) => /Waiting|shuffl/i.test(t)), { a: await F("a", "hud"), b: await F("b", "hud") });
   check("nothing failed to load in either view", (await F("a", "loading")).errors === 0 && (await F("b", "loading")).errors === 0, { a: await F("a", "loading"), b: await F("b", "loading") });
-  await sleep(600);
+  await b.rest(600);
   await shot("3-dealt");
   report.times = Object.fromEntries(report.timeline.map((e) => [e.what, e.t]));
 

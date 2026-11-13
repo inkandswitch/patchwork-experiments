@@ -24,6 +24,11 @@
 //   A, backs to B; A flips one: its back; the pile's top turned face up is
 //   its face to both.
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -78,7 +83,7 @@ async function seatBoth({ secure }) {
   if (secure) {
     // A seated, B not yet: the deck isn't dealt, so A's own hand (and everything) shows backs, no padlocks
     check("A seated, B not: the deck waits", await until(`seats().p1.player === ${J(viewers.a)}`), await P("seats()"));
-    await sleep(800);
+    await b.rest(800);
     const A = await P("tally('a')");
     check("before the deal every card is its back to A: its own hand too, and no veil", A.p1 && A.p1.back > 0 && !A.p1.veil && !A.p1.face && !(A.p2?.veil) && !(A.pile?.veil), A);
     await shot("waiting");
@@ -120,11 +125,11 @@ async function closeups(name, at = "across") {
   const target = { a: at === "across" ? "b" : at, b: at === "across" ? "a" : at };
   await P(from("a", target.a));
   await P(from("b", target.b));
-  await sleep(1200);
+  await b.rest(1200);
   await shot(name);
   await P(`setCam('a', ${J(cams.a)})`);
   await P(`setCam('b', ${J(cams.b)})`);
-  await sleep(300);
+  await b.rest(300);
 }
 
 try {
@@ -144,7 +149,7 @@ try {
     const madeAfter = await P("made()");
     check("nothing was made or written to hide anything: no file, no asset, the same documents as before anyone sat", J(madeAfter) === J(madeBefore) && (await P("privateKeys()")).length === 0, { madeBefore, madeAfter, keys: await P("privateKeys()") });
     report.made = madeAfter;
-    await sleep(500);
+    await b.rest(500);
     await shot("seated");
     await closeups("closeup");
 
@@ -153,7 +158,7 @@ try {
     const flip = await press("a", X, "f", "/Flip/");
     check("hovering a card in A's tray, A's prompt offers Flip; F", flip.ok, flip);
     check("…it is face down in the doc", await until(`faceUp(${J(X)}) === false`, 5000), await P(`transform(${J(X)})`));
-    await sleep(600);
+    await b.rest(600);
     check("A: still its card by the zone rule (its face GLB) but drawn upside down: what shows is its back", (await P(`state('a', ${J(X)})`)) === "face" && (await P(`shownUp('a', ${J(X)})`)) === false, { state: await P(`state('a', ${J(X)})`), shownUp: await P(`shownUp('a', ${J(X)})`) });
     // (no lens: the object's own GLB, the card back drawn on both sides)
     check("B: its back, as before (no look: the object's own GLB)", await until(`state('b', ${J(X)}) === 'back'`, 5000) && (await P(`drawn('b', ${J(X)})`)) === w.back, { state: await P(`state('b', ${J(X)})`), drawn: await P(`drawn('b', ${J(X)})`) });
@@ -183,7 +188,7 @@ try {
     const privMs = (() => { const i = seq.findIndex((e) => e.s === "veil"); const j = seq.findIndex((e) => e.s === "face"); return i >= 0 && j > i ? seq[j].t - seq[i].t : null; })();
     check("B's view went back → veil → face, the veil for the delivery's length", seq.map((e) => e.s).join(">").endsWith("veil>face") && privMs > 1000, { seq, privMs });
     await P("slow('a', 0)");
-    await sleep(400);
+    await b.rest(400);
     await closeups("drawn", "b");
 
     // ── and at full speed: the next draw ──
@@ -226,7 +231,7 @@ try {
       const ok = r.ok && (await until(`where().p1.includes(${J(top)})`, 5000));
       check(`A draws card ${i + 1} into its tray (D)`, ok, r);
       drawn.push(top);
-      await sleep(300);
+      await b.rest(300);
     }
     check("A sees their faces", await until(`states('a', ${J(drawn)}) && Object.values(__p.states('a', ${J(drawn)})).every((s) => s === 'face')`, 10_000), await P(`states('a', ${J(drawn)})`));
     check("B sees A's hand as backs: every card, the two drawn among them", (await until(`where().p1.every((id) => __p.state('b', id) === 'back' && __p.drawn('b', id) === ${J(back)})`, 15_000)), { states: await P(`states('b', ${J(drawn)})`), drawn: await P(`drawnAll('b', ${J(drawn)})`) });
@@ -247,7 +252,7 @@ try {
     check("…its face to both", await until(`state('a', ${J(top)}) === 'face' && __p.state('b', ${J(top)}) === 'face'`, 5000), { a: await P(`state('a', ${J(top)})`), b: await P(`state('b', ${J(top)})`) });
     check("nothing was made or written to hide anything", J(await P("made()")) === J(madeBefore) && (await P("privateKeys()")).length === 0, { before: madeBefore, after: await P("made()") });
     report.plain = { a: await P("tally('a')"), b: await P("tally('b')") };
-    await sleep(500);
+    await b.rest(500);
     await shot("states");
     await closeups("flipped", "a");
   }

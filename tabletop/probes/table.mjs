@@ -15,6 +15,11 @@
 // - play again: the pawn (no tags) carried near a free tray slot does not
 //   snap to it.
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -66,7 +71,7 @@ async function settled(ms = 8000) {
     const c = J(await P("camera('a')"));
     if (c === last) return true;
     last = c;
-    await sleep(250);
+    await b.rest(250);
   }
   return false;
 }
@@ -77,7 +82,7 @@ async function dragPart(part, to) {
   const c = await P("canvas('a')");
   const entry = [Math.round(c.x + c.w - 40), Math.round(c.y + c.h / 2)];
   await b.htmlDrag([from.x, from.y], [entry, ...towards(entry, [to.x, to.y], 6)]);
-  await sleep(400);
+  await b.rest(400);
   return (await ids()).filter((id) => !before.has(id));
 }
 
@@ -112,7 +117,7 @@ try {
     check("A's view has the keyboard", await P("focus('a')"));
     await b.key("s");
     mark("pressed S");
-    await sleep(500);
+    await b.rest(500);
     await snapLooks("shuffled");
     check("A is told it's shuffling", await until("notices('a').some((n) => /^Shuffling \\d+ cards/.test(n))", 3000), await P("notices('a')"));
     check("B is told Ana shuffled it, by its container's name and a count", await until(`notices('b').includes('Ana shuffled “Lost Cities: Deck” (${pile.length})')`, 3000), await P("notices('b')"));
@@ -185,7 +190,7 @@ try {
   await snapLooks("back in play");
   const same = (x, y) => Object.keys(x).every((id) => !(id in y) || x[id] === y[id]);
   check("the hands keep their faces throughout (a shuffle of the pile, the parts bin open and shut)", ["shuffled", "card snapped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
-  await sleep(400);
+  await b.rest(400);
   {
     const target = free[0];
     const near = [target.world[0] + 0.012, target.world[1], target.world[2] + 0.006];
