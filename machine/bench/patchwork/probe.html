@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>machine tool probe</title>
+<style>html,body{margin:0;height:100%} #tool{width:960px;height:760px}</style>
+<div id="tool"></div>
+<script type="module">
+const report = (r) => fetch("/report", { method: "POST", body: JSON.stringify(r) });
+const log = (...a) => fetch("/log", { method: "POST", body: a.join(" ") });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (f, ms, what) => { const end = performance.now() + ms; while (performance.now() < end) { const v = f(); if (v) return v; await sleep(50); } throw new Error(`timed out: ${what}`); };
+window.onerror = (m) => log("onerror", m);
+try {
+  const { Repo, initSubduction } = await import("/bench/patchwork/out/repo.js");
+  await initSubduction?.();
+  const repo = new Repo({ network: [] });
+  window.repo = repo;
+  const { plugins } = await import("/dist/index.js");
+  const tool = await plugins.find((p) => p.type === "patchwork:tool").load();
+  const kind = new URL(location.href).searchParams.get("kind");
+  const file = kind === "doom" ? ["/iwad", "freedoom1.wad"] : ["/engines/snes/test/unarmed.sfc", "unarmed.sfc"];
+  const handle = repo.create({ title: "Machine" });
+  const el = document.getElementById("tool");
+  const t0 = performance.now();
+  const cleanup = tool(handle, el);
+  const input = await until(() => el.querySelectorAll('input[type="file"]')[kind === "doom" ? 0 : 1], 10000, "setup");
+  const bytes = new Uint8Array(await (await fetch(file[0])).arrayBuffer());
+  const dt = new DataTransfer();
+  dt.items.add(new File([bytes], file[1]));
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change"));
+  const canvas = await until(() => el.querySelector("canvas.screen"), 60000, "the screen");
+  const started = performance.now() - t0;
+  const p1 = await until(() => [...el.querySelectorAll(".seats button")].find((b) => /P1: play/.test(b.textContent)), 10000, "P1 button");
+  p1.click();
+  await until(() => el.querySelector('.seats button[data-mine]'), 5000, "seated");
+  const root = el.querySelector(".machine-tool");
+  const press = (code, ms) => { root.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true })); return sleep(ms).then(() => root.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }))); };
+  const shots = {};
+  const tickOf = () => +(el.querySelector(".info").textContent.match(/tick (\d+)/)?.[1] ?? -1);
+  await sleep(1500);
+  shots.a = canvas.toDataURL();
+  const tickA = tickOf();
+  if (kind === "doom") { await press("ArrowUp", 1500); await press("ArrowLeft", 600); await press("ControlLeft", 400); }
+  else { for (let i = 0; i < 4; i++) { await press("Enter", 150); await sleep(2500); } await press("KeyX", 150); await sleep(2000); await press("ArrowRight", 1000); }
+  await sleep(800);
+  shots.b = canvas.toDataURL();
+  const tickB = tickOf();
+  const info = el.querySelector(".info").textContent;
+  const seats = [...el.querySelectorAll(".seats button")].map((b) => b.textContent);
+  const errors = [...el.querySelectorAll("[data-error]")].map((e) => e.textContent);
+  cleanup();
+  report({ ok: true, kind, started, tickA, tickB, info, seats, errors, title: handle.doc().title, pngs: shots, w: canvas.width, h: canvas.height });
+} catch (e) { report({ ok: false, fatal: String(e.stack ?? e) }); }
+</script>
