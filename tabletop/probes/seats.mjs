@@ -1,10 +1,10 @@
 // Seats held by claims, at a Lost Cities table, by two people in headless Chrome.
 //
-//   (in scene/, tabletop/ and keep/) pnpm build
+//   (in scene/, seats/, tabletop/ and keep/) pnpm build
 //   node probes/seats.mjs [--shots <dir>] [--show]
 //
-// Mounts the BUILT scene tool (the seats are its own part) with the BUILT
-// tabletop and keep plugins on a Lost
+// Mounts the BUILT scene tool with the BUILT seats, tabletop and keep
+// plugins on a Lost
 // Cities table set up as the game page does, twice on one doc (A is Ana, B is
 // Ben, with real presence between them; seats-probe.html). Then:
 // - A sits in Player 1, and claims it;
@@ -23,7 +23,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "tabletop-seats"));
 const PEER_TTL_MS = 15_000; // scene/src/stage/presence.js

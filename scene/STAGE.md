@@ -338,7 +338,7 @@ describes: {
   "arena.level":  { name: "Arena level", on: "scene",
                     fields: [{ key: "look", label: "Look", kind: "enum", default: "",
                                options: [{ value: "", label: "The scene's own" }, { value: "arena", label: "Sky, haze and sun" }] }] },
-  "scene.seats": { name: "Seats", on: "scene",
+  "seats":       { name: "Seats", on: "scene",
                       entries: { label: "Seats", noun: "seat", prefix: "seat",
                                  fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }],
                                  init: { player: null } } },
@@ -1083,14 +1083,15 @@ found through plugin metadata, by which packages that don't know each other
 meet. A package that depends on one of these names the convention, never
 the package that provides it.
 
-**Seats** (provided by the scene package's own `scene.seats`, a shared part:
-`src/parts/seats.js`). The places people take at a scene: scene trait
-`scene.seats`, `{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
+**Seats** (provided by the `seats` package: [seats/README.md](../seats/README.md)).
+The places people take at a scene: scene trait `seats`,
+`{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
 It runs wherever the scene has seats, in every activity; it is the seat
-picker, the claim that says a seat's player is here (`scene.seat:<id>`), the
+picker, the claim that says a seat's player is here (`seat:<id>`), the
 seat's view (riding the object its camera is `in`), a seat as a station on
 the use prompt, and "sat down" told to the others. No other package reads
-or writes the trait.
+or writes the trait, and the stage knows nothing of it: a scene that seats
+people lists the seats package like any other.
 
 | | |
 |---|---|

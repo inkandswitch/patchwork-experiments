@@ -363,7 +363,7 @@ the cup and every die it covers or whose shake isn't turned up yet:
 | not covering, shaken blind by H | `{ show: "all", only: seated − H }` | the seated others see it; H and spectators see the veil |
 | not covering | `{ show: "all" }` | everyone |
 
-"Seated − H" is the roster (`roster.viewers`, the scene's seats) less the
+"Seated − H" is the roster (`roster.viewers`, the seats package's) less the
 holder: the stage's algebra says "everyone but me" as `show: "all"` cut by
 `only: <everyone seated but me>`, so a spectator, who is in no list, is cut
 too. A cup with any of its shake's dice out from under it keeps nothing (its
@@ -419,7 +419,7 @@ that set's colour (red, blue, green, yellow, purple, black), the cup lifted
 beside its dice; and a pool in the middle for dice out of play. Everything
 is the scene's own files (`ctx.file`), drawn by this package's code. Each
 cup's draws live in its own trait, so a fair shake needs nothing more of
-setup; seats need the scene's seats, which setup finds by their plugin's
+setup; seats need the seats package, which setup finds by its plugin's
 metadata (`roster: true`) and says so if they're missing.
 
 ## Lots

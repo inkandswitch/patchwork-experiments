@@ -13,14 +13,14 @@
 // open), then "Set up a table" (tool.js setUpTable): tableLayout with the
 // game's GLBs, a container per deck from a keeper and the seats from their
 // owner (both found, as the game page finds them, by their plugins'
-// metadata: here in the BUILT scene, card-table and keep packages, so build
+// metadata: here in the BUILT seats, card-table and keep packages, so build
 // those first), writeTable onto a skeleton scene doc with every map a scene
 // has, the scene doc, and the table listed on the game (its only one: the
 // game is new).
 //
-// --template <game>: the scene's start screen. Needs scene/, tabletop/,
-// card-table/ and keep/ built. In headless Chrome, the BUILT scene tool with the BUILT
-// tabletop and keeper plugins is mounted twice on one EMPTY scene
+// --template <game>: the scene's start screen. Needs scene/, seats/,
+// tabletop/, card-table/ and keep/ built. In headless Chrome, the BUILT scene tool with the BUILT
+// seats, tabletop and keeper plugins is mounted twice on one EMPTY scene
 // (template-probe.html; an in-memory repo, two views A and B), and A picks
 // the template on the start screen (api.template); B opens it after. It checks:
 // - the start screen offers it;
@@ -55,9 +55,10 @@
 // the joint keeper's (a `secure-deck`, the card-table package's). Setting up
 // writes it as plain data, waiting for players: the encrypted shuffle
 // happens later, in the seated players' own browsers, so nothing here needs
-// WebCrypto. The published scene lists the three packages it is made of:
-// the scene's (seats are its own), tabletop's (hands and cards) and
-// card-table's (the keeper).
+// WebCrypto. The published scene lists the four packages it is made of:
+// the scene's, the seats', tabletop's (hands and cards) and card-table's
+// (the keeper). A template's table nobody sits at (Santorini) doesn't list
+// the seats.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -75,10 +76,11 @@ import { packageProblems, pushworkUrl, scenePackages, scenePatchwork, withPackag
 
 // A published table names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene (the seats are its part), the table's own, and the keeper's. In
-// the browser the stage works these out from the registry; here they're
-// stated.
-const PACKAGES = ["scene", "tabletop", "card-table"];
+// the scene, the seats (where anyone sits at it), the table's own, and the
+// keeper's. In the browser the stage works these out from the registry;
+// here they're stated.
+const packagesOf = ({ seated }) => ["scene", ...(seated ? ["seats"] : []), "tabletop", "card-table"];
+const PACKAGES = packagesOf({ seated: true });
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
@@ -163,12 +165,12 @@ const title = `${g.title || "Game"} table ${(g.tables?.length ?? 0) + 1}`;
 const fileOf = (kind) => (g.pieces[kind]?.glbUrl ? { url: g.pieces[kind].glbUrl, hint: g.pieces[kind].bounds ? { bounds: g.pieces[kind].bounds } : null } : null);
 const layout = tableLayout(g, { fileOf, gameUrl: game.url });
 const decks = layout.decks;
-// What's installed, for setting up: the built scene (seats), card-table (the
-// joint keeper) and keep (the plain one), as a registry the game page's own
+// What's installed, for setting up: the built seats, card-table (the joint
+// keeper) and keep (the plain one), as a registry the game page's own
 // lookups read (src/table/made-with.js).
 const here = (p) => resolve(dirname(fileURLToPath(import.meta.url)), "../..", p);
 const installed = [];
-for (const pkg of ["scene", "card-table", "keep"]) {
+for (const pkg of ["seats", "card-table", "keep"]) {
   const entry = here(`${pkg}/dist/index.js`);
   if (!existsSync(entry)) throw new Error(`no ${pkg}/dist/index.js: build it first`);
   installed.push(...(await import(entry)).plugins);
@@ -180,7 +182,7 @@ const registry = async (type) => {
 // the decks' containers first, so the scene never names one that isn't there
 const { binds, kinds } = await containDecks({ repo, registry }, decks, (deck) => `${title}: ${deck.title}`);
 const lay = await findSeats(registry);
-if (!lay) throw new Error("nothing built here owns seats (the scene's seats part)");
+if (!lay) throw new Error("nothing built here owns seats (the seats package)");
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
 writeTable(table, layout, binds, { seats: lay });
 // each deck's container, as its cards name it
@@ -210,8 +212,8 @@ if (!hidden.length) problems.push("no cards in a deck");
 if (Object.entries(decks).some(([deckId, dk]) => dk.secure && kinds[deckId] !== "joint")) problems.push("a deck that asks for its players to shuffle it went to a plain keeper");
 // no trace of the old shapes, and the traits of the three packages the scene lists
 const text = JSON.stringify(s);
-for (const old of ["tabletop.hidden", "tabletop.seats", "plain-deck"]) if (text.includes(old)) problems.push(`the scene still says ${old}`);
-if (JSON.stringify(Object.keys(s.traits?.["scene.seats"] ?? {})) !== JSON.stringify(Object.keys(layout.seats))) problems.push(`its seats are ${JSON.stringify(Object.keys(s.traits?.["scene.seats"] ?? {}))}`);
+for (const old of ["tabletop.hidden", "tabletop.seats", "scene.seats", "plain-deck"]) if (text.includes(old)) problems.push(`the scene still says ${old}`);
+if (JSON.stringify(Object.keys(s.traits?.seats ?? {})) !== JSON.stringify(Object.keys(layout.seats))) problems.push(`its seats are ${JSON.stringify(Object.keys(s.traits?.seats ?? {}))}`);
 if (!hidden.every(([, o]) => o.traits["card-table.kept"])) problems.push("its cards aren't bound by the joint keeper's trait");
 // the new game lists the one table made here, and nothing older
 if (JSON.stringify(game.doc().tables) !== JSON.stringify([scene.url])) problems.push(`the game lists tables ${JSON.stringify(game.doc().tables)}, not just ${scene.url}`);
@@ -220,7 +222,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
-console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits["scene.seats"]).length} seats, starts in ${s.view.activity}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
+console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts in ${s.view.activity}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
 if (DRY) {
@@ -244,14 +246,16 @@ async function fromTemplate(gameId) {
   const { browser, checklist, sleep } = await import("./cdp.mjs");
   const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const ROOT = resolve(PKG, "..");
-  for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+  for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "seats/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+  // the packages this template's table is made of: the seats' only where anyone sits at it
+  const PACKAGES = packagesOf({ seated: TABLES[gameId].seats > 0 });
   const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
   const id = `tabletop.${gameId}`;
   // where each built package is published (its pushwork URL), so the page
   // registers its plugins from there, as a host does, and the stage lists
   // the scene's packages itself
   const urls = {};
-  for (const dir of ["scene", "tabletop", "card-table", "keep"]) {
+  for (const dir of ["scene", "seats", "tabletop", "card-table", "keep"]) {
     try {
       urls[dir] = pushworkUrl(dir);
     } catch {

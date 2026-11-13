@@ -1,4 +1,4 @@
-/* scene.seats: the seat picker (top right: the notices take the top left)
+/* seats: the seat picker (top right: the notices take the top left)
    and a name tag on each of a seat's places. */
 
 .scene-stage .seats-overlay:where(:not(.about-embed *), .about-embed .scene-tool *) {

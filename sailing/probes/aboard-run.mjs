@@ -1,10 +1,10 @@
 // A Lost Cities table aboard the sloop, played by two people in headless
 // Chrome, at anchor and under way.
 //
-//   (in scene/, sailing/, tabletop/ and card-table/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/ and card-table/) pnpm build
 //   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick]
 //
-// Mounts the BUILT scene tool with the BUILT sailing, tabletop and
+// Mounts the BUILT scene tool with the BUILT seats, sailing, tabletop and
 // card-table plugins twice on one empty scene (aboard-probe.html): A is Ana,
 // B is Ben. A builds the scene through the stage's public calls (the start
 // screen's Ship at anchor, then api.part: the Card table in her cockpit and
@@ -52,7 +52,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/index.js", "tabletop/dist/index.js", "card-table/dist/index.js", "keep/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");
@@ -284,7 +284,7 @@ try {
   await P("pick('b', 'p2')");
   const viewers = await P("viewers");
   check("2: A in Player 1, B in Player 2", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
-  check("2: the sim's claim and both seats' claims are live", await until("claims('a').includes('sim') && __p.claims('a').includes('scene.seat:p1') && __p.claims('b').includes('scene.seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
+  check("2: the sim's claim and both seats' claims are live", await until("claims('a').includes('sim') && __p.claims('a').includes('seat:p1') && __p.claims('b').includes('seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
   const dealt = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 180_000);
   mark("dealt");
   check("2: the secure deck reaches playing, each hand's faces delivered", dealt, { phase: await P("phase()"), a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });

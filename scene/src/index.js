@@ -90,8 +90,8 @@ export const plugins = [
   // ─── extensions: the parts the scene editor is made of ───
   // Most declare no traits, so each runs in every scene ("general" scope), in
   // this order, which is the order input is offered to them; those that say
-  // `activities: ["edit"]` only while someone is editing. Carry and seats run
-  // by trait, where the doc has what they're for. The key map, notices, the
+  // `activities: ["edit"]` only while someone is editing. Carry runs by
+  // trait, where the doc has something carryable. The key map, notices, the
   // menu, the selection and its halo serve every activity. The sidebar shows panels in running order:
   // Objects, Inspector, then Dimensions, so those two come before measure
   // (which brings dimensions in right after it); neither claims canvas input,
@@ -343,29 +343,6 @@ export const plugins = [
     activities: ["edit"],
     async load() {
       return (await import("./parts/parts.js")).default;
-    },
-  },
-  // seats: the places people take at a scene, the seat picker, and who sits
-  // where for whoever needs to know (src/parts/seats.js; STAGE.md, "Seats").
-  // A shared part: it runs wherever the scene has seats, in every activity
-  // (who sits where decides who may see what, while editing too). `roster`
-  // says its module can write seats into a scene being set up (`lay`).
-  {
-    type: "scene:extension",
-    id: "scene.seats",
-    name: "Seats",
-    traits: ["scene.seats"],
-    roster: true,
-    describes: {
-      "scene.seats": {
-        name: "Seats",
-        on: "scene",
-        blurb: "The places people take here: pick one to sit in it",
-        entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } },
-      },
-    },
-    async load() {
-      return (await import("./parts/seats.js")).default;
     },
   },
   // what this viewer is doing, and switching it (only shown when there's a choice)

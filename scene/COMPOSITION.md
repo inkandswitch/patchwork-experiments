@@ -59,11 +59,11 @@ each of these exists only because two worlds share it: `placeLayout`
 re-parents and re-frames every piece and seat camera
 (`tabletop/src/setup.js:292-322`); the game must not write the host's `view`
 or title (`tabletop/src/table/template.js:76-85`); `lay` writes seats "only
-where the scene has none" (`src/parts/seats-model.js:86-110`); sailing tells
+where the scene has none" (`seats/src/model.js`, `lay`); sailing tells
 her fittings from a game's pieces by a `sailing.` prefix and "locked
 furniture", and asks `camera.riding()` whether a game has seated the viewer
 (`sailing/src/crew.js:87-140`). Scene-wide singletons are already wrong for
-two games in one doc: one `scene.seats` map, the joint keeper waiting on any
+two games in one doc: one seats map, the joint keeper waiting on any
 open seat (`card-table/src/deck.js:255-262`), `facing` reaching another
 table's player.
 
@@ -501,7 +501,7 @@ art and packages.
   G's stage opens with the link and runs tabletop, its rule, the keeper,
   seats and carry. Cards ride the ship; face up is the table's up.
 - Ana walks the deck (the walk body), looks at p1, and the prompt folds in
-  G's "Sit as Player 1". F claims `scene.seat:p1` in G and enters G's seat
+  G's "Sit as Player 1". F claims `seat:p1` in G and enters G's seat
   body, which rides G's root, over the walk body.
 - The deck waits on G's roster alone. A press on a card goes to G's
   segment, on the wheel to B's. A viewer without sailing still plays.
@@ -569,6 +569,23 @@ ships alone and proves something.
    not a kind yet: it arrives with the `scene.link` source at step 11,
    so no branch exists for a source nothing registers.
 5. **Seats to `seats/`**, with the seat body's home ready for step 6.
+   *Built:* `seats/` is its own package, one `scene:extension` (`seats`,
+   `roster: true`) with the picker, name tags, the seat as a station, the
+   roster and `lay` (`model.js`, pure), and the seat body (`body.js`:
+   `seatPose`, pure, and `seatBody(api).enter(sid) → { seat, leave }`).
+   The part enters the seat body itself through `api.camera` until step 6
+   contributes it as `bodies` and drops the part's waiting on first person
+   (`local.immersive`, `firstPerson`). The trait is `seats` and the claim
+   `seat:<id>`, no longer `scene.`: that prefix is the scene package's.
+   Old docs are ditched. The scene keeps no trace of seats (its plugin,
+   part, CSS, fake world and README section went; STAGE.md's
+   "Conventions" names the package). Every publisher of a table people sit
+   at lists `seats` in `packages` (tabletop's tables, Lost Cities aboard,
+   Liar's dice; a Santorini table, with no seats, doesn't), and every probe
+   page that seats people installs it; in a shell the stage lists it
+   itself, from the trait. *Proves:* the scene suite passes with no seats
+   in it; `seats/` installs, builds and passes its suite copied out of the
+   repo alone.
 6. [T] **Bodies and the held tool**; rides by body, so `fallback` and
    `riding()` go.
 7. [T] **The clock**: one `"clock"` claim per doc, processes, ordered holds.

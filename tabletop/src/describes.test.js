@@ -43,7 +43,8 @@ describe("tabletop: activities", () => {
 
   it("names nobody else's traits: seats and keepers are met through the stage", () => {
     const said = JSON.stringify(plugins.map(({ load, ...p }) => p));
-    for (const other of ["scene.seats", "keep.", "card-table", "secure-deck", "plain-deck"]) expect(said.includes(other)).toBe(false);
+    // (the seats' trait is `seats`: as a key or a value, it would be quoted)
+    for (const other of ['"seats"', "keep.", "card-table", "secure-deck", "plain-deck"]) expect(said.includes(other)).toBe(false);
   });
 });
 

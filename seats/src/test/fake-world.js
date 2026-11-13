@@ -1,13 +1,13 @@
-// A stand-in for the stage, for a shared part whose tests need several views
-// with claims that lapse and merges the test writes by hand (seats): one
-// shared doc and presence, and an api per view (session) that reads and
-// writes them as STAGE.md says. The mounted stage (stage-harness.js) is what
-// most parts are tested on; this is for what it can't stage: a session that
+// A stand-in for the stage, for the seats' tests, which need several views
+// with claims that lapse and merges the test writes by hand: one shared doc
+// and presence, and an api per view (session) that reads and writes them as
+// scene/STAGE.md says, including what it can't stage mounted: a session that
 // was never heard from, a crash with no bye, a claim a merge gave away.
-// (The same file the packages that use the stage copy for their own tests.)
+// (Moved here from scene/src/test with the seats; the packages that use the
+// stage keep their own copies, trimmed to what they need.)
 //
 //   const w = fakeWorld(doc, { content, repo });
-//   const a = w.join("A", { viewer: "alice", ext: "scene.seats" });   // a's api
+//   const a = w.join("A", { viewer: "alice", ext: "seats" });   // a's api
 //   w.attach("A", Part.create(a));           // so sends and flush reach it
 //   w.flush();                               // update() every attached view
 //   w.tick(1 / 60, 30);  w.leave("A");       // frames; a bye

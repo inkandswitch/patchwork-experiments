@@ -40,7 +40,7 @@ whoever owns them, found in the plugin registry by their metadata
 (`src/made-with.js`; scene/STAGE.md, "Keepers" and "Seats"): what a
 face-down card really is goes to a keeper that keeps things in the open
 (`keeper: "plain"`; the `keep` package's), and the seats are laid by
-whoever owns seats (`roster: true`; the scene's own part). Where one isn't
+whoever owns seats (`roster: true`; the `seats` package's). Where one isn't
 installed the import still finishes: the cards are only their backs, or the
 table has no seats, and the report says so. The scene doc names the scene
 package as its suggested import (below), so a viewer with nothing installed

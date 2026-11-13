@@ -3,7 +3,7 @@
 <title>aboard probe</title>
 <!-- Driven by probes/aboard-run.mjs (checks) and probes/publish-aboard.mjs
      (publishing what it builds). The BUILT scene tool (scene/dist) with the
-     BUILT sailing, tabletop and keeper plugins (sailing/dist,
+     BUILT seats, sailing, tabletop and keeper plugins (seats/dist, sailing/dist,
      tabletop/dist, card-table/dist: the joint keeper; keep/dist), and the
      joints and traversal plugins her companionway's traits are for
      (joints/dist, traversal/dist), in a stub registry, on an
@@ -79,7 +79,7 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -190,7 +190,7 @@ try {
         tableLocked: !!o[ids.table]?.locked,
         pieces: pieces.length,
         piecesUnderTable: pieces.filter(([, x]) => x.parent === ids.table).length,
-        seats: scene.doc().traits?.["scene.seats"] ?? null,
+        seats: scene.doc().traits?.seats ?? null,
         deckType: deck()?.["@patchwork"]?.type ?? null,
         deckTitle: deck()?.title ?? null,
         sail: o[ids.rig]?.traits?.["sailing.sail"] ?? null,
@@ -201,7 +201,7 @@ try {
         exits: Object.values(o).filter((x) => x.traits?.["traversal.exit"]).length,
       };
     },
-    seats: () => scene.doc().traits?.["scene.seats"] ?? {},
+    seats: () => scene.doc().traits?.seats ?? {},
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,

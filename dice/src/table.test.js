@@ -13,7 +13,8 @@ function fakeCtx({ seats = true } = {}) {
   const notices = [];
   let n = 0;
   const plugins = [
-    ...(seats ? [{ id: "scene.seats", roster: true, module: { lay: (d, s) => (d.traits["scene.seats"] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { ...v, player: null }]))) } }] : []),
+    // a stand-in for whoever owns seats, found as the table finds it: `roster: true`, its module's `lay`
+    ...(seats ? [{ id: "t.seats", roster: true, module: { lay: (d, s) => (d.traits["t.seats"] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { ...v, player: null }]))) } }] : []),
   ];
   const reg = { filter: (fn) => plugins.filter(fn), load: async (id) => ({ module: plugins.find((p) => p.id === id).module }) };
   return {
@@ -45,7 +46,7 @@ describe("the Liar's dice table", () => {
     expect(objects.filter((o) => o.traits?.["dice.die"]).length).toBe(6 * DICE_EACH);
     expect(objects.filter((o) => o.name === "Pool" && o.locked).length).toBe(1);
     expect(objects.filter((o) => o.name === "Table" && o.locked).length).toBe(1);
-    expect(Object.keys(d.traits["scene.seats"])).toEqual(["seat1", "seat2", "seat3", "seat4", "seat5", "seat6"]);
+    expect(Object.keys(d.traits["t.seats"])).toEqual(["seat1", "seat2", "seat3", "seat4", "seat5", "seat6"]);
     expect(d.view.activity).toBe("play");
     expect(d.title).toBe("Liar's dice");
     expect(d.order.length).toBe(objects.length);

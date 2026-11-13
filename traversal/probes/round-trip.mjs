@@ -1,7 +1,7 @@
 // The round trip, in headless Chrome with real keys and a real mouse: from
 // the sloop's companionway down to E1M1, and from E1M1's exit switch back up.
 //
-//   (in scene/, sailing/, tabletop/, card-table/, keep/, joints/, arena/, doom/ and traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, arena/, doom/ and traversal/) pnpm build
 //   node probes/round-trip.mjs [--shots <dir>] [--show] [--gpu]
 //
 // Mounts the BUILT plugins of every package involved in a small shell
@@ -37,7 +37,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
 const WAD = join(ROOT, "doom/src/test/e1m1.wad");
-for (const p of ["scene", "sailing", "tabletop", "card-table", "keep", "joints", "arena", "doom", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", "joints", "arena", "doom", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name, d = null) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : d;

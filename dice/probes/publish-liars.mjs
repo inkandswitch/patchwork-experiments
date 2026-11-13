@@ -1,13 +1,13 @@
 // Publish a Liar's dice table to a real sync server, and print its Patchwork URL.
 //
-//   (in scene/ and dice/) pnpm build
+//   (in scene/, seats/ and dice/) pnpm build
 //   node probes/publish-liars.mjs [--sync wss://…] [--settle 8000] [--dry-run] [--show] [--shots <dir>]
 //
 // Makes NEW docs on every run (no dedupe).
 //
 // The table is made the way a person makes it: from the scene's start
-// screen. In headless Chrome, the BUILT scene tool with the BUILT dice
-// plugins (exactly the packages stated below, nothing else, each registered
+// screen. In headless Chrome, the BUILT scene tool with the BUILT seats and
+// dice plugins (exactly the packages stated below, nothing else, each registered
 // with its package URL) is mounted on one EMPTY scene (liars-template-probe.html: real
 // Automerge docs, two peers A and B, each with its own replica), and A picks
 // "Liar's dice" (scene:template `dice.liars-dice`) on the start screen, by a
@@ -23,9 +23,9 @@
 // - the view starts in "play", in the hand, and A lands in play;
 // - every piece is built in A, every die read from its GLB as a d6;
 // - everything the doc calls for (each object's provider, each trait, the
-//   activity it starts in) is answered by a plugin installed here (scene's
-//   and dice's, nothing else), and A's stage, given each plugin's package
-//   URL as the host gives it, lists exactly those two packages and names
+//   activity it starts in) is answered by a plugin installed here (scene's,
+//   seats' and dice's, nothing else), and A's stage, given each plugin's
+//   package URL as the host gives it, lists exactly those three packages and names
 //   the scene package as the suggested import;
 // - B opens it in play, its replica holds the same table, every piece built;
 // - nothing failed to load in either view, and no errors on the page;
@@ -37,7 +37,7 @@
 // checked from a repo that has never seen them, and prints the scene's URL.
 //
 // The published scene names the scene package as its suggested import and
-// lists the two packages it is made of: the scene's (seats are its part) and
+// lists the three packages it is made of: the scene's, the seats' and
 // dice's (the dice, the cups, their draws and the template). Nothing of
 // keep's: a liar's dice table has no deck, and the dice draw their own lots.
 // Each package's URL is its `pushwork url` (probes/scene-packages.mjs). The
@@ -59,7 +59,7 @@ import { packageProblems, pushworkUrl, scenePackages, withPackages } from "./sce
 import { browser, checklist, sleep } from "./cdp.mjs";
 
 // the packages the published scene lists (scene/STAGE.md, "Packages")
-const PACKAGES = ["scene", "dice"];
+const PACKAGES = ["scene", "seats", "dice"];
 const TEMPLATE = "dice.liars-dice";
 const CUPS = 6;
 const DICE = 30;
@@ -163,7 +163,7 @@ try {
   const builtA = await until(`built('a').loaded === ${CUPS + DICE + 2} && __p.built('a').diceRead === ${DICE}`, 120_000);
   check(`every piece is built in A (${CUPS + DICE + 2}), every die read from its GLB as a d6`, builtA, await P("built('a')"));
   check("the cups and the dice's own lots run in A", await until("running('a').includes('dice.cup') && __p.running('a').includes('dice.lots')", 5000), await P("running('a')"));
-  // what the table needs, from the doc: all of it installed here (scene and dice only), and the
+  // what the table needs, from the doc: all of it installed here (the stated packages only), and the
   // stage's own list of the packages it comes from (true by construction) is exactly the one stated
   check(`everything the doc calls for is answered by a plugin installed here (${PACKAGES.join(" and ")}'s only)`, (await P("unanswered()")).length === 0, await P("unanswered()"));
   const listedOk = await until(`doc('a') && ((d) => d.patchwork?.suggestedImportUrl === ${Q(SCENE_URL)} && ${Q(JSON.stringify([...STATED].sort()))} === JSON.stringify((d.packages ?? []).map((e) => e?.url).sort()))(__p.doc('a'))`, 10_000);
@@ -221,7 +221,7 @@ async function publish(snapshot) {
     return 1;
   }
   const scene = docs[snapshot.scene];
-  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits["scene.seats"]).length} seats, starts in ${scene.view.activity}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
+  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits.seats).length} seats, starts in ${scene.view.activity}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
   if (DRY) {
     console.log(`dry run: ${Object.keys(docs).length} docs (nothing published)`);
     return 0;

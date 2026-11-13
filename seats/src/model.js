@@ -1,11 +1,11 @@
-// Seats: the places people take at a scene (scene trait "scene.seats"), and
-// the pure side of the part that owns them (seats.js). A seat is
+// Seats: the places people take at a scene (scene trait "seats"), and the
+// pure side of the part that owns them (seats.js). A seat is
 // { name, player: <viewer> | null, camera?: { position, target, in? } };
 // `in` is an object id, the frame the camera is given in (a table aboard a
 // ship); absent, the world.
 //
 // Nothing outside this package reads or writes the trait. Others meet seats
-// through three conventions (STAGE.md, "Seats"):
+// through three conventions (README.md):
 //   - `roster`, contributed here: who sits where, for whoever needs to know
 //     (a table's hands, a keeper's players);
 //   - `seatPlaces`, contributed by whoever gives a seat somewhere to be (a
@@ -15,12 +15,12 @@
 // And setup code writes seats with this module's `lay(d, seats)`, found by
 // the plugin's `roster: true` in the scene:extension registry.
 
-import { applyMatrix, invertMatrix } from "../transform.js";
+import { applyMatrix, invertMatrix } from "./transform.js";
 
-export const SEATS = "scene.seats";
+export const SEATS = "seats";
 
-/** A seat's claim kind, on the scene (STAGE.md, "Claims"). */
-export const SEAT_CLAIM = (sid) => `scene.seat:${sid}`;
+/** A seat's claim kind, on the scene (scene/STAGE.md, "Claims"). */
+export const SEAT_CLAIM = (sid) => `seat:${sid}`;
 
 /** The scene's seats: { [seatId]: { name, player, camera? } }. */
 export const seatsOf = (scene) => scene?.traits?.[SEATS] ?? {};
@@ -87,7 +87,7 @@ export function cleanPlaces(list, objects) {
  * Write seats into a scene doc (in a change, or onto a plain doc being
  * made): `seats` is { [seatId]: { name, camera? } }, each written empty
  * (player: null). Only where the scene has none: the seats map is made once
- * (STAGE.md, "Shared maps"). Where it has some, a seat there whose view is
+ * (scene/STAGE.md, "Shared maps"). Where it has some, a seat there whose view is
  * in a frame that's gone (the table it looked at, deleted) takes the new
  * view for it. Returns whether the scene's seats are these now.
  * @param {object} d  the scene doc (a draft)

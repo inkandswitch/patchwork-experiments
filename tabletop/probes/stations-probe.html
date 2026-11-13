@@ -111,7 +111,7 @@ const walker = {
 };
 
 try {
-  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   getRegistry("scene:extension").register(walker);
   const repo = new FakeRepo();
   window.repo = repo;

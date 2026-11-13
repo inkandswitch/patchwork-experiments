@@ -19,7 +19,7 @@ import { readSave, collectAssets } from "../src/tts.js";
 import { AssetIndex } from "../src/cache.js";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ROOT = resolve(PKG, ".."); // the repo: serves tts-import/ and scene/dist
+const ROOT = resolve(PKG, ".."); // the repo: serves tts-import/, scene/dist and seats/dist
 const arg = (name, d = null) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -27,7 +27,7 @@ const arg = (name, d = null) => {
 const SHOW = process.argv.includes("--show");
 const OUT = resolve(arg("out", join(process.env.TMPDIR || tmpdir(), "tts-import-probe")));
 mkdirSync(OUT, { recursive: true });
-for (const need of [join(PKG, "dist/index.js"), join(ROOT, "scene/dist/index.js")]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
+for (const need of [join(PKG, "dist/index.js"), join(ROOT, "scene/dist/index.js"), join(ROOT, "seats/dist/index.js")]) if (!existsSync(need)) throw new Error(`missing ${need}: build it first`);
 
 // ─── what to drop ────────────────────────────────────────────────────────────
 const fixture = join(PKG, "fixtures/tiny-mod");

@@ -4,7 +4,8 @@
 <!-- Driven by probes/import-run.mjs. Mounts the BUILT tts-import tool (dist/)
      on a fresh tts-import doc in an in-memory repo, drops the mod's files on it
      (a real DataTransfer of Files, as a drop from the desktop would be), waits
-     for the import, then mounts the BUILT scene tool (../scene/dist, loaded at
+     for the import, then mounts the BUILT scene tool (../scene/dist, with the
+     seats from ../seats/dist, which lays the import's seats; loaded at
      runtime by URL — verification only, not a dependency) on the scene it made.
      window.__probe collects what the runner checks. -->
 <script type="importmap">
@@ -31,7 +32,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
 
 try {
-  for (const url of ["../dist/index.js", "/scene/dist/index.js"]) {
+  for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -90,7 +91,7 @@ try {
     // what can be picked up: everything placed that isn't locked (the scene's carry trait)
     carryable: Object.values(scene.objects).filter((o) => o.kind !== "group" && o.traits?.["scene.carry"]).length,
     placed: Object.values(scene.objects).filter((o) => o.kind !== "group").length,
-    seats: Object.keys(scene.traits["scene.seats"] ?? {}),
+    seats: Object.keys(scene.traits.seats ?? {}),
     view: scene.view,
     // what the scene datatype's init makes that the importer leaves as it is
     assets: scene.assets,

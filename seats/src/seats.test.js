@@ -1,4 +1,4 @@
-// scene.seats (seats.js, seats-model.js): seats held by claims, the picker,
+// seats (seats.js, model.js, body.js): seats held by claims, the picker,
 // name tags on the places others give a seat, the seat's view (through the
 // object its camera is in, riding it), a seat as a station on the use prompt,
 // what it tells the others, and the roster it contributes. On the fake world
@@ -6,11 +6,11 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, SEAT_REACH, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./seats-model.js";
-import { applyMatrix as apply } from "../transform.js";
-import * as fakes from "../test/fake-world.js";
-import { emptyScene } from "../test/empty-scene.js";
-import { plugins } from "../index.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, SEAT_REACH, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { applyMatrix as apply } from "./transform.js";
+import * as fakes from "./test/fake-world.js";
+import { emptyScene } from "./test/empty-scene.js";
+import { plugins } from "./index.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -25,11 +25,11 @@ const zone = (seat, half = 0.05) => ({ [ZONE]: { seat, min: [-0.3, 0, -half], ma
 const seatPlaces = (snap) => Object.entries(snap.objects).flatMap(([id, o]) => (o?.traits?.[ZONE] ? [{ id, ...o.traits[ZONE] }] : []));
 /** A view of the world with the seats part in it, and what the others contribute. */
 const withSeats = (w, session, viewer, { local = {}, collected = {} } = {}) => {
-  const api = w.join(session, { viewer, local, ext: "scene.seats" });
+  const api = w.join(session, { viewer, local, ext: "seats" });
   w.view(session).collected = { seatPlaces, ...collected };
   return { api, x: w.attach(session, Seats.create(api)) };
 };
-const KIND = (sid) => `scene.seat:${sid}`;
+const KIND = (sid) => `seat:${sid}`;
 const near = (got, want, digits = 6) => want.forEach((v, i) => expect(got[i]).toBeCloseTo(v, digits));
 // contacts, with names
 const ANA = "automerge:2AnaAnaAnaAnaAnaAnaAnaAna1";
@@ -352,7 +352,7 @@ async function cockpit(seats, { claims, views = [] } = {}) {
   };
   t.step = step;
   t.join = async (session, viewer, { walking = false, walker = true } = {}) => {
-    const api = (t.api[session] = w.join(session, { viewer, local: walking ? { immersive: true } : {}, ext: "scene.seats" }));
+    const api = (t.api[session] = w.join(session, { viewer, local: walking ? { immersive: true } : {}, ext: "seats" }));
     // what walks: sailing's crew, as far as a table knows it (firstPerson on its instance)
     if (walker) {
       const fp = (t.walker[session] = {
@@ -833,7 +833,7 @@ describe("lay: seats written into a scene being set up", () => {
   });
 
   it("the plugin says where to find it: `roster: true`, its trait described, in every activity", async () => {
-    const p = plugins.find((x) => x.id === "scene.seats");
+    const p = plugins.find((x) => x.id === "seats");
     expect(p).toMatchObject({ type: "scene:extension", roster: true, traits: [SEATS] });
     // no `activities`: who sits where is read while editing too, and by whatever else is being done
     expect(p.activities).toBeUndefined();

@@ -82,7 +82,7 @@ try {
   // package: so the stage itself lists the packages the scene calls for and
   // names the scene package as its suggested import, as it would for a person
   const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
-  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"]]) {
+  for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"]]) {
     registerPlugins((await import(path)).plugins, urls[dir]);
   }
   const repo = new FakeRepo();

@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>tabletop seats probe</title>
 <!-- Driven by probes/seats.mjs. The BUILT scene tool (scene/dist) with the
-     BUILT tabletop plugins (tabletop/dist) and a keeper (keep/dist) in a stub registry, on an
+     BUILT seats (seats/dist), tabletop plugins (tabletop/dist) and a keeper (keep/dist) in a stub registry, on an
      in-memory repo, at a Lost Cities table set up as the game page does
      (src/setup.js). Two views of one doc, A (Ana) and B (Ben), each view's
      broadcasts (presence, poses) reaching only the other, a few ms late, until
@@ -53,7 +53,7 @@ function peer(handle) {
 }
 
 try {
-  await install(["../../scene/dist/index.js", "../dist/index.js", "../../keep/dist/index.js"]);
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../keep/dist/index.js"]);
   const repo = new FakeRepo();
   window.repo = repo;
   // the two players' contacts, so the name tags and notices can say who

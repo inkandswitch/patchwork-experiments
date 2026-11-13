@@ -341,7 +341,8 @@ and `general: false` in `activation.js`, the seeding and immediate stop
 rule in `host.js`, `setImmersive`, `router.js:517-522`. Fields: `activities`
 on 26 parts; local `activity`, `immersive`, `tool`; `view.activity`,
 `view.tool`; `firstPerson`; `camera.riding`, ride `fallback`. The gizmo's
-tools and G, R; the hand's H; `standingDown`; `editing()`; `SEAT_REACH`.
+tools and G, R; the hand's H; `standingDown`; `editing()`; `SEAT_REACH`
+(in `seats/` since step 5, with `firstPerson`'s hand-off).
 
 ## 10. How each symptom goes away
 

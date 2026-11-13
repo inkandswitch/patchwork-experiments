@@ -1,27 +1,26 @@
-// scene.seats: the places people take at a scene, and who is in them. A
-// shared part: it runs wherever the scene has seats (scene trait
-// "scene.seats"), in every activity, and names nothing that uses it. A table
-// reads who sits where to say whose hand is whose; a keeper reads who is
-// playing; whatever walks hands the view over when someone sits down.
+// seats: the places people take at a scene, and who is in them. It runs
+// wherever the scene has seats (scene trait "seats"), in every activity, and
+// names nothing that uses it. A table reads who sits where to say whose hand
+// is whose; a keeper reads who is playing; whatever walks hands the view
+// over when someone sits down.
 //
 // What it is:
 //   - the seat picker, over the view at the top right (pick your seat, or
-//     watch; a seat with a `camera` moves your view there, and rides the
-//     object the camera is `in`);
+//     watch; a seat with a `camera` puts you in the seat body, body.js: your
+//     view there, riding the object the camera is `in`);
 //   - a name tag on each of a seat's places ("Player 1 · Ana (away)"),
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it in
-//     first person (Sit as …, Stand up: seats-model.js);
+//     first person (Sit as …, Stand up: model.js);
 //   - telling the others when someone sits down (api.send: the seat id only).
 //
 // Who sits where is the doc's (`player`), and lasts. Whether that player is
-// here now is a claim on the scene, `scene.seat:<id>` (STAGE.md, "Claims"):
+// here now is a claim on the scene, `seat:<id>` (scene/STAGE.md, "Claims"):
 // it lapses when they go, so a seat whose player has gone can be taken
 // (after asking), and one whose player is here can't. Claims decide who may
 // take a seat, never who sees what.
 //
-// What it contributes for others to collect (api.collect; STAGE.md,
-// "Seats"):
+// What it contributes for others to collect (api.collect; README.md):
 //
 //   roster: {
 //     seats(scene)   → [{ id, name, viewer | null }]  every seat, in seat order
@@ -36,11 +35,12 @@
 // never presence or claims), so an `audience` policy may be built on them.
 //
 // And the module's `lay(d, seats)` writes seats into a scene doc being set
-// up (seats-model.js); setup code finds it by this plugin's `roster: true`.
+// up (model.js); setup code finds it by this plugin's `roster: true`.
 
 import css from "./seats.css?inline";
-import { applyMatrix, invertMatrix } from "../transform.js";
-import { CONFIRM_MS, SEATS, SEAT_CLAIM, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./seats-model.js";
+import { applyMatrix, invertMatrix } from "./transform.js";
+import { seatBody } from "./body.js";
+import { CONFIRM_MS, SEATS, SEAT_CLAIM, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 
 /** A little longer than the stage's grace for a claim by a session not yet heard from (6 s). */
 const LAPSE_MS = 6500;
@@ -161,7 +161,7 @@ function create(api) {
       try {
         out.push(...(value(snap) ?? []));
       } catch (err) {
-        console.warn("[scene.seats] a seatPlaces contribution failed", err);
+        console.warn("[seats] a seatPlaces contribution failed", err);
       }
     }
     return cleanPlaces(out, snap?.objects);
@@ -354,9 +354,8 @@ function create(api) {
       api.send("sat", { seat: seatId });
     }
     // each seat can say where its player looks from
-    const cam = seatId ? seatsOf(api.scene())[seatId]?.camera : null;
-    if (cam) seatView(cam);
-    else stopRiding();
+    if (seatId) seatView(seatId);
+    else getUp();
     drawSeats();
   }
 
@@ -369,46 +368,35 @@ function create(api) {
     return `${name === sn ? "Someone" : name} sat down as ${sn}`;
   }
 
-  // ── the seat's view ──
-  // A seat's camera may be in an object's frame (`in`: a table aboard a
-  // ship): the view is put there as that object is drawn now, and then
-  // rides with it (api.camera.ride, at the spot the view looks at), so the
-  // table stays in front of you as she swings and bobs. In first person
-  // (local.immersive: walking her deck) the camera is the walker's: the
-  // view waits until that ends, and whoever is seated is put back in their
-  // seat when it does.
-  let riding = null; // the ride's off
+  // ── the seat's view: the seat body (body.js) ──
+  // In first person (local.immersive: walking her deck) the camera is the
+  // walker's: the seat body waits until that ends, and whoever is seated is
+  // put back in their seat when it does. (At build step 6 the stage's body
+  // stack does this: sitting pushes the seat body over the walk body.)
+  const body = seatBody(api);
+  let sitting = null; // the seat body entered: { seat, leave }
   let waiting = false;
-  function stopRiding() {
-    riding?.();
-    riding = null;
+  function getUp() {
+    sitting?.leave();
+    sitting = null;
     waiting = false;
   }
-  function seatView(cam) {
-    stopRiding();
+  /** Into seat `sid`'s view (the seat body), now or once first person ends. */
+  function seatView(sid) {
+    getUp();
     if (api.local.get()?.immersive) {
       waiting = true;
       return;
     }
-    const { in: frame, ...view } = cam;
-    const m = frame ? (api.worldOf(frame) ?? (api.scene().objects?.[frame] ? api.scene().world(frame) : null)) : null;
-    // in a frame that's gone (its table deleted): no view to put you in; the view stays as it is
-    if (frame && !m) return;
-    if (m) {
-      view.position = applyMatrix(m, cam.position);
-      view.target = applyMatrix(m, cam.target ?? [0, 0, 0]);
-    }
-    api.camera.set(view);
-    // riding the spot it looks at, which so holds still on screen however she rolls
-    if (m) riding = api.camera.ride(frame, { at: [...(cam.target ?? [0, 0, 0])] }) ?? null;
+    // (a seat with no camera, or one in a frame that's gone: the view stays as it is)
+    sitting = body.enter(sid);
   }
   /** Back from first person: in your seat again, if you have one. */
   function backInSeat(local, prev) {
     if (!(prev?.immersive && !local?.immersive) && !(waiting && !local?.immersive)) return;
     waiting = false;
     const mine = seatOf(seatsOf(api.scene()), viewer);
-    const cam = mine ? seatsOf(api.scene())[mine]?.camera : null;
-    if (cam) seatView(cam);
+    if (mine) seatView(mine);
   }
 
   // ── a seat as a station: walk up to it and sit ──
@@ -492,7 +480,7 @@ function create(api) {
       try {
         w.leave();
       } catch (err) {
-        console.warn("[scene.seats] firstPerson.leave failed", err);
+        console.warn("[seats] firstPerson.leave failed", err);
       }
     }
   }
@@ -511,15 +499,15 @@ function create(api) {
     if (cam.in && !m) return false;
     const at = (p) => (m ? applyMatrix(m, p) : [...p]).map(Number);
     const spot = { seat: sid, eye: at(cam.position), target: at(cam.target ?? [0, 0, 0]), frame: cam.in ?? null };
-    const was = riding;
-    stopRiding();
+    const was = sitting;
+    getUp();
     let ok = false;
     try {
       ok = w.enter(spot) !== false;
     } catch (err) {
-      console.warn("[scene.seats] firstPerson.enter failed", err);
+      console.warn("[seats] firstPerson.enter failed", err);
     }
-    if (!ok && was) seatView(cam);
+    if (!ok && was) seatView(sid);
     return ok;
   }
 
@@ -561,7 +549,7 @@ function create(api) {
       dead = true;
       tagLoop?.();
       tagLoop = null;
-      stopRiding();
+      getUp();
       for (const t of timers) clearTimeout(t);
       timers.clear();
     },

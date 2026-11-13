@@ -35,7 +35,7 @@ console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(
 console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
 
 try {
-  await install(["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
   const net = twoPeers({ delay: 25 });
   const repos = { a: net.a, b: net.b };
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });

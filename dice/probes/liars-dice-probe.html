@@ -36,7 +36,7 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -99,7 +99,7 @@ try {
     allLoaded: (w) => Object.keys(objectsOf(w)).every((id) => dbg[w].viewport.contentOf(id)?.loaded),
     /** the seat picker */
     pick(w, sid) { const s = hosts[w].querySelector(".seats-pick"); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    seats: () => plain(scene.a.doc().traits?.["scene.seats"]),
+    seats: () => plain(scene.a.doc().traits?.seats),
     running: (w) => dbg[w].local.get().running.map((r) => r.id),
     packages: () => plain(scene.a.doc().packages),
     cup: (w, id) => plain(objectsOf(w)[id]?.traits?.["dice.cup"]),

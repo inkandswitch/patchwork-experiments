@@ -2,7 +2,8 @@
 <meta charset="utf-8">
 <title>liar's dice template probe</title>
 <!-- Driven by probes/publish-liars.mjs. The BUILT scene tool (scene/dist)
-     with the BUILT dice plugins (dist: cups, lots and the template) in a
+     with the BUILT seats (seats/dist) and dice plugins (dist: cups, lots
+     and the template) in a
      stub registry, on REAL Automerge documents: two peers, A (Ana) and B
      (Ben), each with its own replica of every doc (probes/real-repo.js), a
      change reaching the other 25 ms later by a real merge. Each view's
@@ -10,7 +11,7 @@
      datatype's init makes it) and starts it from the start screen's
      "Liar's dice"; B opens it after (a view joins where the doc says).
      The packages installed are exactly those the query names
-     (?scene=…&dice=…, each its pushwork url: the ones the publisher
+     (?scene=…&seats=…&dice=…, each its pushwork url: the ones the publisher
      states), each plugin registered with its package's URL as the host's
      registry keeps it, so the stage lists the scene's packages and its
      suggested import itself, from what the doc calls for. Nothing of keep's
@@ -168,7 +169,7 @@ try {
       return out;
     },
     /** the scene's seats, as the doc has them */
-    seats: (w) => plain(scene[w].doc().traits?.["scene.seats"] ?? null),
+    seats: (w) => plain(scene[w].doc().traits?.seats ?? null),
     /** the seat picker's choices in a view */
     picker: (w) => [...(hosts[w].querySelector(".seats-pick")?.options ?? [])].map((o) => o.value),
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
