@@ -364,15 +364,18 @@ async function cockpit(seats, { claims, views = [] } = {}) {
   /** The body on top of a view's stack. */
   t.body = (session) => t.api[session].local.get().body.id;
   /** The use prompt in `session`, looking at `id` (at `point`, world) from `from`: the seat verb's state (reach is the stage's: the command says `reach: true`). */
-  t.look = (session, id, point = null, from = t.eye(session)) => {
+  t.ctx = (session, id, point = null, from = t.eye(session)) => {
     const api = t.api[session];
-    const ctx = { scene: api.scene(), local: api.local.get(), from, hit: { id, point, distance: null } };
-    return t.cmd(session).state(id, ctx);
+    return { scene: api.scene(), local: api.local.get(), from, hit: { id, point, distance: null } };
   };
-  /** As the prompt does on F: state, then run. */
+  t.look = (session, id, point = null, from = t.eye(session)) => t.cmd(session).state(id, t.ctx(session, id, point, from));
+  /** The verb's run, in the context of a look at `id` now (as the stage's run passes it). */
+  t.run = (session, id, point = null, from = t.eye(session)) => t.cmd(session).run(id, undefined, t.ctx(session, id, point, from));
+  /** As the prompt does on F: state, then run, in one context. */
   t.press = async (session, id, point = null, from = t.eye(session)) => {
-    const st = t.look(session, id, point, from);
-    if (st && !st.disabled) t.cmd(session).run(id);
+    const ctx = t.ctx(session, id, point, from);
+    const st = t.cmd(session).state(id, ctx);
+    if (st && !st.disabled) t.cmd(session).run(id, undefined, ctx);
     await step();
     return st;
   };
@@ -478,7 +481,7 @@ describe("sitting down from walking", () => {
     const writes = vi.spyOn(t.api.C, "change");
     // a press the prompt didn't stop (it raced the claim): told, nothing written
     t.look("C", "hand1");
-    t.cmd("C").run("hand1");
+    t.run("C", "hand1");
     await t.step();
     expect(t.notices("C")).toEqual(["Ben is sitting there."]);
     expect(writes).not.toHaveBeenCalled();
@@ -513,7 +516,7 @@ describe("sitting down from walking", () => {
     // both see it free, and press together: Carol's write lands first here
     expect(t.look("B", "hand1")).toMatchObject({ label: "Sit as Player 1" });
     expect(t.look("C", "hand1")).toMatchObject({ label: "Sit as Player 1" });
-    t.cmd("C").run("hand1");
+    t.run("C", "hand1");
     // Ben's claim, taken in his view before Carol's arrived, wins the merge
     const writes = vi.spyOn(t.api.C, "change");
     t.w.change((d) => {
@@ -566,7 +569,7 @@ describe("sitting down from walking", () => {
       d.claims = { [KIND("p1")]: { viewer: BEN, session: "B" } };
       d.traits[SEATS].p1.player = BEN;
     });
-    t.cmd("C").run("hand1");
+    t.run("C", "hand1");
     await t.step();
     expect(t.notices("C")).toEqual(["Ben is sitting there."]);
     expect(t.player("p1")).toBe(BEN);

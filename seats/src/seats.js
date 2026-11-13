@@ -409,7 +409,6 @@ function create(api) {
   // walk. Sitting there, a look at your own place offers "Stand up": the
   // seat body comes off, and you walk on from the eye, the seat staying
   // yours.
-  let aimed = null; // { target, sid, verb }: what the seat verb's state last said, for its run
   let walkedUp = null; // { sid, at }: the seat this view sat in from walking, and its claim's time (held.at); cleared by any other sit
   let confirming = null; // { sid, until }: an away seat's first F
   const drawnIn = (snap) => (id) => api.worldOf(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
@@ -419,8 +418,8 @@ function create(api) {
     return id != null && id !== "orbit" && id !== body.id;
   };
 
-  function seatVerbState(target, ctx) {
-    aimed = null;
+  /** The seat a look at `target` (in the command context) is on, and what its verb says: { sid, verb, shown } | null. */
+  function aim(target, ctx) {
     const snap = ctx?.scene ?? scene;
     if (!snap) return null;
     const seats = seatsOf(snap);
@@ -437,14 +436,15 @@ function create(api) {
       confirming: confirming?.sid === sid && Date.now() < confirming.until,
     });
     if (!v) return null;
-    aimed = { target, sid, verb: v.verb };
     const { verb, ...shown } = v;
-    return shown;
+    return { sid, verb, shown };
   }
 
-  function seatVerbRun(target) {
-    // (the prompt asks state just before it runs a verb)
-    const a = aimed?.target === target ? aimed : null;
+  const seatVerbState = (target, ctx) => aim(target, ctx)?.shown ?? null;
+
+  // run gets the context state was asked in (the same look), so it aims again
+  function seatVerbRun(target, _value, ctx) {
+    const a = aim(target, ctx);
     if (!a) return;
     if (a.verb === "stand") return standUp(a.sid);
     const { by, seat, state } = stateOf(a.sid);
