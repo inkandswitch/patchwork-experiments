@@ -1,7 +1,7 @@
 // Peers over real automerge-repo, on an in-memory network with fixed latency
 // and loss tables, in virtual time (fake timers): nothing is random.
 import { readFileSync } from "node:fs";
-import { initSubduction } from "@automerge/automerge-repo";
+import { initSubduction, DocHandle } from "@automerge/automerge-repo";
 import { SimNet } from "./simnet.js";
 import { rig, run, FRAME, LAN, WAN, LOSSLESS, LOSSY, SKEWS } from "./harness.js";
 import { gzip } from "./session.js";
@@ -12,7 +12,7 @@ const wasm = readFileSync(new URL("../../engines/toy/dist/toy.wasm", import.meta
 const content = new TextEncoder().encode("host");
 await initSubduction();
 // Each peer's input depends only on its port and the tick its clock says.
-const { machine, peer, open, session: start, settle } = await rig({
+const { machine, peer, open, session: start, settle, replay } = await rig({
   wasm,
   content,
   input: (p, t) => {
@@ -192,10 +192,11 @@ test("inputs lost in a burst longer than a message's redundancy are asked for", 
     await run(peers, FRAME);
     for (const p of peers) lag = Math.max(lag, p.host.tick - p.host.frontier);
   }
-  // The confirmed state trails the clock by at most the burst (12 ticks, one
-  // message each), plus the input delay (4: an input is sent that many ticks
-  // early, and so is its loss), plus a LAN round trip (2): 18. Without asking it trails by 43 here.
-  expect(lag).toBeLessThanOrEqual(12 + 4 + 2);
+  // The confirmed state trails the clock by at most the burst (12 messages,
+  // one every 1/30 s: 14 ticks), plus the input delay (4: an input is sent
+  // that many ticks early, and so is its loss), plus a LAN round trip (2):
+  // 20. Without asking it trails by 43 here.
+  expect(lag).toBeLessThanOrEqual(Math.ceil((12 * 35) / 30) + 4 + 2);
   for (const p of peers) expect(p.host.status.asked).toBeGreaterThan(0);
   await settle(peers);
 }, 30_000);
@@ -249,4 +250,87 @@ test("a checkpoint computed under another seating is never started from, and is 
   await run([d], 12_000); // d reaps the silent holders, so its frontier runs on
   expect(handle.doc().checkpoints[tick]).toBe(undefined);
   await settle([d]);
+}, 30_000);
+
+test("each peer hears every tick once, in order, and its events end up the documents' (output.js)", async () => {
+  const net = new SimNet({ latency: WAN, loss: LOSSY });
+  const { peers, url } = await session(net, 3);
+  peers.forEach((p, i) => {
+    p.port = i;
+    p.host.sit(i);
+  });
+  const heard = new Map(peers.map((p) => [p, { next: p.host.status.start, events: new Map(), skipped: 0, corrected: 0 }]));
+  const listen = () => {
+    for (const [p, h] of heard)
+      for (const o of p.host.output()) {
+        if (o.gap) {
+          expect(o.gap[0]).toBe(h.next);
+          h.skipped += o.gap[1] - o.gap[0];
+          h.next = o.gap[1];
+        } else if (o.was) {
+          expect(o.tick).toBeLessThan(h.next);
+          expect(h.events.get(o.tick)).toEqual(o.was);
+          h.events.set(o.tick, o.events);
+          h.corrected++;
+        } else {
+          expect(o.tick).toBe(h.next++);
+          expect(o.audio.samples.length).toBe(64);
+          h.events.set(o.tick, o.events);
+        }
+      }
+  };
+  for (let k = 0; k < 250; k++) {
+    await run(peers, FRAME);
+    listen();
+  }
+  await settle(peers);
+  listen();
+  const end = Math.min(...[...heard.values()].map((h) => h.next));
+  expect(end).toBeGreaterThan(200);
+  const truth = new Map();
+  await replay(peers[0], end, (t, e) => truth.set(t, e.output().events));
+  for (const [p, h] of heard) {
+    const wrong = [];
+    for (const [t, events] of h.events) if (t < end && events.join() !== truth.get(t).join()) wrong.push(t);
+    expect(wrong, `${p.name}'s ticks heard with other events than the documents'`).toEqual([]);
+    // Every tick was heard or skipped; skipped only while the others set up.
+    expect(h.events.size + h.skipped).toBe(h.next);
+    expect(p.host.stats.output).toMatchObject({ delivered: h.events.size, skipped: h.skipped });
+  }
+  // The first peer waited for the others to open (1.5 s), and skipped that.
+  expect(heard.get(peers[0]).skipped).toBeGreaterThan(0);
+  // WAN latency is over the input delay, so some deliveries were corrected.
+  expect([...heard.values()].reduce((n, h) => n + h.corrected, 0)).toBeGreaterThan(0);
+}, 30_000);
+
+test("four peers through a hub, as through a sync server: each sends at most 30 input messages a second, and all agree", async () => {
+  const net = new SimNet({ latency: WAN, loss: LOSSY, hub: "hub" });
+  const { peers } = await session(net, 4);
+  peers.forEach((p, i) => {
+    p.port = i;
+    p.host.sit(i);
+  });
+  await run(peers, 1000);
+  // Each peer's broadcasts, by kind (its session handle is its own).
+  const sent = new Map();
+  const broadcast = DocHandle.prototype.broadcast;
+  const spy = vi.spyOn(DocHandle.prototype, "broadcast").mockImplementation(function (m) {
+    const k = sent.get(this) ?? sent.set(this, {}).get(this);
+    k[m.m] = (k[m.m] ?? 0) + 1;
+    return broadcast.call(this, m);
+  });
+  const heard = new Map(peers.map((p) => [p.name, net.by.get(p.name).received]));
+  await run(peers, 4000);
+  spy.mockRestore();
+  expect(sent.size).toBe(4);
+  for (const k of sent.values()) {
+    // Inputs: at most 30 a second, give or take one at the window's edge,
+    // and the answers to the others' requests for lost ones (1 in 10 is).
+    expect(k.in).toBeLessThanOrEqual(4 * 30 + 1 + 4);
+    expect(k["clock/ping"] / 4).toBeLessThanOrEqual(1);
+  }
+  // What a peer hears is the others' messages, each once, relayed by the hub.
+  const all = [...sent.values()].reduce((n, k) => n + Object.values(k).reduce((a, b) => a + b, 0), 0);
+  for (const p of peers) expect(net.by.get(p.name).received - heard.get(p.name)).toBeLessThanOrEqual(all);
+  await settle(peers);
 }, 30_000);

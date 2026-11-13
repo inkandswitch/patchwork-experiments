@@ -10,6 +10,8 @@
 //   handed over once, with the in-order state.
 // - Every change between two beliefs about one port's 3 inputs (unknown, A or
 //   B each), at every pair of clock positions, rewinding across memory growth.
+// - The same with an engine that traps on one of those inputs: the timeline
+//   holds before the trap exactly when the belief steps into it.
 import { readFileSync } from "node:fs";
 import { compile } from "../engine.js";
 import { hashSnapshot } from "../wasm-state.js";
@@ -303,3 +305,74 @@ function sameInput(a, b) {
   if (!a || !b) return a === b;
   return a.length === b.length && a.every((x, i) => x === b[i]);
 }
+
+test("a trap met only on a predicted input holds the timeline before it, and goes when the input does", () => {
+  // The engine traps when it steps tick 2 with port 0's input B[2], after
+  // writing memory (the step runs, then traps), as a real trap leaves state
+  // half-written. Every change of port 0's belief (unknown, A or B, each
+  // tick), at every pair of clock positions, at snapshot spacing 1 and 4:
+  // the timeline is held at 2 exactly when the row it would step there
+  // traps, its state is always the spec's at its tick, a held trap is never
+  // stepped again, and the fault is confirmed exactly when port 0's inputs
+  // up to 2 are all known.
+  const A = [v(1, 0), v(2, ALLOC), v(3, 0)];
+  const B = [v(1, 0), v(-2, FREE), v(0, BIG)];
+  const states = [];
+  for (let k = 0; k < 27; k++) states.push([0, 1, 2].map((t) => [undefined, A[t], B[t]][Math.floor(k / 3 ** t) % 3]));
+  // The input port 0 steps at tick 2 under a belief: known, or the last known before it.
+  const at2 = (s) => s[2] ?? s[1] ?? s[0] ?? ZERO;
+  let cases = 0, held = 0, released = 0, confirmed = 0;
+  for (const every of [1, 4])
+    for (const s1 of states)
+      for (const s2 of states)
+        for (let n1 = 0; n1 <= W; n1++)
+          for (let n2 = 0; n2 <= W; n2++) {
+            const engine = fresh();
+            const step = (row) => Object.getPrototypeOf(engine).step.call(engine, row);
+            let tl, traps = 0;
+            engine.step = (row) => {
+              const t = tl.now;
+              step(row);
+              if (t === 2 && sameInput(row.subarray(0, 2), B[2])) {
+                traps++;
+                throw new WebAssembly.RuntimeError("unreachable");
+              }
+            };
+            tl = new Timeline(engine, { every });
+            for (const p of [1, 2, 3]) for (let t = 0; t < W; t++) tl.put(p, t, X[p][t]);
+            s1.forEach((b, t) => tl.put(0, t, b));
+            tl.advance(n1);
+            const wasHeld = !!tl.fault;
+            const below = s2.some((b, t) => t < tl.floor && !sameInput(b, s1[t]));
+            if (below) {
+              delete engine.step;
+              continue;
+            }
+            s2.forEach((b, t) => t >= tl.floor && tl.put(0, t, b));
+            tl.advance(n2);
+            const traps2 = traps, steps2 = tl.stats.steps;
+            tl.advance(n2);
+            expect(traps).toBe(traps2); // held: never stepped again
+            expect(tl.stats.steps).toBe(steps2);
+            const holds = n2 > 2 && sameInput(at2(s2), B[2]);
+            const at = holds ? 2 : Math.max(n2, tl.floor);
+            expect(tl.now).toBe(at);
+            expect(same(tl.engine.snapshot(), spec([s2, X[1], X[2], X[3]], at))).toBe(true);
+            expect(!!tl.fault).toBe(holds);
+            if (holds) {
+              expect(tl.fault.tick).toBe(2);
+              expect(tl.fault.error).toMatch(/unreachable/);
+              expect(tl.fault.confirmed).toBe(s2.every((b) => b !== undefined));
+              held++;
+              if (tl.fault.confirmed) confirmed++;
+            }
+            if (wasHeld && !holds) released++;
+            delete engine.step;
+            cases++;
+          }
+  // 21,120 cases (the rest change a belief below the floor): 1,760 held,
+  // 832 of them confirmed, and 1,034 held after the first change and not
+  // after the second.
+  expect(cases).toBe(21_120);
+  expect([held, released, confirmed]).toEqual([1760, 1034, 832]);
+});

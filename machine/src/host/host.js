@@ -5,16 +5,21 @@
 // port's inputs, and checkpoints.
 //
 // Per frame: read the clock's tick; sample this peer's port and send its
-// recent inputs to everyone (ephemeral); tell the timeline what is known of
-// every port's input in its window; let it step, rolling back where a late
-// input proves a prediction wrong; write finished seconds of input and due
-// checkpoints to the documents. See HOST.md for the reasoning and the numbers
-// behind each choice.
+// recent inputs to everyone (ephemeral, at most 30 messages a second); tell
+// the timeline what is known of every port's input in its window; let it
+// step, rolling back where a late input proves a prediction wrong; deliver
+// the output that is due (output.js); write finished seconds of input and due
+// checkpoints to the documents. An engine that traps holds the timeline
+// before that tick (timeline.js) and is reported in status.fault; the frame
+// goes on, so this peer's inputs keep flowing and nobody waits for it. See
+// HOST.md for the reasoning and the numbers behind each choice; worker/ runs
+// all of this in a worker.
 import { compile, identify } from "../engine.js";
 import { hashSnapshot } from "../wasm-state.js";
 import { Timeline } from "./timeline.js";
 import { seating, seatingKey, holder, firstDifference, chunkSpan, unpack, pack, gzip, gunzip } from "./session.js";
 import { SessionClock, SyncedWall, tickAt } from "./clock.js";
+import { Outputs } from "./output.js";
 
 /** Seconds, turned into ticks of the engine's rate when a session is made. */
 export const SECONDS = {
@@ -24,9 +29,13 @@ export const SECONDS = {
   delay: 0.1, // input delay (local; see README)
   claim: 0.5, // how far ahead a seat is taken, so that others hear of it first
   reap: 10, // a holder silent this long loses the rest of its seat
+  lag: 0.05, // an unconfirmed tick's output is delivered this far behind the head (output.js)
+  late: 0.25, // a delivered tick's changed events are corrected up to this late
+  stale: 0.25, // output this far behind the clock is skipped, not delivered
 };
 
 const BEAT_MS = 250;
+const SEND_MS = 1000 / 30;
 
 const ticksOf = (seconds, [num, den]) => Math.max(1, Math.round((seconds * num) / den));
 
@@ -60,7 +69,7 @@ export async function createSession(repo, { wasm, content = new Uint8Array(), va
 
 export class Host {
   /** This peer's status, for a view and the tests. */
-  status = { start: 0, desync: [], rebases: 0, asked: 0, written: { chunks: 0, checkpoints: 0 }, error: null };
+  status = { start: 0, desync: [], rebases: 0, asked: 0, written: { chunks: 0, checkpoints: 0 }, fault: null, error: null };
 
   #repo;
   #handle;
@@ -93,6 +102,8 @@ export class Host {
   #retry = 0; // local ms: when to look again for seat docs not found yet
   #again = Infinity; // a rebase wanted while a load was in flight: from this tick
   #off = [];
+  #outputs;
+  #revision = 0; // counts steps and restores (see revision)
 
   /**
    * Opens a session and brings this peer to its state: the newest checkpoint,
@@ -111,6 +122,8 @@ export class Host {
    *                  frames instead of stopping one
    * @param o.perf     () => ms, for the budget only (performance.now)
    * @param o.reap     seconds of silence after which a holder loses its seat
+   * @param o.send     ms between input messages, at least (one a frame if 0)
+   * @param o.lag, o.late, o.stale  seconds, for output() (see SECONDS)
    */
   static async open(repo, url, o) {
     const handle = await repo.find(url);
@@ -146,7 +159,10 @@ export class Host {
       budget: o.budget ?? 10,
       perf: o.perf ?? (() => performance.now()),
       reap: o.reap ?? SECONDS.reap,
+      send: o.send ?? SEND_MS,
     };
+    const ticks = (k) => Math.round(((o[k] ?? SECONDS[k]) * this.#rate[0]) / this.#rate[1]);
+    this.#outputs = new Outputs({ lag: ticks("lag"), late: ticks("late"), stale: ticks("stale") });
     if (o.clock) this.#clock = o.clock;
     else {
       this.#wall = new SyncedWall(this.#o.id, this.#o.now, (m) => handle.broadcast(m));
@@ -174,6 +190,15 @@ export class Host {
   get delay() {
     return this.#o.delay;
   }
+  /**
+   * Changes whenever the engine's state may have: at each step (re-steps
+   * included) and each restore from a checkpoint. A rollback that re-steps to
+   * the same tick reaches another state there, so a picture is current only
+   * for the tick and revision it was drawn at.
+   */
+  get revision() {
+    return this.#revision;
+  }
   /** The tick the engine is at. */
   get tick() {
     return this.#timeline?.now ?? 0;
@@ -182,9 +207,9 @@ export class Host {
   get frontier() {
     return this.#timeline?.frontier ?? 0;
   }
-  /** The timeline's counts: rewinds, ticks re-stepped, steps. */
+  /** The timeline's counts: rewinds, ticks re-stepped, steps; and the output's. */
   get stats() {
-    return this.#timeline?.stats ?? null;
+    return this.#timeline && { ...this.#timeline.stats, output: { ...this.#outputs.stats } };
   }
   get loading() {
     return this.#loading !== null;
@@ -202,6 +227,25 @@ export class Host {
     return tickAt(this.#clock, this.#rate);
   }
 
+  /**
+   * A picture of the state from `view` (engine-defined: a player, a camera):
+   * { width, height, rgba }, or null while loading or if the engine draws
+   * nothing.
+   */
+  picture(view = 0) {
+    if (this.#loading) return null; // a rebase may have restored a checkpoint the tick does not name yet
+    return this.engine?.frame(view) ?? null;
+  }
+
+  /**
+   * What the machine played since the last call, each tick once and in order
+   * (output.js): { tick, audio?: { rate, channels, samples }, events? }, and
+   * among them corrections { tick, events, was } and gaps { gap: [from, to] }.
+   */
+  output() {
+    return this.#outputs.take();
+  }
+
   /** One frame: call it as often as the view draws. */
   frame() {
     this.#wall?.tick();
@@ -209,7 +253,10 @@ export class Host {
     const target = this.target();
     if (this.#mine) this.#sample(target);
     this.#feed(Math.max(target, this.#timeline.now));
+    this.#outputs.skip(target);
     this.#advance(target);
+    this.#outputs.deliver(this.#timeline.now, this.#timeline.frontier);
+    this.status.fault = this.#timeline.fault;
     this.#settleCheckpoints();
     this.#askForGaps();
     this.#reap();
@@ -250,11 +297,12 @@ export class Host {
     this.#mine = null;
   }
 
+  // A clock passed in may leave pausing to its owner (pause and resume optional).
   pause(margin) {
-    this.#clock.pause(margin);
+    this.#clock.pause?.(margin);
   }
   resume() {
-    this.#clock.resume();
+    this.#clock.resume?.();
   }
 
   close() {
@@ -287,13 +335,19 @@ export class Host {
         if (hashSnapshot(base.snapshot) !== base.hash) throw new Error(`checkpoint ${base.tick} does not match its hash`);
       }
       engine.restore(base.snapshot);
+      this.#revision++;
       this.status.start = base.tick;
       await this.#loadSeats(base.tick, true);
+      this.#outputs.start(base.tick);
       this.#timeline = new Timeline(engine, {
         tick: base.tick,
         before: Array.from({ length: this.#ports }, () => this.#vacant),
         marks: (t) => t > 0 && t % this.#every === 0,
         confirmed: (t, snap) => this.#confirmedQueue.push([t, snap]),
+        stepped: (t) => {
+          this.#revision++;
+          if (this.#outputs.wants(t)) this.#outputs.stepped(t, engine.output());
+        },
       });
     })();
     this.#loading = load;
@@ -447,16 +501,19 @@ export class Host {
     const seat = this.#seats.get(m.id);
     seat.top = Math.max(seat.top, m.next - 1);
     seat.heard = this.#o.now();
-    // Sent when there is a new input, repeating the last few (so one lost
-    // message costs nothing), and every BEAT_MS even with nothing new
-    // (paused, or before the seat starts), which is how the others know the
-    // holder is still here.
+    // Sent when there is a new input, at most one message per `send` ms on
+    // average (frames quantize when; `due` keeps the rate), repeating the
+    // last few (so a lost message costs nothing); and every BEAT_MS even with
+    // nothing new (paused, or before the seat starts), which is how the
+    // others know the holder is still here.
     const now = this.#o.now();
-    if (m.next > m.sent || now - m.beat >= BEAT_MS) {
-      const at = Math.max(m.from, m.next - this.#o.redundancy);
+    if ((m.next > m.sent && now >= m.due) || now - m.beat >= BEAT_MS) {
+      // Everything not sent yet, and at least the last `redundancy`.
+      const at = Math.max(m.from, Math.min(m.sent, m.next - this.#o.redundancy));
       this.#handle.broadcast({ m: "in", seat: m.id, at, bytes: pack(m.inputs, at, m.next, this.#width) });
       m.sent = m.next;
       m.beat = now;
+      m.due = Math.max(m.due, now - this.#o.send) + this.#o.send;
     }
     this.#flush(false);
     if (m.next >= m.until) this.#mine = null; // the seat ended (stood, or reaped)
@@ -503,7 +560,7 @@ export class Host {
       also(d);
       d.seats[id] = { port, from, inputs: handle.url, ...(this.#o.by ? { by: this.#o.by } : {}) };
     });
-    this.#mine = { id, port, from, until: Infinity, handle, next: from, durable: from, sent: from, beat: -Infinity, inputs: seat.inputs };
+    this.#mine = { id, port, from, until: Infinity, handle, next: from, durable: from, sent: from, beat: -Infinity, due: -Infinity, inputs: seat.inputs };
   }
 
   // Tells the timeline what is known of every port's input over its window.
@@ -568,9 +625,13 @@ export class Host {
       if (this.#duty(t)) this.#write(cp);
       else if (!this.#unwritten || t >= this.#unwritten.tick) this.#unwritten = cp;
     }
+    // One nobody wrote a period after it was confirmed, the reference peer of
+    // the shared wall time writes; two periods after, anyone (the reference
+    // may be a peer whose engine faulted, which confirms nothing).
     const u = this.#unwritten;
     const fallback = !this.#wall || this.#wall.reference === this.#o.id;
-    if (u && fallback && this.#timeline.frontier >= u.tick + this.#every) {
+    const overdue = u ? this.#timeline.frontier - u.tick : 0;
+    if (u && overdue >= this.#every * (fallback ? 1 : 2)) {
       this.#unwritten = null;
       this.#write(u);
     }
@@ -612,8 +673,6 @@ export class Host {
       this.#handle.change((d) => {
         d.checkpoints ??= {};
         d.checkpoints[t] = { url: cp.url, hash, seating };
-        const ticks = Object.keys(d.checkpoints).map(Number).sort((a, b) => b - a);
-        for (const old of ticks.slice(2)) delete d.checkpoints[old];
       });
       this.status.written.checkpoints++;
     } finally {

@@ -19,6 +19,7 @@ The C side is `engines/machine.h`. Pointers are wasm32 addresses, integers are l
 | `machine_step` | `() -> void` | one tick, reading the input buffer |
 | `machine_output` | `() -> *{u32 rate, channels, count, *f32 samples, u32 events_len, *u8 events}` | optional; the last step's audio and events |
 | `machine_frame` | `(i32 view) -> *{u32 width, height, *u8 rgba}` | optional; a picture from `view` |
+| `machine_query` | `(u32 kind) -> *{u32 len, *u8 bytes}` | optional; the current state read as `kind`, engine-defined; NULL for a kind the engine does not have |
 | `machine_content` | `(u32 len) -> *u8` | optional; where the host copies the content in, before `machine_init` |
 | `machine_fault` | `() -> *u8` | optional; why the last call trapped, NUL-terminated, for the host's error |
 | `_initialize` | `() -> void` | optional; the WASI reactor's constructor call, run once before `machine_init` |
@@ -53,6 +54,7 @@ for it in its input.
   hash(): string,                    // 64-bit, of exactly what snapshot holds
   output(): { audio?: { rate, channels, samples: Float32Array }, events?: Uint8Array },
   frame(view?): { width, height, rgba: Uint8ClampedArray } | null,
+  query(kind): Uint8Array | null,    // machine_query's bytes, copied out
   inspect(name, ...args): { result, memory } }  // any export, called on a copy
 ```
 
@@ -71,6 +73,16 @@ text, for instance), with the trap as its `cause`.
   host copies the live state into a second instance, the viewer, and draws
   there, afresh each call. The live state is never touched. The cost is one
   memory copy per drawn frame.
+- **`query(kind)` reads the state for a view of it,** on a copy, the same
+  way: a scene drawing Doom's level from its things and sectors, a game
+  adapter reading positions out of a console's RAM. The ABI is one export,
+  `machine_query(kind)`, and each engine names its kinds below. A query may
+  write memory (Doom builds its records in its zone), and even one that
+  only reads leaves its stack frame, so it never runs on the live state;
+  the tests prove, by stepping a peer that queries every kind every tick
+  beside one that never does, that the two stay byte-equal at every tick.
+  The copy is most of the cost: 0.1–0.2 ms for Doom's 6.9 MB, about 0.1 ms
+  for the SNES's 3.5 MB.
 - **`inspect(name, ...args)` is the same thing for any export:** an
   engine-specific query (Doom's `doom_trace`, the native trace hashes) runs
   on a fresh copy, and the caller reads its result from the copy's memory.
@@ -212,3 +224,43 @@ emcc.
   - `hash()` is the contract's, over the whole snapshot (about 3.5 MB), not a
     chosen list of RAMs and registers. A list would have to name every chip's
     internal state to be exact; the whole memory cannot leave anything out.
+
+## What each engine answers to `query`
+
+Kinds are small integers; each is an array of little-endian records, or a
+byte string, defined by the engine.
+
+- **Doom** (`engines/doom/README.md`, Queries; decoded by `doom.js`):
+  0 `level`, 1 `players` (their bodies and eyes), 2 `things` (every mobj:
+  position, angle, size, flags, health, sprite and frame, whose body), 3
+  `sectors` (heights, flats, light), 4 `sides` (textures, offsets). With
+  the map's static lumps, that is the level as it stands at this tic. An
+  arbitrary camera, which needs four arguments, is Doom's own export
+  `doom_camera(x, y, z, angle)`, reached through `inspect` and decoded by
+  `doom.js` `camera()` (with `engine.js`'s `picture`).
+- **Super NES** (`engines/snes/src/machine.cpp`): the console's memories,
+  raw, as the core holds them, and nothing about any game. A game's adapter
+  reads what it needs out of them, as a cheat finder or a speedrun timer
+  does.
+
+  | kind | memory | bytes |
+  |---|---|---|
+  | 0 | WRAM, the CPU's work RAM (`$7E0000`–`$7FFFFF`) | 131,072 |
+  | 1 | VRAM, word n at byte 2n, low byte first | 65,536 |
+  | 2 | OAM, the 512-byte sprite table then the 32-byte high table | 544 |
+  | 3 | CGRAM, 256 BGR555 colours | 512 |
+  | 4 | ARAM, the sound CPU's RAM | 65,536 |
+  | 5 | the cartridge's save RAM | 0 if none |
+
+## Outside the contract: presentation
+
+What an engine computes is its state; what a host makes of it for people
+is not, and lives outside the engine, never in a snapshot. Doom's music is
+the case in point: the engine says which song should be playing (the
+first event of every step, a state, not an edge), and a separate module,
+`engines/doom/dist/music.wasm` (Chocolate Doom's own OPL music driver and
+OPL emulator), renders it to PCM for the host (`src/doom-music.js`). It
+is not an engine: it has no ticks, no inputs and no identity in a session,
+and two peers that play it differently, or not at all, stay in the same
+state. Doom's sound effects are the same: the engine reports them with
+their origins, and the host plays the WAD's own PCM where it likes.

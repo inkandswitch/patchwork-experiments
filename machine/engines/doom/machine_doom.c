@@ -430,22 +430,11 @@ EXPORT void machine_step(void)
 
 static machine_frame_t frame;
 
-EXPORT const machine_frame_t *machine_frame(int32_t view)
+// The screen as RGBA, through the palette the game last set.
+static const machine_frame_t *Picture(void)
 {
     byte *rgba;
     int i;
-
-    if (view >= 0 && view < MAXPLAYERS && playeringame[view]
-     && view != consoleplayer)
-    {
-        consoleplayer = displayplayer = view;
-        if (gamestate == GS_LEVEL)
-        {
-            ST_Start();         // the status bar and messages follow
-            HU_Start();         // consoleplayer
-        }
-    }
-    D_Display();
 
     rgba = Z_Malloc(SCREENWIDTH * SCREENHEIGHT * 4, PU_STATIC, NULL);
     for (i = 0; i < SCREENWIDTH * SCREENHEIGHT; i++)
@@ -460,6 +449,264 @@ EXPORT const machine_frame_t *machine_frame(int32_t view)
     frame.height = SCREENHEIGHT;
     frame.rgba = rgba;
     return &frame;
+}
+
+EXPORT const machine_frame_t *machine_frame(int32_t view)
+{
+    if (view >= 0 && view < MAXPLAYERS && playeringame[view]
+     && view != consoleplayer)
+    {
+        consoleplayer = displayplayer = view;
+        if (gamestate == GS_LEVEL)
+        {
+            ST_Start();         // the status bar and messages follow
+            HU_Start();         // consoleplayer
+        }
+    }
+    D_Display();
+    return Picture();
+}
+
+// A camera anywhere in the level: eyes at x, y, z (16.16 map units, z
+// absolute) looking along angle (Doom's binary angle: 2^32 is a turn,
+// counterclockwise from east). Doom's renderer draws from a player, so the
+// camera is a player of its own, holding no weapon, its body nowhere in
+// the level's lists, on the copy; the view fills the screen (no status
+// bar) and the palette is the plain one (no player's damage or pickup
+// tint). Doom has no pitch: its renderer cannot look up or down. Outside
+// a level there is nothing to look at, and the frame is 0 by 0.
+
+EXPORT const machine_frame_t *doom_camera(int32_t x, int32_t y, int32_t z, uint32_t angle)
+{
+    mobj_t body;
+    player_t eye;
+
+    if (gamestate != GS_LEVEL)
+    {
+        frame.width = frame.height = 0;
+        frame.rgba = NULL;
+        return &frame;
+    }
+    memset(&body, 0, sizeof(body));
+    memset(&eye, 0, sizeof(eye));
+    body.x = x;
+    body.y = y;
+    body.z = z;
+    body.angle = angle;
+    body.subsector = R_PointInSubsector(x, y);  // whose light the weapon would take
+    eye.mo = &body;
+    eye.viewz = z;
+    R_SetViewSize(11, detailLevel);
+    R_ExecuteSetViewSize();
+    I_SetPalette(W_CacheLumpName(DEH_String("PLAYPAL"), PU_CACHE));
+    R_RenderPlayerView(&eye);
+    return Picture();
+}
+
+// ---------------------------------------------------------------------
+// Queries: the current state, read for a host's views of it (a map, the
+// level's geometry with its things in it). Each kind is an array of
+// little-endian records, documented in ENGINE.md:
+//
+//   0 level     one record: where the game is
+//   1 players   MAXPLAYERS records: each player's body, eyes and state
+//   2 things    every mobj, in thinker order
+//   3 sectors   every sector, in the map's order: heights, flats, light
+//   4 sides     every sidedef, in the map's order: textures and offsets
+//
+// The records are made here, in the zone, so the host calls this on a copy
+// of the state, as it does a frame.
+
+enum { QUERY_LEVEL, QUERY_PLAYERS, QUERY_THINGS, QUERY_SECTORS, QUERY_SIDES };
+
+typedef struct
+{
+    uint8_t gamestate;          // 0 level, 1 intermission, 2 finale, 3 demo screen
+    uint8_t skill;              // 0-4
+    uint8_t episode, map;
+    uint8_t paused, deathmatch; // deathmatch: 0, 1, or 2 (altdeath)
+    uint8_t ingame;             // bit p: player p is in the game
+    uint8_t pad;
+    uint32_t leveltime;         // tics in this level
+    uint32_t gametic;
+} level_record_t;
+
+typedef struct
+{
+    uint32_t thing;             // its body (a things record's id), 0 if none
+    int32_t x, y, z;            // the eyes: the body's x, y and the view height
+    uint32_t angle;
+    int32_t health, armor;
+    uint8_t ingame;
+    uint8_t state;              // 0 alive, 1 dead, 2 respawning
+    uint8_t weapon;             // readyweapon
+    uint8_t extralight;         // a weapon's flash
+} player_record_t;
+
+typedef struct
+{
+    uint32_t id;                // stable while the thing exists; sound events' origin
+    int32_t x, y, z;
+    uint32_t angle;
+    int32_t radius, height;
+    uint32_t flags;             // mobj flags (p_mobj.h)
+    int32_t health;
+    uint16_t type;              // mobjtype_t
+    int16_t doomednum;          // the map's thing type, -1 for none
+    char sprite[4];
+    uint16_t frame;             // the frame's letter index, | 0x8000 if fullbright
+    int8_t player;              // whose body it is, or -1
+    uint8_t pad;
+} thing_record_t;
+
+typedef struct
+{
+    int32_t floor, ceiling;
+    char floorpic[8], ceilingpic[8];
+    int16_t light, special, tag, pad;
+} sector_record_t;
+
+typedef struct
+{
+    int32_t xoffset, yoffset;   // texture offsets, 16.16
+    char top[8], middle[8], bottom[8];  // "" for none
+} side_record_t;
+
+// r_data.c's texture_t begins with its name, the only field read here.
+typedef struct { char name[8]; } texture_name_t;
+extern texture_name_t **textures;
+extern int numtextures;
+
+static machine_query_t query;
+
+static void *Records(int count, int size)
+{
+    query.len = count * size;
+    query.bytes = Z_Malloc(count * size + 1, PU_STATIC, NULL);
+    memset((void *) query.bytes, 0, count * size);
+    return (void *) query.bytes;
+}
+
+static void TextureName(char *dst, int texture)
+{
+    if (texture > 0 && texture < numtextures)
+        memcpy(dst, textures[texture]->name, 8);
+}
+
+static boolean IsThing(thinker_t *th)
+{
+    return th->function.acp1 == (actionf_p1) P_MobjThinker;
+}
+
+EXPORT const machine_query_t *machine_query(uint32_t kind)
+{
+    thinker_t *th;
+    int i, n;
+
+    switch (kind)
+    {
+    case QUERY_LEVEL:
+    {
+        level_record_t *r = Records(1, sizeof(*r));
+        r->gamestate = gamestate;
+        r->skill = gameskill;
+        r->episode = gameepisode;
+        r->map = gamemap;
+        r->paused = paused;
+        r->deathmatch = deathmatch;
+        for (i = 0; i < MAXPLAYERS; i++)
+            r->ingame |= (playeringame[i] != 0) << i;
+        r->leveltime = leveltime;
+        r->gametic = gametic;
+        break;
+    }
+    case QUERY_PLAYERS:
+    {
+        player_record_t *r = Records(MAXPLAYERS, sizeof(*r));
+        for (i = 0; i < MAXPLAYERS; i++, r++)
+        {
+            player_t *p = &players[i];
+            r->ingame = playeringame[i] != 0;
+            r->state = p->playerstate;
+            r->weapon = p->readyweapon;
+            r->extralight = p->extralight;
+            r->health = p->health;
+            r->armor = p->armorpoints;
+            if (p->mo != NULL)
+            {
+                r->thing = (uint32_t) (uintptr_t) p->mo;
+                r->x = p->mo->x;
+                r->y = p->mo->y;
+                r->z = p->viewz;
+                r->angle = p->mo->angle;
+            }
+        }
+        break;
+    }
+    case QUERY_THINGS:
+    {
+        thing_record_t *r;
+        n = 0;
+        for (th = thinkercap.next; th != &thinkercap; th = th->next)
+            n += IsThing(th);
+        r = Records(n, sizeof(*r));
+        for (th = thinkercap.next; th != &thinkercap; th = th->next)
+        {
+            mobj_t *mo = (mobj_t *) th;
+            if (!IsThing(th))
+                continue;
+            r->id = (uint32_t) (uintptr_t) mo;
+            r->x = mo->x;
+            r->y = mo->y;
+            r->z = mo->z;
+            r->angle = mo->angle;
+            r->radius = mo->radius;
+            r->height = mo->height;
+            r->flags = mo->flags;
+            r->health = mo->health;
+            r->type = mo->type;
+            r->doomednum = mo->info->doomednum;
+            memcpy(r->sprite, sprnames[mo->sprite], 4);
+            r->frame = mo->frame;
+            r->player = mo->player != NULL ? mo->player - players : -1;
+            r++;
+        }
+        break;
+    }
+    case QUERY_SECTORS:
+    {
+        sector_record_t *r = Records(numsectors, sizeof(*r));
+        for (i = 0; i < numsectors; i++, r++)
+        {
+            sector_t *s = &sectors[i];
+            r->floor = s->floorheight;
+            r->ceiling = s->ceilingheight;
+            memcpy(r->floorpic, lumpinfo[firstflat + s->floorpic]->name, 8);
+            memcpy(r->ceilingpic, lumpinfo[firstflat + s->ceilingpic]->name, 8);
+            r->light = s->lightlevel;
+            r->special = s->special;
+            r->tag = s->tag;
+        }
+        break;
+    }
+    case QUERY_SIDES:
+    {
+        side_record_t *r = Records(numsides, sizeof(*r));
+        for (i = 0; i < numsides; i++, r++)
+        {
+            side_t *s = &sides[i];
+            r->xoffset = s->textureoffset;
+            r->yoffset = s->rowoffset;
+            TextureName(r->top, s->toptexture);
+            TextureName(r->middle, s->midtexture);
+            TextureName(r->bottom, s->bottomtexture);
+        }
+        break;
+    }
+    default:
+        return NULL;
+    }
+    return &query;
 }
 
 // ---------------------------------------------------------------------

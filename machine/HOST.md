@@ -378,3 +378,350 @@ re-steps, not correctness.
   - A snapshot is a full memory copy, about 0.1 ms per MB.
   - Hashing is about 0.5 ms per MB, done only at checkpoints.
   - Dirty-page tracking would cut both, but it needs a cooperating engine.
+
+## Phase 2, the host side
+
+Built before the scene's clock and bodies exist; none of it needs them. The
+clock stays injectable: `Host.open(…, { clock })` takes any
+`{ t(), running(), pause?(), resume?() }`, and `RemoteHost` reads such a
+clock on the page each frame and hands the worker its `t` and `running`.
+When `api.clock` lands it is passed as is (if its `t` is a property rather
+than a method, a one-line adapter).
+
+The surface, the same for a host on the page and one in a worker:
+
+```js
+host.frame();                       // as often as the view draws
+const p = host.picture(view);       // { width, height, rgba } (a screen's texture)
+for (const o of host.output()) …    // what the machine played since the last call (below)
+host.sit(port); host.stand(); host.pause(); host.resume();
+host.tick; host.frontier; host.revision; host.seat; host.status; host.stats;
+await host.close();                 // a RemoteHost's waits until the page holds its writes
+```
+
+| file | what |
+|---|---|
+| `output.js` | what a listener hears under rollback: one policy, every engine |
+| `../worker/remote.js` | `RemoteHost.open(repo, url, { worker, … })`: the page's side |
+| `../worker/serve.js` | `serve(endpoint)`: the worker's side; `worker.js` is the entry |
+| `../worker/port.js` | `PortAdapter`: an automerge-repo network adapter over a MessagePort |
+
+### Decisions, made unattended (the lead was away)
+
+**1. The host runs in a worker whole, with a repo of its own.**
+- The worker (`serve.js`) runs `Host.open` unchanged, on an automerge-repo
+  of its own with no storage, whose one peer is the page's repo over a
+  `MessageChannel` (`PortAdapter`). That is how Patchwork's tab repo already
+  reaches its shared worker, so it is the platform's own idiom.
+- **Why not keep the handles on the page** and proxy reads and writes: the
+  host reads and writes five documents, creates seat and checkpoint
+  documents with URLs it needs at once, and sends and hears ephemeral
+  messages. Mirroring that across threads means a sync state per document
+  and ids made on the far side: re-implementing what automerge-repo does
+  between two repos, and less well. Correct by construction instead:
+  Automerge sync converges over any reliable ordered channel, and a
+  MessagePort is one.
+- **What the page's repo does:** it stores everything (the worker's repo
+  keeps nothing), and relays the worker's ephemeral messages like any
+  peer's. Patchwork's tab repo announces documents only to its shared
+  worker (`sharePolicy`), so the machine worker (peer id `machine-…`) gets
+  exactly the documents it asks for. `bench/worker` runs its page repos
+  with that policy.
+- **What it costs:** each document the host touches is held twice (the
+  session ~1 KB, a seat ≤ 50 KB, a checkpoint 0.3–2.5 MB), and each change
+  crosses the channel once, as a structured clone.
+- **Pictures are transferred, not shared.** SharedArrayBuffer needs
+  cross-origin isolation, which Patchwork cannot assume. A picture is a
+  fresh copy out of the engine's memory anyway (`frame()` draws on a copy),
+  so handing its buffer over costs nothing. The worker draws a view only
+  when the page asked for it (`picture(view)`) and the state changed since
+  it last drew it: its tick or `host.revision`, which counts steps and
+  restores (a rollback can re-step to the same tick and reach another
+  state there, as when a late input lands while paused).
+  Audio samples are copied, then transferred: the host keeps what it
+  delivered, to compare re-simulations with.
+- **The page never waits.** `frame()` sends a request unless one is out;
+  the answer brings the state, the pictures and the output. What the page
+  shows is at most one worker frame old.
+- **The budget is 25 ms in a worker** (10 on the page): the page does not
+  wait for it, and a joiner catches up a quarter sooner (below).
+- Options cross to the worker as data; functions such as `now` and `perf`
+  are the worker's (`serve(endpoint, { now })` in tests).
+- **Closing loses nothing.** The worker's repo stores nothing and syncs a
+  change after it is made, so a link cut at once would drop the worker's
+  last writes (a stand, the last chunk, a checkpoint). `close()` stops the
+  host in the worker, which answers with the heads of every document its
+  repo holds; the page keeps the link until its own repo has them all (or
+  `wait` ms pass, for a worker that died), then closes it, and the
+  worker's repo shuts down. Await it before ending the worker. After it,
+  the page sends nothing and ignores any answer still in flight, and the
+  worker refuses requests. One worker serves one host.
+
+**2. Audio under rollback: deliver each tick once, at a lag; correct
+events, crossfade samples.** `output.js`, the same for every engine:
+- A tick's output is delivered once: when it is confirmed, or once the head
+  is `lag` ticks past it (default 0.05 s: 3 SNES ticks, 2 Doom tics),
+  whichever comes first. Until then a re-simulation just replaces it.
+- A re-simulated delivered tick whose output is the same is not delivered
+  again (dedupe).
+- If its events differ, a correction `{ tick, events, was }` goes out while
+  it is at most `late` (0.25 s) old: an interpreter starts late what is new
+  and stops what is gone. For Doom that is a sound record appearing or
+  disappearing; `doom.js`'s `events()` decodes both sides.
+- Samples cannot be corrected, only continued. If the last delivered tick's
+  samples were re-simulated differently, the next tick is crossfaded over
+  its length from what the old timeline would have played next (or the
+  last frame held) into the new one. Otherwise the new timeline continues
+  what was played exactly, since its samples up to the boundary are the
+  played ones.
+- Ticks more than `stale` (0.25 s) behind where the stream should be are
+  skipped, as a gap `{ gap: [from, to] }` (a joiner catching up, a stall),
+  and the stream fades in from silence after it.
+- **Routing:** the SNES's output is a PCM stream (stereo, 32 kHz, ~533
+  frames a tick), for one positional source at its screen. Doom's is events
+  with positions (`events()`: name, volume, origin x/y/z), for the scene to
+  play the WAD's lumps (`sounds()`) at their origins.
+- **Rejected:** confirmed ticks only. Exact by construction, but at WAN
+  latency it plays 100–150 ms behind the picture, and a vanished holder
+  silences everything until it is reaped (10 s). Confirmed-only is `lag:
+  Infinity`, one option away.
+
+**3. Traffic.**
+- **At most 30 input messages a second per peer, whatever the engine's rate
+  or the display's** (`send`, ms, default 1000/30). A token bucket keeps the
+  average exact although frames quantize when a message goes. Each carries
+  every input not sent yet plus the last 8 (the old rule sent only the last
+  8, so a long frame could leave inputs to the chunks). A lost message
+  costs nothing while the next one comes within 8 ticks.
+- **Checkpoints can't be deleted.** automerge-repo has no distributed
+  delete: `repo.delete` drops only the local copy; the sync server and the
+  other peers keep theirs. So the session document now **links every
+  checkpoint** made under the current seating instead of the two newest
+  (stale ones, computed under another seating, are still unlinked). The
+  documents exist anyway; linking them costs the session document nothing
+  measurable (below), and it bounds the replay of any rebase.
+- **A rebase earlier than the oldest checkpoint no longer replays from
+  genesis**: it starts at the newest linked checkpoint at or before the
+  change, so it replays at most one period (60 s: 3600 SNES frames, 5.8 s
+  of CPU in the worker; 2100 Doom tics, 17 ms). Before, a change two
+  minutes back in an hour-long session replayed the hour: 216,000 SNES
+  frames, about 6 minutes of CPU, and every seat document since the start.
+
+**4. Faults.**
+- **A trap holds the timeline, it does not throw.** A step that traps has
+  half-written memory, so the timeline restores the state before it, keeps
+  it, and holds there while that state and the row it would step are the
+  ones that trapped (`timeline.fault`). A belief change lets it try again,
+  so a trap met only on a predicted input goes when the real input comes.
+  Below the frontier it is confirmed: every peer with these inputs meets
+  it.
+- **The frame goes on.** `status.fault = { tick, error, confirmed }`; this
+  peer still samples and sends its input, writes its chunks and reaps, so
+  nobody waits for it and nobody reaps it. A trap only here leaves the
+  others playing; a deterministic trap stops everyone at the same tick,
+  agreeing.
+- **A worker's failure is a status too** (`status.error`), kept across its
+  reports.
+- **Checkpoint writing survives a faulted writer.** One confirmed but not
+  written a period later is written by the shared clock's reference peer;
+  two periods later, by anyone (the reference may be the faulted peer).
+- **Divergence** was already reported (`status.desync: [{ tick, ours,
+  theirs }]`); it is now tested. A peer cannot tell which side is wrong
+  from one checkpoint, so it says so and does nothing else.
+
+### Numbers
+
+Apple M4, Node 24, headless Chrome 157; other agents' builds were running
+throughout, so real-time figures are noisy.
+
+**The worker** (`pnpm check:worker`, `bench/worker/`): a Super NES session
+on Unarmed in a headless Chrome page, page repos on an in-page SimNet (LAN,
+real time). a and b play from the start, each host in a worker; at 55 s c
+opens the session from the 30 s checkpoint, about 1550 frames behind. Every
+animation frame the page asks each host for a frame and draws each peer's
+picture into a canvas. Measured on the page's thread from c's open until 3 s
+after it caught up: long tasks (> 50 ms), frame intervals, and the time each
+frame spent on the machines ("work").
+
+| c runs | catch-up (s) | long tasks: count / total / max (ms) | frame interval p50 / p99 / max (ms) | frames over 33 ms | page work per frame p50 / p99 / max (ms) | page work in all (ms) |
+|---|---|---|---|---|---|---|
+| in a worker (budget 25 ms) | 4.1 | 0 / 0 / 0 | 16.7 / 16.8 / 16.8 | 0 | 0.1 / 0.2 / 0.2 | 26 |
+| on the page, budget 10 ms | 4.8 | 0 / 0 / 0 | 16.7 / 16.8 / 33.3 | 0 | 10.2 / 12.0 / 22.3 | 3,700 |
+| on the page, no budget | 4.3 | 7 / 4,238 / 2,574 | 16.7 / 467 / 2,567 | 9 | 2.5 / 459 / 2,574 | 4,890 |
+
+- **In a worker the page does nothing for the machines**: 0.1 ms a frame,
+  26 ms in 7.3 s, no long task, no late frame, while c catches up 1,556
+  frames (about 2.5 s of SNES CPU) and a and b play on. The same 10 s
+  before c joined: 0.1 ms a frame.
+- **Phase 1's budget alone already prevents long tasks**, but it takes 10–12
+  ms of every 16.7 ms frame for 4.8 s: a scene drawing beside it would drop
+  frames. Without the budget, the page freezes for 2.6 s.
+- An earlier run with the worker's budget at 10 ms took 5.2–6.3 s to catch
+  up; at 25 ms, 3.8–4.1 s; at 50 ms, no faster (4.0 s). Hence 25.
+- Afterwards all three stopped at the same tick on pause. (That their states
+  agree with the documents is the Node test's to show; check:browser
+  showed Chrome's engines agree with Node's bit for bit.)
+
+**Output** (`pnpm bench:output`, `bench/output.test.js`): one run per
+engine over SimNet's WAN table with 1 in 10 messages lost; every step each
+peer took is recorded with its output, so the same run is heard at every
+lag, the policy being a pure function of that record. Against the documents'
+outputs; a click is a boundary jump more than 0.02 of full scale past the
+documents' jump there.
+
+| engine | lag (ticks) | latency (ms) | samples wrong | crossfades | clicks | clicks without crossfades (worst jump) | events right when heard | corrected | left wrong |
+|---|---|---|---|---|---|---|---|---|---|
+| SNES, 2p, 45 s | 0 | 0 | 2.26% | 25 | 0 | 8 (0.10) | — | — | — |
+| | 1 | 15 | 1.72% | 21 | 0 | 4 (0.08) | — | — | — |
+| | 3 (default) | 44 | 0.83% | 11 | 0 | 2 (0.05) | — | — | — |
+| | confirmed only | 104 | 0 | 0 | 0 | 0 | — | — | — |
+| Doom, 4p, 30 s | 0 | 0 | — | — | — | — | 99.69% | 10 | 3 |
+| | 1 | 28 | — | — | — | — | 99.69% | 10 | 3 |
+| | 3 | 84 | — | — | — | — | 99.76% | 10 | 0 |
+| | confirmed only | 148 | — | — | — | — | 100% | 0 | 0 |
+| toy, 3p, 20 s | 0 | 0 | 72% | 448 | — | — | 99.43% | 12 | 0 |
+| | 3 | 78 | 40% | 315 | — | — | 99.76% | 5 | 0 |
+| | confirmed only | 136 | 0 | 0 | — | — | 100% | 0 | 0 |
+
+- **On a real game, rollback rarely reaches the sound.** Unarmed's audio
+  follows its state by frames, so even at lag 0 only 2.3% of ticks played
+  differ from the record, nearly all in the menus. A single changed input
+  in a round (a one-off check, 43 trials) changed the audio within 40
+  frames once.
+- **The crossfade removes every click it meets:** 8 boundaries at lag 0
+  would jump up to 0.10 of full scale (−20 dB) without it; with it, none
+  past 0.02. The exhaustive test proves the bound: a crossfade adds at
+  most one tick's worth of slope.
+- **Doom's sound records are right when heard 99.7% of the time;** the
+  rest are corrected, except 3 ticks at lag 0 and 1 whose correction came
+  more than `late` after they were heard.
+- **The toy is the worst case,** its samples changed by every input at
+  once: 72% of ticks heard at lag 0 differ from the record. That is what
+  `lag` buys back, tick for tick.
+- **So the default is 0.05 s:** it halves the SNES's wrong ticks, closes
+  the late Doom corrections, and audio 50 ms behind the picture is within
+  what people accept (sound trailing picture is tolerated to about 100 ms).
+
+**Traffic** (`pnpm bench:traffic`, `bench/traffic.test.js`): 4 players, 20
+s, 150 ms one-way fixed; inputs that change all the time. Per peer, per
+second: messages it broadcast; ephemeral messages on the wire, sent and
+received; rollbacks, ticks re-stepped, and the frontier's mean lag behind
+the head.
+
+| engine | topology | send | broadcast | sent | received | hub out | rollbacks | re-stepped | frontier lag (ticks) |
+|---|---|---|---|---|---|---|---|---|---|
+| SNES | mesh | every frame | 64 | 577 | 577 | — | 9.6 | 42 | 3.6 |
+| | mesh | 30/s | 34 | 306 | 306 | — | 9.1 | 50 | 4.7 |
+| | mesh | 20/s | 24 | 216 | 216 | — | 9.2 | 54 | 5.3 |
+| | hub | every frame | 64 | 256 | 192 | 769 | 9.6 | 125 | 12.3 |
+| | hub | 30/s | 34 | 136 | 102 | 408 | 9.1 | 128 | 13.2 |
+| | hub | 20/s | 24 | 96 | 72 | 288 | 8.3 | 120 | 13.3 |
+| Doom | mesh | every frame | 39 | 351 | 351 | — | 17 | 41 | 1.6 |
+| | mesh | 30/s | 34 | 306 | 306 | — | 18.1 | 54 | 2.2 |
+| | mesh | 20/s | 24 | 216 | 216 | — | 12.6 | 45 | 2.5 |
+| | hub | every frame | 39 | 156 | 117 | 468 | 13.7 | 103 | 6.6 |
+| | hub | 30/s | 34 | 136 | 102 | 408 | 13 | 103 | 7.1 |
+| | hub | 20/s | 24 | 96 | 72 | 288 | 14.4 | 123 | 7.7 |
+
+On a hub at 30/s, by number of players:
+
+| engine | players | broadcast | sent | received | hub out |
+|---|---|---|---|---|---|
+| SNES | 2 | 32 | 64 | 32 | 64 |
+| | 3 | 33 | 99 | 66 | 198 |
+| | 4 | 34 | 136 | 102 | 408 |
+| Doom | 2 | 32 | 64 | 32 | 64 |
+| | 3 | 33 | 99 | 66 | 198 |
+| | 4 | 34 | 136 | 102 | 408 |
+
+- **30 a second halves the SNES's messages** (64 to 34 broadcast, 4
+  of them clock pings and answers) for about one more tick of frontier lag
+  (3.6 to 4.7, 18 ms) and 17% more re-stepping. 20 a second saves another
+  30% for another 0.6 tick. Doom at 35 Hz barely changes (39 to 34).
+- **It scales linearly per peer:** what a peer receives is 34 × (n − 1).
+  The hub sends n(n − 1) × 34, as any all-to-all relay must: 408 a second
+  for 4 players.
+- **automerge-repo echoes.** It forwards every ephemeral message it has not
+  seen to every peer but its originator. On a mesh that is the (n − 1)²
+  sends per broadcast phase 1 measured; on a hub each peer also sends
+  everything it hears back to the hub, which drops it as seen ("sent" is
+  four times "broadcast" for 4 players). That is automerge-repo's, not the
+  host's; Patchwork's Subduction relay publishes ephemerals by
+  subscription and may not echo, which these numbers do not cover.
+- On a hub every message crosses two links, so latency doubles (300 ms
+  peer to peer here) and so does re-stepping; that is the topology's cost,
+  not the rate's.
+
+**Linking every checkpoint** (`node bench/retention.mjs`): a 4-player
+session document with one checkpoint pointer a minute and seats rolling
+every 10 minutes, saved, and loaded (median of 5).
+
+| hours | two newest: bytes | load | all: bytes | load |
+|---|---|---|---|---|
+| 1 | 6,241 | 8.4 ms | 6,100 | 8.9 ms |
+| 4 | 21,573 | 10.4 ms | 21,137 | 21.8 ms |
+| 10 | 51,393 | 24.3 ms | 51,103 | 37.0 ms |
+
+Automerge keeps every deleted value in history, so unlinking saved
+nothing: the document is the same size either way. Loading the one with
+600 live keys takes up to half again as long, about 13 ms after ten hours,
+once per open.
+
+### Tests
+
+All finite, no randomness.
+- **`output.test.js`:** every re-simulation pattern within 3 ticks of the
+  head, over every sequence of 4 frames (each frame rewinds to any tick at
+  or above the frontier, re-steps every tick from there keeping or changing
+  each one's output, then steps 0, 1 or 2 ticks on): 43,905 sequences, at
+  lags 0, 1, 2 and confirmed-only, then everything confirmed, about 11
+  million checks. Each tick is delivered once, in order, exactly when due,
+  with the timeline's output at that moment; a correction goes out exactly
+  when a delivered tick's events changed and never otherwise; a crossfade
+  happens exactly when the last played tick's samples changed; and no step
+  in the played stream exceeds a ramp's slope plus a crossfade's (2/N),
+  where an unfaded splice jumps up to 1. Each of these mutations fails it:
+  no crossfade, no dedupe, no splice detection, a correction not
+  remembered, the old timeline's next tick forgotten while a splice waits.
+  Also gaps, fades, and confirmed-only skipping.
+- **`timeline.test.js`:** an engine that traps on one input at one tick,
+  under every change of one port's belief at every pair of clock positions,
+  at snapshot spacing 1 and 4 (21,120 cases): held exactly when the belief
+  steps into the trap, never stepped again while held, released when it
+  doesn't, confirmed exactly when the inputs are all known, and the state
+  always the spec's.
+- **`host.test.js`:** every peer hears every tick once, in order, and its
+  events end up the documents' (3 peers, WAN, lossy); 4 peers through a
+  hub send at most 30 input messages a second and agree.
+- **`faults.test.js`:** a trap on one peer (it says so, keeps its seat, the
+  others play on and agree); a trap on every peer at a confirmed tick (all
+  stop there, agree with the documents, inputs flow); a peer whose memory
+  drifts (it reports the desync at the next checkpoint, the others do not);
+  a seat change deeper than the two newest checkpoints (every peer rebases
+  from the newest one before it, not genesis; the later ones are
+  unlinked).
+- **`../worker/remote.test.js`:** closing at once after a stand and a
+  frame request: the page's repo has the stand when close resolves (and
+  does not when the link is cut without waiting), the frame's late answer
+  is ignored, and nothing is sent after; a view is drawn again exactly when
+  its tick or the host's revision changed. And two hosts in "workers" (serve() on an
+  in-process channel that structured-clones and transfers, so a buffer used
+  after it was transferred would be found detached) and one on the page,
+  WAN, lossy: pictures and output reach the page, and all three agree with
+  the documents; a frame is never queued behind another; a trap in the
+  worker reaches the page as a status while the others play on.
+- **`bench/worker`** (`pnpm check:worker`): the browser measurement above;
+  fails if the worker joiner makes a long task on the page or the peers
+  stop at different ticks.
+
+### Not done yet
+
+- **A peer that diverged** says so but does not heal. It could restart from
+  the checkpoint it disagrees with, but from one checkpoint it cannot know
+  which side is wrong.
+- **Subduction's ephemerals** were not measured; the hub here is an
+  automerge-repo peer.
+- **Playing the output** (an AudioWorklet fed by the PCM, Doom's lumps at
+  their origins) is the scene extension's.
+- **`api.clock`**: when it lands, pass it as `clock`; the session clock and
+  `SyncedWall` then go.

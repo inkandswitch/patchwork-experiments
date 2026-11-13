@@ -17,6 +17,14 @@
 // The floor is the newest snapshot at or before the frontier (and the
 // timeline's own start); belief below the floor is gone, and a change there is
 // refused with a RangeError, for the host to rebase from a checkpoint.
+//
+// A step that traps leaves the engine's memory half-written, so the timeline
+// restores the newest snapshot at or before that tick and holds there: it
+// does not step the tick again while the state before it and its row are the
+// ones that trapped (an engine is deterministic, so it would trap again). Any
+// change to either, by a late input or a rewind, lets it try again: a trap
+// met only on a predicted input goes away when the real input arrives. A trap
+// below the frontier is confirmed: every peer with these inputs meets it.
 
 export class Timeline {
   #engine;
@@ -33,6 +41,9 @@ export class Timeline {
   #marks;
   #confirmed;
   #spare = []; // dropped snapshots, reused rather than reallocated
+  #stepped;
+  #trap = null; // { tick, row, snap, error }: the step that trapped, from that state with that row
+  #aim = 0; // the last target
 
   /**
    * @param engine   from compile(wasm).boot(content), at `tick`
@@ -42,8 +53,10 @@ export class Timeline {
    * @param o.max    most snapshots held; past it the oldest above the floor go
    * @param o.marks  ticks whose confirmed state the host wants (checkpoints)
    * @param o.confirmed (tick, snapshot) called once a marked tick's state is confirmed
+   * @param o.stepped (tick) called after every step of tick, the engine then at
+   *                 tick + 1 (so its output() is tick's), re-steps included
    */
-  constructor(engine, { tick = 0, before, every = 4, max = 64, marks = () => false, confirmed = () => {} } = {}) {
+  constructor(engine, { tick = 0, before, every = 4, max = 64, marks = () => false, confirmed = () => {}, stepped = () => {} } = {}) {
     this.#engine = engine;
     this.#ports = engine.players;
     this.#width = engine.inputBytes;
@@ -53,6 +66,7 @@ export class Timeline {
     this.#max = Math.max(2, max);
     this.#marks = marks;
     this.#confirmed = confirmed;
+    this.#stepped = stepped;
     this.now = tick;
     this.floor = tick;
     this.#frontier = tick;
@@ -69,6 +83,23 @@ export class Timeline {
   /** The first tick at which some port's input is not known. */
   get frontier() {
     return this.#frontier;
+  }
+
+  /**
+   * The step the timeline is held before because it trapped: { tick, error },
+   * or null. `confirmed` when every input up to it is known, so that every peer
+   * with them meets it too.
+   */
+  get fault() {
+    const f = this.#trap;
+    if (!f || !this.#holds(f, this.#aim)) return null;
+    return { tick: f.tick, error: f.error, confirmed: f.tick < this.#frontier };
+  }
+
+  // Whether the trap still stands in the way of reaching target: the
+  // timeline is at its tick, from the same state, with the same row.
+  #holds(f, target) {
+    return this.now === f.tick && target > f.tick && f.snap === this.#snaps.get(f.tick) && equal(f.row, this.#row(f.tick));
   }
 
   /** How many snapshots are held (for the host's accounting and the tests). */
@@ -117,6 +148,7 @@ export class Timeline {
   advance(target, limit = Infinity) {
     let steps = 0;
     target = Math.max(target, this.floor);
+    this.#aim = target;
     const back = Math.min(this.#dirty, target);
     if (back < this.now) {
       const was = this.now;
@@ -128,16 +160,35 @@ export class Timeline {
     while (this.now < target && steps < limit) {
       const t = this.now;
       if (!this.#snaps.has(t) && this.#wants(t)) this.#take(t);
+      const trap = this.#trap;
+      if (trap && this.#holds(trap, target)) break;
       const row = this.#row(t);
-      this.#used.set(t, row);
-      this.#engine.step(row);
-      this.now = t + 1;
+      try {
+        this.#step(t, row);
+      } catch (e) {
+        // The memory is half-written: back to the state before the step,
+        // which is kept, so that the trap is held without stepping again.
+        this.#used.delete(t);
+        this.#rewind(t);
+        while (this.now < t) this.#step(this.now, this.#row(this.now)); // the rows just stepped
+        if (!this.#snaps.has(t)) this.#take(t);
+        this.#trap = { tick: t, row, snap: this.#snaps.get(t), error: String(e?.message ?? e) };
+        break;
+      }
+      if (trap?.tick === t) this.#trap = null;
       steps++;
-      this.stats.steps++;
     }
     if (this.#marks(this.now) && !this.#snaps.has(this.now)) this.#take(this.now);
     this.#settle();
     return steps;
+  }
+
+  #step(t, row) {
+    this.#used.set(t, row);
+    this.#engine.step(row);
+    this.now = t + 1;
+    this.stats.steps++;
+    this.#stepped(t);
   }
 
   /** The inputs stepped at tick (players * inputBytes), if tick is in [floor, now). */
@@ -164,7 +215,9 @@ export class Timeline {
 
   // A marked snapshot may have been handed to the host, so it is never reused.
   #drop(s) {
-    if (!this.#marks(s) && this.#spare.length < 4) this.#spare.push(this.#snaps.get(s));
+    const snap = this.#snaps.get(s);
+    if (this.#trap?.snap === snap) this.#trap.snap = null; // the state it trapped from is gone
+    if (!this.#marks(s) && this.#spare.length < 4) this.#spare.push(snap);
     this.#snaps.delete(s);
   }
 

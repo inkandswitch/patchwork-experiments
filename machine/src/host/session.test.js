@@ -82,7 +82,10 @@ test("seatingKey: equal exactly when the same seat holds every port at every tic
     if (b) seats.y = { port: b.from % 2, ...b };
     configs.push(seating(seats, 2));
   }
+  // Tallied, not one expect per case: 393,216 expects take seconds, which
+  // under load is past the test's timeout.
   let cases = 0, equal = 0;
+  const wrong = [];
   for (let t = 0; t <= 5; t++) {
     const keys = configs.map((s) => seatingKey(s, t));
     for (let i = 0; i < configs.length; i++)
@@ -90,11 +93,12 @@ test("seatingKey: equal exactly when the same seat holds every port at every tic
         let want = true;
         for (let k = 0; k < t && want; k++)
           for (let p = 0; p < 2; p++) if (holder(configs[i], p, k) !== holder(configs[j], p, k)) want = false;
-        expect(keys[i] === keys[j]).toBe(want);
+        if ((keys[i] === keys[j]) !== want && wrong.length < 5) wrong.push({ t, i, j, want });
         if (want) equal++;
         cases++;
       }
   }
+  expect(wrong).toEqual([]);
   expect(cases).toBe(6 * 256 ** 2);
   expect(equal).toBeGreaterThan(256 * 6);
 });

@@ -26,6 +26,7 @@
 #include "Shared/IControllerHub.h"
 #include "Shared/Interfaces/IInputProvider.h"
 #include "SNES/Input/SnesController.h"
+#include "Shared/MemoryType.h"
 #include "Utilities/VirtualFile.h"
 #include "host.h"
 extern "C" {
@@ -146,6 +147,34 @@ MACHINE_EXPORT void machine_step(void)
 }
 
 MACHINE_EXPORT const machine_output_t* machine_output(void) { return &output; }
+
+// Queries: the console's memories, raw, as the core holds them. Nothing
+// about any game is here; a game's adapter reads what it needs out of them
+// (positions out of WRAM, say). Unlike Doom's, these read without writing,
+// but the host calls them on a copy all the same (ENGINE.md).
+//
+//   0 WRAM   128 KiB, the CPU's work RAM ($7E0000-$7FFFFF)
+//   1 VRAM   64 KiB, the PPU's video RAM, as bytes (word n at 2n, low first)
+//   2 OAM    544 bytes, the sprite table (512, then the 32-byte high table)
+//   3 CGRAM  512 bytes, the palette, 256 BGR555 words
+//   4 ARAM   64 KiB, the sound CPU's RAM
+//   5 SRAM   the cartridge's save RAM, 0 bytes if it has none
+static const MemoryType memories[] = {
+	MemoryType::SnesWorkRam, MemoryType::SnesVideoRam, MemoryType::SnesSpriteRam,
+	MemoryType::SnesCgRam, MemoryType::SpcRam, MemoryType::SnesSaveRam,
+};
+static machine_query_t query;
+
+MACHINE_EXPORT const machine_query_t* machine_query(uint32_t kind)
+{
+	if(kind >= sizeof(memories) / sizeof(memories[0])) {
+		return nullptr;
+	}
+	ConsoleMemoryInfo m = emu->GetMemory(memories[kind]);
+	query.len = m.Memory ? m.Size : 0;
+	query.bytes = (const uint8_t*)m.Memory;
+	return &query;
+}
 
 // The last finished frame as RGBA. 256 wide (512 in hi-res modes); 224
 // lines, or 239 when the game turns on overscan (twice that interlaced).

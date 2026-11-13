@@ -151,6 +151,37 @@ describe("snes engine on Unarmed", () => {
     }
   }, SLOW);
 
+  // Queries are the console's memories, raw: WRAM, VRAM, OAM, CGRAM, ARAM,
+  // the cartridge's SRAM (Unarmed has none), and nothing past them.
+  const MEMORIES = [0x20000, 0x10000, 544, 512, 0x10000, 0];
+
+  test("queries read the console's memories every frame and change nothing", () => {
+    const e = machine.boot(rom);
+    run(e, FOUR_PLAYERS, 0, FRAMES, (f) => {
+      const got = MEMORIES.map((_, k) => e.query(k).length);
+      expect(got).toEqual(MEMORIES);
+      expect(e.query(MEMORIES.length)).toBe(null);
+      expect(e.hash()).toBe(hashes[f]);
+    });
+  }, SLOW);
+
+  test("the memories are the game's: the HUD's head colours are in CGRAM", () => {
+    const e = machine.boot(rom);
+    e.restore(snapshots.get(1200));
+    const cgram = e.query(3);
+    const colours = new Set();
+    for (let i = 0; i < 256; i++) {
+      const c = cgram[2 * i] | (cgram[2 * i + 1] << 8);
+      const [r, g, b] = [c & 31, (c >> 5) & 31, (c >> 10) & 31].map((x) => (x << 3) | (x >> 2));
+      colours.add((r << 16) | (g << 8) | b);
+    }
+    for (const [, rgb] of HEADS) expect(colours.has(rgb)).toBe(true);
+    // and the work RAM moves with the game
+    const before = e.query(0);
+    run(e, FOUR_PLAYERS, 1200, 1201);
+    expect(same(e.query(0), before)).toBe(false);
+  });
+
   test("ends where it always has: the same bytes on any host", () => {
     expect(hashes[FRAMES]).toBe(GOLDEN);
   });
@@ -159,4 +190,4 @@ describe("snes engine on Unarmed", () => {
 // The hash after the four-player script, for this build of the engine. A
 // change here with an unchanged snes.wasm means the engine is not
 // deterministic across hosts; a rebuilt engine changes it on purpose.
-const GOLDEN = "d0a34dfda976c866";
+const GOLDEN = "ff7d5702b622b02c";

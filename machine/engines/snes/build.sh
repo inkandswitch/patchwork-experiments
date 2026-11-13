@@ -9,7 +9,7 @@ set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 commit=4b8a196e299b3de297b204fd1208d2981562c89b
 src="${MESENCE:-${TMPDIR:-/tmp}/mesence-$commit}"
-obj="${OBJ:-${TMPDIR:-/tmp}/machine-snes-obj}"
+obj="${SNES_OBJ:-${TMPDIR:-/tmp}/machine-snes-obj}"
 
 if [ ! -d "$src/.git" ]; then
   git clone --quiet https://github.com/nesdev-org/MesenCE.git "$src"
@@ -37,7 +37,17 @@ sources=$(cd "$src" && {
   echo Utilities/Audio/blip_buf.cpp
 } | LC_ALL=C sort)
 
-mkdir -p "$obj" "$here/dist"
+# Objects are reused only when built from this commit by this compiler with
+# these flags: the stamp names all three, and any change empties the cache.
+# (A source's own change is caught by its time; a header's, only by the
+# commit, so a cache never outlives the commit it was made from.)
+stamp="$commit $(em++ --version | head -n 1) $flags"
+if [ "$(cat "$obj/stamp" 2>/dev/null)" != "$stamp" ]; then
+  rm -rf "$obj"
+  mkdir -p "$obj"
+  printf '%s\n' "$stamp" > "$obj/stamp"
+fi
+mkdir -p "$here/dist"
 objects=""
 for f in $sources; do
   o="$obj/$(echo "$f" | tr / _).o"
@@ -56,4 +66,4 @@ objects="$objects $obj/frontend_wasi.o"
 em++ -O2 $objects -o "$here/dist/snes.wasm" \
   -sSTANDALONE_WASM --no-entry -sFILESYSTEM=0 \
   -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=2mb -sSTACK_SIZE=256kb -Wl,--stack-first \
-  -sEXPORTED_FUNCTIONS=_machine_info,_machine_content,_machine_init,_machine_input,_machine_step,_machine_output,_machine_frame
+  -sEXPORTED_FUNCTIONS=_machine_info,_machine_content,_machine_init,_machine_input,_machine_step,_machine_output,_machine_frame,_machine_query

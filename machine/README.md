@@ -41,10 +41,11 @@ station per port) is phase 2, and the host already offers what it needs.
 | `src/wasm-state.js` | snapshot, restore, copy and hash of memory plus globals |
 | `src/engine.js` | `compile(wasm).boot(content)`: the engine object; `identify` |
 | `src/host/` | the host: `createSession`, `Host.open`; `timeline.js` (rollback), `session.js`, `clock.js`, `simnet.js`, `harness.js` |
-| `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM |
+| `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM, the queries' decoders, the listener, a camera |
+| `src/doom-music.js` | Doom's music player: `music(wasm, lumps, rate)`, following the engine's music record |
 | `engines/machine.h` | the ABI, in C |
 | `engines/toy` | a toy engine (C, 9 KB), for the exhaustive tests |
-| `engines/doom` | Chocolate Doom, any IWAD and PWADs, 1 to 4 players; its own [README](engines/doom/README.md) |
+| `engines/doom` | Chocolate Doom, any IWAD and PWADs, 1 to 4 players, and its music player (`dist/music.wasm`); its own [README](engines/doom/README.md) |
 | `engines/snes` | a Super NES for any ROM, 5 pads (a multitap in port 2); Unarmed (2 to 4 players) as the test cartridge |
 | `bench/integration.test.js` | the integration bench: both engines, 2 and 4 players, 0/50/150 ms |
 | `bench/browser/` | the browser check |
@@ -60,8 +61,10 @@ The full text is [ENGINE.md](ENGINE.md). In short:
   - `machine_info()`: the rate as a ratio (`hz_num/hz_den`, so the SNES's
     60.0988 Hz is exact), players, and input bytes per player;
   - `machine_init()`, `machine_input()` and `machine_step()`;
-  - optional `machine_output()` (audio and events of the last step) and
-    `machine_frame(view)` (an RGBA picture);
+  - optional `machine_output()` (audio and events of the last step),
+    `machine_frame(view)` (an RGBA picture) and `machine_query(kind)` (the
+    state, read for a view of it: Doom's things and sectors, the SNES's
+    RAMs);
   - optional `machine_content(len)` and `machine_fault()`.
 - **Imports:** only the host's fixed set, each a pure function that keeps
   nothing:
@@ -80,9 +83,9 @@ The full text is [ENGINE.md](ENGINE.md). In short:
   - `hash()` is 64-bit, over exactly those bytes.
   - Restore into a bigger memory uses a fresh instance, because memory can't
     shrink.
-- **`output()` reads and never drains.** `frame(view)` and `inspect(name)`
-  run on a copy of the state, because drawing writes memory (Doom's
-  `validcount`).
+- **`output()` reads and never drains.** `frame(view)`, `query(kind)` and
+  `inspect(name)` run on a copy of the state, because drawing writes memory
+  (Doom's `validcount`), and so does building a query's records.
 
 Content is one byte string the engine defines: a ROM, or for Doom the
 arguments plus the WADs. Start parameters are part of it.
@@ -137,7 +140,7 @@ factor of two.
 
 | | Doom (Freedoom E1M1, 4 players) | Super NES (Unarmed) | toy |
 |---|---|---|---|
-| `.wasm` | 417,919 B | 765,008 B | 9,018 B |
+| `.wasm` | 419,961 B (+ music 75,844 B) | 765,839 B | 9,309 B |
 | rate | 35 Hz | 21477270/357366 ≈ 60.0988 Hz | 35 Hz |
 | ports × input bytes | 4 × 6 (a ticcmd) | 5 × 2 (pad reports) | 4 × 2 |
 | compile / boot | 2 ms / 3–10 ms | 2 ms / 2 ms | — |
@@ -146,6 +149,7 @@ factor of two.
 | snapshot copy / restore | 0.1–0.25 ms / 0.1–0.5 ms | 0.2–0.5 ms / 0.1–0.3 ms | — |
 | `hash()` | 2.3 ms | 1.2–1.4 ms | — |
 | `frame()` | 0.3–0.4 ms, 320×200 | 0.15–0.2 ms, 256×224 | — |
+| `query()` | 0.1–0.24 ms, any kind | 0.09–0.14 ms, any memory | — |
 | checkpoint gzipped | 2.5 MB | 290 KB | — |
 
 ### Through the host
@@ -360,8 +364,9 @@ byte-for-byte reproducible.
 | engine | SHA-1 of `dist/*.wasm` | upstream |
 |---|---|---|
 | toy | `5a45916394a174bb8735000244be21ab27febcf7` | `engines/toy/toy.c` |
-| Doom | `023f0ba516c6fd31a7f78a3920313e1df1a7971a` | chocolate-doom `a2dfd51f`, plus `engines/doom/patches/` |
-| Super NES | `cfa201028b4e43ba5d86d6349898da88ff6f472f` | MesenCE `4b8a196e`, unmodified, plus `engines/snes/src/` |
+| Doom | `8108618af149a057339603f8ff27298cb30a6473` | chocolate-doom `a2dfd51f`, plus `engines/doom/patches/` |
+| Doom's music | `2394a476cbffc05496e686ca5299b7266eacb688` | the same tree's OPL music code, plus `engines/doom/music/` |
+| Super NES | `285177b31244b56118df416fbc6421800da7029a` | MesenCE `4b8a196e`, unmodified, plus `engines/snes/src/` |
 
 - **Toolchain:** emcc 7.0.0 (`brew install emscripten`). Each build is a
   standalone wasm with no JS glue: `-O2 -sSTANDALONE_WASM --no-entry
@@ -375,6 +380,13 @@ byte-for-byte reproducible.
     the package.
   - Nothing from upstream is executed: the sources are compiled directly,
     and only `git archive` of the commit is read.
+- **Scratch:** Doom's tree is remade from the commit on every build
+  (`$DOOM_TREE`). The SNES objects are cached (`$SNES_OBJ`), but only for
+  the commit, compiler and flags named in the cache's stamp; any change
+  empties it, since a stale object gives a different binary.
+- **Checked:** from fresh clones in a copy of the package alone, all four
+  builds give the bytes above, and so does the SNES build over an old,
+  stale object cache.
 - **Fixtures:**
   - The Unarmed ROM (256 KB) is committed.
   - The Freedoom IWAD (28 MB) is not. `sh engines/doom/test/fetch-freedoom.sh`
@@ -386,6 +398,15 @@ byte-for-byte reproducible.
 
 `pnpm test` runs vitest. Every test is finite, with fixed inputs, fixed
 latency and loss tables, and virtual time; nothing is random.
+`src/test-setup.js` keeps it so under load: work that runs on real threads
+(compiling, SHA-256, gzip) finishes before it is awaited, `performance.now`
+is virtual too, and Automerge's ids come from a fixed sequence, so how far
+virtual time got never depends on how busy the machine is. (Before this, the
+host tests' timing, and with it some of their counts, varied run to run.)
+A rare residue remains under heavy parallel load: about 1 in 16 runs of
+the host test files, a settle finds peers stopped at different ticks after
+a pause. Its source is below the host, in
+automerge-repo's scheduling; it is left open.
 
 - **Toy (`src/toy.test.js`):** restore every state into every prior state
   (1,250 pairs), across memory growth.
@@ -401,11 +422,19 @@ latency and loss tables, and virtual time; nothing is random.
   - every tic of the 1-, 2- and 4-player bot demos hashes as native
     Chocolate Doom's trace does (4201 states each);
   - restore torture;
-  - drawing and reading never change the state;
-  - sounds and content.
+  - drawing, a camera, every query and reading never change the state,
+    every tic of the 4-player demo;
+  - the queries are E1M1 as its lumps have it at tic 0, and follow the
+    game (doors, lifts, lights, corpses);
+  - a camera at a player's eyes sees that player's view;
+  - sounds, the listener and content.
+- **Doom's music (`src/doom-music.test.js`):** E1M1 from the engine's
+  record, every song in the IWAD, pause and stop, and songs after them.
 - **Super NES (`src/snes.test.js`):**
   - two engines agree on every frame;
-  - observers change nothing;
+  - observers change nothing, queries of every memory every frame
+    included;
+  - the queried CGRAM holds the HUD's colours;
   - 55 restores;
   - each pad plays;
   - a golden hash.
@@ -444,10 +473,130 @@ latency and loss tables, and virtual time; nothing is random.
 - **From HOST.md:**
   - rebasing to before the oldest checkpoint replays from genesis.
 - **From the engines:**
-  - Doom's music needs a MUS player;
   - views other than player 0 restart the status bar's face;
   - the SNES has no PAL timing, and cartridges that need firmware are
     missing;
   - snapshots are whole-memory (Doom 6.9 MB, SNES 3.5 MB). Dirty-page
     snapshots would be the next reduction.
 
+## Phase 2, the engine side
+
+What the scene will need from the engines, built before the scene's
+clock and bodies exist. Nothing here is in `src/host/`; the host's clock
+stays injectable (`Host.open(…, { clock })`, any `{ t(), running() }`), so
+`api.clock` can replace the session's own when it lands.
+
+**Decisions, made unattended (the lead was away):**
+- **Queries are one export, `machine_query(kind)`,** returning
+  `{u32 len, *u8 bytes}`, kinds engine-defined and listed in ENGINE.md.
+  Not `machine_inspect`: the host's `inspect(name, ...)` already names the
+  general "call any export on a copy", and each ABI export `machine_x` has
+  the method `x` (`output`, `frame`, `query`). Kinds are integers, not
+  strings, so the ABI stays two words; `doom.js` names them (`QUERY`).
+- **Queries run on a copy, like frames,** and the copy is most of their
+  cost. Running on the live state was measured to change it at the first
+  tick (Doom builds its records in its zone), so the copy is not caution
+  but necessity; a batch of kinds per copy was not worth its API at 0.1–0.2
+  ms a query.
+- **Doom's queries are records, not raw memory:** level, players, things,
+  sectors, sides, enough with the map's static lumps to draw the level as
+  it stands. Names, not indices (sprites, flats, textures), so a host needs
+  no table of the engine's internals. Doom has no pitch; the players' and
+  camera's views say so rather than carry a zero.
+- **The Super NES's queries are its raw memories** (WRAM, VRAM, OAM, CGRAM,
+  ARAM, SRAM) and nothing game-specific: a game's adapter reads them.
+- **Doom's music is a separate module** (`dist/music.wasm`) of Chocolate
+  Doom's own OPL driver and emulator, compiled from the same pinned tree,
+  with a small platform under it (`engines/doom/music/music.c`) and one
+  upstream bug fixed (patch 0003:
+  a pause broke the next tempo change). It is presentation, so it is
+  outside the contract: no snapshots, no identity. Rejected: decoding MUS
+  in JS (a second, unchecked copy of DMX's behaviour), and putting music in
+  the engine (it would enter every snapshot, and checkpoint it).
+- **A camera is Doom's own export, `doom_camera(x, y, z, angle)`,** reached
+  through `inspect`: a player of its own on the copy, full screen, plain
+  palette. `machine_frame(view)` keeps one integer; a camera needs four,
+  and only Doom has one.
+- **Sound effects needed nothing new in the engine:** the events already
+  carry the origin (now the same id as the thing's, so a sound can follow
+  its body), `sounds()` already decoded every DMX lump, and the listener
+  per view is the `players` query (`listener()`).
+
+**Numbers** (Apple M4, Node 24, other agents' builds running):
+
+| | |
+|---|---|
+| `doom.wasm` / `music.wasm` / `snes.wasm` | 419,961 / 75,844 / 765,839 bytes |
+| Doom query, any kind | 0.1–0.24 ms (the 6.9 MB copy is most of it) |
+| SNES query, any memory | 0.09–0.14 ms |
+| Doom camera / frame | 0.35–0.68 ms / 0.27–0.48 ms |
+| Doom's things / sectors / sides on E1M1, 4 players | 253 × 48 B / 182 × 32 B / 1829 × 32 B |
+| music: init / render | 1 ms / 12–15 ms per second of stereo at 44.1 or 48 kHz (1.2–1.5% of a core) |
+| E1M1's music | -20 dBFS RMS, peak -7.5 dBFS, at the driver's full volume |
+
+**Rebuilding changed both engines' bytes,** so their identities (the
+table above), and the Super NES golden (`ff7d5702b622b02c`); Doom's tests
+check against native traces, which do not depend on the build.
+
+## Phase 2, the host side
+
+What the scene will need from the host, built before the scene's clock and
+bodies exist; the full text and numbers are in [HOST.md](HOST.md) ("Phase
+2, the host side"). The host's clock stays injectable (`{ clock }`), so
+`api.clock` can replace the session's own when it lands.
+
+```js
+// on the page, the engine and timeline in a worker running src/worker/worker.js (bundled):
+const host = await RemoteHost.open(repo, url, { worker, wasm, content, input: () => myPad });
+// the same surface as Host:
+host.frame(); draw(host.picture(view)); play(host.output()); host.sit(0); host.status.fault;
+```
+
+| path | what |
+|---|---|
+| `src/host/output.js` | what a listener hears under rollback, one policy for every engine |
+| `src/worker/` | `RemoteHost` (page), `serve` and `worker.js` (worker), `PortAdapter` (a repo peer over a MessagePort) |
+| `src/host/faults.test.js` | traps, divergence, deep rebases |
+| `bench/worker/` | `pnpm check:worker`: a SNES joiner catching up, in headless Chrome, measured on the page's thread |
+| `bench/output.test.js` | `pnpm bench:output`: what each peer hears, against the documents, at every lag |
+| `bench/traffic.test.js` | `pnpm bench:traffic`: ephemeral traffic by send rate, mesh and hub, 2–4 players |
+| `bench/retention.mjs` | the session document's cost of linking every checkpoint |
+
+**Decisions, made unattended (the lead was away):**
+- **The host runs in a worker whole, on a repo of its own** whose one peer
+  is the page's repo over a MessageChannel, the way Patchwork's tab repo
+  reaches its shared worker. Proxying handles across threads would
+  re-implement Automerge sync. Pictures are transferred
+  (SharedArrayBuffer would need cross-origin isolation, which Patchwork
+  can't assume). The page never waits for the worker.
+- **Audio: each tick delivered once, 0.05 s behind the head or when
+  confirmed;** re-simulations that change nothing are dropped; changed
+  events go out as corrections; changed samples are crossfaded at the
+  splice. SNES: a PCM stream for a positional source. Doom: sound events
+  with positions, for the scene to play the WAD's lumps.
+- **At most 30 input messages a second per peer**, each carrying every
+  unsent input plus the last 8.
+- **Every checkpoint stays linked** (they can't be deleted; unlinking saved
+  nothing), so a rebase replays at most one period, never from genesis.
+- **A trap holds the timeline and is a status** (`status.fault`); the peer
+  keeps sending inputs, so nobody waits for it.
+- Outside `src/host` and `src/worker`: `esbuild` as a dev dependency (to
+  bundle the worker check), and `bench:integration` now names its file, so
+  the new benches stay out of it.
+
+**Measured** (HOST.md has the tables):
+- A Super NES joiner catching up 1,556 frames in a worker: no long task on
+  the page, no frame over 16.8 ms, 0.1 ms of page time a frame. On the page
+  with phase 1's budget: no long task either, but 10–12 ms of every frame
+  for 4.8 s. Without a budget: a 2.6 s freeze.
+- Over WAN with loss, at the default lag: 0.8% of SNES ticks heard differ
+  from the record and no click (the same stream without crossfades has
+  some, up to 0.05 of full scale; at lag 0, up to 0.10); 99.8% of Doom's
+  sound records right when heard, the rest corrected.
+- 30 messages a second halves the SNES's traffic for about one tick of
+  frontier lag; through a hub each peer receives 34 × (n − 1) a second.
+
+From "Not done yet" above, now done: the worker, ephemeral traffic,
+checkpoint garbage (they can't be deleted; every one stays linked), and
+rebasing before the oldest checkpoint. Still open: the scene extension,
+`api.clock`, and the host side's own list in HOST.md.

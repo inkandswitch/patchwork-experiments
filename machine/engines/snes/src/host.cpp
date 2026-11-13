@@ -103,6 +103,11 @@ void Emulator::RegisterMemory(MemoryType type, void* memory, uint32_t size)
 	_consoleMemory[(int)type] = { memory, size };
 }
 
+ConsoleMemoryInfo Emulator::GetMemory(MemoryType type)
+{
+	return _consoleMemory[(int)type];
+}
+
 // Only reached for SPC music files (playlists, reset); content is one ROM.
 bool Emulator::LoadRom(VirtualFile, VirtualFile, bool, bool) { UNREACHABLE; }
 void Emulator::ReloadRom(bool) { UNREACHABLE; }
