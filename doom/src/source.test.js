@@ -68,7 +68,7 @@ describe("the scene:source", () => {
   const params = Object.fromEntries(meta.params.map((p) => [p.key, p.default]));
 
   it("is for .wad file docs, and its metadata is plain data", () => {
-    expect(meta).toMatchObject({ id: "doom-map", supportedDatatypes: ["file"], extensions: ["wad"], version: 3 });
+    expect(meta).toMatchObject({ id: "doom-map", supportedDatatypes: ["file"], extensions: ["wad"], content: "built", version: 3 });
     const { load, ...rest } = meta;
     expect(structuredClone(rest)).toEqual(rest);
     // which map, and which door or exit switch (neither: the static part); no scale: one for every part

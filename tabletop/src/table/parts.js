@@ -119,7 +119,7 @@ export const makeFile = (kind) => glbFile(PIECES[kind]);
 
 const IDENTITY = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
-/** A scene object for a part: a passthrough GLB, carryable unless locked. */
+/** A scene object for a part: a GLB file object, carryable unless locked. */
 export function partObject(kind, { url, hint }, { transform = IDENTITY, parent = null, group = null } = {}) {
   const t = { ...IDENTITY, ...transform };
   return {
