@@ -299,7 +299,7 @@ view's side is `scene.transfer`, editing only).
   - **Every field but runtime state.** Not copied: `claims` (the stage's), and
     any trait key an extension marks as runtime in `describes` (below). Pose
     holds and presence were never in the doc.
-  - **Files are shared, renders aren't.** A passthrough object keeps its
+  - **Files are shared, renders aren't.** A file object keeps its
     `sourceUrl` (a GLB file doc is immutable), and the source scene's
     `assets` entries naming copied files are copied under the same key,
     unless this scene has that key already. A built object gets a new render
@@ -519,7 +519,8 @@ yet). Every scene doc carries it:
   (`@inkandswitch/patchwork-plugins`) with the bare URL. The registry
   changing is what starts things: the host starts the extensions the doc
   calls for, the render manager builds the objects whose provider was
-  missing, and the parts bin, the start screen and the inspector list what
+  missing, objects with no render doc are routed again by the kind of
+  content their provider makes (a file shows), and the parts bin, the start screen and the inspector list what
   arrived.
 - **Each on its own.** One that fails is shown on the card with why, with
   **Try again** and **Dismiss**, and doesn't hold up the others. A failure
@@ -749,7 +750,7 @@ that extension.
 |---|---|
 | `nameOf(id)` | what this viewer sees, lenses applied |
 | `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test). Never change it, with one exception: **dressing**. An extension may move, scale or hide `root` and the nodes in it for objects that carry one of its own traits, each view for itself (a buoy bobbing on the waves, a sail lowered), and puts them back when it stops. Dressing is only a look: `box`, `worldOf`, picking and the shadow map go by the object's pose, not the dressed nodes, and nothing is sent |
-| `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…), or null |
+| `loadState(id)` | where its content was routed at sync, `content`: `"built"` (the render manager), `"file"` (the GLB queue) or `null` (nothing to load: its provider isn't here, phase `"no-provider"`), with a copy of what the manager or the queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…); null for a group or an unknown id. See README.md, "Content is routed at sync" |
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
@@ -757,7 +758,7 @@ that extension.
 | `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
 | `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
-| `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
+| `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, not built content). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |
 | `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
 | `part(id, at)` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made |

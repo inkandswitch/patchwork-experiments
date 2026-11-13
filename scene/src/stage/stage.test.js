@@ -198,8 +198,8 @@ describe("the stage's pure helpers", () => {
   });
   it("status: what's loading, building or broken", () => {
     expect(statusOf(card(), null)).toBeNull();
-    expect(statusOf(card(), { passthrough: true, phase: "finding" }).state).toBe("loading");
-    expect(statusOf(card(), { passthrough: true, phase: "ready" })).toBeNull();
+    expect(statusOf(card(), { content: "file", phase: "finding" }).state).toBe("loading");
+    expect(statusOf(card(), { content: "file", phase: "ready" })).toBeNull();
     expect(statusOf(card(), { phase: "no-provider", providerId: "x" }).state).toBe("warn");
     expect(statusOf({ kind: "group" }, { phase: "error" })).toBeNull();
     // a failed build that will be retried says so (contract v3 build retries)
@@ -618,7 +618,7 @@ describe("the stage, mounted", () => {
     expect(await api.drop({ url: deck.url, doc: { "@patchwork": { type: "other" } } })).toBe(false);
   });
 
-  it("addObject: a passthrough GLB file becomes an object, where it's asked to go", async () => {
+  it("addObject: a GLB file (a \"file\" source) becomes an object with no render doc, where it's asked to go", async () => {
     const h = newScene({ objects: { p: card(), g: { kind: "group", name: "G", visible: true, group: null } }, order: ["p", "g"] });
     mount(h);
     await settle();

@@ -3,7 +3,7 @@
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
 // to (objects), Position (display units, the pref "units"), Rotation (°),
-// Scale; "Open file" for a passthrough GLB. For a group: name, Visible,
+// Scale; "Open file" for a GLB file object. For a group: name, Visible,
 // Opacity, In group. Then its Behaviours (below). Then the commands that
 // apply to it (every running extension's, shown on "inspector" or on every
 // surface) as buttons: this extension's Frame, Group and Ungroup first. Then
@@ -46,7 +46,7 @@ import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { activityLabel } from "../activities.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
-import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, isPassthrough, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 
 const ID = "scene.inspector";
 // each inspector's own radio group: two views of one scene on a page mustn't share one
@@ -412,7 +412,8 @@ function create(api) {
 
     const behaviours = behavioursView(id, "object");
     const commands = el("div", { class: "cluster commands" });
-    const openFile = isPassthrough(o) ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
+    const content = contentKind(api.loadState?.(id));
+    const openFile = content === "file" ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
     const about = el("section", { class: "about", hidden: true });
     const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
     // Which version of the source it shows (`at`); only a render doc can be fixed.
@@ -460,6 +461,7 @@ function create(api) {
       id,
       group,
       renderUrl: o.renderUrl ?? null,
+      content,
       root,
       name,
       visible,
@@ -678,8 +680,7 @@ function create(api) {
     const status = local.status?.[id] ?? null;
     const load = typeof api.loadState === "function" ? api.loadState(id) : null;
     const content = api.content(id);
-    const passthrough = isPassthrough(o);
-    const parts = statusParts(o, { status, load, content, shown: passthrough ? shownIn(scene, id) : true });
+    const parts = statusParts(o, { status, load, content, shown: contentKind(load) === "file" ? shownIn(scene, id) : true });
     const key = JSON.stringify(parts);
     if (key === view.statusKey) return;
     view.statusKey = key;
@@ -712,7 +713,7 @@ function create(api) {
       return;
     }
     if (body.hidden) body.hidden = false;
-    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null);
+    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id));
     const name = api.nameOf(id);
     const ck = contentKey(id);
     if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local) && last.name === name && last.content === ck) return;

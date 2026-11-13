@@ -1,6 +1,6 @@
 // Each kind of piece is drawn once, as a GLB `file` doc the game keeps
 // (`glbUrl`); every copy of that piece on every table shows the same doc, as a
-// passthrough object in the scene. Editing a piece rewrites its GLB in place,
+// file object in the scene. Editing a piece rewrites its GLB in place,
 // so the tables already set up change with it.
 
 import { encodeGLB } from "./glb.js";

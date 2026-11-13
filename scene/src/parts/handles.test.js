@@ -9,6 +9,7 @@ import handles, { handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } 
 const SLICE = {
   type: "scene:source",
   id: "slice-test",
+  content: "built",
   name: "Slice",
   supportedDatatypes: ["slicey"],
   params: [{ key: "height", label: "Height", kind: "number", default: 0.2, min: -1, max: 1, step: 0.1, cost: "cheap" }],

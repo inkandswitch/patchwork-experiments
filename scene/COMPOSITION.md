@@ -86,8 +86,9 @@ broadcast within a page (`handle-registry.ts:376-381`).
 **Tradeoffs.** A duplicates everything an object has. B is a new branch in
 every reader of objects. C needs nothing new in the doc.
 
-**Recommendation: C.** Today `passthrough: true` on file-glb says what kind
-of content a source makes. Make it a value with three cases:
+**Recommendation: C.** `passthrough: true` on file-glb said what kind of
+content a source makes. Make it a value with three cases (built at step 4,
+with `"file"` and `"built"`; `"scene"` comes with links at step 11):
 
 ```js
 { type: "scene:source", id: "file-glb",   supportedDatatypes: ["file"],  content: "file",  … }
@@ -549,7 +550,24 @@ ships alone and proves something.
 3. [T] **Selection and carrying**: the halo, Select, `scene.carry`;
    `local.tool` goes.
 4. **`content` in place of `passthrough`**, routed at sync. *Proves:*
-   nothing changes for GLBs.
+   nothing changes for GLBs. *Built:* every `scene:source` declares
+   `content`, and one that declares no kind is never offered (the stage
+   warns once). `routeOf` (`src/providers.js`) routes at sync: an object
+   with a render doc is `"built"` (only built content has one, and the
+   manager shows what was built where the provider is missing); one
+   without goes where its provider's kind says, `"file"` to the GLB queue;
+   anything else loads nothing and is drawn as its hint, "no provider"
+   while the registry lacks the id. That last is the one behaviour that
+   changed: a render-less object used to be read as a GLB whatever its
+   provider, which a link's scene doc must never be. Every GLB object
+   names `file-glb`, so GLBs route as before, and the stage now imports
+   the registry statically so the first sync routes them: the Solander
+   probe (135 GLBs open, 378 in all) fetches, subscribes, draws and times
+   the same as before. Routes are recomputed when the registry changes,
+   and `api.loadState(id).content` says which
+   (the inspector's "Open file" and status line read it). `"scene"` is
+   not a kind yet: it arrives with the `scene.link` source at step 11,
+   so no branch exists for a source nothing registers.
 5. **Seats to `seats/`**, with the seat body's home ready for step 6.
 6. [T] **Bodies and the held tool**; rides by body, so `fallback` and
    `riding()` go.

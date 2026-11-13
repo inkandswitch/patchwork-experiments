@@ -6,7 +6,8 @@ datatype keeps its own canonical format; its package registers a
 to a small **`scene-render`** doc that records how it was built, rebuilds it
 when the source or the build params change, and shows the result with grid,
 axes, bounding-box dimensions and point-to-point measurements. A GLB file is
-shown as it is, with no render doc (a *passthrough* provider). Objects are
+shown as it is, with no render doc: each provider says which kind of
+**content** it makes, `"built"` or `"file"`. Objects are
 filed in **groups** (which organise, and hide or fade what's in them) and
 **attached** to one another (which is where they are: an attachment moves
 with its parent), two separate things; a scene of hundreds of parts only
@@ -35,8 +36,8 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `scene-render` | one per scene object (unlisted) |
 | `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
-| `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
-| `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
+| `scene:source` | `file-glb` | `file` docs with extension `glb` — `content: "file"`: shown straight from the file, never built |
+| `scene:source` | `file-stl` | `file` docs with extension `stl` — `content: "built"` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
 | `scene:extension` | `scene.*` (26) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
 All but three of the editor's parts take part only in the `"edit"` activity;
@@ -106,7 +107,7 @@ released where it already sits writes nothing, and a reorder among siblings
 changes only `order` (spliced, so a collaborator's concurrent add survives the
 merge). A group can't be dropped into itself or anything inside it, or among
 an object's attachments. Dragged out of the scene, a row is its geometry: it
-carries the object's render doc (a passthrough object, its GLB file) in the
+carries the object's render doc (a file object, its GLB file) in the
 sidebar's drag formats, so it can be dropped on a slicer or a flow field's
 body slot; scenes never add a dragged row as a document.
 
@@ -323,14 +324,23 @@ except `load` must survive `structuredClone`) with the code behind `load()`:
   icon: "Sailboat",                    // lucide name, optional
   supportedDatatypes: ["camber-hull"], // datatype ids; ["file"] for file docs
   extensions: ["stl"],                 // ONLY for file providers: lower-case, no dot
+  content: "built",                    // REQUIRED: "built" (load() builds a GLB into a render doc) or "file" (below)
   params: [ParamSpec, ...],            // build params, optional
   handles: [Handle, ...],              // params to drag in the viewport, optional (below)
   cost: "expensive",                   // what a build after a source edit costs (set it!)
-  passthrough: true,                   // ONLY when the source doc already is a GLB file: shown as it is, never built (no load())
   version: 1,                          // integer; bump when build() output changes for the same inputs
   async load() { return (await import("./scene-source.js")).default },
 }
 ```
+
+**Content.** Every provider says what kind of content it makes, and one that
+says neither is never offered or used (the stage warns once):
+- `"built"`: `load()` gives a `build()` that makes a GLB from the source doc,
+  kept in the object's own render doc (`scene-render`) and rebuilt as the
+  source, params or provider version change.
+- `"file"`: the source doc already is a GLB `file` doc. The object gets no
+  render doc and the scene shows the file's bytes as they are, so there is no
+  `load()`. The scene's own `file-glb` is one; any package may add another.
 
 **Handles.** A number or integer param that is a position along an axis of
 the object (a slice's height, a rake's) can be dragged in place:
@@ -622,7 +632,7 @@ Object = {
     kind?: "object",                // absent = an object
     name: string,
     sourceUrl: AutomergeUrl | null, providerId: string | null,
-    renderUrl: AutomergeUrl | null, // null: passthrough (shown from sourceUrl)
+    renderUrl: AutomergeUrl | null, // null: not built (its provider's content is "file": shown from sourceUrl)
     visible: boolean, color: string | null, opacity: number, wireframe: boolean,
     transform: { position: [x,y,z], rotation: [x,y,z] /* Euler XYZ, radians */, scale: number },
     parent?: string | null,         // the object it's attached to (never a group); absent = null
@@ -650,9 +660,16 @@ MaterialRule = {
 ```
 
 - `renderUrl` is written once, when the object is added. It is `null` for an
-  object added through a passthrough provider (`file-glb`): no render doc and
-  no GLB copy are made, the scene shows `sourceUrl`'s bytes directly and never
-  builds it.
+  object added through a provider whose content is `"file"` (`file-glb`): no
+  render doc and no GLB copy are made, the scene shows `sourceUrl`'s bytes
+  directly and never builds it.
+- **Content is routed at sync** (`routeOf` in `src/providers.js`): an object
+  with a render doc goes to the render manager, which shows what was built
+  even where its provider isn't installed; one without goes where its
+  provider's `content` says (`"file"`: the GLB queue). Anything else (its
+  provider isn't here, or builds but there is no render doc) loads nothing
+  and is drawn as its `hint`, with "no provider" while the registry lacks the
+  id it names. `api.loadState(id).content` says which.
 - **Groups** (`kind: "group"`) organise: no geometry and no transform.
   Hiding a group hides everything filed in it (at any depth), and its opacity
   multiplies into everything filed in it. A group is never picked, never a
@@ -739,8 +756,8 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
   Patchwork link `…/#doc=automerge:<id>#<heads>&tool=…`, an older
   `…#doc=<id>&heads=<heads>`, and the same percent-encoded. A path suffix is
   dropped; heads that don't look like heads are ignored (the object follows the
-  latest). A passthrough object (`file-glb`) is shown straight from its file
-  and is never fixed.
+  latest). A file object (`file-glb`) is shown straight from its file and is
+  never fixed.
 - **How this differs from `pinned`.** `pinned` lives on the render doc and only
   stops automatic rebuilds: it keeps showing whatever was last built, stale or
   not, and any Rebuild builds the latest. `at` lives on the scene object and
@@ -773,7 +790,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
 | `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |
 | `src/render-manager.js` | per-object watch / stale / debounce / build / load loop (render-doc objects) |
-| `src/glb-queue.js` | the load queue for passthrough objects: priority, ≤ 4 finds, 1 parse at a time, retries, subscriptions |
+| `src/glb-queue.js` | the load queue for file objects (content `"file"`): priority, ≤ 4 finds, 1 parse at a time, retries, subscriptions |
 | `src/groups.js` | groups: inherited visibility / opacity, remove / ungroup plans, the outline's rows and filter |
 | `src/material-rules.js` | `materialRules`: checking and matching |
 | `src/deps.js` | watches a provider's dependency docs (subscribe, retry, heads) |
@@ -782,7 +799,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/controls-tool.js`, `src/param-form.js` | the `scene-render-controls` tool |
 | `src/glb.js` | the GLB encoder (kit: copy me) |
 | `src/render-read.js` | reading a render doc and its GLB from another package (kit: copy me) |
-| `src/stl.js`, `src/sources/file-stl.js` | STL parsing and the STL file provider (the GLB one is passthrough: metadata in `src/index.js`, nothing to build) |
+| `src/stl.js`, `src/sources/file-stl.js` | STL parsing and the STL file provider (the GLB one's content is `"file"`: metadata in `src/index.js`, nothing to build) |
 | `src/test/` | test doubles (a repo, the plugin registry, a camera), the stage harness, and `empty-scene.js`: the whole scene doc every test, probe page and publish script starts from, which is the datatype's `init` |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
@@ -868,7 +885,7 @@ pawns move by the same amount. The page's extension is written to
 
 `solander-run.mjs` serves the Solander 38 site's original GLBs (378 files,
 13.0 MB, meshopt + quantized) and a scene doc of the importer's shape (507
-objects: 378 passthrough layers under 129 groups, 74 shown by default, the
+objects: 378 GLB file layers under 129 groups, 74 shown by default, the
 battery and deck-jig roots hidden), mounts the built tool in headless Chrome
 (real WebGL: ANGLE Metal, Apple M4) against an in-memory repo whose file docs
 arrive over HTTP on first `find`, throttled to 50 Mbit/s and 20 ms, and

@@ -87,7 +87,7 @@ tool by id. Without the scene installed the tables are just documents.
 ## How it fits the scene
 
 - Each kind of piece is drawn once, as a GLB `file` doc. Every copy of it is
-  a **passthrough** object showing that doc (provider `file-glb`, no render
+  a **file** object showing that doc (provider `file-glb`, no render
   doc). Whose doc it is depends on how the table was made:
   - **set up from the game page**: the game keeps it (`glbUrl`), and every
     table set up from that game shares it. The game page redraws a kind's GLB

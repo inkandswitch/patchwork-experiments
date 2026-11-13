@@ -10,7 +10,7 @@ import { FakeHandle } from "./test/fake-repo.js";
 const SCENE = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const OTHER = "automerge:3yt6LbnDAzvNj9WDNDA4ew21R85G";
 
-/** Every kind of thing an object can be: a passthrough GLB, a built one, one with traits and tags, a scaled one, a bare one. */
+/** Every kind of thing an object can be: a GLB file object, a built one, one with traits and tags, a scaled one, a bare one. */
 const OBJECTS = {
   cube: { name: "Cube", sourceUrl: "automerge:cubeglb", providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0.1, 0, 0.2], rotation: [0, 1, 0], scale: 1 }, hint: { bounds: { min: [-0.01, 0, -0.01], max: [0.01, 0.02, 0.01] } } },
   hull: { name: "Hull", sourceUrl: "automerge:hulldoc", providerId: "camber-hull-surface", renderUrl: "automerge:hullrender", parent: "table", group: "g1", visible: true, color: "#ff0000", opacity: 0.5, wireframe: true, transform: { position: [1, 2, 3], rotation: [0.1, 0.2, 0.3], scale: 2.5 }, at: { heads: ["abc"] } },

@@ -43,6 +43,7 @@ export const plugins = [
     // a die doc → a GLB at real size, its faces drawn, saying what it is in extras.dice (src/die-glb.js)
     type: "scene:source",
     id: "die",
+    content: "built",
     name: "Die",
     icon: "Dice5",
     supportedDatatypes: ["die"],

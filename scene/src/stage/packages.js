@@ -146,7 +146,7 @@ export function resetPackages() {
  * @param {{
  *   repo: object,
  *   handle: object,                              // the scene doc's
- *   plugins: Promise<object | null>,             // the host's @inkandswitch/patchwork-plugins
+ *   plugins: object | Promise<object | null>,    // the host's @inkandswitch/patchwork-plugins (or a promise of it)
  *   local: { get(): object, swap(fn): object },  // the stage's local atom (local.packages out)
  *   providerIds?: () => Iterable<string>,        // the providers render docs have asked the stage for
  *   settleMs?: number,

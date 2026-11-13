@@ -8,7 +8,7 @@
 // mode, never its source) and opens probes/xdnd-probe.html: two scene views
 // side by side, A and B, two docs in one in-memory repo.
 //
-// main: A's outline rows are dragged into B's view: a passthrough GLB crate
+// main: A's outline rows are dragged into B's view: a GLB file crate
 // (its file shared, its assets entry copied, its claims left behind), a
 // group of two, a mast with its boom and sail under it (onto B's deck, where
 // it snaps to the mast step; and with Alt, where it's dropped), and a built
@@ -138,7 +138,7 @@ async function main() {
   report.counts.bObjectsAtStart = (await ids("b")).length;
   await shot("0-open");
 
-  // ── 1. the crate (passthrough GLB) onto B's ground ─────────────────────
+  // ── 1. the crate (a GLB file object) onto B's ground ─────────────────────
   {
     const to = px(await P(`at("b", null, [-0.8, 0, 1.6])`));
     const hit = await P(`pickAt("b", ${to.x}, ${to.y})`);

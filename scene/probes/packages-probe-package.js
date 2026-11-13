@@ -34,6 +34,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "probe-box",
+    content: "built",
     name: "Probe box",
     supportedDatatypes: ["probe-box"],
     params: [],

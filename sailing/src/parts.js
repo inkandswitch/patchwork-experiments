@@ -122,7 +122,7 @@ async function filesFor(ctx, parts) {
 
 // ─── objects ────────────────────────────────────────────────────────────────
 
-/** An object for the scene doc: a passthrough GLB. */
+/** An object for the scene doc: a GLB file object. */
 export function partObject({ name, url, transform, parent = null, group = null, traits, tags, locked = false, hint }) {
   return {
     name,

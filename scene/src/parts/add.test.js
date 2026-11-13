@@ -200,7 +200,7 @@ describe("scene.add", () => {
     const file = new File([new Uint8Array([1, 2, 3, 4])], "thing.glb");
     await drop({}, [file]);
     const made = s.repo.created.slice(before);
-    expect(made.length).toBe(1); // the file doc, and no render doc for a passthrough
+    expect(made.length).toBe(1); // the file doc, and no render doc for a "file" source
     expect(made[0].doc()).toMatchObject({ "@patchwork": { type: "file" }, name: "thing.glb", extension: "glb", mimeType: "model/gltf-binary" });
     expect(made[0].doc().content).toEqual(new Uint8Array([1, 2, 3, 4]));
     const [o] = objectsOf(s);
@@ -302,7 +302,7 @@ describe("scene.add", () => {
 
   it("asks which provider when several can show it; Cancel and Escape add nothing", async () => {
     await mount();
-    getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
+    getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", content: "built", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
     const chooser = () => s.port.querySelector(".add-chooser");
 
     await drop({ "text/plain": stl.url });
@@ -332,7 +332,7 @@ describe("scene.add", () => {
 
   it("takes its chooser, hints and listeners away when it stops", async () => {
     await mount({ extensions: [PLAY] });
-    getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
+    getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", content: "built", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
     await drop({ "text/plain": stl.url });
     expect(s.port.querySelector(".add-chooser")).toBeTruthy();
     // this viewer switches to play: the extension stops at once

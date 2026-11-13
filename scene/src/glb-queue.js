@@ -1,4 +1,4 @@
-// One priority queue for showing GLB file docs directly (passthrough objects:
+// One priority queue for showing GLB file docs directly (file objects, whose provider's content is "file":
 // README.md, "`scene` — the composition"). Pure: no three, no DOM; `find`,
 // `read` and `parse` are injected, so it is testable with fakes.
 //

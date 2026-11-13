@@ -15,7 +15,7 @@
 //     as runtime (`runtime: true` for the whole trait, `runtime: ["motion"]`
 //     for some of its keys, or a field spec with `runtime: true`). Pose holds
 //     and presence are never in the doc, so never copied;
-//   - a passthrough object (a GLB file) shares its file: the bytes are
+//   - a file object (a GLB file) shares its file: the bytes are
 //     immutable. The source scene's `assets` entries naming a copied file go
 //     with it, under the same key, unless this scene already has that key;
 //   - a built object (one with a render doc) gets a render doc of its own in
@@ -64,7 +64,7 @@ const docId = (url) => String(parseAutomergeUrl(url) ?? "").replace(/^automerge:
 /**
  * What a row is as a document outside the scene: its render doc (the way the
  * sidebar's own drags look, so a slicer or a flow field's body slot can take
- * it; see README "Consuming a render"), or for a passthrough object its GLB
+ * it; see README "Consuming a render"), or for a file object its GLB
  * file. null for a group or an object with neither.
  * @returns {{ url: string, name?: string, type?: string } | null}
  */

@@ -59,7 +59,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
 
   it("adds each package once, bare, and then writes nothing more", async () => {
     const s = await mount({ extensions: [sea], doc: { traits: { "sailing.sea": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"] } });
-    getRegistry("scene:source").register({ type: "scene:source", id: "terrain-mesh", load: async () => ({}) }, TERRAIN);
+    getRegistry("scene:source").register({ type: "scene:source", id: "terrain-mesh", content: "built", load: async () => ({}) }, TERRAIN);
     await settle();
     expect(urls(s).sort()).toEqual([SAILING, TERRAIN].sort());
     // every entry is a plain { url }
@@ -67,7 +67,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     let changes = 0;
     s.handle.on("change", () => changes++);
     s.change((d) => (d.title = "Renamed"));
-    getRegistry("scene:source").register({ type: "scene:source", id: "another", load: async () => ({}) }, fakeUrl());
+    getRegistry("scene:source").register({ type: "scene:source", id: "another", content: "built", load: async () => ({}) }, fakeUrl());
     await settle();
     expect(changes).toBe(1); // the rename, and no write of ours
     expect(urls(s)).toHaveLength(2);
@@ -210,7 +210,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
       { type: "scene:part", id: "sailing.buoy", name: "Buoy", load: async () => ({ create: async () => null }) },
     ],
   });
-  const terrainPackage = () => ({ plugins: [{ type: "scene:source", id: "terrain-mesh", name: "Terrain", supportedDatatypes: ["terrain"], params: [], load: async () => ({ build: async () => null }) }] });
+  const terrainPackage = () => ({ plugins: [{ type: "scene:source", id: "terrain-mesh", content: "built", name: "Terrain", supportedDatatypes: ["terrain"], params: [], load: async () => ({ build: async () => null }) }] });
   const sceneDoc = (extra = {}) => ({ traits: { "sailing.sea": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: SAILING }, { url: TERRAIN }], ...extra });
 
   beforeEach(() => {

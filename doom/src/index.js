@@ -13,6 +13,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "doom-map",
+    content: "built",
     name: "Doom map",
     icon: "Map",
     supportedDatatypes: ["file"],

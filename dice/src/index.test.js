@@ -19,7 +19,7 @@ describe("the dice package's plugins", () => {
   it("are a datatype and a tool for die docs, a scene source for them, the dice, cup and lots extensions, a template and the parts", () => {
     expect(of("patchwork:datatype").map((p) => p.id)).toEqual(["die"]);
     expect(of("patchwork:tool")).toMatchObject([{ id: "die", supportedDatatypes: ["die"] }]);
-    expect(of("scene:source")).toMatchObject([{ id: PROVIDER, supportedDatatypes: ["die"] }]);
+    expect(of("scene:source")).toMatchObject([{ id: PROVIDER, supportedDatatypes: ["die"], content: "built" }]);
     expect(of("scene:extension").map((p) => p.id)).toEqual(["dice", "dice.cup", "dice.lots"]);
     // nothing here is anyone else's: no plugin, trait or metadata of another package's
     expect(JSON.stringify(plugins.map(({ load, ...m }) => m))).not.toMatch(/keep\.|"lots":/);

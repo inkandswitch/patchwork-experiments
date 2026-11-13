@@ -22,7 +22,7 @@ describe("drops and pastes", () => {
     expect(sceneRowFromDrop(d)).toEqual({ scene: A, id: "o1" });
     const scene = { objects: { o1: { renderUrl: B, sourceUrl: A }, o2: { renderUrl: null, sourceUrl: A }, g: { kind: "group", renderUrl: null, sourceUrl: null } } };
     expect(sliceUrlForSceneObject(scene, "o1")).toBe(B); // the render, not the source
-    expect(sliceUrlForSceneObject(scene, "o2")).toBe(A); // passthrough GLB: the file itself
+    expect(sliceUrlForSceneObject(scene, "o2")).toBe(A); // a GLB file object: the file itself
     expect(sliceUrlForSceneObject(scene, "g")).toBe(null);
     expect(sceneRowFromDrop(dt({ "text/plain": A }))).toBe(null);
   });

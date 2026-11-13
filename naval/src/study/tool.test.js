@@ -132,7 +132,7 @@ describe("naval study view", () => {
     const emit = (u) => [...listeners[u]].forEach((l) => l());
     const live = (u) => ({ url: u, doc: () => store[u], heads: () => ["h"], on: (ev, fn) => ev === "change" && listeners[u].add(fn), off: (ev, fn) => ev === "change" && listeners[u].delete(fn) });
     let builds = 0;
-    getRegistry("scene:source").register({ id: "camber-hull-surface", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [], load: async () => ({ build: async () => (builds++, { glb: GLB }) }) });
+    getRegistry("scene:source").register({ id: "camber-hull-surface", content: "built", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [], load: async () => ({ build: async () => (builds++, { glb: GLB }) }) });
     const d = { "@patchwork": { type: "naval-study" } };
     NavalStudyDatatype.init(d);
     const h = fakeHandle(d, { repo: { find: async (u) => live(u) }, url: "automerge:self1111111111111111111111" });

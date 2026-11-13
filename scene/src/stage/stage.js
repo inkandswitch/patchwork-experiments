@@ -14,8 +14,9 @@
 //     extension; prefs are kept per scene in localStorage. What this viewer
 //     is doing (local.activity) is not kept: joining starts where the doc says.
 //   - the viewport, its theme, and the camera (this viewer's, in localStorage).
-//   - content: the render manager (render-doc objects) and the GLB queue
-//     (passthrough objects), their state → local.status.
+//   - content, routed at sync by the kind its provider makes (providers.js
+//     routeOf): the render manager for "built", the GLB queue for "file";
+//     their state → local.status.
 //   - presence, and other views' pose holds shown on the viewport, played
 //     back smoothly (smooth.js); claims, which are doc fields that count only
 //     while their holder's session is in presence.
@@ -28,6 +29,7 @@
 
 import css from "./stage.css?inline";
 import * as THREE from "three";
+import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { Counter } from "@automerge/automerge";
 import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
@@ -46,7 +48,7 @@ import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc } from "../datatype.js";
 import { atKey, defaultParams } from "../staleness.js";
-import { describeForHumans, describeSource, matchProviders } from "../providers.js";
+import { contentOf, describeForHumans, describeSource, matchProviders, routeOf } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
@@ -254,7 +256,7 @@ export function seededRenderDoc(fresh, seed) {
 
 export function statusOf(o, s) {
   if (!o || isGroup(o) || !s) return null;
-  if (s.passthrough) {
+  if (s.content === "file") {
     if (s.phase === "error") return { state: "error", text: "error", title: s.error };
     if (s.parseError) return { state: "error", text: "error", title: s.parseError };
     if (isLoadingPhase(s.phase)) return { state: "loading", text: "loading", title: "Loading…" };
@@ -452,20 +454,15 @@ export default function Stage(handle, element) {
 
   // ─── the plugin registry ──────────────────────────────────────────────────
 
-  let sourceRegistry = null;
-  const plugins = import("@inkandswitch/patchwork-plugins")
-    .then((m) => {
-      if (dead) return m;
-      sourceRegistry = m.getRegistry?.("scene:source") ?? null;
-      const off = sourceRegistry?.on?.("changed", () => manager.providersChanged());
-      if (typeof off === "function") cleanups.push(off);
-      return m;
-    })
-    .catch((err) => {
-      console.warn("[scene] plugin registry unavailable", err);
-      return null;
-    });
-  const getRegistry = async (type) => (await plugins)?.getRegistry?.(type) ?? null;
+  // The host's registry is there from the start, so the first sync already
+  // routes each object's content by the kind its provider makes.
+  const sourceRegistry = patchworkPlugins.getRegistry("scene:source");
+  const offSources = sourceRegistry.on?.("changed", () => {
+    manager.providersChanged();
+    sourcesChanged();
+  });
+  if (typeof offSources === "function") cleanups.push(offSources);
+  const getRegistry = async (type) => patchworkPlugins.getRegistry(type) ?? null;
 
   const listProviders = () => {
     try {
@@ -475,9 +472,29 @@ export default function Stage(handle, element) {
     }
   };
 
+  /** The kind of content a registered provider makes (providers.js contentOf), else null. */
+  const kindOf = (providerId) => contentOf(sourceRegistry.get(providerId));
+  const unusable = new Set(); // sources already warned about: they declare no content kind
+
+  /** Say once of each registered source that declares no content kind: it is never used. */
+  function warnUnusable() {
+    for (const p of listProviders()) {
+      if (!p?.id || contentOf(p) || unusable.has(p.id)) continue;
+      unusable.add(p.id);
+      console.warn(`[scene] source “${p.id}” declares no content kind ("file" or "built"), so it isn't used`);
+    }
+  }
+
+  // The sources changed: what each object's content routes to may have too.
+  function sourcesChanged() {
+    if (dead) return;
+    warnUnusable();
+    applyDoc(derive());
+    statusChanged();
+  }
+
   async function loadProvider(id) {
-    await plugins;
-    if (!sourceRegistry?.has?.(id)) return null;
+    if (!sourceRegistry.has(id)) return null;
     const p = await sourceRegistry.load(id);
     if (!p?.module) return null;
     return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module };
@@ -492,7 +509,7 @@ export default function Stage(handle, element) {
   const packages = createPackages({
     repo,
     handle,
-    plugins,
+    plugins: patchworkPlugins,
     local,
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
@@ -561,9 +578,10 @@ export default function Stage(handle, element) {
     return m.snapshot;
   }
 
-  // ─── content: render docs and passthrough GLBs ────────────────────────────
+  // ─── content: built (render docs) and files (GLBs shown as they are) ──────
 
-  const objState = new Map(); // id → what the manager or the queue last said
+  const routes = new Map(); // id → where its content was routed at the last sync: "built", "file" or null (providers.js routeOf)
+  const objState = new Map(); // id → what the manager or the queue last said (its `content` says which)
   const displayKeys = new Map(); // id → displayKey last applied
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   // render docs this scene made itself, this session: nothing to wait to sync before building
@@ -598,7 +616,7 @@ export default function Stage(handle, element) {
       const before = objState.get(id)?.bounds;
       // the provider its render doc names is one the scene calls for (packages)
       if (objState.get(id)?.providerId !== s.providerId) packages.check();
-      objState.set(id, s);
+      objState.set(id, { ...s, content: "built" });
       // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
       if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
         const o = doc()?.objects?.[id];
@@ -633,7 +651,7 @@ export default function Stage(handle, element) {
       if (!dead) afterGLB();
     },
     onState: (id, st) => {
-      objState.set(id, { passthrough: true, phase: st.phase, error: st.error });
+      objState.set(id, { content: "file", phase: st.phase, error: st.error });
       statusChanged();
     },
   });
@@ -694,6 +712,7 @@ export default function Stage(handle, element) {
     viewport.setMaterialRules(d.materialRules);
     viewport.setGroups(m.members);
     const tracked = new Set(manager.ids());
+    let rerouted = false;
     for (const { id } of attachOrder) {
       const o = objects[id];
       const parent = parents.get(id) ?? null;
@@ -701,7 +720,17 @@ export default function Stage(handle, element) {
       if (isGroup(o)) {
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
+        routes.delete(id);
         continue;
+      }
+      const route = routeOf(o, kindOf);
+      // a route that moved (its provider arrived or went) is a change to what's shown
+      if (routes.has(id) && routes.get(id) !== route) rerouted = true;
+      routes.set(id, route);
+      // what was said about content of another kind no longer applies
+      if (objState.has(id) && objState.get(id).content !== route) {
+        objState.delete(id);
+        statusDirty = true;
       }
       // placed even without geometry, so whatever is attached to it sits right
       const key = displayKey(o, parent, inh);
@@ -726,7 +755,7 @@ export default function Stage(handle, element) {
       }
       // (unveiled: its own content loads again below, and the veil stays up until that has)
       veils.delete(id);
-      if (o.renderUrl) {
+      if (route === "built") {
         queue.remove(id);
         applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
         // hydrate only what is shown; once loaded it stays loaded
@@ -734,22 +763,32 @@ export default function Stage(handle, element) {
         noteAt(o);
         continue;
       }
-      // what this viewer sees: a lens's source, or the object's own
-      const src = docUrl(looks.get(id)?.sourceUrl ?? o.sourceUrl);
-      if (!src) continue;
-      if (tracked.has(id)) manager.untrack(id);
-      applyHint(id, o.hint?.bounds);
-      if (shown) queue.ensure(id, src, priorityOf(id, o));
-      else if (queue.cancel(id)) {
-        // dropped before it loaded: "not asked for" again, not loading or failing
-        objState.delete(id);
-        statusDirty = true;
+      if (route === "file") {
+        // what this viewer sees: a lens's source, or the object's own
+        const src = docUrl(looks.get(id)?.sourceUrl ?? o.sourceUrl);
+        if (!src) continue;
+        if (tracked.has(id)) manager.untrack(id);
+        applyHint(id, o.hint?.bounds);
+        if (shown) queue.ensure(id, src, priorityOf(id, o));
+        else if (queue.cancel(id)) {
+          // dropped before it loaded: "not asked for" again, not loading or failing
+          objState.delete(id);
+          statusDirty = true;
+        }
+        continue;
       }
+      // Nothing to load (no provider here says what it is): drawn as its
+      // hint, as anything is while its content hasn't arrived.
+      if (tracked.has(id)) manager.untrack(id);
+      queue.remove(id);
+      applyHint(id, o.hint?.bounds);
+      noteMissing(id, o);
     }
     for (const id of new Set([...tracked, ...viewport.objects.keys(), ...queue.ids(), ...displayKeys.keys()])) {
       if (objects[id]) continue;
       manager.untrack(id);
       queue.remove(id);
+      routes.delete(id);
       viewport.removeObject(id);
       if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
@@ -758,6 +797,22 @@ export default function Stage(handle, element) {
       remotePosed.delete(id);
       playing.delete(id);
     }
+    if (rerouted) displayChanged();
+  }
+
+  /**
+   * An object routed nowhere: "no provider" while the registry lacks the one
+   * it names (the doc names it, so the packages prompt can offer it), else no
+   * state at all.
+   */
+  function noteMissing(id, o) {
+    const want = typeof o.providerId === "string" && o.providerId && !sourceRegistry.has(o.providerId) ? o.providerId : null;
+    const was = objState.get(id);
+    if (want) {
+      if (was?.phase === "no-provider" && was.providerId === want) return;
+      objState.set(id, { content: null, phase: "no-provider", providerId: want });
+      statusDirty = true;
+    } else if (objState.delete(id)) statusDirty = true;
   }
 
   /** Draw the veil for these bounds in place of an object's content (veil.js): through the GLB path, so box and picking go by it. */
@@ -1418,7 +1473,6 @@ export default function Stage(handle, element) {
 
   async function providersFor(url, sourceDoc) {
     if (url && parseAutomergeUrl(url) === handle.url) return [];
-    await plugins;
     return matchProviders(listProviders(), describeSource(sourceDoc));
   }
 
@@ -1435,8 +1489,9 @@ export default function Stage(handle, element) {
   }
 
   /**
-   * Add a document to the scene as an object: through `providerId` (else the best match), as a render doc, or
-   * straight through for a passthrough provider.
+   * Add a document to the scene as an object: through `providerId` (else the
+   * best match), with a render doc of its own when the provider's content is
+   * "built", and none when it is "file".
    * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
    * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
    *   parent: attach to that object (and join its group, unless `group` says);
@@ -1462,7 +1517,6 @@ export default function Stage(handle, element) {
     }
     const sourceDoc = source.doc();
     const info = describeSource(sourceDoc);
-    await plugins;
     if (dead) throw new Error("The scene was closed.");
     const providers = matchProviders(listProviders(), info);
     const provider = opts.providerId ? (providers.find((p) => p.id === opts.providerId) ?? null) : (providers[0] ?? null);
@@ -1471,8 +1525,8 @@ export default function Stage(handle, element) {
       throw new Error(`No scene provider is installed for ${describeForHumans(info)}.`);
     }
     const name = opts.name || (await titleOf(sourceDoc, info.datatype));
-    // A passthrough provider's source already is a GLB: no render doc, no copy (README.md, "`scene` — the composition").
-    const renderHandle = provider.passthrough ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
+    // A "file" provider's source already is a GLB: no render doc, no copy (README.md, "`scene` — the composition").
+    const renderHandle = contentOf(provider) !== "built" ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
     if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
     const id = newId("o");
@@ -1502,8 +1556,8 @@ export default function Stage(handle, element) {
       if (fields) for (const [k, v] of Object.entries(fields)) if (!ADD_OWNS.has(k) && v !== undefined) d.objects[id][k] = v;
       // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
       if (hint) d.objects[id].hint = hint;
-      // A URL with heads names a version: show that one. (A passthrough
-      // object is shown straight from its file, so it has nothing to fix.)
+      // A URL with heads names a version: show that one. (A file object is
+      // shown straight from its file, so it has nothing to fix.)
       if (heads?.length && renderHandle) d.objects[id].at = { heads: [...heads] };
       const at = opts.before ? d.order.indexOf(opts.before) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
@@ -1556,7 +1610,7 @@ export default function Stage(handle, element) {
 
   /**
    * The `at` that would fix an object at exactly what its render was last
-   * built from, or null (not built here yet, not tracked, or passthrough).
+   * built from, or null (not built here yet, not tracked, or not built content).
    * Writing it is the caller's: `ops.setField(scene, id, "at", point)`.
    */
   function fixPoint(id) {
@@ -1791,10 +1845,11 @@ export default function Stage(handle, element) {
       /** the element the canvas fills, and the stage's root (for DOM listeners: drops, paste) */
       port,
       root,
-      /** what the manager or the queue last said about an object's content (notes, contested, providerId…) */
+      /** where an object's content was routed (`content`: "built", "file" or null) and what the manager or the queue last said about it (notes, contested, providerId…) */
       loadState: (oid) => {
         const s = objState.get(oid);
-        return s ? Object.freeze({ ...s }) : null;
+        if (!s && !routes.has(oid)) return null;
+        return Object.freeze({ ...s, content: routes.get(oid) ?? null });
       },
 
       // local, prefs, presence
@@ -2190,6 +2245,7 @@ export default function Stage(handle, element) {
   }
   handle.on("change", sync);
   cleanups.push(() => handle.off("change", sync));
+  warnUnusable();
   sync();
 
   // ─── probes ───────────────────────────────────────────────────────────────

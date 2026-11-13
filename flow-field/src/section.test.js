@@ -52,6 +52,7 @@ const sectionProvider = (spy = {}) => ({
 const meshProvider = (spy = {}) => ({
   type: "scene:source",
   id: "test-hull-surface",
+  content: "built",
   name: "Test hull",
   supportedDatatypes: ["test-hull"],
   params: [{ key: "detail", kind: "integer", default: 7 }],
@@ -96,6 +97,18 @@ describe("acquireSection", () => {
     expect(z.section.loops).toHaveLength(1);
   });
 
+  it("builds only through a source whose content is built: never one shown as it is, nor one that declares no kind", async () => {
+    const asked = [];
+    const never = (id, content) => ({ type: "scene:source", id, ...(content ? { content } : {}), supportedDatatypes: ["test-hull"], extensions: [], params: [], load: async () => (asked.push(id), { build: async () => { throw new Error("never built"); } }) });
+    getRegistry("scene:source").register(never("as-is", "file"));
+    getRegistry("scene:source").register(never("kindless", null));
+    getRegistry("scene:source").register(meshProvider());
+    const repo = fakeRepo({ [HULL]: hullDoc() });
+    const r = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo });
+    expect(r).toMatchObject({ ok: true, path: "source", providerId: "test-hull-surface" });
+    expect(asked).toEqual([]);
+  });
+
   it("never asks a geometry:section provider, even one that matches", async () => {
     const sections = {};
     getRegistry("geometry:section").register(sectionProvider(sections));
@@ -119,6 +132,7 @@ describe("acquireSection", () => {
     getRegistry("scene:source").register({
       type: "scene:source",
       id: "anything",
+      content: "built",
       name: "Anything",
       supportedDatatypes: "*",
       params: [],
@@ -132,13 +146,14 @@ describe("acquireSection", () => {
     const r = await acquireSection({ url: HULL, repo });
     expect(r.providerId).toBe("test-hull-surface"); // registered second, but names the datatype
     expect(wild.builds ?? 0).toBe(0);
-    expect(matchProviders([{ id: "w", supportedDatatypes: "*" }, { id: "f", supportedDatatypes: ["file"], extensions: ["stl"] }, { id: "d", supportedDatatypes: ["file"] }], { datatype: "file", extension: "stl" }).map((p) => p.id)).toEqual(["f", "d", "w"]);
+    expect(matchProviders([{ id: "w", content: "built", supportedDatatypes: "*" }, { id: "f", content: "built", supportedDatatypes: ["file"], extensions: ["stl"] }, { id: "d", content: "file", supportedDatatypes: ["file"] }, { id: "k", supportedDatatypes: ["file"] }], { datatype: "file", extension: "stl" }).map((p) => p.id)).toEqual(["f", "d", "w"]);
 
     resetRegistries();
     getRegistry("scene:source").register({ ...meshProvider(), load: async () => ({ build: async () => { throw new Error("boom"); } }) });
     getRegistry("scene:source").register({
       type: "scene:source",
       id: "anything",
+      content: "built",
       name: "Anything",
       supportedDatatypes: "*",
       params: [],
@@ -159,7 +174,7 @@ describe("acquireSection", () => {
     expect((await acquireSection({ url: FLOW, repo })).error).toMatch(/can't be the body/);
     expect((await acquireSection({ url: FLOW, repo, selfUrl: FLOW })).error).toMatch(/itself/);
     // a flow provider is never used to build a body (it would recurse)
-    getRegistry("scene:source").register({ type: "scene:source", id: "flow-field-slice", supportedDatatypes: ["flow-field", "test-hull"], load: async () => ({}) });
+    getRegistry("scene:source").register({ type: "scene:source", id: "flow-field-slice", content: "built", supportedDatatypes: ["flow-field", "test-hull"], load: async () => ({}) });
     expect((await acquireSection({ url: HULL, repo })).error).toMatch(/nothing installed here can build/);
     expect(defaultParams([{ key: "a", default: 1 }, { key: "b", default: "x" }])).toEqual({ a: 1, b: "x" });
   });
@@ -180,9 +195,9 @@ describe("a GLB file as the body", () => {
     expect(r.section.meta.lengthWL).toBeCloseTo(10, 6);
     expect(sectionPathLabel(r)).toBe("slice of the GLB file “Hull.glb”");
     expect(sectionPathChip(r)).toBe("GLB file");
-    // a file-glb scene:source (the scene's passthrough) is never asked to build it
+    // a file-glb scene:source (the scene's, content "file") is never asked to build it
     const spy = {};
-    getRegistry("scene:source").register({ type: "scene:source", id: "file-glb", supportedDatatypes: ["file"], extensions: ["glb"], params: [], passthrough: true, load: async () => ((spy.loaded = true), {}) });
+    getRegistry("scene:source").register({ type: "scene:source", id: "file-glb", supportedDatatypes: ["file"], extensions: ["glb"], params: [], content: "file", load: async () => ((spy.loaded = true), {}) });
     expect((await acquireSection({ url: FILE, repo })).path).toBe("file");
     expect(spy.loaded).toBeUndefined();
   });

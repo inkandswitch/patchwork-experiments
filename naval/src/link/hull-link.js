@@ -61,7 +61,10 @@ export function providerMatches(p, { datatype, extension }) {
   return true;
 }
 
-/** Copy of the scene host's matchProviders: most specific first, registry order among equals. */
+/** Copy of the scene host's contentOf: the kind of content a provider makes, "file" or "built", else null. */
+export const contentOf = (provider) => (provider?.content === "file" || provider?.content === "built" ? provider.content : null);
+
+/** Copy of the scene host's matchProviders: most specific first, registry order among equals; never a provider that declares no content kind. */
 export function matchProviders(providers, source) {
   const score = (p) => {
     const sd = p.supportedDatatypes;
@@ -70,7 +73,7 @@ export function matchProviders(providers, source) {
     return (wild ? 0 : 2) + (hasExt ? 1 : 0);
   };
   return (providers ?? [])
-    .filter((p) => p && p.id && providerMatches(p, source))
+    .filter((p) => p && p.id && contentOf(p) && providerMatches(p, source))
     .map((p, i) => ({ p, i, s: score(p) }))
     .sort((a, b) => b.s - a.s || a.i - b.i)
     .map(({ p }) => p);
@@ -234,7 +237,8 @@ export async function acquireHull({ url, repo, handle, getRegistry, selfUrl } = 
   } catch {
     sources = null;
   }
-  const candidates = matchProviders(list(sources), source).filter((p) => !isOwnProvider(p));
+  // only a provider whose content is built has a build() to call
+  const candidates = matchProviders(list(sources), source).filter((p) => contentOf(p) === "built" && !isOwnProvider(p));
   const notes = [];
   for (const p of candidates) {
     let mesh;

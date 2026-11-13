@@ -2,7 +2,7 @@
 // resize on an OffscreenCanvas, encode JPEG (opaque) or PNG (with alpha).
 //
 // Card sheets are cropped here rather than mapped with UVs: a scene object is
-// one self-contained GLB (a passthrough file doc), so a UV-mapped card would
+// one self-contained GLB (a file doc, shown as it is), so a UV-mapped card would
 // carry its whole sheet — up to 70 cards' worth, often 4096² — in every card's
 // GLB. A cropped cell is a few tens of kB.
 //

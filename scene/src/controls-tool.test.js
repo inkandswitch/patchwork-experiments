@@ -28,6 +28,7 @@ const build = vi.fn(async ({ params }) => ({ kind: "glb", glb: encodeGLB({ meshe
 getRegistry("scene:source").register({
   type: "scene:source",
   id: "thing",
+  content: "built",
   name: "Thing maker",
   supportedDatatypes: ["thing"],
   params: [
@@ -152,6 +153,7 @@ describe("scene-render-controls, dependencies", () => {
     getRegistry("scene:source").register({
       type: "scene:source",
       id: "linked",
+      content: "built",
       name: "Linked",
       supportedDatatypes: ["linked"],
       params: [],

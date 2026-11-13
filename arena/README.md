@@ -98,7 +98,7 @@ target, spawn), each a flat-shaded GLB whose faces are cut into rectangles
 with per-vertex colours from one palette, no textures. A kind is drawn once
 per scene: its GLB is a `file` doc kept in the scene's `assets` under
 `arena/<kind>@<ART>` (`ctx.file`; `src/layout.js`), and every block of that
-kind is a passthrough object showing it (`providerId: "file-glb"`, no render
+kind is a file object showing it (`providerId: "file-glb"`, no render
 doc). `ART` is bumped when the art changes, so new art gets a new key.
 
 The **Arena level** template lays out the sample arena (`sampleArena()`: 29

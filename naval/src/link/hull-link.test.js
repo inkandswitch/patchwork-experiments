@@ -170,9 +170,14 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
   it("a source doc, built by the most specific scene:source with its defaults", async () => {
     const sources = getRegistry("scene:source");
     let seen = null;
-    sources.register({ id: "wild", supportedDatatypes: "*", load: async () => ({ build: async () => ({ glb: new Uint8Array(4) }) }) });
+    sources.register({ id: "wild", content: "built", supportedDatatypes: "*", load: async () => ({ build: async () => ({ glb: new Uint8Array(4) }) }) });
+    // neither is ever asked to build: one shows files as they are, one declares no kind of content
+    const never = () => ({ build: async () => { throw new Error("never built"); } });
+    sources.register({ id: "as-is", content: "file", supportedDatatypes: ["camber-hull"], load: async () => never() });
+    sources.register({ id: "kindless", supportedDatatypes: ["camber-hull"], load: async () => never() });
     sources.register({
       id: "camber-hull-surface",
+      content: "built",
       name: "Camber hull",
       supportedDatatypes: ["camber-hull"],
       params: [{ key: "size", default: "document" }],
@@ -186,11 +191,12 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
     const r = await acquireHull({ url: urls.hull, repo, getRegistry });
     expect(r).toMatchObject({ ok: true, path: "source", providerId: "camber-hull-surface" });
     expect(seen).toEqual({ size: "document" });
-    expect(matchProviders(sources.filter(() => true), { datatype: "camber-hull" }).map((p) => p.id)).toEqual(["camber-hull-surface", "wild"]);
+    expect(matchProviders(sources.filter(() => true), { datatype: "camber-hull" }).map((p) => p.id)).toEqual(["as-is", "camber-hull-surface", "wild"]);
   });
 
   const camberSource = (seen = {}) => ({
     id: "camber-hull-surface",
+    content: "built",
     name: "Camber hull",
     supportedDatatypes: ["camber-hull"],
     params: [{ key: "size", default: "document" }],

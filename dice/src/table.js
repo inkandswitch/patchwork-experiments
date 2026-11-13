@@ -59,7 +59,7 @@ const base = (name) => ({ name, parent: null, group: null, visible: true, color:
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const tidy = (v) => +(+v).toFixed(6) + 0;
 
-/** A passthrough object showing file `f`. */
+/** A file object showing file `f`. */
 export function objectOf(name, f, transform, more = {}) {
   return { ...base(name), sourceUrl: f.url, providerId: "file-glb", renderUrl: null, transform, ...(f.hint?.bounds ? { hint: { bounds: copy(f.hint.bounds) } } : {}), ...more };
 }

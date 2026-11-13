@@ -36,6 +36,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "rig-design",
+    content: "built",
     name: "Rig",
     icon: "Sailboat",
     supportedDatatypes: ["rig-design"],

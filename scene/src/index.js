@@ -69,7 +69,7 @@ export const plugins = [
     // The source doc already is the GLB: its objects get no render doc
     // (renderUrl: null) and the scene shows the file directly, so there is
     // nothing to load or build (README.md, "`scene` — the composition").
-    passthrough: true,
+    content: "file",
   },
   {
     type: "scene:source",
@@ -78,6 +78,7 @@ export const plugins = [
     icon: "Box",
     supportedDatatypes: ["file"],
     extensions: ["stl"],
+    content: "built",
     params: [
       { key: "unit", label: "File units", kind: "enum", default: "mm", options: SOURCE_UNITS, cost: "cheap" },
       { key: "up", label: "Up axis", kind: "enum", default: "z", options: UP_AXES, cost: "cheap" },

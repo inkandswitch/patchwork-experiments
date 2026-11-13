@@ -163,7 +163,7 @@ try {
   const objs = Object.entries(doc.objects);
   const group = objs.find(([, o]) => o.kind === "group");
   const parts = objs.filter(([, o]) => o.kind !== "group");
-  // (arena's spawn point is a passthrough GLB: no render doc)
+  // (arena's spawn point is a GLB file object: no render doc)
   const renders = await Promise.all(parts.map(([, o]) => (o.renderUrl ? P(`find(${JSON.stringify(o.renderUrl)})`) : null)));
   const doors = parts.filter(([, o]) => o.traits?.["joints.slide"]);
   const exits = parts.filter(([, o]) => o.traits?.["traversal.exit"]);

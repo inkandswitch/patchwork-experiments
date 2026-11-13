@@ -24,6 +24,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "implicit-mesh",
+    content: "built",
     name: "Implicit surface (meshed)",
     icon: "Atom",
     supportedDatatypes: ["implicit-surface"],

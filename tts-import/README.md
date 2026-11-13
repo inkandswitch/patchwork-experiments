@@ -168,7 +168,7 @@ Every copy of a look shares one GLB: the kind (`src/kinds.js`) is everything
 the look depends on — images and cells, shape, size, scale, colour, snap
 points — and nothing else, so thirty identical tokens are one file.
 
-**Card sheets are cropped**, not UV-mapped: a passthrough scene object is one
+**Card sheets are cropped**, not UV-mapped: a scene object of a file is one
 self-contained GLB, so a UV-mapped card would carry its whole sheet (up to 70
 cards, often 4096² px) in every card's file. A cropped face is a few tens of kB
 (512 px on its long side by default).
@@ -215,7 +215,7 @@ shape.
 - a `file` doc per kind: the GLB (`extension: "glb"`, `mimeType: "model/gltf-binary"`);
 - a keeper's container per face-down TTS deck, holding `{ sourceUrl, name }` per card (made by the keeper's `contain`; its shape is the keeper's);
 - the `scene`: an empty scene as the scene's own datatype makes one (`src/empty-scene.js`, a copy of its
-  init: `dimensions: {}`, `assets: {}`, `packages: []` and the rest), with passthrough objects
+  init: `dimensions: {}`, `assets: {}`, `packages: []` and the rest), with file objects
   (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with `hint.bounds`, groups for decks /
   stacks / bag contents / states, `locked`, `tags`, traits (`scene.carry` on everything not locked, so it can be picked
   up; `tabletop.card` and the keeper's binding on hidden cards;

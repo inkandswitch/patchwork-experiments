@@ -6,7 +6,7 @@
 // made outside the scene's own tool must (scene/STAGE.md, "Packages").
 //
 // A scene written whole can't ask the stage for a render doc, so here the
-// bag is shown from a GLB file of the sack as it looks now (a passthrough
+// bag is shown from a GLB file of the sack as it looks now (a file
 // object), and the trait says which bag document it is. (A bag added through
 // the parts bin, or dropped into a scene, is built from the bag doc and
 // follows its look: part.js.)

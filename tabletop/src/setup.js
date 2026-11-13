@@ -23,7 +23,7 @@
 //
 // - Each visible piece kind with more than one copy gets a group, so the
 //   outline stays short; a single piece (the board) sits at the top level.
-// - Every copy is a passthrough object showing its kind's GLB file doc
+// - Every copy is a file object showing its kind's GLB file doc
 //   (`fileOf(kind)` → { url, hint }), with the kind's box as its load hint,
 //   and the game as its About (infoUrl) when there is a game doc.
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt

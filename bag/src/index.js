@@ -33,6 +33,7 @@ export const plugins = [
   {
     type: "scene:source",
     id: "bag-sack",
+    content: "built",
     name: "Token bag",
     icon: "ShoppingBag",
     supportedDatatypes: ["bag"],

@@ -1,7 +1,7 @@
 // A flow linked to a scene's render doc (the preferred link), the upstream
 // build cache and transitive dependencies of a source-doc body, the
-// compileFlow cache key, and dropping a scene row (a render, or a passthrough
-// GLB file) onto the editor.
+// compileFlow cache key, and dropping a scene row (a render, or a GLB file
+// object) onto the editor.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getRegistry, resetRegistries } from "@inkandswitch/patchwork-plugins";
 import { acquireSection, cleanSection, sectionPathLabel } from "./section.js";
@@ -88,6 +88,7 @@ function registerMesh(spy, extra = {}) {
   getRegistry("scene:source").register({
     type: "scene:source",
     id: "test-hull-surface",
+    content: "built",
     name: "Test hull",
     supportedDatatypes: ["test-hull"],
     params: [{ key: "scale", kind: "number", default: 1 }],
@@ -346,10 +347,10 @@ describe("dropping a scene row onto the editor", () => {
     expect(render.listeners.size).toBe(0);
   });
 
-  it("links a passthrough GLB object's file doc (a row with no render) and cuts the file as it is", async () => {
+  it("links a GLB file object's file doc (a row with no render) and cuts the file as it is", async () => {
     const h = fakeHandle("automerge:flow", flowDoc(null));
     cleanup = Tool(h, element);
-    // what scene/src/parts/outline.js sets for a passthrough row: its sourceUrl, untyped
+    // what scene/src/parts/outline.js sets for a file object's row: its sourceUrl, untyped
     drop({ "text/x-patchwork-dnd": JSON.stringify({ source: "scene", items: [{ url: GLB1, name: "Sloop" }] }), "text/x-patchwork-urls": JSON.stringify([GLB1]), "text/plain": GLB1 });
     expect(h.doc().body?.url).toBe(GLB1);
     await settle();

@@ -56,7 +56,7 @@ export function makeLevel(d) {
   if (!d.traits[LEVEL]) d.traits[LEVEL] = {};
 }
 
-/** An object for the scene doc: a passthrough GLB, filed in `group`. Laid-out blocks are locked. */
+/** An object for the scene doc: a GLB file object, filed in `group`. Laid-out blocks are locked. */
 export function levelObject({ name, transform, traits }, { url, hint }, group) {
   return {
     name,

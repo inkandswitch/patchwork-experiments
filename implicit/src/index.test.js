@@ -20,6 +20,7 @@ describe("plugins", () => {
     ]);
     const src = plugins.find((p) => p.type === "scene:source");
     expect(src.supportedDatatypes).toEqual(["implicit-surface"]);
+    expect(src.content).toBe("built");
     expect(src.extensions).toBeUndefined();
     expect(src.params).toEqual([
       expect.objectContaining({ key: "resolution", kind: "integer", default: 96, cost: "expensive" }),

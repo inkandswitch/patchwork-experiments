@@ -93,7 +93,7 @@ describe("runImport on the tiny fixture", () => {
     expect(doc(sceneUrl).origin).toEqual({ tts: { saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", workshopId: "1234567890" } });
   });
 
-  it("lays out the table: every object a passthrough GLB at its transform, carryable unless locked", async () => {
+  it("lays out the table: every object a GLB file object at its transform, carryable unless locked", async () => {
     const { scene, report, doc } = await importFixture();
     expect(scene.view).toMatchObject({ snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
     expect(scene.view).not.toHaveProperty("tool");

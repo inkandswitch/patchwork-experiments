@@ -163,7 +163,7 @@ describe("the hull under the rig", () => {
       [R]: { "@patchwork": { type: "scene-render" }, title: "Narrow transom", parent: HULL, params: { size: "length", lengthMeters: 12 }, glbUrl: null, status: "idle" },
     };
     resetRegistries();
-    getRegistry("scene:source").register({ id: "camber-hull-surface", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async () => ({ glb: GLB }) }) });
+    getRegistry("scene:source").register({ id: "camber-hull-surface", content: "built", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async () => ({ glb: GLB }) }) });
     const repo = { find: async (u) => ({ url: u, doc: () => docs[u], heads: () => ["h1"], on() {}, off() {} }) };
     const h = fakeHandle(seeded(), { repo, url: "automerge:self1111111111111111111111" });
     cleanup = RigTool(h, element);

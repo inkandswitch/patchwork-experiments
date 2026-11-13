@@ -23,7 +23,7 @@ describe("the Ship at sea template", () => {
     expect(calls.notices.at(-1).text).toMatch(/come aboard/);
   });
 
-  it("files each kind of part as one GLB doc of the scene's, and every object shows one passthrough", async () => {
+  it("files each kind of part as one GLB doc of the scene's, and every object shows one as a file object", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await template.create(ctx);

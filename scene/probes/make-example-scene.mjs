@@ -7,7 +7,7 @@
 // files themselves, so the probe can be run without it. The hierarchy is not
 // invented: these GLBs carry their assembly path in the filename, separated by
 // `__`, so `BODY__CTR BEAM__scuppers.glb` is the object "scuppers" inside the
-// group "CTR BEAM" inside the group "BODY". Every leaf is a passthrough layer
+// group "CTR BEAM" inside the group "BODY". Every leaf is a file layer
 // (renderUrl null, provider file-glb) — the scene shows the source bytes and
 // never builds anything.
 //

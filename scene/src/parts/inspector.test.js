@@ -396,7 +396,7 @@ describe("scene.inspector: the panel", () => {
     expect($(".about").hidden).toBe(true);
   });
 
-  it("a passthrough GLB: Open file, and its stats in the status line; no Build section", async () => {
+  it("a GLB file object (content \"file\"): Open file, and its stats in the status line; no Build section", async () => {
     const repo = new FakeRepo();
     const file = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb" });
     await mount({ repo, objects: { a: object({ name: "A", sourceUrl: file.url, visible: false, hint: { triangles: 434, bytes: 18492 } }) } });
@@ -453,14 +453,21 @@ describe("scene.inspector: the pure side", () => {
   it("statusParts: render docs with and without the raw load state", () => {
     const o = object({ sourceUrl: "automerge:x", renderUrl: "automerge:y", providerId: "p" });
     expect(statusParts(o, { load: { notes: "1 triangle (ascii STL)" } })).toEqual([{ kind: "notes", text: "1 triangle (ascii STL)" }]);
-    expect(statusParts(o, { status: { state: "warn" } })[0].text).toMatch(/Provider “p” is not installed/);
+    expect(statusParts(o, { status: { state: "warn" } })[0].text).toMatch(/Provider “p” is not installed, so this object can't be rebuilt here/);
+    expect(statusParts(o, { load: { content: "built", phase: "no-provider", providerId: "p" } })[0].text).toMatch(/can't be rebuilt here/);
     expect(statusParts(o, { status: { state: "stale", reason: "out-of-date", title: "Out of date; rebuilding soon" } })).toEqual([]);
     expect(statusParts(o, { status: { state: "stale", reason: "contested", title: "Built differently" } })).toEqual([{ kind: "warn", text: "Built differently" }]);
     // the reason decides, not the wording
     expect(statusParts(o, { status: { state: "stale", reason: "deps", title: "A collaborator's linked document" } })).toEqual([]);
+    // a file: what the stage routed it to says so (load.content), not the record's shape
     const p = object({ sourceUrl: "automerge:x" });
-    expect(statusParts(p, { content: { loaded: true, stats: { triangles: 20000, drawCalls: 1, instanced: 0 } } })).toEqual([{ kind: "notes", text: "20 k triangles · 1 draw call" }]);
-    expect(statusParts(p, { status: { state: "error", title: "GLB failed" } })).toEqual([{ kind: "error", text: "GLB failed" }]);
+    const file = { content: "file" };
+    expect(statusParts(p, { load: file, content: { loaded: true, stats: { triangles: 20000, drawCalls: 1, instanced: 0 } } })).toEqual([{ kind: "notes", text: "20 k triangles · 1 draw call" }]);
+    expect(statusParts(p, { load: file, status: { state: "error", title: "GLB failed" } })).toEqual([{ kind: "error", text: "GLB failed" }]);
+    // routed nowhere: its provider isn't here, so it isn't shown at all
+    const q = object({ sourceUrl: "automerge:x", providerId: "t-gltf" });
+    expect(statusParts(q, { load: { content: null, phase: "no-provider", providerId: "t-gltf" } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
+    expect(statusParts(q, { status: { state: "warn" } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
   });
 
   it("commandsFor: only targeted ones for the inspector, own first", () => {

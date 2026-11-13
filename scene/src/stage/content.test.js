@@ -12,7 +12,8 @@ import add from "../parts/add.js";
 import outline from "../parts/outline.js";
 import inspector from "../parts/inspector.js";
 import { Viewport } from "./viewport.js";
-import { getRegistry } from "../test/plugins-mock.js";
+import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
+import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
 
 // A stand-in for scene.sidebar: mounts every collected panel and updates it each pass.
@@ -245,7 +246,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     api.run({ ext: "scene.inspector", command: "follow-latest", target: id });
     await settle();
     expect("at" in s.doc().objects[id]).toBe(false);
-    // never for a passthrough object
+    // never for what isn't built content
     expect(api.fixPoint("nope")).toBeNull();
   });
 
@@ -293,6 +294,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     getRegistry("scene:source").register({
       type: "scene:source",
       id: "t-thing",
+      content: "built",
       name: "Thing",
       supportedDatatypes: ["thing"],
       version: 3,
@@ -372,5 +374,131 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(render.doc().builtAt).toBe(built);
     expect(render.doc().builtFrom.heads).toEqual(["a-change-we-have-not-synced"]);
     expect(s.api("scene.add").loadState(id)).toMatchObject({ behind: true, stale: false });
+  });
+});
+
+// ─── routing at sync: by the kind of content the object's provider makes ────
+
+describe("content is routed at sync by its provider's kind (COMPOSITION.md §1)", () => {
+  let s, repo;
+  beforeEach(() => {
+    repo = new FakeRepo();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    s?.unmount();
+    s = null;
+    vi.restoreAllMocks();
+  });
+
+  const glbBytes = () => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0] }] });
+  const glbFile = (name = "part.glb", extension = "glb") => repo.add({ "@patchwork": { type: "file" }, name, extension, mimeType: "model/gltf-binary", content: glbBytes() });
+  /** Another package's source of GLB files: shown as they are, like the scene's own file-glb. */
+  const gltfSource = (extra = {}) => ({ type: "scene:source", id: "t-gltf", content: "file", name: "glTF", supportedDatatypes: ["file"], extensions: ["gltf"], params: [], ...extra });
+  const queued = () => s.debug.queue.ids();
+  const tracked = () => s.debug.manager.ids();
+  const api = () => s.api("scene.add");
+
+  it("routes at the first sync: a GLB file object is queued as the stage mounts, before anything awaits", async () => {
+    const glb = glbFile();
+    resetRegistries();
+    const { plugins } = await import("../index.js");
+    for (const p of plugins) if (p.type === "scene:source") getRegistry(p.type).register(p);
+    const { default: Stage } = await import("./stage.js");
+    const handle = repo.add(emptyScene({ objects: { a: object({ sourceUrl: glb.url }) } }));
+    const element = document.createElement("div");
+    element.repo = repo;
+    element.packageSettleMs = 0;
+    document.body.append(element);
+    const cleanup = Stage(handle, element);
+    try {
+      expect(element.querySelector(".scene-stage").__sceneDebug.queue.ids()).toEqual(["a"]);
+    } finally {
+      cleanup();
+      element.remove();
+    }
+  });
+
+  it("a GLB file object goes to the queue and a render-doc object to the manager, and loadState says which", async () => {
+    const glb = glbFile();
+    const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: stl.url, providerId: "file-stl", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { a: object({ sourceUrl: glb.url }), b: object({ sourceUrl: stl.url, providerId: "file-stl", renderUrl: render.url }), g: { kind: "group", name: "G", visible: true, group: null } } } });
+    await settle();
+    expect(queued()).toEqual(["a"]);
+    expect(tracked()).toEqual(["b"]);
+    expect(api().loadState("a").content).toBe("file");
+    expect(api().loadState("b").content).toBe("built");
+    expect(api().loadState("g")).toBeNull();
+    expect(api().loadState("nope")).toBeNull();
+  });
+
+  it("an object whose provider isn't here loads nothing and says so; it loads once a source of that id arrives, by the kind it makes", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hints = vi.spyOn(Viewport.prototype, "setHint");
+    const file = glbFile("part.gltf", "gltf");
+    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { x: object({ sourceUrl: file.url, providerId: "t-gltf", hint: { bounds: { min: [0, 0, 0], max: [1, 1, 1] } } }) } } });
+    await settle();
+    expect(queued()).toEqual([]);
+    expect(tracked()).toEqual([]);
+    expect(api().loadState("x")).toEqual({ content: null, phase: "no-provider", providerId: "t-gltf" });
+    expect(s.local.get().status.x).toMatchObject({ state: "warn", text: "no provider" });
+    // drawn as its hint meanwhile, as anything is while its content hasn't arrived
+    expect(hints).toHaveBeenCalledWith("x", { min: [0, 0, 0], max: [1, 1, 1] });
+
+    getRegistry("scene:source").register(gltfSource());
+    await settle();
+    expect(queued()).toEqual(["x"]);
+    expect(api().loadState("x").content).toBe("file");
+    expect(s.local.get().status.x?.state).not.toBe("warn");
+    expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/declares no content kind/));
+
+    // and it goes again with its source
+    getRegistry("scene:source").unregister("t-gltf");
+    await settle();
+    expect(queued()).toEqual([]);
+    expect(api().loadState("x")).toEqual({ content: null, phase: "no-provider", providerId: "t-gltf" });
+  });
+
+  it("a source that builds, for an object with no render doc: nothing to load, and nothing to say", async () => {
+    const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
+    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { y: object({ sourceUrl: stl.url, providerId: "file-stl" }) } } });
+    await settle();
+    expect(queued()).toEqual([]);
+    expect(tracked()).toEqual([]);
+    expect(api().loadState("y")).toEqual({ content: null });
+    expect(s.local.get().status.y).toBeUndefined();
+  });
+
+  it("addObject through another package's file source makes no render doc and shows the file", async () => {
+    s = await mountStage({ repo, extensions: EXTS });
+    getRegistry("scene:source").register(gltfSource());
+    await settle();
+    const file = glbFile("part.gltf", "gltf");
+    expect((await api().providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["t-gltf"]);
+    const id = await api().addObject(file.url);
+    await settle();
+    expect(s.doc().objects[id]).toMatchObject({ sourceUrl: file.url, providerId: "t-gltf", renderUrl: null });
+    expect(queued()).toEqual([id]);
+    expect(api().loadState(id).content).toBe("file");
+  });
+
+  it("a source that declares no content kind is never offered, and is warned about once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    s = await mountStage({ repo, extensions: EXTS });
+    getRegistry("scene:source").register({ type: "scene:source", id: "t-bare", name: "Bare", supportedDatatypes: ["bare"], params: [], load: async () => ({ build: async () => null }) });
+    getRegistry("scene:source").register({ type: "scene:source", id: "t-old", name: "Old", supportedDatatypes: ["old"], params: [], passthrough: true });
+    await settle();
+    const bare = repo.add({ "@patchwork": { type: "bare" } });
+    const old = repo.add({ "@patchwork": { type: "old" } });
+    expect(await api().providersFor(bare.url, bare.doc())).toEqual([]);
+    expect(await api().providersFor(old.url, old.doc())).toEqual([]);
+    await expect(api().addObject(bare.url)).rejects.toThrow(/No scene provider/);
+    await expect(api().addObject(old.url, { providerId: "t-old" })).rejects.toThrow(/can't show/);
+    getRegistry("scene:source").register(gltfSource());
+    await settle();
+    const said = warn.mock.calls.map((c) => String(c[0])).filter((t) => /declares no content kind/.test(t));
+    expect(said).toEqual([expect.stringContaining("“t-bare”"), expect.stringContaining("“t-old”")]);
   });
 });
