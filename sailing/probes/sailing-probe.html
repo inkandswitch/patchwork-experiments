@@ -261,6 +261,8 @@ try {
       return best ? { ...best, pixels: n } : null;
     },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
+    /** is view w's look on `id`, or on something attached to it (a spoke of the wheel)? */
+    lookIsAt(id, w) { const parents = dbg[w].scene().parents; for (let at = dbg[w].local.get().hovered ?? null, n = 0; at != null && n < 32; at = parents.get(at), n++) if (at === id) return true; return false; },
   });
   window.__ready = true;
 } catch (err) {
