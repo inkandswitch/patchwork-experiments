@@ -559,11 +559,19 @@ try {
   check("F leaves the mainsheet: its claim goes", (await P("me('b')")).station == null && !(await P("doc()")).objects[ids.mainsheet].claims?.station, await P("me('b')"));
   await sleep(6000);
 
-  // a view from off the quarter, A not aboard: Esc stops A's play
+  // a view from off the quarter, A not aboard: Escape never leaves a body
+  // (scene/TOOLS.md §5); the body chip's Leave stops A walking her deck
   await focus("a", await P("canvasCentre('a')"));
   await press("Escape");
+  await sleep(300);
+  const stillAboard = (await P("me('a')")).playing === true && (await P("body('a')")) === "aboard";
+  const chipA = await P("chip('a')");
+  if (chipA) await b.click(Math.round(chipA.x), Math.round(chipA.y));
+  await until("!!window.__p.chipItem('a', 'Leave')", 3000);
+  const leaveA = await P("chipItem('a', 'Leave')");
+  if (leaveA) await b.click(Math.round(leaveA.x), Math.round(leaveA.y));
   await sleep(2500);
-  check("Esc stops A's play: the camera goes back off the quarter, and follows her", (await P("me('a')")).playing === false && !(await P("held('a')")) && (await quarterDistance("a")) < 30, { me: await P("me('a')"), distance: await quarterDistance("a") });
+  check("Escape leaves A aboard; the body chip's Leave stops A's play: the camera goes back off the quarter, and follows her", stillAboard && !!leaveA && (await P("me('a')")).playing === false && (await P("body('a')")) === "orbit" && !(await P("held('a')")) && (await quarterDistance("a")) < 30, { stillAboard, me: await P("me('a')"), body: await P("body('a')"), distance: await quarterDistance("a") });
   report.measured.heelAtQuarterShot = n2((await P(`read('${hull}', 'a')`)).heel);
   await shot("quarter-heeled", "a");
 

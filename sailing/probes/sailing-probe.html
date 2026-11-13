@@ -99,7 +99,11 @@ try {
     change: (fn) => scene.change(fn),
     running: (w) => dbg[w].local.get().running.map((r) => r.id),
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
-    armed: (w) => dbg[w].local.get().armed ?? null,
+    /** the body on top of view w's stack (scene/TOOLS.md §4) */
+    body: (w) => dbg[w].local.get().body?.id ?? null,
+    /** the body chip's rect, and its menu's item starting `label`, to click */
+    chip: (w) => { const e = hosts[w].querySelector(".body-chip"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent }; },
+    chipItem: (w, label) => { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     session: (w) => dbg[w].presence.session,
     objects: () => Object.entries(scene.doc().objects ?? {}).filter(([, o]) => o.kind !== "group").map(([id]) => id),
     byName: (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0] ?? null,

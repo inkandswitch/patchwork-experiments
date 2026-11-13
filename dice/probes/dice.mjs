@@ -240,6 +240,13 @@ try {
   check("A switches to Play", await until("activity('a') === 'play'", 6000), { activity: await P("activity('a')") });
   await settled();
   await sleep(400);
+  // the selection is the viewer's, not the activity's (scene/TOOLS.md §3): the
+  // d20 clicked while editing is still selected, and attention is the
+  // selection if any, so keys would go to it wherever A looks. Escape lets it go.
+  check("switching to Play keeps the selection (the viewer's): the d20", (await P("selected('a')")) === d20, await P("selected('a')"));
+  await P("focus('a')");
+  await b.key("Escape");
+  check("…and Escape lets it go, so attention is the look again", await until("selected('a') === null", 2000), await P("selected('a')"));
 
   // R over the d20
   {

@@ -127,7 +127,7 @@ try {
   const after = { a: await P("inScene('a')"), b: await P("inScene('b')"), bagA: await P("inBag('a')"), bagB: await P("inBag('b')"), carrying: { a: await P("carrying('a')"), b: await P("carrying('b')") }, order: await P("order('a')") };
   check("the docs converge", settled && (await P("converged()")).length === 0, { differ: await P("converged()"), after });
   check("each carries one token, and they are different tokens", after.carrying.a.length === 1 && after.carrying.b.length === 1 && after.carrying.a[0] !== after.carrying.b[0], after.carrying);
-  check("both are armed by the bag (the piece follows the pointer until the next click)", (await P("armed('a')")) === "bag" && (await P("armed('b')")) === "bag", { a: await P("armed('a')"), b: await P("armed('b')") });
+  check("both hold the drawn piece as the held tool, the bag's (it follows the pointer until the next click)", (await P("held('a')")) === "bag" && (await P("held('b')")) === "bag", { a: await P("held('a')"), b: await P("held('b')") });
   check("the count is 1, on both peers and in both views", after.bagA.inside.length === 1 && after.bagB.inside.length === 1 && (await until("label('a')[0] === 'Token bag · 1' && __p.label('b')[0] === 'Token bag · 1'", 3000)), { a: await P("label('a')"), b: await P("label('b')") });
   const places = {};
   for (const id of tokens) places[id] = [...(after.a.includes(id) ? ["scene"] : []), ...(after.bagA.inside.includes(id) ? ["bag"] : [])];
@@ -146,7 +146,7 @@ try {
   const spotB = await P("pageOf('b', [0.35, 0.02, -0.2])");
   await b.click(spotA.x, spotA.y);
   await b.click(spotB.x, spotB.y);
-  const down = await until("carrying('a').length === 0 && __p.carrying('b').length === 0 && __p.armed('a') == null && __p.armed('b') == null", 5000);
+  const down = await until("carrying('a').length === 0 && __p.carrying('b').length === 0 && __p.held('a') == null && __p.held('b') == null", 5000);
   await sleep(300);
   await mark("put down");
   const end = { a: await P("inScene('a')"), b: await P("inScene('b')"), bagA: await P("inBag('a')"), bagB: await P("inBag('b')") };
