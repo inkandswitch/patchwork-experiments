@@ -71,9 +71,7 @@ try {
   check("…with its title and count on it: Token bag · 0", await until(`label('a')[0] === 'Token bag · 0' && __p.label('b')[0] === 'Token bag · 0'`, 5000), { a: await P("label('a')"), b: await P("label('b')") });
   if (RULE !== "random") await P(`setRule(${Q(RULE)})`);
   check("the draw rule is the bag doc's, on both peers", await until(`rule('a') === ${Q(RULE)} && __p.rule('b') === ${Q(RULE)}`, 5000), { a: await P("rule('a')"), b: await P("rule('b')") });
-  await P("play('a')");
-  await P("play('b')");
-  check("both playing", await until("activity('a') === 'play' && __p.activity('b') === 'play'", 5000));
+  // (nothing to switch to: the bag's verbs are there whatever anyone is doing)
   await mark("set up");
   await shot("set-up");
 

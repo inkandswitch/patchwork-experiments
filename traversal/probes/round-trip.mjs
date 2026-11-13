@@ -9,8 +9,9 @@
 // is recorded and, once `follow` is on, opens that doc, as Patchwork does).
 // The maker makes both scenes with the tools (Ship at anchor with Lost Cities
 // in her cockpit; Freedoom's E1M1 slice pasted into an empty scene, set to
-// start in play at the player 1 start). Then a visitor:
-//  1. opens the ship: in play, nothing anywhere mentions the other scene;
+// start people walking at the player 1 start: view.start). Then a visitor:
+//  1. opens the ship: off her quarter (orbit, where a click comes aboard),
+//     sailing running; nothing anywhere mentions the other scene;
 //  2. comes aboard (Enter) and walks her deck (W, steering with the mouse)
 //     to the forward end of the cockpit, past the card table;
 //  3. her companionway, with nowhere to go, offers no verb; her hatch, a
@@ -18,15 +19,16 @@
 //  4. given somewhere to go (its `to`, as a publisher writes it), the
 //     companionway offers [F] Go below; F sends one open-document request
 //     for that doc, bubbling and composed out of the stage;
-//  5. the shell opens E1M1: the visitor arrives in play, the camera at the
-//     player 1 start's eye, the lobby offering Play; nothing mentions the ship;
-//  6. ▶ Play: walking (the walk body) at the start with the gun, the camera
-//     where it was; Esc puts the gun down, the body chip's Leave stops walking;
+//  5. the shell opens E1M1: the visitor arrives walking (the walk body) at
+//     the player 1 start, the camera at its eye, the lobby offering the gun;
+//     nothing mentions the ship;
+//  6. ▶ Pick up the gun: walking at the start with the gun, the camera where
+//     it was; Esc puts the gun down, the body chip's Leave stops walking;
 //  7. at the exit switch (the spawn moved beside it: the walk there is long,
 //     and doom's tests show it can be walked), walking up to it (W), with
 //     nowhere to go it offers no verb; given the ship, it offers [F] Exit,
 //     and F sends open-document for the ship;
-//  8. the shell opens the ship again: in play, nothing mentions E1M1;
+//  8. the shell opens the ship again: sailing running; nothing mentions E1M1;
 //  9. no errors on the page.
 // Prints a JSON report; exits non-zero if any check fails.
 import { dirname, join, resolve } from "node:path";
@@ -139,7 +141,7 @@ try {
   ids.exit = await P(`withTrait("traversal.exit")`);
   ids.spawn = await P(`withTrait("walk.spawn")`);
   ids.home = await P("startAtSpawn()");
-  check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts it in play at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
+  check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts people walking at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
   await P(`show("aboard", "maker")`);
   await until(`p.templates().includes("ship-at-anchor")`, 30_000);
   Object.assign(ids, await P("makeAboard()", 120_000));
@@ -149,11 +151,11 @@ try {
   // ─── 1. a visitor opens the ship ──────────────────────────────────────────
   await P("forgetCameras()");
   await P(`show("aboard", "visitor")`);
-  const inPlay = await until(`p.activity() === "play" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
+  const inPlay = await until(`p.bodyId() === "orbit" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
   await until(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
   await sleep(1500);
   const shipText1 = await textOf();
-  check("1. the visitor opens the ship in play (sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
+  check("1. the visitor opens the ship off her quarter (orbit; sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
   await shot("1-ship-arrive");
 
   // ─── 2. aboard, and to the companionway ───────────────────────────────────
@@ -210,16 +212,16 @@ try {
 
   // ─── 5. arriving in E1M1 ──────────────────────────────────────────────────
   const play = await (async () => {
-    if (!(await until(`p.showing() === "doom" && p.activity() === "play" && p.running().includes("arena")`, 20_000))) return null;
+    if (!(await until(`p.showing() === "doom" && p.running().includes("arena")`, 20_000))) return null;
     await until(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000, 200);
     await sleep(1200);
     return P(`rect(".arena-play")`);
   })();
-  const arrived = play && await until(`p.showing() === "doom" && p.activity() === "play" && p.running().includes("arena")`, 20_000);
+  const arrived = play && await until(`p.showing() === "doom" && p.bodyId() === "walk" && p.running().includes("arena")`, 20_000);
   const cam = await P("cam()");
   const doomText1 = await textOf();
-  details.arrival = { cam: { position: r3(cam.position), target: r3(cam.target) }, home: ids.home, lobby: play, text: doomText1.slice(0, 400), notices: await P("notices()"), available: await P("available()") };
-  check("5a. the shell opens E1M1: the visitor arrives in play, the camera at the player 1 start's eye looking its way, the lobby offering Play", arrived && Math.hypot(...cam.position.map((v, i) => v - ids.home.position[i])) < 0.05 && Math.hypot(...cam.target.map((v, i) => v - ids.home.target[i])) < 0.5 && /Play/.test(play?.text ?? ""), details.arrival);
+  details.arrival = { cam: { position: r3(cam.position), target: r3(cam.target) }, home: ids.home, lobby: play, text: doomText1.slice(0, 400), notices: await P("notices()"), body: await P("body()") };
+  check("5a. the shell opens E1M1: the visitor arrives walking at the player 1 start (view.start), the eye there, the lobby offering the gun", arrived && Math.hypot(cam.position[0] - ids.home.position[0], cam.position[2] - ids.home.position[2]) < 0.3 && Math.abs(cam.position[1] - ids.home.position[1]) < 0.3 && /Pick up the gun/.test(play?.text ?? ""), details.arrival);
   check("5b. nothing shown mentions the ship, and there are no notices", !SHIPPY.test(doomText1) && !doomText1.includes(urls.aboard) && (await P("notices()")).length === 0, details.arrival);
   check("5c. no target count in a level without targets", !/target|standing/i.test(doomText1), doomText1.slice(0, 300));
   await shot("5-doom-arrive");
@@ -230,7 +232,7 @@ try {
   await sleep(1500);
   const eye = (await P("cam()")).position;
   const walking = await P("body()");
-  check("6. ▶ Play: walking at the start (the walk body over orbit, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["orbit", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
+  check("6. ▶ Pick up the gun: walking at the start (the walk body over orbit, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["orbit", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
   await shot("6-doom-play");
 
   // ─── 7. the exit switch ───────────────────────────────────────────────────
@@ -278,11 +280,11 @@ try {
   check("7e. F sends exactly one open-document request, for the ship, out of E1M1's stage", sent2.length === 1 && sent2[0].url === urls.aboard && sent2[0].from === urls.doom && sent2[0].bubbles && sent2[0].composed, sent2);
 
   // ─── 8. back aboard ───────────────────────────────────────────────────────
-  const back = await until(`p.showing() === "aboard" && p.activity() === "play" && p.running().includes("sailing")`, 20_000);
+  const back = await until(`p.showing() === "aboard" && p.bodyId() === "orbit" && p.running().includes("sailing")`, 20_000);
   await until(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
   await sleep(1500);
   const shipText3 = await textOf();
-  check("8. the shell opens the ship again: in play; nothing shown mentions E1M1 or Doom", back && !DOOMISH.test(shipText3) && !shipText3.includes(urls.doom), shipText3.slice(0, 600));
+  check("8. the shell opens the ship again: off her quarter, sailing; nothing shown mentions E1M1 or Doom", back && !DOOMISH.test(shipText3) && !shipText3.includes(urls.doom), shipText3.slice(0, 600));
   await shot("8-ship-again");
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

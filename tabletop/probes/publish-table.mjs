@@ -26,9 +26,9 @@
 // - the start screen offers it;
 // - doc.assets has a file under its versioned key for every kind, and every
 //   object shows one of them (no game doc, no About);
-// - the view starts in play, and A is playing (a game with no seats, zones
-//   or hidden cards, Santorini, gives play nothing to run, so its doc
-//   writes no view.activity: A is in the editor, in the hand);
+// - the view starts people in the seat body (view.start) and A arrives
+//   watching from a seat (a game with no seats, Santorini, starts people in
+//   orbit: A is in orbit);
 // - A's stage lists the package of every plugin the scene calls for, each
 //   one this script states (PACKAGES), and names the scene package as the
 //   suggested import (the page registers each built package's plugins from
@@ -206,7 +206,7 @@ const glbs = Object.keys(game.doc().pieces).map((k) => game.doc().drawn?.[k]?.ur
 const s = scene.doc();
 const problems = [];
 if (drawn !== glbs.length || glbs.some((u) => !u)) problems.push(`${drawn} of ${glbs.length} piece GLBs drawn`);
-if (s.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(s.view?.activity)}, not "play"`);
+if (s.view?.start?.body !== "seat") problems.push(`view.start is ${JSON.stringify(s.view?.start)}, not the seat body`);
 if ("kits" in (s.view ?? {})) problems.push("view still has kits");
 problems.push(...packageProblems(s, PACKAGES));
 const objects = Object.entries(s.objects).filter(([, o]) => o.kind !== "group");
@@ -229,7 +229,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
-console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts in ${s.view.activity}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
+console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts people ${JSON.stringify(s.view.start?.body ?? "orbit")}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
 if (DRY) {
@@ -240,7 +240,7 @@ if (DRY) {
 await verify(made, (url, got) => {
   if (url === scene.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
   if (url === game.url && got["@patchwork"]?.suggestedImportUrl !== pushworkUrl("tabletop")) return "came back without the tabletop package as its suggested import";
-  if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
+  if (url === scene.url && got.view?.start?.body !== "seat") return "came back without view.start in the seat body";
   if (url === game.url && JSON.stringify(got.tables) !== JSON.stringify([scene.url])) return `came back listing tables ${JSON.stringify(got.tables)}, not just its own`;
   if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
   return null;
@@ -295,14 +295,13 @@ async function fromTemplate(gameId) {
     const art = Object.keys(d.assets ?? {});
     check("doc.assets has a file under its versioned key for every kind", laid && art.length === keys.length, { want: keys.length, have: art.length, missing: keys.filter((k) => !d.assets?.[k]) });
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
-    // play is on offer only where the table extension has a trait to run on
-    // (hands, cards); Santorini has none, so its doc doesn't claim play, and
-    // it opens in the editor, where its pieces carry just the same (by their trait)
+    // a game with seats starts people in the seat body (view.start); Santorini has none,
+    // so people start in orbit, where its pieces carry just the same (by their trait)
     const tabled = (await P("cards()")) > 0;
-    const lands = tabled ? "play" : "edit";
-    check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, with no view.tool`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && !("tool" in (d.view ?? {})), d.view);
+    const lands = tabled ? "Watching" : "Orbit";
+    check(`the view starts people ${tabled ? "in the seat body" : "in orbit (no body)"}, with no view.activity or view.tool`, (tabled ? d.view?.start?.body === "seat" : !("body" in (d.view?.start ?? {}))) && !("activity" in (d.view ?? {})) && !("tool" in (d.view ?? {})), d.view);
     check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
-    check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
+    check(`A lands ${lands === "Orbit" ? "in orbit" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
     // lists the package of every plugin the scene calls for (and of the
     // template it ran) and names the scene package as the suggested import.
@@ -332,7 +331,7 @@ async function fromTemplate(gameId) {
       );
       check("A is told to pick a seat", await until("notices('a').includes('Pick a seat (top right) to play.')", 3000), await P("notices('a')"));
       await P("openB()");
-      check("B opens the table in play, and both pickers are up", await until(`activity('b') === 'play' && __p.picker('a') === ${seats + 1} && __p.picker('b') === ${seats + 1}`, 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
+      check("B opens the table watching from a seat, and both pickers are up", await until(`bodyLabel('b') === 'Watching' && __p.picker('a') === ${seats + 1} && __p.picker('b') === ${seats + 1}`, 20_000), { b: await P("bodyLabel('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
       await P(`pick('a', ${JSON.stringify(seated[0])})`);
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
@@ -402,7 +401,7 @@ async function fromTemplate(gameId) {
   const glbs = files.map((u) => renamed.get(u));
   await verify(made, (url, got) => {
     if (url === table.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-    if (url === table.url && got.view?.activity !== docs[snapshot.scene].view?.activity) return `came back with view.activity ${JSON.stringify(got.view?.activity)}`;
+    if (url === table.url && JSON.stringify(got.view?.start ?? null) !== JSON.stringify(docs[snapshot.scene].view?.start ?? null)) return `came back with view.start ${JSON.stringify(got.view?.start)}`;
     if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
     return null;
   });

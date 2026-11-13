@@ -15,7 +15,7 @@
      The maker (Ana) makes both scenes with the tools: the Ship at anchor
      template, the Card table in her cockpit and Lost Cities on it (api.part);
      and an empty scene with Freedoom's E1M1 slice pasted into it, set to start
-     in play at the player 1 start. A visitor (Vi) then opens them. -->
+     walking at the player 1 start (view.start). A visitor (Vi) then opens them. -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -114,8 +114,8 @@ try {
     showing: () => (current?.url === aboard.url ? "aboard" : current?.url === doom.url ? "doom" : current?.url ?? null),
     forgetCameras() { try { localStorage.clear(); } catch {} return true; },
     running: () => (dbg()?.local.get().running ?? []).map((r) => r.id),
-    activity: () => dbg()?.local.get().activities?.current ?? null,
-    available: () => dbg()?.local.get().activities?.available ?? [],
+    /** the body on top of the shown scene's stack, by id */
+    bodyId: () => dbg()?.local.get().body?.id ?? null,
     notices: () => [...(current?.told ?? [])],
     templates: () => [...host.querySelectorAll("[data-template]")].map((b) => b.dataset.template),
     doc: () => JSON.parse(JSON.stringify(doc(), (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v))),
@@ -142,7 +142,10 @@ try {
       const board = await api.part("tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
       if (!board) return { error: "no Lost Cities", notices: P.notices() };
       const m = dbg().scene().world(hull);
-      api.change((d) => { d.view.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) }; });
+      api.change((d) => {
+        if (!d.view.start) d.view.start = {};
+        d.view.start.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) };
+      });
       dbg().local.swap((l) => ({ ...l, selected: null }));
       return { hull, table, board, companionway: withTrait(EXIT), hatch: withTrait("joints.slide") };
     },
@@ -153,7 +156,7 @@ try {
       rootEl().dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
       return true;
     },
-    /** the Doom scene starts in play, its camera at the spawn point's eye looking its way (as publish-e1m1.mjs sets it) */
+    /** the Doom scene starts people walking at the spawn point, its camera at its eye looking its way (as publish-e1m1.mjs sets it) */
     startAtSpawn() {
       const id = withTrait("walk.spawn");
       const m = dbg().scene().world(id);
@@ -161,7 +164,7 @@ try {
       const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
       const r4 = (v) => Math.round(v * 1e4) / 1e4;
       const home = { position: eye.map(r4), target: [eye[0] - 2 * Math.sin(yaw), eye[1], eye[2] - 2 * Math.cos(yaw)].map(r4) };
-      current.handle.change((d) => { d.view.activity = "play"; d.view.home = home; });
+      current.handle.change((d) => { d.view.start = { body: "walk", place: id, home }; });
       return home;
     },
     /** where an exit leads: its `to`, set as the inspector's url field writes it (null: deleted, leading nowhere) */

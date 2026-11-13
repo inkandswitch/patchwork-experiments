@@ -7,18 +7,19 @@
 // Opens probes/editor-probe.html: the BUILT tool, two views of one doc (A big,
 // B small; each one's broadcasts reach only the other), a locked board with a
 // 5×5 grid of connectors, three blocks and two pawns. Then, with real CDP mouse
-// and key events: the layout (toolbar top, sidebar right, canvas the rest);
-// click to select (outline row, inspector, B's box); Escape; no tools to pick
-// (G, R and H do nothing); a halo drag (B sees the pose mid-drag, then the
-// landed transform); carrying by the trait (snaps to a connector, Q turns,
-// Esc puts back, Alt places freely); orbit on
-// the locked board; Measure; Delete; . (Frame); P; double-click; the context menu; no
-// activity switcher (a plain model offers only editing); a pasted automerge
-// URL; a dimension selected by its label and deleted; the inspector's Scene
-// section (Starts in) and "Add behaviour…" (an arena Target on a block starts
-// the arena's editing extension and offers Play: Starts in and the switcher
-// then list it, Play takes this view's editor away and Edit brings it back,
-// the other view editing all along; × stops it). The arena's checks need
+// and key events: the layout (toolbar top, the drawer at the right with the
+// Objects tab each viewer opened from the toolbar, canvas the rest); click to
+// select (outline row, the inspector's tab coming in behind it, B's box);
+// Escape; no tools to pick (G, R and H do nothing); a halo drag (B sees the
+// pose mid-drag, then the landed transform); carrying by the trait (snaps to a
+// connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
+// board; Measure (its Dimensions tab); Delete; . (Frame); the Objects tab's ×
+// and the toolbar's Objects; double-click; the context menu; no modes (the
+// orbit body, no activity anywhere); a pasted automerge URL; a dimension
+// selected by its label and deleted; the inspector on the Scene (the
+// toolbar's Inspector: Starts in, Orbit) and "Add behaviour…" (an arena
+// Target on a block starts the arena in both views, beside the editor: its
+// Play in the toolbar, the editor still there in both; × stops it). The arena's checks need
 // arena/ built (its dist/ is registered alongside); without it they are
 // skipped and say so. Prints a JSON report and exits non-zero if any check
 // fails.
@@ -75,6 +76,10 @@ try {
   if ((await b.js("window.__ready")) !== true) throw new Error(`setup failed: ${JSON.stringify(await P("errors"))}`);
   check("contentLoaded", await b.waitFor("__p.loaded() && __p.loaded(__p.B)", 30_000));
   await sleep(600);
+  // the outline is a drawer tab each viewer opens (the toolbar's Objects): both open it
+  for (const h of ["hostA", "hostB"]) await b.js(`(() => { const e = [...__p.${h}.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return !!e; })()`);
+  await b.waitFor(`!!__p.hostA.querySelector('.stage-drawer .object-row') && !!__p.hostB.querySelector('.stage-drawer .object-row')`, 5000);
+  await sleep(400);
   await shot("0-open");
 
   // ── layout ────────────────────────────────────────────────────────────────
@@ -82,23 +87,22 @@ try {
     const L = await b.js(`(() => {
       const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, r: b.right, b: b.bottom }; };
       const h = __p.hostA;
-      return { stage: r(h.querySelector('.scene-stage')), toolbar: r(h.querySelector('.toolbar')), sidebar: r(h.querySelector('.sidebar')), canvas: r(h.querySelector('canvas')),
+      return { stage: r(h.querySelector('.scene-stage')), toolbar: r(h.querySelector('.toolbar')), drawer: r(h.querySelector('.stage-drawer')), canvas: r(h.querySelector('canvas')),
         buttons: [...h.querySelectorAll('.toolbar button')].map((e) => e.textContent.trim()), picker: [...h.querySelectorAll('.toolbar select')].map((e) => [...e.options].map((o) => o.textContent)),
         oneRow: new Set([...h.querySelectorAll(".toolbar button, .toolbar select")].map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 20); })).size,
-        panels: [...h.querySelectorAll('.sidebar section')].filter((s) => !s.hidden).map((s) => s.querySelector('h3, .panel-title')?.textContent.trim()),
+        tabs: [...h.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()),
         rows: [...h.querySelectorAll('.object-row')].map((e) => e.textContent.replace('×','').trim()) };
     })()`);
     report.layout = L;
-    const want = ["Panel", "Frame all", "Measure", "Snap", "Grid", "Axes", "Bounds"];
-    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && !["Move", "Rotate", "No gizmo", "Hand"].some((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
-    const t = L.toolbar, s = L.sidebar, c = L.canvas, st = L.stage;
+    const want = ["Objects", "Inspector", "Dimensions", "Frame all", "Measure", "Snap", "Grid", "Axes", "Bounds", "Undo", "Redo"];
+    check("toolbarButtons", want.every((w) => L.buttons.includes(w)) && !["Move", "Rotate", "No gizmo", "Hand", "Panel"].some((w) => L.buttons.includes(w)) && L.picker[0]?.includes("cm"), { buttons: L.buttons, picker: L.picker });
+    const t = L.toolbar, s = L.drawer, c = L.canvas, st = L.stage;
     check("toolbarAlongTop", t && Math.abs(t.y - st.y) < 1 && Math.abs(t.w - st.w) < 1 && L.oneRow === 1, { t, st, rows: L.oneRow });
-    check("sidebarAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
+    check("drawerAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
     check("canvasFillsTheRest", c && Math.abs(c.x - st.x) < 1 && Math.abs(c.y - t.b) < 1 && Math.abs(c.r - s.x) < 1 && Math.abs(c.b - st.b) < 1, { c });
-    // nothing selected, the inspector shows the Scene, so its panel is there;
-    // the parts bin comes last, and only when a package offers parts (arena's do)
-    const panels = ["Objects", "Inspector", "Dimensions", ...(ARENA_PARTS ? ["Parts"] : [])];
-    check("panelsObjectsInspectorDimensions", JSON.stringify(L.panels) === JSON.stringify(panels), { panels: L.panels, want: panels });
+    // chrome follows attention: only the tab the viewer opened (nothing is selected, so no inspector);
+    // Parts is a toggle in the toolbar only when a package offers parts (arena's do)
+    check("drawerHasOnlyObjects", JSON.stringify(L.tabs) === '["Objects"]' && L.buttons.includes("Parts") === !!ARENA_PARTS, { tabs: L.tabs, parts: L.buttons.includes("Parts") });
     check("outlineRows", JSON.stringify(L.rows) === JSON.stringify(["Board", "Block 1", "Block 2", "Block 3", "Pawn 1", "Pawn 2"]), L.rows);
   }
 
@@ -109,8 +113,9 @@ try {
     await sleep(250);
     check("clickSelects", (await selected()) === "b0", await selected());
     check("outlineRowHighlighted", await A(`!!p.hostA.querySelector('.object-row[data-id="b0"][data-selected]')`));
-    const insp = await A(`(() => { const s = p.hostA.querySelector('.inspector-body')?.closest('section'); return { shown: !!s && !s.hidden && s.getBoundingClientRect().height > 40, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }; })()`);
-    check("inspectorShowsIt", insp.shown && insp.name === "Block 1", insp);
+    // the inspector's tab comes in behind the Objects tab the viewer is using
+    const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }))()`);
+    check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Objects","Inspector"]' && insp.shown === "Objects" && insp.name === "Block 1", insp);
     const peerBox = await b.waitFor(`(() => { let f = null; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:') && o.visible) f = o; }); return f && f.box.max.x > f.box.min.x; })()`, 3000);
     const bRow = await Bv(`!!p.hostB.querySelector('.object-row[data-id="b0"][data-remote-selected]')`);
     const bPres = await Bv(`Object.values(d.presence.get()).some((s) => s.keys?.['scene.select']?.selected === 'b0')`);
@@ -278,7 +283,11 @@ try {
     report.measure = { dims, label };
     const wd = dims[0] && [dims[0].a.world ?? null, dims[0].b.world ?? null];
     check("measureWritesDimension", dims.length === 1 && label.some((l) => /^24(\.0+)?\s*cm$/.test(l)), { dims, label, wd });
-    check("dimensionInPanel", (await A(`p.text('.sidebar section').join(' ')`)).includes("24"), await A(`p.text('.sidebar section')`));
+    // the toolbar's Dimensions opens its tab, listing it; then back to Objects
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Dimensions"); e.click(); return true; })()`);
+    await sleep(200);
+    check("dimensionInItsTab", (await A(`p.text('.stage-drawer [data-panel="dimensions"]').join(' ')`)).includes("24"), await A(`p.text('.stage-drawer [data-panel="dimensions"]')`));
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
     await shot("7-measured");
     await b.key("Escape");
     await b.key("Escape");
@@ -320,17 +329,20 @@ try {
     check("peerOutlineLosesRow", await b.waitFor(`!__p.hostB.querySelector('.object-row[data-id="p0"]')`, 2000));
   }
 
-  // ── P hides and shows the sidebar ───────────────────────────────────────
+  // ── the drawer: its tabs' × close them, and the canvas takes the room; the toolbar's Objects opens it again ──
   {
-    await b.key("p");
-    await sleep(150);
-    const hid = await A(`({ sidebar: p.rect('.sidebar'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), pressed: p.text('.toolbar button[aria-pressed=true]') })`);
-    check("pHidesSidebar", (!hid.sidebar || hid.sidebar.w === 0) && Math.abs(hid.canvas.w - hid.stage.w) < 1 && !hid.pressed.includes("Panel"), hid);
-    await shot("8-no-sidebar");
-    await b.key("p");
-    await sleep(150);
-    const back = await A(`({ sidebar: p.rect('.sidebar'), canvas: p.rect('canvas') })`);
-    check("pShowsSidebar", back.sidebar?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.sidebar.x) < 1, back);
+    for (let i = 0; i < 4 && (await A(`!!p.hostA.querySelector('.stage-drawer-tab-close')`)); i++) {
+      const x = await A(`p.rect('.stage-drawer-tab-close')`);
+      await b.click(x.x + x.w / 2, x.y + x.h / 2);
+      await sleep(150);
+    }
+    const hid = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage') })`);
+    check("closingTheTabsGivesTheCanvasTheRoom", !hid.drawer && Math.abs(hid.canvas.w - hid.stage.w) < 1, hid);
+    await shot("8-no-drawer");
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
+    await sleep(200);
+    const back = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas') })`);
+    check("objectsOpensItAgain", back.drawer?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.drawer.x) < 1, back);
   }
 
   // ── double-click frames an object ───────────────────────────────────────
@@ -375,10 +387,10 @@ try {
     check("menuRemoveRemoves", !(await obj("b1")));
   }
 
-  // ── activities: a plain model offers only editing, so no switcher ───────
+  // ── no modes: the orbit body, and no activity anywhere ───────────────────
   {
-    const sw = await A(`(() => { const e = p.hostA.querySelector('.activity-switch'); return { there: !!e, hidden: e?.hidden ?? null, activities: d.local.get().activities, activity: d.local.get().activity }; })()`);
-    check("noSwitcherInAModel", sw.there && sw.hidden && sw.activity === "edit" && sw.activities?.current === "edit" && JSON.stringify(sw.activities?.available) === '["edit"]', sw);
+    const sw = await A(`({ switcher: !!p.hostA.querySelector('.activity-switch'), body: d.local.get().body?.id, activity: "activity" in d.local.get(), activities: "activities" in d.local.get() })`);
+    check("noModes", !sw.switcher && sw.body === "orbit" && !sw.activity && !sw.activities, sw);
   }
 
   // ── paste an automerge URL ──────────────────────────────────────────────
@@ -474,87 +486,66 @@ try {
   {
     await b.key("Escape");
     await clickEmpty();
+    // nothing selected (its tab gone with the selection): the toolbar's Inspector opens it on the Scene
+    await b.waitFor(`!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"]')`, 3000);
+    await sleep(150);
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
+    await b.waitFor(`!!__p.hostA.querySelector('.inspector[data-kind="scene"]')`, 3000);
     const startsIn = `(() => {
       const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
-      return [...(r?.querySelectorAll('.starts-in input[data-activity]') ?? [])].map((e) => [e.dataset.activity, e.checked]);
+      return [...(r?.querySelectorAll('.starts-in input[data-body]') ?? [])].map((e) => [e.dataset.body, e.checked]);
     })()`;
     const sc = await A(`(() => {
       const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
-      const s = r?.closest('section');
-      return r && { shown: !!s && !s.hidden && r.getBoundingClientRect().height > 40, kind: r.querySelector('.inspector-kind')?.textContent ?? null,
+      return r && { shown: r.getBoundingClientRect().height > 40, kind: r.querySelector('.inspector-kind')?.textContent ?? null,
         label: r.querySelector('.starts-in-group .group-label')?.textContent ?? null,
         startsIn: ${startsIn},
         addable: [...r.querySelectorAll('.behaviour-add option')].map((o) => o.textContent) };
     })()`);
-    report.sceneInspector = sc;
-    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["edit",true]]', sc);
+    report.sceneInspector = sc ?? { selected: await selected(), tabs: await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`), kinds: await A(`[...p.hostA.querySelectorAll('.inspector')].map((e) => e.dataset.kind)`), pressed: await pressed() };
+    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["orbit",true]]', sc);
     await shot("17-scene-inspector");
-    if (!ARENA) report.skipped.push("addBehaviourOffersPlay, startsInWritesViewActivity, playTakesTheEditorAway, editBringsItBack, removeBehaviourStopsArena: arena/ isn't built");
+    if (!ARENA) report.skipped.push("addBehaviourRunsTheArena, theGameRunsBesideTheEditor, removeBehaviourStopsArena: arena/ isn't built");
     else {
-      // a block, selected from its outline row; "Add behaviour…" → Target
+      // a block, selected from its outline row (the Objects tab shown again); "Add behaviour…" → Target
+      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
+      await sleep(150);
       const row = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row.x, row.y);
+      await b.waitFor(`__p.A.local.get().selected === "b2"`, 3000);
+      await sleep(200);
       const offered = await A(`[...p.hostA.querySelectorAll('.inspector-body .behaviour-add option')].map((o) => [o.value, o.textContent])`);
-      const wasRunning = (await P("running()")).includes("arena.edit");
+      const wasRunning = (await P("running()")).includes("arena");
       // a <select>'s popup isn't in the page in headless Chrome: pick as its change would
       await A(`(() => { const s = p.hostA.querySelector('.inspector-body .behaviour-add'); s.value = "arena.target"; s.dispatchEvent(new Event("change")); return true; })()`);
-      // editing, the arena's editing part starts in both views (not its play), and both now offer Play
-      const started = await b.waitFor(`__p.running().includes("arena.edit") && __p.running(__p.B).includes("arena.edit") && !__p.running().includes("arena")`, 8000);
+      // the arena starts in both views, its Play in each toolbar beside the editor's
+      const started = await b.waitFor(`__p.running().includes("arena") && __p.running(__p.B).includes("arena")`, 8000);
       const card = await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`, 2000);
-      const switchers = await b.waitFor(`[__p.hostA, __p.hostB].every((h) => !h.querySelector('.activity-switch').hidden)`, 2000);
       const t = (await obj("b2"))?.traits;
-      report.behaviour = { offered, wasRunning, traits: t, switchers, labels: await P(`text('.activity-switch button')`) };
-      check("addBehaviourOffersPlay", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null && switchers && JSON.stringify(report.behaviour.labels) === '["Play","Edit"]', report.behaviour);
+      report.behaviour = { offered, wasRunning, traits: t, play: await A(`!!p.hostA.querySelector('.toolbar [data-command="play"]')`) };
+      check("addBehaviourRunsTheArena", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null && report.behaviour.play, report.behaviour);
       await sleep(300);
       await shot("18-behaviour-added");
+      // the game runs beside the editor: nothing went from either view, and the doc starts nobody anywhere
+      const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: p.running().includes("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: p.running(p.B).includes("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
+      check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && !both.start?.body, both);
+      await shot("19-game-and-editor");
 
-      // nothing selected: Starts in now offers Play too; choosing it writes
-      // view.activity, and moves nobody already here
-      await b.key("Escape");
-      await clickEmpty();
-      const radio = async (a) => A(`(() => { const e = p.hostA.querySelector('.starts-in input[data-activity="${a}"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-      const listed = await A(startsIn);
-      const pr = await radio("play");
-      if (pr) await b.click(pr.x, pr.y);
-      await sleep(200);
-      const after = { listed, view: (await doc()).view.activity ?? null, now: await A(startsIn), mine: await A(`d.local.get().activity`), peer: await Bv(`d.local.get().activity`), editing: (await P("running()")).includes("scene.toolbar") };
-      const er = await radio("edit");
-      if (er) await b.click(er.x, er.y);
-      await sleep(200);
-      after.cleared = !("activity" in ((await doc()).view ?? {}));
-      check("startsInWritesViewActivity", JSON.stringify(listed) === '[["edit",true],["play",false]]' && after.view === "play" && JSON.stringify(after.now) === '[["edit",false],["play",true]]' && after.mine === "edit" && after.peer === "edit" && after.editing && after.cleared, after);
-
-      // the switcher: Play takes A's editor away (B keeps editing), Edit brings it back
-      const opt = async (a) => A(`p.rect('.activity-switch button[data-activity="${a}"]')`);
-      const play = await opt("play");
-      await b.click(play.x + play.w / 2, play.y + play.h / 2);
-      // the editor's chrome goes; the selection and its halo stay (they serve every activity)
-      const inPlay = await b.waitFor(`__p.running().includes("arena") && !__p.running().includes("scene.toolbar") && __p.running().includes("scene.select")`, 8000);
-      await sleep(300);
-      const off = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), sidebar: !!p.hostA.querySelector('.sidebar'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), running: p.running(), pressed: p.text('.activity-switch button[aria-pressed=true]'), peer: p.running(p.B).includes("scene.select") && !!p.hostB.querySelector('.toolbar') })`);
-      check("playTakesTheEditorAway", inPlay && !off.toolbar && !off.sidebar && Math.abs(off.canvas.w - off.stage.w) < 1 && Math.abs(off.canvas.h - off.stage.h) < 1 && JSON.stringify(off.pressed) === '["Play"]' && off.peer, off);
-      await shot("19-play");
-      const edit = await opt("edit");
-      await b.click(edit.x + edit.w / 2, edit.y + edit.h / 2);
-      await sleep(500);
-      const on = await A(`({ toolbar: p.rect('.toolbar'), sidebar: p.rect('.sidebar'), running: p.running(), pressed: p.text('.activity-switch button[aria-pressed=true]'), focusInside: p.hostA.contains(document.activeElement) })`);
-      check("editBringsItBack", on.toolbar?.h > 20 && on.sidebar?.w > 200 && on.running.includes("scene.select") && !on.running.includes("arena") && JSON.stringify(on.pressed) === '["Edit"]' && on.focusInside, on);
-      await clickEmpty();
-
-      // × on the card: the trait goes, the arena's editing part stops (after
-      // a doc-caused stop's linger), and with nothing played the switcher goes
-      // the sidebar was made again when editing came back: find the row anew
+      // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)
+      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
+      await sleep(150);
       const row2 = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row2.x, row2.y);
       await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`, 2000);
-      // (the block's Carryable card is above it now: bring it into the sidebar's view)
+      // (the inspector's tab shown, and the block's Carryable card above it now: bring it into view)
+      await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
+      await sleep(150);
       await A(`p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove').scrollIntoView({ block: "center" })`);
       const x = await A(`p.rect('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`);
       if (x) await b.click(x.x + x.w / 2, x.y + x.h / 2);
       const gone = (await obj("b2"))?.traits?.["arena.target"] === undefined;
-      const stopped = await b.waitFor(`!__p.running().includes("arena.edit") && !__p.running(__p.B).includes("arena.edit")`, 8000);
-      const hidden = await A(`p.hostA.querySelector('.activity-switch').hidden`);
-      check("removeBehaviourStopsArena", !!x && gone && stopped && hidden && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, hidden, running: await P("running()") });
+      const stopped = await b.waitFor(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
+      check("removeBehaviourStopsArena", !!x && gone && stopped && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, running: await P("running()") });
     }
   }
 

@@ -116,7 +116,7 @@ try {
   check("a GLB drawn from the mod's assets says which of its URLs it came from", probe.drawnOrigins > 0 || (probe.report?.counts?.assets?.cache ?? 0) === 0);
   check("Set up a table opened a scene with the scene tool", probe.tableOpened?.toolId === "scene");
   check("every card on the table is kept, by the plain keeper", sc.cards === sc.keptCards);
-  check("a hand for every seat, the seats laid, and it starts in play", sc.seats?.length === probe.game?.seats?.length && probe.game.seats.every((s) => sc.hands.includes(s)) && (sc.seats.length === 0 || sc.view?.activity === "play"));
+  check("a hand for every seat, the seats laid, and it starts people at the table (view.start)", sc.seats?.length === probe.game?.seats?.length && probe.game.seats.every((s) => sc.hands.includes(s)) && (sc.seats.length === 0 || sc.view?.start?.body === "seat"));
   check("a mod with bags has bags on the table, each holding its things in a bag document", (probe.report?.counts?.bags ?? 0) === 0 || sc.bags > 0);
   check("the table says which mod it came from", !!sc.origin?.tts?.saveName);
   check("every placed piece not locked can be carried (the scene's carry trait)", sc.carryable === sc.placed - sc.locked && sc.carryable > 0);

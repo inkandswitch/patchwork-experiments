@@ -124,11 +124,9 @@ try {
   mark("table laid out", { cup });
 
   // ── 2. seats ──
-  await P("play('a')");
-  await P("play('b')");
   await P("pick('a', 'seat1')");
   await P("pick('b', 'seat2')");
-  check("A sits as Red, B as Blue; both play", await until(`seats().seat1.player === ${Q(V.a)} && __p.seats().seat2.player === ${Q(V.b)} && __p.activity('a') === 'play' && __p.activity('b') === 'play'`, 10_000), await P("seats()"));
+  check("A sits as Red, B as Blue; both play", await until(`seats().seat1.player === ${Q(V.a)} && __p.seats().seat2.player === ${Q(V.b)} `, 10_000), await P("seats()"));
   check("the cup extension and the dice's own lots run in both views, and nothing of keep's", (await P("running('a')")).includes("dice.cup") && (await P("running('b')")).includes("dice.lots") && !(await P("running('a')")).some((x) => x.startsWith("keep.")), { a: await P("running('a')") });
   await sleep(1500); // seat cameras settle
   await shot("seated");

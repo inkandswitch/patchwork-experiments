@@ -92,9 +92,6 @@ try {
   const TRAY = { min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] };
   getRegistry("scene:extension").register({
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
-    // played as well as edited, needing what a game table does (tabletop's own list)
-    activities: ["play", "edit"],
-    requires: ["scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     load: async () => ({
       create(api) {
         let looks = new Map();
@@ -130,7 +127,14 @@ try {
               api.notify(`Shuffling ${pile.length} cards…`);
             },
           }],
-          panels: [{ id: "probe.panel", title: "Probe", mount(el) { el.textContent = "probe panel"; return { update() {}, dispose() {} }; } }],
+          // its own panel, docked in the drawer (api.dock) when asked: an extension's editor, as Camber's Shape is
+          probePanel: (() => {
+            const el = document.createElement("div");
+            el.className = "probe-panel";
+            el.textContent = "probe panel";
+            (window.__probeDock ??= {})[api.viewer] = () => ((window.__probeClose ??= {})[api.viewer] = api.dock(el, { title: "Probe" }));
+            return el;
+          })(),
         };
       },
     }),
@@ -138,7 +142,7 @@ try {
   const scene = repo.add(emptyScene({
     title: "Hand probe", objects, order: Object.keys(objects),
     view: { units: "cm", grid: false, axes: false, bounds: false, snap: true,
-            home: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] } },
+            start: { home: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] } } },
   }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -177,8 +181,8 @@ try {
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
     carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
-    /** switch a viewer's activity; what each is running */
-    activity: (who, id) => (who === "a" ? dbgA : dbgB).local.swap((m) => ({ ...m, activity: id })),
+    /** open a drawer tab of the stage's own, as its toolbar toggle does (ext "scene.outline", command "objects") */
+    openTab: (who, ext, command) => (who === "a" ? dbgA : dbgB).host.record(ext)?.api.run({ ext, command, value: true }) ?? false,
     running: (who) => ((who === "a" ? dbgA : dbgB).local.get().running ?? []).map((r) => r.id),
     /** "face" or "back": which look a viewer is showing for a hidden object */
     look: (who, id) => {
@@ -189,7 +193,11 @@ try {
       if (!d.traits) d.traits = {};
       d.traits["probe.seat"] = who === "a" ? hostA.viewerId : hostB.viewerId;
     }),
-    panel: (who) => [...(who === "a" ? hostA : hostB).querySelectorAll(".sidebar section")].map((s) => s.textContent).find((t) => t.includes("probe panel")) ?? null,
+    /** dock the probe extension's panel (as a verb of its would) */
+    dockPanel: (who) => window.__probeDock?.[(who === "a" ? hostA : hostB).viewerId]?.(),
+    /** close the probe extension's docked panel (as its caller would), giving the canvas its width back */
+    closePanel: (who) => window.__probeClose?.[(who === "a" ? hostA : hostB).viewerId]?.(),
+    panel: (who) => [...(who === "a" ? hostA : hostB).querySelectorAll(".stage-drawer .stage-drawer-pane")].map((s) => s.textContent).find((t) => t.includes("probe panel")) ?? null,
     settled: () => dbgA.queue.pending() === 0 && dbgB.queue.pending() === 0,
     rot: (id) => scene.doc().objects[id].transform.rotation,
     /** what each card really is */

@@ -84,10 +84,12 @@ async function dragPart(part, to) {
 try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const viewers = await P("viewers");
-  check("both views playing", await until("activity('a') === 'play' && __p.activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3"));
+  // the table starts people in the seat body (view.start): watching from the first seat, writing nothing
+  check("both views arrive watching from a seat, the pickers up", await until("body('a') === 'Watching' && __p.body('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3"), { a: await P("body('a')"), b: await P("body('b')"), seats: await P("seats()") });
   await P("pick('a', 'p1')");
   await P("pick('b', 'p2')");
   check("A in Player 1, B in Player 2", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
+  check("each seated, over watching", await until("body('a') === 'Seated' && __p.body('b') === 'Seated'"), { a: await P("body('a')"), b: await P("body('b')") });
   mark("seated");
   const tray = await P("zoneObj('p1')");
   const board = await P("board()");
@@ -146,10 +148,9 @@ try {
   }
 
   await snapLooks("card snapped");
-  // ── editing: the parts bin ──
-  await click(await P(`rect('.activity-option[data-activity="edit"]')`));
-  check("A switches to Edit", await until("activity('a') === 'edit' && __p.running('a').includes('scene.parts')", 6000), await P("running('a')"));
-  // the camera eases to the editor's view: let it stop before aiming at the ground
+  // ── editing, seated: the parts bin is a drawer tab A opens from the toolbar ──
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  check("A opens Parts from the toolbar, still seated (no mode to switch)", await until("tab('a', 'parts') && __p.body('a') === 'Seated'", 6000), { body: await P("body('a')"), running: await P("running('a')") });
   await settled();
   const bin = await P("binParts('a')");
   check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]), bin);
@@ -176,13 +177,14 @@ try {
   }
   await until(`loaded(${J(pawnId)})`, 15_000);
   await shot("3-parts");
-  // ── play again: the pawn won't take a card slot ──
-  await click(await P(`rect('.activity-option[data-activity="play"]')`));
-  check("A back in play", await until("activity('a') === 'play' && !__p.running('a').includes('scene.parts')", 6000), await P("running('a')"));
+  // ── the bin put away: the pawn won't take a card slot ──
+  const partsButton = await P(`rect('.toolbar [data-command="parts"]')`);
+  await click(partsButton);
+  check("A shuts Parts again", await until("tab('a', 'parts') === false", 6000), { at: partsButton, tab: await P("tab('a', 'parts')") });
   await settled();
   await snapLooks("back in play");
   const same = (x, y) => Object.keys(x).every((id) => !(id in y) || x[id] === y[id]);
-  check("the hands keep their faces throughout (a shuffle of the pile, edit and back)", ["shuffled", "card snapped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
+  check("the hands keep their faces throughout (a shuffle of the pile, the parts bin open and shut)", ["shuffled", "card snapped", "back in play"].every((k) => same(looks.seated.a, looks[k].a) && same(looks.seated.b, looks[k].b)), Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v])));
   await sleep(400);
   {
     const target = free[0];

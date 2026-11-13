@@ -20,7 +20,7 @@
 //  4. a viewer who joins while a door is open sees every door where the doc
 //     has it;
 //  5. the doc's history shows two writes for the door's cycle;
-//  6. the door, copied into another scene (one with no game: editing only),
+//  6. the door, copied into another scene (one with no game: no arena),
 //     opens from its menu and closes itself there;
 //  7. draw calls and frame time, first person and the whole map.
 // Prints a JSON report; exits non-zero if any check fails.
@@ -131,15 +131,9 @@ async function hover(w, p) {
 async function clickAt({ x, y }) {
   await b.click(Math.round(x), Math.round(y));
 }
-/** Play in view w: switch to play, press ▶ Play. */
+/** Play in view w: press ▶ Play (the arena's, which runs wherever the level is: no mode to switch to). */
 async function play(w) {
-  if ((await P(`activity("${w}")`)) !== "play") {
-    const r = await P(`switchRect("${w}", "Play")`);
-    if (r) await clickAt(r);
-    else await P(`setActivity("${w}", "play")`);
-    await b.waitFor(`window.__p.activity("${w}") === "play" && window.__p.running("${w}").includes("arena")`, 8000);
-  }
-  await b.waitFor(`!!window.__p.rect(".arena-play", "${w}")`, 8000);
+  await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect(".arena-play", "${w}")`, 8000);
   await clickAt(await P(`rect(".arena-play", "${w}")`));
   await sleep(600);
 }
@@ -302,8 +296,9 @@ try {
   if (leaveItem) await clickAt(leaveItem);
   await sleep(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (orbit again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "orbit", { chip: chipA, body: await P(`body("a")`) });
-  await P(`setActivity("a", "edit")`);
-  await b.waitFor(`window.__p.activity("a") === "edit"`, 5000);
+  // the outline is a drawer tab A opens from the toolbar (no Edit to switch to)
+  const objectsButton = await P(`buttonRect("a", "Objects")`);
+  if (objectsButton) await clickAt(objectsButton);
   await sleep(500);
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
   await sleep(400);
@@ -329,8 +324,8 @@ try {
   const copiedRender = copied ? await P(`find(${JSON.stringify(copied[1].renderUrl)})`) : null;
   check("the copy is the same WAD seen as the same door (its own render doc, the same params), its slide shut and nobody's", !!copied && copied[1].sourceUrl === wadUrl && copiedRender?.params?.map === "E1M1" && copiedRender?.params?.door === DOOR && copied[1].renderUrl !== parts.find(([id]) => id === doorId)[1].renderUrl && copied[1].traits["joints.slide"].at === "closed" && !("since" in copied[1].traits["joints.slide"]), copied && { traits: copied[1].traits, params: copiedRender?.params });
   await b.waitFor(`window.__p.loaded("d").loaded === window.__p.loaded("d").total && window.__p.loaded("d").total > 0`, 30_000);
-  // a slide alone makes no game: scene 2 is edited only, and the door is opened from its menu (right-click)
-  check("scene 2 offers only editing (a slide offers no activity of its own)", JSON.stringify(await P(`available("d")`)) === '["edit"]', await P(`available("d")`));
+  // a slide alone makes no game: in scene 2 the joints run and the arena doesn't, and the door is opened from its menu (right-click)
+  check("scene 2 runs the joints and no arena (a slide brings only its own package)", (await P(`running("d")`)).includes("joints") && !(await P(`running("d")`)).includes("arena"), await P(`running("d")`));
   const copyId = copied[0];
   const cw = await P(`docWorld(${JSON.stringify(copyId)}, "d")`);
   // an orbiting eye a few metres off: no reach needed from the menu

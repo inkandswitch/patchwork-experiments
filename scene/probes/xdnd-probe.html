@@ -59,7 +59,7 @@ const obj = (name, file, extra = {}) => ({ name, sourceUrl: file.url, providerId
 const fileDoc = (name, glb) => ({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(glb) });
 const sceneDoc = (title, objects = {}, order = [], extra = {}) => emptyScene({
   title, objects, order,
-  view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } }, ...extra,
+  view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } } }, ...extra,
 });
 
 try {
@@ -112,8 +112,8 @@ try {
       deck: obj("Deck", files.deck, { transform: T([0.6, 0, 0.2], [0, Math.PI / 2, 0]) }),
     }, ["deck"]));
   } else {
-    A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));
-    B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [16, 10, 18], target: [0, 1, 0] } } }));
+    A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
+    B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
   }
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
