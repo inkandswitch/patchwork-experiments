@@ -1,0 +1,5 @@
+# Standalone tool package. pnpm 11 reads build-script approvals here (the
+# package.json `pnpm` field is no longer read). vite's esbuild dep works from
+# its prebuilt platform binary, so its postinstall script isn't needed.
+allowBuilds:
+  esbuild: false
