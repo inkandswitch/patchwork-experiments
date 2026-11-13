@@ -113,7 +113,7 @@ export default {
       flash.scale.set(1, 1, 3.5);
       line.add(flash);
       world.add(line);
-      const now = performance.now();
+      const now = api.clock.now();
       tracers.push({ line, flash, until: now + 120, flashUntil: now + FLASH_MS });
       api.invalidate();
       pruneLater();
@@ -134,7 +134,7 @@ export default {
     }
 
     function pruneTracers() {
-      const now = performance.now();
+      const now = api.clock.now();
       for (let i = tracers.length - 1; i >= 0; i--) {
         const t = tracers[i];
         if (now >= t.flashUntil) t.flash.visible = false;
@@ -183,7 +183,7 @@ export default {
       const targets = Object.values(objects).filter(isTarget);
       const standing = targets.filter((o) => !isDown(o)).length;
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
-      const now = performance.now();
+      const now = api.clock.now();
       const reloading = now < reloadUntil;
       const walking = api.local.get()?.body?.id === "walk";
       const key = JSON.stringify([holding, walking, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
@@ -224,7 +224,7 @@ export default {
 
     /** Shoot along a ray ({ origin, dir }, world): the pointer's, or the eye's under lock. */
     function shoot(ray) {
-      const now = performance.now();
+      const now = api.clock.now();
       if (now - lastShot < SHOT_MS || now < reloadUntil) return;
       if (ammo <= 0) return reload();
       const e = ray?.origin ?? api.body?.eye?.()?.position;
@@ -247,7 +247,7 @@ export default {
           const tr = t?.traits?.[TARGET];
           if (!tr || isDown(t)) return; // someone got there first
           tr.stand = { rotation: [...(t.transform.rotation ?? [0, 0, 0])] };
-          tr.down = { by: api.viewer, at: Date.now() };
+          tr.down = { by: api.viewer, at: api.clock.now() };
           const fallen = knockedOver(t.transform, yaw);
           t.transform.position = fallen.position;
           t.transform.rotation = fallen.rotation;
@@ -259,12 +259,12 @@ export default {
 
     function reload() {
       if (reloadUntil || ammo === MAG) return;
-      reloadUntil = performance.now() + RELOAD_MS;
-      setTimeout(() => {
+      reloadUntil = api.clock.now() + RELOAD_MS;
+      api.clock.after(RELOAD_MS, () => {
         reloadUntil = 0;
         ammo = MAG;
         render();
-      }, RELOAD_MS);
+      });
       render();
     }
 
