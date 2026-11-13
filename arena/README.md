@@ -14,9 +14,8 @@ pnpm install && pnpm build && pnpm test
 
 | type | id | for |
 |---|---|---|
-| `scene:extension` | `arena` | playing (`activities: ["play"]`): the gun (a held tool) and the targets, in a scene with any of its traits (`src/play.js`) |
-| `scene:extension` | `arena.edit` | editing (`activities: ["edit"]`): *Stand targets up* in the menu (`src/edit.js`) |
-| `scene:template` | `arena-level` | "Arena level" on an empty scene's start screen: the sample arena, starting in play (`src/template.js`) |
+| `scene:extension` | `arena` | the gun (a held tool), the targets and *Stand targets up* in the menu, in a scene with any of its traits, whatever anyone is doing (`src/play.js`, `src/reset.js`) |
+| `scene:template` | `arena-level` | "Arena level" on an empty scene's start screen: the sample arena, starting people walking at a spawn point (`src/template.js`) |
 | `scene:part` | `arena.target`, `arena.crate`, `arena.spawn` | the editor's parts bin, under "Arena" (`src/parts.js`) |
 
 It doesn't depend on the scene package: it writes objects and traits in the
@@ -89,9 +88,10 @@ State lives where the scene's contract says:
 - sends: `shot { from, to }`, so peers see the tracer; nobody keeps them;
 - local: your body, keys and ammo.
 
-The extension `requires` the use prompt (the verbs of what you look at), the
-key map (Enter), notices and the camera framing the level as it loads. It
-brings no editor.
+The use prompt (the verbs of what you look at), the key map (Enter), notices
+and the camera framing the level as it loads are the scene's general parts,
+in every scene; the editor's are too, following attention (scene/TOOLS.md
+§1).
 
 ## The level
 
@@ -107,9 +107,9 @@ doc). `ART` is bumped when the art changes, so new art gets a new key.
 The **Arena level** template lays out the sample arena (`sampleArena()`: 29
 blocks: a floor, four walls, a tower with a ramp up to it, ten crates, eight
 targets and four spawn points) in one change: a group "Arena" of locked
-blocks, the level trait with `look: "arena"`, and `view.activity: "play"`,
-so whoever opens it, its maker too, is in the game. The editor is one switch
-away.
+blocks, the level trait with `look: "arena"`, and `view.start` walking at
+its first spawn point, so whoever opens it, its maker too, arrives in the
+game. Editing is selecting something; there is nothing to switch.
 
 The parts put one unlocked block where the bin says, under what it was
 dropped on (and in that one's group), from the scene's own file for its
@@ -124,7 +124,7 @@ nothing.
 | `src/play.js`, `src/play.css` | the play extension: the lobby and HUD, the gun, tracers, the atmosphere |
 | `src/level.js` | the kinds' meshes, the sample arena, a target's fall and standing it up (pure) |
 | `src/layout.js` | putting blocks into a scene doc: a kind's file, a block's object, the whole arena |
-| `src/template.js`, `src/parts.js`, `src/edit.js` | the template, the parts, the edit extension |
+| `src/template.js`, `src/parts.js`, `src/reset.js` | the template, the parts, Stand targets up |
 | `src/glb.js` | the GLB encoder, copied from the scene package (the kit: `node scripts/check-kit.mjs` at the repo root) |
 | `src/test/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the tests and probes start a scene doc from |
 | `probes/arena-run.mjs`, `probes/arena-probe.html` | the browser probe (below); `fake-repo.js` and the stubs are its in-memory repo and registry |
@@ -141,9 +141,9 @@ nothing.
   up the gun, shoot and put it down; a hit knocks a target over once,
   scores it and tells the others; the lobby's Stand them up;
 - `src/edit.test.js`: the template (one file per kind, the group, the look,
-  starting in play), the parts (where each goes, what makes a level, one
-  file per kind per scene), the edit command, and a copied knocked-over
-  target;
+  starting people walking at a spawn point), the parts (where each goes,
+  what makes a level, one file per kind per scene), Stand targets up, a
+  copied knocked-over target, and one extension run by its traits alone;
 - `src/describes.test.js`: the traits' descriptions are plain data, and
   what of a target is `runtime`.
 

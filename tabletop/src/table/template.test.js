@@ -131,12 +131,12 @@ describe("the Lost Cities template", () => {
     expect(calls.notices.some((n) => n.kind === "warn" && /owns seats/.test(n.text))).toBe(true);
   });
 
-  it("starts in play, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
+  it("starts people in the seat body, seated nowhere yet, and says to pick a seat; nothing is the table's About", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeDrop(doc, { registries: installed() });
     await lostCities.create(ctx);
-    expect(doc.view.activity).toBe("play");
-    expect(doc.view.tool).toBeUndefined();
+    expect(doc.view.start).toMatchObject({ body: "seat", home: expect.any(Object) });
+    expect("activity" in doc.view || "tool" in doc.view || "home" in doc.view).toBe(false);
     expect(doc.view.snap).toBe(true);
     expect(doc.title).toBe("Lost Cities table");
     expect(doc.traits[SEATS]).toEqual({
@@ -179,9 +179,9 @@ describe("the Santorini template", () => {
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) expect(urls.has(o.sourceUrl)).toBe(true);
     expect(doc.traits).toEqual({});
-    // nobody sits at it, so it doesn't open in play
+    // nobody sits at it: people start in orbit, at its home view
     expect(doc.view).not.toHaveProperty("tool");
-    expect(doc.view).not.toHaveProperty("activity");
+    expect(Object.keys(doc.view.start)).toEqual(["home"]);
     expect(calls.changes).toBe(1);
     expect(calls.notices.at(-1).text).toMatch(/Santorini is laid out/);
   });
@@ -229,7 +229,7 @@ describe("the Draw Dominoes templates", () => {
       expect(new Set(tiles.map((o) => keptIn(o).slot)).size).toBe(28);
       expect(objects.filter((o) => o.traits?.["tabletop.zone"])).toHaveLength(n);
       expect(Object.keys(doc.traits[SEATS])).toHaveLength(n);
-      expect(doc.view.activity).toBe("play");
+      expect(doc.view.start.body).toBe("seat");
       const deck = calls.created.find((d) => d["@patchwork"].type === "t-joint");
       expect(deck.items).toHaveLength(28);
       expect(new Set(deck.items.map((i) => i.name)).size).toBe(28);

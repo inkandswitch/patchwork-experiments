@@ -35,6 +35,8 @@ import { anchorOf, mapModel, thingAt, UNITS_PER_METRE } from "./parts.js";
 import { wadOf } from "./source.js";
 
 export const PROVIDER = "doom-map";
+/** The marker trait on a laid-out map's static part (this package's extension's own). */
+export const MAP = "doom.map";
 /** The part that makes a spawn point (arena's pad, carrying the walk package's `walk.spawn`), by id. */
 export const SPAWN_PART = "arena.spawn";
 /** An object that leads elsewhere (traversal's trait): an exit switch's, with its verb and no destination. */
@@ -136,7 +138,8 @@ export async function layOutMap(ctx, { url, doc, handle, group = null, at = null
   const render = (door) => ({ providerId: PROVIDER, params: { map, door } });
   const origin0 = anchorOf(model, null);
   const p = Array.isArray(at?.point) ? at.point.map(Number) : [0, 0, 0];
-  const root = await ctx.addObject(url, { name: map, group: gid, render: render(null), transform: { position: p, rotation: [0, 0, 0], scale: 1 }, fields: { locked: true } });
+  // the static part carries the package's marker trait (index.js): a scene with a map calls for this package
+  const root = await ctx.addObject(url, { name: map, group: gid, render: render(null), transform: { position: p, rotation: [0, 0, 0], scale: 1 }, fields: { locked: true, traits: { [MAP]: {} } } });
   for (const door of model.specials.doors) {
     await ctx.addObject(url, {
       name: `Door ${door.sector}`,

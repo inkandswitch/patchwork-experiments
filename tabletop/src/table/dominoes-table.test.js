@@ -306,37 +306,29 @@ describe("standing a tile on edge, and laying it flat", () => {
   });
 });
 
-describe("the verbs are play's", () => {
+describe("the verbs have no mode", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("in Edit, Wash, Stand, Lay flat, Lay my hand face up and Draw don't apply, by state or by key", async () => {
+  // What a verb applies to is the table's state, never the viewer's: in
+  // orbit, seated, holding a tool or with something selected, Wash, Stand,
+  // Lay flat, Lay my hand face up and Draw say the same.
+  it("Wash, Stand, Lay flat, Lay my hand face up and Draw say the same whatever the viewer is in, holds or has selected", async () => {
     const t = table();
     await vi.advanceTimersByTimeAsync(10);
     t.cmd(t.A, "draw").run("b0");
     t.w.tick(1 / 60, 40);
     t.w.change((d) => (d.objects.knocked = tile([0.2, 0.0125, 0.2], [...STANDING])));
     t.w.flush();
-    const edit = { activities: { current: "edit", available: ["play", "edit"] } };
-    const inEdit = (id, target) => t.cmd(t.A, id).state(target, { scene: t.A.api.scene(), local: edit });
-    // in play, each applies
-    expect(t.state(t.A, "wash", "b1")).toMatchObject({ label: "Wash (5)" });
-    expect(t.state(t.A, "stand", "b1")).not.toBeNull();
-    expect(t.state(t.A, "stand", "knocked")).toMatchObject({ label: "Lay flat" });
-    expect(t.state(t.A, "reveal", "b0")).not.toBeNull();
-    expect(t.state(t.A, "draw", "b1")).not.toBeNull();
-    // in Edit, none
-    for (const [id, target] of [["wash", "b1"], ["stand", "b1"], ["stand", "knocked"], ["reveal", "b0"], ["draw", "b1"]]) expect(inEdit(id, target), `${id} ${target}`).toBeNull();
-    // and pressing their keys in Edit does nothing
-    t.A.api.local.swap((l) => ({ ...l, activities: edit.activities }));
-    const before = JSON.stringify(t.w.doc.objects);
-    t.cmd(t.A, "wash").run("b1");
-    t.cmd(t.A, "stand").run("b1");
-    t.cmd(t.A, "stand").run("knocked");
-    t.cmd(t.A, "reveal").run("b0");
-    t.cmd(t.A, "draw").run("b2");
-    t.w.tick(1 / 60, 40);
-    expect(JSON.stringify(t.w.doc.objects)).toBe(before);
-    expect(t.A.keeper.calls).toHaveLength(0);
+    const cases = [["wash", "b1"], ["stand", "b1"], ["stand", "knocked"], ["reveal", "b0"], ["draw", "b1"]];
+    const base = cases.map(([id, target]) => t.state(t.A, id, target));
+    expect(base[0]).toMatchObject({ label: "Wash (5)" });
+    expect(base[2]).toMatchObject({ label: "Lay flat" });
+    for (const b of base) expect(b).not.toBeNull();
+    const locals = [{ body: { id: "orbit" } }, { body: { id: "seat" } }, { body: { id: "walk" }, held: { name: "Measure" } }, { selected: "b3" }];
+    for (const extra of locals) {
+      const local = { ...t.A.api.local.get(), ...extra };
+      cases.forEach(([id, target], i) => expect(t.cmd(t.A, id).state(target, { scene: t.A.api.scene(), local }), `${id} ${target} ${JSON.stringify(extra)}`).toEqual(base[i]));
+    }
     t.w.done();
   });
 });

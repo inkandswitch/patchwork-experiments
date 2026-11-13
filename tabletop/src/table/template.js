@@ -26,9 +26,10 @@
 //   is laid out and the maker is told why.
 //
 // Order: the files, then the containers and bags, then one change that
-// writes the table (objects, seats, view: `view.activity` "play" where the
-// game has seats); the stage then starts its maker where the doc says
-// (STAGE.md, "Templates"): Lost Cities in play, Santorini in the editor.
+// writes the table (objects, seats, view: `view.start` in the seat body where
+// the game has seats); the stage then starts its maker where the doc says
+// (STAGE.md, "Templates"): at Lost Cities watching from the first seat,
+// Santorini in orbit.
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";

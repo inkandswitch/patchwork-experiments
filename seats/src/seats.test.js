@@ -6,7 +6,7 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -728,7 +728,7 @@ describe("the seat's view aboard", () => {
 });
 
 describe("name tags aboard", () => {
-  it("name tags lie on the hands as drawn, at the edge nearest each seat, and follow them each frame in play", async () => {
+  it("name tags lie on the hands as drawn, at the edge nearest each seat, and follow them each frame", async () => {
     const t = await aboard();
     const tag = (k) => t.w.view("A").labels.find((l) => l.key === k).position;
     // p1 sits on hand1's +z side; hand2 is turned round, so p2's side is its +z too
@@ -829,5 +829,55 @@ describe("lay: seats written into a scene being set up", () => {
   it("places: only well-formed ones on objects that are there", () => {
     const objects = { tray: {} };
     expect(cleanPlaces([{ seat: "p1", id: "tray", min: [0, 0, 0], max: ["1", 1, 1] }, { seat: "p1", id: "gone", min: [0, 0, 0], max: [1, 1, 1] }, { seat: 3, id: "tray", min: [], max: [] }, null, { seat: "p1", id: "tray" }], objects)).toEqual([{ seat: "p1", id: "tray", min: [0, 0, 0], max: [1, 1, 1] }]);
+  });
+});
+
+describe("arriving seated (view.start = { body: \"seat\" }, no seat named)", () => {
+  it("arrivalSeat: your own seat if the doc seats you and it has a view, else the first with a view, watching; none: nothing (every case of two seats)", () => {
+    const cam = { position: [0, 1, 1], target: [0, 0, 0] };
+    const who = [null, "me", "other"];
+    let cases = 0;
+    for (const c1 of [true, false])
+      for (const c2 of [true, false])
+        for (const p1 of who)
+          for (const p2 of who) {
+            const seats = { p1: { player: p1, ...(c1 ? { camera: cam } : {}) }, p2: { player: p2, ...(c2 ? { camera: cam } : {}) } };
+            const mine = p1 === "me" ? "p1" : p2 === "me" ? "p2" : null;
+            const first = c1 ? "p1" : c2 ? "p2" : null;
+            const want = mine && seats[mine].camera ? { sid: mine, mine: true } : first ? { sid: first, mine: false } : null;
+            expect(arrivalSeat(seats, "me"), JSON.stringify(seats)).toEqual(want);
+            cases++;
+          }
+    expect(cases).toBe(36);
+    expect(arrivalSeat({}, "me")).toBeNull();
+  });
+
+  it("not seated: watching from the first seat's view, writing nothing; sitting goes over it, and getting up comes back to it", async () => {
+    vi.useFakeTimers();
+    const t = await cockpit(SEATS0(), { views: [["C", "carol"]] });
+    const before = JSON.stringify(t.w.doc.traits[SEATS]);
+    expect(t.api.C.body.enter("seat", null)).toBe(true);
+    expect(t.api.C.local.get().body).toMatchObject({ id: "seat", label: "Watching", depth: 1 });
+    await t.step();
+    expect(JSON.stringify(t.w.doc.traits[SEATS])).toBe(before);
+    expect(t.claim("p1")).toBeNull();
+    await t.pickSeat("C", "p2");
+    expect(t.player("p2")).toBe("carol");
+    expect(t.api.C.local.get().body).toMatchObject({ id: "seat", label: "Seated", depth: 2 });
+    await t.pickSeat("C", "");
+    expect(t.player("p2")).toBeNull();
+    expect(t.api.C.local.get().body).toMatchObject({ id: "seat", label: "Watching", depth: 1 });
+  });
+
+  it("seated by the doc (back at the table): in your own seat's view, as sitting there", async () => {
+    vi.useFakeTimers();
+    const t = await cockpit({ ...SEATS0(), p2: { ...SEATS0().p2, player: BEN } }, { views: [["B", BEN]] });
+    expect(t.api.B.body.enter("seat", null)).toBe(true);
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Seated", depth: 1 });
+    await t.step();
+    expect(t.claim("p2")).toMatchObject({ viewer: BEN });
+    // standing up (Watching in the picker) leaves the seat body
+    await t.pickSeat("B", "");
+    expect(t.api.B.local.get().body.id).toBe("orbit");
   });
 });

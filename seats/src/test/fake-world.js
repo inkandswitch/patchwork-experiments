@@ -215,7 +215,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
   };
 
   function join(session, { viewer = `viewer-${session}`, local = {}, ext = "ext" } = {}) {
-    let localState = Object.freeze({ activities: Object.freeze({ current: "play", available: ["play", "edit"] }), body: Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] }), ...local });
+    let localState = Object.freeze({ body: Object.freeze({ id: "orbit", label: "Orbit", ext: null, depth: 0, lock: false, reach: Infinity, keys: [] }), ...local });
     const view = {
       session,
       viewer,
@@ -242,7 +242,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
     const topBody = () => view.bodies.at(-1);
     const bodyLocal = () => {
       const t = topBody();
-      return t.id === "orbit" ? ORBIT : Object.freeze({ id: t.id, label: t.def.label ?? t.id, ext: t.ext, depth: view.bodies.length - 1, lock: !!t.def.lock, reach: t.def.reach ?? Infinity, keys: t.def.keys ?? [] });
+      return t.id === "orbit" ? ORBIT : Object.freeze({ id: t.id, label: t.sitting?.label ?? t.def.label ?? t.id, ext: t.ext, depth: view.bodies.length - 1, lock: !!t.def.lock, reach: t.def.reach ?? Infinity, keys: t.def.keys ?? [] });
     };
     const setBody = () => {
       localState = Object.freeze({ ...localState, body: bodyLocal() });

@@ -98,7 +98,7 @@ describe("a game with one of everything, laid out", () => {
     expect(hands.map((o) => [o.name, o.traits["tabletop.zone"].seat])).toEqual([["A's tray", "a"], ["B's tray", "b"]]);
     expect(Object.values(scene.objects).filter((o) => o.traits?.["dice.die"])).toHaveLength(2);
     expect(scene.origin).toEqual(g.origin);
-    expect(scene.view.activity).toBe("play");
+    expect(scene.view.start.body).toBe("seat");
   });
 
   it("everyThing walks contents too, saying which are in a bag", () => {

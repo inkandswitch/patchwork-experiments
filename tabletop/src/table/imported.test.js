@@ -50,7 +50,7 @@ describe("an imported game, set up as any game is", () => {
     expect(scene.origin).toEqual({ tts: { saveName: "Tiny Test Mod", fileName: "Workshop/1234567890.json", workshopId: "1234567890" } });
     expect(scene.origin).toEqual(g.origin);
     expect(Object.keys(scene.traits[SEATS])).toEqual(["white"]);
-    expect(scene.view.activity).toBe("play");
+    expect(scene.view.start.body).toBe("seat");
   });
 
   it("every card is kept: the deck's three in a container titled by the game and deck, the loose one in the game's", async () => {

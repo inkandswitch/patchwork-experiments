@@ -2,7 +2,7 @@
 // for the drop context (STAGE.md, "Drops") that records what it's asked.
 import { describe, expect, it } from "vitest";
 import ext from "./extension.js";
-import { aboutText, EXIT, isWad, placeIn, slideOf, SPAWN_PART, yawOf } from "./layout.js";
+import { aboutText, EXIT, MAP, isWad, placeIn, slideOf, SPAWN_PART, yawOf } from "./layout.js";
 import { FREEDOOM_NOTICE, freedoomOrigin } from "./freedoom.js";
 import { anchorOf, mapModel, thingAt } from "./parts.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -80,6 +80,9 @@ describe("dropping a WAD", () => {
     expect(maps.map(([, o]) => o.render.params)).toEqual([{ map: "E1M1", door: null }, ...DOORS.map((door) => ({ map: "E1M1", door })), { map: "E1M1", line: 407 }]);
     const [root] = maps[0];
     expect(parts.slice(1).every(([, o]) => o.parent === root)).toBe(true);
+    // the static part carries the package's marker trait, and only it: the extension's reason to run, and to be listed
+    expect(maps.filter(([, o]) => o.traits?.[MAP]).map(([id]) => id)).toEqual([root]);
+    expect(maps[0][1].traits).toEqual({ [MAP]: {} });
     expect(d.traits["arena.level"]).toEqual({ look: "sky" });
     // the start: arena's own spawn part, asked for by id, put under the map at the player 1 start, facing its way
     expect(asked).toEqual([SPAWN_PART]);

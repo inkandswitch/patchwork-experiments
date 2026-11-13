@@ -6,8 +6,10 @@
 //   (source.js). A map is a static part, a part per door and a part per exit
 //   switch, each one object, each the same file doc.
 // - scene:extension "doom": lays out a dropped .wad file doc's first map as
-//   those objects (layout.js). It has no traits and never runs: it is here
-//   for its drop.
+//   those objects (layout.js). Its trait, `doom.map`, is the marker that
+//   layout writes on the map's static part: it says what the object is (the
+//   inspector's Behaviours) and makes a scene with a map call for this
+//   package, as any trait does. Running, it does nothing more.
 
 export const plugins = [
   {
@@ -36,7 +38,10 @@ export const plugins = [
     type: "scene:extension",
     id: "doom",
     name: "Doom maps",
-    general: false,
+    traits: ["doom.map"],
+    describes: {
+      "doom.map": { name: "Doom map", on: "object", blurb: "A Doom-format map's static part, laid out from a WAD; its doors and exit switches are objects of their own, attached to it" },
+    },
     drops: ["file"],
     async load() {
       return (await import("./extension.js")).default;
