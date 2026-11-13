@@ -184,12 +184,12 @@ const registry = async (type) => {
   return { filter: (fn) => [...all.values()].filter(fn), load: async (id) => { const p = all.get(id); if (p && !p.module) p.module = await p.load(); return p; } };
 };
 // the decks' containers first, so the scene never names one that isn't there
-const made = await makeHolders({ repo, registry }, layout);
-const { binds, kinds } = made;
+const holders = await makeHolders({ repo, registry }, layout);
+const { binds, kinds } = holders;
 const lay = await findSeats(registry);
 if (!lay) throw new Error("nothing built here owns seats (the seats package)");
 const table = emptyScene({ "@patchwork": scenePatchwork(), title, packages: scenePackages(PACKAGES) });
-writeTable(table, layout, made, { seats: lay });
+writeTable(table, layout, holders, { seats: lay });
 // each deck's container, as its cards name it
 const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
 const deckUrls = Object.fromEntries(Object.keys(decks).map((deckId) => [deckId, binds[deckId](0)]).map(([deckId, t]) => [deckId, Object.values(t)[0].by]));

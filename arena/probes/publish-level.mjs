@@ -43,8 +43,9 @@ if (DRY) {
 // ─── an empty scene, as the scene datatype's init writes it (src/test/empty-scene.js)
 // with the scene package as its suggested import, and the packages its
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
-// stage works these out from the registry; here they're stated
-const PACKAGES = ["scene", "arena"];
+// stage works these out from the registry; here they're stated (walk for the
+// walk body its spawn points are for)
+const PACKAGES = ["scene", "arena", "walk"];
 const scene = await repo.create2(emptyScene({ "@patchwork": scenePatchwork(), title: "Arena level", packages: scenePackages(PACKAGES) }));
 
 // ─── the template's create(ctx), with the drop context's parts it uses ──────
