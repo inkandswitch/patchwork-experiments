@@ -15,6 +15,7 @@ export function emptyScene(over = {}) {
     traits: {},
     assets: {},
     packages: [],
+    clock: { running: true, t: 0 },
     view: { units: "m", grid: true, axes: true, bounds: false, snap: true },
     ...over,
   };

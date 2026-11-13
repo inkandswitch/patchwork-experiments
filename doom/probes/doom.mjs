@@ -13,7 +13,8 @@
 //  1. both views play E1M1 in first person and walk it, each in one walker:
 //     the walk package's body, the only body over orbit (screenshots);
 //  2. A walks to a door and opens it with F: both views see it rise, rest,
-//     and close itself after its wait;
+//     and close itself after its wait (in world time: the view computing the
+//     scene's clock closes it);
 //  3. B walks into it while it's shut (blocked) and through it while it's
 //     open (passes);
 //  4. a viewer who joins while a door is open sees every door where the doc
@@ -266,7 +267,9 @@ try {
   await shot("3-b-through-looking-back");
   await P(`focus("a")`);
   restOpen ??= (await P(`doc("a")`)).objects[doorId].traits["joints.slide"];
-  check("its rest, written once it got there: open, by A's view", restOpen.at === "open" && typeof restOpen.by === "string", restOpen);
+  details.clocks = { a: await P(`clock("a")`), b: await P(`clock("b")`) };
+  // since: the world time it got there (scene TOOLS.md §7); whoever computes the world closes it, so no `by`
+  check("its rest, written once it got there: open, since a world time", restOpen.at === "open" && Number.isFinite(restOpen.since) && !("by" in restOpen), restOpen);
   await shot("2-a-open");
 
   // ─── 4. a viewer who joined while it rested open (lateJoin, above) ───────
@@ -324,7 +327,7 @@ try {
   await b.waitFor(`Object.values(window.__p.doc("d").objects).some((o) => o.traits?.["joints.slide"])`, 10_000);
   const copied = Object.entries(await P(`doc("d")`)).length && Object.entries((await P(`doc("d")`)).objects).find(([, o]) => o.traits?.["joints.slide"]);
   const copiedRender = copied ? await P(`find(${JSON.stringify(copied[1].renderUrl)})`) : null;
-  check("the copy is the same WAD seen as the same door (its own render doc, the same params), its slide shut and nobody's", !!copied && copied[1].sourceUrl === wadUrl && copiedRender?.params?.map === "E1M1" && copiedRender?.params?.door === DOOR && copied[1].renderUrl !== parts.find(([id]) => id === doorId)[1].renderUrl && copied[1].traits["joints.slide"].at === "closed" && !("by" in copied[1].traits["joints.slide"]), copied && { traits: copied[1].traits, params: copiedRender?.params });
+  check("the copy is the same WAD seen as the same door (its own render doc, the same params), its slide shut and nobody's", !!copied && copied[1].sourceUrl === wadUrl && copiedRender?.params?.map === "E1M1" && copiedRender?.params?.door === DOOR && copied[1].renderUrl !== parts.find(([id]) => id === doorId)[1].renderUrl && copied[1].traits["joints.slide"].at === "closed" && !("since" in copied[1].traits["joints.slide"]), copied && { traits: copied[1].traits, params: copiedRender?.params });
   await b.waitFor(`window.__p.loaded("d").loaded === window.__p.loaded("d").total && window.__p.loaded("d").total > 0`, 30_000);
   // a slide alone makes no game: scene 2 is edited only, and the door is opened from its menu (right-click)
   check("scene 2 offers only editing (a slide offers no activity of its own)", JSON.stringify(await P(`available("d")`)) === '["edit"]', await P(`available("d")`));
