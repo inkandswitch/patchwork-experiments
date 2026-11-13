@@ -168,7 +168,8 @@ try {
     picked: (w) => select(w)?.value ?? null,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     confirms: () => [...confirms],
-    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack, and the stack (scene/TOOLS.md §4) */
     body: (w) => dbg[w]?.local.get().body?.id ?? null,
     stack: (w) => dbg[w]?.router.bodies().map((b) => b.id) ?? null,

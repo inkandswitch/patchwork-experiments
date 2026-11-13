@@ -126,7 +126,13 @@ try {
   const look = (who, id) => T(`look("${who}", "${id}")`);
   await settle();
   check("seated nowhere, both see backs", [await look("a", "inTray"), await look("b", "inTray"), await look("a", "faceDown"), await look("b", "faceDown")].every((x) => x === "back"));
-  check("an extension's panel is in the sidebar", (await T('panel("a")'))?.includes("probe panel"), await T('panel("a")'));
+  await T('dockPanel("a")');
+  await sleep(200);
+  check("an extension's panel is docked in the drawer", (await T('panel("a")'))?.includes("probe panel"), await T('panel("a")'));
+  // closed again (as its caller would), so the canvas has its width back for what follows
+  await T('closePanel("a")');
+  await T('closePanel("b")');
+  await sleep(400);
   await T('sit("a")');
   await sleep(100);
   await settle();
@@ -155,14 +161,14 @@ try {
   // drawing: a face-down card carried into your own tray turns face up for you, and stays hidden from B
   await carry(await T('top("under")'), await T("screen([-0.18, 0.002, 0.25])"));
   await settle();
-  check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, await T('rot("under")'));
+  check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, { rot: await T('rot("under")'), pos: await T('pos("under")') });
   check("and A sees it, B doesn't", (await look("a", "under")) === "face" && (await look("b", "under")) === "back", [await look("a", "under"), await look("b", "under")]);
   await shot("2-cards");
 
-  // playing at the table: F over a card lying there turns it over where it
-  // lies, rising and turning in the air (B sees it go up), and nothing frames
-  await T('activity("a", "play")');
-  check("playing, A runs carrying (by its trait) and no Frame all", await b.waitFor(`(() => { const r = window.__table.running("a"); return r.includes("scene.carry") && !r.includes("scene.frame") && !r.includes("scene.toolbar"); })()`, 5000), await T('running("a")'));
+  // at the table: F over a card lying there turns it over where it lies,
+  // rising and turning in the air (B sees it go up), and nothing frames
+  // (F is carry's Flip on every surface; Frame is `.`)
+  check("A runs carrying (by its trait), whatever else runs", await b.waitFor(`window.__table.running("a").includes("scene.carry")`, 5000), await T('running("a")'));
   await settle();
   const restFlip = await T('worldB("faceDown")');
   const posFlip = await T('pos("faceDown")');
@@ -184,9 +190,10 @@ try {
   check("it comes down where it lay, face down for both", near([posFlipped[0], posFlipped[2]], [posFlip[0], posFlip[2]], 1e-4) && (await look("a", "faceDown")) === "back" && (await look("b", "faceDown")) === "back", { posFlip, posFlipped, a: await look("a", "faceDown"), b: await look("b", "faceDown") });
   const camFlipped = await T("camera()");
   check("and F at the table doesn't move the view", near(camFlip.position, camFlipped.position, 1e-4) && near(camFlip.target, camFlipped.target, 1e-4), { camFlip, camFlipped });
-  await T('activity("a", "edit")');
-  await b.waitFor(`window.__table.running("a").includes("scene.toolbar")`, 5000);
   await settle();
+  // the outline is a drawer tab the viewer opens (Objects): open it, to click rows
+  await T('openTab("a", "scene.outline", "objects")');
+  await sleep(500);
 
   // 9. the halo, with a real drag on its Y arrow (the block is near the view's
   // right edge, where its X arrow runs off it): B sees the pose before the doc changes

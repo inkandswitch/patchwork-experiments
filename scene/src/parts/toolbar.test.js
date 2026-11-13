@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { PLAY, mountStage, object } from "../test/stage-harness.js";
+import { mountStage, object } from "../test/stage-harness.js";
 import toolbar from "./toolbar.js";
 import { keyMatches, keyLabel, commandState, shownOn, flatCommands } from "./toolbar-commands.js";
 
@@ -98,9 +98,8 @@ describe("scene.toolbar", () => {
     log = [];
     s = await mountStage({
       extensions: [
-        { meta: { id: "scene.toolbar", activities: ["edit"] }, module: toolbar },
+        { meta: { id: "scene.toolbar" }, module: toolbar },
         { meta: { id: "t.tools" }, module: fakeTools(log) },
-        PLAY,
       ],
       doc: { objects: { a: object() }, order: ["a"] },
     });
@@ -150,9 +149,9 @@ describe("scene.toolbar", () => {
   });
 
   it("drops an extension's controls when it stops", async () => {
-    await s.activity("play");
-    expect(s.root.querySelector(".toolbar")).toBeNull();
-    await s.activity("edit");
     expect(control("frame")).toBeTruthy();
+    await s.uninstall("t.tools");
+    expect(bar()).toBeTruthy();
+    expect(bar().querySelectorAll("[data-command]")).toHaveLength(0);
   });
 });

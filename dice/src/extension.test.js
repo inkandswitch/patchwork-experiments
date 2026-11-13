@@ -24,8 +24,8 @@ const die = (o = {}) => ({ name: "d6", sourceUrl: "automerge:die", providerId: P
 /** Frames for a throw whose draw is known at once to land: its least time in the air, then its way down, and a few more. */
 const FRAMES = Math.ceil((AIR_SECONDS + LAND_SECONDS) * 60) + 4;
 const LAND_FRAMES = Math.ceil(LAND_SECONDS * 60) + 3;
-const play = { activities: { current: "play", available: ["edit", "play"] } };
-const edit = { activities: { current: "edit", available: ["edit", "play"] } };
+// a viewer in another body, holding a tool: verbs have no mode, so this changes nothing
+const elsewhere = { body: { id: "seat" }, held: { name: "Measure" } };
 /** A draw's seed as lots gives it: 64 hex digits, the roll's 32 bits first. */
 const hex = (seed) => (seed >>> 0).toString(16).padStart(8, "0") + "0".repeat(56);
 
@@ -139,9 +139,9 @@ describe("the dice's verbs", () => {
     expect(t.state("roll", "cube")).toBeNull();
     expect(t.state("roll", null)).toBeNull();
     expect(t.state("roll", "nope")).toBeNull();
-    expect(t.cmd(t.xa, "roll").state("d1", { scene: t.a.scene(), local: edit })).toEqual({ title: "Roll the die (R)" });
+    expect(t.cmd(t.xa, "roll").state("d1", { scene: t.a.scene(), local: elsewhere })).toEqual({ title: "Roll the die (R)" });
     // and running it there throws it
-    t.a.local.swap((m) => ({ ...m, ...edit }));
+    t.a.local.swap((m) => ({ ...m, ...elsewhere }));
     t.run("roll", "d1");
     expect(t.w.holds.size).toBe(1);
     t.w.done();
@@ -676,7 +676,7 @@ describe("rolling several together", () => {
     // each can still be rolled alone
     expect(t.state("roll", "tens")).toEqual({ title: "Roll the die (R)" });
     // G is no gizmo's either: Roll all is offered editing too
-    expect(t.cmd(t.xa, "roll-all").state("tens", { scene: t.a.scene(), local: edit })).toEqual(t.state("roll-all", "tens"));
+    expect(t.cmd(t.xa, "roll-all").state("tens", { scene: t.a.scene(), local: elsewhere })).toEqual(t.state("roll-all", "tens"));
     t.w.done();
   });
 
@@ -803,7 +803,7 @@ describe("turning a die by hand", () => {
     expect(t.state("turn", "pawn")).toBeNull();
     expect(t.state("turn", null)).toBeNull();
     // while editing too: a die is set up by hand
-    expect(t.cmd(t.xa, "turn").state("cube", { scene: t.a.scene(), local: edit })).toMatchObject({ value: 0 });
+    expect(t.cmd(t.xa, "turn").state("cube", { scene: t.a.scene(), local: elsewhere })).toMatchObject({ value: 0 });
     t.w.done();
   });
 
@@ -964,7 +964,7 @@ describe("a die's own panel, docked", () => {
   it("Edit die is offered on a die built from a die doc, in the menu and the inspector, playing or editing", () => {
     const t = withDoc();
     expect(t.state("open", "d1")).toEqual({ title: "Open this die's own panel beside the scene: its shape, faces and colours" });
-    expect(t.cmd(t.xa, "open").state("d1", { scene: t.a.scene(), local: edit })).toBeTruthy();
+    expect(t.cmd(t.xa, "open").state("d1", { scene: t.a.scene(), local: elsewhere })).toBeTruthy();
     expect(t.state("open", "pawn")).toBeNull();
     expect(t.state("open", null)).toBeNull();
     // a die shown from a plain GLB file has no doc of its own to open

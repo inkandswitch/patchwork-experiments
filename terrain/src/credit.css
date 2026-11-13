@@ -1,5 +1,5 @@
 /* terrain.credit: the data's credit, small, at the bottom of the view, in the
-   middle (the corners are the legends', the activity switch's and the grid caption's). */
+   middle (the corners are the legends', the body chip's and the grid caption's). */
 
 .scene-stage .stage-overlay > .terrain-credit:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;

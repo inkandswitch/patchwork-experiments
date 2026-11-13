@@ -642,7 +642,6 @@ export default {
       api.schedule(() => {});
     }
 
-    const editing = (local) => (local ?? api.local?.get?.())?.activities?.current === "edit";
     /** A verb's state for a bag target: null off a bag, disabled while it loads. */
     function onBag(target, make) {
       const bag = bagAt(target);
@@ -678,7 +677,7 @@ export default {
           id: "draw",
           name: "Draw",
           key: "d",
-          // on the use prompt, so hovering a bag in play says it can be drawn from
+          // on the use prompt, so hovering a bag says it can be drawn from
           show: ["use", "menu", "inspector"],
           state: (target) =>
             onBag(target, (bag, n) => {
@@ -739,9 +738,10 @@ export default {
         {
           id: "empty",
           name: "Empty out",
+          // everything set down round the bag: a deliberate act (the menu's and the inspector's, no key),
+          // as tipping a bag out on the table is, whoever does it and whatever they're in
           show: ["menu", "inspector"],
-          // setting a table up, not playing: everything set down round the bag
-          state: (target, ctx) => (editing(ctx?.local) ? onBag(target, (bag, n) => (n ? { title: `Set all ${n} down round the bag` } : null)) : null),
+          state: (target) => onBag(target, (bag, n) => (n ? { title: `Set all ${n} down round the bag` } : null)),
           run(target) {
             const bag = bagAt(target);
             if (bag && isBagDoc(docOf(bag.url))) draw(target, insideOf(bag.url).length, { carry: false, rule: "top", verb: "emptied" });

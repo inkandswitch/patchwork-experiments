@@ -175,8 +175,7 @@ describe("its metadata", () => {
     expect(meta.describes["joints.slide"].runtime).toEqual(["since"]);
     expect(meta.describes["joints.slide"].fields.map((x) => x.key)).toEqual(["axis", "stops", "speed", "wait"]);
   });
-  it("runs whatever the viewer is doing, so it offers no activity of its own; and requires nothing (the prompt is a game's)", () => {
-    expect(meta.activities).toBeUndefined();
-    expect(meta.requires).toBeUndefined();
+  it("runs by its trait alone, whatever the viewer is doing", () => {
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in meta).toBe(false);
   });
 });

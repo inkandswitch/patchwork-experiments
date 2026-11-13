@@ -1,4 +1,7 @@
-// scene.inspector: the "inspector" panel for local.selected.
+// scene.inspector: the "inspector" for local.selected, a drawer tab
+// (TOOLS.md §6). Chrome follows attention: the tab is open while something
+// is selected (its × shuts it until the selection changes), and the
+// toolbar's Inspector opens it with nothing selected, on the scene.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
@@ -15,9 +18,9 @@
 // menu) and the status line.
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
-// Starts in: the activity everyone who opens the scene starts in
-// (doc.view.activity), a choice of those the scene offers
-// (local.activities.available); each viewer can still switch for themselves.
+// Starts in: the body everyone who opens the scene arrives in
+// (doc.view.start.body, read once on arrival: TOOLS.md §2), Orbit or one of
+// the bodies on offer here; each viewer can still change body for themselves.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -29,13 +32,12 @@
 // whole traits map.
 //
 // Every write goes through api.ops (or, for traits and Starts in, a field-level
-// api.change); a refusal (plan.ok === false) is said with api.notify and the
-// field shows the doc again. Fields being typed in are never overwritten.
+// write), each as an edit (api.edit), so undo takes it back; a refusal
+// (plan.ok === false) is said with api.notify and the field shows the doc
+// again. Fields being typed in are never overwritten.
 //
 // A selection that isn't a scene object (a ref such as a dimension: its owner
-// shows it, in its own panel), or one that's gone: the panel body is hidden
-// (the sidebar then hides the section) and holds only the hint "Nothing
-// selected".
+// shows it, in its own tab), or one that's gone: the tab isn't open.
 
 import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
@@ -44,9 +46,10 @@ import { normalizeTransform } from "../transform.js";
 import { EMBED_ATTR } from "../embed.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
-import { activityLabel } from "../activities.js";
+import { drawerTab } from "./tab.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
+import { own } from "../stage/own.js";
 
 const ID = "scene.inspector";
 // each inspector's own radio group: two views of one scene on a page mustn't share one
@@ -81,6 +84,26 @@ function openDocument(from, url, toolId = null) {
   from.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, ...(toolId ? { toolId } : {}) }, bubbles: true, composed: true }));
 }
 
+/**
+ * The bodies Starts in offers: Orbit, then each body on offer here (by its
+ * label, once per id), then the doc's own choice if nothing here offers it
+ * (so it still shows as chosen). Pure.
+ * @param {{ id: string, value: any }[]} collected  api.collect("bodies")
+ * @param {string} want  the doc's view.start.body, or "orbit"
+ * @returns {[string, string][]}  [id, label]
+ */
+export function startBodies(collected, want = "orbit") {
+  const out = [["orbit", "Orbit"]];
+  for (const { value } of collected ?? []) {
+    for (const def of Array.isArray(value) ? value : []) {
+      if (!def || typeof def.id !== "string" || out.some(([id]) => id === def.id)) continue;
+      out.push([def.id, String(def.label ?? def.id)]);
+    }
+  }
+  if (want && !out.some(([id]) => id === want)) out.push([want, want]);
+  return out;
+}
+
 /** Did anything the inspector reads in local change (hover and notices don't count)? */
 function localChanged(a, b) {
   if (a === b) return false;
@@ -97,8 +120,8 @@ function create(api) {
 
   // ─── doc writes, through the planners ──────────────────────────────────────
 
-  /** Apply a plan; a refusal is said, and the fields show the doc again. */
-  function apply(plan) {
+  /** Apply a plan, as an edit; a refusal is said, and the fields show the doc again. */
+  function apply(plan, label = "Edit") {
     if (!plan) {
       refreshNow(true);
       return null;
@@ -108,11 +131,12 @@ function create(api) {
       refreshNow(true);
       return null;
     }
-    api.change(plan);
+    api.edit(plan, { label });
     return plan;
   }
-  const setField = (id, key, value) => apply(api.ops.setField(api.scene(), id, key, value));
-  const setPart = (id, kind, i, v) => apply(api.ops.setTransformPart(api.scene(), id, kind, i, v));
+  const FIELD_LABELS = { name: "Rename", visible: "Visible", wireframe: "Wireframe", locked: "Locked", color: "Colour", opacity: "Opacity", group: "In group", parent: "Attach", at: "Version" };
+  const setField = (id, key, value) => apply(api.ops.setField(api.scene(), id, key, value), FIELD_LABELS[key] ?? key);
+  const setPart = (id, kind, i, v) => apply(api.ops.setTransformPart(api.scene(), id, kind, i, v), kind === "rotation" ? "Rotate" : kind === "scale" ? "Scale" : "Move");
   // ─── fixed versions (`at`) ───────────────────────────────────────────────
 
   /** Where api.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
@@ -122,10 +146,10 @@ function create(api) {
   function fixVersion(id) {
     const point = fixPointOf(id);
     if (!point) return void api.notify("It hasn't been built here yet, so there's no version to fix.", "error");
-    apply(api.ops.setField(api.scene(), id, "at", point));
+    apply(api.ops.setField(api.scene(), id, "at", point), "Fix at this version");
   }
 
-  const followLatest = (id) => apply(api.ops.setField(api.scene(), id, "at", undefined));
+  const followLatest = (id) => apply(api.ops.setField(api.scene(), id, "at", undefined), "Follow latest");
 
   const select = (id) => api.local.swap((m) => ((m.selected ?? null) === (id ?? null) ? m : { ...m, selected: id ?? null }));
 
@@ -172,21 +196,21 @@ function create(api) {
   const holderIn = (d, id) => (id == null ? d : d.objects?.[id] ?? null);
 
   function addTrait(id, desc) {
-    api.change((d) => {
+    api.edit((d) => {
       const h = holderIn(d, id);
       if (!h) return;
       // the scene's map is pre-created (STAGE.md, "Shared maps"); an object's
       // first trait makes its own
       if (!isMap(h.traits)) h.traits = {};
       if (!(desc.key in h.traits)) h.traits[desc.key] = newValue(desc);
-    });
+    }, { label: `Add ${desc.name ?? desc.key}` });
   }
 
   function removeTrait(id, key) {
-    api.change((d) => {
+    api.edit((d) => {
       const t = holderIn(d, id)?.traits;
       if (isMap(t) && key in t) delete t[key];
-    });
+    }, { label: `Remove ${described.get(key)?.name ?? key}` });
   }
 
   /** Write one field of a trait (or of one of its entries, a seat), as the form gave it. */
@@ -198,38 +222,48 @@ function create(api) {
       refreshNow(true);
       return;
     }
-    api.change((d) => {
+    api.edit((d) => {
       let at = holderIn(d, id)?.traits?.[key];
       if (entry != null) at = isMap(at) ? at[entry] : null;
       if (!isMap(at)) return; // gone meanwhile, or not a map of fields
       if (w.remove) {
         if (field.key in at) delete at[field.key];
       } else at[field.key] = copy(w.value);
-    });
+    }, { label: String(field.label ?? field.key) });
   }
 
   function addEntry(id, key, entries) {
     const eid = api.newId(entries.prefix);
-    api.change((d) => {
+    api.edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && !(eid in t)) t[eid] = newValue(entries);
-    });
+    }, { label: "Add" });
   }
 
   function removeEntry(id, key, eid) {
-    api.change((d) => {
+    api.edit((d) => {
       const t = holderIn(d, id)?.traits?.[key];
       if (isMap(t) && eid in t) delete t[eid];
-    });
+    }, { label: "Remove" });
   }
 
-  /** Start everyone who opens the scene in this activity: doc.view.activity ("edit", the default, is no key). */
-  function startIn(activity) {
-    api.change((d) => {
-      if (activity === "edit") {
-        if ("activity" in d.view) delete d.view.activity;
-      } else if (d.view.activity !== activity) d.view.activity = activity;
-    });
+  /**
+   * Start everyone who opens the scene in this body: doc.view.start.body
+   * (orbit, the default, is no key). A new body drops the old one's place;
+   * the home camera stays.
+   */
+  function startIn(body) {
+    api.edit((d) => {
+      if (!isMap(d.view)) d.view = {};
+      const was = isMap(d.view.start) ? d.view.start : null;
+      if ((was?.body ?? "orbit") === body) return;
+      if (!was) d.view.start = {};
+      const start = d.view.start;
+      if ("place" in start) delete start.place;
+      if (body === "orbit") {
+        if ("body" in start) delete start.body;
+      } else start.body = body;
+    }, { label: "Starts in" });
   }
 
   /**
@@ -490,7 +524,7 @@ function create(api) {
     };
   }
 
-  /** Nothing selected: the scene's own Behaviours, and the activity it starts people in. */
+  /** Nothing selected: the scene's own Behaviours, and the body it starts people in. */
   function buildScene() {
     teardown();
     const behaviours = behavioursView(null, "scene");
@@ -501,7 +535,7 @@ function create(api) {
       { class: "inspector", dataset: { kind: "scene" } },
       el("div", { class: "inspector-kind" }, "Scene"),
       behaviours.section,
-      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "What everyone who opens this scene starts out doing" }, "Starts in"), starts, note),
+      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "Where everyone who opens this scene starts out: orbiting it, or in a body (walking, seated)" }, "Starts in"), starts, note),
     );
     body.replaceChildren(root);
     view = { id: null, scene: true, root, behaviours, starts, note, startsKey: null };
@@ -509,27 +543,26 @@ function create(api) {
 
   function fillScene(scene, local) {
     view.behaviours.update(scene);
-    const available = Array.isArray(local?.activities?.available) && local.activities.available.length ? local.activities.available : ["edit"];
-    const key = available.join("\n");
+    const want = typeof scene.d?.view?.start?.body === "string" ? scene.d.view.start.body : "orbit";
+    const bodies = startBodies(api.collect("bodies"), want);
+    const key = JSON.stringify(bodies);
     if (key !== view.startsKey) {
       view.startsKey = key;
       view.starts.replaceChildren(
-        ...available.map((a) => {
-          const radio = el("input", { type: "radio", name: startsName, value: a, dataset: { activity: a } });
+        ...bodies.map(([id, label]) => {
+          const radio = el("input", { type: "radio", name: startsName, value: id, dataset: { body: id } });
           radio.addEventListener("change", () => {
-            if (radio.checked) startIn(a);
+            if (radio.checked) startIn(id);
           });
-          return el("label", { class: "toggle" }, radio, ` ${activityLabel(a)}`);
+          return el("label", { class: "toggle" }, radio, ` ${label}`);
         }),
       );
       view.note.textContent =
-        available.length > 1
-          ? "Everyone who opens this scene starts here. Each viewer can switch for themselves."
-          : "Editing is all this scene offers. A behaviour that's played (a game's) adds a choice.";
+        bodies.length > 1
+          ? "Everyone who opens this scene starts here, once. Each viewer can change body for themselves."
+          : "Orbit is the only body here. A package that brings one (walking, seats) adds a choice.";
     }
-    const want = scene.d?.view?.activity;
-    const start = available.includes(want) ? want : "edit";
-    for (const radio of view.starts.querySelectorAll("input[data-activity]")) radio.checked = radio.dataset.activity === start;
+    for (const radio of view.starts.querySelectorAll("input[data-body]")) radio.checked = radio.dataset.body === want;
   }
 
   // the field shows `v`, unless someone is typing in it (or `force`)
@@ -784,7 +817,7 @@ function create(api) {
         return o && !isGroup(o) ? { title: "Put this object in a new group" } : null;
       },
       run: (target) => {
-        const plan = apply(api.ops.newGroup(api.scene(), { around: target, id: api.newId("g") }));
+        const plan = apply(api.ops.newGroup(api.scene(), { around: target, id: api.newId("g") }), "Group");
         if (plan?.id) select(plan.id);
       },
     },
@@ -794,45 +827,82 @@ function create(api) {
       show: ["inspector", "menu"],
       state: (target, { scene }) => (isGroup(objectOf(target, scene)) ? { title: "Move what's in this group up a level, where it is, and remove the group" } : null),
       run: (target) => {
-        const plan = apply(api.ops.ungroup(api.scene(), target));
+        const plan = apply(api.ops.ungroup(api.scene(), target), "Ungroup");
         if (plan && selectedOf(api.local.get()) === target) select(null);
       },
     },
   ];
 
+  // ─── the tab: open while something is selected, or when asked ────────────
+  let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
+  let dismissed = null; // the selection whose tab the viewer closed (its ×): shut until the selection changes
+  let lastSel = null;
+  const tab = drawerTab(api, {
+    id: "inspector",
+    title: "Inspector",
+    mount(host) {
+      body = host;
+      body.classList.add("inspector-body");
+      view = null;
+      last = null;
+      showEmpty();
+      return {
+        update: (scene, local) => refresh(scene, local),
+        dispose() {
+          teardown();
+          if (body === host) {
+            body.replaceChildren();
+            body = null;
+          }
+          last = null;
+        },
+      };
+    },
+    onClosed: () => {
+      asked = false;
+      dismissed = lastSel;
+    },
+  });
+  /** Is the selection something this inspector shows (a scene object or group)? */
+  const shows = (scene, id) => id != null && !!scene?.objects?.[id];
+  function follow(scene, local) {
+    const sel = selectedOf(local);
+    if (sel !== lastSel) {
+      lastSel = sel;
+      dismissed = null;
+    }
+    const want = asked || (shows(scene, sel) && dismissed !== sel);
+    // following the selection, it comes in behind a tab the viewer is using (the parts bin)
+    if (want) tab.open({ show: asked });
+    else tab.close();
+    tab.update(scene, local);
+  }
+
+  commands.push({
+    id: "inspector",
+    name: "Inspector",
+    show: ["toolbar"],
+    state: (target) => (target == null ? { checked: tab.isOpen(), title: "The selection's fields and behaviours; with nothing selected, the scene's" } : null),
+    run(_target, value) {
+      const open = value === undefined ? !tab.isOpen() : !!value;
+      asked = open;
+      if (!open) dismissed = lastSel;
+      else dismissed = null;
+      follow(api.scene(), api.local.get());
+    },
+  });
+
   return {
     commands,
-    panels: [
-      {
-        id: "inspector",
-        title: "Inspector",
-        pinned: true, // never folds
-        mount(host) {
-          body = host;
-          body.classList.add("inspector-body");
-          view = null;
-          last = null;
-          showEmpty();
-          refreshNow();
-          return {
-            update: (scene, local) => refresh(scene, local),
-            dispose() {
-              teardown();
-              if (body === host) {
-                body.replaceChildren();
-                body = null;
-              }
-              last = null;
-            },
-          };
-        },
-      },
-    ],
+    update: (scene, local) => follow(scene, local),
+    /** for tests and probes: the tab's element, and whether it's docked */
+    tab,
     dispose() {
+      tab.dispose();
       teardown();
       body = null;
     },
   };
 }
 
-export default { create };
+export default own({ create });

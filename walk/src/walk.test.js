@@ -101,3 +101,20 @@ describe("walking", () => {
     expect(d[2]).toBeCloseTo(-1);
   });
 });
+
+describe("the spawn point's trait part (walk.spawn)", () => {
+  it("declares the trait, so a doc with spawn points calls for this package; Walk from here is on a spawn point, unless walking", async () => {
+    const { plugins } = await import("./index.js");
+    const spawn = plugins.find((p) => p.id === "walk.spawn");
+    expect(spawn.traits).toEqual(["walk.spawn"]);
+    expect(spawn.describes["walk.spawn"].on).toBe("object");
+    expect(plugins.find((p) => p.id === "walk").traits).toBeUndefined();
+    const { walkFromState } = await import("./spawn.js");
+    const scene = { objects: { pad: { traits: { "walk.spawn": {} } }, crate: {} } };
+    for (const body of ["orbit", "seat", "walk"])
+      for (const target of ["pad", "crate", null, "gone"]) {
+        const st = walkFromState(target, { scene, local: { body: { id: body } } });
+        expect(!!st, `${body} ${target}`).toBe(target === "pad" && body !== "walk");
+      }
+  });
+});

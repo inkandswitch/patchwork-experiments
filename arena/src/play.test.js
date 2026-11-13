@@ -206,8 +206,8 @@ describe("playing", () => {
     doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: { rotation: [0, 0, 0] } };
     doc.objects.t1.transform = { position: [0, 0, -5], rotation: [1.5, 0, 0], scale: 1 };
     x.update(scene(doc), {}, { scene: null });
-    // editing has its own command for this (edit.js); playing has the button
-    expect(x.commands.map((c) => c.id)).toEqual(["play", "gun"]);
+    // the button, and the menu's Stand targets up (reset.js)
+    expect(x.commands.map((c) => c.id)).toEqual(["play", "gun", "reset"]);
     f.calls.overlay.querySelector(".arena-reset").click();
     expect(doc.objects.t1.transform.rotation).toEqual([0, 0, 0]);
     expect(doc.objects.t1.traits["arena.target"].down).toBeUndefined();

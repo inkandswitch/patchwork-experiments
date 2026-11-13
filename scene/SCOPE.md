@@ -21,9 +21,10 @@ owner, the holders nearest first, the general extensions, the top body.
 |---|---|---|
 | `scene` | a trait on the scene | step 3, every pointer event, at its holder: the nearest link of the hit chain carrying its trait, the scene itself last |
 | `objects` | only traits on objects | step 3, and only when the hit chain reaches one of its objects, with `ev.holder` set to the nearest |
-| `general` | no traits declared at all, `always`, or (until TOOLS.md step 8) only `requires` | step 4 |
+| `general` | no traits declared at all | step 4 |
 
-`requires` makes an extension run but lends it no scope. Three details of
+(`always`, and `requires`, which made an extension run but lent it no
+scope, went at TOOLS.md step 8: traits alone decide.) Three details of
 the code mattered when this was written:
 
 - **Holders came in running order, not by nearness**, so when the table
@@ -41,7 +42,7 @@ the code mattered when this was written:
 
 | Case | Traits today | What it needs from scope |
 |---|---|---|
-| CAD boat editor | none of its own; the editor's parts (`general`, in the `"edit"` activity) | editing has to win while you're editing, even over play traits on the same objects (activities now settle this: a play extension doesn't run while editing) |
+| CAD boat editor | none of its own; the editor's parts (`general`) | editing in the running world, play traits on the same objects running too: the selection's halo and the drawer's inspector edit, and a game's holders take presses on their objects first (Select is every menu's, and orbit's click where no holder takes it); no activity settles it (TOOLS.md §3) |
 | Game table | `seats` (the seats package's) on the scene; `tabletop.zone` and `tabletop.card` on objects | seats, zones and face-up all relative to the table |
 | Arena | `arena.level` on the scene; `arena.target` and `walk.spawn` (the walk package's) on objects | walk and shoot anywhere; spawns where their objects are |
 | **Sailing sim** | `sailing.sea` on the scene; `sailing.ship` on the hull, `sailing.helm`, `sailing.winch` and the rest on her fittings | a boat that moves as one; a tiller and sheets on it; players walking the deck; a card table in the saloon; the whole thing inside an arena level |
@@ -275,9 +276,9 @@ die under a cup). A press carries `ev.holder`, the nearest link of the hit
 chain with the trait, so a press on what's attached to a card carries the
 card.
 
-`requires` still exists until TOOLS.md step 8, and still lends no scope: a
-table, dice, a bag, arena and sailing require the use prompt, the key map
-and notices (and some the menu or the framing), never the carry.
+`requires` went at TOOLS.md step 8: the use prompt, the key map, notices,
+the menu and the framing are general and run in every scene, and the carry
+runs by its trait, so nothing has to bring anything in.
 
 **The problem it answered.** When this was written the tabletop required
 `scene.hand`, a required part is `general` scope and runs everywhere, and a

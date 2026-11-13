@@ -71,7 +71,7 @@ try {
   }
   const sceneA = await net.a.create2(emptyScene({
     title: "Bag probe", objects, order: Object.keys(objects),
-    view: { ...DEFAULT_VIEW, grid: false, axes: false, home: { position: [0, 0.9, 0.9], target: [0, 0, 0] } },
+    view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { home: { position: [0, 0.9, 0.9], target: [0, 0, 0] } } },
   }));
   const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
   try { localStorage.clear(); } catch {}
@@ -96,8 +96,8 @@ try {
   window.__p = {
     errors, tokens: Object.keys(SHAPES), viewers: { a: ana.url, b: ben.url },
     net: { hold: () => net.hold(), release: () => net.release(), held: () => net.held(), stats: () => ({ ...net.stats }) },
-    activity: (w) => dbg[w].local.get().activities?.current ?? null,
-    play: (w) => { dbg[w].local.swap((m) => ({ ...m, activity: "play" })); return true; },
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the parts bin's row for a part, in a view (scrolled into sight) */
     part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rectOf(e); },
     /** the bag: its object id, and whether its GLB has loaded, in a view */

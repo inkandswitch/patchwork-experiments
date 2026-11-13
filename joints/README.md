@@ -22,10 +22,9 @@ reads and writes the trait in the shape below, through the stage's contract
 |---|---|---|
 | `scene:extension` | `joints` | slides: the Open / Close verb, the motion, closing after a wait (`src/extension.js`; the joint itself is `src/slide.js`) |
 
-It declares no `activities`, so it runs whatever the viewer is doing (a
-drawer is opened while editing as well as while walking) and offers no
-activity of its own: a slide doesn't make a scene offer Play; a game in it
-does. It `requires` nothing: the use prompt is a game's to bring into play.
+It runs by its trait, whatever the viewer is doing (a drawer is opened by
+someone selecting things as well as by someone walking); the use prompt
+that shows its verb is the scene's, in every scene.
 While any part in the scene closes itself (a `wait`), it registers a
 **process** on the scene's world clock (`api.clock.process`, scene
 TOOLS.md §7): the closing.

@@ -16,13 +16,13 @@ loads what is shown.
 The tool itself is a **stage** with no UI of its own: it keeps the doc,
 loads and builds content, renders, picks and routes input. Everything you
 see or do in a scene comes from **extensions** (`scene:extension` plugins),
-and the editor described under "Using it" is 20 of them that this package
-ships (selection, halo, carry, outline, inspector, toolbar…), each its own
-module in `src/parts/`, which run while you **edit**. Other packages add more
-(tabletop's game table, arena's first-person level) and the activities they
-take part in, such as **play**; each viewer switches between the ones a
-scene offers. [STAGE.md](STAGE.md) is the contract between the stage and
-extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
+and the editor described under "Using it" is the ones this package ships
+(selection, halo, carry, outline, inspector, toolbar, undo…), each its own
+module in `src/parts/`. Other packages add more (tabletop's game table,
+arena's first-person level). What runs is decided by the doc's traits
+alone: there are no modes, and editing and playing happen in the same
+running world (TOOLS.md). [STAGE.md](STAGE.md) is the contract between the
+stage and extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -40,20 +40,22 @@ pnpm install && pnpm build && pnpm test
 | `scene:source` | `file-stl` | `file` docs with extension `stl` — `content: "built"` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
 | `scene:extension` | `scene.*` (27) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
-All but three of the editor's parts take part only in the `"edit"` activity;
-the key map (`scene.keys`), notices and the packages prompt (`scene.packages`:
-STAGE.md, "Packages") serve every activity. `scene.activity`
-(the switcher: Play | Edit at the bottom left, shown only when a scene offers
-more than editing) and `scene.clock` (the clock chip: ▶ or ⏸ for the doc's
-world time, in a slim bar on the top edge, shown only for a doc with a process: TOOLS.md §7)
-run in every scene.
+Every part but carry declares no traits, so each runs in every scene, a
+game's included; carry runs where the doc has something carryable. What
+keeps the editor's chrome out of the way is that it follows attention
+(TOOLS.md §1): the inspector is a drawer tab while something is selected,
+the outline (Objects), Dimensions and Parts are tabs you open from the
+toolbar, and the grid, axes and bounds are drawn only in the orbit body.
+`scene.clock` is the clock chip (▶ or ⏸ for the doc's world time, in a slim
+bar on the top edge, shown only for a doc with a process: TOOLS.md §7);
+`scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the toolbar).
 
 The stage also answers **who may see what** (`api.audience`, from every
 package's `audience` policy) and draws **the veil** for a look that says
 `veil: true` (STAGE.md, "Audience" and "The veil"); it holds no secrets
 itself.
 
-**Use** (`scene.use`, `src/parts/use.js`) is the use prompt: in play it
+**Use** (`scene.use`, `src/parts/use.js`) is the use prompt: it
 shows attention's verbs (TOOLS.md §3: the selection, else what you look at,
 the middle of the view under pointer lock, else what's under the pointer,
 or the nearest thing it's attached to that has any), up to three, as
@@ -65,7 +67,8 @@ does that. The key map (`scene.keys`) does the keys: a `run` that returns
 a session (`{ end(), cancel(), update?(dt) }`) is held while the key is
 down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
 `cancel` if focus goes, the target goes or its extension stops. The prompt
-runs only when a game lists it in `requires`.
+runs in every scene; with nothing that has verbs under attention it shows
+nothing.
 
 **Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Orbit ▾",
 "Walk ▾": enter a body that can start here, or Leave the one you're in),
@@ -75,10 +78,14 @@ others come with packages (`walk`, `seats`, sailing's).
 
 ## Using it
 
-This is the editor: the `"edit"` activity, which every scene offers and a
-plain model offers alone. A scene whose doc says to start somewhere else
-(`view.activity`, the inspector's "Starts in"; an arena level starts in
-`"play"`) opens there, and the switcher changes it for you alone.
+This is the editor, and it is always there: select something (a click in
+the orbit body, or Select in any menu) and its halo and the inspector are
+the editor. A scene whose doc says where to start (`view.start`, the
+inspector's "Starts in": an arena level starts you walking at a spawn
+point, a card table seated or watching from a seat) puts you there once,
+when you open it; the body chip and Leave change it for you alone. Undo
+(⌘Z) takes back your own edits (the halo, the inspector, add, delete,
+paste), never a verb's (a die's roll stays rolled).
 
 An empty scene is a start screen: "Start from:" lists every installed
 template (`scene:template`: arena's "Arena level", say) and Blank. A template
@@ -216,11 +223,13 @@ notice says what to add. See STAGE.md, "Copying objects".
   A piece attached to something is carried in that thing's
   frame: a card on a table aboard a moving ship goes with the table, snaps
   to its slots and goes down square to it, however she heels and swings.
-  Carrying runs in every activity, wherever the doc has something carryable.
+  Carrying runs wherever the doc has something carryable, whatever anyone is doing.
 - **Locked** (inspector): a locked object can't be carried or moved by its
   halo — a game board, say. Everything else about it still works.
-- **Panels**: the sidebar's panels fold from their titles; any extension
-  can contribute one.
+- **The drawer**: one panel at the right, a tab per pane: the inspector
+  while something is selected, Objects, Dimensions and Parts when you open
+  them from the toolbar, and any extension's docked editor (Camber's
+  Shape, a die's panel).
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
@@ -265,9 +274,6 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 { type: "scene:extension", id: "tabletop", name: "Tabletop",
   traits: ["tabletop.zone", "tabletop.card"],                        // trait keys that start it
   drops: ["*"],                                                      // datatypes it may lay out when dropped
-  requires: ["scene.use", "scene.keys"],                             // what must run with it
-  always: false,
-  activities: ["play"],                                              // the activities it takes part in (absent = all)
   describes: { "tabletop.card": { name: "Card", on: "object", … } },  // for "Add behaviour…" (STAGE.md)
   async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
 
@@ -279,13 +285,11 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   async load() { return { create(ctx, at) } } }                       // puts something in, from the parts bin
 ```
 
-- **What runs** is a function of the registry, the doc and this viewer's
-  activity: an extension runs when it takes part in the activity and has a
-  reason, which is the scene or an object having one of its traits,
-  declaring no traits at all (a general part, like the toolbar), or
-  `always`; and whatever a running one `requires` comes along. A viewer
-  starts where the doc says (`view.activity`, else `"edit"`) and switches
-  for themselves.
+- **What runs** is a function of the registry and the doc, nothing else:
+  an extension runs when the scene or an object has one of its traits, or
+  when it declares no traits at all (a general part, like the toolbar). A
+  viewer starts where the doc says (`view.start`: a body, a place, a home
+  camera), once, and goes on from there for themselves.
 - **State** lives in three places: the doc (shared, kept), presence (shared,
   passing: selections, carries, avatars) and local (this view only:
   selection, the current tool, display prefs). Extensions talk to each other
@@ -623,8 +627,9 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   // defaults for each viewer (each can change their own): display, snapping, where to start
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // a carry snaps (absent = true)
-          activity?: string,                               // the activity a viewer starts in (absent = "edit")
-          home?: { position, target, fov? } },             // where a viewer with no saved camera starts
+          start?: { body?: string,                         // the body people arrive in (absent: orbit), read once
+                    place?: string,                        // what that body's enter is given: a spawn point's id, a seat's
+                    home?: { position, target, fov? } } }, // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
   assets: { [key: string]: { url: AutomergeUrl, hint?: Object["hint"] } },  // the scene's own file docs (ctx.file: STAGE.md, "Parts")
   packages: { url: string }[],      // the packages its contents come from (STAGE.md, "Packages")
@@ -719,7 +724,7 @@ MaterialRule = {
 - Bounds, **Frame all** and selection boxes are world-space boxes of each
   object's own geometry (not including what is attached to it).
 - The camera is each viewer's own, kept in this browser per scene. A viewer
-  with no saved camera starts at `view.home` (set with *Set home view*),
+  with no saved camera starts at `view.start.home` (set with *Set home view*),
   else framing what's there. Orbiting never writes the doc.
 
 ### Fixed versions (`at`)
@@ -783,10 +788,10 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
-| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt, in play when a game requires it), `activity` (the switcher, always on), `clock` (the clock chip, always on) and `body` (the body chip, who's here and the Esc hint) |
+| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip) and `body` (the body chip, who's here and the Esc hint); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
-| `src/activities.js` | what activities are called, for the switcher and "Starts in" |
+| `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
 | `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |
@@ -818,37 +823,35 @@ node probes/editor-run.mjs     # --show to watch, --shots <dir> for the screensh
 
 Two views of one doc (A, and a small B; each one's broadcasts reach only the
 other): a locked 5×5 board with connectors, three blocks, two pawns, and an
-STL file in the repo. A real mouse and keyboard over CDP check the layout
-(toolbar along the top in one row, the sidebar at the right with Objects,
-the Inspector (showing the Scene: nothing is selected) and Dimensions, the
-canvas filling the rest); a click selects (the outline row is
-marked, the inspector shows it, B draws A's selection box and marks the row);
-Escape and a click on nothing deselect; G / R / H are nobody's (there are no
-tools), Grid / Axes / Bounds toggle (per viewer, never the doc); a drag
-on the halo's X arrow moves a block, B seeing the pose
-mid-drag and then the landed transform; a block (it has the carry trait) is
-carried onto a connector, Q turns it 45°, Esc puts it back, Alt puts one
-down between connectors; dragging the locked board orbits and writes
-nothing; . frames everything; M and two clicks on the board write a 24 cm dimension (label on
-the canvas and in the panel); a click on that label selects the dimension in
-place of a selected block (one selection; B hears it) and Delete removes it,
-and only it; Delete removes a selected object; P hides and shows
-the sidebar; a double-click frames an object; a right-click opens the menu
-(Select and Remove work); there's no activity switcher (a plain model offers
-only editing); pasted automerge URLs add a GLB and the STL, which builds,
-shows 20 mm bounds in mm, and rebuilds at
+STL file in the repo. Each viewer opens the outline from the toolbar
+(Objects). A real mouse and keyboard over CDP check the layout (toolbar
+along the top in one row, the drawer at the right with only the Objects
+tab, the canvas filling the rest); a click selects (the outline row is
+marked, the inspector's tab comes in behind the Objects tab, B draws A's
+selection box and marks the row); Escape and a click on nothing deselect;
+G / R / H are nobody's (there are no tools), Grid / Axes / Bounds toggle (per
+viewer, never the doc); a drag on the halo's X arrow moves a block, B seeing
+the pose mid-drag and then the landed transform; a block (it has the carry
+trait) is carried onto a connector, Q turns it 45°, Esc puts it back, Alt
+puts one down between connectors; dragging the locked board orbits and
+writes nothing; . frames everything; M and two clicks on the board write a
+24 cm dimension (label on the canvas, and in the Dimensions tab the toolbar
+opens); a click on that label selects the dimension in place of a selected
+block (one selection; B hears it) and Delete removes it, and only it; Delete
+removes a selected object; the tabs' × close the drawer and the canvas takes
+the room, and the toolbar's Objects opens it again; a double-click frames an
+object; a right-click opens the menu (Select and Remove work); there are no
+modes (the orbit body, no activity in local); pasted automerge URLs add a
+GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its
-parent's halo drag. With nothing selected the inspector shows the Scene: its
-"Starts in" offers only Edit. Then, with arena/ built (its plugins are
-registered too; otherwise these are skipped), "Add behaviour…" on a block
-offers Target and Spawn point, not the scene-only Arena level; adding Target
-starts the arena's editing part in both views, and both now offer Play: the
-switcher shows Play | Edit, and "Starts in" lists Play, which writes
-`view.activity` and moves neither view. Play on A's switcher takes its editor
-away (no toolbar, no sidebar, the canvas fills the view; B keeps editing) and
-Edit brings it back; the Target's × stops the arena again and the switcher
-goes. Paste, and choosing in a `<select>`, are the synthetic events (headless
+parent's halo drag. With nothing selected the toolbar's Inspector opens it
+on the Scene: its "Starts in" offers Orbit. Then, with arena/ built (its
+plugins are registered too; otherwise these are skipped), "Add behaviour…"
+on a block offers Target and not the scene-only Arena level; adding Target
+starts the arena in both views, beside the editor (its Play in the toolbar;
+both views' editors still there, the doc starting nobody anywhere); the
+Target's × stops it again. Paste, and choosing in a `<select>`, are the synthetic events (headless
 Chrome won't give a page the system clipboard or a select's popup).
 
 ### The hand
@@ -870,7 +873,8 @@ released off-centre (it snaps, and rests on the board; the other peer sees it
 in the air, then where it landed), stacks two more blocks on it, puts a pawn
 down with Alt (exactly where dropped), another off the board (on the ground),
 drags the locked board (it stays; the camera orbits) and cancels a carry with
-Esc. Then the extension: its panel is in the sidebar; with nobody seated both
+Esc. Then the extension: its panel docks in the drawer (and is closed again);
+with nobody seated both
 viewers show both cards' backs; once A sits, A shows the card in the tray as
 itself and B still its back; S over a pile of two face-down cards runs its
 command; a face-down card is carried, turned over with F and put down, and
@@ -880,7 +884,7 @@ Last, the halo with a real drag on its X arrow: B sees the block move
 before the doc does, then the written pose; and on a group's pivot, both
 pawns move by the same amount. The page's extension is written to
 [STAGE.md](STAGE.md)'s contract (`looks`, `landing`, commands with `state`,
-`panels`, `api.notify`).
+`api.dock`, `api.notify`).
 
 ### At scale: the Solander 38 probe
 

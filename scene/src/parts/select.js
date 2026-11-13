@@ -1,4 +1,4 @@
-// scene.select: the selection, in every activity (TOOLS.md §3).
+// scene.select: the selection (TOOLS.md §3).
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
@@ -22,6 +22,7 @@
 
 import { peerColor, peerSelections } from "../peers.js";
 import { selectionStep } from "../selection.js";
+import { own } from "../stage/own.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 const REMOTE = [0.6, 0.4, 0.9];
@@ -203,7 +204,9 @@ export function create(api) {
     if (!plan || plan.ok === false) return false;
     const n = plan.within?.length ?? 0;
     if (n > 0 && !confirmRemove(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return false;
-    const done = api.remove([id]);
+    const edit = api.edits("Delete");
+    const done = api.remove([id], { edit });
+    edit.end();
     const gone = new Set(done?.ids ?? plan.ids ?? [id]);
     if (gone.has(selected())) select(null);
     return true;
@@ -219,4 +222,4 @@ export function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

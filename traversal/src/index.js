@@ -14,8 +14,6 @@ export const plugins = [
     id: "traversal",
     name: "Traversal",
     traits: ["traversal.exit"],
-    // no `activities`: it runs whatever the viewer is doing (an exit is used
-    // from its menu while editing too), and so offers no activity of its own
     describes: {
       "traversal.exit": {
         name: "Exit",
@@ -28,8 +26,6 @@ export const plugins = [
         init: {},
       },
     },
-    // no `requires`: the use prompt is a game's to bring into play (STAGE.md,
-    // "The use prompt"), and the menu and the inspector are editing's
     async load() {
       return (await import("./extension.js")).default;
     },

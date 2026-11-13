@@ -67,8 +67,6 @@ export const plugins = [
     id: "dice",
     name: "Dice",
     traits: ["dice.die"],
-    // dice are played with, and edited too (turned by hand, their panel opened)
-    activities: ["play", "edit"],
     describes: {
       "dice.die": {
         name: "Die",
@@ -79,20 +77,13 @@ export const plugins = [
       },
     },
     drops: ["die"],
-    // playing with dice needs these and nothing else: the use prompt (hover
-    // a die: "[R] Roll  [T] Turn"), keys for verbs, a right-click menu, and
-    // somewhere for notices. Carrying them is the scene's, by the
-    // `scene.carry` trait every die and cup is written with. scene.use comes
-    // before scene.keys, so the prompt hears its verbs' keys first
-    // (scene/STAGE.md, "The use prompt").
-    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./extension.js")).default;
     },
   },
   {
-    // dice cups: who may see under each (an audience policy, so no `activities`: it holds while anyone edits),
-    // the dice under them shown as only their holder's client can know them, and the cup verbs in play
+    // dice cups: who may see under each (an audience policy), the dice under them shown as only their
+    // holder's client can know them, and the cup verbs
     type: "scene:extension",
     id: "dice.cup",
     name: "Dice cups",
@@ -101,7 +92,7 @@ export const plugins = [
       "dice.cup": {
         name: "Dice cup",
         on: "object",
-        blurb: "Covers the dice under it. In play: S shakes it over the dice in front of it (a roll nobody chooses), hold P to peek under your own, L lifts it",
+        blurb: "Covers the dice under it. S shakes it over the dice in front of it (a roll nobody chooses), hold P to peek under your own, L lifts it",
         fields: [
           { key: "up", label: "Lifted", kind: "boolean", default: true },
           { key: "blind", label: "Blind (kept from whoever shook it)", kind: "boolean", default: false },
@@ -110,15 +101,14 @@ export const plugins = [
         runtime: ["holder", "roll", "round"],
       },
     },
-    requires: ["scene.use", "scene.keys", "scene.menu", "scene.notices"],
     async load() {
       return (await import("./cup-extension.js")).default;
     },
   },
   {
     // every roll's draw, by lots between the clients of those present (src/lots-ext.js): it runs wherever there is
-    // a die or a cup, and keeps its rounds in their traits (it describes none of its own). No `activities`: a
-    // member's client commits and opens whatever its viewer is doing
+    // a die or a cup, and keeps its rounds in their traits (it describes none of its own), so a member's client
+    // commits and opens whatever its viewer is doing
     type: "scene:extension",
     id: "dice.lots",
     name: "Dice lots",

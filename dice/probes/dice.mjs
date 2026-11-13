@@ -7,15 +7,18 @@
 // Automerge documents (A is Ana, B is Ben, each with its own replica, a
 // change reaching the other 25 ms later; dice-probe.html), at a scene holding
 // one tilted table. Real keys and a real mouse over CDP. Then:
-// - edit: the parts bin offers the Dice parts; a d20 dragged onto the table
+// - the parts bin (a drawer tab A opens from the toolbar; no mode) offers
+//   the Dice parts; a d20 dragged onto the table
 //   is a new die doc, built at real size by the scene's own render pipeline
 //   in both views, lying on the table; a plus/minus die DOC dropped on the
 //   ground becomes a die too; a percentile pair lands as two dice in a group;
-//   R over a die rolls it, editing too (the halo has no keys: TOOLS.md §10);
-// - the die's own panel: selecting the d20, the inspector's "Edit die" docks
-//   its 2D tool in the stage's drawer; naming a face there rebuilds the die, and
-//   both views' built content says the new name;
-// - play: R over the d20 rolls it. Every roll is drawn by lots between the
+//   R over a die rolls it (the halo has no keys: TOOLS.md §10);
+// - the die's own panel: selecting the d20 (its inspector tab comes in
+//   behind the bin), the inspector's "Edit die" docks its 2D tool in the
+//   stage's drawer; naming a face there rebuilds the die, and both views'
+//   built content says the new name;
+// - rolling, in the same view (there is no Play to switch to): R over the
+//   d20 rolls it. Every roll is drawn by lots between the
 //   clients here: R puts the die in the air at once (a pose, drawn by both
 //   views within a frame or two of the key), it tumbles until the draw is
 //   known, then lands in one write; the seed is checked here, with WebCrypto,
@@ -135,11 +138,14 @@ try {
   check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   const TOP = await P("TOP");
   const V = await P("viewers");
-  check("both views editing, the table loaded", await until("activity('a') === 'edit' && __p.activity('b') === 'edit' && __p.loaded('table', 'a') && __p.loaded('table', 'b')", 30_000));
-  check("with no die in the scene the dice extension isn't running, and only Edit is on offer", !(await P("running('a')")).includes("dice") && J(await P("available('a')")) === J(["edit"]), { running: await P("running('a')"), available: await P("available('a')") });
+  check("both views in orbit (the doc says nowhere else to start), the table loaded", await until("body('a') === 'Orbit' && __p.body('b') === 'Orbit' && __p.loaded('table', 'a') && __p.loaded('table', 'b')", 30_000));
+  check("with no die in the scene the dice extension isn't running", !(await P("running('a')")).includes("dice"), { running: await P("running('a')") });
   await settled();
 
-  // ── the parts bin ──
+  // ── the parts bin: a drawer tab, opened from the toolbar ──
+  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  check("A opens Parts from the toolbar", await until("count('.stage-drawer [data-panel=\"parts\"]') === 1", 4000), await P("count('.stage-drawer')"));
+  await settled();
   const bin = await P("binParts('a')");
   check("the bin offers the Dice parts, then a cup and a pool", J(bin) === J(["dice.die", "dice.d4", "dice.d8", "dice.d10", "dice.percentile", "dice.d12", "dice.d20", "dice.coin", "dice.plus-minus", "dice.doubling", "dice.cup", "dice.pool"]), bin);
 
@@ -160,7 +166,7 @@ try {
     check("the scene builds it in both views, and each view's built content says what it is", await until(`built(${J(d20)}, 'a')?.labels.length === 20 && __p.built(${J(d20)}, 'b')?.labels.length === 20`, 30_000), { a: await P(`status(${J(d20)}, 'a')`), b: await P(`status(${J(d20)}, 'b')`) });
     const first = await drawn(d20);
     check("as put down it shows 1 in both views, flat on the tilted table", first.a?.label === "1" && first.b?.label === "1" && flatAt(first.lies.a, TOP) && flatAt(first.lies.b, TOP), first);
-    check("the dice extension now runs in both views, and Play is on offer", (await P("running('a')")).includes("dice") && (await P("running('b')")).includes("dice") && (await P("available('a')")).includes("play"), await P("available('a')"));
+    check("the dice extension now runs in both views", (await P("running('a')")).includes("dice") && (await P("running('b')")).includes("dice"), { a: await P("running('a')"), b: await P("running('b')") });
     check("the scene lists nothing it can't load (the probe's plugins come from a dev server: no package URL)", J((await P("doc()")).packages) === "[]", (await P("doc()")).packages);
   }
   mark("d20 on the table");
@@ -198,7 +204,7 @@ try {
   }
   await shot("1-dice-out");
 
-  // ── R while editing rolls: no halo has it ──
+  // ── R rolls, the bin open and a die just placed: no halo has it ──
   {
     // (the pair is selected, and a key goes to the selection first: let it go)
     await P("focus('a')");
@@ -207,22 +213,27 @@ try {
     const { hovering, before } = await pressOver(d20, "r");
     const rolled = await until(`notices('a').slice(${before.a}).some((n) => /^You rolled /.test(n))`, 8000);
     const said = (await P("notices('a')")).slice(before.a).find((n) => /^You rolled /.test(n));
-    check("R over a die while editing rolls it: A is told, and so is B", hovering && rolled && (await until(`notices('b').includes(${J(said?.replace(/^You/, "Ana"))})`, 4000)), { said, a: await P("notices('a')"), b: await P("notices('b')") });
+    check("R over a die rolls it: A is told, and so is B", hovering && rolled && (await until(`notices('b').includes(${J(said?.replace(/^You/, "Ana"))})`, 4000)), { said, a: await P("notices('a')"), b: await P("notices('b')") });
   }
 
   // ── the die's own panel, docked in the stage's drawer ──
   {
+    // the bin put away, so the drawer is empty to start from
+    await click(await P(`rect('.toolbar [data-command="parts"]')`));
+    await until("count('.stage-drawer') === 0", 3000);
+    await sleep(300);
+    const canvas0 = await P("canvas('a')");
     const at = await P(`aimAt(${J(d20)}, 'a')`);
     await b.click(at.x, at.y);
-    check("clicking the d20 selects it", await until(`selected('a') === ${J(d20)}`, 3000), await P("selected('a')"));
+    check("clicking the d20 selects it, and its inspector tab opens", await until(`selected('a') === ${J(d20)} && __p.count('.stage-drawer [data-panel="inspector"]') === 1`, 3000), await P("selected('a')"));
     const button = await until(`rect('button[data-ext="dice"][data-command="open"]')`, 4000);
     check("the inspector offers Edit die", !!button && (await P(`text('button[data-ext="dice"][data-command="open"]')`)) === "Edit die", await P(`text('button[data-ext="dice"][data-command="open"]')`));
-    const canvas0 = await P("canvas('a')");
     await click(await P(`rect('button[data-ext="dice"][data-command="open"]')`));
-    check("it docks the die's 2D tool in the drawer under the die's name: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P("text('.stage-drawer-tab-name')")) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P("text('.stage-drawer-tab-name')"), b: await P("count('.stage-drawer', 'b')") });
+    const shownTab = ".stage-drawer-tab[aria-selected=\"true\"] .stage-drawer-tab-name";
+    check("it docks the die's 2D tool in the drawer under the die's name, shown: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P(`text(${J(shownTab)})`)) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P(`text(${J(shownTab)})`), b: await P("count('.stage-drawer', 'b')") });
     await sleep(300);
     const canvas1 = await P("canvas('a')");
-    check("the canvas gives it room", canvas1.w < canvas0.w - 200, { before: canvas0.w, after: canvas1.w });
+    check("the canvas gives the drawer room", canvas1.w < canvas0.w - 200, { before: canvas0.w, after: canvas1.w });
     await shot("2-docked");
     // name face 0 in the panel: the die doc changes, the scene rebuilds it, and both views read the new name
     check("a face named in the panel", await P(`commit('.dice-panel .die-face[data-face="0"] input.name', 'crit')`));
@@ -236,23 +247,20 @@ try {
     const rolledHere = (await P("notices('a')")).slice(told0).filter((n) => /^You rolled /.test(n));
     const t1 = J(await P(`transform(${J(d20)})`));
     check("a key typed in the panel is the panel's, not the scene's: R there doesn't roll the selected d20", rolledHere.length === 0 && t1 === t0, { rolledHere, before: t0, after: t1 });
-    await click(await P(`rect('.stage-drawer-tab-close')`));
-    check("its × undocks it, and the drawer goes", await until("count('.dice-panel') === 0 && __p.count('.stage-drawer') === 0", 3000), { panels: await P("count('.dice-panel')"), drawers: await P("count('.stage-drawer')") });
+    await click(await P(`rect('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-close')`));
+    check("its × undocks it; the inspector's tab stays (the d20 is still selected)", await until("count('.dice-panel') === 0 && __p.count('.stage-drawer [data-panel=\"inspector\"]') === 1", 3000), { panels: await P("count('.dice-panel')"), drawers: await P("count('.stage-drawer')") });
     await sleep(300);
   }
 
-  // ── play ──
-  await click(await P(`rect('.activity-option[data-activity="play"]')`));
-  check("A switches to Play", await until("activity('a') === 'play'", 6000), { activity: await P("activity('a')") });
-  await settled();
-  await sleep(400);
-  // the selection is the viewer's, not the activity's (scene/TOOLS.md §3): the
-  // d20 clicked while editing is still selected, and attention is the
-  // selection if any, so keys would go to it wherever A looks. Escape lets it go.
-  check("switching to Play keeps the selection (the viewer's): the d20", (await P("selected('a')")) === d20, await P("selected('a')"));
+  // ── rolling, in the same view: nothing to switch ──
+  // attention is the selection if any, so keys would go to the d20 wherever
+  // A looks. Escape lets it go, and the inspector's tab with it.
+  check("the d20 is still selected (the viewer's)", (await P("selected('a')")) === d20, await P("selected('a')"));
   await P("focus('a')");
   await b.key("Escape");
-  check("…and Escape lets it go, so attention is the look again", await until("selected('a') === null", 2000), await P("selected('a')"));
+  check("…and Escape lets it go, so attention is the look again, and the inspector's tab goes", await until("selected('a') === null && __p.count('.stage-drawer') === 0", 2000), await P("selected('a')"));
+  await settled();
+  await sleep(400);
 
   // R over the d20
   {

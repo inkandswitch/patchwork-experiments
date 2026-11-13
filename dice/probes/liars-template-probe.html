@@ -127,8 +127,8 @@ try {
      * What A's doc calls for that nothing registered here answers (the
      * stage's needs, scene/STAGE.md "Packages"): an object's provider with no
      * scene:source of that id, a trait on the scene or an object that no
-     * scene:extension declares, a view.activity other than "edit" that no
-     * extension offers.
+     * scene:extension declares. (view.start is no need of its own: its body's
+     * package comes with its place's trait.)
      * A table that needs a package not installed here has one.
      */
     unanswered() {
@@ -143,8 +143,6 @@ try {
         if (typeof o.providerId === "string" && o.providerId && !sources.has(o.providerId)) out.push(`${o.name}'s provider ${o.providerId}`);
         for (const k of Object.keys(o.traits ?? {})) if (!declared.has(k)) out.push(`${o.name}'s trait ${k}`);
       }
-      const act = d.view?.activity;
-      if (typeof act === "string" && act && act !== "edit" && !exts.some((p) => Array.isArray(p.activities) && p.activities.includes(act))) out.push(`view.activity ${act}`);
       return out;
     },
     /**
@@ -172,7 +170,8 @@ try {
     seats: (w) => plain(scene[w].doc().traits?.seats ?? null),
     /** the seat picker's choices in a view */
     picker: (w) => [...(hosts[w].querySelector(".seats-pick")?.options ?? [])].map((o) => o.value),
-    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
     notices: (w) => [...told[w]],
     /** what a view is still loading, and what failed to load */

@@ -6,12 +6,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as Automerge from "@automerge/automerge";
-import { PLAY, mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { CLAIM_GRACE_MS } from "./stage.js";
 
-const CREW = { meta: { id: "t.crew", activities: ["edit"] }, module: { create: () => ({}) } };
+const CREW = { meta: { id: "t.crew" }, module: { create: () => ({}) } };
 const OTHER = { meta: { id: "t.other" }, module: { create: () => ({}) } };
-const EXTENSIONS = [CREW, OTHER, PLAY];
+const EXTENSIONS = [CREW, OTHER];
 
 const mounted = [];
 afterEach(() => {
@@ -144,7 +144,7 @@ describe("claims on one view", () => {
     const { A, a } = await twoViews();
     const onLost = vi.fn();
     a.claim("helm", "station", { onLost });
-    await A.activity("play"); // t.crew takes part in editing only
+    await A.uninstall("t.crew");
     expect(A.api("t.crew")).toBeNull();
     expect(A.doc().objects.helm.claims.station).toBeUndefined();
     await settle();

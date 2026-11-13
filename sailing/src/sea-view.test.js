@@ -1,11 +1,10 @@
-// The sea in play: the sea from the doc, the water's extent, and
-// createSeaView and the editor's sea on a fake stage (test/fakes.js), drawn
-// at the doc's world time (the clock is the stage's: scene/src/stage/clock.js).
+// The sea: the sea from the doc, the water's extent, and createSeaView on a
+// fake stage (test/fakes.js), drawn at the doc's world time (the clock is the
+// stage's: scene/src/stage/clock.js), the same for everyone, editing or not.
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
 import { ATMOSPHERE, WATER_REACH, createSeaView, seaParams, waterExtent } from "./sea-view.js";
 import { FLOAT, SEA } from "./traits.js";
-import edit from "./edit.js";
 import { emptyScene, fakeWorld } from "./test/fakes.js";
 
 describe("the sea from the doc", () => {
@@ -110,34 +109,37 @@ describe("createSeaView", () => {
   });
 });
 
-describe("the sea while editing", () => {
+describe("the sea while someone edits", () => {
   let w;
   afterEach(() => w?.done());
+  // each view runs the whole extension: its sea, and the ships' process
+  function seaOn(api) {
+    const sea = createSeaView(api);
+    api.clock.process({ step() {} });
+    api.loop(() => sea.tick());
+    return sea;
+  }
 
-  it("draws the same sea and sky, holding nothing, saying nothing and computing nothing: alone, its sea stands still", () => {
+  // There is no editing sea: every view runs the same sailing extension, so
+  // one that is selecting things and holding a tool draws the same sea at
+  // the same world time as the one sailing her, and it runs on; only a
+  // pause stops it (scene TOOLS.md §7: editing never stops the sea).
+  it("an editor's view draws the sailor's sea at the sailor's time; it runs on, and only a pause stops it", () => {
     const doc = scene();
     w = fakeWorld(doc);
-    const api = w.join("E");
-    const part = edit.create(api);
-    expect(part.atmosphere()).toBe(ATMOSPHERE);
-    w.tick(1 / 60, 30);
-    expect(w.holds.size).toBe(0);
-    expect(w.view("E").keys).toEqual({});
-    expect(doc.claims).toBeUndefined();
-    expect(api.clock.t()).toBe(0);
-    part.dispose();
-  });
-
-  it("while someone sails her, it's at the world time their view computes", () => {
-    const doc = scene();
-    w = fakeWorld(doc);
-    const p = w.join("P");
-    p.clock.process({ step() {} }); // the sailor's view has the ships' process
-    w.tick(1 / 60, 120);
-    const e = w.join("E");
-    edit.create(e);
-    w.tick(1 / 60, 30);
-    expect(e.clock.t()).toBeCloseTo(2.5, 6);
-    expect(w.clock.computer.session).toBe("P");
+    const sailor = w.join("P");
+    const sp = seaOn(sailor);
+    w.tick(1 / 60, 60);
+    const editor = w.join("E");
+    // (what the editor selects or holds runs nothing different: scene's H1)
+    const se = seaOn(editor);
+    w.tick(1 / 60, 60);
+    expect(se.clock()).toBeCloseTo(sp.clock(), 6);
+    expect(se.clock()).toBeGreaterThan(1.5);
+    editor.clock.pause();
+    const t = se.clock();
+    w.tick(1 / 60, 60);
+    expect(se.clock()).toBeCloseTo(t, 6);
+    expect(sp.clock()).toBeCloseTo(t, 6);
   });
 });

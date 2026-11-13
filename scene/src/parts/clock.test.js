@@ -44,7 +44,7 @@ describe("the chip on a stage", () => {
         },
       },
     };
-    const CHIP = { meta: { id: "scene.clock", always: true }, module: clockPart };
+    const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
     const s = await mountStage({ extensions: [PROC, CHIP], viewerId: "me" });
     mounted.push(s);
     await until(() => s.local.get().clock?.computer?.mine);
@@ -74,7 +74,7 @@ describe("the chip on a stage", () => {
   });
 
   it("no process, no chip", async () => {
-    const CHIP = { meta: { id: "scene.clock", always: true }, module: clockPart };
+    const CHIP = { meta: { id: "scene.clock" }, module: clockPart };
     const s = await mountStage({ extensions: [CHIP] });
     mounted.push(s);
     await settle();

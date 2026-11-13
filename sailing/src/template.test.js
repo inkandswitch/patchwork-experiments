@@ -18,7 +18,9 @@ describe("the Ship at sea template", () => {
     expect(sea.wind).toEqual({ speed: 7, from: 45 });
     expect(sea.scale).toBe(1);
     expect(Number.isInteger(sea.seed)).toBe(true);
-    expect(doc.view.activity).toBe("play");
+    // people start in orbit off her quarter (no body: a click comes aboard), and nothing else of the old view
+    expect(Object.keys(doc.view.start)).toEqual(["home"]);
+    expect("activity" in doc.view || "home" in doc.view).toBe(false);
     expect(calls.notices.at(-1).kind).toBe("info");
     expect(calls.notices.at(-1).text).toMatch(/come aboard/);
   });
@@ -113,7 +115,7 @@ describe("the Ship at sea template", () => {
       expect(p[0] * windward[0] + p[2] * windward[2]).toBeGreaterThan(30);
     }
 
-    const { position, target } = doc.view.home;
+    const { position, target } = doc.view.start.home;
     const d = Math.hypot(position[0] - target[0], position[1] - target[1], position[2] - target[2]);
     expect(d).toBeGreaterThan(17);
     expect(d).toBeLessThan(23);
@@ -135,7 +137,7 @@ describe("the Ship at sea template", () => {
 });
 
 describe("the Ship at anchor template", () => {
-  it("lies head to wind off the islet, still, her sail down and her anchor down, in a moderate breeze, in play", async () => {
+  it("lies head to wind off the islet, still, her sail down and her anchor down, in a moderate breeze", async () => {
     const { atAnchor } = await import("./template.js");
     const { ANCHORAGE_AIR } = await import("./layout.js");
     const doc = emptyScene();
@@ -144,7 +146,7 @@ describe("the Ship at anchor template", () => {
     expect(doc.traits["sailing.sea"].wind).toEqual({ speed: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
     expect(ANCHORAGE_AIR.speed).toBeGreaterThanOrEqual(6); // enough to get her out of irons and away
     expect(ANCHORAGE_AIR.speed).toBeLessThanOrEqual(7);
-    expect(doc.view.activity).toBe("play");
+    expect(doc.view.start.home).toBeTruthy();
     const by = (name) => Object.values(doc.objects).find((o) => o.name === name);
     const hull = by("Sloop");
     expect(hull.traits["sailing.ship"]).toEqual({}); // no way on

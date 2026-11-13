@@ -78,8 +78,9 @@ export function levelObject({ name, transform, traits }, { url, hint }, group) {
 
 /**
  * Lay out the sample arena in one change: a group of blocks, the level trait
- * with the arena's look, and the doc's starting activity set to play, so
- * whoever opens it (its maker too) is in the game, not the editor.
+ * with the arena's look, and the doc starting people walking at its first
+ * spawn point (view.start), so whoever opens it (its maker too) is in the
+ * game.
  */
 export async function layOutArena(ctx) {
   const blocks = sampleArena();
@@ -93,12 +94,16 @@ export async function layOutArena(ctx) {
     // a laid-out level has the arena's look (sky, haze, sun: play.js); a
     // scene that only had a target added keeps its own
     d.traits[LEVEL].look = "arena";
-    d.view.activity = "play";
+    let spawn = null;
     for (const b of blocks) {
       const id = ctx.newId("o");
       d.objects[id] = levelObject(b, files[b.kind], gid);
       d.order.push(id);
+      if (!spawn && b.traits?.["walk.spawn"]) spawn = id;
     }
+    // people start walking at the first spawn point (TOOLS.md §2): its trait
+    // calls for the walk package, which brings the body
+    if (spawn) d.view.start = { body: "walk", place: spawn };
   });
   return gid;
 }

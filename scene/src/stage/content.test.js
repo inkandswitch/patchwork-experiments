@@ -16,27 +16,12 @@ import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
 
-// A stand-in for scene.sidebar: mounts every collected panel and updates it each pass.
-const sidebar = {
+// The outline is a drawer tab the viewer opens: these tests have it open.
+const opener = {
   create(api) {
-    const edge = api.edge("right");
-    const mounted = new Map();
-    const sync = (scene, local) => {
-      for (const { value } of api.collect("panels")) {
-        for (const p of value ?? []) {
-          if (mounted.has(p.id)) continue;
-          const section = document.createElement("section");
-          section.dataset.panel = p.id;
-          edge.append(section);
-          mounted.set(p.id, p.mount(section) ?? {});
-        }
-      }
-      for (const m of mounted.values()) m.update?.(scene, local);
-    };
     return {
-      update: (scene, local) => sync(scene, local),
-      dispose: () => {
-        for (const m of mounted.values()) m.dispose?.();
+      update() {
+        api.run({ ext: "scene.outline", command: "objects", value: true });
       },
     };
   },
@@ -46,7 +31,7 @@ const EXTS = [
   { meta: { id: "scene.add" }, module: add },
   { meta: { id: "scene.outline" }, module: outline },
   { meta: { id: "scene.inspector" }, module: inspector },
-  { meta: { id: "t.sidebar" }, module: sidebar },
+  { meta: { id: "t.opener" }, module: opener },
 ];
 
 const STL = `solid part

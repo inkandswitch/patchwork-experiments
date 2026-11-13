@@ -1,8 +1,8 @@
 // scene.use: the use prompt ("[F] Raise the anchor"), attention's verbs
 // shown where attention is (TOOLS.md §3, §5): under the crosshair while the
 // pointer is locked, else at the pointer. It shows; the key map
-// (scene.keys) does. It takes part in play only, and only when something
-// asks for it: a game lists it in `requires`.
+// (scene.keys) does. It runs in every scene, as the key map does: with
+// nothing that has verbs under attention, it shows nothing.
 //
 // Attention is the selection if any, else the look (api.attention). The
 // prompt is on the selection, or the first object along the look's chain
@@ -14,6 +14,8 @@
 // only when pressing it does that, so a verb whose key the body reserves
 // (walking, D) shows without one. Verbs are buttons, for touch; a held verb
 // ("hold F") is the keyboard's.
+//
+// While a gesture is open (a carry: its Q/E/F come first) it shows nothing.
 //
 // While a verb is held (scene.keys' `keymap`), attention is pinned to its
 // target: the prompt shows the held verb (marked held, as it was when
@@ -95,7 +97,9 @@ function create(api) {
     const pinned = km?.pinned();
     const keys = resolverState(api);
     const { collected, ctx, attention } = keys;
-    const found = pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
+    // while a gesture is open (a carry), its keys come first and nothing under the pointer is what they do: no prompt
+    const gesture = api.local.get().gesture != null;
+    const found = gesture ? null : pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
     if (found) {
       current = { target: found.target, hit: ctx.hit, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
     } else current = null;

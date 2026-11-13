@@ -74,7 +74,7 @@ describe("scene.frame: commands and double-click", () => {
     s.unmount();
   });
 
-  it("Set home view writes this camera to doc.view.home; it's a menu command, disabled without a camera", async () => {
+  it("Set home view writes this camera to doc.view.start.home, as an edit; it's a menu command, disabled without a camera", async () => {
     const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }] });
     const c = s.instance("scene.frame").commands.find((k) => k.id === "set-home");
     expect(c.show).toEqual(["menu"]);
@@ -85,7 +85,10 @@ describe("scene.frame: commands and double-click", () => {
     s.api("scene.frame").camera = camera.rig;
     expect(c.state(null, {}).disabled).toBe(false);
     expect(run(s, "set-home")).toBe(true);
-    expect(s.doc().view.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
+    expect(s.doc().view.start.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
+    expect(s.local.get().edits.undo).toBe("Set home view");
+    expect(s.api("scene.frame").undo()).toBe(true);
+    expect(s.doc().view.start).toBeUndefined();
     s.unmount();
   });
 });

@@ -34,7 +34,7 @@ export function sackFile(bagDoc) {
  */
 export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = null }) {
   const title = bagDoc?.title || DEFAULT_TITLE;
-  const scene = emptyScene({ "@patchwork": scenePatchwork(sceneImportUrl), title: `${title}: table` });
+  const scene = emptyScene({ "@patchwork": scenePatchwork(sceneImportUrl), title: `${title}: scene` });
   scene.objects[BAG_OBJECT] = {
     name: title,
     sourceUrl: fileUrl,
@@ -51,7 +51,7 @@ export function sceneWithBag({ bagUrl, bagDoc, fileUrl, hint, sceneImportUrl = n
     traits: { [CONTAINER]: { doc: bagUrl }, [CARRY]: {} },
   };
   scene.order.push(BAG_OBJECT);
-  // a table with a bag on it is for playing at
-  scene.view.activity = "play";
+  // where people start: in orbit (view.start's home is left to the scene's
+  // own framing); a bag has no seats to start anyone in
   return scene;
 }

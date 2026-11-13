@@ -1,6 +1,6 @@
 // scene.packages: the prompt for the packages a scene lists and this viewer
 // doesn't have (STAGE.md, "Packages"). One card for all of them, over the
-// view in every activity:
+// view:
 //   - asked about: "This scene uses 2 packages you don't have.", each by its
 //     own name and its URL, with Load and Not now;
 //   - loading: the same rows, greyed, with nothing to press;

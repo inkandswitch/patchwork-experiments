@@ -1,12 +1,12 @@
 // Making and editing a level against a stand-in for the scene: the template
 // (what an empty scene's start screen runs), the parts (what the parts bin
-// runs) and the edit extension's command.
+// runs) and Stand targets up (reset.js).
 import { describe, it, expect, beforeEach } from "vitest";
 import { plugins } from "./index.js";
 import { KINDS, isDown, sampleArena } from "./level.js";
 import { scores } from "./play.js";
 import { kindKey } from "./layout.js";
-import edit from "./edit.js";
+import { resetCommand } from "./reset.js";
 import template from "./template.js";
 import { emptyScene } from "./test/empty-scene.js";
 
@@ -59,7 +59,7 @@ describe("the Arena level template", () => {
     expect(typeof load).toBe("function");
   });
 
-  it("lays out the sample arena in a group, with the arena's look, and starts the scene in play", async () => {
+  it("lays out the sample arena in a group, with the arena's look, and starts people walking at its first spawn point", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await template.create(ctx);
@@ -71,7 +71,8 @@ describe("the Arena level template", () => {
     expect(calls.created[0]).toMatchObject({ "@patchwork": { type: "file" }, extension: "glb", mimeType: "model/gltf-binary" });
     expect(calls.created[0].content).toBeInstanceOf(Uint8Array);
     expect(doc.traits["arena.level"]).toEqual({ look: "arena" });
-    expect(doc.view.activity).toBe("play");
+    expect(doc.view.start).toEqual({ body: "walk", place: expect.any(String) });
+    expect(doc.objects[doc.view.start.place].traits["walk.spawn"]).toEqual(expect.any(Object));
     const objects = Object.values(doc.objects);
     const group = objects.find((o) => o.kind === "group");
     expect(group.name).toBe("Arena");
@@ -178,17 +179,13 @@ describe("the arena's parts", () => {
   });
 });
 
-describe("editing a level (arena.edit)", () => {
+describe("standing targets up (reset.js)", () => {
   let doc, f, x;
   beforeEach(() => {
     doc = emptyScene();
     doc.traits["arena.level"] = {};
     f = fakeScene(doc);
-    x = edit.create(f.ctx);
-  });
-
-  it("offers only standing targets up: putting things is the parts bin's", () => {
-    expect(x.commands.map((c) => c.id)).toEqual(["reset"]);
+    x = { commands: [resetCommand(f.ctx)] };
   });
 
   it("stands knocked-over targets up, and only offers to when one is down", () => {
@@ -219,18 +216,12 @@ describe("editing a level (arena.edit)", () => {
   });
 });
 
-describe("the arena's activities", () => {
+describe("what the arena runs", () => {
   const byId = (id) => plugins.find((p) => p.id === id);
 
-  it("plays only in play, edits only in edit, on the same traits", () => {
-    expect(byId("arena").activities).toEqual(["play"]);
-    expect(byId("arena.edit").activities).toEqual(["edit"]);
-    expect(byId("arena.edit").traits).toEqual(byId("arena").traits);
-  });
-
-  it("brings what playing needs without the editor: keys, notices, and framing as the level loads", () => {
-    expect(byId("arena").requires).toEqual(["scene.use", "scene.keys", "scene.notices", "scene.autoframe"]);
-    expect(byId("arena.edit").requires).toBeUndefined();
+  it("one extension, by its traits alone: the gun, the targets and Stand targets up, whoever is doing what", () => {
+    expect(plugins.filter((p) => p.type === "scene:extension").map((p) => p.id)).toEqual(["arena"]);
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in byId("arena")).toBe(false);
   });
 
   it("has no kits and no old build extension", () => {

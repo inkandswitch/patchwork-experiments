@@ -11,8 +11,9 @@
 //     room), and the drawer at the right while anything is docked (dock.js). The port holds the viewport's canvas and labels, and the
 //     extensions' overlays. The root is focusable and hears the keys.
 //   - local state (atom.js): one frozen value shared by the stage and every
-//     extension; prefs are kept per scene in localStorage. What this viewer
-//     is doing (local.activity) is not kept: joining starts where the doc says.
+//     extension; prefs are kept per scene in localStorage. Where this viewer
+//     is (the body stack) is not kept: arriving starts where the doc says
+//     (view.start, read once).
 //   - the viewport, its theme, and the camera (this viewer's, in localStorage).
 //   - content, routed at sync by the kind its provider makes (providers.js
 //     routeOf): the render manager for "built", the GLB queue for "file";
@@ -42,12 +43,14 @@ import { HEARTBEAT_MS, createPresence } from "./presence.js";
 import { createHolds } from "./holds.js";
 import { CLOCK, PRESENCE_KEY, PRESENCE_NS, createClock, eligibility } from "./clock.js";
 import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
-import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
+import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
 import { mergeAudience, mergeShown } from "./audience.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import { createDrawer } from "./dock.js";
+import { createEdits } from "../undo.js";
+import { isOwn } from "./own.js";
 import { selectionStep } from "../selection.js";
 import { escapeHint } from "./ladder.js";
 import { lookChain } from "../keymap.js";
@@ -79,6 +82,8 @@ const CAMERA_SAVE_MS = 500;
 export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
 /** How long a notice stays in local.notices. */
 const NOTICE_MS = 6_000;
+/** How long, once view.start's body is on offer, arriving waits for the content before entering it anyway (ms). */
+export const ARRIVE_WAIT_MS = 20_000;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
 // single remote edit answers immediately; past that, the rest of a burst is
@@ -230,12 +235,27 @@ export function cleanCamera(c) {
 }
 
 /**
+ * Where the doc starts people (TOOLS.md §2): `view.start = { body, place,
+ * home }`, read once on arrival. `body` is a body's id (orbit, the stage's,
+ * is none: it is always there), `place` what its enter is given (a spawn
+ * point's object id, a seat's id), `home` the camera. Pure.
+ * @returns {{ body: string | null, place: string | null, home: object | null }}
+ */
+export function startOf(doc) {
+  const s = doc?.view?.start;
+  if (!s || typeof s !== "object") return { body: null, place: null, home: null };
+  const body = typeof s.body === "string" && s.body && s.body !== "orbit" ? s.body : null;
+  const place = typeof s.place === "string" && s.place ? s.place : null;
+  return { body, place, home: cleanCamera(s.home) };
+}
+
+/**
  * Where the camera starts (STAGE.md, "Saving"): this viewer's saved camera,
- * else the doc's suggested home, else null
+ * else the doc's suggested home (view.start.home), else null
  * (a frame extension frames on first content).
  */
 export function initialCamera({ stored = null, doc = null } = {}) {
-  return cleanCamera(stored) ?? cleanCamera(doc?.view?.home) ?? null;
+  return cleanCamera(stored) ?? startOf(doc).home ?? null;
 }
 
 const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
@@ -390,7 +410,14 @@ export default function Stage(handle, element) {
   root.append(edges.top, edges.left, port, edges.right, edges.bottom);
   element.append(style, root);
   // the drawer: what extensions dock (api.dock), outermost at the right
-  const drawer = createDrawer({ parent: edges.right });
+  // what's docked and shown, as local.drawer (so the toolbar's toggles hear of it)
+  const drawer = createDrawer({
+    parent: edges.right,
+    onChange: (d) => {
+      if (dead) return;
+      local.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown }) }));
+    },
+  });
 
   const doc = () => handle.doc() ?? {};
   // Who is looking (extensions' business: seats, say): the account's contact,
@@ -417,9 +444,10 @@ export default function Stage(handle, element) {
     status: Object.freeze({}),
     theme: null,
     notices: Object.freeze([]),
-    // this viewer's activity: null until the host has the doc and starts them where it says
-    activity: null,
-    activities: Object.freeze({ current: DEFAULT_ACTIVITY, available: Object.freeze([DEFAULT_ACTIVITY]) }),
+    // the labels of the steps undo and redo would take, in the focus doc (src/undo.js)
+    edits: Object.freeze({ undo: null, redo: null }),
+    // the drawer's tabs, by title, and the one shown (dock.js)
+    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null }),
     // the doc's clock as the chip shows it (clock.js status), once known
     clock: null,
     prefs: cleanPrefs(readJSON(prefsKey)),
@@ -550,6 +578,10 @@ export default function Stage(handle, element) {
   function derive() {
     const d = doc();
     if (model && model.d === d) return model;
+    return (model = modelOf(d));
+  }
+  /** The derived structure of any snapshot of the doc (derive's, for the doc as it is now). */
+  function modelOf(d) {
     const objects = d.objects ?? {};
     const ids = ops.orderedIds(d);
     // Merged cycles are broken here, for reading (resolveParents and
@@ -570,7 +602,7 @@ export default function Stage(handle, element) {
         members.get(g).push(id);
       }
     }
-    model = {
+    return {
       d,
       objects,
       ids,
@@ -581,12 +613,14 @@ export default function Stage(handle, element) {
       members,
       snapshot: null,
     };
-    return model;
   }
 
   /** The snapshot extensions read (STAGE.md, `scene()`), one per doc. */
   function scene() {
-    const m = derive();
+    return snapshotOf(derive());
+  }
+  /** The snapshot of a model: its doc, structure, world(id) and toLocal(id, point). */
+  function snapshotOf(m) {
     if (!m.snapshot) {
       const worlds = new Map();
       const world = (id) => {
@@ -901,6 +935,139 @@ export default function Stage(handle, element) {
     const answers = audienceAnswers(id);
     return answers ? mergeShown(answers) : null;
   };
+
+  // ─── what an edit did, for undo (TOOLS.md, Decisions 2; src/undo.js) ──────
+  // Judged when a step of the stage's own editing is recorded, from the doc
+  // before its first change and after its last:
+  //   shows  the objects it revealed (who may see what one is grew, by the
+  //          running extensions' audience policies on each side; unknown on
+  //          either side counts as grown) or decided (a running extension's
+  //          `decided(before, after)` names them: their outcome came from
+  //          shared randomness or hidden state);
+  //   kept   the names of the objects it removed whose contents a keeper
+  //          holds: bound by the trait of an extension whose plugin says
+  //          `keeper` (STAGE.md, "Keepers").
+  // And when a step is taken back, who has a stake in those objects now:
+  // every running extension's `parties(scene)(id)`, merged, without this
+  // viewer. Where nothing answers (or answers null) there are no parties;
+  // where one throws, they can't be told.
+
+  /** The snapshot of any version of the doc (the current one's is scene()). */
+  const snapOf = (d) => (d === doc() ? scene() : snapshotOf(modelOf(d)));
+
+  /** Every running extension's answer to `name(...args)`, a function of an object id, each made safe: [{ id, fn }]. */
+  function policiesOf(name, args) {
+    const out = [];
+    for (const r of host.instances()) {
+      if (typeof r.instance[name] !== "function") continue;
+      try {
+        const fn = r.instance[name](...args);
+        if (typeof fn === "function") out.push({ id: r.id, fn });
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: ${name} failed`, err);
+        out.push({ id: r.id, fn: null });
+      }
+    }
+    return out;
+  }
+  /** Who may see what each object is in this snapshot: (id) → "all" | viewer[] | null (unknown). As audienceOf, with policies of its own. */
+  function audiencesIn(snap) {
+    if (!packages.complete() || !host.settled()) return () => null;
+    const list = policiesOf("audience", [snap]);
+    return (id) =>
+      mergeAudience(
+        list.map(({ id: ext, fn }) => {
+          if (!fn) return CLOSED;
+          try {
+            return fn(id) ?? null;
+          } catch (err) {
+            console.warn(`[scene] extension “${ext}”: audience failed for ${id}`, err);
+            return CLOSED;
+          }
+        }),
+      );
+  }
+  /** Did who may see it grow, from `a` to `b`? Unknown (null) on either side: it may have. */
+  const grew = (a, b) => a == null || b == null || (b === "all" ? a !== "all" : a !== "all" && b.some((v) => !a.includes(v)));
+  /** The traits a keeper binds objects by: those of every registered extension whose plugin says `keeper`. */
+  function keeperTraits() {
+    const out = new Set();
+    let list = [];
+    try {
+      list = patchworkPlugins.getRegistry("scene:extension")?.filter?.((p) => !!p?.keeper) ?? [];
+    } catch {
+      list = [];
+    }
+    for (const p of list) for (const t of Array.isArray(p.traits) ? p.traits : []) if (typeof t === "string") out.add(t);
+    return out;
+  }
+  /** What a step did to one doc: the scene's, judged; another (a render doc) shows nothing. */
+  function judgeEdit({ handle: h, before, after }) {
+    if (h !== handle || !before || !after) return null;
+    const was = before.objects ?? {};
+    const now = after.objects ?? {};
+    const shows = new Set();
+    // a listed package missing, or an extension not started: whose policies are missing can't be told,
+    // so every object counts as shown (a hand's `only` among them would hide a reveal); said so on refusal
+    const unknown = !packages.complete() || !host.settled();
+    const askAudience = unknown || host.instances().some((r) => typeof r.instance.audience === "function");
+    const askDecided = host.instances().some((r) => typeof r.instance.decided === "function");
+    if (askAudience || askDecided) {
+      const b = snapOf(before);
+      const a = snapOf(after);
+      if (askAudience) {
+        const ab = audiencesIn(b);
+        const aa = audiencesIn(a);
+        for (const id of Object.keys(now)) if (was[id] && grew(ab(id), aa(id))) shows.add(id);
+      }
+      for (const r of host.instances()) {
+        if (typeof r.instance.decided !== "function") continue;
+        let ids = [];
+        try {
+          ids = r.instance.decided(b, a);
+        } catch (err) {
+          console.warn(`[scene] extension “${r.id}”: decided failed`, err);
+        }
+        for (const id of Array.isArray(ids) ? ids : []) if (typeof id === "string" && (was[id] || now[id])) shows.add(id);
+      }
+    }
+    const kept = [];
+    const gone = Object.keys(was).filter((id) => !now[id]);
+    if (gone.length) {
+      const traits = keeperTraits();
+      for (const id of gone) {
+        const t = was[id]?.traits;
+        if (t && typeof t === "object" && [...traits].some((k) => t[k] != null)) kept.push(String(was[id].name ?? id));
+      }
+    }
+    return { shows: [...shows], kept, ...(unknown && shows.size ? { unknown: true } : {}) };
+  }
+  /**
+   * Who has a stake in these objects now, other than this viewer: every
+   * running extension's `parties(scene)` answer, merged. An answer of null
+   * (or none) is no stake; one that throws can't be told, and nor can the
+   * whole: null (the take-back is refused, as an audience policy that
+   * throws hides).
+   */
+  function partiesOf(ids) {
+    const snap = scene();
+    const out = new Set();
+    for (const { id: ext, fn } of policiesOf("parties", [snap])) {
+      if (!fn) return null; // parties(scene) threw (policiesOf said so)
+      for (const id of ids) {
+        let list;
+        try {
+          list = fn(id);
+        } catch (err) {
+          console.warn(`[scene] extension “${ext}”: parties failed for ${id}`, err);
+          return null;
+        }
+        if (Array.isArray(list)) for (const v of list) if (typeof v === "string" && v) out.add(v);
+      }
+    }
+    out.delete(viewer);
+    return [...out].sort();
+  }
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
@@ -1373,6 +1540,7 @@ export default function Stage(handle, element) {
         console.warn(`[scene] extension “${r.id}”: update failed`, err);
       }
     }
+    tryArrive();
     const work = scheduled;
     scheduled = [];
     for (const { rec, fn } of work) {
@@ -1496,6 +1664,28 @@ export default function Stage(handle, element) {
     handle.change(fn);
   }
 
+  // ─── edits: the stage's own, undone and redone (src/undo.js) ──────────────
+  // This viewer's stacks, per focus doc (the one stage's, until links). A
+  // step's writes are recorded from their own patches as they're made, so
+  // nothing else written meanwhile (a process's save, a peer's merge) is
+  // ever in it.
+  const edits = createEdits({
+    handle,
+    judge: (part) => judgeEdit(part),
+    parties: (ids) => partiesOf(ids),
+    writable: () => !dead && writable(),
+    notify: (text) => notify(text),
+    changed: (next) => {
+      if (!dead) local.swap((m) => (m.edits && m.edits.undo === next.undo && m.edits.redo === next.redo ? m : { ...m, edits: Object.freeze(next) }));
+    },
+  });
+  cleanups.push(() => edits.dispose());
+  /** Write fn: as part of an edit when one is given, else plainly. */
+  function write(edit, fn) {
+    if (edit && typeof edit.change === "function") edit.change(fn);
+    else change(fn);
+  }
+
   function setPref(key, value) {
     if (typeof key !== "string") return;
     local.swap((m) => {
@@ -1522,12 +1712,16 @@ export default function Stage(handle, element) {
 
   const boxOut = (b) => (b && !b.isEmpty() ? { min: b.min.toArray(), max: b.max.toArray() } : null);
 
-  /** Remove in one change, after every running extension's beforeRemove tidy-up. */
-  function remove(ids) {
+  /**
+   * Remove in one change, after every running extension's beforeRemove
+   * tidy-up. With `{ edit }` (an api.edits group), the change is that
+   * edit's, and undo puts it all back.
+   */
+  function remove(ids, { edit = null } = {}) {
     const plan = ops.removeObjects(scene(), ids);
     if (!plan || !plan.ok) return plan;
     const running = host.instances();
-    handle.change((d) => {
+    write(edit, (d) => {
       for (const r of running) {
         if (typeof r.instance.beforeRemove !== "function") continue;
         try {
@@ -1629,7 +1823,7 @@ export default function Stage(handle, element) {
   /**
    * Enter body `id` at `place` (TOOLS.md §2: the object a body is given, a
    * seat or a station, or null for "here"): its enter runs, and what it
-   * answers ({ input, eye(), ride?, keys?, leave() }) goes on top of the
+   * answers ({ input, eye(), ride?, keys?, label?, leave() }) goes on top of the
    * stack. False when no running extension offers it or it can't enter.
    */
   function enterBody(id, place = null) {
@@ -1673,6 +1867,66 @@ export default function Stage(handle, element) {
 
   /** Leave the top body (never orbit): the one under it carries on. */
   const leaveBody = () => (sittings.length ? !!router?.leave() : false);
+
+  // ─── arriving: view.start (TOOLS.md §2) ───────────────────────────────────
+  // Read once: on arrival, and again after a template has written one for
+  // its maker. Its body is entered once a running extension offers it and
+  // the content is in (a walker started before its floor has loaded falls
+  // through it), or ARRIVE_WAIT_MS after it came on offer whatever is still
+  // loading. Until then it waits as long as the body may still come: a
+  // package loading, or asked about and accepted later (the person a table
+  // starts seated takes their time over the prompt), still enters it. The
+  // viewer entering a body first, or everything the doc calls for here and
+  // started (or failed to) with no extension offering that body, ends the
+  // wait: nothing is entered.
+  let arrival = null; // { body, place, offered } still to enter; offered: when the body was first on offer
+  function arrive() {
+    const { body, place } = startOf(doc());
+    arrival = body ? { body, place, offered: null } : null;
+    requestFlush();
+  }
+  /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
+  function contentIn() {
+    if (!viewport.ok) return true;
+    const status = local.get().status ?? {};
+    for (const [oid, o] of Object.entries(doc().objects ?? {})) {
+      if (!o || isGroup(o) || o.visible === false) continue;
+      if (viewport.contentOf(oid)?.loaded) continue;
+      const st = status[oid]?.state;
+      if (st === "error" || st === "warn") continue;
+      return false;
+    }
+    return true;
+  }
+  let arriveTimer = false;
+  function requestFlushSoon() {
+    if (arriveTimer) return;
+    arriveTimer = true;
+    later(() => {
+      arriveTimer = false;
+      requestFlush();
+    }, 250);
+  }
+  function tryArrive() {
+    const a = arrival;
+    if (!a || dead || !router) return;
+    if (sittings.length) {
+      arrival = null; // they went somewhere themselves
+      return;
+    }
+    if (bodyDefs().has(a.body)) {
+      a.offered ??= now();
+      if (!contentIn() && now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
+      arrival = null;
+      enterBody(a.body, a.place);
+      return;
+    }
+    // nothing here offers it, and nothing more is coming: the wait is over
+    if (packages.complete() && !host.starting()) arrival = null;
+    // an extension starting (which says nothing when one fails) or a package loading: look again soon. A
+    // package waiting on the viewer (asked, declined, failed) needs no looking: a yes changes the registry
+    else if (host.starting() || packages.coming()) requestFlushSoon();
+  }
 
   /** The camera rides the top body's ride, if it has one; else orbit's base rides apply. */
   function applyBodyRide() {
@@ -1815,7 +2069,7 @@ export default function Stage(handle, element) {
     const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
     // fresh copies: automerge won't take a value that is already in a document
     const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
-    handle.change((d) => {
+    write(opts.edit, (d) => {
       // only what is still there can be a place (someone may have removed it meanwhile)
       const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
       const groupWanted = opts.group !== undefined ? opts.group : parent ? resolveGroups(d.objects).get(parent) ?? null : null;
@@ -1956,8 +2210,13 @@ export default function Stage(handle, element) {
     }
   }
 
-  /** What a drop handler, a template or a part gets (STAGE.md, "Drops"): reads and writes, nothing to acquire. */
-  function makeDropContext(id) {
+  /**
+   * What a drop handler, a template or a part gets (STAGE.md, "Drops"):
+   * reads and writes, nothing to acquire. With `edit` (the stage's own add:
+   * the add part, the outline, the parts bin), its change and addObject are
+   * that edit's, so undo takes the whole layout out again.
+   */
+  function makeDropContext(id, { edit = null } = {}) {
     return Object.freeze({
       id,
       repo,
@@ -1966,9 +2225,9 @@ export default function Stage(handle, element) {
       viewer,
       doc,
       scene,
-      change,
+      change: edit ? (fn) => write(edit, fn) : change,
       newId,
-      addObject,
+      addObject: edit ? (input, opts = {}) => addObject(input, { ...opts, edit }) : addObject,
       file: sceneFile,
       // read-only: a part squaring itself to what it's dropped on reads that
       // object's GLB extras (a hull's stated bow)
@@ -1994,7 +2253,7 @@ export default function Stage(handle, element) {
    * @param {{ parent?: string | null, transform?: object } | null} [at]
    * @returns {Promise<string | null>}
    */
-  async function applyPart(partId, at = null) {
+  async function applyPart(partId, at = null, { edit = null } = {}) {
     const reg = await getRegistry("scene:part");
     if (dead || !reg) return null;
     let mod;
@@ -2014,7 +2273,7 @@ export default function Stage(handle, element) {
     const place = Object.freeze({ parent, transform, world });
     let made;
     try {
-      made = await mod.create(makeDropContext(partId), place);
+      made = await mod.create(makeDropContext(partId, { edit }), place);
     } catch (err) {
       notify(`That part failed: ${err?.message ?? err}`, "error");
       return null;
@@ -2030,8 +2289,8 @@ export default function Stage(handle, element) {
    * Start the scene from a template (STAGE.md, "Templates"): load the
    * scene:template and run its create() with a drop context, which writes
    * whatever it needs into the doc. Then this viewer starts where the doc now
-   * says, as joining does (an arena's template says "play", so its maker
-   * lands in the game). True when it ran.
+   * says, as arriving does (an arena's template starts people walking at a
+   * spawn point, so its maker lands in the game). True when it ran.
    * @param {string} templateId
    * @returns {Promise<boolean>}
    */
@@ -2056,8 +2315,7 @@ export default function Stage(handle, element) {
     }
     if (dead) return false;
     packages.used("scene:template", templateId);
-    const start = doc().view?.activity;
-    if (typeof start === "string") local.swap((m) => (m.activity === start ? m : { ...m, activity: start }));
+    arrive();
     return true;
   }
 
@@ -2188,9 +2446,31 @@ export default function Stage(handle, element) {
       addObject,
       rebuild,
       fixPoint,
-      drop: (info) => host.drop(info),
+      drop: (info, opts) => host.drop(info, opts),
       template: (templateId) => applyTemplate(templateId),
-      part: (partId, at) => applyPart(partId, at),
+      part: (partId, at, opts) => applyPart(partId, at, opts),
+      /**
+       * The stage's own editing (TOOLS.md, Decisions 2), on the stage's own
+       * parts' api only (own.js): edit(fn, { label, handle? }) writes fn as
+       * one undoable step (on the scene, or on `handle`: an object's render
+       * doc); edits(label) opens a step of several writes, passed as
+       * `{ edit }` to addObject, remove, drop and part or made with its
+       * change(fn, handle?), closed by end(). A package's api has none of
+       * these, so verbs, clock acts and process saves can't be on a stack.
+       */
+      ...(isOwn(rec.module)
+        ? {
+            edit: (fn, { label, handle: h } = {}) => {
+              const g = edits.begin(label);
+              g.change(fn, h);
+              g.end();
+            },
+            edits: (label) => edits.begin(label),
+            /** undo or redo this viewer's last edit in the focus doc: false when there's none, it has been changed since, or it needs the others' agreement */
+            undo: () => edits.take("undo"),
+            redo: () => edits.take("redo"),
+          }
+        : {}),
 
       // picking and camera
       pick: (x, y, opts) => viewport.pick(x, y, opts),
@@ -2240,11 +2520,11 @@ export default function Stage(handle, element) {
         return ownEl(el, edges[EDGES.includes(side) ? side : "right"]);
       },
       /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
-      dock: (el, { title, onClose } = {}) => {
+      dock: (el, { title, onClose, embed = true, show = true } = {}) => {
         if (!live() || !el) return noop;
         // an open drawer wants the pointer (stage/pointer.js)
         const close = acquire(own.offs, () => {
-          const off = drawer.dock(id, el, { title, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
+          const off = drawer.dock(id, el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
           return () => (off?.(), router?.refresh());
         });
         router?.refresh();
@@ -2518,7 +2798,7 @@ export default function Stage(handle, element) {
   function localOfRouter(st, m) {
     const s = topSitting();
     const body = s && s.def.id === st.body.id
-      ? Object.freeze({ id: s.def.id, label: String(s.def.label ?? s.def.id), ext: s.ext, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
+      ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.ext, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
       : ORBIT_LOCAL;
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const held = st.held ? Object.freeze({ ...st.held }) : null;
@@ -2537,8 +2817,6 @@ export default function Stage(handle, element) {
 
   cleanups.push(
     local.watch((next, prev) => {
-      // switching activity stops what the new one doesn't call for at once
-      if (next.activity !== prev.activity) host.sync(doc());
       if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
       // the selection wants the pointer, and is the ladder's rung
       if (next.selected !== prev.selected) router?.refresh();
@@ -2636,6 +2914,8 @@ export default function Stage(handle, element) {
   cleanups.push(() => handle.off("change", sync));
   warnUnusable();
   sync();
+  // where the doc starts people: once, now
+  arrive();
 
   // ─── probes ───────────────────────────────────────────────────────────────
 

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { PLAY, mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
 
-const ADD = { meta: { id: "scene.add", activities: ["edit"] }, module: add };
+const ADD = { meta: { id: "scene.add" }, module: add };
 
 /** A drag event carrying `data` ({ mime: value }) and `files`. */
 function dragEvent(type, data = {}, files = []) {
@@ -82,13 +82,13 @@ describe("scene.add", () => {
           const id = await ctx.addObject(stl.url, { name: "Crate" });
           ctx.change((d) => {
             d.traits["t.game"] = {};
-            d.view.activity = "play";
+            d.view.start = { body: "t.sit" };
           });
           return id;
         },
       },
     };
-    const game = { meta: { id: "t.game", traits: ["t.game"], activities: ["play"] }, module: { create: () => ({}) } };
+    const game = { meta: { id: "t.game", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => ({ input: {}, eye: () => null }) }] }) } };
     await mount({ extensions: [game], templates: [level, { meta: { id: "t.empty", name: "Nothing much" }, module: { create() {} } }] });
     const start = s.port.querySelector(".add-start");
     expect(start.hidden).toBe(false);
@@ -109,10 +109,10 @@ describe("scene.add", () => {
     expect(made).toHaveLength(1);
     expect(made[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "newId", "registry", "repo"]));
     expect(objectsOf(s).map((o) => o.name)).toEqual(["Crate"]);
-    expect(s.doc().view.activity).toBe("play");
-    // its maker lands in the game: editing parts (this one) stop
-    expect(s.local.get().activity).toBe("play");
-    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+    expect(s.doc().view.start).toEqual({ body: "t.sit" });
+    // its maker lands in the game, in the body it starts people in; nothing stops
+    expect(s.local.get().body.id).toBe("t.sit");
+    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game", "scene.add"]);
   });
 
   it("Blank puts the start screen away for this view, leaving the drop hint", async () => {
@@ -331,12 +331,12 @@ describe("scene.add", () => {
   });
 
   it("takes its chooser, hints and listeners away when it stops", async () => {
-    await mount({ extensions: [PLAY] });
+    await mount();
     getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", content: "built", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
     await drop({ "text/plain": stl.url });
     expect(s.port.querySelector(".add-chooser")).toBeTruthy();
-    // this viewer switches to play: the extension stops at once
-    await s.activity("play");
+    // it's uninstalled: the extension stops at once
+    await s.uninstall("scene.add");
     expect(s.local.get().running.map((r) => r.id)).not.toContain("scene.add");
     expect(s.port.querySelector(".add-chooser")).toBeNull();
     expect(s.port.querySelector(".add-empty")).toBeNull();

@@ -24,7 +24,7 @@ export const plugins = [
     name: "Plain keeper",
     traits: ["keep.plain"],
     keeper: "plain",
-    // no `activities`: what is kept stays kept whatever the viewer is doing
+    // by its trait alone: what is kept stays kept whatever the viewer is doing
     describes: {
       "keep.plain": {
         name: "Kept (in the open)",

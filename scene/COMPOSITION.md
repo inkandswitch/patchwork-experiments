@@ -585,7 +585,7 @@ ships alone and proves something.
    part, CSS, fake world and README section went; STAGE.md's
    "Conventions" names the package). Every publisher of a table people sit
    at lists `seats` in `packages` (tabletop's tables, Lost Cities aboard,
-   Liar's dice; a Santorini table, with no seats, doesn't), and every probe
+   Liar's dice, Santorini since step 8 gave it seats), and every probe
    page that seats people installs it; in a shell the stage lists it
    itself, from the trait. *Proves:* the scene suite passes with no seats
    in it; `seats/` installs, builds and passes its suite copied out of the
@@ -601,7 +601,10 @@ ships alone and proves something.
    *Built:* see TOOLS.md step 7 and §7's *Built* notes. One clock, one
    stage, until step 12 gives each linked doc its own.
 8. [T] **Activities and `requires` go**, with `always` and `general:
-   false`. *Proves:* every suite passes with less stage.
+   false`. *Proves:* every suite passes with less stage. *Built:* see
+   TOOLS.md step 8: traits alone decide what runs, chrome follows
+   attention (the inspector and outline are drawer tabs), `view.start` is
+   read once on arrival, and undo takes back the stage's own edits.
 9. [T] **STAGE.md, DESIGN.md and SCOPE.md** follow; old docs ditched,
    examples republished. *Begun ahead of step 8:* see TOOLS.md step 9.
 10. **Split View from Stage, with one stage**: `api.view` with the body

@@ -88,9 +88,9 @@ try {
   const viewers = await P("viewers");
   check("the start screen offers Lost Cities", await until("templates('a').includes('tabletop.lost-cities')", 15_000), await P("templates('a')"));
   await P("start('a', 'tabletop.lost-cities')");
-  check("A is at the table, playing, watching", await until("activity('a') === 'play' && __p.picker('a') === 3", 30_000), await P("activity('a')"));
+  check("A is at the table, its seat picker up", await until("picker('a') === 3", 30_000), await P("bodyLabel('a')"));
   await P("open('b')");
-  check("B too", await until("activity('b') === 'play' && __p.picker('b') === 3", 30_000));
+  check("B too", await until("picker('b') === 3", 30_000));
   const tray1 = await P("tray('p1')"), tray2 = await P("tray('p2')");
   report.seats = { p1: await P("seatCam('p1')"), p2: await P("seatCam('p2')") };
 

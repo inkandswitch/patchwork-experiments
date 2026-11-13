@@ -68,7 +68,8 @@ describe("the Cadboro Bay template's layout", () => {
     // its About is the Terrain doc (sources, licences), and its data's credit shows in the view
     expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {} } });
     expect(d.traits["sailing.sea"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7, scale: WIND.scale });
-    expect(d.view).toMatchObject({ activity: "play", home: { position: [...HOME.position], target: [...HOME.target] } });
+    expect(d.view.start).toEqual({ home: { position: [...HOME.position], target: [...HOME.target] } });
+    for (const k of ["activity", "home", "tool"]) expect(k in d.view).toBe(false);
     expect(d.title).toBe("Cadboro Bay");
   });
 

@@ -1,4 +1,4 @@
-// The sea in play (DESIGN.md, "Play"): the drawn ocean and the sky. ctx.sea
+// The sea (DESIGN.md, "Play"): the drawn ocean and the sky. ctx.sea
 // is what the other parts read: the ocean and wind they float and sail on,
 // and the time to ask them at.
 //
@@ -7,10 +7,9 @@
 // moment whose held poses it's drawing, so a hull sits on the waves drawn
 // under it. Paused, or with nobody computing, the sea stands still.
 //
-// drawSea is the part both activities draw (edit.js shares it): the ocean
-// built from the scene's sailing.sea trait, its surface following the
-// camera, and the atmosphere the surface is lit to match. A scene with no
-// sea trait gets neither.
+// drawSea is the drawing part: the ocean built from the scene's sailing.sea
+// trait, its surface following the camera, and the atmosphere the surface
+// is lit to match. A scene with no sea trait gets neither.
 
 import { createOcean } from "./ocean.js";
 import { createWind } from "./wind.js";
@@ -42,7 +41,7 @@ export function seaParams(trait) {
 // ─── drawing (stage side) ───────────────────────────────────────────────────
 
 /**
- * The sea as both activities draw it: the ocean and wind from the doc's
+ * The sea as it's drawn: the ocean and wind from the doc's
  * sailing.sea trait (rebuilt when it changes), and its surface in a world
  * group; nothing, and no atmosphere, while the scene has no sea trait. The
  * owner runs the loop: draw(t) once a frame.
@@ -121,7 +120,7 @@ export function waterExtent(ocean) {
 }
 
 /**
- * ctx.sea: the sea in play. play.js ticks it first each frame, to draw it at
+ * ctx.sea: the sea. play.js ticks it first each frame, to draw it at
  * the doc's world time.
  * @param {any} api
  */

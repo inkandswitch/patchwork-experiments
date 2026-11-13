@@ -67,7 +67,7 @@ try {
 
   const scene = repo.add(emptyScene({
     title: "Parts probe", objects: { hull }, order: ["hull"],
-    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } },
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } } },
   }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;

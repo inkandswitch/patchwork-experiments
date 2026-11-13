@@ -1,4 +1,4 @@
-// The table (extension.js, visibility.js, rule.js): its policy over every
+// The table (extension.js, visibility.js): its policy over every
 // case, Shuffle through whatever keeps a card, Draw, a card turning face up
 // over your own hand, the hand as the tool in play, and what it tells the
 // others. Seats and keepers are stand-ins (test/stand-ins.js): the table
@@ -6,7 +6,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { CARD, ZONE, audienceOf, faceUpIn, facing, isCard, seatAt, seatOf, seatsFrom, standingIn, zones } from "./visibility.js";
 import Extension, { keptBy } from "./extension.js";
-import Rule from "./rule.js";
 import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
 import { SEATS, keeperOf, keptTrait, roster } from "../test/stand-ins.js";
@@ -260,10 +259,10 @@ describe("who may see what: the table's policy", () => {
     expect(isCard({ traits: { [CARD]: {} } })).toBe(true);
   });
 
-  it("the rule extension contributes exactly that, from the roster it collects, and nothing else", () => {
+  it("the extension's audience is exactly that, from the roster it collects", () => {
     const scene = testScene(objects(), { [SEATS]: seats("ann", null) });
-    const x = Rule.create({ collect: (n) => (n === "roster" ? [{ id: "x", value: roster }] : []) });
-    expect(Object.keys(x)).toEqual(["audience"]);
+    const w = fakes.fakeWorld(sceneOf(objects(), { [SEATS]: seats("ann", null) }));
+    const { x } = sit(w, "A", "ann");
     const of = x.audience(scene);
     expect(of("inHand1")).toEqual({ show: ["ann"], only: ["ann"] });
     expect(of("inHand2Flipped")).toEqual({ show: [], only: [] });
@@ -281,11 +280,11 @@ describe("the table extension", () => {
     return { w, api, keeper, x, toasts: () => w.view("A").notices.map((n) => [n.text, n.kind]) };
   }
 
-  it("contributes no looks, no HUD and no audience of its own: what a card is, is its keeper's; who may see it, the rule's", () => {
+  it("contributes no looks and no HUD: what a card is, is its keeper's; who may see it, its own audience", () => {
     const m = mount();
     expect(m.x.looks).toBeUndefined();
     expect(m.x.hud).toBeUndefined();
-    expect(m.x.audience).toBeUndefined();
+    expect(typeof m.x.audience).toBe("function");
     expect(Extension.drop).toBeUndefined();
     m.w.done();
   });
@@ -490,12 +489,6 @@ describe("drawing to your hand", () => {
     t.w.done();
   });
 
-  it("not while editing", async () => {
-    const t = await table({ local: { activities: { current: "edit", available: ["play", "edit"] } } });
-    expect(t.state(t.xa, "top")).toBeNull();
-    t.w.done();
-  });
-
   it("greyed out for someone watching: sit down to draw", async () => {
     const t = await table({ seated: seats(null, "bob") });
     expect(t.state(t.xa, "top")).toMatchObject({ disabled: true, label: "Sit down to draw" });
@@ -654,12 +647,12 @@ describe("drawing to your hand", () => {
 });
 
 describe("carrying at a table", () => {
-  it("the table forces no tool: there are none, so editing and playing leave local state alone", () => {
+  it("the table forces no tool and no body: a change of what the viewer holds leaves local state alone", () => {
     const w = fakes.fakeWorld(sceneOf({ pawn: { name: "Pawn", transform: T([0, 0, 0]) } }, { [SEATS]: seats("alice", "bob") }));
-    const { api: a } = sit(w, "A", "alice", { local: { activities: { current: "edit", available: ["play", "edit"] } } });
+    const { api: a } = sit(w, "A", "alice");
     const swap = vi.spyOn(a.local, "swap");
     w.flush();
-    a.local.swap((m) => ({ ...m, activities: { ...m.activities, current: "play" } }));
+    a.local.swap((m) => ({ ...m, held: { name: "Measure" } }));
     swap.mockClear();
     w.flush();
     expect(swap).not.toHaveBeenCalled();

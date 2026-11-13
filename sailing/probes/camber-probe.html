@@ -69,8 +69,6 @@ try {
     /** a running extension's stage api (the bin's, while editing: part, addObject) */
     api: (ext = "scene.parts") => dbg.host.record(ext)?.api ?? null,
     running: () => dbg.local.get().running.map((r) => r.id),
-    activity: () => dbg.local.get().activities?.current ?? null,
-    setActivity: (a) => dbg.local.swap((m) => ({ ...m, activity: a })),
     content: (id) => { const c = v.contentOf(id); return c && { loaded: c.loaded, box: c.box, ship: c.extras?.ship ?? null, connectors: c.extras?.connectors?.length ?? 0 }; },
     worldOf: (id) => { const m = v.worldOf(id); return m ? [...m] : null; },
     /** page coords of a point in an object's own frame */

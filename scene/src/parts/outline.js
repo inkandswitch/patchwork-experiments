@@ -1,4 +1,6 @@
-// scene.outline: the object tree, as the sidebar panel "objects".
+// scene.outline: the object tree, as the drawer tab "Objects" (TOOLS.md §6),
+// which the viewer opens (Objects in the toolbar): chrome follows attention,
+// never the doc. Its writes are edits (api.edit), so undo takes them back.
 //
 // Expand state, rows, the filter, keyboard navigation, row drag and drop,
 // New group. A double-click
@@ -25,6 +27,8 @@ import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, parsePatchworkDrop } f
 import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
+import { drawerTab, tabToggle } from "./tab.js";
+import { own } from "../stage/own.js";
 
 /** The filter field appears once there are this many objects. */
 export const SEARCH_FROM = 8;
@@ -110,7 +114,7 @@ function el(tag, attrs = {}, ...children) {
 
 // ─── the part ──────────────────────────────────────────────────────────────
 
-export default {
+export default own({
   create(api) {
     api.style(css);
 
@@ -210,14 +214,15 @@ export default {
       if (box) api.camera.frame(box);
     }
 
-    function write(plan) {
+    // every write here is an edit (api.edit), so undo takes it back
+    function write(plan, label = "Edit") {
       if (plan && plan.ok === false) api.notify(plan.reason, "error");
-      else if (plan) api.change(plan);
+      else if (plan) api.edit(plan, { label });
       return plan;
     }
 
     function setField(id, key, value) {
-      write(api.ops.setField(api.scene(), id, key, value));
+      write(api.ops.setField(api.scene(), id, key, value), key === "name" ? "Rename" : key === "visible" ? "Visible" : key);
     }
 
     /** Remove: scene.select's command when it's running (it confirms), else straight through the stage. */
@@ -236,7 +241,9 @@ export default {
       if (n > 0 && typeof globalThis.confirm === "function") {
         if (!globalThis.confirm(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
       }
-      const done = api.remove([id]);
+      const edit = api.edits("Delete");
+      const done = api.remove([id], { edit });
+      edit.end();
       if (new Set(done?.ids ?? plan.ids).has(selectedId())) select(null);
     }
 
@@ -245,7 +252,7 @@ export default {
       const snap = api.scene();
       const sel = selectedId();
       const id = api.newId("g");
-      const plan = write(api.ops.newGroup(snap, { into: isGroup(snap.objects[sel]) ? sel : null, id }));
+      const plan = write(api.ops.newGroup(snap, { into: isGroup(snap.objects[sel]) ? sel : null, id }), "New group");
       if (!plan || plan.ok === false) return null;
       setExpanded(plan.id, true);
       select(plan.id);
@@ -260,7 +267,7 @@ export default {
       const plan = api.ops.moveRow(api.scene(), id, place);
       if (!plan) return select(id);
       if (plan.ok === false) return api.notify(plan.reason, "error");
-      api.change(plan);
+      api.edit(plan, { label: "Move in the tree" });
       if (plan.parent) setExpanded(plan.parent, true);
       select(id);
       renderAll();
@@ -275,10 +282,19 @@ export default {
       const into = place.parent && snap.objects[place.parent] ? place.parent : null;
       const intoGroup = !!into && isGroup(snap.objects[into]);
       const group = intoGroup ? into : into ? (snap.groups.get(into) ?? null) : null;
+      // one edit, whichever way it's added: undo takes it out again
+      const edit = api.edits("Add");
+      try {
+        await addInto(item, place, { into, intoGroup, group, edit });
+      } finally {
+        edit.end();
+      }
+    }
+    async function addInto(item, place, { into, intoGroup, group, edit }) {
       if (item.url !== api.url) {
         try {
           const handle = await api.repo.find(item.url);
-          if (await api.drop({ url: item.url, doc: handle.doc(), handle, group, at: null })) return;
+          if (await api.drop({ url: item.url, doc: handle.doc(), handle, group, at: null }, { edit })) return;
         } catch {
           // can't open it here: addObject says why below
         }
@@ -286,7 +302,7 @@ export default {
       if (api.signal.aborted) return;
       try {
         const where = intoGroup ? { group: into } : into ? { parent: into } : { group: null };
-        const id = await api.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}) });
+        const id = await api.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}), edit });
         if (api.signal.aborted) return;
         pendingReveal = id;
         select(id);
@@ -680,20 +696,22 @@ export default {
       api.schedule(renderAll);
     });
 
+    // a drawer tab the viewer opens (Objects in the toolbar): chrome follows attention, never the doc
+    const tab = drawerTab(api, {
+      id: "objects",
+      title: "Objects",
+      mount(host) {
+        const v = mountView(host);
+        return {
+          update: () => v.draw(),
+          dispose: () => v.dispose(),
+        };
+      },
+    });
+
     return {
-      panels: [
-        {
-          id: "objects",
-          title: "Objects",
-          mount(host) {
-            const v = mountView(host);
-            return {
-              update: () => v.draw(),
-              dispose: () => v.dispose(),
-            };
-          },
-        },
-      ],
+      commands: [tabToggle(tab, { id: "objects", name: "Objects", title: "Everything in the scene, as a tree: select, rename, re-file" })],
+      tab,
 
       update(scene, local, prev) {
         const was = prev?.local?.selected ?? null;
@@ -707,8 +725,9 @@ export default {
       },
 
       dispose() {
+        tab.dispose();
         for (const v of [...views]) v.dispose();
       },
     };
   },
-};
+});

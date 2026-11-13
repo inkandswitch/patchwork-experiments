@@ -37,12 +37,12 @@ const layer = () => [...(s.debug.viewport.layers.get("scene.dimensions") ?? [])]
 /** The selected dimension's id, from the one selection (its ref), or null. */
 const selectedDim = () => dimensionIdOf(s.local.get().selected ?? null);
 const selectDim = (id) => s.local.swap((m) => ({ ...m, selected: dimensionRef(id) }));
+/** The Dimensions tab, opened as the toolbar's Dimensions does. */
 function panel() {
-  const host = document.createElement("div");
-  s.root.append(host);
-  const p = inst().panels.find((x) => x.id === "dimensions");
-  const handle = p.mount(host);
-  return { host, handle, rows: () => [...host.querySelectorAll(".dimension-row")] };
+  const tab = inst().tab;
+  if (!tab.isOpen()) api().run({ ext: "scene.dimensions", command: "dimensions", value: true });
+  const host = tab.body;
+  return { host, handle: { update: (scene, local) => tab.update(scene, local), dispose: () => tab.dispose() }, rows: () => [...host.querySelectorAll(".dimension-row")] };
 }
 
 describe("pure helpers", () => {
@@ -204,9 +204,9 @@ describe("scene.dimensions", () => {
     expect(s.doc().dimensions.d2).toBeTruthy();
   });
 
-  it("the Dimensions panel lists them, selects on a click and deletes with ×", async () => {
+  it("the Dimensions tab (the toolbar's Dimensions opens it) lists them, selects on a click and deletes with ×", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
-    expect(inst().panels.map((p) => [p.id, p.title])).toEqual([["dimensions", "Dimensions"]]);
+    expect(inst().commands.find((c) => c.id === "dimensions").state(null)).toMatchObject({ checked: false });
     const p = panel();
     expect(p.rows().map((r) => r.dataset.id)).toEqual(["d1"]);
     p.rows()[0].querySelector(".row-main").click();
@@ -224,7 +224,7 @@ describe("scene.dimensions", () => {
     expect(p.host.querySelector(".dimension-list")).toBeNull();
   });
 
-  it("the panel's update works even before the extension's own (the sidebar may come first)", async () => {
+  it("the tab's update works even before the extension's own", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
     const p = panel();
     s.change((d) => {

@@ -62,7 +62,7 @@ try {
     objects: { box: { name: "Box", sourceUrl: source.url, providerId: "probe-box", renderUrl: render.url, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } },
     order: ["box"], traits: { "probe.sea": {}, "probe.local": {} },
     packages: [{ url: PKG }, { url: BROKEN }],
-    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [3, 2.5, 3.5], target: [0, 0.5, 0] } },
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [3, 2.5, 3.5], target: [0, 0.5, 0] } } },
   }));
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");

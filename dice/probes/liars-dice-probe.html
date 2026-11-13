@@ -90,8 +90,8 @@ try {
   window.__p = {
     errors, viewers: { a: ana.url, b: ben.url },
     net: { stats: () => ({ ...net.stats }) },
-    activity: (w) => dbg[w].local.get().activities?.current ?? null,
-    play: (w) => { dbg[w].local.swap((m) => ({ ...m, activity: "play" })); return true; },
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     template: (w, id) => { const r = rectOf(hosts[w].querySelector(`.add-template[data-template="${id}"]`)); return r && r.w > 0 ? r : null; },
     count: (w) => { const o = Object.values(objectsOf(w)); return { cups: o.filter((x) => x.traits?.["dice.cup"]).length, dice: o.filter((x) => x.traits?.["dice.die"]).length, lots: o.filter((x) => x.traits?.["dice.cup"] && "round" in x.traits["dice.cup"]).length, all: o.length }; },
     id: (w, name) => byName(w, name),

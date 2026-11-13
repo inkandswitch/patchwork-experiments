@@ -1,19 +1,25 @@
 // The stage, mounted (no WebGL): extensions registered as plugins, started by
-// trait, by declaring none (general) and `always`, in running order, as this
-// viewer's activity calls for them; the api they get; presence between two
-// mounted stages; prefs kept per scene; templates.
+// trait or by declaring none (general), in running order, as the doc calls
+// for them; the api they get; presence between two mounted stages; prefs
+// kept per scene; where the doc starts people; templates; undo.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
-import { bestWidget, hitChain, initialCamera, mergeAtmosphere, mergeLooks, sameTransform, statusOf, widgetWins } from "./stage.js";
+import { bestWidget, hitChain, initialCamera, mergeAtmosphere, mergeLooks, sameTransform, startOf, statusOf, widgetWins } from "./stage.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const registries = new Map();
   function makeRegistry() {
     const plugins = new Map();
+    const listeners = new Set();
     return {
       register(p) {
         plugins.set(p.id, { ...p });
+      },
+      // uninstalling: gone from the registry, and its listeners told
+      unregister(id) {
+        plugins.delete(id);
+        for (const fn of [...listeners]) fn();
       },
       has: (id) => plugins.has(id),
       get: (id) => plugins.get(id),
@@ -24,7 +30,11 @@ vi.mock("@inkandswitch/patchwork-plugins", () => {
         if (!p.module) p.module = await p.load();
         return p;
       },
-      on: () => () => {},
+      on(ev, fn) {
+        if (ev !== "changed") return () => {};
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
     };
   }
   return {
@@ -81,12 +91,11 @@ const EXT_PLUGINS = [
   // registered far before near, so nearness (not running order) has to put near first
   { id: "t.far", traits: ["t.far"] },
   { id: "t.near", traits: ["t.near"] },
-  { id: "t.edit", activities: ["edit"] },
-  { id: "t.play", activities: ["play"] },
-  { id: "t.always", always: true },
+  { id: "t.edit" },
+  { id: "t.always" },
   { id: "t.dropped", traits: ["t.dropped"], drops: ["t-deck"] },
 ];
-for (const p of EXT_PLUGINS) {
+const registerExt = (p) =>
   getRegistry("scene:extension").register({
     type: "scene:extension",
     name: p.id,
@@ -94,7 +103,9 @@ for (const p of EXT_PLUGINS) {
     // fresh every load, so each test's module is the one used
     load: async () => ext(p.id).module,
   });
-}
+for (const p of EXT_PLUGINS) registerExt(p);
+/** Uninstall a test extension: it stops at once in every mounted stage (put back after each test). */
+const uninstall = (id) => getRegistry("scene:extension").unregister(id);
 // the mock registry caches a loaded module: forget it between tests
 const forgetModules = () => {
   for (const p of EXT_PLUGINS) delete getRegistry("scene:extension").get(p.id).module;
@@ -149,6 +160,11 @@ beforeEach(() => {
   repo = new FakeRepo();
   exts = {};
   for (const p of EXT_PLUGINS) exts[p.id] = recorder(p.id);
+  // one uninstalled last test: all of them again, in their order (registry order is running order)
+  if (EXT_PLUGINS.some((p) => !getRegistry("scene:extension").has(p.id))) {
+    for (const p of EXT_PLUGINS) if (getRegistry("scene:extension").has(p.id)) getRegistry("scene:extension").unregister(p.id);
+    for (const p of EXT_PLUGINS) registerExt(p);
+  }
   forgetModules();
 });
 afterEach(() => {
@@ -188,13 +204,22 @@ describe("the stage's pure helpers", () => {
     expect(sameTransform({ position: [1, 2, 3] }, { position: [1, 2, 3.1] })).toBe(false);
     expect(sameTransform(null, {})).toBe(false);
   });
-  it("the camera: this viewer's, else the doc's home, else none (a top-level doc.camera is not a home)", () => {
+  it("the camera: this viewer's, else the doc's view.start.home, else none (a top-level doc.camera or an old view.home is not a home)", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
     const stray = { position: [2, 2, 2], target: [0, 0, 0] };
-    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, doc: { view: { home } } })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
-    expect(initialCamera({ stored: { position: "nope" }, doc: { view: { home } } })).toEqual(home);
+    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, doc: { view: { start: { home } } } })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
+    expect(initialCamera({ stored: { position: "nope" }, doc: { view: { start: { home } } } })).toEqual(home);
     expect(initialCamera({ doc: { camera: stray } })).toBeNull();
+    expect(initialCamera({ doc: { view: { home } } })).toBeNull();
     expect(initialCamera({ doc: {} })).toBeNull();
+  });
+  it("view.start: a body (orbit is none), a place, a home; anything else is nothing", () => {
+    const home = { position: [1, 1, 1], target: [0, 0, 0] };
+    expect(startOf({ view: { start: { body: "walk", place: "spawn1", home } } })).toEqual({ body: "walk", place: "spawn1", home });
+    expect(startOf({ view: { start: { body: "orbit", place: "x" } } })).toEqual({ body: null, place: "x", home: null });
+    expect(startOf({ view: { start: { body: 3, place: "" } } })).toEqual({ body: null, place: null, home: null });
+    expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null });
+    expect(startOf(null)).toEqual({ body: null, place: null, home: null });
   });
   it("status: what's loading, building or broken", () => {
     expect(statusOf(card(), null)).toBeNull();
@@ -222,7 +247,7 @@ describe("the stage, mounted", () => {
     expect(m.element.querySelector("style")).toBeTruthy(); // stage.css (vitest inlines CSS as "")
   });
 
-  it("runs what the doc's traits, the general extensions and `always` call for, in running order", async () => {
+  it("runs what the doc's traits and the general extensions call for, in running order", async () => {
     // the scene extension loads last
     let release;
     const slow = new Promise((r) => (release = r));
@@ -241,21 +266,55 @@ describe("the stage, mounted", () => {
       await settle();
       expect(running(m)).toEqual(["t.scene:scene", "t.obj:objects", "t.edit:general", "t.always:general"]);
       expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.obj", "t.edit", "t.always"]);
-      expect(m.local.get().activity).toBe("edit");
-      expect(m.local.get().activities).toEqual({ current: "edit", available: ["edit", "play"] });
     } finally {
       getRegistry("scene:extension").get("t.scene").load = async () => ext("t.scene").module;
     }
   });
 
-  it("starts a joining viewer where the doc says: an editing extension doesn't run in play", async () => {
-    const m = mount(newScene({ view: { activity: "play" } }));
+  it("arriving: view.start's body is entered once, at its place, as soon as it's on offer; a later change moves nobody", async () => {
+    const entered = [];
+    exts["t.edit"] = recorder("t.edit", () => ({
+      bodies: [{ id: "stroll", label: "Stroll", lock: false, enter: (place) => (entered.push(place), { input: {}, eye: () => null, label: place === "a" ? "At a" : undefined }) }],
+    }));
+    const h = newScene({ objects: { a: card() }, order: ["a"], view: { start: { body: "stroll", place: "a" } } });
+    const m = mount(h);
     await settle();
-    expect(m.local.get().activity).toBe("play");
-    expect(running(m)).toEqual(["t.play:general", "t.always:general"]);
+    expect(entered).toEqual(["a"]);
+    // the sitting's own label (a station's "Helm") is what the chip says
+    expect(m.local.get().body).toMatchObject({ id: "stroll", label: "At a", depth: 1 });
+    h.change((d) => {
+      d.view.start.place = "b";
+    });
+    await settle();
+    expect(entered).toEqual(["a"]);
+    // a body nothing here offers: nothing is entered, orbit stays
+    const other = mount(newScene({ view: { start: { body: "missing" } } }));
+    await settle();
+    expect(other.local.get().body.id).toBe("orbit");
   });
 
-  it("stops an editing extension at once when the viewer switches to play: its overlay goes, then dispose", async () => {
+  it("arriving: an extension that fails to start doesn't hold the wait open; everything else started without the body on offer ends it", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // what's on offer, read live (the list is the instance's own)
+    const bodies = [];
+    const LATE = { id: "late", label: "Late", lock: false, enter: () => ({ input: {}, eye: () => null }) };
+    exts["t.edit"] = recorder("t.edit", () => ({ bodies }));
+    // the doc calls for t.scene, which fails to start: the host never settles
+    exts["t.scene"] = recorder("t.scene", () => {
+      throw new Error("broken");
+    });
+    const h = newScene({ traits: { "t.scene": {} }, view: { start: { body: "late" } } });
+    const b = mount(h);
+    await settle();
+    await new Promise((r) => setTimeout(r, 300)); // the wait looks again every 250 ms while something starts
+    await settle();
+    bodies.push(LATE);
+    h.change((d) => (d.title = "Renamed")); // a flush, with the body now on offer
+    await settle();
+    expect(b.local.get().body.id).toBe("orbit");
+  });
+
+  it("stops an uninstalled extension at once: its overlay goes, then dispose", async () => {
     exts["t.edit"] = recorder("t.edit", (api) => {
       api.overlay().textContent = "edit overlay";
       api.edge("left").textContent = "edit edge";
@@ -268,16 +327,13 @@ describe("the stage, mounted", () => {
     expect(m.root.querySelector(".stage-overlay").textContent).toBe("edit overlay");
     expect(m.root.querySelector('[data-edge="left"]').textContent).toBe("edit edge");
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(1);
-    m.local.swap((v) => ({ ...v, activity: "play" }));
+    uninstall("t.edit");
     expect(r.disposed).toBe(1);
     expect(r.api.signal.aborted).toBe(true);
     expect(m.root.querySelector(".stage-overlay")).toBeNull();
     expect(m.root.querySelector('[data-edge="left"]').children).toHaveLength(0);
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(0);
     expect(running(m)).toEqual(["t.always:general"]);
-    await settle();
-    expect(running(m)).toEqual(["t.play:general", "t.always:general"]);
-    expect(m.local.get().activities.current).toBe("play");
     // after the abort, acquiring is a no-op
     expect(r.api.overlay().isConnected).toBe(false);
     expect(typeof r.api.camera.limit({ minPolar: 0 })).toBe("function");
@@ -309,7 +365,7 @@ describe("the stage, mounted", () => {
     expect(m.debug.drawer().order.map((el) => el.className)).toEqual(["edit-panel", ""]);
     expect(m.debug.drawer().shown).toBe(mine);
     // the edit extension stops: its pane goes, without onClose, and the other's shows
-    m.local.swap((v) => ({ ...v, activity: "play" }));
+    uninstall("t.edit");
     expect(closed).toEqual([]);
     expect(m.root.querySelector(".edit-panel")).toBeNull();
     expect(m.debug.drawer().order).toEqual([mine]);
@@ -384,7 +440,7 @@ describe("the stage, mounted", () => {
     const merged = { sky: { top: "#336699" }, exposure: 1.2, sun: { direction: [0, 1, 0], shadows: true } };
     expect(m.debug.atmosphere()).toEqual(merged);
     expect(m.debug.viewport.atmosphere).toEqual({ sky: { top: "#336699", horizon: "#336699", bottom: "#336699" }, sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true }, exposure: 1.2 });
-    m.local.swap((v) => ({ ...v, activity: "play" }));
+    uninstall("t.edit");
     await settle();
     expect(m.debug.atmosphere()).toEqual({ sun: { direction: [0, 1, 0], shadows: true } });
     expect(m.debug.viewport.atmosphere.sky).toBeUndefined();
@@ -456,7 +512,7 @@ describe("the stage, mounted", () => {
     expect(api.remove("nope")).toBeNull();
   });
 
-  it("prefs are this viewer's, kept per scene; the activity isn't kept: opening again starts where the doc says", async () => {
+  it("prefs are this viewer's, kept per scene; the body isn't kept: opening again starts where the doc says", async () => {
     const h = newScene({ view: { units: "m" } });
     const m = mount(h);
     await settle();
@@ -465,20 +521,16 @@ describe("the stage, mounted", () => {
     expect(api.pref("nothing", 7)).toBe(7);
     api.setPref("units", "mm");
     expect(api.pref("units", "cm")).toBe("mm");
-    m.local.swap((v) => ({ ...v, activity: "play" }));
-    await settle();
-    expect(running(m)).toContain("t.play:general");
     expect(JSON.parse(localStorage.getItem(`scene-prefs:${h.url}`))).toEqual({ units: "mm" });
     expect(Object.keys(localStorage).filter((k) => k.includes(h.url) && !k.startsWith("scene-prefs:") && !k.startsWith("scene-camera:"))).toEqual([]);
-    // a second open of the same scene starts with the prefs, and in the doc's activity
+    // a second open of the same scene starts with the prefs, and in orbit (the doc says nothing)
     m.cleanup();
     mounted.splice(mounted.indexOf(m), 1);
     m.element.remove();
     const again = mount(h);
     await settle();
     expect(again.local.get().prefs).toEqual({ units: "mm" });
-    expect(again.local.get().activity).toBe("edit");
-    expect(running(again)).toContain("t.edit:general");
+    expect(again.local.get().body.id).toBe("orbit");
   });
 
   it("template(id): the template writes the doc through a drop context, and this viewer starts where it now says", async () => {
@@ -486,20 +538,21 @@ describe("the stage, mounted", () => {
     template = (ctx) => {
       seen.push(Object.keys(ctx).sort());
       ctx.change((d) => {
-        d.view.activity = "play";
+        d.view.start = { body: "stroll" };
         d.traits["t.scene"] = {};
       });
     };
+    exts["t.edit"] = recorder("t.edit", () => ({ bodies: [{ id: "stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }] }));
     try {
       const m = mount(newScene());
       await settle();
-      expect(m.local.get().activity).toBe("edit");
+      expect(m.local.get().body.id).toBe("orbit");
       const api = exts["t.always"].api;
       expect(await api.template("t.template")).toBe(true);
       await settle();
       expect(seen[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "notify", "registry", "repo", "scene"]));
-      expect(m.local.get().activity).toBe("play");
-      expect(running(m)).toEqual(["t.scene:scene", "t.play:general", "t.always:general"]);
+      expect(m.local.get().body.id).toBe("stroll");
+      expect(running(m)).toEqual(["t.scene:scene", "t.edit:general", "t.always:general"]);
       expect(await api.template("nope")).toBe(false);
       template = () => {
         throw new Error("no room");
@@ -741,8 +794,8 @@ describe("the stage, mounted", () => {
     expect(api.context().from).toEqual([1, 2, 3]);
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "b", code: "KeyB", bubbles: true }));
-    // the body's extension stops (switching activity): its body goes with it
-    m.local.swap((v) => ({ ...v, activity: "play" }));
+    // the body's extension stops (uninstalled): its body goes with it
+    uninstall("t.edit");
     await settle();
     expect(m.local.get().body.id).toBe("orbit");
     expect(left).toEqual(["walk"]);
@@ -752,6 +805,46 @@ describe("the stage, mounted", () => {
       ["always", "b"],
       ["always", "w"],
     ]);
+  });
+
+  // H1: what runs is the doc's. Over three fixture docs (nothing, a scene
+  // trait, an object trait), every change this viewer can make that isn't
+  // the doc (entering and leaving a body, holding and putting down a tool,
+  // selecting, a pref, pausing and resuming the clock: a doc change that
+  // carries no trait) starts and stops nothing.
+  it("H1: no change to body, held tool, selection, prefs or clock starts or stops anything", async () => {
+    const docs = [{}, { traits: { "t.scene": {} } }, { objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"] }];
+    for (const fixture of docs) {
+      for (const id of Object.keys(exts)) exts[id] = recorder(id);
+      exts["t.edit"] = recorder("t.edit", () => ({
+        bodies: [{ id: "stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }],
+        commands: [{ id: "gun", name: "Gun", tool: { keys: [] }, run: () => ({}) }],
+      }));
+      forgetModules();
+      const m = mount(newScene(fixture));
+      await settle();
+      const before = running(m);
+      const starts = () => Object.values(exts).reduce((n, r) => n + r.apis.length + r.disposed, 0);
+      const was = starts();
+      const api = exts["t.always"].api;
+      const acts = [
+        () => api.body.enter("stroll"),
+        () => api.run({ ext: "t.edit", command: "gun" }),
+        () => m.local.swap((v) => ({ ...v, selected: "a" })),
+        () => api.setPref("grid", false),
+        () => api.clock.pause(),
+        () => api.clock.resume(),
+        () => api.run({ ext: "t.edit", command: "gun" }),
+        () => api.body.leave(),
+        () => m.local.swap((v) => ({ ...v, selected: null })),
+      ];
+      for (const act of acts) {
+        act();
+        await settle();
+        expect(running(m)).toEqual(before);
+        expect(starts()).toBe(was);
+      }
+    }
   });
 
   it("a tool command's run fills the slot; running it again, Escape or another tool puts it down", async () => {
@@ -929,8 +1022,8 @@ describe("two stages on one scene", () => {
     await settle();
     apiA.pose.hold("a", { position: [5, 0, 0] });
     await until(() => B.debug.viewport.poses.has("a"));
-    // A's viewer switches to play: the hold is released as a put-back
-    A.local.swap((v) => ({ ...v, activity: "play" }));
+    // A's extension stops (uninstalled): the hold is released as a put-back
+    uninstall("t.edit");
     await until(() => !B.debug.viewport.poses.has("a"));
     expect(A.debug.viewport.poses.has("a")).toBe(false);
   });

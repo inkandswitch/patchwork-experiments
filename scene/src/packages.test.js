@@ -94,17 +94,21 @@ describe("what the doc calls for (neededPlugins)", () => {
     source: { apply: (d) => (d.objects.a = { ...(d.objects.a ?? {}), providerId: "p.src" }), need: { type: "scene:source", id: "p.src" } },
     objectTrait: { apply: (d) => (d.objects.b = { ...(d.objects.b ?? {}), traits: { "t.obj": {} } }), need: { type: "scene:extension", trait: "t.obj" } },
     sceneTrait: { apply: (d) => (d.traits["t.scene"] = {}), need: { type: "scene:extension", trait: "t.scene" } },
-    activity: { apply: (d) => (d.view.activity = "play"), need: { type: "scene:extension", activity: "play" } },
   };
+  // where the doc starts people is no mark of its own: its place's trait is (a spawn point's)
+  const START = (d) => (d.view.start = { body: "walk", place: "a" });
   const names = Object.keys(MARKS);
 
-  it("finds exactly the marks that are there: all 16 combinations", () => {
+  it("finds exactly the marks that are there: all 8 combinations, with and without a view.start", () => {
     for (let mask = 0; mask < 1 << names.length; mask++) {
-      const d = newScene();
-      const on = names.filter((_, i) => mask & (1 << i));
-      for (const n of on) MARKS[n].apply(d);
-      const got = neededPlugins(d);
-      expect([on, got]).toEqual([on, names.filter((n) => on.includes(n)).map((n) => MARKS[n].need)]);
+      for (const start of [false, true]) {
+        const d = newScene();
+        const on = names.filter((_, i) => mask & (1 << i));
+        for (const n of on) MARKS[n].apply(d);
+        if (start) START(d);
+        const got = neededPlugins(d);
+        expect([on, start, got]).toEqual([on, start, names.filter((n) => on.includes(n)).map((n) => MARKS[n].need)]);
+      }
     }
   });
 
@@ -122,9 +126,9 @@ describe("what the doc calls for (neededPlugins)", () => {
     ]);
   });
 
-  it("the providers render docs ask for count too; editing calls for nothing", () => {
+  it("the providers render docs ask for count too; a view calls for nothing", () => {
     expect(neededPlugins(newScene(), { providerIds: ["p.render", "p.render", null, ""] })).toEqual([{ type: "scene:source", id: "p.render" }]);
-    for (const view of [{ activity: "edit" }, { activity: null }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
+    for (const view of [{ start: { body: "walk" } }, { grid: false }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
     for (const doc of [null, undefined, {}, { objects: null, traits: null, view: null }]) expect(neededPlugins(doc)).toEqual([]);
   });
 });
@@ -154,30 +158,13 @@ describe("who answers (answeringPlugins)", () => {
     ]);
   });
 
-  it("what an answering extension requires comes with it, at any depth, each once (cycles too)", () => {
-    const d = newScene({ traits: { "t.game": {} } });
+  it("fields that once routed around traits answer nothing: requires, activities, always", () => {
+    const d = newScene({ traits: { "t.game": {} }, view: { start: { body: "walk" } } });
     const r = reg([
-      { id: "game", traits: ["t.game"], requires: ["hand", "keys", "gone"], importUrl: A },
-      { id: "hand", requires: ["keys", "carry"], importUrl: B },
-      { id: "carry", requires: ["game"], importUrl: HTTPS },
-      { id: "keys", importUrl: B },
-      { id: "bystander", importUrl: HTTPS },
+      { id: "game", traits: ["t.game"], requires: ["hand"], importUrl: A },
+      { id: "hand", activities: ["play"], always: true, importUrl: B },
     ]);
-    expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/game", "scene:extension/hand", "scene:extension/keys", "scene:extension/carry"]);
-  });
-
-  it("the activity the doc starts in: the extensions that offer it with a reason of their own", () => {
-    const d = newScene({ view: { activity: "play" } });
-    const r = reg([
-      { id: "general.play", activities: ["play"], importUrl: A }, // general: its own reason
-      { id: "always.play", activities: ["edit", "play"], traits: ["t.nope"], always: true, importUrl: B },
-      { id: "trait.play", activities: ["play"], traits: ["t.nope"], importUrl: HTTPS }, // the doc lacks its trait: it offers nothing
-      { id: "required.play", activities: ["play"], general: false, importUrl: HTTPS },
-      { id: "general.edit", activities: ["edit"], importUrl: HTTPS },
-      { id: "general.all", importUrl: HTTPS }, // declares no activity: it doesn't make "play" available
-    ]);
-    expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/general.play", "scene:extension/always.play"]);
-    expect(answeringPlugins(newScene({ view: { activity: "edit" } }), r)).toEqual([]);
+    expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/game"]);
   });
 
   it("what isn't registered answers nothing; a plugin without an importUrl answers with none", () => {
@@ -196,8 +183,6 @@ describe("the reconcile rule (packagesToList)", () => {
     source: { doc: () => newScene({ objects: { a: { providerId: "p" } } }), type: "scene:source", meta: { id: "p" } },
     objectTrait: { doc: () => newScene({ objects: { a: { traits: { t: {} } } } }), type: "scene:extension", meta: { id: "x", traits: ["t"] } },
     sceneTrait: { doc: () => newScene({ traits: { t: {} } }), type: "scene:extension", meta: { id: "x", traits: ["t"] } },
-    activity: { doc: () => newScene({ view: { ...newScene().view, activity: "play" } }), type: "scene:extension", meta: { id: "x", activities: ["play"] } },
-    required: { doc: () => newScene({ traits: { t: {} } }), type: "scene:extension", meta: { id: "x" }, also: { id: "game", traits: ["t"], requires: ["x"] } },
   };
   // every way its plugin can be registered: [importUrl, the package it names]
   const IMPORTS = [
@@ -228,11 +213,9 @@ describe("the reconcile rule (packagesToList)", () => {
             if (has && !pkg) continue; // a package that can't be named can't be listed
             if (state === "listed at heads" && !String(pkg).startsWith("automerge:")) continue;
             const doc = { ...need.doc(), packages: list(pkg) };
-            const metas = registered ? [{ ...need.meta, importUrl }, ...(need.also ? [{ ...need.also, importUrl: B }] : [])] : [];
+            const metas = registered ? [{ ...need.meta, importUrl }] : [];
             const registries = { [need.type]: metas };
             const want = registered && pkg && !has ? [pkg] : [];
-            // (the requirer's own package, B, is wanted too unless it's there)
-            if (need.also && registered && !listedPackages(doc).includes(B)) want.unshift(B);
             const got = packagesToList({ doc, registries });
             expect([kind, registered, importUrl, state, got]).toEqual([kind, registered, importUrl, state, want]);
             // a fixed point: with those added, there is nothing more to add
@@ -245,7 +228,7 @@ describe("the reconcile rule (packagesToList)", () => {
         }
       }
     }
-    expect(cases).toBe(5 * 2 * (3 * 5 - 1 + 5 * 2));
+    expect(cases).toBe(3 * 2 * (3 * 5 - 1 + 5 * 2));
   });
 
   it("never makes the list: a doc without one gets nothing", () => {

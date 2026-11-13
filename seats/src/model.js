@@ -33,6 +33,21 @@ export function seatOf(seats, viewer) {
 }
 
 /**
+ * Where arriving puts a viewer when the doc starts people seated with no
+ * seat named (view.start = { body: "seat" }: TOOLS.md §2): their own seat if
+ * the doc seats them (back at the table), else the first seat in seat order
+ * that has a view, watching from it (nothing written: sitting down is the
+ * picker's and the seat's verb). Null: no seat with a view. Pure.
+ * @returns {{ sid: string, mine: boolean } | null}
+ */
+export function arrivalSeat(seats, viewer) {
+  const mine = seatOf(seats, viewer);
+  if (mine && seats[mine]?.camera) return { sid: mine, mine: true };
+  const first = Object.entries(seats ?? {}).find(([, s]) => s?.camera)?.[0] ?? null;
+  return first ? { sid: first, mine: false } : null;
+}
+
+/**
  * The roster of a snapshot: every seat, in seat order, as { id, name,
  * viewer } (viewer null: free). Pure in the snapshot.
  */

@@ -26,12 +26,18 @@ describe("a scene made here", () => {
     for (const local of [null, "http://localhost:5173/", "./dist/index.js"]) expect(make(local)["@patchwork"]).toEqual({ type: "scene" });
   });
 
+  it("is a scene named for its bag (an empty scene to build on, not a table), started in orbit", () => {
+    const scene = make(null);
+    expect(scene.title).toBe("Tile bag: scene");
+    expect(scene.view?.start?.body ?? null).toBe(null);
+  });
+
   it("has the bag on it as a container for that bag document, shown from the sack's file", () => {
     const o = make(null).objects[BAG_OBJECT];
     expect([o.name, o.sourceUrl, o.providerId, o.renderUrl]).toEqual(["Tile bag", "automerge:sackfile", "file-glb", null]);
     // a container, and a thing that can be picked up
     expect(o.traits).toEqual({ [CONTAINER]: { doc: BAG }, "scene.carry": {} });
-    expect(make(null).view.tool).toBeUndefined();
+    for (const k of ["start", "activity", "tool"]) expect(k in make(null).view).toBe(false);
     expect(bagUrlOf(o)).toBe(BAG);
     expect(o.hint.bounds.max[0] - o.hint.bounds.min[0]).toBeCloseTo(0.2, 3);
     expect(file.doc["@patchwork"]).toEqual({ type: "file" });

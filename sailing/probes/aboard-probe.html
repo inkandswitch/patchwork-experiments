@@ -162,9 +162,14 @@ try {
       if (!table) return { error: "no Card table", notices: P.notices("a") };
       const board = await api.part("tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
       if (!board) return { error: "no Lost Cities", notices: P.notices("a") };
-      // where the scene opens for someone new: over the cockpit, not fitted to the islet
+      // where the scene starts someone new (view.start, as the inspector's Starts in and Set home view write it):
+      // at the table, watching from a seat (the seat body), and a camera over the cockpit, not fitted to the islet
       const m = dbg.a.scene().world(hull);
-      api.change((d) => { d.view.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) }; });
+      api.change((d) => {
+        if (!d.view.start) d.view.start = {};
+        d.view.start.body = "seat";
+        d.view.start.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) };
+      });
       dbg.a.local.swap((l) => ({ ...l, selected: null }));
       Object.assign(ids, {
         hull, table, board,
@@ -184,8 +189,8 @@ try {
       const pieces = Object.entries(o).filter(([id, x]) => x.kind !== "group" && id !== ids.hull && id !== ids.table && (x.traits?.["tabletop.card"] || x.traits?.["tabletop.zone"] || id === ids.board));
       return {
         title: scene.doc().title,
-        activity: scene.doc().view?.activity ?? null,
-        home: scene.doc().view?.home ?? null,
+        start: scene.doc().view?.start?.body ?? null,
+        home: scene.doc().view?.start?.home ?? null,
         tableParent: o[ids.table]?.parent ?? null,
         tableLocked: !!o[ids.table]?.locked,
         pieces: pieces.length,
@@ -204,7 +209,8 @@ try {
     seats: () => scene.doc().traits?.seats ?? {},
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit", "Aboard") */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     // walking her deck: the crew's bodies on top of the stack (scene/TOOLS.md §4)
     walking: (w) => ["aboard", "station"].includes(dbg[w]?.local.get().body?.id),
     /** the body on top of view w's stack, and the stack */

@@ -3,10 +3,12 @@
 //     ("Frame all"). Not F: F is carry's Flip, on every surface (TOOLS.md §4).
 //   - a double-click on an object frames it (or the selected group it's in).
 //   - "Set home view" (menu): this camera as the doc's suggested start
-//     (doc.view.home), which a viewer without a saved camera opens at.
+//     (doc.view.start.home, TOOLS.md §2), which a viewer without a saved
+//     camera opens at. An edit: undo takes it back.
 // Following the content as it loads is scene.autoframe's.
 
 import { groupChain, isGroup } from "../groups.js";
+import { own } from "../stage/own.js";
 
 /** What a double-click on `hitId` frames: the selected group it's in, else the object itself. Pure. */
 export function frameTarget(scene, hitId, selected) {
@@ -15,7 +17,7 @@ export function frameTarget(scene, hitId, selected) {
   return hitId;
 }
 
-export default {
+export default own({
   create(api) {
     /** What Frame frames: the selection's box, if it has one, else the whole scene's. */
     const selectedBox = (local) => (local?.selected != null ? api.box(local.selected) : null);
@@ -43,9 +45,14 @@ export default {
             const home = { position: [...cam.position].map(Number) };
             if (Array.isArray(cam.target)) home.target = [...cam.target].map(Number);
             if (Number.isFinite(cam.fov)) home.fov = cam.fov;
-            api.change((d) => {
-              d.view.home = home;
-            });
+            api.edit(
+              (d) => {
+                if (!d.view || typeof d.view !== "object") d.view = {};
+                if (!d.view.start || typeof d.view.start !== "object") d.view.start = {};
+                d.view.start.home = home;
+              },
+              { label: "Set home view" },
+            );
           },
         },
       ],
@@ -60,4 +67,4 @@ export default {
       },
     };
   },
-};
+});

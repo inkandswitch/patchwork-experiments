@@ -40,34 +40,32 @@ describe("the dice package's plugins", () => {
     expect((await of("scene:template")[0].load()).create).toBeTypeOf("function");
   });
 
-  it("the cup extension is an audience policy: no activities, so it holds whatever anyone is doing; who shook it, what's under it and its draw don't copy", () => {
+  const MODES = ["activities", "requires", "always", "general"];
+
+  it("the cup extension is an audience policy, run by its trait alone, so it holds whatever anyone is doing; who shook it, what's under it and its draw don't copy", () => {
     const cup = of("scene:extension")[1];
     expect(cup.traits).toEqual(["dice.cup"]);
-    expect(cup.activities).toBeUndefined();
+    for (const k of MODES) expect(k in cup).toBe(false);
     expect(cup.describes["dice.cup"].runtime).toEqual(["holder", "roll", "round"]);
-    expect(cup.requires.indexOf("scene.use")).toBeLessThan(cup.requires.indexOf("scene.keys"));
   });
 
-  it("lots run wherever there's a die or a cup, in every activity (a member's client answers whatever its viewer is doing), with no trait of their own: a round lives in its die's or cup's trait and doesn't copy", () => {
+  it("lots run wherever there's a die or a cup (a member's client answers whatever its viewer is doing), with no trait of their own: a round lives in its die's or cup's trait and doesn't copy", () => {
     const lots = of("scene:extension")[2];
     expect(lots.id).toBe("dice.lots");
     expect(lots.traits).toEqual([DIE, "dice.cup"]);
-    expect(lots.activities).toBeUndefined();
+    for (const k of MODES) expect(k in lots).toBe(false);
     expect(lots.describes).toBeUndefined();
     expect(of("scene:extension")[0].describes[DIE].runtime).toEqual(["round"]);
   });
 
-  it("the extension runs for the die trait, in play and edit, lays out dropped die docs, describes its trait, and requires what playing needs, the use prompt before the key map", () => {
+  it("the extension runs for the die trait alone, lays out dropped die docs, and describes its trait", () => {
     const ext = of("scene:extension")[0];
     expect(ext.traits).toEqual([DIE]);
-    expect(ext.activities).toEqual(["play", "edit"]);
+    for (const k of MODES) expect(k in ext).toBe(false);
     expect(ext.drops).toEqual(["die"]);
     expect(ext.describes[DIE]).toMatchObject({ name: "Die", on: "object" });
     // the trait holds nothing: no fields to write
     expect(ext.describes[DIE].fields).toBeUndefined();
-    // carrying is by the scene.carry trait, never required
-    expect(ext.requires).toEqual(["scene.use", "scene.keys", "scene.menu", "scene.notices"]);
-    expect(ext.requires.indexOf("scene.use")).toBeLessThan(ext.requires.indexOf("scene.keys"));
   });
 
   it("the parts: Die first, then the usual dice, all under Dice, each bringing the die trait and loading a part; then a cup and a pool", async () => {

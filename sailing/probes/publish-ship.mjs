@@ -9,7 +9,8 @@
 // the doc is what a maker gets from New → scene → Ship at sea: the sea trait,
 // the sloop and its stations, landmarks, the scene's one GLB file doc per
 // kind of piece (recorded at doc.assets[key] by ctx.file, as the stage's
-// sceneFile does), and `view.activity` "play", so whoever opens it is aboard.
+// sceneFile does), and `view.start` off her quarter (orbit, where a click
+// comes aboard).
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing. Otherwise it flushes and asks a repo that has never seen
@@ -98,7 +99,7 @@ const d = scene.doc();
 const objects = Object.values(d.objects);
 const has = (trait) => objects.filter((o) => o.traits?.[trait]).length;
 const problems = [];
-if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(d.view?.activity)}, not "play"`);
+if (!d.view?.start?.home || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, or an old view.activity`);
 if (!d.traits?.["sailing.sea"]) problems.push("no sailing.sea trait");
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
 const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];
@@ -118,7 +119,7 @@ if (problems.length) {
   process.exit(1);
 }
 const made = [scene.url, ...glbs];
-console.log(`scene ${scene.url}: ${objects.length} objects, ${glbs.length} GLBs (doc.assets), starts in ${d.view.activity}`);
+console.log(`scene ${scene.url}: ${objects.length} objects, ${glbs.length} GLBs (doc.assets), starts people ${JSON.stringify(d.view.start)}`);
 if (DRY) {
   console.log(`dry run: ${made.length} docs (nothing published)`);
   process.exit(0);

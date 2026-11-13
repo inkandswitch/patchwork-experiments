@@ -20,10 +20,11 @@
 //   per colour: 14), every object shows one of them, every one of them is
 //   shown, and every file is a GLB with bytes;
 // - six seats, nobody in them, and A's seat picker offers each;
-// - the view starts in "play", in the hand, and A lands in play;
+// - the view starts people in the seat body (view.start), and A arrives
+//   watching from a seat;
 // - every piece is built in A, every die read from its GLB as a d6;
 // - everything the doc calls for (each object's provider, each trait, the
-//   activity it starts in) is answered by a plugin installed here (scene's,
+//   body it starts people in, by its place's trait) is answered by a plugin installed here (scene's,
 //   seats' and dice's, nothing else), and A's stage, given each plugin's
 //   package URL as the host gives it, lists exactly those three packages and names
 //   the scene package as the suggested import;
@@ -162,9 +163,9 @@ try {
   check(`six seats (${SEATS.join(", ")}), each named and with a camera, nobody in them`, Q(Object.keys(seats ?? {}).sort()) === Q(SEATS) && Object.values(seats).every((s) => typeof s.name === "string" && s.name && s.camera?.position?.length === 3 && s.camera?.target?.length === 3 && !s.player), seats);
   check("A is told to pick a seat (the seats' owner was found)", await until("notices('a').some((n) => /^Pick a seat \\(top right\\)/.test(n))", 5000), await P("notices('a')"));
   check("A's seat picker offers every seat", await until(`picker('a').filter((s) => ${Q(SEATS)}.includes(s)).length === ${SEATS.length}`, 10_000), await P("picker('a')"));
-  check(`the doc says it's Liar's dice and starts in "play", with no view.tool`, d.title === "Liar's dice table" && d.view?.activity === "play" && !("tool" in (d.view ?? {})), { title: d.title, view: d.view });
+  check(`the doc says it's Liar's dice and starts people in the seat body, with no view.activity or view.tool`, d.title === "Liar's dice table" && d.view?.start?.body === "seat" && !("activity" in (d.view ?? {})) && !("tool" in (d.view ?? {})), { title: d.title, view: d.view });
   check(`every die and cup carries scene.carry (${CUPS + DICE})`, c.carried === CUPS + DICE, { carried: c.carried });
-  check("A lands in play", await until("activity('a') === 'play'", 5000), await P("activity('a')"));
+  check("A lands watching from a seat", await until("bodyLabel('a') === 'Watching'", 20_000), await P("bodyLabel('a')"));
   const builtA = await until(`built('a').loaded === ${CUPS + DICE + 2} && __p.built('a').diceRead === ${DICE}`, 120_000);
   check(`every piece is built in A (${CUPS + DICE + 2}), every die read from its GLB as a d6`, builtA, await P("built('a')"));
   check("the cups and the dice's own lots run in A", await until("running('a').includes('dice.cup') && __p.running('a').includes('dice.lots')", 5000), await P("running('a')"));
@@ -181,7 +182,7 @@ try {
   // ── B opens it ──
   await P("openB()");
   check("B's replica has the same table", await until(`count('b').cups === ${CUPS} && __p.count('b').dice === ${DICE} && __p.count('b').all === ${CUPS + DICE + 2}`, 15_000), await P("count('b')"));
-  check("B opens it in play", await until("activity('b') === 'play'", 15_000), await P("activity('b')"));
+  check("B opens it, watching from a seat", await until("bodyLabel('b') === 'Watching'", 20_000), await P("bodyLabel('b')"));
   check("B's seat picker offers every seat", await until(`picker('b').filter((s) => ${Q(SEATS)}.includes(s)).length === ${SEATS.length}`, 10_000), await P("picker('b')"));
   check(`every piece is built in B, every die read as a d6`, await until(`built('b').loaded === ${CUPS + DICE + 2} && __p.built('b').diceRead === ${DICE}`, 120_000), await P("built('b')"));
   check("both replicas hold the same scene (the same heads)", await until("same()", 10_000), null);
@@ -200,7 +201,7 @@ try {
   const named = [...new Set(JSON.stringify(sceneDoc).match(AM) ?? [])];
   const outside = named.filter((u) => u !== snapshot.scene && !files.includes(u) && !STATED.includes(u));
   check("the scene names no doc but its own files and its packages (no viewer, no contact)", outside.length === 0 && !snapshot.contacts.some((u) => named.includes(u)), { outside });
-  check(`the snapshot is the laid-out table, starting in play`, Object.values(sceneDoc.objects ?? {}).filter((o) => o.kind !== "group").length === CUPS + DICE + 2 && sceneDoc.view?.activity === "play", { objects: Object.keys(sceneDoc.objects ?? {}).length, view: sceneDoc.view });
+  check(`the snapshot is the laid-out table, starting people in the seat body`, Object.values(sceneDoc.objects ?? {}).filter((o) => o.kind !== "group").length === CUPS + DICE + 2 && sceneDoc.view?.start?.body === "seat", { objects: Object.keys(sceneDoc.objects ?? {}).length, view: sceneDoc.view });
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }
@@ -226,7 +227,7 @@ async function publish(snapshot) {
     return 1;
   }
   const scene = docs[snapshot.scene];
-  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits.seats).length} seats, starts in ${scene.view.activity}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
+  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits.seats).length} seats, starts people ${JSON.stringify(scene.view.start?.body ?? "orbit")}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
   if (DRY) {
     console.log(`dry run: ${Object.keys(docs).length} docs (nothing published)`);
     return 0;
@@ -266,7 +267,7 @@ async function publish(snapshot) {
         const sources = Object.values(got.objects ?? {}).filter((o) => o.kind !== "group").map((o) => o.sourceUrl);
         if (pp.length) problem = `came back wrong: ${pp.join("; ")}`;
         else if (!sameSet(urls(got), STATED)) problem = `came back listing ${Q(urls(got))}, not ${Q(STATED)}`;
-        else if (got.view?.activity !== "play") problem = `came back with view.activity ${JSON.stringify(got.view?.activity)}`;
+        else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${JSON.stringify(got.view?.start)}`;
         else if (sources.length !== CUPS + DICE + 2 || !sources.every((s) => glbs.includes(s))) problem = "came back with objects that don't show the published files";
         else if (files.some((u) => JSON.stringify(got).includes(u))) problem = "still names a doc from the page";
       }

@@ -290,6 +290,22 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     return value;
   }
 
+  /**
+   * May a listed package that isn't here still come without the viewer
+   * answering? Yes until the registry can be read and has gone quiet (the
+   * viewer's own may be on their way), and while one loads or is about to
+   * (accepted before). One asked about, declined or failed waits on the
+   * viewer: no.
+   */
+  function coming() {
+    if (noRegistry) return false;
+    if (!mod || !settled) return true;
+    const here = registeredPackages(registries());
+    for (const url of loaded) here.add(url);
+    const t = triage(missingPackages(handle.doc() ?? {}, here), { loading: new Set(loading.keys()), failed, accepted, declined });
+    return t.loading.length + t.load.length > 0;
+  }
+
   const recheck = () => {
     stamp++;
     check();
@@ -322,6 +338,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   return {
     check,
     complete,
+    coming,
     /** A part or template was run here: its package belongs on the list too. */
     used(type, id) {
       if (dead || !mod) return;

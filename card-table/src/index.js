@@ -33,7 +33,7 @@ export const plugins = [
     name: "Joint keeper",
     traits: ["card-table.kept"],
     keeper: "joint",
-    // no `activities`: what is kept stays kept, and keys go on being handed over, whatever the viewer is doing
+    // by its trait alone: what is kept stays kept, and keys go on being handed over, whatever the viewer is doing
     describes: {
       "card-table.kept": {
         name: "Kept (jointly)",

@@ -4,8 +4,8 @@
 // it, bubbling and composed out of a tool's element (what openDocument in
 // @inkandswitch/patchwork-elements dispatches, and what the scene's inspector
 // sends to open a GLB or an About). The visitor goes as a viewer opening a
-// link goes: the destination opens as itself, where it starts and in the
-// activity it starts in; nothing crosses.
+// link goes: the destination opens as itself, where it starts people
+// (its view.start); nothing crosses.
 //
 // scene/COMPOSITION.md §9 plans this as the view's: `api.go(url)`, which will
 // also put the eye at a named frame. When the stage has it, this function is

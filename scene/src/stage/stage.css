@@ -302,6 +302,11 @@
   color: var(--scene-fg);
 }
 
+/* the stage's own chrome shown (the inspector, the outline): a side panel's width */
+.scene-stage .stage-drawer[data-narrow]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: clamp(220px, 30cqi, 290px);
+}
+
 /* a narrow view keeps some of its width for the scene */
 @container (max-width: 640px) {
   .scene-stage .stage-drawer:where(:not(.about-embed *), .about-embed .scene-tool *) {

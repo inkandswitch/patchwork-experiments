@@ -7,6 +7,7 @@ Built only from the scene's extension contract (scene/STAGE.md).
 | | | |
 |---|---|---|
 | `scene:extension` | `walk` | general: the walk body, and everyone else who walks drawn where presence says |
+| `scene:extension` | `walk.spawn` | the spawn point's trait part: a doc with spawn points calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verb, on a spawn point, is Walk from here (menu) |
 | trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`). Written by whatever lays a level out: arena's spawn pad part, doom's layout through it |
 
 ## The body

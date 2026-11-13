@@ -22,7 +22,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `bag` | its 2D panel: contents by kind with counts, the total, the rule, Draw / Draw several / Empty, and what was taken out. Useful on its own, outside any scene |
 | `scene:source` | `bag-sack` | the bag built as a GLB at real size: a plain drawstring sack (20 cm by default) |
 | `scene:part` | `bag.token-bag` | the parts bin's "Token bag" (under Containers): makes a new bag doc and adds it |
-| `scene:extension` | `bag` | the container verbs in a scene, in play and in edit (trait `bag.container`). Its metadata says `container: "bag"`: its module's `fill` makes a bag already holding things (below) |
+| `scene:extension` | `bag` | the container verbs in a scene, whatever anyone is doing (trait `bag.container`). Its metadata says `container: "bag"`: its module's `fill` makes a bag already holding things (below) |
 
 ## The verbs
 
@@ -37,7 +37,7 @@ any game's rule:
 | **Draw** | hover the bag and press **D** (the use prompt: "Draw from Token bag (3)"), or the menu | one item, by the bag's rule, is an object in the scene again and is in the drawer's hand (the scene's `carry`): it follows the pointer until the next click, which puts it down wherever the drawer chooses. With no carry running, it is set down beside the bag |
 | **Draw several** | menu or inspector → Draw 2…10 | that many, each drawn on its own, set down in a row round the bag |
 | **Pour into** | menu or inspector on a bag → Pour into *other bag* | everything inside goes into the other bag |
-| **Empty out** | menu or inspector, editing only | everything is set down round the bag |
+| **Empty out** | menu or inspector (no key), anyone | everything is set down round the bag |
 | **Look inside** | menu or inspector on a bag | the bag's own panel docks in the stage's drawer (`api.dock`), under the bag's name; its tab's × closes it. This is the only way to see what is inside without drawing, **anyone can**, and the others are told that you looked |
 
 Everyone else is told what was done, with `api.send`: "*Ana* drew from *Token

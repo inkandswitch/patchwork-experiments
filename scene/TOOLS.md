@@ -36,9 +36,8 @@ finite cases, permissions left to Keyhive.
 ## Where we are
 
 *As written, before build step 2; the "Today" column is the code then.
-Steps 2, 3, 6 and 7 have since been built (Build order, below), so most of
-it has gone where the last column says; activities and `requires` remain
-until step 8.*
+Steps 2, 3, 6, 7 and 8 have since been built (Build order, below), so all
+of it has gone where the last column says.*
 
 "Activity" is one value per view that decides four things:
 
@@ -593,9 +592,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Flip, Draw and Wash, and Stand on edge is U's and the menu's. That is
   the queued three-verb cap; ordering generic holders after the others at
   a tie is left to it.
-  The inspector and outline stay sidebar panels of the editor's activity:
-  making them drawer tabs that follow attention waits for step 8, when the
-  editor's chrome stops following the activity.
+  The inspector and outline stayed sidebar panels of the editor's activity
+  until step 8 made them drawer tabs that follow attention.
 - **6. Bodies and the held tool.** Stack and slot, four bodies, `from` and
   `reach` everywhere, declared keys, attention, the pointer, the Escape
   ladder; rides by body. *Proves:* H3-H5, H9; Doom with one walker.
@@ -638,19 +636,19 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Three deviations, each the smaller step: (1) **walk** is a new package,
   `walk/`, replacing arena's walker only, with the spawn trait renamed
   `walk.spawn` (arena's pad part writes it; doom asks for that part); it
-  rides what it stands on. E1M1 lists `walk` because its publisher says
-  so (`doom/probes/publish-e1m1.mjs`): the walk extension declares no
-  traits, so nothing in a doc calls for its package and reconcile never
-  adds it. **Sailing keeps its
+  rides what it stands on. (Then E1M1 listed `walk` only because its
+  publisher said so: the walk extension declared no traits, so nothing in
+  a doc called for its package. Step 8 gave `walk.spawn` a trait part of
+  its own in `walk/`.) **Sailing keeps its
   navmesh walker as its own body, `aboard`**, with `station` pushed over
   it: the walk body stands on what rays hit and knows nothing of her
   ladder, the water or a vault over her rail, which the navmesh walker
   proves invariants for; folding them into one walker waits until the walk
   body can stand on a moving deck as well as the navmesh does. (2) A body
   says `here: false` when it needs a place (a seat, a station), so the chip
-  doesn't offer it, and a sitting may carry its own `keys` (a station's
-  keys differ by kind; a sitting's `label`, which sailing answers, isn't
-  read: the chip shows the body's, "At a station"). (3) The key map tries attention's whole
+  doesn't offer it, and a sitting may carry its own `keys` and `label` (a
+  station's keys differ by kind; its label is "Helm", "Winch": read since
+  step 8, the chip having said "At a station" until then). (3) The key map tries attention's whole
   path, the look's hit then what it's attached to, before the scene, so
   Delete on a spoke removes the spoke and F on it takes the helm; the prompt
   shows the first target along that path with verbs. Gun, arena's, is a
@@ -666,19 +664,129 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   `"sim"` claim and the ten-second saves went. Joints' closing is a process
   registered while a part closes itself, `since` is world t, and the
   `here` key, the opener's duty and the grace period went: the computer
-  closes every door. Activities remain: a view in edit has no sailing
-  process, so alone in edit the sea now stands still (it ran on a private
-  clock), and editing still stops the ships until step 8. And any process
+  closes every door. Activities remained until step 8: a view in edit had
+  no sailing process, so alone in edit the sea stood still (it had run on a
+  private clock), and editing stopped the ships. And any process
   makes a view eligible, but a kept process is stepped only by the
   computer: an editor whose only process is joints' (a self-closing hatch)
   who took the claim first computes for a sailor too, and the sailor's
-  ships stand still for as long as the editor is here and visible. That is
-  this step's gap, not the design's: once activities go (step 8) every view
-  with every listed package runs the same extensions and so the same
-  processes, and eligibility already asks for every listed package.
+  ships stand still for as long as the editor is here and visible. That was
+  this step's gap, not the design's, and step 8 closed it: with activities
+  gone every view with every listed package runs the same extensions and so
+  the same processes, and eligibility already asks for every listed package.
 - **8. Activities and `requires` go**, with `always` and `general: false`.
   Only now does editing stop freezing the sea, with pause to replace it.
   *Proves:* H1, H2.
+  *Built:* `activeSet(metas, doc)`: a doc trait gives scene or object scope,
+  none declared is general, and nothing else counts (`src/activities.js`,
+  `parts/activity.js`, `scene.activity`, `local.activity`/`activities`,
+  `view.activity` and `view.tool` went). **`always` went too**: it was
+  declared only by `scene.clock` and `scene.activity`, both traitless and so
+  general anyway, and nothing with traits needed it. The host has one stop
+  rule (a doc change lingers 2 s or while busy; one still loading, or whose
+  plugin is uninstalled, stops at once). Doom's drop-only extension declares
+  the marker trait its layout writes on the map's static part (`doom.map`);
+  walk's spawn point got a trait part of its own (`walk.spawn` in `walk/`,
+  with a Walk from here verb), so a doc with spawn points calls for `walk/`.
+  Every extension's `requires` and `activities` went, and the edit/play
+  twins merged: sailing's `sailing.edit` (her sea while editing: the sea now
+  runs for everyone, so editing never stops her; a pause does), arena's
+  `arena.edit` (Stand targets up is the arena's menu verb), and
+  `tabletop.rule` back into `tabletop` (its `audience`). The verbs that hid
+  in edit or play (tabletop's Draw, Wash, Stand, Lay my hand face up; the
+  cup's) apply whatever the viewer is in; bag's edit-only Empty out is a
+  menu verb anyone may use. **Chrome follows attention:** the sidebar went;
+  the inspector is a drawer tab while something is selected (its × shuts it
+  until the selection changes; the toolbar's Inspector opens it on the
+  scene), the outline (Objects), Dimensions and Parts are tabs the viewer
+  opens from the toolbar (`src/parts/tab.js`, docked with `embed: false` so
+  their keys are the stage's; the inspector following the selection docks
+  with `show: false`, behind a pane in use such as the parts bin); while one
+  of them is shown the drawer is a side panel's width, not a docked
+  editor's; `local.drawer` says what's docked, so the toolbar's toggles hear
+  a tab close. Grid, axes and bounds were already the orbit body's. The use
+  prompt hides while a gesture is open (a carry: its keys come first). Every general part runs in a game too (the toolbar, the use
+  prompt), showing what attention asks for. **`view.start = { body, place,
+  home }`** (`view.home` went into it): read once on arrival and after a
+  template, entered once a running extension offers the body and the
+  content is in (or 20 s after it came on offer), never again; until it's
+  on offer the wait lasts while the body may still come (a package loading,
+  or asked about and accepted however much later), and ends once everything
+  the doc calls for is here and started or failed without it (an extension
+  that failed doesn't hold it open) (`startOf`, `tryArrive` in `stage.js`); the inspector's Starts in picks the body (Orbit, or one on
+  offer). Publishers: tables start people in the seat body with no place,
+  which seats/ reads as your own seat if the doc seats you, else watching
+  from the first seat's view, labelled "Watching", writing nothing (a press
+  on a piece there carries it or uses it; nothing selects; the picker or a
+  seat's verb sits you down over it); a level starts them walking at a
+  spawn point; ships, Cadboro Bay and a bag's new scene start in orbit at
+  their home (a click on the ship comes aboard: sailing's holder takes it
+  before orbit's Select; a bag's new scene is an empty scene to build on,
+  not a table). Santorini gained three seats (Blue, Cream, Grey, by its
+  workers' colours, each looking across from its workers' side), so every
+  built-in game starts people where a press picks a piece up. The four notes-pass issues: a sitting's
+  `label` is read (the chip says "Helm"); `walk.spawn` calls for walk; the
+  stale comments went; `always` went.
+  *Undo, built* (Decisions 2): `api.edit(fn, { label, handle })` and
+  `api.edits(label)` (a step of several writes, passed as `{ edit }` to
+  `addObject`, `remove`, `drop`, `part`) record a step from the change's own
+  patches (`src/undo.js` `createEdits`); the halo, the build-param knobs (on
+  the render doc), the inspector, the outline, Delete, add, the parts bin,
+  transfer, dimensions and Set home view write through them, and nothing
+  else does. `api.undo()`/`redo()` write a step's inverse in one change only
+  when the doc still holds everything the step wrote (else it's dropped
+  whole, and said), so undo never reverts a later write and never half an
+  edit; the undo is the redo step. Per view, keyed by the focus doc. Only
+  the stage's own parts have `edit`, `edits`, `undo` and `redo` on their
+  api: a module this package marks (`src/stage/own.js`, a set only this
+  package's code can reach), not an id, so a package's verb can't put
+  itself on a stack. **Reveals and decides**: a step is judged when
+  recorded, from the doc before and after it (`judgeEdit` in `stage.js`):
+  it showed an object when that object's audience grew (unknown counts as
+  grown), and decided one a running extension's `decided(before, after)`
+  names (nothing answers it yet: no stage edit draws or rolls). Taking it
+  back asks every running extension's `parties(scene)` (seats: whoever is
+  seated, here or away) and is refused with a reason while anyone else has
+  a stake; it stays on the stack, so a party standing up frees it. Nothing
+  answering (or `null`): free (a CAD scene); a `parties` that throws: can't
+  be told, refused. With a listed package missing or an extension not
+  started no audience is known and every step counts as showing: a seated
+  table with a declined package can't take back a stage edit while anyone
+  else is seated, and says so ("…can't be told (a package the scene uses
+  is missing or didn't start)…"). **Kept contents**: a step that removed
+  objects bound by a keeper's trait (a plugin saying `keeper`) is undone as
+  the doc held them, saying the kept part comes back as its keeper has it
+  now. Bag contents (their own doc, not a keeper's) aren't named by this. ⌘Z /
+  Ctrl+Z and ⇧⌘Z / Ctrl+Y (not in a field) and the toolbar's Undo and Redo
+  (`scene.undo`). Checked exhaustively on real Automerge
+  (`src/undo.test.js`): every sequence of up to 4 of five edits (move a die,
+  a card, the hull; add; delete the die), a roll, a shuffle, a process save,
+  a pause, undo and redo (16,104 sequences, ~12 s; `UNDO_DEPTH` for more):
+  an undo or redo only ever changes leaves last written by an edit, no
+  stack ever holds a leaf only a verb, a save or a pause writes, the order
+  always lists exactly the objects, and an undo straight after an edit
+  restores the doc. Making `inverse` skip its "still as left" check fails it
+  at once (move the die, roll it, undo). Again with two people on two
+  replicas (`UNDO_PAIR_DEPTH`, default 4: 22,620 sequences, ~23 s): A's
+  edits, a roll and a save on A's, B's edits to the same field and to
+  another on B's, each one's undo and redo, and a sync both ways, so B's
+  edits arrive merged at once, later, or concurrent with A's own write to
+  that field; every value is its writer's own, and an undo or redo of
+  mine only ever changes a leaf holding a value I wrote. The agreement
+  rule over every move of a card among four states (each hand, face up,
+  face down) × who is seated (nobody, me, me and another): refused exactly
+  when the move widened who may see it and someone else is seated (36
+  cases, `parts/undo.test.js`).
+  *H1* (`stage.test.js`): over three fixture docs, entering and leaving a
+  body, holding and putting down a tool, selecting, a pref, pausing and
+  resuming start and stop nothing; and `activeSet` over every subset of
+  five kinds of extension × four docs (128 cases) is the rule and its
+  order (`stage-pure.test.js`). *H2* (`host.test.js`): one extension, every
+  sequence of up to 4 of want, unwant, busy, idle, wait 2 s and wait 250 ms
+  (1,555): wanted ⇒ running; it stops only unwanted, not busy, at least
+  2 s after the doc stopped calling; unwanted and idle a linger and a
+  recheck on ⇒ stopped. Stopping at once on unwant, or ignoring busy, each
+  fail it.
 - **9. The other notes.** STAGE.md: Activity leaves Words; Body, Held
   tool, Clock and Process arrive; Activation, the chain and Arming are
   rewritten. DESIGN.md: "Activities" becomes "Bodies, tools and the
@@ -690,6 +798,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   rewritten (no Arming section was left); DESIGN.md has "Bodies, tools and
   the clock"; SCOPE.md's §4 and §7 say what was built. Activity stays in
   Words, marked as what step 8 removes. Examples aren't republished.
+  Step 8 brought the notes up to date for itself: Activity left Words,
+  Start and Edit arrived, and STAGE.md has "Arriving" and "Undo".
 
 ## What it costs
 
@@ -711,7 +821,46 @@ The project lead decided the five open questions on 2026-11-12.
 2. **Undo covers the stage's own editing writes only** (handles,
    inspector, transfer, add, remove), per person and per focus doc, as
    inverse changes. Package verbs, clock acts and process saves are never
-   on it, so undo can't un-roll a die.
+   on it, so undo can't un-roll a die. Two rules make that hold when
+   writes interleave (added before step 8 was built):
+   - **Compare-and-set.** An entry records, for each field it touched,
+     the value its edit wrote, and applies only where the field still
+     holds that value. If anything has written the field since (a roll, a
+     carry, a process's save, another person), the entry is refused with a
+     reason ("it has moved since") rather than applied. Undo only ever
+     takes back my own edit, and only while it is still the last thing
+     that happened to those fields. Tested over every interleaving of a
+     stage edit with a package write, a process save and another person's
+     edit to the same and to different fields.
+   - **Kept contents don't come back.** Removing something whose contents
+     a keeper holds outside the doc (a shuffled deck) can't be fully
+     undone: undo restores what the doc held and says what it couldn't
+     restore, or the remove is marked as not undoable. Undo never
+     invents state it didn't see.
+   - **Reveals and decides need the others' agreement** (the project
+     lead, 2026-11-13). Some changes reveal information (they widen what
+     someone else could see: a card from a hand to the table, a flip, a
+     lifted cup) or decide it (their outcome came from shared randomness
+     or hidden state: a roll, a shuffle, a draw). Undoing those can't
+     un-learn what was seen, and undoing a decision hands its maker a
+     second try, so they may only be taken back with the agreement of
+     its **parties**: the people with a stake in the thing, not everyone
+     who saw it (the project lead: "in a card game that would be players
+     but not observers"). The stage can't know who has a stake, so it
+     asks, as it asks who may see a thing: an extension answers for the
+     objects it holds (seats: the people seated at that table; dice: the
+     players in that roll's round, not the viewers who watched). Where no
+     extension answers (two people editing a CAD scene) there are no
+     parties and undo stays free. Parties are current: someone who has
+     left their seat is no longer one; someone still seated but away is,
+     and a take-back waits for them. Whether a change revealed anything
+     the stage knows by comparing each touched object's audience before
+     and after; whether it decided anything, the deciding package says.
+     Step 8 classifies each entry as free or needing agreement and
+     refuses the latter with a reason ("needs the others' agreement"); the
+     take-back protocol (ask, agree or decline, how it shows, an absent
+     party) is designed after step 8, and may extend take-backs to
+     package actions whose effects the stage can invert.
 3. **Selecting in a game is by the menu and the outline.** No modifier
    key; one may be added if play-testing asks.
 4. **Outside an entered link stays live.** Others still play there, and

@@ -22,6 +22,7 @@
 import { HANDLE_SIZE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
+import { own } from "../stage/own.js";
 
 const AXIS_FALLBACK = [
   [0.9, 0.25, 0.25],
@@ -276,8 +277,9 @@ function create(api) {
       const d = drag;
       drag = null;
       if (d?.poses?.size) {
-        // each moved object's put-down, as one change (a group's members together)
-        api.change(api.ops.setTransform(api.scene(), d.poses));
+        // each moved object's put-down, as one change (a group's members
+        // together): an edit, so undo puts it back (TOOLS.md, Decisions 2)
+        api.edit(api.ops.setTransform(api.scene(), d.poses), { label: { rotate: "Rotate", scale: "Scale" }[d.grab?.handle?.kind] ?? "Move" });
         release(d, true);
       }
       reconcile();
@@ -351,4 +353,4 @@ function create(api) {
   };
 }
 
-export default { create };
+export default own({ create });

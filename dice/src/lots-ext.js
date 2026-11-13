@@ -6,8 +6,8 @@
 // the doc, presence, the `roster` convention and api.audience.
 //
 // It runs wherever there is a die or a cup (its `traits` are theirs; it
-// describes none), in every activity: a member's client must commit and open
-// whatever its viewer is doing.
+// describes none), whatever its viewer is doing: a member's client must
+// commit and open.
 //
 // WHERE A ROUND LIVES: in the trait of the thing it's drawn for, under
 // `round`: a cup's (`"dice.cup": { …, round }`), else a die's (`"dice.die":

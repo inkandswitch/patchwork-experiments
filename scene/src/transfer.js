@@ -552,6 +552,17 @@ async function extensionMetas(api) {
  * @returns {Promise<string[] | null>} the new ids of the roots (the first is selected), or null
  */
 export async function copyObjects(api, payload, target) {
+  // the whole copy is one edit (TOOLS.md, Decisions 2): undo takes it out again
+  const edit = typeof api.edits === "function" ? api.edits("Paste") : null;
+  try {
+    return await copyInto(api, payload, target, edit);
+  } finally {
+    edit?.end();
+  }
+}
+
+async function copyInto(api, payload, target, edit) {
+  const change = (fn) => (edit ? edit.change(fn) : api.change(fn));
   const live = () => !api.signal?.aborted;
   const sceneUrl = parseAutomergeUrl(payload?.scene);
   if (!sceneUrl || !payload?.ids?.length) return null;
@@ -629,7 +640,7 @@ export async function copyObjects(api, payload, target) {
   const groupItems = plan.items.filter((it) => it.group);
   if (groupItems.length) {
     for (const it of groupItems) map.set(it.from, api.newId("g"));
-    api.change((d) => {
+    change((d) => {
       for (const it of groupItems) {
         const id = map.get(it.from);
         const g = it.groupOf != null ? map.get(it.groupOf) : it.groupIn;
@@ -653,7 +664,7 @@ export async function copyObjects(api, payload, target) {
     if (!it.data.sourceUrl) {
       // nothing to show it from: written as it is, in its turn (what's under it needs it there)
       const id = api.newId("o");
-      api.change((d) => {
+      change((d) => {
         const p = parent && d.objects[parent] && !isGroup(d.objects[parent]) ? parent : null;
         const gWanted = group !== undefined ? group : p ? (d.objects[p].group ?? null) : null;
         const g = gWanted && d.objects[gWanted] && isGroup(d.objects[gWanted]) ? gWanted : null;
@@ -674,6 +685,7 @@ export async function copyObjects(api, payload, target) {
         transform: transform ?? undefined,
         fields,
         ...(seed ? { render: seed } : {}),
+        ...(edit ? { edit } : {}),
       });
       map.set(it.from, id);
     } catch (err) {
@@ -685,7 +697,7 @@ export async function copyObjects(api, payload, target) {
   // references among the copies, to the copies' new ids, field by field
   const later = [...fixes].flatMap(([from, f]) => f.later.filter((l) => map.has(from) && map.has(l.to)).map((l) => ({ id: map.get(from), ...l, to: map.get(l.to) })));
   if (later.length) {
-    api.change((d) => {
+    change((d) => {
       for (const l of later) {
         const tr = d.objects?.[l.id]?.traits?.[l.trait];
         if (tr && typeof tr === "object") tr[l.key] = l.to;
@@ -697,7 +709,7 @@ export async function copyObjects(api, payload, target) {
   const urls = plan.items.filter((it) => !it.group && map.has(it.from) && typeof it.data.sourceUrl === "string").map((it) => it.data.sourceUrl);
   const assets = same ? {} : assetsFor(source.assets, urls, api.doc()?.assets);
   if (Object.keys(assets).length) {
-    api.change((d) => {
+    change((d) => {
       for (const [k, a] of Object.entries(assets)) if (!d.assets[k]) d.assets[k] = a;
     });
   }

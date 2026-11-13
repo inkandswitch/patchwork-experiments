@@ -4,39 +4,18 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
-import inspector from "./inspector.js";
+import inspector, { startBodies } from "./inspector.js";
+import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };
 
-// A stand-in for scene.sidebar: mounts every panel in a right edge and updates it each flush.
-const SIDEBAR = {
-  meta: { id: "t.sidebar" },
-  module: {
-    create(api) {
-      const edge = api.edge("right");
-      const mounted = new Map();
-      return {
-        update(scene, local) {
-          for (const { value } of api.collect("panels")) {
-            for (const p of value ?? []) {
-              if (!mounted.has(p.id)) {
-                const body = document.createElement("div");
-                body.className = "panel-body";
-                body.dataset.panel = p.id;
-                edge.append(body);
-                mounted.set(p.id, p.mount(body) ?? {});
-              }
-              mounted.get(p.id).update?.(scene, local);
-            }
-          }
-        },
-      };
-    },
-  },
-};
+// The viewer opened the Inspector from the toolbar: it stays open, on the
+// scene with nothing selected (how it follows the selection on its own is
+// its own test, below).
+const OPENED = openTabs(["scene.inspector:inspector"], { once: true });
 
 const group = (name, parent = null, extra = {}) => ({ kind: "group", name, group: parent, visible: true, opacity: 1, ...extra });
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
@@ -56,13 +35,14 @@ beforeAll(() => {
 async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
   s = await mountStage({
     repo,
-    extensions: [SIDEBAR, INSPECTOR, ...extensions],
+    extensions: [INSPECTOR, OPENED, ...extensions],
     doc: { objects, order: Object.keys(objects), ...doc },
   });
   return s;
 }
 
-const body = () => s.root.querySelector('.panel-body[data-panel="inspector"]');
+/** The Inspector tab's pane (open: the viewer asked for it) */
+const body = () => s.instance("scene.inspector").tab.body;
 const $ = (sel) => body().querySelector(sel);
 const buttons = () => [...body().querySelectorAll(".commands button")];
 const button = (text) => buttons().find((b) => b.textContent === text);
@@ -478,5 +458,107 @@ describe("scene.inspector: the pure side", () => {
     ];
     expect(commandsFor(collected, "o", {}, "me").map((c) => c.command.id)).toEqual(["b", "a"]);
     expect(commandsFor(collected, null, {}, "me")).toEqual([]);
+  });
+});
+
+describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §6)", () => {
+  const tab = () => s.instance("scene.inspector").tab;
+  async function bare(objects, extensions = []) {
+    s = await mountStage({ extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
+    await settle();
+  }
+
+  it("shut with nothing selected; open while something is; its × shuts it until the selection changes; a ref isn't something it shows", async () => {
+    await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
+    expect(tab().isOpen()).toBe(false);
+    await select("a");
+    expect(tab().isOpen()).toBe(true);
+    expect(s.debug.drawer().shown).toBe(tab().body);
+    // the viewer closes it (its ×): it stays shut while "a" is selected
+    s.root.querySelector(".stage-drawer-tab-close").click();
+    await settle();
+    expect(tab().isOpen()).toBe(false);
+    s.change((d) => (d.objects.a.name = "A2"));
+    await settle();
+    expect(tab().isOpen()).toBe(false);
+    await select("b");
+    expect(tab().isOpen()).toBe(true);
+    await select("dimension:d1");
+    expect(tab().isOpen()).toBe(false);
+    await select(null);
+    expect(tab().isOpen()).toBe(false);
+    // asked for from the toolbar: the scene's, with nothing selected
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
+    await settle();
+    expect(tab().isOpen()).toBe(true);
+    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
+    await settle();
+    expect(tab().isOpen()).toBe(false);
+  });
+
+  it("following the selection, it comes in behind a pane already shown (the parts bin), a tab to pick; alone, it shows", async () => {
+    const pane = document.createElement("div");
+    const other = { meta: { id: "t.bin" }, module: { create: (api) => (api.dock(pane, { title: "Bin" }), {}) } };
+    await bare({ a: object({ name: "A" }) }, [other]);
+    expect(s.debug.drawer().shown).toBe(pane);
+    await select("a");
+    expect(tab().isOpen()).toBe(true);
+    expect(s.debug.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
+  });
+
+  it("the toolbar's Inspector says whether its tab is open, in the flush after it shuts (local.drawer)", async () => {
+    const toolbar = (await import("./toolbar.js")).default;
+    await bare({ a: object({ name: "A" }) }, [{ meta: { id: "scene.toolbar" }, module: toolbar }]);
+    const pressed = () => s.root.querySelector('.toolbar [data-command="inspector"]')?.getAttribute("aria-pressed");
+    expect(pressed()).toBe("false");
+    await select("a");
+    expect(pressed()).toBe("true");
+    await select(null);
+    expect(tab().isOpen()).toBe(false);
+    expect(pressed()).toBe("false");
+  });
+
+  it("startBodies: Orbit, each body on offer once, then the doc's own if nothing here offers it", () => {
+    const collected = [
+      { id: "walk", value: [{ id: "walk", label: "Walk", enter() {} }] },
+      { id: "seats", value: [{ id: "seat", label: "Seated", enter() {} }, { id: "walk", label: "Again" }] },
+      { id: "junk", value: "nope" },
+    ];
+    expect(startBodies(collected)).toEqual([
+      ["orbit", "Orbit"],
+      ["walk", "Walk"],
+      ["seat", "Seated"],
+    ]);
+    expect(startBodies(collected, "aboard").at(-1)).toEqual(["aboard", "aboard"]);
+    expect(startBodies([], "orbit")).toEqual([["orbit", "Orbit"]]);
+  });
+
+  it("Starts in writes view.start.body (orbit is no key), drops the place, keeps the home; an edit undo takes back", async () => {
+    const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", enter: () => null }] }) } };
+    s = await mountStage({
+      extensions: [INSPECTOR, OPENED, walker],
+      doc: { objects: {}, order: [], view: { start: { body: "seat", place: "p1", home: { position: [1, 1, 1], target: [0, 0, 0] } } } },
+    });
+    await settle();
+    const radios = () => [...s.instance("scene.inspector").tab.body.querySelectorAll("input[data-body]")];
+    expect(radios().map((r) => [r.dataset.body, r.checked])).toEqual([
+      ["orbit", false],
+      ["walk", false],
+      ["seat", true],
+    ]);
+    const pick = (r) => {
+      r.checked = true;
+      r.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    pick(radios()[1]);
+    expect(s.doc().view.start).toEqual({ body: "walk", home: { position: [1, 1, 1], target: [0, 0, 0] } });
+    pick(radios()[0]);
+    expect(s.doc().view.start).toEqual({ home: { position: [1, 1, 1], target: [0, 0, 0] } });
+    expect(s.local.get().edits.undo).toBe("Starts in");
+    s.api("scene.inspector").undo();
+    expect(s.doc().view.start).toEqual({ body: "walk", home: { position: [1, 1, 1], target: [0, 0, 0] } });
+    s.api("scene.inspector").undo();
+    expect(s.doc().view.start).toEqual({ body: "seat", place: "p1", home: { position: [1, 1, 1], target: [0, 0, 0] } });
   });
 });

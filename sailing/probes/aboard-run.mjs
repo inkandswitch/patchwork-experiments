@@ -287,11 +287,12 @@ try {
   check("1: every piece under the table, the table under the hull, locked", shape.pieces === 63 && shape.piecesUnderTable === 63 && shape.tableParent === ids.hull && shape.tableLocked, shape);
   // titled by the game and its deck, never by the scene it was set down in (tabletop/GAME-FORMAT.md)
   check("1: a secure deck, named for the game, not the ship", shape.deckType === "secure-deck" && shape.deckTitle === "Lost Cities: Deck", { deckType: shape.deckType, deckTitle: shape.deckTitle });
-  check("1: in play, sail down, anchor down, a home view over the cockpit", shape.activity === "play" && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { activity: shape.activity, sail: shape.sail, anchor: shape.anchor, home: shape.home });
+  check("1: it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", shape.start === "seat" && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { start: shape.start, sail: shape.sail, anchor: shape.anchor, home: shape.home });
   check("1: the seats' views are in the table's frame", Object.values(shape.seats ?? {}).length === 2 && Object.values(shape.seats).every((s) => s.camera?.in === ids.table), shape.seats);
-  check("A is playing", await until("activity('a') === 'play'", 10_000), await P("activity('a')"));
+  // (view.start is read once, on arrival: A, who made it, is still where the template put them)
+  check("A, who made it, is where it left them: orbit", (await P("bodyLabel('a')")) === "Orbit", await P("bodyLabel('a')"));
   await P("openB()");
-  check("B opens it in play", await until("activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000), { b: await P("activity('b')") });
+  check("B arrives watching from a seat (view.start), both pickers up", await until("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000), { b: await P("bodyLabel('b')") });
   check("everything loads in both views", await until("loaded('a').loaded === __p.loaded('a').total && __p.loaded('b').loaded === __p.loaded('b').total", 120_000), { a: await P("loaded('a')"), b: await P("loaded('b')") });
   mark("loaded");
 
@@ -450,8 +451,10 @@ try {
       const items = await P("menu('a')");
       check("12: the menu on a card, seated and playing, has Select first", items[0]?.label === "Select" && !items[0].disabled, items.map((i) => i.label));
       if (items[0]?.label === "Select") await b.click(items[0].x, items[0].y);
-      // (extensions hear the selection at the stage's next flush: a frame, slow on two software-rendered views)
+      // (extensions hear the selection at the stage's next flush: a frame, slow on two software-rendered views;
+      // and the inspector's drawer tab opens with it, so the canvas narrows: let it settle before aiming)
       await until(`halo('a')?.id === ${J(target)}`, 5000);
+      await sleep(800);
       const halo = await P("halo('a')");
       check("12: Select selects it, and its halo is on it, in its parent's frame", (await P("selected('a')")) === target && halo?.id === target && halo.parent === (await P(`parentOf(${J(target)})`)), { selected: await P("selected('a')"), halo, why: await P("haloWhy('a')") });
       const h0 = await P("haloAt('a', 0)"), h1 = await P("haloAt('a', 0, 0.02)");

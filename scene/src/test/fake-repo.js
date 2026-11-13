@@ -31,6 +31,32 @@ export function fakeHead() {
   return `H${"x".repeat(48 - tail.length)}${tail}`; // unique per call
 }
 
+/**
+ * Patches from one plain value to another, shaped as Automerge's ({ action,
+ * path }): a put or del at each key that differs, recursing into maps; a
+ * list that differs is one put at each index that differs (and a del past
+ * the new end). Enough for what reads a patch's path.
+ */
+export function diffPatches(a, b, path = []) {
+  const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Uint8Array);
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const out = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (i >= b.length) out.push({ action: "del", path: [...path, i] });
+      else if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) out.push({ action: "put", path: [...path, i], value: b[i] });
+    }
+    return out;
+  }
+  if (!isMap(a) || !isMap(b)) return JSON.stringify(a) === JSON.stringify(b) ? [] : [{ action: b === undefined ? "del" : "put", path, value: b }];
+  const out = [];
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (!(k in b)) out.push({ action: "del", path: [...path, k] });
+    else if (!(k in a)) out.push({ action: "put", path: [...path, k], value: b[k] });
+    else out.push(...diffPatches(a[k], b[k], [...path, k]));
+  }
+  return out;
+}
+
 export class FakeHandle {
   constructor(url, doc) {
     this.url = url;
@@ -58,10 +84,16 @@ export class FakeHandle {
   heads() {
     return [...this._heads];
   }
-  change(fn) {
+  change(fn, opts = {}) {
+    const before = this._doc;
     const draft = structuredClone(this._doc);
     fn(draft);
     this._doc = draft;
+    // like Automerge's: a change's patches, with the doc before and after (only when it changed something)
+    if (typeof opts.patchCallback === "function") {
+      const patches = diffPatches(before, draft);
+      if (patches.length) opts.patchCallback(patches, { before, after: draft });
+    }
     this._heads = [fakeHead()];
     this._history.set(this._heads[0], structuredClone(draft));
     this.emit("change", { handle: this, doc: this._doc });

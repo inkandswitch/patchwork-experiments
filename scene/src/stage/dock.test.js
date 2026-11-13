@@ -1,11 +1,11 @@
 // The drawer (dock.js): the pure model over every sequence of up to five
 // acts on three keys, and the DOM that follows it.
 import { describe, it, expect, vi } from "vitest";
-import { EMPTY, createDrawer, docked, shown, shownOf, undocked } from "./dock.js";
+import { EMPTY, createDrawer, docked, dockedBehind, shown, shownOf, undocked } from "./dock.js";
 import { EMBED_ATTR } from "../embed.js";
 
 const KEYS = ["a", "b", "c"];
-const ACTS = { docked, shown, undocked };
+const ACTS = { docked, dockedBehind, shown, undocked };
 const STEPS = Object.keys(ACTS).flatMap((act) => KEYS.map((key) => [act, key]));
 
 /** What the model must say, kept the obvious way: a list of tabs, and a history of what was shown. */
@@ -14,6 +14,12 @@ function reference(ref, [act, key]) {
   if (act === "docked") {
     if (!tabs.includes(key)) tabs = [...tabs, key];
     history = [...history, key];
+  } else if (act === "dockedBehind") {
+    // the least recently shown: shown only when it's the only one
+    if (!tabs.includes(key)) {
+      tabs = [...tabs, key];
+      history = [key, ...history];
+    }
   } else if (act === "shown") {
     if (tabs.includes(key)) history = [...history, key];
   } else {
@@ -30,6 +36,8 @@ function wrong(before, [act, key], s, ref) {
   if (new Set(s.order).size !== s.order.length) return "a key docked twice";
   if (!same([...s.recent].sort(), [...s.order].sort())) return "recent and order differ";
   if (act === "docked" && shownOf(s) !== key) return "docking didn't show it";
+  if (act === "dockedBehind" && before.order.length && shownOf(s) !== shownOf(before)) return "docking behind took over what was shown";
+  if (act === "dockedBehind" && !s.order.includes(key)) return "docking behind didn't dock it";
   if (act === "undocked" && s.order.includes(key)) return "undocking left it";
   if (act === "shown" && !before.order.includes(key) && s !== before) return "showing an undocked key changed something";
   if (!same(s.order.filter((k) => k !== key), before.order.filter((k) => k !== key))) return "the others' tab order changed";
@@ -41,7 +49,7 @@ function wrong(before, [act, key], s, ref) {
 }
 
 describe("the drawer's model, exhaustively", () => {
-  it("over every sequence of ≤5 of dock, show and undock on three keys: tabs in docking order, the last shown still docked is shown, and nothing else", () => {
+  it("over every sequence of ≤5 of dock, dock behind, show and undock on three keys: tabs in docking order, the last shown still docked is shown, and nothing else", () => {
     const failures = [];
     let n = 0;
     // depth first, so each prefix is computed once
@@ -57,7 +65,7 @@ describe("the drawer's model, exhaustively", () => {
       }
     })(EMPTY, { tabs: [], history: [] }, []);
     expect(failures).toEqual([]);
-    expect(n).toBe(1 + 9 + 81 + 729 + 6561 + 59049);
+    expect(n).toBe(1 + 12 + 144 + 1728 + 20736 + 248832);
   });
 });
 
@@ -144,5 +152,34 @@ describe("the drawer's DOM", () => {
     expect(tabNames(drawer)).toEqual(["uno", "two"]);
     expect(drawer.state()).toEqual({ order: [a, b], shown: a });
     expect(drawer.el.querySelectorAll(".stage-drawer-pane")).toHaveLength(2);
+  });
+});
+
+describe("the drawer's width", () => {
+  it("is a side panel's while the stage's own chrome (embed: false) is shown, and a docked editor's room otherwise", () => {
+    const parent = document.createElement("div");
+    const drawer = createDrawer({ parent });
+    const chrome = document.createElement("div");
+    const editor = document.createElement("div");
+    drawer.dock("x", chrome, { title: "Inspector", embed: false });
+    expect(drawer.el.hasAttribute("data-narrow")).toBe(true);
+    expect(chrome.parentElement.hasAttribute("data-stage-embed")).toBe(false);
+    drawer.dock("y", editor, { title: "Shape" });
+    expect(drawer.el.hasAttribute("data-narrow")).toBe(false);
+    drawer.dock("x", chrome, { title: "Inspector", embed: false });
+    expect(drawer.el.hasAttribute("data-narrow")).toBe(true);
+  });
+});
+
+describe("the drawer tells what's docked and shown", () => {
+  it("onChange({ tabs, shown }) on every dock, show and close", () => {
+    const seen = [];
+    const drawer = createDrawer({ parent: document.createElement("div"), onChange: (d) => seen.push(JSON.stringify(d)) });
+    const a = document.createElement("div");
+    const b = document.createElement("div");
+    const closeA = drawer.dock("x", a, { title: "A" });
+    drawer.dock("y", b, { title: "B", show: false });
+    closeA();
+    expect(seen).toEqual([JSON.stringify({ tabs: ["A"], shown: "A" }), JSON.stringify({ tabs: ["A", "B"], shown: "A" }), JSON.stringify({ tabs: ["B"], shown: "B" })]);
   });
 });

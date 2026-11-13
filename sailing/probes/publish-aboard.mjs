@@ -20,7 +20,7 @@
 // bin's Card table in her cockpit and Lost Cities on the table (api.part),
 // and a home view over the cockpit is set. It checks:
 // - every piece is under the table and the table under the hull; the deck
-//   is a secure-deck (card-table is installed); it opens in play, with the
+//   is a secure-deck (card-table is installed); it starts people at the table (the seat body), with the
 //   sail down and the anchor down; each seat's view is in the table's frame;
 // - every object shows one of the scene's own files;
 // - with A and B seated, the secure deck reaches "playing" and each hand's
@@ -116,7 +116,7 @@ try {
   const s = await P("shape()");
   check("every piece under the table, the table under the hull", s.pieces === 63 && s.piecesUnderTable === 63 && s.tableParent === ids.hull, s);
   check("a secure deck", s.deckType === "secure-deck", s.deckType);
-  check("in play, sail down, anchor down, a home view over the cockpit", s.activity === "play" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { activity: s.activity, sail: s.sail, anchor: s.anchor, home: s.home });
+  check("it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", s.start === "seat" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, sail: s.sail, anchor: s.anchor, home: s.home });
   check("each seat's view is in the table's frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera?.in === ids.table), s.seats);
   // the scene is titled as asked; its deck by the game and the deck, never by the scene (tabletop/GAME-FORMAT.md)
   check(`titled “${TITLE}”, its deck “Lost Cities: Deck”`, s.title === TITLE && s.deckTitle === "Lost Cities: Deck", { title: s.title, deck: s.deckTitle });
@@ -128,7 +128,7 @@ try {
   check("every object shows one of the scene's own files", strays.length === 0, strays);
   snapshot = snap;
   await P("openB()");
-  check("B opens it in play", await until("activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000));
+  check("B arrives watching from a seat (view.start)", await until("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000));
   await P("pick('a', 'p1')");
   await P("pick('b', 'p2')");
   const viewers = await P("viewers");
@@ -213,7 +213,7 @@ async function publish(snap) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
         const under = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.card"]).length;
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-        else if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
+        else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
         else if (!hull) problem = "came back without the ship";
         else if (under !== 60) problem = `came back with ${under} cards`;
         else if (got.claims) problem = "came back with claims";

@@ -2,38 +2,15 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import inspector from "./inspector.js";
+import { openTabs } from "../test/tabs.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };
 
-// A stand-in for scene.sidebar: mounts every panel in a right edge and updates it each flush.
-const SIDEBAR = {
-  meta: { id: "t.sidebar" },
-  module: {
-    create(api) {
-      const edge = api.edge("right");
-      const mounted = new Map();
-      return {
-        update(scene, local) {
-          for (const { value } of api.collect("panels")) {
-            for (const p of value ?? []) {
-              if (!mounted.has(p.id)) {
-                const body = document.createElement("div");
-                body.className = "panel-body";
-                body.dataset.panel = p.id;
-                edge.append(body);
-                mounted.set(p.id, p.mount(body) ?? {});
-              }
-              mounted.get(p.id).update?.(scene, local);
-            }
-          }
-        },
-      };
-    },
-  },
-};
+// The viewer opened the Inspector from the toolbar: it stays open, on the scene with nothing selected.
+const OPENED = openTabs(["scene.inspector:inspector"], { once: true });
 
 const DECK = "automerge:2j9vHjM4kfgV7xYGVhQjNzr2Ucqh";
 
@@ -45,8 +22,6 @@ const GAME = {
   meta: {
     id: "t.game",
     traits: ["t.target", "t.zone", "t.hidden", "t.seats", "t.level"],
-    // laid out while editing, and played: a scene with its traits offers play
-    activities: ["edit", "play"],
     describes: {
       "t.target": { name: "Target", on: "object", blurb: "Can be shot", fields: [{ key: "points", label: "Points", kind: "integer", default: 10 }] },
       "t.zone": {
@@ -82,13 +57,13 @@ afterEach(() => {
 
 async function mount({ objects = {}, doc = {}, extensions = [GAME] } = {}) {
   s = await mountStage({
-    extensions: [SIDEBAR, INSPECTOR, ...extensions],
+    extensions: [INSPECTOR, OPENED, ...extensions],
     doc: { objects, order: Object.keys(objects), ...doc },
   });
   return s;
 }
 
-const body = () => s.root.querySelector('.panel-body[data-panel="inspector"]');
+const body = () => s.instance("scene.inspector").tab.body;
 const $ = (sel) => body().querySelector(sel);
 const behaviour = (key) => $(`.behaviour[data-trait="${key}"]`);
 const picker = () => $(".behaviour-add");
@@ -256,36 +231,37 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
   });
 
-  it("Starts in: the activities the scene offers, written to doc.view.activity, with a note about each viewer's own", async () => {
-    await mount({ objects: {} });
-    const radio = (a) => $(`.starts-in input[data-activity="${a}"]`);
+  it("Starts in: Orbit and the bodies on offer, written to doc.view.start.body, read once (this viewer stays where they are)", async () => {
+    // a game whose trait brings a body
+    const BODY_GAME = { meta: { ...GAME.meta, id: "t.bodygame" }, module: { create: () => ({ bodies: [{ id: "t.stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }] }) } };
+    await mount({ objects: {}, extensions: [BODY_GAME] });
+    const radio = (a) => $(`.starts-in input[data-body="${a}"]`);
     const labels = () => [...$(".starts-in").querySelectorAll("label")].map((l) => l.textContent.trim());
-    // a plain scene offers only editing
-    expect(labels()).toEqual(["Edit"]);
-    expect(radio("edit").checked).toBe(true);
-    expect($(".starts-in-note").textContent).toMatch(/Editing is all this scene offers/);
-    // the game's trait makes play a choice
+    // a plain scene: only orbit
+    expect(labels()).toEqual(["Orbit"]);
+    expect(radio("orbit").checked).toBe(true);
+    expect($(".starts-in-note").textContent).toMatch(/Orbit is the only body here/);
+    // the game's trait brings its body: a choice
     s.change((d) => {
       d.traits["t.level"] = {};
     });
     await settle();
-    expect(labels()).toEqual(["Edit", "Play"]);
-    expect(radio("edit").checked).toBe(true);
-    expect($(".starts-in-note").textContent).toMatch(/Each viewer can switch for themselves/);
-    await fire(radio("play"), true);
-    expect(s.doc().view.activity).toBe("play");
-    expect(radio("play").checked).toBe(true);
-    // it's where people start: this viewer, already here, stays editing
-    expect(s.local.get().activity).toBe("edit");
-    expect(running()).toContain("scene.inspector");
-    await fire(radio("edit"), true);
-    expect("activity" in s.doc().view).toBe(false);
+    expect(labels()).toEqual(["Orbit", "Stroll"]);
+    expect(radio("orbit").checked).toBe(true);
+    expect($(".starts-in-note").textContent).toMatch(/Each viewer can change body for themselves/);
+    await fire(radio("t.stroll"), true);
+    expect(s.doc().view.start).toEqual({ body: "t.stroll" });
+    expect(radio("t.stroll").checked).toBe(true);
+    // it's where people start: this viewer, already here, stays in orbit
+    expect(s.local.get().body.id).toBe("orbit");
+    await fire(radio("orbit"), true);
+    expect(s.doc().view.start).toEqual({});
     // a peer's change shows
     s.change((d) => {
-      d.view.activity = "play";
+      d.view.start.body = "t.stroll";
     });
     await settle();
-    expect(radio("play").checked).toBe(true);
+    expect(radio("t.stroll").checked).toBe(true);
   });
 });
 

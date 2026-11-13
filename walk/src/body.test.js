@@ -85,7 +85,7 @@ describe("the walk body", () => {
     expect(b).toMatchObject({ id: "walk", label: "Walk", keys: WALK_KEYS, lock: true, reach: REACH });
     expect(b.here).toBeUndefined();
     expect(WALK_KEYS.map((k) => k.code)).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
-    expect(plugins.find((p) => p.id === "walk").describes[SPAWN].name).toBe("Spawn point");
+    expect(plugins.find((p) => p.id === "walk.spawn").describes[SPAWN].name).toBe("Spawn point");
   });
 
   it("enters at the eye, holds the camera, walks on W and stands on the floor; leaving gives it all back", () => {

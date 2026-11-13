@@ -79,8 +79,7 @@ describe("the metadata", () => {
     expect(typeof load).toBe("function");
     expect(structuredClone(rest)).toEqual(rest);
     expect(meta).toMatchObject({ type: "scene:extension", id: "traversal", traits: [KEY] });
-    expect(meta.activities).toBeUndefined();
-    expect(meta.requires).toBeUndefined();
+    for (const k of ["activities", "requires", "always", "general"]) expect(k in meta).toBe(false);
     expect(meta.describes[KEY].fields.map((x) => [x.key, x.kind])).toEqual([["to", "url"], ["verb", "string"]]);
   });
   it("loads the extension", async () => {

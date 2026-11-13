@@ -20,6 +20,8 @@ import { detachAnchor, distance } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
+import { drawerTab, tabToggle } from "./tab.js";
+import { own } from "../stage/own.js";
 
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
 export const KIND = "dimension";
@@ -246,18 +248,24 @@ export function create(api) {
     const id = typeof value.id === "string" && value.id ? value.id : api.newId("d");
     // fresh plain data: automerge won't take a value that's already in a doc
     const dim = JSON.parse(JSON.stringify({ a: value.a, b: value.b, label: value.label ?? null }));
-    api.change((d) => {
-      d.dimensions[id] = dim;
-    });
+    api.edit(
+      (d) => {
+        d.dimensions[id] = dim;
+      },
+      { label: "Add dimension" },
+    );
     select(id);
     return id;
   }
 
   function remove(id) {
     if (id == null) return;
-    api.change((d) => {
-      if (d.dimensions?.[id]) delete d.dimensions[id];
-    });
+    api.edit(
+      (d) => {
+        if (d.dimensions?.[id]) delete d.dimensions[id];
+      },
+      { label: "Delete dimension" },
+    );
     if (api.local.get().selected === dimensionRef(id)) select(null);
   }
 
@@ -408,7 +416,7 @@ export function create(api) {
     p.render();
     return {
       update(scene, local) {
-        // the sidebar may ask before this extension's own update has run this flush
+        // the tab may be updated before this extension's own update has run this flush
         if (scene && local) ensure(scene, local);
         p.render();
       },
@@ -443,18 +451,26 @@ export function create(api) {
     },
   ];
 
+  // a drawer tab the viewer opens (Dimensions in the toolbar)
+  const tab = drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel });
+  commands.push(tabToggle(tab, { id: "dimensions", name: "Dimensions", title: "The dimensions saved in this scene" }));
+
   return {
-    update,
+    update(scene, local, prev) {
+      update(scene, local, prev);
+      tab.update(scene, local);
+    },
     commands,
-    panels: [{ id: "dimensions", title: "Dimensions", mount: mountPanel }],
+    tab,
     beforeRemove(draft, ids) {
       detachEnds(draft, ids, api.scene().objects);
     },
     dispose() {
+      tab.dispose();
       clearLayer();
       panels.clear();
     },
   };
 }
 
-export default { create };
+export default own({ create });

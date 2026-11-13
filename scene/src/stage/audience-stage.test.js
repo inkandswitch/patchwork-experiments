@@ -36,7 +36,7 @@ const policy = (id, extra = {}) => ({
 });
 // something that asks: it records what it was told at every update
 const asker = (log) => ({
-  meta: { id: "t.asker", always: true },
+  meta: { id: "t.asker" },
   module: {
     create: (api) => ({
       update: () => log.push({ audience: api.audience("card"), shown: api.shown("card"), missing: api.local.get().packages.missing }),
@@ -77,8 +77,8 @@ describe("api.audience, mounted", () => {
   });
 
   it("a policy that throws is read as nobody: it hides, it never reveals", async () => {
-    const broken = { meta: { id: "t.broken", always: true }, module: { create: () => ({ audience: () => () => { throw new Error("boom"); } }) } };
-    const worse = { meta: { id: "t.worse", always: true }, module: { create: () => ({ audience: () => { throw new Error("bang"); } }) } };
+    const broken = { meta: { id: "t.broken" }, module: { create: () => ({ audience: () => () => { throw new Error("boom"); } }) } };
+    const worse = { meta: { id: "t.worse" }, module: { create: () => ({ audience: () => { throw new Error("bang"); } }) } };
     vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const bad of [broken, worse]) {
       const s = await mount({ extensions: [policy("t.faceup"), bad, asker([])], doc: { objects: { card: card({ "t.faceup": { show: "all" } }) }, order: ["card"] }, viewerId: A });
@@ -90,7 +90,7 @@ describe("api.audience, mounted", () => {
 
   it("asks each policy once per snapshot, with the snapshot (pure in the doc)", async () => {
     let calls = 0;
-    const counted = { meta: { id: "t.counted", always: true }, module: { create: () => ({ audience: (scene) => (calls++, (oid) => (scene.objects[oid] ? { show: "all" } : null)) }) } };
+    const counted = { meta: { id: "t.counted" }, module: { create: () => ({ audience: (scene) => (calls++, (oid) => (scene.objects[oid] ? { show: "all" } : null)) }) } };
     const s = await mount({ extensions: [counted, asker([])], doc: { objects: { card: card({}) }, order: ["card"] }, viewerId: A });
     await settle();
     const api = s.api("t.asker");
@@ -181,7 +181,7 @@ describe("unknown while a listed package is missing", () => {
 
 describe("the veil", () => {
   const HINT = { bounds: { min: [-0.028, 0, -0.0435], max: [0.028, 0.0012, 0.0435] } };
-  const lens = (state) => ({ meta: { id: "t.lens", always: true }, module: { create: (api) => ((state.api = api), { looks: () => state.looks }) } });
+  const lens = (state) => ({ meta: { id: "t.lens" }, module: { create: (api) => ((state.api = api), { looks: () => state.looks }) } });
 
   it("a veiled object loads nothing of its own, is drawn from its hint, and loads again when the veil goes", async () => {
     const repo = new FakeRepo();
@@ -212,7 +212,7 @@ describe("the veil", () => {
 
   it("a later lens's `veil: false` lifts it; a veil beats a source in the same look", async () => {
     const state = { looks: new Map([["card", { veil: true, sourceUrl: "automerge:2Facexxxxabcdefghijkmnopqr" }]]) };
-    const lift = { meta: { id: "t.lift", always: true }, module: { create: () => ({ looks: () => state.lift ?? null }) } };
+    const lift = { meta: { id: "t.lift" }, module: { create: () => ({ looks: () => state.lift ?? null }) } };
     const s = await mount({ extensions: [lens(state), lift], doc: { objects: { card: object({ name: "Card", hint: HINT }) }, order: ["card"] } });
     await settle();
     expect(s.debug.veils().has("card")).toBe(true);

@@ -10,6 +10,7 @@ import { emptyScene } from "../test/empty-scene.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import { imported, resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
+import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
 
 const HEAD = "H".repeat(48);
@@ -48,6 +49,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const s of mounted) s.unmount();
   mounted = [];
+  vi.restoreAllMocks();
 });
 
 // ─── reconcile ──────────────────────────────────────────────────────────────
@@ -280,6 +282,34 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     const again = await mount({ handle: s.handle, repo });
     await until(() => state(again).ask.length === 2);
     expect(imported).toEqual([]);
+  });
+
+  it("arriving waits on the prompt: a body whose package is accepted long after opening (> ARRIVE_WAIT_MS) is still entered; declined, nothing is", async () => {
+    let t = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => t);
+    const SEATS = folder(repo, "@tiny/seats").url;
+    const seat = { id: "seat", label: "Seat", lock: false, enter: () => ({ input: {}, eye: () => null }) };
+    servePackage(SEATS, { plugins: [{ type: "scene:extension", id: "t.seats", name: "Seats", traits: ["t.seats"], load: async () => ({ create: () => ({ bodies: [seat] }) }) }] });
+    const doc = { traits: { "t.seats": {} }, packages: [{ url: SEATS }], view: { start: { body: "seat" } } };
+    const s = await mount({ extensions: [PROMPT], repo, doc });
+    await until(() => state(s).ask.length === 1);
+    t = ARRIVE_WAIT_MS + 5_000;
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    expect(s.local.get().body.id).toBe("orbit");
+    await press(s, "load");
+    await until(() => running(s).includes("t.seats"));
+    await settle();
+    expect(s.local.get().body.id).toBe("seat");
+    // another visit, saying not now: orbit, and the arrival waits on nothing
+    localStorage.clear();
+    resetPackages();
+    const d = await mount({ extensions: [PROMPT], repo, doc });
+    await until(() => state(d).ask.length === 1);
+    await press(d, "dismiss");
+    await settle();
+    expect(d.local.get().body.id).toBe("orbit");
+    expect(running(d)).not.toContain("t.seats");
   });
 
   it("a package accepted before loads without asking; one that wasn't is still asked about", async () => {

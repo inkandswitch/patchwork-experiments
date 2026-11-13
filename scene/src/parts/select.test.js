@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { PLAY, mountStage, object, until, settle } from "../test/stage-harness.js";
+import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 
@@ -288,14 +288,12 @@ describe("scene.select: commands", () => {
   });
 });
 
-describe("scene.select: in every activity, by body", () => {
-  it("in play it keeps running and keeps the selection; in orbit a plain click selects, as Select does", async () => {
-    await mount({ extensions: [PLAY] });
+describe("scene.select: by body", () => {
+  it("in orbit a plain click selects, as Select does", async () => {
+    await mount();
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
-    await s.activity("play");
-    expect(s.instance("scene.select")).toBeTruthy();
     expect(sel()).toBe("a");
     hitOn("b");
     s.click(20, 20);

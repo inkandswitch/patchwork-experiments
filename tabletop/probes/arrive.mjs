@@ -72,7 +72,7 @@ try {
   check("the scene's traits are four packages' own (the scene's carry on its pieces, the seats', the table's, the keeper's), and no old ones", J(traits) === J(["card-table.kept", "scene.carry", "seats", "tabletop.card", "tabletop.zone"]), traits);
   check("A's stage lists the packages the scene is made of: the scene's, the seats', tabletop's and the keeper's", await fUntil("a", `f.listed().length === 4`, 10_000) && J(sorted((await F("a", "listed")).map((u) => name[u]))) === J(["card-table", "scene", "seats", "tabletop"]), (await F("a", "listed")).map((u) => name[u] ?? u));
   check("…and names the scene package as the doc's suggested import", (await F("a", "suggested")) === urls.scene, await F("a", "suggested"));
-  check("A is playing, with the table and the keeper running", await fUntil("a", `f.activity()?.current === "play" && ["tabletop", "tabletop.rule", "card-table", "seats"].every((id) => f.running().includes(id))`, 10_000), { activity: await F("a", "activity"), running: await F("a", "running") });
+  check("A is at the table (the seat body: view.start), with the table and the keeper running", await fUntil("a", `f.bodyLabel() != null && ["tabletop", "card-table", "seats"].every((id) => f.running().includes(id))`, 10_000), { body: await F("a", "bodyLabel"), running: await F("a", "running") });
   check("A's deck waits for players", await fUntil("a", `f.hud().some((t) => /is shuffled once someone sits as Player 1 and Player 2/.test(t))`, 10_000), await F("a", "hud"));
 
   // ── B: has only the scene package; opens the URL ──
@@ -114,12 +114,12 @@ try {
   check("the card's Load button is on screen in B's view", !!at, at);
   await b.click(at.x, at.y);
   mark("B clicked Load");
-  const loaded = await fUntil("b", `["tabletop", "tabletop.rule", "card-table"].every((id) => f.running().includes(id))`, 30_000);
+  const loaded = await fUntil("b", `["tabletop", "card-table"].every((id) => f.running().includes(id))`, 30_000);
   check("B's stage starts the table, its rule and the keeper", loaded, await F("b", "running"));
   const imported = await F("b", "imported");
   check("both packages were imported, each at its heads, and nothing else", imported.length === 2 && J(sorted(imported.map((u) => name[u.split("#")[0]]))) === J(["card-table", "tabletop"]) && imported.every((u) => u.includes("#")), imported);
   check("the card is gone, and nothing is missing any more", await fUntil("b", `(!f.card() || f.card().hidden) && f.packages().missing === false`, 5000), { card: await F("b", "card"), packages: await F("b", "packages") });
-  check("B lands in play", await fUntil("b", `f.activity()?.current === "play"`, 5000), await F("b", "activity"));
+  check("B arrives at the table (the seat body: view.start)", await fUntil("b", `/Watching|Seated/.test(f.bodyLabel() ?? "")`, 15_000), await F("b", "bodyLabel"));
   check("B's stage knows who may see what now", await fUntil("b", `f.audiences().unknown === 0`, 5000), await F("b", "audiences"));
 
   // ── the joint shuffle completes, and deals 8 each ──

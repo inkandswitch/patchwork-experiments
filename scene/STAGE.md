@@ -5,12 +5,12 @@ everything that adds to it (**extensions**). [DESIGN.md](DESIGN.md) says why;
 this says exactly what. It is plain data and functions throughout. No
 extension imports another, and the stage knows no extension by name.
 
-It describes the code as it is after build steps 1–7 of
+It describes the code as it is after build steps 1–8 of
 [COMPOSITION.md](COMPOSITION.md)'s build order: nearness, `api.dock`,
 selection and carrying, content kinds, seats in their own package, bodies
-and the held tool, and the clock. Step 8 hasn't happened: **activities**
-still decide part of what runs, and this note says where. Where it is going
-is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
+and the held tool, the clock, and the end of activities (what runs is the
+doc's traits, nothing else) with undo of the stage's own edits. Where it is
+going is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
 
 ## Words
 
@@ -20,7 +20,7 @@ is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Part** | A `scene:part` plugin: something to put into a scene (a mast, a buoy, a target), offered in the editor's parts bin. |
-| **Surface** | An extension that presents others' contributions (toolbar, sidebar, menu, key map, use prompt), read with `api.collect(name)`. |
+| **Surface** | An extension that presents others' contributions (toolbar, menu, key map, use prompt), read with `api.collect(name)`. |
 | **Contribution** | A field on an extension's instance that some other extension may collect. The stage reads only the ones listed under "instance". |
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
 | **Body** | Where a viewer is in the world and how they move and look: orbit (the stage's own, always at the bottom), walk (`walk/`), a seat (`seats/`), sailing's `aboard` and `station`. One stack per view; the top one is current, and its eye and reach are what verbs are measured from. Contributed as `bodies`. |
@@ -31,8 +31,9 @@ is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where extensions dock panes (`api.dock`): Camber's Shape, a die's panel, a bag's. |
-| **Activity** | `"edit"` or `"play"`: one value per view, never in the doc, and the part of the old modes still in the code. An extension may say which activities it takes part in, and then runs only in those: the editor's chrome is edit's; the use prompt, arena's gun and sailing's physics are play's. Build step 8 removes it (TOOLS.md §1). |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (while something is selected), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
+| **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
+| **Edit** | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
 ## Three places for state
 
@@ -53,7 +54,10 @@ These rules follow from that:
 - **The doc may suggest a default.** It does so through `doc.view.*`, and a
   viewer's local choice overrides it. Read a preference with
   `api.pref(key, fallback)`, which returns
-  `local.prefs[key] ?? doc.view[key] ?? fallback`.
+  `local.prefs[key] ?? doc.view[key] ?? fallback`. Display prefs (`units`,
+  `grid`, `axes`, `bounds`, `snap`) stay live this way; `view.start` is the
+  one key that isn't a pref: where people start, read once on arrival
+  ("Arriving").
 - **Ids are opaque.** Any id in doc data may be missing at any time, because
   concurrent edits merge. Readers ignore references to missing objects.
   Writers set fields; they never replace an object's whole map (or its
@@ -78,8 +82,8 @@ this view and by the stage.
 | `status` | stage | `{ [id]: { state, reason?, text, title } }` load and build state. `text` and `title` are for people; code branches on `state` and, for `"stale"`, `reason`: `"deps"`, `"contested"`, `"pinned"` or `"out-of-date"` |
 | `theme` | stage | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | stage, via `notify` | `[{ id, text, kind, at }]` |
-| `activity` | stage (on joining, and after a template), activity surfaces | what this viewer chose to do: `"edit"`, `"play"`, …; null until the stage has the doc. Not persisted. See "Activities" (until build step 8) |
-| `activities` | stage | `{ current, available }`: the activity that runs and the ones this scene offers. **Read the activity here**: `current` is `activity` when it's available, else `"edit"` (until build step 8) |
+| `edits` | stage | `{ undo, redo }`: the labels of the steps Undo and Redo would take in the focus doc ("Move", "Delete"), or null. See "Undo" |
+| `drawer` | stage | `{ tabs, shown }`: the drawer's tabs by title, in docking order, and the one shown (null with none docked), so a surface showing whether a tab is open (the toolbar's Objects, Inspector) hears when it closes |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | stage | `{ ask, loading, failed, missing }`: the listed packages this viewer doesn't have, each `{ url, name }` (`failed` with `error`), and `missing`: whether any listed package isn't here (whatever was answered about it; true until that is known). See "Packages" and "Audience" |
 | `clock` | stage | the doc's world time as the clock chip shows it (see "World time"), or null for a doc with no process anyone here knows of: `{ running, by, computer: { viewer, session, mine } \| null, stalled, able, why }` |
@@ -101,11 +105,6 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   traits?:     string[],              // active when the scene or any object has one of these trait keys
   drops?:      string[],              // may lay out a dropped doc of this datatype ("*": any)
   describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
-  // until build step 8 (TOOLS.md §1):
-  activities?: string[],              // the activities it takes part in; absent = every one
-  always?:     boolean,               // runs in every scene: general when the doc lacks its traits
-  general?:    false,                 // no traits, yet not general: it runs only when something requires it
-  requires?:   string[],              // ids that run whenever this does
   …                                   // any other plain data: the stage ignores it, others may read it from
                                       // the registry (a keeper's `keeper: "plain"`, the seats' `roster: true`: "Conventions")
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>, … } } }
@@ -120,11 +119,11 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
 ```
 
 **The running set** is a pure function of the registry's metadata and the
-doc, and, until build step 8, this viewer's activity. It is computed by
-`activeSet` in `src/stage/activation.js`. The stage recomputes it after every
-doc change and every switch of activity, starts what's new and stops what's
-gone. Nothing else changes it: not the body, the held tool, the selection,
-the clock or where anyone stands.
+doc (TOOLS.md §1, H1). It is computed by `activeSet(metas, doc)` in
+`src/stage/activation.js`. The stage recomputes it after every doc change
+and every registry change, starts what's new and stops what's gone. Nothing
+else changes it: not the body, the held tool, the selection, prefs, the
+clock or where anyone stands.
 
 An extension runs when **it has a reason of its own**, which also gives its
 scope:
@@ -133,32 +132,24 @@ scope:
 |---|---|---|
 | `scene` | a scene trait | step 3, every event: at its nearest holder, which is the scene unless the hit chain reaches one of its objects first |
 | `objects` | only object traits | step 3, and only when the event's hit chain reaches one of its objects (one with its trait) |
-| `general` | it declares no traits at all (a general-purpose part: the key map, the menu, notices, the walk body), or `always` | step 4 |
+| `general` | it declares no traits at all (a general-purpose part: the key map, the menu, notices, the inspector, the walk body) | step 4 |
 
 An extension that declares traits the doc doesn't have has no reason, and
-doesn't run. A doc reason comes before `general`: an `always` extension
-whose traits the doc has is `scene` or `objects`. Carrying is the plainest
-case: `scene.carry` declares the `scene.carry` trait, so it runs with object
-scope wherever the doc has something that can be picked up, and nowhere
-else.
-
-**Until build step 8** three more things decide it (TOOLS.md §1 removes
-them, leaving `activeSet(metas, doc)`):
-- **the activity**: an extension that declares `activities` runs only in
-  those (see "Activities" below); one that declares none runs in every one;
-- **`general: false`**: no traits, yet no reason either. It runs only when
-  something running requires it (the use prompt, `scene.use`, which a game
-  brings into play);
-- **`requires`** pulls the required extensions in whenever the requirer
-  runs, whatever *their* activities (a table in play brings the use prompt,
-  the key map and the menu). It never lends scope: a required extension's
-  own reasons decide it, and with none it's `general`.
+doesn't run. Carrying is the plainest case: `scene.carry` declares the
+`scene.carry` trait, so it runs with object scope wherever the doc has
+something that can be picked up, and nowhere else. An extension that exists
+only for its `drops` (doom's) declares the marker trait its layout writes
+(`doom.map`), so it runs, doing nothing, where what it laid out is; and a
+trait some body reads (the walk body's spawn points, `walk.spawn`) has a
+part of its own that declares it (`walk.spawn`, in `walk/`), so a doc with
+one calls for that package by the same rule. Nothing else decides: there
+are no activities, no `requires`, no `always` and no `general: false`
+(build step 8 removed them; a meta that still says one is ignored).
 
 **Order:**
 - `scene` extensions, in registry order;
 - then `objects` extensions, in registry order;
-- then `general` extensions, in registry order;
-- each extension's `requires` follow it.
+- then `general` extensions, in registry order.
 
 Registry order is the order plugins were registered in, so a package's
 general extensions run in the order its `plugins` list gives them (the
@@ -167,35 +158,17 @@ reach them). This order (`local.running`) is the only order anything
 combines in: input, lenses, `collect`, landing rules. The order extensions
 happened to start in never counts.
 
-**Activities** (until build step 8). What a viewer is doing is one value
-per view, never persisted and never in the doc. It is what is left of modes:
-the editor's chrome (toolbar, sidebar, outline, inspector, measure, grid,
-axes, bounds, the parts bin, copy and paste) declares `["edit"]`; the use
-prompt, arena's play (its gun) and sailing's crew and physics declare
-`["play"]`; a table, dice and a bag declare both (some of their verbs apply
-only in play); selection, the halo, carry, the menu, the key map, the walk
-and seat bodies, the clock chip and every audience policy declare none, and
-so run in both. Build step 8 removes activities, after which the chrome follows
-attention (TOOLS.md §1) and editing no longer stops a sailing sim.
-
-- **Available**: `"edit"`, then every activity declared by an extension with
-  a reason of its own (a doc reason, or `general`/`always`), in registry
-  order. So a plain model offers only `"edit"`, and a scene with an arena's
-  traits offers `"edit"` and `"play"`.
-- **Joining** starts a viewer where the doc says: the first time the stage
-  has the doc, `local.activity` becomes `doc.view.activity ?? "edit"`. A later
-  change to `view.activity` (the inspector's "Starts in") moves nobody who's
-  already here.
-- **Current**: `local.activity` when it's available, else `"edit"`
-  (`currentActivity`; `availableActivities` gives the list). A choice that
-  isn't on offer yet (the arena's plugins haven't registered, a peer's undo
-  took its traits) is kept, and comes back into force when it is.
-- **One place to read it**: the stage publishes both as `local.activities` =
-  `{ current, available }`. Parts read the current activity there, never by
-  working it out from `local.activity`.
-- **Switching** is a write of `local.activity` (the switcher, `scene.activity`,
-  shows a segmented control when more than one is available). What the new
-  activity doesn't call for stops at once.
+**Chrome follows attention, never the doc** (TOOLS.md §1). Every general
+part runs in every scene, a game's included; what keeps the editor's chrome
+out of a game is that it shows only where attention asks for it. The
+inspector is a drawer tab open while something is selected (its × shuts it
+until the selection changes; the toolbar's Inspector opens it on the scene
+with nothing selected); the outline (Objects), Dimensions and Parts are
+drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
+drawn only in the orbit body (and, as display prefs, a doc may suggest them
+off: a table does). The use prompt shows attention's verbs wherever there
+are any. A part that was an edit-only verb is a verb with no mode: a bag's
+Empty out is in its menu, whoever opens it.
 
 **Drops** are not activation. To lay out a dropped document, the add
 extension calls `api.drop(info)`. That loads each module whose `drops` match
@@ -217,11 +190,32 @@ extension's) lists every registered `scene:template` from the registry's
 metadata (`name`, `icon`, `description`; nothing is loaded to offer one),
 and Blank. Choosing one calls `api.template(id)`, which loads it and runs
 `create(ctx)` with the same `ctx` a drop gets. The template writes whatever
-it needs into the doc: objects, traits, and `view.activity`. Then this
-viewer starts where the doc now says, as joining does, so an arena
-template that writes `"play"` lands its maker in the game. (Everyone joins
-in orbit: TOOLS.md's `view.start`, the body and place a scene suggests
-starting in, isn't built. An arena's Play enters the walk body at a spawn.)
+it needs into the doc: objects, traits, and `view.start`. Then this viewer
+starts where the doc now says, as arriving does (below), so an arena
+template that starts people walking at a spawn point lands its maker in the
+game.
+
+**Arriving** (TOOLS.md §2). `view.start = { body, place, home }` is where
+the doc starts people, read once, when the stage opens (and again after a
+template has run). `home` is the camera a viewer with no saved camera of
+their own opens at (`startOf`, `initialCamera`); `body` (absent: orbit) is
+entered at `place` (a spawn point's object id, a seat's id, or absent:
+`null`, the body's own "here") as soon as a running extension offers it and
+the content shown has loaded (a walker started before its floor is in falls
+through it), or `ARRIVE_WAIT_MS` (20 s) after it came on offer whatever is
+still loading. Until it's on offer the wait lasts as long as the body may
+still come: a package loading, or one asked about and accepted however much
+later (someone a table starts seated, taking their time over the prompt,
+is still seated once they say yes). The viewer entering a body first, or
+everything the doc calls for here and started (or failed to start) with no
+extension offering that body, ends the wait with nothing entered. A package
+declined or failed leaves it waiting, quietly, on the viewer. A later
+change to `view.start` moves nobody already here. The body's package is
+listed the ordinary way, by the trait its place carries (a spawn point's
+`walk.spawn` calls for `walk/`; a table's `seats` for `seats/`): nothing in
+`view.start` is looked up in the registry. A body given no place decides
+what that means: the seat body puts you back in your own seat if the doc
+seats you, else watching from the first seat's view (writing nothing).
 
 **Parts** are what you put into a scene once it's started: a mast on a hull,
 a buoy in the sea, a target in a level. A template is a way to start a
@@ -259,9 +253,10 @@ stage knows none of them.
   and the merge keeps one in `assets`: what each peer made keeps the file it
   made (two docs for one key, shown alike), and later drops use the one kept.
   Nothing deletes a file `assets` names.
-- **The bin** (`scene.parts`, editing only) is a sidebar panel listing every
-  registered part by category, with a search once there are eight or more.
-  With none registered there is no panel. Drag one into the view and it
+- **The bin** (`scene.parts`) is a drawer tab, Parts, that the viewer opens
+  from the toolbar, listing every registered part by category, with a
+  search once there are eight or more. With none registered there is no tab
+  and no toggle. What it puts in is one edit (undo takes it out). Drag one into the view and it
   lands where the pointer hits; a click puts it where the view is looking
   (the middle of the view, on whatever is there). Either way:
   - on an object (locked or not), it goes under that object (`parent`),
@@ -420,13 +415,13 @@ describes: {
 - The code that reads a trait must take a missing field as its default: only
   `init` and the defaults present when it was added are written.
 
-**Stopping:**
-- An extension that leaves the running set because this viewer switched
-  activity stops at once (until build step 8).
-- One that leaves because of a doc change keeps running for 2 s, and for as
-  long as it, or an extension it `requires`, has a body entered, the held
-  tool, an open session or a pose hold (the carry holding the table's card),
-  so a peer's undo doesn't tear down someone's game.
+**Stopping** (one rule, H2):
+- An extension that leaves the running set because of a doc change keeps
+  running for 2 s, and for as long as it has a body entered, the held tool,
+  an open session or a pose hold (the carry holding the table's card), so a
+  peer's edit doesn't tear down someone's game.
+- One still loading stops at once (it holds nothing), and so does one whose
+  plugin left the registry (uninstalled: there's no code to keep running).
 
 When an extension stops:
 1. cancel its open session;
@@ -460,7 +455,9 @@ TTS importer's games among them, and bag's "Put it in a new scene"), so an
 extension's `if (!d.traits) d.traits = {}` is only ever a fallback. The same
 for `clock` (`{ running: true, t: 0 }`, "World time"): made with the doc,
 written field by field by the stage, which makes it only as a fallback for a
-doc made without it. `init` makes `assets` too, as do tabletop and bag (each
+doc made without it. `view.start` is written whole only by what lays a
+scene out (a template, a tool writing the doc whole); the inspector's
+Starts in and Set home view write its fields, making it only as a fallback. `init` makes `assets` too, as do tabletop and bag (each
 writing a scene doc whole), and nothing else ever does: a scene without one
 is from before `assets` and is
 republished, not patched. The same goes for the `packages` list (see
@@ -503,9 +500,9 @@ answered by looking in the plugin registry.
 |---|---|
 | an object's `providerId` (and the provider its render doc names) | the `scene:source` with that id |
 | a trait key on the scene or on an object | every `scene:extension` whose `traits` include it |
-| `view.activity`, unless `"edit"` | every `scene:extension` that offers it with a reason of its own |
 
-With each extension come the ones it `requires`, at any depth. A part or a
+`view.start` is no mark of its own: its body's package comes with its
+place's trait (above). A part or a
 template leaves no mark of its own (what it makes is objects and traits,
 found above), so the stage notes it when one is run in this view. Nothing
 else in a scene doc names a plugin: general extensions (the editor's own)
@@ -634,13 +631,13 @@ general ones; in practice keys go by "One key order" below.
 a tool to pick first, and there is no `local.tool` or `view.tool`:
 - **Carrying** is `scene.carry`'s, a trait part: an object with the
   `scene.carry` trait can be picked up, so the part runs (object scope) in
-  any stage whose doc has one, in every activity, and is offered a press as
+  any stage whose doc has one, whatever anyone is doing, and is offered a press as
   the holder of the nearest link with the trait (a press on what's attached
   to a card carries the card). A press that doesn't move is a tap it gives
   back, so the click goes on. `carryable(id)` vetoes only a passing state.
   F is carry's Flip on every surface; Frame is `.`.
 - **Select** is the first entry of every target's menu (`scene.menu` puts
-  `scene.select`'s Select first), in every activity: the deliberate select,
+  `scene.select`'s Select first), whatever body you're in: the deliberate select,
   in a game too. A plain click selects only as the orbit body's default
   press, the stage's own (`ORBIT` in `stage.js`), offered after the whole
   chain. Where a selection may be is `src/selection.js`: an element of the
@@ -770,11 +767,13 @@ whatever the rays hit and riding it), **seat** (`seats/`: no keys, no lock,
 2 m, `here: false`, riding its table), and sailing's **aboard** (her navmesh
 walker on her deck, 2.5 m) and **station** (pushed over aboard by a
 station's verb, `here: false`, its keys by station). The first running
-extension to offer an id has it.
+extension to offer an id has it. `view.start` enters one on arrival
+("Arriving").
 
 `api.body.enter(id, place)` runs `enter` and pushes what it answers (its
-`keys` over the body's; a `label` it answers isn't read yet, so the chip
-shows the body's); `api.body.leave()` pops the top (never
+`keys` over the body's, its `label` over the body's: the chip and who's here
+say "Helm" for sailing's station at the wheel, "Watching" for a seat body
+entered with no seat of yours); `api.body.leave()` pops the top (never
 orbit), and the body under it carries on (`input.resumed`); a body popped
 from under another takes those over it with it; an extension stopping pops
 its bodies. The top body's `input` hears every pointer move and the keys
@@ -814,7 +813,9 @@ that extension.
 | `writable()` | may this view write the doc: false for a handle at fixed heads (Keyhive's to answer, in time). The halo shows no handles where it's false |
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
-| `remove(ids)` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids |
+| `remove(ids, { edit? })` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids. With `edit` (an `edits` step), the change is that edit's |
+| `edit(fn, { label?, handle? })`, `edits(label)` → `{ change(fn, handle?), end() }` | the stage's own editing (TOOLS.md, Decisions 2; "Undo" below): `edit` writes `fn` as one undoable step of this viewer's, on the scene or on `handle` (an object's render doc); `edits` opens a step of several writes, passed as `{ edit }` to `addObject`, `remove`, `drop` and `part` or made with its `change`, closed by `end()`. The halo, the handles, the inspector, the outline, transfer, add, the parts bin, dimensions and Set home view write through it. **Only the stage's own parts' api has these four** (`stage/own.js`: a module this package marks); a package's api has none, so its verbs, clock acts and process saves can't be on a stack |
+| `undo()`, `redo()` → boolean | take back (or again) this viewer's last edit in the focus doc: false when there's none, the doc isn't writable, something it wrote has been written since (then it's dropped, whole, and said), or it showed or decided something others have a stake in (then it stays, and that's said). `scene.undo` binds ⌘Z / Ctrl+Z, ⇧⌘Z / Ctrl+Y and the toolbar's Undo and Redo to them |
 | `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims". The scene's `"clock"` claim is the stage's own (see "World time") |
 | `claimedBy(id, kind)` → `{ viewer, session, mine }` \| null | who holds it, if they're still here. `mine`: this view (any of its extensions) |
 | `registry(type)` | |
@@ -843,12 +844,12 @@ that extension.
 | `focus(ids)` | load these first |
 | `audience(id)` → `"all"` \| viewer[] \| `null` | who may see what this object is: every running extension's `audience` answer for it, merged. `null`: unknown, tell nobody. See "Audience" |
 | `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, not built content). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
-| `drop(info)` | |
+| `drop(info, { edit? })` | offer a dropped doc to the extensions that lay out its datatype; with `edit`, the drop context's `change` and `addObject` are that edit's |
 | `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
-| `part(id, at)` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made |
+| `part(id, at, { edit? })` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made; with `edit`, what it writes is that edit's |
 
 **Picking and camera**
 
@@ -893,7 +894,7 @@ How the camera parts behave:
   limits intersect.
 - **Saving.** The camera is this viewer's. It is kept in `localStorage`
   (`scene-camera:<url>`). On open it comes from there, else
-  `doc.view.home`, else a framing.
+  `doc.view.start.home`, else a framing.
 
 **Drawing**
 
@@ -903,7 +904,7 @@ How the camera parts behave:
 | `world({ onTop? })` | a `Group` owned by the extension. Its meshes are widgets the owner gets first refusal of. `onTop` groups are drawn in a second pass over everything (depth-tested among themselves, lit) |
 | `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The editor's: dimensions 3, axes 2, bounds 1, grid 0 |
 | `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
-| `dock(el, { title, onClose? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it; closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it |
+| `dock(el, { title, onClose?, embed?, show? })` | `close`. Docks `el` in the drawer: one panel at the stage's right, outermost, with a tab per docked element (its title and a ×), one pane shown. Docking shows it (`show: false`: behind the pane shown, a tab to pick, unless nothing else is docked; the inspector following the selection docks so, not covering the parts bin in use); closing the one shown shows the one shown before it; tabs keep docking order; with nothing docked the drawer takes no room. It closes by `close()` (idempotent), by its ×, or with its extension; only the × calls `onClose`, so the caller hears of the closes it didn't make. Docking an element already docked shows it (retitled) and returns its `close`. A pane is an embedded document: keys typed in it are its own; `embed: false` makes it the stage's own chrome instead, whose keys are the stage's (the inspector, the outline, dimensions and parts: `src/parts/tab.js`), and while one of those is shown the drawer is a side panel's width rather than a docked editor's. `src/stage/dock.js`; Camber's Shape, a die's and a bag's panels use it too |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
@@ -1055,6 +1056,58 @@ extensions in its stage register with
 - **Its numbers.** `clock.t` is written on a microsecond grid, rounded up:
   Automerge 3.3.0 stores 0.9999999999999999 assigned inside a new map as 0.
 
+### Undo
+
+Undo covers the stage's own editing writes only (TOOLS.md, Decisions 2),
+per person and per focus doc, as inverse changes (`src/undo.js`):
+
+- **What is an edit.** A write through `api.edit` or an `api.edits` step:
+  the halo's move, rotate and scale; the build-param knobs (on the object's
+  render doc, undone from the scene's stack); the inspector's fields,
+  behaviours and Starts in; the outline's rename, re-file and new group;
+  Delete; add (a drop laid out by an extension is one step with it); the
+  parts bin; copy in and paste; dimensions; Set home view. A package's verb
+  (a roll, a shuffle, a draw), a clock act (pause, resume, a checkpoint) and
+  a process's save are plain writes, never on a stack, so undo can't
+  un-roll a die, un-shuffle a deck or rewind a process.
+- **A step** is what it wrote, recorded from the change's own patches
+  (`handle.change(fn, { patchCallback })`), so nothing written meanwhile by
+  anything else is in it: leaves `{ path, before, after }`, a path cut at
+  its first list index (a list is one value), none under another.
+- **Undoing** writes every leaf's `before` back in one change, only when the
+  doc still holds every leaf's `after`; if anything the step wrote has been
+  written since (by a verb, a process, a peer, or another edit not yet
+  undone), the step is dropped whole and the viewer told ("Nothing to undo:
+  “Move” has been changed since."). So undo never reverts anyone's later
+  write, and never half an edit. The undo is recorded the same way, as the
+  redo step; a new edit clears redo. 100 steps a stack.
+- **Reveals and decides need the others' agreement.** Recording a step,
+  the stage judges it from the doc before and after (`judgeEdit`): it
+  *showed* an object when who may see what it is grew (every running
+  audience policy, on both sides; unknown on either side counts), and it
+  *decided* one a running extension's `decided(before, after)` names. Taking
+  such a step back asks every running extension's `parties(scene)` who has
+  a stake in those objects now; if anyone but this viewer does, it is
+  refused ("Can't undo “Move”: it showed or decided something, and taking
+  it back needs the others' agreement.") and stays on the stack, so a party
+  who stands up frees it. Nothing answering: no parties, free (two people
+  editing a CAD scene); a `parties` that throws: can't be told, refused.
+  While a listed package is missing or an extension the doc calls for
+  hasn't started, no audience is known, so every step counts as showing
+  everything: at a seated table with a declined package, no stage edit can
+  be taken back while anyone else is seated, and the refusal says why
+  ("…who could see what it changed can't be told (a package the scene uses
+  is missing or didn't start)…"). How agreement is asked and given is
+  designed after step 8 (TOOLS.md, Decisions 2).
+- **Kept contents don't come back.** A step that removed objects bound to a
+  keeper (by the trait of an extension whose plugin says `keeper`) is
+  undone as the doc held them, and says so: "what is kept for “Deck” comes
+  back as its keeper has it now, not as it was". Undo never invents state
+  it didn't see.
+- **Per person, per focus doc.** The stacks are this view's
+  (`local.edits` says what they'd take), keyed by the focus doc's url (one
+  stage until links: its own).
+
 ## `instance`
 
 | | Read by |
@@ -1062,12 +1115,13 @@ extensions in its stage register with
 | `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name?, veil? }` | the stage (lenses combine in running order; later wins per field). `veil: true`: the stage draws its stand-in instead of the object's content. See "The veil" |
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
+| `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). `null`, or no extension answering: no stake. One that throws (`parties(scene)` or its function) can't be told, and the take-back is refused, as a throwing audience policy hides |
+| `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
 | `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
 | `commands` | surfaces and key maps |
-| `panels` | sidebars: `[{ id, title, pinned?, mount(body, { head, section }) → { update(scene, local), dispose() } }]`. A body set `hidden` hides its section; a `pinned` panel never folds |
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the carry (`scene.carry`). It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
 | `carryable(id)` → `false` to veto | the carry: false from any running extension and it neither picks `id` up nor flips it just now (anything else allows). Only for passing states (a die under a cup): what can be carried at all is the `scene.carry` trait's. Asked each time |
@@ -1121,8 +1175,7 @@ A **command**:
   never reaches it. `src/keymap.js` is the resolver, and every surface that
   shows a key asks it (`hintFor`): a key is shown only where pressing it
   does that (H3), so walking, Draw shows without D and is in the menu.
-- **The use prompt** (`scene.use`; until build step 8 it runs only in play,
-  and only when a running game requires it) shows
+- **The use prompt** (`scene.use`, general: it runs in every scene) shows
   attention's verbs where attention is (the crosshair under lock, else the
   pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, at most three, each a button, its
@@ -1186,11 +1239,9 @@ audience(scene) → (id) → null | {
   policy once per snapshot.
 - A viewer is a viewer id (`api.viewer`). Seats, roles, a referee are a
   policy's business, mapped to viewer ids; the stage never learns of them.
-- An extension that contributes `audience` declares **no `activities`**
-  (while they exist, until build step 8): a policy that stopped when a
-  viewer switched activity would take its `only`
-  with it. (A package whose verbs are play's and whose policy is everyone's
-  registers two extensions: tabletop's `tabletop` and `tabletop.rule`.)
+- A policy runs by its traits, as everything does, so it never stops under
+  a viewer (stopping would take its `only` with it and enlarge the
+  audience): tabletop's policy is the `tabletop` extension's own `audience`.
 
 **The merge**, over every running extension's answer for one object:
 
@@ -1276,7 +1327,7 @@ the package that provides it.
 **Seats** (provided by the `seats` package: [seats/README.md](../seats/README.md)).
 The places people take at a scene: scene trait `seats`,
 `{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
-It runs wherever the scene has seats, in every activity; it is the seat
+It runs wherever the scene has seats; it is the seat
 picker, the claim that says a seat's player is here (`seat:<id>`), the seat
 body (sitting puts the view at the seat's camera, riding the object its
 camera is `in`), a seat as a station on the use prompt ("Sit as Player 1"),
@@ -1379,7 +1430,7 @@ atmosphere() → null | {
 | Module | Holds |
 |---|---|
 | `stage/atom.js` | the local value |
-| `stage/activation.js` | the running set and scopes, and (until build step 8) activities (pure) |
+| `stage/activation.js` | the running set and scopes: traits only (pure) |
 | `stage/chain.js` | the chain order (pure) |
 | `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
@@ -1393,8 +1444,9 @@ atmosphere() → null | {
 | `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
 | `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
-| `stage/host.js` | starting and stopping extensions (the linger rule), this viewer's activity (joining, `local.activities`), `collect`, drops; it asks the stage for each extension's api |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, the activity, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the orbit body and its Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/host.js` | starting and stopping extensions (the one linger rule), `collect`, drops; it asks the stage for each extension's api |
+| `undo.js` | edits: a step's leaves from its own patches, its inverse (whole, or nothing if anything it wrote was written since), the per-doc stacks, and `createEdits`, the recorder the stage runs (pure but for the recorder) |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, arriving (view.start), the edit recorder, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the orbit body and its Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

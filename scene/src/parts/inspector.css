@@ -288,7 +288,7 @@
   flex: 0 0 auto;
 }
 
-/* Starts in: the activity everyone who opens the scene starts in */
+/* Starts in: the body everyone who opens the scene arrives in (view.start) */
 .scene-stage .inspector .starts-in:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-wrap: wrap;

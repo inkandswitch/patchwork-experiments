@@ -51,11 +51,10 @@ describe("the host", () => {
   const metas = [
     { id: "seats", traits: ["seats"] },
     { id: "zones", traits: ["zone"] },
-    { id: "select", activities: ["edit"] },
-    { id: "outline", requires: ["sidebar"], activities: ["edit"] },
-    { id: "sidebar", activities: ["edit"] },
-    { id: "walk", activities: ["play"] },
-    { id: "switch", always: true },
+    { id: "select" },
+    { id: "outline" },
+    { id: "inspector" },
+    { id: "clock" },
     { id: "deck", traits: ["deck"], drops: ["deck-doc"] },
   ];
 
@@ -86,7 +85,7 @@ describe("the host", () => {
   beforeEach(() => {
     log = [];
     timers = fakeTimers();
-    local = createAtom({ activity: null, running: [] });
+    local = createAtom({ running: [] });
     busy = new Set();
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -102,82 +101,55 @@ describe("the host", () => {
     host.sync(doc({ traits: { seats: {} }, objects: { c: { traits: { zone: {} } } } }));
     await flush();
     // seats is still loading: everything else is running, in its place
-    expect(ids()).toEqual(["zones:objects", "select:general", "outline:general", "sidebar:general", "switch:general"]);
+    expect(ids()).toEqual(["zones:objects", "select:general", "outline:general", "inspector:general", "clock:general"]);
     release();
     await flush();
-    expect(ids()).toEqual(["seats:scene", "zones:objects", "select:general", "outline:general", "sidebar:general", "switch:general"]);
-    expect(host.instances().map((r) => r.id)).toEqual(["seats", "zones", "select", "outline", "sidebar", "switch"]);
+    expect(ids()).toEqual(["seats:scene", "zones:objects", "select:general", "outline:general", "inspector:general", "clock:general"]);
+    expect(host.instances().map((r) => r.id)).toEqual(["seats", "zones", "select", "outline", "inspector", "clock"]);
     // started out of order
     expect(log.filter((l) => l.startsWith("create")).at(-1)).toBe("create:seats");
   });
 
   it("collects a field from every running extension, in running order", async () => {
-    const { host } = make({ instances: { select: { commands: ["s"] }, switch: { commands: ["k"] }, outline: { panels: [1] } } });
+    const { host } = make({ instances: { select: { commands: ["s"] }, clock: { commands: ["k"] }, outline: { tab: 1 } } });
     host.sync(doc());
     await flush();
     expect(host.collect("commands")).toEqual([
       { id: "select", value: ["s"] },
-      { id: "switch", value: ["k"] },
+      { id: "clock", value: ["k"] },
     ]);
     expect(host.inputOf("select")).toBeUndefined();
     expect(host.instanceOf("nope")).toBeNull();
   });
 
-  it("stops at once what this viewer's switch of activity leaves out: signal aborted, then release, then dispose", async () => {
+  it("what runs is the doc's: the same doc runs the same set, whatever local holds (H1)", async () => {
     const { host } = make();
-    host.sync(doc());
+    host.sync(doc({ view: { start: { body: "walk" } } }));
+    await flush();
+    const before = ids();
+    log.length = 0;
+    local.swap((m) => ({ ...m, body: { id: "walk" }, held: { name: "Gun" }, selected: "c", prefs: { grid: false }, clock: { running: false } }));
+    host.sync(doc({ view: { start: { body: "walk" } } }));
+    await flush();
+    expect(ids()).toEqual(before);
+    expect(log).toEqual([]);
+  });
+
+  it("an extension whose plugin leaves the registry stops at once (no code to come back to); one the doc sends away lingers", async () => {
+    const { host, reg } = make();
+    host.sync(doc({ traits: { seats: {} } }));
     await flush();
     log.length = 0;
-    local.swap((m) => ({ ...m, activity: "play" }));
-    host.sync(doc());
-    expect(log.filter((l) => !l.startsWith("create"))).toEqual(["release:select:aborted", "dispose:select", "release:outline:aborted", "dispose:outline", "release:sidebar:aborted", "dispose:sidebar"]);
-    await flush();
-    expect(ids()).toEqual(["walk:general", "switch:general"]);
-    expect(local.get().activities).toEqual({ current: "play", available: ["edit", "play"] });
-  });
-
-  it("joining starts this viewer where the doc says, and a later change to that doesn't move them", async () => {
-    const { host } = make();
-    host.sync(doc({ view: { activity: "play" } }));
-    await flush();
-    expect(local.get().activity).toBe("play");
-    expect(local.get().activities.current).toBe("play");
-    expect(ids()).toEqual(["walk:general", "switch:general"]);
-    host.sync(doc({ view: { activity: "edit" } }));
-    await flush();
-    expect(local.get().activity).toBe("play");
-    expect(ids()).toEqual(["walk:general", "switch:general"]);
-  });
-
-  it("no doc yet (no view): nothing is chosen for the viewer until there is one", async () => {
-    const { host } = make();
-    host.sync({});
-    await flush();
-    expect(local.get().activity).toBeNull();
-    host.sync(doc());
-    expect(local.get().activity).toBe("edit");
-  });
-
-  it("an activity the scene doesn't offer runs as edit, and the choice is kept for when it does", async () => {
-    const play = metas.find((m) => m.id === "walk");
-    play.traits = ["walkable"];
+    const i = metas.findIndex((m) => m.id === "inspector");
+    const [gone] = metas.splice(i, 1);
     try {
-      const { host } = make();
-      local.swap((m) => ({ ...m, activity: "play" }));
+      reg.changed();
+      expect(log).toEqual(["release:inspector:aborted", "dispose:inspector"]);
       host.sync(doc());
-      await flush();
-      expect(local.get().activities).toEqual({ current: "edit", available: ["edit"] });
-      expect(ids()).toContain("select:general");
-      // a trait arrives that offers play: this viewer was always going there
-      host.sync(doc({ traits: { walkable: {} } }));
-      await flush();
-      expect(local.get().activities).toEqual({ current: "play", available: ["edit", "play"] });
-      // the doc sent the editing parts away, so they linger as any would
-      expect(host.lingering("select")).toBe(true);
-      await timers.advance(LINGER_MS);
-      expect(ids()).toEqual(["walk:scene", "switch:general"]);
+      expect(host.lingering("seats")).toBe(true);
+      expect(log).not.toContain("dispose:seats");
     } finally {
-      delete play.traits;
+      metas.splice(i, 0, gone);
     }
   });
 
@@ -199,25 +171,6 @@ describe("the host", () => {
     await timers.advance(BUSY_RECHECK_MS);
     expect(log).toContain("dispose:seats");
     expect(ids()).not.toContain("seats:scene");
-  });
-
-  it("keeps lingering while something it requires is busy (the hand carrying the table's card)", async () => {
-    const seats = metas.find((m) => m.id === "seats");
-    seats.requires = ["sidebar"];
-    try {
-      const { host } = make();
-      host.sync(doc({ traits: { seats: {} } }));
-      await flush();
-      host.sync(doc());
-      busy.add("sidebar");
-      await timers.advance(LINGER_MS + BUSY_RECHECK_MS * 3);
-      expect(log).not.toContain("dispose:seats");
-      busy.delete("sidebar");
-      await timers.advance(BUSY_RECHECK_MS);
-      expect(log).toContain("dispose:seats");
-    } finally {
-      delete seats.requires;
-    }
   });
 
   it("cancels the linger when the doc calls for it again", async () => {
@@ -248,7 +201,7 @@ describe("the host", () => {
     const { host, reg } = make({ mods: { late: mod("late", log) } });
     host.sync(doc());
     await flush();
-    metas.push({ id: "late", always: true });
+    metas.push({ id: "late" });
     try {
       reg.changed();
       await flush();
@@ -280,6 +233,95 @@ describe("the host", () => {
     await flush();
     log.length = 0;
     host.dispose();
-    expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:switch", "dispose:sidebar", "dispose:outline", "dispose:select"]);
+    expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:clock", "dispose:inspector", "dispose:outline", "dispose:select"]);
   });
+
+  // H2: one stop rule. One extension, the doc calling for it or not, busy or
+  // not, over every sequence of up to four events (want, unwant, busy, idle,
+  // wait LINGER_MS, wait BUSY_RECHECK_MS): 1,555 sequences. After every
+  // event: wanted ⇒ running; it stops only when the doc doesn't call for it,
+  // at least LINGER_MS after the doc stopped calling, and not while busy; and
+  // not wanted, not busy, a LINGER_MS and a recheck on ⇒ stopped. At most
+  // one instance at a time.
+  it("H2: over every order of ≤4 of want, unwant, busy, idle and two waits, it stops only by the one rule", async () => {
+    const EVENTS = ["want", "unwant", "busy", "idle", "linger", "recheck"];
+    const seqs = [[]];
+    for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
+    expect(seqs.length).toBe(1555);
+    // (promises only: the host and these timers need no macrotask, so each sequence is quick)
+    const settle = async () => {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    };
+    const quickTimers = () => {
+      let now = 0;
+      let n = 0;
+      const pending = new Map();
+      return {
+        setTimeout: (fn, ms) => (pending.set(++n, { fn, at: now + ms }), n),
+        clearTimeout: (k) => pending.delete(k),
+        async advance(ms) {
+          now += ms;
+          for (;;) {
+            const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((x, y) => x[1].at - y[1].at)[0];
+            if (!due) break;
+            pending.delete(due[0]);
+            due[1].fn();
+            await settle();
+          }
+        },
+      };
+    };
+    const one = [{ id: "seats", traits: ["seats"] }];
+    for (const seq of seqs) {
+      log = [];
+      timers = quickTimers();
+      local = createAtom({ running: [] });
+      busy = new Set();
+      const reg = registry(one, { seats: mod("seats", log) });
+      const host = createHost({
+        registry: async () => reg,
+        local,
+        makeApi: (rec) => ({ api: { id: rec.id, signal: rec.signal }, release: () => {} }),
+        busy: (id) => busy.has(id),
+        setTimer: timers.setTimeout,
+        clearTimer: timers.clearTimeout,
+      });
+      const flush = settle;
+      let t = 0;
+      let wanted = true;
+      let since = null; // when the doc last stopped calling
+      const lines = (k) => log.filter((l) => l === `${k}:seats`).length;
+      host.sync(doc({ traits: { seats: {} } }));
+      await flush();
+      for (const e of seq) {
+        const stoppedBefore = lines("dispose");
+        if (e === "want" || e === "unwant") {
+          if (wanted !== (e === "want")) since = e === "unwant" ? t : null;
+          wanted = e === "want";
+          host.sync(doc(wanted ? { traits: { seats: {} } } : {}));
+          await flush();
+        } else if (e === "busy") busy.add("seats");
+        else if (e === "idle") busy.delete("seats");
+        else {
+          const ms = e === "linger" ? LINGER_MS : BUSY_RECHECK_MS;
+          await timers.advance(ms);
+          t += ms;
+        }
+        const running = lines("create") > lines("dispose");
+        const where = seq.join(",");
+        expect(lines("create") - lines("dispose"), where).toBeLessThanOrEqual(1);
+        if (wanted) expect(running, where).toBe(true);
+        if (lines("dispose") > stoppedBefore) {
+          expect(wanted, where).toBe(false);
+          expect(busy.has("seats"), where).toBe(false);
+          expect(t - since, where).toBeGreaterThanOrEqual(LINGER_MS);
+        }
+        if (!wanted && !busy.has("seats") && since != null && t - since >= LINGER_MS + BUSY_RECHECK_MS && e !== "idle") {
+          // (idle just now: its recheck is still to come)
+          expect(running, where).toBe(false);
+        }
+      }
+      host.dispose();
+    }
+  }, 120_000);
 });
