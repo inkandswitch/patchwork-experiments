@@ -3,7 +3,7 @@
   "version": 1,
   "title": "Santorini",
   "players": "2–3",
-  "about": "Santorini — 2–3 players. Take turns; on your turn, move one of your two workers, then build with that same worker.\n\nMove: one space in any direction (diagonals too) onto an unoccupied space without a dome. A worker can climb at most one level up, and can step down any number of levels.\n\nBuild: on any unoccupied space next to the worker that moved — a level 1 block on bare ground, level 2 on level 1, level 3 on level 2, or a dome on level 3. A domed space is closed for good.\n\nWin by moving one of your workers up onto level 3. If you cannot move and build on your turn, you lose.\n\nSetup: the youngest player places both their workers first, then the others in turn. In this scene, use the hand (H) to carry pieces; they snap to the board's spaces and stack on whatever is already there. Hold Alt to put a piece down without snapping, Q / E to turn it.",
+  "about": "Santorini — 2–3 players. Take turns; on your turn, move one of your two workers, then build with that same worker.\n\nMove: one space in any direction (diagonals too) onto an unoccupied space without a dome. A worker can climb at most one level up, and can step down any number of levels.\n\nBuild: on any unoccupied space next to the worker that moved — a level 1 block on bare ground, level 2 on level 1, level 3 on level 2, or a dome on level 3. A domed space is closed for good.\n\nWin by moving one of your workers up onto level 3. If you cannot move and build on your turn, you lose.\n\nSetup: the youngest player places both their workers first, then the others in turn. In this scene: pick your seat (Blue, Cream or Grey, by the workers' colours) with the Seat picker at the top right, then press a piece and drag it to carry it; it snaps to the board's spaces and stacks on whatever is already there. Hold Alt to put a piece down without snapping, Q / E to turn it.",
   "pieces": {
     "board": {
       "name": "Island board",
@@ -169,5 +169,19 @@
       "count": 2,
       "grid": {"cols":2,"across":[0.04,0,0],"down":[0,0,0]}
     }
-  ]
+  ],
+  "seats": {
+    "p1": {
+      "name": "Blue",
+      "camera": {"position":[0,0.55,0.85],"target":[0,0.03,0.08]}
+    },
+    "p2": {
+      "name": "Cream",
+      "camera": {"position":[-0.85,0.55,0],"target":[-0.08,0.03,0]}
+    },
+    "p3": {
+      "name": "Grey",
+      "camera": {"position":[0.85,0.55,0],"target":[0.08,0.03,0]}
+    }
+  }
 }

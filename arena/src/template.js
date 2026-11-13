@@ -1,12 +1,13 @@
 // The "Arena level" template: an empty scene's start screen offers it, and
-// it lays out the sample arena (layout.js) with the doc set to start in play,
-// so its maker lands in the game. Editing it is one switch away.
+// it lays out the sample arena (layout.js), the doc starting people walking
+// at a spawn point, so its maker lands in the game. Editing it is selecting
+// something (the menu, or the outline); nothing to switch.
 
 import { layOutArena } from "./layout.js";
 
 export default {
   async create(ctx) {
     await layOutArena(ctx);
-    ctx.notify?.("Arena laid out. Press Play (or Enter) to walk it.", "info");
+    ctx.notify?.("Arena laid out. Press Play (or Enter) to pick up the gun.", "info");
   },
 };

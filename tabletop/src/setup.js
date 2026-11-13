@@ -41,8 +41,8 @@
 // - A piece's `tags` and `traits` go on each of its copies; whatever isn't
 //   locked carries the scene's `scene.carry`, so it can be picked up.
 // - The seats are laid by their owner, which writes them only where the
-//   scene has none. A game with seats opens in play; one without (Santorini)
-//   in the editor.
+//   scene has none. A game with seats starts people in the seat body
+//   (view.start); one without (Santorini) in orbit.
 
 import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 import { jumble } from "./table/wash.js";
@@ -310,9 +310,14 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
       axes: false,
       bounds: false,
       snap: true,
-      // a game people sit down at is played: it opens in play (one with no seats, Santorini, in the editor)
-      ...(Object.keys(seats).length ? { activity: "play" } : {}),
-      home: game?.camera ? copy(game.camera) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
+      // where people start (scene TOOLS.md §2): at a game with seats (every
+      // built-in one), the seat body (back in your own seat, else watching
+      // from the first seat's view), where pressing a piece picks it up or
+      // uses it; a game laid out with none starts in orbit at the home view
+      start: {
+        ...(Object.keys(seats).length ? { body: "seat" } : {}),
+        home: game?.camera ? copy(game.camera) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
+      },
     },
     origin: game?.origin ? copy(game.origin) : null,
   };
@@ -355,8 +360,9 @@ export function placeLayout(layout, { parent = null, transform = null } = {}) {
     }
     seats[sid] = c;
   }
-  const home = layout.view?.home;
-  const view = { ...layout.view, ...(home ? { home: { ...home, position: point(home.position), target: point(home.target ?? [0, 0, 0]) } } : {}) };
+  const start = layout.view?.start;
+  const home = start?.home;
+  const view = { ...layout.view, ...(start ? { start: { ...start, ...(home ? { home: { ...home, position: point(home.position), target: point(home.target ?? [0, 0, 0]) } } : {}) } } : {}) };
   return { ...layout, objects, seats, view };
 }
 

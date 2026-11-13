@@ -73,7 +73,7 @@ async function press(w, id, key, verb) {
 /** seat A in p1 and B in p2, then wait for a secure deal to reach both hands */
 async function seatBoth({ secure }) {
   const viewers = await P("viewers");
-  check("both views playing, pickers up", await until("activity('a') === 'play' && __p.activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 20_000));
+  check("both views at the table, pickers up", await until("picker('a') === 3 && __p.picker('b') === 3", 20_000), { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   await P("pick('a', 'p1')");
   if (secure) {
     // A seated, B not yet: the deck isn't dealt, so A's own hand (and everything) shows backs, no padlocks

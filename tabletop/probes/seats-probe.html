@@ -113,7 +113,8 @@ try {
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** the name tags a view draws */
     tags: (w) => [...hosts[w].querySelectorAll(SEAT_TAG)].map((e) => e.textContent.trim()),
-    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
   };
   window.__ready = true;
 } catch (err) {

@@ -128,9 +128,6 @@ try {
     focus: (w) => rootOf(w).focus(),
     focused: (w) => rootOf(w).contains(document.activeElement),
     running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
-    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
-    available: (w) => dbg[w]?.local.get().activities?.available ?? [],
-    setActivity: (w, a) => dbg[w].local.swap((m) => ({ ...m, activity: a })),
     status: (w) => JSON.parse(JSON.stringify(dbg[w]?.local.get().status ?? {})),
     loaded(w) {
       const os = Object.entries(docOf(w).objects ?? {}).filter(([, o]) => o.kind !== "group");
@@ -179,8 +176,8 @@ try {
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     },
     text: (sel, w) => [...hosts[w].querySelectorAll(sel)].map((e) => e.textContent.trim()).filter(Boolean),
-    /** the button of the Play | Edit switch for an activity */
-    switchRect(w, label) {
+    /** a button by its text (a toolbar's Objects, say), to click */
+    buttonRect(w, label) {
       const b = [...hosts[w].querySelectorAll("button")].find((x) => x.textContent.trim() === label && x.getBoundingClientRect().width > 0);
       if (!b) return null;
       const r = b.getBoundingClientRect();

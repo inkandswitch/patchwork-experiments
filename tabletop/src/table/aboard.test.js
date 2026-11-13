@@ -96,11 +96,11 @@ describe("a layout set down on something", () => {
   });
 
   it("written without the view: the scene's view, home and units stay as they were", () => {
-    const d = emptyScene({ view: { units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" } });
+    const d = emptyScene({ view: { units: "m", start: { home: { position: [12, 6, 16], target: [0, 2, 0] } } } });
     const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
     const binds = Object.fromEntries(Object.keys(on.containers).map((k) => [k, (s) => ({ [keptTrait("plain")]: { by: DECK, slot: s } })]));
     writeTable(d, on, { binds }, { view: false, seats: lay });
-    expect(d.view).toEqual({ units: "m", home: { position: [12, 6, 16], target: [0, 2, 0] }, activity: "play" });
+    expect(d.view).toEqual({ units: "m", start: { home: { position: [12, 6, 16], target: [0, 2, 0] } } });
     expect(d.traits[SEATS].p1.camera.in).toBe("tbl");
     expect(d.order).toHaveLength(on.order.length);
   });
@@ -165,7 +165,7 @@ describe("the Card table and Lost Cities parts", () => {
       title: "Ship at anchor",
       objects: { ship: { name: "Sloop", transform: SHIP, parent: null } },
       order: ["ship"],
-      view: { units: "m", activity: "play", home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } },
+      view: { units: "m", start: { home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } } },
     });
   // what's installed: whoever owns seats, and a keeper of each kind
   const installed = () => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins());

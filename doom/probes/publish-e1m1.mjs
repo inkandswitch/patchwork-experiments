@@ -16,8 +16,8 @@
 // headless Chrome, the BUILT scene tool with the BUILT arena, joints,
 // traversal and doom plugins is mounted on an EMPTY scene (e1m1-probe.html:
 // real Automerge docs), the WAD's URL is pasted into it, and the doom package
-// lays out its first map. Then the scene is set to start in play with its
-// camera at the player 1 start's eye. It checks:
+// lays out its first map. Then the scene is set to start people walking at
+// the player 1 start (view.start), its camera at that start's eye. It checks:
 // - the layout: the static part, 11 doors with slides, one exit switch (an
 //   exit with the verb "Exit" and, unless --exit, nowhere to go), arena's
 //   spawn point at the player 1 start, all in one group under the static part;
@@ -43,8 +43,9 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"): the
 // scene, the map's (doom), the doors' (joints), the exit's (traversal) and
-// play's (arena). The probe page has no registry that says where its plugins
-// come from, so they're stated here.
+// play's (arena), and walk (the walk.spawn trait calls for it, and its body
+// is where people start). The probe page has no registry that says where its
+// plugins come from, so they're stated here.
 const PACKAGES = ["scene", "doom", "joints", "traversal", "arena", "walk"];
 
 // --flag (no value), --flag <value>, and --set-exit <scene> <url>
@@ -132,7 +133,7 @@ try {
   const home = await P("startHere()");
   const after = await P("doc()");
   const spawnAt = spawns[0] && after.objects[spawns[0][0]].transform.position;
-  check("it starts in play, a level under its own sky, its home view at the player 1 start's eye", after.view.activity === "play" && after.traits["arena.level"]?.look === "sky" && !home.error && Math.abs(home.position[1] - home.target[1]) < 1e-9, { home, spawnAt, view: after.view });
+  check("it starts people walking at the player 1 start, a level under its own sky, its home view at that start's eye", after.view.start?.body === "walk" && after.view.start?.place === spawns[0]?.[0] && !("activity" in after.view) && after.traits["arena.level"]?.look === "sky" && !home.error && Math.abs(home.position[1] - home.target[1]) < 1e-9, { home, spawnAt, view: after.view });
   const wadDoc = await P(`find(${J(doc.objects[root].sourceUrl)})`);
   const about = group ? await P(`find(${J(group[1].infoUrl)})`) : null;
   check("Freedoom's notice is on the WAD doc and in the About, which says it isn't Freedoom", /Redistribution and use/.test(wadDoc.origin?.notice ?? "") && /All rights reserved/.test(about?.content ?? "") && /not Freedoom/.test(about?.content ?? ""), { origin: wadDoc.origin?.name });
@@ -223,7 +224,7 @@ async function publish(snap) {
         const os = Object.values(got.objects ?? {}).filter((o) => o.kind !== "group");
         const exits = os.filter((o) => o.traits?.[EXIT]);
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-        else if (got.view?.activity !== "play") problem = `came back with view.activity ${J(got.view?.activity)}`;
+        else if (got.view?.start?.body !== "walk") problem = `came back with view.start ${J(got.view?.start)}`;
         else if (os.length !== 14) problem = `came back with ${os.length} objects`;
         else if (exits.length !== 1 || (exits[0].traits[EXIT].to ?? null) !== EXIT_TO) problem = `came back with its exit leading somewhere else than ${EXIT_TO ?? "nowhere"}`;
         else if (got.claims) problem = "came back with claims";

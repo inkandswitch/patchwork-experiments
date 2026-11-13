@@ -26,9 +26,10 @@
 //   is laid out and the maker is told why.
 //
 // Order: the files, then the containers and bags, then one change that
-// writes the table (objects, seats, view: `view.activity` "play" where the
-// game has seats); the stage then starts its maker where the doc says
-// (STAGE.md, "Templates"): Lost Cities in play, Santorini in the editor.
+// writes the table (objects, seats, view: `view.start` in the seat body where
+// the game has seats); the stage then starts its maker where the doc says
+// (STAGE.md, "Templates"): at Lost Cities watching from the first seat,
+// Santorini in orbit.
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";
@@ -118,7 +119,7 @@ export async function setUp(ctx, game, { rng = Math.random, parent = null, trans
   if (fellBack) ctx.notify?.("No keeper whose players shuffle is installed here, so this table's deck is kept in the open: anyone who opens it can read every hand.", "warn");
   if (Object.keys(layout.seats).length && !lay) ctx.notify?.("Nothing installed here owns seats, so this table has none.", "warn");
   if (Object.keys(layout.seats).length && lay) ctx.notify?.("Pick a seat (top right) to play.", "info");
-  else ctx.notify?.(`${g.title || "The game"} is laid out. Carry the pieces with the hand.`, "info");
+  else ctx.notify?.(`${g.title || "The game"} is laid out. Press a piece and drag it to carry it.`, "info");
   return layout;
 }
 

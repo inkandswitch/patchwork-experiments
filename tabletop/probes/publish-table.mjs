@@ -26,9 +26,9 @@
 // - the start screen offers it;
 // - doc.assets has a file under its versioned key for every kind, and every
 //   object shows one of them (no game doc, no About);
-// - the view starts in play, and A is playing (a game with no seats, zones
-//   or hidden cards, Santorini, gives play nothing to run, so its doc
-//   writes no view.activity: A is in the editor, in the hand);
+// - the view starts people in the seat body (view.start) and A arrives
+//   watching from a seat (every built-in game has seats; Santorini's are
+//   its three workers' colours);
 // - A's stage lists the package of every plugin the scene calls for, each
 //   one this script states (PACKAGES), and names the scene package as the
 //   suggested import (the page registers each built package's plugins from
@@ -57,8 +57,7 @@
 // happens later, in the seated players' own browsers, so nothing here needs
 // WebCrypto. The published scene lists the four packages it is made of:
 // the scene's, the seats', tabletop's (hands and cards) and card-table's
-// (the keeper). A template's table nobody sits at (Santorini) doesn't list
-// the seats.
+// (the keeper). A table with no deck (Santorini) lists no keeper.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -105,8 +104,9 @@ const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.i
 const TEMPLATE = typeof args.template === "string" ? args.template : null;
 
 // What each template's table must be, for --template's checks:
-//   seats  how many seats it lays (0: nobody sits, nothing is shuffled)
+//   seats  how many seats it lays (A and B sit in the first two)
 //   deck   what its hidden pieces' pile is called, and `piece` one of them
+//          (none: nothing is kept or shuffled)
 //   count  how many pieces the deck keeps (null: not counted). Where it is
 //          counted, the first joint shuffle must reach every one, and
 //          neither view may veil one
@@ -114,7 +114,7 @@ const TEMPLATE = typeof args.template === "string" ? args.template : null;
 //          dealt, and no piece lies in a hand)
 const TABLES = {
   "lost-cities": { seats: 2, deck: "deck", piece: "card", count: null, hand: 8 },
-  santorini: { seats: 0 },
+  santorini: { seats: 3 },
   "dominoes-2": { seats: 2, deck: "boneyard", piece: "tile", count: 28, hand: 0 },
 };
 if (TEMPLATE && !TABLES[TEMPLATE]) {
@@ -206,7 +206,7 @@ const glbs = Object.keys(game.doc().pieces).map((k) => game.doc().drawn?.[k]?.ur
 const s = scene.doc();
 const problems = [];
 if (drawn !== glbs.length || glbs.some((u) => !u)) problems.push(`${drawn} of ${glbs.length} piece GLBs drawn`);
-if (s.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(s.view?.activity)}, not "play"`);
+if (s.view?.start?.body !== "seat") problems.push(`view.start is ${JSON.stringify(s.view?.start)}, not the seat body`);
 if ("kits" in (s.view ?? {})) problems.push("view still has kits");
 problems.push(...packageProblems(s, PACKAGES));
 const objects = Object.entries(s.objects).filter(([, o]) => o.kind !== "group");
@@ -229,7 +229,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
-console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts in ${s.view.activity}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
+console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts people ${JSON.stringify(s.view.start?.body ?? "orbit")}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
 if (DRY) {
@@ -240,7 +240,7 @@ if (DRY) {
 await verify(made, (url, got) => {
   if (url === scene.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
   if (url === game.url && got["@patchwork"]?.suggestedImportUrl !== pushworkUrl("tabletop")) return "came back without the tabletop package as its suggested import";
-  if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
+  if (url === scene.url && got.view?.start?.body !== "seat") return "came back without view.start in the seat body";
   if (url === game.url && JSON.stringify(got.tables) !== JSON.stringify([scene.url])) return `came back listing tables ${JSON.stringify(got.tables)}, not just its own`;
   if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
   return null;
@@ -295,14 +295,12 @@ async function fromTemplate(gameId) {
     const art = Object.keys(d.assets ?? {});
     check("doc.assets has a file under its versioned key for every kind", laid && art.length === keys.length, { want: keys.length, have: art.length, missing: keys.filter((k) => !d.assets?.[k]) });
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
-    // play is on offer only where the table extension has a trait to run on
-    // (hands, cards); Santorini has none, so its doc doesn't claim play, and
-    // it opens in the editor, where its pieces carry just the same (by their trait)
-    const tabled = (await P("cards()")) > 0;
-    const lands = tabled ? "play" : "edit";
-    check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, with no view.tool`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && !("tool" in (d.view ?? {})), d.view);
+    // a game with seats starts people in the seat body (view.start), where a press picks a piece up
+    const tabled = TABLES[gameId].seats > 0;
+    const lands = tabled ? "Watching" : "Orbit";
+    check(`the view starts people ${tabled ? "in the seat body" : "in orbit (no body)"}, with no view.activity or view.tool`, (tabled ? d.view?.start?.body === "seat" : !("body" in (d.view?.start ?? {}))) && !("activity" in (d.view ?? {})) && !("tool" in (d.view ?? {})), d.view);
     check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
-    check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
+    check(`A lands ${lands === "Orbit" ? "in orbit" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
     // lists the package of every plugin the scene calls for (and of the
     // template it ran) and names the scene package as the suggested import.
@@ -323,7 +321,7 @@ async function fromTemplate(gameId) {
     if (seats) {
       const type = await P("deckType()"), traits = await P("keptBy()"), cards = await P("cards()"), slots = await P("slots()");
       const kept = type === "secure-deck" && traits.join() === "card-table.kept";
-      check(
+      if (deck) check(
         count == null
           ? "the deck is kept by the joint keeper (a secure-deck), every card bound by that keeper's trait"
           : `the ${deck}'s ${count} ${piece}s are kept by the joint keeper (a secure-deck), each bound by card-table.kept to its own slot of one container`,
@@ -332,31 +330,34 @@ async function fromTemplate(gameId) {
       );
       check("A is told to pick a seat", await until("notices('a').includes('Pick a seat (top right) to play.')", 3000), await P("notices('a')"));
       await P("openB()");
-      check("B opens the table in play, and both pickers are up", await until(`activity('b') === 'play' && __p.picker('a') === ${seats + 1} && __p.picker('b') === ${seats + 1}`, 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
+      check("B opens the table watching from a seat, and both pickers are up", await until(`bodyLabel('b') === 'Watching' && __p.picker('a') === ${seats + 1} && __p.picker('b') === ${seats + 1}`, 20_000), { b: await P("bodyLabel('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
       await P(`pick('a', ${JSON.stringify(seated[0])})`);
       await P(`pick('b', ${JSON.stringify(seated[1])})`);
       const viewers = await P("viewers");
       check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
-      // the first shuffle, done: every counted piece shuffled exactly once, by every seat, nothing under way
-      const shuffled = count == null ? "true" : `((s) => !!s && s.phase === 'playing' && s.op === null && s.queue === 0 && s.participants === ${seats} && s.epochs.length === ${count} && s.epochs.every((e) => e === 1))(__p.shuffle())`;
-      const playing = await until(`phase() === 'playing' && ${shuffled} && __p.faces('a').length === ${hand} && __p.faces('b').length === ${hand}`, 120_000);
-      const faces = { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length };
-      if (count == null) check(`the deck reaches phase playing, and each hand's ${hand} faces reach its player`, playing, { phase: await P("phase()"), faces });
-      else {
-        const where = await P("where()");
-        const zones = await P("zones()");
-        const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
-        check(
-          `the first joint shuffle reaches all ${count} ${piece}s (each shuffled once, by both players, nothing under way), and ${hand ? `each hand's ${hand} faces reach its player` : `nothing is dealt: no ${piece} in any of the ${seats} hands, no face to either player`}`,
-          playing && zones === seats && inHands === hand * seats,
-          { shuffle: await P("shuffle()"), faces, zones, where: Object.fromEntries(Object.entries(where).map(([at, ids]) => [at, ids.length])) }
-        );
-        // a veil is a piece kept from you; nothing on this table is kept from anyone who sits at it, so no view shows one
-        const shown = async () => Object.fromEntries(await Promise.all(["a", "b"].map(async (w) => [w, { faces: (await P(`faces('${w}')`)).length, veils: (await P(`veils('${w}')`)).length, backs: (await P(`backs('${w}')`)).length }])));
-        await until(`backs('a').length + __p.faces('a').length === ${count} && __p.backs('b').length + __p.faces('b').length === ${count}`, 10_000);
-        await sleep(500);
-        const now = await shown();
-        check(`neither view veils a ${piece}: each sees ${hand} faces and ${count - hand} backs`, ["a", "b"].every((w) => now[w].veils === 0 && now[w].faces === hand && now[w].backs === count - hand), now);
+      // a table with a deck: its first shuffle, and what reaches each hand
+      if (deck) {
+        // the first shuffle, done: every counted piece shuffled exactly once, by every seat, nothing under way
+        const shuffled = count == null ? "true" : `((s) => !!s && s.phase === 'playing' && s.op === null && s.queue === 0 && s.participants === ${seats} && s.epochs.length === ${count} && s.epochs.every((e) => e === 1))(__p.shuffle())`;
+        const playing = await until(`phase() === 'playing' && ${shuffled} && __p.faces('a').length === ${hand} && __p.faces('b').length === ${hand}`, 120_000);
+        const faces = { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length };
+        if (count == null) check(`the deck reaches phase playing, and each hand's ${hand} faces reach its player`, playing, { phase: await P("phase()"), faces });
+        else {
+          const where = await P("where()");
+          const zones = await P("zones()");
+          const inHands = Object.entries(where).filter(([at]) => at !== "table").reduce((n, [, ids]) => n + ids.length, 0);
+          check(
+            `the first joint shuffle reaches all ${count} ${piece}s (each shuffled once, by both players, nothing under way), and ${hand ? `each hand's ${hand} faces reach its player` : `nothing is dealt: no ${piece} in any of the ${seats} hands, no face to either player`}`,
+            playing && zones === seats && inHands === hand * seats,
+            { shuffle: await P("shuffle()"), faces, zones, where: Object.fromEntries(Object.entries(where).map(([at, ids]) => [at, ids.length])) }
+          );
+          // a veil is a piece kept from you; nothing on this table is kept from anyone who sits at it, so no view shows one
+          const shown = async () => Object.fromEntries(await Promise.all(["a", "b"].map(async (w) => [w, { faces: (await P(`faces('${w}')`)).length, veils: (await P(`veils('${w}')`)).length, backs: (await P(`backs('${w}')`)).length }])));
+          await until(`backs('a').length + __p.faces('a').length === ${count} && __p.backs('b').length + __p.faces('b').length === ${count}`, 10_000);
+          await sleep(500);
+          const now = await shown();
+          check(`neither view veils a ${piece}: each sees ${hand} faces and ${count - hand} backs`, ["a", "b"].every((w) => now[w].veils === 0 && now[w].faces === hand && now[w].backs === count - hand), now);
+        }
       }
     }
     await sleep(500);
@@ -402,7 +403,7 @@ async function fromTemplate(gameId) {
   const glbs = files.map((u) => renamed.get(u));
   await verify(made, (url, got) => {
     if (url === table.url && packageProblems(got, PACKAGES).length) return `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-    if (url === table.url && got.view?.activity !== docs[snapshot.scene].view?.activity) return `came back with view.activity ${JSON.stringify(got.view?.activity)}`;
+    if (url === table.url && JSON.stringify(got.view?.start ?? null) !== JSON.stringify(docs[snapshot.scene].view?.start ?? null)) return `came back with view.start ${JSON.stringify(got.view?.start)}`;
     if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
     return null;
   });

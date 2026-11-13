@@ -211,7 +211,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
   };
 
   function join(session, { viewer = `viewer-${session}`, local = {} } = {}) {
-    let localState = Object.freeze({ activities: Object.freeze({ current: "play", available: ["play", "edit"] }), ...local });
+    let localState = Object.freeze({ ...local });
     const view = {
       session,
       viewer,

@@ -106,13 +106,13 @@ try {
     }
     await b.click(btn.x, btn.y);
     mark("clicked the template", { attempt, btn });
-    made = await until("census().a.n === 28 && __p.activity('a') === 'play'", attempt < 2 ? 20_000 : 60_000);
+    made = await until("census().a.n === 28", attempt < 2 ? 20_000 : 60_000);
   }
   if (!made) await shot("no-table");
-  check("a table of 28 tiles, in play", made, { census: await P("census()"), activity: await P("activity('a')"), notices: await P("notices('a')"), templates: await P("templates('a')"), btn, errors: await P("errors") });
+  check("a table of 28 tiles, its maker arriving at it (the seat body: view.start)", made && (await until("bodyLabel('a') === 'Watching'", 20_000)), { census: await P("census()"), body: await P("bodyLabel('a')"), notices: await P("notices('a')"), templates: await P("templates('a')"), btn, errors: await P("errors") });
   if (!made) throw new Error("no table");
   await P("openB()");
-  check("B opens the same scene from its own replica, in play", await until("census().b.n === 28 && __p.activity('b') === 'play' && __p.census().same", 30_000), await P("census()"));
+  check("B opens the same scene from its own replica, arriving watching from a seat", await until("census().b.n === 28 && __p.bodyLabel('b') === 'Watching' && __p.census().same", 30_000), await P("census()"));
   const start = await P("where()");
   check("all 28 start face down on the table, none in a rack", start.down.length === 28 && !start.p1.length && !start.p2.length, start);
   check("every tile looks the same to both: its back", await until("backs('a').length === 28 && __p.backs('b').length === 28", 30_000), { a: (await P("backs('a')")).length, b: (await P("backs('b')")).length });

@@ -1,5 +1,5 @@
 // seats: the places people take at a scene, and who is in them. It runs
-// wherever the scene has seats (scene trait "seats"), in every activity, and
+// wherever the scene has seats (scene trait "seats"), and
 // names nothing that uses it. A table reads who sits where to say whose hand
 // is whose; a keeper reads who is playing. Sitting down pushes the seat
 // body over whatever body you were in; standing up pops it.
@@ -13,7 +13,8 @@
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
 //     (Sit as …, Stand up: model.js);
-//   - telling the others when someone sits down (api.send: the seat id only).
+//   - telling the others when someone sits down (api.send: the seat id only);
+//   - who the parties are, for undo (`parties`): the people seated.
 //
 // Who sits where is the doc's (`player`), and lasts. Whether that player is
 // here now is a claim on the scene, `seat:<id>` (scene/STAGE.md, "Claims"):
@@ -41,7 +42,7 @@
 import css from "./seats.css?inline";
 import { applyMatrix, invertMatrix } from "./transform.js";
 import { seatBody } from "./body.js";
-import { CONFIRM_MS, SEATS, SEAT_CLAIM, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { CONFIRM_MS, SEATS, SEAT_CLAIM, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 
 /** A little longer than the stage's grace for a claim by a session not yet heard from (6 s). */
 const LAPSE_MS = 6500;
@@ -214,9 +215,9 @@ function create(api) {
       tags.set(items);
     }
   }
-  /** Follow the places each frame while any is attached to something, in play; else stop. */
-  function followTags(snapshot, local) {
-    const moving = local?.activities?.current === "play" && tagged.some(({ z }) => (snapshot.parents?.get?.(z.id) ?? null) != null);
+  /** Follow the places each frame while any is attached to something (a table aboard a ship); else stop. */
+  function followTags(snapshot) {
+    const moving = tagged.some(({ z }) => (snapshot.parents?.get?.(z.id) ?? null) != null);
     if (moving && !tagLoop) tagLoop = api.loop(placeTags);
     else if (!moving && tagLoop) {
       tagLoop();
@@ -374,11 +375,31 @@ function create(api) {
   // her deck, or orbit); standing up, watching or moving pops it, and
   // whatever is under it carries on (walking resumes from the eye).
   let sitting = null; // the seat this view sits in, as a body: its seat id
-  const body = seatBody(api, {
+  const seatDef = seatBody(api, {
     left: (sid) => {
       if (sitting === sid) sitting = null;
     },
   });
+  // Arriving (the stage enters view.start's body: { body: "seat" }, no
+  // place): back in your own seat if the doc seats you (its claim is
+  // reconcile's), else watching from the first seat's view, labelled so,
+  // writing nothing; the picker or a seat's verb sits you down over it, and
+  // standing up comes back to it. A seat named (the picker, the verb) is
+  // the seat body as ever.
+  const body = {
+    ...seatDef,
+    enter(place) {
+      if (place != null) return seatDef.enter(place);
+      const at = arrivalSeat(seatsOf(api.scene()), viewer);
+      const s = at ? seatDef.enter(at.sid) : null;
+      if (!s) return null;
+      if (at.mine) {
+        sitting = at.sid;
+        return s;
+      }
+      return { ...s, seat: null, label: "Watching", leave() {} };
+    },
+  };
   const seated = () => api.local.get()?.body?.id === body.id;
   /** Down to the seat body, if it's in the stack under another (walking her deck from it). */
   function downToSeat() {
@@ -487,6 +508,13 @@ function create(api) {
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
     }),
+    // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
+    // the people seated at it, here or away; not those watching. Asked when
+    // someone takes back an edit that showed or decided something here.
+    parties: (snap) => {
+      const seated = rosterOf(snap).map((s) => s.viewer).filter(Boolean);
+      return () => seated;
+    },
     // the seat body (body.js): entered by the picker and the seat's verb
     bodies: [body],
     commands: [
