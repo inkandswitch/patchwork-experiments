@@ -609,7 +609,10 @@ export class SyntheticInput {
       altKey: m.alt,
       metaKey: m.meta,
       repeat: false,
-    };
+      // Legacy, but hotkey libraries (tldraw's among them) still read these; 0 = ignored.
+      keyCode: keyCodeFor(key),
+      which: keyCodeFor(key),
+    } as KeyboardEventInit;
   }
 
   private keyTarget(): Element {
@@ -629,7 +632,10 @@ export class SyntheticInput {
     const m = this.mods(mods);
     const printable = [...key].length === 1;
     if (printable && !m.ctrl && !m.meta) {
-      this.fire(target, new KeyboardEvent('keypress', { ...this.keyInit(key, code, mods), charCode: key.codePointAt(0) } as any));
+      // A canceled keypress means the page inserted the character itself (ProseMirror
+      // does, e.g. when the selection isn't a text cursor): don't insert it again.
+      const pressed = this.fire(target, new KeyboardEvent('keypress', { ...this.keyInit(key, code, mods), charCode: key.codePointAt(0), keyCode: key.codePointAt(0), which: key.codePointAt(0) } as any));
+      if (!pressed) return;
     }
     this.defaultKeyAction(target, key, m, printable);
   }
@@ -711,17 +717,61 @@ export class SyntheticInput {
     this.keyTarget().dispatchEvent(new KeyboardEvent('keyup', this.keyInit(key, code, mods)));
   }
 
-  /** Types text as a keydown(+insert)/keyup per character, `perCharMs` apart. */
+  /**
+   * Types text as a keydown(+insert)/keyup per character, `perCharMs` apart.
+   *
+   * Paced like a person: editors finish setting up asynchronously (tldraw's label editor
+   * places its caret a frame after it opens; ProseMirror reconciles DOM edits on its own
+   * schedule), and a letter that arrives before that lands in the wrong place — "uOtflow"
+   * for "Outflow". So let the page settle before the first character, and give it at
+   * least a frame between characters.
+   */
   async type(text: string, perCharMs = 25, isCanceled: () => boolean = () => false): Promise<void> {
+    await nextFrame();
+    await nextFrame();
+    await sleep(100);
     for (const ch of text) {
       if (isCanceled()) return;
       const key = ch === '\n' ? 'Enter' : ch;
       const mods: Modifiers = ch !== ch.toLowerCase() && [...ch].length === 1 ? { shift: true } : {};
       this.keyDown(key, undefined, mods);
       this.keyUp(key, undefined, mods);
+      await nextFrame();
       if (perCharMs > 0) await sleep(perCharMs);
     }
   }
+}
+
+/** The next animation frame, or ~1 frame later if frames aren't running (hidden tab). */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (!done) (done = true), resolve();
+    };
+    requestAnimationFrame(() => setTimeout(finish, 0));
+    setTimeout(finish, 50);
+  });
+}
+
+const KEY_CODES: Record<string, number> = {
+  Backspace: 8, Tab: 9, Enter: 13, Shift: 16, Control: 17, Alt: 18, Escape: 27, ' ': 32,
+  PageUp: 33, PageDown: 34, End: 35, Home: 36, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39,
+  ArrowDown: 40, Delete: 46, Meta: 91,
+  ';': 186, ':': 186, '=': 187, '+': 187, ',': 188, '<': 188, '-': 189, '_': 189, '.': 190,
+  '>': 190, '/': 191, '?': 191, '`': 192, '~': 192, '[': 219, '{': 219, '\\': 220, '|': 220,
+  ']': 221, '}': 221, "'": 222, '"': 222,
+  '!': 49, '@': 50, '#': 51, '$': 52, '%': 53, '^': 54, '&': 55, '*': 56, '(': 57, ')': 48,
+};
+
+/** The legacy keydown keyCode (US layout): what `which`-reading code expects. */
+export function keyCodeFor(key: string): number {
+  if (key in KEY_CODES) return KEY_CODES[key];
+  if (/^[a-z]$/i.test(key)) return key.toUpperCase().charCodeAt(0);
+  if (/^[0-9]$/.test(key)) return key.charCodeAt(0);
+  const f = /^F([1-9]|1[0-2])$/.exec(key);
+  if (f) return 111 + Number(f[1]);
+  return 0;
 }
 
 export function codeFor(key: string): string {
