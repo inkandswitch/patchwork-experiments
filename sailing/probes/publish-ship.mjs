@@ -34,8 +34,9 @@ if (!DRY) console.log(`connected to ${SYNC}`);
 // ─── an empty scene, as SceneDatatype.init writes it (empty-scene.js) ──────
 // with the scene package as its suggested import, and the packages its
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
-// stage works these out from the registry; here they're stated
-const PACKAGES = ["scene", "sailing"];
+// stage works these out from the registry; here they're stated (joints and
+// traversal for the sloop's companionway: its hatch's slide, its exit)
+const PACKAGES = ["scene", "sailing", "joints", "traversal"];
 const scene = await repo.create2(emptyScene({ title: "Ship at sea", patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────
@@ -100,7 +101,7 @@ const problems = [];
 if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(d.view?.activity)}, not "play"`);
 if (!d.traits?.["sailing.sea"]) problems.push("no sailing.sea trait");
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
-const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "redBuoy", "greenBuoy"];
+const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];
 const keys = KINDS.map(fileKey).sort();
 const assets = d.assets ?? {};
 if (JSON.stringify(Object.keys(assets).sort()) !== JSON.stringify(keys)) problems.push(`doc.assets has ${JSON.stringify(Object.keys(assets).sort())}, not ${JSON.stringify(keys)}`);

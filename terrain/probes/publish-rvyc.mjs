@@ -47,10 +47,11 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
-// the scene, the terrain's and the sloop's. In a real shell the stage works
+// the scene, the terrain's and the sloop's (with joints and traversal, for her
+// companionway's hatch and exit). In a real shell the stage works
 // these out from the registry; the probe page has none that says where its
 // plugins come from, so they're stated here.
-const PACKAGES = ["scene", "terrain", "sailing"];
+const PACKAGES = ["scene", "terrain", "sailing", "joints", "traversal"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
