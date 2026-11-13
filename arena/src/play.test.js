@@ -70,7 +70,7 @@ const THREE = {
 function fakeApi(doc) {
   const calls = { listen: {}, entered: [], loops: [], sends: [], notices: [], held: null, put: 0 };
   const world = new Obj();
-  let local = { body: { id: "orbit" } };
+  let local = { body: { id: "look", depth: 0 } };
   let x = null;
   const api = {
     id: "arena",

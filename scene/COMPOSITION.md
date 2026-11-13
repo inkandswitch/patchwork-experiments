@@ -252,7 +252,7 @@ view computes them. A sea's water height doesn't, because only sailing
 knows it.
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
-applies; the orbit body rides the focus stage's latest base ride. A seat
+applies; the stage's Look and Edit (the orbit camera) ride the focus stage's latest base ride. A seat
 body rides the game's root; sailing's follow on her hull is base, and
 gives way to any other body with no flag. `camera.ride(null)` rides the
 stage's root, which is the link. `fallback` and `camera.riding()` go, and
@@ -534,11 +534,11 @@ Each is argued above and checkable over finite cases.
 | I1 | **One doc per extension.** Every read and write through an api goes to its stage's handle | Spy handles; run the scene parts', tabletop's, sailing's and the keepers' tests in a child stage; no other handle is touched |
 | I2 | **No reference crosses docs.** Parent, group and every `object` field name an object of the same doc; a link is the only edge between docs | Every assignment over ≤3 docs × ≤3 objects, foreign ids included: the composed relation is intra-doc plus link → child roots, and acyclic |
 | I3 | **Expansion is finite and fixed by the graph.** No identity repeats on a path; each live doc has exactly one acting occurrence, chosen by path order; the rest are mirrors; closed reasons are exact | Every link multigraph on ≤4 docs (live, pinned, self-pins, ≤2 links per pair) × every arrival order: terminates, and the final expansion is the same |
-| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | Lost Cities G × seats {none, p1, p1+p2} × card states × body {orbit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and 20° heel, in Y, mirrored, focus inside and outside: identical |
+| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | Lost Cities G × seats {none, p1, p1+p2} × card states × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and 20° heel, in Y, mirrored, focus inside and outside: identical |
 | I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone, in X, in Y; two in one page) on in-memory Automerge × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field |
-| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and the orbit body's is the focus's latest base ride | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role |
+| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the focus's latest base ride | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role |
 | I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field when S has no edge outside | Every sibling set of a fixed 6-object scene with traits, refs, groups and a seats map × K ⊆ the root's traits |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on ≤3 docs with one bound object and one claim |
@@ -593,7 +593,7 @@ ships alone and proves something.
 6. [T] **Bodies and the held tool**; rides by body, so `fallback` and
    `riding()` go. *Built:* see TOOLS.md's build order; the camera is the
    body's as section 4 says (a seat's ride is the only one while seated,
-   orbit rides sailing's base follow), and sitting from walking pushes the
+   Look and Edit ride sailing's base follow), and sitting from walking pushes the
    seat body over the walk body, so `firstPerson` went. Sailing walks her
    deck in a body of its own (`aboard`), not the walk body (TOOLS.md says
    why).

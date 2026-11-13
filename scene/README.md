@@ -42,10 +42,12 @@ pnpm install && pnpm build && pnpm test
 
 Every part but carry declares no traits, so each runs in every scene, a
 game's included; carry runs where the doc has something carryable. What
-keeps the editor's chrome out of the way is that it follows attention
-(TOOLS.md §1): the inspector is a drawer tab while something is selected,
-the outline (Objects), Dimensions and Parts are tabs you open from the
-toolbar, and the grid, axes and bounds are drawn only in the orbit body.
+keeps the editor's chrome out of the way is that **editing is a body**
+(TOOLS.md §3, Decisions 6): the toolbar, the halo's handles and knobs, the
+inspector (a drawer tab while something is selected), the outline
+(Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
+axes and bounds, and every command marked `edit: true` show only in the
+Edit body. Look, walk, seat and station show none of it.
 `scene.clock` is the clock chip (▶ or ⏸ for the doc's world time, in a slim
 bar on the top edge, shown only for a doc with a process: TOOLS.md §7);
 `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the toolbar).
@@ -70,22 +72,26 @@ down (`hold: true` shows "hold F"): `update` every frame, `end` on release,
 runs in every scene; with nothing that has verbs under attention it shows
 nothing.
 
-**Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Orbit ▾",
-"Walk ▾": enter a body that can start here, or Leave the one you're in),
-who's here (each person's body and held tool, from presence) and the Esc
-hint (the layer the next Escape pops). The stage's own body is orbit;
-others come with packages (`walk`, `seats`, sailing's).
+**Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Look ▾",
+"Edit ▾", "Walk ▾": Look or Edit, a body that can start here, or Leave the
+one you're in), who's here (each person's body and held tool, from
+presence) and the Esc hint (the layer the next Escape pops). The stage's
+own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
+camera; others come with packages (`walk`, `seats`, sailing's). Nothing
+stands on Edit: walking or sitting down from it leaves it, and Leave comes
+back to Look.
 
 ## Using it
 
-This is the editor, and it is always there: select something (a click in
-the orbit body, or Select in any menu) and its halo and the inspector are
-the editor. A scene whose doc says where to start (`view.start`, the
-inspector's "Starts in": an arena level starts you walking at a spawn
-point, a card table seated or watching from a seat) puts you there once,
-when you open it; the body chip and Leave change it for you alone. Undo
-(⌘Z) takes back your own edits (the halo, the inspector, add, delete,
-paste), never a verb's (a die's roll stays rolled).
+This is the editor, in the **Edit** body: choose Edit on the body chip
+(bottom right), click something, and its halo and the inspector are the
+editor. A scene you make new starts you in Edit. A scene whose doc says
+where to start (`view.start`, the inspector's "Starts in": an arena level
+starts you walking at a spawn point, a card table seated or watching from a
+seat, a ship or a showcase in Look) puts you there once, when you open it;
+the body chip and Leave change it for you alone. Undo (⌘Z, in Edit) takes
+back your own edits (the halo, the inspector, add, delete, paste), never a
+verb's (a die's roll stays rolled).
 
 An empty scene is a start screen: "Start from:" lists every installed
 template (`scene:template`: arena's "Arena level", say) and Blank. A template
@@ -185,10 +191,10 @@ notice says what to add. See STAGE.md, "Copying objects".
   the object itself and anything attached to it, so a loop can't be made.
   Hiding an object doesn't hide what's attached to it. Removing an object
   leaves its attachments where they were, now at the scene root.
-- **Viewport**: orbit/pan/zoom, click to select (editing; anywhere, *Select*,
-  first in every right-click menu), **Frame** (`.`: the selection, else
-  everything; editing only — a game table takes just the camera framing the
-  scene as it loads). There are no tools to pick and no modes.
+- **Viewport**: orbit/pan/zoom (Look and Edit), click to select (in Edit;
+  anywhere, *Select*, first in every right-click menu), **Frame** (`.`: the
+  selection, else everything, in every body; the toolbar's Frame all is in
+  Edit). There are no tools to pick and no modes: the editor is a body.
 - **Halo**: what's selected shows handles round its box, after Morphic's: a
   move arrow along each axis, a rotate ring about each, a scale handle at
   each corner (uniform scale, about its middle), all outside the box and the
@@ -298,7 +304,7 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 - **Input** is offered down a chain: the held tool (measure, a gun), the
   widget under the pointer, the extensions whose traits are on the object
   under it, the scene's, the general ones in registry order, then the top
-  body's default (orbit's selects). A press nobody claims orbits. Keys go
+  body's default (Edit's selects; Look has none). A press nobody claims orbits. Keys go
   the gesture's, the held tool's and the body's declared keys first, then
   the key map; Escape is the stage's ladder (TOOLS.md §5).
 - **Commands** are verbs with a target (an object, a ref such as a selected
@@ -627,7 +633,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   // defaults for each viewer (each can change their own): display, snapping, where to start
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // a carry snaps (absent = true)
-          start?: { body?: string,                         // the body people arrive in (absent: orbit), read once
+          start?: { body?: string,                         // the body people arrive in ("edit"; absent or any other: Look, then that body), read once; a scene made new says "edit"
                     place?: string,                        // what that body's enter is given: a spawn point's id, a seat's
                     home?: { position, target, fov? } } }, // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
@@ -841,12 +847,12 @@ block (one selection; B hears it) and Delete removes it, and only it; Delete
 removes a selected object; the tabs' × close the drawer and the canvas takes
 the room, and the toolbar's Objects opens it again; a double-click frames an
 object; a right-click opens the menu (Select and Remove work); there are no
-modes (the orbit body, no activity in local); pasted automerge URLs add a
+modes (the Edit body, no activity in local); pasted automerge URLs add a
 GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its
 parent's halo drag. With nothing selected the toolbar's Inspector opens it
-on the Scene: its "Starts in" offers Orbit. Then, with arena/ built (its
+on the Scene: its "Starts in" offers Look and Edit. Then, with arena/ built (its
 plugins are registered too; otherwise these are skipped), "Add behaviour…"
 on a block offers Target and not the scene-only Arena level; adding Target
 starts the arena in both views, beside the editor (its Play in the toolbar;

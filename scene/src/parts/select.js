@@ -2,10 +2,13 @@
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
-// - A plain click selecting is the orbit body's default press (the stage's:
-//   stage.js, ORBIT), offered after the held tool and the whole chain, so
-//   structurally last; walk, seat and station have none, so there a plain
-//   click selects nothing (TOOLS.md §3, §4).
+// - A plain click selecting is the Edit body's default press (the stage's:
+//   stage.js, ../stage/bodies.js), offered after the held tool and the whole
+//   chain, so structurally last; Look, walk, seat and station have none, so
+//   there a plain click selects nothing (TOOLS.md §3, §4). Select is
+//   everyone's, in every body; what a selection shows beyond its box (the
+//   halo's handles, the inspector) is Edit's. Remove (Delete) is an edit, so
+//   Edit's too.
 // - Where a selection may be is ../selection.js (H10): an element of the
 //   focus stage. With one stage that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets
@@ -183,6 +186,7 @@ export function create(api) {
     },
     {
       id: "remove",
+      edit: true,
       name: "Remove",
       key: ["Delete", "Backspace"],
       show: ["menu", "inspector"],

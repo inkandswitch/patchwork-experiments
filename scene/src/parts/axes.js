@@ -4,6 +4,7 @@
 // scene, drawn after the main pass in a scissored corner (api.afterRender),
 // turned with the camera; its X/Y/Z labels go on screen through api.labels.
 
+import { editing } from "../stage/bodies.js";
 import css from "./axes.css?inline";
 import { gridFor } from "../units.js";
 
@@ -68,8 +69,8 @@ export default {
     const pushLabels = () => labels.set([...axisItems, ...triadItems]);
 
     const shown = () => api.pref("axes", true) !== false;
-    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
-    const drawn = () => shown() && api.local.get().body?.id === "orbit";
+    // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
+    const drawn = () => shown() && editing(api.local.get());
     let key = null;
     let theme = null;
 
@@ -187,6 +188,7 @@ export default {
       commands: [
         {
           id: "axes",
+          edit: true,
           name: "Axes",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the world axes" } : null),

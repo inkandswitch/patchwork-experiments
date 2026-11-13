@@ -54,8 +54,14 @@ export async function contain({ repo }, { title, items }) {
   return { key, bind: (slot) => ({ [TRAIT]: { by: key, slot } }) };
 }
 
-/** The roster, from whoever contributes one (the seats' owner): who is playing, in this snapshot. */
-function playing(api, scene) {
+/**
+ * The roster, from whoever contributes one (the seats' owner): who is
+ * playing with the objects `ids` (a deck's cards), in this snapshot. A
+ * roster that can say which seats are around them (`around`: those at
+ * their table) is asked that, so two tables in one scene are two games;
+ * else every seat counts.
+ */
+export function playing(api, scene, ids = []) {
   const roster = api.collect("roster").map((r) => r?.value).find((r) => r && typeof r.viewers === "function");
   const safe = (fn, fallback) => {
     try {
@@ -65,10 +71,19 @@ function playing(api, scene) {
     }
   };
   if (!roster) return { players: [], openSeats: [], nameOf: () => "someone" };
+  const nameOf = (v) => safe(() => roster.nameOf?.(scene, v), null) ?? "someone";
+  const around = typeof roster.around === "function" ? safe(() => roster.around(scene, [...ids]), null) : null;
+  if (Array.isArray(around)) {
+    return {
+      players: around.map((s) => s?.viewer).filter((v) => typeof v === "string" && v),
+      openSeats: around.filter((s) => !s?.viewer).map((s) => s?.name ?? s?.id),
+      nameOf,
+    };
+  }
   return {
     players: safe(() => roster.viewers(scene), []),
     openSeats: safe(() => roster.open?.(scene), []),
-    nameOf: (v) => safe(() => roster.nameOf?.(scene, v), null) ?? "someone",
+    nameOf,
   };
 }
 
@@ -84,7 +99,7 @@ export function create(api, { secret } = {}) {
   /** What the deck's protocol is told of the table, read from the stage as it is now. */
   function tableFor(url) {
     const slots = bound.slots.get(url) ?? new Map();
-    const { players, openSeats, nameOf } = playing(api, scene);
+    const { players, openSeats, nameOf } = playing(api, scene, slots.values());
     return {
       players,
       openSeats,

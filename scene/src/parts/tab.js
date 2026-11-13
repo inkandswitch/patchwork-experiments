@@ -7,6 +7,12 @@
 // mount(body) runs once, on the first open, and answers { update(scene,
 // local), dispose() }; update runs while the tab is open (and once as it
 // opens), dispose when the part stops.
+//
+// The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
+// while the body is Edit, and shuts when the body stops being Edit (not
+// the viewer closing it: onClosed isn't told).
+
+import { editing } from "../stage/bodies.js";
 
 /**
  * @param {object} api
@@ -22,7 +28,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
 
   /** Dock it (if it isn't); `show: false` puts it behind a pane already shown, a tab to pick. */
   function open({ show = true } = {}) {
-    if (close) return;
+    if (close || !editing(api.local.get())) return;
     if (!view) {
       try {
         view = mount(body) ?? null;
@@ -52,6 +58,13 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     close = null;
     c?.();
   }
+  // out of Edit, the tab goes
+  api.local.watch?.(
+    () => api.schedule(() => {
+      if (close && !editing(api.local.get())) shut();
+    }),
+    (m) => m.body,
+  );
 
   return {
     open,
@@ -88,6 +101,8 @@ export function tabToggle(tab, { id, name, title, available = () => true }) {
   return {
     id,
     name,
+    // the drawer's tabs are the editor's (../stage/bodies.js): only in Edit
+    edit: true,
     show: ["toolbar"],
     state: (target) => (target == null && available() ? { checked: tab.isOpen(), title } : null),
     // (the toolbar says which way; a key or the menu toggles)

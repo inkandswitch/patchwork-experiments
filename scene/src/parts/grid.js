@@ -4,6 +4,7 @@
 // scene in the current units (units.js gridFor), and its plane is given to
 // the stage as an extent so the near plane never cuts it.
 
+import { editing } from "../stage/bodies.js";
 import css from "./grid.css?inline";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
@@ -48,8 +49,8 @@ export default {
     api.overlay().append(caption);
 
     const shown = () => api.pref("grid", true) !== false;
-    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
-    const drawn = () => shown() && api.local.get().body?.id === "orbit";
+    // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
+    const drawn = () => shown() && editing(api.local.get());
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
     let key = null;
 
@@ -95,6 +96,7 @@ export default {
       commands: [
         {
           id: "grid",
+          edit: true,
           name: "Grid",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show the ground grid" } : null),

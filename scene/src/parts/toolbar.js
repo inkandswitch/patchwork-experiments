@@ -8,11 +8,20 @@
 // Each flush it works out every control's state; the DOM is touched only for
 // controls whose state changed, so a picker keeps its focus and a hover costs
 // nothing.
+//
+// The toolbar is the editor's (../stage/bodies.js): it shows only in the Edit
+// body. Elsewhere (looking, walking, seated) there is no bar: a package's
+// command meant for it (arena's Play, the cups' Lift all) is still in the
+// menu and on its key.
 
 import css from "./toolbar.css?inline";
 import { applicable, cleanChoices, controlKey, controlKind, flatCommands, localChanged, tooltip } from "./toolbar-commands.js";
 import { hintFor } from "../keymap.js";
 import { resolverState } from "./resolver.js";
+import { editing } from "../stage/bodies.js";
+
+/** Does the toolbar show? Only in Edit, with something on it. Pure. */
+export const toolbarShown = (local, count) => editing(local) && count > 0;
 
 function create(api) {
   api.style(css);
@@ -92,7 +101,7 @@ function create(api) {
   function render(scene, local) {
     const keys = resolverState(api);
     // (each key is the resolver's: shown only where pressing it does this)
-    const items = applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) }));
+    const items = editing(local) ? applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) })) : [];
     const seen = new Set();
     const els = [];
     for (const item of items) {
@@ -115,7 +124,7 @@ function create(api) {
       order = nextOrder;
       row.replaceChildren(...els);
     }
-    edge.hidden = els.length === 0;
+    edge.hidden = !toolbarShown(local, els.length);
   }
 
   return {

@@ -158,7 +158,7 @@ try {
   check("A opens Parts from the toolbar, still seated (no mode to switch)", await until("tab('a', 'parts') && __p.body('a') === 'Seated'", 6000), { body: await P("body('a')"), running: await P("running('a')") });
   await settled();
   const bin = await P("binParts('a')");
-  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]), bin);
+  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]), bin);
   const boardBox = await P(`slots(${J(board)})`);
   const xs = boardBox.map((s) => s.world[0]), zs = boardBox.map((s) => s.world[2]);
   const mid = [(Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2];

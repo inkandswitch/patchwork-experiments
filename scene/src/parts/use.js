@@ -166,9 +166,10 @@ function create(api) {
     prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
   }
 
-  // A loop runs only while the eye moves on its own: a body other than
-  // orbit (walking, at a station: what's in reach changes every frame).
-  const moving = () => api.local.get().body?.id !== "orbit";
+  // A loop runs only while the eye moves on its own: a body over the
+  // stage's Look or Edit (walking, at a station: what's in reach changes
+  // every frame).
+  const moving = () => (api.local.get().body?.depth ?? 0) > 0;
   function wantLoop() {
     const need = moving();
     if (need && !offLoop) offLoop = api.loop(() => refresh());

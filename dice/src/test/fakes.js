@@ -342,8 +342,8 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       style() {},
       cursor() {},
       box: () => null,
-      // the body's eye is the camera's here (orbit)
-      body: { eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null), current: () => ({ id: "orbit" }) },
+      // the body's eye is the camera's here (the stage's Look: the orbit camera)
+      body: { eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null), current: () => ({ id: "look", depth: 0 }) },
       camera: {
         set: (c) => (view.camera = c),
         get: () => view.camera,

@@ -15,6 +15,7 @@
 import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 import { groupChain, isGroup } from "../groups.js";
 import { closestOnLine } from "../handles.js";
+import { editing } from "../stage/bodies.js";
 
 /** How big a handle is, as a fraction of its distance from the eye: the same size on screen at any zoom. */
 export const HANDLE_SIZE = 0.02;
@@ -55,7 +56,8 @@ export function groupRoots(scene, gid) {
 
 /**
  * What the halo's handles are on: { kind: "object" | "group", id }, or null.
- * Handles show for the selection where its doc may be written, while
+ * Handles are the editor's: they show only in the Edit body
+ * (../stage/bodies.js), for the selection where its doc may be written, while
  * no tool is held (a held tool takes every press), on an object that
  * isn't locked or a group with something it can move.
  * @param {object} scene  api.scene()
@@ -63,7 +65,7 @@ export function groupRoots(scene, gid) {
  * @param {boolean} writable  api.writable()
  */
 export function haloTarget(scene, local, writable = true) {
-  if (!writable || local?.held != null) return null;
+  if (!editing(local) || !writable || local?.held != null) return null;
   const id = local?.selected;
   const o = id != null ? scene?.objects?.[id] : null;
   if (!o) return null;

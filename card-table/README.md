@@ -15,7 +15,9 @@ A keeper is an ordinary extension of a [scene](../scene/README.md)
 
 So a scene that uses it lists this package like any other, and someone who
 arrives by link without it is offered it. It names no other package: who is
-playing comes from the `roster` convention (whoever owns seats), who may see
+playing comes from the `roster` convention (whoever owns seats: the seats
+around the deck's cards, by its `around`, so each of two tables in one room
+waits for its own players), who may see
 what from the stage's `api.audience` (whatever policies are running: a
 table's hands and face-up cards), and whatever handles kept things (a
 table's Shuffle) finds it through the `keeper` convention. Setup code finds

@@ -390,8 +390,10 @@ its containers and bags; and `writeTable(d, layout, made, { seats, view })`
 writes it into a scene doc in one go: every thing at its `at` (several copies
 a group), each deck shuffled if it says so, dealt, and the rest stacked or
 spread, every card a `tabletop.card` bound by its keeper's trait, every bag
-given its document; the seats through their owner's `lay` (which writes them
-only where the scene has none); the view and the game's `origin`.
+given its document; the seats through their owner's `lay` (which adds them to
+the scene's, under other ids where another table's seats have these, and
+says which: each hand is given its seat's id as written); the view and the
+game's `origin`.
 The game page's "Set up a table" writes it onto a fresh `scene` doc and
 creates that: an empty scene as the scene's own datatype makes one
 (`src/empty-scene.js`, a copy of its init: every map and list a scene has,
@@ -418,8 +420,9 @@ the pieces carry.
 
 Every built-in game has seats, Santorini's three by its workers' colours
 (Blue, Cream, Grey), so every table starts people where a press picks a
-piece up. A game laid out with none would start people in orbit at its home
-view, where a press-and-drag still carries a piece but a click selects it.
+piece up. A game laid out with none would start people in Look at its home
+view, where a press-and-drag still carries a piece and a click selects
+nothing (Edit, from the body chip, is where a click selects).
 
 ### Templates
 
@@ -459,10 +462,13 @@ The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
   `setUp` with the game's id: `gamePart("lost-cities")`), set down on what it was put on: every piece under that
   object in its frame (on a Card table: squarely in the middle of the top),
   each seat's camera `in` it, its deck kept by a joint keeper where one is installed.
-  It brings seats only to a scene that has none, and leaves the scene's
+  It brings its own seats (a second table in one scene gets seats of its
+  own, `p1-2`…: the seats package's `lay`), and leaves the scene's
   view, home, units and title alone. So a game aboard a ship is three steps:
   start from *Ship at anchor* (sailing), drop a Card table in her cockpit,
   drop Lost Cities on the table; everything rides with her.
+- **Santorini**: the same for Santorini (no deck: everything in plain
+  sight), a seat for each worker colour.
 - **Draw Dominoes, 2 / 3 / 4 players**: the same for Draw Dominoes. Its
   table is about 1 m square (the felt is 0.74 m), wider than the Card
   table's 0.76 m: with three or four players the side racks hang over.

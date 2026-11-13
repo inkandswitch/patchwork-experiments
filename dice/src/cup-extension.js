@@ -523,7 +523,7 @@ function create(api) {
   }
   function startPeek(id) {
     const m = api.worldOf?.(id);
-    // the body's eye (scene/TOOLS.md §4): walking, seated or in orbit
+    // the body's eye (scene/TOOLS.md §4): walking, seated, or the orbit camera's (Look, Edit)
     const eye = api.body.eye()?.position;
     let dir = [0, 1];
     if (m && eye && THREE) {

@@ -20,12 +20,16 @@
 //     view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
+// Adding is the editor's (../stage/bodies.js): drops, pastes and the start
+// screen are only taken or shown in the Edit body. (A scene made new starts
+// people in Edit, so its maker sees the start screen.)
 
 import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
 import { own } from "../stage/own.js";
+import { editing } from "../stage/bodies.js";
 
 export { fromEmbed };
 
@@ -315,13 +319,14 @@ function create(api) {
   // Anywhere in the stage takes a drop (the side panels too), unless something under it already did (an outline row, which stops
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
+  const adding = () => editing(api.local.get());
   api.listen(root, "dragenter", (e) => {
-    if (!inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
+    if (!adding() || !inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     depth++;
     showHint(true);
   });
   api.listen(root, "dragover", (e) => {
-    if (e.defaultPrevented || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
+    if (!adding() || e.defaultPrevented || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   });
@@ -341,7 +346,7 @@ function create(api) {
     { capture: true },
   );
   api.listen(root, "drop", (e) => {
-    if (e.defaultPrevented || fromEmbed(e, root)) return;
+    if (!adding() || e.defaultPrevented || fromEmbed(e, root)) return;
     const dt = e.dataTransfer;
     if (!accepts(dt)) return;
     e.preventDefault();
@@ -355,7 +360,7 @@ function create(api) {
 
   // ── paste, anywhere in the stage outside a field ─────────────────────────
   api.listen(root, "paste", (e) => {
-    if (e.defaultPrevented || fromEmbed(e, root)) return;
+    if (!adding() || e.defaultPrevented || fromEmbed(e, root)) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
     const text = e.clipboardData?.getData?.("text/plain");
     if (!parseAutomergeUrl(text)) return;
@@ -365,8 +370,8 @@ function create(api) {
 
   return {
     update(scene, local, prev) {
-      if (scene === prev.scene) return;
-      const none = !scene.ids.length;
+      if (scene === prev.scene && local.body === prev.local?.body) return;
+      const none = !scene.ids.length && editing(local);
       if (empty.hidden !== !none) empty.hidden = !none;
     },
     dispose() {

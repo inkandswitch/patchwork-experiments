@@ -120,9 +120,12 @@ export class History {
     this.conflicts = this.conflicts.filter((c) => roots.has(rootOf(c.parent)));
   }
 
+  // A leaf's kids are one shared empty list, and a row equal to its
+  // parent's is its parent's: inputs change seldom, so most rows are shared.
   #node(tick, row, parent) {
     this.size++;
-    return { id: this.#ids++, tick, row, parent, kids: [], born: this.at, shown: 0 };
+    if (row && parent?.row && equal(row, parent.row)) row = parent.row;
+    return { id: this.#ids++, tick, row, parent, kids: NONE, born: this.at, shown: 0 };
   }
 
   #start(tick, snapshot) {
@@ -144,6 +147,7 @@ export class History {
     let next = h.kids.find((k) => equal(k.row, row));
     if (!next) {
       next = this.#node(tick + 1, row, h);
+      if (h.kids === NONE) h.kids = [];
       h.kids.push(next);
     }
     this.head = next;
@@ -205,6 +209,8 @@ export class History {
     if (this.head) this.head.shown++;
   }
 }
+
+const NONE = Object.freeze([]);
 
 /** The ancestor of node (or node itself) at tick, or null. */
 export function ancestorAt(node, tick) {

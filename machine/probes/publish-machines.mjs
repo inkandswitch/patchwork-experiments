@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSession } from "../src/host/host.js";
 import { content as doomContent } from "../src/doom.js";
+import { CHECKPOINT_SECONDS } from "../src/patchwork/datatype.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const arg = (k, d) => {
@@ -46,7 +47,7 @@ for (const ex of EXAMPLES) {
   const wasm = read(`engines/${ex.kind}/dist/${ex.kind}.wasm`);
   const content = ex.content();
   const c = await repo.create2({ title: ex.contentTitle, bytes: content });
-  const session = await createSession(repo, { wasm, content });
+  const session = await createSession(repo, { wasm, content, seconds: { every: CHECKPOINT_SECONDS[ex.kind] } });
   // Time starts stopped: it runs while someone holds a port.
   session.change((d) => void (d.clock = { t: 0, at: Date.now(), until: 0 }));
   const m = await repo.create2({

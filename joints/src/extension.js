@@ -6,7 +6,7 @@
 //   menu, the inspector, the key map), within the body's reach: it says
 //   `reach: true`, and the stage measures from the body's eye against its
 //   reach (scene/TOOLS.md §4), so walking you open a door within 2 m and in
-//   orbit anywhere;
+//   Look or Edit (the orbit camera) anywhere;
 // - the motion: an act, a pose hold each frame while this view moves a part
 //   (a loop, only then, to draw it), released as landed after the one write;
 //   the landing itself is timed by the stage's time (api.clock.after: the

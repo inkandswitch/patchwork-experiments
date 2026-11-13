@@ -268,7 +268,7 @@ describe("the commands", () => {
     const far = s.look([0, 2.3, 9]);
     expect(s.state(s.cmd("helm"), "wheel", near)).toEqual({});
     expect(s.state(s.cmd("helm"), "wheel", far)).toEqual({ disabled: true, title: "too far" });
-    // in orbit the body reaches everything
+    // in Look (the orbit camera) the body reaches everything
     expect(s.state(s.cmd("helm"), "wheel", s.look([0, 2.3, 90], Infinity))).toEqual({});
     expect(s.cmd("helm").state("rig", near)).toBe(null);
     expect(s.cmd("sail").state("wheel", near)).toBe(null);
@@ -603,7 +603,7 @@ describe("the commands", () => {
     s.me.swimming = false;
     s.me.playing = false;
     expect(noFar(s.offered("mast", s.at("mast", 6.45)))).toBe(true);
-    // in orbit (the body reaches everything) there's nowhere to go: the verbs themselves
+    // in Look (the body reaches everything) there's nowhere to go: the verbs themselves
     expect(noFar(s.offered("mast", s.at("mast", 6.45, [0, 0, 100], Infinity)))).toBe(true);
   });
 

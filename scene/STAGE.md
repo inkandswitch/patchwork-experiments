@@ -16,24 +16,26 @@ going is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
 
 | Word | Means |
 |---|---|
-| **Stage** | The core: the doc, loading and building object content, rendering, picking, the camera rig, drawing layers, the input router with its body stack and held-tool slot, presence, claims, pose holds, the world clock, the drawer, lenses and the audience. It has no UI of its own. Its one opinion about input is the orbit body's: a click nobody else took selects. |
+| **Stage** | The core: the doc, loading and building object content, rendering, picking, the camera rig, drawing layers, the input router with its body stack and held-tool slot, presence, claims, pose holds, the world clock, the drawer, lenses and the audience. It has no UI of its own. Its one opinion about input is the Edit body's: a click nobody else took selects (in Look, nothing does). |
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Part** | A `scene:part` plugin: something to put into a scene (a mast, a buoy, a target), offered in the editor's parts bin. |
 | **Surface** | An extension that presents others' contributions (toolbar, menu, key map, use prompt), read with `api.collect(name)`. |
 | **Contribution** | A field on an extension's instance that some other extension may collect. The stage reads only the ones listed under "instance". |
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
-| **Body** | Where a viewer is in the world and how they move and look: orbit (the stage's own, always at the bottom), walk (`walk/`), a seat (`seats/`), sailing's `aboard` and `station`. One stack per view; the top one is current, and its eye and reach are what verbs are measured from. Contributed as `bodies`. |
+| **Body** | Where a viewer is in the world and how they move and look: Look or Edit (the stage's own, both the orbit camera, one always at the bottom: `src/stage/bodies.js`), walk (`walk/`), a seat (`seats/`), sailing's `aboard` and `station`. One stack per view; the top one is current, and its eye and reach are what verbs are measured from. Nothing stands on Edit. Contributed as `bodies` (the stage's two aren't). |
+| **Look** | The stage's body for looking: the orbit camera, no default press, none of the editor. Where a doc that names no body starts people. |
+| **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar, grid, axes and bounds, and every command that says `edit: true`. |
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
-| **Selection** | One target per view (`local.selected`). Select is the first entry of every target's menu; in the orbit body a plain click selects too. |
-| **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, where the doc is writable and no tool is held. Handles, not modes. |
+| **Selection** | One target per view (`local.selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. |
+| **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
 | **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock). Keys and the use prompt go to it. |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
 | **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (while something is selected), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
-| **Edit** | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
+| **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
 ## Three places for state
 
@@ -73,7 +75,7 @@ this view and by the stage.
 | Key | Written by | Means |
 |---|---|---|
 | `hovered` | stage | the object id under the pointer, or null |
-| `body` | stage | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; `{ id: "orbit", depth: 0, reach: Infinity }` until another is entered. Grid, axes and bounds show only in orbit |
+| `body` | stage | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; at the bottom (depth 0) the stage's `{ id: "look" | "edit", label: "Look" | "Edit", reach: Infinity }`, Look until arriving says otherwise. The editor's chrome shows only in Edit (`editing(local)`, `src/stage/bodies.js`) |
 | `held` | stage | the held tool, `{ ext, command, name, keys, pointer }`, or null |
 | `gesture` | stage | the open press session's declared keys, `{ owner, keys }`, or null |
 | `pointer` | stage | `{ locked, lock, wanted, released, refused }` (`src/stage/pointer.js`) |
@@ -165,8 +167,10 @@ inspector is a drawer tab open while something is selected (its × shuts it
 until the selection changes; the toolbar's Inspector opens it on the scene
 with nothing selected); the outline (Objects), Dimensions and Parts are
 drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
-drawn only in the orbit body (and, as display prefs, a doc may suggest them
-off: a table does). The use prompt shows attention's verbs wherever there
+drawn only in the Edit body (and, as display prefs, a doc may suggest them
+off: a table does). All of that, the toolbar, and every command that says
+`edit: true` are the Edit body's alone (TOOLS.md §3, "What is Edit's"):
+looking, walking or seated, nobody sees an editor. The use prompt shows attention's verbs wherever there
 are any. A part that was an edit-only verb is a verb with no mode: a bag's
 Empty out is in its menu, whoever opens it.
 
@@ -198,8 +202,12 @@ game.
 **Arriving** (TOOLS.md §2). `view.start = { body, place, home }` is where
 the doc starts people, read once, when the stage opens (and again after a
 template has run). `home` is the camera a viewer with no saved camera of
-their own opens at (`startOf`, `initialCamera`); `body` (absent: orbit) is
-entered at `place` (a spawn point's object id, a seat's id, or absent:
+their own opens at (`startOf`, `initialCamera`). `body` says the base at
+once: `"edit"` is Edit, anything else or nothing is Look (`startBase` in
+`src/stage/bodies.js`). A scene made new says `"edit"` (the scene datatype's
+`init` writes `view.start = { body: "edit" }`: they came to build); a
+template or publisher writes its own `view.start` over it. Any other body is
+entered over Look at `place` (a spawn point's object id, a seat's id, or absent:
 `null`, the body's own "here") as soon as a running extension offers it and
 the content shown has loaded (a walker started before its floor is in falls
 through it), or `ARRIVE_WAIT_MS` (20 s) after it came on offer whatever is
@@ -615,9 +623,9 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
    on a table aboard a boat goes to the table's extension, then the boat's,
    then the scene's;
 4. **`general` scope**, in running order;
-5. **the top body's input** ("Bodies" below): orbit's default press is
+5. **the top body's input** ("Bodies" below): Edit's default press is
    Select (a click on an object selects it, on nothing clears), structurally
-   last; walk, seat, sailing's aboard and station have no default press;
+   last; Look, walk, seat, sailing's aboard and station have no default press;
 6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held (a first-person body holds it).
@@ -638,12 +646,12 @@ a tool to pick first, and there is no `local.tool` or `view.tool`:
   F is carry's Flip on every surface; Frame is `.`.
 - **Select** is the first entry of every target's menu (`scene.menu` puts
   `scene.select`'s Select first), whatever body you're in: the deliberate select,
-  in a game too. A plain click selects only as the orbit body's default
-  press, the stage's own (`ORBIT` in `stage.js`), offered after the whole
-  chain. Where a selection may be is `src/selection.js`: an element of the
+  in a game too. A plain click selects only as the Edit body's default
+  press, the stage's own (`editInput` in `stage.js`), offered after the
+  whole chain; Look has none. Where a selection may be is `src/selection.js`: an element of the
   focus stage (H10); with one stage, any object.
-- **The halo** (`scene.halo`) is the selection's handles, where the doc is
-  writable and no tool is held: a move arrow along each axis, a rotate ring
+- **The halo** (`scene.halo`) is the selection's handles, in the Edit body,
+  where the doc is writable and no tool is held: a move arrow along each axis, a rotate ring
   about each and a scale handle at each corner, all outside the thing's box
   and sized for the screen (`src/parts/halo-math.js`), plus the build-param
   knobs (`scene.handles`). They are drawn and dragged in the frame of what
@@ -751,8 +759,9 @@ a selected dimension too, whatever order the two run in.
 - On blur, a hidden page or lost pointer lock, the stage sends a `keyup` for
   every key still down.
 
-**Bodies** (TOOLS.md §4). The router's stack holds only bodies, orbit (the
-stage's) always at the bottom. A body is contributed by an extension:
+**Bodies** (TOOLS.md §4). The router's stack holds only bodies, the
+stage's Look or Edit (the base) always at the bottom. Any other body is
+contributed by an extension:
 
 ```js
 bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, or Infinity
@@ -761,26 +770,37 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, 
                             keys?, label?, leave() } | null }]
 ```
 
-The bodies there are: **orbit** (the stage's `ORBIT`: OrbitControls, no
-keys, no lock, reach ∞), **walk** (`walk/`: WASD, lock, 2 m, standing on
+The bodies there are: **Look** and **Edit** (the stage's, `src/stage/bodies.js`:
+both OrbitControls, no keys, no lock, reach ∞; Edit's default press
+selects and the editor's chrome is its alone, Look has neither),
+**walk** (`walk/`: WASD, lock, 2 m, standing on
 whatever the rays hit and riding it), **seat** (`seats/`: no keys, no lock,
 2 m, `here: false`, riding its table), and sailing's **aboard** (her navmesh
 walker on her deck, 2.5 m) and **station** (pushed over aboard by a
 station's verb, `here: false`, its keys by station). The first running
-extension to offer an id has it. `view.start` enters one on arrival
-("Arriving").
+extension to offer an id has it (`look` and `edit` are never an
+extension's). `view.start` enters one on arrival ("Arriving").
+
+**Conventions for bodies.** Nothing stands on Edit: entering any other body
+from Edit turns the base to Look first, so editing while walking or seated
+isn't possible, and Leave never falls back to Edit. `api.body.enter("look")`
+or `("edit")` (the body chip's first two entries) leaves every body over
+the base and makes that one the base (the router's `setBase`). A package
+asks "is this viewer on the orbit camera?" by `local.body.depth === 0`, and
+"is this viewer editing?" never: it marks an editing command `edit: true`
+instead.
 
 `api.body.enter(id, place)` runs `enter` and pushes what it answers (its
 `keys` over the body's, its `label` over the body's: the chip and who's here
 say "Helm" for sailing's station at the wheel, "Watching" for a seat body
 entered with no seat of yours); `api.body.leave()` pops the top (never
-orbit), and the body under it carries on (`input.resumed`); a body popped
+the base), and the body under it carries on (`input.resumed`); a body popped
 from under another takes those over it with it; an extension stopping pops
 its bodies. The top body's `input` hears every pointer move and the keys
 it declares, and is offered presses after the chain; one pushed over is
 `suspended`. The body is the source of `from` (its eye) and `reach`, which
 every surface passes (`api.context`). Its ride, if any, is the only ride;
-else orbit's base rides apply.
+else the orbit camera's base rides apply.
 
 **The held tool** is one slot per view, published as `local.held` (`{ ext,
 command, name, keys, pointer }`, or null). A command that declares `tool:
@@ -1188,6 +1208,7 @@ A **command**:
   show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
   reach?: true,              // applies only within the body's reach (below)
+  edit?: true,               // the editor's: applies only in the Edit body (below)
   tool?: { keys?: [{ code, label }], pointer? },  // a tool: run's answer is the held tool's input ("The held tool")
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit), the same one state was asked in
@@ -1214,7 +1235,15 @@ A **command**:
   surface, and no surface runs it (TOOLS.md §4, H9). `distance` is from the
   eye to the hit when the look is on the target (or under it), else to the
   target's box.
-- Toolbars show commands for the null target.
+- A command that says `edit: true` is the editor's (TOOLS.md §3, "What is
+  Edit's"): `commandState` answers null for it unless `local.body` is Edit,
+  so outside Edit it is on no surface, no key reaches it, and `api.run`
+  doesn't run it. The stage's editing commands say so (Remove, Group,
+  Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste,
+  Measure, the dimensions', the drawer tabs' toggles, Grid, Axes, Bounds,
+  Units, Snap, Inspector, Undo, Redo); a package may mark its own.
+- Toolbars show commands for the null target. The toolbar (`scene.toolbar`)
+  shows only in Edit.
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - **Attention** is one target per view (TOOLS.md §3): the selection if
@@ -1388,9 +1417,9 @@ people lists the seats package like any other.
 
 | | |
 |---|---|
-| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. The first four are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's) |
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, around(scene, ids) → [{ id, name, viewer \| null }] }`. All but `who` are pure in the snapshot (the doc alone), so a policy may be built on them. `around` is the seats at the table some objects are at (seats/README.md), so two tables in one scene are two games until a game is its own doc (COMPOSITION.md) `who` is what to call a viewer now (a contact's name once known, else their seat's) |
 | `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
-| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, only where the scene has none; setup code calls it instead of writing seats |
+| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, and returns `{ [given id]: id written }`: added to the scene's seats, an id still at another table written as `<id>-2`…; setup code calls it instead of writing seats, and names its hands by the ids returned |
 
 **Keepers.** A keeper holds what objects really are, away from the scene
 doc, and shows each viewer what `api.audience` allows. It is an ordinary
@@ -1490,6 +1519,7 @@ atmosphere() → null | {
 | `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
 | `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
 | `stage/ladder.js` | the Escape ladder: which layer one Escape pops, and its hint (pure) |
+| `stage/bodies.js` | the stage's two bodies, Look and Edit; `editing(local)`, the one question the editor's chrome asks; `inBody`, the `edit: true` rule; the stack's model (`enterStep`, `leaveStep`) and where a doc starts people (`startBase`) (pure) |
 | `keymap.js` | the one key resolver: what reserves a key, the key map's invocation, and the hint every surface shows (pure) |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples, and the one order holds go in (`ranksAhead`) |
 | `stage/holds.js` | this view's pose holds in that order: which extension's stands, and dropping ours when a peer's ranks ahead |
@@ -1498,7 +1528,7 @@ atmosphere() → null | {
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions (the one linger rule), `collect`, drops; it asks the stage for each extension's api |
 | `undo.js` | edits: a step's leaves from its own patches, its inverse (whole, or nothing if anything it wrote was written since), the per-doc stacks, and `createEdits`, the recorder the stage runs (pure but for the recorder) |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, arriving (view.start), the edit recorder, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the orbit body and its Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, arriving (view.start), the edit recorder, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the base (Look or Edit) and Edit's Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot, time })`: its frames come from `time`, `stage/time.js`). This is the old
@@ -1533,15 +1563,17 @@ taken out. It keeps the following:
 - **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn, { first? })`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 
-**Router** (`createRouter({ port, canvas, keyRoot, pick, pickWidget, ray, centerRay, chainFor, inputOf, orbit, cameraHeld, onHover, onCursor, onState, pointerWanted, selection, deselect, focusDepth, leaveFocus })`; `focusDepth` is 0 and `leaveFocus` does nothing until the focus can move, COMPOSITION.md step 14):
+**Router** (`createRouter({ port, canvas, keyRoot, pick, pickWidget, ray, centerRay, chainFor, inputOf, base, cameraHeld, onHover, onCursor, onState, pointerWanted, selection, deselect, focusDepth, leaveFocus })`; `focusDepth` is 0 and `leaveFocus` does nothing until the focus can move, COMPOSITION.md step 14):
 - builds events with lazy `hit` and `widget`;
 - runs the chain through `chainFor(ev)`, the held tool before it and the
   top body after it;
 - owns sessions, the body stack, the held tool, popovers, pointer lock
   (`pointer.js`), the Escape ladder (`ladder.js`), key tracking, `menu`
   synthesis and the cursor;
-- returns `{ pushBody, body, bodies, leave, hold, putDown, held, popover,
-  escape, refresh, state, stopOwner(id), dispose }`.
+- returns `{ pushBody, setBase, body, bodies, leave, hold, putDown, held,
+  popover, escape, refresh, state, stopOwner(id), dispose }`; `setBase(body)`
+  leaves every body over the base, then replaces it (the stage's Look or
+  Edit).
 
 **Presence** (`createPresence({ handle, viewer })`):
 - **messages** (on `handle.broadcast`):

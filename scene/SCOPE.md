@@ -42,7 +42,7 @@ the code mattered when this was written:
 
 | Case | Traits today | What it needs from scope |
 |---|---|---|
-| CAD boat editor | none of its own; the editor's parts (`general`) | editing in the running world, play traits on the same objects running too: the selection's halo and the drawer's inspector edit, and a game's holders take presses on their objects first (Select is every menu's, and orbit's click where no holder takes it); no activity settles it (TOOLS.md §3) |
+| CAD boat editor | none of its own; the editor's parts (`general`) | editing in the running world, play traits on the same objects running too: the selection's halo and the drawer's inspector edit, and a game's holders take presses on their objects first (Select is every menu's, and Edit's click where no holder takes it; the halo, the inspector and the rest of the editor are the Edit body's, TOOLS.md Decisions 6); no activity settles it (TOOLS.md §3) |
 | Game table | `seats` (the seats package's) on the scene; `tabletop.zone` and `tabletop.card` on objects | seats, zones and face-up all relative to the table |
 | Arena | `arena.level` on the scene; `arena.target` and `walk.spawn` (the walk package's) on objects | walk and shoot anywhere; spawns where their objects are |
 | **Sailing sim** | `sailing.sea` on the scene; `sailing.ship` on the hull, `sailing.helm`, `sailing.winch` and the rest on her fittings | a boat that moves as one; a tiller and sheets on it; players walking the deck; a card table in the saloon; the whole thing inside an arena level |
@@ -171,8 +171,8 @@ there is no tool to default, per scope or per view. `view.tool`,
 `local.tool`, `effectiveTool` and the hand part are gone. The empty hand is
 the default everywhere, and what a press does follows from the chain: a
 press on a card carries it because the card has the `scene.carry` trait; a
-press on a station is sailing's; an unclaimed click selects in the orbit
-body and does nothing walking. A tool is held only when picked up: one
+press on a station is sailing's; an unclaimed click selects in the Edit
+body and does nothing in Look, walking or seated. A tool is held only when picked up: one
 slot per view (`local.held`), filled by a tool command (measure, arena's
 gun) or `api.hold` (a bag's drawn piece), emptied by Escape. `pref` takes
 no `at`.

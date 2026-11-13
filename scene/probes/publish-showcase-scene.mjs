@@ -14,7 +14,8 @@
 // STAGE.md): groups only organise (no transform, no parent; `group` files
 // one in another), objects are filed in a group with `group` and attached to
 // another object with `parent` (transform relative to it), and the starting
-// camera is `view.start.home` (no body: everyone starts in orbit).
+// camera is `view.start.home` (no body named: everyone starts in Look, the
+// orbit camera without the editor; Edit is on the body chip).
 //
 // --dry-run touches no network: every doc gets a made-up automerge URL, the
 // scene is checked (already in the current shape, nothing dangling), and

@@ -26,6 +26,6 @@ export function emptyScene({ title = "Untitled scene", traits = {}, packages = [
     assets: {},
     packages,
     clock: { running: true, t: 0 },
-    view: { ...DEFAULT_VIEW, ...view },
+    view: { ...DEFAULT_VIEW, start: { body: "edit" }, ...view },
   };
 }
