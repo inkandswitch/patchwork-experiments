@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { compile } from "./engine.js";
 import { content, demo, events, lumps } from "./doom.js";
 import { music } from "./doom-music.js";
+import { FULL } from "./test-tier.js";
 
 const dir = new URL("../engines/doom/test/", import.meta.url);
 const iwadPath = process.env.FREEDOOM1 ?? new URL("freedoom1.wad", dir).pathname;
@@ -53,7 +54,7 @@ describe.skipIf(!haveIwad)("doom music (needs engines/doom/test/freedoom1.wad)",
   // Each of Freedoom's 41 songs, for 8 seconds, on one player in turn.
   const songs = haveIwad ? [...wads.keys()].filter((n) => n.startsWith("D_")) : [];
   let shared;
-  test.each(songs)("%s plays", async (name) => {
+  test.skipIf(!FULL).each(songs)("%s plays", async (name) => {
     expect(songs.length).toBe(41);
     shared ??= await music(wasm, wads, RATE);
     shared.play(name);

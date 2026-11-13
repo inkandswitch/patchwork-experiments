@@ -6,6 +6,7 @@
 // on exactly as the reference does. Every input is fixed.
 import { readFileSync } from "node:fs";
 import { compile } from "./engine.js";
+import { FULL } from "./test-tier.js";
 import { pages } from "./wasm-state.js";
 import { FOUR_PLAYERS, TWO_PLAYERS, pads } from "../engines/snes/test/unarmed.js";
 
@@ -73,7 +74,7 @@ describe("snes: a mid-rollback snapshot of a real game", () => {
   // truth and the two-player one the misprediction.
   const [S, K, END] = [800, 100, 1000];
 
-  test("is the reference's, and goes on as the reference does in a separately compiled engine", async () => {
+  test.skipIf(!FULL)("is the reference's, and goes on as the reference does in a separately compiled engine", async () => {
     const machine = await compile(wasm);
     const ref = machine.boot(rom);
     let atS, atM, frameM;

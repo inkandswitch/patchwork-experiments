@@ -8,6 +8,7 @@ import { SimNet } from "./simnet.js";
 import { rig, run, FRAME, WAN, LOSSY, SKEWS } from "./harness.js";
 import { content as doomContent, demo } from "../doom.js";
 import { FOUR_PLAYERS, pads } from "../../engines/snes/test/unarmed.js";
+import { FULL } from "../test-tier.js";
 
 await initSubduction();
 beforeEach(() => vi.useFakeTimers());
@@ -38,7 +39,7 @@ async function play({ session, peer, open, settle }, seconds) {
   await settle(peers);
 }
 
-const doom = existsSync(iwadPath) ? test : test.skip;
+const doom = existsSync(iwadPath) && FULL ? test : test.skip; // both real engines are the full tier's
 doom("Doom (needs engines/doom/test/freedoom1.wad): four peers, one late, agree with the durable record", async () => {
   const bot = demo(readFileSync(new URL("bot4p.lmp", doomDir)));
   const r = await rig({
@@ -50,7 +51,7 @@ doom("Doom (needs engines/doom/test/freedoom1.wad): four peers, one late, agree 
   await play(r, { chunk: 1, every: 2, roll: 5 });
 }, 120_000);
 
-test("Super NES, Unarmed: four peers, one late, agree with the durable record", async () => {
+test.skipIf(!FULL)("Super NES, Unarmed: four peers, one late, agree with the durable record", async () => {
   const r = await rig({
     wasm: readFileSync(new URL("../../engines/snes/dist/snes.wasm", import.meta.url)),
     content: new Uint8Array(readFileSync(new URL("../../engines/snes/test/unarmed.sfc", import.meta.url))),

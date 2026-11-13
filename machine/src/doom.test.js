@@ -8,6 +8,7 @@
 // (or set FREEDOOM1 to its path). Without it these tests are skipped.
 import { existsSync, readFileSync } from "node:fs";
 import { compile } from "./engine.js";
+import { FULL } from "./test-tier.js";
 import {
   BT, INPUT_BYTES, MF, PLAYERS, QUERY, camera, content, demo, events, level, listener, players, sectors,
   sides, sounds, things, ticcmd,
@@ -48,12 +49,13 @@ function comparer() {
 const LONG = 180_000;
 
 describe.skipIf(!haveIwad)("doom (needs engines/doom/test/freedoom1.wad)", () => {
-  test.each([1, 2, 4])(
+  // Fast tier: 1p, its first 700 tics; full: every tic of all three.
+  test.each(FULL ? [1, 2, 4] : [1])(
     "%ip: every tic's state hashes as native Chocolate Doom's does",
     (n) => {
       const want = native(n);
-      const { tics } = demos[n];
-      expect(want.length).toBe(tics.length + 1);
+      expect(want.length).toBe(demos[n].tics.length + 1);
+      const tics = FULL ? demos[n].tics : demos[n].tics.slice(0, 700);
       const e = boot(n);
       const pages = e.snapshot().length;
       expect(trace(e)[1]).toBe(want[0]);
@@ -75,12 +77,7 @@ describe.skipIf(!haveIwad)("doom (needs engines/doom/test/freedoom1.wad)", () =>
   // freshly booted engine, which restores forwards from tick 0. Both then
   // step the true inputs, and after every tic both states must equal the
   // reference's byte for byte.
-  test.each([
-    [1, 35],
-    [2, 35],
-    [4, 35],
-    [4, 1],
-  ])(
+  test.each(FULL ? [[1, 35], [2, 35], [4, 35], [4, 1]] : [[4, 1]])(
     "%ip: restoring every %i-th tic's snapshot, from a mispredicted future or from boot, re-steps exactly",
     (n, K) => {
       const tics = K === 1 ? demos[n].tics.slice(0, 140) : demos[n].tics;
@@ -114,7 +111,7 @@ describe.skipIf(!haveIwad)("doom (needs engines/doom/test/freedoom1.wad)", () =>
     "4p: drawing every player's view and a camera at each one's eyes, every query, reading output and tracing, every tic, never change the state",
     async () => {
       const same = comparer();
-      const { tics } = demos[4];
+      const tics = FULL ? demos[4].tics : demos[4].tics.slice(0, 140); // fast tier: the first 4 seconds
       const plain = boot(4);
       const busy = boot(4);
       const kinds = [...Object.values(QUERY), Object.keys(QUERY).length]; // and one there is not
@@ -306,7 +303,7 @@ describe.skipIf(!haveIwad)("doom (needs engines/doom/test/freedoom1.wad)", () =>
     expect(e.query(Object.keys(QUERY).length)).toBe(null);
   });
 
-  test("4p: the queries follow the game: time, bodies, doors and lifts, lights, corpses", () => {
+  test.skipIf(!FULL)("4p: the queries follow the game: time, bodies, doors and lifts, lights, corpses", () => {
     const e = boot(4);
     const first = sectors(e.query(QUERY.sectors));
     const moved = new Set();

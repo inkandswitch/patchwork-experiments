@@ -6,6 +6,7 @@ import { SimNet } from "./simnet.js";
 import { rig, run, FRAME, LAN, WAN, LOSSLESS, LOSSY, SKEWS } from "./harness.js";
 import { gzip } from "./session.js";
 import { hashSnapshot } from "../wasm-state.js";
+import { FULL } from "../test-tier.js";
 
 const ALLOC = 1, FREE = 2;
 const wasm = readFileSync(new URL("../../engines/toy/dist/toy.wasm", import.meta.url));
@@ -27,12 +28,13 @@ afterEach(() => vi.useRealTimers());
 const FAST = { chunk: 0.25, every: 1, roll: 2 }; // so a short run rolls seats and writes checkpoints
 const session = (net, n, o = {}) => start(net, n, { seconds: FAST, ...o });
 
+// Fast tier: the gentlest and the harshest network; full: all four.
 describe.each([
   { net: "LAN", latency: LAN, lost: "none", loss: LOSSLESS },
   { net: "LAN", latency: LAN, lost: "1 in 10", loss: LOSSY },
   { net: "WAN", latency: WAN, lost: "none", loss: LOSSLESS },
   { net: "WAN", latency: WAN, lost: "1 in 10", loss: LOSSY },
-])("$net latency, ephemeral lost: $lost", ({ latency, loss }) => {
+].filter((c, i) => FULL || i === 0 || i === 3))("$net latency, ephemeral lost: $lost", ({ latency, loss }) => {
   test.each([2, 3])("%i peers play, pause, and agree with the durable record", async (n) => {
     const net = new SimNet({ latency, loss });
     const { peers } = await session(net, n);
@@ -303,7 +305,7 @@ test("each peer hears every tick once, in order, and its events end up the docum
   expect([...heard.values()].reduce((n, h) => n + h.corrected, 0)).toBeGreaterThan(0);
 }, 30_000);
 
-test("four peers through a hub, as through a sync server: each sends at most 30 input messages a second, and all agree", async () => {
+test.skipIf(!FULL)("four peers through a hub, as through a sync server: each sends at most 30 input messages a second, and all agree", async () => {
   const net = new SimNet({ latency: WAN, loss: LOSSY, hub: "hub" });
   const { peers } = await session(net, 4);
   peers.forEach((p, i) => {

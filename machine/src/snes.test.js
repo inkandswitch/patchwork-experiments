@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, test } from "vitest";
 import { compile, identify } from "./engine.js";
+import { FULL } from "./test-tier.js";
 import { FOUR_PLAYERS, TWO_PLAYERS, pads } from "../engines/snes/test/unarmed.js";
 
 const wasm = readFileSync(new URL("../engines/snes/dist/snes.wasm", import.meta.url));
@@ -19,7 +20,9 @@ const SLOW = 120_000;
 // engine). hashes[f] is the hash after f steps.
 let hashes;
 let snapshots; // frame -> snapshot, at CHECKPOINTS
+// Only the full tier runs what needs this (every test below but the first two).
 beforeAll(() => {
+  if (!FULL) return;
   const e = machine.boot(rom);
   hashes = [e.hash()];
   for (let f = 0; f < FRAMES; f++) {
@@ -52,19 +55,19 @@ describe("snes engine on Unarmed", () => {
     expect(() => e.step(new Uint8Array(8))).toThrow(/10 input bytes/);
     const id = await identify(wasm, rom);
     expect(id.content).toMatch(/^[0-9a-f]{64}$/);
-    expect(machine.boot(rom).hash()).toBe(hashes[0]); // genesis
+    expect(machine.boot(rom).hash()).toBe(e.hash()); // genesis: the same from every boot
   });
 
   test("refuses content that is not a cartridge", () => {
     expect(() => machine.boot(new Uint8Array(0))).toThrow(/refused/);
   });
 
-  test("a second engine fed the same pads agrees on every frame", () => {
+  test.skipIf(!FULL)("a second engine fed the same pads agrees on every frame", () => {
     const e = machine.boot(rom);
     run(e, FOUR_PLAYERS, 0, FRAMES, (f) => expect(e.hash()).toBe(hashes[f]));
   }, SLOW);
 
-  test("snapshots every 7 frames, output() every frame and frame() every 5 change nothing", () => {
+  test.skipIf(!FULL)("snapshots every 7 frames, output() every frame and frame() every 5 change nothing", () => {
     const e = machine.boot(rom);
     let samples = 0;
     run(e, FOUR_PLAYERS, 0, FRAMES, (f) => {
@@ -79,7 +82,7 @@ describe("snes engine on Unarmed", () => {
     expect(Math.abs(samples - (FRAMES * 32000) / 60.0988)).toBeLessThan(600);
   }, SLOW);
 
-  test("every checkpoint restored into every prior state is exact, and goes on as before", () => {
+  test.skipIf(!FULL)("every checkpoint restored into every prior state is exact, and goes on as before", () => {
     // Prior states are reached by stepping, on the four-player script (where
     // the checkpoints came from) and on the two-player one (a different game
     // from frame 780). At each, every checkpoint is restored and re-stepped
@@ -132,7 +135,7 @@ describe("snes engine on Unarmed", () => {
       return ((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2]) === rgb;
     }).length;
 
-  test("the scripts reach a two-player and a four-player round, and every pad plays", () => {
+  test.skipIf(!FULL)("the scripts reach a two-player and a four-player round, and every pad plays", () => {
     const two = machine.boot(rom);
     run(two, TWO_PLAYERS, 0, 1200);
     expect(heads(two.frame())).toBe(2);
@@ -155,7 +158,7 @@ describe("snes engine on Unarmed", () => {
   // the cartridge's SRAM (Unarmed has none), and nothing past them.
   const MEMORIES = [0x20000, 0x10000, 544, 512, 0x10000, 0];
 
-  test("queries read the console's memories every frame and change nothing", () => {
+  test.skipIf(!FULL)("queries read the console's memories every frame and change nothing", () => {
     const e = machine.boot(rom);
     run(e, FOUR_PLAYERS, 0, FRAMES, (f) => {
       const got = MEMORIES.map((_, k) => e.query(k).length);
@@ -165,7 +168,7 @@ describe("snes engine on Unarmed", () => {
     });
   }, SLOW);
 
-  test("the memories are the game's: the HUD's head colours are in CGRAM", () => {
+  test.skipIf(!FULL)("the memories are the game's: the HUD's head colours are in CGRAM", () => {
     const e = machine.boot(rom);
     e.restore(snapshots.get(1200));
     const cgram = e.query(3);
@@ -182,7 +185,7 @@ describe("snes engine on Unarmed", () => {
     expect(same(e.query(0), before)).toBe(false);
   });
 
-  test("ends where it always has: the same bytes on any host", () => {
+  test.skipIf(!FULL)("ends where it always has: the same bytes on any host", () => {
     expect(hashes[FRAMES]).toBe(GOLDEN);
   });
 });
