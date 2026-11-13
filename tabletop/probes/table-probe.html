@@ -99,7 +99,6 @@ try {
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     activity: (w) => dbg[w].local.get().activities?.current ?? null,
-    tool: (w) => dbg[w].local.get().tool ?? null,
     running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** each card's keeper binding, as the scene doc has it: id → "by#slot" */

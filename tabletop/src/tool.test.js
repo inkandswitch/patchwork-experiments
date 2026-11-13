@@ -107,7 +107,8 @@ describe("the tabletop-game tool", () => {
     const glbs = new Set(Object.values(game.doc().pieces).map((p) => p.glbUrl));
     for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect(o).toMatchObject({ sourceUrl: expect.any(String), infoUrl: game.url });
     for (const o of Object.values(scene.objects)) if (o.kind !== "group") expect(glbs.has(o.sourceUrl)).toBe(true);
-    expect(scene).toMatchObject({ title: "Santorini table 1", assets: {}, dimensions: {}, view: { tool: "hand" } });
+    expect(scene).toMatchObject({ title: "Santorini table 1", assets: {}, dimensions: {} });
+    expect(scene.view).not.toHaveProperty("tool");
     expect(scene.view).not.toHaveProperty("activity");
     await until(() => element.querySelector(".tables a")?.textContent === "Santorini table 1");
     // made with the packages list the stage fills in; with no scene package

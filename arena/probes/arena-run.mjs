@@ -195,19 +195,21 @@ try {
   // Both views start where the doc says, in play: A, who chose the template
   // (a template starts its maker as joining does), and B, who joined the
   // level. Each runs only what playing calls for: the arena, what it requires
-  // (keys, notices, framing), the scene's packages part and the switcher.
-  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.keys", "scene.notices", "scene.packages", "scene.use"];
+  // (keys, notices, framing), the scene's packages part and the switcher, and
+  // the selection's parts every activity has (scene/TOOLS.md build step 3:
+  // Select, the menu, the halo and the knobs).
+  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   const inGame = async (w) => {
     const ok = (await until(`!window.__p.running('${w}').includes('scene.toolbar')`, 6000)) && (await settled(w));
     return { ok, activity: await P(`activity('${w}')`), run: await sorted(w) };
   };
   const aGame = await inGame("a");
-  check("creator A is in play: only the game, its requires and the switcher", aGame.ok && aGame.activity === "play" && JSON.stringify(aGame.run) === JSON.stringify(GAME), aGame);
+  check("creator A is in play: only the game, its requires, the switcher and the selection's parts", aGame.ok && aGame.activity === "play" && JSON.stringify(aGame.run) === JSON.stringify(GAME), aGame);
   const bGame = await inGame("b");
   check("player B is in play too: the same", bGame.ok && bGame.activity === "play" && JSON.stringify(bGame.run) === JSON.stringify(GAME), bGame);
   const bChrome = await P("chrome('b')");
   const bView = { toolbar: !!(await P("rect('.toolbar', 'b')")), sidebar: !!(await P("rect('.sidebar', 'b')")), start: await shown(".add-start", "b"), switch: await P("rect('.activity-switch', 'b')"), play: !!(await P("rect('.arena-play', 'b')")), layers: await P("layers('b')"), chrome: bChrome };
-  check("player B sees no toolbar, sidebar or start screen, no grid or axes: the level, the HUD's Play and a small Play | Edit switch", !bView.toolbar && !bView.sidebar && !bView.start && bView.play && !!bView.switch && bView.switch.w > 0 && bView.switch.w < 200 && bView.switch.h < 44 && !bView.layers.some((l) => /grid|axes|bounds|gizmo|handles/.test(l)), bView);
+  check("player B sees no toolbar, sidebar or start screen, no grid or axes: the level, the HUD's Play and a small Play | Edit switch", !bView.toolbar && !bView.sidebar && !bView.start && bView.play && !!bView.switch && bView.switch.w > 0 && bView.switch.w < 200 && bView.switch.h < 44 && !bView.layers.some((l) => /grid|axes|bounds|halo|handles/.test(l)), bView);
   const options = await js(`[...window.__p.hostA.querySelectorAll(".activity-option")].map((b) => [b.dataset.activity, b.textContent.trim(), b.getAttribute("aria-pressed")])`);
   check("the switch offers Play and Edit, with Play pressed", JSON.stringify(options) === JSON.stringify([["play", "Play", "true"], ["edit", "Edit", "false"]]), options);
   // and neither opens staring into a wall: framing came with the arena, so

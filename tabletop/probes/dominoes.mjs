@@ -252,7 +252,18 @@ try {
   check("A carries it out onto the felt in front of the rack: it goes down still standing, its face level and toward A", (await until(`where().stand.includes(${J(standA)})`, 5000)) && dA[1] === 0 && dA[2] > 0.9, { dir: dA, where: await P("where()"), at: await P(`transform(${J(standA)})`) });
   check("…A still sees its face, B its back, no veil", await until(`faces('a').includes(${J(standA)}) && __p.backs('b').includes(${J(standA)}) && __p.veils('a').length === 0 && __p.veils('b').length === 0`, 20_000), { a: await P(`faces('a').includes(${J(standA)})`), b: await P(`backs('b').includes(${J(standA)})`), veilsA: await P("veils('a')"), veilsB: await P("veils('b')") });
   const standB = (await P("where()")).down[0];
-  check("B hovers a boneyard tile, and the prompt offers Stand on edge", !!(await hover(standB, "b")) && (await until("prompt('b').some((t) => /Stand on edge/.test(t))", 3000)), await P("prompt('b')"));
+  // the prompt shows three verbs (the stage's cap): carry's Flip holds the tile as nearly as
+  // the table does and runs first, so Flip, Draw and Wash; Stand on edge is U's, and the menu's
+  // (scene/TOOLS.md build step 3: a generic verb ahead of a game's is the queued three-verb cap)
+  check("B hovers a boneyard tile, and the prompt offers its first three verbs, Flip among them", !!(await hover(standB, "b")) && (await until("prompt('b').length === 3 && __p.prompt('b').some((t) => /Flip/.test(t))", 3000)), await P("prompt('b')"));
+  {
+    const at = await P(`aimAt(${J(standB)}, 'b')`);
+    await b.click(at.x, at.y, { button: "right" });
+    check("…and B's right-click menu on it still offers Stand on edge", await until("menu('b').some((m) => /Stand on edge/.test(m.text))", 3000), await P("menu('b')"));
+    await b.key("Escape");
+    check("Escape closes the menu", await until("menu('b').length === 0", 2000), await P("menu('b')"));
+  }
+  check("B hovers it again", !!(await hover(standB, "b")), await P("hovered('b')"));
   await P("focus('b')");
   await b.key("u");
   check("U stands it up on the table where it lay, its face level and toward B", await until(`where().stand.includes(${J(standB)}) && __p.faceDir(${J(standB)})[1] === 0 && __p.faceDir(${J(standB)})[2] < -0.7`, 5000), { dir: await P(`faceDir(${J(standB)})`), where: await P("where()") });

@@ -10,8 +10,8 @@
 //   it. Untagged pieces (a pawn) don't snap there.
 //
 // A part goes where the bin says, under what it was dropped on (filed in
-// that one's group), and isn't locked: it's placed by hand, so the gizmo may
-// move it. If what it was dropped on went while its file was made (a peer
+// that one's group), and isn't locked: it's placed by hand, so the halo may
+// move it, and it can be picked up (the scene's carry trait). If what it was dropped on went while its file was made (a peer
 // deleted it), it puts nothing. The pieces never make or change seats: a
 // table's seats are the template's, the game page's, a game's part's or the
 // inspector's.
@@ -104,7 +104,7 @@ function tableDrawing() {
   };
 }
 
-/** Parts written locked: the gizmo and the hand leave them where they are. */
+/** Parts written locked: the halo leaves them where they are, and they can't be carried. */
 const LOCKED = new Set(["table"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ export const makeFile = (kind) => glbFile(PIECES[kind]);
 
 const IDENTITY = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
-/** A scene object for a part: a passthrough GLB, not locked. */
+/** A scene object for a part: a passthrough GLB, carryable unless locked. */
 export function partObject(kind, { url, hint }, { transform = IDENTITY, parent = null, group = null } = {}) {
   const t = { ...IDENTITY, ...transform };
   return {
@@ -134,6 +134,7 @@ export function partObject(kind, { url, hint }, { transform = IDENTITY, parent =
     opacity: 1,
     wireframe: false,
     locked: LOCKED.has(kind),
+    ...(LOCKED.has(kind) ? {} : { traits: { "scene.carry": {} } }),
     transform: { position: [...t.position].map(Number), rotation: [...t.rotation].map(Number), scale: Number(t.scale) || 1 },
     ...(hint?.bounds ? { hint: { bounds: { min: [...hint.bounds.min], max: [...hint.bounds.max] } } } : {}),
   };

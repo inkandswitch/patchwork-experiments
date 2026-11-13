@@ -507,21 +507,7 @@ export default {
     }
 
     return {
-      update(snapshot, local, prev) {
-        // Playing at a table is done with the hand. A tool picked while editing
-        // (G, R, the toolbar) is this view's local state and outlives the switch
-        // back to play, and a scene that became a table by a part (Lost Cities
-        // set down in it) suggests no tool, so the stage's default is Move: in play
-        // nothing offers a way to the hand, and without this the table could
-        // no longer be carried or flipped. The tool in force is the scene's
-        // effectiveTool (scene/src/current-tool.js, copied: packages stand
-        // alone); the hand's own command switches to it. (A stage-wide gap,
-        // an Edit tool outliving the switch to Play, which belongs to
-        // scene.activity in time.)
-        if (local?.activities?.current === "play" && (local.tool ?? snapshot?.d?.view?.tool ?? "move") !== "hand") {
-          // (the hand not started yet: its command's write, done here)
-          if (api.run?.({ ext: "scene.hand", command: "hand" }) !== true) api.local?.swap?.((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
-        }
+      update(snapshot, _local, prev) {
         if (snapshot === prev?.scene) return;
         scene = snapshot;
         regions = null;
