@@ -61,6 +61,11 @@
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -354,13 +359,13 @@ async function fromTemplate(gameId) {
           // a veil is a piece kept from you; nothing on this table is kept from anyone who sits at it, so no view shows one
           const shown = async () => Object.fromEntries(await Promise.all(["a", "b"].map(async (w) => [w, { faces: (await P(`faces('${w}')`)).length, veils: (await P(`veils('${w}')`)).length, backs: (await P(`backs('${w}')`)).length }])));
           await until(`backs('a').length + __p.faces('a').length === ${count} && __p.backs('b').length + __p.faces('b').length === ${count}`, 10_000);
-          await sleep(500);
+          await b.rest(500);
           const now = await shown();
           check(`neither view veils a ${piece}: each sees ${hand} faces and ${count - hand} backs`, ["a", "b"].every((w) => now[w].veils === 0 && now[w].faces === hand && now[w].backs === count - hand), now);
         }
       }
     }
-    await sleep(500);
+    await b.rest(500);
     const views = seats ? ["a", "b"] : ["a"];
     const loads = Object.fromEntries(await Promise.all(views.map(async (w) => [w, await P(`loading('${w}')`)])));
     check(`nothing failed to load in ${views.length === 2 ? "either view" : "A's view"}`, views.every((w) => loads[w].errors === 0), loads);

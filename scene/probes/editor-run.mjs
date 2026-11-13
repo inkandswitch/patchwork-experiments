@@ -27,7 +27,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { browser, checklist, sleep } from "./cdp.mjs";
+import { browser, checklist } from "./cdp.mjs";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -51,6 +51,10 @@ const b = await browser({ root, port: PORT, cdp: CDP, page, show: !!arg("show", 
 const { check, checks, details } = checklist();
 const report = { checks, details, shots: [], skipped: [] };
 const P = (e) => b.js(`window.__p.${e}`);
+// Simulated time: both views run on the page's manual clock (window.__time). A wait on the views is frames
+// (soon: at most ms of that clock), never a sleep; the wall (b.waitFor) is for loading and building only.
+const FRAME = 1000 / 60;
+const soon = (expr, ms) => b.soon(expr, { frames: Math.ceil(ms / FRAME) });
 const A = (e) => b.js(`(() => { const p = window.__p, d = p.A; return (${e}); })()`);
 const Bv = (e) => b.js(`(() => { const p = window.__p, d = p.B; return (${e}); })()`);
 const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `editor-${name}.png`)));
@@ -75,11 +79,11 @@ try {
   if (!(await b.waitFor("window.__ready", 30_000))) throw new Error("page never ready");
   if ((await b.js("window.__ready")) !== true) throw new Error(`setup failed: ${JSON.stringify(await P("errors"))}`);
   check("contentLoaded", await b.waitFor("__p.loaded() && __p.loaded(__p.B)", 30_000));
-  await sleep(600);
+  await b.rest(600);
   // the outline is a drawer tab each viewer opens (the toolbar's Objects): both open it
   for (const h of ["hostA", "hostB"]) await b.js(`(() => { const e = [...__p.${h}.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return !!e; })()`);
-  await b.waitFor(`!!__p.hostA.querySelector('.stage-drawer .object-row') && !!__p.hostB.querySelector('.stage-drawer .object-row')`, 5000);
-  await sleep(400);
+  await soon(`!!__p.hostA.querySelector('.stage-drawer .object-row') && !!__p.hostB.querySelector('.stage-drawer .object-row')`, 5000);
+  await b.rest(400);
   await shot("0-open");
 
   // ── layout ────────────────────────────────────────────────────────────────
@@ -110,22 +114,22 @@ try {
   {
     const p = await scr("b0", [0, 0.016, 0]);
     await b.click(p.x, p.y);
-    await sleep(250);
+    await b.rest(250);
     check("clickSelects", (await selected()) === "b0", await selected());
     check("outlineRowHighlighted", await A(`!!p.hostA.querySelector('.object-row[data-id="b0"][data-selected]')`));
     // the inspector's tab comes in behind the Objects tab the viewer is using
     const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }))()`);
     check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Objects","Inspector"]' && insp.shown === "Objects" && insp.name === "Block 1", insp);
-    const peerBox = await b.waitFor(`(() => { let f = null; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:') && o.visible) f = o; }); return f && f.box.max.x > f.box.min.x; })()`, 3000);
+    const peerBox = await soon(`(() => { let f = null; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:') && o.visible) f = o; }); return f && f.box.max.x > f.box.min.x; })()`, 3000);
     const bRow = await Bv(`!!p.hostB.querySelector('.object-row[data-id="b0"][data-remote-selected]')`);
     const bPres = await Bv(`Object.values(d.presence.get()).some((s) => s.keys?.['scene.select']?.selected === 'b0')`);
     check("peerSeesSelectionBox", peerBox && bPres, { peerBox, bPres, bRow });
     check("peerOutlineMarksRow", bRow);
     await shot("1-selected");
     await b.key("Escape");
-    await sleep(150);
+    await b.rest(150);
     check("escapeDeselects", (await selected()) === null, await selected());
-    check("peerBoxGoneAfterEscape", await b.waitFor(`(() => { let f = false; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:')) f = true; }); return !f; })()`, 3000));
+    check("peerBoxGoneAfterEscape", await soon(`(() => { let f = false; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:')) f = true; }); return !f; })()`, 3000));
   }
 
   // ── no tools to pick: G, R and H are nobody's; the toolbar ────────────────
@@ -133,7 +137,7 @@ try {
     const seen = {};
     for (const k of ["r", "h", "g"]) {
       await b.key(k);
-      await sleep(100);
+      await b.rest(100);
       seen[k] = { pressed: await pressed(), objects: JSON.stringify((await doc()).objects) };
     }
     check("noToolKeys", Object.values(seen).every((s) => !["Move", "Rotate", "Hand", "No gizmo"].some((x) => s.pressed.includes(x))) && new Set(Object.values(seen).map((s) => s.objects)).size === 1, seen);
@@ -159,7 +163,7 @@ try {
   {
     const p = await scr("b1", [0, 0.016, 0]);
     await b.click(p.x, p.y);
-    await sleep(200);
+    await b.rest(200);
     check("haloOnSelection", (await P("halo()"))?.id === "b1", await P("halo()"));
     // the X arrow, and which way on screen +X runs
     const h0 = await P('haloAt("move", 0)'), h1 = await P('haloAt("move", 0, 0.05)');
@@ -168,7 +172,7 @@ try {
     const handle = h0 && len ? { x: h0.x, y: h0.y } : null;
     if (handle) {
       await b.move(handle.x, handle.y);
-      await sleep(60);
+      await b.rest(60);
     }
     check("haloArrowOnScreen", !!handle, { h0, h1 });
     if (handle) {
@@ -176,7 +180,7 @@ try {
       const mid = await b.drag([handle.x, handle.y], [handle.x + ux * 90, handle.y + uy * 90], {
         steps: 14,
         beforeRelease: async () => {
-          await sleep(250); // the pose goes out throttled; give it a beat
+          await b.rest(250); // the pose goes out throttled; give it a beat
           await shot("2-halo-mid-drag");
           return {
             doc: (await obj("b1")).transform.position,
@@ -190,7 +194,7 @@ try {
       check("haloDocUnchangedMidDrag", near(mid.doc, before), mid);
       check("peerSeesPoseMidDrag", mid.bShown[0] - before[0] > 0.01 && Math.abs(mid.bShown[0] - mid.aShown[0]) < 0.01, round(mid));
       check("haloMovesBlock", after[0] - before[0] > 0.02 && Math.abs(after[1] - before[1]) < 1e-6 && Math.abs(after[2] - before[2]) < 1e-6, { before, after });
-      await sleep(400);
+      await b.rest(400);
       const bLanded = await Bv(`d.viewport.worldOf("b1").slice(12, 15)`);
       check("peerSeesLandedTransform", near(bLanded, after, 1e-5), { bLanded, after });
     }
@@ -211,7 +215,7 @@ try {
     const before = (await obj("b2")).transform;
     const mid = await carry("b2", [0.065, 0.04, 0.005], {
       during: async () => {
-        await sleep(200);
+        await b.rest(200);
         await shot("3-hand-carry");
         return { bShown: await Bv(`d.viewport.worldOf("b2").slice(12, 15)`), ring: await A(`(() => { let r = null; d.viewport.topScene?.traverse((o) => { if (o.isLine && o.visible && o.geometry?.attributes?.position?.count === 49) r = [o.position.x, o.position.y, o.position.z]; }); return r; })()`) };
       },
@@ -221,7 +225,7 @@ try {
     check("handSnapsToConnector", near(t1.position, [0.06, 0.04, 0], 1e-4), { position: t1.position, mid: round(mid) });
     check("peerSeesCarry", mid.bShown && Math.abs(mid.bShown[0] - before.position[0]) > 0.05, round(mid.bShown));
     // Q while carrying turns it
-    await carry("b2", [-0.055, 0.04, 0.065], { during: async () => { await b.key("q"); await sleep(80); } });
+    await carry("b2", [-0.055, 0.04, 0.065], { during: async () => { await b.key("q"); await b.rest(80); } });
     const t2 = (await obj("b2")).transform;
     const yaw = Math.abs(t2.rotation[1]) > 1e-3 ? Math.abs(t2.rotation[1]) : null;
     check("handQTurns", near(t2.position, [-0.06, 0.04, 0.06], 1e-4) && yaw && Math.abs(yaw - Math.PI / 4) < 1e-3, t2);
@@ -231,11 +235,11 @@ try {
       during: async () => {
         const moved = await A(`d.viewport.worldOf("b2").slice(12, 15)`);
         await b.key("Escape");
-        await sleep(100);
+        await b.rest(100);
         return { moved, after: await A(`d.viewport.worldOf("b2").slice(12, 15)`) };
       },
     });
-    await sleep(300);
+    await b.rest(300);
     const t3 = (await obj("b2")).transform;
     check("handEscapePutsBack", JSON.stringify(t3) === docBefore && near(midEsc.after, t3.position, 1e-5) && !near(midEsc.moved, t3.position, 1e-3), { t3, midEsc: round(midEsc) });
     check("peerSeesPutBack", near(await Bv(`d.viewport.worldOf("b2").slice(12, 15)`), t3.position, 1e-5));
@@ -258,7 +262,7 @@ try {
     await shot("5-orbited");
     // . frames everything again (nothing is selected; F is carry's Flip now)
     await b.key(".");
-    await sleep(400);
+    await b.rest(400);
     const cam2 = await camera();
     const inView = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); return ["board","b0","b1","b2","p0","p1"].every((id) => { const s = p.screen(id); return s && s.x > r.left && s.x < r.right && s.y > r.top && s.y < r.bottom; }); })()`);
     check("periodFramesAll", !near(cam1.position, cam2.position, 1e-3) && inView, { cam2: round(cam2), inView });
@@ -272,12 +276,12 @@ try {
     const p1 = await world([-0.12, 0.04, -0.13]), p2 = await world([0.12, 0.04, -0.13]);
     await b.click(p1.x, p1.y);
     await b.move(p1.x + (p2.x - p1.x) * 0.85, p1.y + (p2.y - p1.y) * 0.85 + 3);
-    await sleep(100);
+    await b.rest(100);
     await shot("6-measure-rubber-band");
     report.shots.push(await b.shot(join(SHOTS, "editor-6b-rubber-band-zoom.png"), { x: Math.min(p1.x, p2.x) - 30, y: Math.min(p1.y, p2.y) - 40, width: Math.abs(p2.x - p1.x) + 60, height: Math.abs(p2.y - p1.y) + 80 }));
     report.rubberBand = await A(`(() => { let n = 0, vis = []; for (const s of [d.viewport.scene, d.viewport.topScene]) s?.traverse((o) => { if ((o.isLine || o.isLineSegments) && o.visible && o.parent?.name?.includes?.('measure')) vis.push(o.type); }); return vis; })()`);
     await b.click(p2.x, p2.y);
-    await sleep(300);
+    await b.rest(300);
     const dims = Object.values((await doc()).dimensions ?? {});
     const label = await A(`[...p.hostA.querySelectorAll('.scene-stage *')].filter((e) => !e.children.length && /\\d\\s*cm$/.test(e.textContent.trim()) && /dim/.test(e.className)).map((e) => e.textContent.trim())`);
     report.measure = { dims, label };
@@ -285,7 +289,7 @@ try {
     check("measureWritesDimension", dims.length === 1 && label.some((l) => /^24(\.0+)?\s*cm$/.test(l)), { dims, label, wd });
     // the toolbar's Dimensions opens its tab, listing it; then back to Objects
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Dimensions"); e.click(); return true; })()`);
-    await sleep(200);
+    await b.rest(200);
     check("dimensionInItsTab", (await A(`p.text('.stage-drawer [data-panel="dimensions"]').join(' ')`)).includes("24"), await A(`p.text('.stage-drawer [data-panel="dimensions"]')`));
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
     await shot("7-measured");
@@ -303,17 +307,17 @@ try {
     const first = await selected();
     const lab = await A(`p.rect('.dimension-label')`);
     if (lab) await b.click(lab.x + lab.w / 2, lab.y + lab.h / 2);
-    await sleep(150);
+    await b.rest(150);
     const sel = await selected();
     const marks = await A(`({ dimRow: !!p.hostA.querySelector('.dimension-row[data-selected]'), objRows: [...p.hostA.querySelectorAll('.object-row[data-selected]')].map((e) => e.dataset.id), halo: p.halo()?.id ?? null })`);
     // selecting the dimension let go of the block: there is one selection
     check("dimensionLabelSelects", first === "b2" && ids0.length === 1 && sel === `dimension:${ids0[0]}` && marks.dimRow && !marks.objRows.length && !marks.halo, { ids0, first, lab, sel, marks });
-    const peer = await b.waitFor(`Object.values(__p.B.presence.get()).some((s) => s.keys?.['scene.select']?.selected === ${JSON.stringify(sel)})`, 2000);
+    const peer = await soon(`Object.values(__p.B.presence.get()).some((s) => s.keys?.['scene.select']?.selected === ${JSON.stringify(sel)})`, 2000);
     check("peerHearsDimensionSelected", peer);
     await shot("7b-dimension-selected");
     const n0 = Object.keys((await doc()).objects).length;
     await b.key("Delete");
-    await sleep(200);
+    await b.rest(200);
     const after = { dims: Object.keys((await doc()).dimensions ?? {}), objects: Object.keys((await doc()).objects).length, selected: await selected(), label: await A(`p.rect('.dimension-label')`) };
     check("deleteRemovesDimension", after.dims.length === 0 && after.objects === n0 && after.selected === null && !after.label, { n0, ...after });
   }
@@ -324,9 +328,9 @@ try {
     await b.click(p.x, p.y);
     check("pawnSelected", (await selected()) === "p0", await selected());
     await b.key("Delete");
-    await sleep(200);
+    await b.rest(200);
     check("deleteRemoves", !(await obj("p0")) && !(await doc()).order.includes("p0") && (await selected()) === null);
-    check("peerOutlineLosesRow", await b.waitFor(`!__p.hostB.querySelector('.object-row[data-id="p0"]')`, 2000));
+    check("peerOutlineLosesRow", await soon(`!__p.hostB.querySelector('.object-row[data-id="p0"]')`, 2000));
   }
 
   // ── the drawer: its tabs' × close them, and the canvas takes the room; the toolbar's Objects opens it again ──
@@ -334,13 +338,13 @@ try {
     for (let i = 0; i < 4 && (await A(`!!p.hostA.querySelector('.stage-drawer-tab-close')`)); i++) {
       const x = await A(`p.rect('.stage-drawer-tab-close')`);
       await b.click(x.x + x.w / 2, x.y + x.h / 2);
-      await sleep(150);
+      await b.rest(150);
     }
     const hid = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage') })`);
     check("closingTheTabsGivesTheCanvasTheRoom", !hid.drawer && Math.abs(hid.canvas.w - hid.stage.w) < 1, hid);
     await shot("8-no-drawer");
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects"); e.click(); return true; })()`);
-    await sleep(200);
+    await b.rest(200);
     const back = await A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas') })`);
     check("objectsOpensItAgain", back.drawer?.w > 200 && Math.abs(back.canvas.x + back.canvas.w - back.drawer.x) < 1, back);
   }
@@ -349,7 +353,7 @@ try {
   {
     const p = await scr("p1", [0, 0.015, 0]);
     await b.dblclick(p.x, p.y);
-    await sleep(500);
+    await b.rest(500);
     const cam = await camera();
     const t = (await obj("p1")).transform.position;
     const dist = Math.hypot(cam.target[0] - t[0], cam.target[1] - (t[1] + 0.015), cam.target[2] - t[2]);
@@ -359,7 +363,7 @@ try {
     // the double-click's first click selected the pawn: let it go, then . frames everything
     await b.key("Escape");
     await b.key(".");
-    await sleep(400);
+    await b.rest(400);
   }
 
   // ── the context menu ────────────────────────────────────────────────────
@@ -367,7 +371,7 @@ try {
     await b.key("Escape");
     const p = await scr("b1", [0, 0.016, 0]);
     await b.click(p.x, p.y, { button: "right" });
-    await sleep(150);
+    await b.rest(150);
     const items = await A(`p.text('.context-menu .menu-item .menu-label')`);
     const menuRect = await A(`p.rect('.context-menu')`);
     await shot("10-menu");
@@ -375,15 +379,15 @@ try {
     check("menuHasRemoveAndSelect", items.includes("Remove") && items.includes("Select"), items);
     const sel = await A(`(() => { const e = [...p.hostA.querySelectorAll('.context-menu .menu-item')].find((x) => x.querySelector('.menu-label')?.textContent.trim() === "Select"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     if (sel) await b.click(sel.x, sel.y);
-    await sleep(100);
+    await b.rest(100);
     check("menuSelectSelects", (await selected()) === "b1" && !(await A(`p.rect('.context-menu')`)), await selected());
     // and Remove from the menu
     const q = await scr("b1", [0, 0.016, 0]);
     await b.click(q.x, q.y, { button: "right" });
-    await sleep(150);
+    await b.rest(150);
     const rm = await A(`(() => { const e = [...p.hostA.querySelectorAll('.context-menu .menu-item')].find((x) => x.querySelector('.menu-label')?.textContent.trim() === "Remove"); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     if (rm) await b.click(rm.x, rm.y);
-    await sleep(200);
+    await b.rest(200);
     check("menuRemoveRemoves", !(await obj("b1")));
   }
 
@@ -403,7 +407,7 @@ try {
     const d = await doc();
     const id = d.order.at(-1);
     check("pasteAddsObject", added && d.objects[id]?.sourceUrl === (await b.js("window.blockUrl")), { n0, now: Object.keys(d.objects).length, last: d.objects[id] });
-    await sleep(500);
+    await b.rest(500);
     await shot("13-pasted");
   }
 
@@ -449,7 +453,7 @@ try {
     await b.click(r0.x, r0.y);
     const wBefore = await A(`d.viewport.worldOf("b0").slice(12, 15)`);
     const attached = await A(`(() => { const s = p.hostA.querySelector('.inspector-body select.attach'); if (!s) return false; const i = [...s.options].findIndex((o) => /Block 3/.test(o.textContent)); if (i < 0) return false; s.selectedIndex = i; s.dispatchEvent(new Event("change")); return true; })()`);
-    await sleep(250);
+    await b.rest(250);
     const c0 = await obj("b0");
     const w0 = await A(`d.viewport.worldOf("b0").slice(12, 15)`);
     check("attachKeepsWorldPose", attached && c0.parent === "b2" && near(w0, wBefore, 1e-6) && !near(c0.transform.position, wBefore, 1e-4), { attached, parent: c0?.parent, local: c0?.transform.position, wBefore, w0 });
@@ -464,7 +468,7 @@ try {
     const p2 = await scr("b2", [0, 0.0319, 0]);
     report.underB2 = await A(`(() => { const r = d.viewport.canvas.getBoundingClientRect(); const h = d.viewport.pick(${p2.x} - r.left, ${p2.y} - r.top); return h && h.id; })()`);
     await b.click(p2.x, p2.y);
-    await sleep(150);
+    await b.rest(150);
     check("parentSelected", (await selected()) === "b2", await selected());
     const s0 = await P('haloAt("move", 0)'), s1 = await P('haloAt("move", 0, 0.05)');
     const L = s0 && s1 ? Math.hypot(s1.x - s0.x, s1.y - s0.y) : 0;
@@ -487,10 +491,10 @@ try {
     await b.key("Escape");
     await clickEmpty();
     // nothing selected (its tab gone with the selection): the toolbar's Inspector opens it on the Scene
-    await b.waitFor(`!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"]')`, 3000);
-    await sleep(150);
+    await soon(`!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"]')`, 3000);
+    await b.rest(150);
     await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
-    await b.waitFor(`!!__p.hostA.querySelector('.inspector[data-kind="scene"]')`, 3000);
+    await soon(`!!__p.hostA.querySelector('.inspector[data-kind="scene"]')`, 3000);
     const startsIn = `(() => {
       const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
       return [...(r?.querySelectorAll('.starts-in input[data-body]') ?? [])].map((e) => [e.dataset.body, e.checked]);
@@ -509,22 +513,22 @@ try {
     else {
       // a block, selected from its outline row (the Objects tab shown again); "Add behaviour…" → Target
       await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
-      await sleep(150);
+      await b.rest(150);
       const row = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row.x, row.y);
-      await b.waitFor(`__p.A.local.get().selected === "b2"`, 3000);
-      await sleep(200);
+      await soon(`__p.A.local.get().selected === "b2"`, 3000);
+      await b.rest(200);
       const offered = await A(`[...p.hostA.querySelectorAll('.inspector-body .behaviour-add option')].map((o) => [o.value, o.textContent])`);
       const wasRunning = (await P("running()")).includes("arena");
       // a <select>'s popup isn't in the page in headless Chrome: pick as its change would
       await A(`(() => { const s = p.hostA.querySelector('.inspector-body .behaviour-add'); s.value = "arena.target"; s.dispatchEvent(new Event("change")); return true; })()`);
       // the arena starts in both views, its Play in each toolbar beside the editor's
       const started = await b.waitFor(`__p.running().includes("arena") && __p.running(__p.B).includes("arena")`, 8000);
-      const card = await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`, 2000);
+      const card = await soon(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`, 2000);
       const t = (await obj("b2"))?.traits;
       report.behaviour = { offered, wasRunning, traits: t, play: await A(`!!p.hostA.querySelector('.toolbar [data-command="play"]')`) };
       check("addBehaviourRunsTheArena", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null && report.behaviour.play, report.behaviour);
-      await sleep(300);
+      await b.rest(300);
       await shot("18-behaviour-added");
       // the game runs beside the editor: nothing went from either view, and the doc starts nobody anywhere
       const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: p.running().includes("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: p.running(p.B).includes("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
@@ -533,18 +537,18 @@ try {
 
       // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)
       await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Objects"); e?.click(); return true; })()`);
-      await sleep(150);
+      await b.rest(150);
       const row2 = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
       await b.click(row2.x, row2.y);
-      await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`, 2000);
+      await soon(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`, 2000);
       // (the inspector's tab shown, and the block's Carryable card above it now: bring it into view)
       await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
-      await sleep(150);
+      await b.rest(150);
       await A(`p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove').scrollIntoView({ block: "center" })`);
       const x = await A(`p.rect('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`);
       if (x) await b.click(x.x + x.w / 2, x.y + x.h / 2);
       const gone = (await obj("b2"))?.traits?.["arena.target"] === undefined;
-      const stopped = await b.waitFor(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
+      const stopped = await soon(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
       check("removeBehaviourStopsArena", !!x && gone && stopped && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, running: await P("running()") });
     }
   }
@@ -556,5 +560,6 @@ try {
 }
 report.logs = b.logs.filter((l) => !/KHR_parallel_shader_compile/.test(l)).slice(-20);
 report.ok = Object.values(checks).every(Boolean);
+report.frames = await b.js("window.__time?.frames() ?? null").catch(() => null); // of the page's clock
 console.log(JSON.stringify(report, null, 2));
 b.stop(report.ok ? 0 : 1);

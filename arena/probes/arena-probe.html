@@ -29,6 +29,8 @@ import { FakeRepo } from "./fake-repo.js";
 import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -45,7 +47,7 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
@@ -76,6 +78,7 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const base = emptyScene({ title: "Arena probe", view: { ...DEFAULT_VIEW, grid: false } });
@@ -94,6 +97,7 @@ try {
   A.other = B; B.other = A;
   const hostA = document.getElementById("a"), hostB = document.getElementById("b");
   hostA.repo = repo; hostB.repo = repo;
+  hostA.time = time; hostB.time = time;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   Tool(A, hostA);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;

@@ -24,11 +24,18 @@
 //     opens from its menu and closes itself there;
 //  7. draw calls and frame time, first person and the whole map.
 // Prints a JSON report; exits non-zero if any check fails.
+//
+// Simulated time: every view, and the two peers' network, run on the page's
+// manual clock (window.__time), so walking, a door's motion and its wait, and
+// what reaches the other peer move only as this steps frames, as fast as the
+// CPU allows. A wait on the world is frames of that clock (b.rest, b.soon);
+// the wall (b.waitFor) is for loading and building only. Frame time is what a
+// drawn frame costs (timeFrames: 20 frames, each drawn).
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { browser, checklist, sleep } from "./cdp.mjs";
+import { browser, checklist } from "./cdp.mjs";
 import { readWad } from "../src/wad.js";
 import { mapModel, anchorOf, UNITS_PER_METRE as SCALE } from "../src/parts.js";
 
@@ -84,20 +91,19 @@ async function face(w, want, pitchWant = 0) {
       for (let k = 1; k <= n; k++) await b.mouse("mouseMoved", x + (mx * k) / n, y + (my * k) / n, { buttons: 1 });
       await b.mouse("mouseReleased", x + mx, y + my);
     }
-    await sleep(60);
+    await b.rest(60);
   }
   return false;
 }
 const eye = async (w) => (await P(`cam("${w}")`)).position;
-/** Walk view w (W held) toward [x, ·, z], steering, until within tol or ms pass. Returns the eye. */
+/** Walk view w (W held) toward [x, ·, z], steering, until within tol or ms (of the page's clock) pass. Returns the eye. */
 async function walkTo(w, [x, , z], { ms = 15000, tol = 0.4 } = {}) {
-  const t0 = Date.now();
   let p = await eye(w);
   await face(w, aimYaw(p, [x, 0, z]));
   await b.keyDown("w");
   try {
-    while (Date.now() - t0 < ms) {
-      await sleep(70);
+    for (let t = 0; t < ms; t += 70) {
+      await b.rest(70);
       p = await eye(w);
       if (Math.hypot(x - p[0], z - p[2]) < tol) break;
       const want = aimYaw(p, [x, 0, z]);
@@ -110,22 +116,22 @@ async function walkTo(w, [x, , z], { ms = 15000, tol = 0.4 } = {}) {
   } finally {
     await b.keyUp("w");
   }
-  await sleep(250);
+  await b.rest(250);
   return eye(w);
 }
-/** Hold W for ms, facing the way it faces. Returns the eye. */
+/** Hold W for ms (of the page's clock), facing the way it faces. Returns the eye. */
 async function push(w, ms) {
   await b.keyDown("w");
-  await sleep(ms);
+  await b.advance(ms);
   await b.keyUp("w");
-  await sleep(200);
+  await b.rest(200);
   return eye(w);
 }
 /** Put the pointer over a world point in view w (what the use prompt looks at without pointer lock). */
 async function hover(w, p) {
   const q = await P(`project("${w}", ${JSON.stringify(p)})`);
   if (q) await b.move(Math.round(q.x), Math.round(q.y));
-  await sleep(250);
+  await b.rest(250);
   return q;
 }
 async function clickAt({ x, y }) {
@@ -135,7 +141,7 @@ async function clickAt({ x, y }) {
 async function play(w) {
   await b.waitFor(`window.__p.running("${w}").includes("arena") && !!window.__p.rect(".arena-play", "${w}")`, 8000);
   await clickAt(await P(`rect(".arena-play", "${w}")`));
-  await sleep(600);
+  await b.rest(600);
 }
 /** The door's height as view w draws it, above where it rests shut. */
 const rise = async (id, w) => {
@@ -191,7 +197,7 @@ try {
   const startA = await eye("a");
   const spawnAt = world(-416, 256);
   check("A starts at the player 1 start", Math.hypot(startA[0] - spawnAt[0], startA[2] - spawnAt[2]) < 0.3, { eye: r3(startA), spawn: r3(spawnAt) });
-  report.numbers.firstPersonStart = await P(`timeFrames("a", 2500)`);
+  report.numbers.firstPersonStart = await P(`timeFrames("a")`);
   await shot("1-a-start");
   await face("a", Math.PI / 2 - 0.3, -0.05); // looking north-ish round the start room
   await shot("1-a-start-north");
@@ -226,20 +232,22 @@ try {
   // without pointer lock (headless) the use prompt goes by the pointer: put it on the door
   const q = await hover("a", [doorAt[0], doorAt[1] + 1.4, doorAt[2] - 0.2]);
   details.lookAtDoor = await P(`pickAt("a", ${Math.round(q.x)}, ${Math.round(q.y)})`);
-  await b.waitFor(`window.__p.useText("a").length > 0`, 3000);
+  await b.soon(`window.__p.useText("a").length > 0`, { frames: 180 });
   const prompt = await P(`useText("a")`);
   check("A, looking at the door within reach, is offered [F] Open", prompt.some((t) => /F/.test(t) && /Open/.test(t)), prompt);
   const writes0 = (await P("writes(1)")).length;
   await b.key("f");
   const samples = [];
-  const tOpen = Date.now();
+  const nowMs = () => b.js("window.__time.now()");
+  const tOpen = await nowMs();
   let passed = null;
   let late = null;
   // its rest as A's doc has it, caught when it's written (on a loaded machine the door can be shut again by the time B is through)
   let restOpen = null;
   // sample both views while it rises; B walks through once it's up; C joins once it rests open
-  while (Date.now() - tOpen < 4200) {
-    samples.push({ t: Date.now() - tOpen, a: await rise(doorId, "a"), b: await rise(doorId, "b") });
+  // every 60 ms of the page's clock, for 4.2 s of it
+  for (let t = 0; t < 4200; t += 60) {
+    samples.push({ t, a: await rise(doorId, "a"), b: await rise(doorId, "b") });
     if (!restOpen) { const sl = (await P(`doc("a")`)).objects[doorId].traits["joints.slide"]; if (sl.at === "open") restOpen = sl; }
     if (!late && (await P(`doc("b")`)).objects[doorId].traits["joints.slide"].at === "open") late = await lateJoin();
     if (!passed && samples.at(-1).b > 2.2) {
@@ -248,7 +256,7 @@ try {
       passed = await push("b", 1400);
       await P(`focus("a")`);
     }
-    await sleep(60);
+    await b.rest(60);
   }
   const top = Math.max(...samples.map((s) => s.a ?? 0));
   const topB = Math.max(...samples.map((s) => s.b ?? 0));
@@ -273,11 +281,11 @@ try {
   await shot("4-c-joined");
 
   // it closes itself after its wait
-  const closed = await b.waitFor(`(() => { const s = window.__p.doc("a").objects[${JSON.stringify(doorId)}].traits["joints.slide"]; return s.at === "closed"; })()`, 12_000, 100);
+  const closed = await b.soon(`(() => { const s = window.__p.doc("a").objects[${JSON.stringify(doorId)}].traits["joints.slide"]; return s.at === "closed"; })()`, { frames: 720 });
   const closeSamples = [];
-  for (let i = 0; i < 10; i++) closeSamples.push({ a: await rise(doorId, "a"), b: await rise(doorId, "b"), c: await rise(doorId, "c") }), await sleep(100);
+  for (let i = 0; i < 10; i++) closeSamples.push({ a: await rise(doorId, "a"), b: await rise(doorId, "b"), c: await rise(doorId, "c") }), await b.rest(100);
   check("it closes itself after its wait, in every view", closed && closeSamples.at(-1).a === 0 && closeSamples.at(-1).b === 0 && closeSamples.at(-1).c === 0, closeSamples.at(-1));
-  report.numbers.openToShutMs = Date.now() - tOpen;
+  report.numbers.openToShutMs = Math.round((await nowMs()) - tOpen); // of the page's clock
   await shot("2-a-shut-again");
 
   // ─── 5. two writes for the cycle ─────────────────────────────────────────
@@ -285,24 +293,24 @@ try {
   check("the doc's history shows two writes for the door's cycle (open, closed), and nothing else moved", cycle.length === 2 && cycle.every((w) => w.moved.length === 1 && w.moved[0] === doorId) && cycle[0].slides[0] === "open" && cycle[1].slides[0] === "closed", cycle);
 
   // ─── 7. draw calls and frame time ────────────────────────────────────────
-  report.numbers.firstPersonAtDoor = await P(`timeFrames("a", 2500)`);
+  report.numbers.firstPersonAtDoor = await P(`timeFrames("a")`);
   // the whole map from above, in edit: Escape puts the gun down (never the body); the body chip's Leave stops walking
   await b.key("Escape");
   const putDown = (await P(`held("a")`)) === null && (await P(`body("a")`)).id === "walk";
   const chipA = await P(`chip("a")`);
   if (chipA) await clickAt(chipA);
-  await b.waitFor(`!!window.__p.chipItem("a", "Leave")`, 3000);
+  await b.soon(`!!window.__p.chipItem("a", "Leave")`, { frames: 180 });
   const leaveItem = await P(`chipItem("a", "Leave")`);
   if (leaveItem) await clickAt(leaveItem);
-  await sleep(300);
+  await b.rest(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (orbit again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "orbit", { chip: chipA, body: await P(`body("a")`) });
   // the outline is a drawer tab A opens from the toolbar (no Edit to switch to)
   const objectsButton = await P(`buttonRect("a", "Objects")`);
   if (objectsButton) await clickAt(objectsButton);
-  await sleep(500);
+  await b.rest(500);
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
-  await sleep(400);
-  report.numbers.wholeMap = await P(`timeFrames("a", 2500)`);
+  await b.rest(400);
+  report.numbers.wholeMap = await P(`timeFrames("a")`);
   await shot("7-whole-map");
   details.drawCalls = { firstPerson: report.numbers.firstPersonStart.calls, atDoor: report.numbers.firstPersonAtDoor.calls, wholeMap: report.numbers.wholeMap.calls };
   check("the whole map draws in under 200 calls (one per texture of the static part, a few per door)", report.numbers.wholeMap.calls > 0 && report.numbers.wholeMap.calls < 200, details.drawCalls);
@@ -310,7 +318,7 @@ try {
   // ─── 6. the door, copied into another scene, still works ────────────────
   const row = await P(`rowRect("a", ${JSON.stringify(doorId)})`);
   if (row) await clickAt(row);
-  await sleep(300);
+  await b.rest(300);
   // (inside a folded row it isn't shown: then select it as the outline would)
   if ((await P(`selected("a")`)) !== doorId) await P(`select("a", ${JSON.stringify(doorId)})`), (details.selectedBy = "local.selected");
   await P(`focus("a")`);
@@ -330,35 +338,35 @@ try {
   const cw = await P(`docWorld(${JSON.stringify(copyId)}, "d")`);
   // an orbiting eye a few metres off: no reach needed from the menu
   await P(`setCamera("d", { position: [${cw[0] + 2}, ${cw[1] + 3}, ${cw[2] + 6}], target: [${cw[0]}, ${cw[1] + 1.2}, ${cw[2]}], fov: 60 })`);
-  await sleep(400);
+  await b.rest(400);
   const onIt = await P(`project("d", [${cw[0]}, ${cw[1] + 0.05}, ${cw[2]}])`);
   details.copyPick = await P(`pickAt("d", ${Math.round(onIt.x)}, ${Math.round(onIt.y)})`);
   await b.move(Math.round(onIt.x), Math.round(onIt.y));
   await b.click(Math.round(onIt.x), Math.round(onIt.y), { button: "right" });
-  await b.waitFor(`!!window.__p.menuItem("d", "Open")`, 4000);
+  await b.soon(`!!window.__p.menuItem("d", "Open")`, { frames: 240 });
   const item = await P(`menuItem("d", "Open")`);
   await shot("6-copy-menu");
   const writes2 = (await P("writes(2)")).length;
   if (item) await clickAt(item);
-  const opened2 = await b.waitFor(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "open"`, 8000, 100);
+  const opened2 = await b.soon(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "open"`, { frames: 480 });
   const drawnOpen = await P(`drawn(${JSON.stringify(copyId)}, "d")`);
   const docOpen = await P(`docWorld(${JSON.stringify(copyId)}, "d")`);
   await shot("6-copy-open");
-  const shut2 = await b.waitFor(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "closed"`, 15000, 100);
+  const shut2 = await b.soon(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "closed"`, { frames: 900 });
   const cycle2 = (await P("writes(2)")).slice(writes2).filter((w) => w.moved.length);
   check("copied into another scene, it opens from its menu (in orbit: the body reaches everything) and closes itself, in two writes", !!item && item.ext === "joints" && opened2 && shut2 && cycle2.length === 2 && cycle2[0].slides[0] === "open" && cycle2[1].slides[0] === "closed" && docOpen[1] - cw[1] > 3 && Math.abs(drawnOpen[1] - docOpen[1]) < 1e-3, { pick: details.copyPick, item, cycle2, shut: cw, open: docOpen, drawnOpen });
 
   // ─── 7b. one view alone, at 1660 × 960: the whole map, and first person ──
   await P(`solo("a")`);
   await P(`focus("a")`);
-  await sleep(800);
+  await b.rest(800);
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
-  await sleep(500);
-  report.numbers.alone = { wholeMap: await P(`timeFrames("a", 3000)`) };
+  await b.rest(500);
+  report.numbers.alone = { wholeMap: await P(`timeFrames("a")`) };
   await shot("7-alone-whole-map");
   await play("a");
   await face("a", -Math.PI / 2, 0);
-  report.numbers.alone.firstPerson = await P(`timeFrames("a", 3000)`);
+  report.numbers.alone.firstPerson = await P(`timeFrames("a")`);
   await shot("7-alone-first-person");
   details.drawCalls.alone = { wholeMap: report.numbers.alone.wholeMap.calls, firstPerson: report.numbers.alone.firstPerson.calls };
 
@@ -395,8 +403,9 @@ async function cmdKey(key, command) {
   await b.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code, windowsVirtualKeyCode: vk, modifiers: 4, commands: [command] });
   await b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: vk, modifiers: 4 });
   await b.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91, modifiers: 0 });
-  await sleep(500);
+  await b.rest(500);
 }
 
+report.frames = await b.js("window.__time?.frames() ?? null").catch(() => null); // of the page's clock
 console.log(JSON.stringify(report, null, 2));
 b.stop(Object.values(checks).every(Boolean) ? 0 : 1);

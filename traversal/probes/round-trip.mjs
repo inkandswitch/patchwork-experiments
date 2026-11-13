@@ -31,6 +31,13 @@
 //  8. the shell opens the ship again: sailing running; nothing mentions E1M1;
 //  9. no errors on the page.
 // Prints a JSON report; exits non-zero if any check fails.
+//
+// Simulated time: the stage runs on the page's manual clock (window.__time),
+// so the ship swings at anchor, the body walks and a prompt answers only as
+// this steps frames, as fast as the CPU allows. A wait on the world is a
+// number of frames (until), never a sleep; the wall is waited on only for
+// loading (loads). A look that doesn't settle on its target throws, saying
+// where it got to.
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
@@ -53,8 +60,12 @@ const report = { checks, details, shots: [], numbers: {} };
 const J = JSON.stringify;
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
-/** Wait for `expr` (with `p` the page's window.__p) to be true. */
-const until = (expr, ms = 10_000, every = 60) => b.waitFor(`(() => { const p = window.__p; return (${expr}); })()`, ms, every);
+const FRAME = 1000 / 60;
+const onP = (expr) => `(() => { const p = window.__p; return (${expr}); })()`;
+/** Frame by frame until `expr` (with `p` the page's window.__p) holds, for at most ms of the page's clock → its value, or false. */
+const until = (expr, ms = 10_000) => b.soon(onP(expr), { frames: Math.ceil(ms / FRAME) });
+/** Loading: the wall's, up to ms (the page's frames going at its pace). */
+const loads = (expr, ms = 20_000, every = 60) => b.waitFor(onP(expr), ms, every);
 const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `round-trip-${name}.png`)));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const r3 = (p) => p && p.map((v) => +v.toFixed(3));
@@ -72,35 +83,41 @@ async function drag(mx, my) {
   const n = 8;
   for (let k = 1; k <= n; k++) await b.mouse("mouseMoved", x + (mx * k) / n, y + (my * k) / n, { buttons: 1 });
   await b.mouse("mouseReleased", x + mx, y + my);
-  await sleep(80);
+  await b.rest(80);
 }
-/** Turn to (yaw, pitch) as `read` reports them, by dragging; the drag's gain (and sign) learned as it goes. */
+/**
+ * Turn to (yaw, pitch) as `read` reports them, by dragging; the drag's gain
+ * (and sign) learned as it goes. Settled within `tol`, or it throws, saying
+ * where it got to: nothing after a look that missed is worth checking.
+ */
 async function turn(read, yaw, pitch, { tol = 0.03 } = {}) {
   let gy = -0.0022, gp = -0.0022; // radians per pixel
+  const tries = [];
   for (let i = 0; i < 16; i++) {
     const at = await read();
     const dy = wrap(yaw - at.yaw), dp = pitch - at.pitch;
     if (Math.abs(dy) < tol && Math.abs(dp) < tol) return true;
+    tries.push([+at.yaw.toFixed(3), +at.pitch.toFixed(3)]);
     const mx = Math.max(-500, Math.min(500, Math.round(dy / gy))), my = Math.max(-300, Math.min(300, Math.round(dp / gp)));
     await drag(mx, my);
     const now = await read();
     if (Math.abs(mx) > 8 && Math.abs(wrap(now.yaw - at.yaw)) > 0.005) gy = wrap(now.yaw - at.yaw) / mx;
     if (Math.abs(my) > 8 && Math.abs(now.pitch - at.pitch) > 0.005) gp = (now.pitch - at.pitch) / my;
   }
-  return false;
+  throw new Error(`turn didn't settle on yaw ${yaw.toFixed(3)}, pitch ${pitch.toFixed(3)} (within ${tol}) in 16 drags: it went ${J(tries)}`);
 }
 /** Look the way a point is from where the body is, on the ship (her frame: bow −Z), and level. */
 const aimYaw = (from, to) => Math.atan2(-(to[0] - from[0]), -(to[2] - from[2]));
 const meLook = async () => { const m = await P("me()"); return { yaw: m.yaw, pitch: m.pitch }; };
 /** Walk the body on the ship to (x, z) in her frame (W held, steering), within tol, or until ms pass. */
 async function walkAboard(to, { ms = 20_000, tol = 0.2 } = {}) {
-  const t0 = Date.now();
   let me = await P("me()");
   await turn(meLook, aimYaw(me.position, to), 0);
   await b.keyDown("w");
   try {
-    while (Date.now() - t0 < ms) {
-      await sleep(50);
+    // looked at every 50 ms of the page's clock
+    for (let t = 0; t < ms; t += 50) {
+      await b.advance(50);
       me = await P("me()");
       if (Math.hypot(to[0] - me.position[0], to[2] - me.position[2]) < tol) break;
       const want = aimYaw(me.position, to);
@@ -113,7 +130,7 @@ async function walkAboard(to, { ms = 20_000, tol = 0.2 } = {}) {
   } finally {
     await b.keyUp("w");
   }
-  await sleep(300);
+  await b.rest(300);
   return P("me()");
 }
 /** Point at an object (near `local` in its frame) and wait for the prompt; returns what it offers. */
@@ -123,7 +140,7 @@ async function hoverPrompt(id, local, want = null, ms = 2500) {
   await b.move(Math.round(at.x) + 1, Math.round(at.y));
   await b.move(Math.round(at.x), Math.round(at.y));
   if (want) await until(`p.prompt().some((t) => ${want}.test(t))`, ms);
-  else await sleep(ms);
+  else await b.rest(ms);
   return { at, hovered: await P("hovered()"), prompt: await P("prompt()") };
 }
 const textOf = async () => (await P("text()")).replace(/\s+/g, " ");
@@ -135,25 +152,25 @@ try {
 
   // ─── the maker makes both scenes ──────────────────────────────────────────
   await P(`show("doom", "maker")`);
-  await until(`p.running().includes("scene.add")`, 30_000);
+  await loads(`p.running().includes("scene.add")`, 30_000);
   await P("pasteWad()");
-  const doomBuilt = await until(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 180_000, 200);
+  const doomBuilt = await loads(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 180_000, 200);
   ids.exit = await P(`withTrait("traversal.exit")`);
   ids.spawn = await P(`withTrait("walk.spawn")`);
   ids.home = await P("startAtSpawn()");
   check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts people walking at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
   await P(`show("aboard", "maker")`);
-  await until(`p.templates().includes("ship-at-anchor")`, 30_000);
+  await loads(`p.templates().includes("ship-at-anchor")`, 30_000);
   Object.assign(ids, await P("makeAboard()", 120_000));
-  const shipBuilt = await until(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 180_000, 200);
+  const shipBuilt = await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 180_000, 200);
   check("the maker sets the ship at anchor with Lost Cities in her cockpit; her companionway has nowhere to go", shipBuilt && !ids.error && !!ids.companionway && !!ids.hatch && (await P("doc()")).objects[ids.companionway].traits["traversal.exit"].to === undefined, { ids, loaded: await P("loaded()") });
 
   // ─── 1. a visitor opens the ship ──────────────────────────────────────────
   await P("forgetCameras()");
   await P(`show("aboard", "visitor")`);
-  const inPlay = await until(`p.bodyId() === "orbit" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
-  await until(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
-  await sleep(1500);
+  const inPlay = await loads(`p.bodyId() === "orbit" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
+  await b.rest(1500);
   const shipText1 = await textOf();
   check("1. the visitor opens the ship off her quarter (orbit; sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
   await shot("1-ship-arrive");
@@ -212,9 +229,9 @@ try {
 
   // ─── 5. arriving in E1M1 ──────────────────────────────────────────────────
   const play = await (async () => {
-    if (!(await until(`p.showing() === "doom" && p.running().includes("arena")`, 20_000))) return null;
-    await until(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000, 200);
-    await sleep(1200);
+    if (!(await loads(`p.showing() === "doom" && p.running().includes("arena")`, 20_000))) return null;
+    await loads(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000, 200);
+    await b.rest(1200);
     return P(`rect(".arena-play")`);
   })();
   const arrived = play && await until(`p.showing() === "doom" && p.bodyId() === "walk" && p.running().includes("arena")`, 20_000);
@@ -229,7 +246,7 @@ try {
   if (!play) throw new Error("not in E1M1's lobby");
   // ─── 6. Play ──────────────────────────────────────────────────────────────
   await b.click(Math.round(play.x), Math.round(play.y));
-  await sleep(1500);
+  await b.rest(1500);
   const eye = (await P("cam()")).position;
   const walking = await P("body()");
   check("6. ▶ Pick up the gun: walking at the start (the walk body over orbit, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["orbit", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
@@ -241,26 +258,26 @@ try {
   const standAt = [sw[12] + 1.6, sw[13] + 0.05, sw[14]];
   // Esc puts the gun down (never the body); the body chip's Leave stops walking, so Play walks in at the moved spawn
   await b.key("Escape");
-  await sleep(400);
+  await b.rest(400);
   const chip = await P(`rect(".body-chip")`);
   if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
   await until(`!!p.rect(".body-menu .menu-item")`, 3000);
   const items = await js(`[...document.querySelectorAll(".body-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim() }; })`);
   const leave = items.find((i) => /^Leave/.test(i.text));
   if (leave) await b.click(Math.round(leave.x), Math.round(leave.y));
-  await sleep(400);
+  await b.rest(400);
   check("6b. Esc puts the gun down; the body chip's Leave stops walking (orbit)", !!leave && (await P("body()")).id === "orbit", { items, body: await P("body()") });
   await P(`moveSpawn(${J(standAt)}, ${Math.PI / 2})`);
-  await sleep(300);
+  await b.rest(300);
   const play2 = await P(`rect(".arena-play")`);
   if (play2) await b.click(Math.round(play2.x), Math.round(play2.y));
-  await sleep(1200);
+  await b.rest(1200);
   const e0 = (await P("cam()")).position;
   await turn(() => P("yawPitch()"), Math.PI / 2, -0.1);
   await b.keyDown("w");
-  await sleep(250);
+  await b.advance(250);
   await b.keyUp("w");
-  await sleep(500);
+  await b.rest(500);
   const e1 = (await P("cam()")).position;
   details.exitWalk = { switch: r3([sw[12], sw[13], sw[14]]), from: r3(e0), to: r3(e1) };
   check("7a. at the exit switch's room, the visitor walks up to it (W)", e1[0] < e0[0] - 0.3 && e1[0] - sw[12] > 0.2 && e1[0] - sw[12] < 1.6, details.exitWalk);
@@ -280,9 +297,9 @@ try {
   check("7e. F sends exactly one open-document request, for the ship, out of E1M1's stage", sent2.length === 1 && sent2[0].url === urls.aboard && sent2[0].from === urls.doom && sent2[0].bubbles && sent2[0].composed, sent2);
 
   // ─── 8. back aboard ───────────────────────────────────────────────────────
-  const back = await until(`p.showing() === "aboard" && p.bodyId() === "orbit" && p.running().includes("sailing")`, 20_000);
-  await until(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
-  await sleep(1500);
+  const back = await loads(`p.showing() === "aboard" && p.bodyId() === "orbit" && p.running().includes("sailing")`, 20_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
+  await b.rest(1500);
   const shipText3 = await textOf();
   check("8. the shell opens the ship again: off her quarter, sailing; nothing shown mentions E1M1 or Doom", back && !DOOMISH.test(shipText3) && !shipText3.includes(urls.doom), shipText3.slice(0, 600));
   await shot("8-ship-again");
@@ -292,5 +309,6 @@ try {
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }
+report.frames = await js("window.__time?.frames() ?? null").catch(() => null); // of the page's clock
 console.log(J(report, null, 2));
 b.stop(Object.values(checks).every(Boolean) ? 0 : 1);

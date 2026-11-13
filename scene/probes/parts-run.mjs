@@ -15,11 +15,16 @@
 // the crate puts one where the view is looking; every placement is
 // selected; the three crates share one file doc (doc.assets), made once.
 // Prints a JSON report and exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on loading and building, stepping a frame each time
+// round.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { browser, checklist, sleep } from "./cdp.mjs";
+import { browser, checklist } from "./cdp.mjs";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -52,7 +57,7 @@ async function dragPart(part, to, { mods = 0 } = {}) {
   const canvas = await P("canvas()");
   const entry = [canvas.x + canvas.w - 40, canvas.y + canvas.h / 2];
   const { seen, types } = await b.htmlDrag([from.x, from.y], [entry, ...towards(entry, [to.x, to.y], 6)].map(([x, y]) => [Math.round(x), Math.round(y)]), { mods, during: () => P("ring()") });
-  await sleep(300);
+  await b.rest(300);
   const added = (await ids()).filter((id) => !before.has(id));
   return { id: added[0] ?? null, added, ring: seen.at(-1), types };
 }
@@ -61,7 +66,7 @@ try {
   if (!(await b.waitFor("window.__ready", 30_000))) throw new Error("page never ready");
   if ((await b.js("window.__ready")) !== true) throw new Error(`setup failed: ${JSON.stringify(await P("errors"))}`);
   check("hullLoaded", await b.waitFor("__p.loaded()", 20_000));
-  await sleep(500);
+  await b.rest(500);
   await shot("0-open");
 
   // ── the bin ───────────────────────────────────────────────────────────────
@@ -124,7 +129,7 @@ try {
     const centre = await P(`pickAt(${c.x + c.w / 2}, ${c.y + c.h / 2})`);
     const item = await P(`item("probe.crate")`);
     await b.click(item.x, item.y);
-    await sleep(400);
+    await b.rest(400);
     const added = (await ids()).filter((id) => !before.has(id));
     const o = added[0] ? (await P("doc()")).objects[added[0]] : null;
     const want = centre?.id ? await P(`toLocal(${JSON.stringify(centre.id)}, ${JSON.stringify(centre.point)})`) : centre?.point;

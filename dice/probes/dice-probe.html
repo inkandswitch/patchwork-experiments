@@ -31,6 +31,8 @@ import { encodeGLB } from "../src/glb.js";
 import { newDieDoc } from "../src/parts.js";
 import { builtOf, faceOfSeed, faceUp, seedFor } from "../src/roll.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -40,9 +42,9 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 
 /** SHA-256 hex by WebCrypto: the probe's own, so a seed is checked by something other than the code that drew it. */
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-/** When each key was last pressed, on this page's clock. */
+/** When each key was last pressed, on this page's clock (the manual one: every time here is its ms). */
 const pressed = {};
-window.addEventListener("keydown", (e) => (pressed[e.key] = performance.now()), true);
+window.addEventListener("keydown", (e) => (pressed[e.key] = time.now()), true);
 
 // column-major 4 × 4 helpers
 const mul4 = (a, b) => { const o = new Array(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
@@ -59,7 +61,8 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
-  const net = twoPeers({ delay: 25 });
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   // how long each doc change takes the views to take in (its "change" listeners, run at once): for the timings
   const changeCost = [];
   {
@@ -69,8 +72,10 @@ try {
     proto.emit = function (ev, payload) {
       if (ev !== "change") return emit.call(this, ev, payload);
       const t = performance.now();
+      const at = time.now();
       const out = emit.call(this, ev, payload);
-      changeCost.push({ at: t, ms: performance.now() - t, peer: this.peer.name });
+      // at: the page's clock; ms: what taking it in cost (CPU, on the wall)
+      changeCost.push({ at, ms: performance.now() - t, peer: this.peer.name });
       return out;
     };
   }
@@ -79,8 +84,8 @@ try {
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) longTasks.push({ at: e.startTime, ms: e.duration }); }).observe({ type: "longtask", buffered: true }); } catch {}
   window.__longTasks = longTasks;
   const frames = [];
-  const frame = (t) => { frames.push(t); if (frames.length > 4000) frames.splice(0, 2000); requestAnimationFrame(frame); };
-  requestAnimationFrame(frame);
+  const frame = (t) => { frames.push(t); if (frames.length > 4000) frames.splice(0, 2000); time.frame(frame); };
+  time.frame(frame);
   window.__frames = frames;
   const repo = net.a;
   window.repo = repo;
@@ -106,15 +111,18 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   const unmount = { a: Tool(scene, hosts.a), b: Tool(sceneB, hosts.b) };
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
   const lotsOf = (w) => dbg[w]?.host.instanceOf("dice.lots")?.["dice.lots"] ?? null;
   const plain = (x) => JSON.parse(JSON.stringify(x ?? null));
   const told = { a: [], b: [] };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) if (dbg[w]) for (const n of dbg[w].local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   // every write to the scene doc, and which objects' transforms it changed
   const writes = [];
   // and, for each die's round, whose openings A's replica holds, each time that changes (the order they came in)
@@ -124,7 +132,7 @@ try {
   scene.on("change", () => {
     const now = JSON.parse(JSON.stringify(scene.doc().objects));
     const moved = Object.keys(now).filter((id) => last[id] && JSON.stringify(now[id].transform) !== JSON.stringify(last[id].transform));
-    writes.push({ at: performance.now(), moved });
+    writes.push({ at: time.now(), moved });
     last = now;
     for (const [id, o] of Object.entries(now)) {
       const r = o?.traits?.["dice.die"]?.round;
@@ -133,7 +141,7 @@ try {
       const was = opensSeen.get(id);
       if (was?.round === r.id && was.k === k) continue;
       opensSeen.set(id, { round: r.id, k });
-      opensLog.push({ at: performance.now(), id, round: r.id, opens: k ? k.split(" ") : [] });
+      opensLog.push({ at: time.now(), id, round: r.id, opens: k ? k.split(" ") : [] });
     }
   });
   const objects = () => scene.doc().objects;
@@ -155,7 +163,7 @@ try {
     errors, viewers: { a: ana.url, b: ben.url }, symbolDie: symbolDie.url, TOP,
     /** when a key was last pressed (this page's clock, ms) */
     pressedAt: (key) => pressed[key] ?? null,
-    now: () => performance.now(),
+    now: () => time.now(),
     /** the throw's draw on a die as a view's lots know it */
     lots(id, w) { const s = lotsOf(w)?.state(id); return s && plain({ id: s.id, draw: s.draw, by: s.by, of: s.of, phase: s.phase, seed: s.seed, public: s.public, contributors: s.contributors, members: s.members, waiting: s.waiting, protests: s.protests }); },
     /** the round on a die or cup as the doc (A's replica) has it */
@@ -216,18 +224,18 @@ try {
     },
     /** sample a die every frame: the doc's transform (has it moved?) and where each view draws its origin */
     watch(id) {
-      const t0 = performance.now();
+      const t0 = time.now();
       const doc0 = JSON.stringify(objects()[id]?.transform);
       const rows = [];
       const tick = () => {
         const la = drawnLocal(id, "a"), lb = dbg.b ? drawnLocal(id, "b") : null;
-        rows.push({ t: Math.round(performance.now() - t0), at: performance.now(), docMoved: JSON.stringify(objects()[id]?.transform) !== doc0, a: la && r6(la[13]), b: lb && r6(lb[13]), up: window.__p.dieShows(id, "a")?.label ?? null });
-        sampler = requestAnimationFrame(tick);
+        rows.push({ t: Math.round(time.now() - t0), at: time.now(), docMoved: JSON.stringify(objects()[id]?.transform) !== doc0, a: la && r6(la[13]), b: lb && r6(lb[13]), up: window.__p.dieShows(id, "a")?.label ?? null });
+        sampler = time.frame(tick);
       };
       tick();
       window.__p.samples = rows;
     },
-    unwatch() { cancelAnimationFrame(sampler); return window.__p.samples; },
+    unwatch() { sampler?.(); return window.__p.samples; },
     screen(p, w = "a") { const q = dbg[w].viewport.project(p); const r = canvasRect(w); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible !== false && q.x > 4 && q.y > 4 && q.x < r.width - 4 && q.y < r.height - 4 }; },
     /** a point on the table's top, given in the table's own frame, in the world */
     onTable(x, z, w = "a") { const m = dbg[w].viewport.worldOf("table"); const p = [x, TOP, z]; return [0, 1, 2].map((r) => r6(m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r])); },

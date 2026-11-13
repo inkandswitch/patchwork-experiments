@@ -28,6 +28,8 @@ import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { PICKER, cardIds, deckUrlOf, install, lostCitiesTable, seatsOf, shownAs } from "./table-setup.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const q = new URLSearchParams(location.search);
 const MODE = q.get("mode") || "template";
 
@@ -47,20 +49,20 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
 }
 
-/** A view's repo: the shared one, except that its writes to a deck doc can be held back `delay[w]` ms (a slow link). */
+/** A view's repo: the shared one, except that its writes to a deck doc can be held back `delay[w]` ms of the page's clock (a slow link). */
 const delay = { a: 0, b: 0 };
 function viewRepo(repo, w) {
   const wrap = (h) => {
     if (!h || h.doc()?.["@patchwork"]?.type !== "secure-deck") return h;
     return new Proxy(h, {
       get(t, k) {
-        if (k === "change") return (fn) => (delay[w] ? setTimeout(() => t.change(fn), delay[w]) : t.change(fn));
+        if (k === "change") return (fn) => (delay[w] ? time.after(delay[w], () => t.change(fn)) : t.change(fn));
         const v = t[k];
         return typeof v === "function" ? v.bind(t) : v;
       },
@@ -87,6 +89,7 @@ const portable = (doc) =>
 
 try {
   await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js"]);
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -104,15 +107,18 @@ try {
   A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = viewRepo(repo, "a"); hosts.b.repo = viewRepo(repo, "b");
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   const dbg = { a: null, b: null };
   const open = (w) => { if (!dbg[w]) { Tool(w === "a" ? A : B, hosts[w]); dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug; } return true; };
   open("a");
   if (MODE !== "template") open("b");
   const told = { a: [], b: [] };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects ?? {};
   // anything in the scene's own files that could be a stand-in for a hidden thing: there must never be one
@@ -144,13 +150,15 @@ try {
   // a log of every change of state, per view per card, with when (for a delivery seen as it happens)
   const log = [];
   const last = { a: new Map(), b: new Map() };
-  const t0 = performance.now();
+  const t0 = time.now();
+  // polled on the wall, as the deliveries it logs land (the secure deck's crypto: between frames, and
+  // whether or not frames are stepped); t is the page's clock
   setInterval(() => {
     for (const w of ["a", "b"]) {
       if (!dbg[w]) continue;
       for (const id of hiddenIds()) {
         const s = stateOf(w, id);
-        if (last[w].get(id) !== s) { last[w].set(id, s); log.push({ t: Math.round(performance.now() - t0), w, id, s }); }
+        if (last[w].get(id) !== s) { last[w].set(id, s); log.push({ t: Math.round(time.now() - t0), w, id, s }); }
       }
     }
   }, 4);

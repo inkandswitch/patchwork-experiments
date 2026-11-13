@@ -24,6 +24,11 @@
 //    its × closes it, and the drawer goes.
 //
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
+//
+// Simulated time: both views, and the two peers' network, run on the page's
+// manual clock (window.__time): a pause is frames of it (b.rest); a wait on a
+// condition (until: b.waitFor) polls the wall, stepping a frame each time
+// round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -120,7 +125,7 @@ try {
   // ── 4. the docs meet ──
   await P("net.release()");
   const settled = await until("converged().length === 0 && __p.inBag('a').inside.length === 1 && __p.inBag('b').inside.length === 1 && __p.carrying('a').length === 1 && __p.carrying('b').length === 1", 10_000);
-  await sleep(400);
+  await b.rest(400);
   await mark("link released");
   const after = { a: await P("inScene('a')"), b: await P("inScene('b')"), bagA: await P("inBag('a')"), bagB: await P("inBag('b')"), carrying: { a: await P("carrying('a')"), b: await P("carrying('b')") }, order: await P("order('a')") };
   check("the docs converge", settled && (await P("converged()")).length === 0, { differ: await P("converged()"), after });
@@ -145,7 +150,7 @@ try {
   await b.click(spotA.x, spotA.y);
   await b.click(spotB.x, spotB.y);
   const down = await until("carrying('a').length === 0 && __p.carrying('b').length === 0 && __p.held('a') == null && __p.held('b') == null", 5000);
-  await sleep(300);
+  await b.rest(300);
   await mark("put down");
   const end = { a: await P("inScene('a')"), b: await P("inScene('b')"), bagA: await P("inBag('a')"), bagB: await P("inBag('b')") };
   const tA = await P(`transform('a', ${Q(after.carrying.a[0])})`);

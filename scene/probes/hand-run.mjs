@@ -19,11 +19,15 @@
 // halo: a real drag on its X arrow (B sees the pose before the doc changes),
 // and on a group's (both members move). Prints a JSON report; exits non-zero
 // on a failure.
+//
+// Simulated time: both views run on the page's manual clock (window.__time):
+// every wait on them is frames of it (b.rest, b.soon), the wall only for
+// loading (b.waitFor).
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { browser, checklist, sleep } from "./cdp.mjs";
+import { browser, checklist } from "./cdp.mjs";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -53,7 +57,7 @@ async function haloArrow(axis = 0) {
   if (!at || !on) return null;
   const len = Math.hypot(on[0] - at[0], on[1] - at[1]);
   await b.move(at[0], at[1]);
-  await sleep(60);
+  await b.rest(60);
   return { at, u: [(on[0] - at[0]) / len, (on[1] - at[1]) / len] };
 }
 
@@ -61,20 +65,20 @@ try {
   if (!(await b.waitFor("window.__ready", 30_000))) throw new Error("page never ready");
   check("no setup errors", (await T("errors")).length === 0, await T("errors"));
   check("every piece loaded in both views", await b.waitFor(`(() => { const l = window.__table.loaded(); return l[0] === window.__table.total && l[1] === window.__table.total; })()`, 20_000), await T("loaded()"));
-  await sleep(400);
+  await b.rest(400);
   const l1 = await T('id("Block 1")'), l2 = await T('id("Block 2")'), dome = await T('id("Block 3")'), w = await T('id("Pawn 1")'), board = await T('id("Board")');
 
   // 1. a block onto the centre space, released a little off-centre
   const midB = await carry(await T(`top("${l1}")`), await T("screen([0.012, 0.04, -0.008])"), {
     beforeRelease: async () => {
-      await sleep(150);
+      await b.rest(150);
       return T(`worldB("${l1}")`);
     },
   });
   const p1 = await T(`pos("${l1}")`);
   check("block snaps to the centre space, on the board", near(p1, [0, 0.04, 0]), p1);
   check("while carried, the other peer sees it in the air", midB && midB[1] > 0.04, midB);
-  await sleep(300);
+  await b.rest(300);
   check("other peer shows it where it landed", near(await T(`worldB("${l1}")`), [0, 0.04, 0]), await T(`worldB("${l1}")`));
 
   // 2. another onto the same space: it stacks
@@ -127,14 +131,14 @@ try {
   await settle();
   check("seated nowhere, both see backs", [await look("a", "inTray"), await look("b", "inTray"), await look("a", "faceDown"), await look("b", "faceDown")].every((x) => x === "back"));
   await T('dockPanel("a")');
-  await sleep(200);
+  await b.rest(200);
   check("an extension's panel is docked in the drawer", (await T('panel("a")'))?.includes("probe panel"), await T('panel("a")'));
   // closed again (as its caller would), so the canvas has its width back for what follows
   await T('closePanel("a")');
   await T('closePanel("b")');
-  await sleep(400);
+  await b.rest(400);
   await T('sit("a")');
-  await sleep(100);
+  await b.rest(100);
   await settle();
   check("sitting in seat 1, A sees the card in its tray; B doesn't", (await look("a", "inTray")) === "face" && (await look("b", "inTray")) === "back", [await look("a", "inTray"), await look("b", "inTray")]);
   check("a face-down card stays hidden from both", (await look("a", "faceDown")) === "back" && (await look("b", "faceDown")) === "back");
@@ -143,9 +147,9 @@ try {
   const before8 = await T("secretNames()");
   const pile = await T("hover('faceDown')");
   await b.move(pile[0], pile[1]);
-  await sleep(300);
+  await b.rest(300);
   await b.key("s");
-  await sleep(200);
+  await b.rest(200);
   const names = await T("secretNames()");
   check("S shuffles the pile under the pointer (2 cards), through its command", /Shuffling 2 cards/.test(await T("toast()")) && names.faceDown === before8.under && names.under === before8.faceDown, { toast: await T("toast()"), names, before8 });
 
@@ -175,15 +179,15 @@ try {
   const camFlip = await T("camera()");
   const atFlip = await T("hover('faceDown')");
   await b.move(atFlip[0], atFlip[1]);
-  await sleep(300);
+  await b.rest(300);
   await b.key("f");
   let peakFlip = -Infinity;
   for (let i = 0; i < 16; i++) {
-    await sleep(20);
+    await b.rest(20);
     const w = await T('worldB("faceDown")');
     if (w) peakFlip = Math.max(peakFlip, w[1]);
   }
-  await sleep(200);
+  await b.rest(200);
   await settle();
   check("F over a card at the table turns it over in the air: B sees it rise", peakFlip > restFlip[1] + 0.01, { rest: restFlip, peak: peakFlip });
   const posFlipped = await T('pos("faceDown")');
@@ -193,25 +197,25 @@ try {
   await settle();
   // the outline is a drawer tab the viewer opens (Objects): open it, to click rows
   await T('openTab("a", "scene.outline", "objects")');
-  await sleep(500);
+  await b.rest(500);
 
   // 9. the halo, with a real drag on its Y arrow (the block is near the view's
   // right edge, where its X arrow runs off it): B sees the pose before the doc changes
   const r4 = await T(`row("${l4}")`);
   await b.click(r4[0], r4[1]);
-  await sleep(150);
+  await b.rest(150);
   const h = await haloArrow(1);
   check("the halo is on the selection, with its Y arrow on screen", !!h && (await T("halo()"))?.id === l4, { halo: await T("halo()"), h });
   if (h) {
     const was = (await T(`pos("${l4}")`))[1];
     const mid = await b.drag(h.at, [h.at[0] + h.u[0] * 60, h.at[1] + h.u[1] * 60], {
       beforeRelease: async () => {
-        await sleep(200);
+        await b.rest(200);
         return { doc: (await T(`pos("${l4}")`))[1], b: (await T(`worldB("${l4}")`))[1] };
       },
     });
     const after = (await T(`pos("${l4}")`))[1];
-    await sleep(300);
+    await b.rest(300);
     const bAfter = (await T(`worldB("${l4}")`))[1];
     check("while the halo drags it, the other peer sees it move (the doc doesn't yet)", Math.abs(mid.doc - was) < 1e-9 && mid.b - was > 0.01, { was, mid });
     check("let go, it's written, and the other peer shows the doc's pose", after - was > 0.01 && Math.abs(bAfter - after) < 1e-6, { was, after, bAfter });
@@ -219,10 +223,10 @@ try {
 
   // 10. a group moves what's in it: its halo's arrow moves both pawns
   const [g0, g1] = await T("groupPawns()");
-  await sleep(200);
+  await b.rest(200);
   const rg = await T(`row("pawns")`);
   await b.click(rg[0], rg[1]);
-  await sleep(150);
+  await b.rest(150);
   const hg = await haloArrow();
   check("a selected group gets a halo, round its box", !!hg && (await T("halo()"))?.kind === "group", await T("halo()"));
   if (hg) {

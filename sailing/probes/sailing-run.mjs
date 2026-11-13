@@ -63,7 +63,17 @@ const b = await browser({ root: ROOT, port: 4760, cdp: 9760, page: `/sailing/pro
 // every page call has a deadline, so a hang says where it was
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(expr, ms, 60);
+// Simulated time: both views run on the page's manual clock (window.__time), so the sea, the ships and
+// the crew move only as this steps frames, as fast as the CPU allows. A wait on the world is frames of
+// that clock (until, b.rest), never a sleep; the wall (loads) is for loading only. "Sea time" is the
+// doc's world time, which the clock runs with the page's.
+const FRAME = 1000 / 60;
+/** Frame by frame until `expr` holds, for at most ms of the page's clock → its value, or false. */
+const until = (expr, ms = 10_000) => b.soon(expr, { frames: Math.ceil(ms / FRAME) });
+/** Loading: the wall's, up to ms (the page's frames going at its pace). */
+const loads = (expr, ms = 10_000) => b.waitFor(expr, ms, 60);
+/** The page's clock (ms). */
+const clockMs = () => js("window.__time.now()");
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], measured: { seed: SEED } };
@@ -95,7 +105,7 @@ const compassOf = (m) => Math.atan2(-m[8], m[10]);
 const KEY = { " ": [" ", "Space", 32], r: ["r", "KeyR", 82], q: ["q", "KeyQ", 81], e: ["e", "KeyE", 69], f: ["f", "KeyF", 70], d: ["d", "KeyD", 68], a: ["a", "KeyA", 65], b: ["b", "KeyB", 66], w: ["w", "KeyW", 87], s: ["s", "KeyS", 83], Escape: ["Escape", "Escape", 27], Enter: ["Enter", "Enter", 13] };
 const keyDown = (k) => b.send("Input.dispatchKeyEvent", { type: "keyDown", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2], ...(k.length === 1 ? { text: k } : {}) });
 const keyUp = (k) => b.send("Input.dispatchKeyEvent", { type: "keyUp", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2] });
-async function press(k, ms = 60) { await keyDown(k); await sleep(ms); await keyUp(k); await sleep(60); }
+async function press(k, ms = 60) { await keyDown(k); await b.rest(ms); await keyUp(k); await b.rest(60); }
 
 /**
  * A simple helmsman at B's wheel (B's view focused): steer `hull` onto the
@@ -105,7 +115,7 @@ async function press(k, ms = 60) { await keyDown(k); await sleep(ms); await keyU
  * @returns {{ onCourse: number | null, reached: { sea, speed } | null, trace }}  sea times since the start
  */
 async function steer(ids, sim, want, { ms = 90_000, speed = 2, settle = 6 } = {}) {
-  const t0 = Date.now(), sea0 = await P(`clock('${sim}')`);
+  const sea0 = await P(`clock('${sim}')`);
   const trace = [];
   let held = null, onCourse = null, reached = null;
   const hold = async (k) => { if (held === k) return; if (held) await keyUp(held); held = k; if (k) await keyDown(k); };
@@ -114,7 +124,8 @@ async function steer(ids, sim, want, { ms = 90_000, speed = 2, settle = 6 } = {}
   // course for `settle` seconds of sea and has stopped turning, so the wheel is left near amidships.
   let prev = null, rate = 0, steadySince = null;
   try {
-    while (Date.now() - t0 < ms) {
+    // looked at every 150 ms of the page's clock, for ms of it
+    for (let t = 0; t < ms; t += 150) {
       const m = await P(`worldOf('${ids.hull}', 'b')`);
       const rd = await P(`read('${ids.hull}', 'b')`);
       const angle = (await P(`value('${ids.wheel}', 'b')`)).angle;
@@ -131,7 +142,7 @@ async function steer(ids, sim, want, { ms = 90_000, speed = 2, settle = 6 } = {}
       const steady = Math.abs(err) < 0.2 && Math.abs(rate) < 0.06;
       steadySince = steady ? (steadySince ?? sea) : null;
       if (reached && sea - reached.sea > settle && steadySince != null && sea - steadySince > 1.5) break;
-      await sleep(150);
+      await b.rest(150);
     }
   } finally {
     await hold(null);
@@ -143,8 +154,11 @@ async function steer(ids, sim, want, { ms = 90_000, speed = 2, settle = 6 } = {}
 async function pointAt(id, w) {
   const at = await P(`aimAt('${id}', '${w}')`);
   if (!at) return null;
+  // (a pixel off first: on a simulated clock the same look aims at the same pixel, and a move to
+  // where the pointer already is fires no pointermove, so the look wouldn't be taken again)
+  await b.move(at.x + 1, at.y);
   await b.move(at.x, at.y);
-  await sleep(120);
+  await b.rest(120);
   return at;
 }
 /** Point at `id` once the view has settled (a walker placed settles her feet, and the eye with them): aim again until the look is on it. */
@@ -163,31 +177,32 @@ async function pointNear(id, w, at) {
     report.measured.missed = [...(report.measured.missed ?? []), { id, at, why: p }];
     return null;
   }
+  await b.move(p.x + 1, p.y);
   await b.move(p.x, p.y);
-  await sleep(120);
+  await b.rest(120);
   return p;
 }
 /** Focus a view: a tap on its canvas (a tap while playing is nothing; not playing, it comes aboard). */
 async function focus(w, where) {
   const c = where ?? (await P(`canvasCentre('${w}')`));
   await b.click(c.x, c.y);
-  await sleep(150);
+  await b.rest(150);
 }
 
 try {
-  check("page set up", await until("window.__ready === true", 20_000), await P("errors"));
+  check("page set up", await loads("window.__ready === true", 20_000), await P("errors"));
 
   // ─── opening ─────────────────────────────────────────────────────────────
   const startBtn = `.add-template[data-template="ship-at-sea"]`;
-  check("the empty scene's start screen offers Ship at sea", await until(`!!window.__p.hostA.querySelector('${startBtn}')`));
-  await sleep(400);
+  check("the empty scene's start screen offers Ship at sea", await loads(`!!window.__p.hostA.querySelector('${startBtn}')`));
+  await b.rest(400);
   const sb = await P(`rect('${startBtn}', 'a')`);
   await b.click(sb.x, sb.y);
-  await until("window.__p.objects().length >= 10", 20_000);
+  await loads("window.__p.objects().length >= 10", 20_000);
   await P("joinB()");
-  const allLoaded = await until("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 10 && a.loaded === a.total && b.loaded === b.total; })()", 40_000);
+  const allLoaded = await loads("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 10 && a.loaded === a.total && b.loaded === b.total; })()", 40_000);
   check("every part loads in both views", allLoaded, { a: await P("loaded('a')"), b: await P("loaded('b')") });
-  await until("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
+  await loads("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
@@ -202,7 +217,7 @@ try {
   // both open off her quarter (orbit: view.start's home), running what the doc calls for: sailing,
   // by its traits, and every general part, the same in both views (scene/TOOLS.md H1)
   const SOME = ["sailing", "scene.body", "scene.clock", "scene.halo", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
-  await sleep(1000);
+  await b.rest(1000);
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
   check("both views open in orbit, off her quarter", (await P("bodyLabel('a')")) === "Orbit" && (await P("bodyLabel('b')")) === "Orbit", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
   check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
@@ -220,9 +235,9 @@ try {
   const SIM = simA ? "a" : "b", FOL = simA ? "b" : "a";
   report.measured.simulator = SIM;
   // the clock: how fast sea time runs against the wall, and the follower's lag
-  const c0 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: Date.now() };
-  await sleep(3000);
-  const c1 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: Date.now() };
+  const c0 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
+  await b.advance(3000);
+  const c1 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   const rate = (c1.s - c0.s) / ((c1.t - c0.t) / 1000);
   report.measured.clock = { rate: n2(rate), lag: n2(c1.s - c1.f) };
   check("the follower's sea clock runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
@@ -235,9 +250,9 @@ try {
   const chipA = await P("rect('.clock-chip .clock-toggle', 'a')");
   await b.click(chipA.x, chipA.y);
   await until(`window.__p.doc().clock?.running === false`, 5000);
-  await sleep(800);
+  await b.rest(800);
   const paused0 = { a: await P("clock('a')"), b: await P("clock('b')"), hull: await P(`worldOf('${hull}', 'b')`) };
-  await sleep(1500);
+  await b.rest(1500);
   const paused1 = { a: await P("clock('a')"), b: await P("clock('b')"), hull: await P(`worldOf('${hull}', 'b')`) };
   const pausedDoc = (await P("doc()")).clock;
   report.measured.paused = { t: pausedDoc?.t, a: paused1.a, b: paused1.b };
@@ -246,7 +261,7 @@ try {
   const chipB = await P("rect('.clock-chip .clock-toggle', 'b')");
   await b.click(chipB.x, chipB.y);
   await until(`window.__p.simulating('a') || window.__p.simulating('b')`, 5000);
-  await sleep(1500);
+  await b.rest(1500);
   check("B resumes from its chip: one view computes again, from where it stood", (await P("doc()")).clock?.running === true && (await P("simulating('a')")) !== (await P("simulating('b')")) && (await P("clock('b')")) > pausedDoc.t, { t: await P("clock('b')") });
 
   // ─── the template starts her under way ───────────────────────────────────
@@ -273,7 +288,7 @@ try {
     o['${windlass}'].traits['sailing.anchor'].down = true;
     o['${windlass}'].traits['sailing.anchor'].rode = 25;
   })`);
-  await sleep(1500);
+  await b.rest(1500);
 
   // ─── floating at anchor ──────────────────────────────────────────────────
   if (section("sim")) throw new Done();
@@ -316,7 +331,7 @@ try {
     let verbsC = [];
     let mR, eye, boomAt, yaw, pitch;
     await P(`place('b', '${hull}', [0, ${ms0[1]}, ${fwdEnd}], 0, 0)`);
-    await sleep(500);
+    await b.rest(500);
     for (let i = 0; i < 5 && !verbsC.some((v) => v.command === "sail"); i++) {
       const mH = await P(`worldOf('${hull}', 'b')`);
       mR = await P(`worldOf('${rig}', 'b')`);
@@ -328,9 +343,9 @@ try {
       yaw = Math.atan2(-d[0], -d[2]) - headingOf(mH);
       pitch = Math.atan2(d[1], Math.hypot(d[0], d[2]));
       await P(`place('b', '${hull}', [0, ${ms0[1]}, ${fwdEnd}], ${yaw}, ${pitch})`);
-      await sleep(300);
+      await b.rest(300);
       aimC = await P(`aimNearest('${rig}', 'b')`);
-      if (aimC) { await b.move(aimC.x + 1, aimC.y); await b.move(aimC.x, aimC.y); await sleep(250); }
+      if (aimC) { await b.move(aimC.x + 1, aimC.y); await b.move(aimC.x, aimC.y); await b.rest(250); }
       verbsC = await P("verbs('b')");
     }
     report.measured.boomLook = { hovered: await P("hovered('b')"), verbs: verbsC };
@@ -343,7 +358,7 @@ try {
   const mastAt = await local(ids.mast);
   const rigAt = await local(rig);
   await P(`place('b', '${hull}', [0.4, ${mastAt[1] + 0.3}, ${rigAt[2] + 1.3}], 0, -0.8)`); // looking down at its foot
-  await sleep(500);
+  await b.rest(500);
   const aimM = await pointAt(ids.mast, "b");
   const verbsM = await P("verbs('b')");
   check("looking at the mast, B's prompt offers to work the halyard (F) and to raise the sail (hold R); no sheet at the mast", !!aimM && verbsM.some((v) => v.command === "halyard" && !v.disabled) && verbsM.some((v) => v.command === "sail" && /Raise/.test(v.name)) && !verbsM.some((v) => v.command === "haul"), { aimM, verbsM });
@@ -351,24 +366,24 @@ try {
   // pointer off the mast before the key landed)
   await focus("b", aimM);
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   for (let i = 0; i < 3 && (await P("me('b')")).station !== rig; i++) {
     const again = await pointAt(ids.mast, "b");
     if (again) await focus("b", again);
     await press("f");
-    await sleep(400);
+    await b.rest(400);
   }
   const atHalyard = await P("me('b')");
   check("F at the mast locks B in there (the sail's stand spot), the hint saying hold R", atHalyard.station === rig && /hold R raise sail/.test(atHalyard.hint ?? ""), atHalyard);
   // (a little: a sail part way up, aft of her keel's centre, rounds her back up into the wind she's falling off)
   await keyDown("r");
-  await sleep(350);
+  await b.rest(350);
   await keyUp("r");
-  await sleep(300);
+  await b.rest(300);
   const hoisted = (await P("doc()")).objects[rig].traits["sailing.sail"].raised;
   check("holding R there hoists it: the doc has it part way up", hoisted > 0.05 && hoisted < 0.5, { hoisted });
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   check("F leaves the mast: walking again, the halyard's claim gone", (await P("me('b')")).station == null && !(await P("doc()")).objects[rig].claims?.halyard, await P("me('b')"));
 
   // ─── the helm ────────────────────────────────────────────────────────────
@@ -376,16 +391,16 @@ try {
   const wh = await local(wheel);
   // from the wheel, the mast is out of reach: it says where to go
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, 0.15)`);
-  await sleep(500);
+  await b.rest(500);
   const aimFar = await pointAtSettled(ids.mast, "b");
   const verbsFar = await P("verbs('b')");
   check("from the wheel, looking at the mast: 'Sail · work it at the wheel or the mainsheet (F)', greyed (you're in the cockpit already)", !!aimFar && verbsFar.some((v) => v.command === "far" && v.disabled && v.name === "Sail · work it at the wheel or the mainsheet (F)"), { aimFar, verbsFar, hovered: await P("hovered('b')") });
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
-  await sleep(500);
+  await b.rest(500);
   const aimH = await pointAtSettled(wheel, "b");
   check("at the wheel, B's prompt offers the helm", !!aimH && (await P("verbs('b')")).some((v) => v.command === "helm" && !v.disabled), { aimH, verbs: await P("verbs('b')"), hovered: await P("hovered('b')") });
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   const bAtHelm = await P("me('b')");
   const helmClaim = (await P("doc()")).objects[wheel].claims?.station ?? null;
   check("F takes the helm: B stands at it, and the doc's station claim names B", bAtHelm.station === wheel && helmClaim?.session === sess.b, { bAtHelm, helmClaim });
@@ -395,39 +410,40 @@ try {
   await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 10000);
   await keyUp("r");
-  await sleep(300);
+  await b.rest(300);
   check("holding R at the helm raises the sail: the doc says raised 1", (await P("doc()")).objects[rig].traits["sailing.sail"].raised > 0.95, (await P("doc()")).objects[rig].traits["sailing.sail"]);
   await shot("helm", "b");
 
   // ─── B weighs the anchor, the main up (DESIGN.md, "Leaving the anchor": hoisted while anchored, so she
   // lies head to wind as it breaks out), and comes back to the helm ────────
   await press("f"); // leaves the helm
-  await sleep(300);
+  await b.rest(300);
   // stand just aft of the windlass, looking down at it
   const wl = await local(windlass);
   await P(`place('b', '${hull}', [${wl[0]}, ${wl[1]}, ${wl[2] + 0.9}], 0, -0.75)`);
-  await sleep(500);
+  await b.rest(500);
   const aimW = await pointAt(windlass, "b");
   const verbsW = await P("verbs('b')");
   check("at the windlass, B's use prompt offers to raise the anchor (hold F)", !!aimW && verbsW.some((v) => v.command === "weigh" && !v.disabled), { aimW, verbsW, me: await P("me('b')"), hovered: await P("hovered('b')") });
   await keyDown("f");
-  await sleep(400);
+  await b.rest(400);
   const weighing = await P("verbs('b')");
   const windlassClaim = (await P("doc()")).objects[windlass].claims?.station ?? null;
   const live = await P(`value('${windlass}', 'a')`);
   await until(`window.__p.doc().objects['${windlass}'].traits['sailing.anchor'].down === false`, 12000);
   await keyUp("f");
-  await sleep(300);
+  await b.rest(300);
   const up = await docAnchor();
   check("holding F winds it up: the doc says the anchor's up, its spot cleared", up.down === false && !up.at, { up, weighing, live });
   check("while F is held the windlass is B's (its station claim), and let go once it's up", windlassClaim?.session === sess.b && !(await P("doc()")).objects[windlass].claims?.station, { windlassClaim });
   check("the windlass said how much chain was out while it wound", weighing.some((v) => v.command === "weigh" && /m of chain/.test(v.name)) || /m of chain/.test(JSON.stringify(verbsW)), { verbsW, weighing });
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
-  await sleep(400);
+  await b.rest(400);
   const aimH2 = await pointAt(wheel, "b");
+  const beforeH2 = { verbs: await P("verbs('b')"), lookIsAt: await P(`lookIsAt('${wheel}', 'b')`), body: await P("body('b')"), focusInB: await js("window.__p.hostB?.contains(document.activeElement) ?? null") };
   await press("f");
-  await sleep(300);
-  check("back at the wheel, F takes the helm again", !!aimH2 && (await P("me('b')")).station === wheel, { aimH2, me: await P("me('b')") });
+  await b.rest(300);
+  check("back at the wheel, F takes the helm again", !!aimH2 && (await P("me('b')")).station === wheel, { aimH2, wheel, beforeH2, me: await P("me('b')") });
 
   // ─── leaving head to wind, as a crew does (DESIGN.md, "Leaving the anchor") ─
   // She lies near head to wind, where her rudder hardly bites. The tack chosen with the wheel (to
@@ -444,22 +460,21 @@ try {
   check("head to wind, the HUD names the move (back the jib, B at the helm)", /back the jib \(B at the helm/.test(advice), { advice, awa: n2(rdLeave.apparentWind.angle), speed: n2(rdLeave.speed) });
   const hLeave = compassOf(await P(`worldOf('${hull}', 'b')`));
   await keyDown("a");
-  await sleep(600); // the wheel a third to port
+  await b.rest(600); // the wheel a third to port
   await keyUp("a");
   leave.hint = (await P("me('b')")).hint;
   await press("b");
   leave.held = (await P("doc()")).objects[jibId]?.traits["sailing.jib"].held ?? null;
   const leaveSea = await P(`clock('${SIM}')`);
-  const leaveWall = Date.now();
   leave.past = null;
-  while ((await P(`clock('${SIM}')`)) - leaveSea < 15 && Date.now() - leaveWall < 60_000) {
+  for (let t = 0; (await P(`clock('${SIM}')`)) - leaveSea < 15 && t < 60_000; t += 150) {
     leave.turned = wrap(compassOf(await P(`worldOf('${hull}', 'b')`)) - hLeave);
     if (Math.abs(leave.turned) > Math.PI / 4) { leave.past = n2((await P(`clock('${SIM}')`)) - leaveSea); break; }
-    await sleep(150);
+    await b.rest(150);
   }
   leave.turned = n2(leave.turned ?? 0);
   await press("b"); // and let it fly
-  await sleep(300);
+  await b.rest(300);
   leave.let = (await P("doc()")).objects[jibId]?.traits["sailing.jib"].held ?? null;
   report.measured.leave = leave;
   // the hint names her bow's way; the jib is held on the other side (stations.js helmBackSide: the side it backs)
@@ -475,12 +490,12 @@ try {
   await focus("a");
   await until("window.__p.me('a')?.playing === true", 3000);
   await P(`place('a', '${hull}', [${wh[0] + 0.8}, ${wh[1] - 0.6}, ${wh[2] + 1.2}], 0.5, -0.45)`);
-  await sleep(500);
+  await b.rest(500);
   const aimHA = await pointAt(wheel, "a");
   const verbsA = await P("verbs('a')");
   check("A, beside the wheel, sees 'Someone's at the helm', disabled", !!aimHA && verbsA.some((v) => v.command === "helm" && v.disabled && /Someone/.test(v.name)), { aimHA, verbsA });
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   check("and F does nothing for A: the claim stays B's", (await P("me('a')")).station == null && (await P("doc()")).objects[wheel].claims?.station?.session === sess.b);
 
   // ─── under sail: bear away onto a beam reach ─────────────────────────────
@@ -497,16 +512,16 @@ try {
   check("both views read the same speed and heading (the simulator's, through presence)", Math.abs(rdA.speed - rdB.speed) < 0.3 && Math.abs(wrap(rdA.heading - rdB.heading)) < 0.05, { a: rdA, b: rdB });
   // heel: + to starboard; leeward is starboard on starboard tack; averaged, as each wave rolls her
   const heels = [];
-  for (let i = 0; i < 12; i++) { heels.push((await P(`read('${hull}', 'b')`)).heel); await sleep(250); }
+  for (let i = 0; i < 12; i++) { heels.push((await P(`read('${hull}', 'b')`)).heel); await b.rest(250); }
   check("she heels to leeward under sail (on the mean, as the waves roll her)", side * mean(heels) > 0.03, { mean: +mean(heels).toFixed(3), heels: heels.map((h) => +h.toFixed(3)) });
 
   // B steers: hold D, the wheel goes over (live, through presence), and she turns in both views
   const h0 = { a: compassOf(await P(`worldOf('${hull}', 'a')`)), b: compassOf(await P(`worldOf('${hull}', 'b')`)) };
   await keyDown("d");
-  await sleep(1500);
+  await b.rest(1500);
   const wheelLive = await P(`value('${wheel}', '${SIM}')`);
   await keyUp("d");
-  await sleep(2500);
+  await b.rest(2500);
   const h1 = { a: compassOf(await P(`worldOf('${hull}', 'a')`)), b: compassOf(await P(`worldOf('${hull}', 'b')`)) };
   check("B holds D: the wheel goes to starboard (the simulator hears it live) and she turns to starboard in both views", wheelLive.angle > 0.5 && wrap(h1.a - h0.a) > 0.1 && wrap(h1.b - h0.b) > 0.1, { wheelLive, h0, h1 });
   await steer(ids, SIM, want, { ms: 40_000, settle: 4 }); // and back onto the reach
@@ -525,26 +540,26 @@ try {
   // the sheet's led aft: at the wheel, E eases it out
   const sheetH0 = (await P(`value('${rig}', 'b')`)).sheet;
   await keyDown("e");
-  await sleep(800);
+  await b.rest(800);
   await keyUp("e");
-  await sleep(300);
+  await b.rest(300);
   const sheetH1 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
   check("at the helm, holding E eases the sheet (it's led aft): the doc has it further out", sheetH1 > sheetH0 + 0.1, { sheetH0, sheetH1 });
 
   // B lets go (F); A can take it now
   await press("f");
-  await sleep(400);
+  await b.rest(400);
   check("B lets go of the helm (F): the claim goes, the angle stays in the doc", (await P("me('b')")).station == null && !(await P("doc()")).objects[wheel].claims?.station && Number.isFinite((await P("doc()")).objects[wheel].traits["sailing.helm"].angle));
   await P(`place('a', '${hull}', [${wh[0] + 0.8}, ${wh[1] - 0.6}, ${wh[2] + 1.2}], 0.5, -0.45)`);
-  await sleep(300);
+  await b.rest(300);
   const aimHA2 = await pointAt(wheel, "a");
   check("then A's prompt offers the helm, and A takes it", !!aimHA2 && (await P("verbs('a')")).some((v) => v.command === "helm" && !v.disabled), { verbs: await P("verbs('a')") });
   await focus("a", aimHA2);
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   check("A is at the helm", (await P("me('a')")).station === wheel && (await P("doc()")).objects[wheel].claims?.station?.session === sess.a, await P("me('a')"));
   await press("f"); // and leaves it
-  await sleep(300);
+  await b.rest(300);
 
   // B hauls in the sheet at the mainsheet, in the cockpit (hold Q): she heels more
   const mast = await local(ids.mast);
@@ -552,7 +567,7 @@ try {
   const atMast = `[0.4, ${mast[1] + 0.3}, ${rg[2] + 1.3}]`;
   const ms = await local(ids.mainsheet);
   await P(`place('b', '${hull}', [0, ${ms[1]}, ${ms[2] + 0.35}], 0, -1.2)`); // its stand spot, between it and the wheel
-  await sleep(500);
+  await b.rest(500);
   let aimQ = await pointAt(ids.mainsheet, "b");
   const verbsQ = await P("verbs('b')");
   check("at the mainsheet, B's prompt offers to take it (F) and the sheet (hold Q, E)", !!aimQ && ["mainsheet", "haul", "ease"].every((c) => verbsQ.some((v) => v.command === c && !v.disabled)), { aimQ, verbsQ });
@@ -563,46 +578,46 @@ try {
     if (i) aimQ = (await pointAt(ids.mainsheet, "b")) ?? aimQ;
     await focus("b", aimQ);
     await keyDown("q");
-    await sleep(800);
+    await b.rest(800);
     await keyUp("q");
-    await sleep(300);
+    await b.rest(300);
     sheet1 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
   }
   check("holding Q there hauls the sheet in: the doc has it tighter", sheet1 < sheet0 - 0.1, { sheet0, sheet1 });
   // F locks in at the mainsheet: Q / E trim, hold R hoists; F leaves
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   for (let i = 0; i < 3 && (await P("me('b')")).station !== ids.mainsheet; i++) {
     const again = await pointAt(ids.mainsheet, "b");
     if (again) await focus("b", again);
     await press("f");
-    await sleep(400);
+    await b.rest(400);
   }
   const atSheet = await P("me('b')");
   check("F takes the mainsheet: B stands at it, the hint saying Q / E and hold R", atSheet.station === ids.mainsheet && /Q \/ E sheet/.test(atSheet.hint ?? "") && /hold R/.test(atSheet.hint ?? "") && Math.abs(atSheet.position[1] - ms[1]) < 0.05, atSheet);
   await keyDown("e");
-  await sleep(500);
+  await b.rest(500);
   await keyUp("e");
-  await sleep(300);
+  await b.rest(300);
   const sheet2 = (await P("doc()")).objects[rig].traits["sailing.sail"].sheet;
   check("there, E eases it: the doc has it further out", sheet2 > sheet1 + 0.05, { sheet1, sheet2 });
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   check("F leaves the mainsheet: its claim goes", (await P("me('b')")).station == null && !(await P("doc()")).objects[ids.mainsheet].claims?.station, await P("me('b')"));
-  await sleep(6000);
+  await b.rest(6000);
 
   // a view from off the quarter, A not aboard: Escape never leaves a body
   // (scene/TOOLS.md §5); the body chip's Leave stops A walking her deck
   await focus("a", await P("canvasCentre('a')"));
   await press("Escape");
-  await sleep(300);
+  await b.rest(300);
   const stillAboard = (await P("me('a')")).playing === true && (await P("body('a')")) === "aboard";
-  const chipA = await P("chip('a')");
-  if (chipA) await b.click(Math.round(chipA.x), Math.round(chipA.y));
+  const bodyChipA = await P("chip('a')");
+  if (bodyChipA) await b.click(Math.round(bodyChipA.x), Math.round(bodyChipA.y));
   await until("!!window.__p.chipItem('a', 'Leave')", 3000);
   const leaveA = await P("chipItem('a', 'Leave')");
   if (leaveA) await b.click(Math.round(leaveA.x), Math.round(leaveA.y));
-  await sleep(2500);
+  await b.rest(2500);
   check("Escape leaves A aboard; the body chip's Leave stops A's play: the camera goes back off the quarter, and follows her", stillAboard && !!leaveA && (await P("me('a')")).playing === false && (await P("body('a')")) === "orbit" && !(await P("held('a')")) && (await quarterDistance("a")) < 30, { stillAboard, me: await P("me('a')"), body: await P("body('a')"), distance: await quarterDistance("a") });
   report.measured.heelAtQuarterShot = n2((await P(`read('${hull}', 'a')`)).heel);
   await shot("quarter-heeled", "a");
@@ -612,10 +627,10 @@ try {
   // B stands still for a while up on the cabin top, to windward of the boom, looking
   // forward past the mast (dropped from a little above it: the walker lands on what's there)
   await P(`place('b', '${hull}', [${-0.35 * side}, ${mast[1] + 1.0}, ${mast[2] + 1.4}], 0.1, -0.1)`);
-  await sleep(1200);
+  await b.rest(1200);
   const s0 = { me: await P("me('b')"), m: await P(`worldOf('${hull}', 'b')`) };
   await shot("deck-forward", "b");
-  await sleep(2500);
+  await b.rest(2500);
   const s1 = { me: await P("me('b')"), m: await P(`worldOf('${hull}', 'b')`) };
   const localMoved = Math.hypot(...s1.me.position.map((v, i) => v - s0.me.position[i]));
   const worldMoved = Math.hypot(s1.me.eye[0] - s0.me.eye[0], s1.me.eye[2] - s0.me.eye[2]);
@@ -623,7 +638,7 @@ try {
   const eyeOnDeck = apply(s1.m, s1.me.position);
   check("and B's feet are on the deck as drawn (eye 1.6 m over them)", Math.abs(s1.me.eye[1] - eyeOnDeck[1] - 1.6) < 0.1, { eye: r3(s1.me.eye), feet: r3(eyeOnDeck) });
   // A draws B's avatar there, in A's own view of the hull
-  await sleep(300);
+  await b.rest(300);
   const av = await P("avatars('a')");
   const bMe = await P("me('b')");
   const bInA = apply(await P(`worldOf('${hull}', 'a')`), bMe.position);
@@ -632,9 +647,9 @@ try {
   // B walks forward a few steps: the deck position changes
   await focus("b");
   await keyDown("w");
-  await sleep(700);
+  await b.rest(700);
   await keyUp("w");
-  await sleep(300);
+  await b.rest(300);
   const s2 = await P("me('b')");
   check("W walks B along the deck (in the ship's frame)", s2.on === hull && Math.hypot(s2.position[0] - s1.me.position[0], s2.position[2] - s1.me.position[2]) > 0.5, { from: r3(s1.me.position), to: r3(s2.position) });
 
@@ -647,15 +662,15 @@ try {
   check("and it bakes the same twice", nav.cells > 1000 && nav.again === nav.cells, { cells: nav.cells, again: nav.again });
   // from the helm, under way (heeled, pitching): a fixed sequence of keys, about 6 s
   await P(`place('b', '${hull}', [0, 0.72, 4.85], 0, -0.1)`);
-  await sleep(300);
+  await b.rest(300);
   await focus("b");
   await watchWalk(js, "b", hull);
   const legs = [];
   const hold = async (keys, ms) => {
     for (const k of keys) await keyDown(k);
-    await sleep(ms);
+    await b.rest(ms);
     for (const k of [...keys].reverse()) await keyUp(k);
-    await sleep(120);
+    await b.rest(120);
     legs.push([keys.join("+"), r3((await P("me('b')")).position)]);
   };
   // (the aft deck right behind the helm is cut by the backstay's foot, so the aft end is taken off the centreline)
@@ -670,7 +685,7 @@ try {
   await hold(["a"], 450); // back down into the well
   await hold(["s", " "], 600); // a jump at its aft end
   await hold(["w"], 300); // and back
-  await sleep(300);
+  await b.rest(300);
   const walked = await walkReport(js, "b");
   report.measured.walk = { ...walked, legs, me: await P("me('b')"), errors: (await errorsNow()).slice(0, 5) };
   await shot("navmesh-walk", "b");
@@ -686,28 +701,28 @@ try {
   // on the reach first, so that she has way to carry when the sail comes down.
   report.measured.beforeLower = { read: await P(`read('${hull}', 'b')`) };
   await P(`place('b', '${hull}', [${wh[0]}, ${wh[1] - 0.6}, ${wh[2] + 0.75}], 0, -0.45)`);
-  await sleep(500);
+  await b.rest(500);
   const aimH3 = await pointAt(wheel, "b");
   await focus("b", aimH3);
   await press("f");
-  await sleep(300);
+  await b.rest(300);
   const resteer = await steer(ids, SIM, want, { ms: 90_000, settle: 6 });
   report.measured.backOnReach = { reached: resteer.reached, trace: resteer.trace.filter((_, i) => i % 8 === 0) };
   await press("f"); // and leaves it
-  await sleep(300);
+  await b.rest(300);
   const sp0 = (await P(`read('${hull}', 'b')`)).speed;
   // B at the gooseneck, looking at the boom
   await P(`place('b', '${hull}', ${atMast}, 0, -0.25)`);
-  await sleep(500);
+  await b.rest(500);
   const aimS = await pointAt(rig, "b");
   const verbsS = await P("verbs('b')");
   check("the sail's verb says what it'll do: Lower sail (hold R)", !!aimS && verbsS.some((v) => v.command === "sail" && /Lower/.test(v.name)), { aimS, verbsS });
   await focus("b", aimS);
   await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised < 0.05`, 8000);
-  await sleep(300);
+  await b.rest(300);
   await keyUp("r");
-  await sleep(400);
+  await b.rest(400);
   const sailDoc = (await P("doc()")).objects[rig].traits["sailing.sail"];
   check("holding R lowers it: the doc says raised 0", sailDoc.raised < 0.05, sailDoc);
   // her jib still draws with the main down (the stock sloop sails her rig contract): B furls it
@@ -724,38 +739,40 @@ try {
       const aimDrum = async () => {
         const p = await P(`aimNear('${w}', 'b', ${JSON.stringify(apply(await P(`worldOf('${w}', 'b')`), [0, 0.35, 0]))})`);
         if (!p || p.miss) return null;
+        await b.move(p.x + 1, p.y);
         await b.move(p.x, p.y);
-        await sleep(120);
+        // (frame by frame until the look is on it: she rolls under the pointer)
+        await until(`window.__p.lookIsAt('${w}', 'b')`, 500);
         return p;
       };
       // from the sole beside it, looking at the winch (its origin, as she lies now), then either way abeam
       await P(`place('b', '${hull}', [${s * 0.22}, 0.75, 2.3], 0, 0)`);
-      await sleep(300);
+      await b.rest(300);
       const mH = await P(`worldOf('${hull}', 'b')`), mW = await P(`worldOf('${w}', 'b')`), eye = (await P("me('b')")).eye;
       const dW = [mW[12] - eye[0], mW[13] - eye[1], mW[14] - eye[2]];
       const looks = [[Math.atan2(-dW[0], -dW[2]) - headingOf(mH), Math.atan2(dW[1], Math.hypot(dW[0], dW[2]))], [(-s * Math.PI) / 2, -0.35], [(s * Math.PI) / 2, -0.35]];
       for (const [yaw, pitch] of looks) {
         await P(`place('b', '${hull}', [${s * 0.22}, 0.75, 2.3], ${yaw}, ${pitch})`);
-        await sleep(400);
+        await b.rest(400);
         aim = await aimDrum();
         if (aim) break;
       }
       const vs = aim ? await P("verbs('b')") : [];
-      furled.tried.push({ name, aim: !!aim, verbs: vs.map((v) => `${v.command}${v.disabled ? " (disabled)" : ""}: ${v.name}`) });
+      furled.tried.push({ name, aim: aim && { x: aim.x, y: aim.y }, look: await P(`lookIsAt('${w}', 'b')`), verbs: vs.map((v) => `${v.command}${v.disabled ? " (disabled)" : ""}: ${v.name}`), me: await P("me('b')") });
       if (!aim || vs.some((v) => v.disabled && /Lazy sheet/.test(v.name))) continue;
       await focus("b", aim);
       aim = (await aimDrum()) ?? aim;
       await press("f");
-      await sleep(400);
+      await b.rest(400);
       furled.station = (await P("me('b')")).station === w;
       furled.hint = (await P("me('b')")).hint;
       await keyDown("r");
       await until(`(window.__p.doc().objects['${jibId}'].traits['sailing.jib'].furl ?? 0) > 0.95`, 8000).catch(() => {});
       await keyUp("r");
-      await sleep(300);
+      await b.rest(300);
       furled.furl = (await P("doc()")).objects[jibId].traits["sailing.jib"].furl;
       await press("f");
-      await sleep(300);
+      await b.rest(300);
       furled.left = (await P("me('b')")).station == null;
       break;
     }
@@ -763,7 +780,7 @@ try {
     check("at the working winch, F takes the jib sheet, hold R furls the jib (the doc says furl 1), F leaves", furled.station && furled.furl > 0.95 && furled.left && /hold R/.test(furled.hint ?? ""), furled);
   }
   const slowing = [];
-  for (let i = 0; i < 6; i++) { await sleep(4000); slowing.push(n2((await P(`read('${hull}', 'b')`)).speed)); }
+  for (let i = 0; i < 6; i++) { await b.rest(4000); slowing.push(n2((await P(`read('${hull}', 'b')`)).speed)); }
   // (an 8 t sloop carries her way: in calm water she'd be at about half speed after 24 s; each wave surges her a little)
   // slowing: the least-squares trend over the samples, not two pairs of them, so one wave's surge can't decide it
   const trend = (() => { const n = slowing.length, mx = (n - 1) / 2, my = mean(slowing); let a = 0, q = 0; slowing.forEach((v, i) => { a += (i - mx) * (v - my); q += (i - mx) ** 2; }); return a / q / 4; })(); // m/s per second
@@ -774,7 +791,7 @@ try {
   const ld = await local(ladder);
   await P(`place('b', '${hull}', [${ld[0] + 1.0}, ${ld[1] + 0.2}, ${ld[2]}], -1.57, -0.2)`); // past the rail, over the water
   await until("window.__p.me('b')?.swimming === true", 5000);
-  await sleep(800);
+  await b.rest(800);
   const sw = await P("me('b')");
   const water = await js(`window.__p.ctx('b').sea.ocean.heightAt(${sw.eye[0]}, ${sw.eye[2]}, window.__p.clock('b'))`);
   check("past the rail B falls in and swims, the eye just over the water", sw.swimming && sw.on == null && Math.abs(sw.eye[1] - water - 0.3) < 0.15, { eye: r3(sw.eye), water: n2(water) });
@@ -782,12 +799,12 @@ try {
   const mL = await P(`worldOf('${hull}', 'b')`);
   const offL = apply(mL, [ld[0] + 4.5, 0, ld[2] + 2]);
   await P(`place('b', null, [${offL[0]}, 0, ${offL[2]}], ${headingOf(mL) + Math.PI / 2 - 0.35}, 0.12)`);
-  await sleep(700);
+  await b.rest(700);
   await shot("swimming", "b");
   const mL2 = await P(`worldOf('${hull}', 'b')`); // she's moved on
   const besideL = apply(mL2, [ld[0] + 0.9, 0, ld[2]]);
   await P(`place('b', null, [${besideL[0]}, 0, ${besideL[2]}], ${headingOf(mL2) + Math.PI / 2}, 0.1)`);
-  await sleep(500);
+  await b.rest(500);
   const aimL = (await pointAt(ladder, "b")) ?? (await pointAt(hull, "b"));
   const verbsL = await P("verbs('b')");
   check("in the water by the ladder, B's prompt offers to climb aboard", !!aimL && verbsL.some((v) => v.command === "climb"), { aimL, verbsL, me: await P("me('b')") });
@@ -797,7 +814,7 @@ try {
   const besideL3 = apply(mL3, [ld[0] + 0.9, 0, ld[2]]);
   await P(`place('b', null, [${besideL3[0]}, 0, ${besideL3[2]}], ${headingOf(mL3) + Math.PI / 2}, 0.1)`);
   await press("f");
-  await sleep(600);
+  await b.rest(600);
   const back = await P("me('b')");
   const mB = await P(`worldOf('${hull}', 'b')`);
   check("F climbs the ladder: B is back on deck, by the ladder", back.on === hull && !back.swimming && Math.hypot(back.position[0] - ld[0], back.position[2] - ld[2]) < 1.5 && back.eye[1] > mB[13] + 1.6, { back: { on: back.on, position: r3(back.position), eye: r3(back.eye) } });
@@ -806,24 +823,24 @@ try {
   if (section("swim")) throw new Done();
   // raise the sail again from A's view (not aboard: the use prompt is only in first person… so B does it)
   await P(`place('b', '${hull}', ${atMast}, 0, -0.25)`);
-  await sleep(400);
+  await b.rest(400);
   const aimS2 = await pointAt(rig, "b");
   await focus("b", aimS2);
   await keyDown("r");
   await until(`window.__p.value('${rig}', 'a').raised > 0.95`, 8000);
   await keyUp("r");
   await P(`watchDoc('${hull}')`);
-  const wall0 = Date.now();
-  await sleep(35_000);
+  const wall0 = await clockMs();
+  await b.advance(35_000);
   const seen = await P("docSeen");
   const fps = report.measured.fps[SIM];
-  check("the doc gets the hull's transform at the clock's checkpoints (every 30 s), not every frame", seen.n >= 1 && seen.n <= 3, { changes: seen.n, writes: seen.writes, seconds: n2((Date.now() - wall0) / 1000), framesPerSecond: fps });
+  check("the doc gets the hull's transform at the clock's checkpoints (every 30 s), not every frame", seen.n >= 1 && seen.n <= 3, { changes: seen.n, writes: seen.writes, seconds: n2(((await clockMs()) - wall0) / 1000), framesPerSecond: fps });
 
   // ─── handoff: the simulator leaves ───────────────────────────────────────
   if (section("doc")) throw new Done();
   const before = await P(`read('${hull}', '${FOL}')`);
   const sampling = js(`window.__p.sampleFrames('${hull}', '${FOL}', 4000)`);
-  await sleep(1000);
+  await b.rest(1000);
   await P(`close('${SIM}')`);
   const across = await sampling;
   // each frame's step past what her speed carries her in that frame's time: a long frame (the page
@@ -833,7 +850,7 @@ try {
   const took = await until(`window.__p.simulating('${FOL}')`, 8000);
   const claim2 = (await P("doc()")).claims?.clock;
   const p0 = await P(`worldOf('${hull}', '${FOL}')`);
-  await sleep(3000);
+  await b.rest(3000);
   const p1 = await P(`worldOf('${hull}', '${FOL}')`);
   const after = await P(`read('${hull}', '${FOL}')`);
   const moved = Math.hypot(p1[12] - p0[12], p1[14] - p0[14]);

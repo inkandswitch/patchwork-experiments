@@ -37,6 +37,13 @@
 // clock, from the keydown to the frame / the doc write).
 // Prints a JSON checklist (and the d20 roll as a sampled trajectory); exits
 // non-zero if any check fails.
+//
+// Simulated time: both views, and the two peers' network, run on the page's
+// manual clock (window.__time): a pause is frames of it (b.rest), a wait on a
+// condition polls the wall (until: b.waitFor, stepping a frame each time
+// round, as lots' crypto takes real time) or counts frames where only the
+// world moves (b.soon). Times in the report are the page's clock, but for
+// the latencies, which are the wall's.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -69,15 +76,14 @@ const towards = ([ax, ay], [bx, by], n = 6) => Array.from({ length: n }, (_, i) 
 const click = async (r) => r && b.click(r.x, r.y);
 const near = (a, c, eps) => a && c && a.length === c.length && a.every((v, i) => Math.abs(v - c[i]) < eps);
 
-/** wait until A's camera has stopped moving */
+/** wait until A's camera has stopped moving (looked at every 250 ms of the page's clock) */
 async function settled(ms = 8000) {
-  const t = Date.now();
   let last = null;
-  while (Date.now() - t < ms) {
+  for (let t = 0; t < ms; t += 250) {
     const c = J(await P("camera('a')"));
     if (c === last) return true;
     last = c;
-    await sleep(250);
+    await b.rest(250);
   }
   return false;
 }
@@ -88,7 +94,7 @@ async function dragPart(part, to) {
   const c = await P("canvas('a')");
   const entry = [Math.round(c.x + c.w - 40), Math.round(c.y + c.h / 2)];
   await b.htmlDrag([from.x, from.y], [entry, ...towards(entry, [to.x, to.y], 6)]);
-  await sleep(500);
+  await b.rest(500);
   return (await ids()).filter((id) => !before.has(id));
 }
 /** a world point near `p` that's on screen in A's view and over nothing but the ground */
@@ -221,7 +227,7 @@ try {
     // the bin put away, so the drawer is empty to start from
     await click(await P(`rect('.toolbar [data-command="parts"]')`));
     await until("count('.stage-drawer') === 0", 3000);
-    await sleep(300);
+    await b.rest(300);
     const canvas0 = await P("canvas('a')");
     const at = await P(`aimAt(${J(d20)}, 'a')`);
     await b.click(at.x, at.y);
@@ -231,7 +237,7 @@ try {
     await click(await P(`rect('button[data-ext="dice"][data-command="open"]')`));
     const shownTab = ".stage-drawer-tab[aria-selected=\"true\"] .stage-drawer-tab-name";
     check("it docks the die's 2D tool in the drawer under the die's name, shown: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P(`text(${J(shownTab)})`)) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P(`text(${J(shownTab)})`), b: await P("count('.stage-drawer', 'b')") });
-    await sleep(300);
+    await b.rest(300);
     const canvas1 = await P("canvas('a')");
     check("the canvas gives the drawer room", canvas1.w < canvas0.w - 200, { before: canvas0.w, after: canvas1.w });
     await shot("2-docked");
@@ -243,13 +249,13 @@ try {
     const t0 = J(await P(`transform(${J(d20)})`));
     await click(await P(`rect('.dice-panel .die-face[data-face="1"] input.name')`));
     await b.key("r");
-    await sleep(1500);
+    await b.rest(1500);
     const rolledHere = (await P("notices('a')")).slice(told0).filter((n) => /^You rolled /.test(n));
     const t1 = J(await P(`transform(${J(d20)})`));
     check("a key typed in the panel is the panel's, not the scene's: R there doesn't roll the selected d20", rolledHere.length === 0 && t1 === t0, { rolledHere, before: t0, after: t1 });
     await click(await P(`rect('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-close')`));
     check("its × undocks it; the inspector's tab stays (the d20 is still selected)", await until("count('.dice-panel') === 0 && __p.count('.stage-drawer [data-panel=\"inspector\"]') === 1", 3000), { panels: await P("count('.dice-panel')"), drawers: await P("count('.stage-drawer')") });
-    await sleep(300);
+    await b.rest(300);
   }
 
   // ── rolling, in the same view: nothing to switch ──
@@ -260,7 +266,7 @@ try {
   await b.key("Escape");
   check("…and Escape lets it go, so attention is the look again, and the inspector's tab goes", await until("selected('a') === null && __p.count('.stage-drawer') === 0", 2000), await P("selected('a')"));
   await settled();
-  await sleep(400);
+  await b.rest(400);
 
   // R over the d20
   {
@@ -282,7 +288,7 @@ try {
     report.d20Rolled = value;
     check("A is told what it rolled: one of the d20's faces", rolled && (await P(`built(${J(d20)}, 'a')`)).labels.includes(value), await P("notices('a')"));
     check("B is told Ana rolled the same", await until(`notices('b').includes(${J(`Ana rolled ${value}`)})`, 4000), await P("notices('b')"));
-    await sleep(700);
+    await b.rest(700);
     const samples = await P("unwatch()");
     const firstAir = samples.find((s) => s.a > TOP + 0.002);
     report.timings.d20.aInAirMs = firstAir ? Math.round(firstAir.at - k) : null;
@@ -323,7 +329,7 @@ try {
     report.timings.symbol = await timing("r", sym);
     check("A is told the symbol it rolled", rolled, await P("notices('a')"));
     check("B is told Ana rolled the same symbol", await until(`notices('b').includes(${J(`Ana rolled ${value}`)})`, 4000), await P("notices('b')"));
-    await sleep(700);
+    await b.rest(700);
     const after = await drawn(sym);
     const ds = await drawOf(sym);
     const symWanted = await P(`expectedFace(${J(ds.mine?.seed ?? "")}, 0, 1, 6)`);
@@ -339,7 +345,7 @@ try {
     const { before } = await pressOver(d20, "t");
     check("T turns the d20 to its next face, told as a turn", await until(`notices('a').slice(${before.a}).includes(${J(`You turned d20 to ${next}`)})`, 3000), (await P("notices('a')")).slice(before.a));
     check("B is told Ana turned it, not that she rolled", (await until(`notices('b').slice(${before.b}).includes(${J(`Ana turned d20 to ${next}`)})`, 3000)) && !(await P("notices('b')")).slice(before.b).some((n) => /rolled/.test(n)), (await P("notices('b')")).slice(before.b));
-    await sleep(400);
+    await b.rest(400);
     const after = await drawn(d20);
     check("both views draw it turned: the next face up, flat on the table", after.same && after.a?.label === next && after.b?.label === next && flatAt(after.lies.a, TOP), { next, a: after.a, b: after.b });
   }
@@ -355,7 +361,7 @@ try {
     check("A is told both in one line: the tens, then the units", rolled, (await P("notices('a')")).slice(before.a));
     check("B is told the same line of Ana", await until(`notices('b').includes(${J(said?.replace(/^You/, "Ana"))})`, 4000), (await P("notices('b')")).slice(before.b));
     report.timings.pair = await timing("g", pair[0]);
-    await sleep(700);
+    await b.rest(700);
     const w = (await P("writes()")).slice(before.writes).filter((x) => x.moved.length);
     check("the pair landed in one write", w.length === 1 && J([...w[0].moved].sort()) === J([...pair].sort()), w);
     const dp = await drawOf(pair[0]);
@@ -372,7 +378,7 @@ try {
   for (const [name, id] of [["6-close-pair", pair[0]], ["7-close-d20", d20]]) {
     const m = await P(`shown(${J(id)}, 'b')`);
     await P(`setCamera('b', { position: [${m[12] + 0.03}, ${m[13] + 0.07}, ${m[14] + 0.06}], target: [${m[12] + 0.01}, ${m[13] + 0.005}, ${m[14]}] })`);
-    await sleep(500);
+    await b.rest(500);
     await shot(name);
   }
 
@@ -383,12 +389,15 @@ try {
     const thrown = await P(`verb('b', 'dice', 'roll', ${J(d20)}) && __p.leave('b')`);
     const waits = await until(`lots(${J(d20)}, 'a')?.by === ${J(V.b)} && __p.lots(${J(d20)}, 'a')?.phase === 'opening' && JSON.stringify(__p.lots(${J(d20)}, 'a').waiting) === ${J(J([V.b]))}`, 5000);
     check("B threw the d20 and left at once: A committed, and the round waits on B's opening (the asker opens first)", thrown && waits, await P(`lots(${J(d20)}, 'a')`));
-    const t = Date.now();
-    const ended = await until(`lots(${J(d20)}, 'a')?.phase === 'ended'`, STALE_MS + 20_000);
+    // (B is gone: only A's watching moves this on, on the page's clock)
+    const clockMs = () => js("window.__time.now()");
+    const t = await clockMs();
+    const ended = await b.soon(`window.__p.lots(${J(d20)}, 'a')?.phase === 'ended'`, { frames: Math.ceil((STALE_MS + 10_000) / (1000 / 60)) });
+    const waited = (await clockMs()) - t;
     const r = await P(`round(${J(d20)})`);
     await until(`notices('a').slice(${before}).some((n) => /given up/.test(n))`, 3000);
     const said = (await P("notices('a')")).slice(before);
-    check("once B was gone from A's presence and A had watched it for both deadlines, A's client gave it up in the doc (not before): ended, nothing landed, nobody waiting, and A was told", ended && Date.now() - t >= STALE_MS - 1500 && J(Object.keys(r?.gone ?? {})) === J([V.a]) && J(await P(`transform(${J(d20)})`)) === J(from) && !(await P("hudLines('a')")).some((l) => /waiting/.test(l)) && said.includes("Ben's throw of d20 was given up before it was drawn: Ben had left. Nothing was rolled."), { ms: Date.now() - t, gone: r?.gone, said, hud: await P("hudLines('a')") });
+    check("once B was gone from A's presence and A had watched it for both deadlines, A's client gave it up in the doc (not before): ended, nothing landed, nobody waiting, and A was told", ended && waited >= STALE_MS - 1500 && J(Object.keys(r?.gone ?? {})) === J([V.a]) && J(await P(`transform(${J(d20)})`)) === J(from) && !(await P("hudLines('a')")).some((l) => /waiting/.test(l)) && said.includes("Ben's throw of d20 was given up before it was drawn: Ben had left. Nothing was rolled."), { ms: Math.round(waited), gone: r?.gone, said, hud: await P("hudLines('a')") });
     mark("stale throw given up");
   }
 

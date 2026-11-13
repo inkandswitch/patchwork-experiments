@@ -50,6 +50,13 @@
 //     dice never moved, and B's client never knows A's roll.
 //
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
+//
+// Simulated time: both views, and the two peers' network, run on the page's
+// manual clock (window.__time): a pause is frames of it (b.rest), a wait on a
+// condition polls the wall (until: b.waitFor, stepping a frame each time
+// round, as lots' crypto takes real time) or counts frames where only the
+// world moves (b.soon). Times in the report are the page's clock, but for
+// the latencies, which are the wall's.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -106,7 +113,8 @@ try {
   // early can move before the click lands (on another template, or Blank): click once it has held still
   let tpl = await until("template('a', 'dice.liars-dice')", 15_000);
   for (let still = 0, t0 = Date.now(); still < 3 && Date.now() - t0 < 15_000; ) {
-    await sleep(400);
+    await b.step(1);
+    await sleep(400); // (the registry loading: the wall's)
     const now = await P("template('a', 'dice.liars-dice')");
     still = now && tpl && now.x === tpl.x && now.y === tpl.y ? still + 1 : 0;
     tpl = now;
@@ -128,7 +136,7 @@ try {
   await P("pick('b', 'seat2')");
   check("A sits as Red, B as Blue; both play", await until(`seats().seat1.player === ${Q(V.a)} && __p.seats().seat2.player === ${Q(V.b)} `, 10_000), await P("seats()"));
   check("the cup extension and the dice's own lots run in both views, and nothing of keep's", (await P("running('a')")).includes("dice.cup") && (await P("running('b')")).includes("dice.lots") && !(await P("running('a')")).some((x) => x.startsWith("keep.")), { a: await P("running('a')") });
-  await sleep(1500); // seat cameras settle
+  await b.rest(1500); // seat cameras settle
   await shot("seated");
 
   // ── 3. both shake ──
@@ -151,7 +159,7 @@ try {
   for (const d of [...dice.a, ...dice.b]) under.push(await P(`transform('b', ${Q(d)})`));
   check("the doc says nothing of either roll: every die under a cup lies face 0 up, turned only about +Y", under.every((t) => t.rotation[0] === 0 && t.rotation[2] === 0), under.map((t) => t.rotation));
   check("the cups are down over them: nobody else may see under either", Q(await P(`audience('a', ${Q(dice.a[0])})`)) === Q([V.a]) && Q(await P(`audience('b', ${Q(dice.b[0])})`)) === Q([V.b]), { a: await P(`audience('a', ${Q(dice.a[0])})`), b: await P(`audience('b', ${Q(dice.b[0])})`) });
-  await sleep(900); // the rattle ends
+  await b.rest(900); // the rattle ends
 
   // ── 4. each sees their own dice, and the other's cup only ──
   const wantA = await P(`expected(${Q(st.aa.seed)})`);
@@ -176,7 +184,7 @@ try {
   await b.keyDown("p");
   check("holding P, A's cup tilts in A's view", await until(`tilted('a', ${Q(cup.a)})`, 3000), { held: await P("heldVerbs('a')"), focus: await P("hasFocus()") });
   check("…and not in B's", !(await P(`tilted('b', ${Q(cup.a)})`)));
-  check("B is told Ana peeked, and sees that she is peeking, not what", (await until("notices('b').includes('Ana peeked under their cup.')", 3000)) && (await until("tags('b').includes('Ana is peeking')", 3000)), { notices: await P("notices('b')"), tags: await P("tags('b')") });
+  check("B is told Ana peeked, and sees that she is peeking, not what", (await until("notices('b').includes('Ana peeked under their cup.')", 3000)) && (await b.soon("window.__p.tags('b').includes('Ana is peeking')", { frames: 180, draw: true })) /* (a label: it moves when drawn) */, { notices: await P("notices('b')"), tags: await P("tags('b')") , bLabels: await js("[...document.querySelectorAll('#b .label')].map((e) => e.textContent.trim() + (e.style.display === 'none' ? ' (hidden)' : ''))"), bPresence: await js("Object.values(document.querySelector('#b .scene-stage').__sceneDebug.presence.get()).map((p) => p.keys?.['dice.cup'] ?? null)") });
   await shot("peeking");
   await b.keyUp("p");
   check("letting go of P, it's back down", await until(`tilted('a', ${Q(cup.a)}) === false`, 3000), { held: await P("heldVerbs('a')"), prompt: await P("prompt('a')"), cup: await P("cupDebug('a')") });
@@ -196,7 +204,7 @@ try {
     const known = { a: await P(`lots('a', ${Q(c)})`), b: await P(`lots('b', ${Q(c)})`) };
     check(`${who}'s seed is the hash of both openings (worked out here with WebCrypto), the same in both views: no one client chose it`, mine.contributors.length === 2 && known.a.seed === mine.seed && known.b.seed === mine.seed && known.a.public && known.b.public, { mine, known });
   }
-  await sleep(500);
+  await b.rest(500);
   const afterB = [];
   const afterA = [];
   for (const d of dice.a) afterB.push(await P(`drawnFace('b', ${Q(d)})`));
@@ -241,7 +249,7 @@ try {
   const roundBlind = await P(`round('b', ${Q(cup.a)})`);
   check("…in the doc, neither part is in the clear nor sealed to anyone yet", Object.keys(roundBlind.opens).length === 0 && Object.keys(roundBlind.sealed).length === 0, { opens: roundBlind.opens, sealed: roundBlind.sealed });
   check("…and the four dice still under the cup: nobody may see them", Q(await P(`audience('a', ${Q(four[0])})`)) === "[]", await P(`audience('a', ${Q(four[0])})`));
-  await sleep(900);
+  await b.rest(900);
   await hover("a", cup.a);
   await b.key("l");
   const up = await until(`cup('b', ${Q(cup.a)}).up && __p.cup('b', ${Q(cup.a)}).blind && __p.lots('b', ${Q(cup.a)})?.seed`, 10_000);
@@ -272,11 +280,11 @@ try {
   mark("forehead", { bSaw: bView.map((v) => v.face?.label) });
 
   // ── 9. a cup knocked over ──
-  await sleep(300);
+  await b.rest(300);
   await hover("b", cup.b);
   await b.key("s");
   check("B shook again", await until(`lots('b', ${Q(cup.b)})?.phase === 'known' && __p.lots('b', ${Q(cup.b)})?.draw === __p.cup('b', ${Q(cup.b)}).roll.draw`, 15_000), { lots: await P(`lots('b', ${Q(cup.b)})`), cup: await P(`cup('b', ${Q(cup.b)})`), prompt: await P("prompt('b')"), hovered: await P("hovered('b')") });
-  await sleep(900);
+  await b.rest(900);
   const knocked = await menuPick("a", cup.b, "Knock over");
   check("A's menu on B's cup offers Knock over", knocked.picked, knocked.offered);
   check("knocked over, B's cup shows its dice to all: turned up in the doc, and A's view draws them", await until(`cup('a', ${Q(cup.b)}).roll.done && __p.drawn('a', ${Q(dice.b[0])})`, 15_000), await P(`cup('a', ${Q(cup.b)})`));
@@ -291,12 +299,12 @@ try {
   await b.key("s");
   const greenKnown = await until(`lots('a', ${Q(green)})?.phase === 'known' && __p.lots('b', ${Q(green)})?.phase === 'sealed' && __p.cup('b', ${Q(green)}).holder === ${Q(V.a)}`, 15_000);
   check("A shook the Green cup: her lots, known to her", greenKnown, { a: await P(`lots('a', ${Q(green)})`), b: await P(`lots('b', ${Q(green)})`) });
-  await sleep(900);
+  await b.rest(900);
   const greenAt = await P(`transform('a', ${Q(green)})`);
   check("neither view's hand will pick up a cup down over dice", !(await P(`carryable('a', ${Q(green)})`)) && !(await P(`carryable('b', ${Q(green)})`)));
   const gFrom = await until(`aimAt(${Q(green)}, 'b')`, 10_000);
   await b.drag([gFrom.x, gFrom.y], [gFrom.x + 60, gFrom.y + 20], { steps: 12 });
-  await sleep(400);
+  await b.rest(400);
   const gA = await P(`transform('a', ${Q(green)})`), gB = await P(`transform('b', ${Q(green)})`);
   check("B dragged at A's down cup: it didn't move in either doc, and nothing was turned up", Q(gA) === Q(greenAt) && Q(gB) === Q(greenAt) && !(await P(`cup('a', ${Q(green)})`)).roll.done && (await P(`lots('b', ${Q(green)})`)).seed === null, { greenAt, gA, gB });
 
@@ -308,7 +316,8 @@ try {
   check("A's replica wrote a new attempt of the same draw: B's client refused it (no commit from B) and wrote why, under its own name", refused && !rr.commits[V.b] && rr.protests[V.b]?.why === "complete" && rr.protests[V.b]?.of === firstGreen, { protests: rr.protests, commits: Object.keys(rr.commits) });
   const sawIt = await until(`hudLines('b').some((t) => /\\byou\\b.* saw Ana draw the lots for Green cup again after the draw before was made, and took no part\\.$/i.test(t))`, 3000);
   check("…and B's HUD says so", sawIt, await P("hudLines('b')"));
-  const alone = await until(`hudLines('b').includes('The lots for Green cup were drawn by Ana alone: nobody else took part.')`, 12_000);
+  // (the commit deadline is the stage's time: frames, not the wall)
+  const alone = await b.soon(`window.__p.hudLines('b').includes('The lots for Green cup were drawn by Ana alone: nobody else took part.')`, { frames: 720 });
   check("…and at its commit deadline it's closed with A alone, which B's HUD says", alone && Q((await P(`lots('b', ${Q(green)})`)).contributors) === Q([V.a]), { hud: await P("hudLines('b')"), lots: await P(`lots('b', ${Q(green)})`) });
   mark("reroll refused");
 
@@ -338,7 +347,7 @@ try {
   await P(`verb('a', 'dice.cup', 'shake', ${Q(black)})`);
   const kKnown = await until(`lots('a', ${Q(black)})?.phase === 'known' && __p.lots('b', ${Q(black)})?.phase === 'sealed' && __p.cup('b', ${Q(black)})?.holder === ${Q(V.a)}`, 15_000);
   check("A shook the Black cup: her lots, known to her", kKnown, await P(`lots('a', ${Q(black)})`));
-  await sleep(900);
+  await b.rest(900);
   const kDraw = (await P(`cup('a', ${Q(black)})`)).roll.draw;
   const kDice = (await P(`cup('a', ${Q(black)})`)).roll.dice;
   const kPoses = await Promise.all([black, ...kDice].map((id) => P(`transform('a', ${Q(id)})`)));

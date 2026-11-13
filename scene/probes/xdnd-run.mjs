@@ -26,11 +26,16 @@
 // `motion` (with --patch: sailing.ship's describes says runtime ["motion"]
 // and needs ["sailing.sea"], as the page registers it) and B says it needs
 // a sea, without adding one.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on loading and building, stepping a frame each time
+// round.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { browser, checklist, sleep } from "./cdp.mjs";
+import { browser, checklist } from "./cdp.mjs";
 
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -79,7 +84,7 @@ async function dragRow(from, id, to, { into = "b", mods = 0, ringIn = "b", entry
   const e = entry ?? [c.x + 30, c.y + c.h / 2];
   const path = [e, ...towards(e, [to.x, to.y], 6)].map(([x, y]) => [Math.round(x), Math.round(y)]);
   const { seen, types } = await b.htmlDrag([Math.round(r.main.x), Math.round(r.main.y)], path, { mods, during: () => P(`ring("${ringIn}")`) });
-  await sleep(600);
+  await b.rest(600);
   const fresh = await added(into, before);
   return { added: fresh, ring: seen.at(-1), rings: seen, types, otherBefore: beforeOther };
 }
@@ -93,7 +98,7 @@ async function settle(w, n, ms = 8000) {
     if (k >= n && k === last) return k;
     last = k;
     if (Date.now() - t0 > ms) return k;
-    await sleep(250);
+    await b.rest(250);
   }
 }
 
@@ -105,12 +110,12 @@ async function cmdKey(key, command) {
   await b.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code, windowsVirtualKeyCode: vk, modifiers: 4, commands: [command] });
   await b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: vk, modifiers: 4 });
   await b.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Meta", code: "MetaLeft", windowsVirtualKeyCode: 91, modifiers: 0 });
-  await sleep(500);
+  await b.rest(500);
 }
 
 async function menuPick(x, y, label) {
   await b.click(x, y, { button: "right" });
-  await sleep(250);
+  await b.rest(250);
   const items = await P("menuItems()");
   const it = items.find((i) => (typeof label === "string" ? i.text === label : label.test(i.text)));
   if (!it) {
@@ -118,7 +123,7 @@ async function menuPick(x, y, label) {
     return { picked: false, items: items.map((i) => i.text) };
   }
   await b.click(it.x, it.y);
-  await sleep(600);
+  await b.rest(600);
   return { picked: true, items: items.map((i) => i.text), text: it.text };
 }
 
@@ -130,7 +135,7 @@ async function main() {
   // the bracket's render built in A (so a copy can take its build)
   const aRenderUrl = (await P(`doc("a")`)).objects.bracket.renderUrl;
   check("aBracketBuilt", await b.waitFor(`__p.docOf(${J(aRenderUrl)}).then((r) => !!r.glbUrl)`, 30_000));
-  await sleep(600);
+  await b.rest(600);
   const A0 = await P(`doc("a")`);
   const aRender0 = await P(`docOf(${J(aRenderUrl)})`);
   const W0 = Object.fromEntries(await Promise.all(Object.keys(A0.objects).map(async (id) => [id, await P(`world("a", ${J(id)})`)])));
@@ -263,7 +268,7 @@ async function main() {
     // tune B's copy: A's render doc doesn't change
     await b.js(`__p.repo ?? null`);
     await b.js(`(async () => { const h = await window.repo.find(${J(o.renderUrl)}); h.change((d) => { d.params.unit = "mm"; }); })()`);
-    await sleep(800);
+    await b.rest(800);
     const aR = await P(`docOf(${J(aRenderUrl)})`);
     const bR = await P(`docOf(${J(o.renderUrl)})`);
     check("tuningCopyLeavesSourceRender", aR.params.unit === "cm" && bR.params.unit === "mm", { a: aR.params, b: bR.params });
@@ -452,7 +457,7 @@ async function sail() {
   // runtime state on her, as play would leave it
   await b.js(`__p.change("a", (d) => { d.objects[${J(ship)}].traits["sailing.ship"].motion = { position: [1, 0, 2], velocity: [0.5, 0, 0], t: 12 }; d.objects[${J(ship)}].claims = { sim: { viewer: "viewer:zz", session: "s-9" } }; })`);
   await b.waitFor(`__p.allLoaded("a")`, 30_000);
-  await sleep(800);
+  await b.rest(800);
   const A0 = await P(`doc("a")`);
   // her subtree in A: everything attached under her
   const under = new Set([ship]);
@@ -493,7 +498,7 @@ async function sail() {
     check("unpatchedAsExpected", report.unpatched.motionCopied && !notice, report.unpatched);
   }
   check("sourceUnchanged", sameJSON(await P(`doc("a")`), A0));
-  await sleep(300);
+  await b.rest(300);
   await shot("1-ship-in-b");
 }
 

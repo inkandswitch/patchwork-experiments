@@ -32,6 +32,11 @@
 //
 // --dry-run makes and checks it all in the browser, but publishes nothing.
 // (probes/aboard-run.mjs plays it: at anchor, under way, first person.)
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 
 import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
@@ -135,7 +140,7 @@ try {
   check("A and B seated", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
   const playing = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 180_000);
   check("the secure deck reaches playing, each hand's faces delivered", playing, { phase: await P("phase()"), a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });
-  await sleep(500);
+  await b.rest(500);
   report.shots.push(await b.shot(join(SHOTS, "publish-seated.png")));
   check("nothing failed to load", (await P("loading('a')")).errors === 0, await P("loading('a')"));
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

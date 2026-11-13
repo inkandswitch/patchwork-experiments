@@ -18,6 +18,12 @@
 // it in the parts bin while looking at the deck, which puts it under the deck
 // and makes the scene a level, played and walked on.
 // Prints a JSON report; exits non-zero if any check fails.
+//
+// Simulated time: both views run on the page's manual clock (window.__time,
+// scene's manualTime), so walking, falling, a tracer's life and presence move
+// only as this steps frames, as fast as the CPU allows. A wait on the world is
+// frames of that clock (until, rest), never a sleep; the wall (loads) is for
+// loading only.
 import { spawn } from "node:child_process";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
@@ -67,27 +73,50 @@ ws.addEventListener("message", (ev) => {
 const send = (method, params = {}) => new Promise((r, no) => { const i = ++seq; pending.set(i, (m) => (m.error ? no(new Error(`${method}: ${m.error.message}`)) : r(m.result))); ws.send(JSON.stringify({ id: i, method, params })); });
 const js = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(`${expr}: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`); return r.result?.value; };
 const P = (e) => js(`window.__p.${e}`);
-const until = async (expr, ms = 10_000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await js(expr).catch(() => false)) return true; await sleep(50); } return false; };
+const FRAME = 1000 / 60;
+/** n frames of the page's clock, back to back (only the last draws). */
+// (then one of the browser's own rendering steps: the drawn frame presented, layout and resize observers run)
+const step = (n = 1) => js(`window.__time.step(${Math.max(0, Math.round(n))}).then(() => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }))`);
+/** ms of the page's clock, in frames. */
+const rest = (ms) => step(Math.max(1, Math.round(ms / FRAME)));
+/** Frame by frame until `expr` holds, for at most ms of the page's clock → its value, or false. */
+const until = async (expr, ms = 10_000) => {
+  try {
+    return await js(`window.__time.until(() => (${expr}), { frames: ${Math.ceil(ms / FRAME)} })`);
+  } catch (err) {
+    if (/after \d+ frames/.test(String(err?.message))) return false;
+    throw err;
+  }
+};
+/** Loading: the wall's, up to ms, the page's frames going at its pace meanwhile. */
+const loads = async (expr, ms = 10_000) => {
+  for (const t0 = Date.now(); Date.now() - t0 < ms; ) {
+    if (await js(expr).catch(() => false)) return true;
+    if (await js("!!window.__time").catch(() => false)) await step(1);
+    await sleep(50);
+  }
+  return false;
+};
 
 const EXPECTED = /KHR_parallel_shader_compile|pointer lock refused/;
 const errorsNow = async () => (await P("errors")).filter((e) => !EXPECTED.test(e));
 const checks = {}, report = { checks, steps: {} };
 let failed = false;
 const check = (name, ok, detail) => { checks[name] = !!ok; if (!ok) failed = true; if (detail !== undefined) report.steps[name] = detail; };
-const shot = async (name, clip) => { const s = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) }); const f = join(SHOTS, `arena-${name}.png`); writeFileSync(f, Buffer.from(s.data, "base64")); (report.shots ??= []).push(f); };
+const shot = async (name, clip) => { await step(1); /* a frame drawn: waits draw nothing */ const s = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) }); const f = join(SHOTS, `arena-${name}.png`); writeFileSync(f, Buffer.from(s.data, "base64")); (report.shots ??= []).push(f); };
 
 const mouse = (type, x, y, buttons = 0) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount: 1 });
 async function click({ x, y }) {
   await mouse("mouseMoved", x, y);
   await mouse("mousePressed", x, y, 1);
-  await sleep(30);
+  await rest(30);
   await mouse("mouseReleased", x, y, 0);
-  await sleep(60);
+  await rest(60);
 }
 const KEYS = { KeyW: ["w", 87], KeyA: ["a", 65], KeyS: ["s", 83], KeyD: ["d", 68], Space: [" ", 32], Escape: ["Escape", 27], Enter: ["Enter", 13], KeyR: ["r", 82] };
 const keyDown = (code) => send("Input.dispatchKeyEvent", { type: "keyDown", code, key: KEYS[code][0], windowsVirtualKeyCode: KEYS[code][1] });
 const keyUp = (code) => send("Input.dispatchKeyEvent", { type: "keyUp", code, key: KEYS[code][0], windowsVirtualKeyCode: KEYS[code][1] });
-async function hold(code, ms) { await keyDown(code); await sleep(ms); await keyUp(code); }
+async function hold(code, ms) { await keyDown(code); await rest(ms); await keyUp(code); }
 
 // the eye (camera position) and which way it looks
 const eye = async () => (await P("cam()")).position;
@@ -117,19 +146,18 @@ async function face(want, pitchWant = 0) {
       await mouse("mouseMoved", c.x, c.y);
       await mouse("mouseMoved", c.x + mx, c.y + my);
     }
-    await sleep(60);
+    await rest(60);
   }
   return false;
 }
-/** Walk (W held) toward [x, z], steering, until within `tol` or `ms` pass. Returns the eye. */
+/** Walk (W held) toward [x, z], steering, until within `tol` or `ms` (of the page's clock) pass. Returns the eye. */
 async function walkTo([x, z], { ms = 8000, tol = 0.6 } = {}) {
-  const t0 = Date.now();
   let p = await eye();
   await face(aimYaw(p, [x, 0, z]));
   await keyDown("KeyW");
   try {
-    while (Date.now() - t0 < ms) {
-      await sleep(80);
+    for (let t = 0; t < ms; t += 80) {
+      await rest(80);
       p = await eye();
       const d = Math.hypot(x - p[0], z - p[2]);
       if (d < tol) break;
@@ -137,7 +165,7 @@ async function walkTo([x, z], { ms = 8000, tol = 0.6 } = {}) {
       if (Math.abs(wrap(want - (await yaw()))) > 0.15) { await keyUp("KeyW"); await face(want); await keyDown("KeyW"); }
     }
   } finally { await keyUp("KeyW"); }
-  await sleep(300);
+  await rest(300);
   return eye();
 }
 const r3 = (p) => p.map((v) => +v.toFixed(2));
@@ -145,7 +173,7 @@ const r3 = (p) => p.map((v) => +v.toFixed(2));
 const shown = async (sel, w = "a") => { const r = await P(`rect('${sel}', '${w}')`); return !!r && r.w > 0 && r.h > 0; };
 /** Wait for an element to be shown and stay put (the editor's edges arrive one by one, moving what's centred in the view). */
 async function steady(sel, w = "a", ms = 6000) {
-  for (let last = null, same = 0, t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) {
+  for (let last = null, same = 0, t = 0; t < ms; t += 100, await rest(100)) {
     const now = JSON.stringify(await P(`rect('${sel}', '${w}')`));
     same = now === last && now !== "null" && JSON.parse(now).w > 0 ? same + 1 : 0;
     if (same >= 3) return true;
@@ -155,11 +183,11 @@ async function steady(sel, w = "a", ms = 6000) {
 }
 /** Wait for a view's running set to stop changing (lingering parts each stop on their own timer). */
 async function settled(w, ms = 4000) {
-  for (let last = null, t0 = Date.now(); ; await sleep(100)) {
+  for (let last = null, t = 0; ; t += 100, await rest(100)) {
     const now = JSON.stringify(await P(`running('${w}')`));
     if (now === last) return true;
     last = now;
-    if (Date.now() - t0 > ms) return false;
+    if (t > ms) return false;
   }
 }
 const sorted = async (w) => [...(await P(`running('${w}')`))].sort();
@@ -171,7 +199,7 @@ async function leaveBody(w = "a") {
   await until(`!!window.__p.chipItem('${w}', 'Leave')`, 3000);
   const item = await P(`chipItem('${w}', 'Leave')`);
   if (item) await click(item);
-  await sleep(300);
+  await rest(300);
   return !!item;
 }
 
@@ -180,20 +208,20 @@ try {
   await send("Runtime.enable");
   await send("Page.enable");
   await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/arena/probes/arena-probe.html?mode=empty` });
-  await until("!!window.__ready", 20_000);
+  await loads("!!window.__ready", 20_000);
   check("page set up", (await js("window.__ready")) === true, await P("errors"));
   // an empty scene: only editing is offered (no switcher), and the add
   // part's start screen offers the templates
   const startBtn = `.add-template[data-template="arena-level"]`;
-  const haveStart = (await until(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
+  const haveStart = (await loads(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
   check("an empty scene's start screen offers the Arena level template, and Blank", haveStart && (await shown(startBtn)) && (await shown('.add-template[data-template=""]')), await P("text('.add-template')"));
   check("an empty scene: A in orbit, nowhere to start", (await P("body('a')")) === "orbit" && !(await P("doc()")).view?.start, { body: await P("body('a')"), view: (await P("doc()")).view });
   await shot("start");
   await click(await P(`rect('${startBtn}')`));
-  await until("window.__p.objects().length >= 29");
+  await loads("window.__p.objects().length >= 29");
   // B joins the level A just made
   await P("joinB()");
-  const allLoaded = await until("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 29 && a.loaded === a.total && b.loaded === b.total; })()", 30_000);
+  const allLoaded = await loads("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 29 && a.loaded === a.total && b.loaded === b.total; })()", 30_000);
   const lv = await P("loaded('a')");
   const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().assets ?? {}).filter((k) => k.startsWith("arena/")), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["walk.spawn"]).length }; })()`);
   check("Arena level lays out the level (a level trait, 8 targets, 4 spawns, a GLB per kind in the scene's assets)", traits.level && traits.targets === 8 && traits.spawns === 4 && traits.kinds.length === 7, traits);
@@ -201,14 +229,14 @@ try {
   const startPad = start?.place ? (await P("doc()")).objects[start.place] : null;
   check("and starts people walking at a spawn point (doc.view.start)", start?.body === "walk" && !!startPad?.traits?.["walk.spawn"] && !("activity" in ((await P("doc()")).view ?? {})), (await P("doc()")).view);
   check("every block's GLB loads in both views", allLoaded, { a: lv, b: await P("loaded('b')") });
-  await until("window.__p.running('a').includes('arena') && window.__p.running('b').includes('arena')");
+  await loads("window.__p.running('a').includes('arena') && window.__p.running('b').includes('arena')");
   check("the arena runs in both views (its level trait), and so do the walk body and the spawn points' part", (await P("running('a')")).includes("arena") && (await P("running('b')")).includes("walk.spawn") && (await P("running('a')")).includes("walk"), { a: await P("running('a')"), b: await P("running('b')") });
 
   // ─── a level opens as a game: both arrive walking, at the doc's spawn point ─
   // Arriving (scene/TOOLS.md §2): A, who chose the template, and B, who
   // joined the level, each enter the walk body at view.start's place once its
   // content is in. What runs is the doc's alone (H1): the same in both views.
-  const arrived = await until("window.__p.body('a') === 'walk' && window.__p.body('b') === 'walk'", 25_000);
+  const arrived = await loads("window.__p.body('a') === 'walk' && window.__p.body('b') === 'walk'", 25_000);
   const padAt = await P(`world(${JSON.stringify(start?.place)})`);
   const eA = (await P("cam('a')")).position, eB = (await P("cam('b')")).position;
   check("both arrive walking (the walk body, the only body over orbit), at the start's spawn point", arrived && JSON.stringify(await P("stack()")) === '["orbit","walk"]' && [eA, eB].every((e) => !!padAt && Math.hypot(e[0] - padAt[0], e[2] - padAt[2]) < 0.6), { a: await P("body('a')"), b: await P("body('b')"), padAt, eA: r3(eA), eB: r3(eB) });
@@ -243,7 +271,7 @@ try {
   check("a laid-out level has the arena's look in both views: sky, haze, and a sun whose shadows every block casts and takes", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && looks[w].shadowMap && looks[w].sunCasts && looks[w].meshes > 0 && looks[w].cast === looks[w].meshes), looks);
 
   await js("window.__p.A.viewport.frame(window.__p.A.viewport.sceneBox())");
-  await sleep(400);
+  await rest(400);
   await shot("level");
 
   // ─── play ────────────────────────────────────────────────────────────────
@@ -251,7 +279,7 @@ try {
   await js("Math.random = () => 0");
   const camBefore = await P("cam()");
   await click(await P("rect('.arena-play')"));
-  await sleep(500);
+  await rest(500);
   const lockState = { locked: await P("locked()"), element: await P("lockElement()"), body: await P("body()"), stack: await P("stack()"), tool: await P("tool()"), held: await P("held()"), pointer: await P("pointer()"), chip: await P("chip()"), hud: await P("text('.arena-hud')") };
   report.steps.lock = lockState;
   check("Play walks in (the walk body, the only body over orbit) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["orbit","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
@@ -264,7 +292,7 @@ try {
 
   // walk forward
   await hold("KeyW", 900);
-  await sleep(300);
+  await rest(300);
   const e1 = await eye();
   const moved = Math.hypot(e1[0] - e0[0], e1[2] - e0[2]);
   check("W walks forward (toward the middle)", moved > 2 && e1[0] > e0[0] && e1[2] < e0[2], { from: r3(e0), to: r3(e1), moved: +moved.toFixed(2) });
@@ -272,14 +300,14 @@ try {
   // strafe
   const yw = await yaw();
   await hold("KeyD", 600);
-  await sleep(300);
+  await rest(300);
   const e2 = await eye();
   const right = [Math.cos(yw), -Math.sin(yw)]; // +X at yaw 0
   const side = (e2[0] - e1[0]) * right[0] + (e2[2] - e1[2]) * right[1];
   check("D strafes right", side > 1, { side: +side.toFixed(2) });
   await hold("KeyA", 600);
   await hold("KeyS", 400);
-  await sleep(300);
+  await rest(300);
   const e3 = await eye();
   check("A and S move back", Math.hypot(e3[0] - e1[0], e3[2] - e1[2]) < Math.hypot(e2[0] - e1[0], e2[2] - e1[2]) + 2, r3(e3));
 
@@ -297,9 +325,9 @@ try {
   // frame rate (dt clamped to 50 ms) a long hold outlasts the first hop
   await keyDown("Space");
   let peak = yBefore;
-  for (let i = 0; i < 2; i++) { await sleep(40); peak = Math.max(peak, (await eye())[1]); }
+  for (let i = 0; i < 2; i++) { await rest(40); peak = Math.max(peak, (await eye())[1]); }
   await keyUp("Space");
-  for (let i = 0; i < 12; i++) { await sleep(40); peak = Math.max(peak, (await eye())[1]); }
+  for (let i = 0; i < 12; i++) { await rest(40); peak = Math.max(peak, (await eye())[1]); }
   await until(`Math.abs(window.__p.cam().position[1] - ${yBefore}) < 0.01`, 3000);
   const yAfter = (await eye())[1];
   check("Space jumps (about 0.8 m) and lands back", peak - yBefore > 0.5 && Math.abs(yAfter - yBefore) < 0.05, { peak: +(peak - yBefore).toFixed(2), back: +yAfter.toFixed(2) });
@@ -325,9 +353,9 @@ try {
   const before = { a: await P("tracersSeen('a')"), b: await P("tracersSeen('b')") };
   const c = await P("canvasCentre()");
   if (turnMode === "drag") await click(c);
-  else { await mouse("mousePressed", c.x, c.y, 1); await sleep(30); await mouse("mouseReleased", c.x, c.y, 0); }
-  await sleep(40);
-  await sleep(300);
+  else { await mouse("mousePressed", c.x, c.y, 1); await rest(30); await mouse("mouseReleased", c.x, c.y, 0); }
+  await rest(40);
+  await rest(300);
   const tracerA = await P("tracersSeen('a')");
   const tracerB = await P("tracersSeen('b')");
   const tdoc = await js(`window.__p.doc().objects['${tid}']`);
@@ -346,12 +374,12 @@ try {
   const pos0 = (await eye());
   await keyDown("KeyS");
   const samples = [];
-  for (let i = 0; i < 10; i++) { await sleep(50); samples.push((await P("drawn('b')")).avatars[0]); }
+  for (let i = 0; i < 10; i++) { await rest(50); samples.push((await P("drawn('b')")).avatars[0]); }
   await keyUp("KeyS");
-  await sleep(1200); // landed (walking back may step off the tower), and a presence tick later
+  await rest(1200); // landed (walking back may step off the tower), and a presence tick later
   // a fall off the tower can still be landing: give B a few more ticks to catch up
   const caughtUp = async () => { const s = await P("drawn('b')"), p = await eye(); return s.avatars.length === 1 && Math.hypot(s.avatars[0][0] - p[0], s.avatars[0][2] - p[2]) < 0.05 && Math.abs(s.avatars[0][1] - (p[1] - 1.6)) < 0.05; };
-  for (let t0 = Date.now(); Date.now() - t0 < 2000 && !(await caughtUp()); ) await sleep(100);
+  for (let t = 0; t < 2000 && !(await caughtUp()); t += 100) await rest(100);
   const seen1 = await P("drawn('b')");
   const pos1 = await eye();
   const distinct = new Set(samples.map((s) => JSON.stringify(s))).size;
@@ -367,27 +395,27 @@ try {
   if (await P("locked()")) {
     // a locked browser's Esc takes the lock first (CDP can't do that for us): lose it, then Esc
     await js("document.exitPointerLock()");
-    await sleep(200);
+    await rest(200);
     report.steps.afterLockLost = await P("text('.arena-hud')");
   }
   const escHint = await P("text('.body-escape')");
   await hold("Escape", 50);
-  await sleep(300);
+  await rest(300);
   const putDown = { tool: await P("tool()"), body: await P("body()"), held: await P("held()"), play: await P("text('.arena-play')"), hint: escHint };
   check("Esc (its hint says so) puts the gun down and leaves A walking: the camera still the body's, the HUD offers the gun again", /put down/.test(escHint[0] ?? "") && putDown.tool === null && putDown.body === "walk" && putDown.held && /Pick up the gun/.test(putDown.play[0] ?? ""), putDown);
   // the body chip's Leave stops walking and gives the camera back
   const left = await leaveBody("a");
   const after = { left, body: await P("body()"), stack: await P("stack()"), held: await P("held()"), locked: await P("locked()"), play: await P("text('.arena-play')") };
   check("the body chip's Leave stops walking: orbit, camera back, Play button again", left && after.body === "orbit" && JSON.stringify(after.stack) === '["orbit"]' && !after.held && !after.locked && /▶ Play/.test(after.play[0] ?? ""), after);
-  await sleep(400);
+  await rest(400);
   check("B's avatar goes when A stops walking", (await P("drawn('b')")).avatars.length === 0, await P("drawn('b')"));
   // Enter plays too (the play command's key, through the key map); Esc puts the gun down, Leave stops walking
   await click(await P("canvasCentre()")); // (the keys to A's view; in orbit a click on nothing selects nothing)
   await hold("Enter", 50);
-  await sleep(300);
+  await rest(300);
   const byEnter = { body: await P("body()"), tool: await P("tool()") };
   await hold("Escape", 50);
-  await sleep(300);
+  await rest(300);
   const escAgain = { body: await P("body()"), tool: await P("tool()") };
   const leftAgain = await leaveBody("a");
   check("Enter starts play (the key map): walking, the gun in hand; Esc puts it down; Leave stops walking", byEnter.body === "walk" && byEnter.tool === "gun" && escAgain.body === "walk" && escAgain.tool === null && leftAgain && (await P("body()")) === "orbit", { byEnter, escAgain, leftAgain });
@@ -397,11 +425,11 @@ try {
   await mouse("mouseMoved", cc.x, cc.y); await mouse("mousePressed", cc.x, cc.y, 1);
   for (let k = 1; k <= 8; k++) await mouse("mouseMoved", cc.x + k * 15, cc.y, 1);
   await mouse("mouseReleased", cc.x + 120, cc.y, 0);
-  await sleep(300);
+  await rest(300);
   check("orbit works again after Leave", Math.hypot(...(await P("cam()")).position.map((v, i) => v - ccam.position[i])) > 0.05);
   // stand them up
   await click(await P("rect('.arena-reset')"));
-  await sleep(200);
+  await rest(200);
   const reset = await js(`window.__p.doc().objects['${tid}']`);
   check("Stand them up stands it back where it was", !reset.traits["arena.target"].down && reset.transform.rotation.every((v, i) => Math.abs(v - [0, tdoc.traits["arena.target"].stand?.rotation?.[1] ?? 0, 0][i]) < 1e-6), reset.transform);
 
@@ -410,13 +438,13 @@ try {
   await P("resize('a', 320, 240)");
   const vh = await js("window.innerHeight");
   await P(`resize('b', 1060, ${vh})`);
-  await sleep(800);
+  await rest(800);
   const bRect = await P("viewRect('b')");
   const bCan = await js("(() => { const r = window.__p.B.viewport.canvas.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()");
   // (its canvas fills the width; the toolbar along the top takes some of the height)
   check("player B's view follows its new size", Math.abs(bCan[0] - 1060) < 4 && bCan[1] <= vh && bCan[1] > vh - 120, { bCan, vh });
   await js("window.__p.B.viewport.frame(window.__p.B.viewport.sceneBox())");
-  await sleep(500);
+  await rest(500);
   await shot("player-lobby", bRect);
   report.steps.playerLobby = { chrome: await P("chrome('b')"), hud: await P("text('.arena-hud', 'b')") };
   // a click in B's view brings the keys there; Enter is the play command's key (scene.keys, required by the arena)
@@ -424,12 +452,12 @@ try {
   await click({ x: bc.x + 200, y: bc.y + 150 });
   await js("Math.random = () => 0");
   await hold("Enter", 50);
-  await sleep(500);
+  await rest(500);
   const bPlay = { body: await P("body('b')"), tool: await P("tool('b')"), held: await P("held('b')"), aBody: await P("body('a')"), focus: await js("document.activeElement?.closest?.('#a, #b')?.id ?? null"), eye: r3((await P("cam('b')")).position) };
   check("Enter plays in B's view (the key map came with the arena's requires): walking with the gun, and not in A's", bPlay.body === "walk" && bPlay.tool === "gun" && bPlay.held && bPlay.aBody === "orbit", bPlay);
   const be0 = (await P("cam('b')")).position;
   await hold("KeyW", 700);
-  await sleep(300);
+  await rest(300);
   const be1 = (await P("cam('b')")).position;
   check("W walks B forward", Math.hypot(be1[0] - be0[0], be1[2] - be0[2]) > 1.5 && Math.abs(be1[1] - 1.6) < 0.06, { from: r3(be0), to: r3(be1) });
   await shot("player-play", bRect);
@@ -437,14 +465,14 @@ try {
   const bTr0 = await P("tracersSeen('b')");
   await click(await P("canvasCentre('b')"));
   await shot("player-shot", bRect);
-  await sleep(400);
+  await rest(400);
   const bTr1 = await P("tracersSeen('b')");
   const aSees = await P("drawn('a')");
   check("B shoots (a tracer, 11 rounds), and A sees B's avatar", bTr1 > bTr0 && /11 \/ 12/.test((await P("text('.arena-hud', 'b')"))[0]) && aSees.avatars.length === 1, { bTr0, bTr1, hud: await P("text('.arena-hud', 'b')"), aSees });
   report.steps.playerPlaying = { chrome: await P("chrome('b')"), layers: await P("layers('b')") };
   check("playing, B's view draws no grid or axes (orbit's), and no drawer is open", !(await P("layers('b')")).some((l) => /grid|axes/.test(l)) && !(await P("rect('.stage-drawer', 'b')")), report.steps.playerPlaying);
   await hold("Escape", 50);
-  await sleep(300);
+  await rest(300);
   const bDown = { tool: await P("tool('b')"), body: await P("body('b')") };
   const bLeft = await leaveBody("b");
   check("Esc puts B's gun down; the chip's Leave stops B walking: Play is back", bDown.tool === null && bDown.body === "walk" && bLeft && (await P("body('b')")) === "orbit" && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")), { bDown, bLeft, body: await P("body('b')") });
@@ -455,8 +483,8 @@ try {
   // ─── hybrid: a deck that knows nothing about arenas ──────────────────────
   await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/arena/probes/arena-probe.html?mode=hybrid` });
   await sleep(300);
-  await until("window.__ready === true", 20_000);
-  await until("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
+  await loads("window.__ready === true", 20_000);
+  await loads("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
   check("hybrid: the arena isn't running before any arena trait", !(await P("running('a')")).includes("arena"), await P("running('a')"));
   // nothing selected: the inspector (opened from the toolbar) on the Scene,
   // whose "Add behaviour…" offers what the arena describes for a scene (the level)
@@ -467,22 +495,22 @@ try {
   // there (the middle of the view), under the deck, standing upright
   const deckTop = await js("(() => { const h = window.__p.A.viewport.raycast([1, 50, 4], [0, -1, 0]); return h && h.point; })()");
   await js(`window.__p.A.viewport.setCamera({ position: [8, 9, 12], target: ${JSON.stringify(deckTop)} })`);
-  await sleep(200);
+  await rest(200);
   const binTarget = `.scene-parts .part[data-part="arena.target"]`;
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
   await until("window.__p.tab('a', 'parts')", 4000);
   await js(`window.__p.hostA.querySelector('${binTarget}')?.scrollIntoView({ block: "center" })`);
   check("hybrid: the parts bin offers the arena's target in a scene that isn't a level", await shown(binTarget), await P("text('.scene-parts')"));
   await click(await P(`rect('${binTarget}')`));
-  await until("window.__p.objects().length === 3", 5000);
+  await loads("window.__p.objects().length === 3", 5000);
   const htid = await js("window.__p.objects().find((id) => window.__p.doc().objects[id].traits?.['arena.target']) ?? null");
   check("hybrid: the target part makes the scene a level, with the scene's own look", !!htid && JSON.stringify((await P("doc()")).traits?.["arena.level"]) === "{}", { htid, traits: (await P("doc()")).traits });
-  check("hybrid: the level's trait starts the arena (its Play, its gun)", (await until("window.__p.running('a').includes('arena')")) && !!(await until("!!window.__p.hostA.querySelector('.arena-play')", 4000)), { running: await P("running('a')") });
+  check("hybrid: the level's trait starts the arena (its Play, its gun)", (await loads("window.__p.running('a').includes('arena')")) && !!(await until("!!window.__p.hostA.querySelector('.arena-play')", 4000)), { running: await P("running('a')") });
   check("hybrid: the new target is selected", !!htid && (await P("A.local.get().selected")) === htid, await P("A.local.get().selected"));
   // the inspector and the bin put away: an open drawer wants the pointer (no lock while it's open)
   await click(await P(`rect('.toolbar [data-command="inspector"]')`));
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
-  await until("(() => { const a = window.__p.loaded('a'); return a.total === 3 && a.loaded === a.total; })()", 10_000);
+  await loads("(() => { const a = window.__p.loaded('a'); return a.total === 3 && a.loaded === a.total; })()", 10_000);
   const ht = await P(`world('${htid}')`);
   const htUp = await js(`(() => { const m = window.__p.A.viewport.worldOf('${htid}'); return m && [m[4], m[5], m[6]].map((v) => v / Math.hypot(m[4], m[5], m[6])); })()`);
   check("hybrid: it goes under the deck, on it where you're looking, upright", (await P("doc()")).objects[htid]?.parent === "deck" && !!ht && Math.hypot(ht[0] - deckTop[0], ht[1] - deckTop[1], ht[2] - deckTop[2]) < 0.05 && htUp?.[1] > 0.999, { ht, deckTop, up: htUp });
@@ -491,19 +519,19 @@ try {
   // Escape lets the new target go (in orbit, holding nothing: the ladder's selection rung), so nothing wants the pointer
   await P("focusA()");
   await hold("Escape", 50);
-  await sleep(200);
+  await rest(200);
   check("hybrid: Esc deselects (orbit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
   await js("Math.random = () => 0");
   await until("!!window.__p.hostA.querySelector('.arena-play')");
   // look at the deck from above it: with no spawn point, walking starts at the eye (scene/TOOLS.md §4)
   await js("window.__p.A.viewport.setCamera({ position: [0, 6, 2], target: [0, 3, -2] })");
-  await sleep(200);
+  await rest(200);
   const camEye = (await P("cam()")).position;
   await click(await P("rect('.arena-play')"));
-  await sleep(500);
+  // (the eye as walking begins: a few frames in, before the fall has carried it far)
   if (!(await P("locked()"))) turnMode = "drag";
   const s0 = await eye();
-  await sleep(1800);
+  await rest(1800);
   const s1 = await eye();
   const under = await js(`window.__p.A.viewport.raycast([${s1[0]}, 50, ${s1[2]}], [0, -1, 0])?.point[1]`);
   check("hybrid: with no spawn point you start at the eye (where the view was) and land on the deck under it", Math.hypot(s0[0] - camEye[0], s0[2] - camEye[2]) < 0.2 && s0[1] > s1[1] + 2 && Math.abs(s1[1] - 1.6 - under) < 0.05, { cam: r3(camEye), s0: r3(s0), s1: r3(s1), deckY: under });
@@ -532,7 +560,7 @@ try {
   await until("!!window.__p.chipItem('a', 'Walk')", 3000);
   const walkItem = await P("chipItem('a', 'Walk')");
   if (walkItem) await click(walkItem);
-  await sleep(300);
+  await rest(300);
   const lockedNow = await P("pointer()");
   check("locked: a new body starts afresh: walking again from the chip, the lock granted (lock ∧ ¬wanted ∧ ¬released ∧ ¬refused)", refusedBefore === true && (await P("body()")) === "walk" && lockedNow?.locked === true && lockedNow.refused === false && lockedNow.wanted === false && (await P("locked()")), { refusedBefore, pointer: lockedNow, body: await P("body()"), tool: await P("tool()") });
   turnMode = "nudge";
@@ -543,7 +571,7 @@ try {
   const cc2 = await P("canvasCentre()");
   // a press shoots at once under the lock (no release needed)
   await mouse("mousePressed", cc2.x, cc2.y, 1);
-  await sleep(150);
+  await rest(150);
   const downAtPress = await js(`window.__p.doc().objects['${htid}'].traits['arena.target'].down?.by ?? null`);
   await mouse("mouseReleased", cc2.x, cc2.y, 0);
   check("locked: a press shoots the deck's target over", downAtPress === "viewer:a", { downAtPress });
@@ -551,26 +579,27 @@ try {
   // page): released, and the body walks on; the next press on the world only
   // relocks (no shot)
   await js(`(() => { window.__fakeLock = false; document.dispatchEvent(new Event("pointerlockchange")); })()`);
-  await sleep(150);
+  await rest(150);
   const released = await P("pointer()");
   const pz = await eye();
   await hold("KeyW", 300); // (backwards is the mast)
-  await sleep(150);
+  await rest(150);
   const pz2 = await eye();
   check("lost lock (the browser's Esc): released; still walking with the gun, and W walks", released?.released === true && (await P("body()")) === "walk" && (await P("tool()")) === "gun" && Math.hypot(pz2[0] - pz[0], pz2[2] - pz[2]) > 0.3, { released, pz: r3(pz), pz2: r3(pz2) });
   const ammo0 = (await P("text('.arena-ammo')"))[0];
   const cc3 = await P("canvasCentre()");
   await click(cc3);
-  await sleep(200);
+  await rest(200);
   check("after a release, the next press only relocks: no shot, locked again", (await P("text('.arena-ammo')"))[0] === ammo0 && (await P("pointer()"))?.released === false && (await P("locked()")), { ammo0, ammo1: (await P("text('.arena-ammo')"))[0], pointer: await P("pointer()") });
   await js("delete document.pointerLockElement");
   await hold("Escape", 50);
-  await sleep(200);
+  await rest(200);
   check("hybrid: no errors", (await errorsNow()).length === 0, await errorsNow());
 } catch (err) {
   check("ran", false, String(err?.stack || err));
   try { await shot("failure"); } catch {}
 }
 report.logs = logs.filter((l) => !/^(debug|log)/.test(l)).slice(0, 40);
+report.frames = await js("window.__time?.frames() ?? null").catch(() => null); // of the page's clock
 console.log(JSON.stringify(report, null, 2));
 stop(failed ? 1 : 0);

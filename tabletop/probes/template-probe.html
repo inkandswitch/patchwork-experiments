@@ -33,6 +33,8 @@ import dominoes2 from "../games/draw-dominoes-2.json" with { type: "json" };
 import { kindsUsed } from "../src/setup.js";
 import { lookFileKey } from "../src/table/files.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 // each template's game, as data (its files are keyed by their looks: src/table/files.js)
 const GAMES = { "lost-cities": lostCities, santorini, "dominoes-2": dominoes2 };
 const gameId = new URLSearchParams(location.search).get("game") || "lost-cities";
@@ -54,7 +56,7 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
@@ -80,6 +82,7 @@ try {
   for (const [dir, path] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["tabletop", "../dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"]]) {
     registerPlugins((await import(path)).plugins, urls[dir]);
   }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -92,15 +95,18 @@ try {
   A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   // A opens the empty scene; B opens it once there is a table (a view joins
   // where the doc says, view.start, read once)
   Tool(A, hosts.a);
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
   const told = { a: [], b: [] };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   const select = (w) => hosts[w].querySelector(PICKER);
   const objects = () => scene.doc().objects ?? {};
   const deckUrl = () => deckUrlOf(objects());

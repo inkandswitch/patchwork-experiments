@@ -26,6 +26,8 @@ import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -33,8 +35,9 @@ const origWarn = console.warn;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 
 try {
-  const { plugins } = await import("../dist/index.js");
+  const { plugins, loadTime } = await import("../dist/index.js");
   for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await loadTime()).manualTime();
   const repo = new FakeRepo();
   const box = (w, h, d, color, at = [0, 0, 0]) => {
     const [x, y, z] = at, a = w / 2, c = d / 2;
@@ -73,6 +76,7 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");
   host.repo = repo;
+  host.time = time;
   Tool(scene, host);
   const dbg = host.querySelector(".scene-stage").__sceneDebug;
   const pageOf = (w) => { const p = dbg.viewport.project(w); const r = dbg.viewport.canvas.getBoundingClientRect(); return p && { x: r.left + p.x, y: r.top + p.y }; };

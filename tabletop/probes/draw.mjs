@@ -13,6 +13,11 @@
 //   (another seat's hand is never turned toward you), never a veil;
 // - B is told "Ana drew a card", and A "You drew a card".
 // Prints a JSON checklist; exits non-zero if any check fails.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -72,7 +77,7 @@ try {
   check("A's view has the keyboard", await P("focus('a')"));
   await b.key("d");
   mark("pressed D");
-  await sleep(150);
+  await b.rest(150);
   const mid = await P(`transform(${JSON.stringify(top)})`);
   check("mid-way, the doc still has it on the deck (it travels as a pose)", JSON.stringify(mid) === JSON.stringify(t), { t, mid });
   const landed = await until(`where().p1.includes(${JSON.stringify(top)})`, 3000);
@@ -87,11 +92,11 @@ try {
   check("…and A sees all of its own hand's faces, no veil left", await until(`veils('a').length === 0 && ${JSON.stringify([...before.p1, top])}.every((id) => __p.faces('a').includes(id))`, 15_000), await P("veils('a')"));
   check("A is told it drew", (await P("notices('a')")).includes("You drew a card"), await P("notices('a')"));
   check("B is told Ana drew", await until("notices('b').includes('Ana drew a card')", 3000), await P("notices('b')"));
-  await sleep(300);
+  await b.rest(300);
   await shot("after");
   // up close in B's view, over A's hand: backs
   await js(`(() => { const v = document.querySelectorAll(".scene-stage")[1].__sceneDebug.viewport; v.setCamera({ position: [0.05, 0.28, 0.2], target: [0.05, 0, 0.5] }); v.invalidate?.(); return true; })()`);
-  await sleep(600);
+  await b.rest(600);
   await shot("others-hand-closeup");
   // a second draw: the next top card, into the last free slot
   {

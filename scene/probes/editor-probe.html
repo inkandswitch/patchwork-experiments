@@ -33,6 +33,9 @@ window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e
 const origWarn = console.warn;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 
+// both views run on one manual clock (time.js, window.__time): nothing in them moves until the probe steps
+// it, and a broadcast reaches the other view 5 ms of that clock later
+let time = null;
 function peer(handle) {
   const eph = new Set();
   const p = {
@@ -42,15 +45,16 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
 }
 
 try {
-  const { plugins } = await import("../dist/index.js");
+  const { plugins, loadTime } = await import("../dist/index.js");
   for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await loadTime()).manualTime();
   const more = (new URLSearchParams(location.search).get("plugins") ?? "").split(",").filter(Boolean);
   for (const url of more) for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
   const repo = new FakeRepo();
@@ -96,6 +100,7 @@ try {
   const hostA = document.getElementById("a"), hostB = document.getElementById("b");
   hostA.repo = repo; hostB.repo = repo;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
+  hostA.time = time; hostB.time = time;
   Tool(A, hostA);
   Tool(B, hostB);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;

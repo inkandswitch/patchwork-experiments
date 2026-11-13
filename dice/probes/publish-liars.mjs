@@ -54,6 +54,11 @@
 // screenshots go; --settle <ms> is how long to wait after writing before
 // checking the server has every doc; --sync <url> (or PATCHWORK_SYNC) is the
 // sync server.
+//
+// Simulated time: the page's stages run on its manual clock (window.__time):
+// a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
+// wall, as they wait on the secure deck's crypto and on loading, stepping a
+// frame each time round.
 
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -137,7 +142,7 @@ try {
   let tpl = await until(`template('a', ${Q(TEMPLATE)})`, 15_000);
   let still = 0;
   for (const t0 = Date.now(); still < 3 && Date.now() - t0 < 15_000; ) {
-    await sleep(400);
+    await b.rest(400);
     const now = await P(`template('a', ${Q(TEMPLATE)})`);
     still = now && tpl && now.x === tpl.x && now.y === tpl.y ? still + 1 : 0;
     tpl = now;
@@ -186,7 +191,7 @@ try {
   check("B's seat picker offers every seat", await until(`picker('b').filter((s) => ${Q(SEATS)}.includes(s)).length === ${SEATS.length}`, 10_000), await P("picker('b')"));
   check(`every piece is built in B, every die read as a d6`, await until(`built('b').loaded === ${CUPS + DICE + 2} && __p.built('b').diceRead === ${DICE}`, 120_000), await P("built('b')"));
   check("both replicas hold the same scene (the same heads)", await until("same()", 10_000), null);
-  await sleep(500);
+  await b.rest(500);
   const loading = { a: await P("loading('a')"), b: await P("loading('b')") };
   check("nothing failed to load, and nothing is still loading, in either view", loading.a.errors === 0 && loading.b.errors === 0 && loading.a.loading === 0 && loading.b.loading === 0, loading);
   await shot("both");

@@ -33,6 +33,26 @@ const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+/** Loading (packages, content): the wall's, with the page's frames going at its pace meanwhile. → whether `pred` held within ms */
+async function loaded(pred, ms = 15_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+/** Run `fn` (async: loading, a part laid out) with the page's frames going at the wall's pace until it's done. */
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
 
 // two peers on one doc: each tool gets a view of the handle whose broadcasts reach only the other
 function peer(handle) {
@@ -44,15 +64,16 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
 }
 
 try {
-  const { plugins } = await import("../dist/index.js");
+  const { plugins, loadTime } = await import("../dist/index.js");
   for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   // a box standing on y = 0 as six quads (no normals needed: flat shading is fine for probing)
@@ -150,16 +171,14 @@ try {
   A.other = B; B.other = A;
   const hostA = document.getElementById("a"), hostB = document.getElementById("b");
   hostA.repo = repo; hostB.repo = repo;
+  hostA.time = time; hostB.time = time;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   Tool(A, hostA);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
   Tool(B, hostB);
   const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
   const total = Object.values(scene.doc().objects).filter((o) => o.kind !== "group").length;
-  for (let i = 0; i < 300; i++) {
-    if (dbgA.stats().loaded === total && dbgB.stats().loaded === total) break;
-    await sleep(50);
-  }
+  await loaded(() => dbgA.stats().loaded === total && dbgB.stats().loaded === total);
   const vp = dbgA.viewport;
   const byName = (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0];
   const pageOf = (v, w) => { const p = v.project(w); const r = v.canvas.getBoundingClientRect(); return p && [r.left + p.x, r.top + p.y]; };

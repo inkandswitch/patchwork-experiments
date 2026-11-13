@@ -25,6 +25,8 @@ import { twoPeers } from "./real-repo.js";
 import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
 import { faceOfSeed, seedFor } from "../src/roll.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
@@ -40,7 +42,8 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
-  const net = twoPeers({ delay: 25 });
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   window.repo = net.a;
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
@@ -50,15 +53,18 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.time = time; hosts.b.time = time;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   Tool(scene.a, hosts.a);
   Tool(scene.b, hosts.b);
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
   const told = { a: [], b: [] };
   const seen = { a: new Set(), b: new Set() };
-  setInterval(() => {
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!seen[w].has(n.id)) { seen[w].add(n.id); told[w].push(n.text ?? String(n)); }
-  }, 20);
+  };
+  time.frame(collect);
   confirm = () => true;
   const objectsOf = (w) => scene[w].doc().objects ?? {};
   const byName = (w, name) => Object.entries(objectsOf(w)).find(([, o]) => o.name === name)?.[0] ?? null;
@@ -138,7 +144,7 @@ try {
       // (a forgery is the one written in someone else's name: their client holds nothing of it)
       if (kind !== "forged") try { localStorage.setItem(`dice.lots:${by}:${rid}`, JSON.stringify({ nonce, pub: "", jwk: null })); } catch {}
       scene[w].change((d) => {
-        d.objects[id].traits["dice.cup"].round = { draw, id: rid, by, at: Date.now(), of, sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, gone: {}, tries: 0, excluded: [] };
+        d.objects[id].traits["dice.cup"].round = { draw, id: rid, by, at: time.now(), of, sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, gone: {}, tries: 0, excluded: [] };
       });
       return rid;
     },

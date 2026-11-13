@@ -5,6 +5,28 @@
 //   const b = await browser({ root, port, cdp, page: "/probes/editor-probe.html" });
 //   await b.js("1 + 1"); await b.drag([x0, y0], [x1, y1]); await b.key("g");
 //   await b.shot("/path/to.png"); b.stop(code);
+//
+// Simulated time (STAGE.md "Time"). A page that mounts its stages on a manual
+// clock puts it at window.__time (scene's manualTime(), from
+// `(await import(".../scene/dist/index.js")).loadTime()`, set as each host
+// element's `time`). Nothing in those stages moves unless it is stepped, so a
+// probe waits on frames, never on the wall:
+//
+//   await b.step(n)                      n frames back to back (only the last draws)
+//   await b.advance(ms)                  as many frames as ms takes
+//   await b.until(expr, { frames, what, state, draw })
+//                                        frame by frame until `expr` is true; else it
+//                                        throws, saying what it waited for and `state`
+//   await b.soon(expr, { frames })       the same, false instead of throwing (for a check)
+//   await b.rest(ms)                     ms of the page's time: frames when simulated, else a sleep
+//   await b.hold(expr, ms)               real work (crypto, a build) with the world held still:
+//                                        polls the wall for up to ms, a still frame (no time
+//                                        passes) each time round; → its value, or false
+//
+// key, click, drag and the rest rest() rather than sleep, and shot() draws a
+// frame first. The wall is for loading and sync only: waitFor(expr, ms) polls
+// on it, stepping a frame each time round when simulated (a page loading at
+// the wall's pace, as it would in a browser).
 import { spawn } from "node:child_process";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { createServer } from "node:http";
@@ -121,6 +143,37 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url: `http://127.0.0.1:${port}${page}` });
 
+  // ── simulated time ──
+  let sim = null; // does the page run on window.__time (asked once it has one)
+  const simulated = async () => sim ?? ((await js("!!window.__time").catch(() => false)) ? (sim = true) : false);
+  const FRAME_MS = 1000 / 60;
+  // After the frames, one of the browser's own rendering steps (a real animation frame): the drawn
+  // frame presented, and layout and resize observers run, as a browser runs them after a frame. (The
+  // page's clock is untouched by it; only the DOM catches up: a canvas that follows its box, say.) At
+  // most 100 ms of the wall: a browser may hold its frames back (a page it thinks is hidden).
+  const PRESENT = "new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); })";
+  /** n frames of the page's clock. */
+  const step = (n = 1) => js(`window.__time.step(${Math.max(0, Math.round(n))}).then(() => ${PRESENT})`);
+  /** ms of the page's clock, in frames. */
+  const advance = (ms) => js(`window.__time.advance(${Number(ms)}).then(() => ${PRESENT})`);
+  /** ms of the page's time: frames when it is simulated, else the wall. */
+  const rest = async (ms) => ((await simulated()) ? step(Math.max(1, Math.round(ms / FRAME_MS))) : sleep(ms));
+  /**
+   * Step until `expr` holds → its value; after `frames`, throw with `what` and `state` (an expression) in the
+   * message. `draw`: each frame drawn (a condition on what's drawn, such as a label, which moves only when drawn).
+   */
+  const until = (expr, { frames = 600, what = expr, state = null, draw = false } = {}) =>
+    js(`window.__time.until(() => (${expr}), { frames: ${Math.round(frames)}, what: ${JSON.stringify(String(what).slice(0, 300))}, state: ${state ? `() => (${state})` : "null"}, draw: ${!!draw} })`);
+  /** until(), with false for a wait that runs out. */
+  const soon = async (expr, { frames = 600, draw = false } = {}) => {
+    try {
+      return await until(expr, { frames, draw });
+    } catch (err) {
+      if (/after \d+ frames/.test(String(err?.message))) return false;
+      throw err;
+    }
+  };
+
   const MODS = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
   const modBits = (m) => (typeof m === "number" ? m : (m ?? []).reduce((a, k) => a | (MODS[k] ?? 0), 0));
   const BUTTON_BITS = { left: 1, right: 2, middle: 4 };
@@ -160,11 +213,17 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     mouse,
     keyDown,
     keyUp,
+    simulated,
+    step,
+    advance,
+    until,
+    soon,
+    rest,
     /** a full key press */
     async key(key, mods = 0) {
       await keyDown(key, mods);
       await keyUp(key, mods);
-      await sleep(60);
+      await rest(60);
     },
     async move(x, y) {
       await mouse("mouseMoved", x, y);
@@ -174,7 +233,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       await mouse("mouseMoved", x, y);
       await mouse("mousePressed", x, y, { button, mods, clickCount });
       await mouse("mouseReleased", x, y, { button, mods, clickCount });
-      await sleep(80);
+      await rest(80);
     },
     async dblclick(x, y) {
       await mouse("mouseMoved", x, y);
@@ -182,7 +241,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       await mouse("mouseReleased", x, y, { clickCount: 1 });
       await mouse("mousePressed", x, y, { clickCount: 2 });
       await mouse("mouseReleased", x, y, { clickCount: 2 });
-      await sleep(120);
+      await rest(120);
     },
     /**
      * Press at `from`, move to `to` in steps, then (unless `hold`) release.
@@ -194,11 +253,11 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       const bits = BUTTON_BITS[button];
       for (let i = 1; i <= steps; i++) {
         await mouse("mouseMoved", sx + ((ex - sx) * i) / steps, sy + ((ey - sy) * i) / steps, { mods, buttons: bits, button });
-        await sleep(16);
+        await rest(16);
       }
       const mid = beforeRelease ? await beforeRelease() : null;
       await mouse("mouseReleased", ex, ey, { mods, button });
-      await sleep(settle);
+      await rest(settle);
       return mid;
     },
     /**
@@ -226,21 +285,44 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
         // twice: crossing into a new element, Blink fires only enter / leave on the first
         await send("Input.dispatchDragEvent", { type: "dragOver", x, y, data, modifiers: modBits(mods) });
         await send("Input.dispatchDragEvent", { type: "dragOver", x, y, data, modifiers: modBits(mods) });
-        await sleep(16);
+        await rest(16);
         if (during) seen.push(await during(x, y));
       }
       const [lx, ly] = path.at(-1);
       await send("Input.dispatchDragEvent", { type: end === "drop" ? "drop" : "dragCancel", x: lx, y: ly, data, modifiers: modBits(mods) });
       await mouse("mouseReleased", lx, ly);
-      await sleep(150);
+      await rest(150);
       return { types: data.items.map((it) => it.mimeType), seen };
     },
     async shot(path, clip) {
+      if (await simulated()) await step(1); // a frame drawn: frames stepped in a wait draw nothing
       const r = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) });
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, Buffer.from(r.data, "base64"));
       return path;
     },
+    /**
+     * Real work with the world held still (simulated pages): poll `expr` on the wall for up to ms,
+     * a still frame each time round (the update flush and the loops run; no time passes, so nothing
+     * moves however long the work takes). Not simulated, a waitFor.
+     */
+    async hold(expr, ms = 20_000, every = 40) {
+      if (!(await simulated())) return this.waitFor(expr, ms, every);
+      const t0 = Date.now();
+      for (;;) {
+        let v;
+        try {
+          v = await js(expr);
+        } catch {
+          v = false;
+        }
+        if (v) return v;
+        if (Date.now() - t0 > ms) return false;
+        await js("window.__time.step(1, { still: true })");
+        await sleep(every);
+      }
+    },
+    /** Loading and sync: poll `expr` on the wall for up to ms (a frame stepped each time round, when simulated). */
     async waitFor(expr, ms = 20_000, every = 50) {
       const t0 = Date.now();
       for (;;) {
@@ -252,6 +334,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
         }
         if (v) return v;
         if (Date.now() - t0 > ms) return false;
+        if (await simulated()) await step(1);
         await sleep(every);
       }
     },

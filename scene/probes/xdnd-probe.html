@@ -33,6 +33,8 @@ import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/test/empty-scene.js";
 import { encodeGLB } from "../src/glb.js";
 
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
 const q = new URLSearchParams(location.search);
 const MODE = q.get("mode") ?? "main";
 const PATCH = q.get("patch") === "1";
@@ -74,6 +76,7 @@ try {
       getRegistry(p.type).register(reg);
     }
   }
+  time = window.__time = (await (await import("../dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const MAST_STEP = [0, 0.3, -0.5];
@@ -122,6 +125,7 @@ try {
   const dbg = {};
   for (const w of ["a", "b"]) {
     hosts[w].repo = repo;
+    hosts[w].time = time;
     hosts[w].viewerId = `viewer:${w}`;
     Tool(handles[w], hosts[w]);
     dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug;
