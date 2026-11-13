@@ -4,7 +4,7 @@
 // player, a spectator). What each may see is the stage's merge of this one
 // policy (audience = show ∩ only), worked out here as the stage does.
 
-import { COVER, CUP_HEIGHT, DIE_HALF, LIFT_BACK, MAX_UNDER, cupOf, cupsOf, fits, includes, knocked, lifted, lowered, ours, policy, ringOf, sealersFor, shakePlan, shaken, spotOf, stoodUp, upright, yawOf } from "./cup.js";
+import { COVER, CUP_HEIGHT, DIE_HALF, LIFT_BACK, MAX_UNDER, cupOf, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, ringOf, sealersFor, shakePlan, shaken, spotOf, stoodUp, upright, yawOf } from "./cup.js";
 import { builtDie } from "./die-glb.js";
 import { dieOf, presetDoc } from "./die.js";
 import { faceUp, reach, seedFor, seedFromLots, settled } from "./roll.js";
@@ -222,15 +222,24 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
               for (const contributors of [null, ...subsetsOf(P).filter((s) => s.includes(by)).map((s) => s.sort())]) cases.push({ holder, blind, draw, of, by, asked, contributors });
   it("has every case", () => expect(cases.length).toBe(2 * 2 * 2 * 4 * 2 * 7 * 5));
 
-  it("ours: its draw, of its dice in order, asked by the holder, sealed by the holder alone (or, blind, the holder among others); fits: and, blind, someone besides the holder kept a part sealed", () => {
+  it("ours: its draw, of its dice in order, asked by the holder, sealed by the holder alone (or, blind, the holder among others); forgedOn: ours, and someone says a part of it is in their name and not theirs; fits: ours, not forged, and, blind, someone besides the holder kept a part sealed", () => {
     for (const c of cases) {
       const cup = cupOf({ traits: { "dice.cup": { holder: c.holder, up: false, blind: false, roll: { draw: "d1", dice: DICE, blind: c.blind, done: false } } } });
       const sealers = c.contributors ? c.asked.filter((v) => c.contributors.includes(v)) : null;
-      const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers };
       const isOurs = c.holder !== null && c.draw === "d1" && c.of === DICE && c.by === c.holder && (c.blind ? c.asked.includes(c.holder) && c.asked.length > 1 : c.asked.length === 1 && c.asked[0] === c.holder);
-      expect(ours(st, cup), JSON.stringify(c)).toBe(isOurs);
-      const isFit = isOurs && (!c.blind || sealers === null || sealers.some((v) => v !== c.holder));
-      expect(fits(st, cup), JSON.stringify(c)).toBe(isFit);
+      // and whoever says a part of it in their name isn't theirs: nobody, another player, the holder; or this client refusing it so
+      for (const forged of [[], ["ben"], ["ana"]])
+        for (const fault of [null, { of: "r", why: "forged" }, { of: "r", why: "complete" }]) {
+          const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers, forged, fault };
+          const what = JSON.stringify({ ...c, forged, fault });
+          expect(ours(st, cup), what).toBe(isOurs);
+          const isForged = isOurs && (forged.length > 0 || fault?.why === "forged");
+          expect(forgedOn(st, cup), what).toBe(isForged);
+          const isFit = isOurs && !isForged && (!c.blind || sealers === null || sealers.some((v) => v !== c.holder));
+          expect(fits(st, cup), what).toBe(isFit);
+        }
+      const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers, forged: [] };
+      const isFit = fits(st, cup);
       // what that means: a seed a client uses for this cup was one only its holder could know (in the open), or nobody (blind),
       // until the stage's audience released it. (One sealer knows a draw at once; several, none of them until they release.)
       if (isFit && sealers) {

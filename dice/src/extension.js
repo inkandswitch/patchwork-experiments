@@ -41,7 +41,9 @@
 // everyone does: a throw thrown away for a better one is never unremarked.
 // A thrower lands only an attempt its own client made; one written in
 // anyone's name by someone else (lots.js "forged") nobody lands, and a
-// throw told before that came out is told again.
+// throw told before that came out is told again. A throw whose thrower
+// left before it was drawn is given up by everyone alike (lots.js GONE):
+// nothing was rolled, and every view says so once.
 //
 // What a die IS comes only from what the scene built for it: its GLB's
 // `extras.dice` (die-glb.js builtDie), read through api.content. The trait
@@ -304,6 +306,8 @@ function create(api) {
         // someone else, is no throw of mine
         if (st && !(st.by === api.viewer && st.own)) return fail(st.by === api.viewer ? "Someone wrote the lots for that throw in your name: nothing was rolled." : `${capWho(st.by)} drew that throw again: nothing was rolled.`);
         if (st?.spoiled) return fail("That roll didn't land: its lots were spoiled (see above).");
+        // given up (lots.js GONE): someone's client didn't see me here, or mine lost my part
+        if (st?.phase === "ended") return fail(`That roll didn't land: ${st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`);
         if (Date.now() - started > THROW_MS) return fail(`That roll didn't land: its lots are still waiting${st?.waiting?.length ? ` for ${st.waiting.length} more` : ""}. Nothing was rolled.`);
         const seed = st?.public ? seedFromLots(st.seed) : null;
         if (seed == null || t < AIR_SECONDS) {
@@ -370,6 +374,12 @@ function create(api) {
       if (w.told && !w.forgedTold && st.forged?.length) {
         w.forgedTold = true;
         api.notify(`${forgedLine(st.forged)}: the roll of ${namesOf(w.of, snap)} told before is no fair roll.`, "warn");
+      }
+      // given up before it was drawn (lots.js GONE): nothing was rolled, which every view says once (its thrower's said why)
+      if (!w.done && st.phase === "ended") {
+        w.done = true;
+        // (one somebody says was forged is said so already)
+        if (w.by !== api.viewer && !st.forged?.length) api.notify(`${whose(w.by).replace(/^./, (c) => c.toUpperCase())} throw of ${namesOf(w.of, snap)} was given up before it was drawn: ${st.gone.includes(w.by) ? "their part of its lots was lost" : `${whoOf(w.by)} had left`}. Nothing was rolled.`, "warn");
       }
       if (!w.done && st.public && w.publicAt == null) {
         w.publicAt = now;

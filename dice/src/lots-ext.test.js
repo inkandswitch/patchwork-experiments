@@ -7,11 +7,12 @@
 // the cup's own trait.
 
 import Lots, { ID, holderOf } from "./lots-ext.js";
-import { OPEN_MS, commitOf, contributorsOf, couldKnow, freshNonce, newRound, roundOf, seedOf } from "./lots.js";
+import { STALE_MS, OPEN_MS, commitOf, contributorsOf, couldKnow, freshNonce, newRound, roundOf, seedOf } from "./lots.js";
 
 const CUP = "dice.cup";
 
-function world({ seated, present, running = present }) {
+function world({ seated, present: arrived, running = arrived }) {
+  const present = [...arrived];
   let doc = { objects: { cup: { name: "Cup", traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } }, d1: { name: "d1", traits: { "dice.die": {} } } } };
   let audience = () => null;
   const clients = new Map();
@@ -62,6 +63,12 @@ function world({ seated, present, running = present }) {
         flush();
         await new Promise((r) => setTimeout(r, 2));
       }
+    },
+    /** `v` goes: its client stops, and it's no longer in anyone's presence. */
+    leave(v) {
+      clients.get(v)?.ext.dispose();
+      clients.delete(v);
+      present.splice(present.indexOf(v), 1);
     },
     dispose: () => clients.forEach((c) => c.ext.dispose()),
   };
@@ -357,4 +364,101 @@ describe("dice.lots, a draw open to all (a throw in the open)", () => {
     for (const v of ["ana", "ben"]) expect(w.lots(v).state("d1")).toMatchObject({ phase: "spoiled", seed: null });
     expect(w.hud("ana")[0]).toMatch(/^The lots for d1 are spoiled: /);
   });
+});
+
+describe("dice.lots, a round whose asker can't move it on", () => {
+  // time by hand: what each client first saw, and when the deadlines fall
+  let now;
+  let spy;
+  beforeEach(() => {
+    now = 1_000_000;
+    spy = vi.spyOn(Date, "now").mockImplementation(() => now);
+  });
+  afterEach(() => spy.mockRestore());
+  const later = async (w, ms) => {
+    now += ms;
+    await w.settle();
+    await new Promise((r) => setTimeout(r, 1100)); // the runner's own timer (a second, watching someone else's round)
+    await w.settle();
+  };
+
+  it("the asker leaves before opening: everyone waits on her until STALE_MS has passed with her gone, then the first client to see it gives it up in the doc, and every client says it's ended", async () => {
+    const w = world({ seated: null, present: ["ana", "ben", "cy", "spec"] });
+    w.lots("ana").draw("d1", { sealers: [], of: ["d1"] });
+    w.leave("ana"); // her round is written, with her commit; her client goes before it can open
+    await w.settle();
+    expect(Object.keys(w.round("d1").commits).sort()).toEqual(["ana", "ben", "cy", "spec"]);
+    await later(w, 2000);
+    for (const v of ["ben", "cy", "spec"]) {
+      expect(w.lots(v).state("d1")).toMatchObject({ phase: "opening", waiting: ["ana"] });
+      expect(w.hud(v)).toContain("Drawing lots for d1: waiting for ana.");
+    }
+    // not before both deadlines have passed since each client first saw it
+    await later(w, STALE_MS - 2000 - 1);
+    expect(w.round("d1").gone).toEqual({});
+    await later(w, 1);
+    const gone = Object.keys(w.round("d1").gone);
+    expect(gone.length).toBeGreaterThan(0);
+    expect(gone.every((v) => ["ben", "cy", "spec"].includes(v))).toBe(true);
+    for (const v of ["ben", "cy", "spec"]) {
+      expect(w.lots(v).state("d1")).toMatchObject({ phase: "ended", waiting: [], seed: null });
+      expect(w.hud(v)).toEqual([]);
+    }
+    // and it stays ended: nothing more is written
+    const after = JSON.stringify(w.raw("d1"));
+    await later(w, STALE_MS);
+    expect(JSON.stringify(w.raw("d1"))).toBe(after);
+    w.dispose();
+  }, 15_000);
+
+  it("the asker leaves before the commits are in (one member never commits): her deadline never comes, and the round is ended the same way", async () => {
+    const w = world({ seated: ["ana", "ben", "cy"], present: ["ana", "ben", "cy"] });
+    w.clients.get("cy").ext.dispose(); // cy's client is here and never commits
+    w.lots("ana").draw("d1", { sealers: [], of: ["d1"] });
+    w.leave("ana");
+    await w.settle();
+    await later(w, STALE_MS - 1);
+    expect(w.lots("ben").state("d1")).toMatchObject({ phase: "committing", waiting: ["cy"] });
+    await later(w, 1);
+    expect(w.round("d1").gone).toEqual({ ben: true });
+    expect(w.lots("ben").state("d1").phase).toBe("ended");
+    w.dispose();
+  }, 15_000);
+
+  it("an asker who is here is never given up on, however long its round takes: it moves it on itself", async () => {
+    const w = world({ seated: null, present: ["ana", "ben", "cy"] });
+    w.clients.get("ana").ext.dispose(); // ana is here, her client a modified one that never opens
+    const id = "rSTUCKxx";
+    w.write((d) => (d.objects.d1.traits["dice.die"].round = newRound({ draw: "dSTUCKxx", id, by: "ana", at: now, of: ["d1"], sealers: [], members: ["ana", "ben", "cy"], commit: commitOf(id, "ana", freshNonce(), "", ["d1"]) })));
+    await w.settle();
+    await later(w, STALE_MS * 3);
+    expect(w.round("d1").gone).toEqual({});
+    expect(w.lots("ben").state("d1")).toMatchObject({ phase: "opening", waiting: ["ana"] });
+    w.dispose();
+  }, 15_000);
+
+  it("the asker's own client, back without its part (another browser's, or storage cleared), gives up its own round at once", async () => {
+    const r = newRound({ draw: "dLOSTxxx", id: "rLOSTxxx", by: "ana", at: 0, of: ["d1"], sealers: [], members: ["ana", "ben"], commit: commitOf("rLOSTxxx", "ana", freshNonce(), "", ["d1"]) });
+    r.commits.ben = commitOf("rLOSTxxx", "ben", freshNonce(), "", ["d1"]);
+    const w = world({ seated: null, present: ["ana", "ben"] });
+    w.write((d) => (d.objects.d1.traits["dice.die"].round = r));
+    await w.settle();
+    expect(w.round("d1").gone).toEqual({ ana: true });
+    for (const v of ["ana", "ben"]) expect(w.lots(v).state("d1").phase).toBe("ended");
+    w.dispose();
+  }, 15_000);
+
+  it("a cup lifted while its holder is away waits for her by design: never ended", async () => {
+    const w = world({ seated: ["ana", "ben"], present: ["ana", "ben"] });
+    w.setAudience(() => ["ana"]);
+    w.lots("ana").draw("cup", { sealers: ["ana"] });
+    await w.settle();
+    expect(w.lots("ben").state("cup").phase).toBe("sealed");
+    w.leave("ana");
+    w.setAudience(() => "all");
+    await later(w, STALE_MS * 2);
+    expect(w.round().gone).toEqual({});
+    expect(w.lots("ben").state("cup")).toMatchObject({ phase: "sealed", waiting: ["ana"] });
+    w.dispose();
+  }, 15_000);
 });

@@ -388,21 +388,30 @@ describe("rolling a die", () => {
 });
 
 describe("a roll whose draw doesn't come", () => {
-  it("spoiled, taken by another throw, or still waiting when its time is up: nothing lands, it's put back as it lay, and the thrower is told why", () => {
-    for (const how of ["spoiled", "taken", "waiting"]) {
+  it("spoiled, taken by another throw, given up (lots.js GONE), or still waiting when its time is up: nothing lands, it's put back as it lay, and the thrower is told why", () => {
+    for (const how of ["spoiled", "taken", "gone", "lost", "waiting"]) {
       const t = world();
       const before = structuredClone(t.doc.objects.d1.transform);
       t.run("roll", "d1");
       t.w.tick(1 / 60, 30);
       if (how === "spoiled") t.lots.states.set("d1", { ...t.lots.states.get("d1"), phase: "spoiled", spoiled: { by: "bob", why: "opening" } });
       if (how === "taken") t.lots.states.set("d1", { ...t.lots.states.get("d1"), draw: "dOTHERxx", by: "bob" });
+      // bob's client didn't see alice here; or alice's own client lost her part
+      if (how === "gone") t.lots.states.set("d1", { ...t.lots.states.get("d1"), phase: "ended", waiting: [], gone: ["bob"] });
+      if (how === "lost") t.lots.states.set("d1", { ...t.lots.states.get("d1"), phase: "ended", waiting: [], gone: ["alice"] });
       if (how === "waiting") t.w.tick(1 / 10, Math.ceil(THROW_MS / 100) + 2);
       t.w.tick(1 / 60, 2);
       expect(t.writes).toHaveLength(0);
       expect(t.doc.objects.d1.transform).toEqual(before);
       expect(t.w.released).toEqual([{ session: "A", id: "d1", landed: false }]);
       expect(t.w.view("A").loops).toHaveLength(0);
-      const said = { spoiled: /spoiled/, taken: /^Someone threw that die before yours was drawn: that is the throw\.$/, waiting: /still waiting for 1 more\. Nothing was rolled\./ }[how];
+      const said = {
+        spoiled: /spoiled/,
+        taken: /^Someone threw that die before yours was drawn: that is the throw\.$/,
+        gone: /^That roll didn't land: someone gave its lots up, not seeing you here\. Nothing was rolled\.$/,
+        lost: /^That roll didn't land: your client lost its part of the lots\. Nothing was rolled\.$/,
+        waiting: /still waiting for 1 more\. Nothing was rolled\./,
+      }[how];
       expect(t.notices("A").at(-1)).toMatch(said);
       expect(t.state("roll", "d1")).toEqual({ title: "Roll the die (R)" });
       t.w.done();
@@ -424,6 +433,35 @@ describe("a throw is the doc's", () => {
     expect(t.doc.objects.d1.transform).toEqual(rollPlan(5, { built: built("d6"), from }).to);
     t.sync();
     expect(t.notices("B")).toEqual([`Someone rolled ${t.label("d1")}`]);
+    t.w.done();
+  });
+
+  it("its thrower gone before it was drawn, it's given up (lots.js GONE): nothing lands, and the other view says so once", () => {
+    const t = world();
+    const from = structuredClone(t.doc.objects.d1.transform);
+    t.run("roll", "d1");
+    t.w.tick(1 / 60, 10);
+    t.w.leave("A");
+    t.lots.states.set("d1", { ...t.lots.states.get("d1"), phase: "ended", waiting: [], gone: ["bob"] });
+    t.sync();
+    t.sync();
+    vi.advanceTimersByTime(TOLD_MS + LAND_GRACE_MS);
+    t.sync();
+    expect(t.doc.objects.d1.transform).toEqual(from);
+    expect(t.notices("B")).toEqual(["Someone's throw of d1 was given up before it was drawn: someone had left. Nothing was rolled."]);
+    t.w.done();
+  });
+
+  it("one its thrower's client gave up because it was asked in their name by someone else (forged) isn't told as given up: the forgery is said instead", () => {
+    const t = world();
+    t.run("roll", "d1");
+    t.w.tick(1 / 60, 10);
+    t.w.leave("A");
+    t.lots.states.set("d1", { ...t.lots.states.get("d1"), phase: "ended", waiting: [], gone: ["alice"], forged: ["alice"] });
+    t.sync();
+    vi.advanceTimersByTime(TOLD_MS + LAND_GRACE_MS);
+    t.sync();
+    expect(t.notices("B").some((n) => /given up/.test(n))).toBe(false);
     t.w.done();
   });
 

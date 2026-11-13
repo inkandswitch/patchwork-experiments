@@ -37,11 +37,17 @@
 // The doc isn't signed, so a client uses a draw's seed only if it is the
 // one the cup's shake asked for (cup.js `fits`: its draw, asked by the
 // holder, of its dice, sealed as the shake says); a round written over it by anyone else
-// is no roll of this cup's, and the holder's client asks again for its own.
+// is no roll of this cup's, and the holder's client asks again for its own;
+// so it does for its own round given up while it was away (lots.js GONE).
+// Its own round with a part somebody says was written in their name (lots.js
+// "forged"; cup.js `forgedOn`) is no roll either, and asking again for that
+// draw would be refused as a reroll (its holder, the sole sealer, could have
+// known it), so the holder's client shakes again in place instead: a new
+// draw of the same dice, its roll saying who said so (`forged`).
 // Each view says when a cup was shaken from the doc itself (a new draw on
 // it), not from anyone's word, so a reshake can't go untold.
 
-import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, includes, knocked, lifted, lowered, ours, policy, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
+import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
 import { builtOf, faceOfSeed, faceUp, scaleOf, seedFor, seedFromLots, settled } from "./roll.js";
 import { lookFor } from "./rule.js";
 
@@ -55,6 +61,8 @@ const TRUST_MS = 3000;
 export const ASTRAY_MS = 2000;
 
 const str = (s) => typeof s === "string" && s.length > 0 && s.length < 128;
+const listOf = (vs) => (vs.length > 1 ? `${vs.slice(0, -1).join(", ")} and ${vs.at(-1)}` : vs[0] ?? "");
+const cap = (t) => t.replace(/^./, (x) => x.toUpperCase());
 const only = (d, keys) => Object.keys(d).every((k) => keys.includes(k));
 /** What a peer may tell us: which cup, and nothing else (nothing about what's under it). A shake is told from the doc: a new draw on a cup. */
 export const MESSAGES = {
@@ -107,6 +115,7 @@ function create(api) {
   const rollsSeen = new Map(); // cup id → the draw last seen on it (to tell a new one)
   const ownShakes = new Set(); // draws this view shook itself (told as it did)
   const asked = new Map(); // a draw this client asked for → the lots round that was on the cup when it last asked
+  const redrawn = new Set(); // my shakes' draws this client drew again because someone said their lots were forged
   const astray = new Map(); // a draw whose lots aren't what it asked for → since when (this client's clock)
   let dead = false;
   const labels = api.labels?.();
@@ -140,6 +149,9 @@ function create(api) {
     }
   };
   const whose = (v) => (v === viewer ? "your" : `${who(v)}'s`);
+  /** "Ben says its lots were written in their name by someone else", for whoever said so (lots.js "forged"). */
+  const forgedLine = (vs) =>
+    vs.length === 1 && vs[0] === viewer ? "your client says its lots were written in your name by someone else" : `${listOf(vs.map((v) => (v === viewer ? "you" : who(v))))} say${vs.length === 1 ? "s" : ""} its lots were written in their name by someone else`;
 
   function builtFor(id) {
     const b = builtOf(api.content?.(id)?.extras?.dice);
@@ -216,16 +228,33 @@ function create(api) {
       const was = rollsSeen.get(c.id);
       rollsSeen.set(c.id, draw);
       if (was === undefined || draw === null || draw === was || ownShakes.has(draw)) continue;
+      // drawn again by its holder for a forgery: said with who said so (the holder's word that they did)
+      if (c.cup.roll.forged.length) {
+        api.notify?.(cap(`${whose(c.cup.holder)} cup was drawn again: ${forgedLine(c.cup.roll.forged)}.`), "warn");
+        continue;
+      }
       const how = c.cup.roll.blind ? " blind" : "";
       api.notify?.(c.cup.holder === viewer ? `Your cup was shaken${how}.` : `${who(c.cup.holder)} shook their cup${how}.`);
     }
   }
 
   /**
-   * My shake's lots, put right: when the round on my cup isn't the one my
+   * My shake's lots, put right. When the round on my cup isn't the one my
    * shake asked for (someone wrote over it; two of us shook at once and the
-   * merge kept my roll and their round), my client asks again for my draw,
-   * once for each round it finds there.
+   * merge kept my roll and their round), or is, but was given up while I was
+   * away (lots.js GONE), my client asks again for my draw, once for each
+   * round it finds there: a new attempt of it, which nobody refuses, since I
+   * couldn't have known the one it replaces.
+   *
+   * When it is mine and somebody says a part of it is in their name and not
+   * theirs (`forgedOn`), whoever wrote that part may know the roll or have
+   * steered it, so it must be drawn again; but a new attempt of the same
+   * draw would be refused by every client that saw the first complete (I am
+   * its sole sealer: from the doc, I could have known it), and told as my
+   * reroll. So my client shakes again in place: a new draw of the same
+   * dice, written with a roll that says who said so (`forged`), which every
+   * view tells ("Ana's cup was drawn again: Ben says…"). A holder may shake
+   * again whenever it likes, told; this gives nobody anything more.
    */
   function heal() {
     const lots = lotsApi();
@@ -234,17 +263,39 @@ function create(api) {
       const roll = c.cup.roll;
       if (!roll || roll.done) continue;
       const st = lots?.state?.(c.id) ?? null;
-      if (ours(st, c.cup)) {
+      if (forgedOn(st, c.cup)) {
         astray.delete(roll.draw);
+        if (lots && c.cup.holder === viewer && !redrawn.has(roll.draw)) redraw(c, st);
         continue;
       }
-      if (!astray.has(roll.draw)) astray.set(roll.draw, now);
+      if (ours(st, c.cup)) {
+        astray.delete(roll.draw);
+        if (st.phase !== "ended") continue;
+      } else if (!astray.has(roll.draw)) astray.set(roll.draw, now);
       if (!lots || c.cup.holder !== viewer) continue;
       const there = st?.id ?? null;
       if (asked.has(roll.draw) && asked.get(roll.draw) === there) continue;
       asked.set(roll.draw, there);
       lots.draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), draw: roll.draw, of: roll.dice });
     }
+  }
+
+  /** Shake my cup again in place, its dice where they lie: a new draw, told with who said the last one's lots were forged. */
+  function redraw(c, st) {
+    const roll = c.cup.roll;
+    redrawn.add(roll.draw);
+    const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [viewer] : [])])].sort();
+    const draw = lotsApi().draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), of: roll.dice });
+    if (!draw) return;
+    // (its round lands after this write, over the forged one: not a round gone astray)
+    asked.set(draw, st.id);
+    ownShakes.add(draw);
+    api.change((doc) => {
+      const t = doc.objects?.[c.id]?.traits?.[CUP];
+      if (!t?.roll || t.roll.draw !== roll.draw || t.roll.done) return;
+      t.roll = { draw, dice: [...roll.dice], blind: roll.blind, done: false, forged };
+    });
+    api.notify?.(`Your cup was drawn again: ${forgedLine(forged)}.`, "warn");
   }
 
   // ── what this view shows ──
@@ -570,14 +621,20 @@ function create(api) {
       if (state.cups.size && !lotsApi()) out.push({ text: "Cups can't be shaken yet: rolls are drawn by lots, which aren't running here.", state: "warn" });
       const lots = lotsApi();
       const now = Date.now();
-      const list = (vs) => (vs.length > 1 ? `${vs.slice(0, -1).join(", ")} and ${vs.at(-1)}` : vs[0]);
-      const cap = (t) => t.replace(/^./, (x) => x.toUpperCase());
+      const list = listOf;
       for (const c of state.cups.values()) {
         const roll = c.cup.roll;
         if (!roll || roll.done) continue;
         const st = lots?.state?.(c.id);
         if (lots && !ours(st, c.cup)) {
           if (now - (astray.get(roll.draw) ?? now) >= ASTRAY_MS) out.push({ text: cap(`${whose(c.cup.holder)} dice can't be turned up: the lots on that cup aren't the ones its shake asked for (two shakes at once, or someone wrote over them). ${c.cup.holder === viewer ? "Your client is asking again" : `${who(c.cup.holder)}'s client asks again`}.`), state: "warn" });
+          continue;
+        }
+        // (the lots' own HUD says who says so; its holder's client draws it again)
+        if (forgedOn(st, c.cup)) continue;
+        // given up while its holder was away: their client asks again when they're back
+        if (st?.phase === "ended") {
+          if (!c.covering && c.cup.holder !== viewer) out.push({ text: `${cap(whose(c.cup.holder))} dice can't be turned up: ${who(c.cup.holder)} left before their roll was drawn, and draws it again when they're back.`, state: "warn" });
           continue;
         }
         if (st && !fits(st, c.cup)) {

@@ -170,6 +170,10 @@ try {
     },
     /** what die k of a throw of n lands, from a seed (64 hex), for a die of `faces` faces */
     expectedFace: (seed, k, n, faces) => { const s = parseInt(seed.slice(0, 8), 16) >>> 0; return faceOfSeed(n === 1 ? s : seedFor(s, k), faces); },
+    /** run a verb in a view as its command, over object `id` (no pointer: for what has to happen in one tick) */
+    verb: (w, ext, cmd, id) => { const c = dbg[w]?.host.instanceOf(ext)?.commands?.find((c) => c.id === cmd); if (!c) return false; c.run(id); return true; },
+    /** the HUD lines the dice's extensions give a view now */
+    hudLines: (w) => ["dice.lots", "dice"].flatMap((x) => dbg[w]?.host.instanceOf(x)?.hud?.() ?? []).map((l) => l.text),
     /** close a view's scene tool (its viewer leaves) */
     leave(w) { unmount[w]?.(); unmount[w] = null; dbg[w] = null; return true; },
     present: (w) => Object.values(dbg[w]?.presence?.get?.() ?? {}).map((p) => p.viewer),

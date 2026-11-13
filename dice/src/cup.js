@@ -8,8 +8,10 @@
 //   "dice.cup": { holder: <viewer> | null,   // who shook it last: whose dice are under it
 //                 up: boolean,               // lifted: set down behind its dice, mouth down, covering nothing
 //                 blind: boolean,            // shaken blind: what's under it is the others' to see, never the holder's
-//                 roll: null | { draw, dice: [id…], blind, done },   // the last shake: its lots draw, its dice in order,
-//                                                                     // whether it was shaken blind, and whether they've been turned up
+//                 roll: null | { draw, dice: [id…], blind, done, forged? },   // the last shake: its lots draw, its dice in order,
+//                                                                     // whether it was shaken blind, and whether they've been turned up;
+//                                                                     // `forged`: drawn again by its holder because these viewers said
+//                                                                     // the lots before it were written in their name (cup-extension.js)
 //                 round: lots.js round }      // the shake's draw (lots-ext.js), of its dice
 //
 // Its GLB stands on its mouth at the origin, closed at the top, 9 cm tall
@@ -64,7 +66,7 @@ export function cupOf(o) {
   const r = t.roll;
   const roll =
     r && typeof r === "object" && typeof r.draw === "string" && Array.isArray(r.dice)
-      ? { draw: r.draw, dice: [...r.dice].filter((x) => typeof x === "string"), blind: r.blind === true, done: r.done === true }
+      ? { draw: r.draw, dice: [...r.dice].filter((x) => typeof x === "string"), blind: r.blind === true, done: r.done === true, forged: Array.isArray(r.forged) ? [...new Set(r.forged.filter(isViewer))].sort() : [] }
       : null;
   return { holder: isViewer(t.holder) ? t.holder : null, up: t.up === true, blind: t.blind === true, roll };
 }
@@ -279,9 +281,18 @@ export function ours(st, cup) {
 }
 
 /**
- * Is its seed this cup's roll: ours, and, shaken blind, drawn with somebody
- * besides the holder keeping a part sealed (else the holder's client holds
- * every part, and it's no blind roll). Unsettled until the contributors
- * are fixed (`sealers` null): ours is all there is to say.
+ * Is the shake's own draw one somebody says has a part written in their
+ * name (lots.js "forged")? Then nothing is turned up by it: whoever wrote
+ * that part could know the roll (it holds the part), or steer it. Its
+ * holder draws again, as a new shake of the same dice (cup-extension.js).
  */
-export const fits = (st, cup) => ours(st, cup) && (!cup.roll.blind || !Array.isArray(st.sealers) || st.sealers.some((v) => v !== cup.holder));
+export const forgedOn = (st, cup) => ours(st, cup) && (st.forged?.length > 0 || st.fault?.why === "forged");
+
+/**
+ * Is its seed this cup's roll: ours, nobody saying a part of it is forged,
+ * and, shaken blind, drawn with somebody besides the holder keeping a part
+ * sealed (else the holder's client holds every part, and it's no blind
+ * roll). Unsettled until the contributors are fixed (`sealers` null): ours
+ * is all there is to say.
+ */
+export const fits = (st, cup) => ours(st, cup) && !forgedOn(st, cup) && (!cup.roll.blind || !Array.isArray(st.sealers) || st.sealers.some((v) => v !== cup.holder));

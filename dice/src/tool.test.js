@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Tool, { PANEL_AIR_MS, PANEL_GRACE_MS, faceOfDraw, facePicture, rollsOf, showingFace } from "./tool.js";
 import { KEPT_ROLLS, PRESETS, dieOf } from "./die.js";
-import { COMMIT_MS, OPEN_MS, commitOf, freshNonce, newRound, seedOf } from "./lots.js";
+import { COMMIT_MS, OPEN_MS, STALE_MS, commitOf, freshNonce, newRound, seedOf } from "./lots.js";
 import { GONE_MS, HERE } from "./panel-lots.js";
 import { faceOfSeed, seedFromLots } from "./roll.js";
 import { SYMBOLS, dieMarks } from "./marks.js";
@@ -56,6 +56,8 @@ function mount(preset = "d6", more = {}, { handle = fakeRepo().add({ "@patchwork
 const bytesAre = (b) => vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation((arr) => arr.fill(b));
 /** The face a round in the doc says, worked out here from its openings. */
 const faceOfRound = (r, n) => faceOfSeed(seedFromLots(seedOf(r.id, Object.entries(r.opens))), n);
+/** Every status line the panel shows under the die. */
+const LINES = (t) => t.$$(".die-drawn").map((e) => e.textContent);
 /** Press Roll, and let it come down. */
 const roll = (t) => {
   t.$("button.roll").click();
@@ -528,6 +530,39 @@ describe("rolling with others who have the die open", () => {
     expect(ben.$$(".die-drawn").map((e) => e.textContent)).toEqual(["Drawn by someone and you; someone didn't open their part, and it was drawn again without them."]);
     ana.cleanup();
     ben.cleanup();
+  });
+
+  it("a roll whose asker closed their panel before it was drawn is given up by the panel still here, once it has waited both deadlines: nothing written, nobody waiting, and it says so", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    // cy asked, and his panel went before opening his part (the asker opens first, so everyone waits on him)
+    const id = "rCYGONEx";
+    d.h.change((doc) => (doc.round = newRound({ draw: "dCYGONEx", id, by: "cy", at: Date.now(), of: ["die"], sealers: [], members: ["ben", "cy"], commit: commitOf(id, "cy", freshNonce(), "", ["die"]) })));
+    const ben = mount("d6", {}, { handle: d.peer(), viewer: "ben" });
+    expect(Object.keys(ben.doc().round.commits).sort()).toEqual(["ben", "cy"]);
+    vi.advanceTimersByTime(2000);
+    expect(ben.$(".die-table .reads").textContent).toBe("Rolling…");
+    vi.advanceTimersByTime(STALE_MS - 2000 + 300);
+    expect(ben.doc().round.gone).toEqual({ ben: true });
+    expect(ben.doc().rolls ?? []).toEqual([]);
+    expect(ben.$(".die-table .reads").textContent).not.toBe("Rolling…");
+    expect(LINES(ben)).toContain("Someone rolled and left before it was drawn: nothing was rolled.");
+    expect(LINES(ben).join("|")).not.toMatch(/waiting/);
+    ben.cleanup();
+  });
+
+  it("the asker's own roll, given up by someone who stopped hearing from it: it says why, and lands nothing", () => {
+    vi.useFakeTimers();
+    const d = sharedDie("d6");
+    const ana = mount("d6", {}, { handle: d.peer(), viewer: "ana" });
+    // a panel that says it's here and then never commits, so the roll is still under way
+    d.peer().broadcast({ type: HERE, session: "sghost", viewer: "ghost" });
+    ana.$("button.roll").click();
+    d.h.change((doc) => (doc.round.gone.ben = true));
+    vi.advanceTimersByTime(COMMIT_MS + OPEN_MS);
+    expect(ana.doc().rolls ?? []).toEqual([]);
+    expect(LINES(ana)).toContain("That roll didn't land: someone gave its lots up, not hearing from you. Nothing was rolled.");
+    ana.cleanup();
   });
 
   it("closing a panel says goodbye: the others count it gone at once", () => {

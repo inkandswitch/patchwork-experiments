@@ -21,7 +21,9 @@
 // (`again: true`, "rolled again before it came down"); its asker opened its
 // part first, so it knew the face no sooner than they did. Its asker writes
 // only an attempt its own client made, and nobody writes one somebody says
-// was written in their name (lots.js "forged"). They are the panel's alone:
+// was written in their name (lots.js "forged"); a roll whose asker closed
+// the panel before it was drawn is given up by everyone alike (lots.js
+// GONE), and nothing is written. They are the panel's alone:
 // a die in a scene is rolled there, and its place in the scene says what it
 // shows.
 //
@@ -200,6 +202,8 @@ export default function DieTool(handle, element) {
       else if (st?.spoiled) (pending = null), (note = "That roll didn't land: its lots were spoiled.");
       // only an attempt this panel made is its roll
       else if (st && !(st.by === viewer && st.own)) (pending = null), (note = st.by === viewer ? "Someone wrote the lots for that roll in your name: nothing was rolled." : `${cap(nameOf(st.by))} drew that roll again: nothing was rolled.`);
+      // given up (lots.js GONE): someone's panel stopped hearing from this one, or this one lost its part
+      else if (st?.phase === "ended") (pending = null), (note = `That roll didn't land: ${st.gone.includes(viewer) ? "this panel lost its part of the lots" : `${list(st.gone.map(nameOf))} gave its lots up, not hearing from you`}. Nothing was rolled.`);
       else if (now - pending.at > PANEL_THROW_MS && !st?.public) (pending = null), (note = `That roll didn't land: its lots are still waiting for ${list((st?.waiting ?? []).map(nameOf))}. Nothing was rolled.`);
     }
     const face = faceOfDraw(st, n);
@@ -298,7 +302,7 @@ export default function DieTool(handle, element) {
   /** Is a draw under way on the die (asked, not yet written into its rolls, not given up on)? */
   function rollingNow(doc, st) {
     if (pending) return true;
-    if (!st || st.spoiled || st.forged?.length || landed(doc, st.draw)) return false;
+    if (!st || st.spoiled || st.phase === "ended" || st.forged?.length || landed(doc, st.draw)) return false;
     return Date.now() - (seenAt.get(st.draw) ?? 0) < PANEL_THROW_MS + PANEL_GRACE_MS;
   }
   /** What to say about the last roll: who drew it, if the doc still has its draw and it lands where the roll says. */
@@ -330,6 +334,9 @@ export default function DieTool(handle, element) {
     const rolling = rollingNow(doc, st);
     const lines = [];
     if (rolling) lines.push({ text: `Rolling: drawn by lots between ${lots.present().length > 1 ? `the ${lots.present().length} of you here` : "you alone (nobody else has it open)"}…`, state: "loading" });
+    // the last roll asked was given up before it was drawn (lots.js GONE): nothing was rolled (one somebody says
+    // was forged is said so by the lots' own lines)
+    else if (st?.phase === "ended" && st.by !== viewer && !st.forged.length) lines.push({ text: `${cap(nameOf(st.by))} rolled and ${st.gone.includes(st.by) ? "lost their part of the lots" : "left"} before it was drawn: nothing was rolled.`, state: "warn" });
     else {
       const drawn = drawnLine(doc, st, rolls, n);
       if (drawn) lines.push(drawn);

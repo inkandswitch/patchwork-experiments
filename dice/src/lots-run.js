@@ -53,8 +53,14 @@
 // appears in its name afterwards. So one viewer is one client: the same
 // viewer in a second browser, or on another device, is a stranger to this
 // one, and their parts are refused as forged.
+//
+// GONE (lots.js): a round under way whose asker isn't here, watched for
+// STALE_MS, or my own that waits on a part my client doesn't hold, this
+// client gives up in the doc (`gone[viewer]`), so that every client agrees
+// it's ended and nobody waits on it any more. Whoever wants the draw asks
+// again.
 
-import { commitOf, derive, due, faultOf, freshId, freshNonce, membersFor, newRound, opensRight, roundOf } from "./lots.js";
+import { commitOf, derive, due, faultOf, freshId, freshNonce, goneOf, membersFor, newRound, opensRight, roundOf } from "./lots.js";
 import { makeKeys, seal, unseal } from "./seal.js";
 
 /** How long a wait goes untold in the HUD (ms): a round between two clients that are here takes a few round trips. */
@@ -268,9 +274,12 @@ export function createRunner(place) {
   }
 
   function step() {
-    let pending = false;
+    let pending = false; // a round of mine under way: its deadlines are this client's to keep
+    let watching = false; // someone else's under way: if its asker goes, this client gives it up
     const now = Date.now();
     const all = rounds();
+    let here = null;
+    const present = () => (here ??= place.present());
     if (!base && (place.ready?.() ?? true)) base = new Map(all.map(({ r }) => [r.id, !!r.commits[viewer] || r.by === viewer]));
     // (nothing before the doc is here: what's on it then is past, and this client couldn't tell its own part from a forgery after)
     if (!base) return;
@@ -296,8 +305,14 @@ export function createRunner(place) {
       }
       if (r.opens[viewer]) opened.add(r.id);
       if (d.contributors && !openingSince.has(r.id)) openingSince.set(r.id, now);
+      // under way: its asker must move it on; if it can't (gone, or its part lost), give it up, so nobody waits on it
+      if (d.phase === "committing" || d.phase === "opening") {
+        if (r.by === viewer) pending = true;
+        else watching = true;
+        if (goneOf(r, viewer, { present: present(), watched: now - seenAt.get(r.id), mine: !!mineOf(r.id), fault: d.fault }))
+          into(id, r.id, (round) => void (round.gone[viewer] || (round.gone[viewer] = true)));
+      }
       if (r.by === viewer && d.fault?.why !== "forged" && (d.phase === "committing" || d.phase === "opening")) {
-        pending = true;
         const s = due(r, viewer, now, { openingSince: openingSince.get(r.id) ?? null });
         if (s?.close) into(id, r.id, (round) => void (round.closed || (round.closed = s.close)));
         else if (s?.retry) attempt(id, { draw: r.draw, of: r.of, sealers: r.sealers, members: s.retry.members, tries: r.tries + 1, excluded: s.retry.excluded, replaces: r.id });
@@ -320,7 +335,8 @@ export function createRunner(place) {
       if (d.phase === "open" && mine.has(r.id)) forget(r.id);
     }
     clearTimeout(timer);
-    timer = pending && !dead ? setTimeout(act, 250) : null;
+    // (giving a round up waits STALE_MS: looking again each second is plenty, and costs nobody's frames)
+    timer = dead ? null : pending ? setTimeout(act, 250) : watching ? setTimeout(act, 1000) : null;
   }
 
   function state(id) {
@@ -355,8 +371,9 @@ export function createRunner(place) {
       if (d.fault?.why === "forged" || d.forged.includes(viewer)) out.push({ text: `Someone wrote the lots for ${what} in your name: your client refused them, and nothing lands by them.`, state: "error" });
       const others = d.forged.filter((v) => v !== viewer);
       if (others.length) out.push({ text: cap(`${list(others.map(name))} say${others.length === 1 ? "s" : ""} the lots for ${what} were written in their name by someone else: nothing lands by them.`), state: "error" });
-      // what anyone can see in the doc about how this one was drawn, while it still matters
-      if (d.phase !== "open") {
+      // what anyone can see in the doc about how this one was drawn, while it still matters (given up, it doesn't:
+      // whoever wanted it says so)
+      if (d.phase !== "open" && d.phase !== "ended") {
         // (a witness's word, under its own name: everyone who saw it says so, members or not)
         const by = (why) => d.protests.filter((p) => p.why === why).map((p) => name(p.by));
         const saw = by("complete");
