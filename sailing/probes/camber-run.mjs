@@ -50,7 +50,13 @@ const b = await browser({
 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(expr, ms, 60);
+// Simulated time: the stage runs on the page's manual clock (window.__time). A wait on the world is frames
+// of it (until, b.rest), never a sleep; the wall (loads) is for loading and building only.
+const FRAME = 1000 / 60;
+/** Frame by frame until `expr` holds, for at most ms of the page's clock → its value, or false. */
+const until = (expr, ms = 10_000) => b.soon(expr, { frames: Math.ceil(ms / FRAME) });
+/** Loading and building: the wall's, up to ms (the page's frames going at its pace). */
+const loads = (expr, ms = 10_000) => b.waitFor(expr, ms, 60);
 const list = checklist();
 const { check } = list;
 const report = { example: EXAMPLE, scale: SCALE, checks: list.checks, details: list.details, shots: [], measured: {} };
@@ -74,7 +80,7 @@ const deg = (r) => n2((r * 180) / Math.PI);
 const KEY = { f: ["f", "KeyF", 70] };
 const keyDown = (k) => b.send("Input.dispatchKeyEvent", { type: "keyDown", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2], text: k });
 const keyUp = (k) => b.send("Input.dispatchKeyEvent", { type: "keyUp", key: KEY[k][0], code: KEY[k][1], windowsVirtualKeyCode: KEY[k][2] });
-async function press(k, ms = 60) { await keyDown(k); await sleep(ms); await keyUp(k); await sleep(60); }
+async function press(k, ms = 60) { await keyDown(k); await b.rest(ms); await keyUp(k); await b.rest(60); }
 
 /** a page point on whole pixels, where a drag can really drop */
 const px = (p) => p && { x: Math.round(p.x), y: Math.round(p.y) };
@@ -87,14 +93,14 @@ async function dragPart(part, to) {
   const canvas = await P("canvas()");
   const entry = [canvas.x + canvas.w - 40, canvas.y + canvas.h / 2];
   const { seen } = await b.htmlDrag([from.x, from.y], [entry, ...towards(entry, [to.x, to.y], 6)].map(([x, y]) => [Math.round(x), Math.round(y)]), { during: () => P("ring()") });
-  await sleep(400);
+  await b.rest(400);
   const added = (await ids()).filter((id) => !before.has(id));
   return { id: added[0] ?? null, added, ring: seen.at(-1) ?? null };
 }
 
 try {
-  check("page set up", (await until("window.__ready === true", 30_000)) && (await P("errors")).length === 0, await P("errors"));
-  await until("window.__p.bin().includes('sailing.mast')", 10_000);
+  check("page set up", (await loads("window.__ready === true", 30_000)) && (await P("errors")).length === 0, await P("errors"));
+  await loads("window.__p.bin().includes('sailing.mast')", 10_000);
   const bin = await P("bin()");
   check("editing: the parts bin runs and offers sailing's parts", ["sailing.mast", "sailing.wheel", "sailing.windlass", "sailing.ladder"].every((id) => bin.includes(id)), bin);
 
@@ -104,7 +110,7 @@ try {
   const hull = await js(`window.__p.api().addObject(window.__p.hullUrl, { providerId: "camber-hull-surface", transform: { position: [0, 0, 0], rotation: [0, ${YAW}, 0], scale: ${SCALE} } })`);
   await js(`window.__p.change((d) => { d.objects['${hull}'].traits = { "sailing.ship": {} }; })`);
   report.ids = { hull };
-  const built = await until(`window.__p.content('${hull}')?.loaded`, 60_000);
+  const built = await loads(`window.__p.content('${hull}')?.loaded`, 60_000);
   const content = await P(`content('${hull}')`);
   const ship = content?.ship;
   check("camber's scene:source builds her GLB here, and it states her ship: dimensions, displacement, bow +X, up +Y", !!built && ship?.displacement > 0 && JSON.stringify(ship.forward) === "[1,0,0]" && JSON.stringify(ship.up) === "[0,1,0]", content);
@@ -126,7 +132,7 @@ try {
   const B0 = bodyOfHull(m0);
   const editCam = { position: B0.origin.map((v, i) => v + 9 * B0.stbd[i] + 3 * B0.aft[i] + [0, 10, 0][i]), target: B0.origin.map((v, i) => v + [0, 0.5, 0][i]) };
   await P(`setCam(${JSON.stringify(editCam)})`);
-  await sleep(600);
+  await b.rest(600);
   await shot("0-hull");
 
   /** the deck under a point of hers (her frame, unscaled): the world point and what it hit */
@@ -175,7 +181,7 @@ try {
     const VERSION = { rig: 3, mast: 3, jib: 2, wheel: 2, windlass: 2, anchor: 2 };
     check("the parts share the scene's files: one GLB doc per kind (doc.assets)", ["mast", "rig", "jib", "wheel", "windlass", "anchor", "ladder"].every((k) => d.assets?.[`sailing/${k}@${VERSION[k] ?? 1}`]?.url), Object.keys(d.assets ?? {}));
   }
-  await until(`['${mast}', '${rig}', '${wheel}', '${windlass}', '${ladder}'].every((id) => window.__p.content(id)?.loaded)`, 20_000);
+  await loads(`['${mast}', '${rig}', '${wheel}', '${windlass}', '${ladder}'].every((id) => window.__p.content(id)?.loaded)`, 20_000);
 
   // every part squared to her body (its bow hers, whatever way camber drew her), upright, at its real size, on her deck
   {
@@ -202,22 +208,22 @@ try {
     check("fore and aft as put: the windlass forward of the mast, the wheel aft of it", placed.windlass.inBody[2] < placed.mast.inBody[2] && placed.mast.inBody[2] < placed.wheel.inBody[2], placed);
   }
   await P(`setCam(${JSON.stringify(editCam)})`);
-  await sleep(400);
+  await b.rest(400);
   await shot("1-rigged");
   // and from closer, off her bow, to see the rig stand on her
   {
     const m = await P(`worldOf('${hull}')`);
     const body = bodyOfHull(m);
     await P(`setCam(${JSON.stringify({ position: body.origin.map((v, i) => v + 9 * body.bow[i] + 8 * body.stbd[i] + [0, 6, 0][i]), target: body.origin.map((v, i) => v + [0, 4, 0][i]) })})`);
-    await sleep(500);
+    await b.rest(500);
     await shot("2-rigged-bow");
   }
 
   // ─── playing: she floats, and sails bow first ────────────────────────────
   // (no Play to switch to: sailing has run since her traits arrived, editing included)
-  check("sailing runs, and this view simulates", (await until("!!window.__p.ctx() && window.__p.simulating()", 15_000)) === true, await P("running()"));
+  check("sailing runs, and this view simulates", (await loads("!!window.__p.ctx() && window.__p.simulating()", 15_000)) === true, await P("running()"));
   check("she's a ship to the sim: helm, sail, anchor and ladder found aboard her", await until(`(() => { const s = window.__p.stations('${hull}'); return s && s.helm === '${wheel}' && s.sail === '${rig}' && s.anchor === '${windlass}' && s.ladder === '${ladder}'; })()`, 5000), await P(`stations('${hull}')`));
-  await sleep(2500);
+  await b.rest(2500);
   // float: her body's origin (midships, on her design waterline) against the water under it, frame by frame
   {
     const t = await P(`track('${hull}', ${JSON.stringify(ORIGIN)}, 3000)`);
@@ -232,7 +238,7 @@ try {
     // settled on the reach: way on, the leeway of getting going gone
     const trace = [];
     for (let i = 0; i < 6; i++) {
-      await sleep(2500);
+      await b.rest(2500);
       const q = await P(`read('${hull}')`);
       trace.push([n2((await P("clock()")) - t0), n2(q?.speed ?? 0), deg(q?.heel ?? 0)]);
     }
@@ -257,7 +263,7 @@ try {
     const m = await P(`worldOf('${hull}')`);
     const body = bodyOfHull(m);
     await P(`setCam(${JSON.stringify({ position: body.origin.map((v, i) => v + 26 * body.aft[i] + 17 * body.stbd[i] + [0, 7, 0][i]), target: body.origin.map((v, i) => v + 2 * body.bow[i] + [0, 6, 0][i]) })})`);
-    await sleep(300);
+    await b.rest(300);
     await shot("3-under-sail");
   }
 
@@ -271,7 +277,7 @@ try {
     const mw = await P(`worldOf('${mast}')`);
     const mastIn = inBody(body, [mw[12], mw[13], mw[14]]);
     await P(`place('${hull}', [${mastIn[0] + 1.2}, ${mastIn[1] + 1}, ${mastIn[2] + 2}], 0.15, -0.1)`);
-    await sleep(2000);
+    await b.rest(2000);
     const me = await P("me()");
     const m2 = await P(`worldOf('${hull}')`);
     const b2 = bodyOfHull(m2);
@@ -286,13 +292,13 @@ try {
     const ww = await P(`worldOf('${wheel}')`);
     const wIn = inBody(b2, [ww[12], ww[13], ww[14]]);
     await P(`place('${hull}', [${wIn[0]}, ${wIn[1] - 0.6}, ${wIn[2] + 0.9}], 0, -0.45)`);
-    await sleep(600);
+    await b.rest(600);
     const aim = await P(`aimAt('${wheel}')`);
-    if (aim) { await b.move(aim.x, aim.y); await sleep(200); }
+    if (aim) { await b.move(aim.x, aim.y); await b.rest(200); }
     const verbs = await P("verbs()");
     check("at the wheel, the use prompt offers the helm", !!aim && verbs.some((v) => v.command === "helm" && !v.disabled), { aim, verbs, hovered: await P("hovered()"), me: await P("me()"), asked: r3([wIn[0], wIn[1] - 0.6, wIn[2] + 0.9]) });
     await press("f");
-    await sleep(300);
+    await b.rest(300);
     check("F takes the helm: standing at the wheel", (await P("me()"))?.station === wheel, await P("me()"));
     await shot("5-at-the-helm");
 
@@ -301,7 +307,7 @@ try {
     {
       const spot = `[${mastIn[0]}, ${mastIn[1] + 1}, ${mastIn[2] + 3}]`;
       await P(`place('${hull}', ${spot}, 0, 0.3)`);
-      await sleep(600);
+      await b.rest(600);
       const bh = bodyOfHull(await P(`worldOf('${hull}')`));
       const mr = await P(`worldOf('${rig}')`);
       const eyeB = (await P("me()"))?.eye ?? [0, 0, 0];
@@ -312,14 +318,14 @@ try {
       const d = sub(boom, eyeB);
       const [dx, dy, dz] = [dot(d, bh.stbd), dot(d, bh.up), dot(d, bh.aft)];
       await P(`place('${hull}', ${spot}, ${Math.atan2(-dx, -dz)}, ${Math.atan2(dy, Math.hypot(dx, dz))})`);
-      await sleep(400);
+      await b.rest(400);
       // she rolls under way, and the boom is thin: aim again, a few times, until the pointer's on it
       let aimB = null, verbsB = [], hoveredB = null;
       for (let k = 0; k < 6; k++) {
         aimB = await P(`aimNearest('${rig}')`);
         if (!aimB) break;
         await b.move(aimB.x, aimB.y);
-        await sleep(120);
+        await b.rest(120);
         verbsB = await P("verbs()");
         hoveredB = await P("hovered()");
         if (verbsB.some((v) => v.command === "sail")) break;

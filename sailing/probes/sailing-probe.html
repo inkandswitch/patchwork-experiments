@@ -36,6 +36,8 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
+
+let time = null; // the page's manual clock (scene's manualTime): window.__time
 // ?lock=1: pointer lock granted (headless Chrome refuses it), so the use prompt's centre ray runs
 if (new URLSearchParams(location.search).has("lock")) await import("./lock-shim.js");
 
@@ -58,7 +60,7 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
@@ -69,6 +71,7 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const scene = repo.add(emptyScene({ title: "Sailing probe", view: { grid: false } }));
@@ -78,11 +81,14 @@ try {
   A.other = B; B.other = A;
   const hostA = document.getElementById("a"), hostB = document.getElementById("b");
   hostA.repo = repo; hostB.repo = repo;
+  hostA.time = time; hostB.time = time;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   const cleanups = { a: Tool(A, hostA), b: null };
   const dbg = { a: hostA.querySelector(".scene-stage").__sceneDebug, b: null };
   const hosts = { a: hostA, b: hostB };
 
+  /** Does a pointer at canvas px (x, y) reach the canvas, not a HUD or a panel over it? (a pick sees only 3D) */
+  const onCanvas = (v, r, x, y) => document.elementFromPoint(r.left + x, r.top + y) === v.canvas;
   const P = (window.__p = {
     errors, scene, repo, hostA, hostB,
     get A() { return dbg.a; },
@@ -170,35 +176,26 @@ try {
       });
       P.docSeen = seen;
     },
-    /** sample a view's displayed hull every animation frame for `ms`: [t, x, y, z, yaw, roll] */
+    /** sample a view's displayed hull every frame for `ms` of the page's clock: [t, x, y, z, yaw, roll] */
     async sampleFrames(id, w, ms = 1500) {
       const out = [];
-      const t0 = performance.now();
-      await new Promise((done) => {
-        const f = () => {
-          const m = dbg[w]?.viewport.worldOf(id);
-          if (m) out.push([performance.now() - t0, m[12], m[13], m[14], Math.atan2(m[8], m[10]), Math.asin(Math.max(-1, Math.min(1, m[1])))]);
-          if (performance.now() - t0 < ms) requestAnimationFrame(f);
-          else done();
-        };
-        requestAnimationFrame(f);
-      });
+      const t0 = time.now();
+      for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
+        await time.step(1, { draw: false }); // (no picture: a sample)
+        const m = dbg[w]?.viewport.worldOf(id);
+        if (m) out.push([time.now() - t0, m[12], m[13], m[14], Math.atan2(m[8], m[10]), Math.asin(Math.max(-1, Math.min(1, m[1])))]);
+      }
       return out;
     },
-    /** per frame for `ms`: the hull's height over the water under its origin, at the clock the view draws the sea at */
+    /** per frame for `ms` of the page's clock: the hull's height over the water under its origin, at the clock the view draws the sea at */
     async sampleFloat(id, w, ms = 2000) {
       const out = [];
-      const t0 = performance.now();
-      await new Promise((done) => {
-        const f = () => {
-          const m = dbg[w]?.viewport.worldOf(id);
-          const sea = P.ctx(w)?.sea;
-          if (m && sea) out.push(m[13] - sea.ocean.heightAt(m[12], m[14], sea.clock()));
-          if (performance.now() - t0 < ms) requestAnimationFrame(f);
-          else done();
-        };
-        requestAnimationFrame(f);
-      });
+      for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
+        await time.step(1, { draw: false }); // (no picture: a sample)
+        const m = dbg[w]?.viewport.worldOf(id);
+        const sea = P.ctx(w)?.sea;
+        if (m && sea) out.push(m[13] - sea.ocean.heightAt(m[12], m[14], sea.clock()));
+      }
       return out;
     },
     /**
@@ -223,7 +220,7 @@ try {
           const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
           if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
           const hit = v.pick(x, y);
-          if (hit && under(hit.id)) return { x: r.left + x, y: r.top + y, id: hit.id };
+          if (hit && under(hit.id) && onCanvas(v, r, x, y)) return { x: r.left + x, y: r.top + y, id: hit.id };
         }
       }
       return null;
@@ -241,7 +238,7 @@ try {
         const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
         if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
         const hit = v.pick(x, y);
-        if (hit && under(hit.id)) return { x: r.left + x, y: r.top + y, id: hit.id, distance: hit.distance ?? null };
+        if (hit && under(hit.id) && onCanvas(v, r, x, y)) return { x: r.left + x, y: r.top + y, id: hit.id, distance: hit.distance ?? null };
       }
       const c = v.pick(p.x, p.y);
       return { miss: true, at: { x: p.x, y: p.y, w: r.width, h: r.height }, centre: c && { id: c.id, distance: c.distance ?? null } };
@@ -255,7 +252,7 @@ try {
       let best = null, n = 0;
       for (let y = 4; y < r.height - 4; y += step) for (let x = 4; x < r.width - 4; x += step) {
         const hit = v.pick(x, y);
-        if (!hit || !under(hit.id)) continue;
+        if (!hit || !under(hit.id) || !onCanvas(v, r, x, y)) continue;
         n++;
         if (!best || hit.distance < best.distance) best = { x: r.left + x, y: r.top + y, id: hit.id, distance: hit.distance };
       }

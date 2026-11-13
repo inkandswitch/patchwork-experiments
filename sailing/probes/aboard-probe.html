@@ -13,7 +13,9 @@
      calls: the start screen's "Ship at anchor" template (A clicks it), then
      the parts bin's Card table in her cockpit and Lost Cities on the table
      (api.part). B opens it after. Nothing here imports another package's
-     source: each package's built dist is loaded as its plugins. -->
+     source: each package's built dist is loaded as its plugins.
+     Both views run on one manual clock (scene's manualTime, window.__time):
+     nothing moves until the probe steps it, broadcasts included. -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -27,6 +29,18 @@
 </style>
 <div id="a"></div><div id="b"></div>
 <script type="module">
+// ?seed=N (default 1): Math.random seeded (mulberry32), so the template's sea and wind, and
+// whatever else draws on it (ids, sessions), are the same every run
+{
+  let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
@@ -40,7 +54,8 @@ const origWarn = console.warn, origError = console.error;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
 
-// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late (of the page's clock).
+let time = null;
 function peer(handle) {
   const eph = new Set();
   const p = {
@@ -50,7 +65,7 @@ function peer(handle) {
     change: (fn) => handle.change(fn),
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
-    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
     eph,
   };
   return p;
@@ -70,6 +85,25 @@ const portable = (doc) =>
 // 4 × 4, column-major
 const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Loading (packages, content): the wall's, with the page's frames going at its pace meanwhile. → whether `pred` held within ms */
+async function loaded(pred, ms = 15_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+/** Run `fn` (async: loading, a part laid out) with the page's frames going at the wall's pace until it's done. */
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
 
 /** Where the Card table goes in the sloop's cockpit, in her hull's frame: between the benches, forward of the wheel, its long side across her. */
 const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0], scale: 1 };
@@ -83,12 +117,16 @@ try {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
   const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
-  // an empty scene, as the scene datatype's init makes it
-  const scene = repo.add(emptyScene());
+  // an empty scene, as the scene datatype's init makes it. With ?held, its world starts paused: setting up,
+  // loading and dealing take the wall's time (as many frames as they take), so aboard-run resumes the world
+  // where its scripted part begins, and every run sails the same sea from the same moment
+  const held = new URLSearchParams(location.search).has("held");
+  const scene = repo.add({ ...emptyScene(), ...(held ? { clock: { running: false, t: 0 } } : {}) });
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);
@@ -96,12 +134,16 @@ try {
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
   hosts.a.repo = repo; hosts.b.repo = repo;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  hosts.a.time = time; hosts.b.time = time;
   Tool(A, hosts.a);
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
   const told = { a: [], b: [] };
-  setInterval(() => {
+  // every notice either view shows, collected every frame (a notice lives 6 s of the page's clock)
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
-  }, 20);
+  };
+  time.frame(collect);
   const objects = () => scene.doc().objects ?? {};
   const byName = (n) => Object.entries(objects()).find(([, o]) => o.name === n)?.[0] ?? null;
   const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
@@ -148,11 +190,14 @@ try {
      * the Card table into her cockpit, Lost Cities onto the table, a home
      * view over the cockpit. → the ids, or { error }.
      */
-    async build({ title = "Lost Cities aboard" } = {}) {
+    build: (o) => pumping(() => build(o)),
+  });
+  /** (P.build, its frames pumped) */
+  async function build({ title = "Lost Cities aboard" } = {}) {
       const button = hosts.a.querySelector('[data-template="ship-at-anchor"]');
       if (!button) return { error: "no Ship at anchor on the start screen", templates: P.templates("a") };
       button.click();
-      for (let i = 0; i < 300 && !(withTrait("sailing.ship") && dbg.a.host.record("sailing")?.api); i++) await sleep(50);
+      await loaded(() => withTrait("sailing.ship") && dbg.a.host.record("sailing")?.api);
       const hull = withTrait("sailing.ship");
       if (!hull) return { error: "no ship" };
       const api = apiOf("a");
@@ -180,7 +225,10 @@ try {
         companionway: withTrait("traversal.exit"), hatch: withTrait("joints.slide"),
       });
       return { ...ids };
-    },
+  }
+  Object.assign(P, {
+    /** the world's clock running again (api.clock.resume, as the clock chip's ▶ does): → its t */
+    resume() { apiOf("a").clock.resume(); return apiOf("a").clock.t(); },
     openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
 
     /** the doc's shape, for the checks */
@@ -319,21 +367,17 @@ try {
     /** the sea's wind freshened (as the inspector's Sea field writes it) */
     setWind(speed) { scene.change((d) => { d.traits["sailing.sea"].wind.speed = speed; }); return true; },
     /**
-     * Sample, every animation frame for `ms`, where a point on the table is
-     * on each view's page, and where the table is in the world.
+     * Sample, every frame for `ms` of the page's clock, where a point on the
+     * table is on each view's page, and where the table is in the world.
      */
     async sampleTable(ms = 10000) {
       const out = { a: [], b: [], world: [] };
-      const t0 = performance.now();
-      await new Promise((done) => {
-        const f = () => {
-          for (const w of ["a", "b"]) { const p = P.pageOf(ids.table, TABLE_TOP, w); if (p) out[w].push([p.x, p.y]); }
-          const m = dbg.a.viewport.worldOf(ids.table);
-          if (m) out.world.push([m[12], m[13], m[14], Math.atan2(m[8], m[10])]);
-          if (performance.now() - t0 < ms) requestAnimationFrame(f); else done();
-        };
-        requestAnimationFrame(f);
-      });
+      for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
+        await time.step(1, { draw: false }); // (no picture: a sample)
+        for (const w of ["a", "b"]) { const p = P.pageOf(ids.table, TABLE_TOP, w); if (p) out[w].push([p.x, p.y]); }
+        const m = dbg.a.viewport.worldOf(ids.table);
+        if (m) out.world.push([m[12], m[13], m[14], Math.atan2(m[8], m[10])]);
+      }
       return out;
     },
     /** a page point over object `id` in view `w` (around its origin, until a pick hits it) */
