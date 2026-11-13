@@ -46,6 +46,9 @@ Two things a link is not:
 
 ## Where we are
 
+*As written, before build step 1; line references are to the code then.
+Steps 1–7 have since been built (Build order, below).*
+
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
 (`src/stage/stage.js:336`). Every per-object table is keyed by a doc-local
 id. Presence, claims, activation, packages and the audience all read that
@@ -600,7 +603,7 @@ ships alone and proves something.
 8. [T] **Activities and `requires` go**, with `always` and `general:
    false`. *Proves:* every suite passes with less stage.
 9. [T] **STAGE.md, DESIGN.md and SCOPE.md** follow; old docs ditched,
-   examples republished.
+   examples republished. *Begun ahead of step 8:* see TOOLS.md step 9.
 10. **Split View from Stage, with one stage**: `api.view` with the body
     stack, held tool, focus and selection; the session in the view.
     *Proves:* suites pass; the I1 harness exists.
@@ -673,4 +676,5 @@ The five open questions were put to the project lead and answered:
 4. **The private layer is a doc the view links** (section 10). Accepted,
    before the hiding work's steps 5 and 6 are built.
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
-   `lay`. Accepted; build step 4 goes ahead.
+   `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
+   built).

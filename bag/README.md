@@ -256,9 +256,9 @@ container needs, this is what it does instead:
 
 | needed | the contract has | so the bag |
 |---|---|---|
-| "this was put down on me" | `landing`: a question the hand asks while it carries, not asked at all once the carrier has flipped the piece, and no event when it lets go | remembers which object this view's hand asked about, and when the doc then shows that object moved, looks at whether it lies on a bag. A drop is therefore two changes (the hand's put-down, then the bag's removal), not one |
-| carry something from a key press, or something that doesn't exist yet | `carry(id, ev, opts)` returns a session "to give back from their press" | arms itself, feeds the pointer to the hand's session, and ends it on the next click |
-| "is my own hand still holding this?" | `heldBy(id)`: peers only | infers that the hand gave way from a peer's hold appearing |
+| "this was put down on me" | `landing`: a question the carry asks while it carries, not asked at all once the carrier has flipped the piece, and no event when it lets go | remembers which object this view's carry asked about, and when the doc then shows that object moved, looks at whether it lies on a bag. A drop is therefore two changes (the carry's put-down, then the bag's removal), not one |
+| carry something from a key press, or something that doesn't exist yet | `carry(id, ev, opts)` returns a session "to give back from their press" | holds the drawn piece as a tool (`api.hold`), feeds the pointer to the carry's session, and ends it on the next click |
+| "is my own carry still holding this?" | `heldBy(id)`: peers only | infers that the carry gave way from a peer's hold appearing |
 | put an object back as it was | `addObject` (a new id, a new render doc, asynchronous) and `remove`; no insert | writes `objects[id]` and `order` itself, in one change |
 | what a copy leaves behind (runtime traits) | the rule is in `scene/src/transfer.js`, not on `api` | keeps every trait (a move, not a copy), dropping only `claims` |
 | two docs changed together | nothing | the doc shape above |

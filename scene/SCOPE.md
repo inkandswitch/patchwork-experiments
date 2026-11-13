@@ -7,48 +7,56 @@ they cost, a recommendation, and what it would change in the code.
 
 ## Where we are
 
-Today an extension's scope comes from its own reasons (`activeSet` in
+*Since written:* §2 is built (build step 1), and so are TOOLS.md's bodies,
+held tool and carry trait (steps 3 and 6), which answer §4, §6 and §7 in
+their own way; each section says what was built. [STAGE.md](STAGE.md),
+"Activation" and "The input chain", is the code as it is now.
+
+An extension's scope comes from its own reasons (`activeSet` in
 `src/stage/activation.js`, `chainOrder` and `holdersFor` in
-`src/stage/chain.js`):
+`src/stage/chain.js`). The input chain is: the held tool, the widget's
+owner, the holders nearest first, the general extensions, the top body.
 
 | Scope | Reason | Hears input |
 |---|---|---|
-| `scene` | a trait on the scene | step 5, every pointer event; step 4 as well when one of its objects is in the hit chain (now settled by §2: step 4 only, its holder the nearest link carrying its trait, the scene itself last) |
-| `objects` | only traits on objects | step 4, and only when the hit chain reaches one of its objects, with `ev.holder` set to the nearest |
-| `general` | no traits declared at all, `always`, or only `requires` | step 6 (now step 5, since §2 merged the old steps 4 and 5) |
+| `scene` | a trait on the scene | step 3, every pointer event, at its holder: the nearest link of the hit chain carrying its trait, the scene itself last |
+| `objects` | only traits on objects | step 3, and only when the hit chain reaches one of its objects, with `ev.holder` set to the nearest |
+| `general` | no traits declared at all, `always`, or (until TOOLS.md step 8) only `requires` | step 4 |
 
 `requires` makes an extension run but lends it no scope. Three details of
-the code matter below:
+the code mattered when this was written:
 
-- **Holders come in running order, not by nearness.** Step 4 offers every
-  extension with a holder in the chain in running order. So when the table
-  and the boat both hold something under the pointer, it's registry order
-  that picks between them, not which one is nearer. (Now settled by §2:
-  holders go nearest first.)
-- **Key events have no hit** (`noHit` in `router.js`). An `objects`
-  extension never hears a key unless it has armed or has a session open.
-- **A scope is one per extension.** Tabletop keeps its seats in one scene
-  trait, so a scene has at most one table.
+- **Holders came in running order, not by nearness**, so when the table
+  and the boat both held something under the pointer, registry order
+  picked between them. (Settled by §2: holders go nearest first.)
+- **Key events have no hit** (`noHit` in `router.js`), so an `objects`
+  extension never hears a key in the chain. (Now keys go by the one key
+  order of TOOLS.md §5: the gesture's, the held tool's and the body's
+  declared keys, then the key map, which runs commands on attention's path.)
+- **A scope is one per extension.** Seats are one scene trait (`seats`, now
+  the seats package's), so a scene has at most one table of seated
+  players. (COMPOSITION.md's answer: each game its own doc.)
 
 ## The cases
 
 | Case | Traits today | What it needs from scope |
 |---|---|---|
 | CAD boat editor | none of its own; the editor's parts (`general`, in the `"edit"` activity) | editing has to win while you're editing, even over play traits on the same objects (activities now settle this: a play extension doesn't run while editing) |
-| Game table | `tabletop.seats` on the scene; `tabletop.zone` and `tabletop.hidden` on objects | seats, zones and face-up all relative to the table |
-| Arena | `arena.level` on the scene; `arena.target` and `arena.spawn` on objects | walk and shoot anywhere; spawns where their objects are |
-| **Sailing sim** | (planned) | a boat that moves as one; a tiller and sheets on it; players walking the deck; a card table in the saloon; the whole thing inside an arena level |
+| Game table | `seats` (the seats package's) on the scene; `tabletop.zone` and `tabletop.card` on objects | seats, zones and face-up all relative to the table |
+| Arena | `arena.level` on the scene; `arena.target` and `walk.spawn` (the walk package's) on objects | walk and shoot anywhere; spawns where their objects are |
+| **Sailing sim** | `sailing.sea` on the scene; `sailing.ship` on the hull, `sailing.helm`, `sailing.winch` and the rest on her fittings | a boat that moves as one; a tiller and sheets on it; players walking the deck; a card table in the saloon; the whole thing inside an arena level |
 
 The sailing sim is the case that breaks today's model. Here is its chain
 when you point at a card on the saloon table:
 
 ```
-card (tabletop.hidden) → table (tabletop seats) → saloon sole → hull (sailing.boat) → [groups] → scene (arena.level)
+card (tabletop.card) → table → saloon sole → hull (sailing.ship) → [groups] → scene (seats, sailing.sea, arena.level)
 ```
 
-Three extensions have a claim on that card. Today the tabletop and arena
-are both `scene` scope, and with two scene traits only registry order
-decides which of them goes first.
+Three extensions have a claim on that card. When this was written the
+tabletop and arena were both `scene` scope, and with two scene traits only
+registry order decided which of them went first. (§2 settled it: nearest
+first.)
 
 ## 1. Is scope a property of an extension or of a trait?
 
@@ -109,7 +117,7 @@ scene placement as depth = chain length. That merges steps 4 and 5 into a
 single walk up the chain. It's a few lines in `chain.js`, plus tests: a card
 on a table on a boat, and two extensions on one object.
 
-**Done.** One difference from the plan above: the scene's placement is found
+**Done** (build step 1). One difference from the plan above: the scene's placement is found
 by `holdersFor`, which walks the hit chain with the scene appended as its last
 link (`traitsOf(null)` is the scene's traits, holder id `null`), rather than by
 `chainOrder` reading the `scene` label. So input reads no scope label but
@@ -137,41 +145,45 @@ two peers order the same pair differently, nothing diverges in the doc.
 
 ## 4. Scene traits versus traits on an object
 
-*Superseded in part by [TOOLS.md](TOOLS.md) (build step 3): `view.tool`,
-`local.tool`, `effectiveTool` and `parts/hand.js` are gone. Carrying is
-the `scene.carry` trait, run by `parts/carry.js`, so the per-scope view
-default for `tool` below has nothing left to choose; step 9 rewrites this
-section.*
-
 The rule: **anything that belongs to a thing lives on that object, in its
 frame.** Scene traits are for what really is about the whole document:
 rules of the world, catalogues and scoreboards.
 
 | Trait | Today | Should be |
 |---|---|---|
-| `tabletop.seats` (with each seat's `camera` in world coordinates) | scene | on the table object, with cameras in the table's frame. A scene placement still works and means "the whole scene is the table" |
-| `tabletop.zone` (a box in its object's frame) | object | already right |
-| face up (`isFaceUp`: +Y in the world) | implied | +Y in the table's frame, so cards on a heeling boat don't flip |
-| `arena.level` (the block catalogue) | scene | scene: it's a catalogue, not a place |
-| `arena.spawn`, `arena.target` | object | already right: attach them to the boat and they sail |
-| `doc.view.tool` and other view defaults | scene | allow a `view` on an object (below) |
+| Trait | When written | Should be | As built |
+|---|---|---|---|
+| seats (then `tabletop.seats`, with each seat's `camera` in world coordinates) | scene | on the table object, with cameras in the table's frame | `seats`, the seats package's, still on the scene; a seat's camera may be given `in` an object's frame (the table), so it rides a table aboard a ship. One table per doc is COMPOSITION.md's to lift, a game being its own doc |
+| `tabletop.zone` (a box in its object's frame) | object | already right | unchanged |
+| face up (`isFaceUp`: +Y in the world) | implied | +Y in the table's frame, so cards on a heeling boat don't flip | built: +Y in the frame the card lies in, its parent's (tabletop's `faceUpIn`) |
+| `arena.level` (the block catalogue) | scene | scene: it's a catalogue, not a place | unchanged |
+| `arena.spawn`, `arena.target` | object | already right: attach them to the boat and they sail | the spawn is now `walk.spawn`, the walk package's |
+| `doc.view.tool` and other view defaults | scene | allow a `view` on an object (below) | `view.tool` is gone (below) |
 
-**View defaults per scope.** `local.tool` is one value for the whole view.
-On a table a drag should carry, on the boat it should pull a sheet, and in
-the editor it should move. *Option:* `api.pref(key, fallback, at?)` reads
-`local` → the nearest object in `at`'s chain with a `view[key]` →
-`doc.view` → fallback. The hand would ask with the pressed object's id.
-*Recommendation:* do it, but only for keys a part asks about with a target
-(`tool`). The camera and display toggles stay per view.
+**View defaults per scope**, as proposed: `local.tool` was one value for
+the whole view, but on a table a drag should carry, on the boat it should
+pull a sheet, and in the editor it should move; so `api.pref(key, fallback,
+at?)` would read a `view[key]` on the nearest object in `at`'s chain.
 
-**Code.** Tabletop: seats move to `tabletop.seats` on a table object; a
-scene placement stays valid (no migration: older scenes are replaced).
-`seatsOf` and `isFaceUp` become per holder. The seat picker becomes a
-"Sit here" command on the table (from the menu) plus a picker for the table
-you're at. Stage: `pref` takes `at`. `effectiveTool` takes the doc view it
-resolved.
+**As built** ([TOOLS.md](TOOLS.md) §1, §3, §4; build steps 3 and 6):
+there is no tool to default, per scope or per view. `view.tool`,
+`local.tool`, `effectiveTool` and the hand part are gone. The empty hand is
+the default everywhere, and what a press does follows from the chain: a
+press on a card carries it because the card has the `scene.carry` trait; a
+press on a station is sailing's; an unclaimed click selects in the orbit
+body and does nothing walking. A tool is held only when picked up: one
+slot per view (`local.held`), filled by a tool command (measure, arena's
+gun) or `api.hold` (a bag's drawn piece), emptied by Escape. `pref` takes
+no `at`.
 
 ## 5. Does a scope move?
+
+*Since built:* the camera rides as `camera.ride` (a base ride) and a body's
+own ride, which wins (STAGE.md, "Riding"); the carry and the halo work in
+the frame of the object's doc parent as drawn this frame, so a card on a
+sailing hull doesn't jump; the walk body rides what it stands on, and
+sailing walks her deck in her own frame. Landing doesn't attach: a carried
+thing keeps its doc parent.
 
 Yes. The boat moves as one, and everything on board moves with it
 because it's attached: world = parent's world · local. That covers seats,
@@ -214,7 +226,13 @@ while it moves:
 
 > Superseded in part (build step 6): arms became bodies on one stack and the
 > held tool in one slot (TOOLS.md §4); there is no `api.arm`. Read "arm"
-> below as the note's earlier word.
+> below as the note's earlier word. Keys go by TOOLS.md §5's one order (the
+> gesture's, the held tool's and the body's declared keys, then the key map
+> over attention's path: the selection, else the look's hit and what it's
+> attached to, then the scene), not selection → scene → hovered. A walker
+> passes a press it doesn't want down the chain without `ev.holders`: the
+> top body is offered presses after the chain, so a station's holder gets
+> the press first.
 
 - **Keys have no hit**, so scope can't pick who gets them, and it shouldn't.
   The key map runs commands against selection → scene → hovered, and that
@@ -245,12 +263,27 @@ while it moves:
 
 ## 7. `requires` and the parts it pulls in
 
-`requires` lends no scope, so a required part is `general` scope and runs
-everywhere. In the sailing scene the tabletop requires `scene.hand`, a
-table's doc suggests the hand as the tool (`view.tool: "hand"`), and
-now a drag carries the arena's walls.
+**As built** ([TOOLS.md](TOOLS.md) §1, build step 3): "can be carried" is
+data, the `scene.carry` trait on the object. The carry part
+(`src/parts/carry.js`, `scene.carry`, which replaced the old `scene.hand`)
+declares that trait, so it runs by trait, with object scope, wherever the
+doc has something carryable, and nothing requires it. Tabletop's pieces,
+dice, cups and whatever comes out of a bag carry the trait; an arena's
+walls, a hull and her fittings simply lack it, so a drag on them never
+carries them. `carryable(id)` stays as a veto for passing states only (a
+die under a cup). A press carries `ev.holder`, the nearest link of the hit
+chain with the trait, so a press on what's attached to a card carries the
+card.
 
-**Options.**
+`requires` still exists until TOOLS.md step 8, and still lends no scope: a
+table, dice, a bag, arena and sailing require the use prompt, the key map
+and notices (and some the menu or the framing), never the carry.
+
+**The problem it answered.** When this was written the tabletop required
+`scene.hand`, a required part is `general` scope and runs everywhere, and a
+table's doc suggested the hand as the tool (`view.tool: "hand"`), so in a
+sailing scene with a table aboard a drag carried the arena's walls. The
+options were:
 - **A.** Lend the requirer's scope. But the key map and notices are
   required too, and they must not be limited to hovering a table.
 - **B.** Leave `requires` alone, and let object parts ask which objects are
@@ -258,40 +291,29 @@ now a drag carries the arena's walls.
   that holders answer for their subtree.
 - **C.** Per-scope tool (section 4) only.
 
-**Recommendation: B together with C.** The table says its pieces are
-carryable, the arena says its blocks aren't while a level is being played,
-and with no opinion from anyone it behaves as it does today. **Code:** the
-hand collects `carryable` and checks it beside `canCarry`; tabletop and
-arena each add a few lines.
-
-**Built otherwise** (TOOLS.md §1, its build step 3): "can be carried" is the
-`scene.carry` trait on the object, declared by the carry part (`scene.hand`
-renamed `scene.carry`), so it runs by trait and nothing requires it; a wall
-or a hull simply lacks it. `carryable(id)` stays as a veto for passing states
-only (a die under a cup), and `view.tool` is gone.
+The recommendation was B with C. The trait does B's job as data instead of
+a collected rule, and needs no C.
 
 ## 8. What the sailing sim needs, in short
 
-*The `view.tool`, `pref(…, at)` and `parts/hand.js` rows below are superseded
-by [TOOLS.md](TOOLS.md): "the tool fits the place" is now which objects carry
-the `scene.carry` trait, and `carryable` is a veto for passing states only.*
+What this note asked for, and what sailing is built on now.
 
-| Need | Comes from |
-|---|---|
-| a boat is a scope | `sailing.boat` on the hull; everything on board attached under it (sections 1, 5) |
-| it moves as one | a continuous pose hold by one peer; readers use the displayed world (5) |
-| tiller and sheets | `sailing.station` objects on the boat; nearest holder wins the press (2); taking one is an arm (6) |
-| walking the deck | the walker's body in the frame of what it stands on, and presence that way (5) |
-| card table in the saloon | `tabletop.seats` on the table object, seats and face-up in its frame, landings attach (4, 5) |
-| inside an arena | `arena.level` stays a scene trait; targets on the boat just work (4) |
-| the tool fits the place | `view.tool` on the table and the boat (4); `carryable` (7) |
-| cameras that ride | `camera.follow` (5) |
-| one player per station; items in one person's hands; who simulates | claims, written in the doc, lapsing with their holder's presence (9.1) |
-| "F to use", reach, verbs you hold | the `scene.use` part; `from` and session-returning commands (9.2) |
-| crew you can see, holding things | avatars as presence in their frame, items claimed by their holder (9.3) |
-| the ship moves for everyone | one peer claims the simulation in the doc and streams the pose; inputs come from the stations' presence; handoff when its session leaves, settled by Automerge (9.4) |
-| cannonballs, spray | sends, simulated locally (9.5) |
-| the sea | an ocean extension: a surface layer, atmosphere, a water-height contribution (9.6) |
+| Need | Asked for | As built |
+|---|---|---|
+| a boat is a scope | `sailing.boat` on the hull; everything on board attached under it (sections 1, 5) | `sailing.ship` on the hull, her fittings attached under her with traits of their own |
+| it moves as one | a continuous pose hold by one peer; readers use the displayed world (5) | a pose hold by the view computing the clock; `worldOf` and rays see what's drawn |
+| tiller and sheets | `sailing.station` objects; nearest holder wins the press (2); taking one is an arm (6) | `sailing.helm`, `sailing.winch`, `sailing.mainsheet`…; nearest holder (2); taking one pushes sailing's `station` body |
+| walking the deck | the walker's body in the frame of what it stands on (5) | sailing's `aboard` body, her navmesh walker in her frame |
+| card table in the saloon | seats on the table object, face-up in its frame, landings attach (4, 5) | seats on the scene with cameras `in` the table; face up in the card's parent's frame; landings don't attach |
+| inside an arena | `arena.level` stays a scene trait; targets on the boat just work (4) | the same |
+| the tool fits the place | `view.tool` on the table and the boat (4); `carryable` (7) | no tool to fit: what carries has `scene.carry` (4, 7) |
+| cameras that ride | `camera.follow` (5) | `camera.ride`, and the top body's ride |
+| one player per station; items in one person's hands; who simulates | claims in the doc, lapsing with their holder's presence (9.1) | claims (STAGE.md, "Claims"); who simulates is the doc's `"clock"` claim |
+| "F to use", reach, verbs you hold | `scene.use`; `from` and session-returning commands (9.2) | `scene.use`; `reach: true` measured from the body's eye against its reach (2.5 m aboard); held verbs |
+| crew you can see, holding things | avatars as presence in their frame, one shared part (9.3) | sailing draws its crew and the walk package its walkers, each its own; nothing is held in a hand |
+| the ship moves for everyone | one peer claims the simulation and streams the pose (9.4) | her physics is a process on the doc's world clock (TOOLS.md §7) |
+| cannonballs, spray | sends, simulated locally (9.5) | not built |
+| the sea | an ocean extension: a surface layer, atmosphere, a water-height contribution (9.6) | sailing draws the sea at the clock's t; water height doesn't cross extensions |
 
 ## 9. Local interaction, the Sea of Thieves way
 
@@ -404,23 +426,23 @@ the shared part `scene.use` (`src/parts/use.js`). The rest still stand.
 
 ## Summary of changes, if all are taken
 
-| Where | Change |
-|---|---|
-| `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge: done |
-| `stage/router.js` | `ev.holders` for armed handlers |
-| `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` |
-| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
-| `stage/stage.js` | `api.claim` / `api.claimedBy` (claims as doc fields, lapsing with their holder's presence): done |
-| new part `scene.use` | the first-person use prompt over commands, held verbs; it passes commands' `state` a `from`, and `run` may return a session: done |
-| new part for avatars | drawing people from presence, in their frame, with what they hold (shared by the arena and the ship) |
-| `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents |
-| `parts/menu.js` | sections by holder, nearest first |
-| tabletop | seats on the table object, per-holder seats, zones and face-up |
-| arena | the walker's body relative to what it stands on; `carryable` for blocks |
-| STAGE.md | "Activation" and "The input chain" rewritten around placements |
+| Where | Change | Now |
+|---|---|---|
+| `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge | done (build step 1) |
+| `stage/router.js` | `ev.holders` for armed handlers | not needed: the body is offered presses after the chain (§6) |
+| `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` | `camera.ride` and body rides instead of `follow`; `holders`, `holderOf` and `pref(…, at)` not built |
+| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world | not needed: readers that care read `worldOf`, which is always what's drawn |
+| `stage/stage.js` | `api.claim` / `api.claimedBy` (claims as doc fields, lapsing with their holder's presence) | done |
+| new part `scene.use` | the first-person use prompt over commands, held verbs; it passes commands' `state` a `from`, and `run` may return a session | done; `from` and `reach` now come from the body, on every surface |
+| new part for avatars | drawing people from presence, in their frame, with what they hold (shared by the arena and the ship) | not built: the walk package and sailing each draw their own |
+| `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents | `parts/carry.js` (`scene.carry`, by trait); `carryable` a veto; displayed parent frame; no attach |
+| `parts/menu.js` | sections by holder, nearest first | not built |
+| tabletop | seats on the table object, per-holder seats, zones and face-up | face-up in its frame; seats moved to `seats/`, still on the scene |
+| arena | the walker's body relative to what it stands on; `carryable` for blocks | the walk body (`walk/`) rides what it stands on; blocks lack `scene.carry` |
+| STAGE.md | "Activation" and "The input chain" rewritten around placements | done |
 
-None of this changes what runs (`activeSet`) or the stopping rules. Section
+None of this changed what runs (`activeSet`) or the stopping rules. Section
 9's items are additions: each can land on its own, and the arena or the
-table can use each before the ship does. The
-first two rows are the decision that matters: once scope is where a trait
-sits, and precedence is nearness, the rest can follow one case at a time.
+table can use each before the ship does. The first two rows were the
+decision that mattered: once scope is where a trait sits, and precedence is
+nearness, the rest can follow one case at a time.

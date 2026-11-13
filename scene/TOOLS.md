@@ -35,6 +35,11 @@ finite cases, permissions left to Keyhive.
 
 ## Where we are
 
+*As written, before build step 2; the "Today" column is the code then.
+Steps 2, 3, 6 and 7 have since been built (Build order, below), so most of
+it has gone where the last column says; activities and `requires` remain
+until step 8.*
+
 "Activity" is one value per view that decides four things:
 
 | Strand | Today | Goes to |
@@ -616,9 +621,10 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   context, attention's (`src/parts/resolver.js` `keyContext`: its hit,
   else the look), and `reach: true` on a command
   is checked once, in `commandState`: beyond reach it is disabled, "too
-  far". The four REACH constants went: joints and traversal have one
-  command each; seats' verb says `reach: true`; sailing's station verbs
-  do too. Reaches: orbit Infinity, walk 2 m, seat 2 m, sailing's crew 2.5
+  far". The four REACH constants went as verb checks: joints and
+  traversal have one command each; seats' verb says `reach: true`;
+  sailing's station verbs do too (`SEAT_REACH` stays in `seats/` as the
+  seat body's reach). Reaches: orbit Infinity, walk 2 m, seat 2 m, sailing's crew 2.5
   m. The pointer is `src/stage/pointer.js` (an open drawer also wants it),
   the ladder `src/stage/ladder.js` with seven rungs (a popover, `api.popover`,
   between the field and the gesture: the menu, the add dialog and the body
@@ -631,16 +637,20 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   without them. Bag's drawn piece in hand is a held tool.
   Three deviations, each the smaller step: (1) **walk** is a new package,
   `walk/`, replacing arena's walker only, with the spawn trait renamed
-  `walk.spawn` (arena's pad part writes it; doom asks for that part, so
-  E1M1 lists `walk`); it rides what it stands on. **Sailing keeps its
+  `walk.spawn` (arena's pad part writes it; doom asks for that part); it
+  rides what it stands on. E1M1 lists `walk` because its publisher says
+  so (`doom/probes/publish-e1m1.mjs`): the walk extension declares no
+  traits, so nothing in a doc calls for its package and reconcile never
+  adds it. **Sailing keeps its
   navmesh walker as its own body, `aboard`**, with `station` pushed over
   it: the walk body stands on what rays hit and knows nothing of her
   ladder, the water or a vault over her rail, which the navmesh walker
   proves invariants for; folding them into one walker waits until the walk
   body can stand on a moving deck as well as the navmesh does. (2) A body
   says `here: false` when it needs a place (a seat, a station), so the chip
-  doesn't offer it, and a sitting may carry its own `keys` and `label` (a
-  station's keys differ by kind). (3) The key map tries attention's whole
+  doesn't offer it, and a sitting may carry its own `keys` (a station's
+  keys differ by kind; a sitting's `label`, which sailing answers, isn't
+  read: the chip shows the body's, "At a station"). (3) The key map tries attention's whole
   path, the look's hit then what it's attached to, before the scene, so
   Delete on a spoke removes the spoke and F on it takes the helm; the prompt
   shows the first target along that path with verbs. Gun, arena's, is a
@@ -674,6 +684,12 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   rewritten. DESIGN.md: "Activities" becomes "Bodies, tools and the
   clock". SCOPE.md: §4's per-scope tool goes; §7's walls are
   `scene.carry`'s. Old docs ditched, examples republished.
+  *Begun, ahead of step 8* (2026-11-13): the three notes describe the code
+  after step 7. STAGE.md's Words gain Body, Held tool, Selection, Halo,
+  Attention, Carry, Clock, Process and Drawer; Activation and the chain are
+  rewritten (no Arming section was left); DESIGN.md has "Bodies, tools and
+  the clock"; SCOPE.md's §4 and §7 say what was built. Activity stays in
+  Words, marked as what step 8 removes. Examples aren't republished.
 
 ## What it costs
 

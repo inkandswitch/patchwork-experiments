@@ -3,8 +3,9 @@
 Board games as data. A **tabletop game** is one JSON document in the
 [tabletop-game format](GAME-FORMAT.md): what each piece looks like and is,
 and where everything starts. **Set up a table** lays it out in a new
-[scene](../scene/README.md) and opens it in the scene's **hand**, where
-everyone with the scene open can carry pieces around: they snap to the
+[scene](../scene/README.md) and opens it, where everyone with the scene
+open can carry pieces around (each carries the scene's `scene.carry`
+trait): they snap to the
 board's spaces and stack on whatever is already there. Rules are a
 description for the players, not enforced. Every game this package ships is a
 file in `games/`, and so is any other package's (dice's Liar's dice); a Tabletop
@@ -111,7 +112,7 @@ tool by id. Without the scene installed the tables are just documents.
     look alike share one, whatever game they're from, and new art gets a new
     key: a table made with the old keeps its own.
 - A board's spaces are **connectors** in its GLB (`extras.connectors`, see the
-  scene's GLB conventions), made from the piece's `snapPoints`. The scene's hand does the snapping and stacking;
+  scene's GLB conventions), made from the piece's `snapPoints`. The scene's carry does the snapping and stacking;
   nothing here is specific to Santorini.
 - A locked piece (a board) is set up **locked**, so dragging it orbits instead.
 - On a table set up from the game page, each copy's About (`infoUrl`) is the
@@ -217,7 +218,7 @@ Shuffle and Draw show without them (buttons, and in the menu: scene/TOOLS.md
 §5); seated, S shuffles and D draws.
 
 **Shuffle** (`S` over a card: the scene's use prompt shows it, with the
-hand's Flip, under the pointer; or *Shuffle pile* in its right-click menu)
+carry's Flip, under the pointer; or *Shuffle pile* in its right-click menu)
 shuffles the pile it's in — the cards of the same container whose footprints
 overlap it by half or more — through whatever keeps them (the `keeper`
 convention: any running extension that says it keeps the card): a plain
@@ -260,7 +261,7 @@ again in one write, jumbled where they were: a grid of cells round their
 middle, each at a turn of its own, the cells wide enough that no two can
 touch however they're turned. Positions are public and say nothing.
 Anyone playing may wash, seated or not, as anyone at a table can reach in
-and stir the tiles (and as the hand lets anyone carry or flip them).
+and stir the tiles (and as the carry lets anyone carry or flip them).
 **Shuffle** is offered only where there's a pile (a card lying alone has
 nothing to shuffle with).
 
@@ -411,12 +412,13 @@ grid and axes off, units in cm, looking from the game's `camera`
 scene's notices and its Play | Edit switch (where a viewer can step into the
 editor for themselves). The table's verbs take part in both activities
 (`activities: ["play", "edit"]`), its rule in every one, and it
-`requires` what playing needs: the scene's hand, use prompt (listed before
-the key map, so it hears its verbs' keys first), key map, right-click menu,
-framing and notices.
+`requires` what playing needs: the scene's use prompt (listed before the
+key map, so it hears its verbs' keys first), key map, right-click menu,
+framing and notices. Carrying needs no requiring: the pieces carry the
+`scene.carry` trait, and the scene's carry runs by it.
 
 A game nobody sits at (Santorini) writes no `view.activity`, and its table
-opens in the editor, in the hand.
+opens in the editor, where its pieces carry just the same.
 
 ### Templates
 
@@ -497,12 +499,12 @@ are none.
 | `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `makeHolders` |
 | `src/table/template.js` | laying a registered game out in a drop context's scene by its id (`setUp`, the `tables` convention), and the templates |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
-| `src/table/extension.js` | the table's scene extension: Shuffle (through a card's keeper), Draw, a card turning face up over your own hand, the hand as the tool in play, where each seat's hands are, telling the others |
+| `src/table/extension.js` | the table's scene extension: Shuffle (through a card's keeper), Draw, a card turning face up over your own hand, where each seat's hands are, telling the others |
 | `src/table/rule.js` | the table's policy as its own extension (`audience`), in every activity |
 | `src/table/visibility.js` | who may see what: hands, cards, face up in the card's frame, as an `audience` answer (pure) |
 | `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, card table (their art, and putting one in), and a game as a part (`gamePart(id)`) |
 | `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
-| `src/table/slots.js` | card slots: which connectors take a card (or a tile), in the world, with their whole frames where this package wrote them (the hand's rule, copied; pure) |
+| `src/table/slots.js` | card slots: which connectors take a card (or a tile), in the world, with their whole frames where this package wrote them (the scene carry's rule, copied; pure) |
 | `src/table/wash.js` | washing: which face-down pieces are swept together, and the jumble they're laid out in (pure) |
 | `src/table/stand.js` | standing a piece on edge facing a way, laying it flat, resting where it was, and a hand laid out face up (pure) |
 | `src/table/test-scene.js` | for tests: a scene snapshot like the extension api's, from a plain objects map |
