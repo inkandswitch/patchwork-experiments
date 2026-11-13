@@ -77,7 +77,7 @@ describe("the Arena level template", () => {
     expect(group.name).toBe("Arena");
     expect(objects.filter((o) => o.group === Object.keys(doc.objects).find((id) => doc.objects[id] === group))).toHaveLength(blocks.length);
     expect(objects.filter((o) => o.traits?.["arena.target"])).toHaveLength(blocks.filter((b) => b.traits?.["arena.target"]).length);
-    expect(objects.filter((o) => o.traits?.["arena.spawn"])).toHaveLength(4);
+    expect(objects.filter((o) => o.traits?.["walk.spawn"])).toHaveLength(4);
     expect(doc.order).toHaveLength(blocks.length + 1);
     // every block has its kind's box as a hint, so the level frames and loads biggest-first before any GLB is in
     expect(objects.filter((o) => o.kind !== "group").every((o) => o.hint?.bounds?.max)).toBe(true);
@@ -135,7 +135,7 @@ describe("the arena's parts", () => {
     doc.traits["arena.level"] = { look: "arena" };
     await (await load("arena.spawn")).create(f.ctx, AT);
     expect(doc.traits["arena.level"]).toEqual({ look: "arena" });
-    expect(Object.values(doc.objects)[0].traits).toEqual({ "arena.spawn": {} });
+    expect(Object.values(doc.objects)[0].traits).toEqual({ "walk.spawn": {} });
   });
 
   it("dropped on an object, it goes under that object", async () => {

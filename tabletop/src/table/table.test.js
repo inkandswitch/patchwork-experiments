@@ -482,7 +482,7 @@ describe("drawing to your hand", () => {
 
   it("applies to a card out on the table, while playing, for someone seated with room in their hand", async () => {
     const t = await table();
-    expect(t.state(t.xa, "top")).toEqual({ title: expect.stringMatching(/\(D\)/) });
+    expect(t.state(t.xa, "top")).toEqual({ title: expect.stringMatching(/into your hand$/) });
     expect(t.state(t.xa, "mid")).not.toBeNull(); // any card of the pile: the top one is what's drawn
     expect(t.state(t.xa, "board")).toBeNull(); // not a card
     expect(t.state(t.xa, "kept")).toBeNull(); // in a hand already

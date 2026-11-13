@@ -13,9 +13,11 @@ pnpm install && pnpm build && pnpm test
 
 Nothing Doom-shaped is outside this package. The doors open with the joints
 package's slide (`joints.slide`), an exit switch is the traversal package's
-exit (`traversal.exit`), and a map that is a scene on its own is walked with
-the arena's first-person play (`arena.level`, and arena's own spawn point
-part at the player 1 start); none of them knows it is Doom. This package
+exit (`traversal.exit`), and a map that is a scene on its own is walked in
+the walk package's body (scene/TOOLS.md §4) from a spawn point at the player
+1 start (arena's spawn pad part, which carries `walk.spawn`), under the
+arena's sky (`arena.level`), with arena's gun; none of them knows it is
+Doom. This package
 writes their traits in the shapes they document and asks for arena's part by
 id in the registry; it imports none of their code.
 
@@ -100,7 +102,7 @@ holes is cut by earcut (ISC). `F_SKY1` ceilings aren't drawn, nor upper
 walls between two sky ceilings.
 
 **Scale.** 36 units to the metre puts Doom's common 16-unit steps (0.44 m)
-under the arena walker's 0.45 m step; its 24-unit steps (0.67 m) need a jump,
+under the walk body's 0.45 m step; its 24-unit steps (0.67 m) need a jump,
 which the walker has (an apex near 0.85 m). Doom's 56-unit player is 1.56 m.
 
 ### The drop: a map as a scene
@@ -113,7 +115,7 @@ group "<map>"            infoUrl: an About doc (markdown)
 └ <map>                  { map, door: null }, locked
   ├ Door <sector> × n    { map, door: <sector> }, locked; joints.slide
   ├ Exit switch × n      { map, line: <line> }, locked; traversal.exit { verb: "Exit" }
-  └ Spawn point          arena's part, at the player 1 start (an empty scene only)
+  └ Spawn point          arena's pad part (walk.spawn), at the player 1 start (an empty scene only)
 ```
 
 The doors are attached to the static part, so moving or resizing the map
@@ -122,7 +124,8 @@ moves and resizes them, and a door slides along its parent's +Y.
 Dropped into an **empty** scene, the map is the scene, so it is made a
 level: `arena.level` `{ look: "sky" }` (the arena's sky alone: the light is
 baked in, so a sun would light nothing), and a spawn point at the player 1
-start, made by arena's own `arena.spawn` part (found in the registry by id;
+start (`walk.spawn`, where the walk body starts), made by arena's own
+`arena.spawn` part (found in the registry by id;
 without arena installed there is none, and no level to spawn in). Dropped
 into a scene with something in it already, the map is a piece of that
 scene: no level, no spawn, the scene's game (if any) left as it was.
@@ -236,22 +239,25 @@ Freedoom gets an About saying so.
   notice isn't known.
 
 **The browser probe** plays E1M1 with a real keyboard and mouse in headless
-Chrome: the BUILT scene, arena, joints and doom packages, on real Automerge
+Chrome: the BUILT scene, arena, walk, joints, traversal and doom packages, on real Automerge
 documents (two peers, each its own replica, merged 25 ms apart).
 
 ```
-(in scene/, arena/, joints/ and doom/) pnpm build
-node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--gpu] [--show]
+(in scene/, arena/, walk/, joints/, traversal/ and doom/) pnpm build
+node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--gpu] [--show] [--port 4920] [--cdp 9920]
 ```
 
-A pastes the WAD's URL into an empty scene; both views play; A and B walk
+A pastes the WAD's URL into an empty scene; both views play, each in one
+walker (the walk body, the only body over orbit) with the gun in hand; A and B walk
 from the player 1 start through the great hall to door 100 (about 38 m); B
 walks into the shut door, moves over a metre and is stopped; A presses F at
 it; both see it rise 3.44 m and rest open; B walks through; C joins while it
 is open and draws every door where the doc has it; it closes itself after
-its wait; the doc's history shows two writes for the cycle; the door is
+its wait; the doc's history shows two writes for the cycle; Escape puts the
+gun down and the body chip's Leave stops walking; the door is
 copied into another scene (⌘C, ⌘V), which has no game and so offers only
-editing, and opens there from its menu (right-click) and closes itself; draw calls
+editing, and opens there from its menu (right-click; in orbit, which reaches
+everything) and closes itself; draw calls
 and frame times are measured. It prints a JSON report and exits non-zero if
 any check fails.
 

@@ -19,7 +19,8 @@ describe("arena: describes its traits", () => {
     // play.js gives an atmosphere for each of these (LOOKS), and none for the scene's own
     expect(look.options.map((o) => o.value)).toEqual(["", "arena", "sky"]);
     expect(d["arena.target"].on).toBe("object");
-    expect(d["arena.spawn"].on).toBe("object");
+    // a spawn point is the walk package's trait: it describes it
+    expect(d["arena.spawn"]).toBeUndefined();
     // a target's down and stand are not settings; who shot it is play state, which a copy leaves behind
     expect(d["arena.target"].fields).toBeUndefined();
     expect(d["arena.target"].runtime).toEqual(["down"]);

@@ -110,7 +110,7 @@ describe("drawing at a table aboard", () => {
   it("glides the top card into your first free slot, in the table's frame, whatever the ship is drawn doing", async () => {
     const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } });
     t.sail(T([13, 0.3, 7], [0.08, 1.1, -0.05])); // sailed on, heeled: the doc hasn't been told yet
-    expect(t.cmd(t.xa, "draw").state("mid", { scene: t.a.scene(), local: t.a.local.get() })).toEqual({ title: expect.stringMatching(/\(D\)/) });
+    expect(t.cmd(t.xa, "draw").state("mid", { scene: t.a.scene(), local: t.a.local.get() })).toEqual({ title: expect.stringMatching(/into your hand$/) });
     t.cmd(t.xa, "draw").run("mid");
     t.w.tick(1 / 60, 40);
     const o = t.w.doc.objects.top;
@@ -136,13 +136,13 @@ describe("drawing at a table aboard", () => {
     t.w.done();
   });
 
-  it("Shuffle and Draw stand aside in first person (S and D walk), and come back after", async () => {
+  it("Shuffle and Draw apply whatever body you're in: walking, their keys are the body's (the stage shows them without), never hidden", async () => {
     const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
     const ctx = (local) => ({ scene: t.a.scene(), local: { ...t.a.local.get(), ...local } });
-    expect(t.cmd(t.xa, "shuffle").state("top", ctx({ immersive: true }))).toBe(null);
-    expect(t.cmd(t.xa, "draw").state("top", ctx({ immersive: true }))).toBe(null);
-    expect(t.cmd(t.xa, "shuffle").state("top", ctx({ immersive: false }))).not.toBe(null);
-    expect(t.cmd(t.xa, "draw").state("top", ctx({ immersive: false }))).not.toBe(null);
+    for (const body of [{ id: "walk" }, { id: "seat" }, { id: "orbit" }]) {
+      expect(t.cmd(t.xa, "shuffle").state("top", ctx({ body }))).not.toBe(null);
+      expect(t.cmd(t.xa, "draw").state("top", ctx({ body }))).not.toBe(null);
+    }
     t.w.done();
   });
 });

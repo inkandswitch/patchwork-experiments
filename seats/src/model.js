@@ -5,13 +5,13 @@
 // ship); absent, the world.
 //
 // Nothing outside this package reads or writes the trait. Others meet seats
-// through three conventions (README.md):
+// through two conventions (README.md):
 //   - `roster`, contributed here: who sits where, for whoever needs to know
 //     (a table's hands, a keeper's players);
 //   - `seatPlaces`, contributed by whoever gives a seat somewhere to be (a
-//     hand tray): where its name tag goes, and what a look at it means;
-//   - `firstPerson`, contributed by whatever walks: the hand-off when someone
-//     sits down from, or stands up into, first person.
+//     hand tray): where its name tag goes, and what a look at it means.
+// Sitting is a body (body.js), the stage's: sitting down from walking pushes
+// it over the walk body, standing up pops it (scene/TOOLS.md §4).
 // And setup code writes seats with this module's `lay(d, seats)`, found by
 // the plugin's `roster: true` in the scene:extension registry.
 
@@ -112,8 +112,9 @@ export function lay(d, seats) {
 // ─── a seat as a station ────────────────────────────────────────────────────
 //
 // What the use prompt (scene.use) offers when you look at a seat's place
-// from within reach, in first person ("Sit as Player 1", F), and, sitting
-// there with something to walk in, "Stand up" (F).
+// while walking ("Sit as Player 1", F), and, sitting there, "Stand up" (F).
+// Reach is the stage's (the command says `reach: true`, measured from the
+// body's eye against its reach).
 //
 // A seat's place is its places (a hand tray, a little beyond its edges) and,
 // for a seat with a camera, its bench: the floor under where its player's
@@ -124,8 +125,6 @@ export function lay(d, seats) {
 // camera is given in or one it's attached to (the table, the ship whose
 // bench it is): never a loose piece, so F over a card is still the hand's.
 
-/** How far from the eye a seat's place can be sat at (m). */
-export const SEAT_REACH = 2;
 /** How far past a place's edges a look still counts as at it (m). */
 export const PLACE_MARGIN = 0.08;
 /** A bench's reach across its frame from under the seat's eye (m), and how far below the eye it goes. */
@@ -136,24 +135,18 @@ export const CONFIRM_MS = 5000;
 
 /**
  * The seat a look is at, or null.
- * @param {{ snap: object, target: string, point: number[] | null, from: number[] | null, seats: object, places: object[], drawn: (id: string) => number[] | null }} o
+ * @param {{ snap: object, target: string, point: number[] | null, seats: object, places: object[], drawn: (id: string) => number[] | null }} o
  *   snap: api.scene(); target: what the prompt asks about; point: where the
- *   look landed (world, may be null when hovering); from: the eye (world);
- *   places: cleanPlaces(…); drawn: an object's world matrix as drawn
- *   (api.worldOf), null if it's gone
+ *   look landed (world, may be null when hovering); places: cleanPlaces(…);
+ *   drawn: an object's world matrix as drawn (api.worldOf), null if it's gone
  */
-export function seatLookedAt({ snap, target, point, from, seats, places, drawn }) {
-  if (!Array.isArray(from) || target == null || !snap?.objects?.[target]) return null;
+export function seatLookedAt({ snap, target, point, seats, places, drawn }) {
+  if (target == null || !snap?.objects?.[target]) return null;
   const regions = (places ?? []).filter((z) => seats?.[z.seat]);
-  const near = (p) => Array.isArray(p) && Math.hypot(p[0] - from[0], p[1] - from[1], p[2] - from[2]) <= SEAT_REACH;
   // a place's own object: its seat, wherever on it the look landed (its middle, hovering without a point)
   const tray = regions.find((z) => z.id === target);
-  if (tray) {
-    const m = drawn(tray.id);
-    const mid = m ? applyMatrix(m, [(tray.min[0] + tray.max[0]) / 2, tray.min[1], (tray.min[2] + tray.max[2]) / 2]) : null;
-    return near(Array.isArray(point) ? point : mid) ? tray.seat : null;
-  }
-  if (!Array.isArray(point) || !near(point) || !placeLike(snap, target, seats)) return null;
+  if (tray) return tray.seat;
+  if (!Array.isArray(point) || !placeLike(snap, target, seats)) return null;
   for (const z of regions) {
     const m = drawn(z.id);
     const inv = m ? invertMatrix(m) : null;
@@ -192,20 +185,20 @@ function placeLike(snap, target, seats) {
 
 /**
  * The verb a seat offers this viewer, from where it stands for them
- * (seatState), or null:
- * - in first person (`immersive`): a seat whose player is here is refused
- *   ("Ana is sitting there", greyed out); one whose player has gone asks
- *   first (`confirm`: F once says what you'd take over, F again within
- *   CONFIRM_MS takes it); your own is "Back to your seat"; any other is
- *   "Sit as <name>";
- * - not in first person, sitting there, with something to walk in
- *   (`canStand`): "Stand up". The picker is the way to sit anywhere else.
+ * (seatState), and the body they're in, or null:
+ * - walking (a body that isn't orbit or the seat): a seat whose player is
+ *   here is refused ("Ana is sitting there", greyed out); one whose player
+ *   has gone asks first (`confirm`: F once says what you'd take over, F
+ *   again within CONFIRM_MS takes it); your own is "Back to your seat"; any
+ *   other is "Sit as <name>";
+ * - seated, in your own seat: "Stand up" (the seat body pops; whatever you
+ *   sat down from carries on). The picker is the way to sit anywhere else.
  * Pure.
- * @param {{ name: string, state: string, who?: string | null, immersive: boolean, canStand: boolean, confirming: boolean }} o
+ * @param {{ name: string, state: string, who?: string | null, walking: boolean, seated: boolean, confirming: boolean }} o
  * @returns {{ verb: "sit" | "confirm" | "stand", label: string, title?: string, disabled?: boolean } | null}
  */
-export function seatVerb({ name, state, who = null, immersive, canStand, confirming }) {
-  if (immersive) {
+export function seatVerb({ name, state, who = null, walking, seated, confirming }) {
+  if (walking) {
     switch (state) {
       case "taken":
         return { verb: "sit", label: `${who || "Someone"} is sitting there`, disabled: true };
@@ -221,6 +214,6 @@ export function seatVerb({ name, state, who = null, immersive, canStand, confirm
     }
     return null;
   }
-  if (state === "mine" && canStand) return { verb: "stand", label: "Stand up", title: `Get up from ${name} and walk; the seat stays yours (F at it sits you back down)` };
+  if (state === "mine" && seated) return { verb: "stand", label: "Stand up", title: `Get up from ${name}; the seat stays yours` };
   return null;
 }
