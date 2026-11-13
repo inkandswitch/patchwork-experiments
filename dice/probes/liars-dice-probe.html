@@ -118,12 +118,14 @@ try {
      * A MODIFIED client's write, on replica `w`: a new lots attempt on the cup, as nobody honest writes it.
      *   reroll: the same draw, asked by whoever asked it, the same members, nothing tried
      *   hijack: the same draw as the cup's roll, asked by `w`'s viewer, sealed by `w`'s viewer alone
+     *   forged: the same draw as the cup's roll, asked IN ITS HOLDER'S NAME and sealed to them, the holder's commit
+     *           of a nonce `w` holds (so `w` would know the roll, or steer it): a part the holder's client didn't make
      * Returns the new attempt's id.
      */
     async forge(w, id, kind) {
       const o = objectsOf(w)[id];
       const r = plain(roundIn(w, id));
-      const by = kind === "reroll" ? r.by : (w === "a" ? ana.url : ben.url);
+      const by = kind === "reroll" ? r.by : kind === "forged" ? o.traits["dice.cup"].holder : (w === "a" ? ana.url : ben.url);
       const draw = kind === "reroll" ? r.draw : o.traits["dice.cup"].roll.draw;
       // of the shake's dice, as an honest round is (anything else is no round of the cup's anyway)
       const of = plain(o.traits["dice.cup"].roll.dice);
@@ -133,9 +135,10 @@ try {
       const members = [ana.url, ben.url].sort();
       // a modified client of the view's own viewer writes it: so its own client holds the part it committed (as
       // its runner would, lots-run.js), and doesn't take the round for a forgery in its name
-      try { localStorage.setItem(`dice.lots:${by}:${rid}`, JSON.stringify({ nonce, pub: "", jwk: null })); } catch {}
+      // (a forgery is the one written in someone else's name: their client holds nothing of it)
+      if (kind !== "forged") try { localStorage.setItem(`dice.lots:${by}:${rid}`, JSON.stringify({ nonce, pub: "", jwk: null })); } catch {}
       scene[w].change((d) => {
-        d.objects[id].traits["dice.cup"].round = { draw, id: rid, by, at: Date.now(), of, sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, tries: 0, excluded: [] };
+        d.objects[id].traits["dice.cup"].round = { draw, id: rid, by, at: Date.now(), of, sealers: kind === "reroll" ? r.sealers : [by], members, commits: { [by]: commit }, keys: {}, closed: null, opens: {}, sealed: {}, protests: {}, gone: {}, tries: 0, excluded: [] };
       });
       return rid;
     },

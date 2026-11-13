@@ -149,8 +149,11 @@ didn't open their part, and it was drawn again without them" when someone
 was left out for not opening), and if its face isn't what its draw says,
 that it was written by hand. A draw that's spoiled, taken by someone else's
 roll at the same moment, written over in its asker's name by someone else
-(lots, "Forgeries"), or not drawn within 15 s lands nothing and says why.
-Alone, a roll is drawn at once: one member.
+(lots, "Forgeries"), given up (lots, "Away and stalled": its asker's panel
+closed before it was drawn), or not drawn within 15 s lands nothing and
+says why; a roll someone else asked and left is "Cy rolled and left before
+it was drawn: nothing was rolled." Alone, a roll is drawn at once: one
+member.
 
 The panel's rolls are its own: they build nothing in a scene (the source's
 `fingerprint` leaves `title`, `rolls` and `round` out), and a roll in a scene
@@ -214,11 +217,14 @@ against the table, not the horizon.
   0.32 s in the air) and is written once, where it landed. A peer who takes
   hold of the die or moves it meanwhile has it: the roll writes nothing.
 - **When the draw doesn't come**: spoiled (a wrong opening), taken by a throw
-  of the same die by someone else at the same moment, or not drawn within
-  15 s (past every deadline lots has): nothing lands, the die is put back as
-  it lay, and the thrower is told why ("Nothing was rolled."). Alone in the
-  scene, a draw has one member and is drawn at once: a roll then takes just
-  its tumble.
+  of the same die by someone else at the same moment, given up (lots, "Away
+  and stalled"), or not drawn within 15 s (past every deadline lots has):
+  nothing lands, the die is put back as it lay, and the thrower is told why
+  ("Nothing was rolled."). A throw whose thrower left before it was drawn
+  is given up by everyone alike, and every other view says so once: "Ben's
+  throw of d20 was given up before it was drawn: Ben had left. Nothing was
+  rolled." Alone in the scene, a draw has one member and is drawn at once:
+  a roll then takes just its tumble.
 - **Several together** take one draw: on the first die in the scene's order,
   `of` every die in that order, each die its own seed from it by its place
   (`seedFor`); they tumble together, land in **one write**, and are told in
@@ -294,8 +300,9 @@ trait `dice.cup` (`src/cup.js`):
 "dice.cup": { holder: <viewer> | null,     // who shook it last
               up: boolean,                 // lifted: set down beside its dice (10 cm along its own +X)
               blind: boolean,              // shaken blind: the others may see what's under it, its holder may not
-              roll: null | { draw, dice: [id…], blind, done },   // the last shake: its lots draw, its dice in order,
-                                                                  // shaken blind, turned up yet
+              roll: null | { draw, dice: [id…], blind, done, forged },   // the last shake: its lots draw, its dice in order,
+                                                                  // shaken blind, turned up yet; `forged`: drawn again in place
+                                                                  // because these viewers said its lots were written in their name
               round: null | <a lots round> }                     // the shake's draw (Lots, below)
 ```
 
@@ -350,8 +357,42 @@ at once (the cup's `roll` and its `round` are separate keys, and a merge can
 keep one shake's roll and the other's round), is no roll of the
 cup's: no view turns the dice up from it, the holder's client asks again
 for its own draw, and after 2 s every view's HUD says why the dice can't be
-turned up. Each view tells a shake from the doc (a new draw on a cup: "Ana
-shook their cup."), not from anyone's word, so a reshake can't go untold.
+turned up. So it does for its own round given up while it was away (Lots,
+"Away and stalled"); lifted meanwhile, everyone else's HUD says "Ana's dice
+can't be turned up: Ana left before their roll was drawn, and draws it
+again when they're back". Each view tells a shake from the doc (a new draw
+on a cup: "Ana shook their cup."), not from anyone's word, so a reshake
+can't go untold.
+
+**A forgery on a cup** (Lots, "Forgeries"): the shake's own draw, asked in
+the holder's name, with a part somebody says is in their name and not
+theirs (`forged` in lots' state; cup.js `forgedOn`). Whoever wrote that
+part may know the roll (it holds a part sealed to "them") or have steered
+it, so no view turns the dice up from it, and it must be drawn again. Not
+as a new attempt of the same draw, though: its holder is its sole sealer,
+so from the doc it could have known it, and every client that saw it
+complete would refuse the new attempt as the holder's reroll and say so.
+The holder's client shakes again in place instead: a new draw of the same
+dice where they lie, written with a roll that says who said so (`forged`),
+which every view tells ("Ana's cup was drawn again: Ben says its lots were
+written in their name by someone else."). A holder may always shake again,
+told, so this gives the holder nothing more. It does so only for the word
+of someone who couldn't know the roll from the doc (lots' `knew`; cup.js
+`redrawFor`), and for its own client's only while nobody else could: a
+seated other who can already see a blind cup's dice (it's up), or anyone
+once a roll is public, would get to choose among the holder's rolls by
+saying "forged" until one suited them, or, as surely, by writing over the
+holder's commit, which makes the holder's own client say "forged". Their
+word only stops the roll: nothing turns up by it, every HUD says who said
+so (an overwritten commit, as "someone wrote its lots in your name"), and
+the holder may shake again, told. An honest client says so the moment it
+sees a part in its name it didn't make, which is at the commits, long
+before anything is released to it, so its word draws the dice again if it
+reaches the holder's client in time. Who could know the roll is read when
+the holder's client handles the word, not when it was said: if the holder's
+client only gets to it after the parts have been released (it was busy, or
+a forger released "their" part as well), it only stops the roll, like
+anyone else's.
 
 **Who may see what** (the cup's `audience` policy, merged by the stage), for
 the cup and every die it covers or whose shake isn't turned up yet:
@@ -392,7 +433,18 @@ cup.
   client that saw the first one drawn, and they say so (Lots, "Rerolls"): it is then drawn by the holder alone, and every view's HUD
   says that too, while the cup is down.
 - It can't take someone else's roll: a round written on their cup sealed
-  to itself is no roll of that cup's (above).
+  to itself is no roll of that cup's (above); nor one written in the
+  holder's name, sealed to the holder with a part it holds itself, if the
+  holder's client is here: it refuses it as forged, and shakes again in
+  place (above). If the holder's client isn't here, nothing can tell (Lots,
+  "Forgeries"), until its holder is back and sees the round in its name.
+- It can't choose among another's rolls by saying "forged" (anyone can, in
+  their own name), nor by writing over the holder's commit so the holder's
+  client says it. Said before it could know the roll, it gets the cup
+  drawn again, aloud, a roll it knows no more of than the last; said once it
+  could know it (a seated other, a blind cup up), it only stops that roll,
+  told under its name (or, for an overwritten commit, as a part written in
+  the holder's name), and the holder decides whether to shake again.
 - Shaken blind, no one other player's client knows the roll early, or can
   keep it from the rest: each seated part is sealed. (So any one of them
   being away keeps it from everyone until they're back.)
@@ -460,6 +512,7 @@ round: {
   closed,                      // the contributors, if the commit deadline passed before everyone committed
   opens: { [v]: nonce },       sealed: { [s]: { [r]: AES-GCM envelope of sealer s's nonce, to r } },
   protests: { [v]: { of, why } },   // v's client refused this attempt ("Rerolls", below)
+  gone: { [v]: true },              // v's client gave it up: its asker can't move it on ("Away and stalled", below)
   tries, excluded }
 ```
 
@@ -522,15 +575,28 @@ the nonce they opened) beside a nonce of their own ground to the face they
 want, or a commit and opening in someone's name in a round of their own.
 Only the client whose name it is can tell, and it does: an attempt with a
 part in its viewer's name it didn't make, or asked in its viewer's name
-and not by it, or where its commit isn't the one it made, it refuses
+and not by it, or where its commit isn't the one it made, or with its
+viewer's key in `gone` (below) that it didn't write, it refuses
 (`protests[v] = { of: <that attempt>, why: "forged" }`), takes no further
 part in, and its HUD says "Someone wrote the lots for d20 in your name";
 everyone else's says "Ana says the lots for d20 were written in their name
 by someone else". `forged` (in each client's state) lists who says so, and
-nothing lands by such a round. What was on the doc when a client came is
-past: it can't know what it made then, and judges none of it, save a part
-that appears in its name afterwards. So one viewer is one client: the same
-viewer on another device is a stranger to this one.
+nothing lands by such a round (a cup's holder draws again: Cups, above).
+What was on the doc when a client came is past: it can't know what it made
+then, and judges none of it, save a part that appears in its name
+afterwards. So one viewer is one client: the same viewer on another device
+is a stranger to this one.
+
+**A forgery while its victim is away is accepted, not defended.** Only the
+client whose name a part is in can tell it isn't theirs, so a part written
+in the name of someone whose client isn't here (gone, or never there) reads
+as theirs to everyone, and nothing says otherwise until they come back
+while the round is still there. Telling it without them takes signed
+changes (who wrote each one), which Automerge will provide; nothing here
+signs anything meanwhile, by decision. What it buys is bounded: a seed the
+forger can steer only by grinding a part it holds under the absent one's
+name, in a round among whoever else is here, each of whom still refuses
+anything in their own name.
 
 **Away and stalled.** One who goes before committing is left out at the
 commit deadline (5 s); one who commits and doesn't open is left out of a
@@ -542,7 +608,47 @@ part is due, the result waits for it, and the HUD says for whom. Several
 sealers are several such waits: a cup shaken blind can't be shown to anyone
 while any seated player who took part is away. A thrower's client gives up
 on its tumble after 15 s and says so; a draw that finishes after that still
-lands (anyone lands a drawn throw).
+lands (anyone lands a drawn throw), and its thrower's view tells it "(drawn
+after all, after you were told it didn't land)".
+
+Only the asker moves an attempt on (it closes the commits, opens first and
+draws again without whoever stalls), so one whose asker left mid-way would
+wait for it forever. Instead it is **given up**, in the doc, so every client
+agrees: a client that sees an attempt still under way (committing or
+opening) whose asker isn't here (by its presence; the panel: not heard from
+for 5 s), and has watched it for 10 s (`STALE_MS`, both deadlines: an asker
+that's here has closed it or drawn again by then), writes its own key in
+`gone`; so does the asker's own client for an attempt it can't move on (it
+waits on its opening and this client doesn't hold its part, or it refuses
+it as forged). With any key in `gone`, every client's `derive` says
+`"ended"` for it, while nobody but its asker could know its seed
+(`endable`: committing; opening before the asker has opened, which is
+before anyone else has; or with only the asker's own part still out):
+nobody commits, opens or waits, and the HUD stops waiting. Past that,
+`gone` ends nothing. The one contributor still to open could work the seed
+out from the others' openings, and a `gone` it wrote then would be a veto
+it chose knowing the face, told as an absence ("Cy gave its lots up, not
+seeing you here"). So the attempt keeps waiting on it, by name, and the
+asker, if here, draws again without it at its deadline, as for anyone who
+stalls; if the asker is away too, it waits for one of them. A key in
+`gone` is a part like any other: one in my name my client didn't write, it
+refuses as forged (Forgeries, above).
+One drawn, or waiting only on sealed parts (a cup lifted while its holder is
+away), is never given up: it isn't stuck. Whoever still wants the draw asks
+again: a cup's holder, back, asks for its draw anew, and nobody refuses that
+(the attempt it replaces was under way, so its asker couldn't have known
+it; save an asker that had closed out everyone else and then lost its own
+part, which from the doc is withholding).
+
+"Ended" is what the doc says now, the same for every client with the same
+doc, and not final. A `gone` written by a client that hadn't yet seen the
+asker's opening can cross it, and the openings after it can bring the
+attempt past `endable` (one contributor, not its asker, still to open).
+Then it waits on that one again, who opens as it would have, and it is
+drawn after all. Its consumers follow the doc: a throw is landed by anyone
+who saw it thrown and told "(drawn after all, once given up)"; the panel
+writes it down and drops its "didn't land". It takes an asker seen as away
+for 10 s while it was still writing, so it is rare.
 
 **What a client can and can't do** (each checked over every case of up to
 three players in `lots.test.js`, with real WebCrypto in `seal.test.js` and
@@ -568,16 +674,28 @@ three players in `lots.test.js`, with real WebCrypto in `seal.test.js` and
   of an open draw, never its asker, can stop it: refuse to open (the asker's
   deadline draws again without it, and the roll is told "(Cy didn't open
   their part, and it was drawn again without them)"), or throw the die
-  itself (refused and told by every client, "withheld"), or catch it. That
-  is a veto, said aloud, never a choice of face. A thrower that throws a
+  itself (refused and told by every client, "withheld"), or catch it, or
+  write something in another's name (that one's client refuses the round
+  as forged, and nothing lands by it: told as a forgery, though not by
+  whom, since the doc isn't signed). That is a veto, said aloud, never a
+  choice of face. A thrower that throws a
   drawn throw away (or nudges it, or anything else that keeps it from
   coming down as drawn) has it told with the face it was drawn to show, by
   every view; the panel writes it into `rolls` anyway. Nobody gets a face
   they like without everyone seeing the one they threw away.
 - *Forge a part in someone else's name* (Forgeries, above): that someone's
   client, if it is here, refuses it as forged, says so to everyone, and
-  nothing lands by it. If their client is gone, or never there, nothing can
-  tell: the doc isn't signed.
+  nothing lands by it (a cup is drawn again). If their client is gone, or
+  never there, nothing can tell: the doc isn't signed. Accepted until
+  Automerge signs changes.
+- *Stall a draw by leaving* (Away and stalled, above): it is given up by
+  whoever is still here, the same for everyone, and its consumer says so.
+  Writing `gone` falsely, in one's own name, ends a draw only while nobody
+  but its asker could know it: a veto blind, which tells the thrower to
+  throw again. Once someone could know it, `gone` does nothing, so the last
+  opener can't use it to throw away a face it knows: it stalls, by name,
+  and is left out. Writing `gone` in someone else's name is a forgery: their
+  client, if here, refuses the round and says so.
 - *Lie in an opening:* the round is spoiled, naming whose opening it was.
 - *Close early or exclude honest players:* the asker writes `closed` (and
   `members`), so a cheating asker can draw with itself alone and so choose
@@ -637,11 +755,28 @@ checked over every case, never sampled at random (`pnpm test`):
   should know it at each step, an honest retry never protested; every way
   an open draw among two or three can stand when its asker asks again
   (refused exactly when the asker could know it: complete or withheld), and
-  every reroll a sole sealer could write (`lots.test.js`); the extension
+  every reroll a sole sealer could write; every attempt a client can leave
+  behind among two or three (open or sealed, every set of commits, closed or
+  not, every set of openings) judged by every member and a spectator, the
+  asker here or not, watched just short of `STALE_MS` or for it, holding
+  its part or not, refusing it as forged or not: given up exactly when its
+  asker can't move it on and nobody but its asker could know it, ended for
+  everyone alike once anyone has, never once drawn, never by any set of
+  `gone` keys once someone besides the asker could know it (it waits on that
+  one, and the asker's deadline leaves it out, exactly as without them), and
+  asked again for by its asker without a refusal save the one withholding
+  case (`lots.test.js`); the extension
   with three clients and a spectator, real WebCrypto, a draw open to all
   alone (drawn at once, no deadline) and together, a client that runs no
-  lots not waited for, `of` changed after the openings spoiling it
-  (`lots-ext.test.js`); envelopes (`seal.test.js`);
+  lots not waited for, `of` changed after the openings spoiling it; an
+  asker leaving before opening, or before the commits are in, given up by
+  the others at `STALE_MS` and not before, an asker that's here never given
+  up on, an asker back without its part giving up its own, a last opener
+  writing `gone` instead of opening left out at the asker's deadline as if
+  it had stalled, a `gone` in a viewer's name its client didn't write
+  refused as forged and said so, a lifted cup whose holder is away never
+  given up (`lots-ext.test.js`); envelopes
+  (`seal.test.js`);
 - the tumble and the landing, every shape, every face, a fan of starting
   poses, times and tumbles: off the table as it lay, a toss above where it
   was, only turning; the way down starting exactly where it is in the air
@@ -653,12 +788,21 @@ checked over every case, never sampled at random (`pnpm test`):
   fails (spoiled, taken, too slow) landing nothing and saying so; a drawn
   throw whose thrower left landed by the other view after the grace; one
   drawn alone said so; a die written down on another face not told; a new
-  throw of a die whose last throw never came down told (`extension.test.js`);
+  throw of a die whose last throw never came down told; a throw given up (someone didn't
+  see its thrower here, its thrower lost its part, or a `gone` forged in its
+  name) landing nothing and saying why, one whose thrower left given up and
+  said once by the other view, and one given up, or past its 15 s, and then
+  drawn after all landed as its seed says and told so (`extension.test.js`);
 - the panel: Roll alone a draw of one member, at once, landing its seed's
   face; two panels on one doc drawing together, the seed the hash of both
   openings, both showing the same face; the asker gone, the other writing it
   down; a silent member closed out at the commit deadline and said so;
-  goodbye on close; a roll written by hand shown as such (`tool.test.js`);
+  goodbye on close; a roll written by hand shown as such; a roll whose
+  asker's panel closed before it was drawn given up by the panel still
+  here at `STALE_MS`, the asker's own roll given up saying why, a `gone`
+  forged in the asker's name said as a forgery, and a roll given up and
+  then drawn after all written down, its "didn't land" dropped
+  (`tool.test.js`);
 - cups, over every case of {down, lifted, knocked over, carried off} ×
   {open, blind} × {someone's, nobody's} × {shaken, not} × {holder, another
   seated player, a spectator}: who may see each die and the cup, that a
@@ -671,7 +815,12 @@ checked over every case, never sampled at random (`pnpm test`):
   every round a client might find on a cup ({nobody's, Ana's} × {open,
   blind} × {its draw, another} × {of its dice in order, reordered, fewer,
   none} × {asked by Ana, Ben} × every set of sealers × every set of
-  contributors): whether it is the shake's, and that a round a client uses
+  contributors × {nobody, Ben, Ana} saying a part is forged × this client
+  refusing it as forged or not × who could know it): whether it is the
+  shake's, whether it is forged, whose word its holder draws it again for
+  (only those who couldn't know it, and its own only while nobody else
+  could), and that a round a client
+  uses
   was knowable early by the holder alone (open) or by nobody (blind)
   (`cup.test.js`);
 - the cup extension against a fake stage with two players and a spectator
@@ -680,7 +829,14 @@ checked over every case, never sampled at random (`pnpm test`):
   may not see under); a shake's one write and what it asks lots for; a shake
   told from the doc, a sneaked new draw too; turning up as the seed says,
   once; a round written over the holder's, and two shakes at once, never
-  used, asked again for once per round, told after 2 s; blind: Shake blind
+  used, asked again for once per round, told after 2 s; a forgery in the
+  holder's own draw (said by another, or by the holder's own client) never
+  used, shaken again in place once as a new draw of the same dice, nothing
+  moved, told by every view with who said so, and only by the holder's
+  client; one said forged by someone who could know it (public, or seen),
+  or by the holder's own client once someone else could (a commit written
+  over under a lifted blind cup), only stopped, never drawn again; a shake given up while its holder was away asked again for once,
+  its HUD line when lifted; blind: Shake blind
   refused with nobody else here, a blind round drawn alone refused, lifted
   (veiled for the holder and the spectator), Show me; the carry veto; peeks
   borne out by the doc, messages of the wrong shape dropped; knock over and
@@ -700,8 +856,11 @@ the draw's seed lands up, flat on what the die lies on, that the seed is the
 hash of both clients' openings (worked out in the page with WebCrypto), that
 a group throw is one draw on its first die of both dice in order, that a
 roll is a pose until it lands in one write, and that B is told what Ana did;
-then B leaves and A rolls alone (one member, drawn at once). It reports the
-time from each key to the landing write.
+then B throws the d20 and leaves before anyone's commit reaches B, and A's
+client gives the throw up once B is gone and both deadlines have passed
+(not before), in the doc, nothing landed, nobody waiting, A told; then A
+rolls alone (one member, drawn at once). It reports the time from each key
+to the landing write.
 
 ```sh
 (in scene/ and dice/) pnpm build
@@ -723,8 +882,12 @@ Ana's down cup and it doesn't move; then, as modified clients writing the
 doc: Ana's replica rerolls a drawn Green cup (Ben's client refuses and says
 so, and it's drawn by Ana alone, said too), Ben's replica writes a round on
 Ana's Yellow draw sealed to himself (no view uses it; Ana's client asks
-again, Ben never learns her roll); and both shake the Purple cup at the same
-moment (the merge ends with one holder whose lots are its shake's).
+again, Ben never learns her roll); both shake the Purple cup at the same
+moment (the merge ends with one holder whose lots are its shake's); and
+Ben's replica writes a round on Ana's Black draw in Ana's name, her commit a
+nonce he holds (Ana's client refuses it and shakes again in place, a new
+draw of the same dice; Ben takes part, protesting nothing, is told why,
+and never learns her roll).
 
 ```sh
 (in scene/ and dice/) pnpm build

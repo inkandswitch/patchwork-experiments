@@ -230,6 +230,132 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.done();
   });
 
+  it("a forgery in Alice's own draw (Bob says the part in his name isn't his, before he could know the roll): no client uses its seed; Alice's client shakes again in place, once, as a new draw of the same dice (never a new attempt of the old one, which every client that saw it would refuse as her reroll), the roll saying who said so; every view tells it", () => {
+    const t = table();
+    t.shake();
+    const draw = t.cup().roll.draw;
+    const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
+    expect(t.lots.draws.length).toBe(1);
+    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"], knew: ["alice"] }));
+    t.w.change(() => {});
+    t.w.flush();
+    // a new draw (no `draw` given: not the old one asked again), of the same dice, sealed as the shake was
+    expect(t.lots.draws.slice(1)).toEqual([{ id: "cup", sealers: ["alice"], of: t.dice, draw: "dfake1xx" }]);
+    expect(t.lots.draws[1]).toMatchObject({ draw: expect.not.stringMatching(draw) });
+    expect(t.cup().roll).toEqual({ draw: "dfake1xx", dice: t.dice, blind: false, done: false, forged: ["bob"] });
+    expect(t.cup().holder).toBe("alice");
+    // nothing moved: the cup stays down over the same dice
+    for (const [id, pose] of Object.entries(poses)) expect(t.doc.objects[id].transform).toEqual(pose);
+    // nothing turned up by the forged one, and nobody draws a die from it
+    expect(t.cup().roll.done).toBe(false);
+    for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
+    t.w.flush();
+    expect(t.notices("A").at(-1)).toBe("Your cup was drawn again: Bob says its lots were written in their name by someone else.");
+    expect(t.notices("B").at(-1)).toBe("Alice's cup was drawn again: your client says its lots were written in your name by someone else.");
+    expect(t.notices("S").at(-1)).toBe("Alice's cup was drawn again: Bob says its lots were written in their name by someone else.");
+    // once: the forged round still there until the new one lands is just a round astray, already asked over
+    for (let i = 0; i < 3; i++) {
+      t.w.change(() => {});
+      t.w.flush();
+    }
+    expect(t.lots.draws.length).toBe(2);
+    // the new draw's round lands, and it's an ordinary shake from there
+    t.lots.states.set("cup", lotsState({ id: "rnew", draw: "dfake1xx", by: "alice", asked: ["alice"], sealers: ["alice"] }));
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.lots.draws.length).toBe(2);
+    expect(t.hud("B")).toEqual([]);
+    t.w.done();
+  });
+
+  it("a forgery said by someone who could already know the roll (here: it's public) only stops it: nothing turns up and nothing is drawn again for them, since saying so would let them choose among rolls", () => {
+    const t = table();
+    t.shake();
+    const draw = t.cup().roll.draw;
+    const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
+    for (const knew of ["all", ["alice", "bob"]]) {
+      t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"], knew, ...(knew === "all" ? { phase: "open", public: true } : {}) }));
+      for (let i = 0; i < 3; i++) {
+        t.w.change(() => {});
+        t.w.flush();
+      }
+      expect(t.lots.draws.length).toBe(1);
+      expect(t.cup().roll).toMatchObject({ draw, done: false });
+      expect(t.cup().roll.forged ?? []).toEqual([]);
+      for (const [id, pose] of Object.entries(poses)) expect(t.doc.objects[id].transform).toEqual(pose);
+      for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
+    }
+    t.w.done();
+  });
+
+  it("a forgery Alice's own client finds (asked in her name, not by her): the same, saying so in her own words", () => {
+    const t = table();
+    t.shake();
+    const draw = t.cup().roll.draw;
+    // her client refuses it: its fault is hers before her protest is in the doc
+    t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice"], sealers: ["alice"], forged: [], fault: { of: "rforged", why: "forged" }, knew: ["alice"] }));
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.cup().roll.forged).toEqual(["alice"]);
+    t.w.flush();
+    expect(t.notices("A").at(-1)).toBe("Your cup was drawn again: your client says its lots were written in your name by someone else.");
+    expect(t.notices("B").at(-1)).toBe("Alice's cup was drawn again: Alice says its lots were written in their name by someone else.");
+    t.w.done();
+  });
+
+  it("a forgery Alice's own client finds once someone else could know the roll (Bob, a blind cup up, wrote over her commit): only stopped, never drawn again, else Bob could draw her dice again until a roll suited him", () => {
+    const t = table();
+    t.shake(true);
+    const draw = t.cup().roll.draw;
+    t.run("A", "lift");
+    t.w.flush();
+    const poses = Object.fromEntries(["cup", ...t.dice].map((id) => [id, structuredClone(t.doc.objects[id].transform)]));
+    for (const knew of [["bob"], ["alice", "bob"], "all"]) {
+      t.lots.states.set("cup", lotsState({ id: "rforged", draw, by: "alice", asked: ["alice", "bob"], sealers: ["alice", "bob"], forged: [], fault: { of: "rforged", why: "forged" }, knew }));
+      for (let i = 0; i < 3; i++) {
+        t.w.change(() => {});
+        t.w.flush();
+      }
+      expect(t.lots.draws.length).toBe(1);
+      expect(t.cup().roll).toMatchObject({ draw, done: false });
+      expect(t.cup().roll.forged ?? []).toEqual([]);
+      for (const [id, pose] of Object.entries(poses)) expect(t.doc.objects[id].transform).toEqual(pose);
+      for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
+    }
+    t.w.done();
+  });
+
+  it("only the holder's client draws again for a forgery: Bob's, holding no cup, asks nothing", () => {
+    const t = table({ present: ["B", "S"] });
+    t.w.change((d) => (d.objects.cup.traits[CUP] = { holder: "alice", up: false, blind: false, roll: { draw: "dALICExx", dice: t.dice, blind: false, done: false }, round: null }));
+    t.lots.states.set("cup", lotsState({ id: "rforged", draw: "dALICExx", by: "alice", asked: ["alice"], sealers: ["alice"], forged: ["bob"] }));
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.lots.draws).toEqual([]);
+    expect(t.cup().roll.draw).toBe("dALICExx");
+    t.w.done();
+  });
+
+  it("Alice's shake given up while she was away (lots.js GONE): nobody uses it; lifted, the others' HUD says she draws it again when back; her client, here, asks again for the same draw, once for that round, which nobody refuses", () => {
+    const t = table();
+    t.shake();
+    const draw = t.cup().roll.draw;
+    t.lots.states.set("cup", lotsState({ id: "rgone", draw, by: "alice", asked: ["alice"], sealers: ["alice"], phase: "ended", seed: null, gone: ["bob"] }));
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.lots.draws.slice(1)).toEqual([{ id: "cup", sealers: ["alice"], of: t.dice, draw }]);
+    t.w.change(() => {});
+    t.w.flush();
+    expect(t.lots.draws.length).toBe(2);
+    expect(t.hud("B")).toEqual([]); // down: nothing to see yet
+    t.run("B", "lift");
+    t.w.flush();
+    expect(t.cup().roll.done).toBe(false);
+    expect(t.hud("B")).toEqual(["Alice's dice can't be turned up: Alice left before their roll was drawn, and draws it again when they're back."]);
+    expect(t.hud("A")).toEqual([]);
+    t.w.done();
+  });
+
   it("two shakes at once, the merge keeping Alice's roll and Bob's round (another draw): the same, and Alice's client asks again for hers", () => {
     const t = table();
     t.shake();

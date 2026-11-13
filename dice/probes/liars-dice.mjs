@@ -42,6 +42,12 @@
 // 13. Two shake one cup (Purple) at the same moment: the merge keeps one
 //     holder, and that holder's client ends with lots that are its shake's,
 //     known to it alone.
+// 14. A forgery, by a modified client: A shakes Black; B's replica writes a
+//     round on A's draw in A's name, A's commit a nonce B holds. A's client
+//     refuses it as forged and shakes again in place (a new draw of the same
+//     dice, never a new attempt of the old one, which B's client would
+//     refuse as A's reroll); B is told why, B takes part (no protest), the
+//     dice never moved, and B's client never knows A's roll.
 //
 // Prints a JSON checklist and a timeline; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -227,10 +233,13 @@ try {
   // ── 8. the forehead case ──
   const blind = await menuPick("a", cup.a, "Shake blind");
   check("A's menu on her cup offers Shake blind", blind.picked, blind.offered);
-  const four = dice.a.slice(1);
+  // (the four left beside her cup: whichever one went to the pool is gone from them)
+  const four = dice.a.filter((d) => d !== lost);
   const drawnBlind = await until(`cup('b', ${Q(cup.a)}).blind && __p.lots('b', ${Q(cup.a)})?.draw === __p.cup('b', ${Q(cup.a)}).roll.draw && __p.lots('b', ${Q(cup.a)})?.phase === 'sealed' && __p.lots('a', ${Q(cup.a)})?.phase === 'sealed'`, 15_000);
   const sf = { a: await P(`lots('a', ${Q(cup.a)})`), b: await P(`lots('b', ${Q(cup.a)})`) };
-  check("blind: every seated part sealed (A's and B's), so while it's down nobody knows it, B included", drawnBlind && !sf.a.seed && !sf.b.seed && Q(sf.b.sealers) === Q([V.a, V.b].sort()) && Q((await P(`cup('a', ${Q(cup.a)})`)).roll.dice) === Q(four), sf);
+  const blindDice = (await P(`cup('a', ${Q(cup.a)})`)).roll.dice;
+  // (a copy: sf is read again once it's lifted)
+  check("blind: every seated part sealed (A's and B's), so while it's down nobody knows it, B included", drawnBlind && !sf.a.seed && !sf.b.seed && Q(sf.b.sealers) === Q([V.a, V.b].sort()) && Q(blindDice) === Q(four), { ...structuredClone(sf), four, blindDice });
   const roundBlind = await P(`round('b', ${Q(cup.a)})`);
   check("…in the doc, neither part is in the clear nor sealed to anyone yet", Object.keys(roundBlind.opens).length === 0 && Object.keys(roundBlind.sealed).length === 0, { opens: roundBlind.opens, sealed: roundBlind.sealed });
   check("…and the four dice still under the cup: nobody may see them", Q(await P(`audience('a', ${Q(four[0])})`)) === "[]", await P(`audience('a', ${Q(four[0])})`));
@@ -241,14 +250,15 @@ try {
   sf.b = await P(`lots('b', ${Q(cup.a)})`);
   const sealedTo = Object.fromEntries(Object.entries((await P(`round('b', ${Q(cup.a)})`)).sealed).map(([k, v]) => [k, Object.keys(v)]));
   check("lifted: A's part was sealed to B (and to nobody else); B's to nobody; B's client knows it, A's doesn't", !!sf.b.seed && Q(sealedTo) === Q({ [V.a]: [V.b] }) && (await P(`lots('a', ${Q(cup.a)})`)).seed === null, { sealedTo, b: sf.b });
-  await sleep(600);
+  // each view draws what it now knows on its next flush: wait for it (a loaded machine can hold frames back a while)
+  const wantBlind = sf.b.seed ? await P(`expected(${Q(sf.b.seed)}, 6, 4)`) : [];
+  await until(`${Q(four)}.every((d, i) => !__p.veiled('b', d) && __p.drawnFace('b', d)?.face === ${Q(wantBlind)}[i] && __p.veiled('a', d))`, 10_000);
   const aView = [];
   const bView = [];
   for (const d of four) aView.push({ veiled: await P(`veiled('a', ${Q(d)})`), face: await P(`drawnFace('a', ${Q(d)})`) });
   for (const d of four) bView.push({ veiled: await P(`veiled('b', ${Q(d)})`), face: await P(`drawnFace('b', ${Q(d)})`) });
-  const wantBlind = (await P(`expected(${Q(sf.b.seed)}, 6, 4)`));
   check("A lifted her blind cup: the audience is Ben alone", up && Q(await P(`audience('a', ${Q(four[0])})`)) === Q([V.b]), { up, audience: await P(`audience('a', ${Q(four[0])})`), cup: await P(`cup('a', ${Q(cup.a)})`), V });
-  check("B sees A's four dice as their seed says", bView.every((v, i) => !v.veiled && v.face?.face === wantBlind[i]), { want: wantBlind, bView });
+  check("B sees A's four dice as their seed says", bView.every((v, i) => !v.veiled && v.face?.face === wantBlind[i]), { want: wantBlind, bView, dbgB: await P("cupDebug('b')"), lotsB: await P(`lots('b', ${Q(cup.a)})`), audB: await P(`audience('b', ${Q(four[0])})`), whyB: await P(`whyNotDrawn('b', ${Q(four[0])})`), bViewNow: await Promise.all(four.map((d) => P(`drawnFace('b', ${Q(d)})`))) });
   check("A sees the stage's veil on each (face up, kept from her), never the dice", aView.every((v) => v.veiled), aView);
   check("…and A's client still can't know them", (await P(`lots('a', ${Q(cup.a)})`)).seed === null);
   check("both views label it blind", (await P("tags('a')")).includes("Blind: hidden from you") && (await P("tags('b')")).includes("Blind: hidden from Ana"), { a: await P("tags('a')"), b: await P("tags('b')") });
@@ -257,7 +267,7 @@ try {
   check("A's prompt now offers Show me", await until("prompt('a').some((t) => /Show me/.test(t))", 3000), await P("prompt('a')"));
   await b.key("l");
   const shown = await until(`cup('a', ${Q(cup.a)}).roll.done && !__p.veiled('a', ${Q(four[0])})`, 15_000);
-  await sleep(500);
+  await until(`${Q(four)}.every((d, i) => __p.drawnFace('a', d)?.face === ${Q(bView.map((v) => v.face?.face ?? null))}[i])`, 10_000);
   const aNow = [];
   for (const d of four) aNow.push(await P(`drawnFace('a', ${Q(d)})`));
   check("Show me: B's part is opened, and A sees exactly what B saw", shown && aNow.every((f, i) => f?.face === bView[i].face.face), { bSaw: bView.map((v) => v.face?.label), aSees: aNow.map((f) => f?.label) });
@@ -324,6 +334,27 @@ try {
   const pc = await P(`cup('a', ${Q(purple)})`);
   check("both shook the Purple cup at once: the merged doc has one holder, and the lots on it are that shake's, known to the holder's client alone", settledP, { cup: pc, a: await P(`lots('a', ${Q(purple)})`), b: await P(`lots('b', ${Q(purple)})`), hudA: await P("hudLines('a')"), hudB: await P("hudLines('b')") });
   mark("simultaneous shake");
+
+  // ── 14. a forgery in the holder's name, written by a modified client ──
+  const black = await P("id('a', 'Black cup')");
+  await P(`verb('a', 'dice.cup', 'shake', ${Q(black)})`);
+  const kKnown = await until(`lots('a', ${Q(black)})?.phase === 'known' && __p.lots('b', ${Q(black)})?.phase === 'sealed' && __p.cup('b', ${Q(black)})?.holder === ${Q(V.a)}`, 15_000);
+  check("A shook the Black cup: her lots, known to her", kKnown, await P(`lots('a', ${Q(black)})`));
+  await sleep(900);
+  const kDraw = (await P(`cup('a', ${Q(black)})`)).roll.draw;
+  const kDice = (await P(`cup('a', ${Q(black)})`)).roll.dice;
+  const kPoses = await Promise.all([black, ...kDice].map((id) => P(`transform('a', ${Q(id)})`)));
+  const toldBefore = (await P("notices('b')")).length;
+  const forgedK = await P(`forge('b', ${Q(black)}, 'forged')`);
+  const redrawn = await until(`cup('a', ${Q(black)})?.roll?.draw !== ${Q(kDraw)} && __p.cup('b', ${Q(black)})?.roll?.draw === __p.cup('a', ${Q(black)})?.roll?.draw && __p.lots('a', ${Q(black)})?.draw === __p.cup('a', ${Q(black)}).roll.draw && __p.lots('a', ${Q(black)})?.phase === 'known' && __p.lots('b', ${Q(black)})?.phase === 'sealed'`, 15_000);
+  const kc = await P(`cup('b', ${Q(black)})`);
+  const kr = await P(`round('b', ${Q(black)})`);
+  check("B's replica wrote a round on A's Black draw in A's name: A's client refused it and shook again in place, a new draw of the same dice, its roll saying A said so; B took part, protesting nothing", redrawn && kr?.id !== forgedK && kr?.by === V.a && Q(kr?.sealers) === Q([V.a]) && !!kr?.commits?.[V.b] && Object.keys(kr?.protests ?? {}).length === 0 && Q(kc.roll.dice) === Q(kDice) && Q(kc.roll.forged) === Q([V.a]) && kc.holder === V.a, { cup: kc, round: kr && { id: kr.id, by: kr.by, sealers: kr.sealers, commits: Object.keys(kr.commits), protests: kr.protests } });
+  const kPosesAfter = await Promise.all([black, ...kDice].map((id) => P(`transform('b', ${Q(id)})`)));
+  check("…the cup and its dice never moved, nothing was turned up, and B's client never knew A's roll", Q(kPosesAfter) === Q(kPoses) && !kc.roll.done && (await P(`lots('b', ${Q(black)})`)).seed === null);
+  const toldK = await until(`notices('b').slice(${toldBefore}).includes(${Q("Ana's cup was drawn again: Ana says its lots were written in their name by someone else.")})`, 5000);
+  check("…and B is told why, from the doc", toldK, (await P("notices('b')")).slice(toldBefore));
+  mark("forgery redrawn");
 
   const errs = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile|GPU stall due to ReadPixels/.test(e));
   check("no errors or warnings on the page", errs.length === 0, errs);

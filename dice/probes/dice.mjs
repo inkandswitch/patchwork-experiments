@@ -24,8 +24,12 @@
 //   is told "Ana rolled N" from the doc; the same for the symbol die; T turns
 //   the d20 to its next face, told as a turn; G over one of the pair rolls
 //   both: ONE draw, on the first die, of both in order, landing in one write
-//   and told in one line; then B leaves and A rolls alone: a draw of one
-//   member, drawn at once.
+//   and told in one line; then B throws the d20 and leaves at once, before
+//   anyone's commit reaches B: its round waits on B's opening (the asker
+//   opens first), and once B is gone from A's presence and A has watched it
+//   for both deadlines (lots.js STALE_MS), A's client gives it up in the
+//   doc: ended for every client, nothing landed, nobody waiting, and A is
+//   told; then A rolls alone: a draw of one member, drawn at once.
 // Measures press-to-in-the-air and press-to-landed for each roll (this page's
 // clock, from the keydown to the frame / the doc write).
 // Prints a JSON checklist (and the d20 roll as a sampled trajectory); exits
@@ -37,6 +41,8 @@ import { existsSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+/** lots.js STALE_MS: how long a client watches a round under way, its asker gone, before it gives it up */
+const STALE_MS = 10_000;
 const ROOT = resolve(PKG, "..");
 for (const p of ["dice/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
@@ -362,7 +368,23 @@ try {
     await shot(name);
   }
 
-  // ── alone: B leaves, and A rolls the d20 by herself ──
+  // ── stale: B throws the d20 and leaves before it's drawn; A gives it up once B is gone and both deadlines have passed ──
+  {
+    const before = (await P("notices('a')")).length;
+    const from = await P(`transform(${J(d20)})`);
+    const thrown = await P(`verb('b', 'dice', 'roll', ${J(d20)}) && __p.leave('b')`);
+    const waits = await until(`lots(${J(d20)}, 'a')?.by === ${J(V.b)} && __p.lots(${J(d20)}, 'a')?.phase === 'opening' && JSON.stringify(__p.lots(${J(d20)}, 'a').waiting) === ${J(J([V.b]))}`, 5000);
+    check("B threw the d20 and left at once: A committed, and the round waits on B's opening (the asker opens first)", thrown && waits, await P(`lots(${J(d20)}, 'a')`));
+    const t = Date.now();
+    const ended = await until(`lots(${J(d20)}, 'a')?.phase === 'ended'`, STALE_MS + 20_000);
+    const r = await P(`round(${J(d20)})`);
+    await until(`notices('a').slice(${before}).some((n) => /given up/.test(n))`, 3000);
+    const said = (await P("notices('a')")).slice(before);
+    check("once B was gone from A's presence and A had watched it for both deadlines, A's client gave it up in the doc (not before): ended, nothing landed, nobody waiting, and A was told", ended && Date.now() - t >= STALE_MS - 1500 && J(Object.keys(r?.gone ?? {})) === J([V.a]) && J(await P(`transform(${J(d20)})`)) === J(from) && !(await P("hudLines('a')")).some((l) => /waiting/.test(l)) && said.includes("Ben's throw of d20 was given up before it was drawn: Ben had left. Nothing was rolled."), { ms: Date.now() - t, gone: r?.gone, said, hud: await P("hudLines('a')") });
+    mark("stale throw given up");
+  }
+
+  // ── alone: B has left, and A rolls the d20 by herself ──
   {
     await P("leave('b')");
     check("B has left: A's view sees nobody else here", await until("present('a').length === 0", 8000), await P("present('a')"));
