@@ -1,7 +1,7 @@
 // The Machine tool: an existing game, run as a deterministic engine that
 // every viewer steps from a shared input log (../host). Pick a port to play;
 // everyone else watches the same game.
-import { compile } from "../engine.js";
+import { compile, identify } from "../engine.js";
 import { createSession, Host } from "../host/host.js";
 import { seating } from "../host/session.js";
 import { content as doomContent, lumps } from "../doom.js";
@@ -14,7 +14,27 @@ const WASM = {
   snes: new URL("../../engines/snes/dist/snes.wasm", import.meta.url),
 };
 const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
-const bytes = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+const bytes = async (url, init) => {
+  const r = await fetch(url, init);
+  if (!r.ok) throw new Error(`${url.pathname?.split("/").pop() ?? url}: ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Docs and files arrive by sync and may not all be here yet when a viewer
+// opens a machine: keep asking, and say what we're waiting for, rather than
+// fail on the first timeout.
+async function patiently(what, say, f, { tries = 12, wait = 2500 } = {}) {
+  for (let i = 1; ; i++) {
+    try {
+      return await f();
+    } catch (e) {
+      if (i >= tries) throw new Error(`${what}: ${e.message ?? e}`);
+      say(`${what}… (still waiting, try ${i + 1})`);
+      await sleep(wait);
+    }
+  }
+}
 const create = async (repo, value) => (repo.create2 ? await repo.create2(value) : repo.create(value));
 
 // Content records (doom.js content()): u32 length + bytes, the first the
@@ -115,13 +135,31 @@ export default function MachineTool(handle, element) {
   // ---- playing
   async function play(doc) {
     const kind = doc.kind;
-    const content = (await repo.find(doc.content)).doc().bytes;
-    const contentBytes = content instanceof Uint8Array ? content : new Uint8Array(content);
-    const wasm = await bytes(WASM[kind]);
+    const note = root.querySelector(".note");
+    const say = (t) => note && (note.textContent = t);
+    say("Fetching the game…");
+    const session = await patiently("Fetching the session", say, () => repo.find(doc.session));
+    const want = session.doc().engine;
+    say("Fetching what it runs…");
+    const contentBytes = await patiently("Fetching what it runs", say, async () => {
+      const b = (await repo.find(doc.content)).doc()?.bytes;
+      if (!b?.length) throw new Error("not here yet");
+      const u = b instanceof Uint8Array ? b : new Uint8Array(b);
+      if ((await identify(new Uint8Array(), u)).content !== want.content) throw new Error("not all here yet");
+      return u;
+    });
+    // The engine is a file of this package: until sync has all of it, what
+    // comes back isn't the engine the session names. Ask again, bypassing caches.
+    say("Fetching the engine…");
+    const wasm = await patiently("Fetching the engine", say, async (i) => {
+      const w = await bytes(WASM[kind], { cache: "reload" });
+      if ((await identify(w)).engine !== want.wasm) throw new Error("not the session's engine yet");
+      return w;
+    });
+    say("Joining the session…");
     const me = await name();
     let mine = () => input.sample();
     const host = await Host.open(repo, doc.session, { wasm, content: contentBytes, by: me, input: () => mine() });
-    const session = await repo.find(doc.session);
     const engine = host.engine;
     const [num, den] = session.doc().engine.hz;
     const hz = num / den;
