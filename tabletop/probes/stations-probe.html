@@ -4,13 +4,14 @@
 <!-- Driven by probes/stations.mjs. The BUILT scene tool with the BUILT
      tabletop and card-table plugins on a Lost Cities table from the template,
      two views A (Ana) and B (Ben), with real presence between them (either
-     view can be cut off). Plus a stand-in for something that walks in first
-     person (sailing's crew, aboard): a scene:extension, running in play, whose
-     instance has the `firstPerson` contribution tabletop hands over to
-     ({ enter(spot) → boolean, leave() }). start(w, eye, target) puts a view in
-     first person: an immersive arm (no pointer lock, which headless Chrome
-     won't give, so the use prompt reads the hovered object, as it does in
-     first person unlocked), the camera held at that eye; Esc leaves. -->
+     view can be cut off). Plus a stand-in for a body that walks (the walk
+     body, sailing's crew aboard): a scene:extension contributing one body,
+     `probe-walk` (scene/TOOLS.md §4), that holds the camera at an eye it is
+     given and reserves no keys, so F reaches the key map. It asks for no
+     pointer lock (headless Chrome won't give one), so the use prompt reads the
+     hovered object. start(w, eye, target) enters it (or moves it); the seat
+     body goes on over it, and when that pops it walks on from the eye, as the
+     walk body does. -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -55,56 +56,67 @@ function peer(handle) {
   return p;
 }
 
-// ── the stand-in walker: one per view, found by its viewer ──
-const walkers = {}; // viewer → { start, stop, walking, entered: [], left: 0 }
+// ── the stand-in walker: a body, one per view, found by its viewer ──
+const walkers = {}; // viewer → { start, stop, walking, entered, suspended, resumed: [eye], left, eye }
 const walker = {
   type: "scene:extension",
   id: "probe-walker",
   name: "Probe walker",
-  always: true,
-  activities: ["play"],
   async load() {
     return {
       create(api) {
-        const w = { walking: false, entered: [], left: 0, eye: null };
-        let release = null, disarm = null;
-        function start(eye, target) {
-          if (!w.walking) {
-            release = api.camera.hold();
-            disarm = api.arm({
-              key(ev) { if (ev.key !== "Escape") return false; stop(); return true; },
-              disarmed() { if (w.walking) stop(); },
-            }, { immersive: true });
-            w.walking = true;
-          }
-          w.eye = eye;
-          api.camera.set({ position: eye, target });
-          return true;
-        }
-        function stop() {
-          if (!w.walking) return;
-          w.walking = false;
-          const d = disarm, r = release;
-          disarm = release = null;
-          d?.();
-          r?.();
-        }
-        w.start = start;
-        w.stop = stop;
-        walkers[api.viewer] = w;
-        return {
-          firstPerson: {
-            // on your feet at the seat: above its eye, a step back from what it looks at
-            enter(spot) {
-              w.entered.push(JSON.parse(JSON.stringify(spot)));
-              const [ex, ey, ez] = spot.eye, [tx, , tz] = spot.target;
-              const d = Math.hypot(ex - tx, ez - tz) || 1;
-              return start([ex + ((ex - tx) / d) * 0.3, ey + 0.4, ez + ((ez - tz) / d) * 0.3], spot.target);
-            },
-            leave() { w.left++; stop(); },
-          },
-          dispose() { stop(); },
+        const w = { walking: false, entered: 0, suspended: 0, resumed: [], left: 0, eye: null, target: null };
+        let release = null;
+        const top = () => api.local.get()?.body?.id === "probe-walk";
+        const hold = () => {
+          release ??= api.camera.hold();
+          api.camera.set({ position: w.eye, target: w.target });
         };
+        const letGo = () => {
+          const r = release;
+          release = null;
+          r?.();
+        };
+        const body = {
+          id: "probe-walk",
+          label: "Probe walk",
+          keys: [],
+          lock: false,
+          reach: 2,
+          enter() {
+            w.entered++;
+            w.walking = true;
+            hold();
+            return {
+              input: {
+                suspended() { w.suspended++; letGo(); },
+                // the body over it went: walk on from the eye, where it left the view
+                resumed() {
+                  const c = api.camera.get();
+                  w.eye = [...c.position];
+                  w.target = [...(c.target ?? [0, 0, 0])];
+                  w.resumed.push({ eye: [...w.eye], target: [...w.target] });
+                  hold();
+                },
+              },
+              eye: () => {
+                const d = w.target.map((v, i) => v - w.eye[i]);
+                const n = Math.hypot(...d) || 1;
+                return { position: [...w.eye], direction: d.map((v) => v / n) };
+              },
+              leave() { w.left++; w.walking = false; letGo(); },
+            };
+          },
+        };
+        w.start = (eye, target) => {
+          w.eye = eye;
+          w.target = target;
+          if (top()) return (hold(), true);
+          return api.body.enter("probe-walk");
+        };
+        w.stop = () => (top() ? api.body.leave() : false);
+        walkers[api.viewer] = w;
+        return { bodies: [body], dispose() { letGo(); } };
       },
     };
   },
@@ -157,14 +169,16 @@ try {
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     confirms: () => [...confirms],
     activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
-    immersive: (w) => !!dbg[w]?.local.get().immersive,
+    /** the body on top of view w's stack, and the stack (scene/TOOLS.md §4) */
+    body: (w) => dbg[w]?.local.get().body?.id ?? null,
+    stack: (w) => dbg[w]?.router.bodies().map((b) => b.id) ?? null,
     phase: () => { const u = deckUrlOf(objects()); return u ? repo.handles.get(u)?.doc()?.phase ?? null : null; },
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
-    /** the stand-in walker in view w */
+    /** the stand-in walker in view w: on top of the stack */
     walk(w, eye, target) { return walkers[viewerOf[w]].start(eye, target); },
     stopWalking(w) { walkers[viewerOf[w]].stop(); return true; },
-    walking: (w) => !!walkers[viewerOf[w]]?.walking,
-    walker: (w) => { const k = walkers[viewerOf[w]]; return k ? { walking: k.walking, entered: k.entered, left: k.left, eye: k.eye } : null; },
+    walking: (w) => dbg[w]?.local.get().body?.id === "probe-walk",
+    walker: (w) => { const k = walkers[viewerOf[w]]; return k ? { walking: k.walking, entered: k.entered, suspended: k.suspended, resumed: k.resumed, left: k.left, eye: k.eye, stack: dbg[w]?.router.bodies().map((b) => b.id) } : null; },
     tray: (seat) => Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat) ?? null,
     handCards(seat) {
       const s = dbg.a.scene();

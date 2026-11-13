@@ -1,16 +1,17 @@
 // A Doom map in a scene, walked in first person by two people, in headless
 // Chrome with real keys and a real mouse.
 //
-//   (in scene/, arena/, joints/, traversal/ and doom/) pnpm build
-//   node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--show] [--gpu]
+//   (in scene/, arena/, walk/, joints/, traversal/ and doom/) pnpm build
+//   node probes/doom.mjs --wad <freedoom1.wad> [--shots <dir>] [--show] [--gpu] [--port 4920] [--cdp 9920]
 //
-// Mounts the BUILT scene tool with the BUILT arena, joints, traversal and doom plugins on
+// Mounts the BUILT scene tool with the BUILT arena, walk, joints, traversal and doom plugins on
 // real Automerge docs (two peers, probes/real-repo.js). The WAD is a file doc
 // in peer a's repo; A pastes its URL into an empty scene, and the doom
 // package lays its first map out: one static object and one per door, all the
 // same file doc, and arena's spawn point at the player 1 start. Then (the
 // verifier's success criteria):
-//  1. both views play E1M1 in first person and walk it (screenshots);
+//  1. both views play E1M1 in first person and walk it, each in one walker:
+//     the walk package's body, the only body over orbit (screenshots);
 //  2. A walks to a door and opens it with F: both views see it rise, rest,
 //     and close itself after its wait;
 //  3. B walks into it while it's shut (blocked) and through it while it's
@@ -39,7 +40,8 @@ const arg = (name, d = null) => {
 const WAD = arg("--wad");
 if (!WAD) throw new Error("usage: node probes/doom.mjs --wad <freedoom1.wad>");
 const SHOTS = resolve(arg("--shots", join(process.env.TMPDIR || tmpdir(), "doom-shots")));
-const PORT = 4920, CDP = 9920;
+// (--port / --cdp: another probe, another lane's, may have the defaults)
+const PORT = Number(arg("--port", 4920)), CDP = Number(arg("--cdp", PORT + 5000));
 
 // where things are, from the map itself: the static part is pasted at the origin, its anchor there
 const model = mapModel(readWad(new Uint8Array(readFileSync(WAD))), "E1M1");
@@ -189,7 +191,8 @@ try {
 
   // ─── 1. both walk it in first person ─────────────────────────────────────
   await play("a");
-  check("A plays in first person: a sky, the arena's walker at the player 1 start", (await P(`atmosphere("a")`))?.sky?.top === "#5d8fc9" && (await P(`running("a")`)).includes("joints"), { atmosphere: await P(`atmosphere("a")`), running: await P(`running("a")`) });
+  const bodyA = await P(`body("a")`);
+  check("A plays in first person: a sky, one walker (the walk body, the only body over orbit) with the arena's gun in hand", (await P(`atmosphere("a")`))?.sky?.top === "#5d8fc9" && (await P(`running("a")`)).includes("joints") && (await P(`running("a")`)).includes("walk") && bodyA.id === "walk" && JSON.stringify(bodyA.stack) === '["orbit","walk"]' && bodyA.reach === 2 && (await P(`held("a")`)) === "gun", { atmosphere: await P(`atmosphere("a")`), running: await P(`running("a")`), body: bodyA, held: await P(`held("a")`) });
   const startA = await eye("a");
   const spawnAt = world(-416, 256);
   check("A starts at the player 1 start", Math.hypot(startA[0] - spawnAt[0], startA[2] - spawnAt[2]) < 0.3, { eye: r3(startA), spawn: r3(spawnAt) });
@@ -213,7 +216,7 @@ try {
   for (const p of ROUTE) await walkTo("b", p);
   const atDoorB = await walkTo("b", FRONT_B, { tol: 0.25 });
   check("B walks the same way, to beside A", Math.hypot(atDoorB[0] - FRONT_B[0], atDoorB[2] - FRONT_B[2]) < 0.5, { start: r3(startB), eye: r3(atDoorB) });
-  check("each sees the other (arena avatars)", (await P(`avatars("a")`)).length === 1 && (await P(`avatars("b")`)).length === 1, { a: await P(`avatars("a")`), b: await P(`avatars("b")`) });
+  check("each sees the other (the walk package's avatars)", (await P(`avatars("a")`)).length === 1 && (await P(`avatars("b")`)).length === 1, { a: await P(`avatars("a")`), b: await P(`avatars("b")`) });
 
   // ─── 3a. B is stopped by the shut door ────────────────────────────────────
   const doorId = doors.find(([, o]) => o.name === `Door ${DOOR}`)[0];
@@ -237,9 +240,12 @@ try {
   const tOpen = Date.now();
   let passed = null;
   let late = null;
+  // its rest as A's doc has it, caught when it's written (on a loaded machine the door can be shut again by the time B is through)
+  let restOpen = null;
   // sample both views while it rises; B walks through once it's up; C joins once it rests open
   while (Date.now() - tOpen < 4200) {
     samples.push({ t: Date.now() - tOpen, a: await rise(doorId, "a"), b: await rise(doorId, "b") });
+    if (!restOpen) { const sl = (await P(`doc("a")`)).objects[doorId].traits["joints.slide"]; if (sl.at === "open") restOpen = sl; }
     if (!late && (await P(`doc("b")`)).objects[doorId].traits["joints.slide"].at === "open") late = await lateJoin();
     if (!passed && samples.at(-1).b > 2.2) {
       await P(`focus("b")`);
@@ -259,8 +265,8 @@ try {
   await face("b", aimYaw(passed, atDoorA));
   await shot("3-b-through-looking-back");
   await P(`focus("a")`);
-  const restOpen = (await P(`doc("a")`)).objects[doorId];
-  check("its rest, written once it got there: open, by A's view", restOpen.traits["joints.slide"].at === "open" && typeof restOpen.traits["joints.slide"].by === "string", restOpen.traits["joints.slide"]);
+  restOpen ??= (await P(`doc("a")`)).objects[doorId].traits["joints.slide"];
+  check("its rest, written once it got there: open, by A's view", restOpen.at === "open" && typeof restOpen.by === "string", restOpen);
   await shot("2-a-open");
 
   // ─── 4. a viewer who joined while it rested open (lateJoin, above) ───────
@@ -283,8 +289,16 @@ try {
 
   // ─── 7. draw calls and frame time ────────────────────────────────────────
   report.numbers.firstPersonAtDoor = await P(`timeFrames("a", 2500)`);
-  // the whole map from above, in edit
+  // the whole map from above, in edit: Escape puts the gun down (never the body); the body chip's Leave stops walking
   await b.key("Escape");
+  const putDown = (await P(`held("a")`)) === null && (await P(`body("a")`)).id === "walk";
+  const chipA = await P(`chip("a")`);
+  if (chipA) await clickAt(chipA);
+  await b.waitFor(`!!window.__p.chipItem("a", "Leave")`, 3000);
+  const leaveItem = await P(`chipItem("a", "Leave")`);
+  if (leaveItem) await clickAt(leaveItem);
+  await sleep(300);
+  check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (orbit again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "orbit", { chip: chipA, body: await P(`body("a")`) });
   await P(`setActivity("a", "edit")`);
   await b.waitFor(`window.__p.activity("a") === "edit"`, 5000);
   await sleep(500);
@@ -334,7 +348,7 @@ try {
   await shot("6-copy-open");
   const shut2 = await b.waitFor(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "closed"`, 15000, 100);
   const cycle2 = (await P("writes(2)")).slice(writes2).filter((w) => w.moved.length);
-  check("copied into another scene, it opens from its menu (no key, no reach, while editing) and closes itself, in two writes", !!item && item.ext === "joints" && opened2 && shut2 && cycle2.length === 2 && cycle2[0].slides[0] === "open" && cycle2[1].slides[0] === "closed" && docOpen[1] - cw[1] > 3 && Math.abs(drawnOpen[1] - docOpen[1]) < 1e-3, { pick: details.copyPick, item, cycle2, shut: cw, open: docOpen, drawnOpen });
+  check("copied into another scene, it opens from its menu (in orbit: the body reaches everything) and closes itself, in two writes", !!item && item.ext === "joints" && opened2 && shut2 && cycle2.length === 2 && cycle2[0].slides[0] === "open" && cycle2[1].slides[0] === "closed" && docOpen[1] - cw[1] > 3 && Math.abs(drawnOpen[1] - docOpen[1]) < 1e-3, { pick: details.copyPick, item, cycle2, shut: cw, open: docOpen, drawnOpen });
 
   // ─── 7b. one view alone, at 1660 × 960: the whole map, and first person ──
   await P(`solo("a")`);
