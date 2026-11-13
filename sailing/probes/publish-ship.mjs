@@ -9,7 +9,7 @@
 // the doc is what a maker gets from New → scene → Ship at sea: the sea trait,
 // the sloop and its stations, landmarks, the scene's one GLB file doc per
 // kind of piece (recorded at doc.assets[key] by ctx.file, as the stage's
-// sceneFile does), and `view.start` off her quarter (orbit, where a click
+// sceneFile does), and `view.start` off her quarter (Look, no body named, where a click
 // comes aboard).
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
@@ -99,7 +99,7 @@ const d = scene.doc();
 const objects = Object.values(d.objects);
 const has = (trait) => objects.filter((o) => o.traits?.[trait]).length;
 const problems = [];
-if (!d.view?.start?.home || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, or an old view.activity`);
+if (!d.view?.start?.home || "body" in d.view.start || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, a body named (she starts people in Look), or an old view.activity`);
 if (!d.traits?.["sailing.sea"]) problems.push("no sailing.sea trait");
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
 const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];

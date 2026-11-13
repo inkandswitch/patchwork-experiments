@@ -25,7 +25,8 @@ export function emptyScene(over = {}) {
     assets: {},
     packages: [],
     clock: { running: true, t: 0 },
-    view: { ...DEFAULT_VIEW },
+    // a scene made new starts people in Edit (scene/src/stage/bodies.js); a publisher names its own start
+    view: { ...DEFAULT_VIEW, start: { body: "edit" } },
     ...over,
   };
 }

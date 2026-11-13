@@ -18,7 +18,7 @@ describe("the Ship at sea template", () => {
     expect(sea.wind).toEqual({ speed: 7, from: 45 });
     expect(sea.scale).toBe(1);
     expect(Number.isInteger(sea.seed)).toBe(true);
-    // people start in orbit off her quarter (no body: a click comes aboard), and nothing else of the old view
+    // people start in Look off her quarter (no body named: a click comes aboard), and nothing else of the old view
     expect(Object.keys(doc.view.start)).toEqual(["home"]);
     expect("activity" in doc.view || "home" in doc.view).toBe(false);
     expect(calls.notices.at(-1).kind).toBe("info");
