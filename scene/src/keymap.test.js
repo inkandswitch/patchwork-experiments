@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { attentionPath, codeOfKey, hintFor, labelOf, mapInvocation, reservedBy, resolveKey } from "./keymap.js";
+import { attentionPath, codeOfKey, hintFor, labelOf, lookChain, mapInvocation, reservedBy, resolveKey } from "./keymap.js";
+import { keyContext, resolverState } from "./parts/resolver.js";
 import { TOO_FAR, applicable, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
 import { promptEntries } from "./parts/use.js";
 import { menuEntries } from "./parts/menu.js";
@@ -39,24 +40,53 @@ const BODIES = [
 ];
 const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
 const GESTURES = [null, { keys: CARRY_KEYS }];
+// Attention and the look under it: with a selection, attention's hit is
+// null but the look still decides the distance (and the point), so the
+// cases include a look on the selected card farther than its box.
 const ATTENTIONS = [
-  { name: "selection card", attention: { selected: "card", hit: null } },
-  { name: "selection crate", attention: { selected: "crate", hit: null } },
+  { name: "selection card", attention: { selected: "card", hit: null }, look: null },
+  { name: "selection card, look on it beyond its box", attention: { selected: "card", hit: null }, look: { id: "card", distance: 2.1 } },
+  { name: "selection crate, look spoke", attention: { selected: "crate", hit: null }, look: { id: "spoke", distance: 1 } },
   { name: "look spoke", attention: { selected: null, hit: { id: "spoke", distance: 1 } } },
   { name: "look card", attention: { selected: null, hit: { id: "card", distance: 1 } } },
-  { name: "null", attention: { selected: null, hit: null } },
+  { name: "look card, far", attention: { selected: null, hit: { id: "card", distance: 3 } } },
+  { name: "null", attention: { selected: null, hit: null }, look: null },
 ];
-const REACH = [1, 10];
+const BOX = [1, 10]; // how far every target's box is
 const ALL_KEYS = [...new Set(flatCommands(COLLECTED).flatMap(({ command }) => keysOf(command)).concat(["q", "e", "a", " ", "x"]))];
 
+/**
+ * A view's api as resolver.js reads it. Its context measures distance as the
+ * stage's does (stage.js distanceFrom): to the hit when it is on the target
+ * or something attached to it, else to the target's box.
+ */
+function apiFor({ body, tool, gesture, attention, look, box }) {
+  return {
+    local: { get: () => ({ gesture, held: tool, body }) },
+    collect: () => COLLECTED,
+    attention: () => attention,
+    look: () => (attention.selected == null ? attention.hit : look),
+    context: (hit = null) => ({
+      scene,
+      local: {},
+      from: [0, 0, 0],
+      reach: body.reach,
+      hit,
+      distance: (t) => (hit?.id != null && lookChain(hit.id, parents).includes(t) && Number.isFinite(hit.distance) ? hit.distance : box),
+    }),
+  };
+}
+
+// Every surface's hints and the key map's dispatch use one state, built from
+// attention by resolverState (keyContext): so the cases build it that way.
 function* cases() {
   for (const body of BODIES)
     for (const tool of TOOLS)
       for (const gesture of GESTURES)
-        for (const { name, attention } of ATTENTIONS)
-          for (const d of REACH) {
-            const ctx = { scene, local: {}, from: [0, 0, 0], reach: body.reach, hit: attention.hit, distance: () => d };
-            yield { body, tool, gesture, name, d, state: { gesture, tool, body, collected: COLLECTED, ctx, attention } };
+        for (const { name, attention, look = null } of ATTENTIONS)
+          for (const d of BOX) {
+            const api = apiFor({ body, tool, gesture, attention, look, box: d });
+            yield { body, tool, gesture, name, d, api, state: resolverState(api) };
           }
 }
 
@@ -104,8 +134,30 @@ describe("the key resolver (H3), exhaustively", () => {
         expect(resolveKey({ key: hk, code: codeOfKey(hk) }, c.state).invocation).toEqual(r.invocation);
       }
     }
-    expect(n).toBe(BODIES.length * TOOLS.length * GESTURES.length * ATTENTIONS.length * REACH.length);
+    expect(n).toBe(BODIES.length * TOOLS.length * GESTURES.length * ATTENTIONS.length * BOX.length);
     expect(hints).toBeGreaterThan(0);
+  });
+
+  it("the context is attention's: its hit, else the look, for hints and keys alike", () => {
+    for (const c of cases()) {
+      const { attention } = c.state;
+      const look = c.api.look();
+      // the one place it's built
+      expect(c.state.ctx.hit).toBe(attention.hit ?? look);
+      expect(keyContext(c.api, attention).hit).toBe(c.state.ctx.hit);
+    }
+    // seated (reach 2), a selected card whose box is 1 m off while the look is on it 2.1 m off: too far, for the hint and the key
+    const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
+    const seated = (look) => resolverState(apiFor({ body: BODIES[2], tool: null, gesture: null, attention: { selected: "card", hit: null }, look, box: 1 }));
+    const far = seated({ id: "card", distance: 2.1 });
+    expect(far.ctx.distance("card")).toBe(2.1);
+    expect(hintFor(draw, far)).toBe("");
+    expect(resolveKey({ key: "d", code: "KeyD" }, far)).toBe(null);
+    expect(promptEntries(far.collected, far.attention, far.ctx).entries.find((e) => e.command.id === "draw").state.title).toBe(TOO_FAR);
+    // the look elsewhere: the box decides, and D draws
+    const near = seated({ id: "crate", distance: 5 });
+    expect(hintFor(draw, near)).toBe("D");
+    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card" } });
   });
 
   it("what reserves keys comes first: the gesture's, the tool's, then the body's", () => {

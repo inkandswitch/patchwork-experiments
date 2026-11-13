@@ -1377,7 +1377,7 @@ export default function Stage(handle, element) {
     return Object.create(s, props);
   }
 
-  // Input or arm handlers whose press sessions are counted.
+  // Input (an extension's, a body's or the held tool's) whose press sessions are counted.
   function withSessions(own, input, extra = {}) {
     return Object.create(input, {
       press: {
@@ -1458,7 +1458,8 @@ export default function Stage(handle, element) {
    * command whose state() says null (or disabled) for that target, in the
    * context every surface passes (`from` and `reach` from the body: a
    * `reach: true` command out of reach is disabled), doesn't run; one
-   * without state() only runs for the scene (target null). A command that
+   * without state() only runs for the scene (target null). It runs as
+   * run(target, value, ctx), in the same context its state was asked in. A command that
    * declares `tool` is held: its run returns the tool's input, which goes in
    * the slot (running it again while held puts it down).
    * @returns {boolean} whether it ran
@@ -1474,7 +1475,8 @@ export default function Stage(handle, element) {
     }
     if (!c || typeof c.run !== "function") return false;
     try {
-      const st = commandState(c, target, context(hit));
+      const ctx = context(hit);
+      const st = commandState(c, target, ctx);
       if (!st || st.disabled) return false;
       if (c.tool) {
         const held = router?.held();
@@ -1483,11 +1485,11 @@ export default function Stage(handle, element) {
           return true;
         }
         if (value === false) return true;
-        const input = c.run(target, value);
-        if (input && typeof input === "object") holdTool(ext, c, input);
+        const input = c.run(target, value, ctx);
+        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, ...(typeof c.tool === "object" ? c.tool : {}) }, input);
         return true;
       }
-      c.run(target, value);
+      c.run(target, value, ctx);
       return true;
     } catch (err) {
       console.warn(`[scene] extension “${ext}”: command ${command} failed`, err);
@@ -1590,11 +1592,13 @@ export default function Stage(handle, element) {
     viewport.bodyRide?.(r && typeof r === "object" && typeof r.id === "string" ? r : null);
   }
 
-  /** Hold a tool: its command's declared keys and pointer, the given input. */
-  function holdTool(ext, command, input) {
+  /**
+   * Hold a tool: its declaration ({ command?, name, keys, pointer }: the
+   * command it was picked up through, if any) and the given input.
+   */
+  function holdTool(ext, t, input) {
     const own = owned.get(ext);
     if (!own || !router) return noop;
-    const t = typeof command.tool === "object" && command.tool ? command.tool : {};
     let put = null;
     const wrapped = withSessions(own, input, {
       put: {
@@ -1604,7 +1608,7 @@ export default function Stage(handle, element) {
         },
       },
     });
-    put = router.hold(ext, { command: command.id, name: String(command.name ?? command.id), input: wrapped, keys: t.keys ?? [], pointer: !!t.pointer });
+    put = router.hold(ext, { command: t.command ?? null, name: String(t.name ?? t.command ?? ext), input: wrapped, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
     own.tool = put;
     return put;
   }
@@ -2208,15 +2212,14 @@ export default function Stage(handle, element) {
         /** the top body's reach (m; orbit's is Infinity) */
         reach: () => bodyReach(),
       }),
-      /** hold one of this extension's tool commands (it declares `tool`) with this input: whatever was held is put down. @returns put */
-      hold: (commandId, input) => {
-        if (!live() || !input) return noop;
-        const c = (host.instanceOf(id)?.commands ?? []).find((k) => k?.id === commandId);
-        if (!c?.tool) {
-          console.warn(`[scene] extension “${id}”: hold(${commandId}): no such tool command`);
-          return noop;
-        }
-        return holdTool(id, c, input);
+      /**
+       * Hold a tool not picked up through a command (bag's drawn piece in
+       * hand): its declaration { name, keys?: [{ code, label }], pointer? }
+       * and its input. Whatever was held is put down. @returns put
+       */
+      hold: (tool, input) => {
+        if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
+        return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
       popover: (close) => (live() && router && typeof close === "function" ? acquire(own.offs, () => router.popover(id, close)) : noop),
@@ -2235,8 +2238,8 @@ export default function Stage(handle, element) {
     };
 
     function release() {
-      // 1–2: its open session and its arms (the router cancels, pops and
-      // unlocks), then its camera holds
+      // 1–2: its open session, its bodies and its held tool (the router
+      // cancels, pops, puts down and unlocks), then its camera holds
       router?.stopOwner(id);
       for (const rec of [...own.bodies]) leftBody(rec);
       own.tool = null;

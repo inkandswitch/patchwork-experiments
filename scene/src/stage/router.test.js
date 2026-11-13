@@ -452,6 +452,25 @@ describe("keys", () => {
     expect(blur).toHaveBeenCalled();
     expect(t.inputs.keys.key).not.toHaveBeenCalled();
   });
+  it("a search field with text: Escape clears it (one input event), the next leaves it; neither reaches the ladder below", () => {
+    const t = setup();
+    t.inputs.keys = { key: vi.fn(() => true) };
+    const field = document.createElement("input");
+    field.type = "search";
+    t.root.append(field);
+    field.focus();
+    field.value = "wind";
+    const inputs = vi.fn();
+    field.addEventListener("input", inputs);
+    const blur = vi.spyOn(field, "blur");
+    for (const [value, cleared, blurred] of [["", 1, 0], ["", 1, 1]]) {
+      key(field, "keydown", "Escape", "Escape");
+      expect(field.value).toBe(value);
+      expect(inputs).toHaveBeenCalledTimes(cleared);
+      expect(blur).toHaveBeenCalledTimes(blurred);
+    }
+    expect(t.inputs.keys.key).not.toHaveBeenCalled();
+  });
   it("on blur and a hidden page, every held key gets its keyup", () => {
     const t = setup();
     const armed = { key: () => true, keyup: vi.fn() };

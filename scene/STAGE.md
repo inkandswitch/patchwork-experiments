@@ -388,13 +388,14 @@ describes: {
 - An extension that leaves the running set because this viewer switched
   activity stops at once.
 - One that leaves because of a doc change keeps running for 2 s, and for as
-  long as it, or an extension it `requires`, has an arm, an open session or
-  a pose hold (the carry holding the table's card), so a peer's undo doesn't
-  tear down someone's game.
+  long as it, or an extension it `requires`, has a body entered, the held
+  tool, an open session or a pose hold (the carry holding the table's card),
+  so a peer's undo doesn't tear down someone's game.
 
 When an extension stops:
 1. cancel its open session;
-2. pop its arms (unlock, release camera holds);
+2. pop its bodies (the router unlocks when the top body changes), put its
+   held tool down, and release its camera holds;
 3. release its pose holds as put-backs, and let go of its claims (no `onLost`);
 4. clear its presence keys;
 5. stop its loops, `afterRender` hooks and scheduled work;
@@ -727,8 +728,9 @@ else orbit's base rides apply.
 
 **The held tool** is one slot, `{ stage, ext, command }`. A command that
 declares `tool: { keys?, pointer? }` is a tool: running it holds the input
-its run returns (running it again puts it down); `api.hold(commandId,
-input)` holds one directly (a bag's drawn piece). Holding another, Escape,
+its run returns (running it again puts it down); `api.hold({ name, keys?,
+pointer? }, input)` holds one not picked up through a command (a bag's
+drawn piece; its slot's `command` is null). Holding another, Escape,
 or its extension stopping puts it down (`input.put()`). It is offered every
 event first.
 
@@ -802,7 +804,7 @@ that extension.
 | | |
 |---|---|
 | `body` | `{ current() → local.body, enter(id, place) → boolean, leave() → boolean, eye() → { position, direction } \| null, reach() }`: any running extension's body, entered at `place` (an object id, or null for "here") |
-| `hold(commandId, input)` → put | hold one of this extension's tool commands (one that declares `tool`) with this input; whatever was held is put down |
+| `hold({ name, keys?, pointer? }, input)` → put | hold a tool not picked up through a command (a bag's drawn piece), declared here, with this input; whatever was held is put down |
 | `popover(close)` → release | an open menu or dialog: it wants the pointer, and Escape closes it (`close()`); release when it closes itself |
 | `context(hit?)` | the command context every surface passes: `{ scene, local, from, reach, hit, distance(target) }` |
 | `attention()`, `look()` | `{ selected, hit }`; the look's hit, `{ id, point, distance }` or null |
@@ -943,8 +945,8 @@ A **command**:
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
   show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
-  state(target, { scene, local, from?, hit? }) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
-  run(target, value?) → void | session }
+  state(target, ctx) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
+  run(target, value?, ctx) → void | session }   // ctx: api.context(hit), the same one state was asked in
 ```
 
 - `state` returning null (or false) means the command doesn't apply to that
@@ -960,7 +962,10 @@ A **command**:
 - Surfaces call `api.run({ ext, command, target, value, hit? })`. Every
   surface computes `state` in one context, `api.context(hit)`: `{ scene,
   local, from, reach, hit, distance(target) }`, `from` the body's eye and
-  `reach` its reach. A command that says `reach: true` applies only within
+  `reach` its reach; `run` gets the same context as its third argument.
+  Keys are resolved, and their hints computed, in attention's context
+  (`src/parts/resolver.js` `keyContext`: attention's hit, else the look,
+  so with a selection the look still decides distance and point). A command that says `reach: true` applies only within
   reach: beyond it, it is disabled with the title "too far", on every
   surface, and no surface runs it (TOOLS.md §4, H9). `distance` is from the
   eye to the hit when the look is on the target (or under it), else to the

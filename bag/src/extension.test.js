@@ -176,7 +176,10 @@ describe("drawing", () => {
     expect(t.carries.map((c) => [c.id, c.opts.now])).toEqual([["meeple", true]]);
     const arm = t.rec.arms.at(-1);
     expect(arm.on).toBe(true);
-    expect(arm.command).toBe("carry");
+    expect(arm.tool).toMatchObject({ name: "Drawn piece", pointer: true });
+    expect(arm.tool.keys.map((k) => k.code)).toEqual(["KeyQ", "KeyE", "KeyF", "AltLeft", "AltRight"]);
+    // held directly: no command to pick it up through
+    expect(t.cmd("carry")).toBeUndefined();
     arm.handlers.move({ x: 10, y: 20 });
     expect(t.carries[0].moves).toEqual([{ x: 10, y: 20 }]);
     // the next click puts it down where the drawer chose

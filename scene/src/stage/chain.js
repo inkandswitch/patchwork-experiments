@@ -61,7 +61,7 @@ export function holdersFor(running, hitChain, traitsOf) {
  * Offer an event down the chain: the first handler that returns something
  * truthy claims it. Returns { id, result } or null.
  * @param {string[]} order
- * @param {(id: string) => object | undefined} inputOf  an extension's `input` (or arm handlers)
+ * @param {(id: string) => object | undefined} inputOf  an extension's `input` (or a body's or the held tool's)
  * @param {string} type  "press" | "click" | …
  * @param {object | ((id: string) => object)} ev  the event, or a function giving it per extension (to add `holder`)
  */

@@ -5,7 +5,8 @@
 // The rungs, top first:
 //   0. lock      the pointer lock. The browser's own Escape releases it,
 //                unseen by the page (stage/pointer.js): the page never pops it
-//   1. field     a focused text field (it blurs)
+//   1. field     a focused text field (it blurs; a search field with text
+//                clears first, then blurs: the router does this rung)
 //   2. popover   an open menu or dialog (it closes)
 //   3. gesture   an open press session, a carry (it is put back)
 //   4. tool      the held tool (it is put down)

@@ -73,7 +73,9 @@ function create(api) {
     label.className = "menu-label";
     label.textContent = extra.label ?? String(state.label ?? command.name ?? command.id);
     b.append(label);
-    const key = extra.key ?? hintFor({ ext, command, target }, keys);
+    // the key is the key map's, decided in its context (resolver.js keyContext); the
+    // row runs at the point the menu was opened on, so a row disabled there shows none
+    const key = state.disabled ? "" : (extra.key ?? hintFor({ ext, command, target }, keys));
     if (key) {
       const k = document.createElement("kbd");
       k.className = "menu-key";

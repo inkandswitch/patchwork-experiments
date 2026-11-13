@@ -27,6 +27,7 @@
 
 import { commandState, controlKind, flatCommands } from "./toolbar-commands.js";
 import { mapInvocation } from "../keymap.js";
+import { resolverState } from "./resolver.js";
 
 /** Does this look like a session (something a held verb returns)? */
 const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "function" || typeof r.cancel === "function");
@@ -112,24 +113,23 @@ function create(api) {
     if (ev.ctrl || ev.meta || typeof ev.key !== "string" || ev.key === "Escape") return false;
     // the held key's own repeat: still the held verb's, on its target
     if (ev.repeat && held.has(codeOf(ev))) return true;
-    const attention = attentionNow();
-    const hit = attention.hit ?? api.look();
-    const ctx = api.context(hit);
-    const inv = mapInvocation(api.collect("commands"), ev.key, ctx, attention);
+    // the state every hint is computed from (resolver.js), so a shown key does what it showed
+    const { collected, ctx, attention } = resolverState(api, attentionNow());
+    const inv = mapInvocation(collected, ev.key, ctx, attention);
     if (!inv) return false;
     if (ev.repeat) return true;
-    const entry = flatCommands(api.collect("commands")).find((e) => e.ext === inv.ext && e.command.id === inv.command);
+    const entry = flatCommands(collected).find((e) => e.ext === inv.ext && e.command.id === inv.command);
     if (!entry) return false;
     const { command } = entry;
     // a tool: the stage holds it (or puts it down)
-    if (command.tool) return api.run({ ...inv, hit });
+    if (command.tool) return api.run({ ...inv, hit: ctx.hit });
     // what api.run does, keeping what run returns: still applies, then run
     const state = commandState(command, inv.target, ctx);
     if (!state || state.disabled) return false;
     const value = controlKind(state) === "toggle" ? !state.checked : undefined;
     let out;
     try {
-      out = command.run(inv.target, value);
+      out = command.run(inv.target, value, ctx);
     } catch (err) {
       console.warn(`[scene] extension “${inv.ext}”: command ${command.id} failed`, err);
       return true;

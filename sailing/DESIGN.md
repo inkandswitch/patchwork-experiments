@@ -2107,7 +2107,7 @@ the side test still decides.
 | S2 | station → walking | leave | Same cell |
 | L1 | swimming → ladder | F within reach of the ladder's `foot` | `t = 0` |
 | L2 | ladder → walking | `t` reaches 1 (for now `t` jumps 0 → 1, as boarding does today; a climb animation is a later choice) | At the link's `top`, a kept cell (C1) |
-| P1 | any → walking / swimming | `place(on, p)`, spawn, `firstPerson.enter` | **Projection** is total and returns only valid states: the kept cell nearest `p` in plan within `step` of `p`'s height; else, if `p` is outside `D_r` (over the water), swimming there; else the nearest kept cell. An empty mesh means swimming at `putOut` |
+| P1 | any → walking / swimming | `place(on, p)`, spawn, entering the `aboard` body (`crew.js` `aboardBody.enter`) | **Projection** is total and returns only valid states: the kept cell nearest `p` in plan within `step` of `p`'s height; else, if `p` is outside `D_r` (over the water), swimming there; else the nearest kept cell. An empty mesh means swimming at `putOut` |
 | R1 | any aboard → by projection | her mesh is rebaked (parts changed) | The old local point is projected onto the new mesh (P1). Projected into the water, `yaw` gains her heading, so the look doesn't turn |
 | G1 | any aboard → swimming | she's gone | At the last world point, by SW1's push (clear of any other ship) |
 | B1 | boarding → walking (or swimming) | her first mesh lands | Spawn projected (P1). Into the water (an empty mesh), `yaw` gains her heading, as everywhere else into the water |

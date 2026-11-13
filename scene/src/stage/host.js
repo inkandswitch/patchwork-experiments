@@ -9,8 +9,9 @@
 // STAGE.md order. The host only decides when.
 //
 // An extension that leaves because of the doc (a peer's undo took its trait
-// away) lingers for LINGER_MS, and for as long as it's busy (an arm, an open
-// session, a pose hold), so nobody's game is torn down under them. One that
+// away) lingers for LINGER_MS, and for as long as it's busy (a body entered,
+// the held tool, an open session, a pose hold), so nobody's game is torn down
+// under them. One that
 // leaves because this viewer switched activity stops at once.
 //
 // The activity: local.activity is this viewer's (null until they join: the
@@ -76,7 +77,7 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.activity in; local.running and local.activities out)
  *   makeApi: (rec: object) => { api: object, release: () => void },
  *   makeDropContext?: (id: string) => object,
- *   busy?: (id: string) => boolean,             // an arm, an open session or a pose hold
+ *   busy?: (id: string) => boolean,             // a body entered, the held tool, an open session or a pose hold
  *   onChange?: () => void,                      // an extension started or stopped
  *   lingerMs?: number,
  *   setTimer?: (fn: () => void, ms: number) => any,

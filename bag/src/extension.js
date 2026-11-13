@@ -46,6 +46,8 @@ const CARRY_KEYS = Object.freeze([
   { code: "AltLeft", label: "Place freely" },
   { code: "AltRight", label: "Place freely" },
 ]);
+/** The drawn piece in hand, held as a tool (scene/TOOLS.md §4): never picked up through a command, so held directly. */
+const DRAWN_PIECE = Object.freeze({ name: "Drawn piece", keys: CARRY_KEYS, pointer: true });
 /** How long a notice waits for its sender's name (ms). */
 const NAME_MS = 400;
 /** The most a single Draw several takes. */
@@ -444,7 +446,7 @@ export default {
       // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
       // every press until it's put down; Escape (the stage's ladder) or
       // another tool picked up puts it back where it came out
-      p.putDown = api.hold("carry", {
+      p.putDown = api.hold(DRAWN_PIECE, {
         move: (ev) => void (mine() && s.move(ev)),
         press(ev) {
           if (!mine() || (ev.button != null && ev.button !== 0)) return null;
@@ -669,15 +671,6 @@ export default {
         });
       },
       commands: [
-        {
-          // the drawn piece in hand, as the held tool (startCarry holds it): never shown, never keyed
-          id: "carry",
-          name: "Drawn piece",
-          tool: { keys: CARRY_KEYS, pointer: true },
-          show: [],
-          state: () => null,
-          run: () => null,
-        },
         {
           id: "draw",
           name: "Draw",

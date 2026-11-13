@@ -779,13 +779,22 @@ describe("the stage, mounted", () => {
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
     expect(put).toEqual(["gun", "brush", "gun"]);
     expect(m.local.get().held).toBe(null);
+    // a tool held directly, not through a command: its declaration, and no command
+    const putDown = api.hold({ name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true }, { put: () => put.push("piece") });
+    expect(m.local.get().held).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true });
+    putDown();
+    expect(put).toEqual(["gun", "brush", "gun", "piece"]);
+    expect(m.local.get().held).toBe(null);
+    // one with no name isn't a tool
+    api.hold({}, { put() {} });
+    expect(m.local.get().held).toBe(null);
   });
 
   it("a reach: true command runs only within the body's reach; orbit reaches everything", async () => {
     const ran = [];
     exts["t.always"] = recorder("t.always", () => ({
       bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [0, 0, 0], direction: [0, 0, -1] }), leave() {} }) }],
-      commands: [{ id: "open", name: "Open", reach: true, state: (t) => (t === "a" ? {} : null), run: (t) => ran.push(t) }],
+      commands: [{ id: "open", name: "Open", reach: true, state: (t) => (t === "a" ? {} : null), run: (t, _v, ctx) => ran.push([t, ctx.hit?.distance ?? null, ctx.reach]) }],
     }));
     const m = mount(newScene({ objects: { a: card({ transform: { position: [0, 0, -5], rotation: [0, 0, 0], scale: 1 } }) }, order: ["a"] }));
     await settle();
@@ -797,7 +806,11 @@ describe("the stage, mounted", () => {
     expect(api.run({ ext: "t.always", command: "open", target: "a", hit: { id: "a", distance: 2.5 } })).toBe(false);
     expect(api.run({ ext: "t.always", command: "open", target: "a" })).toBe(false);
     expect(api.context().distance("a")).toBeCloseTo(5);
-    expect(ran).toEqual(["a", "a"]);
+    // run gets the context its state was asked in
+    expect(ran).toEqual([
+      ["a", null, Infinity],
+      ["a", 1.5, 2],
+    ]);
   });
 
   it("focus left for nowhere (a clicked button that went away) comes back to the root", async () => {

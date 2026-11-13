@@ -577,8 +577,15 @@ export function createRouter(o) {
     if (fromEmbed(e, keyRoot)) return;
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
-      // the field rung: Escape leaves the field, and is nothing else
-      if (e.key === "Escape") target.blur?.();
+      // the field rung: Escape leaves the field, and is nothing else (a search
+      // field with text clears first: its query is a layer of its own)
+      if (e.key === "Escape") {
+        if (target.type === "search" && target.value) {
+          e.preventDefault();
+          target.value = "";
+          target.dispatchEvent(new Event("input", { bubbles: true }));
+        } else target.blur?.();
+      }
       return;
     }
     if (e.key === "Escape") {
@@ -815,7 +822,7 @@ export function createRouter(o) {
 
   /**
    * Hold a tool: the slot's one occupant; whatever was held is put down first.
-   * @param {string} owner  @param {{ command: string, name?: string, input: object, keys?: object[], pointer?: boolean }} t
+   * @param {string} owner  @param {{ command: string | null (a tool held directly, not through a command), name?: string, input: object, keys?: object[], pointer?: boolean }} t
    * @returns {() => void} put it down (if it's still the one held)
    */
   function hold(owner, t) {

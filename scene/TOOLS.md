@@ -155,7 +155,7 @@ picking one replaces it, Esc empties it. `local.tool`, `effectiveTool` and
 ```js
 bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres | Infinity
            enter(place) → { input, eye() → { position, direction }, ride?, leave() } }]
-// a tool: a command whose run arms the slot, declaring { keys: [{ code, label }], pointer? }
+// a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
 ```
 
 - **orbit**, the stage's: OrbitControls, `frame`, `autoframe` and the aids.
@@ -198,7 +198,8 @@ touch. Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused
-field, popover or dock field, the gesture, the held tool, the selection,
+field, popover or dock field (a search field with text clears first, then
+leaves: its query is a layer), the gesture, the held tool, the selection,
 the focus (Leave). Never the body, never the clock. The Esc hint names the
 next layer. Escape is handled in eleven files today; the ladder is the one
 place it is decided.
@@ -470,8 +471,9 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   `leave`, `eye`, `reach`; a body popped from under another takes those
   over it, and an extension stopping pops its own. The held tool is
   `local.held`; a command that declares `tool: { keys, pointer }` holds the
-  input its run returns (run again: put down), and `api.hold(command,
-  input)` holds one directly. `api.arm`, `relock`, `local.armed`,
+  input its run returns (run again: put down), and `api.hold({ name, keys,
+  pointer }, input)` holds one not picked up through a command (bag's drawn
+  piece; the slot's `command` is then null). `api.arm`, `relock`, `local.armed`,
   `local.immersive`, `camera.riding` and ride `fallback` went. Declared
   keys (`[{ code, label }]`) on the gesture (carry's `CARRY_KEYS`), the
   tool and the body make the key order (`src/keymap.js`) decidable before a
@@ -479,7 +481,10 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   `hintFor`, the dispatching resolver; the key map is the only
   `input.key`, and held verbs moved into it. The prompt still runs only in
   play (activities go at step 8). `from`, `reach` and `distance` are on
-  every surface's context (`api.context`), and `reach: true` on a command
+  every surface's context (`api.context`), passed to `state` and to `run`
+  (its third argument); keys and every key hint are decided in one
+  context, attention's (`src/parts/resolver.js` `keyContext`: its hit,
+  else the look), and `reach: true` on a command
   is checked once, in `commandState`: beyond reach it is disabled, "too
   far". The four REACH constants went: joints and traversal have one
   command each; seats' verb says `reach: true`; sailing's station verbs
@@ -487,7 +492,9 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   m. The pointer is `src/stage/pointer.js` (an open drawer also wants it),
   the ladder `src/stage/ladder.js` with seven rungs (a popover, `api.popover`,
   between the field and the gesture: the menu, the add dialog and the body
-  chip's menu are popovers, so the eleven Escape handlers are one). The
+  chip's menu are popovers, so the eleven Escape handlers are one; the
+  parts and outline filters' own Escape went to the field rung, which
+  clears a search field's text before it leaves the field). The
   body chip, who's here (body and held tool from presence) and the Esc hint
   are `scene.body`, bottom right; the world bar of §6 is not built. Tabletop's
   verbs no longer hide walking: their keys are the walk body's, so they show

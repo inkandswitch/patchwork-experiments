@@ -98,10 +98,10 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), a
       return close;
     },
     // the held tool (scene/TOOLS.md §4): one slot; holding again puts the last down
-    hold(command, handlers) {
+    hold(tool, handlers) {
       const was = rec.arms.at(-1);
       if (was?.on) (was.on = false), was.handlers.put?.();
-      const a = { command, handlers, on: true };
+      const a = { tool, handlers, on: true };
       rec.arms.push(a);
       return () => {
         if (!a.on) return;

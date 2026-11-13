@@ -23,6 +23,7 @@
 import css from "./use.css?inline";
 import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
 import { attentionPath, hintFor } from "../keymap.js";
+import { resolverState } from "./resolver.js";
 
 /** How many verbs the prompt shows. */
 export const MAX_VERBS = 3;
@@ -91,16 +92,12 @@ function create(api) {
   function refresh() {
     const km = keymap();
     if (km && !offWatch) offWatch = km.watch(() => refresh());
-    const local = api.local.get();
-    const collected = api.collect("commands");
     const pinned = km?.pinned();
-    const look = api.look();
-    const attention = pinned !== undefined ? Object.freeze({ selected: pinned, hit: null }) : api.attention();
-    const ctx = api.context(attention.hit ?? look);
+    const keys = resolverState(api);
+    const { collected, ctx, attention } = keys;
     const found = pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
     if (found) {
-      const keys = { gesture: local.gesture ?? null, tool: local.held ?? null, body: local.body ?? null, collected, ctx, attention };
-      current = { target: found.target, hit: attention.hit ?? look, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
+      current = { target: found.target, hit: ctx.hit, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
     } else current = null;
     render();
   }

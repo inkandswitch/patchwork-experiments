@@ -353,7 +353,7 @@ export default {
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
         if (pl && pl !== local && prev.scene === scene && ["selected", "held", "theme", "status"].every((k) => pl[k] === local[k])) return;
-        // the selection, its object, the provider, arming, theme, a move or content arriving
+        // the selection, its object, the provider, the held tool, theme, a move or content arriving
         refresh();
       },
       /** The selected object's handles, at the values shown (for probes and tests). */
