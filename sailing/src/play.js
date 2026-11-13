@@ -26,7 +26,6 @@ import { createCrew } from "./crew.js";
 import { createLooks } from "./looks.js";
 import { stationCommands } from "./stations.js";
 import { createHud } from "./hud.js";
-import { carryableAboard } from "./traits.js";
 
 /** The simulator's presence rate (Hz): its clock and its poses go out this often. */
 export const RATE = 30;
@@ -62,8 +61,6 @@ export default {
         for (const p of parts) p.update?.(scene, local, prev);
       },
       atmosphere: () => ctx.sea.atmosphere(),
-      // the hand (a game played aboard) never picks up the ship or her fittings (traits.js)
-      carryable: (id) => carryableAboard(api.scene(), id),
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
       // what walks, for whoever owns seats (api.collect("firstPerson"): stand up at a seat, sit back down)
