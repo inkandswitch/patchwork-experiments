@@ -395,6 +395,22 @@ client only gets to it after the parts have been released (it was busy, or
 a forger released "their" part as well), it only stops the roll, like
 anyone else's.
 
+**Not closed yet: knowing is read from the doc.** "Who could know the roll"
+(lots' `knew`) is read from the round's `sealed` map, and the doc is
+unsigned, so the viewer it names can take itself out: Ben, seated at Ana's
+lifted blind cup, reads `sealed.ana.ben`, then in one change deletes that
+envelope and either writes over Ana's commit or says "forged" himself.
+Ana's client now finds nobody but its own (or nobody) who could know, and
+draws the cup again, sealed to Ben again, as often as he likes: he chooses
+among her rolls. With three or more seated the holder's-word route is shut
+(the others stay in `knew`), but the others'-word route works for any
+number. The fix is for the holder's client to decide from what it knows
+itself (every cup draw has the holder as a sealer, and only its client
+releases that part): it records whom it sealed its part to, or that it
+opened it, and widens `knew` by that record (FOLLOWUPS, "Merge of the four
+lanes"). Until then the claims below about choosing among rolls hold only
+against a forger who leaves `sealed` alone.
+
 **Who may see what** (the cup's `audience` policy, merged by the stage), for
 the cup and every die it covers or whose shake isn't turned up yet:
 
@@ -441,7 +457,8 @@ cup.
   "Forgeries"), until its holder is back and sees the round in its name.
 - It can't choose among another's rolls by saying "forged" (anyone can, in
   their own name), nor by writing over the holder's commit so the holder's
-  client says it. Said before it could know the roll, it gets the cup
+  client says it, as long as it leaves `sealed` alone (deleting its own
+  envelopes first is the open hole above, "Not closed yet"). Said before it could know the roll, it gets the cup
   drawn again, aloud, a roll it knows no more of than the last; said once it
   could know it (a seated other, a blind cup up), it only stops that roll,
   told under its name (or, for an overwritten commit, as a part written in

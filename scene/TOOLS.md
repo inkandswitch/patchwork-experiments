@@ -144,8 +144,9 @@ the focus verbs and carries still work; a Select there does nothing.
 
 ## 4. The body and the held tool
 
-**One stack, one slot.** The router's arm stack keeps its mechanism
-(`router.js:575-633`: suspended, resumed) and holds only bodies, orbit
+**One stack, one slot.** The router's stack (once the arm stack; now
+`stack`, `pushBody` and `popBody` in router.js, keeping the old mechanism:
+suspended, resumed) holds only bodies, orbit
 always at the bottom. Entering a body pushes it; Leave pops it (standing up
 returns to walking); a body whose stage closes is popped; focus moves don't
 touch it. Over the stack is one slot, the held tool `{ stage, ext, command }`:

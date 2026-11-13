@@ -754,7 +754,7 @@ describe("the stage, mounted", () => {
     ]);
   });
 
-  it("a tool command's run arms the slot; running it again, Escape or another tool puts it down", async () => {
+  it("a tool command's run fills the slot; running it again, Escape or another tool puts it down", async () => {
     const put = [];
     exts["t.always"] = recorder("t.always", () => ({
       commands: [

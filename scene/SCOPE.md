@@ -212,6 +212,10 @@ while it moves:
 
 ## 6. Keys, hover, menus and arms with nested scopes
 
+> Superseded in part (build step 6): arms became bodies on one stack and the
+> held tool in one slot (TOOLS.md §4); there is no `api.arm`. Read "arm"
+> below as the note's earlier word.
+
 - **Keys have no hit**, so scope can't pick who gets them, and it shouldn't.
   The key map runs commands against selection → scene → hovered, and that
   order stays. What's missing is a way for a command to know which of its
