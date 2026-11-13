@@ -22,7 +22,8 @@ Nobody's state is authoritative, and nothing about Doom or the Super NES is
 in the host.
 
 ```sh
-pnpm install && pnpm test        # ~45 s; the Doom tests need the IWAD (below), else they skip
+pnpm install && pnpm test        # the fast tier, ~13 s; the Doom tests need the IWADs (below), else they skip
+pnpm test:full                   # every exhaustive case too, at commit (~150 s)
 pnpm bench:integration           # the real engines through the host, measured (~45 min; MACHINE_BENCH=doom-4-150 for one)
 pnpm check:browser               # both engines in headless Chrome, against Node; PNGs
 pnpm build:engines               # rebuilds engines/*/dist with emcc; the output is committed
@@ -43,6 +44,9 @@ station per port) is phase 2, and the host already offers what it needs.
 | `src/host/` | the host: `createSession`, `Host.open`; `timeline.js` (rollback), `session.js`, `clock.js`, `simnet.js`, `harness.js` |
 | `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM, the queries' decoders, the listener, a camera |
 | `src/doom-music.js` | Doom's music player: `music(wasm, lumps, rate)`, following the engine's music record |
+| `src/content.js` | content provisioning: recipes, `identify`, a per-hash cache in IndexedDB, `provide(hash, …)` |
+| `src/present/` | presentation for a scene (phase 2b): `screen.js` (a picture as a three.js texture), `sound.js` (WebAudio routing of `output()`), `doom-world.js` (Doom's things and sectors for a spectator), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
+| `src/test-tier.js` | the test tiers' flag |
 | `engines/machine.h` | the ABI, in C |
 | `engines/toy` | a toy engine (C, 9 KB), for the exhaustive tests |
 | `engines/doom` | Chocolate Doom, any IWAD and PWADs, 1 to 4 players, and its music player (`dist/music.wasm`); its own [README](engines/doom/README.md) |
@@ -389,14 +393,19 @@ byte-for-byte reproducible.
   stale object cache.
 - **Fixtures:**
   - The Unarmed ROM (256 KB) is committed.
-  - The Freedoom IWAD (28 MB) is not. `sh engines/doom/test/fetch-freedoom.sh`
-    fetches Freedoom 0.13.0 and checks its SHA-256s. Alternatively, point
-    `FREEDOOM1` at a copy.
+  - The Freedoom IWADs (28 MB each) are not. `sh engines/doom/test/fetch-freedoom.sh`
+    fetches Freedoom 0.13.0 and checks its SHA-256s; freedoom1.wad is what
+    the engine plays, freedoom2.wad only has its sprites decoded.
+    Alternatively, point `FREEDOOM1` (and `FREEDOOM2`) at copies.
   - Without the IWAD, the Doom tests and bench rows skip.
 
 ## Tests
 
-`pnpm test` runs vitest. Every test is finite, with fixed inputs, fixed
+`pnpm test` runs vitest's fast tier, for iterating (13 s on an M4 with
+two workers); `pnpm test:full` (`MACHINE_FULL=1`) adds every exhaustive
+case, and is what runs at commit (150 s). A test only the full tier runs is
+marked `test.skipIf(!FULL)`; one the fast tier runs on a prefix says where
+it cuts (`src/test-tier.js`). Every test is finite, with fixed inputs, fixed
 latency and loss tables, and virtual time; nothing is random.
 `src/test-setup.js` keeps it so under load: work that runs on real threads
 (compiling, SHA-256, gzip) finishes before it is awaited, `performance.now`
@@ -428,6 +437,30 @@ automerge-repo's scheduling; it is left open.
     game (doors, lifts, lights, corpses);
   - a camera at a player's eyes sees that player's view;
   - sounds, the listener and content.
+- **Presentation (`src/present/`):**
+  - the screen: one texture for its life, no copy, an upload per new
+    picture, each machine's aspect;
+  - sound, on a fake WebAudio context that renders what was scheduled:
+    the resampler over every way of cutting a signal, the stream over every
+    arrival pattern of 6 frames bringing 6 ticks (it plays on exactly while
+    the lead covers the lateness, else restarts once; never a click),
+    stalls, gaps, bursts and drift; Doom's voices and corrections (each
+    origin left making what the corrected tick leaves it making, 324
+    pairings); Doom's mix against S_AdjustSoundParams; E1M1's music from
+    the real player, sample for sample;
+  - Doom's world: rotation selection by r_things.c's expression and its
+    geometry at every 1/32 turn of facing and bearing and either side of
+    every edge; the BSP's sector against the map's lines on a 16-unit grid
+    (E1M1; every map of freedoom1 in the full tier, 1.3 M points); things
+    on the floors Doom spawned them on; every sprite of both Freedoom IWADs
+    decoded and checked against a second decoder (853 and 1350 lumps);
+  - Unarmed: every frame of the scripted runs, each player where the game
+    then draws it (the PPU's OAM), facing what the buttons asked, inside
+    the arena; PNGs of it are evidence, not tests.
+- **Content (`src/content.test.js`):** `parts` is `doom.js content()`'s
+  layout; identification of WADs and cartridges; the cache with storage
+  failing every way; `provide` over every ordering of up to three of seven
+  candidates, with and without a recipe, against a rule stated apart.
 - **Doom's music (`src/doom-music.test.js`):** E1M1 from the engine's
   record, every song in the IWAD, pause and stop, and songs after them.
 - **Super NES (`src/snes.test.js`):**

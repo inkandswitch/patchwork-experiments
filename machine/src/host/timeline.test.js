@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { compile } from "../engine.js";
 import { hashSnapshot } from "../wasm-state.js";
 import { Timeline } from "./timeline.js";
+import { FULL } from "../test-tier.js";
 
 const wasm = readFileSync(new URL("../../engines/toy/dist/toy.wasm", import.meta.url));
 const content = new TextEncoder().encode("timeline");
@@ -98,7 +99,7 @@ test("the in-order run differs at every tick", () => {
   expect(new Set(ref.map((s) => hashSnapshot(s))).size).toBe(W + 1);
 });
 
-test("every arrival order of 3 ticks × 2 ports, interleaved every way with the clock, advancing after each event", () => {
+test.skipIf(!FULL)("every arrival order of 3 ticks × 2 ports, interleaved every way with the clock, advancing after each event", () => {
   // put() says whether the state must be re-stepped; that must be exactly
   // when the spec's rows below the clock changed. The state is compared with
   // the spec's whenever either changed, and at the end.
@@ -140,7 +141,7 @@ test("every arrival order of 3 ticks × 2 ports, interleaved every way with the 
   expect(rewinds).toBeGreaterThan(0);
 }, 60_000);
 
-test("every arrival tick of 3 ticks × 2 remote ports × a local port at delay 0, 1, 2 × snapshot spacing 1, 2, 4", () => {
+test.skipIf(!FULL)("every arrival tick of 3 ticks × 2 remote ports × a local port at delay 0, 1, 2 × snapshot spacing 1, 2, 4", () => {
   // Ports 0 and 1 are remote: each of their 6 inputs arrives after 0..3 clock
   // ticks (4^6 ways). Port 2 is local: its input for tick k is put when the
   // clock reaches k - d. Ticks 0 and 2 are checkpoints; each must be handed
@@ -254,7 +255,7 @@ test("where every input is known, snapshots are rare but the floor still moves",
   expect(tl.floor).toBeGreaterThanOrEqual(128);
 });
 
-test("every arrival order again, one step per event: inputs arriving mid-re-simulation are never lost", () => {
+test.skipIf(!FULL)("every arrival order again, one step per event: inputs arriving mid-re-simulation are never lost", () => {
   // The host steps on a time budget, so a rollback's re-simulation can span
   // frames, and inputs (late ones included) land between its steps. Here
   // every event is followed by at most one step, at snapshot spacing 1 and

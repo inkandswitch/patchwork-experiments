@@ -9,6 +9,7 @@
     "build": "vite build",
     "build:engines": "sh engines/toy/build.sh && sh engines/snes/build.sh && sh engines/doom/build.sh",
     "test": "vitest run",
+    "test:full": "MACHINE_FULL=1 vitest run",
     "test:watch": "vitest",
     "bench:integration": "vitest run --config bench/vitest.config.js bench/integration.test.js",
     "bench:output": "vitest run --config bench/vitest.config.js bench/output.test.js",
