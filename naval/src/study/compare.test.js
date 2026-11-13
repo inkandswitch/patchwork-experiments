@@ -289,7 +289,7 @@ describe("subjects: what a dropped doc becomes, and a subject resolved at real s
 
   it("the hull's chartroom:source table rides along, and the job carries it to the worker", async () => {
     const upright = JSON.parse(readFileSync(here("../test/chartroom/upright-box.json"), "utf8"));
-    getRegistry(CHARTROOM_SOURCE).register({ id: "camber-hull-chartroom", name: "Camber", supportedDatatypes: ["camber-hull"], load: async () => ({ fingerprint: () => "fp", hydrostaticTable: () => upright, marineGeometry: () => null }) });
+    getRegistry(CHARTROOM_SOURCE).register({ id: "camber-hull-chartroom", name: "Camber", supportedDatatypes: ["camber-hull"], formats: ["hydrostatic-table/1"], load: async () => ({ fingerprint: () => "fp", hydrostaticTable: () => upright, marineGeometry: () => null }) });
     const r = await resolveSubject({ id: "s1", label: "x", hull: { url: U.hull, heads: null }, design: null }, { repo, getRegistry });
     expect(r.used.hull).toMatchObject({ table: "chartroom", fingerprint: "fp" });
     expect(r.job.linked.mesh.table).toBe(upright);
