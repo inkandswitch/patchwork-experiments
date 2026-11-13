@@ -167,30 +167,25 @@ describe("scene.dimensions", () => {
     expect(lines[1].geometry.getAttribute("position").count).toBe(2);
   });
 
-  it("Delete dimension and Deselect dimension take a dimension's ref as their target, and are keys only", async () => {
+  it("Delete dimension takes a dimension's ref as its target, and is a key only; Escape is the ladder's, no command's", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
     const cmd = (id) => inst().commands.find((c) => c.id === id);
     const ref = dimensionRef("d1");
     expect(cmd("delete")).toMatchObject({ name: "Delete dimension", key: ["Delete", "Backspace"], show: [] });
-    expect(cmd("deselect")).toMatchObject({ name: "Deselect dimension", key: "Escape", show: [] });
+    expect(cmd("deselect")).toBeUndefined();
     expect(state("delete", ref)).toBeTruthy(); // any dimension, selected or not
-    expect(state("deselect", ref)).toBeNull(); // only the selected one
     expect(state("delete")).toBeNull(); // not the scene's
     expect(state("delete", "a")).toBeNull(); // nor an object's
     expect(state("delete", dimensionRef("gone"))).toBeNull();
     selectDim("d1");
     expect(state("delete")).toBeNull(); // still not the scene's: the key map offers the selection first
-    expect(state("deselect", ref)).toBeTruthy();
-    expect(run("deselect", ref)).toBe(true);
-    expect(selectedDim()).toBeNull();
-    selectDim("d1");
     expect(run("delete", ref)).toBe(true);
     expect(s.doc().dimensions.d1).toBeUndefined();
     expect(selectedDim()).toBeNull();
     expect(run("delete", ref)).toBe(false);
   });
 
-  it("Delete and Escape reach the selected dimension through the key map", async () => {
+  it("Delete reaches the selected dimension through the key map; Escape deselects it (the ladder)", async () => {
     await mount({
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null }, d2: { a: free([0, 0, 0]), b: free([0, 0, 2]), label: null } },
       before: [KEYS, SELECT],

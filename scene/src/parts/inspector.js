@@ -54,7 +54,7 @@ let startsGroups = 0;
 const OPEN_EVENT = "patchwork:open-document";
 const CONTROLS_TOOL = "scene-render-controls";
 // local keys whose change can't change what the inspector shows
-const IGNORED_LOCAL = new Set(["hovered", "notices", "armed"]);
+const IGNORED_LOCAL = new Set(["hovered", "notices", "pointer", "escape", "gesture"]);
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -610,7 +610,7 @@ function create(api) {
   }
 
   function fillCommands(scene, local) {
-    const list = commandsFor(api.collect("commands"), view.id, { scene, local }, ID);
+    const list = commandsFor(api.collect("commands"), view.id, api.context(null), ID);
     const key = commandsKey(list);
     if (key === view.commandsKey) return;
     view.commandsKey = key;

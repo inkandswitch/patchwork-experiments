@@ -68,8 +68,8 @@ export default {
     const pushLabels = () => labels.set([...axisItems, ...triadItems]);
 
     const shown = () => api.pref("axes", true) !== false;
-    // what's drawn: shown, and not while an immersive arm (first-person play) is on
-    const drawn = () => shown() && !api.local.get().immersive;
+    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
+    const drawn = () => shown() && api.local.get().body?.id === "orbit";
     let key = null;
     let theme = null;
 
@@ -196,7 +196,7 @@ export default {
       update(scene, local, prev) {
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.immersive === was.immersive) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.body === was.body) return;
         if (!triad.children.length || local.theme !== theme) {
           theme = local.theme;
           key = null;

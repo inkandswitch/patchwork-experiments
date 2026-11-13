@@ -25,19 +25,47 @@ export function flatCommands(collected) {
  * A command's state for a target, or null when it doesn't apply. A command
  * without state() applies only to the null target (the scene). A state()
  * that throws doesn't apply.
+ *
+ * A command that says `reach: true` applies only within the body's reach
+ * (TOOLS.md §4): every surface passes the same context, `from` (the eye),
+ * `reach` (the body's, metres or Infinity) and `distance(target)` (from the
+ * eye to the look's hit when the look is on the target, else to the
+ * target's box), and beyond reach the verb shows disabled, "too far". Reach
+ * is ergonomics, not permission: orbit's is Infinity.
  * @param {object} command
  * @param {string | null} target
- * @param {{ scene: object, local: object }} ctx
+ * @param {{ scene: object, local: object, from?: number[] | null, reach?: number, distance?: (target: string) => number, hit?: object | null }} ctx
  * @returns {object | null}
  */
 export function commandState(command, target, ctx) {
-  if (typeof command?.state !== "function") return target == null ? {} : null;
-  try {
-    const s = command.state(target, ctx);
-    return s && typeof s === "object" ? s : s == null || s === false ? null : {};
-  } catch {
-    return null;
+  let s;
+  if (typeof command?.state !== "function") s = target == null ? {} : null;
+  else {
+    try {
+      const r = command.state(target, ctx);
+      s = r && typeof r === "object" ? r : r == null || r === false ? null : {};
+    } catch {
+      return null;
+    }
   }
+  if (s && command.reach === true && target != null && !inReach(target, ctx)) return { ...s, disabled: true, title: TOO_FAR };
+  return s;
+}
+
+/** What a verb beyond reach says. */
+export const TOO_FAR = "too far";
+
+/** Is a target within the context's reach? (No measure, or no reach given: yes.) */
+export function inReach(target, ctx) {
+  const reach = typeof ctx?.reach === "number" && !Number.isNaN(ctx.reach) ? ctx.reach : Infinity;
+  if (reach === Infinity || typeof ctx?.distance !== "function") return true;
+  let d;
+  try {
+    d = Number(ctx.distance(target));
+  } catch {
+    d = Infinity;
+  }
+  return Number.isFinite(d) && d <= reach;
 }
 
 /**
@@ -89,10 +117,9 @@ export function keyLabel(command) {
   return k.length === 1 ? k.toUpperCase() : k;
 }
 
-/** A tooltip: the state's title (else the name), with the key. */
-export function tooltip(command, state) {
+/** A tooltip: the state's title (else the name), with the key (the resolver's hint, where a surface has one: ../keymap.js hintFor). */
+export function tooltip(command, state, key = keyLabel(command)) {
   const base = String(state?.title ?? command?.name ?? command?.id ?? "");
-  const key = keyLabel(command);
   return key ? `${base} (${key})` : base;
 }
 
@@ -130,9 +157,9 @@ export function applicable(flat, target, ctx, surface, opts) {
 }
 
 /** Everything a rendered control shows, as one string (to tell whether it changed). */
-export function controlKey({ ext, command, state }) {
+export function controlKey({ ext, command, state, key }) {
   const choices = Array.isArray(state.choices) ? cleanChoices(state.choices) : null;
-  return JSON.stringify([ext, command.id, command.name ?? "", controlKind(state), tooltip(command, state), state.checked ?? null, state.value ?? null, choices, !!state.disabled, state.label ?? null]);
+  return JSON.stringify([ext, command.id, command.name ?? "", controlKind(state), tooltip(command, state, key), state.checked ?? null, state.value ?? null, choices, !!state.disabled, state.label ?? null]);
 }
 
 /** Has anything but these local keys changed? (a shallow compare) */

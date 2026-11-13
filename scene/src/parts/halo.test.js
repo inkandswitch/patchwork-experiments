@@ -29,12 +29,12 @@ describe("haloTarget: what the handles are on", () => {
     lg: group("Locked"),
     lm: object({ group: "lg", locked: true }),
   });
-  it("every selection × armed × writable", () => {
+  it("every selection × held tool × writable", () => {
     const want = { a: { kind: "object", id: "a" }, g: { kind: "group", id: "g" }, m: { kind: "object", id: "m" } };
     for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
-      for (const armed of [null, "scene.measure"])
+      for (const armed of [null, { ext: "scene.measure", command: "measure" }])
         for (const writable of [true, false]) {
-          const got = haloTarget(sc, { selected, armed }, writable);
+          const got = haloTarget(sc, { selected, held: armed }, writable);
           expect([selected, armed, writable, got]).toEqual([selected, armed, writable, writable && armed == null ? (want[selected] ?? null) : null]);
         }
   });
@@ -224,16 +224,16 @@ function pressOn(h, at = h.from ?? h.at) {
 }
 
 describe("scene.halo on the stage", () => {
-  it("shows on the selection, and goes for deselection, arming, a lock or a read-only doc", async () => {
+  it("shows on the selection, and goes for deselection, a held tool, a lock or a read-only doc", async () => {
     await mount({ objects: { a: object(), l: object({ locked: true }) } });
     expect(s.halo().debug.target).toBe(null);
     await s.select("a");
     expect(s.halo().debug.target).toEqual({ kind: "object", id: "a" });
     expect(s.halo().debug.handles).toHaveLength(14);
-    s.local.swap((m) => ({ ...m, armed: "scene.measure" }));
+    s.local.swap((m) => ({ ...m, held: { ext: "scene.measure", command: "measure" } }));
     await settle();
     expect(s.halo().debug.handles).toEqual([]);
-    s.local.swap((m) => ({ ...m, armed: null }));
+    s.local.swap((m) => ({ ...m, held: null }));
     await settle();
     expect(s.halo().debug.handles).toHaveLength(14);
     await s.select("l");

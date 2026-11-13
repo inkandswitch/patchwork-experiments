@@ -38,6 +38,14 @@ import { poseBeside } from "./place.js";
 
 /** How long a finished draw is still watched, to say so if a peer turns out to have drawn the same piece (ms). */
 const RECENT_MS = 30_000;
+/** The keys the hand's carry takes (scene's carry: Q and E turn, F turns over, Alt places freely), declared for the stage's key order. */
+const CARRY_KEYS = Object.freeze([
+  { code: "KeyQ", label: "Turn left" },
+  { code: "KeyE", label: "Turn right" },
+  { code: "KeyF", label: "Turn over" },
+  { code: "AltLeft", label: "Place freely" },
+  { code: "AltRight", label: "Place freely" },
+]);
 /** How long a notice waits for its sender's name (ms). */
 const NAME_MS = 400;
 /** The most a single Draw several takes. */
@@ -433,26 +441,28 @@ export default {
       if (!s) return false;
       p.session = s;
       const mine = () => p.session === s;
-      p.disarm = api.arm({
+      // the drawn piece in hand is a held tool (scene/TOOLS.md §4): it takes
+      // every press until it's put down; Escape (the stage's ladder) or
+      // another tool picked up puts it back where it came out
+      p.disarm = api.hold("carry", {
         move: (ev) => void (mine() && s.move(ev)),
         press(ev) {
           if (!mine() || (ev.button != null && ev.button !== 0)) return null;
           return {
             cursor: "grabbing",
+            keys: CARRY_KEYS,
             move: (e) => void (mine() && s.move(e)),
             end: (e) => void (mine() && letGo(p, "down", e)),
             tap: (e) => (mine() && letGo(p, "down", e), true),
             cancel() {},
             key: (e) => mine() && !!s.key?.(e),
+            keyup: (e) => mine() && !!s.keyup?.(e),
           };
         },
-        key(ev) {
-          if (!mine()) return false;
-          if (ev.key === "Escape") return letGo(p, "back"), true;
-          return !!s.key?.(ev);
-        },
+        key: (ev) => mine() && !!s.key?.(ev),
         keyup: (ev) => mine() && !!s.keyup?.(ev),
         cursor: () => "grabbing",
+        put: () => void (mine() && letGo(p, "back")),
       });
       return true;
     }
@@ -660,6 +670,15 @@ export default {
       },
       commands: [
         {
+          // the drawn piece in hand, as the held tool (startCarry holds it): never shown, never keyed
+          id: "carry",
+          name: "Drawn piece",
+          tool: { keys: CARRY_KEYS, pointer: true },
+          show: [],
+          state: () => null,
+          run: () => null,
+        },
+        {
           id: "draw",
           name: "Draw",
           key: "d",
@@ -670,7 +689,7 @@ export default {
               const title = titleOf(bag.url);
               if (!n) return { disabled: true, label: `${title} is empty`, title: "There is nothing inside to draw" };
               const copy = replaces(ruleOf(docOf(bag.url)));
-              return { label: `Draw from ${title} (${n})`, title: copy ? "Draw a copy of one into your hand; it stays in the bag (D)" : "Draw one into your hand (D)" };
+              return { label: `Draw from ${title} (${n})`, title: copy ? "Draw a copy of one into your hand; it stays in the bag" : "Draw one into your hand" };
             }),
           run: (target) => void draw(target, 1),
         },

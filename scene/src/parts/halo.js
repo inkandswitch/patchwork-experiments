@@ -1,6 +1,6 @@
 // scene.halo: the selection's handles (TOOLS.md §3), after Morphic's halo.
 //
-// Round what's selected, where its doc may be written and nothing is armed:
+// Round what's selected, where its doc may be written and no tool is held:
 // a move arrow along each axis, a rotate ring about each, and a scale handle
 // at each corner, all outside its box (./halo-math.js says where), sized for
 // the screen. There are no modes and no keys: each handle is its own verb,
@@ -328,7 +328,7 @@ function create(api) {
     input,
     update(scene, local, prev) {
       const p = prev?.local;
-      if (p && scene === prev.scene && local.selected === p.selected && local.armed === p.armed && local.theme === p.theme && local.status === p.status) return;
+      if (p && scene === prev.scene && local.selected === p.selected && local.held === p.held && local.theme === p.theme && local.status === p.status) return;
       reconcile();
     },
     dispose() {

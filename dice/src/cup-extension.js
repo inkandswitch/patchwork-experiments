@@ -460,7 +460,8 @@ function create(api) {
   }
   function startPeek(id) {
     const m = api.worldOf?.(id);
-    const eye = api.camera?.get?.()?.position;
+    // the body's eye (scene/TOOLS.md §4): walking, seated or in orbit
+    const eye = api.body.eye()?.position;
     let dir = [0, 1];
     if (m && eye && THREE) {
       const local = new THREE.Vector3(...eye).applyMatrix4(new THREE.Matrix4().fromArray(m).invert());

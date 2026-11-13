@@ -136,7 +136,7 @@ try {
   await P("pasteWad()");
   const doomBuilt = await until(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 180_000, 200);
   ids.exit = await P(`withTrait("traversal.exit")`);
-  ids.spawn = await P(`withTrait("arena.spawn")`);
+  ids.spawn = await P(`withTrait("walk.spawn")`);
   ids.home = await P("startAtSpawn()");
   check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts it in play at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
   await P(`show("aboard", "maker")`);

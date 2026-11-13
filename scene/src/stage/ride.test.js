@@ -69,22 +69,22 @@ describe("rides", () => {
     expect(out === null || r6(out.position).join() === r6(cam.position).join()).toBe(true);
   });
 
-  it("the latest applies, a fallback only when nothing else rides; leaving one re-baselines the next", () => {
+  it("the body's ride is the only one while it is set; else the latest base ride; leaving one re-baselines the next", () => {
     const rides = createRides();
-    const worlds = { ship: at([0, 0, 0]), table: at([0, 1, 0]) };
+    const worlds = { ship: at([0, 0, 0]), table: at([0, 1, 0]), other: at([0, 0, 0]) };
     const worldOf = (id) => worlds[id];
-    const offShip = rides.add("ship", { fallback: true, turn: false });
+    const offShip = rides.add("ship", { turn: false });
     expect(rides.current().id).toBe("ship");
-    const offTable = rides.add("table");
+    rides.body({ id: "table" });
     expect(rides.current().id).toBe("table");
-    // a fallback added later still gives way
-    const offOther = rides.add("other", { fallback: true });
+    // a base ride added later still gives way to the body's
+    const offOther = rides.add("other");
     expect(rides.current().id).toBe("table");
     offOther();
     rides.step({ worldOf, held: false, ...cam });
     worlds.table = at([1, 1, 0]);
     expect(r6(rides.step({ worldOf, held: false, ...cam }).position)).toEqual([1, 2, 5]);
-    offTable();
+    rides.body(null);
     // the ship's ride starts from this frame: the table's move isn't followed twice
     worlds.ship = at([5, 0, 0]);
     expect(rides.step({ worldOf, held: false, ...cam })).toBe(null);
@@ -119,17 +119,17 @@ describe("rides", () => {
 });
 
 describe("rides that wait their turn", () => {
-  it("a fallback asked for while another applies starts from where its object is when it comes to apply", () => {
+  it("a base ride asked for while the body's applies starts from where its object is when it comes to apply", () => {
     const rides = createRides();
     const worlds = { table: at([0, 1, 0]), ship: at([0, 0, 0]) };
     const worldOf = (id) => worlds[id];
     const cam = { position: [0, 2, 5], target: [0, 1, 0] };
-    const offTable = rides.add("table", {}, worlds.table);
-    rides.add("ship", { fallback: true }, worlds.ship); // its baseline: here
+    rides.body({ id: "table" }, worlds.table);
+    rides.add("ship", {}, worlds.ship); // its baseline: here
     worlds.ship = at([50, 0, 0]);
     worlds.table = at([50, 1, 0]);
     rides.step({ worldOf, held: false, ...cam });
-    offTable();
+    rides.body(null);
     // the ship's 50 m happened while the table's ride applied: not followed again
     expect(rides.step({ worldOf, held: false, ...cam })).toBe(null);
   });

@@ -44,7 +44,7 @@ function spawnStandIn() {
     async create(ctx, at) {
       const id = ctx.newId("o");
       ctx.change((d) => {
-        d.objects[id] = { name: "Spawn point", providerId: "file-glb", parent: at.parent, group: d.objects[at.parent].group, transform: at.transform, traits: { "arena.spawn": {} } };
+        d.objects[id] = { name: "Spawn point", providerId: "file-glb", parent: at.parent, group: d.objects[at.parent].group, transform: at.transform, traits: { "walk.spawn": {} } };
         d.order.push(id);
       });
       return id;
@@ -83,7 +83,7 @@ describe("dropping a WAD", () => {
     expect(d.traits["arena.level"]).toEqual({ look: "sky" });
     // the start: arena's own spawn part, asked for by id, put under the map at the player 1 start, facing its way
     expect(asked).toEqual([SPAWN_PART]);
-    const spawns = parts.filter(([, o]) => o.traits?.["arena.spawn"]);
+    const spawns = parts.filter(([, o]) => o.traits?.["walk.spawn"]);
     expect(spawns).toHaveLength(1);
     const m = mapModel(fixture(), "E1M1");
     const t = m.map.things[m.specials.starts.find((s) => s.player === 1).thing];
@@ -118,7 +118,7 @@ describe("dropping a WAD", () => {
     await ext.drop(ctx, { url: "automerge:wad", doc: wadDoc(), handle: null });
     expect(d.traits["arena.level"]).toBeUndefined();
     expect(asked).toEqual([]);
-    expect(partsOf(d).filter(([, o]) => o.traits?.["arena.spawn"])).toEqual([]);
+    expect(partsOf(d).filter(([, o]) => o.traits?.["walk.spawn"])).toEqual([]);
     expect(partsOf(d).filter(([, o]) => o.providerId === "doom-map")).toHaveLength(13);
   });
 

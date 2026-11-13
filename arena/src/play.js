@@ -1,17 +1,19 @@
-// Playing a level (the "arena" extension): first person, against whatever the
-// scene is made of. Nothing here knows about floors or walls: walking asks
-// the stage's raycasts (walk.js), shooting is one more ray, and what counts as
-// a target or a place to start is a trait on an object. So a boat with a few
-// targets on its deck is a level too.
+// Playing a level (the "arena" extension): a gun, and targets to shoot down,
+// in whatever the scene is made of. Walking is the walk body's (the walk
+// package, scene/TOOLS.md §4): this enters it, at a spawn point, when you
+// walk in. The gun is a held tool: "Gun" (G) picks it up and Escape (the
+// stage's ladder) puts it down; a click shoots, R reloads, and so does the
+// other mouse button. Shooting is one more ray, and what counts as a target
+// is a trait on an object, so a boat with a few targets on its deck is a
+// level too.
 //
 // State lives where the scene's contract says it should:
 // - doc: a target knocked over ({ down: { by, at }, stand: { rotation } }:
 //   level.js isDown) and its fallen pose. Scores aren't stored; they're
 //   counted from who knocked what down, so two players hitting one target at
 //   once agree on whose it is.
-// - presence: where each player is (their avatar), at 20 Hz while playing.
 // - sends: shots, so peers see the tracer; nobody keeps them.
-// - local (this closure): your body, keys, ammo.
+// - local (this closure): ammo.
 //
 // A level also has a look: a sky, a light haze that hides the void past the
 // walls, and a warm low sun that casts shadows (the stage's atmosphere). Only
@@ -19,19 +21,18 @@
 // targets on its deck keeps its own.
 
 import css from "./play.css?inline";
-import { BODY, look, lookDir, step } from "./walk.js";
 import { isDown, knockedOver, standTargetsUp } from "./level.js";
 
 const TARGET = "arena.target";
-const SPAWN = "arena.spawn";
+/** The walk body's spawn point (the walk package's trait; arena's spawn part writes it). */
+export const SPAWN = "walk.spawn";
 const MAG = 12;
 const RELOAD_MS = 1200;
 const SHOT_MS = 110; // between shots
-const FOV = 75;
 const HIT_MS = 260; // how long the hit marker shows
 const FLASH_MS = 60; // how long a muzzle flash shows
-/** The keys play takes: walking, running and jumping (and Esc, to stop). Every other key goes on down the chain (the use prompt). */
-export const MOVE_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
+/** The keys the gun takes while it's held: R reloads. */
+export const GUN_KEYS = Object.freeze([{ code: "KeyR", label: "Reload" }]);
 
 /** The level's sky, haze and sun (the stage's atmosphere; STAGE.md): look "arena". */
 export const ATMOSPHERE = Object.freeze({
@@ -86,18 +87,7 @@ export default {
     const overlay = api.overlay();
     overlay.classList.add("arena");
 
-    let playing = false;
-    let paused = false; // the lock was lost: waiting for a click to take it back
-    // Pointer lock can be refused (a sandboxed frame, a headless browser, a
-    // page without focus). Then play goes on without it: drag to look, click
-    // to shoot. Losing a lock you had (Esc) pauses instead. The stage tells
-    // them apart: lockLost({ refused }).
-    let free = false; // playing without the lock
-    let disarm = null;
-    let releaseCamera = null;
-    let stopLoop = null;
-    const body = { feet: [0, 0, 0], vel: [0, 0, 0], onGround: false, yaw: 0, pitch: 0 };
-    const keys = new Set();
+    let holding = false; // the gun is the held tool
     let ammo = MAG;
     let reloadUntil = 0;
     let lastShot = 0;
@@ -107,9 +97,7 @@ export default {
 
     // ─── drawing ──────────────────────────────────────────────────────────
     const world = api.world();
-    const tracers = []; // { line, until }
-    const avatars = new Map(); // session → { group, until }
-    const labels = api.labels();
+    const tracers = []; // { line, flash, until, flashUntil }
 
     function tracer(from, to, hue) {
       const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...from), new THREE.Vector3(...to)]);
@@ -127,23 +115,21 @@ export default {
       const now = performance.now();
       tracers.push({ line, flash, until: now + 120, flashUntil: now + FLASH_MS });
       api.invalidate();
-      // playing, tick() prunes them; watching, a loop of their own does (else
-      // a peer's shot hangs in the air until you play)
-      if (!playing) pruneLater();
+      pruneLater();
     }
     let tracerLoop = null;
 
     function pruneLater() {
-      if (!tracerLoop && tracers.length) {
-        tracerLoop = api.loop(() => {
-          pruneTracers();
-          if (tracers.length && !playing) return;
-          const off = tracerLoop;
-          tracerLoop = null;
-          off?.();
-          api.invalidate();
-        });
-      }
+      if (tracerLoop || (!tracers.length && !holding)) return;
+      tracerLoop = api.loop(() => {
+        pruneTracers();
+        if (holding) render();
+        if (tracers.length || holding) return;
+        const off = tracerLoop;
+        tracerLoop = null;
+        off?.();
+        api.invalidate();
+      });
     }
 
     function pruneTracers() {
@@ -163,52 +149,6 @@ export default {
       t.line.material.dispose();
       t.flash.geometry.dispose();
       t.flash.material.dispose();
-    }
-
-    function avatarFor(session, hue) {
-      let a = avatars.get(session);
-      if (!a) {
-        const group = new THREE.Group();
-        group.userData.noPick = true;
-        const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(hue / 360, 0.6, 0.55), roughness: 0.6 });
-        const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.2, 16), mat);
-        torso.position.y = 0.75;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), mat);
-        head.position.y = 1.55;
-        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.1), new THREE.MeshBasicMaterial({ color: 0x111111 }));
-        visor.position.set(0, 1.58, -0.2);
-        group.add(torso, head, visor);
-        world.add(group);
-        a = { group };
-        avatars.set(session, a);
-      }
-      return a;
-    }
-
-    function drawPeers() {
-      const peers = api.presence.get();
-      const seen = new Set();
-      const items = [];
-      for (const [session, p] of Object.entries(peers)) {
-        const av = p.keys?.arena?.avatar;
-        if (!av || !Array.isArray(av.feet)) continue;
-        seen.add(session);
-        const a = avatarFor(session, hueOf(p.viewer ?? session));
-        a.group.position.set(av.feet[0], av.feet[1], av.feet[2]);
-        a.group.rotation.set(0, av.yaw ?? 0, 0);
-        items.push({ key: session, text: nameOf(p.viewer), position: [av.feet[0], av.feet[1] + 2.05, av.feet[2]], className: "arena-name", rank: 1 });
-      }
-      for (const [session, a] of avatars) {
-        if (seen.has(session)) continue;
-        a.group.removeFromParent();
-        a.group.traverse((o) => {
-          o.geometry?.dispose?.();
-          o.material?.dispose?.();
-        });
-        avatars.delete(session);
-      }
-      labels.set(items);
-      api.invalidate();
     }
 
     function nameOf(viewer) {
@@ -244,12 +184,13 @@ export default {
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
       const now = performance.now();
       const reloading = now < reloadUntil;
-      const key = JSON.stringify([playing, paused, free, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
+      const walking = api.local.get()?.body?.id === "walk";
+      const key = JSON.stringify([holding, walking, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
       const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
       const show = (...kids) => hud.replaceChildren(...kids.filter((k) => k != null));
-      if (!playing) {
+      if (!holding) {
         // the start bar with the scores under it, in one column (so a narrow view wraps rather than overlaps)
         show(
           el(
@@ -258,7 +199,7 @@ export default {
             el(
               "div",
               { class: "arena-start" },
-              el("button", { type: "button", class: "arena-play", onclick: () => start() }, "▶ Play"),
+              el("button", { type: "button", class: "arena-play", onclick: () => start() }, walking ? "▶ Pick up the gun" : "▶ Play"),
               // a level without targets (an imported map) has nothing to count
               targets.length ? el("span", { class: "arena-count" }, `${standing} of ${targets.length} targets standing`) : null,
               standing < targets.length ? el("button", { type: "button", class: "arena-reset", onclick: () => resetTargets() }, "Stand them up") : null,
@@ -274,90 +215,32 @@ export default {
         now < hitUntil ? el("div", { class: "arena-hit" }) : null,
         targets.length || board.length ? el("div", { class: "arena-top" }, targets.length ? el("span", {}, `${standing} of ${targets.length} standing`) : null, board.length ? scoreList : null) : null,
         el("div", { class: "arena-ammo", "data-empty": ammo === 0 }, reloading ? "Reloading…" : `${ammo} / ${MAG}`),
-        el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · Right-click reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · Right-click reload · Esc stop"),
-        paused ? el("button", { type: "button", class: "arena-resume", onclick: () => resume() }, "Click to carry on") : null,
+        el("div", { class: "arena-help" }, "Click shoot · R or right-click reload · Esc put the gun down"),
       );
     }
 
-    // ─── playing ──────────────────────────────────────────────────────────
-    /** A spawn point (a random one), else above the middle of what's there. */
-    function spawn() {
-      const spots = Object.entries(scene?.objects ?? {}).filter(([, o]) => o?.traits?.[SPAWN]);
-      const pick = spots.length ? spots[Math.floor(Math.random() * spots.length)] : null;
-      if (pick) {
-        const m = api.worldOf(pick[0]);
-        if (m) {
-          body.feet = [m[12], m[13] + 0.1, m[14]];
-          body.yaw = Math.atan2(m[8], m[10]); // face the way the spawn point faces
-          body.pitch = 0;
-        }
-      } else {
-        const box = api.sceneBox();
-        const c = box ? [(box.min[0] + box.max[0]) / 2, box.max[1] + 1, (box.min[2] + box.max[2]) / 2] : [0, 2, 0];
-        body.feet = c;
-        body.yaw = 0;
-        body.pitch = 0;
-      }
-      body.vel = [0, 0, 0];
-      body.onGround = false;
-    }
+    // ─── the gun ──────────────────────────────────────────────────────────
 
-    const walkWorld = {
-      down: (from, max) => api.raycast(from, [0, -1, 0], { far: max })?.distance ?? null,
-      ahead: (from, dir, max) => {
-        const h = api.raycast(from, dir, { far: max });
-        return h ? { distance: h.distance, normal: h.normal } : null;
-      },
-    };
-
-    function eye() {
-      return [body.feet[0], body.feet[1] + BODY.eye, body.feet[2]];
-    }
-
-    function placeCamera() {
-      const e = eye();
-      const d = lookDir(body.yaw, body.pitch);
-      api.camera.set({ position: e, target: [e[0] + d[0], e[1] + d[1], e[2] + d[2]], fov: FOV, near: 0.05, far: 800 });
-    }
-
-    function tick(dt) {
-      const input = {
-        forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
-        strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
-        run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
-        jump: keys.has("Space"),
-      };
-      const next = step(body, input, body.yaw, Math.min(dt, 0.05), walkWorld);
-      Object.assign(body, next);
-      if (body.feet[1] < BODY.fallLimit) spawn();
-      if (reloadUntil && performance.now() >= reloadUntil) {
-        reloadUntil = 0;
-        ammo = MAG;
-      }
-      placeCamera();
-      api.presence.set("avatar", { feet: body.feet.map((v) => +v.toFixed(3)), yaw: +body.yaw.toFixed(3), pitch: +body.pitch.toFixed(3) });
-      pruneTracers();
-      render();
-    }
-
-    function shoot() {
+    /** Shoot along a ray ({ origin, dir }, world): the pointer's, or the eye's under lock. */
+    function shoot(ray) {
       const now = performance.now();
       if (now - lastShot < SHOT_MS || now < reloadUntil) return;
       if (ammo <= 0) return reload();
+      const e = ray?.origin ?? api.body?.eye?.()?.position;
+      const d = ray?.dir ?? api.body?.eye?.()?.direction;
+      if (!Array.isArray(e) || !Array.isArray(d)) return;
       lastShot = now;
       ammo--;
-      const e = eye();
-      const d = lookDir(body.yaw, body.pitch);
       const hit = api.raycast(e, d, { far: 300 });
       const to = hit ? hit.point : [e[0] + d[0] * 300, e[1] + d[1] * 300, e[2] + d[2] * 300];
+      const yaw = Math.atan2(-d[0], -d[2]);
       // from just below, right of and ahead of the eye, where a gun's muzzle would be
-      const from = [e[0] + Math.cos(body.yaw) * 0.22 - Math.sin(body.yaw) * 0.55, e[1] - 0.22, e[2] - Math.sin(body.yaw) * 0.22 - Math.cos(body.yaw) * 0.55];
+      const from = [e[0] + Math.cos(yaw) * 0.22 - Math.sin(yaw) * 0.55, e[1] - 0.22, e[2] - Math.sin(yaw) * 0.22 - Math.cos(yaw) * 0.55];
       tracer(from, to, hueOf(api.viewer));
       api.send("shot", { from, to });
       const o = hit ? scene?.objects?.[hit.id] : null;
       if (o && isTarget(o) && !isDown(o)) {
         hitUntil = now + HIT_MS;
-        const yaw = body.yaw;
         api.change((dd) => {
           const t = dd.objects?.[hit.id];
           const tr = t?.traits?.[TARGET];
@@ -376,6 +259,11 @@ export default {
     function reload() {
       if (reloadUntil || ammo === MAG) return;
       reloadUntil = performance.now() + RELOAD_MS;
+      setTimeout(() => {
+        reloadUntil = 0;
+        ammo = MAG;
+        render();
+      }, RELOAD_MS);
       render();
     }
 
@@ -383,157 +271,77 @@ export default {
       api.change((d) => standTargetsUp(d));
     }
 
-    function turn(dx, dy) {
-      const l = look(body.yaw, body.pitch, dx, dy);
-      body.yaw = l.yaw;
-      body.pitch = l.pitch;
-    }
-
-    /** Take the lock back after losing it (refused, lockLost says so and play goes on without it). */
-    function resume() {
-      Promise.resolve(api.relock()).catch(() => {});
-    }
-
-    /** The lock was refused: play on without it. */
-    function onRefused() {
-      if (!playing) return;
-      free = true;
-      paused = false;
-      render();
-    }
-
-    function start() {
-      if (playing) return;
-      playing = true;
-      paused = false;
-      free = false;
-      spawn();
-      ammo = MAG;
-      api.presence.rate(20);
-      releaseCamera = api.camera.hold();
-      // a bare session: a press while playing is a shot, never a drag
-      const shotSession = { move() {}, end() {}, cancel() {}, tap: () => true };
-      // without the lock: a drag looks around, a tap shoots
-      const lookSession = (ev) => {
-        let last = [ev.clientX ?? 0, ev.clientY ?? 0];
-        return {
-          move(e) {
-            const at = [e.clientX ?? last[0], e.clientY ?? last[1]];
-            turn(at[0] - last[0], at[1] - last[1]);
-            last = at;
-          },
-          end() {},
-          cancel() {},
-          tap() {
-            shoot();
-            return true;
-          },
-          cursor: "grabbing",
-        };
-      };
-      disarm = api.arm(
-        {
-          move(ev) {
-            if (!ev.locked || paused) return;
-            turn(ev.dx ?? 0, ev.dy ?? 0);
-          },
-          press(ev) {
-            if (paused) return null; // the resume button takes it
-            // the other button reloads: no key of its own, so every key but walking's is the use prompt's
-            if (ev.button === 2) reload();
-            if (ev.button !== 0) return shotSession;
-            if (!ev.locked) return lookSession(ev);
-            shoot();
-            return shotSession;
-          },
-          click: () => true,
-          menu: () => true,
-          wheel: () => true,
-          // only play's own keys: F, R, E and the rest go on to the use prompt (a door's Open, a die's Roll)
-          key(ev) {
-            if (ev.key === "Escape") {
-              stop();
-              return true;
-            }
-            if (!MOVE_KEYS.has(ev.code)) return false;
-            keys.add(ev.code);
-            return true;
-          },
-          keyup(ev) {
-            if (!keys.has(ev.code)) return false;
-            keys.delete(ev.code);
-            return true;
-          },
-          lockLost({ refused = false } = {}) {
-            keys.clear();
-            if (refused) return onRefused();
-            paused = true; // lost (Esc): wait for a click
-            render();
-          },
-          resumed() {
-            paused = false;
-            render();
-          },
-          disarmed() {
-            if (playing) stop();
-          },
-          cursor: (ev) => (ev.locked ? "none" : "crosshair"),
-        },
-        // immersive: the editor's decorations (grid, axes) stand aside while playing
-        { lock: true, replace: true, immersive: true },
-      );
-      stopLoop = api.loop((dt) => {
-        if (!paused) tick(dt);
-      });
-      render();
-    }
-
-    function stop() {
-      if (!playing) return;
-      playing = false;
-      paused = false;
-      free = false;
-      keys.clear();
-      const d = disarm;
-      disarm = null;
-      d?.();
-      stopLoop?.();
-      stopLoop = null;
-      releaseCamera?.();
-      releaseCamera = null;
-      api.presence.set("avatar", undefined);
-      api.presence.rate(0);
-      pruneLater(); // your last shots' tracers
-      render();
-    }
-
-    // the lock was granted, or came back (a click on "carry on")
-    const onLock = () => {
-      if (!playing || !document.pointerLockElement) return;
-      if (paused || free) {
-        paused = false;
-        free = false;
+    // a bare session: a press the gun took is a shot (or a reload), never a drag
+    const bare = { move() {}, end() {}, cancel() {}, tap: () => true };
+    // the gun's input, while it's the held tool: under the lock a press
+    // shoots at once; without it a press is the body's (a walk drags to look)
+    // and a tap comes back as a click, which shoots
+    const gun = {
+      press(ev) {
+        if (ev.button === 2) {
+          reload();
+          return bare;
+        }
+        if (ev.button !== 0 || !ev.locked) return null;
+        shoot(ev.ray);
+        return bare;
+      },
+      click(ev) {
+        shoot(ev.ray);
+        return true;
+      },
+      // the other button reloads: no menu while the gun is held
+      menu: () => true,
+      key(ev) {
+        if (ev.code !== "KeyR") return false;
+        reload();
+        return true;
+      },
+      cursor: (ev) => (ev.locked ? "none" : "crosshair"),
+      put() {
+        holding = false;
         render();
-      }
+      },
     };
-    api.listen(document, "pointerlockchange", onLock);
-    // other players move between doc changes
-    api.presence.watch(() => drawPeers());
+
+    /** Walk in (at a spawn point) with the gun in hand. */
+    function start() {
+      if (api.local.get()?.body?.id !== "walk") {
+        const spots = Object.entries(scene?.objects ?? {}).filter(([, o]) => o?.traits?.[SPAWN]).map(([id]) => id);
+        const spot = spots.length ? spots[Math.floor(Math.random() * spots.length)] : null;
+        if (!api.body.enter("walk", spot)) api.notify("Walking needs the walk package; you can still shoot from here.");
+      }
+      if (!holding) api.run({ ext: api.id, command: "gun" });
+    }
 
     return {
       update(s, local, prev) {
         scene = s;
-        if (s !== prev?.scene) render();
-        drawPeers();
+        if (s !== prev?.scene || local?.body !== prev?.local?.body) render();
       },
       receive(type, data, from) {
         if (type !== "shot" || !Array.isArray(data?.from) || !Array.isArray(data?.to)) return;
         tracer(data.from, data.to, hueOf(from?.viewer ?? from?.session));
       },
       commands: [
-        { id: "play", name: "Play", key: "Enter", show: ["toolbar", "menu"], state: () => (playing ? null : { title: "Walk the level in first person (Enter)" }), run: () => start() },
+        { id: "play", name: "Play", key: "Enter", show: ["toolbar", "menu"], state: (t) => (t == null && !holding ? { title: "Walk the level with the gun" } : null), run: () => start() },
+        {
+          // a tool: its run's input goes in the stage's one slot
+          id: "gun",
+          name: "Gun",
+          key: "g",
+          tool: { keys: GUN_KEYS },
+          show: ["toolbar", "menu"],
+          state: (t) => (t == null ? { checked: holding, title: "The gun: a click shoots, R reloads" } : null),
+          run() {
+            holding = true;
+            ammo = MAG;
+            pruneLater();
+            render();
+            return gun;
+          },
+        },
       ],
-      hud: () => [],
       // only a laid-out level has the arena's look (see the top): adding a
       // target to a boat writes the level trait too, but not its look
       atmosphere: () => {
@@ -541,7 +349,7 @@ export default {
         return typeof look === "string" && Object.hasOwn(LOOKS, look) ? LOOKS[look] : null;
       },
       dispose() {
-        stop();
+        tracerLoop?.();
         for (const t of tracers) disposeTracer(t);
       },
     };

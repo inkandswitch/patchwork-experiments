@@ -56,14 +56,14 @@ export function groupRoots(scene, gid) {
 /**
  * What the halo's handles are on: { kind: "object" | "group", id }, or null.
  * Handles show for the selection where its doc may be written, while
- * nothing is armed (an armed tool takes every press), on an object that
+ * no tool is held (a held tool takes every press), on an object that
  * isn't locked or a group with something it can move.
  * @param {object} scene  api.scene()
  * @param {object} local  api.local.get()
  * @param {boolean} writable  api.writable()
  */
 export function haloTarget(scene, local, writable = true) {
-  if (!writable || local?.armed != null) return null;
+  if (!writable || local?.held != null) return null;
   const id = local?.selected;
   const o = id != null ? scene?.objects?.[id] : null;
   if (!o) return null;

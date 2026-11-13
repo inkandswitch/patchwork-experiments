@@ -711,37 +711,93 @@ describe("the stage, mounted", () => {
     ]);
   });
 
-  it("an armed extension is local.armed and has the input first; stopping it disarms", async () => {
+  it("bodies: entering pushes one over orbit (local.body says which); its keys are its; its extension stopping pops it", async () => {
     const order = [];
-    exts["t.edit"] = recorder("t.edit", (api) => {
-      api.arm({ key: (ev) => (order.push(["armed", ev.key]), true) });
-      return {};
-    });
-    exts["t.always"] = recorder("t.always", () => ({ input: { key: (ev) => (order.push(["always", ev.key]), true) } }));
+    const left = [];
+    exts["t.edit"] = recorder("t.edit", () => ({
+      bodies: [
+        {
+          id: "walk",
+          label: "Walk",
+          keys: [{ code: "KeyW", label: "Forward" }],
+          lock: false,
+          reach: 2,
+          enter: (place) => ({ input: { key: (ev) => (order.push(["walk", ev.key, place]), true) }, eye: () => ({ position: [1, 2, 3], direction: [0, 0, -1] }), leave: () => left.push("walk") }),
+        },
+        { id: "nowhere", label: "Nowhere", enter: () => null },
+      ],
+    }));
+    exts["t.always"] = recorder("t.always", (api) => ({ input: { key: (ev) => (order.push(["always", ev.key]), true) } }));
     const m = mount(newScene());
     await settle();
-    expect(m.local.get().armed).toBe("t.edit");
-    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", bubbles: true }));
-    m.local.swap((v) => ({ ...v, activity: "play" }));
-    expect(m.local.get().armed).toBeNull();
+    const api = m.debug.host.record("t.always").api;
+    expect(m.local.get().body).toMatchObject({ id: "orbit", depth: 0, reach: Infinity });
+    expect(api.body.enter("nowhere")).toBe(false);
+    expect(api.body.enter("missing")).toBe(false);
+    expect(api.body.enter("walk", "here")).toBe(true);
+    expect(m.local.get().body).toMatchObject({ id: "walk", label: "Walk", ext: "t.edit", depth: 1, reach: 2, keys: [{ code: "KeyW", label: "Forward" }] });
+    expect(api.body.eye()).toEqual({ position: [1, 2, 3], direction: [0, 0, -1] });
+    expect(api.body.reach()).toBe(2);
+    expect(api.context().from).toEqual([1, 2, 3]);
+    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "b", code: "KeyB", bubbles: true }));
+    // the body's extension stops (switching activity): its body goes with it
+    m.local.swap((v) => ({ ...v, activity: "play" }));
+    await settle();
+    expect(m.local.get().body.id).toBe("orbit");
+    expect(left).toEqual(["walk"]);
+    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     expect(order).toEqual([
-      ["armed", "a"],
+      ["walk", "w", "here"],
       ["always", "b"],
+      ["always", "w"],
     ]);
   });
 
-  it("an immersive arm is local.immersive while it's on", async () => {
-    let disarm = null;
-    exts["t.edit"] = recorder("t.edit", (api) => {
-      disarm = api.arm({}, { immersive: true });
-      return {};
-    });
+  it("a tool command's run arms the slot; running it again, Escape or another tool puts it down", async () => {
+    const put = [];
+    exts["t.always"] = recorder("t.always", () => ({
+      commands: [
+        { id: "gun", name: "Gun", key: "g", tool: { keys: [{ code: "KeyR", label: "Reload" }] }, run: () => ({ put: () => put.push("gun") }) },
+        { id: "brush", name: "Brush", tool: { pointer: true }, run: () => ({ put: () => put.push("brush") }) },
+      ],
+    }));
     const m = mount(newScene());
     await settle();
-    expect(m.local.get().immersive).toBe(true);
-    disarm();
-    expect(m.local.get().immersive).toBe(false);
+    const api = m.debug.host.record("t.always").api;
+    expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
+    expect(m.local.get().held).toEqual({ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false });
+    expect(m.local.get().pointer.wanted).toBe(false);
+    api.run({ ext: "t.always", command: "brush" });
+    expect(put).toEqual(["gun"]);
+    expect(m.local.get().held.command).toBe("brush");
+    expect(m.local.get().pointer.wanted).toBe(true);
+    api.run({ ext: "t.always", command: "brush" });
+    expect(put).toEqual(["gun", "brush"]);
+    expect(m.local.get().held).toBe(null);
+    api.run({ ext: "t.always", command: "gun" });
+    m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+    expect(put).toEqual(["gun", "brush", "gun"]);
+    expect(m.local.get().held).toBe(null);
+  });
+
+  it("a reach: true command runs only within the body's reach; orbit reaches everything", async () => {
+    const ran = [];
+    exts["t.always"] = recorder("t.always", () => ({
+      bodies: [{ id: "walk", label: "Walk", reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [0, 0, 0], direction: [0, 0, -1] }), leave() {} }) }],
+      commands: [{ id: "open", name: "Open", reach: true, state: (t) => (t === "a" ? {} : null), run: (t) => ran.push(t) }],
+    }));
+    const m = mount(newScene({ objects: { a: card({ transform: { position: [0, 0, -5], rotation: [0, 0, 0], scale: 1 } }) }, order: ["a"] }));
+    await settle();
+    const api = m.debug.host.record("t.always").api;
+    expect(api.run({ ext: "t.always", command: "open", target: "a" })).toBe(true);
+    api.body.enter("walk");
+    // with a hit, its distance; without, from the eye to the target (its origin, with no box drawn)
+    expect(api.run({ ext: "t.always", command: "open", target: "a", hit: { id: "a", distance: 1.5 } })).toBe(true);
+    expect(api.run({ ext: "t.always", command: "open", target: "a", hit: { id: "a", distance: 2.5 } })).toBe(false);
+    expect(api.run({ ext: "t.always", command: "open", target: "a" })).toBe(false);
+    expect(api.context().distance("a")).toBeCloseTo(5);
+    expect(ran).toEqual(["a", "a"]);
   });
 
   it("focus left for nowhere (a clicked button that went away) comes back to the root", async () => {

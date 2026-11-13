@@ -11,9 +11,6 @@
 
 export const KEY = "traversal.exit";
 
-/** How far the point looked at may be from the eye for the use prompt to offer the verb (m): arm's reach, as a slide's. */
-export const REACH = 2;
-
 /** The verb when the trait names none. */
 export const DEFAULT_VERB = "Go";
 
@@ -45,25 +42,14 @@ export function verbOf(trait) {
 }
 
 /**
- * Is the point looked at within arm's reach of the eye? Only the use prompt
- * says where the eye is and what the look hit (STAGE.md, "Reach"): its
- * `hit.distance`, else the distance to `hit.point`. Without either, no.
- */
-export function inReach(from, hit, reach = REACH) {
-  if (!Array.isArray(from) || !hit) return false;
-  const d = Number.isFinite(hit.distance) ? hit.distance : Array.isArray(hit.point) ? Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]) : Infinity;
-  return d <= reach;
-}
-
-/**
- * The verb for a target on a surface, or null: an object (by id) with the
- * trait that leads somewhere; on the use prompt only within reach.
+ * The verb for a target, or null: an object (by id) with the trait that
+ * leads somewhere. Reach is the stage's (the command says `reach: true`).
  * @param {{ objects?: object } | null} scene  the snapshot
  * @param {string | null} target
- * @param {{ surface: "use" | "menu", here?: string | null, from?: number[], hit?: object }} o
+ * @param {{ here?: string | null }} o
  * @returns {{ label: string, to: string } | null}
  */
-export function exitVerb(scene, target, { surface, here = null, from, hit } = {}) {
+export function exitVerb(scene, target, { here = null } = {}) {
   if (typeof target !== "string") return null;
   const o = scene?.objects?.[target];
   if (!o || o.kind === "group") return null;
@@ -71,6 +57,5 @@ export function exitVerb(scene, target, { surface, here = null, from, hit } = {}
   if (!trait) return null;
   const to = destinationOf(trait, here);
   if (!to) return null;
-  if (surface === "use" && !inReach(from, hit)) return null;
   return { label: verbOf(trait), to };
 }

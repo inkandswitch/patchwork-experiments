@@ -1,13 +1,15 @@
-// scene.measure: point-to-point measuring, as an armed tool.
+// scene.measure: point-to-point measuring, as a held tool (TOOLS.md §4).
 //
-// "Measure" (M) arms it. While armed:
+// "Measure" (M) picks it up; M again, or Escape (the ladder's tool rung),
+// puts it down. It takes every press, so it is held, one tool at a time,
+// and it wants the pointer (`pointer: true`: no lock while it's held).
+// While held:
 //   - the pointer's hover picks a point (the ground counts; a vertex within
 //     10 px snaps) and shows a rubber band from the first point, with its
 //     length in the viewer's units, and a glow when it snapped;
 //   - a click places the first point, then the second, which hands the two
 //     anchors to scene.dimensions (its "add" command), which saves the
 //     dimension and selects it;
-//   - Escape clears the first point, else disarms.
 // It draws only the preview; the dimensions extension draws what's saved.
 
 import css from "./measure.css?inline";
@@ -21,7 +23,7 @@ export const DIMENSIONS = "scene.dimensions";
 export const SNAP_PX = 10;
 
 export const HINT_FIRST = "Click the first point · Esc to stop measuring";
-export const HINT_SECOND = "Click the second point · Esc to cancel";
+export const HINT_SECOND = "Click the second point · Esc to stop measuring";
 
 /**
  * Where an anchor is now: through its object's displayed world matrix while
@@ -64,7 +66,7 @@ export function create(api) {
   hint.hidden = true;
   overlay.append(hint);
 
-  let disarm = null; // set while armed
+  let holding = false; // set while it's the held tool
   let a = null; // the first point's anchor
   let hover = null; // { world, snapped } under the pointer
   let pending = null; // the latest pointer position waiting for a frame
@@ -108,7 +110,7 @@ export function create(api) {
   /** The preview: line, markers, snap glow, length label, hint. */
   function draw() {
     clearLayer();
-    if (!disarm) {
+    if (!holding) {
       labels.set([]);
       hint.hidden = true;
       api.invalidate();
@@ -206,7 +208,7 @@ export function create(api) {
         frame = 0;
         const p = pending;
         pending = null;
-        if (!disarm || !p) return;
+        if (!holding || !p) return;
         setHover(pickAt(p.x, p.y));
       });
     },
@@ -215,50 +217,30 @@ export function create(api) {
       if (hit) place(hit);
       return true;
     },
-    key(ev) {
-      if (ev.key !== "Escape") return false;
-      if (a) {
-        a = null;
-        draw();
-      } else stop();
-      return true;
-    },
     cursor: () => "crosshair",
-    suspended() {
+    put() {
+      // put down (M again, Escape, another tool picked up, or the stage): forget everything
+      if (!holding) return;
+      holding = false;
       cancelFrame();
-      hover = null;
-      draw();
-    },
-    disarmed() {
-      // popped by someone else (or the stage): forget everything
-      if (!disarm) return;
-      disarm = null;
       reset();
       api.cursor(null);
       draw();
     },
   };
 
+  /** Pick it up: what the stage holds is this input. */
   function start() {
-    if (disarm) return;
     reset();
-    disarm = api.arm(handlers, { replace: true });
+    holding = true;
     api.cursor("crosshair");
     draw();
-  }
-
-  function stop() {
-    const d = disarm;
-    disarm = null;
-    reset();
-    api.cursor(null);
-    d?.();
-    draw();
+    return handlers;
   }
 
   // the pointer left the view: no hover point
   api.listen(overlay.parentElement ?? overlay, "pointerleave", () => {
-    if (!disarm) return;
+    if (!holding) return;
     cancelFrame();
     setHover(null);
   });
@@ -268,15 +250,17 @@ export function create(api) {
       id: "measure",
       name: "Measure",
       key: "m",
-      state: (target) => (target == null ? { checked: !!disarm, title: "Measure point to point (M)" } : null),
-      run: () => (disarm ? stop() : start()),
+      // a tool: its run's input goes in the stage's one slot
+      tool: { pointer: true },
+      state: (target) => (target == null ? { checked: holding, title: "Measure point to point" } : null),
+      run: () => start(),
     },
   ];
 
   return {
     commands,
     update(scene, local, prev) {
-      if (!disarm) return;
+      if (!holding) return;
       const was = prev?.local;
       // the first point follows its object; the units or theme may have changed
       const moved = a?.objectId && scene !== prev?.scene;
@@ -288,7 +272,7 @@ export function create(api) {
     },
     // for tests
     get state() {
-      return { armed: !!disarm, a, hover };
+      return { held: holding, a, hover };
     },
   };
 }

@@ -1944,10 +1944,10 @@ export class Viewport {
    * Carry the orbit camera with object `id` as it moves (./ride.js): each
    * frame, after the loops, the camera and its target move by the shift of
    * its point `at` (its frame; its origin), its turn about the vertical
-   * (`turn`) and its rise (`rise`). The latest
-   * ride that isn't a `fallback` applies, else the latest fallback; while
-   * the camera is held, none moves it.
-   * @param {string} id  @param {{ turn?: boolean, rise?: boolean, fallback?: boolean, at?: number[] }} [opts]
+   * (`turn`) and its rise (`rise`). A base ride: the latest applies while
+   * the current body has no ride of its own; while the camera is held, none
+   * moves it.
+   * @param {string} id  @param {{ turn?: boolean, rise?: boolean, at?: number[] }} [opts]
    * @returns {() => void} off
    */
   ride(id, opts) {
@@ -1957,10 +1957,10 @@ export class Viewport {
     return off;
   }
 
-  /** The ride that applies now: { id, fallback }, or null. */
-  riding() {
-    const r = this.rides.current();
-    return r ? { id: r.id, fallback: r.fallback } : null;
+  /** The current body's ride ({ id, at?, turn?, rise? }), the only one that applies while set; null: none. */
+  bodyRide(spec) {
+    this.rides.body(spec ?? null, spec?.id != null && this.ok ? this.worldOf(spec.id) : null);
+    this.invalidate();
   }
 
   /** One frame of the ride that applies (the frame loop's, after the loops). */

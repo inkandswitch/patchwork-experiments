@@ -105,3 +105,19 @@
   .use-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
   opacity: 0.5;
 }
+
+/* a verb is a button, for touch (the prompt itself lets presses through) */
+.scene-stage
+  .use-prompt
+  button.use-verb:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-stage
+  .use-prompt
+  button.use-verb:disabled:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: default;
+}

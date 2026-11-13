@@ -11,20 +11,19 @@
 /**
  * @param {{
  *   running: { id: string, meta: object, scope: "scene" | "objects" | "general" }[],  // running order
- *   armed?: string | null,          // the top of the arm stack
  *   widgetOwner?: string | null,    // the extension whose widget is under the pointer
  *   holders?: Map<string, { id: string | null, depth: number }>,  // holdersFor(…)
  * }} o
- * @returns {string[]} extension ids, each once, at its earliest step: armed,
- *   the widget's owner, the holders nearest first, then the general ones
+ * @returns {string[]} extension ids, each once, at its earliest step: the
+ *   widget's owner, the holders nearest first, then the general ones (the
+ *   router offers the held tool before these and the top body after them)
  */
-export function chainOrder({ running, armed = null, widgetOwner = null, holders = new Map() }) {
+export function chainOrder({ running, widgetOwner = null, holders = new Map() }) {
   const ids = new Set(running.map((r) => r.id));
   const out = [];
   const push = (id) => {
     if (id && ids.has(id) && !out.includes(id)) out.push(id);
   };
-  push(armed);
   push(widgetOwner);
   // a stable sort, so equal depths keep running order
   const held = running.filter((r) => holders.has(r.id));

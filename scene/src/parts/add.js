@@ -164,7 +164,7 @@ function create(api) {
     .catch(() => {});
 
   // ── the provider chooser ─────────────────────────────────────────────────
-  let choosing = null; // { box, done, disarm }
+  let choosing = null; // { box, done, disarm }: disarm lets go of the popover
 
   /** Ask which provider to show `what` with. @returns {Promise<object | null>} */
   function choose(providers, what) {
@@ -196,21 +196,9 @@ function create(api) {
       box.append(cancel);
       chooserLayer.append(box);
       choosing = { box, done, disarm: null };
-      // Escape cancels; Enter and Space press the focused choice (and nothing
-      // else down the chain hears them). Every other event falls through.
-      choosing.disarm = api.arm({
-        key(ev) {
-          if (ev.key === "Escape") {
-            done(null);
-            return true;
-          }
-          if ((ev.key === "Enter" || ev.key === " ") && box.contains(document.activeElement)) {
-            document.activeElement.click();
-            return true;
-          }
-          return false;
-        },
-      });
+      // a focused dialog (TOOLS.md §4): it wants the pointer, Escape (the
+      // ladder's popover rung) cancels, and its buttons keep Enter and Space
+      choosing.disarm = api.popover(() => done(null));
       box.querySelector("button")?.focus?.({ preventScroll: true });
     });
   }

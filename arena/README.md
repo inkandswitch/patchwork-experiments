@@ -1,7 +1,8 @@
 # arena
 
 A little first-person arena as a kind of [scene](../scene/README.md): walk
-the level, shoot the targets over. It is not a datatype or a tool. It is two
+the level (the [walk](../walk/README.md) package's body), shoot the targets
+over. It is not a datatype or a tool. It is two
 scene extensions, a template and three parts, so any scene can become a level:
 a boat with a few targets on her deck is one too.
 
@@ -13,7 +14,7 @@ pnpm install && pnpm build && pnpm test
 
 | type | id | for |
 |---|---|---|
-| `scene:extension` | `arena` | playing (`activities: ["play"]`): first person, walking and shooting, in a scene with any of its traits (`src/play.js`) |
+| `scene:extension` | `arena` | playing (`activities: ["play"]`): the gun (a held tool) and the targets, in a scene with any of its traits (`src/play.js`) |
 | `scene:extension` | `arena.edit` | editing (`activities: ["edit"]`): *Stand targets up* in the menu (`src/edit.js`) |
 | `scene:template` | `arena-level` | "Arena level" on an empty scene's start screen: the sample arena, starting in play (`src/template.js`) |
 | `scene:part` | `arena.target`, `arena.crate`, `arena.spawn` | the editor's parts bin, under "Arena" (`src/parts.js`) |
@@ -28,9 +29,10 @@ plugin registry by its traits.
 |---|---|---|
 | `arena.level` | the scene | `{ look?: "arena" \| "sky" }`: the scene is a level. `look: "arena"` gives it the arena's sky, haze and low sun in play (the stage's atmosphere); `look: "sky"` the sky alone, for a level whose light is its own (an imported map with its light baked in: a sun would light nothing, and haze would only fade it); without either the scene keeps its own |
 | `arena.target` | an object | `{}` standing. Knocked over: `{ down: { by: <viewer>, at: <ms> }, stand: { rotation } }` |
-| `arena.spawn` | an object | `{}`: where players start, facing the way it faces |
+A spawn point is the walk package's trait, `walk.spawn` (where the walk body
+starts); arena's spawn part is a pad that carries it.
 
-The `arena` extension describes all three for the scene's inspector ("Add
+The `arena` extension describes both for the scene's inspector ("Add
 behaviour…"), so a level can be made without a script. A level trait gives
 play the whole scene's input; object traits alone offer it only what reaches
 their objects, which is why the Target and Spawn point parts make the scene a
@@ -54,28 +56,29 @@ it came from.)
 
 ## Playing
 
-Enter, the toolbar's Play, or the lobby's **▶ Play** starts: you're put on a
-spawn point (a random one; with none, above the middle of what's there) and
-the pointer is locked (where it can't be, drag to look). W A S D or the
-arrows move, Shift runs, Space jumps,
-a click shoots (12 in the magazine, reloading when it's empty; a right-click
-reloads sooner), Esc stops. Falling out of the world respawns you. The lobby and the HUD count the targets standing only in a level that has
-some: an imported map with none shows no count.
+Enter, the toolbar's Play, or the lobby's **▶ Play** walks you in: the walk
+body (scene/TOOLS.md §4, the walk package's) entered at a spawn point (a
+random one; with none, at the eye), with the gun in hand. The pointer is
+locked (where it can't be, drag to look). W A S D or the arrows move, Shift
+runs, Space jumps: those keys are the walk body's.
 
-Play takes only those keys (`MOVE_KEYS` and Esc). Every other key, R
-included, goes on down the input chain to the use prompt (`scene.use`, which
-the arena requires before the key map), so whatever in the level has a verb
-on another key can be used while walking: look at a door within reach and
-press F to open it (the joints package's slide), at a die and press R to
-roll it. The prompt shows the verbs for what's in the middle of the view.
-A verb on one of the walking keys (W, A, S, D, Space, Shift: a bag's Draw on
-D, a pile's Shuffle on S) can't be used while walking: the walker has those.
-Which of two contributions gets a key they both want is the stage's
-question, not the arena's.
+The **gun** is a held tool (`gun`, G; scene/TOOLS.md §4): a click shoots
+(12 in the magazine, reloading when it's empty), R or a right-click reloads
+sooner, and Escape (the stage's ladder) puts it down; walking goes on. Leave
+walking with the body chip. Falling out of the world respawns you. The
+lobby and the HUD count the targets standing only in a level that has some:
+an imported map with none shows no count.
+
+Every other key goes on to the key map, so whatever in the level has a verb
+can be used while walking: look at a door within reach and press F to open
+it (the joints package's slide), at a die and press R to roll it (R is the
+gun's while you hold it). The use prompt shows the verbs for what's in the
+middle of the view; a verb on one of the walking keys (a bag's Draw on D, a
+pile's Shuffle on S) shows without its key and is in the menu.
 
 Nothing in play knows about floors or walls: walking is two questions asked
 of the stage by ray (how far down to the ground, how far until something is
-in the way: `src/walk.js`, pure), and a shot is one more ray. So the floor
+in the way: the walk package's `walk.js`), and a shot is one more ray. So the floor
 can be a level's slab, a crate or the deck of a boat.
 
 State lives where the scene's contract says:
@@ -118,8 +121,7 @@ nothing.
 | file | what |
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe), with the traits' descriptions |
-| `src/play.js`, `src/play.css` | the play extension: the lobby and HUD, walking, shooting, avatars, tracers, the atmosphere |
-| `src/walk.js` | one step of a first-person body against rays (pure) |
+| `src/play.js`, `src/play.css` | the play extension: the lobby and HUD, the gun, tracers, the atmosphere |
 | `src/level.js` | the kinds' meshes, the sample arena, a target's fall and standing it up (pure) |
 | `src/layout.js` | putting blocks into a scene doc: a kind's file, a block's object, the whole arena |
 | `src/template.js`, `src/parts.js`, `src/edit.js` | the template, the parts, the edit extension |
@@ -134,11 +136,10 @@ nothing.
 `pnpm test` runs the unit tests against stand-ins for the scene's api:
 
 - `src/arena.test.js`: the kinds' GLBs (through the encoder's own parser),
-  the sample arena, walking (`step` on a floor, into a wall, up a step, a
-  jump and a fall), a target's fall;
-- `src/play.test.js`: what play asks of the stage when you start, walk,
-  shoot and stop; a hit knocks a target over once, scores it and tells the
-  others; the lobby's Stand them up;
+  the sample arena, a target's fall (walking's tests moved to `walk/`);
+- `src/play.test.js`: what play asks of the stage when you walk in, pick
+  up the gun, shoot and put it down; a hit knocks a target over once,
+  scores it and tells the others; the lobby's Stand them up;
 - `src/edit.test.js`: the template (one file per kind, the group, the look,
   starting in play), the parts (where each goes, what makes a level, one
   file per kind per scene), the edit command, and a copied knocked-over

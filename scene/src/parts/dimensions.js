@@ -10,8 +10,9 @@
 // A dimension is selectable though it isn't a scene object: selecting one
 // sets local.selected, the one selection, to its ref "dimension:<id>"
 // (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
-// lets go of it with nothing to reconcile. Delete and Escape are commands on
-// that ref; a click elsewhere in the view is scene.select's to clear. This
+// lets go of it with nothing to reconcile. Delete is a command on that ref;
+// Escape (the stage's ladder) and a click elsewhere in the view (orbit's
+// default press) clear it, as they clear any selection. This
 // extension lets go of a ref whose dimension went.
 
 import css from "./dimensions.css?inline";
@@ -418,8 +419,9 @@ export function create(api) {
     };
   }
 
-  // Delete and Escape apply to a dimension's ref (the key map offers them
-  // the selection first), never to the scene or an object.
+  // Delete applies to a dimension's ref (the key map offers it the
+  // selection first), never to the scene or an object. Escape deselects it
+  // as the stage's ladder deselects anything.
   const applies = (target, { scene } = {}) => dimensionOf(target, scene ?? api.scene()) != null;
 
   const commands = [
@@ -438,16 +440,6 @@ export function create(api) {
       show: [],
       state: (target, ctx) => (applies(target, ctx) ? { title: "Delete this dimension" } : null),
       run: (target) => remove(dimensionOf(target, api.scene())),
-    },
-    {
-      id: "deselect",
-      name: "Deselect dimension",
-      key: "Escape",
-      show: [],
-      state: (target, ctx) => (applies(target, ctx) && (ctx?.local ?? api.local.get())?.selected === target ? { title: "Clear the dimension selection" } : null),
-      run: (target) => {
-        if ((api.local.get().selected ?? null) === target) select(null);
-      },
     },
   ];
 

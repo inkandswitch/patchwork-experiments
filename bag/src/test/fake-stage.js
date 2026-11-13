@@ -1,6 +1,6 @@
 // For tests: the part of the stage's extension api (scene/STAGE.md, "api")
 // that the bag's extension uses, over FakeHandles. Each thing the stage would
-// do is recorded so a test can read it back: notices, sends, labels, arms,
+// do is recorded so a test can read it back: notices, sends, labels, held tools (arms),
 // loops, docked panels, addObject calls.
 import { FakeHandle, FakeRepo } from "./fake-repo.js";
 
@@ -97,10 +97,17 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), a
       rec.docked.push(d);
       return close;
     },
-    arm(handlers) {
-      const a = { handlers, on: true };
+    // the held tool (scene/TOOLS.md §4): one slot; holding again puts the last down
+    hold(command, handlers) {
+      const was = rec.arms.at(-1);
+      if (was?.on) (was.on = false), was.handlers.put?.();
+      const a = { command, handlers, on: true };
       rec.arms.push(a);
-      return () => void (a.on = false);
+      return () => {
+        if (!a.on) return;
+        a.on = false;
+        handlers.put?.();
+      };
     },
     loop(fn) {
       rec.loops.add(fn);

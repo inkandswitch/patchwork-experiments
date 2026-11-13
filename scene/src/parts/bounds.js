@@ -36,8 +36,8 @@ export default {
     layer.userData.noPick = true;
     const labels = api.labels();
     const shown = () => api.pref("bounds", false) === true;
-    // what's drawn: shown, and not while an immersive arm (first-person play) is on
-    const drawn = () => shown() && !api.local.get().immersive;
+    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
+    const drawn = () => shown() && api.local.get().body?.id === "orbit";
     let key = null;
 
     function clear() {
@@ -93,7 +93,7 @@ export default {
       update(scene, local, prev) {
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.selected === was.selected && local.immersive === was.immersive) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.selected === was.selected && local.body === was.body) return;
         redraw(scene, local);
       },
       dispose() {

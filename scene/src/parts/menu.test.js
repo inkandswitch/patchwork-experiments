@@ -96,7 +96,8 @@ describe("scene.menu", () => {
 
   describe("with commands", () => {
     beforeEach(() => mountWith([{ meta: { id: "t.cmds" }, module: commandsExt([]) }]), 30_000);
-    const open = (hit = { id: "a" }) => s.instance("scene.menu").input.menu({ type: "menu", x: 40, y: 30, hit });
+    // (the pointer is on what it opens on: that's the look, attention's, whose keys the menu shows)
+    const open = (hit = { id: "a" }) => (s.local.swap((m) => ({ ...m, hovered: hit?.id ?? null })), s.instance("scene.menu").input.menu({ type: "menu", x: 40, y: 30, hit }));
     const el = () => s.root.querySelector(".context-menu");
     const labels = () => [...el().querySelectorAll(".menu-item .menu-label")].map((x) => x.textContent);
 
@@ -127,6 +128,7 @@ describe("scene.menu", () => {
         command: "lock",
         target: "a",
         value: true,
+        hit: { id: "a", point: null, distance: null },
       });
       expect(el()).toBeNull();
       open();
@@ -136,6 +138,7 @@ describe("scene.menu", () => {
         command: "color",
         target: null,
         value: "blue",
+        hit: { id: "a", point: null, distance: null },
       });
     });
 

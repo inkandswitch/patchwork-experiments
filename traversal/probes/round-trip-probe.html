@@ -155,7 +155,7 @@ try {
     },
     /** the Doom scene starts in play, its camera at the spawn point's eye looking its way (as publish-e1m1.mjs sets it) */
     startAtSpawn() {
-      const id = withTrait("arena.spawn");
+      const id = withTrait("walk.spawn");
       const m = dbg().scene().world(id);
       const yaw = Math.atan2(m[8], m[10]);
       const eye = [m[12], m[13] + 0.1 + 1.6, m[14]];
@@ -173,7 +173,7 @@ try {
     },
     /** move the Doom scene's spawn point to `local` in the map's frame, facing `yaw` (a probe's shortcut to a far room) */
     moveSpawn(position, yaw) {
-      const id = withTrait("arena.spawn");
+      const id = withTrait("walk.spawn");
       current.handle.change((d) => { d.objects[id].transform.position = position; d.objects[id].transform.rotation = [0, yaw, 0]; });
       return id;
     },

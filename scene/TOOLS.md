@@ -163,6 +163,8 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   her hull). `.` frames the selection, Home goes home; F is free.
 - **walk**, one package's, replacing arena's and sailing's walkers. It
   starts at the eye, else the spawn; its floor is whatever the ray hits.
+  (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as
+  a body of its own for now: see build step 6.)
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
   movement keys, so D draws. **station**, sailing's: A/D steer.
 
@@ -461,6 +463,53 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
 - **6. Bodies and the held tool.** Stack and slot, four bodies, `from` and
   `reach` everywhere, declared keys, attention, the pointer, the Escape
   ladder; rides by body. *Proves:* H3-H5, H9; Doom with one walker.
+  *Built:* the router's stack holds only bodies, orbit (the stage's,
+  `ORBIT` in `stage.js`) at the bottom, whose default press is Select,
+  offered after the held tool and the whole chain: structurally last
+  (`scene.select` lost its click). `api.body` is `current`, `enter`,
+  `leave`, `eye`, `reach`; a body popped from under another takes those
+  over it, and an extension stopping pops its own. The held tool is
+  `local.held`; a command that declares `tool: { keys, pointer }` holds the
+  input its run returns (run again: put down), and `api.hold(command,
+  input)` holds one directly. `api.arm`, `relock`, `local.armed`,
+  `local.immersive`, `camera.riding` and ride `fallback` went. Declared
+  keys (`[{ code, label }]`) on the gesture (carry's `CARRY_KEYS`), the
+  tool and the body make the key order (`src/keymap.js`) decidable before a
+  press, and every surface (prompt, menu, bar) shows a key only through
+  `hintFor`, the dispatching resolver; the key map is the only
+  `input.key`, and held verbs moved into it. The prompt still runs only in
+  play (activities go at step 8). `from`, `reach` and `distance` are on
+  every surface's context (`api.context`), and `reach: true` on a command
+  is checked once, in `commandState`: beyond reach it is disabled, "too
+  far". The four REACH constants went: joints and traversal have one
+  command each; seats' verb says `reach: true`; sailing's station verbs
+  do too. Reaches: orbit Infinity, walk 2 m, seat 2 m, sailing's crew 2.5
+  m. The pointer is `src/stage/pointer.js` (an open drawer also wants it),
+  the ladder `src/stage/ladder.js` with seven rungs (a popover, `api.popover`,
+  between the field and the gesture: the menu, the add dialog and the body
+  chip's menu are popovers, so the eleven Escape handlers are one). The
+  body chip, who's here (body and held tool from presence) and the Esc hint
+  are `scene.body`, bottom right; the world bar of §6 is not built. Tabletop's
+  verbs no longer hide walking: their keys are the walk body's, so they show
+  without them. Bag's drawn piece in hand is a held tool.
+  Three deviations, each the smaller step: (1) **walk** is a new package,
+  `walk/`, replacing arena's walker only, with the spawn trait renamed
+  `walk.spawn` (arena's pad part writes it; doom asks for that part, so
+  E1M1 lists `walk`); it rides what it stands on. **Sailing keeps its
+  navmesh walker as its own body, `aboard`**, with `station` pushed over
+  it: the walk body stands on what rays hit and knows nothing of her
+  ladder, the water or a vault over her rail, which the navmesh walker
+  proves invariants for; folding them into one walker waits until the walk
+  body can stand on a moving deck as well as the navmesh does. (2) A body
+  says `here: false` when it needs a place (a seat, a station), so the chip
+  doesn't offer it, and a sitting may carry its own `keys` and `label` (a
+  station's keys differ by kind). (3) The key map tries attention's whole
+  path, the look's hit then what it's attached to, before the scene, so
+  Delete on a spoke removes the spoke and F on it takes the helm; the prompt
+  shows the first target along that path with verbs. Gun, arena's, is a
+  held tool (G; a click shoots, R reloads). `view.start` is not built: the
+  arena's Play enters walk at a spawn. Sailing's where-to-go verb stays,
+  first in its order, ahead of the station's greyed verbs.
 - **7. The clock.** `src/stage/clock.js`, the claim, processes,
   checkpoints, ordered holds; sailing and joints move on. *Proves:* H6-H8.
 - **8. Activities and `requires` go**, with `always` and `general: false`.

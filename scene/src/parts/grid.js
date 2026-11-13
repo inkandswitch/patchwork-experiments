@@ -48,8 +48,8 @@ export default {
     api.overlay().append(caption);
 
     const shown = () => api.pref("grid", true) !== false;
-    // what's drawn: shown, and not while an immersive arm (first-person play) is on
-    const drawn = () => shown() && !api.local.get().immersive;
+    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
+    const drawn = () => shown() && api.local.get().body?.id === "orbit";
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
     let key = null;
 
@@ -105,7 +105,7 @@ export default {
         // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.immersive === was.immersive) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.body === was.body) return;
         if (was && local.theme !== was.theme) key = null;
         redraw(local.theme);
       },

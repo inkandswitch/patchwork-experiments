@@ -50,7 +50,7 @@ modules share.
 | `walker.js` | yes | The walker: a state machine over the navmesh (walking, airborne, vaulting, at a station, on the ladder, swimming), invariant I (`checkWalker`), projection (P1), the seeds a bake starts from |
 | `navcheck.js` | yes | Checking a bake: the oracle on the raw triangles, the bake properties B1–B7, the static checks C1–C9 |
 | `walk.js` | yes | Walking's pure helpers (`wishVelocity`, `look`, `lookDir`) and the body's numbers (`BODY`, `DECK`, `SWIM`) |
-| `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard, stations, the ladder, tabletop's `firstPerson`; everyone else's avatars |
+| `crew.js` | stage side thin | ctx.crew: the bake's input adapter (her triangles from `api.content`, the bake key) and her mesh rebaked as her parts change; the walker stepped each frame and the camera at its eye; coming aboard and stations as the crew's bodies (`aboard`, `station`: scene/TOOLS.md §4), the ladder; everyone else's avatars |
 | `stations.js` | mostly | The verbs for the use prompt: the helm (with the sheet led aft to it), the sail and sheet (at the rig or the mast), the windlass, the ladder (pure held-verb sessions) |
 | `hud.js` | model pure | Crosshair, the sailing panel (speed over the ground, heading, a dial with the apparent and true wind, a row per sail on a contract ship (`sailRow`, from trim.js) or one Sail row, anchor), the hint line, and what to do head to wind before she's in irons (`luffing`) and once she is (`inIrons`) (`hudModel`) |
 | `trim.js` | yes | Each sail's trim from the physics' read (`trimOf`): α_sheet, flog, σ, belly, and its state (down, wing, backed, luffing, stalled, drawing), on its family's thresholds (`trimModelOf`); the sheets' slack (`mainsheetSlack`, `jibSheets`, `sheetSlack`) and their curve (`sheetCurve`), the flutter, the telltales, the vane and the burgee |
@@ -1612,8 +1612,8 @@ api.loop((dt, now) => {
   ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator()); // the clock first: what the ships step to
   ctx.sim.tick(dt);   // take over, follow, or step and hold the ships
   ctx.crew.tick(dt);  // walk on the deck as it now is; draw everyone else; not aboard, follow: the orbit rides
-                      //   the first ship sideways (api.camera.ride, a fallback ride, so a seat at a table
-                      //   aboard, riding her too, wins), or is moved each frame on a stage without rides
+                      //   the first ship sideways (api.camera.ride, a base ride, so a seat at a table
+                      //   aboard, whose body rides it, wins), or is moved each frame on a stage without rides
   looks.tick(dt);     // floats and sails, dressed
   hud.tick(dt);
   // and the presence rate, when it changes: 30 simulating, 20 aboard, else 0
@@ -1640,17 +1640,19 @@ ctx.sim.simulator()      // the simulating session, when it's someone else, else
 ctx.sim.tick()
 
 // crew.js — createCrew(api, ctx) → ctx.crew
-ctx.crew.input           // the extension's input handlers (click to come aboard: an arm with pointer lock). Only a click on
+ctx.crew.input           // the extension's input handlers (click to come aboard: the "aboard" body, with pointer lock). Only a click on
                          //   the sea, the sky, a ship, a fitting of hers or anything not aboard a ship (the islet) (boardsOn): one on
-                         //   anything else aboard (a card) goes on. Seated (seatedView: the camera riding something, not her own
-                         //   fallback follow), only the sea or sky; the HUD (hudModel's `seated`) then offers Enter, no walking keys
-ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and Esc back to the orbit off the quarter
+                         //   anything else aboard (a card) goes on. Seated (seatedView: a body that is neither orbit nor the crew's,
+                         //   a seat), only the sea or sky; the HUD (hudModel's `seated`) then offers Enter, no walking keys
+ctx.crew.bodies          // [aboard, station]: the crew's bodies on the stage's stack (scene/TOOLS.md §4). aboard: walking her deck
+                         //   (the navmesh walker), the walking keys, the lock, reach 2.5 m (crew.js REACH); station: pushed over it by
+                         //   take, its keys the station's (declared), `here: false`. A body over aboard that isn't ours (a seat) leaves
+                         //   the walker waiting; when it goes you stand at the projection (P1) of where its view was
+ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and leave her (the body chip's Leave) back to the orbit off the quarter
 ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
-                         //   playing, paused (the lock lost), free (the lock refused: drag to look), hint (the station's line) }
+                         //   playing, paused (the browser released the lock), free (no lock: drag to look), hint (the station's line) }
 ctx.crew.take(stationId, handlers) → leave   // stand at a station (its stand spot: her mesh's link for it; the sail's for the mast):
-                         //   pushes an arm over walking; handlers: { key, keyup, tick(dt), left(), hint?() }
-ctx.crew.firstPerson     // { enter({ seat, eye, target, frame }) → boolean, leave() }: for whoever owns seats (seats/README.md); enter
-                         //   stands you at the projection (P1) of the seat's eye onto her mesh, a seated eye's height down
+                         //   pushes the station body over walking; handlers: { keys: codes, key, keyup, tick(dt), left(), hint?() }
 ctx.crew.leave()         // step away from the station you're at
 ctx.crew.board(shipId)   // climb aboard (from the water, by the ladder)
 ctx.crew.place(on, position, yaw?, pitch?)   // put the body somewhere (local to ship `on`, else in the water): a respawn
@@ -1716,9 +1718,10 @@ commits), so the wheel stays where it was left. The helmsman holds the
 wheel's pose themselves, so it turns as their key does; the simulator holds
 it only while nobody's at the helm.
 
-**Stations** (stations.js). Reach is to the point looked at (the prompt's
-`hit`, on the target or anything under it), else the target's origin, within
-`REACH` 2.5 m: the boom over the cockpit is in reach however far its
+**Stations** (stations.js). Each verb says `reach: true`: the stage
+measures from the body's eye to the point looked at (on the target or
+anything under it), else the target's box, against the body's reach (the
+crew's 2.5 m, `crew.js` `REACH`; orbit's everything): the boom over the cockpit is in reach however far its
 gooseneck is. Where you lock in (crew.take: at the station's stand spot, a
 link of her navmesh; F leaves):
 
@@ -2118,14 +2121,13 @@ is a capsule (from the gooseneck, along the boom's current angle, radius
 a move or lowers `h` can't break I. A boom swinging into someone standing
 passes through them; it never pushes.
 
-**Seats (`firstPerson`, for the seats package).** `enter({ seat, eye, target, frame })`
-puts you `walking` at the projection (P1) of the eye's plan point, dropped
-by the seat's eye height. The ship is the one `frame` is aboard. Your
-`yaw` faces `target`. `leave()` stops first person and leaves the
-walker's state where it was.
+**Seats** (the seats package's seat body, pushed over `aboard`). While it's
+on top the walker waits where it was; when it goes, you are put `walking`
+at the projection (P1) of the view's eye (the seat's), dropped by a seated
+eye's height, on the first ship; your `yaw` faces what the view looked at.
 
 **What crew.js keeps.** Its API to the package is unchanged:
-`input, start, stop, me, take, leave, board, place, tick, update, dispose`.
+`input, bodies, start, stop, me, take, leave, board, place, tick, update, dispose`.
 `me().position` is the derived local feet, and the presence record keeps
 its format. `walk.js` keeps the pure helpers (`wishVelocity`, `look`,
 `lookDir`) and the parameter objects. The bake is `navmesh.js` (pure); the
@@ -2194,8 +2196,8 @@ few boxes as triangles, baked, then driven. This is the full list:
     swim at `from`; her mesh never comes, after `boardWait` you swim.
 24. `place`: a point over the water means swimming; a point by the deck is
     projected to a cell (the probes' `place` calls keep working).
-25. `firstPerson.enter`: you stand at the projection of the seat's eye,
-    facing its target.
+25. Standing up from a seat over `aboard`: you stand at the projection of
+    the seat's eye, facing its target.
 26. Stepping across: an OPEN side over another ship's kept cell puts you
     on her deck, in her frame (walker.js `intoWater`).
 27. A huge `dt` or speed: the move is capped, and I holds.
@@ -2431,8 +2433,9 @@ it measured.
   returns that jump as `lift`, and crew.js draws the eye with a lag along
   her up that closes at 5 m/s going up and 3.5 m/s going down
   (`walk.js easeEye`). Only the camera lags: I and the feet are untouched.
-- **Tabletop's `firstPerson`** is on the play instance (`api.collect`).
-  `enter` drops the seat's eye by a seated eye's height (1.15 m) and
-  projects it (P1). `leave` ends first person without setting her quarter
+- **A seat over the crew** (the seats package's body, pushed over
+  `aboard`): standing up drops the seat's eye by a seated eye's height
+  (1.15 m) and projects it (P1); sitting down leaves the walker waiting,
+  without setting her quarter
   view, so the seat's view takes the camera.
 

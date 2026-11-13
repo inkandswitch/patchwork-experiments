@@ -4,14 +4,16 @@
 // The arena is not a datatype or a tool. It is two scene extensions, a
 // template and three parts (see the scene package's STAGE.md):
 // - "arena" plays: in a scene whose doc has an arena trait (the level on the
-//   scene, targets and spawn points on objects), the "play" activity walks
-//   and shoots in it;
+//   scene, targets on objects), the "play" activity has the gun (a held
+//   tool) and the targets; walking in is the walk package's walk body,
+//   entered at a spawn point (its trait, `walk.spawn`);
 // - "arena.edit" edits a level: stands knocked-over targets back up;
 // - the "arena-level" template lays out the sample arena in an empty scene
 //   and starts it in play, so its maker is in the game at once;
 // - the parts ("Arena" in the editor's parts bin) put a target, a crate or a
-//   spawn point into any scene: a boat's deck as well as a level. A target or
-//   a spawn point makes the scene a level if it isn't one yet.
+//   spawn point (a pad carrying the walk package's `walk.spawn`) into any
+//   scene: a boat's deck as well as a level. A target or a spawn point makes
+//   the scene a level if it isn't one yet.
 // A level trait on its own comes from the inspector's "Add behaviour…", which
 // reads `describes`.
 
@@ -20,7 +22,7 @@ export const plugins = [
     type: "scene:extension",
     id: "arena",
     name: "Arena",
-    traits: ["arena.level", "arena.target", "arena.spawn"],
+    traits: ["arena.level", "arena.target"],
     activities: ["play"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // level can be made without a script. A target's down/stand are not
@@ -50,7 +52,6 @@ export const plugins = [
         ],
       },
       "arena.target": { name: "Target", on: "object", blurb: "Can be shot down; counts toward the shooter's score", runtime: ["down"] },
-      "arena.spawn": { name: "Spawn point", on: "object", blurb: "Where players start, facing the way it faces" },
     },
     // playing brings no editor, so it says what it needs: the use prompt,
     // for what's in the level to use (a door's Open: play takes only its own
@@ -70,7 +71,7 @@ export const plugins = [
     type: "scene:extension",
     id: "arena.edit",
     name: "Arena editing",
-    traits: ["arena.level", "arena.target", "arena.spawn"],
+    traits: ["arena.level", "arena.target"],
     activities: ["edit"],
     async load() {
       return (await import("./edit.js")).default;
@@ -116,7 +117,8 @@ export const plugins = [
     icon: "MapPin",
     category: "Arena",
     description: "Where players start in play, facing the way it faces. Makes the scene a level",
-    traits: ["arena.spawn"],
+    // the walk body's spawn point (the walk package's trait), drawn as one of the arena's pads
+    traits: ["walk.spawn"],
     async load() {
       return (await import("./parts.js")).spawn;
     },
