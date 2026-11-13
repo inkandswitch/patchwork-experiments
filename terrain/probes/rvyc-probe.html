@@ -139,8 +139,8 @@ try {
       const render = t?.renderUrl ? repo.handles.get(t.renderUrl)?.doc() : null;
       return {
         title: d.title,
-        activity: d.view?.activity ?? null,
-        home: d.view?.home ?? null,
+        start: d.view?.start ?? null,
+        home: d.view?.start?.home ?? null,
         sea: d.traits?.["sailing.sea"] ?? null,
         terrain: t ? { transform: t.transform, locked: !!t.locked, providerId: t.providerId, parent: t.parent, sourceUrl: t.sourceUrl, infoUrl: t.infoUrl ?? null, credit: !!t.traits?.["terrain.credit"] } : null,
         terrainDoc: terrainDoc ? { title: terrainDoc.title, type: terrainDoc["@patchwork"]?.type, origin: terrainDoc.origin, grid: terrainDoc.grid, data: !!terrainDoc.data, sources: (terrainDoc.sources ?? []).map((s) => s.id), sourceUrls: (terrainDoc.sources ?? []).map((s) => s.url ?? null), requests: (terrainDoc.sources ?? []).reduce((a, s) => a + (s.requests?.length ?? 0), 0), osmDate: terrainDoc.osmDate ?? null, matchesChecked: terrainDoc.data?.summary?.matchesChecked ?? null, attribution: terrainDoc.attribution } : null,
@@ -152,7 +152,7 @@ try {
         anchor: objects()[withTrait("sailing.anchor")]?.traits?.["sailing.anchor"] ?? null,
       };
     },
-    activity: () => dbg.local.get().activities?.current ?? null,
+    bodyLabel: () => dbg.local.get().body?.label ?? null,
     status: (id) => dbg.local.get().status?.[id] ?? null,
     loaded() {
       const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
@@ -204,19 +204,12 @@ try {
         })(),
       };
     },
-    /** this viewer to the editor, at the doc's home view */
-    async editAtHome() {
-      dbg.local.swap((l) => ({ ...l, activity: "edit" }));
-      await sleep(400);
-      const h = scene.doc().view.home;
+    /** this viewer's camera at the doc's home view (view.start.home), in orbit; what its body chip says */
+    async atHome() {
+      const h = scene.doc().view.start.home;
       dbg.viewport.setCamera({ position: h.position, target: h.target });
       await sleep(600);
-      return dbg.local.get().activities?.current;
-    },
-    async play() {
-      dbg.local.swap((l) => ({ ...l, activity: "play" }));
-      await sleep(600);
-      return dbg.local.get().activities?.current;
+      return dbg.local.get().body?.label ?? null;
     },
     /** the Terrain tool on the scene's Terrain doc, over the whole page: what its map and panels say */
     async terrainTool() {

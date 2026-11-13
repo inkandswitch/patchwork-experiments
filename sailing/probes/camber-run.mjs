@@ -214,8 +214,8 @@ try {
   }
 
   // ─── playing: she floats, and sails bow first ────────────────────────────
-  await P(`setActivity("play")`);
-  check("Play runs sailing, and this view simulates", (await until("window.__p.activity() === 'play' && !!window.__p.ctx() && window.__p.simulating()", 15_000)) === true, await P("running()"));
+  // (no Play to switch to: sailing has run since her traits arrived, editing included)
+  check("sailing runs, and this view simulates", (await until("!!window.__p.ctx() && window.__p.simulating()", 15_000)) === true, await P("running()"));
   check("she's a ship to the sim: helm, sail, anchor and ladder found aboard her", await until(`(() => { const s = window.__p.stations('${hull}'); return s && s.helm === '${wheel}' && s.sail === '${rig}' && s.anchor === '${windlass}' && s.ladder === '${ladder}'; })()`, 5000), await P(`stations('${hull}')`));
   await sleep(2500);
   // float: her body's origin (midships, on her design waterline) against the water under it, frame by frame

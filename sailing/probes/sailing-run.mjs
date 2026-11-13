@@ -199,13 +199,13 @@ try {
     return p;
   };
 
-  // both in play, running only the sailing extension and what it requires
-  // (and every activity's: the selection's parts, scene/TOOLS.md build step 3, the body chip, step 6, and the world clock, step 7)
-  const PLAY = ["sailing", "scene.activity", "scene.body", "scene.clock", "scene.halo", "scene.handles", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
-  await sleep(2500); // lingering parts each stop on their own timer
+  // both open off her quarter (orbit: view.start's home), running what the doc calls for: sailing,
+  // by its traits, and every general part, the same in both views (scene/TOOLS.md H1)
+  const SOME = ["sailing", "scene.body", "scene.clock", "scene.halo", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
+  await sleep(1000);
   const run = { a: [...(await P("running('a')"))].sort(), b: [...(await P("running('b')"))].sort() };
-  check("both views open in play", (await P("activity('a')")) === "play" && (await P("activity('b')")) === "play");
-  check("only sailing, what it requires, the clock chip and the Play | Edit switch run: no editor parts", ["a", "b"].every((w) => JSON.stringify(run[w]) === JSON.stringify(PLAY)), run);
+  check("both views open in orbit, off her quarter", (await P("bodyLabel('a')")) === "Orbit" && (await P("bodyLabel('b')")) === "Orbit", { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
+  check("both run what the doc calls for, the same: sailing and the general parts", JSON.stringify(run.a) === JSON.stringify(run.b) && SOME.every((id) => run.a.includes(id)), run);
   check("the HUD offers to come aboard in both views", (await P("text('.sail-hint button', 'a')"))[0] === "Click to come aboard" && (await P("text('.sail-hint button', 'b')"))[0] === "Click to come aboard");
   const looks = { a: await P("look('a')"), b: await P("look('b')") };
   check("the sea's sky, haze and sun in both views", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && !!looks[w].atmosphere), looks);

@@ -98,7 +98,8 @@ try {
     /** a doc change from outside both views (as an editor's would land) */
     change: (fn) => scene.change(fn),
     running: (w) => dbg[w].local.get().running.map((r) => r.id),
-    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack (scene/TOOLS.md §4) */
     body: (w) => dbg[w].local.get().body?.id ?? null,
     /** the body chip's rect, and its menu's item starting `label`, to click */
