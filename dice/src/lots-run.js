@@ -44,6 +44,17 @@
 // another browser is lost to this one. What it has seen of each draw's
 // attempts (to refuse a reroll) is in memory only: a reload forgets it.
 //
+// WHO COULD KNOW (lots.js knewWith). The doc's word on who could know a
+// seed (`knew`, from `sealed`) can be made smaller by anyone: an envelope
+// deleted, or a round written over the one released. So this client also
+// keeps, per draw, whom it sealed its own part of any attempt of it to
+// (before the envelope is written) and whether it opened that part, and
+// `knew` in state() is the doc's word widened by that. A draw with a part
+// in my name from before this client came is one it can't account for
+// (what its earlier self released, it doesn't know): anyone could know it.
+// Kept in memory only: a reload makes every such draw "all", which only
+// ever stops a roll (cup.js redrawFor), never draws one again.
+//
 // FORGERIES (lots.js): a round this client first sees once the doc is here
 // that has a commit in its viewer's name it didn't make, or is asked in its
 // viewer's name and it didn't ask it, or where its commit isn't the one it
@@ -62,7 +73,7 @@
 // asker could know it (lots.js `endable`). Whoever wants the draw asks
 // again.
 
-import { commitOf, derive, due, faultOf, freshId, freshNonce, goneOf, membersFor, newRound, opensRight, roundOf } from "./lots.js";
+import { KEPT, commitOf, derive, due, faultOf, freshId, freshNonce, goneOf, membersFor, newRound, opensRight, roundOf } from "./lots.js";
 import { makeKeys, seal, unseal } from "./seal.js";
 
 /** How long a wait goes untold in the HUD (ms): a round between two clients that are here takes a few round trips. */
@@ -83,6 +94,8 @@ export function createRunner(place) {
   const seenAt = new Map(); // round id → when this client first saw it
   const lastOn = new Map(); // thing id → the attempt on it as this client last saw it (a new draw is judged against it)
   const gaveUp = new Set(); // attempt ids this client wrote its own `gone` into
+  const released = new Map(); // draw → { to: Set, opened }: whom this client sealed its own part of an attempt of it to, and whether it opened one
+  let past = null; // draws with a part (or the asking) in my name when this client came: what was released of them, it can't say
   // round id → { part, gone }: was there a part (or the asking), or a `gone`, in my name in it when this client came;
   // null until the doc is here
   let base = null;
@@ -120,9 +133,23 @@ export function createRunner(place) {
     } catch {}
   }
 
+  /** What this client did with its own sealed part of a draw (lots.js knewWith): KEPT, a record, or null when it can't say. */
+  function toldOf(draw) {
+    if (!past || past.has(draw)) return null;
+    const t = released.get(draw);
+    return t ? { to: [...t.to], opened: t.opened } : KEPT;
+  }
+  /** Keep that, before the part leaves this client. */
+  function release(draw, to) {
+    if (!released.has(draw)) released.set(draw, { to: new Set(), opened: false });
+    const t = released.get(draw);
+    if (to === "all") t.opened = true;
+    else t.to.add(to);
+  }
+
   const heldFor = (r) => {
     const m = mineOf(r.id);
-    return { mine: m ? { nonce: m.nonce, key: m.pub || null } : null, learned: learned.get(r.id) ?? null, fault: faults.get(r.id) ?? null };
+    return { mine: m ? { nonce: m.nonce, key: m.pub || null } : null, learned: learned.get(r.id) ?? null, fault: faults.get(r.id) ?? null, told: toldOf(r.draw) };
   };
 
   /**
@@ -244,12 +271,13 @@ export function createRunner(place) {
     busy.add(k);
     try {
       const env = await seal({ id: r.id, recipient: to, text: nonce, jwk: m.jwk, theirPub: r.keys[to] });
-      if (!dead)
-        into(id, r.id, (round) => {
-          // my own key in `sealed`: only I make it
-          if (!round.sealed[viewer]) round.sealed[viewer] = {};
-          if (!round.sealed[viewer][to]) round.sealed[viewer][to] = env;
-        });
+      if (dead) return;
+      release(r.draw, to);
+      into(id, r.id, (round) => {
+        // my own key in `sealed`: only I make it
+        if (!round.sealed[viewer]) round.sealed[viewer] = {};
+        if (!round.sealed[viewer][to]) round.sealed[viewer][to] = env;
+      });
     } catch (err) {
       console.warn("[dice.lots] couldn't seal", err);
     } finally {
@@ -295,7 +323,10 @@ export function createRunner(place) {
     const all = rounds();
     let here = null;
     const present = () => (here ??= place.present());
-    if (!base && (place.ready?.() ?? true)) base = new Map(all.map(({ r }) => [r.id, { part: !!r.commits[viewer] || r.by === viewer, gone: !!r.gone[viewer] }]));
+    if (!base && (place.ready?.() ?? true)) {
+      base = new Map(all.map(({ r }) => [r.id, { part: !!r.commits[viewer] || r.by === viewer, gone: !!r.gone[viewer] }]));
+      past = new Set(all.filter(({ r }) => base.get(r.id).part || mineOf(r.id)).map(({ r }) => r.draw));
+    }
     // (nothing before the doc is here: what's on it then is past, and this client couldn't tell its own part from a forgery after)
     if (!base) return;
     for (const { id, r } of all) {
@@ -338,8 +369,10 @@ export function createRunner(place) {
         for (const s of d.holding) {
           const nonce = s === viewer ? mineOf(r.id)?.nonce : learned.get(r.id)?.[s];
           if (!nonce) continue;
-          if (audience === "all") into(id, r.id, (round) => void (round.opens[s] || (round.opens[s] = nonce)));
-          else if (Array.isArray(audience) && s === viewer) {
+          if (audience === "all") {
+            if (s === viewer) release(r.draw, "all");
+            into(id, r.id, (round) => void (round.opens[s] || (round.opens[s] = nonce)));
+          } else if (Array.isArray(audience) && s === viewer) {
             for (const to of audience) if (to !== viewer && r.keys[to] && !r.sealed[viewer]?.[to]) void sealTo(id, r, to, nonce);
           }
         }

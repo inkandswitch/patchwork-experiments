@@ -7,7 +7,7 @@
 // opens only when it's addressed to it (seal.test.js checks the real ones).
 
 import { createHash } from "node:crypto";
-import { COMMIT_MS, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
+import { COMMIT_MS, KEPT, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, knewWith, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
 import { sha256 } from "./sha256.js";
 
 const nonceOf = (v, id) => sha256(`nonce|${v}|${id}`);
@@ -299,6 +299,63 @@ describe("lots: a reroll", () => {
     expect(knewOf(made(["a", "b", "c"], { sealed: { a: { b: env }, c: { b: env } } }))).toEqual(["b"]);
     // not yet closed: nobody
     expect(knewOf(roundOf({ round: newRound({ draw: "dxxxx", id, by: "a", at: 0, sealers: ["a"], members: ["a", "b"], commit: "0".repeat(64) }) }))).toEqual([]);
+  });
+
+  it("who could know, as a sealer's client tells it (knewWith): the doc's word, whatever anyone deleted from it, never misses anyone else who holds that client's part", () => {
+    // Every honest doc of a round a, b and c took part in, a among its sealers: each envelope a sealer could have
+    // written (to each other member) and each sealer's opening there or not; then every way a forger could take any
+    // of them out again. a's client knows what it wrote itself (`told`), and that never leaves out anyone but a
+    // who could know the seed from the honest doc: anyone who could holds a's part, sealed to them or in the clear.
+    const id = "r1xx";
+    const M = ["a", "b", "c"];
+    let cases = 0;
+    for (const sealers of [["a"], ["a", "b"], ["a", "b", "c"]]) {
+      const slots = [...sealers.flatMap((s) => M.filter((t) => t !== s).map((t) => ({ s, t }))), ...sealers.map((s) => ({ s, open: true }))];
+      // each slot: 0 never written, 1 written, 2 written and then deleted by the forger
+      for (let k = 0; k < 3 ** slots.length; k++) {
+        const state = slots.map((_, i) => Math.floor(k / 3 ** i) % 3);
+        const docWith = (keep) => {
+          const r = newRound({ draw: "dxxxx", id, by: "a", at: 0, sealers, members: M, commit: commitOf(id, "a", nonceOf("a", id), keyOf("a", id)), key: keyOf("a", id) });
+          for (const v of ["b", "c"]) (r.commits[v] = commitOf(id, v, nonceOf(v, id), keyOf(v, id))), (r.keys[v] = keyOf(v, id));
+          slots.forEach((x, i) => {
+            if (!keep(state[i])) return;
+            if (x.open) r.opens[x.s] = nonceOf(x.s, id);
+            else (r.sealed[x.s] ??= {})[x.t] = { iv: "AAAA", ct: "AAAA" };
+          });
+          return roundOf({ round: r });
+        };
+        const honest = docWith((st) => st > 0);
+        const forged = docWith((st) => st === 1);
+        const told = { to: slots.filter((x, i) => x.s === "a" && !x.open && state[i] > 0).map((x) => x.t), opened: slots.some((x, i) => x.s === "a" && x.open && state[i] > 0) };
+        const truth = knewOf(honest);
+        const said = knewWith(knewOf(forged), told);
+        const what = JSON.stringify({ sealers, state });
+        if (truth === "all") expect(said, what).toBe("all");
+        else for (const v of truth) if (v !== "a") expect(said === "all" || said.includes(v), what).toBe(true);
+        // and it only ever widens the doc's word
+        const doc = knewOf(forged);
+        if (doc === "all") expect(said).toBe("all");
+        else for (const v of doc) expect(said === "all" || said.includes(v), what).toBe(true);
+        cases++;
+      }
+    }
+    expect(cases).toBe(3 ** 3 + 3 ** 6 + 3 ** 9);
+  });
+
+  it("knewWith: the doc's word, and whom the client sealed its part to; everyone once it opened it, or when it can't say", () => {
+    const P = ["a", "b", "c"];
+    const subsetsOf = (list) => list.reduce((acc, x) => acc.concat(acc.map((s) => [...s, x])), [[]]);
+    for (const knew of ["all", ...subsetsOf(P)])
+      for (const told of [null, KEPT, ...subsetsOf(P).flatMap((to) => [{ to, opened: false }, { to, opened: true }])]) {
+        const said = knewWith(knew, told);
+        if (knew === "all" || told === null || told.opened) expect(said).toBe("all");
+        else expect(said).toEqual([...new Set([...knew, ...told.to])].sort());
+      }
+    // derive takes it as `told`, the doc's word alone when it's left out
+    const r = roundOf({ round: newRound({ draw: "dxxxx", id: "r1xx", by: "a", at: 0, sealers: ["a"], members: ["a"], commit: commitOf("r1xx", "a", nonceOf("a", "r1xx"), keyOf("a", "r1xx")), key: keyOf("a", "r1xx") }) });
+    expect(derive(r, "a").knew).toEqual(["a"]);
+    expect(derive(r, "a", { told: { to: ["b"], opened: false } }).knew).toEqual(["a", "b"]);
+    expect(derive(r, "a", { told: null }).knew).toBe("all");
   });
 
   it("a round written over a draw by someone else (sealed to themselves) and completed, then asked for again by the draw's own asker: no fault, for the asker never knew the one it replaces", () => {

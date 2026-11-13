@@ -290,8 +290,11 @@ export const forgedOn = (st, cup) => ours(st, cup) && (st.forged?.length > 0 || 
 
 /**
  * Whose word that the shake's draw is forged its holder's client (`me`)
- * draws it again for: that of anyone who couldn't know the roll from the doc
- * (lots' `knew`), and its own while nobody but itself could. Someone who
+ * draws it again for: that of anyone who couldn't know the roll (lots'
+ * `knew`: the doc's word, which anyone can make smaller by deleting an
+ * envelope, widened by whom the holder's client itself sealed its part of
+ * the draw to, and "all" once it opened it or can't say: lots.js knewWith),
+ * and its own while nobody but itself could. Someone who
  * could (a seated other once a blind cup is up; anyone once it's public)
  * gains a choice among rolls if a word drew them again, so it only stops
  * this one: nothing turns up by it, every HUD says who said so, and its

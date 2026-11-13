@@ -5,6 +5,7 @@
 // policy (audience = show ∩ only), worked out here as the stage does.
 
 import { COVER, CUP_HEIGHT, DIE_HALF, LIFT_BACK, MAX_UNDER, cupOf, cupsOf, fits, forgedOn, includes, redrawFor, knocked, lifted, lowered, ours, policy, ringOf, sealersFor, shakePlan, shaken, spotOf, stoodUp, upright, yawOf } from "./cup.js";
+import { KEPT, knewWith } from "./lots.js";
 import { builtDie } from "./die-glb.js";
 import { dieOf, presetDoc } from "./die.js";
 import { faceUp, reach, seedFor, seedFromLots, settled } from "./roll.js";
@@ -251,6 +252,18 @@ describe("a shake's lots: is the round on a cup the one its shake asked for, and
             // the holder's own word, once someone else could know the roll (Ben, a blind cup up): only stops it
             if (knew !== "all" && knew.some((x) => x !== "ana")) expect(said).not.toContain("ana");
             if (isForged && words.includes("ana") && alone(knew)) expect(said).toContain("ana");
+            // the doc's word as Ana's client widens it by whom it sealed her part to (lots.js knewWith): it only ever
+            // takes words away, never one from someone it sealed to, and none at all once it opened her part or
+            // can't say (a reload): whatever anyone deleted from `sealed`, a viewer who holds her part stays in it
+            for (const told of [KEPT, null, { to: ["ben"], opened: false }, { to: ["ben", "cy"], opened: false }, { to: [], opened: true }]) {
+              const wider = redrawFor({ ...st, knew: knewWith(knew, told) }, cup, "ana");
+              const ok =
+                wider.every((v) => said.includes(v)) &&
+                !wider.some((v) => told?.to.includes(v) || (v === "ana" && told?.to.length)) &&
+                (told && !told.opened ? true : wider.length === 0) &&
+                (told !== KEPT || wider.join() === said.join());
+              if (!ok) expect.fail(`${what} knew ${knew} told ${JSON.stringify(told)}: ${wider}, from the doc alone ${said}`);
+            }
           }
         }
       const st = { draw: c.draw, of: c.of, by: c.by, asked: c.asked, sealers, forged: [] };

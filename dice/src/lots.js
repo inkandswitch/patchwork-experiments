@@ -340,6 +340,27 @@ export function knewOf(r) {
   return sorted([...sealers, ...Object.values(r.sealed).flatMap((m) => Object.keys(m))].filter(holds));
 }
 
+/** What a client did with its own sealed part of a draw, when it never released it: nothing. */
+export const KEPT = Object.freeze({ to: Object.freeze([]), opened: false });
+
+/**
+ * Who could know an attempt's seed, as one client (`told`'s) can tell it:
+ * the doc's word (`knewOf`, or any such answer) widened by what that client
+ * did with its own sealed part, which only it releases. The doc isn't
+ * signed, so the doc's word can be made smaller by anyone (an envelope
+ * deleted from `sealed`, a whole round written over the one released), but
+ * never past this: every viewer the client sealed its part to could know
+ * the seed, and once it opened that part, anyone.
+ * `told`: { to: viewer[], opened: boolean }, what the client did with its
+ * part (lots-run.js keeps it per draw); KEPT when it released nothing; null
+ * when it can't say (a part of the draw from before it came: a reload, or
+ * another browser), and then anyone could.
+ */
+export function knewWith(knew, told) {
+  if (knew === "all" || !told || told.opened) return "all";
+  return sorted([...knew, ...told.to]);
+}
+
 /**
  * Who could have known an attempt's seed from the doc, however far it got:
  * "all" when every contributor's part is in the clear; else each viewer who
@@ -406,9 +427,10 @@ export function faultOf(prev, next, me, { opened = false } = {}) {
  * What a round says to `me`, given what my client holds.
  * @param {object} r        roundOf(...)
  * @param {string | null} me
- * @param {{ mine?: { nonce: string, key?: string | null } | null, learned?: Record<string, string> | null, fault?: object | null }} [held]
+ * @param {{ mine?: { nonce: string, key?: string | null } | null, learned?: Record<string, string> | null, fault?: object | null, told?: { to: string[], opened: boolean } | null }} [held]
  *   mine: my own nonce (and public key) for this attempt; learned: sealers' nonces, from envelopes to me;
- *   fault: faultOf(...) for this attempt, if my client has one (it then takes no part)
+ *   fault: faultOf(...) for this attempt, if my client has one (it then takes no part);
+ *   told: what my client did with my own sealed part of this draw (knewWith): KEPT, a record, or null (it can't say)
  * @returns {{
  *   draw, id, by, at, of: string[], asked: string[], members, tries, excluded,
  *   phase: "committing" | "opening" | "sealed" | "known" | "open" | "spoiled" | "ended",
@@ -423,13 +445,13 @@ export function faultOf(prev, next, me, { opened = false } = {}) {
  *   fault: null | { of, why },  // my client refuses this attempt
  *   forged: string[],           // who says a part of it in their name isn't theirs (their "forged" protest): land nothing by it
  *   gone: string[],             // who gave it up (GONE): while nobody but its asker could know it, that ends it ("ended"), for everyone
- *   knew: "all" | string[],     // who could know its seed, from the doc (knewOf)
+ *   knew: "all" | string[],     // who could know its seed: the doc's word (knewOf), widened by `told` (knewWith)
  *   mustCommit: boolean, mustOpen: boolean,
  *   own: boolean,               // my commit is in it, and it's the one I made (with `by` me: my own attempt)
  *   overwritten: boolean,       // my commit in the doc isn't the one I made
  * }}
  */
-export function derive(r, me, { mine = null, learned = null, fault = null } = {}) {
+export function derive(r, me, { mine = null, learned = null, fault = null, told = KEPT } = {}) {
   const contributors = contributorsOf(r);
   const out = {
     draw: r.draw,
@@ -453,7 +475,7 @@ export function derive(r, me, { mine = null, learned = null, fault = null } = {}
     fault,
     forged: Object.keys(r.protests).filter((v) => r.protests[v].why === "forged"),
     gone: Object.keys(r.gone),
-    knew: knewOf(r),
+    knew: knewWith(knewOf(r), told),
     mustCommit: false,
     mustOpen: false,
     own: false,

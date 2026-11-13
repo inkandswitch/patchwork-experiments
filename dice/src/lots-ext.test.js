@@ -7,7 +7,8 @@
 // the cup's own trait.
 
 import Lots, { ID, holderOf } from "./lots-ext.js";
-import { STALE_MS, OPEN_MS, commitOf, contributorsOf, couldKnow, freshNonce, newRound, roundOf, seedOf } from "./lots.js";
+import { STALE_MS, OPEN_MS, commitOf, contributorsOf, couldKnow, freshNonce, knewOf, newRound, roundOf, seedOf } from "./lots.js";
+import { cupOf, redrawFor } from "./cup.js";
 
 const CUP = "dice.cup";
 
@@ -22,7 +23,7 @@ function world({ seated, present: arrived, running = arrived }) {
   };
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
-  for (const v of present) {
+  const join = (v) => {
     const c = { local };
     const api = {
       id: ID,
@@ -43,7 +44,8 @@ function world({ seated, present: arrived, running = arrived }) {
     c.api = api;
     c.ext = Lots.create(api);
     clients.set(v, c);
-  }
+  };
+  for (const v of present) join(v);
   return {
     clients,
     lots: (v) => clients.get(v).ext[ID],
@@ -63,6 +65,11 @@ function world({ seated, present: arrived, running = arrived }) {
         flush();
         await new Promise((r) => setTimeout(r, 2));
       }
+    },
+    /** `v`'s client starts again (a reload): what it kept in memory is gone, what it kept in storage isn't. */
+    rejoin(v) {
+      clients.get(v).ext.dispose();
+      join(v);
     },
     /** `v` goes: its client stops, and it's no longer in anyone's presence. */
     leave(v) {
@@ -511,4 +518,97 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.lots("ben").state("cup")).toMatchObject({ phase: "sealed", waiting: ["ana"] });
     w.dispose();
   }, 15_000);
+});
+
+describe("dice.lots, who could know a cup's roll, as its holder's client tells it: never less than whom it sealed its own part to", () => {
+  // Ana shook blind, Ben the other one seated; the cup is up, so Ana's client sealed her part to Ben (and Ben's to
+  // nobody: the holder never sees a blind roll). Ben could know the roll. A modified client of Ben's then takes his
+  // envelope out of the doc in the same change as getting Ana's client to say the roll is forged, which, read from the
+  // doc alone, would have Ana's client draw the cup again for him (sealed to him again) as often as he liked.
+  const lifted = async () => {
+    const w = world({ seated: ["ana", "ben"], present: ["ana", "ben"] });
+    w.setAudience(() => []); // down, blind: nobody
+    const draw = w.lots("ana").draw("cup", { sealers: ["ana", "ben"], of: ["d1"] });
+    await w.settle();
+    w.setAudience(() => ["ben"]); // lifted: the seated others
+    await w.settle();
+    expect(Object.keys(w.round().sealed.ana)).toEqual(["ben"]);
+    expect(w.lots("ana").state("cup").knew).toEqual(["ben"]);
+    const cup = cupOf({ traits: { [CUP]: { holder: "ana", up: true, blind: true, roll: { draw, dice: ["d1"], blind: true, done: false } } } });
+    return { w, draw, cup };
+  };
+  const unsealed = (d) => delete d.objects.cup.traits[CUP].round.sealed.ana.ben;
+
+  it("Ben deletes `sealed.ana.ben` and overwrites Ana's commit: her client says forged, still counts Ben as able to know, and nothing is drawn again", async () => {
+    const { w, cup } = await lifted();
+    w.write((d) => {
+      unsealed(d);
+      d.objects.cup.traits[CUP].round.commits.ana = "0".repeat(64);
+    });
+    const st = w.lots("ana").state("cup");
+    expect(st.fault?.why).toBe("forged");
+    expect(knewOf(w.round())).toEqual([]); // the doc's word, emptied
+    expect(st.knew).toEqual(["ben"]);
+    expect(redrawFor(st, cup, "ana")).toEqual([]);
+    await w.settle();
+    expect(redrawFor(w.lots("ana").state("cup"), cup, "ana")).toEqual([]);
+    w.dispose();
+  });
+
+  it("Ben deletes `sealed.ana.ben` and says the roll is forged himself: his word only stops it", async () => {
+    const { w, cup } = await lifted();
+    w.write((d) => {
+      unsealed(d);
+      d.objects.cup.traits[CUP].round.protests.ben = { of: d.objects.cup.traits[CUP].round.id, why: "forged" };
+    });
+    const st = w.lots("ana").state("cup");
+    expect(st.forged).toEqual(["ben"]);
+    expect(knewOf(w.round())).toEqual([]);
+    expect(st.knew).toEqual(["ben"]);
+    expect(redrawFor(st, cup, "ana")).toEqual([]);
+    w.dispose();
+  });
+
+  it("Ben writes a whole new attempt of Ana's draw in her name, nothing sealed in it: her client refuses it as forged, and still counts Ben (whom it sealed her part of that draw to)", async () => {
+    const { w, draw, cup } = await lifted();
+    const id = "rFAKExxx";
+    const r = newRound({ draw, id, by: "ana", at: Date.now(), of: ["d1"], sealers: ["ana", "ben"], members: ["ana", "ben"], commit: commitOf(id, "ana", freshNonce(), "", ["d1"]) });
+    r.commits.ben = commitOf(id, "ben", freshNonce(), "", ["d1"]);
+    w.write((d) => void (d.objects.cup.traits[CUP].round = r));
+    const st = w.lots("ana").state("cup");
+    expect(st.fault?.why).toBe("forged");
+    expect(knewOf(w.round())).toEqual([]);
+    expect(st.knew).toEqual(["ben"]);
+    expect(redrawFor(st, cup, "ana")).toEqual([]);
+    w.dispose();
+  });
+
+  it("after a reload, Ana's client can't say whom her part went to: anyone could know it, so nothing is ever drawn again", async () => {
+    const { w, cup } = await lifted();
+    w.rejoin("ana");
+    await w.settle();
+    expect(w.lots("ana").state("cup").knew).toBe("all");
+    w.write((d) => {
+      unsealed(d);
+      d.objects.cup.traits[CUP].round.commits.ana = "0".repeat(64);
+    });
+    const st = w.lots("ana").state("cup");
+    expect(st.fault?.why).toBe("forged");
+    expect(st.knew).toBe("all");
+    expect(redrawFor(st, cup, "ana")).toEqual([]);
+    w.dispose();
+  });
+
+  it("while the cup is still down Ana's client sealed her part to nobody: Ben's word draws it again (he knows no more of the next roll than of this one)", async () => {
+    const w = world({ seated: ["ana", "ben"], present: ["ana", "ben"] });
+    w.setAudience(() => []);
+    const draw = w.lots("ana").draw("cup", { sealers: ["ana", "ben"], of: ["d1"] });
+    await w.settle();
+    const cup = cupOf({ traits: { [CUP]: { holder: "ana", up: false, blind: true, roll: { draw, dice: ["d1"], blind: true, done: false } } } });
+    w.write((d) => void (d.objects.cup.traits[CUP].round.protests.ben = { of: d.objects.cup.traits[CUP].round.id, why: "forged" }));
+    const st = w.lots("ana").state("cup");
+    expect(st.knew).toEqual([]);
+    expect(redrawFor(st, cup, "ana")).toEqual(["ben"]);
+    w.dispose();
+  });
 });

@@ -378,7 +378,7 @@ dice where they lie, written with a roll that says who said so (`forged`),
 which every view tells ("Ana's cup was drawn again: Ben says its lots were
 written in their name by someone else."). A holder may always shake again,
 told, so this gives the holder nothing more. It does so only for the word
-of someone who couldn't know the roll from the doc (lots' `knew`; cup.js
+of someone who couldn't know the roll (lots' `knew`, below; cup.js
 `redrawFor`), and for its own client's only while nobody else could: a
 seated other who can already see a blind cup's dice (it's up), or anyone
 once a roll is public, would get to choose among the holder's rolls by
@@ -395,21 +395,38 @@ client only gets to it after the parts have been released (it was busy, or
 a forger released "their" part as well), it only stops the roll, like
 anyone else's.
 
-**Not closed yet: knowing is read from the doc.** "Who could know the roll"
-(lots' `knew`) is read from the round's `sealed` map, and the doc is
-unsigned, so the viewer it names can take itself out: Ben, seated at Ana's
-lifted blind cup, reads `sealed.ana.ben`, then in one change deletes that
-envelope and either writes over Ana's commit or says "forged" himself.
-Ana's client now finds nobody but its own (or nobody) who could know, and
-draws the cup again, sealed to Ben again, as often as he likes: he chooses
-among her rolls. With three or more seated the holder's-word route is shut
-(the others stay in `knew`), but the others'-word route works for any
-number. The fix is for the holder's client to decide from what it knows
-itself (every cup draw has the holder as a sealer, and only its client
-releases that part): it records whom it sealed its part to, or that it
-opened it, and widens `knew` by that record (FOLLOWUPS, "Merge of the four
-lanes"). Until then the claims below about choosing among rolls hold only
-against a forger who leaves `sealed` alone.
+**Who could know the roll is the holder's client's own word, not the
+doc's.** The doc can say who could know it (lots' `knewOf`, read from the
+round's `sealed` map), but the doc is unsigned, so the viewer it names can
+take itself out: Ben, seated at Ana's lifted blind cup, reads
+`sealed.ana.ben`, then in one change deletes that envelope and either
+writes over Ana's commit or says "forged" himself; or he writes a whole new
+attempt of her draw in her name with nothing sealed in it. Read from the
+doc alone, Ana's client would find nobody but itself (or nobody) who could
+know, and draw the cup again, sealed to Ben again, as often as he liked. So
+lots' `knew` is the doc's word widened by what Ana's client did with her
+own part, which only it releases (`lots.js knewWith`): it keeps, per draw,
+whom it sealed that part to (before the envelope is written) and whether it
+opened it, and anyone who could know the roll holds her part. Deleting
+envelopes can only shrink the doc's word, never that. A draw with a part
+in her name from before her client came (a reload, another browser) is one
+it can't account for, and counts as known to all: only stopped, never drawn
+again. The record is in memory: after a reload a forged word on that
+shake stops it, and Ana shakes again.
+
+**Not closed yet: asking again.** The holder's client also asks again,
+without a word from anyone, for its draw when the round on its cup isn't
+its shake's (written over) or was given up (`gone`), and both of those are
+read from the doc. Ben, seated at Ana's lifted blind cup and knowing her
+roll, can write any round over hers, or delete his own commit and write
+`gone` in his own name (the round then reads as still committing, which a
+`gone` ends); either way Ana's client asks again for the same draw, a new
+attempt sealed to Ben again once its contributors are fixed, so he can
+choose among her blind rolls, and no view tells it as a shake (the draw is
+the same). Closing it is the same move as above, the holder's own record
+gating the asking (FOLLOWUPS); until then the claims below about choosing
+among rolls hold only against a forger who doesn't write over or give up
+the round.
 
 **Who may see what** (the cup's `audience` policy, merged by the stage), for
 the cup and every die it covers or whose shake isn't turned up yet:
@@ -457,8 +474,9 @@ cup.
   "Forgeries"), until its holder is back and sees the round in its name.
 - It can't choose among another's rolls by saying "forged" (anyone can, in
   their own name), nor by writing over the holder's commit so the holder's
-  client says it, as long as it leaves `sealed` alone (deleting its own
-  envelopes first is the open hole above, "Not closed yet"). Said before it could know the roll, it gets the cup
+  client says it, deleting its own envelopes first or not (above: who could
+  know is the holder's client's own word). Writing over the round, or giving
+  it up, it still can (above, "Not closed yet"). Said before it could know the roll, it gets the cup
   drawn again, aloud, a roll it knows no more of than the last; said once it
   could know it (a seated other, a blind cup up), it only stops that roll,
   told under its name (or, for an overwritten commit, as a part written in
@@ -801,7 +819,16 @@ checked over every case, never sampled at random (`pnpm test`):
   writing `gone` instead of opening left out at the asker's deadline as if
   it had stalled, a `gone` in a viewer's name its client didn't write
   refused as forged and said so, a lifted cup whose holder is away never
-  given up (`lots-ext.test.js`); envelopes
+  given up; under a lifted blind cup, the seated other deleting the
+  holder's envelope to him and overwriting her commit, or saying "forged"
+  himself, or writing a new attempt of her draw in her name: her client
+  still counts him as able to know, and draws nothing again; after a
+  reload, known to all; still down, nothing sealed to anyone, his word
+  draws it again (`lots-ext.test.js`); who could know as a sealer's client
+  tells it, over every honest doc of a draw among three with it a sealer
+  (every envelope and opening there or not) and every way of deleting any
+  of them again: never missing anyone else the honest doc says could know
+  it, never narrower than the doc's word (`lots.test.js`); envelopes
   (`seal.test.js`);
 - the tumble and the landing, every shape, every face, a fan of starting
   poses, times and tumbles: off the table as it lay, a toss above where it
@@ -842,12 +869,13 @@ checked over every case, never sampled at random (`pnpm test`):
   blind} × {its draw, another} × {of its dice in order, reordered, fewer,
   none} × {asked by Ana, Ben} × every set of sealers × every set of
   contributors × {nobody, Ben, Ana} saying a part is forged × this client
-  refusing it as forged or not × who could know it): whether it is the
-  shake's, whether it is forged, whose word its holder draws it again for
-  (only those who couldn't know it, and its own only while nobody else
-  could), and that a round a client
-  uses
-  was knowable early by the holder alone (open) or by nobody (blind)
+  refusing it as forged or not × who could know it × what the holder's
+  client did with its part): whether it is the shake's, whether it is
+  forged, whose word its holder draws it again for (only those who couldn't
+  know it, and its own only while nobody else could; the holder's record
+  only ever taking words away, never leaving one from someone it sealed
+  to, none once it opened its part or can't say), and that a round a client
+  uses was knowable early by the holder alone (open) or by nobody (blind)
   (`cup.test.js`);
 - the cup extension against a fake stage with two players and a spectator
   and a scripted lots: how a view dresses a die in every case (shown as it
