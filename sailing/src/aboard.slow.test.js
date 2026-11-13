@@ -70,7 +70,7 @@ async function sloop() {
 /** A view in play: play.js's instance on the fake stage, with what the crew and HUD ask of it. */
 function join(w, session, hull) {
   const base = w.join(session);
-  const s = { bodies: [{ id: "orbit" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
+  const s = { bodies: [{ id: "look" }], cam: { position: [10, 6, 10], target: [0, 0, 0] }, held: 0, groups: [] };
   // what the crew's avatars are made of, beside what the sea asks for
   const T = base.THREE;
   class Group {
@@ -157,7 +157,7 @@ describe("aboard, together", () => {
     expect(a.command("aboard").state(null, {})).toBeTruthy();
     a.command("aboard").run(null);
     b.instance.input.click({});
-    expect(a.bodies.map((x) => x.id)).toEqual(["orbit", "aboard"]);
+    expect(a.bodies.map((x) => x.id)).toEqual(["look", "aboard"]);
     w.tick(1 / 60, 30);
     // one owner of the presence rate: the simulator streams, the crew sends where they stand
     expect(w.view("A").rate).toBe(30);

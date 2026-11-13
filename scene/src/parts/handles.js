@@ -10,8 +10,9 @@
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
 // They are the halo's build-param knobs (TOOLS.md §3): shown for the
-// selection, hidden while another extension holds the tool
-// (measuring, say).
+// selection in the Edit body (they are the editor's: ../stage/bodies.js)
+// where the scene may be written, hidden while another extension holds the
+// tool (measuring, say).
 //
 // Reads local.selected, local.held and local.theme. Writes only the render
 // doc's params.
@@ -21,11 +22,21 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { own } from "../stage/own.js";
+import { editing } from "../stage/bodies.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
+
+/**
+ * May the selection's knobs show? Only in Edit, where the scene may be
+ * written, and while no other extension holds the tool. Pure.
+ * @param {object} local  api.local.get()  @param {boolean} writable  @param {string} self  this part's id
+ */
+export function knobsShown(local, writable, self) {
+  return editing(local) && !!writable && (local?.held == null || local.held.ext === self);
+}
 
 /** The provider (scene:source metadata) an object was built by, or null. */
 export function providerOf(sources, providerId) {
@@ -128,6 +139,7 @@ export default own({
     /** The selected object, if it's one with a provider that declares handles: { id, o, provider }. */
     function target() {
       const local = api.local.get();
+      if (!editing(local) || !api.writable()) return null;
       const id = local.selected ?? null;
       const o = id ? api.doc()?.objects?.[id] : null;
       if (!o || o.kind === "group" || !o.renderUrl || !o.providerId) return null;
@@ -196,7 +208,7 @@ export default own({
 
     /** Each spec's world line, while the object is shown and has its content. */
     function lines() {
-      if (!sub || !specs.length || standingDown()) return [];
+      if (!sub || !specs.length || !knobsShown(api.local.get(), api.writable(), api.id)) return [];
       const c = api.content(sub.id);
       if (!c?.loaded || !c.box || !api.box(sub.id)) return [];
       const m = api.worldOf(sub.id);
@@ -357,7 +369,7 @@ export default own({
         const pl = prev?.local;
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
-        if (pl && pl !== local && prev.scene === scene && ["selected", "held", "theme", "status"].every((k) => pl[k] === local[k])) return;
+        if (pl && pl !== local && prev.scene === scene && ["selected", "held", "body", "theme", "status"].every((k) => pl[k] === local[k])) return;
         // the selection, its object, the provider, the held tool, theme, a move or content arriving
         refresh();
       },

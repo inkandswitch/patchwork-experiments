@@ -3,7 +3,7 @@ import { buildEvent, createRouter, isMac, isTyping, releaseKind, retype, withHol
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false, orbit = {} } = {}) {
+function setup({ held = false, holders = {}, mac = false, base = {} } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -31,7 +31,7 @@ function setup({ held = false, holders = {}, mac = false, orbit = {} } = {}) {
     deselect: vi.fn(() => {
       t.selected = false;
     }),
-    orbitInput: orbit,
+    baseInput: base,
     requestLock: vi.fn(() => Promise.resolve()),
     exitLock: vi.fn(),
     orbit: vi.fn(), // a bubble listener on the canvas, where OrbitControls listens
@@ -52,7 +52,7 @@ function setup({ held = false, holders = {}, mac = false, orbit = {} } = {}) {
     onHover: t.onHover,
     onCursor: t.onCursor,
     onState: t.onState,
-    orbit: { id: "orbit", input: t.orbitInput },
+    base: { id: "edit", input: t.baseInput },
     pointerWanted: () => t.wanted,
     selection: () => t.selected,
     deselect: t.deselect,
@@ -497,11 +497,11 @@ describe("keys", () => {
 });
 
 describe("the body stack", () => {
-  it("orbit is always at the bottom; a body pushed is suspended under the next and resumed when it goes; leave never pops orbit", () => {
+  it("the base is always at the bottom; a body pushed is suspended under the next and resumed when it goes; leave never pops the base", () => {
     const t = setup();
     const walk = { suspended: vi.fn(), resumed: vi.fn(), left: vi.fn() };
     const seat = { left: vi.fn() };
-    expect(t.router.bodies()).toEqual([{ id: "orbit", owner: null }]);
+    expect(t.router.bodies()).toEqual([{ id: "edit", owner: null }]);
     expect(t.router.leave()).toBe(false);
     t.router.pushBody("walker", { id: "walk", input: walk });
     t.router.pushBody("seats", { id: "seat", input: seat });
@@ -512,8 +512,32 @@ describe("the body stack", () => {
     expect(walk.resumed).toHaveBeenCalledTimes(1);
     expect(t.router.leave()).toBe(true);
     expect(walk.left).toHaveBeenCalledTimes(1);
-    expect(t.router.body().id).toBe("orbit");
+    expect(t.router.body().id).toBe("edit");
     expect(t.router.leave()).toBe(false);
+  });
+  it("setBase: every body over the base leaves (each told), then the base is replaced; its default press is the new one's", () => {
+    const order = [];
+    const edit = { click: () => (order.push("edit"), true), left: vi.fn() };
+    const t = setup({ base: edit });
+    const walk = { left: vi.fn() };
+    const seat = { left: vi.fn() };
+    t.router.pushBody("walker", { id: "walk", input: walk });
+    t.router.pushBody("seats", { id: "seat", input: seat });
+    t.router.setBase({ id: "look", input: {} });
+    expect(seat.left).toHaveBeenCalledTimes(1);
+    expect(walk.left).toHaveBeenCalledTimes(1);
+    expect(edit.left).toHaveBeenCalledTimes(1);
+    expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
+    expect(t.onState.mock.calls.at(-1)[0].body).toMatchObject({ id: "look", depth: 0 });
+    // Look has no default press: the click goes nowhere (and on to OrbitControls)
+    down(t);
+    up(t);
+    expect(order).toEqual([]);
+    expect(t.router.leave()).toBe(false);
+    t.router.setBase({ id: "edit", input: edit });
+    down(t);
+    up(t);
+    expect(order).toEqual(["edit"]);
   });
   it("a body popped from under another takes those over it with it", () => {
     const t = setup();
@@ -524,15 +548,15 @@ describe("the body stack", () => {
     popWalk();
     expect(seat.left).toHaveBeenCalledTimes(1);
     expect(walk.left).toHaveBeenCalledTimes(1);
-    expect(t.router.bodies().map((b) => b.id)).toEqual(["orbit"]);
+    expect(t.router.bodies().map((b) => b.id)).toEqual(["edit"]);
   });
   it("a press goes the held tool, the chain, then the top body's default (structurally last)", () => {
     const order = [];
-    const t = setup({ orbit: { click: () => (order.push("orbit"), true) } });
+    const t = setup({ base: { click: () => (order.push("edit"), true) } });
     t.inputs.a = { click: () => (order.push("a"), false) };
     down(t);
     up(t);
-    expect(order).toEqual(["a", "orbit"]);
+    expect(order).toEqual(["a", "edit"]);
     order.length = 0;
     t.router.pushBody("w", { id: "walk", input: { click: () => (order.push("walk"), true) } });
     down(t);
@@ -675,7 +699,8 @@ describe("the pointer", () => {
   it("H5: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused, for all 2⁴ cases × each body × {press, key}; after a release the next press only relocks", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const bodies = [
-      { id: "orbit", lock: false },
+      { id: "look", lock: false, base: true },
+      { id: "edit", lock: false, base: true },
       { id: "walk", lock: true },
       { id: "seat", lock: false },
     ];
@@ -690,8 +715,11 @@ describe("the pointer", () => {
           const lock = fakeLock(t, { refuse: want.refused });
           const press = vi.fn(() => true);
           const keyFn = vi.fn(() => true);
-          if (body.id !== "orbit") t.router.pushBody("b", { id: body.id, input: { click: press, key: keyFn }, lock: body.lock, keys: [{ code: "KeyW" }] });
-          else t.inputs.view = { click: press, key: keyFn };
+          if (!body.base) t.router.pushBody("b", { id: body.id, input: { click: press, key: keyFn }, lock: body.lock, keys: [{ code: "KeyW" }] });
+          else {
+            t.router.setBase({ id: body.id, input: {} });
+            t.inputs.view = { click: press, key: keyFn };
+          }
           await settleLock();
           if (want.released && lock.locked) lock.release();
           if (want.wanted) {
@@ -725,8 +753,8 @@ describe("the pointer", () => {
         }
       }
     }
-    // orbit and seat: 8 cases each (lock false) × 2; walk: 8 × 2
-    expect(cases).toBe(48);
+    // look, edit and seat: 8 cases each (lock false) × 2; walk: 8 × 2
+    expect(cases).toBe(64);
     warn.mockRestore();
   });
 
@@ -809,7 +837,7 @@ describe("stopping an owner", () => {
     expect(body.left).toHaveBeenCalledTimes(1);
     expect(tool.put).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
-    expect(t.router.body().id).toBe("orbit");
+    expect(t.router.body().id).toBe("edit");
     expect(t.router.held()).toBe(null);
     expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });

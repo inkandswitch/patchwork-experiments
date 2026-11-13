@@ -31,7 +31,7 @@ The core is a **stage**. It holds:
   the drawer extensions dock panes in.
 
 It has no UI of its own: no toolbar, sidebar, modes or verbs. Its only
-opinion about input is the orbit body's: a click nobody else took selects.
+opinion about input is the Edit body's: a click nobody else took selects.
 
 Everything else is a **contribution**, from an **extension** that any
 package may register. An extension runs in a scene for one of two reasons,
@@ -70,22 +70,28 @@ Three ideas replace modes, so that playing and editing are not states a
 viewer switches between ([TOOLS.md](TOOLS.md)).
 
 **A body** is where a viewer is and how they move and look. The stage owns
-**orbit**, always at the bottom of a per-view stack; packages contribute
-the rest: **walk** (first person on whatever the rays hit, riding what it
+two, **Look** and **Edit**, both the orbit camera, one of them always at
+the bottom of a per-view stack; packages contribute the rest: **walk** (first person on whatever the rays hit, riding what it
 stands on), a **seat** at a table, and sailing's **aboard** (her deck) and
 **station** (the helm, a winch). Entering a body pushes it, leaving pops it:
 sitting down from walking pushes a seat, standing up walks on. The top body
 says which keys it reserves, whether it wants pointer lock, where the eye
 is and how far it reaches, and every verb is measured from there ("too far"
-is computed once, by the stage, for every surface).
+is computed once, by the stage, for every surface). Look and Edit are
+chosen on the body chip; nothing stands on Edit, so entering any other body
+leaves it, and leaving one comes back to Look.
 
 **The held tool** is one slot per view: empty, or one tool that takes every
 press first (measure, arena's gun, a piece just drawn from a bag). A tool is
 held only if it takes input outside its own widgets; Escape puts it down.
-Playing is the empty hand. Editing is selecting a thing, which shows its
-**halo** (move, rotate and scale handles where the doc may be written), or
-holding an editing tool. Carrying needs no tool: whatever has the
-`scene.carry` trait can be picked up by anyone.
+Playing is the empty hand. **Editing is a body**: the editor is the Edit
+body (the project lead's decision, TOOLS.md Decisions 6). There a click
+selects, and a selection shows its **halo** (move, rotate and scale
+handles where the doc may be written) and the inspector; the toolbar, the
+grid, axes and bounds and every editing command are Edit's alone, so
+someone at a table or walking a level sees no editor. Carrying needs no
+tool and no body: whatever has the `scene.carry` trait can be picked up by
+anyone, and Select is in every menu.
 
 **The clock** is the doc's world time. One view computes it, holding the
 doc's `"clock"` claim, and steps every **process** extensions register (the
@@ -98,12 +104,13 @@ on the wall clock and finish during a pause.
 has one of its traits, and one that declares none runs in every scene.
 Nothing a viewer holds, where they stand or the clock changes it, so a
 sailing sim never stops for someone editing her (a pause does, by name).
-The editor's chrome runs everywhere and shows where attention asks: the
-inspector is a drawer tab while something is selected, the outline a tab
-the viewer opens, the grid and axes are the orbit body's. A doc says where
-people **start** (`view.start`: a body, a place, a home camera), read once
-on arrival: a table starts people seated (or watching from a seat), a level
-walking at a spawn point. **Undo** takes back the stage's own edits (the
+The editor's parts run everywhere and show only in Edit, where attention
+asks: the inspector is a drawer tab while something is selected, the
+outline a tab the viewer opens, the grid and axes are drawn. A doc says
+where people **start** (`view.start`: a body, a place, a home camera), read
+once on arrival: a table starts people seated (or watching from a seat), a
+level walking at a spawn point, a ship or a showcase in Look (no body
+named), and a scene made new in Edit, since its maker came to build. **Undo** takes back the stage's own edits (the
 halo, the inspector, add, remove, paste), this viewer's, never a verb's:
 undo can't un-roll a die. Only the stage's own parts can edit, and an edit
 that showed or decided something is taken back only with its parties'
@@ -122,7 +129,7 @@ what. A press goes down one chain, and each step may claim it or pass:
    scene's (a card on a table aboard a boat goes to the table's extension,
    then the boat's, then the scene's);
 4. general extensions;
-5. the top body (in orbit, Select);
+5. the top body (in Edit, Select; Look has nothing here);
 6. otherwise a drag orbits the camera.
 
 Keys have no position, so what reserves them comes first: the open gesture

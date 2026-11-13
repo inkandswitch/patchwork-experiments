@@ -1,10 +1,13 @@
 // scene.body: the body chip, who's here, and the Esc hint (TOOLS.md §4, §6).
 //
-// - The chip ("Orbit ▾", "Walk ▾") names the body on top of the stack. Its
-//   menu enters any body a running extension offers that can start "here"
-//   (a body that needs a place, a seat or a station, says `here: false` and
-//   is entered by that thing's verb instead), and Leave pops the top body
-//   (never orbit): standing up returns to walking.
+// - The chip ("Look ▾", "Edit ▾", "Walk ▾") names the body on top of the
+//   stack. Its menu offers the stage's Look and Edit (the orbit camera,
+//   ../stage/bodies.js: choosing one leaves every body over it), then any
+//   body a running extension offers that can start "here" (a body that
+//   needs a place, a seat or a station, says `here: false` and is entered by
+//   that thing's verb instead), and Leave pops the top body (never Look or
+//   Edit): standing up returns to walking, and from walking or a seat to
+//   Look.
 // - Who's here: each person present, with their body and held tool, from
 //   presence (this part publishes this view's as `body` and `held`).
 // - The Esc hint names the layer the next Escape pops (stage/ladder.js),
@@ -13,6 +16,7 @@
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
+import { LOOK, STAGE_BODIES } from "../stage/bodies.js";
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -24,26 +28,26 @@ const el = (tag, cls, text) => {
 /**
  * Who's here, from presence: [{ session, viewer, body, held, you }], this
  * view first, the others in session order; a person with no body published
- * yet is in orbit. Pure.
+ * yet is in Look. Pure.
  * @param {object} presence  api.presence.get()
  * @param {string} ext  this part's id (where body and held are published)
  * @param {string | null} self  this view's session
  * @param {{ body?: { id, label }, held?: { name } | null }} mine  this view's local
  */
 export function whoIsHere(presence, ext, self, mine) {
-  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? "Orbit", held: mine?.held?.name ?? null, you: true }];
+  const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: mine?.held?.name ?? null, you: true }];
   for (const [session, p] of Object.entries(presence ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (session === self) continue;
     const k = p?.keys?.[ext] ?? {};
-    out.push({ session, viewer: p?.viewer ?? null, body: typeof k.body?.label === "string" ? k.body.label : "Orbit", held: typeof k.held?.name === "string" ? k.held.name : null, you: false });
+    out.push({ session, viewer: p?.viewer ?? null, body: typeof k.body?.label === "string" ? k.body.label : LOOK.label, held: typeof k.held?.name === "string" ? k.held.name : null, you: false });
   }
   return out;
 }
 
-/** The bodies the chip offers: those that can start "here", by label. Pure. */
+/** The bodies the chip offers: the stage's Look and Edit, then those that can start "here", by label. Pure. */
 export function chipBodies(collected) {
-  const out = [];
-  const seen = new Set();
+  const out = STAGE_BODIES.map((b) => ({ id: b.id, label: b.label }));
+  const seen = new Set(out.map((b) => b.id));
   for (const { value } of collected ?? []) {
     for (const def of Array.isArray(value) ? value : []) {
       if (!def || typeof def.id !== "string" || seen.has(def.id) || def.here === false) continue;
@@ -151,7 +155,7 @@ function create(api) {
         return row;
       }),
     );
-    chip.textContent = `${local.body?.label ?? "Orbit"} ▾`;
+    chip.textContent = `${local.body?.label ?? LOOK.label} ▾`;
     chip.title = (local.body?.depth ?? 0) > 0 ? "Your body: change it, or leave it" : "Your body: change it";
     hint.textContent = esc;
     hint.hidden = !esc;
@@ -161,7 +165,7 @@ function create(api) {
   let published = "";
   function publish() {
     const local = api.local.get();
-    const body = { id: local.body?.id ?? "orbit", label: local.body?.label ?? "Orbit" };
+    const body = { id: local.body?.id ?? LOOK.id, label: local.body?.label ?? LOOK.label };
     const held = local.held ? { name: local.held.name } : undefined;
     const key = JSON.stringify([body, held ?? null]);
     if (key === published) return;

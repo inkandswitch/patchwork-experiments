@@ -6,6 +6,7 @@
 // otherwise every shown object gets a faint box and its sizes. Boxes are of
 // loaded geometry only (no hints), from api.box.
 
+import { editing } from "../stage/bodies.js";
 import css from "./bounds.css?inline";
 import { formatLength } from "../units.js";
 import { isGroup } from "../groups.js";
@@ -36,8 +37,8 @@ export default {
     layer.userData.noPick = true;
     const labels = api.labels();
     const shown = () => api.pref("bounds", false) === true;
-    // what's drawn: shown, and only in the orbit body (TOOLS.md §1: the aids are orbit's)
-    const drawn = () => shown() && api.local.get().body?.id === "orbit";
+    // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
+    const drawn = () => shown() && editing(api.local.get());
     let key = null;
 
     function clear() {
@@ -84,6 +85,7 @@ export default {
       commands: [
         {
           id: "bounds",
+          edit: true,
           name: "Bounds",
           show: ["toolbar"],
           state: (target) => (target == null ? { checked: shown(), title: "Show bounding boxes and sizes" } : null),

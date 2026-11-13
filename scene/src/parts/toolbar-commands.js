@@ -1,6 +1,8 @@
 // Reading commands (STAGE.md, "A command"), for the surfaces that present
 // them: the toolbar, the key map and the menu. Pure: no DOM, no api.
 
+import { inBody } from "../stage/bodies.js";
+
 /**
  * Every running extension's commands, flattened, in running order then
  * command order. Anything that isn't a command (no id, no run) is skipped.
@@ -31,13 +33,18 @@ export function flatCommands(collected) {
  * `reach` (the body's, metres or Infinity) and `distance(target)` (from the
  * eye to the look's hit when the look is on the target, else to the
  * target's box), and beyond reach the verb shows disabled, "too far". Reach
- * is ergonomics, not permission: orbit's is Infinity.
+ * is ergonomics, not permission: Look's and Edit's are Infinity.
+ *
+ * A command that says `edit: true` is the editor's (../stage/bodies.js): it
+ * applies only while the body is Edit, so outside it it is on no surface
+ * and doesn't run.
  * @param {object} command
  * @param {string | null} target
  * @param {{ scene: object, local: object, from?: number[] | null, reach?: number, distance?: (target: string) => number, hit?: object | null }} ctx
  * @returns {object | null}
  */
 export function commandState(command, target, ctx) {
+  if (!inBody(command, ctx?.local)) return null;
   let s;
   if (typeof command?.state !== "function") s = target == null ? {} : null;
   else {

@@ -1,6 +1,6 @@
 // Publish "Cadboro Bay" to a real sync server and print its Patchwork URL:
 // the waters off the Royal Victoria Yacht Club, from open data, with the
-// stock sloop on the club's moorings, people starting in orbit at a home view.
+// stock sloop on the club's moorings, people starting in Look at a home view.
 //
 //   (in scene/, sailing/ and terrain/) pnpm build
 //   node probes/publish-rvyc.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--shots <dir>] [--show]
@@ -23,7 +23,7 @@
 //    - the fingerprint survives publishing: recomputed on the docs with every
 //      url rewritten and every map's keys sorted (as automerge returns
 //      them), it is still the render's builtFrom.fingerprint;
-//    - the sea has the summer breeze; people start in orbit at a home view (view.start);
+//    - the sea has the summer breeze; people start in Look (no body named) at a home view (view.start);
 //    - the sloop is on the mooring with her main down, her jib rolled away and her anchor down,
 //      in water deeper than her draft at the lowest normal tide all round
 //      her swing, read from the GLB's own extras.terrain with the copyable
@@ -122,7 +122,7 @@ try {
   check("the terrain's About is its Terrain doc, and it carries the credit trait", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit, s.terrain);
   check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 2 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 1, s.render);
   check("a summer afternoon's sea: 4 m/s from 235°, small waves", J(s.sea?.wind) === J({ speed: 4, from: 235 }) && s.sea.scale === 0.5, s.sea);
-  check("it starts people in orbit at a home view from the club (view.start)", !s.start?.body && (await P("bodyLabel()")) === "Orbit" && J(s.home) === J({ position: [-400, 22, 300], target: [120, 0, -40] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
+  check("it starts people in Look (no body named) at a home view from the club (view.start)", !s.start?.body && (await P("bodyLabel()")) === "Look" && J(s.home) === J({ position: [-400, 22, 300], target: [120, 0, -40] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
   check("the sloop is on the mooring, head to wind, main down, jib rolled away, anchor down", s.hull && Math.hypot(s.hull.position[0], s.hull.position[2]) < 0.01 && Math.abs(Math.cos(s.hull.rotation[1] + (235 * Math.PI) / 180) - 1) < 1e-9 && s.sail?.raised === 0 && s.jib?.furl === 1 && s.anchor?.down === true && s.anchor.rode === 25, { hull: s.hull, sail: s.sail, jib: s.jib, anchor: s.anchor });
   const t = await P("terrain()");
   report.numbers.terrain = t;
@@ -137,7 +137,7 @@ try {
   // screens
   await sleep(1500);
   report.shots.push(await b.shot(join(SHOTS, "rvyc-play.png")));
-  check("the home view, in orbit", (await P("atHome()")) === "Orbit");
+  check("the home view, in Look", (await P("atHome()")) === "Look");
   await sleep(1500);
   report.shots.push(await b.shot(join(SHOTS, "rvyc-home.png")));
   await P("setCamera([1200, 2600, 2900], [1600, 0, 900])");

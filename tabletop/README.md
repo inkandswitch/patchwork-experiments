@@ -420,8 +420,9 @@ the pieces carry.
 
 Every built-in game has seats, Santorini's three by its workers' colours
 (Blue, Cream, Grey), so every table starts people where a press picks a
-piece up. A game laid out with none would start people in orbit at its home
-view, where a press-and-drag still carries a piece but a click selects it.
+piece up. A game laid out with none would start people in Look at its home
+view, where a press-and-drag still carries a piece and a click selects
+nothing (Edit, from the body chip, is where a click selects).
 
 ### Templates
 

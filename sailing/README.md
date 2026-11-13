@@ -18,7 +18,7 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **From the template.** In an empty scene, pick **Ship at sea** on the start
   screen. It lays out a sloop under way on a beam reach (sail up, anchor
   up), a sea with a north-easterly breeze, two buoys and an islet upwind,
-  and starts people off her quarter (orbit: a click comes aboard). Or **Ship at anchor**: the same sloop lying head to
+  and starts people off her quarter (Look, the orbit camera: a click comes aboard). Or **Ship at anchor**: the same sloop lying head to
   wind at anchor off the islet in a moderate breeze, sail down, anchor down,
   somewhere still to set things up aboard (a card table in her cockpit:
   tabletop's *Card table* and *Lost Cities* parts) and to get under way

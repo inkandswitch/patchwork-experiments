@@ -519,31 +519,44 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     expect(pressed()).toBe("false");
   });
 
-  it("startBodies: Orbit, each body on offer once, then the doc's own if nothing here offers it", () => {
+  it("startBodies: Look and Edit, each body on offer once, then the doc's own if nothing here offers it", () => {
     const collected = [
       { id: "walk", value: [{ id: "walk", label: "Walk", enter() {} }] },
       { id: "seats", value: [{ id: "seat", label: "Seated", enter() {} }, { id: "walk", label: "Again" }] },
       { id: "junk", value: "nope" },
     ];
     expect(startBodies(collected)).toEqual([
-      ["orbit", "Orbit"],
+      ["look", "Look"],
+      ["edit", "Edit"],
       ["walk", "Walk"],
       ["seat", "Seated"],
     ]);
     expect(startBodies(collected, "aboard").at(-1)).toEqual(["aboard", "aboard"]);
-    expect(startBodies([], "orbit")).toEqual([["orbit", "Orbit"]]);
+    expect(startBodies([], "look")).toEqual([
+      ["look", "Look"],
+      ["edit", "Edit"],
+    ]);
+    // a body no longer anyone's (an old doc's "orbit") still shows as chosen
+    expect(startBodies([], "orbit").at(-1)).toEqual(["orbit", "orbit"]);
   });
 
-  it("Starts in writes view.start.body (orbit is no key), drops the place, keeps the home; an edit undo takes back", async () => {
+  it("Starts in writes view.start.body (Look is no key), drops the place, keeps the home; an edit undo takes back", async () => {
     const walker = { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", enter: () => null }] }) } };
     s = await mountStage({
       extensions: [INSPECTOR, OPENED, walker],
       doc: { objects: {}, order: [], view: { start: { body: "seat", place: "p1", home: { position: [1, 1, 1], target: [0, 0, 0] } } } },
     });
     await settle();
+    // the doc starts people seated (nothing here offers a seat: Look); the inspector is Edit's
+    expect(s.local.get().body.id).toBe("look");
+    expect(s.instance("scene.inspector").tab.isOpen()).toBe(false);
+    s.api("scene.inspector").body.enter("edit");
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
+    await settle();
     const radios = () => [...s.instance("scene.inspector").tab.body.querySelectorAll("input[data-body]")];
     expect(radios().map((r) => [r.dataset.body, r.checked])).toEqual([
-      ["orbit", false],
+      ["look", false],
+      ["edit", false],
       ["walk", false],
       ["seat", true],
     ]);
@@ -551,7 +564,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
       r.checked = true;
       r.dispatchEvent(new Event("change", { bubbles: true }));
     };
-    pick(radios()[1]);
+    pick(radios()[2]);
     expect(s.doc().view.start).toEqual({ body: "walk", home: { position: [1, 1, 1], target: [0, 0, 0] } });
     pick(radios()[0]);
     expect(s.doc().view.start).toEqual({ home: { position: [1, 1, 1], target: [0, 0, 0] } });

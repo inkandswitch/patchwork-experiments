@@ -231,31 +231,34 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
   });
 
-  it("Starts in: Orbit and the bodies on offer, written to doc.view.start.body, read once (this viewer stays where they are)", async () => {
+  it("Starts in: Look, Edit and the bodies on offer, written to doc.view.start.body, read once (this viewer stays where they are)", async () => {
     // a game whose trait brings a body
     const BODY_GAME = { meta: { ...GAME.meta, id: "t.bodygame" }, module: { create: () => ({ bodies: [{ id: "t.stroll", label: "Stroll", enter: () => ({ input: {}, eye: () => null }) }] }) } };
     await mount({ objects: {}, extensions: [BODY_GAME] });
     const radio = (a) => $(`.starts-in input[data-body="${a}"]`);
     const labels = () => [...$(".starts-in").querySelectorAll("label")].map((l) => l.textContent.trim());
-    // a plain scene: only orbit
-    expect(labels()).toEqual(["Orbit"]);
-    expect(radio("orbit").checked).toBe(true);
-    expect($(".starts-in-note").textContent).toMatch(/Orbit is the only body here/);
+    // a plain scene, made new: Look and Edit, and it starts people in Edit
+    expect(labels()).toEqual(["Look", "Edit"]);
+    expect(radio("edit").checked).toBe(true);
+    expect($(".starts-in-note").textContent).toMatch(/Look shows it, Edit is the editor/);
     // the game's trait brings its body: a choice
     s.change((d) => {
       d.traits["t.level"] = {};
     });
     await settle();
-    expect(labels()).toEqual(["Orbit", "Stroll"]);
-    expect(radio("orbit").checked).toBe(true);
+    expect(labels()).toEqual(["Look", "Edit", "Stroll"]);
+    expect(radio("edit").checked).toBe(true);
     expect($(".starts-in-note").textContent).toMatch(/Each viewer can change body for themselves/);
     await fire(radio("t.stroll"), true);
     expect(s.doc().view.start).toEqual({ body: "t.stroll" });
     expect(radio("t.stroll").checked).toBe(true);
-    // it's where people start: this viewer, already here, stays in orbit
-    expect(s.local.get().body.id).toBe("orbit");
-    await fire(radio("orbit"), true);
+    // it's where people start: this viewer, already here, stays in Edit
+    expect(s.local.get().body.id).toBe("edit");
+    // Look is no key
+    await fire(radio("look"), true);
     expect(s.doc().view.start).toEqual({});
+    await fire(radio("edit"), true);
+    expect(s.doc().view.start).toEqual({ body: "edit" });
     // a peer's change shows
     s.change((d) => {
       d.view.start.body = "t.stroll";

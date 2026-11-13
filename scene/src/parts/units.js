@@ -11,6 +11,7 @@ export default {
       commands: [
         {
           id: "units",
+          edit: true,
           name: "Units",
           show: ["toolbar"],
           state: (target) => (target == null ? { value: current(), choices: UNIT_OPTIONS.map((o) => ({ ...o })), title: "Units for lengths" } : null),

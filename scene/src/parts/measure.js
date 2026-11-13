@@ -248,6 +248,7 @@ export function create(api) {
   const commands = [
     {
       id: "measure",
+      edit: true,
       name: "Measure",
       key: "m",
       // a tool: its run's input goes in the stage's one slot

@@ -24,7 +24,7 @@ export const selectionAtFocus = ({ focus, selected }) => selected == null || (se
 
 /**
  * The selection and focus after one event:
- * - press { path }: the orbit view's plain click. On something in the focus
+ * - press { path }: the Edit body's plain click. On something in the focus
  *   it selects that element; on nothing ([]) it clears; outside, nothing.
  * - select { path }: the menu's Select: as a press, but on nothing, nothing.
  * - enter { path }: enter a link that is an element of the focus stage; the

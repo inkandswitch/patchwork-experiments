@@ -91,10 +91,11 @@ export const plugins = [
   // All but carry declare no traits, so each runs in every scene ("general"
   // scope), in this order, which is the order input is offered to them.
   // Carry runs by trait, where the doc has something carryable. Chrome
-  // follows attention, never the doc (TOOLS.md §1): the inspector is a
-  // drawer tab while something is selected, the outline, dimensions and
-  // parts are tabs the viewer opens, and the grid, axes and bounds are drawn
-  // only in the orbit body.
+  // follows attention, never the doc (TOOLS.md §1), and the editor's chrome
+  // is the Edit body's (src/stage/bodies.js): the toolbar, the halo and its
+  // knobs, the inspector (a drawer tab while something is selected), the
+  // outline, dimensions and parts (tabs the viewer opens), the grid, axes
+  // and bounds, and every command marked `edit: true` show only there.
   {
     type: "scene:extension",
     id: "scene.toolbar",
@@ -245,7 +246,7 @@ export const plugins = [
     },
   },
   {
-    // the selection: Select is every menu's first entry, and the orbit
+    // the selection: Select is every menu's first entry, and the Edit
     // body's click (TOOLS.md §3)
     type: "scene:extension",
     id: "scene.select",

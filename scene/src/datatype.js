@@ -1,6 +1,8 @@
 // The two datatypes this package owns. See README.md for the document shapes.
 
 export const DEFAULT_VIEW = Object.freeze({ units: "m", grid: true, axes: true, bounds: false, snap: true });
+/** The body a scene made new starts people in: the editor (src/stage/bodies.js EDIT). */
+export const NEW_SCENE_BODY = "edit";
 
 export const SceneDatatype = {
   init(doc) {
@@ -19,7 +21,11 @@ export const SceneDatatype = {
     // world time (TOOLS.md §7): the stage only ever writes its fields, so a
     // pause and a checkpoint made at once both keep theirs
     doc.clock = { running: true, t: 0 };
-    doc.view = { ...DEFAULT_VIEW };
+    // where people start (TOOLS.md §2): a scene made new is made to be
+    // built, so it starts them in Edit (src/stage/bodies.js). A doc that
+    // names no body starts them in Look; a template or a publisher that
+    // makes something to look at, play or walk writes its own view.start
+    doc.view = { ...DEFAULT_VIEW, start: { body: NEW_SCENE_BODY } };
   },
   getTitle(doc) {
     return doc?.title || "Untitled scene";

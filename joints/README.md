@@ -56,7 +56,7 @@ One verb (**Open**, or **Close** when it's open), **F**, on every surface:
 the use prompt, the menu, the inspector and the key map. It says `reach:
 true`, so the stage measures it from the body's eye against the body's
 reach (scene/TOOLS.md §4): walking, within 2 m of the point looked at (out
-of reach it shows disabled, "too far", and F goes by); in orbit, anywhere.
+of reach it shows disabled, "too far", and F goes by); in Look or Edit (the orbit camera), anywhere.
 
 While it moves the verb says Opening / Closing; while someone else moves it,
 the verb is there but disabled.
