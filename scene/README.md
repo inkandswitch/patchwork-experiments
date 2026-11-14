@@ -699,10 +699,9 @@ MaterialRule = {
   is the union of what's shown inside it. Moving it with its halo writes
   each member's transform. A loop of groups (two concurrent edits) is
   broken the same way on every peer, like an attachment cycle.
-- **Only this shape is read.** Nothing upgrades a scene written in an
-  older one (groups with transforms, `view.tool`, `view.defaultGizmo` or
-  `view.defaultMode`, a top-level `camera`), and extensions read only their
-  traits: such a scene is replaced, not read. `traits`, `view`,
+- **Only this shape is read.** Nothing upgrades a scene written in
+  another one, and extensions read only their traits: such a scene is
+  replaced, not read. `traits`, `view`,
   `dimensions`, `assets` and `packages` are made with the doc (STAGE.md,
   "Shared maps").
 - `packages` lists the packages the scene's contents come from, as package
@@ -758,6 +757,21 @@ parent, `locked`, and `hint.bounds`, the room it gives the linked doc, drawn
 while the link is closed. The linked doc runs its own extensions on its own
 channel, and nothing of the host reads into it. A game part does this for
 you: Lost Cities dropped on a table makes a game doc and links it there.
+
+**Enter** a link (its menu, the inspector's Linked scene row, the outline's
+→, or a double-click) to select and edit what's in it, in place: the
+selection, the halo, the inspector and the outline then act on the linked
+doc, while the host stays live around you and its verbs, carries and keys
+still work. The trail along the top names each link entered; a crumb, its
+Leave or Escape goes back out. A link is entered where its doc acts (a
+mirror's, where it's live); a pin and a closed link aren't entered.
+
+**Extract** (on an object or group) makes it and what's attached
+under it a scene doc of its own, linked where it was; **Bundle** (on a
+link) copies the linked doc into this one in the link's place, never
+writing the linked doc. Runtime state (claims, a game's deal) stays
+behind. Both are Edit's, each one undo step; the inspector's checkboxes say which of the
+scene's own traits go along (STAGE.md, "Extract and bundle").
 
 ### Fixed versions (`at`)
 
@@ -825,8 +839,8 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
-| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip) and `body` (the body chip, who's here and the Esc hint); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
+| `src/stage/` | the stage and the view: `stage.js` (a doc's stage: its doc loop, the api each extension gets), `view.js` (the view: the mount, the router, the body stack, the selection, hover and focus as paths, the stages and links it opens, input across stages), `links.js` (expansion of the link graph, pure), `scope.js` (one stage's frame onto the viewport, the choke point every spatial call goes through), `paths.js` (the key grammar), `readonly.js` (what a pin or a mirror is given), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip), `body` (the body chip, who's here and the Esc hint), `focus` (Enter on a link), `packages` (the packages prompt) and `autoframe` (an untouched camera framing what arrives); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
 | `src/extract.js` | extract and bundle (COMPOSITION.md §8): the plans (pure: T whole, the host's one change, the bundle's change) and doing them through a stage's own api; invariants I9 (`extract.test.js`) and I11 (`linearity.test.js`) |
@@ -879,7 +893,7 @@ block (one selection; B hears it) and Delete removes it, and only it; Delete
 removes a selected object; the tabs' × close the drawer and the canvas takes
 the room, and the toolbar's Objects opens it again; a double-click frames an
 object; a right-click opens the menu (Select and Remove work); there are no
-modes (the Edit body, no activity in local); pasted automerge URLs add a
+modes (the Edit body); pasted automerge URLs add a
 GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its

@@ -313,7 +313,7 @@ it over and it covers nothing. A cup that is down over dice can't be picked up
 just now (`carryable`, a passing state's veto): picking a cup up is lifting it, so it can't be slid a
 couple of centimetres off part of a hand (which would turn the whole roll
 up, since the dice share one seed: cup.js's policy still says so for a doc
-where it happens anyway, written by edit mode or a modified client, which is
+where it happens anyway, written in the Edit body or by a modified client, which is
 no more than Lift lets anyone do). Nothing enforces a rule, a turn or a bid.
 These are its verbs, in play:
 

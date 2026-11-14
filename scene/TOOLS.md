@@ -44,8 +44,9 @@ finite cases, permissions left to Keyhive.
 ## Where we are
 
 *As written, before build step 2; the "Today" column is the code then.
-Steps 2, 3, 6, 7 and 8 have since been built (Build order, below), so all
-of it has gone where the last column says.*
+Steps 2, 3, 6, 7, 8 and 9 are done (Build order, below), so all of it has
+gone where the last column says, and [STAGE.md](STAGE.md) describes the
+result.*
 
 "Activity" is one value per view that decides four things:
 
@@ -924,6 +925,9 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   Words, marked as what step 8 removes. Examples aren't republished.
   Step 8 brought the notes up to date for itself: Activity left Words,
   Start and Edit arrived, and STAGE.md has "Arriving" and "Undo".
+  *Done* after COMPOSITION's step 15 (COMPOSITION.md, build step 9 and
+  "Decisions, step 9"): the three notes describe the code as it is, with
+  no history in them.
 - **Editing is a body** (Decisions 6, after step 8). *Built:*
   `src/stage/bodies.js` has `LOOK`, `EDIT`, `editing(local)` (the one
   question every piece of editing chrome asks), `inBody` (the `edit: true`

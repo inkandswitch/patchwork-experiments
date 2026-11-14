@@ -30,7 +30,7 @@ const DESCRIBES = {
   "sailing.sea": {
     name: "Sea",
     on: "scene",
-    blurb: "Open water with wind and waves; ships float and sail on it, in Play",
+    blurb: "Open water with wind and waves; ships float and sail on it",
     fields: [
       { key: "wind", label: "Wind (speed m/s, from degrees)", kind: "json", default: { speed: 7, from: 45 } },
       { key: "seed", label: "Seed", kind: "integer", default: 1 },
@@ -109,7 +109,7 @@ const DESCRIBES = {
   "sailing.float": {
     name: "Float",
     on: "object",
-    blurb: "Rides the waves where it's moored: bobs and tilts with the sea, in Play",
+    blurb: "Rides the waves where it's moored: bobs and tilts with the sea",
   },
 };
 

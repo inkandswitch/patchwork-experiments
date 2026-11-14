@@ -1,9 +1,9 @@
 # Scenes made of scenes: a design note
 
 A note to decide from, not a contract. [STAGE.md](STAGE.md) says what the
-stage does today. [SCOPE.md](SCOPE.md) asks what an extension's scope should
-be within one doc. This note asks what happens when a scene holds **another
-scene document**: a card game on a ship's saloon table, a fit-out on a hull,
+stage does today, [DESIGN.md](DESIGN.md) gives the overview and
+[SCOPE.md](SCOPE.md) says whose a press is. This note asks what happens
+when a scene holds **another scene document**: a card game on a ship's saloon table, a fit-out on a hull,
 a level in a bay. Each section gives the options, what they cost, a
 recommendation, and what it changes.
 
@@ -47,23 +47,26 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–15 have since been built, and step 16 decided (Build order,
-below). Since step 12 the
-stage composes docs: Lost Cities aboard is two docs (the boat, with a
-locked link to the game on its card table), and the Quiet games room links
-its games, its Lost Cities table the same game doc as the boat's. Since
-step 13 pins and mirrors open: "Fitting out" is a sloop whose companionway
-is a fit-out fixed at a version, and one hatch linked live twice. Since
-step 14 a viewer enters a linked doc to select and edit what's in it, the
-boat live around them. Since step 15 a selection becomes a doc of its own,
-linked in its place, and a link is bundled back (the boat's card table and
-its game, extracted and bundled in Chrome). Step 16 was decided rather than
-built: nothing needs named frames yet, and the one workaround that looked
-like it did (the games room renaming its links to arrive at Lost Cities)
-went with a smaller rule, a start placed on a link. The links' loose ends
-are closed (Decisions, links loose ends): one packages prompt for every
-open doc, who's here and the held verbs' pins across docs, a hidden link
-hiding its doc, the frame audit, and finite harnesses for I4, I5 and I8.
+Every step of the build order below is done: 1–15 built, 16 decided rather
+than built (nothing needs named frames yet; a start placed on a link was
+the smaller rule), and 9 closed by bringing STAGE.md, DESIGN.md and
+SCOPE.md to the code as it is. The stage composes docs: a link is live
+(acting at one placement per view), a mirror (the same live doc placed
+again, drawn and never acted on), pinned (a doc fixed at a version, with
+everything reached through it) or closed (drawn as its hint). A viewer
+enters a linked doc to select and edit in it, the host live around them,
+and leaves by Escape or the trail. A selection becomes a doc of its own,
+linked in its place (Extract), and a link is copied back (Bundle). One
+packages prompt covers every open doc; a hidden link hides its doc; who's
+here and held verbs' pins work across docs; packages load at the heads
+their folder settles on. The published examples are Lost Cities aboard
+(the boat, with the game linked locked on her table), the Quiet games room
+(the same game doc on one of its tables) and Fitting out (a fit-out pinned
+at a version, a hatch linked live twice). Still open: the clock chip shows
+the focus doc's clock only (TOOLS.md §6 wants one per doc on the focus
+path); out of focus isn't tinted; leaving Edit keeps the selection; an
+arrival whose body refuses at the moment it's offered isn't tried again;
+walk's avatars of others are the focus doc's while you aren't walking.
 What follows is kept as the record of why; where it
 still holds, the step that left it says so.*
 
@@ -674,6 +677,19 @@ ships alone and proves something.
    read once on arrival, and undo takes back the stage's own edits.
 9. [T] **STAGE.md, DESIGN.md and SCOPE.md** follow; old docs ditched,
    examples republished. *Begun ahead of step 8:* see TOOLS.md step 9.
+   *Done* after step 15 (Decisions, step 9): the three describe the code as
+   it is, with no history in them. STAGE.md gained Closed link, Focus and
+   Extract/Bundle in Words, the local state split into the stage's
+   (`api.local`) and the viewer's (`api.view`), an api table for the view,
+   links and surfaces, the input chain's segments across links, the ride's
+   `tilt`, the seats convention as built (no `around`, no renaming `lay`)
+   and the modules it lacked; DESIGN.md is the overview of views, stages,
+   links, the focus, extract and bundle, bodies, the held tool and the
+   clock, and the published examples; SCOPE.md went from a design note to
+   the scope model as built (§2 still nearness, which code cites). The
+   scene README gained Enter, Leave, Extract and Bundle; the package docs
+   that still spoke of edit mode, Play or activities were fixed. The
+   examples were republished by the integration after step 15.
 10. **Split View from Stage, with one stage**: `api.view` with the body
     stack, held tool, focus and selection; the session in the view.
     *Proves:* suites pass; the I1 harness exists. *Built:* `src/stage/view.js`
@@ -1037,6 +1053,29 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, step 9 (2026-11-14, made unattended)
+
+1. **SCOPE.md is kept, as a reference.** It is the one place that answers
+   "whose a press is" end to end (trait placement, nearness, the frame,
+   across links), which STAGE.md spreads over three sections. Rewritten as
+   the model as built, numbered so §2 is still nearness (chain.js and two
+   tests cite it); what it once weighed is in git and in the build order.
+   Section 11 above said it would shrink to nearness; it also keeps the
+   frames and keys that follow from nearness.
+2. **No doc deleted.** None of the six is stale or duplicated as a whole:
+   DESIGN.md is the overview, STAGE.md the contract, SCOPE.md one question,
+   README.md the tool for a person, and TOOLS.md and COMPOSITION.md the
+   design notes whose history is their job (the build order's *Built*
+   notes and the Decisions). History was cut from the first four instead.
+3. **The local table split in two.** It listed the viewer's keys (body,
+   held, selection…) under `api.local`, which since the view split is the
+   stage's; the code has `api.view.get()` for those. STAGE.md now has one
+   table each, with who changes what.
+4. **Sailing's "in Play" blurbs went** (`sailing/src/index.js`, the sea's
+   and the float's `describes`): there is no Play to be in. A string, but
+   it ships, so sailing is rebuilt and synced with scene.
+5. **No republish.** Nothing here changes a doc's shape.
 
 ## Decisions, integration (2026-11-14, made unattended)
 
