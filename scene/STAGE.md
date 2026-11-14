@@ -1689,10 +1689,15 @@ meet. A package that depends on one of these names the convention, never
 the package that provides it.
 
 **Seats** (provided by the `seats` package: [seats/README.md](../seats/README.md)).
-The places people take at a scene: scene trait `seats`,
-`{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
-It runs wherever the scene has seats; it is the seat
-picker, the claim that says a seat's player is here (`seat:<id>`), the seat
+The places people take at a scene: trait `seats`,
+`{ [seatId]: { name, player: <viewer> | null, lasting?: false, camera?: { position, target, in? } } }`,
+on the scene (the doc's own seats: its table's) or on an object (that
+object's own, copied and removed with it: a machine's ports). A lasting
+seat keeps its player in the doc when they get up or go; one that doesn't
+last is only the claim of whoever sits in it.
+It runs wherever the scene or an object has seats; it is the seat
+picker, the claim that says a seat's player is here (`seat:<id>`, on the
+seats' owner), the seat
 body (sitting puts the view at the seat's camera, riding the object its
 camera is `in`), a seat as a station on the use prompt ("Sit as Player 1"),
 and "sat down" told to the others. No other package reads
@@ -1701,9 +1706,9 @@ people lists the seats package like any other.
 
 | | |
 |---|---|
-| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → seatId \| null }`. All but `who` and `sitting` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's); `sitting` is the seat this view sits in now (the seat body on top), which a machine's port follows. A doc has one table's seats: a second game is a doc of its own, linked |
-| `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
-| `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, each seat empty (a seat already there keeps its player and takes the new name and view); setup code calls it instead of writing seats |
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → { of, seat } \| null }`. `seats`, `viewers`, `open` and `nameOf` are the doc's own seats, its table's: a doc has one table's seats (a second game is a doc of its own, linked), and an object's seats are never among them. All but `who` and `sitting` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's); `sitting` is the seat this view sits in now, anywhere in the doc (`of`: the object whose seat it is, null for the doc's own; the seat body on top), which a machine's port follows |
+| `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, of?, id, min, max }]`: a box in object `id`'s own frame (a hand tray) for seat `seat` of object `of` (absent: the doc's own). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
+| `lay(d, seats, of?)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, lasting?, camera? } }` into a scene doc being set up, each seat empty (a seat already there keeps its player and takes the new name, view and lasting): the doc's own, or object `of`'s on it; setup code calls it instead of writing seats |
 
 **Keepers.** A keeper holds what objects really are, away from the scene
 doc, and shows each viewer what `api.audience` allows. It is an ordinary

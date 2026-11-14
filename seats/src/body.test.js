@@ -88,7 +88,7 @@ describe("the seat body, entered and left", () => {
           w.done();
           continue;
         }
-        expect(sat.seat, label).toBe("p1");
+        expect(sat.seat, label).toEqual({ of: null, seat: "p1" });
         expect(view.camera, label).toEqual(want);
         // the stage applies a body's ride (the object its camera is in, else the doc's root), rolling with it; the body asks for none itself
         expect(sat.ride, label).toEqual({ id: cam.in ? "tbl" : null, at: cam.target ?? [0, 0, 0], tilt: true });
