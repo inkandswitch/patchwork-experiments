@@ -1307,7 +1307,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     viewer,
     now: time.now,
     onStatus: (status) => {
-      if (!dead) local.swap(assoc("clock", status));
+      if (dead) return;
+      local.swap(assoc("clock", status));
+      // (the view puts the focus path's together for the clock chip: view.clocks)
+      view.clocksChanged?.();
     },
   });
 
@@ -1396,9 +1399,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const loc = local.get();
     const content = contentDirty;
     contentDirty = false;
-    const running = host.instances();
+    // (and the general parts' halves, which nothing else asks: host.halves)
+    const running = [...host.instances(), ...host.halves()];
     for (const r of running) {
-      const vw = viewValue(r.scope === "general");
+      const vw = viewValue(r.scope === "general" && !r.half);
       const was = seen.get(r.instance);
       const changed = !was || was.scene !== snap || was.local !== loc || was.view !== vw;
       if (!changed && !content) continue;
@@ -2151,7 +2155,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (bag.delete(give)) give();
       };
     };
-    const general = rec.scope === "general";
+    // (a general part's half, run where the focus isn't, is a drawn extension of this stage's, not the view's: no path, no view-wide packages)
+    const general = rec.scope === "general" && !rec.half;
     const viewNow = () => viewValue(general);
     let watched = viewNow(); // what api.view.watch last told of
     const ownEl = (el, parent) => {
@@ -2510,7 +2515,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       owned.delete(id);
     }
 
-    return { api: acts ? api : drawnApi(api), release };
+    // a pin's or a mirror's extensions, and a general part's half (elsewhere: it draws this doc's, never acts), get the drawn facet
+    return { api: acts && !rec.half ? api : drawnApi(api), release };
   }
 
   /**
@@ -2570,6 +2576,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
     general,
+    // away from the focus, a stage that acts draws the general parts' halves (elsewhere); a drawn one doesn't
+    halves: acts,
   });
   hostMade = true;
 
@@ -2758,6 +2766,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     nameOf: (oid) => nameOf(oid),
     /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */
     packages: () => local.get().packages,
+    /** may this view write its doc? */
+    writable: () => writable(),
+    /** its doc's world time: what its chip shows (local.clock: ./clock.js status, null with no process), and pause or resume it by name (anyone who may write) */
+    clock: Object.freeze({ status: () => local.get().clock, pause: () => clock.pause(), resume: () => clock.resume() }),
   });
 
   stage = Object.freeze({

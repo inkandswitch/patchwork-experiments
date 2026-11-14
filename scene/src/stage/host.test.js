@@ -331,8 +331,12 @@ describe("the host", () => {
   // every event: in ⇒ running and offering, and started only if it wasn't
   // running (back before it stopped, it's kept); out ⇒ offering nothing; it
   // stops only while out and not busy, at once on going out idle, else at
-  // the recheck after it lets go. At most one instance at a time.
-  it("the view's move: over every order of ≤4 of in, out, busy, idle and a recheck, a general part stops only out and idle, and offers only in", async () => {
+  // the recheck after it lets go. At most one instance at a time. And in a
+  // stage that acts (halves: true), its half (elsewhere) runs exactly while
+  // it is out and the whole part has stopped, never alongside it: at most one
+  // of the two at a time, and the half offers nothing (COMPOSITION.md §3,
+  // "Presence where it is"). In a drawn stage (halves: false), never.
+  it("the view's move: over every order of ≤4 of in, out, busy, idle and a recheck, in a stage that acts and a drawn one, a general part stops only out and idle, and offers only in; its half runs exactly while it's out and stopped, never with it", async () => {
     const EVENTS = ["in", "out", "busy", "idle", "recheck"];
     const seqs = [[]];
     for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
@@ -360,12 +364,14 @@ describe("the host", () => {
       };
     };
     const one = [{ id: "walk" }];
+    for (const halves of [false, true])
     for (const seq of seqs) {
       log = [];
       timers = quickTimers();
       local = createAtom({ running: [] });
       busy = new Set();
-      const reg = registry(one, { walk: mod("walk", log, { bodies: ["walk"] }) });
+      const walk = { ...mod("walk", log, { bodies: ["walk"] }), elsewhere: () => (log.push("half:walk"), { bodies: ["never"], dispose: () => log.push("unhalf:walk") }) };
+      const reg = registry(one, { walk });
       const host = createHost({
         registry: async () => reg,
         local,
@@ -373,6 +379,7 @@ describe("the host", () => {
         busy: (id) => busy.has(id),
         setTimer: timers.setTimeout,
         clearTimer: timers.clearTimeout,
+        halves,
       });
       const lines = (k) => log.filter((l) => l === `${k}:walk`).length;
       host.sync(doc());
@@ -395,7 +402,11 @@ describe("the host", () => {
         // (out again while out is no move: the view says so on every relink)
         else if ((e === "out" && moved) || e === "recheck") due = true;
         const running = lines("create") > lines("dispose");
+        const halved = lines("half") - lines("unhalf");
         expect(lines("create") - lines("dispose"), where).toBeLessThanOrEqual(1);
+        // the half: exactly while out and the whole part stopped (in a stage that acts), never with it
+        expect([where, halves, halved]).toEqual([where, halves, halves && !atFocus && !running ? 1 : 0]);
+        expect([where, host.halves().length]).toEqual([where, halved]);
         if (atFocus) {
           expect([where, running, host.collect("bodies").length, host.offering().length]).toEqual([where, true, 1, 1]);
           // started only if it had stopped

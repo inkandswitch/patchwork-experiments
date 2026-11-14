@@ -116,8 +116,11 @@ the outline, a double-click) moves it into a link whose doc acts there. The
 selection is always in the focus doc, and the editor (the halo, the
 inspector, the outline, add, paste, undo) edits that doc in its frame. The
 focus scopes the selection, never input: outside it verbs, carries, keys and
-the menu still work, and the world around keeps running. **Leave** goes back
-out (Escape's last rung, the trail along the top). No stage sees the focus.
+the menu still work, and the world around keeps running, its people drawn
+where they are: a general part that draws a doc's people (walk's avatars,
+others' selections) has a half the view runs in every other doc that acts.
+**Leave** goes back out (Escape's last rung, the trail along the top). No
+stage sees the focus.
 
 **Arriving.** A doc says where people start (`view.start`). A start placed
 on one of its links arrives through it, as the linked doc starts people: the
@@ -168,7 +171,8 @@ is in every menu.
 **The clock** is each doc's world time. One view computes it, holding the
 doc's `"clock"` claim, and steps every **process** extensions register (the
 ships' physics, a door closing itself); the others follow its time, and
-take over if it goes. Anyone who may write can pause it, by name. Nobody
+take over if it goes. Anyone who may write can pause it, by name, on its
+chip (one for each doc on the focus path that has a clock). Nobody
 present, no time passes. Things that are acts (a die's tumble, a carry) run
 on the stage's time and finish during a pause. A linked doc has its own
 clock: pausing the boat doesn't pause the game on her table.

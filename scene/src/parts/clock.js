@@ -1,11 +1,16 @@
-// scene.clock (always on): the clock chip (TOOLS.md §6, §7). It shows the
-// doc's world time as the stage publishes it in local.clock (the clock's
-// status: src/stage/clock.js), and only for a doc with a process: ▶ while it
+// scene.clock (always on): the clock chips (TOOLS.md §6, §7). One chip for
+// each doc on the focus path that has a clock to show, outermost first: its
+// world time as its stage publishes it (the clock's status:
+// src/stage/clock.js), put together by the view as view.clocks, which a
+// general part sees. A doc shows a chip only with a process: ▶ while it
 // runs, ⏸ "Paused by Ana" while it doesn't, and its one button pauses or
-// resumes it (anyone who may write: the lead's decision 5). Who computes is
-// shown only when it's news: on a stall ("waiting for Ben's machine") or
-// when nobody here can ("nobody here can run it: view only"). Notices are
-// aria-live. No keys.
+// resumes that doc (anyone who may write it: the lead's decision 5), through
+// its stage's reader. Who computes is shown only when it's news: on a stall
+// ("waiting for Ben's machine") or when nobody here can ("nobody here can run
+// it: view only"). While the focus is inside a link each chip names its doc
+// (the trail's name for it, in view.clocks); at the outermost there is one
+// doc and no name. Notices
+// are aria-live. No keys.
 //
 // It sits in a slim bar on the stage's top edge, the seed of TOOLS.md §6's
 // world bar, beside the view rather than over it: the view's corners and its
@@ -36,20 +41,10 @@ function create(api) {
   const bar = api.edge("top");
   bar.classList.add("clock-bar");
   bar.hidden = true;
-  const chip = document.createElement("div");
-  chip.className = "clock-chip";
-  chip.setAttribute("role", "status");
-  chip.setAttribute("aria-live", "polite");
-  const text = document.createElement("span");
-  text.className = "clock-text";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "button clock-toggle";
-  chip.append(text, button);
-  bar.append(chip);
 
   let dead = false;
   let shown = null;
+  const chips = new Map(); // stage → { el, doc, text, button }
   const names = new Map(); // viewer → their contact's name; null while asking, or if it has none
   function name(viewer) {
     if (viewer && viewer === api.viewer) return "you";
@@ -62,41 +57,78 @@ function create(api) {
             const n = h?.doc?.()?.name;
             if (dead || typeof n !== "string" || !n.trim()) return;
             names.set(viewer, n.trim());
-            render(api.local.get().clock);
+            shown = null;
+            render(api.view.get().clocks);
           })
           .catch(() => {});
     }
     return names.get(viewer) ?? "someone";
   }
 
-  function render(status) {
-    const c = chipOf(status, name);
-    if (!c) {
-      bar.hidden = true;
-      shown = null;
-      return;
+  function chipEl(stage) {
+    let c = chips.get(stage);
+    if (c) return c;
+    const el = document.createElement("div");
+    el.className = "clock-chip";
+    el.dataset.stage = String(stage);
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    const doc = document.createElement("span");
+    doc.className = "clock-doc";
+    const text = document.createElement("span");
+    text.className = "clock-text";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button clock-toggle";
+    el.append(doc, text, button);
+    button.addEventListener("click", () => {
+      const r = readerOf(stage);
+      if (button.dataset.action === "pause") r?.clock.pause();
+      else r?.clock.resume();
+    });
+    chips.set(stage, (c = { el, doc, text, button }));
+    return c;
+  }
+
+  // the focus path's stages, as the view's readers (the outermost last)
+  const path = () => (typeof api.path === "function" ? api.path({ focus: true }) : []);
+  const readerOf = (stage) => path().find((r) => r.stage === stage) ?? null;
+
+  function render(clocks) {
+    const readers = path();
+    // (inside a link there is more than one doc on the path: each chip says whose)
+    const named = readers.length > 1;
+    const items = [];
+    for (const { stage, name: doc, status } of clocks ?? []) {
+      const r = readers.find((x) => x.stage === stage);
+      const c = r ? chipOf(status, name) : null;
+      if (c) items.push({ stage, chip: c, doc: named ? doc : "", writable: !!r.writable() });
     }
-    bar.hidden = false;
-    const writable = api.writable();
-    const key = JSON.stringify([c, writable]);
+    const key = JSON.stringify(items);
     if (key === shown) return;
     shown = key;
-    text.textContent = `${c.icon} ${c.text}`;
-    button.textContent = c.label;
-    button.dataset.action = c.action;
-    button.hidden = !writable;
-    button.title = c.action === "pause" ? "Pause the world here, for everyone" : "Let the world run again, for everyone";
+    bar.hidden = !items.length;
+    const els = [];
+    for (const it of items) {
+      const c = chipEl(it.stage);
+      c.doc.textContent = it.doc;
+      c.doc.hidden = !it.doc;
+      c.text.textContent = `${it.chip.icon} ${it.chip.text}`;
+      c.button.textContent = it.chip.label;
+      c.button.dataset.action = it.chip.action;
+      c.button.hidden = !it.writable;
+      c.button.title = it.chip.action === "pause" ? `Pause ${it.doc || "the world here"}, for everyone` : `Let ${it.doc || "the world"} run again, for everyone`;
+      els.push(c.el);
+    }
+    for (const [stage, c] of [...chips]) if (!items.some((it) => it.stage === stage)) (c.el.remove(), chips.delete(stage));
+    bar.replaceChildren(...els);
   }
-  button.addEventListener("click", () => {
-    if (button.dataset.action === "pause") api.clock.pause();
-    else api.clock.resume();
-  });
 
-  render(api.local.get().clock);
+  render(api.view.get().clocks);
 
   return {
-    update(scene, local, prev) {
-      if (local.clock !== prev?.local?.clock) render(local.clock);
+    update(scene, local, prev, view) {
+      if (view.clocks !== prev?.view?.clocks) render(view.clocks);
     },
     dispose() {
       dead = true;

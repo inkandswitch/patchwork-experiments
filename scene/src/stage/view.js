@@ -149,10 +149,12 @@ export function projectView(v, n, prefix, { general = false } = {}) {
   };
   // (where the focus is is the view's: a stage never learns where the viewer has entered)
   // (nor every open doc's packages: the union is the view's prompt, its general parts')
-  const { focus: _focus, packages: _packages, ...rest } = v;
+  // (nor the focus path's clocks: the clock chip's, a general part's)
+  const { focus: _focus, packages: _packages, clocks: _clocks, ...rest } = v;
   return Object.freeze({
     ...rest,
     ...(general && v.packages ? { packages: v.packages } : {}),
+    ...(general && v.clocks ? { clocks: v.clocks } : {}),
     ...(!general && v.escape?.layer === "focus" ? { escape: NO_ESCAPE } : {}),
     selected: elementOf(v.selected, prefix),
     hovered: elementOf(v.hovered, prefix),
@@ -298,6 +300,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     focus: Object.freeze([]),
     // every open doc's packages this viewer doesn't have (unionPackages): the general parts' prompt
     packages: unionPackages([]),
+    // the focus path's clocks, outermost first: the general parts' clock chip (clocksChanged)
+    clocks: Object.freeze([]),
   });
   const onStorage = (e) => {
     if (e.key !== prefsKey) return;
@@ -367,6 +371,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     s.start();
     s.announce(announced());
     packagesChanged();
+    clocksChanged();
     return s;
   }
   // Who's here (COMPOSITION.md §6): the viewer's body and held tool are the
@@ -385,6 +390,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function removeStage(s) {
     if (stages.get(s.n) === s) stages.delete(s.n);
     packagesChanged();
+    clocksChanged();
     for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
@@ -692,6 +698,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     reopening = { tabs: new Set(was.drawer?.tabs ?? []), shown: was.drawer?.shown ?? null };
     cameraCarried = true;
     placeGeneral();
+    clocksChanged();
     showTrail();
     router?.refresh();
   }
@@ -717,6 +724,28 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const next = unionPackages(stagesInOrder().map((s) => s.reader.packages()));
     atom.swap((m) => (JSON.stringify(m.packages) === JSON.stringify(next) ? m : { ...m, packages: next }));
   }
+  // ─── clocks: the focus path's (TOOLS.md §6's clock chip) ───────────────────
+  // Each stage computes its doc's world time and says what its chip would
+  // show (local.clock: ./clock.js). The chip is one general part, the view's,
+  // so the view puts the focus path's together, as view.clocks, which only
+  // the general parts see (projectView): one entry per stage on the path
+  // with a clock to show, outermost first, { stage, name, status }: a plain
+  // value, so the chip hears a change on any of them; `name` is the trail's
+  // for that doc. Pause and Resume are each stage's (its reader's `clock`).
+  const NO_CLOCKS = Object.freeze([]);
+  function clocksChanged() {
+    if (dead) return;
+    const f = atom.get().focus;
+    const out = [];
+    for (let i = 0; i <= f.length; i++) {
+      const s = stageAt(f.slice(0, i)) ?? (i === 0 ? outermost() : null);
+      const status = s?.reader.clock.status() ?? null;
+      if (status) out.push(Object.freeze({ stage: s.n, name: nameAt(f.slice(0, i)), status }));
+    }
+    const next = out.length ? Object.freeze(out) : NO_CLOCKS;
+    atom.swap((m) => (JSON.stringify(m.clocks) === JSON.stringify(next) ? m : { ...m, clocks: next }));
+  }
+
   const packages = Object.freeze({
     load: (urls) => Promise.all(stagesInOrder().map((s) => s.packages.load(urls))).then(() => {}),
     dismiss: (urls) => {
@@ -732,10 +761,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   trail.className = "stage-trail";
   trail.setAttribute("aria-label", "Where you are");
   let trailKey = "";
+  /** What the trail calls the doc at path `p` on the focus path: the outermost's title, else its host's name for the link. */
+  function nameAt(p) {
+    if (!p.length) return String(outermost()?.doc()?.title || "Scene");
+    return String(stageAt(p.slice(0, -1))?.reader.nameOf(p.at(-1)) || "Linked scene");
+  }
   function showTrail() {
     const focus = atom.get().focus;
-    const names = [String(outermost()?.doc()?.title || "Scene")];
-    for (let i = 0; i < focus.length; i++) names.push(String(stageAt(focus.slice(0, i))?.reader.nameOf(focus[i]) || "Linked scene"));
+    const names = [];
+    for (let i = 0; i <= focus.length; i++) names.push(nameAt(focus.slice(0, i)));
     const key = focus.length ? JSON.stringify(names) : "";
     if (key === trailKey) return;
     trailKey = key;
@@ -1345,6 +1379,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     reopened,
     packages,
     packagesChanged,
+    /** a stage's clock said something new (local.clock): the focus path's clocks again */
+    clocksChanged,
     /** "Not now"'s packages, the view's: every stage's packages module shares it */
     declinedPackages,
     // the stages

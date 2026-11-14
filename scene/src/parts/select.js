@@ -19,6 +19,10 @@
 //   ref is its owner's to let go of.
 // - Draws the selection box (accent) and each peer's (their colour) in a
 //   world layer; the boxes follow held poses (checked after each frame).
+//   Away from the focus, in every other doc that acts here, its half
+//   (elsewhere) draws the peers' boxes there, in that doc's frame: what
+//   someone selects on the boat shows from inside the game on her table
+//   (COMPOSITION.md §3, "Presence where it is").
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
 // - Asks the stage to load the selection first (api.focus), if it's an object.
 // - Commands: Remove (Delete, Backspace; objects only), Select. Escape
@@ -45,7 +49,12 @@ function confirmRemove(message) {
   }
 }
 
-export function create(api) {
+/**
+ * The selection boxes in this api's doc, in its frame: this view's (`mine`:
+ * the selected id, or null) and each peer's, from presence. { refresh,
+ * dispose }; they follow held poses on their own.
+ */
+function boxes(api, mine) {
   const { THREE } = api;
   const layer = api.world();
   layer.name = "scene.select";
@@ -57,19 +66,14 @@ export function create(api) {
   // the doc, the theme or presence changes (not every frame)
   let targets = [];
 
-  const selected = () => api.view.get().selected ?? null;
-
-  /** Select a target of this stage's (null: nothing); the view keeps it as a path (stage/view.js). */
-  const select = (id) => api.view.select(id ?? null);
-
   function computeTargets() {
     const loc = api.view.get();
     const objects = api.scene().objects ?? {};
     const theme = loc.theme ?? {};
     const out = [];
-    const mine = loc.selected ?? null;
-    if (mine && objects[mine]) out.push({ key: "self", id: mine, rgb: theme.accent ?? ACCENT });
-    const seen = new Set(mine ? [mine] : []);
+    const self = mine();
+    if (self && objects[self]) out.push({ key: "self", id: self, rgb: theme.accent ?? ACCENT });
+    const seen = new Set(self ? [self] : []);
     for (const p of peerSelections(api.presence.get(), api.id, objects)) {
       if (!p.selected || seen.has(p.selected)) continue;
       seen.add(p.selected);
@@ -139,6 +143,23 @@ export function create(api) {
     if (targets.length) drawBoxes();
   });
 
+  return {
+    refresh,
+    dispose() {
+      for (const key of [...drawn.keys()]) drop(key);
+      targets = [];
+    },
+  };
+}
+
+export function create(api) {
+  const selected = () => api.view.get().selected ?? null;
+  const drawn = boxes(api, selected);
+  const refresh = drawn.refresh;
+
+  /** Select a target of this stage's (null: nothing); the view keeps it as a path (stage/view.js). */
+  const select = (id) => api.view.select(id ?? null);
+
   function update(scene, local, prev, view) {
     const sel = view.selected ?? null;
     // the selection's object went (removed here or by a peer); a ref that
@@ -206,11 +227,26 @@ export function create(api) {
   return {
     update,
     commands,
-    dispose() {
-      for (const key of [...drawn.keys()]) drop(key);
-      targets = [];
-    },
+    dispose: drawn.dispose,
   };
 }
 
-export default own({ create });
+/**
+ * In any other doc that acts here: the peers' boxes there (the drawn facet).
+ * This view's selection is never in it (it is in the focus doc), and it says
+ * nothing on that doc's channel.
+ */
+export function elsewhere(api) {
+  const drawn = boxes(api, () => null);
+  drawn.refresh();
+  return {
+    update(scene, local, prev, view) {
+      // (only the viewer's hover or pointer changed: nothing here; the same scene, local and view is content loaded)
+      if (prev?.scene === scene && prev?.local === local && prev?.view !== view && prev?.view?.theme === view.theme) return;
+      drawn.refresh();
+    },
+    dispose: drawn.dispose,
+  };
+}
+
+export default own({ create, elsewhere });

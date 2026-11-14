@@ -65,11 +65,11 @@ locked on her table), the Quiet games room (the same game doc on one of its
 tables), Fitting out (a fit-out pinned at a version, a hatch linked live
 twice) and Games night (a mashup: the room and the Liar's dice table linked
 unchanged into a new doc). Each was checked in the real Patchwork on
-2026-11-14 (FOLLOWUPS "Final fixer"). Still open:
-- the clock chip shows the focus doc's clock only (TOOLS.md §6 wants one
-  per doc on the focus path), and walk's avatars of others are the focus
-  doc's while you aren't walking (the same root: presence drawn by a
-  general part is the focus doc's);
+2026-11-14 (FOLLOWUPS "Final fixer"). Since then, presence is drawn where
+it is (section 3): a general part with a half (`elsewhere`: walk's
+avatars, `scene.select`'s peer boxes) draws each acting doc's people in
+that doc's frame, and the clock chips are one per doc on the focus path.
+Still open:
 - out of focus isn't tinted;
 - in Edit, a click on sky or sea with nothing selected isn't Edit's (TOOLS
   Decisions 6), so it goes down the chain and comes aboard the boat
@@ -248,6 +248,25 @@ nothing when nothing offers them anything. The view offers the union of
 what its acting stages offer: commands, tools and bodies. The outermost doc
 gives the defaults: the atmosphere and `view.start`, the body and place a
 viewer starts in. Inner docs' spawns serve arrivals (section 9).
+
+**Presence where it is.** What a doc's people are doing (someone walking,
+someone's selection) is that doc's, so it is drawn where the doc is, in
+its frame, whatever the focus. A general part's module may have a second
+function beside `create`: `elsewhere(api)`, its half. The view runs the
+whole part at the focus and the half in every other stage that acts, each
+handed that stage's api as a drawn stage's (the drawn facet: it hears the
+doc's channel and draws in the stage's layers; no chrome in the DOM, no
+input, body, tool, command, camera, selection, notice or pref). A pin and
+a mirror run none: a pin has no channel, and a mirror is the same doc drawn
+again, its people already drawn where it acts. The half never runs beside
+its whole part in one stage (a walk lingering where it holds the body
+draws there itself), and nothing offers or collects from a half. Walk and
+`scene.select` are its two consumers: they share nothing but the rule. A
+part with nothing of the doc's to draw (the menu, the inspector, the
+toolbar) has no half and runs at the focus alone, so twenty linked games
+still don't make twenty menus. *Built 2026-11-14 (presence lane):*
+`host.halves`, `drawnApi` for a half, walk and select split into a shared
+drawing function and the two entry points.
 
 **`collect` is the caller's.** A stage's extension collects from its own
 stage. A general part collects from every stage on the **input path**, the
@@ -634,6 +653,7 @@ Each is argued above and checkable over finite cases.
 | I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside; each edge outside is cleared where it lives and said | Every set of roots of a fixed 7-object, two-cluster scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 1016 cases, 116 exact over four classes (p the root or not, the link grouped or not, S one block of the order or spread), each exact one again with the host holding T's ids; every concurrent edit to what T was made from refuses the extract (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
+| I12 | **Presence where it is.** Each acting stage draws its doc's people, in its frame, by the whole general part (focus, or lingering while it holds something) or its half, never both; a pin and a mirror draw nobody; the clock chips are the focus path's docs with a process, outermost first, each acting on its own doc | Every focus over a tree with acting stages at depth 0–3, a sibling off the focus path, a mirror (with its links) and a pin × where the body is held (nowhere, each acting stage) × before and after letting it go, one other person present in each doc from a view of their own: who is drawn in which stage and in which stage's layer, which stages run the whole part, its half or neither, the clocks and the chips' names (55 states, `src/stage/presence-where.test.js`); every chip pausing its own doc only; the host's move over every order of ≤4 events × acting or drawn (`host.test.js`, 1562 sequences); select's half × focus × own selection (`select.test.js`); walk's halves × every set of four kinds of peer (`walk/src/extension.test.js`); the real packages in `sailing/probes/links-run.mjs` 7b |
 
 ## Build order
 
@@ -1075,6 +1095,41 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, presence where it is (2026-11-14, made unattended)
+
+1. **A half, not general parts everywhere.** Three ways were weighed. Running
+   every general part in every acting stage (drawn where the focus isn't)
+   would draw the grid, the axes and the halo at every link in Edit, since
+   those parts can't tell they aren't at the focus (no stage sees it), and
+   it would make twenty instances of twenty-five parts for twenty links.
+   Letting the general part at the focus reach into the other stages
+   (their presence, a layer in their frame) gives it three new
+   capabilities and leaves a lingering walk drawing its stage twice. The
+   half is one optional function on the module, run by the stage that
+   needs it with an api that already exists (the drawn facet), and the
+   host's one rule keeps it from ever sharing a stage with its whole part.
+   Its two consumers, walk's avatars and select's peer boxes, are
+   unrelated.
+2. **Every acting stage, not the focus path.** See TOOLS.md Decisions 8:
+   the focus scopes the editor, never what the world shows.
+3. **A half gets the drawn facet, and may write as the stage's extensions
+   may.** The stage acts, so writes are allowed there; neither half writes
+   or speaks, and what it is for is drawing. Wrapping a half's writes as a
+   pin's are wrapped was rejected as a second list of every write path to
+   keep in step with the api, for code whose whole part already writes at
+   the focus.
+4. **The chips are fed by the view, acted on through readers.** The view
+   gathers the focus path's clock statuses into `view.clocks` (general
+   parts only), as it gathers every open doc's packages into
+   `view.packages`, so the chip hears a change in any doc on the path; a
+   reader's `clock` pauses and resumes its doc. Each entry carries the
+   trail's name for its doc, so the chip and the trail never name a doc
+   differently; a chip shows its name only while the focus is inside a
+   link.
+5. **Who's here is unchanged** (the focus doc's list): it already lists
+   everyone with that doc open anywhere. One list per doc on the focus
+   path, like the chips, is left for when it's asked for.
 
 ## Decisions, final fixer (2026-11-14, made unattended)
 

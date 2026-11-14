@@ -4,6 +4,10 @@ import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
 import { commandState } from "./toolbar-commands.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
+import { FakeRepo } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { LINK } from "../stage/links.js";
+import { keyOf } from "../stage/paths.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const group = (name, parent = null, extra = {}) => ({ kind: "group", name, group: parent, visible: true, opacity: 1, ...extra });
@@ -397,5 +401,51 @@ describe("select-peers", () => {
       { session: "s1", viewer: null, selected: null, hovered: "b" },
       { session: "s2", viewer: "v2", selected: "a", hovered: null },
     ]);
+  });
+});
+
+describe("scene.select: away from the focus (its half)", () => {
+  // A host with a live link to G and a mirror of it. A peer on G's channel
+  // selects G's card. Whatever the focus, the card's peer box is drawn in G's
+  // acting stage, by select's whole part there (focus inside) or its half
+  // (focus outside); never in the mirror, never twice; and this view's own
+  // selection is only ever boxed in the focus doc.
+  it("every focus × a selection of mine or none: the peer's box in G's acting stage alone, mine only where the focus is", async () => {
+    const repo = new FakeRepo();
+    const g = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }), die: object({ name: "Die" }) }, order: ["card", "die"] }));
+    const link = (name) => object({ name, sourceUrl: g.url, providerId: LINK, renderUrl: null });
+    s = await mountStage({ repo, extensions: [SELECT], doc: { objects: { table: object({ name: "Table" }), L: link("G"), R: link("G again") }, order: ["table", "L", "R"] } });
+    const view = s.debug.view;
+    const stageAt = (p) => view.stages().find((x) => x.path.join("/") === p);
+    await until(() => stageAt("L") && stageAt("R"), 2000);
+    const { THREE } = s.api("scene.select");
+    // (no WebGL here: every object has one box, and every link's frame is the host's)
+    view.viewport.objectBox = () => new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
+    view.viewport.worldOf = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    g.emit("ephemeral-message", { senderId: "p1", message: { type: "scene:presence", session: "p1", viewer: "viewer:p1", seq: 1, at: Date.now(), keys: { "scene.select": { selected: "card" } } } });
+    // each stage's boxes: [which, id] per helper in its select layer
+    const drawn = () =>
+      Object.fromEntries(
+        view.stages().map((x) => [
+          x.path.join("/"),
+          [...(view.viewport.layers.get(keyOf(x.n, "scene.select")) ?? [])].flatMap((l) => l.children.map((h) => h.userData.selection)).sort(),
+        ]),
+      );
+    let n = 0;
+    for (const focus of [[], ["L"]]) {
+      for (const mine of [null, "die"]) {
+        expect(view.focusOn(focus)).toBe(true);
+        await until(() => view.focusStage().debug.host.instanceOf("scene.select"), 2000);
+        if (mine) view.select([...focus, focus.length ? mine : "table"]);
+        else view.select(null);
+        const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), R: [] };
+        await until(() => JSON.stringify(drawn()) === JSON.stringify(want), 2000).catch(() => expect([focus, mine, drawn()]).toEqual([focus, mine, want]));
+        // the half where the focus isn't, the whole part where it is; neither in the mirror
+        expect([focus, !!stageAt("L").debug.host.halfRecord("scene.select")]).toEqual([focus, !focus.length]);
+        expect(stageAt("R").debug.host.halfRecord("scene.select")).toBe(null);
+        n++;
+      }
+    }
+    expect(n).toBe(4);
   });
 });

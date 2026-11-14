@@ -135,7 +135,10 @@ Each stage is its own scope, and nothing is taught across a link.
   game's seats, then sailing (at the link's chain: sole, hull) and the
   host's scene traits.
 - **General parts are the focus stage's**, offered after every segment
-  wherever the hit is. The key map, the use prompt and the menu walk the
+  wherever the hit is. What one draws of a doc's people (walk's avatars,
+  peers' selection boxes) its half draws in every other stage that acts,
+  in that stage's frame, offering nothing (COMPOSITION.md §3, "Presence
+  where it is"). The key map, the use prompt and the menu walk the
   input path a doc at a time, each doc's commands in its own context.
 - **Drawn stages have no segment.** A press on a mirrored card or a pinned
   fit-out reaches the host as the link.

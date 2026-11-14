@@ -109,7 +109,7 @@ or identity closes, with what was opened under it, and opens again.
   removes `at`.
 - **One doc per extension.** An extension runs in a stage when that
   stage's doc has one of its traits; a general one (no traits) runs once,
-  in the focus stage. Everything an api reads and writes is its stage's
+  in the focus stage, and its half (below) in every other stage that acts. Everything an api reads and writes is its stage's
   doc: `null` is that doc's root, `api.url` its url, every id one of its
   own. No reference crosses docs.
 - **The focus** (COMPOSITION.md §5, TOOLS.md §3) is the path of the links
@@ -141,7 +141,23 @@ or identity closes, with what was opened under it, and opens again.
   once, and one holding something (a body: walk; the held tool: Measure; a
   session; a pose hold) lingers there, offering nothing, until it lets go,
   so a walk or a measurement goes on across Enter and Leave (back in that
-  stage before then, it's kept). What each doc runs is untouched (H1). `scene.focus` offers Enter on a link (the menu,
+  stage before then, it's kept). What each doc runs is untouched (H1).
+  **Presence where it is.** What a doc's people are doing is drawn where
+  that doc is, so a general part whose module also has
+  `elsewhere(api) → instance` (walk: the others walking; `scene.select`:
+  peers' selection boxes) has that half run by every stage that acts and
+  isn't the focus (`host.halves`), handed the drawn facet (`drawnApi`: no
+  chrome in the DOM, no camera, select, notice, pref, body, tool or
+  command; it hears its doc's channel). Every acting stage, not only the
+  focus path: the focus scopes the selection and the editor, and a sibling
+  doc is as live as one the focus is inside. A pin and a mirror run none
+  (a value has no channel; a mirror is the same doc drawn again, its people
+  drawn where it acts). A half is offered nothing and in no running set
+  (`local.running`, `collect`, `generals`, `settled` never count it), and it
+  never runs beside its whole part in one stage: a whole part lingering
+  there (a walk holding the body) keeps the half out until it lets go, and
+  the focus arriving stops the half first. A module without `elsewhere`
+  runs at the focus alone, as before. `scene.focus` offers Enter on a link (the menu,
   the inspector) and takes a double-click on one; the outline's link rows
   say what the link is here and enter; the inspector has a Linked scene
   row.
@@ -186,6 +202,10 @@ or identity closes, with what was opened under it, and opens again.
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  A reader also has `writable()` and its doc's `clock` (`status()`, as
+  `local.clock`; `pause()`, `resume()`), so the clock chip shows and
+  pauses each doc on the focus path (`view.clocks` says when any of them
+  changed).
   `api.path` is a general part's only, as `view.packages` is: the readers
   are other docs, and a stage's extension reading them would depend on
   where it is placed (I4); any other extension's `api.path` is undefined.
@@ -264,6 +284,7 @@ the calls named here, never swapped.
 | `drawer` | `api.dock` | `{ tabs, shown }`: the drawer's tabs by title, in docking order, and the one shown (null with none docked), so a surface showing whether a tab is open (the toolbar's Objects, Inspector) hears when it closes |
 | `prefs` | `api.setPref` | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | the view (general parts only) | every open doc's packages this viewer doesn't have, one prompt's worth (see "Packages") |
+| `clocks` | the view (general parts only) | the focus path's clocks, outermost first: `[{ stage, name, status }]`, one per stage on the path whose `clock` is not null, `name` the trail's for that doc. The clock chip's: a chip per doc, Pause and Resume through each stage's reader (`clock`) |
 
 Private local state lives in the extension's closure, or under a key prefixed
 `<id>.`. Another extension doesn't write it: it runs one of the owner's
@@ -283,7 +304,9 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
   …                                   // any other plain data: the stage ignores it, others may read it from
                                       // the registry (a keeper's `keeper: "plain"`, the seats' `roster: true`: "Conventions")
-  async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>, … } } }
+  async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean>,
+                          elsewhere?(api) → instance,  // a general part's half: run in every other stage that acts ("Views, stages and links")
+                          … } } }
 
 { type: "scene:template", id, name, icon?, description?,
   async load() { return { create(ctx) → Promise } } }
@@ -1799,7 +1822,7 @@ atmosphere() → null | {
 | `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
-| `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages |
+| `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages, the focus path's clocks |
 | `stage/paths.js` | the key grammar (a stage's object in the viewport, a stage's extension at the router) and a stage's element of a path (pure) |
 | `stage/scope.js` | one stage's view of the viewport: its keys and its frame, the one choke point every spatial call goes through; similarities and their conversions (pure parts exported) |
 | `stage/links.js` | what a link is, and expansion (pure) |
@@ -1821,7 +1844,7 @@ atmosphere() → null | {
 | `stage/time.js` | the one source of time: the browser's (`realTime`) or one that moves only when stepped (`manualTime`) ("Time") |
 | `stage/clock.js` | the doc's world time: who computes it, processes, checkpoints and the `saved` stamp, following, pause and resume (pure parts exported) |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
-| `stage/host.js` | starting and stopping extensions (the one linger rule), `collect`, drops; it asks the stage for each extension's api |
+| `stage/host.js` | starting and stopping extensions (the one linger rule), `collect`, drops, the general parts' halves away from the focus (`halves`); it asks the stage for each extension's api |
 | `undo.js` | edits: a step's leaves from its own patches, its inverse (whole, or nothing if anything it wrote was written since), the per-doc stacks, and `createEdits`, the recorder the stage runs (pure but for the recorder) |
 | `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses and veils, the audience, atmosphere, status, prefs, arriving (view.start), the edit recorder, templates, parts and the scene's files, camera saving), the api each extension gets and what it owns (`makeApi`), the base (Look or Edit) and Edit's Select, the bodies entered, the held tool, attention and the command context, the clock's wiring (its claim, presence and eligibility), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
