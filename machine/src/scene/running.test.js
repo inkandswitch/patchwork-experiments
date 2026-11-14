@@ -10,6 +10,7 @@ import { rig, FRAME, LAN } from "../host/harness.js";
 import { tickAt } from "../host/clock.js";
 import { newSession } from "../patchwork/load.js";
 import { runMachine } from "./running.js";
+import { follow } from "./seating.js";
 
 const wasm = readFileSync(new URL("../../engines/toy/dist/toy.wasm", import.meta.url));
 const content = new TextEncoder().encode("scene");
@@ -125,7 +126,8 @@ test("two views play and stop: both at the same tick, with the state the documen
     const { a, b } = await views({ born: 30, lag, input });
     a.m.play(0);
     await frames([a, b], 200);
-    b.m.play(0); // taken: b gets the next free port
+    expect(b.m.play(0)).toBe(null); // taken
+    expect(b.m.play(1)).toBe(1);
     expect(b.host.seat.port).toBe(1);
     await frames([a, b], 2000);
     a.m.leave();
@@ -146,12 +148,14 @@ test("two views play and stop: both at the same tick, with the state the documen
   }
 }, 30_000);
 
-test("play takes the preferred port when free, else the first free, and none when all are held", async () => {
+test("play takes the port asked for when it's free, none when it's held; holding one, that one", async () => {
   const { a, b } = await views();
   expect(a.m.play(2)).toBe(2);
   expect(a.m.play(0)).toBe(2); // already seated: the same port
   await frames([a, b], 300);
-  expect(b.m.play(2)).toBe(0);
+  expect(b.m.play(2)).toBe(null);
+  expect(b.host.seat).toBe(null);
+  expect(b.m.play(0)).toBe(0);
   await a.m.close();
   await b.m.close();
 });
@@ -170,3 +174,61 @@ test("the process's step moves nothing: stepped on the stage's grid or not, the 
   await a.m.close();
   await b.m.close();
 });
+
+test("a seat drives the port: every sequence of three seats for one view (none, P1, P2) while the other sits at P2, then gets up", async () => {
+  // b sits at port 1 throughout; a follows each of 27 sequences of three
+  // wants, 400 ms each. After each: a holds what it wants unless b holds it
+  // (then nothing, and the pad never came), the pad was picked up once per
+  // port taken and put down once per port given back, and two views never
+  // hold one port. Then b gets up: a takes P2 if it's still waiting for it,
+  // and if a is up too, the machine stops.
+  const WANTS = [null, 0, 1];
+  let cases = 0;
+  for (const x of WANTS)
+    for (const y of WANTS)
+      for (const z of WANTS) {
+        const { a, b } = await views();
+        const pads = { a: [], b: [] };
+        const hands = (p) => ({ pickUp: (port) => pads[p.name].push(["up", port]), putDown: () => pads[p.name].push(["down"]) });
+        const want = { a: null, b: 1 };
+        const run = async (ms) => {
+          for (let t = 0; t < ms; t += FRAME) {
+            for (const p of [a, b]) {
+              follow(p.m, want[p.name], hands(p));
+              if (p.world.run) p.world.s += FRAME / 1000;
+              p.m.frame();
+            }
+            await vi.advanceTimersByTimeAsync(FRAME);
+          }
+        };
+        await run(400);
+        let mine = null; // the port a holds, by the model
+        let ups = 0, downs = 0;
+        for (const w of [x, y, z]) {
+          if (mine !== null && w !== mine) downs++;
+          want.a = w;
+          await run(400);
+          const next = w === 1 ? null : w; // b holds port 1
+          if (next !== null && next !== mine) ups++;
+          mine = next;
+          expect(a.host.seat?.port ?? null).toBe(mine === null && w === 1 ? null : mine);
+          expect(pads.a.filter(([k]) => k === "up").length).toBe(ups);
+          expect(pads.a.filter(([k]) => k === "down").length).toBe(downs);
+          const h = a.m.holders();
+          expect(h[1]?.by).toBe("b");
+          if (mine !== null) expect(h[mine]?.by).toBe("a");
+          expect(h.filter((s) => s?.by === "a").length).toBe(mine === null ? 0 : 1);
+        }
+        expect(pads.b).toEqual([["up", 1]]);
+        want.b = null;
+        await run(1000);
+        expect(b.host.seat).toBe(null);
+        // b's port free now: a, still wanting it, takes it; and a machine nobody holds stops
+        expect(a.host.seat?.port ?? null).toBe(z);
+        expect(a.m.clock.running()).toBe(z !== null);
+        await a.m.close();
+        await b.m.close();
+        cases++;
+      }
+  expect(cases).toBe(27);
+}, 120_000);

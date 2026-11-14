@@ -25,7 +25,9 @@
 //  6. the picture sits on the cabinet's screen as the stage draws it (the
 //     quad's corners against the bezel's own vertices), and still does after
 //     the cabinet is moved and turned, on both views;
-//  7. no errors. Screenshots of each moment.
+//  7. each view plays its sound (WebAudio, as the page records it): Doom's
+//     music and the pistol's lump, the Super NES's stream;
+//  8. no errors. Screenshots of each moment.
 // What a view shows is read from the stage (the screen mesh, the texture it
 // draws) and the view's own replica of the session, never from the
 // extension, which has no surface for probes.
@@ -162,6 +164,12 @@ try {
     check(`${kind}: both views' machines advance while it's played, the keys moving the game`, during.every((s) => s.tick > 60 && s.running) && playing.pictures >= 3, { during, pictures: playing.pictures });
     check(`${kind}: one view computes the world while the machine runs`, (await P(`clock("a").computing`)) !== (await P(`clock("b").computing`)), [await P(`clock("a")`), await P(`clock("b")`)]);
     check(`${kind}: the two views drew the same picture for most ticks both drew (the rest predictions put right)`, playing.pairs > 100 && playing.mismatched / playing.pairs < 0.1, playing);
+    // its sound, read from WebAudio (the page records every buffer started, by context): each view
+    // played the machine (music or the console's stream at the context's rate; Doom's effects from the WAD's lumps at theirs)
+    const sound = await P("audio()");
+    report.numbers[`${kind}-sound`] = sound;
+    const lumps = (s) => s.rates.some((r) => r !== s.rate);
+    check(`${kind}: both views played its sound${kind === "doom" ? " (its music, and the pistol from the WAD's own lump)" : ""}`, sound.contexts === 2 && sound.started.every((s) => s.loud > 10 && (kind !== "doom" || lumps(s))), sound.started);
     await shot(`${kind}-playing`);
 
     // Escape: the port back; the last player gone, the machine stops for everyone
@@ -195,6 +203,8 @@ try {
       if (f === 150) await b.keyUp("ArrowUp");
       if (f === 160) await b.keyDown("ArrowLeft");
       if (f === 220) await b.keyUp("ArrowLeft");
+      if (f === 240) await b.keyDown("Control"); // the pistol
+      if (f === 246) await b.keyUp("Control");
     },
   });
   // the Super NES beside it: Ben presses Start through Unarmed's title and lore

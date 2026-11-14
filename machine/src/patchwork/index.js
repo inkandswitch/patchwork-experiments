@@ -50,8 +50,8 @@ export const plugins = [
     },
   },
   {
-    // a machine in a scene: its session run on the scene's world time, its picture on the cabinet's screen,
-    // and Play, the pad in hand (../scene/extension.js)
+    // a machine in a scene: its session run on the scene's world time, its picture and sound at the cabinet's
+    // screen, a seat per port, and Play, the pad in hand (../scene/extension.js)
     type: "scene:extension",
     id: "machine",
     name: "Machines",
@@ -60,15 +60,29 @@ export const plugins = [
       machine: {
         name: "Machine",
         on: "object",
-        blurb: "An existing game, run as is, in step for everyone here; its picture is on its screen. P plays (a free port, the pad in hand); Escape gives the port back. It stops while nobody plays",
+        blurb: "An existing game, run as is, in step for everyone here; its picture and sound come from its screen. Sit at one of its seats to play that port (the pad in hand; Escape puts it down, P picks it up), stand up to give it back; where it has no seats, P plays and Escape gives the port back. It stops while nobody plays",
         fields: [{ key: "player", label: "Screen shows player (Doom, from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
         // the session is this object's running game: a copy starts a game of its own
         runtime: ["session"],
       },
     },
-    drops: ["machine"],
+    // a machine doc is a new cabinet; a ROM or an IWAD dropped on a cabinet with no game is its game
+    drops: ["machine", "file"],
     async load() {
       return (await import("../scene/extension.js")).default;
+    },
+  },
+  {
+    // an empty cabinet from the parts bin: drop a ROM or an IWAD on it (../scene/part.js)
+    type: "scene:part",
+    id: "machine",
+    name: "Machine",
+    icon: "Gamepad2",
+    category: "Games",
+    description: "A cabinet for an existing game: drop a Super NES ROM or a Doom IWAD on it, and sit at it to play",
+    traits: ["machine"],
+    async load() {
+      return (await import("../scene/part.js")).default;
     },
   },
 ];

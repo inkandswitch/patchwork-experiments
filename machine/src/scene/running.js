@@ -92,13 +92,18 @@ export async function runMachine(o) {
         removeProcess = null;
       }
     },
-    /** Takes a port (`prefer` if it's free, else the first free one) and starts the machine; the port, or null if all are held. */
-    play(prefer = 0) {
+    /**
+     * Takes `port` and starts the machine: the port, or null if someone
+     * holds it, or holds it a little longer (Host.sit refuses: a seat ending
+     * ahead of now, its holder just stood up). Already holding a port, that one.
+     */
+    play(port) {
       if (host.seat) return host.seat.port;
-      const h = holders();
-      const port = h[prefer] === null ? prefer : h.indexOf(null);
-      if (port < 0) return null;
-      host.sit(port); // seated first, then the clock: the port is held when it starts
+      try {
+        host.sit(port); // seated first, then the clock: the port is held when it starts
+      } catch {
+        return null;
+      }
       if (!clock.running()) host.resume();
       return port;
     },

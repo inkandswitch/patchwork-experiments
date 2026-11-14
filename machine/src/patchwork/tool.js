@@ -4,16 +4,14 @@
 import { compile } from "../engine.js";
 import { Host } from "../host/host.js";
 import { seating } from "../host/session.js";
-import { content as doomContent, lumps } from "../doom.js";
 import { History } from "../history/history.js";
 import { inputs, HELP } from "./input.js";
-import { audio } from "./audio.js";
-import { WASM, bytes, load, doomWads, portsOf, newSession } from "./load.js";
+import { speaker } from "../present/speaker.js";
+import { WASM, MUSIC, bytes, load, doomWads, gameOf, portsOf, newSession } from "./load.js";
 import { traced } from "./traced.js";
 import { quietClock } from "./quiet.js";
 import css from "./tool.css?inline";
 
-const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
 const create = async (repo, value) => (repo.create2 ? await repo.create2(value) : repo.create(value));
 
 const el = (tag, attrs = {}, ...kids) => {
@@ -57,15 +55,9 @@ export default function MachineTool(handle, element) {
     const make = async (kind, file, opts) => {
       status.textContent = "Starting…";
       try {
-        const raw = new Uint8Array(await file.arrayBuffer());
-        let content = raw;
-        let title = file.name.replace(/\.[^.]+$/, "");
-        if (kind === "doom") {
-          const episodic = lumps(raw).has("E1M1");
-          const args = ["-skill", String(opts.skill), "-warp", ...(episodic ? ["1", "1"] : ["1"]), "-players", String(opts.players)];
-          content = doomContent({ wads: [raw], args });
-          title = `${title} · ${episodic ? "E1M1" : "MAP01"} · ${opts.players}p`;
-        }
+        const game = gameOf(file.name, new Uint8Array(await file.arrayBuffer()), opts);
+        if (game?.kind !== kind) throw new Error(kind === "doom" ? "that isn't an IWAD" : "that isn't a ROM (.sfc, .smc)");
+        const { content, title } = game;
         const wasm = await bytes(WASM[kind]);
         await compile(wasm); // refuses a broken engine before anything is written
         const c = await create(repo, { title, bytes: content });
@@ -149,11 +141,12 @@ export default function MachineTool(handle, element) {
     const soundBtn = el("button", { class: "sound", onclick: async () => {
       if (!sound) {
         soundBtn.disabled = true;
+        const ctx = new AudioContext();
         const wads = kind === "doom" ? doomWads(contentBytes) : [];
-        sound = await audio({ kind, wads, musicWasm: kind === "doom" ? await bytes(MUSIC) : null });
+        sound = { ctx, out: await speaker(ctx, { kind, wads, musicWasm: kind === "doom" ? await bytes(MUSIC) : null }) };
         soundBtn.remove();
       }
-      await sound.resume();
+      await sound.ctx.resume();
     } }, "🔊 Sound");
     const pause = el("button", { onclick: () => (host.clock?.running?.() ? host.pause() : host.resume()) }, "⏸ Pause");
     const stopped = el("div", { class: "stopped" });
@@ -226,8 +219,11 @@ export default function MachineTool(handle, element) {
         image.data.set(pic.rgba);
         g.putImageData(image, 0, 0);
       }
-      const out = host.output();
-      if (sound) sound.play(out, host.engine, view, hz);
+      // what it played, heard as the player shown hears it; taken either way, so it never piles up
+      if (sound) {
+        sound.out.port = view;
+        sound.out.feed(host);
+      } else host.output();
       drawSeats();
       const now = performance.now();
       if (now - lastInfo > 500) {
@@ -261,7 +257,8 @@ export default function MachineTool(handle, element) {
       }
       host.close();
       input.dispose();
-      sound?.close();
+      sound?.out.close();
+      sound?.ctx.close();
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
   }
