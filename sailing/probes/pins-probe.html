@@ -348,7 +348,8 @@ try {
         r.hold = api.pose.hold(name === "pinned" ? ids.fHatch : ids.wHatch, { position: [0, 9, 0], rotation: [0, 0, 0], scale: 1 });
         r.run = api.run({ ext: "joints", command: "slide", target: name === "pinned" ? ids.fHatch : ids.wHatch });
         r.writable = api.writable();
-        r.role = api.role;
+        r.role = stageAt(...path).role; // (the view's to say: an extension has no api.role)
+        r.hasRole = "role" in api;
         out[name] = r;
       }
       return out;

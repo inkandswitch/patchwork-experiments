@@ -19,10 +19,19 @@
 //  5. Ana draws a card (D over the deck, the room's key map reaching into
 //     G) and carries one onto an expedition column; Ben and Cara see both
 //     moves; Ben draws and plays one of his, and Ana and Cara see it;
-//  6. with the boat's world running, a card leans with her in Ben's view
+//  6. I6 with the real packages (scene/COMPOSITION.md, Invariants): mid-play,
+//     Ana's room links G twice more, live (a mirror, Ana seated in the
+//     acting stage) and fixed at this version (a pin), and Ana opens G in a
+//     view of her own whose handle refuses writes (D). Each runs G's
+//     extensions, read-only; the mirror and D show Ana exactly her acting
+//     stage's faces (I4: the roster reaches a drawn stage), the pin what she
+//     saw when it was fixed (her hand, and the cards played face up); Ana then plays a card face up (her keeper hands over
+//     its key) and draws, and all of it stays so, with nothing written
+//     through any of them: no warning, no error (7);
+//  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
-//  7. no page errors.
+//  8. no page errors, and no warnings (a refused write would warn).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +44,7 @@ for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "links-probe"));
 const PORT = Number(arg("--port") ?? 4791);
-const b = await browser({ root: ROOT, port: PORT, cdp: Number(arg("--cdp") ?? PORT + 5000), page: `/sailing/probes/links-probe.html?seed=${Number(arg("--seed") ?? 1)}`, width: 1700, height: 490, show: process.argv.includes("--show"), timeout: 900_000 });
+const b = await browser({ root: ROOT, port: PORT, cdp: Number(arg("--cdp") ?? PORT + 5000), page: `/sailing/probes/links-probe.html?seed=${Number(arg("--seed") ?? 1)}`, width: 1950, height: 490, show: process.argv.includes("--show"), timeout: 900_000 });
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const FRAME = 1000 / 60;
@@ -156,17 +165,38 @@ try {
   await draw("b", "p2");
   await shot("played");
 
-  // 6. heel: the boat's world runs
+  // 6. I6, pinned, unwritable and mirrored, mid-play
+  const i6 = await P("i6()", 300_000);
+  check("6. I6: mid-play, the room links G live again (a mirror) and fixed at this version (a pin, its deps the docs reached through it); Ana opens G read-only in a view of her own", !!i6 && !i6.error && i6.deps > 0, i6);
+  const st6 = await P("i6Stages()");
+  report.numbers.i6 = { stages: st6 };
+  const runsG = (x) => !!x && ["tabletop", "card-table", "seats"].every((id) => x.running.includes(id));
+  check("6. the mirror and the pin are drawn stages of G and D a read-only one; each runs G's extensions, none may write; G still acts where Ana sits", st6.acting?.role === "acting" && st6.acting.writable === true && st6.mirror?.role === "mirror" && st6.pin?.role === "pinned" && st6.d?.role === "acting" && [st6.mirror, st6.pin, st6.d].every((x) => runsG(x) && x.writable === false) && st6.aLinks.mirror?.open && st6.aLinks.pin?.open && (await P("seats()")).p1?.player === (await P("people")).a, st6);
+  const sameFaces = (f) => J([...f.mirror].sort()) === J([...f.acting].sort()) && J([...f.d].sort()) === J([...f.acting].sort());
+  await holds("(() => { const f = __p.i6Faces(); return f.acting.length > 0 && JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  const f6 = await P("i6Faces()");
+  check("6. the mirror and D show Ana exactly the faces her acting stage shows (her hand), the pin what she saw when it was fixed (her hand and the cards face up)", f6.acting.length > 0 && sameFaces(f6) && J([...f6.pin].sort()) === J([...i6.pinFaces].sort()) && i6.pinHand.every((id) => f6.pin.includes(id)), { faces: f6, pinFaces: i6.pinFaces, why: await P(`i6Why(${J(i6.pinHand[0])})`) });
+  // Ana plays one face up (her keeper hands over its key in the open) and draws: the others take no part
+  const hand6 = (await P("where()")).p1;
+  if (hand6[0]) await play("a", hand6[0], -0.085, 1);
+  await draw("a", "p1");
+  await holds("(() => { const f = __p.i6Faces(); return JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  const f6b = await P("i6Faces()");
+  check("6. after Ana's play and draw, the mirror and D still show what her acting stage shows, and the pin still shows what it was fixed at", sameFaces(f6b) && J([...f6b.pin].sort()) === J([...i6.pinFaces].sort()), { faces: f6b });
+  const warned = (await P("errors")).filter((e) => !EXPECTED.test(e));
+  check("6. nothing was written through the mirror, the pin or D: no warning, no error so far", warned.length === 0, warned.slice(0, 10));
+
+  // 7. heel: the boat's world runs
   await P("resume()");
   const lean = await P(`sampleLean(${J(ids.board)}, 8000)`, 120_000);
   report.numbers.lean = lean;
-  check("6. aboard, G's table leans with the boat in Ben's view; in Ana's room and in Cara's view it stays level", lean.b > 0.05 && lean.a < 1e-6 && lean.c < 1e-6, lean);
-  check("6. Ben's seat view rolls with the table (the camera's up is the table's); Ana's keeps the world's", lean.camOffTableB < 1e-6 && lean.camOffWorldA < 1e-9, lean);
+  check("7. aboard, G's table leans with the boat in Ben's view; in Ana's room and in Cara's view it stays level", lean.b > 0.05 && lean.a < 1e-6 && lean.c < 1e-6, lean);
+  check("7. Ben's seat view rolls with the table (the camera's up is the table's); Ana's keeps the world's", lean.camOffTableB < 1e-6 && lean.camOffWorldA < 1e-9, lean);
   await shot("heeled");
 
-  // 7.
+  // 8.
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
-  check("7. no page errors", errors.length === 0, errors.slice(0, 10));
+  check("8. no page errors, and no warnings", errors.length === 0, errors.slice(0, 10));
 } catch (err) {
   check(`ran to the end: ${err?.message ?? err}`, false, String(err?.stack ?? err));
 }
