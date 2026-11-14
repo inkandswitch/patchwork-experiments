@@ -5,7 +5,7 @@
 //   feet?), so a fault in the bake's rasteriser shows up as a disagreement;
 // - the static checks C1–C9 over a whole baked hull: every cell, every side,
 //   every link.
-// Used by the unit tests, the property test (walker.property.slow.test.js), the
+// Used by the unit tests, the enumerated cases (walker.cases.slow.test.js), the
 // sloop's static checks (sloop-navmesh.test.js) and the camber probe.
 
 import { DIRS, NONE, OPEN, OVERBOARD, STEP, WALL, apexOf, bake, cellRange, columnAt, pointOf, sideBase, surfaceAt } from "./navmesh.js";
@@ -150,7 +150,7 @@ export const squareOf = (mesh, a) => {
 
 /**
  * The oracle for one walker state aboard, against the raw triangles in her
- * frame (DESIGN.md, "One property test"):
+ * frame (DESIGN.md, "The walker's enumerated cases"):
  * - the feet are within h + 2 mm above a triangle in their column;
  * - no triangle meets the body's cylinder (radius r) over [s + step, s + H]
  *   standing, [s + max(h, step), s + h + H] in the air, [b + h, b + h + H]
@@ -186,7 +186,7 @@ export function swimmerClear(index, q, r) {
 // ─── the bake properties ────────────────────────────────────────────────────
 
 /**
- * B1, B3, B4, B5 from the mesh alone (cheap: every case of the property test
+ * B1, B3, B4, B5 from the mesh alone (cheap: every enumerated case
  * runs them).
  * @returns {string[]} problems
  */

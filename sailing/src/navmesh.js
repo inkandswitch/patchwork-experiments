@@ -1091,7 +1091,7 @@ function nearestFloor(geo, ok, p, within, in3d = false) {
   return best;
 }
 
-// ─── triangles from boxes (fixtures, the property test, the swept wheel) ───
+// ─── triangles from boxes (fixtures, the enumerated cases, the swept wheel) ───
 
 /** An axis-aligned box as 12 triangles (9 numbers each). */
 export function boxTriangles([x0, y0, z0], [x1, y1, z1]) {
