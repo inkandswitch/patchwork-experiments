@@ -1,4 +1,4 @@
-// Fixtures for the walker's unit cases and its property test: a few boxes as
+// Fixtures for the walker's unit cases and its enumerated cases: a few boxes as
 // triangles, baked, a world of ships to step in, and a driver that checks
 // invariant I (and, given the triangles, the oracle) after every step.
 import { bake, boxTriangles } from "../navmesh.js";

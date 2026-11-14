@@ -1225,8 +1225,8 @@ polar (`physics.slow.test.js`), 45 s on a seeded sea
 fixtures (`agreement.slow.test.js`), two sloops sailed 30 s each on a
 quarter-turned hull (`frame.slow.test.js`), the stage cases that sail her
 8–25 simulated seconds (`sim.slow.test.js`), the two-crew aboard case
-(`aboard.slow.test.js`) and the walker's random property test
-(`walker.property.slow.test.js`): 38 cases in about 5 s. Their shared
+(`aboard.slow.test.js`) and the walker's enumerated cases
+(`walker.cases.slow.test.js`). Their shared
 setup moved to `src/test/` (`sim-stage.js`, `sail-runs.js`,
 `frame-hulls.js`). README "Working on it" says which to run when.
 
@@ -2218,13 +2218,20 @@ few boxes as triangles, baked, then driven. This is the full list:
 
 Each step of every case runs `assertWalker`.
 
-**One property test** (`walker.property.slow.test.js`, `fast-check` 4.10.2 as a
-devDependency, seeded, under 2 s). Each case is:
-- a 4 × 4 m arena: a floor plus 0–8 boxes (some floating: wires,
-  overhangs, low ceilings), 0–2 ramps (0–60°) and 0–3 thin rods;
-- a sequence of up to 200 steps: keys, run, jump, yaw, and `dt` from
-  1/240 to 1/20;
-- a sequence of ship matrices.
+**The walker's enumerated cases** (`walker.cases.slow.test.js`, finite and
+named; no random input, so a failure names its arena, leg and step and runs
+the same every time). Each case is:
+- a 4 × 4 m arena: a floor alone; each kind of box alone, on the floor (a
+  1 cm lip, a stair, a knee-high crate, a wall) and floating (a wire at shin
+  height, a low ceiling, a table-high overhang, a box over the spawn point,
+  which the bake's seed must step out of); a ramp at 0, 30 or 60° facing
+  each of four ways; a thin post or rail along x or z, 1 or 3 cm; and all
+  at once (8 boxes, 2 ramps, 3 rods). Every arena twice: its edges on the
+  10 cm columns' lines, and 3 mm off them;
+- 36 legs from the start, one per combination of forward, strafe, run and
+  jump, 16 steps each, heading each of the eight ways, `dt` alternating
+  1/240 and 1/20 s, under every extreme pose of the ship (±3 m, ±0.5 m
+  heave, ±30° heel, ±20° pitch, ±180° turn) in turn.
 
 Each step checks I, and also an **oracle on the raw triangles, not the
 mesh**:
@@ -2232,14 +2239,21 @@ mesh**:
 - no triangle meets the cylinder of radius r over `[s + step, s + H]`
   (over `[s + h, s + h + H]` while airborne).
 
-Every case's bake also passes B3–B5. Two cases in three raft a second
-baked ship (a 4 × 4 m deck, with or without a rail) 0–1 m off one of the
-first one's sides, riding with her, and half of those start in the water
-between them. A swimmer must then be clear of both ships (I, and no
-triangle of either within r), and a walker who steps across is checked
-against the other ship's triangles. A failure shrinks to the fewest boxes
-and steps, and prints the seed. About 100 runs. (Without the ring search,
-it finds the rafted-swimmer breach and shrinks it to no boxes and no steps.)
+Every case's bake also passes B1, B3–B5. A case that starts on deck must
+spend three quarters of its checks aboard (so it walks among the features,
+not overboard). A second baked ship (a 4 × 4 m deck, with or without a
+rail) lies on each side of the first, touching or 1 m off, riding with her,
+the walker on deck or in the water between them: a swimmer must be clear of
+both ships (I, and no triangle of either within r), and a walker who steps
+across is checked against the other ship's triangles. 95 cases, under a
+second. They replaced a seeded `fast-check` property test (the project's
+tests are finite and exhaustive, never random), and on their first run
+found what it never had: a box's or ramp's side exactly on a line between
+columns also makes a cell at its height in the column outside it, so the
+walker can stand up to a column's width past the edge. The three on-grid
+cases that show it are listed as `KNOWN_GAPS` (the test asks that exactly
+those fail); the fix is the bake's (a triangle must cover part of a
+column's open square).
 
 **Static checks** on each baked hull. They run on the stock sloop in vitest
 (`sloop-navmesh.test.js`, triangles from `ship.js`), and on the camber hull
@@ -2402,11 +2416,11 @@ it measured.
   quiet moments, down from 530 ms as first written. That is over the 50 ms
   aim and under the test's 500 ms limit. In a loaded browser it measured
   219 ms.
-- **The property test bakes its arenas at 10 cm, not 5.** A hundred cases
-  then fit the budget: 1.0 s in a full run of the suite. Everything reads
-  the cell size from the mesh's own params; the unit cases and the hull
-  checks run at 5 cm. On its first run it found the seed fallback above
-  and shrank it to one box.
+- **The walker's enumerated cases bake their arenas at 10 cm, not 5.**
+  95 cases then run in under a second. Everything reads the cell size from
+  the mesh's own params; the unit cases and the hull checks run at 5 cm.
+  (The random test they replaced found the seed fallback above on its
+  first run: the "box over the spawn point" arena keeps it covered.)
 - **The browser check uses real keys without pointer lock.** Walking reads
   only the keys, and each leg's yaw is set by `place`. `lock-shim.js`
   (the diagnosis' shim) is in the probe page behind `?lock=1`, for the

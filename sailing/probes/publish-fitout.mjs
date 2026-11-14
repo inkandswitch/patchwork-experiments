@@ -39,15 +39,13 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
-import { packageProblems, withPackages } from "./scene-packages.mjs";
+import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
 
-// What each doc's contents come from (scene/STAGE.md, "Packages"). The boat
-// still lists joints and traversal, her linked docs' packages: written
-// before the view's one prompt covered every open doc (COMPOSITION.md,
-// Decisions, links loose ends 1), when only the outermost doc's were asked
-// about. Harmless (each linked doc lists its own); to drop, with a check of
-// what she calls for like publish-aboard's, at the next republish.
-const PACKAGES = { s: ["scene", "sailing", "joints", "traversal"], f: ["scene", "sailing", "joints", "traversal"], w: ["scene", "sailing", "joints"] };
+// What each doc's contents come from (scene/STAGE.md, "Packages"): each
+// lists its own only (the view's one prompt covers every open doc's:
+// COMPOSITION.md, Decisions, links loose ends 1), and the page checks that
+// each calls for plugins of those packages and no others.
+const PACKAGES = { s: ["scene", "sailing"], f: ["scene", "sailing", "joints", "traversal"], w: ["scene", "sailing", "joints"] };
 const SLIDE = "joints.slide";
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1 };
@@ -87,8 +85,11 @@ for (const p of ["scene", "sailing", "joints", "traversal"]) if (!existsSync(joi
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-fitout"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
+// each package's plugins registered from its URL, so the page can say which package each plugin is from
+const urls = Object.fromEntries(["scene", "sailing", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
+const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
-const b = await browser({ root: ROOT, port: 4797, cdp: 9797, page: "/sailing/probes/pins-probe.html", width: 1700, height: 570, show: !!args.show, timeout: 600_000 });
+const b = await browser({ root: ROOT, port: 4797, cdp: 9797, page: `/sailing/probes/pins-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1700, height: 570, show: !!args.show, timeout: 600_000 });
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const loads = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 60);
@@ -110,6 +111,15 @@ try {
   const links = await P("links()");
   check("S's view opens F pinned, W acting and mirrored", links.fitout?.role === "pinned" && links.acting?.role === "acting" && links.mirror?.role === "mirror" && Object.values(links).every((l) => l.open), links);
   check("everything loads", await loads("loaded().loaded === __p.loaded().total", 120_000), await P("loaded()"));
+  // each doc, open alone, calls for plugins of its stated packages only, and lists only those: the boat
+  // none of F's or W's (joints, traversal), which they list themselves
+  for (const [w, who] of [["s", "the boat"], ["f", "the fit-out"], ["w", "the hatch"]]) {
+    const pk = await P(`packages(${J(w)})`);
+    const answering = [...new Set((pk?.answering ?? []).map((p) => folderOf(p.importUrl)))];
+    const listed = (pk?.listed ?? []).map(folderOf);
+    const stated = PACKAGES[w];
+    check(`${who} calls for plugins of its stated packages only, and lists only those`, !!pk && answering.includes("scene") && answering.every((p) => stated.includes(p)) && listed.every((p) => stated.includes(p)), { answering, listed, stated });
+  }
   check("F alone opens its hatch: F has changed since it was fixed", (await P("openF()")) === true && (await until("slideOf('f')?.at === 'open'", 6000)), await P("slideOf('f')"));
   await b.step(30);
   check("the boat still shows F's hatch shut, as fixed", (await P("pinnedSlide()"))?.at === "closed", await P("pinnedSlide()"));

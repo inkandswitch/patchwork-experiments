@@ -229,8 +229,8 @@ files you touched (`npx vitest run src/stations.test.js`), while you work.
 `pnpm test:slow` (vitest.slow.config.ts) runs only the `*.slow.test.js`
 files: the long physics settles (the polar, 45 s on a seeded sea), the full
 agreement sweep over the rig contract fixtures, the stage cases that sail her
-for many simulated seconds, the two-crew aboard case and the walker's random
-property test. Run it once before you finish a change to the physics, the
+for many simulated seconds, the two-crew aboard case and the walker's enumerated
+cases. Run it once before you finish a change to the physics, the
 simulator or the walker. A new test that sails her for more than a second or
 so of wall time belongs in a `.slow.test.js` file; its shared setup goes in
 `src/test/` (sim-stage.js, sail-runs.js, frame-hulls.js).
