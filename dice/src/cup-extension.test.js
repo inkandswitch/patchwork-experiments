@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import Cups, { ASTRAY_MS, MESSAGES, SHAKE_SECONDS, dressFor } from "./cup-extension.js";
 import { CUP, lifted, ringOf, sealersFor } from "./cup.js";
+import { KEPT } from "./lots.js";
 import { PRESETS, dieOf } from "./die.js";
 import { builtDie } from "./die-glb.js";
 import { faceOfSeed, faceUp, seedFor, seedFromLots } from "./roll.js";
@@ -31,6 +32,7 @@ function audienceOf(a) {
 function scriptedLots() {
   const states = new Map();
   const draws = [];
+  const told = new Map();
   let n = 0;
   return {
     states,
@@ -42,7 +44,10 @@ function scriptedLots() {
         return draw;
       },
       state: (id) => states.get(id) ?? null,
+      // this client's own record of its part of a draw (lots-run told): what a test puts in `told`, else none
+      told: (draw) => told.get(draw) ?? null,
     },
+    told,
   };
 }
 
@@ -342,6 +347,41 @@ describe("the cup's verbs and what the doc says", () => {
       for (const s of ["A", "B", "S"]) expect(t.views[s].x.debug().dressed.filter(([, k]) => k === "pose")).toEqual([]);
     }
     t.w.done();
+  });
+
+  it("asking again for her own shake (written over, or given up) only while nobody else could know it, by Alice's own record: else stopped, written on the roll, every HUD says so, she's told once; with no record (a reload), only a shake that isn't blind", () => {
+    const TOLD = { none: null, kept: KEPT, self: { to: ["alice"], opened: false }, bob: { to: ["alice", "bob"], opened: false }, opened: { to: [], opened: true } };
+    let cases = 0;
+    for (const blind of [false, true])
+      for (const [k, told] of Object.entries(TOLD))
+        for (const how of ["written over", "given up"]) {
+          const t = table();
+          t.shake(blind);
+          const draw = t.cup().roll.draw;
+          const asked = blind ? ["alice", "bob"] : ["alice"];
+          if (told) t.lots.told.set(draw, told);
+          t.lots.states.set(
+            "cup",
+            how === "written over"
+              ? lotsState({ id: "rover", draw, by: "bob", asked: ["bob"], sealers: ["bob"], phase: "open", public: true })
+              : lotsState({ id: "rgone", draw, by: "alice", asked, sealers: asked, phase: "ended", seed: null, gone: ["bob"] }),
+          );
+          for (let i = 0; i < 3; i++) {
+            t.w.change(() => {});
+            t.w.flush();
+          }
+          const label = JSON.stringify({ blind, told: k, how });
+          // the model: nothing released, or to nobody but her and never opened; with no record, sealed to her alone
+          const ask = k === "kept" || k === "self" || (k === "none" && !blind);
+          expect(t.lots.draws.slice(1), label).toEqual(ask ? [{ id: "cup", sealers: blind ? ["alice", "bob"] : ["alice"], of: t.dice, draw }] : []);
+          expect(!!t.cup().roll.stopped, label).toBe(!ask);
+          const stopped = t.notices("A").filter((n) => /isn't drawn again/.test(n));
+          expect(stopped.length, label).toBe(ask ? 0 : 1);
+          if (!ask) for (const v of ["A", "B", "S"]) expect(t.hud(v).some((l) => /shake was stopped/.test(l)), `${label} ${v}`).toBe(true);
+          t.w.done();
+          cases++;
+        }
+    expect(cases).toBe(20);
   });
 
   it("only the holder's client draws again for a forgery: Bob's, holding no cup, asks nothing", () => {

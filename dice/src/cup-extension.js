@@ -53,6 +53,7 @@
 
 import { CUP, CUP_HEIGHT, CUP_MOUTH, MAX_UNDER, cupsOf, fits, forgedOn, includes, knocked, lifted, lowered, ours, policy, redrawFor, sealersFor, shakePlan, shaken, stoodUp, upright } from "./cup.js";
 import { builtOf, faceOfSeed, faceUp, scaleOf, seedFor, seedFromLots, settled } from "./roll.js";
+import { mayAskAgain } from "./lots.js";
 import { lookFor } from "./rule.js";
 
 /** How long a shake rattles before the cup comes down (s). */
@@ -270,7 +271,7 @@ function create(api) {
     const now = api.clock.now();
     for (const c of state.cups.values()) {
       const roll = c.cup.roll;
-      if (!roll || roll.done) continue;
+      if (!roll || roll.done || roll.stopped) continue;
       const st = lots?.state?.(c.id) ?? null;
       if (forgedOn(st, c.cup)) {
         astray.delete(roll.draw);
@@ -286,8 +287,27 @@ function create(api) {
       const there = st?.id ?? null;
       if (asked.has(roll.draw) && asked.get(roll.draw) === there) continue;
       asked.set(roll.draw, there);
-      lots.draw(c.id, { sealers: sealersFor(viewer, roll.blind, seated(snap)), draw: roll.draw, of: roll.dice });
+      const sealers = sealersFor(viewer, roll.blind, seated(snap));
+      // only while nobody else could know the attempt it replaces, by my own record (lots.js mayAskAgain)
+      const alone = sealers.length === 1 && sealers[0] === viewer;
+      if (!mayAskAgain(lots.told?.(roll.draw) ?? null, viewer, { alone })) stopRoll(c);
+      else lots.draw(c.id, { sealers, draw: roll.draw, of: roll.dice });
     }
+  }
+
+  /**
+   * My shake can't be asked for again: someone else could know it, so a new
+   * attempt would let them choose among my rolls. It stops, written on the
+   * roll (every view's HUD says so); I may shake again, told as ever.
+   */
+  function stopRoll(c) {
+    const draw = c.cup.roll.draw;
+    api.change((doc) => {
+      const t = doc.objects?.[c.id]?.traits?.[CUP];
+      if (!t?.roll || t.roll.draw !== draw || t.roll.done) return;
+      t.roll.stopped = true;
+    });
+    api.notify?.("Your shake was written over or given up after someone else could know it, so it isn't drawn again (that would let them choose): shake again.", "warn");
   }
 
   /** Shake my cup again in place, its dice where they lie: a new draw, told with who said the last one's lots were forged. */
@@ -641,6 +661,11 @@ function create(api) {
         const roll = c.cup.roll;
         if (!roll || roll.done) continue;
         const st = lots?.state?.(c.id);
+        // stopped by its holder's client (heal): drawing it again would let whoever could know it choose
+        if (roll.stopped) {
+          out.push({ text: cap(`${whose(c.cup.holder)} shake was stopped: its lots were written over or given up after someone else could know it, so it isn't drawn again. ${c.cup.holder === viewer ? "Shake again" : `${who(c.cup.holder)} may shake again`}.`), state: "warn" });
+          continue;
+        }
         if (lots && !ours(st, c.cup)) {
           if (now - (astray.get(roll.draw) ?? now) >= ASTRAY_MS) out.push({ text: cap(`${whose(c.cup.holder)} dice can't be turned up: the lots on that cup aren't the ones its shake asked for (two shakes at once, or someone wrote over them). ${c.cup.holder === viewer ? "Your client is asking again" : `${who(c.cup.holder)}'s client asks again`}.`), state: "warn" });
           continue;

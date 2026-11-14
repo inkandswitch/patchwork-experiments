@@ -27,6 +27,7 @@
 //   "dice.lots": {
 //     draw(id, { sealers, draw, of }) → draw id | null   (lots-run.js)
 //     state(id) → null | lots.js derive()
+//     told(draw) → KEPT | { to, opened } | null   (this client's own record of its part: lots.js mayAskAgain)
 //   }
 //
 // and a HUD line for anything a round says that everyone should see
@@ -114,7 +115,7 @@ function create(api) {
       if (prev && snapshot === prev.scene && local?.running === prev.local?.running && local?.packages === prev.local?.packages && local?.["dice.lots.known"] === prev.local?.["dice.lots.known"]) return;
       runner.act();
     },
-    [ID]: Object.freeze({ draw: runner.draw, state: runner.state }),
+    [ID]: Object.freeze({ draw: runner.draw, state: runner.state, told: runner.told }),
     hud: runner.hud,
     dispose: runner.dispose,
   };

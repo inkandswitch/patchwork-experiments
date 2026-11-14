@@ -370,6 +370,24 @@ export function endedWhy(st, me, words) {
   return gone.includes(me) ? words.lost : words.gaveUp(gone);
 }
 
+/**
+ * May the holder's client ask again for its own draw (a new attempt of the
+ * same draw) when the round on its cup was written over or given up?
+ * Only if nobody else could know the attempt it replaces, by the holder's
+ * own record (`told`: lots-run's, never the doc's word, which anyone can
+ * make smaller): nothing released (KEPT), or released to nobody but `me`
+ * and never opened. With no record (a draw from before this client came: a
+ * reload), only when the new attempt is sealed to `me` alone (`alone`: a
+ * shake that isn't blind), since then nobody else can know the new one
+ * either, whatever they knew of the old. Else asking again would hand
+ * whoever could know the roll a choice among the holder's rolls (they write
+ * over the round, or give it up, until one suits them). Pure.
+ */
+export function mayAskAgain(told, me, { alone = false } = {}) {
+  if (!told) return !!alone;
+  return told === KEPT || (!told.opened && told.to.every((v) => v === me));
+}
+
 export function knewWith(knew, told) {
   if (knew === "all" || !told || told.opened) return "all";
   return sorted([...knew, ...told.to]);

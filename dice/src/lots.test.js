@@ -7,7 +7,7 @@
 // opens only when it's addressed to it (seal.test.js checks the real ones).
 
 import { createHash } from "node:crypto";
-import { COMMIT_MS, KEPT, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, endedWhy, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, knewWith, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
+import { COMMIT_MS, KEPT, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, endedWhy, mayAskAgain, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, knewWith, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
 import { sha256 } from "./sha256.js";
 
 const nonceOf = (v, id) => sha256(`nonce|${v}|${id}`);
@@ -783,5 +783,19 @@ describe("endedWhy: why an ended attempt of mine came to nothing, the same order
           cases++;
         }
     expect(cases).toBe(48);
+  });
+});
+
+describe("mayAskAgain: the holder's own record gates asking again for its draw", () => {
+  it("every record over me and one other, sealed to me alone or not: yes only if nobody else could know the attempt it replaces", () => {
+    const records = [null, KEPT, { to: [], opened: false }, { to: ["me"], opened: false }, { to: ["bo"], opened: false }, { to: ["me", "bo"], opened: false }, { to: [], opened: true }, { to: ["me"], opened: true }];
+    let cases = 0;
+    for (const told of records)
+      for (const alone of [false, true]) {
+        const want = told === null ? alone : !told.opened && told.to.every((v) => v === "me");
+        expect(mayAskAgain(told, "me", { alone }), JSON.stringify({ told, alone })).toBe(want);
+        cases++;
+      }
+    expect(cases).toBe(16);
   });
 });
