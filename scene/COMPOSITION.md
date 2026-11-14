@@ -1038,6 +1038,28 @@ The five open questions were put to the project lead and answered:
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
 
+## Decisions, integration (2026-11-14, made unattended)
+
+Found while verifying the merged steps 13–15 in the real Patchwork.
+
+1. **A package is loaded at the heads its folder settles on.** A doc found
+   fresh is still catching up: in the real Patchwork, sailing's folder was
+   found at an older version and reached its current heads 160 ms
+   later. Loaded at the found heads (as the stage did since packages were
+   first loaded), an old build ran against tonight's scene (`camera.object`
+   is gone), every frame threw, and a game linked aboard never seated its
+   arriving viewer (19 of 21 cold loads of the room arrived; the two that
+   didn't went unlogged; each of the three failed boat arrivals traced with its
+   page log had loaded an old sailing).
+   The module watcher reloads a package when its folder changes; a scene
+   loads once per page and its running extensions keep their module, so
+   reloading would not fix them. Instead the load waits until the folder has
+   gone `FOLDER_QUIET_MS` (500 ms) without a change, at most
+   `PACKAGE_FIND_MS`, then pins those heads (packages.js `quiet`; STAGE.md
+   "Packages"). Rejected: no pin at all (the entry and its chunks could then
+   come from two versions). Cost: half a second on every package a viewer
+   loads.
+
 ## Decisions, links loose ends (2026-11-14, made unattended)
 
 The open items the links work (steps 10–15) left, closed on lane/compose.

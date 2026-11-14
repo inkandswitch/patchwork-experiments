@@ -138,7 +138,7 @@ describe("unknown while a listed package is missing", () => {
     servePackage(SCREEN, screenPackage());
     const n = log.length;
     await s.debug.packages.load([SCREEN]);
-    await until(() => s.local.get().running.some((r) => r.id === "t.screen"));
+    await until(() => s.local.get().running.some((r) => r.id === "t.screen"), 3000);
     await settle();
     expect(api.audience("card")).toEqual([B]);
     expect(s.local.get().packages.missing).toBe(false);

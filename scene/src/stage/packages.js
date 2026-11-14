@@ -17,7 +17,8 @@
 //     one or the other: a click, or a remembered click for that URL.
 //
 // A load is the module watcher's two steps, on this thread: the package at
-// its folder doc's current heads through importPackage, then registerPlugins
+// its folder doc's current heads (once the folder has stopped changing: see
+// FOLDER_QUIET_MS) through importPackage, then registerPlugins
 // with the bare URL. Both come from the host's importmap, by dynamic import.
 // Nothing is written to the viewer's module settings: what a scene brings
 // lasts until the page is reloaded.
@@ -28,6 +29,16 @@ import { answeringPlugins, listedPackages, missingPackages, packageTitle, packag
 export const PACKAGE_SETTLE_MS = 1_000;
 /** How long to wait for a package's folder doc. */
 export const PACKAGE_FIND_MS = 30_000;
+/**
+ * How long a found package folder must go without a change before it is
+ * loaded at its heads. A doc found fresh is still catching up: its first
+ * heads are a prefix of its history (an old build, which may not run against
+ * this scene), the rest arriving in a burst right after (measured in the real
+ * Patchwork: found at an old version, current 160 ms later). The module
+ * watcher reloads a package when its folder changes; a scene's load is once
+ * per page, so it waits for the folder to settle instead.
+ */
+export const FOLDER_QUIET_MS = 500;
 /** localStorage: the package URLs this viewer has accepted, as a JSON list. */
 export const ACCEPTED_KEY = "scene-packages:accepted";
 /** The registries whose changes are watched (the ones a scene reads, and the two every package may register in). */
@@ -68,6 +79,26 @@ function rememberAccepted(url) {
   }
 }
 
+/** Resolves once `handle` has gone `ms` without a change, or after `max` whatever it does. */
+function quiet(handle, ms, max) {
+  return new Promise((resolve) => {
+    let timer = null;
+    const done = () => {
+      clearTimeout(timer);
+      clearTimeout(cap);
+      handle.off?.("change", changed);
+      resolve();
+    };
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(done, ms);
+    };
+    const cap = setTimeout(done, max);
+    handle.on?.("change", changed);
+    changed();
+  });
+}
+
 const within = (promise, ms, what) =>
   new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(what)), ms);
@@ -93,6 +124,7 @@ function loadPackage(url, { repo, plugins }) {
     if (url.startsWith("automerge:")) {
       // at its heads now, as the module watcher loads it: the entry and every chunk from one version
       const folder = await within(repo.find(url), PACKAGE_FIND_MS, "its folder couldn't be found");
+      await quiet(folder, FOLDER_QUIET_MS, PACKAGE_FIND_MS);
       at = folder.view(folder.heads()).url;
     }
     const pkg = await fs.importPackage(at);

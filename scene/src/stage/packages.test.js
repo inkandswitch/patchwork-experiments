@@ -343,7 +343,9 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     await until(() => state(s).ask.length === 2);
     await settle();
     await press(s, "load");
-    await until(() => running(s).includes("sailing.sea"));
+    // (each folder is loaded once it has gone FOLDER_QUIET_MS without a change)
+    await until(() => running(s).includes("sailing.sea") && state(s).loading.length === 0, 3000);
+    await settle();
     // pinned to the folder docs' heads, as the module watcher loads a package
     const heads = async (url) => `${url}#${(await repo.find(url)).heads().join("|")}`;
     expect([...imported].sort()).toEqual([await heads(SAILING), await heads(TERRAIN)].sort());
@@ -356,6 +358,26 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     expect(accepted().sort()).toEqual([SAILING, TERRAIN].sort());
     // nothing was added to the list, and nothing was listed twice
     expect(urls(s)).toEqual([SAILING, TERRAIN]);
+  });
+
+  // A doc found fresh is still catching up: found at a prefix of its history
+  // (an old build), the rest a moment later. Loaded at the found heads, the
+  // old build would run against this scene (FOLDER_QUIET_MS).
+  it("Load: a folder still catching up when found is loaded at the heads it settles on, not those it was found at", async () => {
+    const s = await mount({ extensions: [PROMPT], repo, doc: sceneDoc() });
+    await until(() => state(s).ask.length === 2);
+    await settle();
+    const sailing = await repo.find(SAILING);
+    const found = sailing.heads().join("|");
+    await press(s, "load");
+    // the rest of its history arrives after it was found: two changes, 150 ms apart
+    sailing.change((d) => (d.title = "@tiny/sailing, newer"));
+    await new Promise((r) => setTimeout(r, 150));
+    sailing.change((d) => (d.title = "@tiny/sailing, newest"));
+    await until(() => running(s).includes("sailing.sea"), 3000);
+    const at = imported.find((u) => u.startsWith(SAILING)).split("#")[1];
+    expect(at).toBe(sailing.heads().join("|"));
+    expect(at).not.toBe(found);
   });
 
   it("Not now: nothing loads, nothing is remembered, and it isn't asked again in this view; the next open asks again", async () => {
@@ -391,7 +413,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     await settle();
     expect(s.local.get().body.id).toBe("look");
     await press(s, "load");
-    await until(() => running(s).includes("t.seats"));
+    await until(() => running(s).includes("t.seats"), 3000);
     await settle();
     expect(s.local.get().body.id).toBe("seat");
     // another visit, saying not now: Look, and the arrival waits on nothing
@@ -408,7 +430,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
   it("a package accepted before loads without asking; one that wasn't is still asked about", async () => {
     localStorage.setItem(ACCEPTED_KEY, JSON.stringify([SAILING]));
     const s = await mount({ extensions: [PROMPT], repo, doc: sceneDoc() });
-    await until(() => running(s).includes("sailing.sea"));
+    await until(() => running(s).includes("sailing.sea"), 3000);
     await until(() => state(s).ask.length === 1);
     expect(state(s)).toEqual({ ask: [TERRAIN], loading: [], failed: [] });
     expect(imported.map((u) => u.split("#")[0])).toEqual([SAILING]);

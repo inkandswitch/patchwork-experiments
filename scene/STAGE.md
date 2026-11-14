@@ -798,8 +798,13 @@ yet). Every scene doc carries it:
   own doc's.)
 - **Load** loads each as the module watcher would, on this thread:
   `importPackage` (`@inkandswitch/patchwork-filesystem`) at the folder's
-  current heads, then `registerPlugins(plugins, url)`
-  (`@inkandswitch/patchwork-plugins`) with the bare URL. The registry
+  heads once it has gone `FOLDER_QUIET_MS` (500 ms) without a change, then
+  `registerPlugins(plugins, url)`
+  (`@inkandswitch/patchwork-plugins`) with the bare URL. (A folder found
+  fresh is still catching up: its first heads are a prefix of its history,
+  an old build, the rest arriving a moment later. The module watcher
+  reloads when a folder changes; a scene loads once per page, so it waits
+  for the folder to settle.) The registry
   changing is what starts things: the host starts the extensions the doc
   calls for, the render manager builds the objects whose provider was
   missing, objects with no render doc are routed again by the kind of
