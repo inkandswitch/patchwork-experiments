@@ -216,6 +216,21 @@ way (Jim's, bow at x = 0) is turned a half-turn about z. The run keeps the
 turn and the waterline datum, so the scene draws results back in the
 model's own frame.
 
+**Kept with the case** (`src/hull/stash.js`). A model can be huge (the
+Daysailor is a 92 MB file that takes seconds to convert, and too big to reach
+a fresh browser at all) while the hull a case uses is small. So linking a
+hull, choosing parts it doesn't already hold, Re-read and Keep write one small
+`openfoam-hull` doc: the chosen parts' triangles in the model's own frame
+(11,000 triangles, under half a megabyte, for the Daysailor), every part's
+summary, and what it was read from (heads, reader, params). Opening the case
+reads only that: ready in 0.2 s with 75 ms of main-thread work, the original
+never loaded, nothing converted (`probes/stash-run.mjs`). The bow and dropping
+parts need nothing more; adding a part the stash lacks reads the original
+once and keeps a new one. Nothing is written just because someone opened a
+case. Whether the original has changed isn't checked on open (that would
+load it): the case says when its hull was read, and "Re-read the model" reads
+it again.
+
 `src/hull/prepare.js` then places it at its attitude, welds, winds every
 face consistently, closes up to four openings (camber draws some transoms as
 no face at all, and an open shell fills with water in the mesher), measures
