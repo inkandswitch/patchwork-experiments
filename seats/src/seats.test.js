@@ -6,7 +6,7 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, placeOn, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -447,6 +447,52 @@ describe("which seat a look is at (pure)", () => {
   });
 });
 
+describe("several places on one object (a machine's ports along its front)", () => {
+  // N places side by side along x on one object, each 0.25 wide, at
+  // y 0.8..1, z 0.3..0.4 in its frame; the object as it stands, or moved and
+  // turned. Points on a grid in the object's frame, never on a boundary (a
+  // turn's rounding would make "on" a coin toss), and who sits: nobody, or
+  // each place's seat.
+  const boxes = (n) => Array.from({ length: n }, (_, i) => ({ seat: `s${i}`, id: "m", min: [i * 0.25, 0.8, 0.3], max: [(i + 1) * 0.25, 1, 0.4] }));
+  const c = Math.cos(0.7), s = Math.sin(0.7);
+  const poses = [
+    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 2, 0.5, -3, 1],
+  ];
+  const xs = Array.from({ length: 26 }, (_, i) => -0.2 + i * 0.0573);
+  it("the place the point is in; else your own, if you sit at one of them; else the nearest; with no point, yours or the first", () => {
+    let cases = 0;
+    for (const n of [1, 2, 3, 4]) {
+      const trays = boxes(n);
+      for (const m of poses)
+        for (const mine of [null, ...trays.map((z) => z.seat)])
+          for (const x of xs)
+            for (const y of [0.5, 0.91, 1.3])
+              for (const z of [0.35, 0.7]) {
+                const inX = x > 0 && x < n * 0.25;
+                const column = Math.min(n - 1, Math.max(0, Math.floor(x / 0.25)));
+                const inside = inX && y > 0.8 && y < 1 && z > 0.3 && z < 0.4;
+                const want = n === 1 ? "s0" : inside ? `s${column}` : (mine ?? `s${column}`);
+                expect(placeOn(trays, m, apply(m, [x, y, z]), mine)).toBe(want);
+                cases++;
+              }
+      for (const mine of [null, ...trays.map((z) => z.seat)]) expect(placeOn(trays, null, null, mine)).toBe(n === 1 ? "s0" : (mine ?? "s0"));
+    }
+    expect(cases).toBe((1 + 2 + 3 + 4 + 4) * 2 * 26 * 3 * 2);
+  });
+
+  it("through seatLookedAt: a look at the object is at the place the rule picks", () => {
+    const snap = { objects: { m: {} }, parents: new Map(), world: () => poses[1] };
+    const seats = { s0: { name: "P1" }, s1: { name: "P2" } };
+    const at = (p, mine = null) => seatLookedAt({ snap, target: "m", point: apply(poses[1], p), seats, places: boxes(2), drawn: () => poses[1], mine });
+    expect(at([0.1, 0.9, 0.35])).toBe("s0");
+    expect(at([0.4, 0.9, 0.35])).toBe("s1");
+    expect(at([0.4, 1.3, 0.35])).toBe("s1"); // above the places: the nearest
+    expect(at([0.24, 1.3, 0.35], "s1")).toBe("s1"); // seated at P2, looking at the middle: your own
+    expect(at([0.1, 0.9, 0.35], "s1")).toBe("s0"); // but a look on P1's place is P1's
+  });
+});
+
 describe("sitting down from walking", () => {
   it("F at a free seat: the picker's sit (claim, player, notices), then the seat body on top of the walk, in its view", async () => {
     const t = await cockpit(SEATS0(), { views: [["B", BEN], ["C", "carol", { walking: true }]] });
@@ -600,6 +646,7 @@ describe("standing up", () => {
     const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol", { walking: true }]] });
     await t.pickSeat("C", "p1"); // (in the seat's view, over the walk)
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
+    expect(t.x.C.roster.sitting()).toBe("p1");
     const eye = t.at([0, 1.2, 0.95]);
     expect(t.look("C", "hand1", null, eye)).toMatchObject({ label: "Stand up" });
     const writes = vi.spyOn(t.api.C, "change");
@@ -610,6 +657,7 @@ describe("standing up", () => {
     expect(t.player("p1")).toBe("carol");
     expect(t.claim("p1")?.session).toBe("C");
     expect(t.notices("C")).toContain("You got up from Player 1; it's still yours.");
+    expect(t.x.C.roster.sitting()).toBeNull(); // up: not sitting, though the seat is still yours
     expect(t.w.view("C").rides).toEqual([]);
     // walking now: the place offers sitting back down
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
@@ -625,6 +673,7 @@ describe("standing up", () => {
     t.api.C.body.enter("walk"); // up out of it, walking (sailing's Enter does this from a seat)
     t.api.C.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
     expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat", "walk"]);
+    expect(t.x.C.roster.sitting()).toBeNull(); // walking off from it is not sitting
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
     await t.press("C", "hand1");
     expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat"]);
