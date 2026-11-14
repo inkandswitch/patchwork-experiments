@@ -123,15 +123,14 @@ try {
     for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
   }, 20);
   const objects = () => scene.doc().objects ?? {};
-  const select = (w) => hosts[w].querySelector(PICKER);
-  const decks = () => [...new Set(cardIds(objects()).map((id) => kept(objects()[id])?.by).filter(Boolean))];
-  const deckOf = (tableId) => {
-    const s = dbg.a.scene();
-    const under = (id) => { for (let x = id; x; x = s.parents.get(x)) if (x === tableId) return true; return false; };
-    const id = cardIds(objects()).find(under);
-    const url = id ? kept(objects()[id])?.by : null;
-    return url ? repo.handles.get(url)?.doc() ?? null : null;
-  };
+  // Each game is a doc of its own, linked onto its table (scene/COMPOSITION.md): table i's game doc,
+  // the stage view w shows it in, and the picker that stage put up (each game's seats are its own)
+  const gameDoc = (i) => (ids.tables?.[i]?.game ? repo.handles.get(ids.tables[i].game)?.doc() ?? null : null);
+  const gStage = (w, i) => (dbg[w] ? dbg[w].view.stages().find((x) => x.url === ids.tables?.[i]?.game) ?? null : null);
+  const select = (w, i = 0) => { const st = gStage(w, i); return st ? hosts[w].querySelector(`.stage-overlay[data-stage="${st.n}"] ${PICKER}`) : null; };
+  const deckIn = (d) => { const id = cardIds(d?.objects ?? {})[0]; return id ? kept(d.objects[id])?.by ?? null : null; };
+  const decks = () => (ids.tables ?? []).map((_, i) => deckIn(gameDoc(i))).filter(Boolean);
+  const deckOf = (i) => { const url = deckIn(gameDoc(i)); return url ? repo.handles.get(url)?.doc() ?? null : null; };
   const apiOf = (w) => {
     for (const id of ["scene.add", "scene.use", "scene.carry", "tabletop", "seats"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
     return null;
@@ -203,26 +202,40 @@ try {
           });
         } else table = await api.part("tabletop.table", { parent: ids.Tatami, transform: at });
         if (!table) return { error: `no Card table for ${t.part}`, notices: P.notices("a") };
-        const before = new Set(Object.keys(seatsOf(scene.doc())));
-        const board = await api.part(t.part, { parent: table, transform: { position: t.at, rotation: [0, 0, 0], scale: 1 } });
-        if (!board) return { error: `no ${t.part}`, notices: P.notices("a") };
-        const seats = Object.entries(seatsOf(scene.doc())).filter(([sid]) => !before.has(sid));
+        // the game part makes the game's own doc and links it onto the table
+        const made1 = await api.part(t.part, { parent: table, transform: { position: t.at, rotation: [0, 0, 0], scale: 1 } });
+        if (!made1) return { error: `no ${t.part}`, notices: P.notices("a") };
+        const gameUrl = objects()[made1].sourceUrl;
+        const g = (await repo.find(gameUrl)).doc();
+        const seats = Object.entries(seatsOf(g));
+        // its link's id says where it comes in the room's order (arriving watches from the first game's seat:
+        // a view's first acting stage is its links' first, by id), so Lost Cities is link-1
+        const link = `link-${ids.tables.length + 1}-${t.part.replace(/^tabletop\./, "")}`;
         api.change((d) => {
+          d.objects[link] = d.objects[made1];
+          delete d.objects[made1];
+          d.order.splice(d.order.indexOf(made1), 1, link);
           d.objects[table].name = t.name;
-          for (const [sid, s] of seats) {
-            if (!s.camera || s.camera.in !== table) continue;
+          // a chair at each of its seats: a seat's camera is in the game's root frame, which sits at t.at on the table
+          for (const [, s] of seats) {
+            if (!s.camera) continue;
+            const cam = { ...s.camera, position: s.camera.position.map((v, k) => v + t.at[k]), target: (s.camera.target ?? [0, 0, 0]).map((v, k) => v + t.at[k]) };
             const id = api.newId("o");
-            d.objects[id] = t.low ? object("Cushion", made["office/cushion@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(s.camera, true) }) : object("Chair", made["office/chair@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(s.camera) });
+            d.objects[id] = t.low ? object("Cushion", made["office/cushion@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(cam, true) }) : object("Chair", made["office/chair@1"], { parent: table, group: d.objects[table].group ?? null, transform: chairFor(cam) });
             d.order.push(id);
           }
         });
-        ids.tables.push({ table, board, part: t.part, seats: seats.map(([sid]) => sid) });
+        ids.tables.push({ table, link, game: gameUrl, part: t.part, seats: seats.map(([sid]) => sid) });
       }
       // where the scene starts people: watching from a seat at the first table (the seat body), the home view across the room
       api.change((d) => {
         d.view.start = { body: "seat", home: { position: [...HOME.position], target: [...HOME.target] } };
       });
-      dbg.a.local.swap((l) => ({ ...l, selected: null }));
+      dbg.a.view.select(null);
+      // (each game's stage opens once its doc is found)
+      for (let k = 0; k < 900 && !ids.tables.every((_, i) => gStage("a", i)?.debug.host.instanceOf("seats")); k++) {
+        await new Promise((r) => setTimeout(r, 16));
+      }
       return { ...ids };
     },
     /** the chairs' floor positions in the world, per table, to bake shadows: [{ x, z, chairs: [[x, z]] }] */
@@ -239,8 +252,14 @@ try {
       const d = scene.doc();
       return {
         title: d.title, start: d.view?.start ?? null, view: { grid: d.view.grid, axes: d.view.axes },
-        seats: Object.fromEntries(Object.entries(seatsOf(d)).map(([sid, s]) => [sid, { name: s.name, in: s.camera?.in ?? null }])),
+        // the room's own: none; each game's, its doc's
+        seats: seatsOf(d),
         zones: Object.values(objects()).filter((o) => o.traits?.["tabletop.zone"]).map((o) => o.traits["tabletop.zone"].seat).sort(),
+        links: Object.entries(objects()).filter(([, o]) => o.providerId === "scene.link").map(([id, o]) => ({ id, parent: o.parent, locked: !!o.locked, game: o.sourceUrl })),
+        games: ids.tables.map((t, i) => {
+          const g = gameDoc(i) ?? {};
+          return { part: t.part, title: g.title ?? null, seats: Object.keys(seatsOf(g)), zones: Object.values(g.objects ?? {}).filter((o) => o.traits?.["tabletop.zone"]).map((o) => o.traits["tabletop.zone"].seat).sort(), start: g.view?.start?.body ?? null };
+        }),
         decks: decks().map((u) => ({ type: repo.handles.get(u)?.doc()?.["@patchwork"]?.type ?? null, title: repo.handles.get(u)?.doc()?.title ?? null })),
         spawn: Object.values(objects()).filter((o) => o.traits?.["walk.spawn"]).length,
         chairs: Object.values(objects()).filter((o) => o.name === "Chair" || o.name === "Cushion").length,
@@ -254,35 +273,38 @@ try {
       return { answering: i.answering.map((p) => ({ id: p.id, importUrl: p.importUrl })), listed: i.listed, suggested: scene.doc()["@patchwork"]?.suggestedImportUrl ?? null };
     },
     strays() {
-      const urls = new Set(Object.values(scene.doc().assets ?? {}).map((a) => a.url));
-      return Object.entries(objects()).filter(([, o]) => o.kind !== "group" && !urls.has(o.sourceUrl)).map(([id]) => id);
+      const out = [];
+      for (const d of [scene.doc(), ...ids.tables.map((_, i) => gameDoc(i))]) {
+        const urls = new Set(Object.values(d?.assets ?? {}).map((a) => a.url));
+        for (const [id, o] of Object.entries(d?.objects ?? {})) if (o.kind !== "group" && o.providerId !== "scene.link" && !urls.has(o.sourceUrl)) out.push(id);
+      }
+      return out;
     },
     seats: () => seatsOf(scene.doc()),
-    /** the picker's groups and options: [{ group, options }] */
-    pickerShape(w) {
-      const s = select(w);
-      if (!s) return null;
-      return [...s.children].map((c) => (c.tagName === "OPTGROUP" ? { group: c.label, options: [...c.children].map((o) => o.value) } : { option: c.value }));
-    },
-    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    /** each game's picker in view w: its options, and whether it's shown (it follows attention) */
+    pickers(w) { return ids.tables.map((_, i) => { const s = select(w, i); return s ? { options: [...s.options].map((o) => o.value), shown: !s.closest(".seats-bar")?.hidden } : null; }); },
+    /** sit (or watch) at table i's game, by its picker */
+    pick(w, sid, i = 0) { const s = select(w, i); if (!s) return null; s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    seatsAt: (i) => seatsOf(gameDoc(i) ?? {}),
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     body: (w) => ({ id: dbg[w]?.local.get().body?.id ?? null, label: dbg[w]?.local.get().body?.label ?? null, stack: dbg[w].router.bodies().map((x) => x.id) }),
-    phaseAt: (i) => deckOf(ids.tables[i].table)?.phase ?? null,
-    participantsAt: (i) => deckOf(ids.tables[i].table)?.participants?.length ?? 0,
+    phaseAt: (i) => deckOf(i)?.phase ?? null,
+    participantsAt: (i) => deckOf(i)?.participants?.length ?? 0,
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     /** cards a view sees as faces, at table i */
     facesAt(w, i) {
-      const s = dbg.a.scene();
-      const t = ids.tables[i].table;
-      const under = (id) => { for (let x = id; x; x = s.parents.get(x)) if (x === t) return true; return false; };
-      return cardIds(objects()).filter((id) => under(id) && shownAs(dbg[w], id) === "face");
+      const st = gStage(w, i);
+      return st ? cardIds(gameDoc(i)?.objects ?? {}).filter((id) => shownAs(st.debug, id) === "face") : [];
     },
     loaded(w) {
       const vp = dbg[w].viewport;
-      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
-      return { total: all.length, loaded: all.filter((id) => vp.contentOf(id)?.loaded).length };
+      const SEP = "\u001f";
+      const keyed = (n, id) => (n === 0 ? id : `${SEP}${n}${SEP}${id}`);
+      const all = [...Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].providerId !== "scene.link").map((id) => id)];
+      ids.tables.forEach((_, i) => { const st = gStage(w, i); const g = gameDoc(i); if (st && g) for (const [id, o] of Object.entries(g.objects ?? {})) if (o.kind !== "group") all.push(keyed(st.n, id)); });
+      return { total: all.length, loaded: all.filter((k) => vp.contentOf(k)?.loaded).length };
     },
-    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+    loading: (w) => { const st = [...Object.values(dbg[w].local.get().status ?? {}), ...ids.tables.flatMap((_, i) => Object.values(gStage(w, i)?.debug.local.get().status ?? {}))]; return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
     cam: (w) => dbg[w].viewport.getCamera(),
     /** put view w's camera somewhere (an orbit view, for a picture) */
     look(w, position, target) { apiOf(w).camera.set({ position, target }); return true; },
@@ -295,9 +317,11 @@ try {
     /** the use prompt's verbs in a view */
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
     /** the doc snapshot to publish: the scene, its containers and its files */
+    /** the docs to publish: the room, each game, their decks, and every doc's files */
     snapshot() {
-      const urls = [scene.url, ...decks(), ...Object.values(scene.doc().assets ?? {}).map((a) => a.url)].filter(Boolean);
-      return { scene: scene.url, holders: decks(), docs: Object.fromEntries(urls.map((u) => [u, portable(repo.handles.get(u).doc())])) };
+      const games = ids.tables.map((t) => t.game);
+      const urls = [scene.url, ...games, ...decks(), ...[scene.doc(), ...ids.tables.map((_, i) => gameDoc(i))].flatMap((d) => Object.values(d?.assets ?? {}).map((a) => a.url))].filter(Boolean);
+      return { scene: scene.url, games, holders: decks(), docs: Object.fromEntries([...new Set(urls)].map((u) => [u, portable(repo.handles.get(u).doc())])) };
     },
     objectsNamed: (n) => Object.entries(objects()).filter(([, o]) => o.name === n).map(([id]) => id),
   });

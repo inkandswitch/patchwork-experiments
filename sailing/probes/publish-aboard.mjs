@@ -48,6 +48,10 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 // shell the stage works these out from the registry; the probe page has none
 // that says where its plugins come from, so they're stated here.
 const PACKAGES = ["scene", "seats", "sailing", "tabletop", "card-table", "joints", "traversal"];
+// The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
+// from. (The boat lists the game's too, for now: a view offers the packages of the outermost doc only, so a
+// viewer arriving at the boat without seats or tabletop would never be asked for what her linked game runs.)
+const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
@@ -117,20 +121,22 @@ try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
   check("the start screen offers Ship at anchor", await until("templates('a').includes('ship-at-anchor')", 20_000), await P("templates('a')"));
   const ids = await P(`build({ title: ${J(TITLE)} })`, 120_000);
-  check("built through the start screen and the parts bin", !ids.error && ids.table && ids.board, ids);
+  check("built through the start screen and the parts bin", !ids.error && ids.table && ids.board && ids.link, ids);
   const s = await P("shape()");
-  check("every piece under the table, the table under the hull", s.pieces === 63 && s.piecesUnderTable === 63 && s.tableParent === ids.hull, s);
+  check("two docs: the boat holds one locked link to the game on the table, and none of its pieces or seats; the game every piece at its root", s.link?.parent === ids.table && s.link.locked && s.boatPieces === 0 && !s.boatSeats && s.pieces === 63 && s.piecesAtGameRoot === 63 && s.tableParent === ids.hull, { link: s.link, boatPieces: s.boatPieces, pieces: s.pieces, atRoot: s.piecesAtGameRoot });
   check("a secure deck", s.deckType === "secure-deck", s.deckType);
   check("it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", s.start === "seat" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, sail: s.sail, anchor: s.anchor, home: s.home });
-  check("each seat's view is in the table's frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera?.in === ids.table), s.seats);
+  check("the seats are the game's, their views in its root frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera && !x.camera.in), s.seats);
   // the scene is titled as asked; its deck by the game and the deck, never by the scene (tabletop/GAME-FORMAT.md)
   check(`titled “${TITLE}”, its deck “Lost Cities: Deck”`, s.title === TITLE && s.deckTitle === "Lost Cities: Deck", { title: s.title, deck: s.deckTitle });
   check("her companionway is under her, an exit that leads nowhere (\"Go below\"), the only exit; its hatch under it, shut", s.companionway?.parent === ids.hull && JSON.stringify(s.companionway.exit) === JSON.stringify({ verb: "Go below" }) && s.exits === 1 && s.hatch?.parent === ids.companionway && s.hatch.slide?.at === "closed", { companionway: s.companionway, hatch: s.hatch, exits: s.exits });
   check("everything loads", await until("loaded('a').loaded === __p.loaded('a').total", 120_000), await P("loaded('a')"));
   const snap = await P("snapshot()");
-  const assets = new Set(Object.values(snap.docs[snap.scene].assets ?? {}).map((a) => a.url));
-  const strays = Object.entries(snap.docs[snap.scene].objects).filter(([, o]) => o.kind !== "group" && !assets.has(o.sourceUrl)).map(([id]) => id);
-  check("every object shows one of the scene's own files", strays.length === 0, strays);
+  const strays = [snap.scene, snap.game].flatMap((u) => {
+    const assets = new Set(Object.values(snap.docs[u].assets ?? {}).map((a) => a.url));
+    return Object.entries(snap.docs[u].objects).filter(([, o]) => o.kind !== "group" && o.providerId !== "scene.link" && !assets.has(o.sourceUrl)).map(([id]) => `${u === snap.game ? "game" : "boat"}:${id}`);
+  });
+  check("every object shows one of its own doc's files (the link shows the game)", strays.length === 0, strays);
   snapshot = snap;
   await P("openB()");
   check("B arrives watching from a seat (view.start)", await until("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000));
@@ -154,7 +160,7 @@ else await publish(snapshot);
 
 // ─── publish the scene as it was before anyone sat ──────────────────────────
 async function publish(snap) {
-  const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES) };
+  const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES), [snap.game]: withPackages(snap.docs[snap.game], GAME_PACKAGES) };
   // where her companionway leads, when asked: its exit's `to`, and nothing else
   const exits = Object.entries(docs[snap.scene].objects).filter(([, o]) => o.traits?.[EXIT]);
   if (BELOW) {
@@ -175,7 +181,7 @@ async function publish(snap) {
     return b.stop(1);
   }
   if (DRY) {
-    console.log(`dry run: ${count} docs (the scene, its deck and ${count - 2} files; nothing published)`);
+    console.log(`dry run: ${count} docs (the boat, the game, its deck and ${count - 3} files; nothing published)`);
     return b.stop(0);
   }
   const { Repo, initSubduction } = await import("@automerge/automerge-repo");
@@ -197,10 +203,12 @@ async function publish(snap) {
     for (const o of Object.values(d.objects ?? {})) delete o.claims;
     return d;
   };
-  // files first, then the deck, then the scene, each pointing at the new urls
-  const files = Object.keys(docs).filter((u) => u !== snap.scene && u !== snap.deck);
+  // files first, then the deck, then the game, then the boat linking it, each pointing at the new urls
+  const files = Object.keys(docs).filter((u) => u !== snap.scene && u !== snap.deck && u !== snap.game);
   for (const u of files) renamed.set(u, (await repo.create2(revive(docs[u]))).url);
   if (snap.deck) renamed.set(snap.deck, (await repo.create2(rewrite(docs[snap.deck]))).url);
+  const game = await repo.create2(rewrite(unclaimed(docs[snap.game])));
+  renamed.set(snap.game, game.url);
   const scene = await repo.create2(rewrite(unclaimed(docs[snap.scene])));
   const made = [scene.url, ...renamed.values()];
   const glbs = files.map((u) => renamed.get(u));
@@ -214,13 +222,19 @@ async function publish(snap) {
     try {
       const got = (await within(30000, checker.find(url))).doc();
       let problem = !got || !Object.keys(got).length ? "empty" : null;
+      if (!problem && url === game.url) {
+        const cards = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.card"]).length;
+        if (packageProblems(got, GAME_PACKAGES).length) problem = `came back wrong: ${packageProblems(got, GAME_PACKAGES).join("; ")}`;
+        else if (cards !== 60) problem = `came back with ${cards} cards`;
+        else if (got.claims || Object.values(got.objects ?? {}).some((o) => o.claims)) problem = "came back with claims";
+      }
       if (!problem && url === scene.url) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
-        const under = Object.values(got.objects ?? {}).filter((o) => o.traits?.["tabletop.card"]).length;
+        const links = Object.values(got.objects ?? {}).filter((o) => o.providerId === "scene.link");
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
         else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
         else if (!hull) problem = "came back without the ship";
-        else if (under !== 60) problem = `came back with ${under} cards`;
+        else if (links.length !== 1 || links[0].sourceUrl !== game.url) problem = `came back without one link to the game (${links.map((l) => l.sourceUrl).join(", ")})`;
         else if (got.claims) problem = "came back with claims";
         else if ((Object.values(got.objects).find((o) => o.traits?.[EXIT])?.traits[EXIT].to ?? null) !== BELOW) problem = `came back with her companionway leading somewhere else than ${BELOW ?? "nowhere"}`;
       }
@@ -236,7 +250,7 @@ async function publish(snap) {
     console.error(`\nNOT verified: re-run, or raise --settle.`);
     return b.stop(1);
   }
-  console.log(`\n  scene  https://patchwork.inkandswitch.com/#doc=${scene.url}\n`);
+  console.log(`\n  scene  https://patchwork.inkandswitch.com/#doc=${scene.url}\n  game   https://patchwork.inkandswitch.com/#doc=${game.url}  (link it into the Quiet games room: publish-office.mjs --game ${game.url})\n`);
   return b.stop(0);
 }
 

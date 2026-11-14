@@ -2137,6 +2137,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     const ownEl = (el, parent) => {
       if (!live()) return el;
       own.els.add(el);
+      // (which stage it is: several docs' extensions share one view's DOM)
+      el.dataset.stage = String(n);
       // (the drawer stays outermost: an edge part started while it's open goes inside it)
       if (drawer.el.parentNode === parent) parent.insertBefore(el, drawer.el);
       else parent.append(el);
