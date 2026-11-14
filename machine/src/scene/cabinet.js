@@ -17,7 +17,7 @@ export const SCREEN_WIDTH = 0.72;
 // Each machine's picture as seen, at its usual size: Doom's 320x200, the Super NES's 256x224.
 const USUAL = { doom: [320, 200], snes: [256, 224] };
 
-const BODY = { width: 0.9, height: 1.75, depth: 0.7 };
+export const BODY = { width: 0.9, height: 1.75, depth: 0.7 };
 const SCREEN_Y = 1.3; // the screen's centre above the floor
 const BEZEL = 0.06; // round the screen
 const PROUD = 0.002; // the picture stands this far off the bezel

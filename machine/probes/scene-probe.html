@@ -35,8 +35,30 @@ const origWarn = console.warn, origError = console.error;
 console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
 console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
 
+// What the page plays, read from WebAudio itself (the extension has no
+// surface for probes): every context made, every panner, and every buffer
+// source started, with its context and how loud its buffer is.
+const audio = { contexts: [], panners: [], started: [] };
+{
+  const AC = window.AudioContext;
+  window.AudioContext = class extends AC {
+    constructor(...a) { super(...a); audio.contexts.push(this); }
+    createPanner() { const p = super.createPanner(); p.__ctx = audio.contexts.indexOf(this); audio.panners.push(p); return p; }
+  };
+  const start = AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start = function (...a) {
+    const b = this.buffer;
+    let peak = 0;
+    if (b) for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) peak = Math.max(peak, Math.abs(v));
+    audio.started.push({ ctx: audio.contexts.findIndex((c) => c === this.context), rate: b?.sampleRate ?? 0, frames: b?.length ?? 0, peak });
+    return start.apply(this, a);
+  };
+}
+// ?seats: the seats package too (probes/seats.mjs)
+const SEATS = new URLSearchParams(location.search).has("seats");
+
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", ...(SEATS ? ["../../seats/dist/index.js"] : []), "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -183,6 +205,51 @@ try {
       return { total: os.length, loaded: os.filter(([id]) => dbg[w]?.viewport.contentOf(id)?.loaded).length };
     },
     setCamera: (w, c) => dbg[w].viewport.setCamera(c),
+    // the seats probe: the parts bin's part, a file dropped on the port, the seats picker, the body, the camera, the seats' input docs, the sound
+    rom: () => rom.length,
+    async part(w, at) {
+      const host = dbg[w].host;
+      const api = host.running().map((r) => host.record(r.id)?.api).find((a) => typeof a?.part === "function");
+      return api.part("machine", at);
+    },
+    dropFile(w, name, x, y) {
+      const dt = new DataTransfer();
+      dt.items.add(new File([rom], name));
+      const canvas = dbg[w].viewport.canvas;
+      canvas.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    },
+    machineDoc: async (url) => { const d = (await net.a.find(url)).doc(); return { kind: d.kind ?? null, title: d.title, content: d.content ?? null }; },
+    pickSeat(w, sid) {
+      const select = hosts[w].querySelector("select.seats-pick");
+      select.value = sid;
+      select.dispatchEvent(new Event("change"));
+      return select.value;
+    },
+    seatOptions: (w) => [...(hosts[w].querySelector("select.seats-pick")?.options ?? [])].map((o) => [o.value, o.textContent]),
+    body: (w) => dbg[w].local.get().body?.id ?? null,
+    eye: (w) => dbg[w].viewport.camera.position.toArray(),
+    focus: (w) => rootOf(w).focus(),
+    async inputs(url) {
+      const s = (await net.a.find(url)).doc();
+      const out = [];
+      for (const [id, seat] of Object.entries(s.seats ?? {})) {
+        const d = (await net.a.find(seat.inputs)).doc();
+        let bits = 0, chunks = 0;
+        for (const b of Object.values(d?.chunks ?? {})) {
+          chunks++;
+          for (let i = 0; i + 1 < b.length; i += 2) bits |= b[i] | (b[i + 1] << 8);
+        }
+        out.push({ id, port: seat.port, by: seat.by ?? null, until: seat.until ?? null, chunks, bits });
+      }
+      return out;
+    },
+    audio: () => ({
+      contexts: audio.contexts.length,
+      panners: audio.panners.map((p) => ({ ctx: p.__ctx, at: [p.positionX.value, p.positionY.value, p.positionZ.value] })),
+      listeners: audio.contexts.map((c) => [c.listener.positionX.value, c.listener.positionY.value, c.listener.positionZ.value]),
+      started: audio.contexts.map((c, i) => { const s = audio.started.filter((x) => x.ctx === i); return { n: s.length, loud: s.filter((x) => x.peak > 0.001).length, rates: [...new Set(s.map((x) => x.rate))], rate: c.sampleRate }; }),
+    }),
+    viewers: { a: ana.url, b: ben.url },
     project: (w, p) => { const q = dbg[w].viewport.project(p); const r = dbg[w].viewport.canvas.getBoundingClientRect(); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible }; },
   };
   window.__ready = true;

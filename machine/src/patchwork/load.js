@@ -4,6 +4,7 @@
 // a viewer opens a machine: keep asking, and say what we're waiting for,
 // rather than fail on the first timeout.
 import { identify } from "../engine.js";
+import { content as doomContent, lumps } from "../doom.js";
 import { createSession } from "../host/host.js";
 import { CHECKPOINT_SECONDS } from "./datatype.js";
 
@@ -11,6 +12,8 @@ export const WASM = {
   doom: new URL("../../engines/doom/dist/doom.wasm", import.meta.url),
   snes: new URL("../../engines/snes/dist/snes.wasm", import.meta.url),
 };
+/** Doom's music player (doom-music.js). */
+export const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
 
 export const bytes = async (url, init) => {
   const r = await fetch(url, init);
@@ -70,6 +73,23 @@ function records(b) {
 }
 export const doomArgs = (b) => new TextDecoder().decode(records(b)[0]).split("\0").filter(Boolean);
 export const doomWads = (b) => records(b).slice(1);
+
+/**
+ * The game a file makes, or null: a Super NES ROM (.sfc, .smc) is its own
+ * content; an IWAD (.wad, "IWAD") boots Doom at its first map (E1M1, or
+ * MAP01 for a game without episodes), with `players` ports at `skill`.
+ * Anything else (a PWAD alone, another file) makes none. Pure.
+ * @returns {{ kind: "doom" | "snes", title: string, content: Uint8Array } | null}
+ */
+export function gameOf(name, raw, { players = 4, skill = 3 } = {}) {
+  const ext = /\.([^.]+)$/.exec(name ?? "")?.[1]?.toLowerCase() ?? "";
+  const base = (name ?? "").replace(/\.[^.]+$/, "") || "Game";
+  if (ext === "sfc" || ext === "smc") return raw?.length ? { kind: "snes", title: base, content: raw } : null;
+  if (ext !== "wad" || raw?.length < 12 || new TextDecoder().decode(raw.subarray(0, 4)) !== "IWAD") return null;
+  const episodic = lumps(raw).has("E1M1");
+  const args = ["-skill", String(skill), "-warp", ...(episodic ? ["1", "1"] : ["1"]), "-players", String(players)];
+  return { kind: "doom", title: `${base} · ${episodic ? "E1M1" : "MAP01"} · ${players}p`, content: doomContent({ wads: [raw], args }) };
+}
 
 /** How many ports people can play: Doom's from its start arguments, the Super NES's four through its multitap. */
 export function portsOf(kind, content) {
