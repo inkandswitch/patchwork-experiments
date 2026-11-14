@@ -124,7 +124,9 @@ run in every body (what runs is the doc's), and show nothing outside it.
 A **place** is not a type: it is the object given to a body's `enter` (a
 seat, a station), or null for "here". `view.start` is read on arrival, and
 the scene's package list must include its body's package. Prefs keep
-today's live rule, `local.prefs[k] ?? doc.view[k] ?? fallback`.
+today's live rule, `view.prefs[k] ?? doc.view[k] ?? fallback` (since step 10
+the viewer's keys are `api.view`'s, and a pref falls back to the calling
+stage's doc).
 
 ## 3. Attention, selection and handles
 
@@ -227,6 +229,11 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   table seats people, a level walks them, a ship, Cadboro Bay or a
   showcase names no body (Look). The inspector's Starts in offers Look (no
   key), Edit, then the bodies on offer.
+- **seat**'s ride (since step 12) is its doc's root, at the spot the seat
+  looks at, and it **tilts**: the camera moves with the table whole and its
+  up is the table's, so a seat at a table aboard rolls with it (the lead,
+  2026-11-13: "roll with the table; the boat is how the boat is"). Other
+  rides keep the world's up.
 - **walk**, one package's, replacing arena's and sailing's walkers. It
   starts at the eye, else the spawn; its floor is whatever the ray hits.
   (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as

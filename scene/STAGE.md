@@ -5,18 +5,23 @@ everything that adds to it (**extensions**). [DESIGN.md](DESIGN.md) says why;
 this says exactly what. It is plain data and functions throughout. No
 extension imports another, and the stage knows no extension by name.
 
-It describes the code as it is after build steps 1–8 of
+It describes the code as it is after build steps 1–12 of
 [COMPOSITION.md](COMPOSITION.md)'s build order: nearness, `api.dock`,
 selection and carrying, content kinds, seats in their own package, bodies
-and the held tool, the clock, and the end of activities (what runs is the
-doc's traits, nothing else) with undo of the stage's own edits. Where it is
-going is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
+and the held tool, the clock, the end of activities (what runs is the
+doc's traits, nothing else) with undo of the stage's own edits, the view
+split from the stage, and links, closed and then open and live (a scene doc
+placed in another opens a stage of its own: "Views, stages and links",
+below). Where it is going is [TOOLS.md](TOOLS.md) and
+[COMPOSITION.md](COMPOSITION.md).
 
 ## Words
 
 | Word | Means |
 |---|---|
-| **Stage** | The core: the doc, loading and building object content, rendering, picking, the camera rig, drawing layers, the input router with its body stack and held-tool slot, presence, claims, pose holds, the world clock, the drawer, lenses and the audience. It has no UI of its own. Its one opinion about input is the Edit body's: a click nobody else took selects (in Look, nothing does). |
+| **Stage** | The core, one per open doc: the doc, loading and building object content, presence, claims and pose holds on the doc's channel, the world clock, lenses, the audience, its extensions and the api each gets. It has no UI of its own. |
+| **View** | One per mounted tool, shared by every stage it opens: the DOM and edges, the viewport (rendering, picking, the camera rig, drawing layers), the input router with its body stack and held-tool slot, the drawer, the selection and hover (as paths), notices, prefs, and one presence session. Its one opinion about input is the Edit body's: a click nobody else took selects (in Look, nothing does). |
+| **Link** | An object whose source is a scene doc (`providerId: "scene.link"`): the view opens a stage for that doc, drawn where the link is, in the link's frame. Live without `at`; a pinned value with it (opened at step 13). |
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Part** | A `scene:part` plugin: something to put into a scene (a mast, a buoy, a target), offered in the editor's parts bin. |
@@ -37,13 +42,64 @@ going is [TOOLS.md](TOOLS.md) and [COMPOSITION.md](COMPOSITION.md).
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
 | **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
+## Views, stages and links
+
+A view shows one stage per open doc. The outermost doc's stage is the
+view's first; each **live link** (an object through the `scene.link`
+source, no `at`) to a doc that acts there opens another, its root under the
+link's node, in the link's frame (COMPOSITION.md §2, §7). Expansion
+(`stage/links.js`) is a pure function of the link graph: a live doc acts at
+one occurrence per view, the first in path order (shallowest, then the
+smallest link id where paths differ); a repeat identity on a path is closed
+`"cycle"`; a doc that can't be opened is closed `"unavailable"`; a live
+link inside a pin is held at the pin's `deps`, else closed `"unpinned"`. A
+closed, mirrored or pinned link is drawn as its hint (`api.link(id)` →
+`{ state, reason? }`; mirrors and pins open at step 13).
+
+- **One doc per extension.** An extension runs in a stage when that
+  stage's doc has one of its traits; a general one (no traits) runs once,
+  in the focus (the outermost, until Enter moves it). Everything an api
+  reads and writes is its stage's doc: `null` is that doc's root, `api.url`
+  its url, every id one of its own. No reference crosses docs.
+- **Frames.** Everything spatial in an api is in its stage's root frame,
+  through one choke point (`stage/scope.js`): `worldOf`, `box`, `sceneBox`,
+  `pick`, `ray`, `raycast`, `project`, `camera.*`, labels, world layers,
+  extents, and every event's `ray`, `hit` and widget. A frame is a
+  similarity: points by it, directions by its rotation, distances by its
+  scale. A hit on anything not of this doc is `{ id: null, point, normal,
+  distance }`; a hit inside one of this doc's links is the link.
+- **Paths.** The selection and hover are paths (the links from the
+  outermost in, then the object); each stage sees its element
+  (`api.view.get().selected`), and `api.view.select(target)` selects its
+  own target. One key grammar (`stage/paths.js`) names an object in the
+  viewport and an extension at the router: the outermost's ids are their
+  own, any other's `SEP n SEP id`.
+- **Input** goes a segment per stage on the hit's path, innermost first:
+  each its holders, nearest first, then its root's, out to the outermost
+  whatever the focus. A general part collects from every acting stage (the
+  input path's first), each item tagged with its `stage`, and runs a
+  command with `api.run({ stage, ext, command, target })`; `api.path()` is
+  the input path's stages (each `{ stage, scene, collect, context,
+  attention, look, run, nameOf }`), which the key map, the use prompt and
+  the menu walk innermost first.
+- **Channels.** Presence, claims and pose holds are each doc's, on its
+  channel, in its ids. Every stage of a view uses the view's one session.
+  The **page bus** delivers a broadcast to every other presence on the same
+  handle in the page (automerge-repo doesn't echo within a page), so two
+  views of one doc in one page hear each other; presences on different
+  handles are left to the network.
+- **What the outermost doc gives the view**: its atmosphere, `view.start`
+  (the body named may be any acting stage's: a room arrives in its linked
+  game's seat body), the camera's home, and prefs' fallback (a pref falls
+  back to the calling stage's doc).
+
 ## Three places for state
 
 | | Shared? | Lasts? | Read | Write |
 |---|---|---|---|---|
 | **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
 | **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
-| **Local** | no (this view) | no | `api.local.get()` | `api.local.swap(fn)` |
+| **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, focus, and the selection and hover as this stage's elements) | `api.local.swap(fn)`; `api.view.select(target)`, `api.setPref`, `api.notify` |
 
 (There is no fourth, private place yet: what is one viewer's alone, lasting
 and on all their devices. A keeper that needs one keeps it itself, as the
@@ -1183,7 +1239,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 
 | | Read by |
 |---|---|
-| `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
+| `update(scene, local, prev, view)` | the stage, once per UI flush when the doc, the stage's local state or the view (as this stage sees it, `api.view.get()`) changed; `prev` = `{ scene, local, view }`. Also when what's shown changed without any (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene`, `local === prev.local` and `view === prev.view`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name?, veil? }` | the stage (lenses combine in running order; later wins per field). `veil: true`: the stage draws its stand-in instead of the object's content. See "The veil" |
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
 | `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). `null`, or no extension answering: no stake. One that throws (`parties(scene)` or its function) can't be told, and the take-back is refused, as a throwing audience policy hides |
@@ -1515,6 +1571,10 @@ atmosphere() → null | {
 | `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
+| `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages |
+| `stage/paths.js` | the key grammar (a stage's object in the viewport, a stage's extension at the router) and a stage's element of a path (pure) |
+| `stage/scope.js` | one stage's view of the viewport: its keys and its frame, the one choke point every spatial call goes through; similarities and their conversions (pure parts exported) |
+| `stage/links.js` | what a link is, and expansion (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the body stack, the held tool, popovers, lock, the ladder, keys, menu, cursor |
 | `stage/pointer.js` | the pointer lock model: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused (pure) |
@@ -1575,7 +1635,9 @@ taken out. It keeps the following:
   leaves every body over the base, then replaces it (the stage's Look or
   Edit).
 
-**Presence** (`createPresence({ handle, viewer })`):
+**Presence** (`createPresence({ handle, viewer, session })`; the page bus,
+`pageBus(handle, receive)`, delivers what it broadcasts to every other
+presence on the same handle in the page):
 - **messages** (on `handle.broadcast`):
   - `scene:presence` carries `{ session, viewer, seq, at, keys }` or
     `{ session, bye: true }`;

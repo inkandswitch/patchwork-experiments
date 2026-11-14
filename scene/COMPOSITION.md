@@ -47,7 +47,12 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–7 have since been built (Build order, below).*
+Steps 1–12 have since been built (Build order, below). Since step 12 the
+stage composes docs: Lost Cities aboard is two docs (the boat, with a
+locked link to the game on its card table), and the Quiet games room links
+its games, its Lost Cities table the same game doc as the boat's. What
+follows is kept as the record of why; where it still holds, the step that
+left it says so.*
 
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
 (`src/stage/stage.js:336`). Every per-object table is keyed by a doc-local
@@ -79,7 +84,8 @@ and an id-agnostic viewport, router and `ride.js`.
 **One real hazard.** With a game open aboard and alone, a seat claim from
 one reads as lapsed in the other, because presence runs on one handle. Two
 views in one page never hear each other: automerge-repo doesn't echo a
-broadcast within a page (`handle-registry.ts:376-381`).
+broadcast within a page (`handle-registry.ts:376-381`). *Solved at step 12
+by the page bus (section 6).*
 
 ## 1. What a link is
 
@@ -523,7 +529,15 @@ stays where it was put.
 has G open alone. All three run a stage for G on G's channel. Ana's p1 and
 Ben's p2 are both live for everyone, and all three keepers release the same
 keys. X heels and Y doesn't; G can't tell. X's storm can't scatter Y's
-cards, and a screen in Y can't hide Ana's hand.
+cards, and a screen in Y can't hide Ana's hand. *Built and probed*
+(`sailing/probes/links-run.mjs`, 20/20): one page, one repo, three views
+(the room, the boat, G alone) sharing G's one handle, so only the page bus
+carries G's channel between them; Ana at p1 in the room and Ben at p2
+aboard, each hearing the other two; the secure deck dealt, each seeing only
+their own hand's faces and Cara neither; each plays and draws through their
+own room's or boat's key map; with her world running G's table leans up to
+9.3° in Ben's view and not at all in Ana's or Cara's, and Ben's camera's up
+is the table's.
 
 ## Invariants
 
@@ -609,8 +623,39 @@ ships alone and proves something.
    examples republished. *Begun ahead of step 8:* see TOOLS.md step 9.
 10. **Split View from Stage, with one stage**: `api.view` with the body
     stack, held tool, focus and selection; the session in the view.
-    *Proves:* suites pass; the I1 harness exists.
+    *Proves:* suites pass; the I1 harness exists. *Built:* `src/stage/view.js`
+    is the view: the mount, the viewport, the router, the camera and its
+    saving, the body stack and the held tool, notices, prefs, the drawer, and
+    the selection and hover as **paths**; `createStage({ handle, view, n,
+    path, frame, under, general })` is a stage. `api.view` is `get()` (the
+    view as this stage sees it: the selection and hover its element of their
+    paths, the body's and held tool's owner its own extension id where they
+    are its own), `watch`, `select(target)`; `api.local` keeps `running`,
+    `status`, `edits`, `clock`, `packages` and extensions' keys. `update`
+    is `update(scene, local, prev, view)` with `prev.view`, and the command
+    context carries `view`. One key grammar (`src/stage/paths.js`) names a
+    stage's object in the viewport and a stage's extension at the router:
+    the outermost's ids are their own, any other's `SEP n SEP id`, injective
+    whatever a doc puts in its ids. `src/stage/scope.js` is the frame choke
+    point: a stage's ids and frame onto the viewport, every spatial call
+    through it (boxes in the stage's own frame, by premultiplying each body's
+    matrix; "not mine" is `id: null`); the viewport keeps groups and material
+    rules per stage, and layers and labels may hang under a node. Every
+    event reaches a stage's input, session, body or tool in its frame. The
+    I1 harness is `src/stage/one-doc.test.js` (`src/test/spy.js`).
 11. **Links, closed only**: the `scene.link` source, `links.js` and I3.
+    *Built:* `expand(root, docOf, { budget })` as section 7 says, the
+    closed reasons exactly three; inside a pin a live link is held at the
+    pin's `deps` (a pinned link's own `deps` else the pin's). `scene.link`
+    is a `scene:source` with `content: "scene"` for the `scene` datatype; an
+    object through it is a link, with no render doc, routed `"scene"` at sync
+    and drawn as its hint. Heads make it a pinned value. Both `url ===
+    handle.url` checks went; the add part still refuses a scene in itself
+    live (it would only be closed). I3 (`links.test.js`): every graph on 2
+    docs with up to two links per ordered pair and an unavailable doc,
+    every graph on 3 docs (one live or pinned link per ordered pair), every
+    live graph on 4 docs, and every subset of a pin's deps, each over every
+    arrival order.
 12. **Links, open and live**: child stages, path keys in `viewport.js`, one
     frame choke point (I7), segments and `collect` on the path (I8),
     channels and the page bus (I5), audience per stage (I4), each doc's
@@ -618,7 +663,40 @@ ships alone and proves something.
     its own doc, cards carried without entering G, and G in two scenes, in
     a probe. The choke point can't catch code reading three.js
     `matrixWorld` directly (`dimensions.js`, camber's dressing); those need
-    an audit.
+    an audit. *Built:* the view expands the outermost doc's links whenever a
+    doc changes or a linked doc arrives (`relink`), and opens a stage for
+    each live doc where it acts, keyed by URL, its root under the link's
+    node, its frame the link's drawn placement composed up the path; an
+    acting occurrence that moves closes its stage and opens another (its
+    claims go: the "acting occurrence can move" cost). A host draws an open
+    link as its doc, else as its hint; `api.link(id)` says which. General
+    extensions run in the focus (the outermost) only. The chain is a
+    segment per stage on the hit's path, innermost first; a general part
+    collects from every acting stage (the input path's first), items tagged
+    with `stage`, and `api.run({ stage, … })` runs in that stage; `api.path()`
+    gives the input path's stages, and the key map, use prompt and menu go a
+    stage at a time (`keymap.js` `segmentsOf`). Presence, claims and holds
+    are per doc; the **page bus** (`presence.js` `pageBus`) delivers each
+    broadcast to every other presence on the same handle in the page (a
+    copy, a microtask later), which is exactly where automerge-repo doesn't
+    echo; presences on different handles are left to the network, so
+    nothing is heard twice. One session per view, rotated on bfcache. Each
+    stage has its clock. A ride may `tilt` (roll and pitch followed, the
+    camera's up its object's), and the seat body rides its doc's root
+    tilting, so a seat aboard rolls with its table (the lead's call: "roll
+    with the table; the boat is how the boat is"). Retired with it:
+    tabletop's `placeLayout`, the `view` flag and title guard, and "Sit at
+    this table" (a game part makes a game doc and links it, locked);
+    seats' `lay` renaming, `seatIds`, `seatsAround`, `roster.around` and
+    the picker's groups (the picker follows attention); card-table's keeper
+    waits on its doc's seats; sailing's prefix test (`sailingThing`) and
+    "not hers" in `boardsOn`, and `seatedView` asks whether the current
+    body is another extension's. *Proved* by `sailing/probes/links-run.mjs`
+    (below, worked example 3). Not done here: mirrors and pins open (13),
+    Enter/Leave (14); the packages card shows the focus doc's asks only; a
+    hidden link hides only its hint (its doc's stage still draws); "who's
+    here" shows people at a linked placement as "look" to a viewer of the
+    game alone (the body chip publishes on the focus doc's channel).
 13. **Pins and mirrors** (I6), which never compute. *Proves:* example 2; a
     part repeated live.
 14. **Edit in context**: Enter, Leave, link rows in the outline and

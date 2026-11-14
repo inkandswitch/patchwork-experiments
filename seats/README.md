@@ -13,13 +13,15 @@ people lists this package in its `packages`, like any other.
 
 - **The trait**, on the scene: `seats`,
   `{ [seatId]: { name, player: <viewer> | null, camera?: { position, target, in? } } }`.
-  `in` is the object the camera is given in (a table aboard a ship); absent,
-  the world. Nothing outside this package reads or writes it. The plugin
+  A seat's camera is in its doc's root frame; `in` names an object of the
+  doc it is given in instead. A game is a doc of its own (scene's
+  COMPOSITION.md): linked onto a table aboard, its root is the table. Nothing outside this package reads or writes it. The plugin
   describes it (*Seats*, a map of entries), so the inspector can add, name
   and remove seats.
 - **The picker**, over the view at the top right: pick a seat, or watch.
-  Seats at more than one table (several frames) are grouped by table, each
-  group named for the object their views are in (`pickerGroups`).
+  It follows attention: shown while you sit at this doc's table, else (sitting
+  nowhere) while you look at it. A room of linked games shows the picker of
+  the one you're at; each game's seats are its own doc's.
 - **Who sits where is the doc's** (`player`) and lasts. Whether that player
   is here now is a claim on the scene, `seat:<id>` (scene/STAGE.md,
   "Claims"): it lapses when they go, so a seat whose player has gone can be
@@ -33,10 +35,12 @@ people lists this package in its `packages`, like any other.
   own offers *Stand up*. The verb says `reach: true`: the stage measures
   reach from the body's eye against its reach (scene/TOOLS.md §4).
 - **The seat body** (`src/body.js`), contributed as `bodies` (scene/TOOLS.md
-  §4): sitting in a seat with a camera puts the view there, through the
-  object the camera is `in` as drawn now, and its ride (the body's, the only
-  one that applies while seated) is that object at the spot the seat looks
-  at, so the table holds still in front of you however the ship rolls. It
+  §4): sitting in a seat with a camera puts the view there (in the doc's
+  root frame, which the stage takes to the world), and its ride (the body's,
+  the only one that applies while seated) is the doc's root (or the object
+  its camera is `in`) at the spot the seat looks at, tilting: a game linked
+  onto a table aboard rolls with the table, and the view with it (the boat
+  is how the boat is). It
   reserves no keys (D draws), locks nothing, reaches 2 m, and needs a seat
   (`here: false`: the body chip doesn't offer it). Sitting pushes it over
   whatever body you're in (walking her deck, or Look); standing up, the
@@ -47,9 +51,9 @@ people lists this package in its `packages`, like any other.
 
 | | |
 |---|---|
-| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, around(scene, ids) → [{ id, name, viewer \| null }] }`. All but `who` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `around` is the seats at the table these objects are at (a deck's cards): for each, the seats in the nearest frame up its parents that is some seat's (`camera.in`), else those in the world. With one table that is every seat; with several, each its own, so a keeper waits only on its own table's players. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone" |
+| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. All but `who` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone" |
 | `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). A name tag goes on each, and a look at one is a look at its seat |
-| `lay(d, seats)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty, and returns `{ [given id]: id written }`. The map is made once; a scene that has seats gets these added: a seat whose camera's frame is gone takes the new view, and an id still at another table is written as `<id>-2`, `-3`… (a second table in one room). Setup code calls it instead of writing seats, and names its hands by the ids it returns |
+| `lay(d, seats)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty; a seat already there keeps its player and takes the new name and view. A game is a doc of its own, so its seats are its doc's: a second game is a second doc, with its own `p1` and `p2` |
 
 These are also listed in scene/STAGE.md, "Conventions", with the keepers'.
 Where this package isn't loaded there is no roster: a hand is nobody's and

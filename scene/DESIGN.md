@@ -64,6 +64,19 @@ those come from; a viewer who lacks one is offered it, and it loads only on
 a click. Nothing in the stage knows a domain: it has no idea what a card,
 a ship or a door is.
 
+### Views, stages and links
+
+What the stage holds splits two ways. The **view** is the viewer's, one per
+mounted tool: the canvas and the camera, the router with its body stack and
+held tool, the selection and hover, prefs and notices. A **stage** is a
+doc's, one per open doc: its snapshot, content, extensions, channel,
+claims, clock and audience. A **link** (an object whose source is a scene
+doc) places one world inside another: the view opens a stage for the
+linked doc, drawn where the link is, in its frame, so the game never knows
+it's on a ship and the ship never reads into the game. The only couplings
+across a link are space (rays, hits, frames, rides) and the view's input
+path; an extension sees one doc. See [COMPOSITION.md](COMPOSITION.md).
+
 ### Bodies, tools and the clock
 
 Three ideas replace modes, so that playing and editing are not states a
@@ -191,17 +204,21 @@ editor in the drawer.
 
 ## Where today's code stands
 
-Build steps 1–8 of [COMPOSITION.md](COMPOSITION.md)'s order are built:
+Build steps 1–12 of [COMPOSITION.md](COMPOSITION.md)'s order are built:
 nearness in the chain, the drawer, selection and carrying by trait, content
-kinds, seats as a package, bodies and the held tool, the clock, and the end
+kinds, seats as a package, bodies and the held tool, the clock, the end
 of activities (traits alone decide what runs; chrome follows attention;
-`view.start`; undo of the stage's own edits).
+`view.start`; undo of the stage's own edits), the view split from the
+stage, and links: a scene doc placed in another opens a stage of its own,
+sharing the one view, in the link's frame, on its own channel. A card game
+on a ship's table is its own doc, linked onto the table; the same game doc
+linked into a still room is the same game, played by one person in the
+room and another aboard, its table heeling only aboard.
 [STAGE.md](STAGE.md) is the contract for all of it. The stage is
 `src/stage/`; the shared parts are `src/parts/`; the other packages
 (tabletop, seats, dice, bag, keep, card-table, sailing, joints, traversal,
 walk, arena, doom) are top-level folders of this repo, each standalone.
 
-Next are the notes catching up (step 9: examples republished) and then
-scenes inside scenes: one stage per open document, sharing one view, so a card game on a
-ship's table is its own doc, linked onto the table
-([COMPOSITION.md](COMPOSITION.md)).
+Next are pins and mirrors (a value of a doc, and a live doc seen twice in
+one view), editing in context (Enter, Leave), extract and bundle, and named
+frames ([COMPOSITION.md](COMPOSITION.md), steps 13–16).

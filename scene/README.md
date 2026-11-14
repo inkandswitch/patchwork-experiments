@@ -733,6 +733,19 @@ MaterialRule = {
   with no saved camera starts at `view.start.home` (set with *Set home view*),
   else framing what's there. Orbiting never writes the doc.
 
+### Links: a scene in a scene
+
+An object whose source is another scene doc, through the scene's own
+`scene.link` source (`content: "scene"`), is a **link**: no render doc,
+and the view opens a stage for the linked doc, drawn where the link is, in
+its frame (COMPOSITION.md; STAGE.md, "Views, stages and links"). Dropping a
+scene doc adds one, live; a URL with heads adds a pinned value (opened at
+step 13). The host's facts about it are its own fields: its transform,
+parent, `locked`, and `hint.bounds`, the room it gives the linked doc, drawn
+while the link is closed. The linked doc runs its own extensions on its own
+channel, and nothing of the host reads into it. A game part does this for
+you: Lost Cities dropped on a table makes a game doc and links it there.
+
 ### Fixed versions (`at`)
 
 An object normally shows the latest version of its source. With `at` set it
