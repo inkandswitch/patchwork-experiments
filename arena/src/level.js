@@ -1,7 +1,7 @@
 // What a level is made of: a few kinds of block, each a GLB drawn here, and
 // the sample arena as a list of where they go. Pure; the scene shows the GLBs
 // as ordinary objects, so a level is edited like any other scene. The level's
-// look (sky, fog, sun) is play.js's atmosphere.
+// look (sky, fog, sun) is play.js's atmosphere ambient.
 
 // ─── painting ───────────────────────────────────────────────────────────────
 //
