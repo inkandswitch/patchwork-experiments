@@ -109,7 +109,17 @@ try {
     },
     canvas: () => { const r = v.canvas.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
     item: (id) => { const e = host.querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
-    bin: () => [...host.querySelectorAll('section[data-panel="parts"] .part')].map((e) => e.dataset.part),
+    bin: () => [...host.querySelectorAll('[data-panel="parts"] .part')].map((e) => e.dataset.part),
+    /** the clock chip: its text and its toggle (Pause / Resume: anyone's) */
+    clockChip: () => { const t = host.querySelector(".clock-toggle"); return t && !t.closest("[hidden]") ? { text: host.querySelector(".clock-text")?.textContent ?? "", label: t.textContent.trim() || t.getAttribute("aria-label") || t.title, ...P.rectOf(t) } : null; },
+    /** a centred rect of an element */
+    rectOf: (sel) => { const e = typeof sel === "string" ? host.querySelector(sel) : sel; if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    /** the body chip, its menu's item starting `label`, and the body this view is in */
+    chip: () => P.rectOf(".body-chip"),
+    chipItem: (label) => P.rectOf([...host.querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)) ?? null),
+    body: () => dbg.local.get().body?.id ?? null,
+    /** a toolbar command's button (the toolbar is Edit's) */
+    tool: (id) => P.rectOf(`.toolbar [data-command="${id}"]`),
     ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
     selected: () => dbg.local.get().selected ?? null,
     cam: () => v.getCamera(),

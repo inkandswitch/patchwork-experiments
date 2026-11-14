@@ -11,18 +11,21 @@
 // Mounts the BUILT scene tool with the BUILT sailing plugins and camber's
 // BUILT plugins (camber/patchwork/dist, served at /camber/: a probe may
 // borrow another package's build at dev time; no package imports another).
-// The scene starts with a sea and nothing else. Then, as someone would:
+// The scene starts with a sea and nothing else, and people in Edit (a scene
+// made new). Then, as someone would:
 // - adds one of camber's example hulls (camber's scene:source builds its GLB
 //   in the page, in the floating frame: bow +X, waterline y = 0, with
 //   extras.ship), scaled to a yacht's size, and gives it the Ship trait with
 //   no frame: her frame comes from the GLB's extras.ship.forward / up;
-// - drags the wheel, the windlass, the ladder and the mast from the parts
-//   bin onto her deck (real HTML drags into the view): each goes under the
-//   hull, squared to her bow, upright, on her deck;
-// - plays: she floats at her waterline and sails bow first (her velocity
-//   along the hull's +X, the way camber drew her bow) under the sail the
-//   mast brought;
-// - comes aboard: stands on her deck, and the use prompt reaches the wheel.
+// - pauses the world (the clock chip) and drags the wheel, the windlass, the
+//   ladder and the mast from the parts bin (a drawer tab, from the toolbar)
+//   onto her deck (real HTML drags into the view): each goes under the hull,
+//   squared to her bow, upright on her deck;
+// - resumes the world: she floats at her waterline and sails bow first (her
+//   velocity along the hull's +X, the way camber drew her bow) under the
+//   sail the mast brought;
+// - leaves Edit for Look on the body chip, lets the last part go (Esc), and
+//   comes aboard: stands on her deck, and the use prompt reaches the wheel.
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
@@ -100,6 +103,10 @@ async function dragPart(part, to) {
 
 try {
   check("page set up", (await loads("window.__ready === true", 30_000)) && (await P("errors")).length === 0, await P("errors"));
+  // the parts bin is a drawer tab opened from the toolbar, which is Edit's: the scene starts people in Edit
+  check("the scene starts people in Edit", (await loads("window.__p.body() === 'edit'", 10_000)), await P("body()"));
+  const partsBtn = (await loads("!!window.__p.tool('parts')", 10_000)) && (await P("tool('parts')"));
+  if (partsBtn) await b.click(partsBtn.x, partsBtn.y);
   await loads("window.__p.bin().includes('sailing.mast')", 10_000);
   const bin = await P("bin()");
   check("editing: the parts bin runs and offers sailing's parts", ["sailing.mast", "sailing.wheel", "sailing.windlass", "sailing.ladder"].every((id) => bin.includes(id)), bin);
@@ -127,6 +134,11 @@ try {
   };
   const inBody = (body, p) => { const d = sub(p, body.origin); return [dot(d, body.stbd), dot(d, body.up), dot(d, body.aft)]; };
 
+  // rigging her is done with the world paused (the clock chip's Pause, anyone's: scene/TOOLS.md Decisions 5):
+  // editing never stops her, so at sea she'd pitch and heel under the pointer between a part's aim and its drop
+  const pauseBtn = (await loads("window.__p.clockChip()?.label === 'Pause'", 15_000)) && (await P("clockChip()"));
+  if (pauseBtn) await b.click(pauseBtn.x, pauseBtn.y);
+  check("the world paused to rig her (the clock chip)", !!pauseBtn && (await loads("/Paused/.test(window.__p.clockChip()?.text ?? '')", 5000)), await P("clockChip()"));
   // looking down at her from over her starboard quarter
   const m0 = await P(`worldOf('${hull}')`);
   const B0 = bodyOfHull(m0);
@@ -168,7 +180,7 @@ try {
     parts[name] = { id: r.id, added: r.added, hit, ring: r.ring };
     const landed = r.ring?.at?.transform?.position;
     // where it lands is where the pointer's pick hit (the aim: near the spot wanted, as near as her drawn lines let a pointer get)
-    check(`${name}: dragged from the bin onto her deck, it goes under her hull where the pointer hit, and is selected`, !!r.id && hit?.id === hull && doc.objects[r.id]?.parent === hull && (await P("selected()")) === r.id && !!landed && !!aim && Math.hypot(...landed.map((v, i) => v - aim.local[i])) < 2e-3 && aim.d < 0.05, { local: r3(local), aimedAt: r3(aim?.local), landed: r3(landed), parent: doc.objects[r.id]?.parent });
+    check(`${name}: dragged from the bin onto her deck, it goes under her hull where the pointer hit, and is selected`, !!r.id && hit?.id === hull && doc.objects[r.id]?.parent === hull && (await P("selected()")) === r.id && !!landed && !!aim && Math.hypot(...landed.map((v, i) => v - aim.local[i])) < 2e-3 && aim.d < 0.05, { local: r3(local), aimedAt: r3(aim?.local), landed: r3(landed), snapped: r.ring?.snapped ?? null, parent: doc.objects[r.id]?.parent, selected: await P("selected()"), id: r.id });
   }
   report.ids = { hull, ...Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, v.id])), rig: await P(`byName("Boom and sail")`), anchor: await P(`byName("Anchor")`) };
   const { mast, wheel, windlass, ladder, rig } = report.ids;
@@ -192,7 +204,8 @@ try {
       const w = await P(`worldOf('${parts[name].id}')`);
       const up = col(w, 1), fwd = col(w, 2).map((v) => -v); // a part's bow is its −Z, as the ship's
       placed[name] = {
-        tilt: deg(Math.acos(Math.min(1, dot(unit(up), [0, 1, 0])))),
+        // upright on her deck: along her up (she floats, so her deck is rarely level with the world)
+        tilt: deg(Math.acos(Math.min(1, dot(unit(up), body.up)))),
         scale: n2(len(up)),
         toBow: deg(Math.acos(Math.max(-1, Math.min(1, dot(unit([fwd[0], 0, fwd[2]]), unit([body.bow[0], 0, body.bow[2]])))))),
         inBody: r3(inBody(body, [w[12], w[13], w[14]])),
@@ -220,6 +233,9 @@ try {
   }
 
   // ─── playing: she floats, and sails bow first ────────────────────────────
+  const resumeBtn = await P("clockChip()");
+  if (resumeBtn?.label === "Resume") await b.click(resumeBtn.x, resumeBtn.y);
+  check("rigged, the world runs again (the clock chip's Resume)", await loads("window.__p.clockChip()?.label === 'Pause'", 5000), await P("clockChip()"));
   // (no Play to switch to: sailing has run since her traits arrived, editing included)
   check("sailing runs, and this view simulates", (await loads("!!window.__p.ctx() && window.__p.simulating()", 15_000)) === true, await P("running()"));
   check("she's a ship to the sim: helm, sail, anchor and ladder found aboard her", await until(`(() => { const s = window.__p.stations('${hull}'); return s && s.helm === '${wheel}' && s.sail === '${rig}' && s.anchor === '${windlass}' && s.ladder === '${ladder}'; })()`, 5000), await P(`stations('${hull}')`));
@@ -269,6 +285,16 @@ try {
 
   // ─── aboard: on her deck, and the wheel ──────────────────────────────────
   {
+    // rigged: out of Edit (where a click selects her: scene/TOOLS.md Decisions 6) into Look, where a click comes aboard
+    const chip = await P("chip()");
+    if (chip) await b.click(chip.x, chip.y);
+    const lookItem = (await loads("!!window.__p.chipItem('Look')", 5000)) && (await P("chipItem('Look')"));
+    if (lookItem) await b.click(lookItem.x, lookItem.y);
+    check("done rigging, Look on the body chip", (await loads("window.__p.body() === 'look'", 5000)), await P("body()"));
+    // the last part dragged is still selected (a selection outlives the body: TOOLS.md Decisions 6), and attention is
+    // the selection if any (scene.use): Esc lets it go, so the look, not the mast, is what the use prompt follows
+    await b.key("Escape");
+    check("Esc lets the last part go: nothing selected", await until("window.__p.selected() == null", 1000), await P("selected()"));
     await b.click(...Object.values(await P("canvasCentre()")));
     check("a click comes aboard: on her deck, playing", await until(`window.__p.me()?.playing === true && window.__p.me()?.on === '${hull}'`, 5000), await P("me()"));
     // stand amidships, to starboard of the mast, looking forward
@@ -294,9 +320,11 @@ try {
     await P(`place('${hull}', [${wIn[0]}, ${wIn[1] - 0.6}, ${wIn[2] + 0.9}], 0, -0.45)`);
     await b.rest(600);
     const aim = await P(`aimAt('${wheel}')`);
-    if (aim) { await b.move(aim.x, aim.y); await b.rest(200); }
+    // (a pixel off first: on a simulated clock the same look aims at the same pixel, and a move to where the
+    // pointer already is fires no pointermove, so the look wouldn't be taken again: sailing-run.mjs pointAt)
+    if (aim) { await b.move(aim.x + 1, aim.y); await b.move(aim.x, aim.y); await until("window.__p.verbs().some((v) => v.command === 'helm')", 1000); }
     const verbs = await P("verbs()");
-    check("at the wheel, the use prompt offers the helm", !!aim && verbs.some((v) => v.command === "helm" && !v.disabled), { aim, verbs, hovered: await P("hovered()"), me: await P("me()"), asked: r3([wIn[0], wIn[1] - 0.6, wIn[2] + 0.9]) });
+    check("at the wheel, the use prompt offers the helm", !!aim && verbs.some((v) => v.command === "helm" && !v.disabled), { aim, verbs, hovered: await P("hovered()"), wheel, named: await js(`(() => { const d = window.__p.doc(); const h = window.__p.hovered(); return h && { name: d.objects[h]?.name, traits: Object.keys(d.objects[h]?.traits ?? {}) }; })()`), me: await P("me()"), asked: r3([wIn[0], wIn[1] - 0.6, wIn[2] + 0.9]) });
     await press("f");
     await b.rest(300);
     check("F takes the helm: standing at the wheel", (await P("me()"))?.station === wheel, await P("me()"));
@@ -324,6 +352,7 @@ try {
       for (let k = 0; k < 6; k++) {
         aimB = await P(`aimNearest('${rig}')`);
         if (!aimB) break;
+        await b.move(aimB.x + 1, aimB.y);
         await b.move(aimB.x, aimB.y);
         await b.rest(120);
         verbsB = await P("verbs()");

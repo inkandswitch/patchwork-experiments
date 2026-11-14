@@ -37,7 +37,7 @@
 //     and D walk), and S and D walk; with the table in her cockpit the
 //     mainsheet is in reach from its stand spot and offers F; the body chip's
 //     Leave puts A back in the seat view (Escape never leaves a body);
-// 10. walking up to her own tray (from orbit, Enter): F sits A down (the seat
+// 10. walking up to her own tray (from Look, Enter): F sits A down (the seat
 //     body over "aboard", the walker waiting); F at it again (the seats'
 //     "Stand up") pops the seat: walking on her deck beside the table and
 //     facing it, the seat still A's; F once more, back in the seat view;
@@ -534,7 +534,7 @@ try {
   // ── 10: sitting down from her deck, and standing up (the seat body over "aboard") ──
   {
     await P("focus('a')");
-    // off the seat (the chip's Leave: the seat stays A's), then aboard from orbit
+    // off the seat (the chip's Leave: the seat stays A's), then aboard from Look
     await leaveBody("a", "Seated");
     check("10: the chip's Leave stands A up from the seat into Look, the seat still A's", (await P("body('a')")).id === "look" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
     await b.key("Enter");
