@@ -170,6 +170,9 @@ describe("the toolbar is one row at any width", async () => {
     const bar = rule((s) => s.endsWith(".toolbar"));
     expect(bar.body).toMatch(/flex-wrap:\s*nowrap/);
     expect(bar.body).toMatch(/overflow-x:\s*auto/);
+    // no scrollbar to come and go with the commands on offer (it would change the bar's height)
+    expect(bar.body).toMatch(/scrollbar-width:\s*none/);
+    expect(rule((s) => s.includes("::-webkit-scrollbar"))?.body).toMatch(/display:\s*none/);
   });
   it("its row doesn't wrap, and its controls keep their size", () => {
     expect(rule((s) => s.endsWith(".toolbar .tools")).body).toMatch(/flex-wrap:\s*nowrap/);

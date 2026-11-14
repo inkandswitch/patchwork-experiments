@@ -172,6 +172,18 @@ describe("scene.menu", () => {
       expect(labels()).toEqual(["Paste", "Red", "Blue"]);
     });
 
+    // A right-click with no hover before it (a probe's, a touch's long press,
+    // or within one frame of moving there): the press is where the look is,
+    // so the menu is the object's under it, not the scene's.
+    it("a right-click on an object with no hover before it opens that object's menu", async () => {
+      s.debug.viewport.pick = () => ({ id: "a", point: [0, 1, 0], normal: [0, 1, 0], distance: 3 });
+      expect(s.local.get().hovered ?? null).toBe(null);
+      s.pointer("pointerdown", 20, 20, { button: 2, buttons: 2 });
+      s.pointer("pointerup", 20, 20, { button: 2 });
+      expect(el()?.querySelector(".menu-title")?.textContent).toBe("Hull");
+      expect(labels()).toEqual(["Poke", "Locked", "Paste", "Red", "Blue"]);
+    });
+
     it("closes when what it was opened on is removed", async () => {
       open();
       s.change((d) => {

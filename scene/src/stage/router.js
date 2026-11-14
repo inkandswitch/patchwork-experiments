@@ -396,6 +396,10 @@ export function createRouter(o) {
     gesture = g;
     cancelHover();
     const ev = make("press", e);
+    // what is pressed is where the look is: the hover a frame would have
+    // brought (a touch has none before it), so the look, the use prompt and
+    // a menu from this press all name the thing under it
+    o.onHover?.(ev);
     const r = dispatch("press", ev);
     if (gesture !== g) return; // something in press tore it down
     if (r) {

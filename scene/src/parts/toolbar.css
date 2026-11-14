@@ -2,18 +2,25 @@
    .toolbar). Buttons and toggles use the stage's .button primitive. */
 
 /* One row, whatever the width: in a narrow view it scrolls sideways rather
-   than wrapping to a second row, so the canvas under it keeps its height. */
+   than wrapping to a second row, so the canvas under it keeps its height.
+   No scrollbar is drawn (a horizontal one would come and go with the
+   commands on offer and change that height after all); the row scrolls by
+   wheel or trackpad, and every command is in the menu too. */
 .scene-stage .toolbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   align-items: center;
   justify-content: space-between;
   gap: var(--studio-space-xs, 0.375rem);
   padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
   border-bottom: 1px solid var(--scene-border);
   background: var(--scene-bg);
+}
+
+.scene-stage .toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .scene-stage
