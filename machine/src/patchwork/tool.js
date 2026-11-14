@@ -11,6 +11,7 @@ import { audio } from "./audio.js";
 import { WASM, bytes, load } from "./load.js";
 import { traced } from "./traced.js";
 import { CHECKPOINT_SECONDS } from "./datatype.js";
+import { quietClock } from "./quiet.js";
 import css from "./tool.css?inline";
 
 const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
@@ -135,17 +136,26 @@ export default function MachineTool(handle, element) {
     let watching = 0;
     let sound = null;
 
-    // Nobody holds a port: time stands still where the last player left it,
-    // so nobody comes back to hours of an empty world to catch up on.
+    // Nobody holds a port: time stands still where the last player left it
+    // (quiet.js). On opening, and after every change to the session, a
+    // microtask later (so a click that stands up and sits elsewhere is one
+    // act): a stale seat from an earlier session that the host reaps after
+    // its silence, or the last player leaving, stops the clock here too.
     const quiet = () => {
-      const s = session.doc();
-      const held = seating(s.seats, ports).some((p) => p.at(-1)?.until === Infinity);
-      const c = s.clock;
-      if (!held && c.until === undefined) {
-        const last = Math.max(0, ...Object.values(s.seats ?? {}).map((x) => (x.until ?? 0) / hz));
-        session.change((d) => void (d.clock = { t: last, at: Date.now(), until: last }));
-      }
+      const stop = quietClock(session.doc(), ports, hz, Date.now());
+      if (stop) session.change((d) => void (d.clock = stop));
     };
+    let quietQueued = false;
+    let closed = false;
+    const onSession = () => {
+      if (quietQueued) return;
+      quietQueued = true;
+      queueMicrotask(() => {
+        quietQueued = false;
+        if (!closed) quiet();
+      });
+    };
+    session.on("change", onSession);
     quiet();
 
     // the view
@@ -200,8 +210,9 @@ export default function MachineTool(handle, element) {
               } else if (x) watching = port;
               else {
                 if (host.seat) host.stand();
-                if (!host.clock?.running?.()) host.resume();
+                // seated first, then the clock: the port is held when it starts
                 host.sit(port);
+                if (!host.clock?.running?.()) host.resume();
                 watching = port;
                 root.focus();
               }
@@ -258,6 +269,8 @@ export default function MachineTool(handle, element) {
 
     return () => {
       if (traced.get(doc.session) === entry) traced.delete(doc.session);
+      closed = true;
+      session.off("change", onSession);
       cancelAnimationFrame(raf);
       if (host.seat) {
         host.stand();
