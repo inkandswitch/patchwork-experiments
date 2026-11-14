@@ -62,7 +62,7 @@ function peer(handle) {
     url: handle.url,
     doc: () => handle.doc(),
     heads: () => handle.heads?.(),
-    change: (fn) => handle.change(fn),
+    change: (fn, opts) => handle.change(fn, opts), // (opts: the edit recorder's patchCallback, so undo works here too)
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
     broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
