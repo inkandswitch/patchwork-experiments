@@ -61,6 +61,17 @@ export function samePath(a, b) {
   return true;
 }
 
+/**
+ * The order of paths: shorter first, then entry by entry by code unit (no
+ * locale). A total order on paths, so stages ordered by it are ordered by the
+ * doc's structure, never by when their docs arrived.
+ */
+export function comparePaths(a, b) {
+  if (a.length !== b.length) return a.length - b.length;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  return 0;
+}
+
 /** A frozen path (null stays null). */
 export function pathOf(list) {
   return Array.isArray(list) ? Object.freeze([...list]) : null;

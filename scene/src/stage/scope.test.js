@@ -3,7 +3,7 @@
 // to depth 3 of a finite set of turns, shifts and scales.
 
 import { describe, expect, it } from "vitest";
-import { SEP, elementOf, keyOf, parseKey, samePath } from "./paths.js";
+import { SEP, comparePaths, elementOf, keyOf, parseKey, samePath } from "./paths.js";
 import { frameOf, hitIn, rayIn, scopeViewport, similarityOf } from "./scope.js";
 import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
@@ -54,6 +54,26 @@ function* frames() {
   for (const a of TRANSFORMS) for (const b of TRANSFORMS.filter((_, i) => i % 7 === 0)) yield multiplyMatrices(composeMatrix(a), composeMatrix(b));
   for (const a of TRANSFORMS.filter((_, i) => i % 5 === 0)) for (const b of TRANSFORMS.filter((_, i) => i % 9 === 0)) for (const c of TRANSFORMS.filter((_, i) => i % 11 === 0)) yield multiplyMatrices(multiplyMatrices(composeMatrix(a), composeMatrix(b)), composeMatrix(c));
 }
+
+describe("the order of paths", () => {
+  // every path to depth 2 over ids that differ by case, prefix, digits and a non-ASCII letter
+  const IDS = ["", "a", "B", "a1", "a10", "a2", "é", "link-1-x"];
+  const PATHS = [[]];
+  for (const x of IDS) PATHS.push([x]);
+  for (const x of IDS) for (const y of IDS) PATHS.push([x, y]);
+  it("is a total order: antisymmetric, transitive, zero exactly on the same path", () => {
+    const sign = (v) => Math.sign(v);
+    for (const a of PATHS)
+      for (const b of PATHS) {
+        expect(sign(comparePaths(a, b)) + sign(comparePaths(b, a))).toBe(0);
+        expect(comparePaths(a, b) === 0).toBe(samePath(a, b));
+        for (const c of PATHS) if (comparePaths(a, b) <= 0 && comparePaths(b, c) <= 0) expect(comparePaths(a, c)).toBeLessThanOrEqual(0);
+      }
+  });
+  it("puts shorter paths first, so the outermost stage ([]) is always first", () => {
+    for (const a of PATHS) for (const b of PATHS) if (a.length < b.length) expect(comparePaths(a, b)).toBeLessThan(0);
+  });
+});
 
 describe("I7: a stage's frame is a similarity, applied exactly", () => {
   it("points by the frame, directions and normals by its rotation, distances by its scale; in and out are inverse", () => {

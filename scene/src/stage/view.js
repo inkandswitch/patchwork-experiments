@@ -22,7 +22,7 @@ import { escapeHint } from "./ladder.js";
 import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
 import { selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
-import { elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
+import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
 import { expand } from "./links.js";
 import { multiplyMatrices } from "../transform.js";
 
@@ -277,7 +277,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** The stage selection is scoped by: the outermost, until Enter moves it (COMPOSITION.md step 14). */
   const focusStage = () => outermost();
   /** The stages that act (every open stage, until mirrors and pins: step 13), outermost first. */
-  const acting = () => [...stages.values()].sort((a, b) => a.path.length - b.path.length || a.n - b.n);
+  // outermost first, then by path: a doc's structure, not the order its links' docs arrived in
+  const acting = () => [...stages.values()].sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
   /** Give a stage its number; the first is the outermost. */
   function addStage(make) {
     const n = nextStage++;
@@ -636,18 +637,24 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       arrival = null;
       return;
     }
-    if (bodyDefs().has(a.body)) {
+    const all = [...stages.values()];
+    const unsettled = (s) => s.starting() || s.packages.coming();
+    const offer = bodyDefs().get(a.body);
+    if (offer) {
       a.offered ??= time.now();
-      if (![...stages.values()].every((s) => s.contentIn()) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
+      // a stage ahead of the offering one in acting order, or a link still on its way, may offer
+      // it too, and its offer is the one arriving takes; and the content first
+      const order = acting();
+      const ahead = order.slice(0, order.indexOf(offer.stage));
+      if ((linksPending() || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
       arrival = null;
       enterBody(a.body, a.place);
       return;
     }
     // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)
-    const all = [...stages.values()];
     const pending = linksPending();
     if (!pending && all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
-    else if (pending || all.some((s) => s.starting() || s.packages.coming())) requestFlushSoon();
+    else if (pending || all.some(unsettled)) requestFlushSoon();
   }
 
   // ─── the look and attention (TOOLS.md §3) ─────────────────────────────────

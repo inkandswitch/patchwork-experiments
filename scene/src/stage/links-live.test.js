@@ -219,4 +219,43 @@ describe("arriving through a link", () => {
     await until(() => s.debug.view.atom.get().body.id === "t.sit");
     expect(s.debug.view.atom.get().body.label).toBe("Sitting");
   });
+
+  // Two linked games offer the start body. Which one a viewer arrives in is
+  // the doc's structure (links in path order), never which game's doc came
+  // over the network first: both arrival orders, the same game.
+  for (const first of ["A", "B"]) {
+    it(`two linked games offering the start body: the first link's, whichever doc loads first (${first} first)`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const entered = [];
+      const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: (api) => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => (entered.push(api.scene().traits["t.game"].name), { input: {} }) }] }) } };
+      const gates = new Map();
+      class GatedRepo extends FakeRepo {
+        async find(url) {
+          await gates.get(url)?.promise;
+          return super.find(url);
+        }
+      }
+      const repo = new GatedRepo();
+      const ga = repo.add(emptyScene({ title: "GA", objects: {}, order: [], traits: { "t.game": { name: "GA" } } }));
+      const gb = repo.add(emptyScene({ title: "GB", objects: {}, order: [], traits: { "t.game": { name: "GB" } } }));
+      const late = first === "A" ? gb : ga;
+      let open;
+      gates.set(late.url, { promise: new Promise((r) => (open = r)) });
+      s = await mountStage({
+        repo,
+        extensions: [SEATISH],
+        doc: {
+          objects: { "link-a": object({ name: "A", sourceUrl: ga.url, providerId: LINK, renderUrl: null }), "link-b": object({ name: "B", sourceUrl: gb.url, providerId: LINK, renderUrl: null }) },
+          order: ["link-b", "link-a"],
+          view: { start: { body: "t.sit" } },
+        },
+      });
+      await until(() => s.debug.view.stages().length === 2);
+      await settle();
+      expect(entered).toEqual([]); // the other link is still on its way
+      open();
+      await until(() => s.debug.view.atom.get().body.id === "t.sit");
+      expect(entered).toEqual(["GA"]);
+    });
+  }
 });
