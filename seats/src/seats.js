@@ -390,26 +390,33 @@ function create(api) {
   // her deck, or Look: from Edit the stage turns to Look first); standing up, watching or moving pops it, and
   // whatever is under it carries on (walking resumes from the eye).
   let sitting = null; // the seat this view sits in, as a body: its seat id
+  // the seat this view arrived seated in (the doc seated it: view.start's seat
+  // body, no place), with no Watching under it: getting up from it comes back
+  // to watching, as it does for someone who arrived watching and then sat
+  let arrivedIn = null;
+  let watchingNext = false;
   const seatDef = seatBody(api, {
     left: (sid) => {
       if (sitting === sid) sitting = null;
+      if (arrivedIn === sid) arrivedIn = null;
     },
   });
   // Arriving (the stage enters view.start's body: { body: "seat" }, no
   // place): back in your own seat if the doc seats you (its claim is
   // reconcile's), else watching from the first seat's view, labelled so,
   // writing nothing; the picker or a seat's verb sits you down over it, and
-  // standing up comes back to it. A seat named (the picker, the verb) is
-  // the seat body as ever.
+  // standing up comes back to it (from your own seat too: arrivedIn). A seat
+  // named (the picker, the verb) is the seat body as ever.
   const body = {
     ...seatDef,
     enter(place) {
       if (place != null) return seatDef.enter(place);
-      const at = arrivalSeat(seatsOf(api.scene()), viewer);
+      // (getting up from the seat you arrived in: watching, whatever the doc's copy here says yet)
+      const at = arrivalSeat(seatsOf(api.scene()), watchingNext ? null : viewer);
       const s = at ? seatDef.enter(at.sid) : null;
       if (!s) return null;
       if (at.mine) {
-        sitting = at.sid;
+        sitting = arrivedIn = at.sid;
         return s;
       }
       return { ...s, seat: null, label: "Watching", leave() {} };
@@ -424,7 +431,18 @@ function create(api) {
     downToSeat();
     const was = sitting;
     sitting = null;
+    const back = was != null && was === arrivedIn;
+    arrivedIn = null;
     if (was != null && seated()) api.body.leave();
+    // arrived in it: back to watching (the doc no longer seats you), as if you'd arrived watching and sat
+    if (back && !seated()) {
+      watchingNext = true;
+      try {
+        api.body.enter(body.id, null);
+      } finally {
+        watchingNext = false;
+      }
+    }
   }
   /** Into seat `sid`'s view (the seat body); back down to it if it's under something already. */
   function seatView(sid) {

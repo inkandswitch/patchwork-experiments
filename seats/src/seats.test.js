@@ -884,8 +884,39 @@ describe("arriving seated (view.start = { body: \"seat\" }, no seat named)", () 
     expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Seated", depth: 1 });
     await t.step();
     expect(t.claim("p2")).toMatchObject({ viewer: BEN });
-    // standing up (Watching in the picker) leaves the seat body
+    // standing up (Watching in the picker): watching from the first seat's view, as if
+    // they'd arrived watching and sat (the boat and the room alike), writing nothing more
     await t.pickSeat("B", "");
+    expect(t.player("p2")).toBeNull();
+    expect(t.claim("p2")).toBeNull();
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Watching", depth: 1 });
+    // sitting again goes over it, and getting up comes back to it
+    await t.pickSeat("B", "p1");
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Seated", depth: 2 });
+    await t.pickSeat("B", "");
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Watching", depth: 1 });
+  });
+
+  it("seated by the doc, moving to another seat and then up: watching (one Watching under the seat, never two)", async () => {
+    vi.useFakeTimers();
+    const t = await cockpit({ ...SEATS0(), p2: { ...SEATS0().p2, player: BEN } }, { views: [["B", BEN]] });
+    expect(t.api.B.body.enter("seat", null)).toBe(true);
+    await t.step();
+    await t.pickSeat("B", "p1");
+    expect(t.player("p1")).toBe(BEN);
+    expect(t.player("p2")).toBeNull();
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Seated", depth: 2 });
+    await t.pickSeat("B", "");
+    expect(t.api.B.local.get().body).toMatchObject({ id: "seat", label: "Watching", depth: 1 });
+  });
+
+  it("seated by the doc, Leave (the stage's): Look, as Leave always falls back; nothing re-enters", async () => {
+    vi.useFakeTimers();
+    const t = await cockpit({ ...SEATS0(), p2: { ...SEATS0().p2, player: BEN } }, { views: [["B", BEN]] });
+    expect(t.api.B.body.enter("seat", null)).toBe(true);
+    await t.step();
+    expect(t.api.B.body.leave()).toBe(true);
+    await t.step();
     expect(t.api.B.local.get().body.id).toBe("look");
   });
 });
