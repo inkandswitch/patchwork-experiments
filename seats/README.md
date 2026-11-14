@@ -51,8 +51,8 @@ people lists this package in its `packages`, like any other.
 
 | | |
 |---|---|
-| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. All but `who` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone" |
-| `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). A name tag goes on each, and a look at one is a look at its seat |
+| `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → seatId \| null }`. All but `who` and `sitting` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone". `sitting` is the seat this view is sitting in now: the seat body on top (standing up, walking off from it or watching is not sitting); a machine's port follows it (machine/HOST.md, Phase 2b) |
+| `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). A name tag goes on each, and a look at one is a look at its seat. Several places may share one object (a machine's ports along its front): a look at that object is at the place it lands in, else at your own among them if you sit at one, else at the nearest (`placeOn`) |
 | `lay(d, seats)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, empty; a seat already there keeps its player and takes the new name and view. A game is a doc of its own, so its seats are its doc's: a second game is a second doc, with its own `p1` and `p2` |
 
 These are also listed in scene/STAGE.md, "Conventions", with the keepers'.
@@ -66,7 +66,7 @@ a deck waits for players; the stage offers the package from the scene's
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/seats.js` | the part: picker, claims and reconciling them with the doc, name tags, the station verb, the roster |
-| `src/model.js` | its pure side: the trait, `seatState`, `rosterOf`, `lay`, `seatLookedAt`, `seatVerb`, `seatTagAt` |
+| `src/model.js` | its pure side: the trait, `seatState`, `rosterOf`, `lay`, `seatLookedAt` and `placeOn`, `seatVerb`, `seatTagAt` |
 | `src/body.js` | the seat body: `seatPose` (pure) and `seatBody(api)` |
 | `src/transform.js` | the two matrix operations it needs (a copy of the scene's) |
 | `src/test/fake-world.js` | a stand-in stage with several views, claims that lapse, sessions never heard from, crashes without a bye and merges written by hand |

@@ -34,10 +34,14 @@
 //     nameOf(scene, viewer) → string | null           the name of the seat they sit in
 //     who(viewer)    → string                         what to call them: their contact's name once
 //                                                     known, else their seat's, else "Someone"
+//     sitting()      → seatId | null                  the seat this view is sitting in now (the seat
+//                                                     body on top: standing up, walking off from it or
+//                                                     watching is not sitting)
 //   }
 //
-// All but `who` are pure in the snapshot they're given (the doc alone:
-// never presence or claims), so an `audience` policy may be built on them.
+// All but `who` and `sitting` are pure in the snapshot they're given (the
+// doc alone: never presence or claims), so an `audience` policy may be built
+// on them.
 //
 // And the module's `lay(d, seats)` writes seats into a scene doc being set
 // up (model.js); setup code finds it by this plugin's `roster: true`.
@@ -477,7 +481,7 @@ function create(api) {
     const snap = ctx?.scene ?? scene;
     if (!snap) return null;
     const seats = seatsOf(snap);
-    const sid = seatLookedAt({ snap, target, point: ctx?.hit?.point ?? null, seats, places: placesOf(snap), drawn: drawnIn(snap) });
+    const sid = seatLookedAt({ snap, target, point: ctx?.hit?.point ?? null, seats, places: placesOf(snap), drawn: drawnIn(snap), mine: seated() ? sitting : null });
     if (!sid) return null;
     const st = stateOf(sid, seats);
     const name = st.state === "taken" ? contactName(st.by?.viewer) : st.state === "away" ? contactName(st.seat?.player) : null;
@@ -542,6 +546,8 @@ function create(api) {
       open: (snap) => rosterOf(snap).filter((s) => !s.viewer).map((s) => s.name),
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
+      // the seat this view is sitting in now: the seat body on top, in that seat
+      sitting: () => (seated() ? sitting : null),
     }),
     // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
     // the people seated at it, here or away; not those watching. Asked when

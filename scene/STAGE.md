@@ -1701,7 +1701,7 @@ people lists the seats package like any other.
 
 | | |
 |---|---|
-| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string }`. All but `who` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's). A doc has one table's seats: a second game is a doc of its own, linked |
+| `roster` (contributed by the seats' owner) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → seatId \| null }`. All but `who` and `sitting` are pure in the snapshot (the doc alone), so a policy may be built on them. `who` is what to call a viewer now (a contact's name once known, else their seat's); `sitting` is the seat this view sits in now (the seat body on top), which a machine's port follows. A doc has one table's seats: a second game is a doc of its own, linked |
 | `seatPlaces` (contributed by whoever gives a seat somewhere to be) | `(scene) → [{ seat, id, min, max }]`: a box in object `id`'s own frame (a hand tray). The seats' owner puts a name tag on each, and a look at one is a look at its seat |
 | `lay(d, seats)` (the module of the plugin with `roster: true`) | writes `{ [seatId]: { name, camera? } }` into a scene doc being set up, each seat empty (a seat already there keeps its player and takes the new name and view); setup code calls it instead of writing seats |
 

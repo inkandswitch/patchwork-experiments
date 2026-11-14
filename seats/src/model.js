@@ -153,17 +153,18 @@ export const CONFIRM_MS = 5000;
 
 /**
  * The seat a look is at, or null.
- * @param {{ snap: object, target: string, point: number[] | null, seats: object, places: object[], drawn: (id: string) => number[] | null }} o
+ * @param {{ snap: object, target: string, point: number[] | null, seats: object, places: object[], drawn: (id: string) => number[] | null, mine?: string | null }} o
  *   snap: api.scene(); target: what the prompt asks about; point: where the
  *   look landed (world, may be null when hovering); places: cleanPlaces(…);
- *   drawn: an object's world matrix as drawn (api.worldOf), null if it's gone
+ *   drawn: an object's world matrix as drawn (api.worldOf), null if it's gone;
+ *   mine: the seat this view sits in, if any
  */
-export function seatLookedAt({ snap, target, point, seats, places, drawn }) {
+export function seatLookedAt({ snap, target, point, seats, places, drawn, mine = null }) {
   if (target == null || !snap?.objects?.[target]) return null;
   const regions = (places ?? []).filter((z) => seats?.[z.seat]);
   // a place's own object: its seat, wherever on it the look landed (its middle, hovering without a point)
-  const tray = regions.find((z) => z.id === target);
-  if (tray) return tray.seat;
+  const trays = regions.filter((z) => z.id === target);
+  if (trays.length) return placeOn(trays, Array.isArray(point) ? drawn(target) : null, point, mine);
   if (!Array.isArray(point) || !placeLike(snap, target, seats)) return null;
   for (const z of regions) {
     const m = drawn(z.id);
@@ -185,6 +186,29 @@ export function seatLookedAt({ snap, target, point, seats, places, drawn }) {
     if (Math.hypot(p[0] - e[0], p[2] - e[2]) <= BENCH_RADIUS && p[1] <= e[1] + 0.2 && p[1] >= e[1] - BENCH_DROP) return sid;
   }
   return null;
+}
+
+/**
+ * Of several places on one object (a machine's ports along its front), the
+ * one a look at that object is at: the place the point is in; else your own
+ * among them, if you sit at one (seated, you look at the middle of what
+ * you're at); else the one nearest the point; else the first. One place is
+ * simply its seat. Distances are in the object's frame (`m`, as drawn), to
+ * each box; ties go to the earlier place. Pure.
+ */
+export function placeOn(trays, m, point, mine = null) {
+  if (trays.length === 1) return trays[0].seat;
+  const own = trays.find((z) => z.seat === mine)?.seat ?? null;
+  const inv = m && Array.isArray(point) ? invertMatrix(m) : null;
+  if (!inv) return own ?? trays[0].seat;
+  const p = applyMatrix(inv, point);
+  const gap = (z) => Math.hypot(...[0, 1, 2].map((k) => Math.max(z.min[k] - p[k], 0, p[k] - z.max[k])));
+  const inside = trays.find((z) => gap(z) === 0);
+  if (inside) return inside.seat;
+  if (own) return own;
+  let best = trays[0];
+  for (const z of trays) if (gap(z) < gap(best)) best = z;
+  return best.seat;
 }
 
 /** Can a look at `target` be a look at a seat's place: something locked, or a seat camera's frame or what that's attached to? */
