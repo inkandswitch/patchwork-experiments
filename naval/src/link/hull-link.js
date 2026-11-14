@@ -26,6 +26,7 @@ import { decodeGLB, glbTriangles } from "./glb-read.js";
 import { fileBytes, isRenderDoc } from "./render-read.js";
 import { chartroomTableFor, sameHull } from "./chartroom-link.js";
 import { HYDROSTATIC_TABLE_FORMAT } from "../naval/chartroom-types.js";
+import { suggestedPackageOf } from "./package.js";
 
 export const OWN_DATATYPE = "rig-design";
 
@@ -178,9 +179,10 @@ export function renderRefusal(doc) {
  * @param {{ url: string, repo?: object, handle?: object, getRegistry?: Function, selfUrl?: string }} o
  *   handle: the linked doc's handle when the caller has it (a study reads a doc at pinned heads through a view)
  * @returns {Promise<{ ok: true, mesh, path: "file"|"source", providerId, providerName, title, datatype, handle, doc, table: { source: "chartroom"|"glb"|null, providerId?, fingerprint?, note? } }
- *                  | { ok: false, error: string, transient: boolean, handle?, doc?, title?, parent? }>}
+ *                  | { ok: false, error: string, transient: boolean, handle?, doc?, title?, parent?, suggests? }>}
  *   transient: about this peer (not loaded yet, nothing here can build it); a retry may succeed.
  *   parent: for a refused scene render, the hull it renders (what to link instead).
+ *   suggests: nothing here builds it, and the hull doc names its own package (package.js): offer to load that.
  *   mesh.table: the hull's own Chartroom table when one checks out (its chartroom:source's, else its GLB's), else null.
  */
 export async function acquireHull({ url, repo, handle, getRegistry, selfUrl } = {}) {
@@ -249,7 +251,10 @@ export async function acquireHull({ url, repo, handle, getRegistry, selfUrl } = 
     const table = await ownTable(doc, datatype, get, mesh);
     return { ok: true, mesh, path: "source", providerId: p.id, providerName: name, title: name, datatype, handle: h, doc, table };
   }
-  return fail(notes.length ? `no hull from the linked document: ${notes.join("; ")}` : `nothing installed here can build ${describeForHumans(source)} (no scene:source provider)`);
+  if (notes.length) return fail(`no hull from the linked document: ${notes.join("; ")}`);
+  // nothing here can build it: the package the hull names for itself would (package.js)
+  const suggests = suggestedPackageOf(doc);
+  return fail(`nothing installed here can build ${describeForHumans(source)} (no scene:source provider)${suggests ? "; the hull names a package that can: load it" : ""}`, true, suggests ? { suggests } : {});
 }
 
 /**

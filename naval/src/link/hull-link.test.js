@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { acquireHull, findChartroomTable, glbFingerprint, hullPathChip, matchProviders, meshFromGlb, sameHull } from "./hull-link.js";
 import { CHARTROOM_SOURCE } from "./chartroom-link.js";
+import { suggestedPackageOf } from "./package.js";
 import { glbTriangles } from "./glb-read.js";
 import { toHullFrame, glbToFrameMatrix } from "../naval/hull-frame.js";
 import { floatHull, rigToTable, MODEL_LOA_M } from "../naval/hull-form.js";
@@ -161,6 +162,34 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
       if (params?.size === "length") expect(r.error).toMatch(/stretched to/);
       else expect(r.error).not.toMatch(/stretched/);
     });
+
+  it("nothing here builds it: the failure names the package the hull doc names for itself, if importable (Patchwork's rule)", async () => {
+    const A = "automerge:camberPackage111111111111";
+    const cases = [
+      [undefined, null],
+      ["", null],
+      [42, null],
+      ["javascript:alert(1)", null],
+      ["file:///etc/passwd", null],
+      [`${A}#h1`, null],
+      [`${A}/path`, null],
+      ["automerge:short", null],
+      [A, A],
+      ["https://example.org/p/index.js", "https://example.org/p/index.js"],
+      ["http://localhost:8080/index.js", "http://localhost:8080/index.js"],
+    ];
+    for (const [given, want] of cases) {
+      const doc = { "@patchwork": { type: "camber-hull", ...(given !== undefined ? { suggestedImportUrl: given } : {}) } };
+      expect(suggestedPackageOf(doc), String(given)).toBe(want);
+      const u = "automerge:sugg1111111111111111111111";
+      docs[u] = { ...doc, title: "Narrow transom" };
+      const r = await acquireHull({ url: u, repo, getRegistry });
+      expect(r).toMatchObject({ ok: false, transient: true });
+      expect(r.suggests ?? null, String(given)).toBe(want);
+      expect(r.error).toMatch(/nothing installed here can build “camber-hull” documents/);
+    }
+    expect(suggestedPackageOf(null)).toBeNull();
+  });
 
   it("a GLB file doc", async () => {
     const r = await acquireHull({ url: urls.file, repo });

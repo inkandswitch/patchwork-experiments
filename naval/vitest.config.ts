@@ -6,6 +6,7 @@ export default defineConfig({
     alias: {
       // the host provides this through its importmap; the build leaves it external
       "@inkandswitch/patchwork-plugins": fileURLToPath(new URL("./src/test/patchwork-plugins-stub.js", import.meta.url)),
+      "@inkandswitch/patchwork-filesystem": fileURLToPath(new URL("./src/test/patchwork-filesystem-stub.js", import.meta.url)),
     },
   },
   test: {

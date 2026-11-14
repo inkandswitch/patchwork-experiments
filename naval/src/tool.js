@@ -30,6 +30,7 @@ import { FIELD_GROUPS, fieldText, fieldEstimated, numbersHtml, glanceHtml, HEADS
 import { parseQuantity } from "./naval/units.js";
 import { jOf } from "./naval/sailplan.js";
 import { acquireHull, hullPathChip } from "./link/hull-link.js";
+import { loadPackage } from "./link/package.js";
 import { parseAutomergeUrl, parsePatchworkDrop, hasPatchworkDrop } from "./link/dnd.js";
 import { DEFAULT_FRAME } from "./naval/hull-frame.js";
 import { createStaticsRunner } from "./statics-runner.js";
@@ -288,7 +289,7 @@ export default function RigTool(handle, element) {
 
   // ── the linked hull
   const findRepo = () => globalThis.repo ?? handle.repo ?? null;
-  const linked = { url: null, handle: null, off: null, timer: 0, retry: 0, failures: 0, seq: 0, status: "none", mesh: null, error: null, chip: "", path: null };
+  const linked = { url: null, handle: null, off: null, timer: 0, retry: 0, failures: 0, seq: 0, status: "none", mesh: null, error: null, chip: "", path: null, suggests: null, loadingPackage: false };
   let dead = false;
 
   function linkRow(f, id) {
@@ -297,11 +298,13 @@ export default function RigTool(handle, element) {
     row.dataset.field = id;
     row.innerHTML = `<span class="field-label">${esc(f.label)}</span>
       <div class="cluster"><input type="text" name="${id}" spellcheck="false" placeholder="paste or drop a hull: automerge:…"><button type="button" data-act="link">Link</button><button type="button" data-act="unlink">Unlink</button></div>
-      <span class="link-status" role="status"></span>`;
+      <span class="link-status" role="status"></span>
+      <button type="button" data-act="load-package" hidden>Load the hull's package</button>`;
     const input = row.querySelector("input");
     const go = () => linkTo(input.value);
     row.querySelector('[data-act="link"]').addEventListener("click", go);
     row.querySelector('[data-act="unlink"]').addEventListener("click", () => write((d) => setPath(d, ["hull", "link"], null)));
+    row.querySelector('[data-act="load-package"]').addEventListener("click", loadHullPackage);
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -334,7 +337,33 @@ export default function RigTool(handle, element) {
     linked.off?.();
     clearTimeout(linked.timer);
     clearTimeout(linked.retry);
-    Object.assign(linked, { url: null, handle: null, off: null, timer: 0, retry: 0, failures: 0, seq: linked.seq + 1, status: "none", mesh: null, error: null, chip: "", path: null });
+    Object.assign(linked, { url: null, handle: null, off: null, timer: 0, retry: 0, failures: 0, seq: linked.seq + 1, status: "none", mesh: null, error: null, chip: "", path: null, suggests: null, loadingPackage: false });
+  }
+
+  /**
+   * Nothing here builds the linked hull, and the hull names its own package
+   * (link/package.js): load it, once the person says yes to that url, and
+   * read the hull again.
+   */
+  async function loadHullPackage() {
+    const url = linked.suggests;
+    if (!url || linked.loadingPackage) return;
+    if (typeof globalThis.confirm === "function" && !globalThis.confirm(`The linked hull names a package that can read it:\n${url}\n\nLoad it? It runs code from that address.`)) return;
+    linked.loadingPackage = true;
+    render();
+    try {
+      await loadPackage(url, { repo: findRepo() });
+      if (dead || linked.suggests !== url) return;
+      linked.suggests = null;
+      linked.failures = 0;
+      await fetchHull();
+    } catch (err) {
+      if (dead) return;
+      linked.error = `its package didn't load (${err?.message ?? err})`;
+    } finally {
+      linked.loadingPackage = false;
+      if (!dead) render();
+    }
   }
 
   function syncLink(doc) {
@@ -380,6 +409,7 @@ export default function RigTool(handle, element) {
     linked.status = r.ok ? "ready" : linked.mesh ? "ready" : "error";
     if (r.ok) [linked.mesh, linked.path] = [r.mesh, r.path];
     linked.error = r.ok ? null : r.error;
+    linked.suggests = r.ok ? null : (r.suggests ?? null);
     linked.chip = r.ok ? hullPathChip(r) : linked.chip;
     render();
   }
@@ -565,6 +595,10 @@ export default function RigTool(handle, element) {
                 : "reading…";
         st.textContent = text;
         st.dataset.tone = doc.hull.link && linked.status === "error" ? "error" : "";
+        const load = row.querySelector('[data-act="load-package"]');
+        load.hidden = !(doc.hull.link && linked.status === "error" && linked.suggests);
+        load.disabled = linked.loadingPackage;
+        load.title = linked.suggests ? `Load ${linked.suggests}` : "";
         continue;
       }
       // a field being typed in keeps its text, unless it was just committed (then it is shown as stored)
