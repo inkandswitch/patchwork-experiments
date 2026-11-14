@@ -6,6 +6,10 @@
 // view of its source at those heads, and from views of the dependencies `at`
 // lists; staleness is judged against those views, so edits to the live docs
 // never make it stale. Params and provider versions still do.
+//
+// A read-only manager (`readOnly`: a pinned or mirrored stage's, COMPOSITION.md
+// §7) shows what is built and nothing else: it judges nothing, builds
+// nothing and writes no render doc. The acting stage keeps them built.
 
 import { fileBytes } from "./file-content.js";
 import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, knowsHeads, pinnedRepo, runBuild, validBounds, viewAt } from "./build.js";
@@ -65,8 +69,9 @@ function parseKey(key) {
  * @param {{ setTimeout, clearTimeout }} [o.timers]
  * @param {() => number} [o.now]
  * @param {number} [o.syncSettleMs]  see SYNC_SETTLE_MS
+ * @param {boolean} [o.readOnly]  show what is built; never build or write a render doc
  */
-export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS }) {
+export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS, readOnly = false }) {
   const entries = new Map();
   let disposed = false;
   const selfId = repo?.peerId ?? null;
@@ -271,7 +276,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       deps: entry.deps.urls(),
     });
 
-    if (entry.building) return; // build() re-evaluates when it finishes
+    if (readOnly || entry.building) return; // (build() re-evaluates when it finishes)
 
     if (othersBuilding) {
       if (now() - entry.buildingSeenAt >= STUCK_BUILDING_MS) return settleStatus(entry); // re-enters via "change"
@@ -351,7 +356,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
   }
 
   async function build(entry) {
-    if (disposed || entry.dead || entry.building) return;
+    if (readOnly || disposed || entry.dead || entry.building) return;
     const render = entry.renderHandle.doc();
     const sourceHandle = sourceView(entry);
     if (!sourceHandle) return evaluate(entry); // fixed at heads not here yet

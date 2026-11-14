@@ -219,6 +219,7 @@ room and another aboard, its table heeling only aboard.
 (tabletop, seats, dice, bag, keep, card-table, sailing, joints, traversal,
 walk, arena, doom) are top-level folders of this repo, each standalone.
 
-Next are pins and mirrors (a value of a doc, and a live doc seen twice in
-one view), editing in context (Enter, Leave), extract and bundle, and named
-frames ([COMPOSITION.md](COMPOSITION.md), steps 13–16).
+Pins and mirrors followed (a doc fixed at a version, and a live doc seen
+twice in one view: both drawn, read-only, never acted on). Next are editing
+in context (Enter, Leave), extract and bundle, and named frames
+([COMPOSITION.md](COMPOSITION.md), steps 14–16).

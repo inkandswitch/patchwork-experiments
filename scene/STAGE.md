@@ -21,7 +21,8 @@ below). Where it is going is [TOOLS.md](TOOLS.md) and
 |---|---|
 | **Stage** | The core, one per open doc: the doc, loading and building object content, presence, claims and pose holds on the doc's channel, the world clock, lenses, the audience, its extensions and the api each gets. It has no UI of its own. |
 | **View** | One per mounted tool, shared by every stage it opens: the DOM and edges, the viewport (rendering, picking, the camera rig, drawing layers), the input router with its body stack and held-tool slot, the drawer, the selection and hover (as paths), notices, prefs, and one presence session. Its one opinion about input is the Edit body's: a click nobody else took selects (in Look, nothing does). |
-| **Link** | An object whose source is a scene doc (`providerId: "scene.link"`): the view opens a stage for that doc, drawn where the link is, in the link's frame. Live without `at`; a pinned value with it (opened at step 13). |
+| **Link** | An object whose source is a scene doc (`providerId: "scene.link"`): the view opens a stage for that doc, drawn where the link is, in the link's frame. Live without `at`; a pinned value with it, the doc at those heads. |
+| **Mirror**, **pin** | A stage that is drawn and never acts: a mirror, a live doc at a placement other than the one it acts at; a pin, a doc at fixed heads. Both read-only. |
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Part** | A `scene:part` plugin: something to put into a scene (a mast, a buoy, a target), offered in the editor's parts bin. |
@@ -44,18 +45,47 @@ below). Where it is going is [TOOLS.md](TOOLS.md) and
 
 ## Views, stages and links
 
-A view shows one stage per open doc. The outermost doc's stage is the
-view's first; each **live link** (an object through the `scene.link`
-source, no `at`) to a doc that acts there opens another, its root under the
-link's node, in the link's frame (COMPOSITION.md §2, §7). Expansion
-(`stage/links.js`) is a pure function of the link graph: a live doc acts at
-one occurrence per view, the first in path order (shallowest, then the
-smallest link id where paths differ); a repeat identity on a path is closed
-`"cycle"`; a doc that can't be opened is closed `"unavailable"`; a live
-link inside a pin is held at the pin's `deps`, else closed `"unpinned"`. A
-closed, mirrored or pinned link is drawn as its hint (`api.link(id)` →
-`{ state, reason? }`; mirrors and pins open at step 13).
+A view shows one stage per open doc occurrence. The outermost doc's stage is
+the view's first; every **link** (an object through the `scene.link`
+source) whose doc is open opens another, its root under the link's node, in
+the link's frame (COMPOSITION.md §2, §7). Expansion (`stage/links.js`) is a
+pure function of the link graph: a live doc **acts** at one occurrence per
+view, the first in path order (shallowest, then the smallest link id where
+paths differ), and is a **mirror** at every other; a link with `at` is
+**pinned**, its doc at those heads; a repeat identity on a path is closed
+`"cycle"`; a doc that can't be opened is closed `"unavailable"`; a live link
+inside a pin is held at the pin's `deps`, else closed `"unpinned"`. A closed
+link, or one whose doc (or version) hasn't arrived, is drawn as its hint.
+`api.link(id)` → `{ role: "acting" | "mirror" | "pinned" | "closed", open,
+reason? }` (open: its doc is drawn). A stage whose occurrence changes role
+or identity closes, with what was opened under it, and opens again.
 
+- **Acting and drawn.** A stage that acts is where its doc is played. A pin
+  and a mirror are **drawn**: their extensions run (so they look as the doc
+  does, lenses, looks and dressing included) and draw into the world
+  (layers, labels, styles), but nothing more. They have no segment in the
+  chain, offer no body, tool, command or widget, put no chrome in the DOM
+  (`overlay`, `edge`, `dock`, `popover` stay out of it), don't move the
+  camera, select, notify or set prefs, and register no process (it is
+  never started). A mirror hears its doc's channel (and, over the page bus,
+  its view's acting stage of the same doc, so a carry shows in both) and
+  says nothing on it; a pin has no channel, so no claim counts in it and
+  nobody is seated. `api.role` says which a stage is.
+- **Read-only.** A stage is read-only when it doesn't act or its handle
+  refuses writes (`api.writable()` false). It is then given its doc and its
+  repo read-only (`stage/readonly.js`): `change`, `addObject`, `remove`,
+  `claim`, `send`, `pose.hold`, the stage's own edits, parts, templates and
+  drops are refused, package reconcile writes nothing, the render manager
+  builds nothing, presence only listens, and every handle the repo gives
+  out refuses writes, so a keeper in it can't write its container either
+  (invariant I6). A pin's repo finds each doc its `deps` lists at those
+  heads.
+- **Fixing a link.** `api.fixPoint(linkId)` is where the inspector's Fix at
+  this version fixes a live link: `{ heads, deps? }`, its doc's heads and
+  in `deps` the heads of every doc reached through it (the live docs opened
+  under it, and every doc their stages found through their repos: render
+  docs, files, a keeper's container), so a pin is whole. Follow latest
+  removes `at`.
 - **One doc per extension.** An extension runs in a stage when that
   stage's doc has one of its traits; a general one (no traits) runs once,
   in the focus (the outermost, until Enter moves it). Everything an api
@@ -890,7 +920,8 @@ that extension.
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal`, `Counter` | `Counter` is the stage's automerge Counter. `session`: this view's presence session, what its claims and holds name (two tabs of one viewer are two sessions; it changes on coming back from the back-forward cache) |
 | `doc()`, `change(fn)`, `newId(prefix)` | |
-| `writable()` | may this view write the doc: false for a handle at fixed heads (Keyhive's to answer, in time). The halo shows no handles where it's false |
+| `writable()` | may this view write the doc: false in a pin or a mirror, and where the handle refuses writes (Keyhive's to answer, in time). The halo shows no handles where it's false |
+| `role` | `"acting"`, or `"mirror"` / `"pinned"` for a stage that is drawn and never acted on ("Views, stages and links") |
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids, { edit? })` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids. With `edit` (an `edits` step), the change is that edit's |
@@ -926,7 +957,7 @@ that extension.
 | `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
 | `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
-| `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, not built content). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
+| `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix an object at exactly what it shows now: a render-doc object at what its render was last built from; a live link at its doc's heads, with every doc reached through it in `deps`; else null (not built or open here yet, not loaded, a file, already fixed). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info, { edit? })` | offer a dropped doc to the extensions that lay out its datatype; with `edit`, the drop context's `change` and `addObject` are that edit's |
 | `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
 | `part(id, at, { edit? })` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made; with `edit`, what it writes is that edit's |

@@ -13,6 +13,18 @@
 // goes through its scope of the viewport (./scope.js), the one choke point
 // where its frame and its keys (./paths.js) meet the view's.
 //
+// A stage acts, or it is drawn (COMPOSITION.md §7). One that acts is where
+// its doc is played: its extensions hear input, offer bodies, tools and
+// commands, compute its clock and speak on its channel. A pin (its doc at
+// fixed heads) and a mirror (a live doc acting at another placement in this
+// view) are drawn: their extensions run, so they look as the doc does, and
+// they draw into the world (layers, labels, looks, lenses), but nothing
+// more: no input, bodies, tools, commands or DOM chrome, no camera, no
+// processes, and they hear their doc's channel without speaking on it (a
+// pin has none). A stage is read-only when it doesn't act or its handle is,
+// and is then given its doc and repo read-only (./readonly.js), so it writes
+// nothing whatever it calls (invariant I6).
+//
 // The parts, in the order they're wired:
 //   - local state (atom.js): the stage's own (running, status, edits, clock,
 //     packages, and extensions' keys); the view's is `api.view`.
@@ -50,6 +62,8 @@ import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import { createEdits } from "../undo.js";
 import { isOwn } from "./own.js";
+import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
+import { isLink } from "./links.js";
 import { isStageBody } from "./bodies.js";
 import { createView, projectView } from "./view.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
@@ -92,6 +106,8 @@ const EDGES = ["top", "right", "bottom", "left"];
 /** Is this one of the router's events (so a stage hands it on in its own frame)? */
 const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
+/** A step of edits in a stage that may not write: it records and writes nothing. */
+const NO_EDIT = Object.freeze({ change: noop, end: noop });
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 /** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
@@ -287,10 +303,21 @@ export default function Stage(handle, element) {
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
  *   general?: boolean,                 // does it run the general extensions (the focus does)
+ *   role?: "acting" | "mirror" | "pinned",  // does it act, or is it drawn (links.js expand)
+ *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
  */
-export function createStage({ handle, view, n, path = [], frame = () => null, under = null, general = true }) {
-  const repo = view.repo;
+export function createStage({ handle: given, view, n, path = [], frame = () => null, under = null, general = true, role = "acting", deps = null }) {
+  // does it act (COMPOSITION.md §7): a pin or a mirror is drawn, never acted on
+  const acts = role === "acting";
+  // read-only: its doc, and every doc it reaches, refuse writes (I6)
+  const readOnly = !acts || handleReadOnly(given);
+  const handle = readOnly ? readOnlyHandle(given) : given;
+  // the docs found through its repo, url → handle: what fixing a link through it holds (fixPoint)
+  const reached = new Map();
+  const repo = stageRepo(view.repo, { readOnly, deps, reached });
+  /** May this view write the doc (it acts, and its handle lets it)? */
+  const writable = () => !handleReadOnly(handle);
   const sceneUrl = handle.url ?? "scene";
   let dead = false;
   const cleanups = [];
@@ -513,6 +540,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
 
   const manager = createRenderManager({
     repo,
+    readOnly,
     loadProvider,
     onState: (id, s) => {
       const before = objState.get(id)?.bounds;
@@ -680,12 +708,12 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         continue;
       }
       if (route === "scene") {
-        // a link: the view opens a stage for its doc where it acts (links.js);
-        // open, its doc is what's drawn; otherwise it is drawn as its hint,
-        // the room the host gives it
+        // a link: the view opens a stage for its doc (links.js), acting or
+        // drawn; open, its doc is what's drawn; otherwise it is drawn as its
+        // hint, the room the host gives it
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
-        applyHint(id, view.linkState([...path, id])?.state === "open" ? null : o.hint?.bounds);
+        applyHint(id, view.linkState([...path, id])?.open ? null : o.hint?.bounds);
         if (objState.delete(id)) statusDirty = true;
         continue;
       }
@@ -922,7 +950,9 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  const presence = createPresence({ handle, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
+  // its doc's channel: a read-only stage hears it and says nothing; a pin, a value, has none
+  const channel = role !== "pinned";
+  const presence = createPresence({ handle: channel ? given : null, listen: readOnly, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
   const remotePosed = new Set(); // object ids showing another view's pose
   const playing = new Set(); // of those, the ones still playing back (smooth.js)
   let poseLoopOff = null;
@@ -1077,6 +1107,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
 
   /** Hold an object's pose for an extension: true when the hold stands. */
   function holdPose(extId, own, id, transform, yields) {
+    if (!writable()) return false;
     if (!holds.hold(extId, id, normalizeTransform(transform), { yields })) return false;
     own.holds.add(id);
     return true;
@@ -1134,7 +1165,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * read it: its holder may have just joined, or this view may have.
    */
   function claimedBy(oid, kind) {
-    if (!isKind(kind)) return null;
+    // a claim counts only while its holder is on the doc's channel, and a pin has none
+    if (!isKind(kind) || !channel) return null;
     const c = claimField(doc(), oid, kind);
     if (!c) return null;
     const viewerOf = typeof c.viewer === "string" ? c.viewer : null;
@@ -1192,7 +1224,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * Taking it again from the same extension gives the same release.
    */
   function takeClaim(extId, own, oid, kind, onLost) {
-    if (!isKind(kind) || dead) return null;
+    if (!isKind(kind) || dead || !writable()) return null;
     if (oid != null && !doc().objects?.[oid]) return null;
     const key = claimKey(oid, kind);
     const held = claims.get(key);
@@ -1268,7 +1300,6 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   const clockOwn = { claims: new Set() };
   let hostMade = false; // (the host is made below, once makeApi exists)
   const visible = () => globalThis.document?.visibilityState !== "hidden";
-  const writable = () => !(typeof handle.isReadOnly === "function" && handle.isReadOnly());
   const clock = createClock({
     doc,
     change: (fn) => handle.change(fn),
@@ -1282,8 +1313,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       shownAt: (s) => presence.shownAt(s),
       rate: (hz) => presence.rate(PRESENCE_NS, hz),
     },
-    // (no pins or mirrors yet: every stage acts)
-    eligible: () => eligibility({ acts: true, writable: writable(), visible: visible(), settled: hostMade && host.settled(), complete: packages.complete() }),
+    eligible: () => eligibility({ acts, writable: writable(), visible: visible(), settled: hostMade && host.settled(), complete: packages.complete() }),
     writable,
     viewer,
     now: time.now,
@@ -1553,8 +1583,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   };
 
   function change(fn) {
-    // null: nothing to do; a refusal (ops.js) writes nothing
-    if (typeof fn !== "function" || fn.ok === false) return;
+    // null: nothing to do; a refusal (ops.js) writes nothing; a read-only stage writes nothing
+    if (typeof fn !== "function" || fn.ok === false || !writable()) return;
     handle.change(fn);
   }
 
@@ -1591,6 +1621,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * edit's, and undo puts it all back.
    */
   function remove(ids, { edit = null } = {}) {
+    if (!writable()) return null;
     const plan = ops.removeObjects(scene(), ids);
     if (!plan || !plan.ok) return plan;
     const running = host.instances();
@@ -1657,9 +1688,10 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   // this stage puts there hears events in this stage's frame, and is its own
   // (a stopping extension's go with it).
 
-  /** Every running extension's bodies, by id (the first to offer an id has it). */
+  /** Every running extension's bodies, by id (the first to offer an id has it); none from a stage that doesn't act. */
   function bodyDefs() {
     const out = new Map();
+    if (!acts) return out;
     for (const { id: ext, value } of host.collect("bodies")) {
       for (const def of Array.isArray(value) ? value : []) {
         if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || isStageBody(def.id)) continue;
@@ -1804,6 +1836,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * @returns {Promise<string>} the new object's id; rejects with a sentence to show
    */
   async function addObject(input, opts = {}) {
+    if (!writable()) throw new Error("This scene is read-only here.");
     const link = parseAutomergeLink(input);
     if (!link) throw new Error("That doesn't look like an automerge URL.");
     const url = link.url;
@@ -1915,6 +1948,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    */
   function fixPoint(id) {
     const o = doc().objects?.[id];
+    // a link: its doc's heads, and every doc reached through it (the view's to say, from the stages it opened there)
+    if (isLink(o)) return o.at ? null : view.fixPointAt([...path, id]);
     if (!o?.renderUrl || !manager.ids().includes(id)) return null;
     const point = manager.fixPoint(id);
     if (!point) return null;
@@ -1949,6 +1984,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     };
     const have = known();
     if (have) return have;
+    if (!writable()) throw new Error("This scene is read-only here.");
     if (filesMaking.has(key)) return filesMaking.get(key);
     const making = (async () => {
       const f = await make();
@@ -2021,6 +2057,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * @returns {Promise<string | null>}
    */
   async function applyPart(partId, at = null, { edit = null } = {}) {
+    if (!writable()) return null;
     const reg = await getRegistry("scene:part");
     if (dead || !reg) return null;
     let mod;
@@ -2062,6 +2099,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
    * @returns {Promise<boolean>}
    */
   async function applyTemplate(templateId) {
+    if (!writable()) return false;
     const reg = await getRegistry("scene:template");
     if (dead || !reg) return false;
     let mod;
@@ -2134,8 +2172,9 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       };
     };
     let watched = viewValue(); // what api.view.watch last told of
-    const ownEl = (el, parent) => {
-      if (!live()) return el;
+    // (a stage that doesn't act puts no chrome in the view: what it makes stays out of the DOM; its styles go in, since what it draws may need them)
+    const ownEl = (el, parent, { chrome = true } = {}) => {
+      if (!live() || (chrome && !acts)) return el;
       own.els.add(el);
       // (which stage it is: several docs' extensions share one view's DOM)
       el.dataset.stage = String(n);
@@ -2160,8 +2199,10 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       Counter,
       doc,
       change,
-      /** may this view write the doc? (a handle at fixed heads may not: Keyhive's to answer, in time) */
-      writable: () => !(typeof handle.isReadOnly === "function" && handle.isReadOnly()),
+      /** may this view write the doc? (not in a pin or a mirror, nor where the handle refuses: Keyhive's to answer, in time) */
+      writable,
+      /** does this stage act ("acting"), or is it drawn ("mirror", "pinned")? (COMPOSITION.md §7) */
+      role,
       newId,
       scene,
       ops,
@@ -2211,11 +2252,13 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
             }),
           ),
         select: (target) => {
-          if (live()) view.select(target == null ? null : [...path, target]);
+          if (live() && acts) view.select(target == null ? null : [...path, target]);
         },
       }),
       pref,
-      setPref,
+      setPref: (key, value) => {
+        if (acts) setPref(key, value);
+      },
       presence: Object.freeze({
         set: (key, value) => {
           if (live()) presence.set(id, key, value);
@@ -2230,7 +2273,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       send: (type, data) => {
         if (live()) presence.send(id, type, data);
       },
-      notify: (text, kind) => notify(text, kind, id),
+      notify: (text, kind) => (acts ? notify(text, kind, id) : null),
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
       packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
@@ -2249,12 +2292,12 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         applyDoc(derive());
       },
       providersFor,
-      /** a link of this doc's, as the view has it: { state: "open" | "mirror" | "pinned" | "closed", reason? }, or null (not a link, or not expanded yet) */
+      /** a link of this doc's, as the view has it: { role: "acting" | "mirror" | "pinned" | "closed", open, reason? } (open: its doc is drawn, else its hint), or null (not a link, or not expanded yet) */
       link: (oid) => view.linkState([...path, oid]),
       addObject,
       rebuild,
       fixPoint,
-      drop: (info, opts) => host.drop(info, opts),
+      drop: (info, opts) => (writable() ? host.drop(info, opts) : Promise.resolve(false)),
       template: (templateId) => applyTemplate(templateId),
       part: (partId, at, opts) => applyPart(partId, at, opts),
       /**
@@ -2269,11 +2312,12 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       ...(isOwn(rec.module)
         ? {
             edit: (fn, { label, handle: h } = {}) => {
+              if (!writable()) return;
               const g = edits.begin(label);
               g.change(fn, h);
               g.end();
             },
-            edits: (label) => edits.begin(label),
+            edits: (label) => (writable() ? edits.begin(label) : NO_EDIT),
             /** undo or redo this viewer's last edit in the focus doc: false when there's none, it has been changed since, or it needs the others' agreement */
             undo: () => edits.take("undo"),
             redo: () => edits.take("redo"),
@@ -2291,12 +2335,17 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         },
         // in this stage's frame (./scope.js)
         get: () => scope.camera.get(),
-        set: (cam) => scope.camera.set(cam),
-        frame: (box) => scope.camera.frame(box),
-        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
+        // the camera is the viewer's: only a stage that acts moves it
+        set: (cam) => {
+          if (acts) scope.camera.set(cam);
+        },
+        frame: (box) => {
+          if (acts) scope.camera.frame(box);
+        },
+        hold: () => (acts ? acquire(own.cameraHolds, () => viewport.hold()) : noop),
         /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
-        ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
-        limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
+        ride: (oid, opts) => (acts ? acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)) : noop),
+        limit: (spec) => (acts ? acquire(own.offs, () => viewport.limit(spec)) : noop),
         touched: () => viewport.touched() || cameraRestored,
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom); never while it's held */
@@ -2330,7 +2379,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       },
       /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
       dock: (el, { title, onClose, embed = true, show = true } = {}) => {
-        if (!live() || !el) return noop;
+        if (!live() || !el || !acts) return noop;
         // an open drawer wants the pointer (stage/pointer.js)
         const close = acquire(own.offs, () => {
           const off = drawer.dock(ownerKey(id), el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
@@ -2343,7 +2392,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         const el = document.createElement("style");
         el.textContent = String(text ?? "");
         el.dataset.owner = id;
-        return ownEl(el, root);
+        return ownEl(el, root, { chrome: false });
       },
       listen: (target, type, fn, opts) =>
         acquire(own.offs, () => {
@@ -2351,7 +2400,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
           return () => target.removeEventListener(type, fn, opts);
         }),
       cursor: (name) => {
-        if (live()) view.cursor(ownerKey(id), name);
+        if (live() && acts) view.cursor(ownerKey(id), name);
       },
       pose: Object.freeze({
         /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
@@ -2385,7 +2434,9 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         computer: () => claimedBy(null, CLOCK),
         pause: () => clock.pause(),
         resume: () => clock.resume(),
+        /** (a pin or a mirror computes nothing: its processes are never started) */
         process: (spec) => {
+          if (!acts) return noop;
           const off = acquire(own.processes, () => clock.process(spec));
           clockFrames();
           return off;
@@ -2402,9 +2453,9 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => viewValue().body,
         /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
-        enter: (bid, place) => (live() ? enterBody(bid, place) : false),
+        enter: (bid, place) => (live() && acts ? enterBody(bid, place) : false),
         /** leave the top body (never the base: Look or Edit) */
-        leave: () => (live() ? view.leaveBody() : false),
+        leave: () => (live() && acts ? view.leaveBody() : false),
         /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
         /** the top body's reach (m; Look's and Edit's are Infinity) */
@@ -2416,11 +2467,11 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
        * and its input. Whatever was held is put down. @returns put
        */
       hold: (tool, input) => {
-        if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
+        if (!live() || !acts || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
-      popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
+      popover: (close) => (live() && acts && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
       /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
       context: (hit) => context(hit),
       /** attention: { selected, hit } (the selection, else the look) */
@@ -2437,7 +2488,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       path: (o) => view.inputPath(o),
       audience: audienceOf,
       shown: shownTo,
-      run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.stage(inv.stage)?.reader.run(inv) ?? false) : run(inv)),
+      run: (inv) => (!acts ? false : inv?.stage != null && inv.stage !== n ? (view.stage(inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
 
     function release() {
@@ -2514,6 +2565,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   // stage's frame), owners as the view's keys, distances in the world.
   function widgetsAt(ev) {
     const out = [];
+    if (!acts) return out;
     const f = scope.frame();
     for (const r of host.running()) {
       const input = r.instance.input;
@@ -2532,6 +2584,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   // the hit's path: its holders, nearest first, then its root's, then (in the
   // focus) the general ones.
   function segment(element) {
+    // a pin or a mirror is drawn, never acted on: it has no segment (I8)
+    if (!acts) return { order: [], holderOf: () => null };
     const running = host.running();
     const m = derive();
     const chain = element != null && m.objects[element] ? hitChain(element, m.parents, m.groups, m.objects) : [];
@@ -2631,6 +2685,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     tickPoses,
     /** the doc's clock here (clock.js): t, status, tick(at), check() */
     clock,
+    /** does it act ("acting"), or is it drawn ("mirror", "pinned")? */
+    role,
     /** the claims this view holds: [{ id, kind, ext }] */
     claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     stats: () => ({
@@ -2676,17 +2732,21 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   const reader = Object.freeze({
     stage: n,
     scene,
-    collect: (name) => host.collect(name).map((x) => ({ ...x, stage: n })),
+    collect: (name) => (acts ? host.collect(name).map((x) => ({ ...x, stage: n })) : []),
     context: (hit) => context(hit),
     attention: () => attention(),
     look: () => look(),
-    run: (inv) => run(inv),
+    run: (inv) => (acts ? run(inv) : false),
     nameOf: (oid) => nameOf(oid),
   });
 
   stage = Object.freeze({
     n,
     reader,
+    role,
+    acts,
+    /** the docs found through its repo, url → handle (a link's fixPoint holds their heads) */
+    reached,
     path: Object.freeze([...path]),
     url: handle.url ?? null,
     handle,

@@ -739,8 +739,10 @@ An object whose source is another scene doc, through the scene's own
 `scene.link` source (`content: "scene"`), is a **link**: no render doc,
 and the view opens a stage for the linked doc, drawn where the link is, in
 its frame (COMPOSITION.md; STAGE.md, "Views, stages and links"). Dropping a
-scene doc adds one, live; a URL with heads adds a pinned value (opened at
-step 13). The host's facts about it are its own fields: its transform,
+scene doc adds one, live; a URL with heads, or *Fix at this version*, makes
+it a pin: its doc at those heads, read-only. A doc linked live twice acts at
+the first link and is a **mirror** at the other: the same live doc, drawn
+there and never acted on. The host's facts about it are its own fields: its transform,
 parent, `locked`, and `hint.bounds`, the room it gives the linked doc, drawn
 while the link is closed. The linked doc runs its own extensions on its own
 channel, and nothing of the host reads into it. A game part does this for
@@ -775,7 +777,12 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
   offers them as commands on the right-click menu); the point to fix at
   comes from `api.fixPoint(id)` (STAGE.md), and the write is a plain
   `ops.setField(scene, id, "at", …)`. The outline marks a fixed object with a
-  small "◷ fixed" tag.
+  small "◷ fixed" tag. A **link** (a scene doc placed in this one) is fixed
+  the same way: at its doc's heads, with the heads of every doc reached
+  through it in `deps` (the docs it links, the files and containers its
+  extensions read), so the whole of what it shows is held. A fixed link is
+  a **pin**: its doc at those heads, drawn and never acted on (STAGE.md,
+  "Views, stages and links").
 - **URLs.** A dropped or pasted URL with heads adds the object with
   `at: { heads }` (no `deps`). Accepted: `automerge:<id>#<h1>|<h2>` (the form
   automerge-repo's `stringifyAutomergeUrl` writes, heads `|`-joined), a

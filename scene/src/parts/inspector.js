@@ -155,10 +155,17 @@ function create(api) {
   /** Where api.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
   const fixPointOf = (id) => (typeof api.fixPoint === "function" ? api.fixPoint(id) : null);
 
-  /** Fix an object at exactly what its render was last built from. */
+  /**
+   * Can it be fixed at a version: content that follows a doc as it changes
+   * (a render doc's build, or a link's scene doc), not a file.
+   */
+  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || api.loadState?.(id)?.content === "scene");
+  const notYet = (id) => (api.loadState?.(id)?.content === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
+
+  /** Fix an object at exactly what it shows now: its render's build, or a link's doc and every doc reached through it. */
   function fixVersion(id) {
     const point = fixPointOf(id);
-    if (!point) return void api.notify("It hasn't been built here yet, so there's no version to fix.", "error");
+    if (!point) return void api.notify("There's no version of it here to fix yet.", "error");
     apply(api.ops.setField(api.scene(), id, "at", point), "Fix at this version");
   }
 
@@ -463,8 +470,8 @@ function create(api) {
     const openFile = content === "file" ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
     const about = el("section", { class: "about", hidden: true });
     const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
-    // Which version of the source it shows (`at`); only a render doc can be fixed.
-    const version = o.renderUrl
+    // Which version of the source it shows (`at`): a render doc's, or a link's doc's.
+    const version = versioned(id, o)
       ? {
           text: el("span", { class: "version-text" }),
           fix: el("button", { type: "button", class: "button fix-version", onclick: () => fixVersion(id) }, "Fix at this version"),
@@ -651,7 +658,7 @@ function create(api) {
     if (v.text.title !== title) v.text.title = title;
     const point = fixPointOf(view.id);
     v.fix.disabled = !point || atKey(point) === key;
-    v.fix.title = !point ? "Not built here yet: nothing to fix" : "Keep showing exactly what is built now, whatever later edits to the source do";
+    v.fix.title = !point ? notYet(view.id) : "Keep showing exactly what it shows now, whatever later edits to the source do";
     v.follow.disabled = !at;
   }
 
@@ -795,9 +802,9 @@ function create(api) {
       show: ["menu"],
       state: (target, { scene }) => {
         const o = objectOf(target, scene);
-        if (!o || isGroup(o) || !o.renderUrl || normalizeAt(o.at)) return null;
+        if (!versioned(target, o) || normalizeAt(o.at)) return null;
         const point = fixPointOf(target);
-        return point ? { title: "Keep showing exactly what is built now, whatever later edits to the source do" } : { title: "Not built here yet: nothing to fix", disabled: true };
+        return point ? { title: "Keep showing exactly what it shows now, whatever later edits to the source do" } : { title: notYet(target), disabled: true };
       },
       run: (target) => fixVersion(target),
     },
@@ -808,7 +815,7 @@ function create(api) {
       show: ["menu"],
       state: (target, { scene }) => {
         const o = objectOf(target, scene);
-        return o && !isGroup(o) && o.renderUrl && normalizeAt(o.at) ? { title: "Follow edits to the source again" } : null;
+        return versioned(target, o) && normalizeAt(o.at) ? { title: "Follow edits to the source again" } : null;
       },
       run: (target) => followLatest(target),
     },

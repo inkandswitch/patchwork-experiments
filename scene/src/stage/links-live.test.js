@@ -65,7 +65,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(ids(s.debug.view.stage(0))).toEqual(["scene.keys", "t.general", "t.host"]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);
-    expect(s.api("t.host").link("L")).toEqual({ state: "open" });
+    expect(s.api("t.host").link("L")).toEqual({ role: "acting", open: true });
     expect(s.api("t.host").link("table")).toBe(null);
     // the game's api is the game's: its url, its scene, its root at null
     const gapi = m.g.debug.host.record("t.card").api;
@@ -165,8 +165,8 @@ describe("a live link opens a stage for its doc", () => {
       d.objects.M = { name: "Gone", sourceUrl: "automerge:2222222222222222222222222222", providerId: LINK, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } };
       d.order.push("M");
     });
-    await until(() => s.api("t.host").link("M")?.state === "closed");
-    expect(s.api("t.host").link("M")).toEqual({ state: "closed", reason: "unavailable" });
+    await until(() => s.api("t.host").link("M")?.role === "closed");
+    expect(s.api("t.host").link("M")).toEqual({ role: "closed", open: false, reason: "unavailable" });
   });
 });
 

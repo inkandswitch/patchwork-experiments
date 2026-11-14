@@ -23,6 +23,12 @@
 // without one are ignored, as are our own, and so is a hold without its
 // `since` stamp.
 //
+// A presence that only listens (`listen: true`: a read-only stage's, a pin's
+// or a mirror's, COMPOSITION.md §7) hears its doc's channel and says nothing
+// on it: no hello, no heartbeat, no keys, sends or holds, no bye. It hears
+// its own session too, since it never speaks: that is how a mirror hears its
+// own view's acting stage of the same doc (one session per view).
+//
 // Nothing here knows what a key means or what a transform looks like: the
 // stage shows poses and extensions read keys. Time comes in through now /
 // setTimer / clearTimer so tests can drive it.
@@ -180,6 +186,7 @@ function newSession() {
  *   now?: () => number,
  *   setTimer?: (fn: () => void, ms: number) => any,
  *   clearTimer?: (t: any) => void,
+ *   listen?: boolean,                       // hear the channel, say nothing on it
  * }} o
  */
 export function createPresence({
@@ -189,6 +196,7 @@ export function createPresence({
   now = () => Date.now(),
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
+  listen = false,
 }) {
   let dead = false;
   let session = firstSession;
@@ -196,6 +204,7 @@ export function createPresence({
 
   let bus = null; // this presence on the page bus (joined below, once onMessage exists)
   function broadcast(msg) {
+    if (listen) return;
     if ((dead || away) && !msg.bye) return;
     try {
       handle?.broadcast?.(msg);
@@ -233,7 +242,7 @@ export function createPresence({
   function sendState() {
     clearTimer(sendTimer);
     sendTimer = null;
-    if (dead || away) return;
+    if (dead || away || listen) return;
     sentAt = now();
     broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys });
     clearTimer(heartbeat);
@@ -405,7 +414,7 @@ export function createPresence({
    * hold it is the stage's to say (holds.js), this only says it to peers.
    */
   function hold(ext, id, parent, transform, yields = false) {
-    if (dead || !isStr(ext) || !isStr(id) || !isObj(transform)) return;
+    if (dead || listen || !isStr(ext) || !isStr(id) || !isObj(transform)) return;
     let h = held.get(id);
     if (h && h.ext !== ext) {
       clearTimer(h.timer);
@@ -607,7 +616,7 @@ export function createPresence({
   const onMessage = (payload) => {
     if (dead) return;
     const msg = payload?.message;
-    if (!isObj(msg) || !isStr(msg.session) || msg.session === session) return;
+    if (!isObj(msg) || !isStr(msg.session) || (msg.session === session && !listen)) return;
     if (msg.type === PRESENCE) onPresence(msg);
     else if (msg.type === SEND) onSend(msg);
     else if (msg.type === POSE) onPose(msg);
@@ -673,7 +682,7 @@ export function createPresence({
     bus = null;
   }
 
-  const listen = (bag) => (fn) => {
+  const subscribe = (bag) => (fn) => {
     if (dead || typeof fn !== "function") return () => {};
     bag.add(fn);
     return () => bag.delete(fn);
@@ -686,16 +695,16 @@ export function createPresence({
     set,
     clear,
     get,
-    watch: listen(watchers),
+    watch: subscribe(watchers),
     rate,
     send,
-    onReceive: listen(receivers),
+    onReceive: subscribe(receivers),
     hold,
     release,
     remoteHolds,
     shownAt,
     heldBy,
-    watchHolds: listen(holdWatchers),
+    watchHolds: subscribe(holdWatchers),
     settle,
     goodbye,
     hello,

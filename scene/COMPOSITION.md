@@ -47,10 +47,12 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–12 have since been built (Build order, below). Since step 12 the
+Steps 1–13 have since been built (Build order, below). Since step 12 the
 stage composes docs: Lost Cities aboard is two docs (the boat, with a
 locked link to the game on its card table), and the Quiet games room links
-its games, its Lost Cities table the same game doc as the boat's. What
+its games, its Lost Cities table the same game doc as the boat's. Since
+step 13 pins and mirrors open: "Fitting out" is a sloop whose companionway
+is a fit-out fixed at a version, and one hatch linked live twice. What
 follows is kept as the record of why; where it still holds, the step that
 left it says so.*
 
@@ -376,13 +378,17 @@ expand(root, open) → [{ path, url, heads | null, role: "acting" | "mirror" | "
 - **A live doc acts at one occurrence per view**: the shallowest, then the
   smallest link id where two paths first differ. One viewer acting at two
   placements would run every extension twice under one session: two sims
-  stepping, two keepers dealing, two seats. The acting stage is keyed by
-  URL, so when a doc arrives and the choice changes, its frame moves and
-  its claims and channel go on.
+  stepping, two keepers dealing, two seats. *As built (step 13):* every
+  stage is keyed by its occurrence (path, role and identity), so when a doc
+  arrives and the choice changes, the stage that acted closes (its claims
+  go) and one opens where it acts now, with the mirror's stage closing in
+  its turn (Decisions, step 13, 7).
 - **Every other live occurrence is a mirror**: a read-only stage on the same
   live handle. It runs its extensions, so it looks the same, at its own
   placement. It is drawn, not acted on: its segment is never in the chain,
-  it offers no tool or body, and it never computes its clock. By the page
+  it offers no tool or body, and it never computes its clock. *As built:*
+  it draws into the world and nothing more (no chrome, camera, notices or
+  processes), and hears its channel without speaking on it. By the page
   bus it hears its own view's acting stage, so a carry shows in both. A
   part used twice in an assembly follows latest twice; a copied link shows
   the same game, not a dead box.
@@ -698,7 +704,68 @@ ships alone and proves something.
     here" shows people at a linked placement as "look" to a viewer of the
     game alone (the body chip publishes on the focus doc's channel).
 13. **Pins and mirrors** (I6), which never compute. *Proves:* example 2; a
-    part repeated live.
+    part repeated live. *Built:* the view opens a stage for every occurrence
+    the expansion doesn't close, keyed by its path, role and identity
+    (`view.js` `relinkNow`): a live doc acts at the first in path order and
+    is a mirror (`role: "mirror"`, a read-only stage on the same live
+    handle) at the rest; a pinned link is a read-only stage on its doc at
+    the pinned heads (`pinHandle`: `handle.view(heads)`, drawn as its hint
+    until those heads arrive). `createStage({ role, deps })`: a stage that
+    doesn't act (pin, mirror) is **drawn**: its extensions run and draw into
+    the world, but it has no segment, body, tool, command or widget, puts no
+    chrome in the DOM, doesn't move the camera, select, notify or set
+    prefs, and starts no process; `view.acting()` and the input path pass
+    over it. A stage that doesn't act, or whose handle refuses writes, is
+    **read-only by construction**: its handle and repo come through
+    `stage/readonly.js`, whose writes and sends throw, and every write path
+    checks `writable()` first (change, addObject, remove, claim, pose.hold,
+    the own parts' edits, parts, templates, drops, files); package
+    reconcile writes nothing, the render manager builds nothing
+    (`readOnly`), and presence only listens (`listen: true`: no hello, keys,
+    sends, holds or bye; it hears its own session, which is how a mirror
+    hears its view's acting stage over the page bus). A pin has no channel:
+    no claim counts in it. `api.role`; `api.link(id)` → `{ role, open,
+    reason? }`. **A pin is whole:** a stage's repo notes every doc it finds,
+    and `api.fixPoint(link)` (the view's `fixPointAt`) is the linked doc's
+    heads with, in `deps`, the heads of every live doc opened under it and
+    every doc their stages reached (render docs, files, a keeper's
+    container); a pin's repo finds those at their heads. The inspector's Fix
+    at this version and Follow latest take links as they take built
+    content. I6 (`readonly-stage.test.js`): a pin, a mirror and a live doc
+    whose handle refuses writes × every write, send, hold, claim, process,
+    own edit, part, template, drop, `api.handle` and `api.repo` write, then
+    a checkpoint's worth of world time, over docs whose `change` and
+    `broadcast` throw: nothing reaches them and the stage never reaches its
+    own refusal (no warning, no throw); for the drawn two, everything that
+    would act; the wrappers over every refused method. Pins and mirrors in a
+    view (`links-drawn.test.js`): roles and placements, an edit and a carry
+    shown in the mirror over the page bus, a press on a mirrored card
+    reaching the host as the link, the mirror acting once the acting link
+    goes, a pin unmoved by its doc going on, fixPoint holding a nested doc
+    and a container, Fix and Follow round trip. Presence's listening (every
+    way it could speak × a minute) and the render manager's read-only (six
+    reasons to build) have their own. *Proved* in Chrome by
+    `sailing/probes/pins-run.mjs` (27/27; "Fitting out": a sloop at anchor
+    whose companionway is a fit-out F fixed at a version, and one hatch W
+    that closes itself, linked live twice): F changed live in its own view
+    and the boat still shows it as fixed, with nothing written through the
+    pin; looking at the pin or the mirror S offers nothing; F on the acting
+    hatch opens it and the mirror shows it open at its own placement, then
+    both close two seconds on, W's clock computed by the acting stage alone;
+    writes through the pin and the mirror refused, quietly; Follow latest
+    shows F as it is, and Fix at this version pins it again with its files
+    in deps; under way, F and both hatches ride the hull to 9e-16.
+    `publish-fitout.mjs --dry-run` 9/9 (22 docs). The audit step 12 asked
+    for: the readers of three.js `matrixWorld` outside the viewport
+    (`dimensions.js`, `gltf-content.js`, sailing's `sim.js`) all take it
+    relative to a root, which is frame-invariant; `axes.js` reads
+    `camera.object` as a general part (the focus, the outermost); sailing's
+    `sea-view.js` takes `camera.object.position` in the world, wrong only
+    for a sea in a linked doc. Camber's dressing is Rising Tide's and wasn't
+    audited here. Not done here: Enter on a pin offering Follow latest
+    (14); a mirrored secure deck's faces (a keeper's keys are its
+    instance's, so a mirror's keeper may show backs where the acting one
+    shows faces; not checked).
 14. **Edit in context**: Enter, Leave, link rows in the outline and
     inspector; H10 across docs.
 15. **Extract and bundle** (I9, I11).
@@ -759,3 +826,75 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, step 13 (2026-11-14, made unattended)
+
+Made while building pins and mirrors, with the project lead away; each is
+the simplest reading of section 7 that held up, and says why.
+
+1. **A drawn stage draws into the world, and nothing more.** A pin's or a
+   mirror's extensions run, so it looks as its doc does (layers, labels,
+   styles, looks, lenses), but `overlay`, `edge`, `dock` and `popover` stay
+   out of the DOM, and it doesn't move the camera, select, notify, set a
+   pref, set the cursor, enter a body, hold a tool or run a command. Why:
+   chrome is input, and section 7 says a mirror is drawn, not acted on; a
+   seat picker or a HUD would otherwise appear once per repeat, and a pin's
+   would offer acts on a value.
+2. **Read-only by construction.** A read-only stage is handed its doc and
+   its repo through wrappers (`stage/readonly.js`) whose writes and sends
+   throw. The stage checks `writable()` before every write, so it never
+   reaches them; the I6 harness counts a warning or a throw as a failure.
+   Why: the property holds whatever an extension calls (`api.handle`, a
+   handle from `api.repo`), and a guard someone forgets shows up loudly.
+3. **Read-only is silent.** Every read-only stage's presence only listens,
+   including a live doc acting where its handle refuses writes (a
+   spectator). Why: section 7 has a read-only stage refuse `send` and
+   `pose.hold`; presence keys are speech on the same channel; one rule.
+4. **A pin has no channel.** No claim counts in it (nobody is seated) and
+   it hears nobody. Why: a value has no participants; on the live doc's
+   channel it would show today's people over an old version.
+5. **A mirror hears its own session.** Listening only, it accepts messages
+   from the view's own session. Why: one session per view, and that is how
+   it hears its view's acting stage of the same doc; it never speaks, so
+   nothing echoes.
+6. **No processes in a drawn stage**, replicated ones included:
+   `api.clock.process` is refused there and the spec is never started. Why:
+   "it never computes its clock". Its t is still read: a mirror follows the
+   computer, a pin reads the doc's `clock.t`.
+7. **Stages are keyed by occurrence** (path, role, identity). When one
+   changes (the acting link removed, a link pinned or followed), its stage
+   closes with everything opened under it, and another opens. This keeps
+   step 12's close and reopen rather than section 7's "keyed by URL, its
+   claims go on". Why: moving a live stage's nodes, frame and segment to
+   another placement is a second mechanism for a rare event, and "the
+   acting occurrence can move" is already a listed cost.
+8. **`api.link(id)` is `{ role, open, reason? }`**: the expansion's role
+   (acting, mirror, pinned, closed) and whether its doc is drawn. Why: the
+   old `state` folded two facts into one value.
+9. **A pin is whole without knowing any package.** `fixPoint` of a link
+   holds its doc's heads and, in `deps`, the heads of every live doc opened
+   under it and every doc their stages found through their repos (each
+   stage's repo notes what it finds): render docs, files, a keeper's
+   container. A pin nested under it is skipped (its own `at` holds it). Why:
+   the general reading of "every doc reached through it"; no package
+   declares its references.
+10. **A pin's repo finds listed docs at their heads and others as they
+    are**, read-only (the render pins' `pinnedRepo`). Why: the precedent,
+    and refusing an unlisted doc would starve a keeper of what it shows.
+11. **A drawn stage's render manager builds nothing** and writes no render
+    doc; it shows what is built. Why: the acting stage keeps renders built,
+    and two hosts pinning one doc at different heads must not fight.
+12. **Fix at this version and Follow latest apply to links** as to built
+    content: one verb (the inspector's), two consumers.
+13. **A pin at heads this replica hasn't got** is drawn as its hint
+    (`{ role: "pinned", open: false }`) until the live doc's changes bring
+    them.
+14. **The example's fit-out holds no stations.** Its companionway (a
+    joints slide, a traversal exit) is drawn in the pin and never acted on.
+    Sailing's stations are bound to a ship's simulation in their own doc,
+    so a fit-out of stations would be inert by design: worked example 2
+    puts stations in S.
+15. **Publishing a pin re-creates its doc's history.** Heads don't travel
+    between repos, so `publish-fitout.mjs` makes F as it was fixed, then
+    F's change, and writes the pin at F's server heads (its deps at the
+    files' server heads).

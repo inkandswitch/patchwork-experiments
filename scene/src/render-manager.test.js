@@ -11,7 +11,7 @@ import { pinnedRepo, runBuild, viewAt } from "./build.js";
 
 const tinyGLB = (z = 0) => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, z] }] });
 
-function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "cheap" }], build, fingerprint, pinned = false, peerId } = {}) {
+function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "cheap" }], build, fingerprint, pinned = false, peerId, readOnly = false } = {}) {
   const repo = new FakeRepo();
   if (peerId) repo.peerId = peerId;
   const timers = fakeTimers();
@@ -32,11 +32,47 @@ function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "che
     onGLB: (id, bytes, url) => glbs.push(url),
     timers,
     now: timers.now,
+    readOnly,
   });
   return { repo, timers, source, render, impl, provider, mgr, states, glbs };
 }
 
 describe("render manager", () => {
+  // A pinned or mirrored stage's (COMPOSITION.md §7): it shows what is built,
+  // and over every reason a render could be rebuilt it builds nothing and
+  // writes no render doc.
+  for (const why of ["never built", "params", "source", "a build that failed", "stuck building", "rebuild()"]) {
+    it(`read-only: ${why}: builds nothing, writes nothing, still shows what is built`, async () => {
+      const built = setup();
+      await built.mgr.track("o1", { sourceUrl: built.source.url, renderUrl: built.render.url });
+      await built.timers.advance(0);
+      const t = setup({ readOnly: true });
+      if (why !== "never built") {
+        // the same render, built as the writable manager built it
+        t.render.change((d) => Object.assign(d, JSON.parse(JSON.stringify({ ...built.render.doc(), glbUrl: null }))));
+        if (why === "params") t.render.change((d) => (d.params.size = 7));
+        if (why === "source") t.source.change((d) => (d.size = 9));
+        if (why === "a build that failed") t.render.change((d) => ((d.status = "error"), (d.error = "boom")));
+        if (why === "stuck building") t.render.change((d) => (d.status = "building"));
+      }
+      const glb = t.repo.add({ "@patchwork": { type: "file" }, name: "x.glb", extension: "glb", mimeType: "model/gltf-binary", content: tinyGLB() });
+      t.render.change((d) => (d.glbUrl = glb.url));
+      const heads = t.render.heads();
+      const calls = [];
+      const change = t.render.change.bind(t.render);
+      t.render.change = (...a) => (calls.push("change"), change(...a));
+      t.render.broadcast = () => calls.push("broadcast");
+      await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+      if (why === "rebuild()") t.mgr.rebuild("o1");
+      await t.timers.advance(10 * 60_000);
+      expect(t.impl.build).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
+      expect(t.render.heads()).toEqual(heads);
+      expect(t.repo.created).toEqual([]);
+      expect(t.glbs).toEqual([glb.url]);
+    });
+  }
+
   it("builds immediately when never built, stores a new GLB file doc, and loads it", async () => {
     const t = setup();
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });

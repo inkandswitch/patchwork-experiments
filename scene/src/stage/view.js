@@ -23,7 +23,8 @@ import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
 import { selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
-import { expand } from "./links.js";
+import { expand, identityOf } from "./links.js";
+import { viewAt } from "../build.js";
 import { multiplyMatrices } from "../transform.js";
 
 /** How many stages a view opens at most, nearest first (COMPOSITION.md §7: the budget is the view's). */
@@ -276,9 +277,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const outermost = () => stages.get(0) ?? null;
   /** The stage selection is scoped by: the outermost, until Enter moves it (COMPOSITION.md step 14). */
   const focusStage = () => outermost();
-  /** The stages that act (every open stage, until mirrors and pins: step 13), outermost first. */
-  // outermost first, then by path: a doc's structure, not the order its links' docs arrived in
-  const acting = () => [...stages.values()].sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
+  /**
+   * The stages that act, outermost first, then by path: a doc's structure,
+   * not the order its links' docs arrived in. A pin or a mirror is drawn and
+   * never acts (COMPOSITION.md §7), so it is never among them.
+   */
+  const acting = () => [...stages.values()].filter((s) => s.acts).sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
   /** Give a stage its number; the first is the outermost. */
   function addStage(make) {
     const n = nextStage++;
@@ -289,7 +293,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   function removeStage(s) {
     if (stages.get(s.n) === s) stages.delete(s.n);
-    for (const [u, x] of linked) if (x === s) linked.delete(u);
+    for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
@@ -308,18 +312,22 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // ─── links: the stages this view opens (COMPOSITION.md §7) ────────────────
   // The expansion (links.js) is a pure function of the link graph as the view
   // has it: worked out again whenever a stage's doc changes or a linked doc
-  // arrives. Each live doc acts at one occurrence and is opened there, its
-  // stage keyed by URL. Mirrors and pins are drawn as their hints until step
-  // 13 opens them; a closed link is drawn as its hint.
+  // arrives. Every occurrence that isn't closed gets a stage of its own, keyed
+  // by its path: a live doc acts at one of them, and is a mirror (a read-only
+  // stage on the same live handle) at the rest; a pinned value is a read-only
+  // stage on its doc at those heads. A stage whose occurrence changes role or
+  // identity closes, with everything opened under it, and opens again. A
+  // closed link, or one whose doc (or version) hasn't arrived, is drawn as
+  // its hint.
   const docs = new Map(); // url → { handle, state: "loading" | "ready" | "unavailable" }
-  const linked = new Map(); // url → the stage opened for it
+  const pins = new Map(); // identity (links.js identityOf) → the doc's handle at those heads
+  const opened = new Map(); // path key → { stage, key: role and identity }
   let expansion = [];
-  let linkStates = new Map(); // path (joined by keyOf's separator) → { state, reason? }
+  let linkStates = new Map(); // path key → { role, open, reason? }
   const pathKey = (p) => p.join("\u001f");
-  function docOf(u, heads) {
-    if (heads) return undefined; // a pinned value opens with pins (step 13)
-    const root = outermost();
-    if (root && u === root.url) return root.doc();
+  const occKey = (o) => `${o.role}|${identityOf(o.url, o.heads)}`;
+  /** A doc's live handle as the view has it: found once, watched for changes; null if it can't be opened, undefined while on its way. */
+  function liveHandle(u) {
     let d = docs.get(u);
     if (!d) {
       docs.set(u, (d = { handle: null, state: "loading" }));
@@ -344,8 +352,24 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       return undefined;
     }
     if (d.state === "unavailable") return null;
-    if (d.state !== "ready") return undefined;
-    return d.handle.doc() ?? undefined;
+    return d.state === "ready" ? d.handle : undefined;
+  }
+  /** A doc at fixed heads: its handle there, once those heads are here (the live doc's changes bring them), else undefined; null if it can't be opened. */
+  function pinHandle(u, heads) {
+    const ident = identityOf(u, heads);
+    if (pins.has(ident)) return pins.get(ident);
+    const live = liveHandle(u);
+    if (!live) return live;
+    const v = viewAt(live, heads);
+    if (!v) return undefined;
+    pins.set(ident, v);
+    return v;
+  }
+  function docOf(u, heads) {
+    const root = outermost();
+    if (!heads && root && u === root.url) return root.doc();
+    const h = heads ? pinHandle(u, heads) : liveHandle(u);
+    return h ? (h.doc() ?? undefined) : h;
   }
   let relinkQueued = false;
   /** Work out the expansion again (soon): stages open and close to match. */
@@ -362,34 +386,40 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!root) return;
     expansion = expand({ url: root.url }, docOf, { budget: LINK_BUDGET });
     const want = new Map();
-    for (const o of expansion) if (o.role === "acting" && o.depth > 0) want.set(o.url, o);
-    // a stage whose doc no longer acts here, or acts somewhere else, closes (its claims go with it)
-    for (const [u, s] of [...linked]) {
-      const o = want.get(u);
-      if (o && samePath(o.path, s.path) && stages.get(s.n) === s) continue;
-      linked.delete(u);
-      s.dispose();
+    for (const o of expansion) if (o.depth > 0 && o.role !== "closed") want.set(pathKey(o.path), o);
+    // a stage whose occurrence is gone, or is now another role or identity, closes, and everything opened under it (its claims go with it)
+    const closing = [];
+    for (const [k, rec] of opened) {
+      const o = want.get(k);
+      if (!(o && rec.key === occKey(o) && stages.get(rec.stage.n) === rec.stage)) closing.push(rec.stage.path);
     }
-    // open the rest, outermost first (each under its parent's stage)
-    for (const [u, o] of want) {
-      if (linked.has(u)) continue;
+    for (const p of closing)
+      for (const [k, rec] of [...opened])
+        if (rec.stage.path.length >= p.length && p.every((x, i) => x === rec.stage.path[i])) {
+          opened.delete(k);
+          rec.stage.dispose();
+        }
+    // open the rest, parents first (the expansion is in path order)
+    for (const o of expansion) {
+      const k = pathKey(o.path);
+      if (o.depth === 0 || o.role === "closed" || opened.has(k)) continue;
       const parentOcc = expansion[o.parent];
-      const parent = parentOcc.depth === 0 ? root : linked.get(parentOcc.url);
-      const d = docs.get(u);
-      if (!parent || !d?.handle) continue;
-      linked.set(u, openLinked(d.handle, parent, o));
+      const parent = parentOcc.depth === 0 ? root : opened.get(pathKey(parentOcc.path))?.stage;
+      const handle = o.heads ? pinHandle(o.url, o.heads) : liveHandle(o.url);
+      if (!parent || !handle) continue;
+      opened.set(k, { stage: openLinked(handle, parent, o), key: occKey(o) });
     }
     const states = new Map();
     for (const o of expansion) {
       if (o.depth === 0) continue;
-      const open = o.role === "acting" && linked.get(o.url)?.path && samePath(linked.get(o.url).path, o.path);
-      states.set(pathKey(o.path), Object.freeze({ state: open ? "open" : o.role, ...(o.reason ? { reason: o.reason } : {}) }));
+      const open = opened.get(pathKey(o.path))?.key === occKey(o);
+      states.set(pathKey(o.path), Object.freeze({ role: o.role, open: o.role !== "closed" && open, ...(o.reason ? { reason: o.reason } : {}) }));
     }
     const was = linkStates;
     linkStates = states;
     if (JSON.stringify([...was]) !== JSON.stringify([...states])) for (const s of stages.values()) s.linksChanged();
   }
-  /** Open a linked doc's stage, its root under the link's node, in the link's frame. */
+  /** Open a linked doc's stage, its root under the link's node, in the link's frame, acting or drawn as its occurrence says. */
   function openLinked(handle, parent, o) {
     const linkId = o.link;
     const frame = () => {
@@ -398,15 +428,41 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const f = parent.frame();
       return f.matrix ? multiplyMatrices(f.matrix, m) : m;
     };
-    return addStage((n) => openStage({ handle, view: api, n, path: o.path, frame, under: keyOf(parent.n, linkId), general: false }));
+    return addStage((n) => openStage({ handle, view: api, n, path: o.path, frame, under: keyOf(parent.n, linkId), general: false, role: o.role, deps: o.deps }));
   }
   /** Is a linked doc still on its way: one being found, or acting with no stage open for it yet? */
   function linksPending() {
     for (const d of docs.values()) if (d.state === "loading") return true;
-    return expansion.some((o) => o.role === "acting" && o.depth > 0 && !linked.has(o.url));
+    return expansion.some((o) => o.role === "acting" && o.depth > 0 && !opened.has(pathKey(o.path)));
   }
-  /** A link's state as the view has it ({ state: "open" | "mirror" | "pinned" | "closed" | "acting", reason? }), by its path; null if it isn't one. */
+  /** A link's state as the view has it ({ role: "acting" | "mirror" | "pinned" | "closed", open, reason? }: open, its doc is drawn, else its hint), by its path; null if it isn't one. */
   const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
+  /**
+   * Where fixing the link at path `p` would fix it (COMPOSITION.md §7, "a pin
+   * is whole"): `{ heads, deps? }`, the heads of its doc as this view has it,
+   * and in `deps` the heads of every doc reached through it: the live docs
+   * opened under it and every doc their stages found through their repos
+   * (render docs, files, a keeper's container). Null when no live stage is
+   * open there.
+   */
+  function fixPointAt(p) {
+    const at = opened.get(pathKey(p))?.stage;
+    if (!at || at.role === "pinned") return null;
+    const heads = at.handle.heads?.();
+    if (!Array.isArray(heads) || !heads.length) return null;
+    const deps = {};
+    const note = (u, h) => {
+      const hs = h?.heads?.();
+      if (u !== at.url && !deps[u] && Array.isArray(hs) && hs.length) deps[u] = [...hs];
+    };
+    for (const { stage: s } of opened.values()) {
+      // (a pin under it is fixed already, by its own `at`)
+      if (s.role === "pinned" || s.path.length < p.length || !p.every((x, i) => x === s.path[i])) continue;
+      if (s !== at) note(s.url, s.handle);
+      for (const [u, h] of s.reached) note(u, h);
+    }
+    return Object.keys(deps).length ? { heads: [...heads], deps } : { heads: [...heads] };
+  }
 
   /** Every stage's update flush. */
   const requestFlush = () => {
@@ -747,10 +803,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const order = [...first, ...acting().map((s) => s.n).filter((x) => !first.includes(x))];
     return order.flatMap((x) => stages.get(x)?.reader.collect(name) ?? []);
   }
-  /** The stages on a path, innermost first, out to the outermost. */
+  /** The stages that act on a path, innermost first, out to the outermost (a pin or a mirror on it is passed over: it is drawn, never acted on). */
   function onPath(path) {
     const out = [];
-    for (const s of stages.values()) if (path.length > s.path.length && s.path.every((x, i) => x === path[i])) out.push(s);
+    for (const s of stages.values()) if (s.acts && path.length > s.path.length && s.path.every((x, i) => x === path[i])) out.push(s);
     return out.sort((a, b) => b.path.length - a.path.length);
   }
   const inputOf = (key) => {
@@ -969,6 +1025,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     tryArrive,
     relink,
     linkState,
+    fixPointAt,
     /** what arriving still waits to enter (view.start's body), for probes and tests */
     arriving: () => (arrival ? { ...arrival } : null),
     linksPending: () => linksPending(),

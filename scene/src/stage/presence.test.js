@@ -594,3 +594,52 @@ describe("without a usable handle", () => {
     p.dispose();
   });
 });
+
+// A presence that only listens (a read-only stage's: COMPOSITION.md §7): over
+// every call that would speak and over time, it says nothing; it hears the
+// channel, its own session included (how a mirror hears its view's acting
+// stage of the same doc).
+describe("listening only", () => {
+  const SPEAKS = {
+    hello: (p) => p,
+    set: (p) => p.set("x", "k", 1),
+    rate: (p) => p.rate("x", 60),
+    clear: (p) => p.clear("x"),
+    send: (p) => p.send("x", "kind", { n: 1 }),
+    hold: (p) => p.hold("x", "o1", null, { position: [1, 0, 0] }),
+    release: (p) => p.release("x", "o1"),
+    goodbye: (p) => p.goodbye(),
+    back: (p) => (p.goodbye(), p.hello("s-new")),
+    dispose: (p) => p.dispose(),
+  };
+  for (const [what, act] of Object.entries(SPEAKS)) {
+    it(`${what}: nothing goes out, now or after a minute`, () => {
+      const hl = bus.makeHandle("L");
+      const l = createPresence({ handle: hl, viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+      act(l);
+      clock.advance(60_000);
+      expect(bus.log.filter((x) => x.from === "L")).toEqual([]);
+      expect(l.heldBy?.("o1") ?? null).toBe(null);
+      l.dispose();
+    });
+  }
+
+  it("hears the channel, its own session too: presence, sends and holds", () => {
+    const hl = bus.makeHandle("L");
+    const l = createPresence({ handle: hl, viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    const got = [];
+    l.onReceive((ext, kind, data, from) => got.push([ext, kind, from.session]));
+    a.set("x", "k", 2);
+    a.send("x", "kind", null);
+    b.send("x", "kind", null);
+    a.hold("x", "o1", null, { position: [1, 0, 0] });
+    clock.advance(HEARTBEAT_MS); // (b says nothing new until its heartbeat)
+    expect(l.get().sa?.keys?.x?.k).toBe(2);
+    expect(Object.keys(l.get()).sort()).toEqual(["sa", "sb"]);
+    expect(got).toEqual([["x", "kind", "sa"], ["x", "kind", "sb"]]);
+    expect(l.remoteHolds().get("o1")?.session).toBe("sa");
+    // and a speaking presence of the same session still never hears itself
+    expect(a.get().sa).toBeUndefined();
+    l.dispose();
+  });
+});
