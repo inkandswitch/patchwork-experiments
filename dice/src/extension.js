@@ -287,6 +287,11 @@ function create(api) {
       if (text) api.notify(text, "warn");
     };
     toss.end = end;
+    // A hold refused (something else here or a peer has hold of the die: a carry, the halo, someone's
+    // catch) is the die caught: it's theirs, and this throw neither shows nor lands it.
+    const hold = (id, pose) => {
+      if (!api.pose.hold(id, pose)) drop(id);
+    };
     const started = api.clock.now();
     let t = 0;
     let down = null; // once the seed is known: { u, paths: Map id → path, landed: Map id → { to, face } }
@@ -323,7 +328,8 @@ function create(api) {
         }
         const seed = st?.public ? seedFromLots(st.seed) : null;
         if (seed == null || t < AIR_SECONDS) {
-          for (const [id, d] of dice) api.pose.hold(id, airborne(d.built, d.from, t, d));
+          for (const [id, d] of [...dice]) hold(id, airborne(d.built, d.from, t, d));
+          if (!dice.size) return end();
           return;
         }
         const landed = landingsOf(dice, order.length, seed);
@@ -331,7 +337,8 @@ function create(api) {
       }
       down.u = Math.min(1, down.u + Math.min(0.1, Number(dt) || 0) / LAND_SECONDS);
       if (down.u < 1) {
-        for (const id of dice.keys()) api.pose.hold(id, down.paths.get(id)(down.u));
+        for (const id of [...dice.keys()]) hold(id, down.paths.get(id)(down.u));
+        if (!dice.size) return end();
         return;
       }
       const ids = [...dice.keys()];
@@ -340,7 +347,8 @@ function create(api) {
       api.change(api.ops.setTransform(api.scene(), new Map(ids.map((id) => [id, down.landed.get(id).to]))));
       for (const id of ids) api.pose.release(id, { landed: true });
     });
-    for (const [id, d] of dice) api.pose.hold(id, d.from);
+    for (const [id, d] of [...dice]) hold(id, d.from);
+    if (!dice.size) end();
   }
 
   // ── every throw, as the doc has it: landed by anyone once it's drawn, told from the doc ──

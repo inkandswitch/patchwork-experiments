@@ -499,11 +499,16 @@ function create(api) {
       }
       const w = Math.sin(t * Math.PI * 7);
       const k = state.cups.get(id)?.k ?? 1;
-      api.pose.hold(id, {
+      // refused (a carry or the halo here, or a peer, has hold of the cup): the rattle stops; the shake is written
+      const shown = api.pose.hold(id, {
         position: [base.position[0] + (0.006 * w) / k, base.position[1] + (0.05 * Math.sin(t * Math.PI)) / k, base.position[2]],
         rotation: [0.25 * w, base.rotation[1], 0.15 * Math.cos(t * Math.PI * 5)],
         scale: base.scale,
       });
+      if (!shown) {
+        stop?.();
+        shaking.delete(id);
+      }
     });
     shaking.set(id, { stop });
   }

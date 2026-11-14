@@ -136,6 +136,25 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.done();
   });
 
+  it("the rattle in the air is shown only while its hold stands: refused (a carry or the halo here has the cup), it stops and holds nothing; the shake is written as ever", () => {
+    for (const when of ["start", "mid-shake"]) {
+      const t = table();
+      if (when === "start") t.w.view("A").heldHere = new Set(["cup"]);
+      t.run("A", "shake");
+      expect(t.cup(), when).toMatchObject({ holder: "alice", up: false, roll: { done: false } });
+      t.w.tick(1 / 60, 3);
+      if (when === "mid-shake") t.w.view("A").heldHere = new Set(["cup"]);
+      t.w.tick(1 / 60, 3);
+      const loops = t.w.view("A").loops.length;
+      t.w.tick(1 / 60, Math.ceil(SHAKE_SECONDS * 60) + 2);
+      // no hold of the cup's left standing, nor released as landed: it was never this throw's to land
+      expect(t.w.holds.get("cup")?.landed ?? false, when).toBe(false);
+      expect(t.w.released.filter((r) => r.id === "cup" && r.landed), when).toEqual([]);
+      expect(t.w.view("A").loops.length, when).toBeLessThanOrEqual(loops);
+      t.w.done();
+    }
+  });
+
   it("everyone else is told of a shake from the doc: a new draw on the cup, whoever wrote it and whatever they said", () => {
     const t = table();
     t.shake();
