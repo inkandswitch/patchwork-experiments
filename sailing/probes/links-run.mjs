@@ -41,10 +41,12 @@
 //     boat's world running, Ben enters G: his clock chips are the focus
 //     path's, so the boat's chip stays, named; he leaves. Cara (G alone)
 //     selects a card: Ben (outside G) and Ana (outside G, in the room) see
-//     her box in their G stage, drawn by select's half, and Ana's mirror and
-//     pin of G draw none. Cara walks on G's table: Ben and Ana draw her, by
-//     walk's half, where her feet are through G's frame in each (heeling
-//     aboard, level in the room); the mirror and the pin draw nobody;
+//     her box in their G stage and Ana's mirror of G, drawn by scene.others
+//     (a part of every doc), and Ana's pin of G draws none. Cara walks on G's
+//     table: Ben and Ana draw her, by walk.people (a part of every doc),
+//     where her feet are through G's frame in each (heeling aboard, level in
+//     the room, and again in Ana's mirror through its own link); the pin
+//     draws nobody;
 //  8. no page errors, and no warnings (a refused write would warn).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -244,21 +246,21 @@ try {
     const card = (await P("where()")).table[0] ?? (await P("where()")).p1[0];
     await P(`caraSelects(${J(card)})`);
     const box = `peer:${await P("session('c')")}`;
-    const seen = await until(`peerBoxes('b').some((x) => x.role === 'acting' && x.half && x.boxes.includes(${J(box)})) && __p.peerBoxes('a').some((x) => x.role === 'acting' && x.half && x.boxes.includes(${J(box)}))`, 4000);
+    const seen = await until(`peerBoxes('b').some((x) => x.role === 'acting' && x.boxes.includes(${J(box)})) && __p.peerBoxes('a').filter((x) => x.role !== 'pinned' && x.boxes.includes(${J(box)})).length === 2`, 4000);
     const boxes = { a: await P("peerBoxes('a')"), b: await P("peerBoxes('b')") };
     report.numbers.peerBoxes = boxes;
-    check("7b. Cara selects a card in G: Ben and Ana, each outside G, see her box in their G stage, drawn by select's half; Ana's mirror and pin of G draw none", seen && J(boxes.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && [...boxes.a, ...boxes.b].every((x) => (x.role === "acting" ? J(x.boxes) === J([box]) : x.boxes.length === 0 && !x.half && !x.whole)), boxes);
+    check("7b. Cara selects a card in G: Ben and Ana, each outside G, see her box in their G stage, and Ana in her mirror of G too, drawn by scene.others, which runs in every stage of G; Ana's pin of G draws none", seen && J(boxes.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && [...boxes.a, ...boxes.b].every((x) => x.runs && J(x.boxes) === J(x.role === "pinned" ? [] : [box])), boxes);
     await P("caraSelects(null)");
 
     const walks = await P("caraWalks()");
     await P("stepFrames(30)");
-    const drawnBoth = await until("avatars('b').some((x) => x.role === 'acting' && x.n === 1) && __p.avatars('a').some((x) => x.role === 'acting' && x.n === 1)", 4000);
+    const drawnBoth = await until("avatars('b').some((x) => x.role === 'acting' && x.n === 1) && __p.avatars('a').filter((x) => x.role !== 'pinned' && x.n === 1).length === 2", 4000);
     await P("stepFrames(1)");
-    const av = { a: await P("avatars('a')"), b: await P("avatars('b')"), wantA: await P("caraIn('a')"), wantB: await P("caraIn('b')") };
+    const av = { a: await P("avatars('a')"), b: await P("avatars('b')"), wantA: await P("caraIn('a')"), wantB: await P("caraIn('b')"), wantMirror: await P("caraIn('a', true)") };
     report.numbers.avatars = av;
-    const at = (w) => av[w].find((x) => x.role === "acting")?.at;
+    const at = (w, role = "acting") => av[w].find((x) => x.role === role)?.at;
     const near = (p, q) => !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6;
-    check("7b. Cara walks on G's table: Ben and Ana draw her by walk's half in their G stage, where her feet are through G's frame in each (heeling aboard, level in the room); the mirror and the pin draw nobody", walks && drawnBoth && J(av.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && near(at("a"), av.wantA) && near(at("b"), av.wantB) && [...av.a, ...av.b].every((x) => (x.role === "acting" ? x.half && x.n === 1 : x.n === 0 && !x.half && !x.whole)), av);
+    check("7b. Cara walks on G's table: Ben and Ana draw her by walk.people in their G stage, where her feet are through G's frame in each (heeling aboard, level in the room), and Ana again in her mirror through its link; the pin draws nobody", walks && drawnBoth && J(av.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && near(at("a"), av.wantA) && near(at("b"), av.wantB) && near(at("a", "mirror"), av.wantMirror) && [...av.a, ...av.b].every((x) => x.runs && x.n === (x.role === "pinned" ? 0 : 1)), av);
     await shot("presence");
   }
 
