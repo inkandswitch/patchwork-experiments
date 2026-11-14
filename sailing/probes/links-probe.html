@@ -303,6 +303,10 @@ try {
     /** the camera's up in view w, and how far it leans */
     cameraUp(w) { const u = dbg[w].viewport.camera.up; return { up: [u.x, u.y, u.z], tilt: tiltDeg([u.x, u.y, u.z]) }; },
     hovered: (w) => gStage(w)?.debug.local.get().hovered ?? null,
+    /** who's here in view w's body chip: { session: text } */
+    here: (w) => Object.fromEntries([...hosts[w].querySelectorAll(".body-person")].map((e) => [e.dataset.session, e.textContent.trim()])),
+    /** does view w's who's here list each of these sessions, and none of them as looking or editing? */
+    hereBusy: (w, sessions) => { const h = P.here(w); return sessions.every((x) => typeof h[x] === "string" && !/· (look|edit)$/i.test(h[x])); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     pageOf(id, local, w) { const m = dbg[w].viewport.worldOf(gKey(w, id)); return m ? page(w, apply(m, local)) : null; },

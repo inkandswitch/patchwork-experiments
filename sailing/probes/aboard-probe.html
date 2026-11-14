@@ -238,11 +238,13 @@ try {
       // the board: G's first locked piece
       const board = Object.keys(gameObjects()).find((id) => gameObjects()[id].kind !== "group" && gameObjects()[id].locked) ?? null;
       // where the scene starts someone new (view.start, as the inspector's Starts in and Set home view write it):
-      // at the table, watching from a seat (the seat body), and a camera over the cockpit, not fitted to the islet
+      // through the game's link, as the game starts people (watching from a seat: TOOLS.md §2, a start placed
+      // on a link), and a camera over the cockpit, not fitted to the islet
       const m = dbg.a.scene().world(hull);
       api.change((d) => {
         if (!d.view.start) d.view.start = {};
-        d.view.start.body = "seat";
+        delete d.view.start.body;
+        d.view.start.place = link;
         d.view.start.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) };
       });
       dbg.a.view.select(null);
@@ -275,6 +277,7 @@ try {
         gameTitle: game?.doc().title ?? null,
         gameStart: game?.doc().view?.start?.body ?? null,
         start: scene.doc().view?.start?.body ?? null,
+        startsThroughLink: !!ids.link && scene.doc().view?.start?.place === ids.link,
         home: scene.doc().view?.start?.home ?? null,
         tableParent: o[ids.table]?.parent ?? null,
         tableLocked: !!o[ids.table]?.locked,
