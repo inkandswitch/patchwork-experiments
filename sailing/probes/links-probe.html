@@ -1,0 +1,282 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>links probe</title>
+<!-- Driven by probes/links-run.mjs: one Lost Cities game doc G, linked live
+     into two scenes (scene/COMPOSITION.md, worked example 3), on the BUILT
+     scene, seats, sailing, tabletop, card-table, keep, joints and traversal
+     plugins in a stub registry, on ONE in-memory repo:
+       A (Ana)  a still room: a Card table with G linked onto it;
+       B (Ben)  the sloop at anchor: the Card table in her cockpit, G linked
+                onto it (the Lost Cities part makes G and links it);
+       C (Cara) G open alone.
+     All three views share G's one handle, as views in one page of one repo
+     do, so the network carries nothing between them: only the stage's page
+     bus does (scene/src/stage/presence.js). One manual clock (window.__time)
+     for all three: nothing moves until the probe steps it. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 6px; }
+  #a, #b, #c { width: 560px; height: 480px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div><div id="c"></div>
+<script type="module">
+{
+  let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** a viewport key (scene/src/stage/paths.js): the outermost stage's ids are their own */
+const SEP = "\u001f";
+const keyOf = (n, id) => (n === 0 && !String(id).startsWith(SEP) ? String(id) : `${SEP}${n}${SEP}${id}`);
+let time = null;
+async function loaded(pred, ms = 20_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
+
+/** Where the Card table goes in the sloop's cockpit, in her hull's frame; the middle of its top, in its frame. */
+const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0], scale: 1 };
+const TABLE_TOP = [0, 0.7006, 0];
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const people = { a: repo.add({ "@patchwork": { type: "contact" }, name: "Ana" }), b: repo.add({ "@patchwork": { type: "contact" }, name: "Ben" }), c: repo.add({ "@patchwork": { type: "contact" }, name: "Cara" }) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c") };
+  for (const w of ["a", "b", "c"]) Object.assign(hosts[w], { repo, viewerId: people[w].url, time });
+  const dbg = { a: null, b: null, c: null };
+  const docs = { room: null, boat: null, game: null };
+  const ids = {};
+  const mount = (w, handle) => {
+    Tool(handle, hosts[w]);
+    dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug;
+  };
+  const told = { a: [], b: [], c: [] };
+  const collect = () => {
+    time.frame(collect);
+    for (const w of ["a", "b", "c"]) for (const n of dbg[w]?.view.atom.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  };
+  time.frame(collect);
+  /** an api of the outermost stage of view w */
+  const apiOf = (w) => {
+    for (const id of ["scene.use", "scene.keys", "scene.add", "sailing"]) { const x = dbg[w].host.record(id)?.api; if (x) return x; }
+    return null;
+  };
+  /** the stage view w shows G in: its own (C), else the one its link opened */
+  const gStage = (w) => (dbg[w] ? dbg[w].view.stages().find((s) => s.url === docs.game?.url) ?? null : null);
+  const gKey = (w, id) => { const s = gStage(w); return s ? keyOf(s.n, id) : null; };
+  const G = () => docs.game?.doc() ?? {};
+  const gObjects = () => G().objects ?? {};
+  const keptBy = (o) => Object.values(o?.traits ?? {}).find((v) => v && typeof v === "object" && typeof v.by === "string" && Number.isInteger(v.slot)) ?? null;
+  const deckUrl = () => Object.values(gObjects()).map((o) => keptBy(o)?.by).find(Boolean) ?? null;
+  const hidden = () => Object.keys(gObjects()).filter((id) => gObjects()[id].traits?.["tabletop.card"]);
+  /** a G snapshot (any view's G stage: the doc is the same doc) */
+  const gScene = () => (gStage("c") ?? gStage("a") ?? gStage("b")).scene();
+  const zoneOf = (id) => {
+    const s = gScene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(gObjects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return null;
+  };
+  const page = (w, p) => {
+    const v = dbg[w].viewport;
+    const r = v.canvas.getBoundingClientRect();
+    const q = v.project(p);
+    return q?.visible === false ? null : { x: r.left + q.x, y: r.top + q.y };
+  };
+  const upOf = (m) => { const l = Math.hypot(m[4], m[5], m[6]) || 1; return [m[4] / l, m[5] / l, m[6] / l]; };
+  const tiltDeg = (u) => (Math.acos(Math.max(-1, Math.min(1, u[1]))) * 180) / Math.PI;
+
+  const P = (window.__p = {
+    errors, ids, people: Object.fromEntries(Object.entries(people).map(([w, h]) => [w, h.url])),
+    /**
+     * The boat as a person makes her (B: Ship at anchor, the Card table in her cockpit, Lost Cities on it: the part
+     * makes G and links it), then the room (A: a Card table, and G linked onto it: the same G), then G alone (C).
+     */
+    build: () => pumping(build),
+    async open() { return true; },
+  });
+  async function build() {
+    docs.boat = repo.add(emptyScene({ title: "Lost Cities aboard" }));
+    mount("b", docs.boat);
+    const button = await (async () => { await loaded(() => hosts.b.querySelector('[data-template="ship-at-anchor"]')); return hosts.b.querySelector('[data-template="ship-at-anchor"]'); })();
+    if (!button) return { error: "no Ship at anchor on the start screen" };
+    button.click();
+    const withTrait = (h, t) => Object.entries(h.doc().objects ?? {}).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+    await loaded(() => withTrait(docs.boat, "sailing.ship") && dbg.b.host.record("sailing")?.api);
+    ids.hull = withTrait(docs.boat, "sailing.ship");
+    const bapi = apiOf("b");
+    bapi.change((d) => { d.title = "Lost Cities aboard"; });
+    ids.boatTable = await bapi.part("tabletop.table", { parent: ids.hull, transform: COCKPIT_TABLE });
+    if (!ids.boatTable) return { error: "no Card table aboard", notices: P.notices("b") };
+    ids.boatLink = await bapi.part("tabletop.lost-cities", { parent: ids.boatTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
+    if (!ids.boatLink) return { error: "no Lost Cities aboard", notices: P.notices("b") };
+    const link = docs.boat.doc().objects[ids.boatLink];
+    docs.game = await repo.find(link.sourceUrl);
+    bapi.change((d) => { d.view.start = { body: "seat" }; });
+    // the room: a still floor, a Card table, the same G linked onto it
+    docs.room = repo.add(emptyScene({ title: "Quiet room", view: { start: { body: "seat" } } }));
+    mount("a", docs.room);
+    await loaded(() => apiOf("a"));
+    const aapi = apiOf("a");
+    ids.roomTable = await aapi.part("tabletop.table", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    ids.roomLink = await aapi.addObject(docs.game.url, { parent: ids.roomTable, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 }, hint: link.hint, fields: { locked: true } });
+    // a part selects what it makes: let go, so attention is the look
+    dbg.a.view.select(null);
+    dbg.b.view.select(null);
+    // G alone
+    mount("c", docs.game);
+    await loaded(() => gStage("a")?.debug.host.instanceOf("tabletop") && gStage("b")?.debug.host.instanceOf("tabletop") && gStage("c")?.debug.host.instanceOf("tabletop"));
+    // the board, G's first locked piece; the hands
+    const go = gObjects();
+    ids.board = Object.keys(go).find((id) => go[id].kind !== "group" && go[id].locked) ?? null;
+    ids.hand1 = Object.keys(go).find((id) => go[id].traits?.["tabletop.zone"]?.seat === "p1");
+    ids.hand2 = Object.keys(go).find((id) => go[id].traits?.["tabletop.zone"]?.seat === "p2");
+    ids.game = docs.game.url;
+    return { ...ids };
+  }
+  Object.assign(P, {
+    /** each view's stages: [{ n, url, path }] */
+    stages: (w) => dbg[w].view.stages().map((s) => ({ n: s.n, url: s.url, path: [...s.path] })),
+    link: (w) => (w === "a" ? apiOf("a").link(ids.roomLink) : w === "b" ? apiOf("b").link(ids.boatLink) : null),
+    shape: () => ({
+      boatHasGamePieces: Object.values(docs.boat.doc().objects).some((o) => o.traits?.["tabletop.card"]),
+      roomHasGamePieces: Object.values(docs.room.doc().objects).some((o) => o.traits?.["tabletop.card"]),
+      boatLink: docs.boat.doc().objects[ids.boatLink],
+      roomLink: docs.room.doc().objects[ids.roomLink],
+      sameGame: docs.boat.doc().objects[ids.boatLink]?.sourceUrl === docs.room.doc().objects[ids.roomLink]?.sourceUrl,
+      gameTitle: G().title,
+      seats: Object.keys(G().traits?.seats ?? {}),
+      boatSeats: docs.boat.doc().traits?.seats ?? null,
+      roomSeats: docs.room.doc().traits?.seats ?? null,
+      running: Object.fromEntries(["a", "b", "c"].map((w) => [w, { outer: dbg[w].host.running().map((r) => r.id), game: gStage(w)?.debug.host.running().map((r) => r.id) ?? null }])),
+    }),
+    seats: () => G().traits?.seats ?? {},
+    pick(w, sid) {
+      const sel = gStage(w) && [...hosts[w].querySelectorAll(".seats-pick")].find((s) => [...s.options].some((o) => o.value === sid));
+      if (!sel) return null;
+      sel.value = sid;
+      sel.dispatchEvent(new Event("change"));
+      return sel.value;
+    },
+    body: (w) => dbg[w].view.atom.get().body,
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    phase: () => (deckUrl() ? repo.handles.get(deckUrl())?.doc()?.phase ?? null : null),
+    /** G's channel as each view hears it: the sessions in its presence, and its own */
+    presence: (w) => { const s = gStage(w); return s ? { mine: s.debug.presence.session, peers: Object.keys(s.debug.presence.get()) } : null; },
+    /** does each view's G stage hear the other two views' sessions? */
+    hearsAll: () => ["a", "b", "c"].every((w) => { const p = P.presence(w); return p && ["a", "b", "c"].filter((x) => x !== w).every((x) => p.peers.includes(P.presence(x)?.mine)); }),
+    claims: (w) => gStage(w)?.debug.claims().map((c) => c.kind) ?? [],
+    claimedBy: (w, sid) => gStage(w)?.debug.host.record("seats")?.api.claimedBy(null, `seat:${sid}`) ?? null,
+    faces(w) { const looks = gStage(w)?.debug.looks(); return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; }); },
+    where() { const out = { p1: [], p2: [], table: [] }; for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id); return out; },
+    /** the deck's pile, at its spot ([0.3, 0] in G's root frame), top first */
+    pile() {
+      const s = gScene();
+      const at = (id) => s.world(id).slice(12, 15);
+      return hidden().filter((id) => { const p = at(id); return Math.hypot(p[0] - 0.3, p[2]) < 0.01; }).sort((p, q) => at(q)[1] - at(p)[1]);
+    },
+    /** a card's doc pose in G's root frame */
+    inGame(id) { const m = gScene().world(id); return { local: m.slice(12, 15).map((v) => +v.toFixed(4)), up: +upOf(m)[1].toFixed(4), parent: gObjects()[id]?.parent ?? null }; },
+    /** a G object as drawn in view w: its world position and how far its up leans from the world's (deg) */
+    drawn(id, w) { const m = dbg[w].viewport.worldOf(gKey(w, id)); return m ? { p: m.slice(12, 15), tilt: tiltDeg(upOf(m)), up: upOf(m) } : null; },
+    /** the camera's up in view w, and how far it leans */
+    cameraUp(w) { const u = dbg[w].viewport.camera.up; return { up: [u.x, u.y, u.z], tilt: tiltDeg([u.x, u.y, u.z]) }; },
+    hovered: (w) => gStage(w)?.debug.local.get().hovered ?? null,
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    pageOf(id, local, w) { const m = dbg[w].viewport.worldOf(gKey(w, id)); return m ? page(w, apply(m, local)) : null; },
+    /** a page point over G's object `id` in view `w` (spiralling out from its origin until a pick hits it) */
+    aimAt(id, w, local = null) {
+      const v = dbg[w].viewport;
+      const key = gKey(w, id);
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(key);
+      const p0 = m && v.project(local ? apply(m, local) : [m[12], m[13], m[14]]);
+      if (!p0) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 1.5 * Math.sqrt(k);
+        const x = p0.x + rad * Math.cos(a), y = p0.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        if (v.pick(x, y)?.id !== key) continue;
+        const on = (px) => px > 2 && px < r.width - 2 && v.pick(px, y)?.id === key;
+        let lo = x, hi = x;
+        while (x - lo < 60 && on(lo - 1)) lo--;
+        while (hi - x < 60 && on(hi + 1)) hi++;
+        return { x: r.left + (lo + hi) / 2, y: r.top + y };
+      }
+      return null;
+    },
+    resume() { apiOf("b").clock.resume(); return apiOf("b").clock.t(); },
+    /** sample, frame by frame for `ms` of the page's clock, how far a G card leans in each view, and B's camera's up against G's table */
+    async sampleLean(id, ms = 6000) {
+      const out = { a: [], b: [], c: [], camB: [], camA: [] };
+      for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
+        await time.step(1, { draw: false });
+        for (const w of ["a", "b", "c"]) { const d = P.drawn(id, w); if (d) out[w].push(d.tilt); }
+        const t = dbg.b.viewport.worldOf(gKey("b", ids.board));
+        const cu = dbg.b.viewport.camera.up;
+        if (t) { const u = upOf(t); out.camB.push(Math.hypot(u[0] - cu.x, u[1] - cu.y, u[2] - cu.z)); }
+        const ca = dbg.a.viewport.camera.up;
+        out.camA.push(Math.hypot(ca.x, ca.y - 1, ca.z));
+      }
+      const max = (xs) => (xs.length ? Math.max(...xs) : null);
+      return { a: max(out.a), b: max(out.b), c: max(out.c), bMin: out.b.length ? Math.min(...out.b) : null, camOffTableB: max(out.camB), camOffWorldA: max(out.camA), frames: out.a.length };
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>
