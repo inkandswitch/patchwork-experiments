@@ -339,20 +339,20 @@ try {
     enterG(w) { return P.enter(w, w === "a" ? ids.roomLink : ids.boatLink); },
     leaveG(w) { dbg[w].view.leave(); return dbg[w].view.atom.get().focus.length; },
     session: (w) => dbg[w].view.session,
-    /** in each of view w's stages of G (path, role): what its part `ext` draws in its world layer, by the whole part or its half */
+    /** in each of view w's stages of G (path, role): whether its part `ext` runs there, and what it draws in its world layer */
     layerIn(w, ext) {
       // (a pin's url names G at its heads: G's stages are those whose url starts with G's)
       return dbg[w].view.stages().filter((s) => typeof s.url === "string" && s.url.startsWith(docs.game?.url)).map((s) => {
         const groups = [...(dbg[w].viewport.layers.get(keyOf(s.n, ext)) ?? [])];
-        return { path: s.path.join("/"), role: s.role, half: s.debug.host.halfRecord(ext)?.state === "running", whole: !!s.debug.host.instanceOf(ext), children: groups.flatMap((g) => g.children) };
+        return { path: s.path.join("/"), role: s.role, runs: !!s.debug.host.instanceOf(ext), children: groups.flatMap((g) => g.children) };
       });
     },
     /** each stage of G's peer selection boxes in view w */
-    peerBoxes: (w) => P.layerIn(w, "scene.select").map(({ children, ...x }) => ({ ...x, boxes: children.map((h) => h.userData.selection).sort() })),
+    peerBoxes: (w) => P.layerIn(w, "scene.others").map(({ children, ...x }) => ({ ...x, boxes: children.map((h) => h.userData.selection).sort() })),
     /** each stage of G's avatars in view w, and the first one's world position (its layer followed to where its stage's root is drawn now) */
     avatars(w) {
       dbg[w].viewport.followLayers();
-      return P.layerIn(w, "walk").map(({ children, ...x }) => {
+      return P.layerIn(w, "walk.people").map(({ children, ...x }) => {
         const g = children[0];
         let top = g;
         while (top?.parent) top = top.parent;
@@ -361,11 +361,11 @@ try {
         return { ...x, n: children.length, at: e ? [e[12], e[13], e[14]] : null };
       });
     },
-    /** where Cara's avatar should be drawn in view w now: her feet (G's frame, as she says them on G's channel) through G's root as w draws it */
-    caraIn(w) {
+    /** where Cara's avatar should be drawn in view w now: her feet (G's frame, as she says them on G's channel) through G's root as w draws it (`mirror`: Ana's mirror of G) */
+    caraIn(w, mirror = false) {
       const st = gStage(w);
       const feet = st?.debug.presence.get()[dbg.c.view.session]?.keys?.walk?.avatar?.feet;
-      const link = w === "a" ? keyOf(0, ids.roomLink) : keyOf(0, ids.boatLink);
+      const link = mirror ? keyOf(0, ids.mirrorLink) : w === "a" ? keyOf(0, ids.roomLink) : keyOf(0, ids.boatLink);
       const m = dbg[w].viewport.worldOf(link);
       return feet && m ? apply(m, feet) : null;
     },
