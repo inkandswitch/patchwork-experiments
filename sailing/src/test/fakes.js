@@ -470,7 +470,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
         };
       },
       world: () => ({ children: [], add(o) { this.children.push(o); } }),
-      camera: { object: { position: { x: 0, y: 2, z: 0 } } },
+      // the camera as the stage hands it out, in the stage's frame
+      camera: { get: () => ({ position: [0, 2, 0], target: [0, 0, -1], fov: 50, up: [0, 1, 0] }) },
       invalidate() {},
       schedule: (fn) => fn(),
     };

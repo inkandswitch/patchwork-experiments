@@ -94,7 +94,9 @@ export function drawSea(api) {
     },
     /** The surface at time t, around the camera. */
     draw(t) {
-      surface?.update(t, api.camera.object.position, ATMOSPHERE.sun, ATMOSPHERE.sky);
+      // around the camera as this stage has it (in its frame: a sea in a linked doc is drawn in that doc's)
+      const at = api.camera.get()?.position;
+      if (at) surface?.update(t, at, ATMOSPHERE.sun, ATMOSPHERE.sky);
     },
     dispose() {
       surface?.dispose();
