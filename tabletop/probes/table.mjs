@@ -10,8 +10,9 @@
 // - verbs: hovering the deck, A's use prompt offers Flip and Shuffle; S
 //   shuffles (through the card's keeper), and B is told Ana shuffled it (N);
 // - card slots: a card carried near a free slot of A's tray squares onto it;
-// - edit: the parts bin offers the Tabletop parts; a pawn dragged out lands
-//   where it was dropped, its art one file;
+// - edit: A chooses Edit on the body chip (the seat stays A's); the parts
+//   bin offers the Tabletop parts; a pawn dragged out lands where it was
+//   dropped, its art one file; A sits back down from the seat picker;
 // - play again: the pawn (no tags) carried near a free tray slot does not
 //   snap to it.
 // Prints a JSON checklist; exits non-zero if any check fails.
@@ -153,9 +154,17 @@ try {
   }
 
   await snapLooks("card snapped");
-  // ── editing, seated: the parts bin is a drawer tab A opens from the toolbar ──
+  // ── editing: Edit is a body (scene/TOOLS.md Decisions 6). A leaves the seat for Edit on the
+  // body chip (the seat stays A's), and opens the parts bin, a drawer tab, from the toolbar ──
+  const chooseBody = async (w, label) => {
+    await click(await P(`rect('.body-chip', '${w}')`));
+    await until(`chipItem('${w}', '${label}')`, 3000);
+    await click(await P(`chipItem('${w}', '${label}')`));
+    return until(`body('${w}') === '${label}'`, 3000);
+  };
+  check("A chooses Edit on the body chip: no longer seated, the seat still A's", (await chooseBody("a", "Edit")) && (await P("seats()")).p1.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
-  check("A opens Parts from the toolbar, still seated (no mode to switch)", await until("tab('a', 'parts') && __p.body('a') === 'Seated'", 6000), { body: await P("body('a')"), running: await P("running('a')") });
+  check("A opens Parts from the toolbar", await until("tab('a', 'parts') && __p.body('a') === 'Edit'", 6000), { body: await P("body('a')"), running: await P("running('a')") });
   await settled();
   const bin = await P("binParts('a')");
   check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.table", "tabletop.lost-cities", "tabletop.santorini", "tabletop.dominoes-2", "tabletop.dominoes-3", "tabletop.dominoes-4"]), bin);
@@ -186,6 +195,9 @@ try {
   const partsButton = await P(`rect('.toolbar [data-command="parts"]')`);
   await click(partsButton);
   check("A shuts Parts again", await until("tab('a', 'parts') === false", 6000), { at: partsButton, tab: await P("tab('a', 'parts')") });
+  // (the chip doesn't offer the seat body, which needs a seat: the picker sits A down again, in its own seat)
+  await P("pick('a', 'p1')");
+  check("A sits back down in Player 1 from the seat picker", await until("body('a') === 'Seated'", 3000), { body: await P("body('a')"), seats: await P("seats()") });
   await settled();
   await snapLooks("back in play");
   const same = (x, y) => Object.keys(x).every((id) => !(id in y) || x[id] === y[id]);

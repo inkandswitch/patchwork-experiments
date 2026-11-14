@@ -7,8 +7,8 @@
 // hull (turned a quarter, off the origin, with a connector tagged "mast" and a snap radius)
 // and two parts registered by the page: a crate (no tags) and a mast (tags
 // ["mast"]). Then, with real CDP drags (the bin's own HTML drag, intercepted
-// and played at real coordinates): the bin shows both parts, by category,
-// last in the sidebar; a crate dragged onto the hull goes under it, at the
+// and played at real coordinates): the bin (a drawer tab, opened from Edit's
+// toolbar) shows both parts, by category; a crate dragged onto the hull goes under it, at the
 // drop point in its frame, with the ring there while dragging; the mast
 // dragged onto the hull away from its step, within its reach, snaps to the
 // step (the ring says snapped), and with Alt doesn't; a crate dropped on open ground goes under nothing; a click on
@@ -69,12 +69,15 @@ try {
   await b.rest(500);
   await shot("0-open");
 
-  // ── the bin ───────────────────────────────────────────────────────────────
+  // ── the bin: a drawer tab, opened from the toolbar (Edit's) ───────────────
   {
+    check("startsInEdit", (await P("body()")) === "edit", await P("body()"));
+    const btn = await b.waitFor("__p.tool('parts')", 5000);
+    if (btn) await b.click(btn.x, btn.y);
+    const drawer = await b.waitFor("__p.drawer()?.parts && __p.drawer()", 5000);
+    check("binIsADrawerTab", !!drawer && drawer.tabs.includes("Parts"), drawer);
     const panel = await P("panel()");
-    const order = await P("sidebar()");
     check("binListsParts", panel && !panel.hidden && JSON.stringify(panel.parts) === JSON.stringify(["Crate", "Mast"]) && JSON.stringify(panel.categories) === JSON.stringify(["Probe", "Rig"]), panel);
-    check("binLastInSidebar", order.at(-1) === "parts", order);
   }
 
   // ── a crate dragged onto the hull: under it, at the drop point ────────────

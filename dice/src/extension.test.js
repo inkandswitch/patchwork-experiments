@@ -778,6 +778,29 @@ describe("rolling several together", () => {
     t.w.done();
   });
 
+  it("one something else here has hold of (a carry, the halo: its hold refused) is caught, at the start or mid-air: never shown or landed by the throw", () => {
+    for (const when of ["start", "mid-air", "landing"]) {
+      const t = pair();
+      filed(t);
+      const tens = structuredClone(t.doc.objects.tens.transform);
+      if (when === "start") t.w.view("A").heldHere = new Set(["tens"]);
+      t.run("roll", "g");
+      t.w.tick(1 / 60, 10);
+      if (when === "mid-air") t.w.view("A").heldHere = new Set(["tens"]);
+      t.draw(8, "tens");
+      if (when === "landing") {
+        t.w.tick(1 / 60, 2);
+        t.w.view("A").heldHere = new Set(["tens"]);
+      }
+      t.w.tick(1 / 60, FRAMES);
+      // one write, of units only: tens is where it lay (the carry's to write)
+      expect(t.writes, when).toHaveLength(1);
+      expect(t.doc.objects.tens.transform, when).toEqual(tens);
+      expect(t.doc.objects.units.transform, when).not.toEqual(structuredClone(tens));
+      t.w.done();
+    }
+  });
+
   it("while any of them is in the air or in a peer's hand, the throw waits", () => {
     const t = pair();
     filed(t);

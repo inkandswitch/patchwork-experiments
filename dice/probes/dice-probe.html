@@ -186,7 +186,7 @@ try {
     leave(w) { unmount[w]?.(); unmount[w] = null; dbg[w] = null; return true; },
     present: (w) => Object.values(dbg[w]?.presence?.get?.() ?? {}).map((p) => p.viewer),
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
-    /** the body a view is in, by what its chip says ("Orbit", "Seated") */
+    /** the body a view is in, by what its chip says ("Look", "Seated") */
     body: (w) => dbg[w].local.get().body?.label ?? null,
     /** a drawer tab's name button, by its title, in view w (to show that tab) */
     tabRect(w, title) { const e = [...hosts[w].querySelectorAll(".stage-drawer-tab-name")].find((n) => n.textContent === title); if (!e) return null; const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null; },

@@ -256,7 +256,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   2026-11-13: "roll with the table; the boat is how the boat is"). Other
   rides keep the world's up.
 - **walk**, one package's, replacing arena's and sailing's walkers. It
-  starts at the eye, else the spawn; its floor is whatever the ray hits.
+  starts at the eye if there is floor under it (within 10 m; decided unattended
+  2026-11-14, so an eye over nothing doesn't fall out of the world first),
+  else the spawn; its floor is whatever the ray hits.
   (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as
   a body of its own for now: see build step 6.)
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
@@ -1047,6 +1049,17 @@ The project lead decided the five open questions on 2026-11-12.
      the click: a press (a drag, a carry) still goes down the chain first.
      A package's click verb is reached outside Edit, or by its key and the
      menu.
+   - **The inspector stays open** (decided unattended, 2026-11-14; lane/loose).
+     It used to open on a selection and shut on deselecting, so the canvas
+     changed width at every select and deselect and everything on screen
+     shifted. Now in Edit a selection opens it and it stays open, showing
+     the scene when nothing is selected, until its × or the toolbar's
+     Inspector shuts it (shut until the selection changes) or Edit is left.
+     Not an overlaid drawer: an overlay hides the scene under it, where the
+     selected thing often is, moves the view's visible centre off the
+     camera's, and the drawer also holds docked editors (Camber's Shape)
+     that need their own width. Tested over every sequence of up to two of
+     nine events and three of five (`parts/inspector.test.js`).
    - Nothing stands on Edit: entering any body from it turns the base to
      Look, and Leave falls back to Look, never to Edit (§4).
    - A doc names Edit to start people in it; naming nothing is Look. A scene

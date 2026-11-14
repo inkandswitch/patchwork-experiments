@@ -1,6 +1,6 @@
 // The table (extension.js, visibility.js): its policy over every
 // case, Shuffle through whatever keeps a card, Draw, a card turning face up
-// over your own hand, the hand as the tool in play, and what it tells the
+// over your own hand, a Draw from the seat body, and what it tells the
 // others. Seats and keepers are stand-ins (test/stand-ins.js): the table
 // meets them only through the stage's conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";
@@ -617,6 +617,30 @@ describe("drawing to your hand", () => {
     expect(t.w.sent).toEqual([]);
     expect(t.notices("A")).toEqual(["Someone drew that one"]);
     expect(t.w.doc.objects.low.transform.position).toEqual([0.3, 0.001, 0]);
+    t.w.done();
+  });
+
+  it("one something else here has hold of (a carry, the halo: its hold refused), at the start or on its way: the next card; none left to take, say so", async () => {
+    for (const when of ["start", "on its way"]) {
+      const t = await table();
+      if (when === "start") t.w.view("A").heldHere = new Set(["top"]);
+      t.draw("top");
+      t.w.tick(1 / 60, 5);
+      if (when === "on its way") t.w.view("A").heldHere = new Set(["top"]);
+      t.w.tick(1 / 60, 40);
+      // top stays where the carry has it in the doc; mid comes instead, in one write
+      expect(t.w.doc.objects.top.transform.position, when).toEqual([0.3, 0.003, 0]);
+      near(t.w.doc.objects.mid.transform.position, [-0.21, 0.002, 0.5]);
+      expect(t.writes, when).toHaveLength(1);
+      t.w.done();
+    }
+    // every card of the pile held here: nothing glides, nothing is written, and it says so
+    const t = await table();
+    t.w.view("A").heldHere = new Set(["top", "mid", "low"]);
+    t.draw("top");
+    t.w.tick(1 / 60, 40);
+    expect(t.writes).toEqual([]);
+    expect(t.notices("A")).toEqual(["Someone drew that one"]);
     t.w.done();
   });
 

@@ -61,7 +61,7 @@ const obj = (name, file, extra = {}) => ({ name, sourceUrl: file.url, providerId
 const fileDoc = (name, glb) => ({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(glb) });
 const sceneDoc = (title, objects = {}, order = [], extra = {}) => emptyScene({
   title, objects, order,
-  view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } } }, ...extra,
+  view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { body: "edit", home: { position: [3.2, 3.4, 4.4], target: [0, 0.3, 0] } } }, ...extra, // editing: the outline and the bin are Edit's
 });
 
 try {
@@ -115,8 +115,8 @@ try {
       deck: obj("Deck", files.deck, { transform: T([0.6, 0, 0.2], [0, Math.PI / 2, 0]) }),
     }, ["deck"]));
   } else {
-    A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
-    B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
+    A = repo.add(sceneDoc("Scene A (sailing)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { body: "edit", home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
+    B = repo.add(sceneDoc("Scene B (empty)", {}, [], { view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { body: "edit", home: { position: [16, 10, 18], target: [0, 1, 0] } } } }));
   }
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -153,6 +153,9 @@ try {
     /** an outline row's name button (the grab handle), scrolled into view */
     row: (w, id) => { const li = hosts[w].querySelector(`li.object-row[data-id="${id}"]`); if (!li) return null; li.scrollIntoView({ block: "nearest" }); return { main: rect(li.querySelector(".row-main")), li: rect(li) }; },
     rows: (w) => [...hosts[w].querySelectorAll("li.object-row")].map((li) => li.dataset.id),
+    /** open a drawer tab from the toolbar (Edit's): "objects", "parts"; true once it's docked */
+    openTab: (w, id) => { if (hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)) return true; const e = hosts[w].querySelector(`.toolbar [data-command="${id}"]`); e?.click(); return !!e; },
+    tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     ring: (w) => dbg[w].host.instanceOf("scene.transfer")?.debug?.ring() ?? null,
     toasts: (w) => [...hosts[w].querySelectorAll(".toast")].map((e) => e.textContent.trim()),
     selected: (w) => dbg[w].local.get().selected ?? null,

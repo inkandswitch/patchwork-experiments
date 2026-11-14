@@ -234,7 +234,7 @@ describe("every interleaving of open, wait, close, the opener leaving, and two a
     expect(failures.slice(0, 1).map((f) => ({ ...f, writes: f.writes.map((w) => `${w.at} ${w.by} ${w.to}`) }))).toEqual([]);
     expect(maxWrites).toBeGreaterThan(2); // some cases are two cycles (B shuts it early, then opens it again)
     expect(loserFirst).toBeGreaterThan(0); // the cases the bound is about are among them
-  });
+  }, 60_000); // exhaustive: ~10 s seen under load (default 5 s)
 
   it("a plain cycle is two writes, the second a wait after the first", () => {
     const { writes } = simulate({ door: DOOR, latency: 40, events: [press("A", 0), joining("B", 0)] });
@@ -391,5 +391,5 @@ describe("H8: a pause changes no act and no liveness outcome, paused at every st
       if (end(paused) !== end(plain)) fail("ends differently");
     }
     expect(failures.slice(0, 3)).toEqual([]);
-  });
+  }, 60_000); // exhaustive: every case on the paused clock too
 });

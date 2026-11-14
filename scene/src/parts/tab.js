@@ -1,7 +1,7 @@
 // A part's tab in the drawer (TOOLS.md §6): its panel, docked with api.dock
 // while it's open. Chrome follows attention, never the doc: whoever owns the
-// tab says when it opens (the inspector while something is selected; the
-// outline, dimensions and parts when the viewer asks), and the tab's × is
+// tab says when it opens (the inspector on a selection, staying open after;
+// the outline, dimensions and parts when the viewer asks), and the tab's × is
 // the viewer closing it (onClosed).
 //
 // mount(body) runs once, on the first open, and answers { update(scene,

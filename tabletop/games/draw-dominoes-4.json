@@ -554,7 +554,7 @@
       "piece": "rack",
       "name": "Player 2's rack",
       "seat": "p2",
-      "at": {"position":[-0.42,0,0],"rotation":[0,-1.5707963267948966,0]}
+      "at": {"position":[-0.33,0,0],"rotation":[0,-1.5707963267948966,0]}
     },
     {
       "id": "rack3",
@@ -568,7 +568,7 @@
       "piece": "rack",
       "name": "Player 4's rack",
       "seat": "p4",
-      "at": {"position":[0.42,0,0],"rotation":[0,1.5707963267948966,0]}
+      "at": {"position":[0.33,0,0],"rotation":[0,1.5707963267948966,0]}
     },
     {
       "deck": {

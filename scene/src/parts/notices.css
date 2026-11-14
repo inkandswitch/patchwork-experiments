@@ -1,5 +1,7 @@
 /* scene.notices: HUD pills (top left) and toasts (bottom centre), over the
-   view (old styles.css .hud, .toast and the .pill states). */
+   view (old styles.css .hud, .toast and the .pill states). Nothing here
+   takes the pointer (notices.test.js): they say, and the world under them
+   is still the pointer's. */
 
 .scene-stage
   .notices-layer
@@ -42,7 +44,8 @@
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: auto;
+  /* a notice is read, never pointed at: what's under it stays hoverable and clickable */
+  pointer-events: none;
   animation: scene-toast-in 0.15s ease-out;
   transition: opacity 0.25s ease;
 }

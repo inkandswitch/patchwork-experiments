@@ -468,7 +468,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await settle();
   }
 
-  it("shut with nothing selected; open while something is; its × shuts it until the selection changes; a ref isn't something it shows", async () => {
+  it("shut until something is selected; then open, on the scene when nothing is; its × shuts it until the selection changes; a ref opens nothing", async () => {
     await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
     expect(tab().isOpen()).toBe(false);
     await select("a");
@@ -483,10 +483,24 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     expect(tab().isOpen()).toBe(false);
     await select("b");
     expect(tab().isOpen()).toBe(true);
+    // open, it stays open whatever is selected next: the canvas keeps its width (TOOLS.md Decisions 6)
     await select("dimension:d1");
+    expect(tab().isOpen()).toBe(true);
+    await select(null);
+    expect(tab().isOpen()).toBe(true);
+    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
+    await select("a");
+    expect(tab().isOpen()).toBe(true);
+    // shut from the toolbar: shut while the selection stays, shut by deselecting, opened by the next selection
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
+    await settle();
     expect(tab().isOpen()).toBe(false);
     await select(null);
     expect(tab().isOpen()).toBe(false);
+    // a ref selected with the tab shut opens nothing
+    await select("dimension:d1");
+    expect(tab().isOpen()).toBe(false);
+    await select(null);
     // asked for from the toolbar: the scene's, with nothing selected
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
     await settle();
@@ -496,6 +510,65 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await settle();
     expect(tab().isOpen()).toBe(false);
   });
+
+  it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, and of 3 of an object, nothing, ×, Look, Edit: open exactly as the rule says", async () => {
+    // The rule, as a model: in Edit, open once a selection (of something it
+    // shows) or the toolbar opened it, until × / toolbar off (then shut until
+    // the selection changes) or leaving Edit; out of Edit, shut; back in
+    // Edit, open on an object selected that wasn't shut by hand.
+    const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit"];
+    const model = (m, e) => {
+      const sel = { obj: "a", obj2: "b", ref: "dimension:d1", none: null }[e];
+      if (sel !== undefined) {
+        if (sel === m.sel) return m;
+        const open = m.edit && (m.open || sel === "a" || sel === "b");
+        return { ...m, sel, open, dismissed: false };
+      }
+      if (e === "x") return m.open ? { ...m, open: false, dismissed: true } : m;
+      if (e === "on") return m.edit ? { ...m, open: true, dismissed: false } : m;
+      if (e === "off") return m.edit ? { ...m, open: false, dismissed: true } : m;
+      if (e === "look") return { ...m, edit: false, open: false };
+      if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && (m.sel === "a" || m.sel === "b") };
+      return m;
+    };
+    await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
+    const api = s.api("scene.inspector");
+    // (a lighter settle than the harness's: the stage's flush is a macrotask or two)
+    const step = () => settle(1);
+    const pick = async (id) => {
+      s.local.swap((m) => ({ ...m, selected: id }));
+      await step();
+    };
+    const apply = async (e) => {
+      const sel = { obj: "a", obj2: "b", ref: "dimension:d1", none: null }[e];
+      if (sel !== undefined) return pick(sel);
+      if (e === "x") {
+        if (tab().isOpen()) s.root.querySelector(".stage-drawer-tab-close").click();
+      } else if (e === "on" || e === "off") {
+        if (s.local.get().body.id === "edit") api.run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
+      } else api.body.enter(e);
+      await step();
+    };
+    const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((q) => alphabet.map((e) => [...q, e])));
+    const seqs = [0, 1, 2].flatMap((n) => words(EVENTS, n)).concat(words(["obj", "none", "x", "look", "edit"], 3));
+    let cases = 0;
+    for (const q of seqs) {
+      // from Edit, nothing selected, the tab shut
+      api.body.enter("look");
+      await pick(null);
+      api.body.enter("edit");
+      await step();
+      expect(tab().isOpen()).toBe(false);
+      let m = { edit: true, sel: null, open: false, dismissed: false };
+      for (const e of q) {
+        await apply(e);
+        m = model(m, e);
+        expect(tab().isOpen(), q.join(" ")).toBe(m.open);
+      }
+      cases++;
+    }
+    expect(cases).toBe(1 + 9 + 81 + 125);
+  }, 60_000);
 
   it("following the selection, it comes in behind a pane already shown (the parts bin), a tab to pick; alone, it shows", async () => {
     const pane = document.createElement("div");
@@ -515,6 +588,9 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await select("a");
     expect(pressed()).toBe("true");
     await select(null);
+    expect(pressed()).toBe("true");
+    s.root.querySelector(".stage-drawer-tab-close").click();
+    await settle();
     expect(tab().isOpen()).toBe(false);
     expect(pressed()).toBe("false");
   });

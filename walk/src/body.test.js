@@ -33,7 +33,21 @@ describe("riding what you stand on (pure)", () => {
 
 describe("where a walk starts (pure)", () => {
   const spawn = M(Math.PI / 2, [5, 1, -3]);
-  const eye = { position: [2, 3.6, 4], direction: lookDir(0.7, -0.2) };
+  const eye = { position: [2, 3.6, 4], direction: lookDir(0.7, -0.2), floor: true };
+  it("every case: a place, an eye over floor, an eye over nothing, a spawn, a box, each there or not: the first of place, eye over floor, spawn, box's middle, the origin", () => {
+    const box = { min: [-2, 0, -2], max: [4, 3, 2] };
+    let cases = 0;
+    for (const p of [null, spawn])
+      for (const e of [null, eye, { ...eye, floor: false }])
+        for (const sp of [null, M(0, [9, 9, 9])])
+          for (const b of [null, box]) {
+            const got = r6(startOf({ place: p, eye: e, spawn: sp, box: b }).feet);
+            const want = p ? [5, 1.1, -3] : e?.floor ? r6([2, 3.6 - BODY.eye, 4]) : sp ? [9, 9.1, 9] : b ? [1, 4, 0] : [0, 2, 0];
+            expect(got, JSON.stringify({ p: !!p, e: e ? e.floor : null, sp: !!sp, b: !!b })).toEqual(want);
+            cases++;
+          }
+    expect(cases).toBe(24);
+  });
   it("a spawn given as the place; else the eye; else any spawn; else above the scene's middle", () => {
     expect(r6(startOf({ place: spawn, eye, spawn: M(0, [9, 9, 9]) }).feet)).toEqual([5, 1.1, -3]);
     expect(startOf({ place: spawn }).yaw).toBeCloseTo(Math.PI / 2);
@@ -88,6 +102,18 @@ describe("the walk body", () => {
     expect(b.here).toBeUndefined();
     expect(WALK_KEYS.map((k) => k.code)).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
     expect(plugins.find((p) => p.id === "walk.spawn").describes[SPAWN].name).toBe("Spawn point");
+  });
+
+  it("an eye with no floor under it within EYE_FLOOR_M (beside the deck, below it): starts above the scene's middle instead (no spawn here), never at the eye", () => {
+    for (const position of [[0, -5, 5], [0, 12, 5]]) {
+      const f = fakeApi({ camera: { position, target: [0, position[1], 0] } });
+      const s = walkBody(f.api).enter(null);
+      expect(r6(s.state.feet), JSON.stringify(position)).toEqual([0, 2, 0]);
+      s.leave();
+    }
+    // just within reach: at the eye
+    const f = fakeApi({ camera: { position: [0, 9.5, 5], target: [0, 9.5, 0] } });
+    expect(r6(walkBody(f.api).enter(null).state.feet)).toEqual(r6([0, 9.5 - BODY.eye, 5]));
   });
 
   it("enters at the eye, holds the camera, walks on W and stands on the floor; leaving gives it all back", () => {

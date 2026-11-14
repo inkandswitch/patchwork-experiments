@@ -52,7 +52,8 @@ try {
   const bytes = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
   // the WAD as a file doc, as the scene's add makes one from a desktop file: nothing said of where it's from
   const wad = await repo.create2({ "@patchwork": { type: "file" }, name: "freedoom1-e1m1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
-  const scene = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false } }));
+  // made new, it starts its maker in Edit, where the WAD is pasted (the layout then names its own start: walking)
+  const scene = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { body: "edit" } } }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");

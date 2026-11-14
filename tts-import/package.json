@@ -14,13 +14,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "fflate": "^0.8.2",
-    "three": "^0.186.1"
+    "fflate": "^0.8.2"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.3.2",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
     "happy-dom": "^15.11.7",
+    "three": "^0.186.1",
     "vite": "^7.1.9",
     "vitest": "^3.2.4"
   }

@@ -23,9 +23,9 @@
 //
 // sail: A gets sailing's sloop from its parts bin (she brings a sea); her
 // row is dragged into an empty B. Everything under her comes, without her
-// `motion` (with --patch: sailing.ship's describes says runtime ["motion"]
-// and needs ["sailing.sea"], as the page registers it) and B says it needs
-// a sea, without adding one.
+// `motion` (sailing.ship's describes says runtime ["motion"] and needs
+// ["sailing.sea"]; --patch forces that declaration on a sailing build
+// without it) and B says it needs a sea, without adding one.
 //
 // Simulated time: the page's stages run on its manual clock (window.__time):
 // a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
@@ -130,6 +130,9 @@ async function menuPick(x, y, label) {
 async function main() {
   check("allLoadedA", await b.waitFor(`__p.allLoaded("a")`, 30_000));
   check("allLoadedB", await b.waitFor(`__p.allLoaded("b")`, 30_000));
+  // the outline is a drawer tab each viewer opens from Edit's toolbar
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
+  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
   const files = await P("files");
   const urlA = await P(`url("a")`);
   // the bracket's render built in A (so a copy can take its build)
@@ -443,6 +446,8 @@ async function main() {
 
 async function sail() {
   const before = await ids("a");
+  // the bin and the outline are drawer tabs A opens from Edit's toolbar
+  await b.waitFor(`__p.openTab("a", "parts") && __p.tab("a", "parts")`, 20_000);
   await b.waitFor(`__p.part("a", "sailing.sloop")`, 20_000);
   const it = await P(`part("a", "sailing.sloop")`);
   if (!it) await shot("0-no-bin");
@@ -454,6 +459,8 @@ async function sail() {
   const ship = Object.keys(A.objects).find((id) => A.objects[id].traits?.["sailing.ship"]);
   check("sloopPlacedInA", !!ship && !!A.traits?.["sailing.sea"], { ship, traits: Object.keys(A.traits ?? {}) });
   if (!ship) return;
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
+  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
   // runtime state on her, as play would leave it
   await b.js(`__p.change("a", (d) => { d.objects[${J(ship)}].traits["sailing.ship"].motion = { position: [1, 0, 2], velocity: [0.5, 0, 0], t: 12 }; d.objects[${J(ship)}].claims = { sim: { viewer: "viewer:zz", session: "s-9" } }; })`);
   await b.waitFor(`__p.allLoaded("a")`, 30_000);
@@ -489,14 +496,10 @@ async function sail() {
   const assetKeys = Object.keys(A0.assets ?? {});
   check("shipAssetsCopied", assetKeys.length > 0 && assetKeys.filter((k) => bIds.some((id) => B.objects[id].sourceUrl === A0.assets[k].url)).every((k) => sameJSON(B.assets?.[k], A0.assets[k])), { a: assetKeys, b: Object.keys(B.assets ?? {}) });
   const notice = toasts.find((t) => /needs a sea/i.test(t));
-  if (PATCH) {
-    check("motionLeftBehind", B.objects[bShip]?.traits?.["sailing.ship"] && !("motion" in B.objects[bShip].traits["sailing.ship"]), B.objects[bShip]?.traits);
-    check("needsSeaNotice", notice === "This ship needs a sea: add Sea to the scene.", toasts);
-  } else {
-    // sailing doesn't say yet: the copy takes `motion`, and nothing is said (what the build report asks sailing to add)
-    report.unpatched = { motionCopied: !!B.objects[bShip]?.traits?.["sailing.ship"]?.motion, notice: notice ?? null };
-    check("unpatchedAsExpected", report.unpatched.motionCopied && !notice, report.unpatched);
-  }
+  // sailing.ship's describes says runtime ["motion"] and needs ["sailing.sea"] (sailing/src/index.js), so the
+  // copy leaves her motion behind and B is told she needs a sea (--patch only forces the same declaration)
+  check("motionLeftBehind", B.objects[bShip]?.traits?.["sailing.ship"] && !("motion" in B.objects[bShip].traits["sailing.ship"]), B.objects[bShip]?.traits);
+  check("needsSeaNotice", notice === "This ship needs a sea: add Sea to the scene.", toasts);
   check("sourceUnchanged", sameJSON(await P(`doc("a")`), A0));
   await b.rest(300);
   await shot("1-ship-in-b");

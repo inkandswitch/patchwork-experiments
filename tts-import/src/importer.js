@@ -17,6 +17,7 @@ import { imageSize } from "./image-size.js";
 import { sniff } from "./sniff.js";
 import { DEFAULT_METRES_PER_UNIT } from "./convert.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
+import { browserShrink } from "./shrink.js";
 
 export { DEFAULT_SETTINGS };
 
@@ -64,9 +65,13 @@ async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
  * missing asset (whatever uses it is drawn without it), only for no save at
  * all, or a repo that won't take documents.
  *
- * @param {{ sources: ReturnType<typeof source>[], repo, fetch?, settings?, onProgress?, now? }} o
+ * `shrink(bytes, { mimeType, limit })` makes an image over maxStoredBytes
+ * smaller (shrink.js: the browser's, by default; none in Node), resolving
+ * { bytes, mimeType, extension, width, height } or null (then it isn't kept).
+ *
+ * @param {{ sources: ReturnType<typeof source>[], repo, fetch?, settings?, onProgress?, now?, shrink? }} o
  */
-export async function runImport({ sources, repo, fetch: fetchFn = null, settings = {}, onProgress = () => {}, now = () => Date.now() }) {
+export async function runImport({ sources, repo, fetch: fetchFn = null, settings = {}, onProgress = () => {}, now = () => Date.now(), shrink = browserShrink() }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const unit = Number(s.metresPerUnit) > 0 ? Number(s.metresPerUnit) : DEFAULT_METRES_PER_UNIT;
   const progress = (phase, done = 0, total = 0) => onProgress({ phase, done, total });
@@ -144,12 +149,27 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   done = 0;
   // a raw asset bigger than this isn't kept (a piece is drawn without it)
   const keepLimit = Number(s.maxStoredBytes) > 0 ? Number(s.maxStoredBytes) : 32e6;
-  const present = [...assets.values()].filter((a) => a.bytes && a.size <= keepLimit);
-  for (const a of assets.values())
-    if (a.bytes && a.size > keepLimit) {
-      warnings.push(`${a.url} (${Math.round(a.size / 1e6)} MB) wasn't stored: over ${Math.round(keepLimit / 1e6)} MB`);
-      a.error = `over ${Math.round(keepLimit / 1e6)} MB: not stored`;
+  const mb = (n) => `${Math.round(n / 1e6)} MB`;
+  for (const a of assets.values()) {
+    if (!a.bytes || a.size <= keepLimit) continue;
+    // an image is made smaller where the page can (shrink.js); anything else, or an image that won't go small enough, isn't kept
+    let smaller = null;
+    if (a.role !== "model" && shrink) {
+      try {
+        smaller = await shrink(a.bytes, { mimeType: a.mimeType, limit: keepLimit });
+      } catch {
+        smaller = null;
+      }
     }
+    if (smaller?.bytes?.byteLength > 0 && smaller.bytes.byteLength <= keepLimit) {
+      warnings.push(`${a.url} (${mb(a.size)}) was over ${mb(keepLimit)}: stored at ${smaller.width} × ${smaller.height} (${mb(smaller.bytes.byteLength)}) instead`);
+      Object.assign(a, { bytes: smaller.bytes, size: smaller.bytes.byteLength, mimeType: smaller.mimeType, extension: smaller.extension, dims: { width: smaller.width, height: smaller.height }, shrunkFrom: a.size });
+      continue;
+    }
+    warnings.push(`${a.url} (${mb(a.size)}) wasn't stored: over ${mb(keepLimit)}`);
+    a.error = `over ${mb(keepLimit)}: not stored`;
+  }
+  const present = [...assets.values()].filter((a) => a.bytes && !a.error && a.size <= keepLimit);
   progress("Storing assets", 0, present.length);
   for (const a of present) {
     const content = a.extension === "obj" ? new TextDecoder().decode(a.bytes) : a.bytes;
@@ -185,6 +205,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       source: a.error ? null : a.source,
       fileUrl: a.fileUrl,
       bytes: a.size,
+      ...(a.shrunkFrom ? { shrunkFrom: a.shrunkFrom } : {}),
       mimeType: a.mimeType,
       usedBy: a.by,
       uses: a.uses,

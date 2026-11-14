@@ -305,7 +305,7 @@ try {
     seats: () => game?.doc().traits?.seats ?? {},
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    /** what view w's body chip says ("Watching", "Seated", "Orbit", "Aboard") */
+    /** what view w's body chip says ("Watching", "Seated", "Look", "Aboard") */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     // walking her deck: the crew's bodies on top of the stack (scene/TOOLS.md §4)
     walking: (w) => ["aboard", "station"].includes(dbg[w]?.local.get().body?.id),

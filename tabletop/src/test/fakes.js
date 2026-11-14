@@ -340,8 +340,12 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         object: { position: { x: 0, y: 1, z: 1 } },
       },
       pose: {
+        // as the stage's: true when the hold stands; refused while another extension here has the object
+        // (view.heldHere: a carry, the halo). A peer's hold is left to the test (heldBy says who has it).
         hold(id, transform) {
+          if (view.heldHere?.has(id)) return false;
           holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });
+          return true;
         },
         release(id, { landed = false } = {}) {
           released.push({ session, id, landed });

@@ -8,10 +8,12 @@
 //   "dice.cup": { holder: <viewer> | null,   // who shook it last: whose dice are under it
 //                 up: boolean,               // lifted: set down behind its dice, mouth down, covering nothing
 //                 blind: boolean,            // shaken blind: what's under it is the others' to see, never the holder's
-//                 roll: null | { draw, dice: [id…], blind, done, forged? },   // the last shake: its lots draw, its dice in order,
+//                 roll: null | { draw, dice: [id…], blind, done, forged?, stopped? },   // the last shake: its lots draw, its dice in order,
 //                                                                     // whether it was shaken blind, and whether they've been turned up;
 //                                                                     // `forged`: drawn again by its holder because these viewers said
-//                                                                     // the lots before it were written in their name (cup-extension.js)
+//                                                                     // the lots before it were written in their name (cup-extension.js);
+//                                                                     // `stopped`: its holder's client won't ask for it again, since
+//                                                                     // someone else could know it (lots.js mayAskAgain)
 //                 round: lots.js round }      // the shake's draw (lots-ext.js), of its dice
 //
 // Its GLB stands on its mouth at the origin, closed at the top, 9 cm tall
@@ -66,7 +68,7 @@ export function cupOf(o) {
   const r = t.roll;
   const roll =
     r && typeof r === "object" && typeof r.draw === "string" && Array.isArray(r.dice)
-      ? { draw: r.draw, dice: [...r.dice].filter((x) => typeof x === "string"), blind: r.blind === true, done: r.done === true, forged: Array.isArray(r.forged) ? [...new Set(r.forged.filter(isViewer))].sort() : [] }
+      ? { draw: r.draw, dice: [...r.dice].filter((x) => typeof x === "string"), blind: r.blind === true, done: r.done === true, forged: Array.isArray(r.forged) ? [...new Set(r.forged.filter(isViewer))].sort() : [], stopped: r.stopped === true }
       : null;
   return { holder: isViewer(t.holder) ? t.holder : null, up: t.up === true, blind: t.blind === true, roll };
 }

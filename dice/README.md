@@ -414,19 +414,24 @@ it can't account for, and counts as known to all: only stopped, never drawn
 again. The record is in memory: after a reload a forged word on that
 shake stops it, and Ana shakes again.
 
-**Not closed yet: asking again.** The holder's client also asks again,
-without a word from anyone, for its draw when the round on its cup isn't
-its shake's (written over) or was given up (`gone`), and both of those are
-read from the doc. Ben, seated at Ana's lifted blind cup and knowing her
-roll, can write any round over hers, or delete his own commit and write
-`gone` in his own name (the round then reads as still committing, which a
-`gone` ends); either way Ana's client asks again for the same draw, a new
-attempt sealed to Ben again once its contributors are fixed, so he can
-choose among her blind rolls, and no view tells it as a shake (the draw is
-the same). Closing it is the same move as above, the holder's own record
-gating the asking (FOLLOWUPS); until then the claims below about choosing
-among rolls hold only against a forger who doesn't write over or give up
-the round.
+**Asking again, gated by the holder's own record.** The holder's client
+asks again, without a word from anyone, for its draw when the round on its
+cup isn't its shake's (written over) or was given up (`gone`), and both of
+those are read from the doc. Ben, seated at Ana's lifted blind cup and
+knowing her roll, could write any round over hers, or delete his own commit
+and write `gone` in his own name, and Ana's client would ask again for the
+same draw, sealed to Ben again: a choice among her blind rolls. So it asks
+again only while nobody else could know the attempt it replaces, by its own
+record (lots-run's, never the doc's word): its part never released, or
+released to nobody but Ana and never opened (`lots.js mayAskAgain`). With no
+record (a reload: the draw is from before this client came), it asks again
+only for a shake that isn't blind, whose new attempt is sealed to Ana alone,
+so nobody else can know it whatever they knew before. Otherwise the shake is
+**stopped**: Ana's client writes `stopped` on the roll, is told once, every
+view's HUD says the shake was stopped and why, and she may shake again (told,
+as any shake is). A forged `stopped` only stops a roll, like a forged
+`forged`. (cup-extension.test.js: blind or not × five records × written over
+or given up, 20 cases.)
 
 **Who may see what** (the cup's `audience` policy, merged by the stage), for
 the cup and every die it covers or whose shake isn't turned up yet:
@@ -475,8 +480,9 @@ cup.
 - It can't choose among another's rolls by saying "forged" (anyone can, in
   their own name), nor by writing over the holder's commit so the holder's
   client says it, deleting its own envelopes first or not (above: who could
-  know is the holder's client's own word). Writing over the round, or giving
-  it up, it still can (above, "Not closed yet"). Said before it could know the roll, it gets the cup
+  know is the holder's client's own word), nor by writing over the round or
+  giving it up (above, "Asking again": once it could know the roll, that
+  only stops it). Said before it could know the roll, it gets the cup
   drawn again, aloud, a roll it knows no more of than the last; said once it
   could know it (a seated other, a blind cup up), it only stops that roll,
   told under its name (or, for an overwritten commit, as a part written in

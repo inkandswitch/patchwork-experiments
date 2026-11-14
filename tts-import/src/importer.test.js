@@ -54,6 +54,29 @@ describe("runImport on the tiny fixture", () => {
     expect(doc(stored.find((a) => a.role === "image").fileUrl).content).toBeInstanceOf(Uint8Array);
   });
 
+  it("an asset over maxStoredBytes: an image made smaller where a shrinker can (stored, said), else not stored; a model never shrunk", async () => {
+    const sizes = Object.values((await importFixture()).report.assets).filter((a) => a.fileUrl).map((a) => [a.role, a.bytes]);
+    const limit = Math.min(...sizes.map(([, n]) => n)); // every asset but the smallest is over it
+    const over = sizes.filter(([, n]) => n > limit);
+    const overImages = over.filter(([role]) => role === "image").length;
+    const overModels = over.filter(([role]) => role === "model").length;
+    for (const shrinks of [true, false]) {
+      const asked = [];
+      const shrink = async (bytes, o) => (asked.push(o), shrinks ? { bytes: new Uint8Array(limit).fill(1), mimeType: o.mimeType, extension: "png", width: 2, height: 1 } : null);
+      const { report, doc } = await importFixture({ settings: { maxStoredBytes: limit }, shrink });
+      const warnings = report.warnings;
+      const all = Object.values(report.assets);
+      expect(asked.length, `shrinks ${shrinks}`).toBe(overImages);
+      expect(asked.every((o) => o.limit === limit && /^image\//.test(o.mimeType))).toBe(true);
+      const shrunk = all.filter((a) => a.shrunkFrom);
+      expect(shrunk.length).toBe(shrinks ? overImages : 0);
+      for (const a of shrunk) expect(doc(a.fileUrl).content).toEqual(new Uint8Array(limit).fill(1));
+      expect(all.filter((a) => a.fileUrl).length).toBe(sizes.length - overModels - (shrinks ? 0 : overImages));
+      expect(warnings.filter((w) => /stored at 2 × 1/.test(w)).length).toBe(shrinks ? overImages : 0);
+      expect(warnings.filter((w) => /wasn't stored: over/.test(w)).length).toBe(overModels + (shrinks ? 0 : overImages));
+    }
+  });
+
   it("makes one tabletop-game doc, valid by the format, saying which mod it came from; and no scene", async () => {
     const { gameUrl, game, doc, repo } = await importFixture();
     const d = doc(gameUrl);

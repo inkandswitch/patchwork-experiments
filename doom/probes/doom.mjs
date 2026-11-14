@@ -11,7 +11,7 @@
 // same file doc, and arena's spawn point at the player 1 start. Then (the
 // verifier's success criteria):
 //  1. both views play E1M1 in first person and walk it, each in one walker:
-//     the walk package's body, the only body over orbit (screenshots);
+//     the walk package's body, the only body over Look (screenshots);
 //  2. A walks to a door and opens it with F: both views see it rise, rest,
 //     and close itself after its wait (in world time: the view computing the
 //     scene's clock closes it);
@@ -193,7 +193,7 @@ try {
   // ─── 1. both walk it in first person ─────────────────────────────────────
   await play("a");
   const bodyA = await P(`body("a")`);
-  check("A plays in first person: a sky, one walker (the walk body, the only body over orbit) with the arena's gun in hand", (await P(`atmosphere("a")`))?.sky?.top === "#5d8fc9" && (await P(`running("a")`)).includes("joints") && (await P(`running("a")`)).includes("walk") && bodyA.id === "walk" && JSON.stringify(bodyA.stack) === '["orbit","walk"]' && bodyA.reach === 2 && (await P(`held("a")`)) === "gun", { atmosphere: await P(`atmosphere("a")`), running: await P(`running("a")`), body: bodyA, held: await P(`held("a")`) });
+  check("A plays in first person: a sky, one walker (the walk body, the only body over Look) with the arena's gun in hand", (await P(`atmosphere("a")`))?.sky?.top === "#5d8fc9" && (await P(`running("a")`)).includes("joints") && (await P(`running("a")`)).includes("walk") && bodyA.id === "walk" && JSON.stringify(bodyA.stack) === '["look","walk"]' && bodyA.reach === 2 && (await P(`held("a")`)) === "gun", { atmosphere: await P(`atmosphere("a")`), running: await P(`running("a")`), body: bodyA, held: await P(`held("a")`) });
   const startA = await eye("a");
   const spawnAt = world(-416, 256);
   check("A starts at the player 1 start", Math.hypot(startA[0] - spawnAt[0], startA[2] - spawnAt[2]) < 0.3, { eye: r3(startA), spawn: r3(spawnAt) });
@@ -303,8 +303,15 @@ try {
   const leaveItem = await P(`chipItem("a", "Leave")`);
   if (leaveItem) await clickAt(leaveItem);
   await b.rest(300);
-  check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (orbit again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "orbit", { chip: chipA, body: await P(`body("a")`) });
-  // the outline is a drawer tab A opens from the toolbar (no Edit to switch to)
+  check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (Look again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "look", { chip: chipA, body: await P(`body("a")`) });
+  // the outline is a drawer tab A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
+  const chipLook = await P(`chip("a")`);
+  if (chipLook) await clickAt(chipLook);
+  await b.soon(`!!window.__p.chipItem("a", "Edit")`, { frames: 180 });
+  const editItem = await P(`chipItem("a", "Edit")`);
+  if (editItem) await clickAt(editItem);
+  await b.rest(300);
+  check("A chooses Edit on the body chip (the toolbar, the outline and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
   const objectsButton = await P(`buttonRect("a", "Objects")`);
   if (objectsButton) await clickAt(objectsButton);
   await b.rest(500);
@@ -336,7 +343,7 @@ try {
   check("scene 2 runs the joints and no arena (a slide brings only its own package)", (await P(`running("d")`)).includes("joints") && !(await P(`running("d")`)).includes("arena"), await P(`running("d")`));
   const copyId = copied[0];
   const cw = await P(`docWorld(${JSON.stringify(copyId)}, "d")`);
-  // an orbiting eye a few metres off: no reach needed from the menu
+  // Edit's orbiting eye a few metres off: no reach needed from the menu
   await P(`setCamera("d", { position: [${cw[0] + 2}, ${cw[1] + 3}, ${cw[2] + 6}], target: [${cw[0]}, ${cw[1] + 1.2}, ${cw[2]}], fov: 60 })`);
   await b.rest(400);
   const onIt = await P(`project("d", [${cw[0]}, ${cw[1] + 0.05}, ${cw[2]}])`);
@@ -354,7 +361,7 @@ try {
   await shot("6-copy-open");
   const shut2 = await b.soon(`window.__p.doc("d").objects[${JSON.stringify(copyId)}].traits["joints.slide"].at === "closed"`, { frames: 900 });
   const cycle2 = (await P("writes(2)")).slice(writes2).filter((w) => w.moved.length);
-  check("copied into another scene, it opens from its menu (in orbit: the body reaches everything) and closes itself, in two writes", !!item && item.ext === "joints" && opened2 && shut2 && cycle2.length === 2 && cycle2[0].slides[0] === "open" && cycle2[1].slides[0] === "closed" && docOpen[1] - cw[1] > 3 && Math.abs(drawnOpen[1] - docOpen[1]) < 1e-3, { pick: details.copyPick, item, cycle2, shut: cw, open: docOpen, drawnOpen });
+  check("copied into another scene, it opens from its menu (in Edit, scene 2's start: the orbit camera reaches everything) and closes itself, in two writes", !!item && item.ext === "joints" && opened2 && shut2 && cycle2.length === 2 && cycle2[0].slides[0] === "open" && cycle2[1].slides[0] === "closed" && docOpen[1] - cw[1] > 3 && Math.abs(drawnOpen[1] - docOpen[1]) < 1e-3, { pick: details.copyPick, item, cycle2, shut: cw, open: docOpen, drawnOpen });
 
   // ─── 7b. one view alone, at 1660 × 960: the whole map, and first person ──
   await P(`solo("a")`);

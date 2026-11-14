@@ -66,6 +66,7 @@
 // keys typed in it are its own (STAGE.md, "Keys").
 
 import { cupsOf } from "./cup.js";
+import { endedWhy } from "./lots.js";
 import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { AIR_SECONDS, LAND_SECONDS, ROLL_SKID, airborne, builtOf, faceOfSeed, faceUp, landing, rollPlan, scaleOf, seedFromLots, seedOfThrow, turnTo } from "./roll.js";
 
@@ -287,6 +288,11 @@ function create(api) {
       if (text) api.notify(text, "warn");
     };
     toss.end = end;
+    // A hold refused (something else here or a peer has hold of the die: a carry, the halo, someone's
+    // catch) is the die caught: it's theirs, and this throw neither shows nor lands it.
+    const hold = (id, pose) => {
+      if (!api.pose.hold(id, pose)) drop(id);
+    };
     const started = api.clock.now();
     let t = 0;
     let down = null; // once the seed is known: { u, paths: Map id → path, landed: Map id → { to, face } }
@@ -312,8 +318,8 @@ function create(api) {
         // given up (lots.js GONE): someone's client didn't see me here, or mine lost my part
         // (a `gone` in my name my client didn't write is a forgery: said so instead)
         if (st?.phase === "ended") {
-          const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [api.viewer] : [])])];
-          return fail(`That roll didn't land: ${forged.length ? forgedLine(forged, false) : st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`, false);
+          const why = endedWhy(st, api.viewer, { forged: (vs) => forgedLine(vs, false), lost: "your client lost its part of the lots", gaveUp: (vs) => `${list(vs.map(whoOf))} gave its lots up, not seeing you here` });
+          return fail(`That roll didn't land: ${why}. Nothing was rolled.`, false);
         }
         if (api.clock.now() - started > THROW_MS) {
           // (should the doc draw it after all, it lands and is told so, saying this view was told it didn't)
@@ -323,7 +329,8 @@ function create(api) {
         }
         const seed = st?.public ? seedFromLots(st.seed) : null;
         if (seed == null || t < AIR_SECONDS) {
-          for (const [id, d] of dice) api.pose.hold(id, airborne(d.built, d.from, t, d));
+          for (const [id, d] of [...dice]) hold(id, airborne(d.built, d.from, t, d));
+          if (!dice.size) return end();
           return;
         }
         const landed = landingsOf(dice, order.length, seed);
@@ -331,7 +338,8 @@ function create(api) {
       }
       down.u = Math.min(1, down.u + Math.min(0.1, Number(dt) || 0) / LAND_SECONDS);
       if (down.u < 1) {
-        for (const id of dice.keys()) api.pose.hold(id, down.paths.get(id)(down.u));
+        for (const id of [...dice.keys()]) hold(id, down.paths.get(id)(down.u));
+        if (!dice.size) return end();
         return;
       }
       const ids = [...dice.keys()];
@@ -340,7 +348,8 @@ function create(api) {
       api.change(api.ops.setTransform(api.scene(), new Map(ids.map((id) => [id, down.landed.get(id).to]))));
       for (const id of ids) api.pose.release(id, { landed: true });
     });
-    for (const [id, d] of dice) api.pose.hold(id, d.from);
+    for (const [id, d] of [...dice]) hold(id, d.from);
+    if (!dice.size) end();
   }
 
   // ── every throw, as the doc has it: landed by anyone once it's drawn, told from the doc ──

@@ -102,8 +102,14 @@ try {
   window.__p = {
     errors, tokens: Object.keys(SHAPES), viewers: { a: ana.url, b: ben.url },
     net: { hold: () => net.hold(), release: () => net.release(), held: () => net.held(), stats: () => ({ ...net.stats }) },
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
+    /** the body chip, and its menu's item starting `label` ("Look", "Edit", "Leave"…), in a view */
+    chip: (w) => rectOf(hosts[w].querySelector(".body-chip")),
+    chipItem: (w, label) => rectOf([...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)) ?? null),
+    /** a toolbar command's button (shown in Edit only), and whether a drawer tab is open, in a view */
+    tool: (w, id) => rectOf(hosts[w].querySelector(`.toolbar [data-command="${id}"]`)),
+    tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     /** the parts bin's row for a part, in a view (scrolled into sight) */
     part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rectOf(e); },
     /** the bag: its object id, and whether its GLB has loaded, in a view */

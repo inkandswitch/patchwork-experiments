@@ -4,8 +4,10 @@
 // sill or a moving deck are all floor; nothing here knows which.
 //
 // It starts at the place it is given (a spawn point's object id), else at
-// the eye (the camera, as it was: walking from where you were looking), else
-// at a spawn point, else above the middle of the scene. It rides what it
+// the eye (the camera, as it was: walking from where you were looking) if
+// there is floor under it within EYE_FLOOR_M, else at a spawn point, else
+// above the middle of the scene. (An eye over nothing, beside a deck or off
+// a level's edge, used to fall to BODY.fallLimit and only then respawn.) It rides what it
 // stands on: when the object under the feet moves (a deck, a lift), the
 // feet and the facing move with it, so the floor never slides out from
 // under them. It reserves the walking keys, asks for pointer lock, and
@@ -71,17 +73,21 @@ export function aimOf(dir) {
   return { yaw: Math.atan2(-x, -z), pitch: Math.atan2(y, Math.hypot(x, z)) };
 }
 
+/** How far below the eye there must be floor for a walk to start there (m). */
+export const EYE_FLOOR_M = 10;
+
 /**
  * Where a walk starts (pure): a spawn point given as the place (its world
- * matrix), else the eye (the camera: its position and forward), else any
- * spawn, else above the middle of the scene's box.
- * @param {{ place?: number[] | null, eye?: { position, direction } | null, spawn?: number[] | null, box?: { min, max } | null }} o
+ * matrix), else the eye (the camera: its position and forward) when there is
+ * floor under it (`eye.floor`: something within EYE_FLOOR_M straight down),
+ * else any spawn, else above the middle of the scene's box.
+ * @param {{ place?: number[] | null, eye?: { position, direction, floor: boolean } | null, spawn?: number[] | null, box?: { min, max } | null }} o
  * @returns {{ feet: number[], yaw: number, pitch: number }}
  */
 export function startOf({ place = null, eye = null, spawn = null, box = null }) {
   const at = (m) => ({ feet: [m[12], m[13] + 0.1, m[14]], yaw: headingOf(m), pitch: 0 });
   if (place) return at(place);
-  if (Array.isArray(eye?.position)) {
+  if (Array.isArray(eye?.position) && eye.floor) {
     const a = Array.isArray(eye.direction) ? aimOf(eye.direction) : { yaw: 0, pitch: 0 };
     return { feet: [eye.position[0], eye.position[1] - BODY.eye, eye.position[2]], yaw: a.yaw, pitch: Math.max(-1.2, Math.min(1.2, a.pitch)) };
   }
@@ -115,7 +121,9 @@ export function walkBody(api) {
       const spot = typeof place === "string" && api.scene()?.objects?.[place] ? api.worldOf(place) : null;
       const all = spawns();
       const any = all.length ? api.worldOf(all[Math.floor(Math.random() * all.length)]) : null;
-      const body = { vel: [0, 0, 0], onGround: false, ...startOf({ place: spot, eye: spot ? null : camEye(), spawn: any, box: api.sceneBox?.() }) };
+      const from = spot ? null : camEye();
+      if (from) from.floor = api.raycast(from.position, [0, -1, 0], { far: EYE_FLOOR_M }) != null;
+      const body = { vel: [0, 0, 0], onGround: false, ...startOf({ place: spot, eye: from, spawn: any, box: api.sceneBox?.() }) };
       const keys = new Set();
       let releaseCamera = null;
       let stopLoop = null;
@@ -227,10 +235,11 @@ export function walkBody(api) {
           cursor: (ev) => (ev.locked ? "none" : "grab"),
           // another body on top (a seat): wait under it
           suspended: () => off(),
-          // that body went: walk on from the eye, where it left the view
+          // that body went: walk on from the eye, where it left the view (a seat: carrying on from
+          // where you sat, whatever is under it, never sent to a spawn)
           resumed() {
             const e = camEye();
-            if (e) Object.assign(body, { vel: [0, 0, 0], onGround: false, ...startOf({ eye: e }) });
+            if (e) Object.assign(body, { vel: [0, 0, 0], onGround: false, ...startOf({ eye: { ...e, floor: true } }) });
             on();
           },
         },

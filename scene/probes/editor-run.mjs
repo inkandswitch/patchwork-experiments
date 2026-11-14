@@ -15,9 +15,9 @@
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
 // board; Measure (its Dimensions tab); Delete; . (Frame); the Objects tab's ×
 // and the toolbar's Objects; double-click; the context menu; no modes (the
-// orbit body, no activity anywhere); a pasted automerge URL; a dimension
+// Edit body the doc starts people in, no activity anywhere); a pasted automerge URL; a dimension
 // selected by its label and deleted; the inspector on the Scene (the
-// toolbar's Inspector: Starts in, Orbit) and "Add behaviour…" (an arena
+// toolbar's Inspector: Starts in, Look or Edit) and "Add behaviour…" (an arena
 // Target on a block starts the arena in both views, beside the editor: its
 // Play in the toolbar, the editor still there in both; × stops it). The arena's checks need
 // arena/ built (its dist/ is registered alongside); without it they are
@@ -391,10 +391,10 @@ try {
     check("menuRemoveRemoves", !(await obj("b1")));
   }
 
-  // ── no modes: the orbit body, and no activity anywhere ───────────────────
+  // ── no modes: the Edit body (the doc starts people in it), and no activity anywhere ──
   {
     const sw = await A(`({ switcher: !!p.hostA.querySelector('.activity-switch'), body: d.local.get().body?.id, activity: "activity" in d.local.get(), activities: "activities" in d.local.get() })`);
-    check("noModes", !sw.switcher && sw.body === "orbit" && !sw.activity && !sw.activities, sw);
+    check("noModes", !sw.switcher && sw.body === "edit" && !sw.activity && !sw.activities, sw);
   }
 
   // ── paste an automerge URL ──────────────────────────────────────────────
@@ -490,11 +490,11 @@ try {
   {
     await b.key("Escape");
     await clickEmpty();
-    // nothing selected (its tab gone with the selection): the toolbar's Inspector opens it on the Scene
-    await soon(`!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"]')`, 3000);
+    // nothing selected: the inspector, opened by the selections before, stays open, now on the Scene
+    // (TOOLS.md Decisions 6, "The inspector stays open"); its tab is shown to look at it
+    check("inspectorStaysOpenOnTheScene", await soon(`!!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"] .inspector[data-kind="scene"]')`, 3000), await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`));
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
     await b.rest(150);
-    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
-    await soon(`!!__p.hostA.querySelector('.inspector[data-kind="scene"]')`, 3000);
     const startsIn = `(() => {
       const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
       return [...(r?.querySelectorAll('.starts-in input[data-body]') ?? [])].map((e) => [e.dataset.body, e.checked]);
@@ -507,7 +507,7 @@ try {
         addable: [...r.querySelectorAll('.behaviour-add option')].map((o) => o.textContent) };
     })()`);
     report.sceneInspector = sc ?? { selected: await selected(), tabs: await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`), kinds: await A(`[...p.hostA.querySelectorAll('.inspector')].map((e) => e.dataset.kind)`), pressed: await pressed() };
-    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["orbit",true]]', sc);
+    check("sceneSectionStartsIn", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Starts in" && JSON.stringify(sc.startsIn) === '[["look",false],["edit",true]]', sc);
     await shot("17-scene-inspector");
     if (!ARENA) report.skipped.push("addBehaviourRunsTheArena, theGameRunsBesideTheEditor, removeBehaviourStopsArena: arena/ isn't built");
     else {
@@ -530,9 +530,9 @@ try {
       check("addBehaviourRunsTheArena", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null && report.behaviour.play, report.behaviour);
       await b.rest(300);
       await shot("18-behaviour-added");
-      // the game runs beside the editor: nothing went from either view, and the doc starts nobody anywhere
+      // the game runs beside the editor: nothing went from either view, and the doc still starts people in Edit (a behaviour doesn't move its start)
       const both = await A(`({ toolbar: !!p.hostA.querySelector('.toolbar'), select: p.running().includes("scene.select"), peerToolbar: !!p.hostB.querySelector('.toolbar'), peerEditor: p.running(p.B).includes("scene.inspector"), start: window.sceneHandle.doc().view?.start ?? null })`);
-      check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && !both.start?.body, both);
+      check("theGameRunsBesideTheEditor", both.toolbar && both.select && both.peerToolbar && both.peerEditor && both.start?.body === "edit", both);
       await shot("19-game-and-editor");
 
       // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)

@@ -442,6 +442,8 @@ export function createRunner(place) {
     act,
     draw,
     state,
+    /** What this client did with its own sealed part of a draw (lots.js mayAskAgain, knewWith): KEPT, a record, or null. */
+    told: toldOf,
     hud,
     dispose() {
       dead = true;

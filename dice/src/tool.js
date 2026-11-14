@@ -34,6 +34,7 @@
 import css from "./styles.css?inline";
 import { KEPT_ROLLS, MARK_KINDS, MAX_MARKS, MAX_NAME, MAX_SIZE, MAX_TEXT, MIN_SIZE, PRESETS, SHAPE_PRESET, dieOf, presetDoc } from "./die.js";
 import { SYMBOLS, dieMarks, flatSide } from "./marks.js";
+import { endedWhy } from "./lots.js";
 import { panelLots } from "./panel-lots.js";
 import { faceOfSeed, seedFromLots } from "./roll.js";
 import { SHAPES, shapeName, solid } from "./solids.js";
@@ -205,7 +206,14 @@ export default function DieTool(handle, element) {
       else if (st && !(st.by === viewer && st.own)) say(st.by === viewer ? "Someone wrote the lots for that roll in your name: nothing was rolled." : `${cap(nameOf(st.by))} drew that roll again: nothing was rolled.`);
       // given up (lots.js GONE): someone's panel stopped hearing from this one, or this one lost its part (a `gone`
       // in my name this panel didn't write is a forgery: said so instead)
-      else if (st?.phase === "ended") say(`That roll didn't land: ${st.fault?.why === "forged" || st.forged.includes(viewer) ? "someone wrote its lots in your name" : st.forged.length ? `${list(st.forged.map(nameOf))} say${st.forged.length === 1 ? "s" : ""} someone wrote its lots in their name` : st.gone.includes(viewer) ? "this panel lost its part of the lots" : `${list(st.gone.map(nameOf))} gave its lots up, not hearing from you`}. Nothing was rolled.`);
+      else if (st?.phase === "ended") {
+        const why = endedWhy(st, viewer, {
+          forged: (vs) => (vs.includes(viewer) ? "someone wrote its lots in your name" : `${list(vs.map(nameOf))} say${vs.length === 1 ? "s" : ""} someone wrote its lots in their name`),
+          lost: "this panel lost its part of the lots",
+          gaveUp: (vs) => `${list(vs.map(nameOf))} gave its lots up, not hearing from you`,
+        });
+        say(`That roll didn't land: ${why}. Nothing was rolled.`);
+      }
       else if (now - pending.at > PANEL_THROW_MS && !st?.public) say(`That roll didn't land: its lots are still waiting for ${list((st?.waiting ?? []).map(nameOf))}. Nothing was rolled.`);
     }
     const face = faceOfDraw(st, n);
