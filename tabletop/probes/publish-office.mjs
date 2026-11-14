@@ -19,7 +19,7 @@
 // cushion at each seat); the doc
 // starts people watching from a seat (view.start's seat body) with a home
 // view across the room. It checks:
-// - each table brought its own seats (Lost Cities p1 p2; Santorini's under
+// - each table holds a locked link to a game doc of its own (each with its own seats and hands; Santorini.s under
 //   other ids where those were taken; Dominoes' too), each seat's view in
 //   its own table's frame, each hand named by its own table's seat;
 // - the picker groups the seats by table, named for each;
@@ -48,7 +48,7 @@ import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs
 // players shuffle them), and walk (the entrance mat is a spawn point)
 const PACKAGES = ["scene", "seats", "tabletop", "card-table", "walk"];
 
-const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1, art: 0 };
+const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1, art: 0, game: 1 };
 const args = {};
 const bad = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -78,6 +78,11 @@ const DRY = !!args["dry-run"];
 const ART = !!args.art;
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const TITLE = typeof args.title === "string" ? args.title : "Quiet games room";
+// --game <url>: the Lost Cities game doc the room's Lost Cities table links (publish-aboard.mjs prints it), so
+// the room and the boat play the same game (scene/COMPOSITION.md, worked example 3). Without it, the room's own.
+const GAME = typeof args.game === "string" ? args.game : null;
+// each game is a doc of its own, listing what its contents come from
+const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
@@ -110,39 +115,41 @@ try {
   } else {
     const s = await P("shape()");
     const [lc, sa, dom] = ids.tables;
-    const want = { p1: lc.table, p2: lc.table, "p1-2": sa.table, "p2-2": sa.table, p3: sa.table, "p1-3": dom.table, "p2-3": dom.table };
+    // each game is a doc of its own, linked onto its table: the room holds the links, and no game's pieces or seats
     check(
-      "each table brought its own seats, each seat's view in its own table",
-      J(Object.fromEntries(Object.entries(s.seats).map(([k, v]) => [k, v.in]))) === J(want) && J(lc.seats) === J(["p1", "p2"]) && J(sa.seats) === J(["p1-2", "p2-2", "p3"]) && J(dom.seats) === J(["p1-3", "p2-3"]),
-      { seats: s.seats, tables: ids.tables },
+      "each table holds one locked link to a game doc of its own; the room has no seats or hands of its own",
+      s.links.length === 3 && ids.tables.every((t) => s.links.some((l) => l.id === t.link && l.parent === t.table && l.locked && l.game === t.game)) && !Object.keys(s.seats).length && s.zones.length === 0,
+      { links: s.links, seats: s.seats, zones: s.zones },
     );
-    check("each hand is its own table's seat's", J(s.zones) === J(["p1", "p1-3", "p2", "p2-3"]), s.zones);
+    check(
+      "each game brought its own seats (Lost Cities p1 p2, Santorini p1–p3, Dominoes p1 p2), each hand its own game's seat's, each starting people in the seat body",
+      J(s.games.map((g) => g.seats)) === J([["p1", "p2"], ["p1", "p2", "p3"], ["p1", "p2"]]) && J(s.games[0].zones) === J(["p1", "p2"]) && J(s.games[2].zones) === J(["p1", "p2"]) && s.games.every((g) => g.start === "seat"),
+      s.games,
+    );
     check("a chair or a cushion at every seat, a spawn point at the doors", s.chairs === 7 && s.spawn === 1, s);
     check("it starts people watching from a seat (the seat body), at home across the room; no grid or axes", s.start?.body === "seat" && !!s.start?.home && s.view.grid === false && s.view.axes === false, { start: s.start, view: s.view });
     check(`titled “${TITLE}”, two decks kept by the joint keeper`, s.title === TITLE && s.decks.length === 2 && s.decks.every((d) => d.type === "secure-deck"), { title: s.title, decks: s.decks });
-    check("every object shows one of the scene's own files", (await P("strays()")).length === 0, await P("strays()"));
-    const groups = await P("pickerShape('a')");
-    check(
-      "the picker groups the seats by table, named for each",
-      J(groups) === J([{ option: "" }, { group: "Lost Cities table", options: ["p1", "p2"] }, { group: "Santorini table", options: ["p1-2", "p2-2", "p3"] }, { group: "Dominoes table", options: ["p1-3", "p2-3"] }]),
-      groups,
-    );
+    check("every object shows one of its own doc's files (a link shows its game)", (await P("strays()")).length === 0, await P("strays()"));
+    const pickers = await P("pickers('a')");
+    check("each game's picker lists its own seats", J(pickers.map((x) => x?.options)) === J([["", "p1", "p2"], ["", "p1", "p2", "p3"], ["", "p1", "p2"]]), pickers);
     const pk = await P("packages('a')");
     const answering = new Set(pk.answering.map((p) => folderOf(p.importUrl)));
-    check("the stage lists the package of every plugin the room calls for, each one stated", PACKAGES.every((p) => answering.has(p) && pk.listed.includes(urls[p])) && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
+    // (the room's own stage calls for the scene's and the spawn point's; seats, tabletop and the keeper are its games')
+    check("the stage lists the package of every plugin the room calls for, each one stated", ["scene", "walk"].every((p) => answering.has(p) && pk.listed.includes(urls[p])) && [...answering].every((p) => PACKAGES.includes(p)) && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
     snapshot = await P("snapshot()");
     report.shots.push(await b.shot(join(SHOTS, "office-built.png")));
     await P("openB()");
     check("B arrives watching from a seat (view.start)", await until("bodyLabel('b') === 'Watching'", 60_000), await P("body('b')"));
-    await P("pick('a', 'p1')");
-    await P("pick('b', 'p2')");
+    check("…watching Lost Cities: its picker is the one shown (the picker follows attention)", await until("pickers('b')[0]?.shown && !__p.pickers('b')[1]?.shown && !__p.pickers('b')[2]?.shown", 10_000), await P("pickers('b')"));
+    await P("pick('a', 'p1', 0)");
+    await P("pick('b', 'p2', 0)");
     const playing = await until("phaseAt(0) === 'playing' && __p.facesAt('a', 0).length >= 8 && __p.facesAt('b', 0).length >= 8", 240_000);
     check("seated at Lost Cities, its deck reaches playing and each hand's faces reach its player", playing, { phase: await P("phaseAt(0)"), a: (await P("facesAt('a', 0)")).length, b: (await P("facesAt('b', 0)")).length });
     check("…while the Dominoes boneyard still waits for its own players", (await P("phaseAt(2)")) === "waiting" && (await P("participantsAt(2)")) === 0, { phase: await P("phaseAt(2)"), participants: await P("participantsAt(2)") });
     await sleep(800);
     report.shots.push(await b.shot(join(SHOTS, "office-seated.png")));
-    await P("pick('a', 'p1-3')");
-    await P("pick('b', 'p2-3')");
+    await P("pick('a', 'p1', 2)");
+    await P("pick('b', 'p2', 2)");
     check("both moved to Dominoes: its boneyard starts", await until("phaseAt(2) === 'playing'", 240_000), { phase: await P("phaseAt(2)"), participants: await P("participantsAt(2)") });
     await sleep(800);
     report.shots.push(await b.shot(join(SHOTS, "office-dominoes.png")));
@@ -172,17 +179,28 @@ async function art() {
     await sleep(900);
     report.shots.push(await b.shot(join(SHOTS, `art-${name}.png`)));
   }
-  await P("pick('a', 'p1')");
+  await P("pick('a', 'p1', 0)");
   await sleep(2500);
   report.shots.push(await b.shot(join(SHOTS, "art-seat.png")));
-  await P("pick('a', 'p2')");
+  await P("pick('a', 'p2', 0)");
   await sleep(2000);
   report.shots.push(await b.shot(join(SHOTS, "art-seat2.png")));
 }
 
 // ─── publish the room as it was before anyone sat ───────────────────────────
-async function publish(snap) {
+async function publish(snapshot0) {
+  let snap = snapshot0;
+  // the room lists its games' packages too, for now: a view offers the outermost doc's packages only
   const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES) };
+  for (const g of snap.games) docs[g] = withPackages(snap.docs[g], GAME_PACKAGES);
+  // the room's Lost Cities links the given game (the boat's): its own game doc, deck and files aren't published
+  if (GAME) {
+    const own = snap.games[0];
+    const ownDeck = Object.values(snap.docs[own].objects ?? {}).map((o) => Object.values(o.traits ?? {}).find((v) => v && typeof v.by === "string")?.by).find(Boolean) ?? null;
+    const others = new Set([snap.scene, ...snap.games.slice(1)].flatMap((u) => Object.values(snap.docs[u].assets ?? {}).map((a) => a.url)));
+    for (const u of [own, ownDeck, ...Object.values(snap.docs[own].assets ?? {}).map((a) => a.url)]) if (u && !others.has(u)) delete docs[u];
+    snap = { ...snap, games: snap.games.slice(1), holders: snap.holders.filter((u) => u !== ownDeck), linked: { [own]: GAME } };
+  }
   const stamped = packageProblems(docs[snap.scene], PACKAGES);
   if (stamped.length) {
     for (const p of stamped) console.error(`  ${p}`);
@@ -190,7 +208,7 @@ async function publish(snap) {
   }
   const count = Object.keys(docs).length;
   if (DRY) {
-    console.log(`dry run: ${count} docs (the scene, ${snap.holders.length} decks and ${count - 1 - snap.holders.length} files; nothing published)`);
+    console.log(`dry run: ${count} docs (the room, ${snap.games.length} games, ${snap.holders.length} decks and ${count - 1 - snap.games.length - snap.holders.length} files${GAME ? `; Lost Cities linked to ${GAME}` : ""}; nothing published)`);
     return b.stop(0);
   }
   const { Repo, initSubduction } = await import("@automerge/automerge-repo");
@@ -211,10 +229,12 @@ async function publish(snap) {
     for (const o of Object.values(d.objects ?? {})) delete o.claims;
     return d;
   };
-  // files first, then the decks (their faces name files), then the scene
-  const files = Object.keys(docs).filter((u) => u !== snap.scene && !snap.holders.includes(u));
+  // files first, then the decks (their faces name files), then the games, then the room linking them
+  for (const [from, to] of Object.entries(snap.linked ?? {})) renamed.set(from, to);
+  const files = Object.keys(docs).filter((u) => u !== snap.scene && !snap.holders.includes(u) && !snap.games.includes(u));
   for (const u of files) renamed.set(u, (await repo.create2(revive(docs[u]))).url);
   for (const u of snap.holders) renamed.set(u, (await repo.create2(rewrite(docs[u]))).url);
+  for (const u of snap.games) renamed.set(u, (await repo.create2(rewrite(unclaimed(docs[u])))).url);
   const scene = await repo.create2(rewrite(unclaimed(docs[snap.scene])));
   const made = [scene.url, ...renamed.values()];
   const glbs = files.map((u) => renamed.get(u));
@@ -229,10 +249,11 @@ async function publish(snap) {
       const got = (await within(30000, checker.find(url))).doc();
       let problem = !got || !Object.keys(got).length ? "empty" : null;
       if (!problem && url === scene.url) {
-        const seats = Object.keys(got.traits?.seats ?? {});
+        const links = Object.values(got.objects ?? {}).filter((o) => o.providerId === "scene.link");
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
         else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
-        else if (seats.length !== 7) problem = `came back with seats ${J(seats)}`;
+        else if (links.length !== 3) problem = `came back with ${links.length} links`;
+        else if (GAME && !links.some((l) => l.sourceUrl === GAME)) problem = `came back without its link to ${GAME}`;
         else if (got.claims) problem = "came back with claims";
       }
       if (!problem && glbs.includes(url) && !(got.content?.byteLength > 0)) problem = "a GLB doc with no bytes";
@@ -247,6 +268,6 @@ async function publish(snap) {
     console.error(`\nNOT verified: re-run, or raise --settle.`);
     return b.stop(1);
   }
-  console.log(`\n  scene  https://patchwork.inkandswitch.com/#doc=${scene.url}\n`);
+  console.log(`\n  scene  https://patchwork.inkandswitch.com/#doc=${scene.url}${GAME ? `\n  Lost Cities: the game ${GAME} (the boat's)` : ""}\n`);
   return b.stop(0);
 }
