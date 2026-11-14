@@ -533,7 +533,7 @@ export function createCrew(api, ctx) {
   const AB = "aboard";
   const ST = "station";
   /** Is the top body one of the crew's (walking her deck, or at a station)? */
-  const ours = () => [AB, ST].includes(api.local.get()?.body?.id);
+  const ours = () => [AB, ST].includes(api.view.get()?.body?.id);
   let enteringStation = false; // a station going on over "aboard": not a wait
   let overOrbit = true; // "aboard" went on over the stage's orbit camera, Look (else over a body that has a view of its own: a seat)
   let suspended = false; // another body (a seat) is over "aboard"
@@ -569,7 +569,7 @@ export function createCrew(api, ctx) {
     enter() {
       if (playing) return null;
       // the body this one goes over: the stage's Look (from Edit the stage turns to Look first; depth 0), or one that takes the camera back when this goes (a seat)
-      overOrbit = (api.local.get()?.body?.depth ?? 0) === 0;
+      overOrbit = (api.view.get()?.body?.depth ?? 0) === 0;
       playing = true;
       suspended = false;
       if (!w || (onShip() && !frameOfShip(w.ship))) spawn();
@@ -653,7 +653,7 @@ export function createCrew(api, ctx) {
   function start() {
     if (playing) {
       // waiting under a seat: stand up from it
-      while (suspended && api.local.get()?.body?.depth > 0 && !ours()) if (!api.body.leave()) break;
+      while (suspended && api.view.get()?.body?.depth > 0 && !ours()) if (!api.body.leave()) break;
       return;
     }
     api.body.enter(AB);
@@ -662,7 +662,7 @@ export function createCrew(api, ctx) {
   /** Off the deck: leave the crew's bodies (a station, then "aboard"). */
   function stop() {
     if (!playing) return;
-    while (ours() && api.local.get()?.body?.depth > 0) if (!api.body.leave()) break;
+    while (ours() && api.view.get()?.body?.depth > 0) if (!api.body.leave()) break;
     if (playing) stopped(); // (not the top: a body over it went with the stage)
   }
 
@@ -756,7 +756,7 @@ export function createCrew(api, ctx) {
   function leave() {
     const s = station;
     if (!s) return;
-    if (api.local.get()?.body?.id === ST) api.body.leave();
+    if (api.view.get()?.body?.id === ST) api.body.leave();
     if (station === s) depart(s); // (the body was already gone)
   }
 
@@ -885,7 +885,7 @@ export function createCrew(api, ctx) {
     // the crew's bodies: walking her deck, and standing at a station
     bodies: [aboardBody, stationBody],
     me() {
-      const ptr = api.local.get()?.pointer ?? {};
+      const ptr = api.view.get()?.pointer ?? {};
       return {
         playing: playing && !suspended,
         // the browser let the lock go (its Escape): a click takes it back

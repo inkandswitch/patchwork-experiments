@@ -107,6 +107,7 @@ function join(w, session, hull) {
     raycast: rays(base.worldOf, hull),
     // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
     local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
+    view: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     body: {
       current: () => ({ id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }),
       enter(id, place = null) {

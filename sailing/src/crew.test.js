@@ -240,6 +240,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
       },
     },
     local: { get: () => ({ body: s.body(), pointer: { ...s.pointer } }) },
+    view: { get: () => ({ body: s.body(), pointer: { ...s.pointer } }) },
     // the stage's body stack, as far as the crew meets it (scene/TOOLS.md §4)
     body: {
       current: () => s.body(),
