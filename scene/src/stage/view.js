@@ -30,7 +30,7 @@ import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
 import { atFocus, focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
-import { expand, identityOf } from "./links.js";
+import { expand, identityOf, isLink } from "./links.js";
 import { viewAt } from "../build.js";
 import { multiplyMatrices } from "../transform.js";
 
@@ -77,6 +77,29 @@ export function startOf(doc) {
   const body = typeof s.body === "string" && s.body ? s.body : null;
   const place = typeof s.place === "string" && s.place ? s.place : null;
   return { body, place, home: cleanCamera(s.home) };
+}
+
+/**
+ * Where a start leads (TOOLS.md §2): from stage `s`, its doc's start; while
+ * its place is one of that doc's links, on through it, as the linked doc
+ * starts people. `next(s, linkId)` → the stage the link opens (undefined:
+ * not yet; null: nobody arrives through it). Links can't repeat on a path
+ * (links.js), so this ends. Pure.
+ * @returns {{ stage, body: string | null, place: string | null, through: boolean } | null | undefined}
+ */
+export function startArrival(s, { doc, next }) {
+  let stage = s;
+  let through = false;
+  for (;;) {
+    if (!stage) return undefined;
+    const d = doc(stage);
+    const { body, place } = startOf(d);
+    if (place == null || !isLink(d?.objects?.[place])) return { stage, body, place, through };
+    const n = next(stage, place);
+    if (n == null) return n;
+    stage = n;
+    through = true;
+  }
 }
 
 /**
@@ -847,17 +870,36 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── arriving: view.start (TOOLS.md §2) ───────────────────────────────────
   // The outermost doc's, read once: on arrival, and again after a template
-  // has written one for its maker. Its body is entered once an acting stage
-  // offers it and the content is in, or ARRIVE_WAIT_MS after it came on
-  // offer. Until then it waits as long as the body may still come.
-  let arrival = null; // { body, place, offered }
+  // has written one for its maker. A start whose place is one of the doc's
+  // links arrives through it: as the linked doc starts people, in its stage
+  // (and so on down, a place there being a link in turn). Its body is
+  // entered once that stage (else the first acting stage) offers it and the
+  // content is in, or ARRIVE_WAIT_MS after it came on offer. Until then it
+  // waits as long as the body may still come.
+  let arrival = null; // { offered, based }
   function arrive() {
-    const s = outermost();
-    if (!s) return;
-    const { body, place } = startOf(s.doc());
-    setBase(startBase(body));
-    arrival = body && !isStageBody(body) ? { body, place, offered: null } : null;
+    if (!outermost()) return;
+    arrival = { offered: null, based: false };
+    tryArrive();
     requestFlush();
+  }
+  /**
+   * Where the start leads (startArrival): `{ stage, body, place, through }`
+   * (`through`: reached through a link), undefined while a link on the way
+   * is still on its way, null when it can't be arrived through (a pin, a
+   * mirror or a closed link: nobody arrives in a value or a copy).
+   */
+  function arrivalAt() {
+    return startArrival(outermost(), {
+      doc: (s) => s.doc(),
+      next: (s, id) => {
+        const p = [...s.path, id];
+        const st = linkState(p);
+        if (!st) return undefined;
+        if (st.role !== "acting") return null;
+        return stageAt(p) ?? undefined;
+      },
+    });
   }
   function restoreCamera(doc) {
     const cam = initialCamera({ stored: readJSON(cameraKey), doc });
@@ -882,18 +924,39 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       arrival = null;
       return;
     }
+    const at = arrivalAt();
+    if (at === null) {
+      arrival = null;
+      return;
+    }
+    if (at === undefined) {
+      // (each flush asks again; a doc arriving flushes)
+      if (linksPending()) requestFlushSoon();
+      return;
+    }
+    // the base at once (Look, or Edit for a scene made to be built)
+    if (!a.based) {
+      a.based = true;
+      setBase(startBase(at.body));
+    }
+    if (!at.body || isStageBody(at.body)) {
+      arrival = null;
+      return;
+    }
     const all = [...stages.values()];
     const unsettled = (s) => s.starting() || s.packages.coming();
-    const offer = bodyDefs().get(a.body);
+    const caller = at.through ? at.stage : null;
+    const offer = bodyDefs(caller).get(at.body);
     if (offer) {
       a.offered ??= time.now();
       // a stage ahead of the offering one in acting order, or a link still on its way, may offer
-      // it too, and its offer is the one arriving takes; and the content first
+      // it too, and its offer is the one arriving takes (unless the start named the stage, through
+      // a link); and the content first
       const order = acting();
-      const ahead = order.slice(0, order.indexOf(offer.stage));
+      const ahead = caller ? [] : order.slice(0, order.indexOf(offer.stage));
       if ((linksPending() || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
       arrival = null;
-      enterBody(a.body, a.place);
+      enterBody(at.body, at.place, caller);
       return;
     }
     // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)
@@ -1249,8 +1312,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     relink,
     linkState,
     fixPointAt,
-    /** what arriving still waits to enter (view.start's body), for probes and tests */
-    arriving: () => (arrival ? { ...arrival } : null),
+    /** what arriving still waits to enter (where view.start leads: its stage's number, body and place), for probes and tests */
+    arriving: () => {
+      if (!arrival) return null;
+      const at = arrivalAt();
+      return at ? { stage: at.stage.n, body: at.body, place: at.place, offered: arrival.offered } : { pending: at === undefined };
+    },
     linksPending: () => linksPending(),
     /** the expansion as it stands (links.js), for probes and tests */
     expansion: () => expansion,

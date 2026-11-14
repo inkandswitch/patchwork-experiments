@@ -10,6 +10,7 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
+import { startArrival } from "./view.js";
 import { keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import keys from "../parts/keys.js";
@@ -222,6 +223,52 @@ describe("arriving through a link", () => {
     expect(s.debug.view.atom.get().body.label).toBe("Sitting");
   });
 
+  // A start whose place is a link arrives through it, as the linked doc
+  // starts people (TOOLS.md §2): the second of two games, named by its link,
+  // whatever the first offers; the game's own start body and place.
+  it("a start placed on a link arrives as the linked doc starts people, in its stage, whichever link comes first", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const entered = [];
+    const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: (api) => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: (place) => (entered.push([api.scene().traits["t.game"].name, place]), { input: {} }) }] }) } };
+    const repo = new FakeRepo();
+    const ga = repo.add(emptyScene({ title: "GA", objects: {}, order: [], traits: { "t.game": { name: "GA" } }, view: { start: { body: "t.sit" } } }));
+    const gb = repo.add(emptyScene({ title: "GB", objects: {}, order: [], traits: { "t.game": { name: "GB" } }, view: { start: { body: "t.sit", place: "p2" } } }));
+    s = await mountStage({
+      repo,
+      extensions: [SEATISH],
+      doc: {
+        objects: { "link-a": object({ name: "A", sourceUrl: ga.url, providerId: LINK, renderUrl: null }), "link-b": object({ name: "B", sourceUrl: gb.url, providerId: LINK, renderUrl: null }) },
+        order: ["link-a", "link-b"],
+        // the host's own body is no part of it: the linked doc says
+        view: { start: { place: "link-b" } },
+      },
+    });
+    await until(() => s.debug.view.atom.get().body.id === "t.sit");
+    expect(entered).toEqual([["GB", "p2"]]);
+  });
+
+  it("a start placed on a pinned link, a mirror or a closed one arrives nowhere: Look, nothing entered", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const kind of ["pinned", "mirror", "closed"]) {
+      const entered = [];
+      const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => (entered.push(1), { input: {} }) }] }) } };
+      const repo = new FakeRepo();
+      const g = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit" } } }));
+      const link = (extra = {}) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, ...extra });
+      const objects =
+        kind === "pinned" ? { m: link({ at: { heads: g.heads() } }) } : kind === "mirror" ? { a: link(), m: link() } : { m: link({ sourceUrl: "automerge:2j9knnaaaaaaaaaaaaaaaaaaaaaa" }) };
+      // (in the mirror's case, link "a" comes first in path order: the doc acts there, and "m" shows it again)
+      s = await mountStage({ repo, extensions: [SEATISH], doc: { objects, order: Object.keys(objects), view: { start: { body: "t.sit", place: "m" } } } });
+      await settle();
+      await settle();
+      expect(entered, kind).toEqual([]);
+      expect(s.debug.view.atom.get().body.id, kind).toBe("look");
+      expect(s.debug.view.arriving(), kind).toBe(null);
+      s.unmount();
+      s = null;
+    }
+  });
+
   // Two linked games offer the start body. Which one a viewer arrives in is
   // the doc's structure (links in path order), never which game's doc came
   // over the network first: both arrival orders, the same game.
@@ -260,4 +307,46 @@ describe("arriving through a link", () => {
       expect(entered).toEqual(["GA"]);
     });
   }
+});
+
+describe("startArrival: where a start leads, over every chain of up to two links", () => {
+  // a stage per depth, each doc's start placed on nothing, an object, or its link to the next;
+  // the link's stage there, not yet, or nobody arrives through it
+  const link = (url) => ({ providerId: LINK, sourceUrl: url });
+  it("ends at the first start not placed on a link; undefined while a link's stage is on its way; null through a pin, a mirror or a closed link", () => {
+    const places = ["none", "object", "link"];
+    const nexts = ["stage", "pending", "refused"];
+    let n = 0;
+    for (const p0 of places)
+      for (const p1 of places)
+        for (const p2 of ["none", "object"])
+          for (const x0 of nexts)
+            for (const x1 of nexts) {
+              const stages = [0, 1, 2].map((i) => ({
+                i,
+                doc: {
+                  objects: { thing: { name: "Thing" }, L: link(`automerge:d${i + 1}`) },
+                  view: { start: { body: `b${i}`, ...([p0, p1, p2][i] === "none" ? {} : { place: [p0, p1, p2][i] === "object" ? "thing" : "L" }) } },
+                },
+              }));
+              const xs = [x0, x1];
+              const got = startArrival(stages[0], { doc: (s) => s.doc, next: (s) => (xs[s.i] === "stage" ? stages[s.i + 1] : xs[s.i] === "pending" ? undefined : null) });
+              // the model: walk while the place is a link
+              let want;
+              for (let i = 0; ; i++) {
+                const place = [p0, p1, p2][i];
+                if (place !== "link") {
+                  want = { stage: stages[i], body: `b${i}`, place: place === "object" ? "thing" : null, through: i > 0 };
+                  break;
+                }
+                if (xs[i] !== "stage") {
+                  want = xs[i] === "pending" ? undefined : null;
+                  break;
+                }
+              }
+              expect(got, `${p0}/${p1}/${p2} ${x0}/${x1}`).toEqual(want);
+              n++;
+            }
+    expect(n).toBe(3 * 3 * 2 * 3 * 3);
+  });
 });
