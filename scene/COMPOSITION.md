@@ -47,14 +47,20 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–14 have since been built (Build order, below). Since step 12 the
+Steps 1–15 have since been built, and step 16 decided (Build order,
+below). Since step 12 the
 stage composes docs: Lost Cities aboard is two docs (the boat, with a
 locked link to the game on its card table), and the Quiet games room links
 its games, its Lost Cities table the same game doc as the boat's. Since
 step 13 pins and mirrors open: "Fitting out" is a sloop whose companionway
 is a fit-out fixed at a version, and one hatch linked live twice. Since
 step 14 a viewer enters a linked doc to select and edit what's in it, the
-boat live around them. What follows is kept as the record of why; where it
+boat live around them. Since step 15 a selection becomes a doc of its own,
+linked in its place, and a link is bundled back (the boat's card table and
+its game, extracted and bundled in Chrome). Step 16 was decided rather than
+built: nothing needs named frames yet, and the one workaround that looked
+like it did (the games room renaming its links to arrive at Lost Cities)
+went with a smaller rule, a start placed on a link. What follows is kept as the record of why; where it
 still holds, the step that left it says so.*
 
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
@@ -481,6 +487,10 @@ on its root. A GLB connector with a `name` is the same thing. Two consumers:
 
 A name the doc doesn't publish resolves to its root.
 
+*Not built (Decisions, step 16).* Arriving through a link is the smaller
+rule that the one consumer needed: a start whose place is one of the doc's
+links arrives as the linked doc starts people.
+
 ## 10. The private layer
 
 The hiding design's S4 puts private objects in a scene with `"own:<k>"`
@@ -580,9 +590,9 @@ Each is argued above and checkable over finite cases.
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field |
 | I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the latest base ride of any acting stage, whatever the focus | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role; a sibling link's stage riding × every focus |
-| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field when S has no edge outside | Every sibling set of a fixed 6-object scene with traits, refs, groups and a seats map × K ⊆ the root's traits |
+| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside | Every set of roots of a fixed 6-object scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 504 cases (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
-| I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on ≤3 docs with one bound object and one claim |
+| I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
 
 ## Build order
 
@@ -878,8 +888,59 @@ ships alone and proves something.
     double-click selects the link and opens the inspector, which narrows the
     canvas under the second click (the probe aims again; a person on a small
     part of a link may miss).
-15. **Extract and bundle** (I9, I11).
+15. **Extract and bundle** (I9, I11). *Built:* `src/extract.js`, as §8
+    says: Extract on an object or group (S: it, what's attached under it
+    and what's filed in it; its top objects share one parent p, else it's
+    refused) writes T whole with ids kept, runtime state left behind and
+    render docs copied with their builds, then the host in one change
+    (`extractHost`): S goes, a link to T at p with no transform of its own,
+    its hint S's box in p's frame, in the group S's outer members share,
+    where S's first member was in the order; references into S cleared and
+    said; a dimension with both ends on S goes to T, one with one end keeps
+    it frozen; a start placed on S moves to T and the host starts through the
+    link (step 16). Bundle on a link (`bundlePlan`) copies the doc it shows
+    (a pin's value, its live links fixed at the pin's deps) in the link's
+    place, ids kept unless taken, top objects at link · local under the
+    link's parent and in its group, what hung on the link left where it is,
+    and never writes that doc. K is the commands' `options` (STAGE.md "A
+    command": the inspector's checkboxes, none ticked; the menu takes none).
+    Both are `scene.transfer`'s, edit-only, one undo step, the host written
+    once, computed from the host as it is when it's written (compare-and-set
+    on S and K). *Proves* (`src/extract.test.js`, I9): every set of roots of
+    a six-object scene (a table with a lamp and a card on it, a crate and a
+    wheel in a group: a built object, both kinds of reference, a runtime
+    trait field, a claim, a `copy: "drop"` field, three dimensions, a start
+    on the crate) × every K over three root traits, 504 cases, each run
+    through the doer on a fake repo: refused exactly when the tops don't
+    share a parent (168); otherwise the host written once and nothing else
+    that existed, the new docs T and one render doc per built object, T and
+    the host intra-doc (I2), T and what comes back holding no runtime state;
+    bundled back, the host written once more and T never; and where S has no
+    edge outside (64 cases, said independently of the code: no reference of
+    either kind across S, its outer members in one group, no dimension
+    across) the host is the original on every field but runtime state and
+    render doc identity (whose seeds agree), its order exact where S was one
+    block of it, else S one block where its first member was. I11
+    (`src/linearity.test.js`): A, B and C on real Automerge, B holding a
+    keeper-bound object with a claimed one under it; link A→B, pin A→B, link
+    C→B, copy into A or C, extract, bundle in A or C; every sequence of up to
+    three and every interleaving (a ‖ b, a ‖ b ‖ c, a ; (b ‖ c), (a ‖ b) ;
+    c, a ‖ (b ; c)) over every ordered choice, 2696: at most one doc holds
+    runtime state, and it is B. Dropping `cleanObject` from either direction
+    fails a harness. Through the stage (`src/parts/transfer.test.js`): the
+    view opens T where the link is, Undo puts the host back exactly, Bundle
+    leaves the linked doc's bytes alone, the inspector's checkboxes run
+    Extract with what's ticked. In Chrome: `sailing/probes/extract-run.mjs`
+    (25/25): Lost Cities aboard, the card table and the game's link on it
+    extracted into T, the game acting inside T (its stage's path the boat's
+    link, then T's) with its cards drawn where they were (0 m), Undo and Redo,
+    then Bundle: the boat back field for field, T unwritten, the game at its
+    first path, its cards where they were. Decisions, step 15.
 16. **Named frames and traversal**, when doom's exits or stations need them.
+    *Decided, not built* (Decisions, step 16): neither needs them yet. The
+    one workaround was arrival among linked docs, and it went with a start
+    placed on a link (`startArrival`, `src/stage/view.js`), which names no
+    place across a doc.
 
 ## What the stage doesn't do, and what it costs
 
@@ -936,6 +997,126 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, step 16 (2026-11-14, made unattended)
+
+Named frames and traversal (§9) were to be built "when doom's exits or
+stations need them". Read against doom, traversal, sailing and the
+published examples, nothing needs them, so step 16 is this decision.
+
+1. **Named frames aren't built.** Precisely why:
+   - **Doom's exits** lead to a map's start: E1M1's exit switch carries
+     `traversal.exit.to` (the boat), and going there opens the boat as it
+     starts people. A Doom exit always goes to the next map's player start,
+     which is that map's `view.start`, so no exit lands anywhere a doc's own
+     start doesn't.
+   - **Stations** are objects of the ship's own doc, entered with their
+     local id as the place. A station in a linked fit-out would be inert
+     (step 13, decision 14), and worked example 2's station snapped to a
+     fit-out's published winch has no consumer built: no fit-out publishes
+     a frame, and carry doesn't snap across a link.
+   - **The one workaround was about arrival, not names.** The Quiet games
+     room renamed its links `link-1-lost-cities`… so that arriving, which
+     takes the first acting stage offering the start body, would pick Lost
+     Cities. That needed a way to say *which linked doc* you arrive in, not
+     a place inside it by name.
+2. **A start placed on a link arrives through it.** `view.start.place`
+   naming one of the doc's links hands arrival to that doc: its own
+   `view.start` (body and place), in its stage, and on down where that
+   place is a link in turn (`startArrival`, pure). The host's `body` isn't
+   read then. Through a pin, a mirror or a closed link nobody arrives (Look,
+   nothing entered). Why: nothing crosses, the host names an object of its
+   own and the linked doc its own place, so the game arrives people the same
+   way alone and in the room (I4); and it composes, a room in a building
+   arrives through two links. The games room's publisher now writes
+   `{ place: <its Lost Cities link>, home }` and keeps the ids addObject
+   made. Extract uses the same rule to keep a start that was on what it
+   extracts (decisions, step 15, 9). Rejected: a body-and-stage pair in
+   `view.start` (`{ body, in: link }`), which says the same with a second
+   field and leaves the linked doc's own start unused.
+3. **When named frames come, the name is not the URL's fragment.**
+   traversal passes `to` as written, and `automerge:<id>#<heads>` already
+   means a version, so `url#name` would collide with it. A consumer that
+   needs a named landing gets its own field beside `to`. What would call for
+   them: an exit to a place other than a doc's start (a teleporter pair
+   across docs, a portal landing at a door), or a station snapped to a linked
+   fit-out's fitting. Then: `frames: { name: localId }` on the root, the
+   view's `go(url, name)`, carry snapping to a link's frames.
+
+## Decisions, step 15 (2026-11-14, made unattended)
+
+Made while building extract and bundle, with the project lead away.
+
+1. **They are `scene.transfer`'s commands**, beside Copy and Paste. Why:
+   §8 calls them one copy rule used in two directions, and transfer is
+   where the copy rule's verbs live; a part of their own would be a second
+   home for it.
+2. **S is the selection's subtree.** The selection is one value, so the
+   command extracts one target (an object, or a group with what's filed in
+   it); the plans take any set of roots, and the harness runs every set.
+   Why: no multiple selection exists to take a set from; when one does,
+   nothing below the command changes.
+3. **K is a command's `options`**, a set of values the inspector offers as
+   checkboxes, none ticked, the button running with what's ticked; other
+   surfaces run with none. Why: §8 asks for checkboxes, none ticked, nothing
+   inferred, and the contract had a one-of (`choices`) but no set. Cost: an
+   addition to the command contract whose two consumers are siblings. The
+   ticks are the inspector's, per selection, never stored.
+4. **Render docs are copied both ways**, seeded with their builds. Why: one
+   copy rule (paste does so), and one render doc shown by two docs' stages
+   would be built by both (step 13, decision 11). So I9 compares render
+   docs by what they hold, not by url.
+5. **The host's change is worked out when it's written**, from the host as
+   it is then, after T and the render copies are made; extract writes
+   nothing if S or K's traits changed meanwhile (T is left unlinked: an
+   orphan, nothing lost), and bundle is planned again. Why: an edit to S
+   while T was being written would otherwise be missing from T and deleted
+   from the host.
+6. **Extract doesn't call `beforeRemove`.** References into S are cleared
+   by their descriptions, as paste clears them, and the doc's own maps are
+   handled by extract itself. Why: nothing leaves the world, it moves; the
+   one implementer (dimensions) would freeze measurements that move with S.
+7. **Dimensions go with both their ends.** One with both ends on S goes to
+   T (its points refreshed in T's frame); one with one end on S stays,
+   that end frozen where it is, as removing the object does; bundle brings
+   T's dimensions back, ids kept unless taken. Why: §2, a relation lives in
+   the doc that holds both its ends.
+8. **The link is filed in the group S's outer members share** (else none),
+   and bundle files T's ungrouped objects in the link's group. Why: so a
+   group S sat in comes back with it.
+9. **A start placed on S moves to T**, the host starting people through the
+   link (step 16, 2), and bundle puts T's start back, its place following
+   its id, the host's home kept. Why: arriving keeps working across an
+   extract, and it round-trips.
+10. **T is a scene made new from the host's look**: the first root's name as
+    its title (and the link's), the host's display prefs, its own start
+    unless one moved (decision 9) the datatype's (Edit), its packages what
+    reconcile would list for it here, the host's `"@patchwork"`. Why: T is
+    a new doc someone will open to build; its look shouldn't change.
+11. **Order.** The link goes where S's first member was; bundle puts T's
+    order in the link's place. So the order round-trips exactly when S is
+    one block of it, and otherwise S comes back as one block, every other
+    relative order kept. Why: a link is one row; the alternative, spreading
+    T's objects back to where they were, needs the host to remember T.
+12. **A reference to p becomes null in T, and stays null coming back.**
+    Why: §8 for the first; for the second, null in T is its root, which the
+    host can't tell from a reference that was always null. A reference to p
+    is an edge outside S.
+13. **Bundling a pin copies its value**; a live link inside it is copied
+    fixed at the heads the pin held it at. Why: a copy of a value is that
+    value, not today's.
+14. **Bundle is refused whole** for a ticked trait the host has ("This scene
+    already has Seats") or the linked doc lacks. Why: an edit happens or it
+    doesn't; §8's "refused per key" is which key the refusal names.
+15. **Bundle's options are read from the linked doc**, found by url (and
+    heads) once and cached; the surfaces ask again through a local key of
+    transfer's. Why: a command's state is synchronous, and the only way to
+    the linked doc's root traits is to find it, which an extension may do by
+    URL itself. Cost: the first time a link is selected its checkboxes come
+    a moment later. A host still never reads into a link to decide anything.
+16. **The aboard probe page passes a change's options through** to its
+    handle. Why: without the patches the edit recorder never recorded
+    anything there, so undo couldn't be probed on it.
 
 ## Decisions, step 14 (2026-11-14, made unattended)
 

@@ -123,7 +123,11 @@ run in every body (what runs is the doc's), and show nothing outside it.
 
 A **place** is not a type: it is the object given to a body's `enter` (a
 seat, a station), or null for "here". `view.start` is read on arrival, and
-the scene's package list must include its body's package. Prefs keep
+the scene's package list must include its body's package. A place that is
+one of the doc's links arrives through it, as the linked doc starts people
+(its own `view.start`, in its stage, and on down): the host names its own
+link and the linked doc its own place, so nothing crosses
+(COMPOSITION.md, Decisions, step 16). Prefs keep
 today's live rule, `view.prefs[k] ?? doc.view[k] ?? fallback` (since step 10
 the viewer's keys are `api.view`'s, and a pref falls back to the calling
 stage's doc).

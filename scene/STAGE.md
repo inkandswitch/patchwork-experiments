@@ -175,9 +175,10 @@ or identity closes, with what was opened under it, and opens again.
   views of one doc in one page hear each other; presences on different
   handles are left to the network.
 - **What the outermost doc gives the view**: its atmosphere, `view.start`
-  (the body named may be any acting stage's: a room arrives in its linked
-  game's seat body), the camera's home, and prefs' fallback (a pref falls
-  back to the calling stage's doc).
+  (the body named may be any acting stage's; and a start placed on one of
+  its links arrives through it, as that doc starts people: "Arriving"), the
+  camera's home, and prefs' fallback (a pref falls back to the calling
+  stage's doc).
 
 ## Three places for state
 
@@ -366,6 +367,15 @@ listed the ordinary way, by the trait its place carries (a spawn point's
 `view.start` is looked up in the registry. A body given no place decides
 what that means: the seat body puts you back in your own seat if the doc
 seats you, else watching from the first seat's view (writing nothing).
+A place that is one of the doc's links arrives **through** it: as the
+linked doc starts people (its own `view.start`, body and place, in its
+stage; and on down, where that place is a link in turn: `startArrival` in
+`src/stage/view.js`), whatever the host's `body` says. So the Quiet games
+room starts people through its Lost Cities link, and the game decides how
+(its seat body). Nothing crosses: the host names its own link, the linked
+doc its own place. Through a pin, a mirror or a closed link nobody arrives
+(Look, nothing entered): a value isn't played, and a mirror is the same
+doc drawn again. Extract moves a start placed on what it extracts so.
 
 **Parts** are what you put into a scene once it's started: a mast on a hull,
 a buoy in the sea, a target in a level. A template is a way to start a
@@ -508,6 +518,47 @@ view's side is `scene.transfer`, editing only).
     trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
     to the scene."). Nothing adds a scene trait for you.
   - The first copied root is selected.
+
+**Extract and bundle** (COMPOSITION.md §8; `src/extract.js`; the view's side
+is `scene.transfer`'s Extract and Bundle, editing only, each one undo step).
+The copy rule above used in two directions, each followed by one change to
+the host, written against the host as it is at that moment.
+
+- **Extract** (on an object or a group) takes S: it, everything attached
+  under it and everything filed in it, whose top objects must share one
+  parent p (else it's refused, saying so). It writes a new scene doc T
+  whole, before anyone can know of it: S's objects under their own ids
+  (a fresh doc has no collisions), every transform as it was (p's frame is
+  T's root), runtime state and `copy: "drop"` fields left behind, a built
+  object's render doc copied with its build, the `assets` entries S's files
+  use, the dimensions with both ends on S, the host's display prefs, the
+  packages its contents come from, and the host's `"@patchwork"`. In T a
+  reference to an object of S is kept, one to p becomes `null`, any other
+  is cleared. Then the host, in one change: S goes; a link to T takes its
+  place at p, with no transform of its own, filed in the group S's outer
+  members share (else none), its hint S's box in p's frame, where S's first
+  member was in the order; a reference into S is cleared; a dimension with
+  one end on S keeps that end frozen where it is; a start placed on S moves
+  to T, and the host starts people through the link instead. The link is
+  selected. If S changed meanwhile, nothing is written (T is left unlinked).
+- **Bundle** (on a link whose doc is open here) copies the doc the link
+  shows (at its `at` when fixed: a live link inside it is copied fixed where
+  the pin held it) into the host in the link's place, and removes the link,
+  in one change. The linked doc is never written. Ids are kept unless the
+  host has them, and every reference follows; T's top objects go under the
+  link's parent at link · local, filed in the link's group; what was
+  attached to the link stays where it is, on its parent; a reference to the
+  link is cleared; a start through the link becomes T's start. Its top
+  object is selected.
+- **K, the root traits that go along**, is explicit: Extract moves the
+  ticked host traits to T; Bundle copies the ticked traits of T to the host,
+  refused for a trait the host has ("This scene already has Seats"). They
+  are the commands' `options` (the inspector's checkboxes, none ticked: "A
+  command"); the menu takes none. Nothing infers them.
+- So `bundle(extract(S, K), K)` gives the host back on every field but
+  runtime state and render doc identity when S has no edge outside it
+  (I9), and no runtime state ever has two writable holders (I11).
+  Every cleared reference is said in paste's words.
 
 **Describing traits.** `describes` says what an extension's traits are, so a
 surface can write them without a script (the inspector's Behaviours and "Add
@@ -1364,7 +1415,7 @@ A **command**:
   reach?: true,              // applies only within the body's reach (below)
   edit?: true,               // the editor's: applies only in the Edit body (below)
   tool?: { keys?: [{ code, label }], pointer? },  // a tool: run's answer is the held tool's input ("The held tool")
-  state(target, ctx) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
+  state(target, ctx) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], options?: [{ value, label }], disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit), the same one state was asked in
 ```
 
@@ -1373,6 +1424,11 @@ A **command**:
 - `label` is the verb's name for this target, over `name` ("Lower sail" where
   `name` says "Raise sail"; "Someone's at the helm"). Every surface that shows
   a command's name shows it.
+- `options` makes a command run with a set of its values: the inspector
+  shows a checkbox for each beside the button, none ticked (a new
+  selection starts again), and the button runs it with the ticked values,
+  in their order, as `value`; every other surface runs it with no value.
+  Extract and Bundle take the root traits that go along so.
 - `title` is the tooltip. On a `disabled` command it's the reason ("Follow
   latest to shape"), and the inspector writes it out after the button.
 - A command without `state` applies only to the null target, the scene.
