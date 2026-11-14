@@ -178,8 +178,9 @@ has one of its traits, and one that declares none runs in the focus stage.
 Nothing a viewer holds, where they stand or the clock changes it, so a
 sailing sim never stops for someone editing her (a pause does, by name).
 The editor's parts run everywhere and show only in Edit, where attention
-asks: the inspector is a drawer tab while something is selected, the
-outline a tab the viewer opens, the grid and axes are drawn. A doc says
+asks: the inspector is a drawer tab a selection opens, which stays open
+(on the scene when nothing is selected) until its ×, the toolbar or
+leaving Edit shuts it, the outline a tab the viewer opens, the grid and axes are drawn. A doc says
 where people **start** (`view.start`: a body, a place, a home camera), read
 once on arrival: a table starts people seated (or watching from a seat), a
 level walking at a spawn point, a ship or a showcase in Look (no body

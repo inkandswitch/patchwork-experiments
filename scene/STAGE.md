@@ -37,13 +37,13 @@ each build step.
 | **Look** | The stage's body for looking: the orbit camera, no default press, none of the editor. Where a doc that names no body starts people. |
 | **Edit** (body) | The stage's body for editing: the orbit camera whose plain click selects, and the only body the editor's chrome shows in (TOOLS.md §3, "What is Edit's"): the halo and knobs, the inspector, the toolbar, grid, axes and bounds, and every command that says `edit: true`. |
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
-| **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. |
+| **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
 | **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock). Keys and the use prompt go to it. |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (while something is selected), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (a selection opens it in Edit; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
 | **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
@@ -336,9 +336,9 @@ happened to start in never counts.
 **Chrome follows attention, never the doc** (TOOLS.md §1). Every general
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
-inspector is a drawer tab open while something is selected (its × shuts it
-until the selection changes; the toolbar's Inspector opens it on the scene
-with nothing selected); the outline (Objects), Dimensions and Parts are
+inspector is a drawer tab a selection opens in Edit; it stays open, on
+the scene when nothing is selected, until its × (shut until the selection
+changes), the toolbar's Inspector or leaving Edit shuts it; the outline (Objects), Dimensions and Parts are
 drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
 drawn only in the Edit body (and, as display prefs, a doc may suggest them
 off: a table does). All of that, the toolbar, and every command that says
@@ -387,7 +387,9 @@ through it), or `ARRIVE_WAIT_MS` (20 s) after it came on offer whatever is
 still loading. Until it's on offer the wait lasts as long as the body may
 still come: a package loading, or one asked about and accepted however much
 later (someone a table starts seated, taking their time over the prompt,
-is still seated once they say yes). The viewer entering a body first, or
+is still seated once they say yes). A body that refuses when entered (its
+`enter` answers nothing, say a seat not yet laid) is asked again until
+`ARRIVE_WAIT_MS` after the offer. The viewer entering a body first, or
 everything the doc calls for here and started (or failed to start) with no
 extension offering that body, ends the wait with nothing entered. A package
 declined or failed leaves it waiting, quietly, on the viewer. A later

@@ -106,8 +106,9 @@ for passing states (a die under a cup). Flip is carry's verb.
 
 **Chrome follows attention, never the doc.** Twenty edit-only parts are
 what keep the outline, grid and axes out of a game today. Instead the
-inspector is a drawer tab while something is selected, the outline a tab
-the viewer opens, and grid, axes and bounds are the Edit body's (§4). A
+inspector is a drawer tab a selection opens and that stays open (on the
+scene when nothing is selected) until its ×, the toolbar or leaving Edit,
+the outline a tab the viewer opens, and grid, axes and bounds are the Edit body's (§4). A
 doc may still suggest display prefs (grid, units, snap), as it suggests
 atmosphere; no game needs one to work. Since Decisions 6 the editor's
 chrome is the Edit body's alone (§3, "What is Edit's"): the parts still
@@ -183,8 +184,10 @@ surface and `api.run` ask) answers null for it outside Edit, so it is on
 no surface, no key reaches it and it doesn't run; a package may mark its
 own. A drawer tab (`parts/tab.js`) opens only in Edit and shuts when the
 body leaves it. A tool held through an Edit command (Measure) is put down
-when the body leaves Edit. The selection itself is yours in every body: it
-survives a change of body, and Edit shows its chrome again on coming back.
+when the body leaves Edit, and so is the selection (Decisions 6: attention
+is the selection, so one kept from Edit would aim F and the use prompt at
+what was last edited). A menu's Select works in every body, and that
+selection stays until something clears it or Edit is left.
 A package's command meant for the toolbar (arena's Play and Gun, the cups'
 Lift all) shows there only in Edit; elsewhere it's in the menu and on its
 key, until §6's bar of tools exists for games.
@@ -305,7 +308,7 @@ place it is decided.
 pops the body, so it never leaves Edit (or enters it); the chip and Leave
 do. Its selection rung stands in every body, since Select is everyone's.
 Its tool rung puts down whatever is held; leaving Edit has already put
-down a tool held through an Edit command. Keys: an `edit: true` command's
+down a tool held through an Edit command, and the selection. Keys: an `edit: true` command's
 key reaches it only in Edit (Delete, M for Measure, ⌘C and ⌘V), so walking
 or seated those keys are free for the game, and its hint shows nowhere
 else. **Undo** (⌘Z, ⇧⌘Z / Ctrl+Y, the toolbar's Undo and Redo) is the
@@ -821,9 +824,9 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   in edit or play (tabletop's Draw, Wash, Stand, Lay my hand face up; the
   cup's) apply whatever the viewer is in; bag's edit-only Empty out is a
   menu verb anyone may use. **Chrome follows attention:** the sidebar went;
-  the inspector is a drawer tab while something is selected (its × shuts it
-  until the selection changes; the toolbar's Inspector opens it on the
-  scene), the outline (Objects), Dimensions and Parts are tabs the viewer
+  the inspector is a drawer tab a selection opens in Edit, and it stays
+  open, on the scene when nothing is selected, until its × (shut until the
+  selection changes), the toolbar's Inspector or leaving Edit shuts it, the outline (Objects), Dimensions and Parts are tabs the viewer
   opens from the toolbar (`src/parts/tab.js`, docked with `embed: false` so
   their keys are the stage's; the inspector following the selection docks
   with `show: false`, behind a pane in use such as the parts bin); while one
@@ -1064,6 +1067,24 @@ The project lead decided the five open questions on 2026-11-12.
      camera's, and the drawer also holds docked editors (Camber's Shape)
      that need their own width. Tested over every sequence of up to two of
      nine events and three of five (`parts/inspector.test.js`).
+   - **Leaving Edit puts the selection down** (decided unattended,
+     2026-11-14, final fixer; it was kept, "yours in every body", until
+     then). Attention is the selection if any (§3), so after rigging in Edit
+     and choosing Look, F and the use prompt still acted on the last part
+     selected: the mast's halyard, at the wheel. Leaving Edit already put
+     down what Edit holds (a held Measure, the drawer tabs); the selection
+     is one more of those. The focus stays: it is where the viewer is, as
+     the camera is. A menu's Select outside Edit still selects. One rule in
+     the view's `setBase`, through `selectionStep`'s `clear`, so H10 holds;
+     tested over every body changed from × to (Look, Edit, a walk, a seat)
+     × every focus (the scene, one link in, two) × a selection or none
+     (`stage/focus.test.js`, 96 cases).
+   - **The toolbar is one row** (decided unattended, 2026-11-14, final
+     fixer). In a narrow view it wrapped to a second row, so the canvas lost
+     height whenever the view narrowed or a command came on offer. It now
+     scrolls sideways and its controls keep their size; collapsing into the
+     menu was rejected because the menu already holds every toolbar
+     command, so a collapse would only hide them twice.
    - Nothing stands on Edit: entering any body from it turns the base to
      Look, and Leave falls back to Look, never to Edit (§4).
    - A doc names Edit to start people in it; naming nothing is Look. A scene
@@ -1076,3 +1097,15 @@ The project lead decided the five open questions on 2026-11-12.
    stops walking to move the winch, §6), and a package's toolbar command
    (arena's Play, the cups' Lift all) is in the menu and on its key outside
    Edit, until there is a bar of tools for games.
+7. **No tie rule for verbs beyond running order** (decided unattended,
+   2026-11-14, final fixer). The domino prompt shows Flip, Draw and Wash
+   (the cap is three), and Stand on edge is on U and in the menu: carry's
+   `scene.carry` and the table's trait sit on the same tile, so the two
+   extensions tie there, and running order breaks the tie, for presses
+   and verbs alike (SCOPE.md §2). Ranking "a game's own verbs" ahead of a
+   "generic" holder at a tie was proposed and rejected: which holder is
+   generic is a priority list by another name, and SCOPE.md rejects
+   declared priority because every new package would have to fit into
+   it. Presses and verbs keep one order, so the prompt never offers first
+   what a press wouldn't reach first. What the cap costs stays: a fourth
+   verb is on its key and in the menu.

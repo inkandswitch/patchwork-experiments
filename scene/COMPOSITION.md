@@ -46,29 +46,44 @@ Two things a link is not:
 
 ## Where we are
 
-*As written, before build step 1; line references are to the code then.
-Every step of the build order below is done: 1–15 built, 16 decided rather
-than built (nothing needs named frames yet; a start placed on a link was
-the smaller rule), and 9 closed by bringing STAGE.md, DESIGN.md and
-SCOPE.md to the code as it is. The stage composes docs: a link is live
-(acting at one placement per view), a mirror (the same live doc placed
-again, drawn and never acted on), pinned (a doc fixed at a version, with
-everything reached through it) or closed (drawn as its hint). A viewer
-enters a linked doc to select and edit in it, the host live around them,
-and leaves by Escape or the trail. A selection becomes a doc of its own,
-linked in its place (Extract), and a link is copied back (Bundle). One
+**Now (2026-11-14).** Every step of the build order below is done: 1–15
+built, 16 decided rather than built (nothing needs named frames yet; a
+start placed on a link was the smaller rule), and 9 closed by bringing
+STAGE.md, DESIGN.md and SCOPE.md to the code as it is. The stage composes
+docs: a link is live (acting at one placement per view), a mirror (the same
+live doc placed again, drawn and never acted on), pinned (a doc fixed at a
+version, with everything reached through it) or closed (drawn as its hint).
+A viewer enters a linked doc to select and edit in it, the host live around
+them, and leaves by Escape or the trail. A selection becomes a doc of its
+own, linked in its place (Extract), and a link is copied back (Bundle). One
 packages prompt covers every open doc; a hidden link hides its doc; who's
 here and held verbs' pins work across docs; packages load at the heads
-their folder settles on. The published examples are Lost Cities aboard
-(the boat, with the game linked locked on her table), the Quiet games room
-(the same game doc on one of its tables) and Fitting out (a fit-out pinned
-at a version, a hatch linked live twice). Still open: the clock chip shows
-the focus doc's clock only (TOOLS.md §6 wants one per doc on the focus
-path); out of focus isn't tinted; leaving Edit keeps the selection; an
-arrival whose body refuses at the moment it's offered isn't tried again;
-walk's avatars of others are the focus doc's while you aren't walking.
-What follows is kept as the record of why; where it
-still holds, the step that left it says so.*
+their folder settles on; an arrival whose body refuses when offered is
+asked again until the wait ends; leaving Edit puts the selection down. The
+published examples are Lost Cities aboard (the boat, with the game linked
+locked on her table), the Quiet games room (the same game doc on one of its
+tables) and Fitting out (a fit-out pinned at a version, a hatch linked live
+twice). Still open:
+- the clock chip shows the focus doc's clock only (TOOLS.md §6 wants one
+  per doc on the focus path), and walk's avatars of others are the focus
+  doc's while you aren't walking (the same root: presence drawn by a
+  general part is the focus doc's);
+- out of focus isn't tinted;
+- in Edit, a click on sky or sea with nothing selected isn't Edit's (TOOLS
+  Decisions 6), so it goes down the chain and comes aboard the boat
+  (sailing's click). Consistent with the rule, surprising in Edit: the
+  lead's call whether a click on nothing in Edit should stop there;
+- the first click of a double-click on a link selects it, and if the
+  inspector was shut that opens it and narrows the canvas under the second
+  click, which can then miss a small link. Since the inspector stays open
+  (TOOLS Decisions 6) this happens only on the first selection of an Edit
+  visit or after its ×; an overlaid drawer was rejected there, so the
+  remaining fix is opening the inspector a beat after a click that may
+  become a double-click.
+
+*What follows is the record as written before build step 1; line
+references are to the code then. Where it still holds, the step that left
+it says so.*
 
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
 (`src/stage/stage.js:336`). Every per-object table is keyed by a doc-local

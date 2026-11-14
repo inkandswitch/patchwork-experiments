@@ -538,7 +538,16 @@ const lots = api.collect("dice.lots")[0]?.value;
 const draw = lots.draw(id, { sealers: [], of: [die…] });   // [] or "all": open to all; or [me]; or [everyone seated] …
 lots.draw(id, { sealers, of, draw });                     // ask again for a draw already asked (a new attempt of it)
 lots.state(id) // → { draw, by, of, asked, phase, seed (64 hex, known here) | null, public, contributors, members, sealers, waiting, protests, … }
+lots.told(draw) // → KEPT | { to: [viewer…], opened } | null
 ```
+
+`told(draw)` is this client's own record of its sealed part of a draw, never
+the doc's word: `KEPT` (`{ to: [], opened: false }`) when it released its
+part to nobody, `{ to, opened }` naming whom it released it to (`opened`:
+to everyone), or null when it can't say (a draw from before this client's
+record began, as after a reload). The cup asks it before asking again for a
+draw (`lots.js mayAskAgain`) and to widen who could know a seed
+(`knewWith`): only a client's own record can say it kept its part.
 
 **Who takes part**: the asker, and every seated viewer (with no seats in the
 scene, everyone) who is here and runs lots: each client says so in its

@@ -44,7 +44,8 @@ Every part but carry declares no traits, so each runs in every scene, a
 game's included; carry runs where the doc has something carryable. What
 keeps the editor's chrome out of the way is that **editing is a body**
 (TOOLS.md §3, Decisions 6): the toolbar, the halo's handles and knobs, the
-inspector (a drawer tab while something is selected), the outline
+inspector (a drawer tab a selection opens; it stays open, on the scene
+when nothing is selected, until its ×, the toolbar or leaving Edit), the outline
 (Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
 axes and bounds, and every command marked `edit: true` show only in the
 Edit body. Look, walk, seat and station show none of it.
@@ -242,7 +243,8 @@ STAGE.md, "Extract and bundle".
 - **Locked** (inspector): a locked object can't be carried or moved by its
   halo — a game board, say. Everything else about it still works.
 - **The drawer**: one panel at the right, a tab per pane: the inspector
-  while something is selected, Objects, Dimensions and Parts when you open
+  (in Edit a selection opens it, and it stays open, on the scene when
+  nothing is selected, until its ×, the toolbar or leaving Edit), Objects, Dimensions and Parts when you open
   them from the toolbar, and any extension's docked editor (Camber's
   Shape, a die's panel).
 
