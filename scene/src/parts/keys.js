@@ -26,7 +26,7 @@
 // stays on it. It reads the pin through `keymap` (api.collect).
 
 import { commandState, controlKind, flatCommands } from "./toolbar-commands.js";
-import { mapInvocation } from "../keymap.js";
+import { mapInvocation, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 
 /** Does this look like a session (something a held verb returns)? */
@@ -114,15 +114,24 @@ function create(api) {
     // the held key's own repeat: still the held verb's, on its target
     if (ev.repeat && held.has(codeOf(ev))) return true;
     // the state every hint is computed from (resolver.js), so a shown key does what it showed
-    const { collected, ctx, attention } = resolverState(api, attentionNow());
-    const inv = mapInvocation(collected, ev.key, ctx, attention);
+    // attention's path, a stage at a time, innermost first (COMPOSITION.md §5)
+    let inv = null;
+    let seg = null;
+    for (const s of segmentsOf(resolverState(api, attentionNow()))) {
+      inv = mapInvocation(s.collected, ev.key, s.ctx, s.attention);
+      if (inv) {
+        seg = s;
+        break;
+      }
+    }
     if (!inv) return false;
+    const { collected, ctx } = seg;
     if (ev.repeat) return true;
     const entry = flatCommands(collected).find((e) => e.ext === inv.ext && e.command.id === inv.command);
     if (!entry) return false;
     const { command } = entry;
     // a tool: the stage holds it (or puts it down)
-    if (command.tool) return api.run({ ...inv, hit: ctx.hit });
+    if (command.tool) return api.run({ ...inv, ...(seg.stage !== undefined ? { stage: seg.stage } : {}), hit: ctx.hit });
     // what api.run does, keeping what run returns: still applies, then run
     const state = commandState(command, inv.target, ctx);
     if (!state || state.disabled) return false;

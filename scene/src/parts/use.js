@@ -24,7 +24,7 @@
 
 import css from "./use.css?inline";
 import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
-import { attentionPath, hintFor } from "../keymap.js";
+import { attentionPath, hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 
 /** How many verbs the prompt shows. */
@@ -96,12 +96,22 @@ function create(api) {
     if (km && !offWatch) offWatch = km.watch(() => refresh());
     const pinned = km?.pinned();
     const keys = resolverState(api);
-    const { collected, ctx, attention } = keys;
     // while a gesture is open (a carry), its keys come first and nothing under the pointer is what they do: no prompt
     const gesture = api.view.get().gesture != null;
-    const found = gesture ? null : pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
+    // the verbs of the nearest thing that has any: attention's path, a stage at a time, innermost first
+    let found = null;
+    let seg = null;
+    if (!gesture)
+      for (const s of segmentsOf(keys)) {
+        found = pinned !== undefined ? heldEntries(s.collected, pinned, km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
+        if (found?.entries.length) {
+          seg = s;
+          break;
+        }
+        found = null;
+      }
     if (found) {
-      current = { target: found.target, hit: ctx.hit, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
+      current = { target: found.target, hit: seg.ctx.hit, stage: seg.stage, reader: seg.reader ?? null, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target, stage: seg.stage }, keys) })) };
     } else current = null;
     render();
   }
@@ -152,7 +162,8 @@ function create(api) {
       e.stopPropagation();
       const target = current?.target ?? null;
       // (applies still: the stage's run asks again)
-      if (commandState(command, target, api.context(current?.hit ?? null))) api.run({ ext, command: command.id, target, hit: current?.hit ?? null });
+      const reader = current?.reader ?? api;
+      if (commandState(command, target, reader.context(current?.hit ?? null))) api.run({ ...(current?.stage !== undefined ? { stage: current.stage } : {}), ext, command: command.id, target, hit: current?.hit ?? null });
       api.root.focus?.({ preventScroll: true });
     });
     return el;

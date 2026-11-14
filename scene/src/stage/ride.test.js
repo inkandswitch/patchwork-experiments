@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createRides, rideFrame, rideMove } from "./ride.js";
+import { createRides, rideFrame, rideMove, upOf, wholeMove } from "./ride.js";
 import { composeMatrix } from "../transform.js";
 
 const r6 = (a) => a.map((v) => Math.round(v * 1e6) / 1e6 + 0);
@@ -132,5 +132,46 @@ describe("rides that wait their turn", () => {
     rides.body(null);
     // the ship's 50 m happened while the table's ride applied: not followed again
     expect(rides.step({ worldOf, held: false, ...cam })).toBe(null);
+  });
+});
+
+describe("a ride that tilts (a seat rolls with its table)", () => {
+  const [make, frame, up, whole] = [createRides, rideFrame, upOf, wholeMove];
+  const rot = (roll, yaw, at = [0, 0, 0]) => {
+    // Rz(roll) then Ry(yaw), column-major, at `at`
+    const cr = Math.cos(roll), sr = Math.sin(roll), cy = Math.cos(yaw), sy = Math.sin(yaw);
+    // R = Ry · Rz
+    const r = [cy * cr, sr, -sy * cr, -cy * sr, cr, sy * sr, sy, 0, cy];
+    return [r[0], r[1], r[2], 0, r[3], r[4], r[5], 0, r[6], r[7], r[8], 0, at[0], at[1], at[2], 1];
+  };
+  it("moves the camera and its target with the object whole, and gives its up, for every roll and turn in a finite set", () => {
+    for (const roll of [-0.35, -0.1, 0, 0.1, 0.35])
+      for (const yaw of [0, 0.5, -1.2])
+        for (const at of [[0, 0, 0], [3, 0.7, -2]]) {
+          const rides = make();
+          const m0 = rot(0, 0, [1, 0, 0]);
+          rides.body({ id: "t", tilt: true, at }, m0);
+          const m1 = rot(roll, yaw, [1, 0.2, 0]);
+          const cam = { position: [1, 1.2, 0.8], target: [1, 0.7, 0] };
+          const out = rides.step({ worldOf: () => m1, held: false, ...cam });
+          if (roll === 0 && yaw === 0) {
+            // only the shift: still moved whole
+            expect(out.up.map((v) => +v.toFixed(12))).toEqual([0, 1, 0]);
+          }
+          // the camera's point in the object's frame is the same before and after
+          const into = (m, q) => whole(frame(m), frame(rot(0, 0, [0, 0, 0])))(q);
+          const before = into(m0, cam.position);
+          const after = into(m1, out.position);
+          for (let i = 0; i < 3; i++) expect(after[i]).toBeCloseTo(before[i], 9);
+          expect(out.up.map((v, i) => Math.abs(v - up(m1)[i]) < 1e-12).every(Boolean)).toBe(true);
+          expect(rides.tilts()).toBe(true);
+        }
+  });
+  it("a ride that doesn't tilt never gives an up", () => {
+    const rides = make();
+    rides.body({ id: "t", at: [0, 0, 0] }, rot(0, 0));
+    const out = rides.step({ worldOf: () => rot(0.3, 0.2, [0, 0.1, 0]), held: false, position: [0, 1, 1], target: [0, 0, 0] });
+    expect(out.up).toBeUndefined();
+    expect(rides.tilts()).toBe(false);
   });
 });

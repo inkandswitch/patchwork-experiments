@@ -2039,9 +2039,25 @@ export class Viewport {
       position: this.camera.position.toArray(),
       target: this.controls.target.toArray(),
     });
+    // a ride that tilts carries the camera's up with its object; otherwise up is the world's
+    if (out?.up) this.setUp(out.up);
+    else if (!this.rides.tilts()) this.setUp([0, 1, 0]);
     if (!out) return;
     this.camera.position.fromArray(out.position);
     this.controls.target.fromArray(out.target);
+    this.needsRender = true;
+  }
+
+  /** The camera's up, and the orbit's with it (OrbitControls keeps up through its _quat, made from camera.up). */
+  setUp(up) {
+    const u = this.camera.up;
+    if (Math.abs(u.x - up[0]) < 1e-12 && Math.abs(u.y - up[1]) < 1e-12 && Math.abs(u.z - up[2]) < 1e-12) return;
+    u.set(up[0], up[1], up[2]).normalize();
+    const c = this.controls;
+    if (c?._quat) {
+      c._quat.setFromUnitVectors(u, new Vector3(0, 1, 0));
+      c._quatInverse.copy(c._quat).invert();
+    }
     this.needsRender = true;
   }
 

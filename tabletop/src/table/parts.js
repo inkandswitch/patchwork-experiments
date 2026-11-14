@@ -31,7 +31,9 @@
 
 import { glbFile } from "./files.js";
 import { composeMatrix } from "./frame.js";
-import { setUp } from "./template.js";
+import { docContext, setUp } from "./template.js";
+import { emptyScene } from "../empty-scene.js";
+import { sceneImportUrl, scenePatchwork } from "../scene-package.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
 
@@ -180,21 +182,54 @@ export function squared(t) {
 }
 
 /**
- * A game's whole table as a part: a registered game, by its id, laid out
- * (template.js setUp) where it was put, under what it was put on, squared to
- * it. Its own seats, beside any other table's; the scene's view, title and
- * home are left alone. The board (its first locked piece) is what's selected.
+ * A game's whole table as a part (scene/COMPOSITION.md §8: a game part makes
+ * a game doc and links it): a registered game, by its id, laid out in a scene
+ * doc of its own (template.js setUp, as the start screen's template lays it
+ * out: its own seats, title, view and keepers' containers), then linked where
+ * it was put, under what it was put on, squared to it, and locked as
+ * furniture is. Its link is what's selected. A host never reads into it: a
+ * ship it's put aboard carries it by the link; its pieces, seats and rules
+ * are the game doc's alone.
  */
 export function gamePart(gameId) {
   return {
     async create(ctx, at) {
       const parent = at?.parent ?? null;
       const transform = parent ? squared(at?.transform) : (at?.transform ?? null);
-      const layout = await setUp(ctx, gameId, { parent, transform, view: false });
+      const handle = await ctx.repo.create2(emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()) }));
+      const layout = await setUp(docContext(ctx, handle), gameId);
       if (!layout) return null;
-      return layout.order.find((oid) => layout.objects[oid]?.kind !== "group" && layout.objects[oid]?.locked) ?? null;
+      // the room the host gives it: its pieces' extent, as laid out (the host's fact: the link's hint)
+      const bounds = layoutBounds(layout);
+      try {
+        return await ctx.addObject(handle.url, { parent, transform, ...(bounds ? { hint: { bounds } } : {}), fields: { locked: true } });
+      } catch (err) {
+        ctx.notify?.(String(err?.message ?? err), "error");
+        return null;
+      }
     },
   };
+}
+
+/** A layout's extent at its root: each root piece's hint box where it lies (turns ignored, a margin over), or null. Pure. */
+export function layoutBounds(layout) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const oid of layout?.order ?? []) {
+    const o = layout.objects[oid];
+    if (!o || o.kind === "group" || o.parent) continue;
+    const p = o.transform?.position ?? [0, 0, 0];
+    const b = o.hint?.bounds ?? { min: [0, 0, 0], max: [0, 0, 0] };
+    const r = Math.max(...[0, 2].flatMap((k) => [Math.abs(b.min[k]), Math.abs(b.max[k])]));
+    for (let k = 0; k < 3; k++) {
+      const lo = k === 1 ? b.min[1] : -r;
+      const hi = k === 1 ? b.max[1] : r;
+      min[k] = Math.min(min[k], p[k] + lo);
+      max[k] = Math.max(max[k], p[k] + hi);
+    }
+  }
+  if (!min.every(Number.isFinite)) return null;
+  return { min: min.map((v) => +v.toFixed(4)), max: max.map((v) => +v.toFixed(4)) };
 }
 
 export const pawn = part("pawn");

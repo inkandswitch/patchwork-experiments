@@ -23,6 +23,11 @@ import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
 import { selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
+import { expand } from "./links.js";
+import { multiplyMatrices } from "../transform.js";
+
+/** How many stages a view opens at most, nearest first (COMPOSITION.md §7: the budget is the view's). */
+export const LINK_BUDGET = 64;
 
 /** How long after the orbit stops the camera is saved. */
 const CAMERA_SAVE_MS = 500;
@@ -159,7 +164,7 @@ function newSession() {
  * Mount a view in `element` (element.repo, element.viewerId and element.time
  * optional). Its stages come after, the outermost first (./stage.js).
  */
-export function createView(element, { url = "scene" } = {}) {
+export function createView(element, { url = "scene", openStage = null } = {}) {
   const repo = element.repo ?? globalThis.repo;
   let dead = false;
   const cleanups = [];
@@ -283,6 +288,7 @@ export function createView(element, { url = "scene" } = {}) {
   }
   function removeStage(s) {
     if (stages.get(s.n) === s) stages.delete(s.n);
+    for (const [u, x] of linked) if (x === s) linked.delete(u);
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
@@ -298,6 +304,104 @@ export function createView(element, { url = "scene" } = {}) {
     for (const s of stages.values()) if (s.path.length === p.length - 1 && s.path.every((x, i) => x === p[i])) return keyOf(s.n, p.at(-1));
     return null;
   }
+  // ─── links: the stages this view opens (COMPOSITION.md §7) ────────────────
+  // The expansion (links.js) is a pure function of the link graph as the view
+  // has it: worked out again whenever a stage's doc changes or a linked doc
+  // arrives. Each live doc acts at one occurrence and is opened there, its
+  // stage keyed by URL. Mirrors and pins are drawn as their hints until step
+  // 13 opens them; a closed link is drawn as its hint.
+  const docs = new Map(); // url → { handle, state: "loading" | "ready" | "unavailable" }
+  const linked = new Map(); // url → the stage opened for it
+  let expansion = [];
+  let linkStates = new Map(); // path (joined by keyOf's separator) → { state, reason? }
+  const pathKey = (p) => p.join("\u001f");
+  function docOf(u, heads) {
+    if (heads) return undefined; // a pinned value opens with pins (step 13)
+    const root = outermost();
+    if (root && u === root.url) return root.doc();
+    let d = docs.get(u);
+    if (!d) {
+      docs.set(u, (d = { handle: null, state: "loading" }));
+      Promise.resolve()
+        .then(() => repo.find(u))
+        .then(
+          (h) => {
+            if (dead) return;
+            d.handle = h;
+            d.state = "ready";
+            const on = () => relink();
+            h.on?.("change", on);
+            d.off = () => h.off?.("change", on);
+            relink();
+          },
+          () => {
+            if (dead) return;
+            d.state = "unavailable";
+            relink();
+          },
+        );
+      return undefined;
+    }
+    if (d.state === "unavailable") return null;
+    if (d.state !== "ready") return undefined;
+    return d.handle.doc() ?? undefined;
+  }
+  let relinkQueued = false;
+  /** Work out the expansion again (soon): stages open and close to match. */
+  function relink() {
+    if (relinkQueued || dead) return;
+    relinkQueued = true;
+    queueMicrotask(() => {
+      relinkQueued = false;
+      if (!dead) relinkNow();
+    });
+  }
+  function relinkNow() {
+    const root = outermost();
+    if (!root) return;
+    expansion = expand({ url: root.url }, docOf, { budget: LINK_BUDGET });
+    const want = new Map();
+    for (const o of expansion) if (o.role === "acting" && o.depth > 0) want.set(o.url, o);
+    // a stage whose doc no longer acts here, or acts somewhere else, closes (its claims go with it)
+    for (const [u, s] of [...linked]) {
+      const o = want.get(u);
+      if (o && samePath(o.path, s.path) && stages.get(s.n) === s) continue;
+      linked.delete(u);
+      s.dispose();
+    }
+    // open the rest, outermost first (each under its parent's stage)
+    for (const [u, o] of want) {
+      if (linked.has(u)) continue;
+      const parentOcc = expansion[o.parent];
+      const parent = parentOcc.depth === 0 ? root : linked.get(parentOcc.url);
+      const d = docs.get(u);
+      if (!parent || !d?.handle) continue;
+      linked.set(u, openLinked(d.handle, parent, o));
+    }
+    const states = new Map();
+    for (const o of expansion) {
+      if (o.depth === 0) continue;
+      const open = o.role === "acting" && linked.get(o.url)?.path && samePath(linked.get(o.url).path, o.path);
+      states.set(pathKey(o.path), Object.freeze({ state: open ? "open" : o.role, ...(o.reason ? { reason: o.reason } : {}) }));
+    }
+    const was = linkStates;
+    linkStates = states;
+    if (JSON.stringify([...was]) !== JSON.stringify([...states])) for (const s of stages.values()) s.linksChanged();
+  }
+  /** Open a linked doc's stage, its root under the link's node, in the link's frame. */
+  function openLinked(handle, parent, o) {
+    const linkId = o.link;
+    const frame = () => {
+      const m = parent.displayedWorld(linkId);
+      if (!m) return null;
+      const f = parent.frame();
+      return f.matrix ? multiplyMatrices(f.matrix, m) : m;
+    };
+    return addStage((n) => openStage({ handle, view: api, n, path: o.path, frame, under: keyOf(parent.n, linkId), general: false }));
+  }
+  /** A link's state as the view has it ({ state: "open" | "mirror" | "pinned" | "closed" | "acting", reason? }), by its path; null if it isn't one. */
+  const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
+
   /** Every stage's update flush. */
   const requestFlush = () => {
     for (const s of stages.values()) s.requestFlush();
@@ -607,6 +711,25 @@ export function createView(element, { url = "scene" } = {}) {
     }
     return { order, holderOf: (k) => holders.get(k) ?? null };
   }
+  /**
+   * The input path (COMPOSITION.md §3): the stages from attention's innermost
+   * out to the outermost (the selection's path, else the look's; `look: true`
+   * the look's), each as its reader (stage.js). Nothing under attention: the
+   * outermost alone.
+   */
+  function inputPath({ look: lookOnly = false } = {}) {
+    const sel = atom.get().selected;
+    const l = !lookOnly && sel ? null : look();
+    const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
+    const on = path ? onPath(path) : [];
+    return (on.length ? on : [outermost()].filter(Boolean)).map((s) => s.reader);
+  }
+  /** What every acting stage offers as `name`: the input path's stages first, innermost first; each item tagged with its stage. */
+  function collect(name) {
+    const first = inputPath().map((r) => r.stage);
+    const order = [...first, ...acting().map((s) => s.n).filter((x) => !first.includes(x))];
+    return order.flatMap((x) => stages.get(x)?.reader.collect(name) ?? []);
+  }
   /** The stages on a path, innermost first, out to the outermost. */
   function onPath(path) {
     const out = [];
@@ -752,6 +875,7 @@ export function createView(element, { url = "scene" } = {}) {
   function dispose() {
     if (dead) return;
     for (const s of [...stages.values()].sort((a, b) => b.n - a.n)) s.dispose();
+    for (const d of docs.values()) d.off?.();
     dead = true;
     router.dispose();
     for (const cancel of timers) cancel();
@@ -768,7 +892,7 @@ export function createView(element, { url = "scene" } = {}) {
     style.remove();
   }
 
-  return {
+  const api = {
     time,
     repo,
     viewer,
@@ -806,6 +930,8 @@ export function createView(element, { url = "scene" } = {}) {
     acting,
     pathOfKey,
     onPath,
+    inputPath,
+    collect,
     requestFlush,
     // the viewer's
     notify,
@@ -824,8 +950,13 @@ export function createView(element, { url = "scene" } = {}) {
     setBase,
     arrive,
     tryArrive,
+    relink,
+    linkState,
+    /** the expansion as it stands (links.js), for probes and tests */
+    expansion: () => expansion,
     dispose,
   };
+  return api;
 }
 
 // ─── widgets (pure) ─────────────────────────────────────────────────────────

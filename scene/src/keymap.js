@@ -103,12 +103,23 @@ export function mapInvocation(collected, key, ctx, attention) {
  * @param {{ gesture?, tool?, body?, collected, ctx, attention }} state
  * @returns {{ layer: "gesture" | "tool" | "body" } | { layer: "map", invocation: object } | null}
  */
+/**
+ * The segments the key map visits (COMPOSITION.md §5): attention's path,
+ * one per stage, innermost first, each with its own commands, context and
+ * attention; a state with none is one segment of its own fields.
+ */
+export const segmentsOf = (state) => (Array.isArray(state?.segments) && state.segments.length ? state.segments : [{ stage: undefined, collected: state?.collected ?? [], ctx: state?.ctx, attention: state?.attention }]);
+
 export function resolveKey({ key, code = null }, state) {
   if (key === "Escape") return null;
   const by = reservedBy(code ?? codeOfKey(key), state);
   if (by) return { layer: by };
-  const invocation = mapInvocation(state.collected, key, state.ctx, state.attention);
-  return invocation ? { layer: "map", invocation } : null;
+  // each stage on attention's path, innermost first: its element of the path, then its null target
+  for (const seg of segmentsOf(state)) {
+    const invocation = mapInvocation(seg.collected, key, seg.ctx, seg.attention);
+    if (invocation) return { layer: "map", invocation: seg.stage === undefined ? invocation : { ...invocation, stage: seg.stage } };
+  }
+  return null;
 }
 
 /**
@@ -119,10 +130,10 @@ export function resolveKey({ key, code = null }, state) {
  * @param {{ ext: string, command: object, target: string | null }} entry
  * @param {{ gesture?, tool?, body?, collected, ctx, attention }} state
  */
-export function hintFor({ ext, command, target = null }, state) {
+export function hintFor({ ext, command, target = null, stage = undefined }, state) {
   for (const k of keysOf(command)) {
     const r = resolveKey({ key: k, code: codeOfKey(k) }, state);
-    if (r?.layer === "map" && r.invocation.ext === ext && r.invocation.command === command.id && r.invocation.target === (target ?? null)) return labelOf(k);
+    if (r?.layer === "map" && r.invocation.ext === ext && r.invocation.command === command.id && r.invocation.target === (target ?? null) && (stage === undefined || r.invocation.stage === stage)) return labelOf(k);
   }
   return "";
 }

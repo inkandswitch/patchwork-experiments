@@ -313,38 +313,28 @@ describe("a player's secret", () => {
   });
 });
 
-describe("who plays a deck: the roster's seats around its cards", () => {
-  // two tables' seats: a1, a2 at table A (cards a…), b1, b2 at table B (cards b…)
+describe("who plays a deck: the roster's seats (a game is a doc of its own: every seat of its doc)", () => {
   const SEATS = [
-    { id: "a1", name: "A1", table: "A" },
-    { id: "a2", name: "A2", table: "A" },
-    { id: "b1", name: "B1", table: "B" },
-    { id: "b2", name: "B2", table: "B" },
+    { id: "p1", name: "Player 1" },
+    { id: "p2", name: "Player 2" },
+    { id: "p3", name: "Player 3" },
   ];
   const apiWith = (roster) => ({ collect: (n) => (n === "roster" && roster ? [{ id: "seats", value: roster }] : []) });
 
-  it("over every way of seating Ana and Ben at the four seats (or not): a deck waits on its own table's seats alone, with a roster that says `around`; on every seat without", () => {
+  it("over every way of seating Ana and Ben at three seats (or not): the deck waits on every seat of the doc", () => {
     const who = [null, "ana", "ben"];
-    for (let m = 0; m < 81; m++) {
+    for (let m = 0; m < 27; m++) {
       const sat = SEATS.map((s, i) => ({ ...s, viewer: who[Math.floor(m / 3 ** i) % 3] }));
       if (sat.filter((s) => s.viewer === "ana").length > 1 || sat.filter((s) => s.viewer === "ben").length > 1) continue;
-      const all = { viewers: () => sat.map((s) => s.viewer).filter(Boolean), open: () => sat.filter((s) => !s.viewer).map((s) => s.name), nameOf: () => null };
-      const around = { ...all, around: (_scene, ids) => sat.filter((s) => [...ids].some((id) => id.startsWith(s.table.toLowerCase()))).map(({ id, name, viewer }) => ({ id, name, viewer })) };
-      for (const [deck, table] of [[["a0", "a1"], "A"], [["b0"], "B"]]) {
-        const own = sat.filter((s) => s.table === table);
-        const got = playing(apiWith(around), {}, deck);
-        expect(got.players).toEqual(own.map((s) => s.viewer).filter(Boolean));
-        expect(got.openSeats).toEqual(own.filter((s) => !s.viewer).map((s) => s.name));
-        const whole = playing(apiWith(all), {}, deck);
-        expect(whole.players).toEqual(sat.map((s) => s.viewer).filter(Boolean));
-        expect(whole.openSeats).toEqual(sat.filter((s) => !s.viewer).map((s) => s.name));
-      }
+      const r = { viewers: () => sat.map((s) => s.viewer).filter(Boolean), open: () => sat.filter((s) => !s.viewer).map((s) => s.name), nameOf: () => null };
+      const got = playing(apiWith(r), {});
+      expect(got.players).toEqual(sat.map((s) => s.viewer).filter(Boolean));
+      expect(got.openSeats).toEqual(sat.filter((s) => !s.viewer).map((s) => s.name));
     }
   });
 
-  it("a roster whose `around` fails counts every seat; no roster, nobody", () => {
-    const r = { viewers: () => ["ana"], open: () => ["B1"], around: () => { throw new Error("no"); } };
-    expect(playing(apiWith(r), {}, ["a0"])).toMatchObject({ players: ["ana"], openSeats: ["B1"] });
-    expect(playing(apiWith(null), {}, ["a0"])).toMatchObject({ players: [], openSeats: [] });
+  it("no roster, nobody", () => {
+    expect(playing(apiWith(null), {})).toMatchObject({ players: [], openSeats: [] });
   });
 });
+

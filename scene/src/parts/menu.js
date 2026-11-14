@@ -61,7 +61,7 @@ function create(api) {
     list[next].focus({ preventScroll: true });
   }
 
-  function item({ ext, command, state }, target, extra = {}) {
+  function item({ ext, command, state, stage }, target, extra = {}) {
     const hit = menuHit;
     const b = document.createElement("button");
     b.type = "button";
@@ -75,7 +75,7 @@ function create(api) {
     b.append(label);
     // the key is the key map's, decided in its context (resolver.js keyContext); the
     // row runs at the point the menu was opened on, so a row disabled there shows none
-    const key = state.disabled ? "" : (extra.key ?? hintFor({ ext, command, target }, keys));
+    const key = state.disabled ? "" : (extra.key ?? hintFor({ ext, command, target, stage }, keys));
     if (key) {
       const k = document.createElement("kbd");
       k.className = "menu-key";
@@ -88,7 +88,7 @@ function create(api) {
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       close({ refocus: true });
-      api.run({ ext, command: command.id, target, value: extra.value, hit });
+      api.run({ ...(stage !== undefined ? { stage } : {}), ext, command: command.id, target, value: extra.value, hit });
     });
     return b;
   }
@@ -118,7 +118,7 @@ function create(api) {
             role: "menuitemradio",
             label: ch.label,
             value: ch.value,
-            key: i === 0 ? hintFor({ ext: entry.ext, command, target }, keys) : "",
+            key: i === 0 ? hintFor({ ext: entry.ext, command, target, stage: entry.stage }, keys) : "",
             checked: ch.value === state.value || (ch.value != null && state.value != null && String(ch.value) === String(state.value)),
           }),
         ),
@@ -134,21 +134,38 @@ function create(api) {
     const ctx = api.context(hit);
     keys = resolverState(api);
     menuHit = hit;
-    const { forObject, forScene } = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
+    // The pointer's path (COMPOSITION.md §5): a section per stage on it,
+    // innermost first, each its element's verbs in its own context; then the
+    // scene's. In one stage, one section.
+    const path = typeof api.path === "function" ? api.path({ look: true }) : [];
+    const sections = [];
+    if (path.length > 1) {
+      for (const seg of path) {
+        const l = seg.look();
+        const t = l?.id ?? null;
+        if (t == null || !seg.scene().objects?.[t]) continue;
+        const own = menuEntries(seg.collect("commands"), t, seg.context(l)).forObject;
+        if (own.length) sections.push({ target: t, name: seg.nameOf(t), hit: l, entries: own });
+      }
+    }
+    const { forObject: rootObject, forScene } = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
+    if (!sections.length && rootObject.length) sections.push({ target, name: api.nameOf(target), hit, entries: rootObject.filter((e) => e.stage === undefined || e.stage === path.at(-1)?.stage) });
+    const forObject = sections.flatMap((x) => x.entries);
     if (!forObject.length && !forScene.length) return false;
     const el = document.createElement("div");
     el.className = "context-menu";
     el.setAttribute("role", "menu");
-    if (forObject.length) {
-      const name = api.nameOf(target);
-      if (name) {
+    for (const sec of sections) {
+      if (sec.name) {
         const title = document.createElement("div");
         title.className = "menu-title";
-        title.textContent = name;
+        title.textContent = sec.name;
         el.append(title);
       }
-      for (const e of forObject) el.append(...rows(e, target));
+      menuHit = sec.hit;
+      for (const e of sec.entries) el.append(...rows(e, sec.target));
     }
+    menuHit = hit;
     if (forObject.length && forScene.length) {
       const sep = document.createElement("div");
       sep.className = "menu-separator";

@@ -7,8 +7,11 @@
 // What it is:
 //   - the seat picker, over the view at the top right (pick your seat, or
 //     watch; a seat with a `camera` puts you in the seat body, body.js,
-//     contributed as `bodies`: your view there, riding the object the
-//     camera is `in`);
+//     contributed as `bodies`: your view there, riding the doc's root, or
+//     the object its camera is `in`, rolling with it). It
+//     follows attention: shown while you sit at this doc's table, or (sitting
+//     nowhere) while you look at it, so a room of linked games shows the
+//     picker of the one you're at;
 //   - a name tag on each of a seat's places ("Player 1 · Ana (away)"),
 //     wherever something contributes places (`seatPlaces`);
 //   - a seat as a station on the use prompt, for whoever walks up to it
@@ -31,8 +34,6 @@
 //     nameOf(scene, viewer) → string | null           the name of the seat they sit in
 //     who(viewer)    → string                         what to call them: their contact's name once
 //                                                     known, else their seat's, else "Someone"
-//     around(scene, ids) → [{ id, name, viewer | null }]  the seats around these objects (a deck's
-//                                                     cards): those at their table (model.js seatsAround)
 //   }
 //
 // All but `who` are pure in the snapshot they're given (the doc alone:
@@ -44,7 +45,7 @@
 import css from "./seats.css?inline";
 import { applyMatrix, invertMatrix } from "./transform.js";
 import { seatBody } from "./body.js";
-import { CONFIRM_MS, SEATS, SEAT_CLAIM, arrivalSeat, cleanPlaces, lay, pickerGroups, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsAround, seatsOf } from "./model.js";
+import { CONFIRM_MS, SEATS, SEAT_CLAIM, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 
 /** A little longer than the stage's grace for a claim by a session not yet heard from (6 s). */
 const LAPSE_MS = 6500;
@@ -148,6 +149,18 @@ function create(api) {
     sit(want);
   });
   const bar = el("label", { class: "seats-bar" }, el("span", {}, "Seat"), picker);
+  /**
+   * Is this doc's table where the viewer's attention is? Sitting at it (this
+   * extension's seat body is the current one); else, sitting nowhere, looking
+   * at it or having something of it selected. The picker is shown only then:
+   * chrome follows attention, so of several tables (each its own doc) only the
+   * one you're at shows its seats.
+   */
+  const attending = () => {
+    const v = api.view.get();
+    if (v.body?.id === body.id) return v.body.ext === api.id;
+    return api.look() != null || v.selected != null;
+  };
   bar.hidden = true;
   overlay.append(bar);
 
@@ -175,20 +188,17 @@ function create(api) {
     if (!scene || dead) return;
     const seats = seatsOf(scene);
     const ids = Object.keys(seats);
-    bar.hidden = !ids.length;
+    bar.hidden = !ids.length || !attending();
     const st = new Map(ids.map((id) => [id, stateOf(id, seats)]));
     // ask after everyone here by name now, so a notice about them can say who
     for (const r of Object.values(api.presence.get() ?? {})) contactName(r?.viewer);
     picked = ids.find((id) => st.get(id).state === "mine" || st.get(id).state === "mine-elsewhere") ?? "";
     const note = { taken: " (taken)", away: " (away)" };
     const label = (id) => `${seats[id]?.name || id}${note[st.get(id).state] ?? ""}`;
-    // seats at more than one table: a group for each, named for the table
-    const groups = pickerGroups(seats, scene.objects, (f) => api.nameOf?.(f) || scene.objects?.[f]?.name || null);
-    const k = JSON.stringify([groups, ids.map(label)]);
+    const k = JSON.stringify(ids.map(label));
     if (k !== seatKey) {
       seatKey = k;
-      const option = (id) => el("option", { value: id }, label(id));
-      picker.replaceChildren(el("option", { value: "" }, "Watching"), ...(groups ? groups.map((g) => el("optgroup", { label: g.label }, ...g.seats.map(option))) : ids.map(option)));
+      picker.replaceChildren(el("option", { value: "" }, "Watching"), ...ids.map((id) => el("option", { value: id }, label(id))));
     }
     if (globalThis.document?.activeElement !== picker) picker.value = picked;
     tagged = [];
@@ -495,6 +505,8 @@ function create(api) {
 
   return {
     update(snapshot, local, prev) {
+      // attention moved (the picker follows it): shown or hidden, nothing else
+      bar.hidden = !Object.keys(seatsOf(snapshot)).length || !attending();
       // (what's running changed: someone who gives seats places may have come or gone)
       if (snapshot === prev?.scene && local?.running === prev?.local?.running) return followTags(snapshot, local);
       scene = snapshot;
@@ -512,10 +524,6 @@ function create(api) {
       open: (snap) => rosterOf(snap).filter((s) => !s.viewer).map((s) => s.name),
       nameOf: (snap, v) => (v ? (rosterOf(snap).find((s) => s.viewer === v)?.name ?? null) : null),
       who,
-      around: (snap, ids) => {
-        const at = new Set(seatsAround(snap, ids));
-        return rosterOf(snap).filter((s) => at.has(s.id));
-      },
     }),
     // who has a stake in a thing at this table (scene/TOOLS.md, Decisions 2):
     // the people seated at it, here or away; not those watching. Asked when

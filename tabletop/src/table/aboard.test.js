@@ -10,7 +10,7 @@ import * as fakes from "../test/fakes.js";
 import { SEATS, keeperOf, keeperPlugin, keptIn, keptTrait, registries, roster, seatsPlugin } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
 import { apply, composeMatrix, multiply } from "./frame.js";
-import { placeLayout, tableLayout, writeTable } from "../setup.js";
+import { tableLayout, writeTable } from "../setup.js";
 import { cardTable, gamePart, PIECES, TABLE, GAME_TAG, partKey, squared } from "./parts.js";
 import { game as builtIn, gamePlugins } from "../test/games.js";
 
@@ -64,80 +64,9 @@ async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: n
   return { w, a, b, xa, xb, sail, cmd };
 }
 
-describe("a layout set down on something", () => {
-  const files = { url: "automerge:glb", hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.001, 0.04] } } };
-  const flat = tableLayout(builtIn("lost-cities"), { fileOf: () => files, rng: () => 0.5 });
 
-  it("a plain shift: every piece under the parent, moved up onto its top; each seat's view in its frame", () => {
-    const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
-    for (const [oid, o] of Object.entries(on.objects)) {
-      if (o.kind === "group") {
-        expect(o.parent).toBeUndefined();
-        continue;
-      }
-      expect(o.parent).toBe("tbl");
-      near(o.transform.position, flat.objects[oid].transform.position.map((v, i) => v + (i === 1 ? 0.7 : 0)));
-      expect(o.transform.rotation).toEqual(flat.objects[oid].transform.rotation);
-    }
-    expect(on.seats.p1.camera).toEqual({ position: [0, 1.2, 0.95], target: [0, 0.7, 0.16], in: "tbl" });
-    expect(on.order).toEqual(flat.order);
-    // the flat layout is untouched
-    expect(Object.values(flat.objects).every((o) => o.parent == null)).toBe(true);
-  });
 
-  it("a turn: whole matrices, the seats' views turned with the table", () => {
-    const t = { position: [0.1, 0.7, -0.2], rotation: [0, Math.PI / 2, 0] };
-    const on = placeLayout(flat, { parent: "tbl", transform: t });
-    const M = composeMatrix(t);
-    for (const [oid, o] of Object.entries(on.objects)) if (o.kind !== "group") sameMatrix(composeMatrix(o.transform), multiply(M, composeMatrix(flat.objects[oid].transform)));
-    near(on.seats.p1.camera.position, apply(M, [0, 0.5, 0.95]));
-    near(on.seats.p2.camera.target, apply(M, [0, 0, -0.16]));
-    expect(on.seats.p2.camera.in).toBe("tbl");
-  });
 
-  it("written without the view: the scene's view, home and units stay as they were", () => {
-    const d = emptyScene({ view: { units: "m", start: { home: { position: [12, 6, 16], target: [0, 2, 0] } } } });
-    const on = placeLayout(flat, { parent: "tbl", transform: { position: [0, 0.7, 0] } });
-    const binds = Object.fromEntries(Object.keys(on.containers).map((k) => [k, (s) => ({ [keptTrait("plain")]: { by: DECK, slot: s } })]));
-    writeTable(d, on, { binds }, { view: false, seats: lay });
-    expect(d.view).toEqual({ units: "m", start: { home: { position: [12, 6, 16], target: [0, 2, 0] } } });
-    expect(d.traits[SEATS].p1.camera.in).toBe("tbl");
-    expect(d.order).toHaveLength(on.order.length);
-  });
-});
-
-describe("two tables in one scene", () => {
-  const files = { url: "automerge:glb", hint: { bounds: { min: [-0.03, 0, -0.04], max: [0.03, 0.001, 0.04] } } };
-  for (const game of ["lost-cities", "draw-dominoes-2"]) {
-    it(`${game}: the second table's seats are its own, beside the first's, and each hand names its own table's seat`, () => {
-      const d = emptyScene({ objects: { t1: { name: "Card table" }, t2: { name: "Card table" } }, order: ["t1", "t2"] });
-      const hands = (ids) => ids.map((id) => d.objects[id]).filter((o) => o.traits?.[ZONE]).map((o) => [o.parent, o.traits[ZONE].seat]);
-      const written = [];
-      for (const tbl of ["t1", "t2"]) {
-        const on = placeLayout(tableLayout(builtIn(game), { fileOf: () => files, rng: () => 0.5, newId: ((n) => () => `${tbl}-o${n++}`)(0) }), { parent: tbl, transform: { position: [0, 0.7, 0] } });
-        const binds = Object.fromEntries(Object.keys(on.containers).map((k) => [k, (s) => ({ [keptTrait("plain")]: { by: DECK, slot: s } })]));
-        writeTable(d, on, { binds }, { view: false, seats: lay });
-        written.push(on.order);
-      }
-      expect(Object.entries(d.traits[SEATS]).map(([id, s]) => [id, s.camera.in])).toEqual([["p1", "t1"], ["p2", "t1"], ["p1-2", "t2"], ["p2-2", "t2"]]);
-      expect(hands(written[0]).sort()).toEqual([["t1", "p1"], ["t1", "p2"]]);
-      expect(hands(written[1]).sort()).toEqual([["t2", "p1-2"], ["t2", "p2-2"]]);
-      // each table's cards are around its own seats
-      const snap = { objects: d.objects, traits: d.traits };
-      const cardOf = (ids) => ids.find((id) => d.objects[id].traits?.[CARD]);
-      expect(roster.around(snap, [cardOf(written[0])]).map((s) => s.id)).toEqual(["p1", "p2"]);
-      expect(roster.around(snap, [cardOf(written[1])]).map((s) => s.id)).toEqual(["p1-2", "p2-2"]);
-    });
-  }
-
-  it("seated at another table, Draw says so and draws nothing; at this one it draws", async () => {
-    const away = { p1: { name: "Player 1", player: null }, p2: { name: "Player 2", player: "bob" }, q1: { name: "Player 1", player: "alice", camera: { position: [0, 1, 1], target: [0, 0, 0], in: "board" } } };
-    const t = await aboard({ seated: away });
-    expect(t.cmd(t.xa, "draw").state("mid", { scene: t.a.scene(), local: t.a.local.get() })).toMatchObject({ disabled: true, label: "Sit at this table to draw" });
-    expect(t.cmd(t.xb, "draw").state("mid", { scene: t.b.scene(), local: t.b.local.get() })).toEqual({ title: expect.stringMatching(/into your hand$/) });
-    t.w.done();
-  });
-});
 
 describe("drawing at a table aboard", () => {
   it("glides the top card into your first free slot, in the table's frame, whatever the ship is drawn doing", async () => {
@@ -218,44 +147,49 @@ describe("the Card table and Lost Cities parts", () => {
     expect(PIECES.table.snapPoints).toEqual([{ position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], tags: [GAME_TAG] }]);
   });
 
-  it("Lost Cities on it: every piece under the table, the seats' views in its frame, and the scene's view and title left alone", async () => {
+  it("Lost Cities on it: a game doc of its own, laid out whole (its pieces, its seats in its root frame, its title and start), linked onto the table, locked; the ship's doc gains only the link", async () => {
     const doc = emptyShip();
     const { ctx, calls } = fakes.fakeDrop(doc, { registries: installed() });
     const tid = await cardTable.create(ctx, { parent: "ship", transform: TBL });
-    const before = structuredClone(doc.view);
-    const board = await lostCities.create(ctx, { parent: tid, transform: { position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], scale: 1 } });
-    expect(doc.objects[board].name).toBe("Board");
-    const pieces = Object.entries(doc.objects).filter(([id, o]) => o.kind !== "group" && id !== "ship" && id !== tid);
+    const before = { view: structuredClone(doc.view), title: doc.title, objects: Object.keys(doc.objects).length };
+    const link = await lostCities.create(ctx, { parent: tid, transform: { position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], scale: 1 } });
+    // the ship: one more object, the link, under the table, locked; its view and title as they were, no seats
+    expect(Object.keys(doc.objects)).toHaveLength(before.objects + 1);
+    expect(doc.objects[link]).toMatchObject({ providerId: "scene.link", parent: tid, locked: true });
+    expect(doc.objects[link].hint.bounds.max[1]).toBeGreaterThan(0);
+    expect(doc.view).toEqual(before.view);
+    expect(doc.title).toBe(before.title);
+    expect(doc.traits?.[SEATS]).toBeUndefined();
+    // the game: its own doc, every piece at its root
+    const game = ctx.made(doc.objects[link].sourceUrl);
+    expect(game["@patchwork"].type).toBe("scene");
+    expect(game.title).toBe("Lost Cities table");
+    const pieces = Object.values(game.objects).filter((o) => o.kind !== "group");
     expect(pieces).toHaveLength(63);
-    for (const [, o] of pieces) {
-      expect(o.parent).toBe(tid);
-      expect(o.transform.position[1]).toBeGreaterThanOrEqual(TABLE.h);
-    }
-    expect(doc.view).toEqual(before);
-    expect(doc.title).toBe("Ship at anchor");
-    // the seats' owner was asked to lay them, each view in the table's frame
-    expect(doc.traits[SEATS].p1.camera).toEqual({ position: [0, 1.2006, 0.95], target: [0, 0.7006, 0.16], in: tid });
-    // its deck asks for its players to shuffle it: a joint keeper's container, named for the game (never the ship), every card bound to it
-    const cards = Object.values(doc.objects).filter((o) => o.traits?.[CARD]);
+    for (const o of pieces) expect(o.parent ?? null).toBe(null);
+    // its seats in its root frame (nothing to be `in`), and it starts people in the seat body
+    expect(game.traits[SEATS].p1.camera).toEqual({ position: [0, 0.5, 0.95], target: [0, 0, 0.16] });
+    expect(game.view.start.body).toBe("seat");
+    // its files are its own; its deck asks for its players to shuffle it, named for the game
+    for (const o of pieces) expect(Object.values(game.assets).map((a) => a.url)).toContain(o.sourceUrl);
+    const cards = pieces.filter((o) => o.traits?.[CARD]);
     expect(cards).toHaveLength(60);
     expect(new Set(cards.map((o) => keptIn(o).kind))).toEqual(new Set(["joint"]));
     const container = calls.created.find((d) => d?.["@patchwork"]?.type === "t-joint");
     expect(container.title).toBe("Lost Cities: Deck");
-    expect(container.items).toHaveLength(60);
   });
 
-  it("brings its own seats beside any there, a second one under other ids with its hands named by them; puts nothing when what it was put on went", async () => {
+  it("two games: two docs, each with its own p1 and p2 and its hands named by them", async () => {
     const doc = emptyShip();
-    doc.traits[SEATS] = { a: { name: "Captain", player: null } };
     const { ctx } = fakes.fakeDrop(doc, { registries: installed() });
-    await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 0]) });
-    await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 3]) });
-    expect(Object.keys(doc.traits[SEATS])).toEqual(["a", "p1", "p2", "p1-2", "p2-2"]);
-    expect(doc.traits[SEATS].a).toEqual({ name: "Captain", player: null });
-    const handSeats = Object.values(doc.objects).map((o) => o.traits?.[ZONE]?.seat).filter(Boolean).sort();
-    expect(handSeats).toEqual(["p1", "p1-2", "p2", "p2-2"]);
-    const n = Object.keys(doc.objects).length;
-    expect(await lostCities.create(ctx, { parent: "gone", transform: T([0, 1, 0]) })).toBe(null);
-    expect(Object.keys(doc.objects)).toHaveLength(n);
+    const a = await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 0]) });
+    const b = await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 3]) });
+    for (const link of [a, b]) {
+      const game = ctx.made(doc.objects[link].sourceUrl);
+      expect(Object.keys(game.traits[SEATS])).toEqual(["p1", "p2"]);
+      const handSeats = Object.values(game.objects).map((o) => o.traits?.[ZONE]?.seat).filter(Boolean).sort();
+      expect(handSeats).toEqual(["p1", "p2"]);
+    }
+    expect(doc.objects[a].sourceUrl).not.toBe(doc.objects[b].sourceUrl);
   });
 });

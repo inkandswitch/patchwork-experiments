@@ -299,6 +299,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         watch: () => () => {},
       },
       // (the view's keys and the stage's in one value here: a fake world has one stage)
+      look: () => null,
       view: {
         get: () => localState,
         watch: () => () => {},

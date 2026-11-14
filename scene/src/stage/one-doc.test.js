@@ -10,22 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
-
-/** Record every write and send a handle takes. */
-export function spy(handle) {
-  const log = [];
-  const change = handle.change.bind(handle);
-  const broadcast = handle.broadcast.bind(handle);
-  handle.change = (fn, opts) => {
-    log.push("change");
-    return change(fn, opts);
-  };
-  handle.broadcast = (m) => {
-    log.push(`broadcast:${m?.type ?? "?"}`);
-    return broadcast(m);
-  };
-  return log;
-}
+import { spy } from "../test/spy.js";
 
 /** An extension that writes and sends through every api that does, once it has run `go`. */
 export const WRITER = {

@@ -249,7 +249,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
         const sitting = def?.enter(place);
         if (!sitting) return false;
         const prev = s.bodies.at(-1);
-        s.bodies.push({ id, def, sitting });
+        s.bodies.push({ id, def, sitting, ext: "sailing" });
         prev.sitting?.input?.suspended?.();
         return true;
       },
@@ -294,7 +294,7 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
   };
   s.body = () => {
     const t = s.bodies.at(-1);
-    return { id: t.id, label: t.sitting?.label ?? t.def?.label ?? "Look", depth: s.bodies.length - 1, lock: !!t.def?.lock, reach: t.def?.reach ?? Infinity, keys: t.sitting?.keys ?? [] };
+    return { id: t.id, ext: t.ext ?? null, label: t.sitting?.label ?? t.def?.label ?? "Look", depth: s.bodies.length - 1, lock: !!t.def?.lock, reach: t.def?.reach ?? Infinity, keys: t.sitting?.keys ?? [] };
   };
   // a key the top body declares reaches it; any other goes on (the router's key order)
   s.declared = () => (s.bodies.at(-1).sitting?.keys ?? []).map((k) => k.code);
@@ -605,22 +605,20 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.rides).toEqual([]);
   });
 
-  it("a click comes aboard from the sea or the sky, the ship or a fitting of hers; not from something else aboard her", () => {
+  it("a click comes aboard wherever it reaches her: the sea or the sky, the ship, anything of her doc's (what nearer takes it, a card's carry or a linked game, already has)", () => {
     const s = stage();
-    s.api.scene().objects.card = { traits: { "tabletop.card": {} }, tags: ["card"] };
+    s.api.scene().objects.table = { locked: true };
     s.api.scene().objects.mast = { tags: ["sailing.mast"] };
-    s.api.scene().parents.set("card", "hull");
+    s.api.scene().parents.set("table", "hull");
     s.api.scene().parents.set("mast", "hull");
     const scene = s.api.scene();
     expect(boardsOn(scene, null)).toBe(true);
     expect(boardsOn(scene, { id: "hull" })).toBe(true);
     expect(boardsOn(scene, { id: "wheel" })).toBe(true);
     expect(boardsOn(scene, { id: "mast" })).toBe(true);
-    expect(boardsOn(scene, { id: "card" })).toBe(false);
+    expect(boardsOn(scene, { id: "table" })).toBe(true);
     const crew = s.make();
     s.ctx.crew = crew;
-    expect(crew.input.click({ hit: { id: "card" } })).toBe(false);
-    expect(crew.me().playing).toBe(false);
     expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);
     expect(crew.me().playing).toBe(true);
   });
@@ -682,15 +680,15 @@ describe("what's baked into her navmesh (the input adapter)", { timeout: 60_000 
       windlass: { traits: { "sailing.anchor": {} } },
       anchor: { traits: { "sailing.hook": {} } },
       table: { locked: true },
-      card: { tags: ["card"] },
-      dice: {},
+      card: { tags: ["card"], traits: { "scene.carry": {} } },
+      dice: { traits: { "scene.carry": {} } },
       hidden: { tags: ["sailing.mast"], visible: false },
       buoy: { traits: { "sailing.float": {} } },
     },
     parents: new Map([["mast", "hull"], ["rig", "mast"], ["boom2", "rig"], ["wheel", "hull"], ["windlass", "hull"], ["anchor", "windlass"], ["table", "hull"], ["card", "table"], ["dice", "hull"], ["hidden", "hull"]]),
   };
 
-  it("her own things and locked furniture; not the sail's subtree, the anchor, loose pieces, hidden things, or what's not aboard", () => {
+  it("everything under her that stays put; not the sail's subtree, the anchor, what can be carried, hidden things, or what's not aboard", () => {
     expect(bakedObjects(scene, "hull")).toEqual([
       { id: "hull", swept: false },
       { id: "mast", swept: false },
@@ -712,7 +710,7 @@ describe("what's baked into her navmesh (the input adapter)", { timeout: 60_000 
     const k0 = navKey(s.api, "hull");
     expect(k0).toBeTruthy();
     const scene2 = s.api.scene();
-    scene2.objects.card = { tags: ["card"], transform: { position: [0, 1.2, 1] } };
+    scene2.objects.card = { tags: ["card"], traits: { "scene.carry": {} }, transform: { position: [0, 1.2, 1] } };
     scene2.ids.push("card");
     scene2.parents.set("card", "hull");
     expect(navKey(s.api, "hull")).toBe(k0);

@@ -402,11 +402,6 @@ describe("setting up a table", () => {
     const domes = Object.values(t.scene.objects).filter((o) => o.kind !== "group" && o.name?.startsWith("Dome "));
     expect(domes).toHaveLength(18);
     for (const o of domes) expect(o.traits).toEqual({ "t.lamp": { on: true }, "scene.carry": {} });
-    // set down in a scene that's somewhere already, the scene keeps its own
-    const host = skeleton();
-    host.origin = { mine: true };
-    writeTable(host, t.layout, { binds: {} }, { view: false });
-    expect(host.origin).toEqual({ mine: true });
   });
 });
 

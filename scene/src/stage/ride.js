@@ -5,8 +5,11 @@
 // the shift of a point of it (`at`, in its frame: its origin unless said;
 // a seat rides the spot on the table it looks at, so that spot holds still
 // on screen however she rolls), its turn about the vertical through that
-// point (`turn`), and its rise and fall (`rise`). Roll and pitch are never
-// followed (the orbit keeps world up).
+// point (`turn`), and its rise and fall (`rise`). Roll and pitch are
+// followed only by a ride that says `tilt`: then the camera moves with the
+// object whole, as a passenger does, and its up is the object's (a seat at a
+// table rolls with the table: the boat is how the boat is). Otherwise the
+// orbit keeps world up.
 //
 // Only one ride applies at a time (TOOLS.md §4): the current body's, when
 // it has one (a seat rides its table), else the latest base ride (orbit
@@ -19,7 +22,34 @@
 /** Where a point of an object (`at`, in its frame; its origin) is and which way it heads, from its world matrix (column-major): what a ride follows. */
 export function rideFrame(m, at = null) {
   const p = at ? [0, 1, 2].map((r) => m[r] * at[0] + m[4 + r] * at[1] + m[8 + r] * at[2] + m[12 + r]) : [m[12], m[13], m[14]];
-  return { p, yaw: Math.atan2(m[8], m[10]) };
+  return { p, yaw: Math.atan2(m[8], m[10]), m: [...m] };
+}
+
+/** The object's up (its +Y) in the world, unit, from its world matrix. */
+export function upOf(m) {
+  const l = Math.hypot(m[4], m[5], m[6]) || 1;
+  return [m[4] / l, m[5] / l, m[6] / l];
+}
+
+/**
+ * How a point moves with an object whole from one frame to the next: by
+ * the rigid motion now · last⁻¹ (its turn, roll, pitch and shift). Pure.
+ */
+export function wholeMove(last, now) {
+  const a = last.m;
+  const b = now.m;
+  // last's inverse, for a similarity: transpose of its rotation over its scale²
+  const s2 = a[0] * a[0] + a[1] * a[1] + a[2] * a[2] || 1;
+  const inv = (q) => {
+    const x = q[0] - a[12];
+    const y = q[1] - a[13];
+    const z = q[2] - a[14];
+    return [(a[0] * x + a[1] * y + a[2] * z) / s2, (a[4] * x + a[5] * y + a[6] * z) / s2, (a[8] * x + a[9] * y + a[10] * z) / s2];
+  };
+  return (q) => {
+    const l = inv(q);
+    return [0, 1, 2].map((r) => b[r] * l[0] + b[4 + r] * l[1] + b[8 + r] * l[2] + b[12 + r]);
+  };
 }
 
 /**
@@ -56,9 +86,9 @@ export function createRides() {
   const list = []; // base rides, latest last
   let mine = null; // the current body's ride
 
-  const make = (id, { turn = true, rise = true, at = null } = {}, now = null) => {
+  const make = (id, { turn = true, rise = true, tilt = false, at = null } = {}, now = null) => {
     const point = Array.isArray(at) && at.length === 3 && at.every((v) => Number.isFinite(Number(v))) ? at.map(Number) : null;
-    return { id, turn: turn !== false, rise: rise !== false, at: point, last: now ? rideFrame(now, point) : null };
+    return { id, turn: turn !== false, rise: rise !== false, tilt: tilt === true, at: point, last: now ? rideFrame(now, point) : null };
   };
   const current = () => mine ?? list.at(-1) ?? null;
 
@@ -72,6 +102,8 @@ export function createRides() {
         if (i >= 0) list.splice(i, 1);
       };
     },
+    /** Does the ride that applies follow roll and pitch (so the camera's up is its object's)? */
+    tilts: () => !!current()?.tilt,
     /** The current body's ride (null: it has none, and the latest base ride applies) */
     body(spec, now = null) {
       mine = spec && spec.id != null ? make(spec.id, spec, now) : null;
@@ -92,6 +124,11 @@ export function createRides() {
       const last = r.last;
       r.last = now;
       if (held || !last) return null;
+      if (now.m.every((v, i) => v === last.m[i])) return null;
+      if (r.tilt) {
+        const move = wholeMove(last, now);
+        return { position: move(position), target: move(target), up: upOf(now.m) };
+      }
       if (now.yaw === last.yaw && now.p.every((v, i) => v === last.p[i])) return null;
       const move = rideMove(last, now, r);
       return { position: move(position), target: move(target) };

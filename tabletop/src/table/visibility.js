@@ -179,25 +179,6 @@ export function audienceOf(scene, seats) {
   };
 }
 
-/**
- * The ids of the seats at the table some objects are at, from a roster that
- * can say (`around`: two tables in one scene); null where none can (every
- * seat is at it).
- * @returns {Set<string> | null}
- */
-export function seatsAroundFrom(api, scene, ids) {
-  for (const r of api.collect?.("roster") ?? []) {
-    if (typeof r?.value?.around !== "function") continue;
-    try {
-      const list = r.value.around(scene, ids);
-      if (Array.isArray(list)) return new Set(list.map((s) => s?.id).filter((x) => typeof x === "string"));
-    } catch (err) {
-      console.warn("[tabletop] the roster failed", err);
-    }
-  }
-  return null;
-}
-
 /** The roster's seats for a snapshot, from whoever contributes one (api.collect("roster")): [{ id, name, viewer }], [] with none. */
 export function seatsFrom(api, scene) {
   for (const r of api.collect?.("roster") ?? []) {

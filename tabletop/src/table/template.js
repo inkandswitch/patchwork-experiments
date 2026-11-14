@@ -1,7 +1,10 @@
-// A game's table laid out in a scene from inside it: an empty scene's start
-// screen (`scene:template`) or a game dropped from the parts bin
-// (`scene:part`, parts.js), through the same writer as the game page's "Set
-// up a table" (setup.js tableLayout + writeTable), so they can't drift apart.
+// A game's table laid out in a scene doc: an empty scene's start screen
+// (`scene:template`), or a game dropped from the parts bin (`scene:part`,
+// parts.js), which makes a game doc of its own, lays it out there and links
+// it onto what it was put on (scene/COMPOSITION.md §8). Through the same
+// writer as the game page's "Set up a table" (setup.js tableLayout +
+// writeTable), so they can't drift apart. The table is always the whole
+// doc's: its seats, title, view and origin are the doc's own.
 //
 // A game is found by its id among the registered `tabletop:game`s (this
 // package's own are JSON files in games/; another package may register its
@@ -32,7 +35,7 @@
 // built-in game has seats; one without would start them in Look).
 
 import { glbFile, lookFileKey } from "./files.js";
-import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";
+import { kindsUsed, tableLayout, writeTable } from "../setup.js";
 import { findSeats, findSource, makeHolders } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
@@ -54,19 +57,15 @@ export async function loadGame(registry, gameId) {
 }
 
 /**
- * Lay a game's table out in the scene the drop context is for: at the root,
- * as a template does, or set down on something (`parent`, at `transform` in
- * its frame: the games' parts), every piece under it and each seat's view in
- * its frame (setup.js placeLayout). `view: false` leaves the scene's view,
- * title and origin alone, for a table put into a scene that's already
- * something else (a ship).
- * @param {object} ctx      the stage's drop context (STAGE.md, "Drops")
+ * Lay a game's table out in the doc a context is for (the stage's drop
+ * context, STAGE.md "Drops", or docContext's for a game doc of its own).
+ * @param {object} ctx      { repo, registry, newId, doc, change, file, notify }
  * @param {string | object} game  a registered game's id, or a game
- * @param {{ rng?: () => number, parent?: string | null, transform?: object | null, view?: boolean, images?: object | null }} [o]
+ * @param {{ rng?: () => number, images?: object | null }} [o]
  * @returns {Promise<object | null>} the layout written (null when the game isn't there or isn't valid,
- *   nothing keeps its cards, or its parent went meanwhile)
+ *   or nothing keeps its cards)
  */
-export async function setUp(ctx, game, { rng = Math.random, parent = null, transform = null, view = true, images = defaultImages() } = {}) {
+export async function setUp(ctx, game, { rng = Math.random, images = defaultImages() } = {}) {
   const g = typeof game === "string" ? await loadGame(ctx.registry, game) : game;
   if (!g) {
     ctx.notify?.(`There's no game “${game}” installed here.`, "error");
@@ -86,10 +85,9 @@ export async function setUp(ctx, game, { rng = Math.random, parent = null, trans
     files[kind] = await ctx.file(lookFileKey(piece), () => glbFile(piece, io));
   }
 
-  const flat = tableLayout(g, { fileOf: (kind) => files[kind] ?? null, newId: ctx.newId, rng });
-  const layout = parent || transform ? placeLayout(flat, { parent, transform }) : flat;
+  const layout = tableLayout(g, { fileOf: (kind) => files[kind] ?? null, newId: ctx.newId, rng });
   const current = ctx.doc?.()?.title;
-  const named = view && (!current || current === UNTITLED);
+  const named = !current || current === UNTITLED;
 
   // the containers and bags first, so the scene never names one that isn't there
   let made;
@@ -101,18 +99,10 @@ export async function setUp(ctx, game, { rng = Math.random, parent = null, trans
   }
   const lay = Object.keys(layout.seats).length ? await findSeats(ctx.registry) : null;
 
-  let put = false;
   ctx.change((d) => {
-    // set down on something that went while the files were made: nothing
-    if (parent && !d.objects?.[parent]) return;
-    writeTable(d, layout, made, { view, seats: lay });
+    writeTable(d, layout, made, { seats: lay });
     if (named) d.title = `${g.title || "Game"} table`;
-    put = true;
   });
-  if (!put) {
-    ctx.notify?.("What that was put on has gone.");
-    return null;
-  }
 
   for (const note of made.notes) ctx.notify?.(note, "warn");
   const fellBack = Object.entries(layout.containers).some(([key, c]) => c.secure && made.kinds[key] !== "joint");
@@ -121,6 +111,48 @@ export async function setUp(ctx, game, { rng = Math.random, parent = null, trans
   if (Object.keys(layout.seats).length && lay) ctx.notify?.("Pick a seat (top right) to play.", "info");
   else ctx.notify?.(`${g.title || "The game"} is laid out. Press a piece and drag it to carry it.`, "info");
   return layout;
+}
+
+/**
+ * A context for a doc of its own (a game doc a part makes), as setUp takes
+ * it: its reads and writes, and its own files (the doc's `assets`, as the
+ * stage's ctx.file keeps a scene's), with the maker's repo, registry and notices.
+ * @param {object} ctx  the maker's drop context  @param {object} handle  the doc's
+ */
+export function docContext(ctx, handle) {
+  const making = new Map();
+  const known = (key) => {
+    const a = handle.doc()?.assets?.[key];
+    return typeof a?.url === "string" ? { url: a.url, hint: a.hint ? JSON.parse(JSON.stringify(a.hint)) : null } : null;
+  };
+  return {
+    repo: ctx.repo,
+    registry: ctx.registry,
+    newId: ctx.newId,
+    notify: ctx.notify,
+    url: handle.url,
+    doc: () => handle.doc(),
+    change: (fn) => handle.change(fn),
+    async file(key, make) {
+      const have = known(key);
+      if (have) return have;
+      if (!making.has(key))
+        making.set(
+          key,
+          (async () => {
+            const f = await make();
+            const file = await ctx.repo.create2({ "@patchwork": { type: "file" }, name: String(f.name ?? key), extension: String(f.extension ?? ""), mimeType: String(f.mimeType ?? "application/octet-stream"), content: f.bytes });
+            const hint = f.hint ? JSON.parse(JSON.stringify(f.hint)) : null;
+            handle.change((d) => {
+              if (!d.assets) d.assets = {};
+              if (!d.assets[key]?.url) d.assets[key] = hint ? { url: file.url, hint } : { url: file.url };
+            });
+            return known(key) ?? { url: file.url, hint };
+          })(),
+        );
+      return making.get(key);
+    },
+  };
 }
 
 /** A template that lays a registered game's table out in an empty scene. */

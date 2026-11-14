@@ -270,7 +270,7 @@ function timings(size = 400) {
  * @returns {() => void} cleanup
  */
 export default function Stage(handle, element) {
-  const view = createView(element, { url: handle.url ?? "scene" });
+  const view = createView(element, { url: handle.url ?? "scene", openStage: createStage });
   view.addStage((n) => createStage({ handle, view, n }));
   return () => view.dispose();
 }
@@ -680,11 +680,12 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         continue;
       }
       if (route === "scene") {
-        // a link: the view opens a stage for its doc (stage/links.js); here
-        // it is drawn as its hint, the room the host gives it
+        // a link: the view opens a stage for its doc where it acts (links.js);
+        // open, its doc is what's drawn; otherwise it is drawn as its hint,
+        // the room the host gives it
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
-        applyHint(id, o.hint?.bounds);
+        applyHint(id, view.linkState([...path, id])?.state === "open" ? null : o.hint?.bounds);
         if (objState.delete(id)) statusDirty = true;
         continue;
       }
@@ -2244,6 +2245,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         applyDoc(derive());
       },
       providersFor,
+      /** a link of this doc's, as the view has it: { state: "open" | "mirror" | "pinned" | "closed", reason? }, or null (not a link, or not expanded yet) */
+      link: (oid) => view.linkState([...path, oid]),
       addObject,
       rebuild,
       fixPoint,
@@ -2421,11 +2424,16 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
-      // the others
-      collect: (name) => host.collect(name),
+      // the others (COMPOSITION.md §3): a stage's extension collects from its own
+      // stage; a general one, the view's, from every acting stage (the input
+      // path's first, innermost first), each item tagged with its `stage`, and
+      // runs a command in the stage it names
+      collect: (name) => (rec.scope === "general" ? view.collect(name) : reader.collect(name)),
+      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's) */
+      path: (o) => view.inputPath(o),
       audience: audienceOf,
       shown: shownTo,
-      run,
+      run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.stage(inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
 
     function release() {
@@ -2578,6 +2586,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     packages.check();
     clockCheck();
     requestFlush();
+    // its links may have changed: the view works out what it opens again
+    view.relink();
     perf.sync.add(cpuNow() - t0);
   }
   handle.on("change", sync);
@@ -2658,8 +2668,21 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     if (globalThis.__sceneDebug === debug) delete globalThis.__sceneDebug;
   }
 
+  // what the view's general parts read of this stage, and run in it
+  const reader = Object.freeze({
+    stage: n,
+    scene,
+    collect: (name) => host.collect(name).map((x) => ({ ...x, stage: n })),
+    context: (hit) => context(hit),
+    attention: () => attention(),
+    look: () => look(),
+    run: (inv) => run(inv),
+    nameOf: (oid) => nameOf(oid),
+  });
+
   stage = Object.freeze({
     n,
+    reader,
     path: Object.freeze([...path]),
     url: handle.url ?? null,
     handle,
@@ -2682,6 +2705,13 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     displayedWorld,
     pageHide,
     pageShow,
+    /** the view's links changed state: draw them again (open, or as their hints) */
+    linksChanged: () => {
+      if (!dead) {
+        applyDoc(derive());
+        displayChanged();
+      }
+    },
     /** the first sync, once the view knows this stage (and, for the outermost, arriving: once, now) */
     start() {
       if (n === 0) {

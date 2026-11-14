@@ -11,14 +11,15 @@ import { inBody } from "../stage/bodies.js";
  */
 export function flatCommands(collected) {
   const out = [];
-  for (const { id: ext, value } of collected ?? []) {
+  for (const { id: ext, value, stage } of collected ?? []) {
     let list;
     try {
       list = Array.isArray(value) ? value : value && typeof value[Symbol.iterator] === "function" ? [...value] : [];
     } catch {
       continue;
     }
-    for (const command of list) if (command && command.id != null && typeof command.run === "function") out.push({ ext, command });
+    // (a general surface's collection tags each with the stage it is from: COMPOSITION.md §3)
+    for (const command of list) if (command && command.id != null && typeof command.run === "function") out.push(stage === undefined ? { ext, command } : { ext, command, stage });
   }
   return out;
 }

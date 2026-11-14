@@ -33,13 +33,21 @@ export function keyAttention(api) {
  * @returns {{ gesture, tool, body, collected, ctx, attention }}
  */
 export function resolverState(api, attention = keyAttention(api)) {
-  const local = api.view.get();
+  const view = api.view.get();
+  // the input path's stages, innermost first (COMPOSITION.md §5); the caller's
+  // own attention is the outermost's (a held verb pins it there)
+  const path = typeof api.path === "function" ? api.path() : [];
+  const segments = path.length > 1 ? path.map((seg) => {
+    const att = seg.stage === path.at(-1).stage ? attention : seg.attention();
+    return { stage: seg.stage, reader: seg, collected: seg.collect("commands"), ctx: keyContext(seg, att), attention: att };
+  }) : null;
   return {
-    gesture: local.gesture ?? null,
-    tool: local.held ?? null,
-    body: local.body ?? null,
-    collected: api.collect("commands"),
+    gesture: view.gesture ?? null,
+    tool: view.held ?? null,
+    body: view.body ?? null,
+    collected: segments ? segments.flatMap((s) => s.collected) : api.collect("commands"),
     ctx: keyContext(api, attention),
     attention,
+    ...(segments ? { segments } : {}),
   };
 }

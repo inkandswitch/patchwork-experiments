@@ -131,6 +131,38 @@ export function winningHold(holds) {
   return best;
 }
 
+// ─── the page bus ────────────────────────────────────────────────────────────
+// automerge-repo doesn't echo an ephemeral broadcast within a page: two
+// views of one doc in one page (split panes, a game open alone beside the
+// boat it is linked into) share one handle and never hear each other. The
+// page bus delivers each broadcast to every other presence on the same
+// handle in the page, as the network delivers it to other pages: a copy, a
+// task later. Presences on different handles (different repos, connected by
+// a network) are left to the network, so nothing is heard twice.
+const buses = new WeakMap(); // handle → Set of receivers on it in this page
+
+/** Join the page bus for `handle`: deliver(msg) to the others, and leave(). */
+export function pageBus(handle, receive) {
+  if (!handle || typeof handle !== "object") return { deliver() {}, leave() {} };
+  let set = buses.get(handle);
+  if (!set) buses.set(handle, (set = new Set()));
+  set.add(receive);
+  return {
+    deliver(message) {
+      for (const other of [...set]) {
+        if (other === receive) continue;
+        const copy = structuredClone(message);
+        queueMicrotask(() => {
+          if (set.has(other)) other({ message: copy, senderId: "page" });
+        });
+      }
+    },
+    leave() {
+      set.delete(receive);
+    },
+  };
+}
+
 function newSession() {
   try {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -162,6 +194,7 @@ export function createPresence({
   let session = firstSession;
   let away = false; // said bye on pagehide; hello() comes back as a new session
 
+  let bus = null; // this presence on the page bus (joined below, once onMessage exists)
   function broadcast(msg) {
     if ((dead || away) && !msg.bye) return;
     try {
@@ -169,6 +202,7 @@ export function createPresence({
     } catch {
       // best effort: presence is never worth an error
     }
+    bus?.deliver(msg);
   }
 
   function tell(listeners, ...args) {
@@ -583,6 +617,7 @@ export function createPresence({
   } catch {
     // a handle without ephemeral messages: presence stays local
   }
+  bus = pageBus(handle, onMessage);
 
   // say hello, so peers know we're here before our first key
   sendState();
@@ -602,10 +637,10 @@ export function createPresence({
 
   // Back from the back-forward cache: peers took our bye as final, so come
   // back as a new session, with the state we have.
-  function hello() {
+  function hello(next = newSession()) {
     if (dead || !away) return;
     away = false;
-    session = newSession();
+    session = next;
     sendState();
   }
 
@@ -617,6 +652,7 @@ export function createPresence({
     } catch {
       // ignore
     }
+    const leaving = bus;
     clearTimer(sendTimer);
     clearTimer(heartbeat);
     clearTimer(keepalive);
@@ -631,8 +667,10 @@ export function createPresence({
     watchers.clear();
     receivers.clear();
     holdWatchers.clear();
-    // the bye also ends our holds on every peer
+    // the bye also ends our holds on every peer (in the page too), then off the bus
     if (!away) broadcast({ type: PRESENCE, session, bye: true });
+    leaving?.leave();
+    bus = null;
   }
 
   const listen = (bag) => (fn) => {
