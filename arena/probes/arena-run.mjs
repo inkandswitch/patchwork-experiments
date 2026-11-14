@@ -191,6 +191,17 @@ async function settled(w, ms = 4000) {
   }
 }
 const sorted = async (w) => [...(await P(`running('${w}')`))].sort();
+/** Choose body `label` on view w's body chip ("Look", "Edit", "Walk"…): true if the chip offered it. */
+async function chooseBody(w, label) {
+  const chip = await P(`chip('${w}')`);
+  if (!chip) return false;
+  await click(chip);
+  await until(`!!window.__p.chipItem('${w}', '${label}')`, 3000);
+  const item = await P(`chipItem('${w}', '${label}')`);
+  if (item) await click(item);
+  await rest(300);
+  return !!item;
+}
 /** Leave the top body of view w by its body chip's "Leave (…)": true if the chip offered it. */
 async function leaveBody(w = "a") {
   const chip = await P(`chip('${w}')`);
@@ -215,7 +226,7 @@ try {
   const startBtn = `.add-template[data-template="arena-level"]`;
   const haveStart = (await loads(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
   check("an empty scene's start screen offers the Arena level template, and Blank", haveStart && (await shown(startBtn)) && (await shown('.add-template[data-template=""]')), await P("text('.add-template')"));
-  check("an empty scene: A in orbit, nowhere to start", (await P("body('a')")) === "orbit" && !(await P("doc()")).view?.start, { body: await P("body('a')"), view: (await P("doc()")).view });
+  check("an empty scene: A in Edit, where a scene made new starts people (view.start names Edit)", (await P("body('a')")) === "edit" && (await P("doc()")).view?.start?.body === "edit", { body: await P("body('a')"), view: (await P("doc()")).view });
   await shot("start");
   await click(await P(`rect('${startBtn}')`));
   await loads("window.__p.objects().length >= 29");
@@ -239,21 +250,24 @@ try {
   const arrived = await loads("window.__p.body('a') === 'walk' && window.__p.body('b') === 'walk'", 25_000);
   const padAt = await P(`world(${JSON.stringify(start?.place)})`);
   const eA = (await P("cam('a')")).position, eB = (await P("cam('b')")).position;
-  check("both arrive walking (the walk body, the only body over orbit), at the start's spawn point", arrived && JSON.stringify(await P("stack()")) === '["orbit","walk"]' && [eA, eB].every((e) => !!padAt && Math.hypot(e[0] - padAt[0], e[2] - padAt[2]) < 0.6), { a: await P("body('a')"), b: await P("body('b')"), padAt, eA: r3(eA), eB: r3(eB) });
+  check("both arrive walking (the walk body, the only body over Look), at the start's spawn point", arrived && JSON.stringify(await P("stack()")) === '["look","walk"]' && [eA, eB].every((e) => !!padAt && Math.hypot(e[0] - padAt[0], e[2] - padAt[2]) < 0.6), { a: await P("body('a')"), b: await P("body('b')"), padAt, eA: r3(eA), eB: r3(eB) });
   await settled("a");
   await settled("b");
   check("what runs is the same in both views: the doc's", JSON.stringify(await sorted("a")) === JSON.stringify(await sorted("b")), { a: await sorted("a"), b: await sorted("b") });
   check("the HUD shows the gun to pick up and 8 standing (and nothing stray)", (await P("text('.arena-count')"))[0] === "8 of 8 targets standing" && /Pick up the gun/.test((await P("text('.arena-play')"))[0] ?? "") && !/null/.test((await P("text('.arena-hud')"))[0]), await P("text('.arena-hud')"));
   const bView = { start: await shown(".add-start", "b"), layers: await P("layers('b')"), chrome: await P("chrome('b')") };
-  check("walking, B sees no start screen, and no grid, axes or bounds (they're orbit's)", !bView.start && !bView.layers.some((l) => /grid|axes|bounds|halo|handles/.test(l)), bView);
+  check("walking, B sees no start screen, and no grid, axes or bounds (they're Edit's)", !bView.start && !bView.layers.some((l) => /grid|axes|bounds|halo|handles/.test(l)), bView);
   await shot("game");
 
   // ─── the designer edits, in the same running level ───────────────────────
-  // There's no Edit to switch to: A leaves walking (orbit), opens the parts
-  // bin from the toolbar, and B goes on walking.
-  const leftToEdit = await leaveBody("a");
+  // A leaves walking (Look: nothing of the editor), chooses Edit on the body
+  // chip (TOOLS.md Decisions 6), opens the parts bin from the toolbar, and B
+  // goes on walking.
+  const leftToLook = await leaveBody("a");
   await settled("a");
-  check("A leaves walking: orbit, where the axes are drawn (orbit's aids)", leftToEdit && (await P("body('a')")) === "orbit" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
+  check("A leaves walking: Look, where no editing aids are drawn", leftToLook && (await P("body('a')")) === "look" && !(await P("layers('a')")).some((l) => /scene\\.(grid|axes)/.test(l)) && !(await shown(".toolbar")), { body: await P("body('a')"), layers: await P("layers('a')") });
+  const toEdit = await chooseBody("a", "Edit");
+  check("A chooses Edit on the body chip: the axes are drawn (Edit's aids)", toEdit && (await P("body('a')")) === "edit" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
   await click(await P(`rect('.toolbar [data-command="parts"]')`));
   check("Parts, from the toolbar: a drawer tab", await until("window.__p.tab('a', 'parts')", 4000), await P("running('a')"));
   const binParts = await js(`[...window.__p.hostA.querySelectorAll('.scene-parts .parts-group[data-category="Arena"] .part')].map((b) => b.dataset.part)`);
@@ -282,7 +296,7 @@ try {
   await rest(500);
   const lockState = { locked: await P("locked()"), element: await P("lockElement()"), body: await P("body()"), stack: await P("stack()"), tool: await P("tool()"), held: await P("held()"), pointer: await P("pointer()"), chip: await P("chip()"), hud: await P("text('.arena-hud')") };
   report.steps.lock = lockState;
-  check("Play walks in (the walk body, the only body over orbit) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["orbit","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
+  check("Play walks in from Edit (the walk body over Look: nothing stands on Edit) with the gun in hand (the held tool); the walk body holds the camera; the chip says Walk", lockState.body === "walk" && JSON.stringify(lockState.stack) === '["look","walk"]' && lockState.tool === "gun" && lockState.held && /Walk/.test(lockState.chip?.text ?? ""), lockState);
   if (!lockState.locked) turnMode = "drag";
   report.steps.turnMode = turnMode;
   const e0 = await eye();
@@ -406,11 +420,11 @@ try {
   // the body chip's Leave stops walking and gives the camera back
   const left = await leaveBody("a");
   const after = { left, body: await P("body()"), stack: await P("stack()"), held: await P("held()"), locked: await P("locked()"), play: await P("text('.arena-play')") };
-  check("the body chip's Leave stops walking: orbit, camera back, Play button again", left && after.body === "orbit" && JSON.stringify(after.stack) === '["orbit"]' && !after.held && !after.locked && /▶ Play/.test(after.play[0] ?? ""), after);
+  check("the body chip's Leave stops walking: Look (never back to Edit), camera back, Play button again", left && after.body === "look" && JSON.stringify(after.stack) === '["look"]' && !after.held && !after.locked && /▶ Play/.test(after.play[0] ?? ""), after);
   await rest(400);
   check("B's avatar goes when A stops walking", (await P("drawn('b')")).avatars.length === 0, await P("drawn('b')"));
   // Enter plays too (the play command's key, through the key map); Esc puts the gun down, Leave stops walking
-  await click(await P("canvasCentre()")); // (the keys to A's view; in orbit a click on nothing selects nothing)
+  await click(await P("canvasCentre()")); // (the keys to A's view; in Look a click selects nothing)
   await hold("Enter", 50);
   await rest(300);
   const byEnter = { body: await P("body()"), tool: await P("tool()") };
@@ -418,15 +432,15 @@ try {
   await rest(300);
   const escAgain = { body: await P("body()"), tool: await P("tool()") };
   const leftAgain = await leaveBody("a");
-  check("Enter starts play (the key map): walking, the gun in hand; Esc puts it down; Leave stops walking", byEnter.body === "walk" && byEnter.tool === "gun" && escAgain.body === "walk" && escAgain.tool === null && leftAgain && (await P("body()")) === "orbit", { byEnter, escAgain, leftAgain });
-  // orbit works again: a drag moves the camera
+  check("Enter starts play (the key map): walking, the gun in hand; Esc puts it down; Leave stops walking", byEnter.body === "walk" && byEnter.tool === "gun" && escAgain.body === "walk" && escAgain.tool === null && leftAgain && (await P("body()")) === "look", { byEnter, escAgain, leftAgain });
+  // Look's orbit camera works again: a drag moves the camera
   const ccam = await P("cam()");
   const cc = await P("canvasCentre()");
   await mouse("mouseMoved", cc.x, cc.y); await mouse("mousePressed", cc.x, cc.y, 1);
   for (let k = 1; k <= 8; k++) await mouse("mouseMoved", cc.x + k * 15, cc.y, 1);
   await mouse("mouseReleased", cc.x + 120, cc.y, 0);
   await rest(300);
-  check("orbit works again after Leave", Math.hypot(...(await P("cam()")).position.map((v, i) => v - ccam.position[i])) > 0.05);
+  check("Look's orbit drag works again after Leave", Math.hypot(...(await P("cam()")).position.map((v, i) => v - ccam.position[i])) > 0.05);
   // stand them up
   await click(await P("rect('.arena-reset')"));
   await rest(200);
@@ -454,7 +468,7 @@ try {
   await hold("Enter", 50);
   await rest(500);
   const bPlay = { body: await P("body('b')"), tool: await P("tool('b')"), held: await P("held('b')"), aBody: await P("body('a')"), focus: await js("document.activeElement?.closest?.('#a, #b')?.id ?? null"), eye: r3((await P("cam('b')")).position) };
-  check("Enter plays in B's view (the key map came with the arena's requires): walking with the gun, and not in A's", bPlay.body === "walk" && bPlay.tool === "gun" && bPlay.held && bPlay.aBody === "orbit", bPlay);
+  check("Enter plays in B's view (the key map came with the arena's requires): walking with the gun, and not in A's", bPlay.body === "walk" && bPlay.tool === "gun" && bPlay.held && bPlay.aBody === "look", bPlay);
   const be0 = (await P("cam('b')")).position;
   await hold("KeyW", 700);
   await rest(300);
@@ -470,12 +484,12 @@ try {
   const aSees = await P("drawn('a')");
   check("B shoots (a tracer, 11 rounds), and A sees B's avatar", bTr1 > bTr0 && /11 \/ 12/.test((await P("text('.arena-hud', 'b')"))[0]) && aSees.avatars.length === 1, { bTr0, bTr1, hud: await P("text('.arena-hud', 'b')"), aSees });
   report.steps.playerPlaying = { chrome: await P("chrome('b')"), layers: await P("layers('b')") };
-  check("playing, B's view draws no grid or axes (orbit's), and no drawer is open", !(await P("layers('b')")).some((l) => /grid|axes/.test(l)) && !(await P("rect('.stage-drawer', 'b')")), report.steps.playerPlaying);
+  check("playing, B's view draws no grid or axes (Edit's), and no drawer is open", !(await P("layers('b')")).some((l) => /grid|axes/.test(l)) && !(await P("rect('.stage-drawer', 'b')")), report.steps.playerPlaying);
   await hold("Escape", 50);
   await rest(300);
   const bDown = { tool: await P("tool('b')"), body: await P("body('b')") };
   const bLeft = await leaveBody("b");
-  check("Esc puts B's gun down; the chip's Leave stops B walking: Play is back", bDown.tool === null && bDown.body === "walk" && bLeft && (await P("body('b')")) === "orbit" && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")), { bDown, bLeft, body: await P("body('b')") });
+  check("Esc puts B's gun down; the chip's Leave stops B walking: Play is back", bDown.tool === null && bDown.body === "walk" && bLeft && (await P("body('b')")) === "look" && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")), { bDown, bLeft, body: await P("body('b')") });
   await shot("player-after", bRect);
 
   check("no errors in the arena run", (await errorsNow()).length === 0, await errorsNow());
@@ -486,6 +500,7 @@ try {
   await loads("window.__ready === true", 20_000);
   await loads("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
   check("hybrid: the arena isn't running before any arena trait", !(await P("running('a')")).includes("arena"), await P("running('a')"));
+  check("hybrid: a scene made new starts A in Edit, where the toolbar is", (await P("body('a')")) === "edit" && (await loads("!!window.__p.hostA.querySelector('.toolbar [data-command=\"inspector\"]')", 5000)), { body: await P("body('a')"), toolbar: await js(`[...window.__p.hostA.querySelectorAll('.toolbar [data-command]')].map((e) => e.dataset.command)`), start: (await P("doc()")).view?.start });
   // nothing selected: the inspector (opened from the toolbar) on the Scene,
   // whose "Add behaviour…" offers what the arena describes for a scene (the level)
   await click(await P(`rect('.toolbar [data-command="inspector"]')`));
@@ -516,11 +531,11 @@ try {
   check("hybrid: it goes under the deck, on it where you're looking, upright", (await P("doc()")).objects[htid]?.parent === "deck" && !!ht && Math.hypot(ht[0] - deckTop[0], ht[1] - deckTop[1], ht[2] - deckTop[2]) < 0.05 && htUp?.[1] > 0.999, { ht, deckTop, up: htUp });
   const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.keyLight.intensity, v.keyLight.position.toArray()] }; })()");
   check("hybrid: a deck with a target keeps the stage's own look (no arena sky, haze or sun)", hv.atmosphere === null && !hv.sky && hv.fog === null && !hv.shadowMap && hv.key[0] === 1.5, hv);
-  // Escape lets the new target go (in orbit, holding nothing: the ladder's selection rung), so nothing wants the pointer
+  // Escape lets the new target go (in Edit, holding nothing: the ladder's selection rung), so nothing wants the pointer
   await P("focusA()");
   await hold("Escape", 50);
   await rest(200);
-  check("hybrid: Esc deselects (orbit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
+  check("hybrid: Esc deselects (Edit, nothing held)", (await P("A.local.get().selected")) == null, await P("A.local.get().selected"));
   await js("Math.random = () => 0");
   await until("!!window.__p.hostA.querySelector('.arena-play')");
   // look at the deck from above it: with no spawn point, walking starts at the eye (scene/TOOLS.md §4)

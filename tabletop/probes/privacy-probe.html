@@ -178,7 +178,7 @@ try {
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     phase: () => (deckUrl() ? repo.handles.get(deckUrl())?.doc()?.phase ?? null : null),
     deckType: () => (deckUrl() ? repo.handles.get(deckUrl())?.doc()?.["@patchwork"]?.type ?? null : null),

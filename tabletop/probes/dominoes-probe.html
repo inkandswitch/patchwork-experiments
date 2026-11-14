@@ -87,7 +87,7 @@ try {
     seats: () => seatsOf(scene.a.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     deck: () => { const d = deck(); return d ? { phase: d.phase, op: d.op ? d.op.pass : null, queue: d.queue?.length ?? 0, epochs: Object.values(d.epochs ?? {}), faces: d.faces?.length ?? 0, participants: d.participants?.length ?? 0, cipherHex: [...new Set((d.cards ?? []).map((c) => String(c).length))] } : null; },
     /** every tile, by both replicas: how many there are, and the slots they're bound to */

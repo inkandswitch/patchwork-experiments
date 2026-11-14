@@ -69,7 +69,7 @@ const walker = {
       create(api) {
         const w = { walking: false, entered: 0, suspended: 0, resumed: [], left: 0, eye: null, target: null };
         let release = null;
-        const top = () => api.local.get()?.body?.id === "probe-walk";
+        const top = () => api.view.get()?.body?.id === "probe-walk"; // (the body is the view's: api.view, since COMPOSITION step 10)
         const hold = () => {
           release ??= api.camera.hold();
           api.camera.set({ position: w.eye, target: w.target });
@@ -174,7 +174,7 @@ try {
     picked: (w) => select(w)?.value ?? null,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
     confirms: () => [...confirms],
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack, and the stack (scene/TOOLS.md §4) */
     body: (w) => dbg[w]?.local.get().body?.id ?? null,

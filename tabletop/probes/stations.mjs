@@ -6,7 +6,7 @@
 // stations-probe.html: a Lost Cities table from the template, two views A
 // (Ana) and B (Ben), and a stand-in for a body that walks (`probe-walk`,
 // scene/TOOLS.md §4). Real mouse and keys over CDP:
-// - in orbit, not walking: hovering a tray offers no seat verb (the picker is
+// - in Look, not walking: hovering a tray offers no seat verb (the picker is
 //   the way there);
 // - walking, unseated, hovering Player 1's tray offers "Sit as Player 1"; F
 //   sits A there (its claim, the notice): the seat body goes on over the
@@ -99,13 +99,13 @@ try {
   const tray1 = await P("tray('p1')"), tray2 = await P("tray('p2')");
   report.seats = { p1: await P("seatCam('p1')"), p2: await P("seatCam('p2')") };
 
-  // ── in orbit, not walking: no seat verb ──
+  // ── in Look, not walking: no seat verb ──
   const h0 = await hover("a", tray1, null);
-  check("in orbit, not walking: hovering Player 1's tray offers no seat verb", (await P("body('a')")) === "orbit" && h0.hovered === tray1 && !h0.prompt.some((t) => /Sit|Stand|seat/.test(t)), { ...h0, body: await P("body('a')") });
+  check("in Look, not walking: hovering Player 1's tray offers no seat verb", (await P("body('a')")) === "look" && h0.hovered === tray1 && !h0.prompt.some((t) => /Sit|Stand|seat/.test(t)), { ...h0, body: await P("body('a')") });
 
   // ── walking, unseated: Sit as Player 1 ──
   await walkTo("a", "p1");
-  check("A walks: the stand-in walker's body, over orbit", J(await P("stack('a')")) === J(["orbit", "probe-walk"]), await P("walker('a')"));
+  check("A walks: the stand-in walker's body, over Look", J(await P("stack('a')")) === J(["look", "probe-walk"]), await P("walker('a')"));
   const h1 = await hover("a", tray1, "Sit as Player 1");
   check("A hovers Player 1's tray: the prompt offers \"Sit as Player 1\"", h1.ok, h1);
   await shot("1-sit-offered");
@@ -115,7 +115,7 @@ try {
   check("…told as the picker tells it", await until("notices('a').includes('You sat down as Player 1')", 2000), await P("notices('a')"));
   check("…B is told too", await until("notices('b').some((n) => /Ana sat down as Player 1/.test(n))", 2000), await P("notices('b')"));
   check("…the picker shows it", (await P("picked('a')")) === "p1", await P("picked('a')"));
-  check("…the seat body goes on over the walker, which waits under it (suspended, not left)", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk", "seat"]) && (await P("walker('a')")).suspended === 1 && (await P("walker('a')")).left === 0, await P("walker('a')"));
+  check("…the seat body goes on over the walker, which waits under it (suspended, not left)", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["look", "probe-walk", "seat"]) && (await P("walker('a')")).suspended === 1 && (await P("walker('a')")).left === 0, await P("walker('a')"));
   const seat1 = await P("seatCam('p1')");
   check("…the camera is the seat's view", await until(`camera('a') && ${J(seat1.position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000), { camera: await P("camera('a')"), seat: seat1 });
   await b.rest(500);
@@ -127,7 +127,7 @@ try {
   check("seated, A hovers its own tray: the prompt offers \"Stand up\"", h2.ok, h2);
   await shot("3-stand-offered");
   await press("a", "f");
-  check("F pops the seat body: walking again (the walker resumed, never entered twice)", (await until("walking('a')", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk"]) && (await P("walker('a')")).entered === 1, await P("walker('a')"));
+  check("F pops the seat body: walking again (the walker resumed, never entered twice)", (await until("walking('a')", 3000)) && J(await P("stack('a')")) === J(["look", "probe-walk"]) && (await P("walker('a')")).entered === 1, await P("walker('a')"));
   const resumed = (await P("walker('a')")).resumed.at(-1);
   check("…walking on from the seat's eye, looking where it looked", near(resumed?.eye, seat1.position) && near(resumed?.target, seat1.target), { resumed, seat1 });
   check("…and the seat is still A's", (await P("seats()")).p1.player === viewers.a && (await P("claim('p1')"))?.session === sessionA, await P("seats()"));
@@ -142,7 +142,7 @@ try {
   check("hovering a card in the tray, the prompt is Flip, not a seat verb", hc.ok && !hc.prompt.some((t) => /Sit|Stand|seat/.test(t)), hc);
   await hover("a", tray1, "Back to your seat");
   await press("a", "f");
-  check("F: back in Player 1 (the seat body over the walker again), in the seat's view", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk", "seat"]) && (await P("seats()")).p1.player === viewers.a && (await until(`camera('a') && ${J(seat1.position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000)), { camera: await P("camera('a')"), seats: await P("seats()") });
+  check("F: back in Player 1 (the seat body over the walker again), in the seat's view", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["look", "probe-walk", "seat"]) && (await P("seats()")).p1.player === viewers.a && (await until(`camera('a') && ${J(seat1.position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000)), { camera: await P("camera('a')"), seats: await P("seats()") });
   mark("A back in its seat");
 
   // ── a present player's seat is refused ──
@@ -179,7 +179,7 @@ try {
   const sessionA2 = await P("session('a')");
   check("F again: A sits in Player 2, holding its claim", await until(`seats().p2.player === ${J(viewers.a)} && __p.claim('p2')?.session === ${J(sessionA2)}`, 3000), { seats: await P("seats()"), claim: await P("claim('p2')") });
   check("…Player 1 is let go", (await P("seats()")).p1.player == null, await P("seats()"));
-  check("…A sits (one seat body, over the walker), in Player 2's view", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["orbit", "probe-walk", "seat"]) && (await until(`camera('a') && ${J((await P("seatCam('p2')")).position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000)), await P("camera('a')"));
+  check("…A sits (one seat body, over the walker), in Player 2's view", (await until("body('a') === 'seat'", 3000)) && J(await P("stack('a')")) === J(["look", "probe-walk", "seat"]) && (await until(`camera('a') && ${J((await P("seatCam('p2')")).position)}.every((v, i) => Math.abs(v - __p.camera('a').position[i]) < 0.02)`, 3000)), { camera: await P("camera('a')"), body: await P("body('a')"), stack: await P("stack('a')") });
   check("B (still hearing the doc) is told its seat was taken while it was away", await until("notices('b').some((n) => /Ana took Player 2 while you were away/.test(n))", 3000), await P("notices('b')"));
   await b.rest(500);
   await shot("7-taken-over");
