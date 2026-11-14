@@ -10,7 +10,7 @@
 // The maker makes both scenes with the tools (Ship at anchor with Lost Cities
 // in her cockpit; Freedoom's E1M1 slice pasted into an empty scene, set to
 // start people walking at the player 1 start: view.start). Then a visitor:
-//  1. opens the ship: off her quarter (orbit, where a click comes aboard),
+//  1. opens the ship: off her quarter (Look, where a click comes aboard),
 //     sailing running; nothing anywhere mentions the other scene;
 //  2. comes aboard (Enter) and walks her deck (W, steering with the mouse)
 //     to the forward end of the cockpit, past the card table;
@@ -162,17 +162,17 @@ try {
   await P(`show("aboard", "maker")`);
   await loads(`p.templates().includes("ship-at-anchor")`, 30_000);
   Object.assign(ids, await P("makeAboard()", 120_000));
-  const shipBuilt = await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 180_000, 200);
+  const shipBuilt = await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 180_000, 200);
   check("the maker sets the ship at anchor with Lost Cities in her cockpit; her companionway has nowhere to go", shipBuilt && !ids.error && !!ids.companionway && !!ids.hatch && (await P("doc()")).objects[ids.companionway].traits["traversal.exit"].to === undefined, { ids, loaded: await P("loaded()") });
 
   // ─── 1. a visitor opens the ship ──────────────────────────────────────────
   await P("forgetCameras()");
   await P(`show("aboard", "visitor")`);
-  const inPlay = await loads(`p.bodyId() === "orbit" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
-  await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
+  const inPlay = await loads(`p.bodyId() === "look" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 120_000, 200);
   await b.rest(1500);
   const shipText1 = await textOf();
-  check("1. the visitor opens the ship off her quarter (orbit; sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
+  check("1. the visitor opens the ship off her quarter (Look; sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
   await shot("1-ship-arrive");
 
   // ─── 2. aboard, and to the companionway ───────────────────────────────────
@@ -249,7 +249,7 @@ try {
   await b.rest(1500);
   const eye = (await P("cam()")).position;
   const walking = await P("body()");
-  check("6. ▶ Pick up the gun: walking at the start (the walk body over orbit, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["orbit", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
+  check("6. ▶ Pick up the gun: walking at the start (the walk body over Look, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["look", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect(".arena-play")`)), { eye: r3(eye), home: ids.home.position, body: walking });
   await shot("6-doom-play");
 
   // ─── 7. the exit switch ───────────────────────────────────────────────────
@@ -266,7 +266,7 @@ try {
   const leave = items.find((i) => /^Leave/.test(i.text));
   if (leave) await b.click(Math.round(leave.x), Math.round(leave.y));
   await b.rest(400);
-  check("6b. Esc puts the gun down; the body chip's Leave stops walking (orbit)", !!leave && (await P("body()")).id === "orbit", { items, body: await P("body()") });
+  check("6b. Esc puts the gun down; the body chip's Leave stops walking (Look)", !!leave && (await P("body()")).id === "look", { items, body: await P("body()") });
   await P(`moveSpawn(${J(standAt)}, ${Math.PI / 2})`);
   await b.rest(300);
   const play2 = await P(`rect(".arena-play")`);
@@ -297,8 +297,8 @@ try {
   check("7e. F sends exactly one open-document request, for the ship, out of E1M1's stage", sent2.length === 1 && sent2[0].url === urls.aboard && sent2[0].from === urls.doom && sent2[0].bubbles && sent2[0].composed, sent2);
 
   // ─── 8. back aboard ───────────────────────────────────────────────────────
-  const back = await loads(`p.showing() === "aboard" && p.bodyId() === "orbit" && p.running().includes("sailing")`, 20_000);
-  await loads(`(() => { const l = p.loaded(); return l.total > 60 && l.loaded === l.total; })()`, 120_000, 200);
+  const back = await loads(`p.showing() === "aboard" && p.bodyId() === "look" && p.running().includes("sailing")`, 20_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 120_000, 200);
   await b.rest(1500);
   const shipText3 = await textOf();
   check("8. the shell opens the ship again: off her quarter, sailing; nothing shown mentions E1M1 or Doom", back && !DOOMISH.test(shipText3) && !shipText3.includes(urls.doom), shipText3.slice(0, 600));

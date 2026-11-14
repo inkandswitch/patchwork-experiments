@@ -22,7 +22,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
-import { emptyScene, DEFAULT_VIEW } from "../src/test/empty-scene.js";
+import { emptyScene } from "../src/test/empty-scene.js";
 import { faceOfSeed, seedFor } from "../src/roll.js";
 
 let time = null; // the page's manual clock (scene's manualTime): window.__time
@@ -47,7 +47,8 @@ try {
   window.repo = net.a;
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
   const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
-  const sceneA = await net.a.create2(emptyScene({ title: "Untitled scene", view: { ...DEFAULT_VIEW } }));
+  // a scene made new: it starts people in Edit, where its start screen is (scene/TOOLS.md Decisions 6)
+  const sceneA = await net.a.create2(emptyScene({ title: "Untitled scene" }));
   const scene = { a: sceneA, b: await net.b.find(sceneA.url) };
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -96,7 +97,7 @@ try {
   window.__p = {
     errors, viewers: { a: ana.url, b: ben.url },
     net: { stats: () => ({ ...net.stats }) },
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     template: (w, id) => { const r = rectOf(hosts[w].querySelector(`.add-template[data-template="${id}"]`)); return r && r.w > 0 ? r : null; },
     count: (w) => { const o = Object.values(objectsOf(w)); return { cups: o.filter((x) => x.traits?.["dice.cup"]).length, dice: o.filter((x) => x.traits?.["dice.die"]).length, lots: o.filter((x) => x.traits?.["dice.cup"] && "round" in x.traits["dice.cup"]).length, all: o.length }; },
@@ -168,6 +169,8 @@ try {
     heldVerbs: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb[data-held]")].map((e) => e.textContent.trim()),
     hasFocus: () => document.hasFocus(),
     cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.()),
+    /** the cup extension's own account of what it dressed in view w (cup-extension.js debug) */
+    cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.() ?? null),
     whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: dbg[w].veils().has(id), look: plain(dbg[w].looks().get?.(id) ?? null) }; },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },

@@ -63,9 +63,10 @@ try {
   // the WAD as a file doc, as the scene's add makes one from a desktop file: nothing said of where it's from
   const wad = await net.a.create2({ "@patchwork": { type: "file" }, name: "freedoom1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
   const wadMs = performance.now() - t0;
-  const scene1 = { a: await net.a.create2(emptyScene({ title: "Doom probe", view: { ...DEFAULT_VIEW, grid: false, axes: false } })) };
+  // scenes made new, as the datatype makes them: they start people in Edit (where a WAD is pasted)
+  const scene1 = { a: await net.a.create2(emptyScene({ title: "Doom probe", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { body: "edit" } } })) };
   scene1.b = await net.b.find(scene1.a.url);
-  const scene2 = await net.a.create2(emptyScene({ title: "Somewhere else", view: { ...DEFAULT_VIEW } }));
+  const scene2 = await net.a.create2(emptyScene({ title: "Somewhere else" }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c"), d: document.getElementById("d") };

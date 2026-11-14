@@ -70,7 +70,8 @@ try {
 
   const scene = repo.add(emptyScene({
     title: "Parts probe", objects: { hull }, order: ["hull"],
-    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } } },
+    // the parts bin is Edit's (scene/TOOLS.md Decisions 6): the scene starts people in Edit
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, start: { body: "edit", home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } } },
   }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -92,10 +93,14 @@ try {
     pickAt: (x, y) => { const r = dbg.viewport.canvas.getBoundingClientRect(); const h = dbg.viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id, point: h.point }; },
     toLocal: (id, p) => dbg.scene().toLocal(id, p),
     canvas: () => { const r = dbg.viewport.canvas.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
-    // scrolled into the sidebar's view first: the inspector, once something is selected, pushes the bin down
+    // scrolled into the drawer pane's view first
     item: (id) => { const e = host.querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
-    panel: () => { const s = host.querySelector('section[data-panel="parts"]'); return s && { hidden: s.hidden, categories: [...s.querySelectorAll(".parts-category")].map((e) => e.textContent), parts: [...s.querySelectorAll(".part-name")].map((e) => e.textContent), does: [...s.querySelectorAll(".part-does")].map((e) => e.textContent) }; },
-    sidebar: () => [...host.querySelectorAll(".sidebar > section")].filter((s) => !s.hidden).map((s) => s.dataset.panel),
+    panel: () => { const s = host.querySelector('[data-panel="parts"]'); return s && { hidden: s.hidden, categories: [...s.querySelectorAll(".parts-category")].map((e) => e.textContent), parts: [...s.querySelectorAll(".part-name")].map((e) => e.textContent), does: [...s.querySelectorAll(".part-does")].map((e) => e.textContent) }; },
+    /** the drawer's tabs by name, and the one shown */
+    drawer: () => { const d = host.querySelector(".stage-drawer"); return d && { tabs: [...d.querySelectorAll(".stage-drawer-tab-name")].map((e) => e.textContent.trim()), parts: !!d.querySelector('[data-panel="parts"]')?.isConnected }; },
+    /** a toolbar command's button (the toolbar is Edit's) */
+    tool: (id) => { const e = host.querySelector(`.toolbar [data-command="${id}"]`); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    body: () => dbg.local.get().body?.id ?? null,
     ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
     selected: () => dbg.local.get().selected ?? null,
     camera: () => dbg.viewport.getCamera(),

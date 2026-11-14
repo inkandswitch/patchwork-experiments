@@ -170,7 +170,7 @@ try {
     seats: (w) => plain(scene[w].doc().traits?.seats ?? null),
     /** the seat picker's choices in a view */
     picker: (w) => [...(hosts[w].querySelector(".seats-pick")?.options ?? [])].map((o) => o.value),
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
     notices: (w) => [...told[w]],

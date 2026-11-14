@@ -95,7 +95,8 @@ try {
   const bytes = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
   const wad = await repo.create2({ "@patchwork": { type: "file" }, name: "freedoom1-e1m1.wad", extension: "wad", mimeType: "application/octet-stream", content: bytes });
   const aboard = await repo.create2(emptyScene({ title: "Lost Cities aboard" }));
-  const doom = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false } }));
+  // made new, it starts its maker in Edit, where the WAD is pasted (the layout then names its own start: walking)
+  const doom = await repo.create2(emptyScene({ title: "E1M1", view: { ...DEFAULT_VIEW, grid: false, axes: false, start: { body: "edit" } } }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("view");
@@ -158,8 +159,9 @@ try {
     notices: () => [...(current?.told ?? [])],
     templates: () => [...host.querySelectorAll("[data-template]")].map((b) => b.dataset.template),
     doc: () => JSON.parse(JSON.stringify(doc(), (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v))),
+    /** the shown scene's own objects with content to load: a link's content is its doc's (Lost Cities aboard is a linked game doc) */
     loaded() {
-      const os = Object.entries(objects()).filter(([, o]) => o.kind !== "group");
+      const os = Object.entries(objects()).filter(([, o]) => o.kind !== "group" && o.providerId !== "scene.link");
       return { total: os.length, loaded: os.filter(([id]) => dbg()?.viewport.contentOf(id)?.loaded).length };
     },
     status: () => JSON.parse(JSON.stringify(dbg()?.local.get().status ?? {})),

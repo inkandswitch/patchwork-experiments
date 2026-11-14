@@ -169,7 +169,8 @@ try {
   for (const d of dice.a) seenByA.push(await P(`drawnFace('a', ${Q(d)})`));
   for (const d of dice.b) seenByB.push(await P(`drawnFace('b', ${Q(d)})`));
   check("A's view draws her five dice showing what her seed says", seenByA.every((f, i) => f?.face === wantA[i]), { want: wantA, drawn: seenByA, why: await P(`whyNotDrawn('a', ${Q(dice.a[0])})`) });
-  check("B's view draws his five showing what his seed says", seenByB.every((f, i) => f?.face === wantB[i]), { want: wantB, drawn: seenByB });
+  const okB = seenByB.every((f, i) => f?.face === wantB[i]);
+  check("B's view draws his five showing what his seed says", okB, okB ? undefined : { want: wantB, drawn: seenByB, cup: await P("cupDebug('b')"), why: await Promise.all(dice.b.map((d) => P(`whyNotDrawn('b', ${Q(d)})`))), audience: await Promise.all(dice.b.map((d) => P(`audience('b', ${Q(d)})`))), ids: dice.b });
   const hiddenInA = [];
   const hiddenInB = [];
   for (const d of dice.b) hiddenInA.push(await P(`drawn('a', ${Q(d)})`));

@@ -617,7 +617,7 @@ function create(api) {
     },
     looks: () => looks,
     /** for probes: this view's own peek, and what it has dressed */
-    debug: () => ({ peek, dressed: [...dressed.entries()].map(([id, d]) => [id, d.kind]) }),
+    debug: () => ({ peek, dressed: [...dressed.entries()].map(([id, d]) => [id, d.kind]), known: [...truth.keys()], built: [...builts.keys()] }),
     // a die under a cup can't be picked up through it; a cup being shaken is in someone's hand; a cup down over
     // dice can't be slid off part of them (picking it up is lifting it: Lift, or Knock over)
     carryable: (id) => !(state.covered.has(id) || shaking.has(id) || state.cups.get(id)?.under.length > 0),

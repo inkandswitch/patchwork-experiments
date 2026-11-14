@@ -232,7 +232,7 @@ async function publish(snapshot) {
     return 1;
   }
   const scene = docs[snapshot.scene];
-  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits.seats).length} seats, starts people ${JSON.stringify(scene.view.start?.body ?? "orbit")}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
+  console.log(`table: ${Object.keys(scene.objects).length} objects, ${Object.keys(scene.assets).length} files, ${Object.keys(scene.traits.seats).length} seats, starts people ${JSON.stringify(scene.view.start?.body ?? "look")}; suggested import ${scene["@patchwork"].suggestedImportUrl}; packages: ${scene.packages.map((e) => e.url).join(" ")}`);
   if (DRY) {
     console.log(`dry run: ${Object.keys(docs).length} docs (nothing published)`);
     return 0;

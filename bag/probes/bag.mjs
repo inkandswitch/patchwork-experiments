@@ -67,6 +67,22 @@ try {
   check("three tokens on the table, loaded in both views", await until(`tokens.every((id) => __p.loaded('a', id) && __p.loaded('b', id))`, 30_000), tokens);
 
   // ── 1. a bag from the parts bin ──
+  // The doc names no body: both start in Look. The parts bin is Edit's (a
+  // drawer tab, from the toolbar: scene/TOOLS.md Decisions 6), so A chooses
+  // Edit on the body chip, opens Parts, clicks Token bag, shuts Parts and
+  // goes back to Look to play.
+  check("both start in Look (the doc names no body)", await until("bodyLabel('a') === 'Look' && __p.bodyLabel('b') === 'Look'", 10_000), { a: await P("bodyLabel('a')"), b: await P("bodyLabel('b')") });
+  const choose = async (w, label) => {
+    const chip = await until(`chip('${w}')`, 5000);
+    await b.click(chip.x, chip.y);
+    const item = await until(`chipItem('${w}', '${label}')`, 3000);
+    if (item) await b.click(item.x, item.y);
+    return !!item && (await until(`bodyLabel('${w}') === '${label}'`, 3000));
+  };
+  check("A chooses Edit on the body chip", await choose("a", "Edit"), await P("bodyLabel('a')"));
+  const partsBtn = await until("tool('a', 'parts')", 5000);
+  if (partsBtn) await b.click(partsBtn.x, partsBtn.y);
+  check("Parts, from the toolbar: a drawer tab", await until("tab('a', 'parts')", 5000));
   const row = await until("part('a', 'bag.token-bag')", 10_000);
   check("the parts bin offers Token bag", !!row, row);
   await b.click(row.x, row.y);
@@ -76,7 +92,9 @@ try {
   check("…with its title and count on it: Token bag · 0", await until(`label('a')[0] === 'Token bag · 0' && __p.label('b')[0] === 'Token bag · 0'`, 5000), { a: await P("label('a')"), b: await P("label('b')") });
   if (RULE !== "random") await P(`setRule(${Q(RULE)})`);
   check("the draw rule is the bag doc's, on both peers", await until(`rule('a') === ${Q(RULE)} && __p.rule('b') === ${Q(RULE)}`, 5000), { a: await P("rule('a')"), b: await P("rule('b')") });
-  // (nothing to switch to: the bag's verbs are there whatever anyone is doing)
+  const shut = await P("tool('a', 'parts')");
+  await b.click(shut.x, shut.y);
+  check("A shuts Parts and goes back to Look: the bag's verbs are everyone's, in any body", (await until("tab('a', 'parts') === false", 3000)) && (await choose("a", "Look")), { tab: await P("tab('a', 'parts')"), body: await P("bodyLabel('a')") });
   await mark("set up");
   await shot("set-up");
 
@@ -191,7 +209,8 @@ try {
     await b.click(over.x, over.y, { button: "right" });
     const verbs = await until("menu('a').length && __p.menu('a')", 3000);
     const texts = (verbs || []).map((m) => m.text);
-    check("right-click the bag: Draw from Token bag (2), Draw 2, Look inside; no Empty out in play", texts.includes("Draw from Token bag (2)") && texts.includes("Draw 2") && texts.includes("Look inside") && !texts.includes("Empty out"), texts);
+    // (Empty out is everyone's since step 8: tipping a bag out is a deliberate act, whatever body you're in; bag/src/extension.js)
+    check("right-click the bag: Draw from Token bag (2), Draw 2, Empty out, Look inside", texts.includes("Draw from Token bag (2)") && texts.includes("Draw 2") && texts.includes("Empty out") && texts.includes("Look inside"), texts);
     // ── looking inside: the bag's own panel, docked in the stage's drawer ──
     const look = (verbs || []).find((m) => m.text === "Look inside");
     if (look) await b.click(look.x, look.y);
