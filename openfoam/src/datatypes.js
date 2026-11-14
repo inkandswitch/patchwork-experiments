@@ -1,0 +1,46 @@
+// The three datatypes. A case is made from the "new document" menu; runs
+// and servers are made by the tool and the daemon (unlisted).
+import { defaultSetup } from "./setup.js";
+import { initCase } from "./protocol.js";
+
+export const CaseDatatype = {
+  init(doc) {
+    initCase(doc, defaultSetup());
+  },
+  getTitle(doc) {
+    return doc.title || "OpenFOAM case";
+  },
+  setTitle(doc, title) {
+    doc.title = title;
+  },
+  markCopy(doc) {
+    doc.title = `Copy of ${doc.title || "OpenFOAM case"}`;
+    // a copy keeps the setup and the hull, not the runs (they belong to the original)
+    doc.runs = [];
+    doc.selected = null;
+  },
+};
+
+export const RunDatatype = {
+  init(doc) {
+    doc.title = "OpenFOAM run";
+  },
+  getTitle(doc) {
+    return doc.title || "OpenFOAM run";
+  },
+  setTitle(doc, title) {
+    doc.title = title;
+  },
+};
+
+export const ServerDatatype = {
+  init(doc) {
+    doc.title = "OpenFOAM server";
+  },
+  getTitle(doc) {
+    return doc.title || "OpenFOAM server";
+  },
+  setTitle(doc, title) {
+    doc.title = title;
+  },
+};
