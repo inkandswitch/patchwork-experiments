@@ -197,5 +197,5 @@ describe("the tabletop-game tool", () => {
     for (const o of cards) expect(o.name).toBe("Card");
     expect(Object.keys(scene.traits[SEATS])).toEqual(["p1", "p2"]);
     cleanup();
-  });
+  }, 30_000); // builds the whole game: ~7 s seen under load (default 5 s)
 });
