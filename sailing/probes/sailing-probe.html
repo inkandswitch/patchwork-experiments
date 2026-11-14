@@ -74,7 +74,10 @@ try {
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
   window.repo = repo;
-  const scene = repo.add(emptyScene({ title: "Sailing probe", view: { grid: false } }));
+  // With ?held its world starts paused: loading takes the wall's time (as many frames as it takes), so
+  // sailing-run resumes the world once both views have loaded, and every run sails the same sea from the same moment
+  const held = new URLSearchParams(location.search).has("held");
+  const scene = repo.add({ ...emptyScene({ title: "Sailing probe", view: { grid: false } }), ...(held ? { clock: { running: false, t: 0 } } : {}) });
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);
@@ -93,6 +96,8 @@ try {
     errors, scene, repo, hostA, hostB,
     get A() { return dbg.a; },
     get B() { return dbg.b; },
+    /** the world's clock running again (api.clock.resume, as the clock chip's ▶ does): → its t */
+    resume() { const api = dbg.a.host.record("sailing")?.api ?? dbg.a.host.record("scene.use")?.api; api.clock.resume(); return api.clock.t(); },
     joinB() {
       if (dbg.b) return;
       cleanups.b = Tool(B, hostB);
@@ -104,7 +109,7 @@ try {
     /** a doc change from outside both views (as an editor's would land) */
     change: (fn) => scene.change(fn),
     running: (w) => dbg[w].local.get().running.map((r) => r.id),
-    /** what view w's body chip says ("Watching", "Seated", "Orbit"…) */
+    /** what view w's body chip says ("Watching", "Seated", "Look"…) */
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack (scene/TOOLS.md §4) */
     body: (w) => dbg[w].local.get().body?.id ?? null,

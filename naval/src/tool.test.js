@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import RigTool from "./tool.js";
 import { normalize } from "./doc.js";
 import { RigDesignDatatype } from "./datatype.js";
 import { readFileSync } from "node:fs";
 import { getRegistry, resetRegistries } from "./test/patchwork-plugins-stub.js";
 import { fileURLToPath } from "node:url";
+
+// Loading a package is the host's (patchwork-filesystem): here, a package load is whatever the test says it does
+const packageLoads = vi.hoisted(() => ({ asked: [], run: async () => {} }));
+vi.mock("./link/package.js", async (orig) => ({
+  ...(await orig()),
+  loadPackage: async (url) => {
+    packageLoads.asked.push(url);
+    await packageLoads.run(url);
+  },
+}));
 
 /** Just enough DocHandle: doc(), change(fn), on/off("change"). */
 function fakeHandle(initial, extra = {}) {
@@ -198,6 +208,55 @@ describe("the hull under the rig", () => {
     element.querySelector('[data-act="unlink"]').click();
     expect(h.doc().hull.link).toBeNull();
     expect(readout("lwlFloat").dataset.prov).toBe("synthetic");
+  });
+
+  it("a hull nothing here can build that names its own package: offered, loaded on a yes (never without one), and read", async () => {
+    const GLB = new Uint8Array(readFileSync(here("./test/fixtures/camber/narrow-transom.glb")));
+    const CAMBER = "automerge:camberPackage111111111111";
+    const cases = [
+      // what the hull doc suggests → is it offered?
+      { suggests: undefined, offered: false },
+      { suggests: "javascript:alert(1)", offered: false },
+      { suggests: `${CAMBER}#heads`, offered: false },
+      { suggests: "https://example.org/camber/index.js", offered: true },
+      { suggests: CAMBER, offered: true },
+    ];
+    for (const { suggests, offered } of cases) {
+      const HULL = "automerge:hu11111111111111111111111";
+      const docs = { [HULL]: { "@patchwork": { type: "camber-hull", ...(suggests ? { suggestedImportUrl: suggests } : {}) }, title: "Narrow transom" } };
+      resetRegistries();
+      const repo = { find: async (u) => ({ url: u, doc: () => docs[u], heads: () => ["h1"], on() {}, off() {} }) };
+      const h = fakeHandle(seeded(), { repo, url: "automerge:self1111111111111111111111" });
+      h.change((d) => (d.hull.link = { url: HULL, frame: { bow: "+X", up: "+Y" } }));
+      packageLoads.asked = [];
+      // the package, once loaded, registers camber's scene:source
+      packageLoads.run = async () => {
+        getRegistry("scene:source").register({ id: "camber-hull-surface", content: "built", name: "Camber hull", supportedDatatypes: ["camber-hull"], params: [{ key: "size", default: "document" }], load: async () => ({ build: async () => ({ glb: GLB }) }) });
+      };
+      cleanup = RigTool(h, element);
+      const status = () => element.querySelector(".link-status")?.textContent ?? "";
+      const button = () => element.querySelector('[data-act="load-package"]');
+      await until(() => /nothing installed here can build/.test(status()));
+      expect(button().hidden, String(suggests)).toBe(!offered);
+      if (offered) {
+        // no: nothing loads
+        globalThis.confirm = () => false;
+        button().click();
+        await new Promise((r) => setTimeout(r, 10));
+        expect(packageLoads.asked).toEqual([]);
+        // yes: that url, and the hull is read
+        let asked = null;
+        globalThis.confirm = (text) => ((asked = text), true);
+        button().click();
+        await until(() => readout("lwlFloat")?.dataset.prov === "mesh");
+        expect(asked).toContain(suggests);
+        expect(packageLoads.asked).toEqual([suggests]);
+        expect(element.querySelector('[data-field="hull.link"] [data-act="load-package"]').hidden).toBe(true);
+      }
+      delete globalThis.confirm;
+      cleanup();
+      cleanup = null;
+    }
   });
 });
 
