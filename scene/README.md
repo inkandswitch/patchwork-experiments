@@ -74,8 +74,9 @@ nothing.
 
 **Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Look ▾",
 "Edit ▾", "Walk ▾": Look or Edit, a body that can start here, or Leave the
-one you're in), who's here (each person's body and held tool, from
-presence) and the Esc hint (the layer the next Escape pops). The stage's
+one you're in), who's here (each person in the focus doc, with their body
+and held tool, which every view says on every channel it acts on: someone
+seated at a game linked elsewhere shows seated) and the Esc hint (the layer the next Escape pops). The stage's
 own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
 camera; others come with packages (`walk`, `seats`, sailing's). Nothing
 stands on Edit: walking or sitting down from it leaves it, and Leave comes
@@ -154,6 +155,14 @@ only where the new scene has that entry. Runtime state (claims, and
 whatever an extension marks as runtime: a ship's motion) stays behind. If
 what you copied needs something the scene lacks (a ship needs a sea), a
 notice says what to add. See STAGE.md, "Copying objects".
+
+**Extract** (in Edit, on an object or group: the menu or the inspector)
+makes it a scene of its own, linked where it was, everything on it coming
+along and its pose unchanged; **Bundle** (on a link) copies the scene it
+shows back in, in its place, and the copy no longer follows it. In the
+inspector each lists the scene's root behaviours (Seats, a Sea) as
+checkboxes, none ticked, for what goes along. Each is one undo step. See
+STAGE.md, "Extract and bundle".
 
 - **Outline**: visibility, colour, remove; click to select, double-click to frame.
   An object fixed at a version shows a small "◷ fixed" tag (display only).
@@ -700,7 +709,9 @@ MaterialRule = {
   URLs (`automerge:<id>`, bare, or `https://…`). The stage keeps it true: it
   adds the package of every registered plugin the doc calls for (a
   provider, a trait's extension, a part that was used), and offers a viewer
-  the listed ones they don't have, in one prompt (STAGE.md, "Packages").
+  the listed ones they don't have, in one prompt for every doc open in the
+  view (STAGE.md, "Packages"): a scene lists only its own contents'
+  packages, never its linked docs'.
   `@patchwork.suggestedImportUrl` is the scene package itself, so a viewer
   with nothing installed is offered the scene tool, which offers the rest.
   A doc written whole (a publish script, another tool) writes both:
@@ -739,8 +750,10 @@ An object whose source is another scene doc, through the scene's own
 `scene.link` source (`content: "scene"`), is a **link**: no render doc,
 and the view opens a stage for the linked doc, drawn where the link is, in
 its frame (COMPOSITION.md; STAGE.md, "Views, stages and links"). Dropping a
-scene doc adds one, live; a URL with heads adds a pinned value (opened at
-step 13). The host's facts about it are its own fields: its transform,
+scene doc adds one, live; a URL with heads, or *Fix at this version*, makes
+it a pin: its doc at those heads, read-only. A doc linked live twice acts at
+the first link and is a **mirror** at the other: the same live doc, drawn
+there and never acted on. The host's facts about it are its own fields: its transform,
 parent, `locked`, and `hint.bounds`, the room it gives the linked doc, drawn
 while the link is closed. The linked doc runs its own extensions on its own
 channel, and nothing of the host reads into it. A game part does this for
@@ -775,7 +788,12 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
   offers them as commands on the right-click menu); the point to fix at
   comes from `api.fixPoint(id)` (STAGE.md), and the write is a plain
   `ops.setField(scene, id, "at", …)`. The outline marks a fixed object with a
-  small "◷ fixed" tag.
+  small "◷ fixed" tag. A **link** (a scene doc placed in this one) is fixed
+  the same way: at its doc's heads, with the heads of every doc reached
+  through it in `deps` (the docs it links, the files and containers its
+  extensions read), so the whole of what it shows is held. A fixed link is
+  a **pin**: its doc at those heads, drawn and never acted on (STAGE.md,
+  "Views, stages and links").
 - **URLs.** A dropped or pasted URL with heads adds the object with
   `at: { heads }` (no `deps`). Accepted: `automerge:<id>#<h1>|<h2>` (the form
   automerge-repo's `stringifyAutomergeUrl` writes, heads `|`-joined), a
@@ -808,9 +826,10 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, the body stack and the held tool, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds and their one order), `holds.js` (this view's holds in that order), `clock.js` (the doc's world time: who computes it, processes, checkpoints, following), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste; the copy itself is `src/transfer.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip) and `body` (the body chip, who's here and the Esc hint); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select` (where a selection may be is `src/selection.js`), `halo` (its maths `halo-math.js`), `carry` (its maths `carry-math.js`), `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `transfer` (copying from another scene, Copy and Paste, Extract and Bundle; the copy itself is `src/transfer.js`, extract and bundle `src/extract.js`, where a copy lands `landing.js`, shared with the outline), `use` (the use prompt), `undo` (Undo and Redo), `clock` (the clock chip) and `body` (the body chip, who's here and the Esc hint); `tab.js` is a part's drawer tab (the inspector, the outline, dimensions, parts) |
 | `src/stage/audience.js`, `src/stage/veil.js` | who may see what an object is, merged from every package's policy (pure), and the veil the stage draws for a look that says so, from the object's bounds alone (STAGE.md, "Audience" and "The veil") |
 | `src/undo.js` | undo of the stage's own edits: a step from its patches, its inverse (whole, or nothing if it has been written over since), the stacks, and the recorder the stage runs |
+| `src/extract.js` | extract and bundle (COMPOSITION.md §8): the plans (pure: T whole, the host's one change, the bundle's change) and doing them through a stage's own api; invariants I9 (`extract.test.js`) and I11 (`linearity.test.js`) |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
 | `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |

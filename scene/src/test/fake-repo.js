@@ -165,6 +165,53 @@ export class FakeRepo {
   }
 }
 
+/**
+ * Two repos (two pages) joined by an in-memory network, for the docs both
+ * hold (add each to both, at one URL, first): a change on either side
+ * arrives on the other as that doc, at the same heads, with a "change"; a
+ * broadcast on either side arrives on the other's handle as an
+ * "ephemeral-message" ({ message, senderId }), a copy, a task later, as
+ * automerge-repo's network delivers it (and never back to its own page:
+ * that is the page bus's). @returns disconnect
+ */
+export function connect(a, b) {
+  const offs = [];
+  for (const [url, ha] of a.handles) {
+    const hb = b.handles.get(url);
+    if (!hb) continue;
+    let applying = false; // a change arriving: its "change" on that side isn't sent back
+    for (const [from, to] of [
+      [ha, hb],
+      [hb, ha],
+    ]) {
+      const onChange = () => {
+        if (applying) return;
+        applying = true;
+        try {
+          to._doc = structuredClone(from._doc);
+          to._heads = [...from._heads];
+          for (const h of from._heads) to._history.set(h, structuredClone(from._history.get(h)));
+          to.emit("change", { handle: to, doc: to._doc });
+        } finally {
+          applying = false;
+        }
+      };
+      from.on("change", onChange);
+      const send = from.broadcast;
+      from.broadcast = function (message) {
+        send.call(this, message);
+        const copy = structuredClone(message);
+        queueMicrotask(() => to.emit("ephemeral-message", { message: copy, senderId: "network" }));
+      };
+      offs.push(() => {
+        from.off("change", onChange);
+        from.broadcast = send;
+      });
+    }
+  }
+  return () => offs.forEach((off) => off());
+}
+
 /** Manual timers so debounce is deterministic. */
 export function fakeTimers() {
   let now = 0;

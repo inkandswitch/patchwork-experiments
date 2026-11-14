@@ -204,6 +204,29 @@ export function ungroup(snapshot, id) {
   );
 }
 
+/**
+ * A fresh object record: what an object is when it's made, before anything
+ * else is said about it (its traits, tags, hint, `at`… go on top). The one
+ * place that shape is written (addObject, extract's link). Pure: a plain
+ * value, fresh arrays included.
+ */
+export function newObjectRecord({ name, sourceUrl = null, providerId = null, renderUrl = null, parent = null, group = null, transform = null }) {
+  const t = normalizeTransform(transform);
+  return {
+    name,
+    sourceUrl,
+    providerId,
+    renderUrl,
+    parent,
+    group,
+    visible: true,
+    color: null,
+    opacity: 1,
+    wireframe: false,
+    transform: { position: [...t.position], rotation: [...t.rotation], scale: t.scale },
+  };
+}
+
 /** A fresh group id, the way the tool makes ids. */
 export const newGroupId = () => `g${Math.random().toString(36).slice(2, 10)}`;
 

@@ -91,6 +91,21 @@
   display: none;
 }
 
+/* a command run with a set of its options: the button, then a checkbox each */
+.scene-stage .inspector .command-with-options:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.scene-stage .inspector .command-options:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 11px;
+}
+
 /* why the command before it is disabled */
 .scene-stage .inspector .command-reason:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-size: 11px;

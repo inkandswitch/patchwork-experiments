@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { FakeRepo } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { LINK } from "../stage/links.js";
 import { plugins } from "../index.js";
 import keys, { heldSessions } from "./keys.js";
 import use, { heldEntries, promptEntries } from "./use.js";
@@ -113,12 +116,15 @@ describe("scene.use, the pure side", () => {
     const a = { end: vi.fn(), cancel: vi.fn(), update: vi.fn(() => { throw new Error("x"); }) };
     const b = { end: vi.fn(), cancel: vi.fn(), update: vi.fn() };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    h.open("KeyE", a, { target: "capstan", ext: "g", command: "wind" });
-    h.open("KeyR", b, { target: "gone" });
+    h.open("KeyE", a, { path: ["L", "capstan"], ext: "g", command: "wind", entry: { ext: "g" } });
+    h.open("KeyR", b, { path: ["gone"] });
     expect(h.holding("g", "wind")).toBe(true);
+    // the pin is the first held verb's target's path; entries are matched by the whole path
+    expect(h.path).toEqual(["L", "capstan"]);
+    expect([h.entries(["L", "capstan"]).length, h.entries(["capstan"]).length]).toEqual([1, 0]);
     h.tick(0.016);
     expect(b.update).toHaveBeenCalledWith(0.016);
-    h.cancelWhere((t) => t === "gone");
+    h.cancelWhere((p) => p.at(-1) === "gone");
     expect(b.cancel).toHaveBeenCalledTimes(1);
     expect(h.end("KeyE")).toBe(true);
     expect(a.end).toHaveBeenCalledTimes(1);
@@ -384,4 +390,91 @@ describe("scene.use", () => {
     s.key("f");
     expect(log).toEqual([]);
   });
+});
+
+// A held verb's target in a linked doc (COMPOSITION.md §5): the pin is the
+// target's path, so it holds wherever the look goes (onto the host's deck,
+// onto nothing), the target's other keys are its, a change to the host's
+// doc is no reason to let go, and it lets go when the target goes from its
+// own doc, when its link goes, or when its extension stops there.
+describe("held verbs across links", () => {
+  let s, log, sessions, repo, gameDoc;
+  afterEach(() => {
+    s?.unmount();
+    s = null;
+    vi.restoreAllMocks();
+  });
+  async function mount() {
+    log = [];
+    sessions = [];
+    repo = new FakeRepo();
+    gameDoc = repo.add(emptyScene({ ...DOC, title: "G" }));
+    s = await mountStage({
+      repo,
+      extensions: [{ meta: { id: "t.game", traits: ["t.level"] }, module: game(log, sessions) }, USE, KEYS],
+      doc: { objects: { deck: object({ name: "Deck" }), L: object({ name: "Ship", sourceUrl: gameDoc.url, providerId: LINK, renderUrl: null, parent: "deck" }) }, order: ["deck", "L"] },
+    });
+    await until(() => s.debug.view.stages().length === 2 && s.debug.view.stages()[1].debug.host.instanceOf("t.game"));
+    await settle();
+  }
+  const hover = async (path) => {
+    s.debug.view.atom.swap((v) => ({ ...v, hovered: path == null ? null : Object.freeze(path) }));
+    await settle();
+  };
+  const prompt = () => s.root.querySelector(".use-prompt");
+  const verbs = () => [...prompt().querySelectorAll(".use-verb")].map((v) => v.textContent);
+  const down = (key) => s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
+  const up = (key) => s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
+  const pinned = () => s.api("scene.use").collect("keymap").map((r) => r.value).find((v) => v?.pinned)?.pinned();
+
+  it("holds the target's path wherever the look goes; its other keys are its; the host's doc changing doesn't let go", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await mount();
+    await hover(["L", "capstan"]);
+    expect(verbs()).toEqual(["holdEWind the capstan", "PDrop the pawl"]);
+    down("e");
+    expect(log).toEqual([["wind", "capstan"]]);
+    expect(pinned()).toEqual(["L", "capstan"]);
+    for (const where of [["deck"], null, ["L", "barrel"]]) {
+      await hover(where);
+      expect(verbs()).toEqual(["holdEWind the capstan", "PDrop the pawl"]);
+      s.key("p");
+      expect(log.at(-1)).toEqual(["pawl", "capstan"]);
+    }
+    s.change((d) => (d.objects.deck.name = "Foredeck"));
+    await settle();
+    await hover(["deck"]);
+    expect(sessions[0].cancel).not.toHaveBeenCalled();
+    up("e");
+    expect(sessions[0].end).toHaveBeenCalledTimes(1);
+    expect(pinned()).toBe(undefined);
+  });
+
+  for (const how of ["its target goes from its doc", "its link goes", "its extension stops"]) {
+    it(`lets go when ${how}`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await mount();
+      await hover(["L", "capstan"]);
+      down("e");
+      await hover(["deck"]);
+      if (how === "its target goes from its doc")
+        gameDoc.change((d) => {
+          delete d.objects.capstan;
+          d.order = d.order.filter((id) => id !== "capstan");
+        });
+      else if (how === "its link goes")
+        s.change((d) => {
+          delete d.objects.L;
+          d.order = d.order.filter((id) => id !== "L");
+        });
+      else await s.uninstall("t.game");
+      await settle();
+      // (what's held is looked at whenever the focus's parts are told anything, and every frame, which
+      // these tests have none of: a look moving is something)
+      await hover(null);
+      await until(() => sessions[0].cancel.mock.calls.length === 1, 2000);
+      expect(sessions[0].end).not.toHaveBeenCalled();
+      expect(pinned()).toBe(undefined);
+    });
+  }
 });

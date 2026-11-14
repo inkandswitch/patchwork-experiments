@@ -41,7 +41,7 @@
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { getRegistry, registerPlugins } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
 
@@ -62,7 +62,7 @@ function peer(handle) {
     url: handle.url,
     doc: () => handle.doc(),
     heads: () => handle.heads?.(),
-    change: (fn) => handle.change(fn),
+    change: (fn, opts) => handle.change(fn, opts), // (opts: the edit recorder's patchCallback, so undo works here too)
     on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
     off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
     broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
@@ -113,9 +113,11 @@ const TABLE_TOP = [0, 0.7006, 0];
 const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
+  // ?urls= (package folder → its URL): each package's plugins registered from it, as a real shell does, so
+  // the stages can say which package each plugin comes from (publish-aboard checks what each doc lists)
+  const urls = JSON.parse(new URLSearchParams(location.search).get("urls") || "{}");
+  for (const [dir, url] of [["scene", "../../scene/dist/index.js"], ["seats", "../../seats/dist/index.js"], ["sailing", "../dist/index.js"], ["tabletop", "../../tabletop/dist/index.js"], ["card-table", "../../card-table/dist/index.js"], ["keep", "../../keep/dist/index.js"], ["joints", "../../joints/dist/index.js"], ["traversal", "../../traversal/dist/index.js"]]) {
+    registerPlugins((await import(url)).plugins, urls[dir]);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
@@ -132,6 +134,16 @@ try {
   const A = peer(scene), B = peer(scene);
   A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  // every double-click a host hears: what it landed on, and the view's focus just after (for step 13's report)
+  const dbls = { a: [], b: [] };
+  for (const w of ["a", "b"])
+    hosts[w].addEventListener("dblclick", (e) => {
+      const t = e.target;
+      const v = dbg[w]?.view;
+      const r = v?.canvas.getBoundingClientRect();
+      const hit = v && r ? v.viewport.pick(e.clientX - r.left, e.clientY - r.top) : null;
+      dbls[w].push({ on: `${t.tagName.toLowerCase()}.${String(t.className || "")}`, x: e.clientX, y: e.clientY, hit: hit?.id ? v.pathOfKey(hit.id) : null, focus: v?.atom.get().focus ?? null, top: r?.top, left: r?.left, w: r?.width, cam: v?.viewport.getCamera()?.position?.map((x) => +x.toFixed(3)), frame: window.__time?.frames?.() });
+    });
   hosts.a.repo = repo; hosts.b.repo = repo;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   hosts.a.time = time; hosts.b.time = time;
@@ -151,6 +163,8 @@ try {
   const gameObjects = () => game?.doc().objects ?? {};
   const inGame = (id) => !!game && !!gameObjects()[id];
   const gStage = (w) => (game && dbg[w] ? dbg[w].view.stages().find((x) => x.url === game.url) ?? null : null);
+  // the focus stage's debug: where the general parts (the halo, the inspector) run
+  const fdbg = (w) => dbg[w].view.focusStage()?.debug ?? dbg[w];
   const SEP = "\u001f";
   /** a viewport key (scene/src/stage/paths.js): the outermost stage's ids are their own */
   const keyIn = (w, id) => { if (!inGame(id)) return id; const n = gStage(w)?.n; return n == null ? null : n === 0 ? id : `${SEP}${n}${SEP}${id}`; };
@@ -198,6 +212,12 @@ try {
     get A() { return dbg.a; },
     get B() { return dbg.b; },
     templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    /** what the boat's stage (or, with `inGame`, the game's) calls for and who answers, and what its doc lists */
+    packages(w, inGameStage = false) {
+      const st = inGameStage ? gStage(w)?.debug : dbg[w];
+      const i = st?.packages.inspect();
+      return i ? { answering: i.answering.map((p) => ({ id: p.id, importUrl: p.importUrl })), listed: i.listed } : null;
+    },
 
     /**
      * The scene, as a person makes it: Ship at anchor from the start screen,
@@ -226,11 +246,13 @@ try {
       // the board: G's first locked piece
       const board = Object.keys(gameObjects()).find((id) => gameObjects()[id].kind !== "group" && gameObjects()[id].locked) ?? null;
       // where the scene starts someone new (view.start, as the inspector's Starts in and Set home view write it):
-      // at the table, watching from a seat (the seat body), and a camera over the cockpit, not fitted to the islet
+      // through the game's link, as the game starts people (watching from a seat: TOOLS.md §2, a start placed
+      // on a link), and a camera over the cockpit, not fitted to the islet
       const m = dbg.a.scene().world(hull);
       api.change((d) => {
         if (!d.view.start) d.view.start = {};
-        d.view.start.body = "seat";
+        delete d.view.start.body;
+        d.view.start.place = link;
         d.view.start.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) };
       });
       dbg.a.view.select(null);
@@ -263,6 +285,7 @@ try {
         gameTitle: game?.doc().title ?? null,
         gameStart: game?.doc().view?.start?.body ?? null,
         start: scene.doc().view?.start?.body ?? null,
+        startsThroughLink: !!ids.link && scene.doc().view?.start?.place === ids.link,
         home: scene.doc().view?.start?.home ?? null,
         tableParent: o[ids.table]?.parent ?? null,
         tableLocked: !!o[ids.table]?.locked,
@@ -335,22 +358,57 @@ try {
     // what a view hovers or has selected, in the doc it's in (G's, through the link; else the boat's)
     /** view w's selection as the view keeps it: a path, the links from the boat in, then the object */
     selectionPath: (w) => dbg[w].view.atom.get().selected,
+    /** is it one of G's objects? */
+    inGame: (id) => inGame(id),
+    /** the boat's title, and its name for the link to G (the trail's crumbs) */
+    boatTitle: () => scene?.doc().title ?? null,
+    linkName: () => objects()[ids.link]?.name ?? null,
+    /** the boat's link to G as the boat's doc holds it (the host's facts: placement, parent, lock) */
+    linkRecord: () => { const o = objects()[ids.link]; return o ? { parent: o.parent, transform: o.transform, locked: !!o.locked, sourceUrl: o.sourceUrl } : null; },
+    /** of these objects, the one in plain sight on view w's screen farthest from its edges: { id, x, y } (page px), or null */
+    aimBest(ids, w) {
+      const r = dbg[w].viewport.canvas.getBoundingClientRect();
+      let best = null;
+      for (const id of ids) {
+        const a = P.aimAt(id, w);
+        if (!a) continue;
+        const margin = Math.min(a.x - r.left, r.right - a.x, a.y - r.top, r.bottom - a.y);
+        if (!best || margin > best.margin) best = { ...a, id, margin };
+      }
+      return best ? { ...best, top: r.top, left: r.left, w: r.width, cam: dbg[w].viewport.getCamera()?.position?.map((v) => +v.toFixed(3)), frame: window.__time?.frames?.() } : null;
+    },
+    /** a camera over G's table, looking down on it from just A's side of above: { position, target } in the world */
+    overTable(w) { const m = dbg[w].viewport.worldOf(ids.link); return m ? { position: apply(m, [0, 0.95, 0.3]), target: apply(m, [0, 0, 0]) } : null; },
+    /** put view w's camera at `c` ({ position, target }, in the world): where a person would orbit it to */
+    setCam(w, c) { dbg[w].viewport.setCamera(c); return true; },
+    /** the double-clicks view w heard: [{ on, x, y, hit, focus, top, left, w, cam, frame }] (after the stage's own handling) */
+    dbls: (w) => dbls[w],
+    /** view w's focus: the links entered ([]: the boat) */
+    focusPath: (w) => dbg[w].view.atom.get().focus,
+    /** the trail (breadcrumb) view w shows while its focus is inside a link: its crumbs' text, or null */
+    trail: (w) => { const t = hosts[w].querySelector(".stage-trail"); return t ? [...t.querySelectorAll(".trail-crumb, .trail-here")].map((e) => e.textContent) : null; },
+    /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
+    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => s.path),
+    /** what each of view w's stages sees selected: [path, its element] */
+    seen: (w) => dbg[w].view.stages().filter((s) => s.acts).map((s) => [s.path, s.debug.local.get().selected ?? null]),
     hovered: (w) => gStage(w)?.debug.local.get().hovered ?? dbg[w].local.get().hovered ?? null,
     selected: (w) => gStage(w)?.debug.local.get().selected ?? dbg[w].local.get().selected ?? null,
     /** the right-click menu's items on a view's page: label and middle */
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { label: e.querySelector(".menu-label")?.textContent.trim() ?? "", x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; }),
+    // the halo is a general part: it runs in the focus stage (the boat's, until A enters G)
     /** what a view's halo is on, and the frame it's drawn in (its doc parent's) */
-    halo: (w) => { const h = dbg[w].host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
+    halo: (w) => { const h = fdbg(w).host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
     /** why a view's halo is or isn't on what it has selected */
-    haloWhy: (w) => { const l = dbg[w].local.get(); const o = dbg[w].scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: dbg[w].host.record("scene.halo")?.api?.writable?.() ?? null, dragging: dbg[w].host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
+    haloWhy: (w) => { const d = fdbg(w); const l = d.local.get(); const o = d.scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: d.host.record("scene.halo")?.api?.writable?.() ?? null, dragging: d.host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
     /** a halo arrow's point (a third along it), and `along` frame units further, on a view's page */
     haloAt(w, axis, along = 0) {
-      const h = dbg[w].host.instanceOf("scene.halo")?.debug;
+      const h = fdbg(w).host.instanceOf("scene.halo")?.debug;
       const x = h?.handles.find((k) => k.kind === "move" && k.axis === axis);
       if (!x) return null;
       const p = x.from.map((v, i) => v + (x.to[i] - v) / 3);
       p[axis] += along;
-      return page(w, h.frame.pointOut(p));
+      // (the halo's frame is in its stage's root frame: the focus stage's, G's once A has entered it; the world from there)
+      return page(w, dbg[w].view.focusStage().frame().pointOut(h.frame.pointOut(p)));
     },
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),

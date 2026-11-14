@@ -1,0 +1,396 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pins probe</title>
+<!-- Driven by probes/pins-run.mjs (checks) and probes/publish-fitout.mjs
+     (publishing what it builds): pins and mirrors (scene/COMPOSITION.md §7,
+     worked example 2 and "a part repeated live"), on the BUILT scene,
+     sailing, joints and traversal plugins in a stub registry, on ONE
+     in-memory repo, each doc made the way a person makes it, by the tools:
+       W  "Hatch": a sliding hatch that closes itself (sailing's companionway
+          part, its slide given a wait), made in a view of its own (w), then
+          that view closed;
+       F  "Companionway fit-out": the companionway part, in view f, which
+          stays open: F alone, where F is changed later, live;
+       S  the assembly (view s): "Ship at anchor" from the start screen, her
+          own companionway taken out, F linked where it was and fixed at that
+          version (the inspector's Fix at this version, in Edit), and W
+          linked live twice on her cabin top, port and starboard.
+     One manual clock (window.__time) for every view: nothing moves until the
+     probe steps it. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 6px; }
+  #s { width: 900px; height: 560px; flex: none; position: relative; }
+  #f { width: 480px; height: 560px; flex: none; position: relative; }
+  #w { width: 300px; height: 300px; flex: none; position: relative; }
+</style>
+<div id="s"></div><div id="f"></div><div id="w"></div>
+<script type="module">
+{
+  let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+const invert = (m) => {
+  // a rigid-or-similar 4×4 (column-major): the inverse of its 3×3 by cofactors, then the translation
+  const [a, b, c, , d, e, f, , g, h, i] = m;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  const r = [A / det, (c * h - b * i) / det, (b * f - c * e) / det, 0, B / det, (a * i - c * g) / det, (c * d - a * f) / det, 0, C / det, (b * g - a * h) / det, (a * e - b * d) / det, 0, 0, 0, 0, 1];
+  const t = [m[12], m[13], m[14]];
+  for (let k = 0; k < 3; k++) r[12 + k] = -(r[k] * t[0] + r[4 + k] * t[1] + r[8 + k] * t[2]);
+  return r;
+};
+const mul = (a, b) => { const o = new Array(16).fill(0); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k]; return o; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SEP = "\u001f";
+const keyOf = (n, id) => (n === 0 && !String(id).startsWith(SEP) ? String(id) : `${SEP}${n}${SEP}${id}`);
+const SLIDE = "joints.slide";
+const EXIT = "traversal.exit";
+let time = null;
+async function loaded(pred, ms = 20_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const people = { s: repo.add({ "@patchwork": { type: "contact" }, name: "Sam" }), f: repo.add({ "@patchwork": { type: "contact" }, name: "Fay" }), w: repo.add({ "@patchwork": { type: "contact" }, name: "Wes" }) };
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { s: document.getElementById("s"), f: document.getElementById("f"), w: document.getElementById("w") };
+  for (const w of ["s", "f", "w"]) Object.assign(hosts[w], { repo, viewerId: people[w].url, time });
+  const dbg = { s: null, f: null, w: null };
+  const unmount = { s: null, f: null, w: null };
+  const docs = { s: null, f: null, w: null };
+  const ids = {};
+  const mount = (w, handle) => {
+    unmount[w] = Tool(handle, hosts[w]);
+    dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug;
+  };
+  /** an api of the outermost stage of view w */
+  const apiOf = (w) => {
+    for (const id of ["scene.inspector", "scene.use", "scene.keys", "scene.add", "sailing"]) { const x = dbg[w]?.host.record(id)?.api; if (x) return x; }
+    return null;
+  };
+  /** the stage at a path in view s ([] the boat), and its api (any running extension's) */
+  const stageAt = (...path) => dbg.s?.view.stages().find((x) => x.path.join("/") === path.join("/")) ?? null;
+  const apiIn = (st) => (st ? ["joints", "traversal", "sailing", "scene.inspector"].map((id) => st.debug.host.record(id)?.api).find(Boolean) ?? null : null);
+  const objectsOf = (h) => h?.doc()?.objects ?? {};
+  const withTrait = (h, t) => Object.entries(objectsOf(h)).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  /** the writes each doc's handle took, counted (a pin's handles too: G.view(heads) gives one) */
+  const writes = { f: 0, w: 0, pin: 0 };
+  const countWrites = (h, key) => {
+    const change = h.change.bind(h);
+    h.change = (...a) => (writes[key]++, change(...a));
+    const view = h.view.bind(h);
+    h.view = (heads) => {
+      const v = view(heads);
+      const c = v.change.bind(v);
+      v.change = (...a) => (writes.pin++, c(...a));
+      return v;
+    };
+  };
+  const page = (w, p) => {
+    const v = dbg[w].viewport;
+    const r = v.canvas.getBoundingClientRect();
+    const q = v.project(p);
+    return q?.visible === false ? null : { x: r.left + q.x, y: r.top + q.y };
+  };
+
+  const P = (window.__p = {
+    errors, ids, writes, people: Object.fromEntries(Object.entries(people).map(([w, h]) => [w, h.url])),
+    build: (o) => pumping(() => build(o ?? {})),
+  });
+
+  async function build({ title = "Fitting out" } = {}) {
+    // W: the hatch, in a view of its own
+    docs.w = repo.add(emptyScene({ title: "Hatch" }));
+    mount("w", docs.w);
+    await loaded(() => apiOf("w"));
+    const wapi = apiOf("w");
+    const wc = await wapi.part("sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    if (!wc) return { error: "no companionway part in W", errors };
+    ids.wHatch = withTrait(docs.w, SLIDE);
+    ids.wFrame = wc;
+    // a hatch that closes itself, two seconds after it is opened
+    wapi.change((d) => {
+      d.title = "Hatch";
+      d.objects[ids.wHatch].traits[SLIDE].wait = 2;
+      d.objects[wc].name = "Hatch frame";
+      delete d.objects[wc].traits[EXIT];
+    });
+    await loaded(() => wapi.sceneBox());
+    const wBox = JSON.parse(JSON.stringify(wapi.sceneBox()));
+    unmount.w();
+    hosts.w.style.display = "none";
+
+    // F: the companionway fit-out, open alone in view f
+    docs.f = repo.add(emptyScene({ title: "Companionway fit-out" }));
+    mount("f", docs.f);
+    await loaded(() => apiOf("f"));
+    const fapi = apiOf("f");
+    ids.fCompanionway = await fapi.part("sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    if (!ids.fCompanionway) return { error: "no companionway part in F", errors };
+    ids.fHatch = withTrait(docs.f, SLIDE);
+    await loaded(() => fapi.sceneBox());
+    const fBox = JSON.parse(JSON.stringify(fapi.sceneBox()));
+    dbg.f.view.select(null);
+
+    // S: Ship at anchor, through the start screen
+    docs.s = repo.add(emptyScene({ title }));
+    mount("s", docs.s);
+    const button = await (async () => { await loaded(() => hosts.s.querySelector('[data-template="ship-at-anchor"]')); return hosts.s.querySelector('[data-template="ship-at-anchor"]'); })();
+    if (!button) return { error: "no Ship at anchor on the start screen" };
+    button.click();
+    await loaded(() => withTrait(docs.s, "sailing.ship") && dbg.s.host.record("sailing")?.api && withTrait(docs.s, EXIT));
+    ids.hull = withTrait(docs.s, "sailing.ship");
+    const sapi = apiOf("s");
+    sapi.change((d) => (d.title = title));
+    // her own companionway out (and the hatch on it), F in its place
+    const own = withTrait(docs.s, EXIT);
+    const place = JSON.parse(JSON.stringify(objectsOf(docs.s)[own]));
+    const ownHatch = Object.keys(objectsOf(docs.s)).find((id) => objectsOf(docs.s)[id].parent === own);
+    sapi.remove([own, ownHatch].filter(Boolean));
+    ids.fitout = await sapi.addObject(docs.f.url, { parent: place.parent, transform: place.transform, hint: { bounds: fBox }, fields: { locked: true }, name: "Companionway fit-out" });
+    // W twice on her cabin top, forward of the companionway, port and starboard of it
+    const fwd = (dx, dz) => ({ position: [place.transform.position[0] + dx, place.transform.position[1] + 0.05, place.transform.position[2] + dz], rotation: [...place.transform.rotation], scale: 1 });
+    ids.port = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (port)" });
+    ids.starboard = await sapi.addObject(docs.w.url, { parent: place.parent, transform: fwd(-0.62, -1.3), hint: { bounds: wBox }, fields: { locked: true }, name: "Hatch (starboard)" });
+    if (!ids.fitout || !ids.port || !ids.starboard) return { error: "a link wasn't made", ids, errors };
+    // which acts is the doc's structure: the link that comes first in path order (the smaller id); the other mirrors it
+    [ids.acting, ids.mirror] = [ids.port, ids.starboard].sort();
+    // starts people looking (no body named: Look), the world held still until the probe runs it
+    sapi.change((d) => (d.view.start = {}));
+    sapi.clock.pause();
+    dbg.s.view.select(null);
+    await loaded(() => stageAt(ids.fitout)?.debug.host.instanceOf("joints") && stageAt(ids.port)?.debug.host.instanceOf("joints") && stageAt(ids.starboard)?.debug.host.instanceOf("joints"));
+    // F fixed where it is: the inspector's Fix at this version, in Edit, as a person does it
+    sapi.body.enter("edit");
+    const fixed = sapi.run({ ext: "scene.inspector", command: "fix-version", target: ids.fitout });
+    sapi.body.enter("look");
+    await loaded(() => stageAt(ids.fitout)?.role === "pinned" && stageAt(ids.fitout)?.debug.host.instanceOf("joints"));
+    ids.f = docs.f.url;
+    ids.w = docs.w.url;
+    ids.s = docs.s.url;
+    ids.fixed = fixed;
+    countWrites(docs.f, "f");
+    countWrites(docs.w, "w");
+    return { ...ids };
+  }
+
+  /** a link of S's: its state as S's view has it */
+  const linkOf = (id) => apiOf("s")?.link(id) ?? null;
+  /** what a stage of view s says of itself */
+  const about = (st) => (st ? { n: st.n, url: st.url, path: [...st.path], role: st.role, running: st.debug.host.running().map((r) => r.id), title: st.doc().title } : null);
+  /** an object of the stage at `path`, as view s draws it: its world matrix */
+  const drawnIn = (path, id) => { const st = stageAt(...path); return st ? dbg.s.viewport.worldOf(keyOf(st.n, id)) : null; };
+  /** an object as drawn, in the frame of the link it is in (its doc's frame there) */
+  const localIn = (path, id) => {
+    const m = drawnIn(path, id);
+    const st = stageAt(...path);
+    const f = st?.frame()?.matrix;
+    if (!m) return null;
+    const l = f ? mul(invert(f), m) : m;
+    return l.slice(12, 15).map((v) => +v.toFixed(4));
+  };
+  Object.assign(P, {
+    stages: () => dbg.s.view.stages().map(about),
+    stage: (...path) => about(stageAt(...path)),
+    link: linkOf,
+    links: () => ({ fitout: linkOf(ids.fitout), acting: linkOf(ids.acting), mirror: linkOf(ids.mirror) }),
+    shape() {
+      const o = objectsOf(docs.s);
+      const links = Object.entries(o).filter(([, x]) => x.providerId === "scene.link").map(([id, x]) => ({ id, url: x.sourceUrl, parent: x.parent, at: x.at ? { heads: [...x.at.heads], deps: Object.keys(x.at.deps ?? {}) } : null }));
+      return {
+        links,
+        hull: !!o[ids.hull],
+        rig: Object.values(o).some((x) => x.traits?.["sailing.sail"]),
+        boatSlides: Object.values(o).filter((x) => x.traits?.[SLIDE]).length,
+        boatExits: Object.values(o).filter((x) => x.traits?.[EXIT]).length,
+        fObjects: Object.keys(objectsOf(docs.f)).length,
+        wObjects: Object.keys(objectsOf(docs.w)).length,
+        fAssets: Object.values(docs.f.doc().assets ?? {}).map((a) => a.url),
+        wAssets: Object.values(docs.w.doc().assets ?? {}).map((a) => a.url),
+      };
+    },
+    fHeads: () => docs.f.heads(),
+    slideOf: (which) => JSON.parse(JSON.stringify((which === "f" ? objectsOf(docs.f)[ids.fHatch] : objectsOf(docs.w)[ids.wHatch])?.traits?.[SLIDE] ?? null)),
+    /** the pinned F's hatch, as S's pinned stage has its doc */
+    pinnedSlide: () => JSON.parse(JSON.stringify(stageAt(ids.fitout)?.doc().objects?.[ids.fHatch]?.traits?.[SLIDE] ?? null)),
+    localIn: (path, id) => localIn(path, id),
+    /** has view s drawn every object of every linked doc (its content loaded)? */
+    loaded() {
+      const vp = dbg.s.viewport;
+      const out = { total: 0, loaded: 0 };
+      for (const st of dbg.s.view.stages()) {
+        for (const [id, o] of Object.entries(st.doc().objects ?? {})) {
+          if (o.kind === "group" || o.providerId === "scene.link") continue;
+          out.total++;
+          if (vp.contentOf(keyOf(st.n, id))?.loaded) out.loaded++;
+        }
+      }
+      return out;
+    },
+    /** the view s camera, framed on the cabin top: the fit-out and both hatches */
+    frame() {
+      const vp = dbg.s.viewport;
+      const pts = [ids.fitout, ids.port, ids.starboard].map((id) => vp.worldOf(id)).filter(Boolean).map((m) => m.slice(12, 15));
+      const c = [0, 1, 2].map((k) => pts.reduce((s, p) => s + p[k], 0) / pts.length);
+      vp.setCamera({ position: [c[0] - 3.2, c[1] + 3.4, c[2] + 2.2], target: c });
+      return c;
+    },
+    /** a page point over object `id` of the stage at `path` in view s (spiralling out from its origin until a pick hits it) */
+    aimAt(path, id) {
+      const st = stageAt(...path);
+      if (!st) return null;
+      const v = dbg.s.viewport;
+      const key = keyOf(st.n, id);
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(key);
+      const p0 = m && v.project([m[12], m[13], m[14]]);
+      if (!p0) return null;
+      for (let k = 0; k < 1200; k++) {
+        const a = k * 0.6, rad = 1.5 * Math.sqrt(k);
+        const x = p0.x + rad * Math.cos(a), y = p0.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        if (v.pick(x, y)?.id !== key) continue;
+        return { x: r.left + x, y: r.top + y };
+      }
+      return null;
+    },
+    /** what view s hovers, as a path (the links from the boat in, then the object) */
+    hovered: () => dbg.s.view.atom.get().hovered,
+    hoveredIs: (path) => JSON.stringify(dbg.s.view.atom.get().hovered) === JSON.stringify(path),
+    prompt: () => [...hosts.s.querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
+    focus() { const r = hosts.s.querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    /** every body on offer in view s, and the stage that offers it */
+    bodies: () => [...dbg.s.view.bodyDefs()].map(([id, x]) => ({ id, stage: x.stage.path.join("/") })),
+    /** the commands view s's surfaces collect, with the stage each comes from */
+    commandStages: () => dbg.s.view.collect("commands").map((c) => (c.stage == null ? null : dbg.s.view.stage(c.stage)?.path.join("/") ?? null)),
+    /** who computes W's clock, and does each W stage of view s */
+    computing: () => ({ claim: JSON.parse(JSON.stringify(docs.w.doc().claims?.clock ?? null)), acting: stageAt(ids.acting)?.debug.clock.computing() ?? null, mirror: stageAt(ids.mirror)?.debug.clock.computing() ?? null, session: dbg.s.view.session }),
+    /** F changed live in its own view: its hatch opened, by its verb (view f's key map path: the command run in its stage), and a sign written */
+    openF() {
+      const fapi = apiOf("f");
+      const ran = fapi.run({ ext: "joints", command: "slide", target: ids.fHatch });
+      return ran;
+    },
+    renameF: (name) => apiOf("f").change((d) => (d.objects[ids.fCompanionway].name = name)),
+    /** the inspector's Follow latest / Fix at this version on the fit-out, in Edit, then back to Look */
+    version(command) {
+      const sapi = apiOf("s");
+      sapi.body.enter("edit");
+      const ran = sapi.run({ ext: "scene.inspector", command, target: ids.fitout });
+      sapi.body.enter("look");
+      return ran;
+    },
+    fixPoint: () => JSON.parse(JSON.stringify(apiOf("s").fixPoint(ids.fitout))),
+    /** try every write through the pinned and mirrored stages' apis (an extension's): each refused, nothing thrown */
+    tryWrites() {
+      const out = {};
+      for (const [name, path] of [["pinned", [ids.fitout]], ["mirror", [ids.mirror]]]) {
+        const api = apiIn(stageAt(...path));
+        const r = {};
+        try { api.change((d) => (d.title = "written")); r.change = "quiet"; } catch (e) { r.change = `threw ${e.message}`; }
+        r.claim = api.claim(null, "seat:p1");
+        r.hold = api.pose.hold(name === "pinned" ? ids.fHatch : ids.wHatch, { position: [0, 9, 0], rotation: [0, 0, 0], scale: 1 });
+        r.run = api.run({ ext: "joints", command: "slide", target: name === "pinned" ? ids.fHatch : ids.wHatch });
+        r.writable = api.writable();
+        r.role = stageAt(...path).role; // (the view's to say: an extension has no api.role)
+        r.hasRole = "role" in api;
+        out[name] = r;
+      }
+      return out;
+    },
+    resume() { apiOf("s").clock.resume(); return apiOf("s").clock.t(); },
+    pause() { apiOf("s").clock.pause(); return apiOf("s").clock.t(); },
+    /** frame by frame for `ms` of the page's clock: how far the hull moved, and the fit-out and both hatches stay where the hull carries them */
+    async sampleRide(ms = 3000) {
+      const vp = dbg.s.viewport;
+      let moved = 0, off = 0;
+      const h0 = vp.worldOf(ids.hull);
+      const rel0 = {};
+      for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch], ["mirror", [ids.mirror], ids.wHatch]]) rel0[k] = mul(invert(h0), drawnIn(path, id));
+      for (let i = 0, n = Math.ceil(ms / time.frameMs); i < n; i++) {
+        await time.step(1, { draw: false });
+        const h = vp.worldOf(ids.hull);
+        moved = Math.max(moved, Math.hypot(h[12] - h0[12], h[13] - h0[13], h[14] - h0[14]), Math.hypot(h[4] - h0[4], h[6] - h0[6]));
+        for (const [k, path, id] of [["fit", [ids.fitout], ids.fHatch], ["acting", [ids.acting], ids.wHatch], ["mirror", [ids.mirror], ids.wHatch]]) {
+          const rel = mul(invert(h), drawnIn(path, id));
+          off = Math.max(off, ...rel.map((v, j) => Math.abs(v - rel0[k][j])));
+        }
+      }
+      return { moved, off };
+    },
+    /** the docs to publish: the boat, F (as fixed, and as it is now), W, and their files */
+    snapshot() {
+      const at = objectsOf(docs.s)[ids.fitout]?.at;
+      const fThen = at ? docs.f.view([...at.heads]).doc() : null;
+      const urls = [docs.s.url, docs.f.url, docs.w.url, ...[docs.s, docs.f, docs.w].flatMap((h) => Object.values(h.doc().assets ?? {}).map((a) => a.url))];
+      return {
+        scene: docs.s.url, f: docs.f.url, w: docs.w.url, fitout: ids.fitout,
+        fThen: fThen ? portable(fThen) : null,
+        deps: at?.deps ? Object.keys(at.deps) : [],
+        docs: Object.fromEntries([...new Set(urls)].map((u) => [u, portable(repo.handles.get(u).doc())])),
+      };
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

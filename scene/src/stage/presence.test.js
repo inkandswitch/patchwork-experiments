@@ -594,3 +594,83 @@ describe("without a usable handle", () => {
     p.dispose();
   });
 });
+
+// A presence that only listens (a read-only stage's: COMPOSITION.md §7): over
+// every call that would speak and over time, it says nothing; it hears the
+// channel, its own session included (how a mirror hears its view's acting
+// stage of the same doc).
+describe("listening only", () => {
+  const SPEAKS = {
+    hello: (p) => p,
+    set: (p) => p.set("x", "k", 1),
+    rate: (p) => p.rate("x", 60),
+    clear: (p) => p.clear("x"),
+    send: (p) => p.send("x", "kind", { n: 1 }),
+    hold: (p) => p.hold("x", "o1", null, { position: [1, 0, 0] }),
+    release: (p) => p.release("x", "o1"),
+    goodbye: (p) => p.goodbye(),
+    back: (p) => (p.goodbye(), p.hello("s-new")),
+    dispose: (p) => p.dispose(),
+  };
+  for (const [what, act] of Object.entries(SPEAKS)) {
+    it(`${what}: nothing goes out, now or after a minute`, () => {
+      const hl = bus.makeHandle("L");
+      const l = createPresence({ handle: hl, viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+      act(l);
+      clock.advance(60_000);
+      expect(bus.log.filter((x) => x.from === "L")).toEqual([]);
+      expect(l.heldBy?.("o1") ?? null).toBe(null);
+      l.dispose();
+    });
+  }
+
+  it("hears the channel, its own session too: presence, sends and holds", () => {
+    const hl = bus.makeHandle("L");
+    const l = createPresence({ handle: hl, viewer: "alice", session: "sa", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    const got = [];
+    l.onReceive((ext, kind, data, from) => got.push([ext, kind, from.session]));
+    a.set("x", "k", 2);
+    a.send("x", "kind", null);
+    b.send("x", "kind", null);
+    a.hold("x", "o1", null, { position: [1, 0, 0] });
+    clock.advance(HEARTBEAT_MS); // (b says nothing new until its heartbeat)
+    expect(l.get().sa?.keys?.x?.k).toBe(2);
+    expect(Object.keys(l.get()).sort()).toEqual(["sa", "sb"]);
+    expect(got).toEqual([["x", "kind", "sa"], ["x", "kind", "sb"]]);
+    expect(l.remoteHolds().get("o1")?.session).toBe("sa");
+    // and a speaking presence of the same session still never hears itself
+    expect(a.get().sa).toBeUndefined();
+    l.dispose();
+  });
+});
+
+// What the view says of the viewer (COMPOSITION.md §6): its body and held
+// tool, beside `viewer`, on every channel it acts on; cleaned on the way in;
+// a listening presence says none of it.
+describe("the view's body and held tool", () => {
+  it("go out with the state, cleaned, and only when they change; a listener says nothing", () => {
+    a.announce({ body: { id: "seat", label: "Player 1", extra: 1 }, held: { name: "Measure", ext: "x" } });
+    clock.advance(1000);
+    expect(b.get().sa).toMatchObject({ viewer: "alice", body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    expect(Object.keys(b.get().sa.body)).toEqual(["id", "label"]);
+    const before = sent("A", "scene:presence").length;
+    a.announce({ body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    clock.advance(100);
+    expect(sent("A", "scene:presence").length).toBe(before);
+    a.announce({ body: { id: "look", label: "Look" }, held: null });
+    clock.advance(1000);
+    expect(b.get().sa).toMatchObject({ body: { id: "look", label: "Look" }, held: null });
+    // what isn't a body or a tool is nothing
+    for (const [body, held] of [[{ id: 3, label: "x" }, { name: 4 }], ["seat", "Measure"], [null, undefined]]) {
+      a.announce({ body, held });
+      clock.advance(1000);
+      expect([b.get().sa.body, b.get().sa.held]).toEqual([null, null]);
+    }
+    const hc = bus.makeHandle("C");
+    const quiet = createPresence({ handle: hc, viewer: "cara", session: "sc", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    quiet.announce({ body: { id: "walk", label: "Walk" }, held: null });
+    clock.advance(HEARTBEAT_MS * 2);
+    expect(sent("C", "scene:presence")).toEqual([]);
+    expect("sc" in b.get()).toBe(false);
+  });
+});

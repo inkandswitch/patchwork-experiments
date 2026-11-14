@@ -19,10 +19,25 @@
 //  5. Ana draws a card (D over the deck, the room's key map reaching into
 //     G) and carries one onto an expedition column; Ben and Cara see both
 //     moves; Ben draws and plays one of his, and Ana and Cara see it;
-//  6. with the boat's world running, a card leans with her in Ben's view
+//  6. I6 with the real packages (scene/COMPOSITION.md, Invariants): mid-play,
+//     Ana's room links G twice more, live (a mirror, Ana seated in the
+//     acting stage) and fixed at this version (a pin), and Ana opens G in a
+//     view of her own whose handle refuses writes (D). Each runs G's
+//     extensions, read-only; the mirror and D show Ana exactly her acting
+//     stage's faces (I4: the roster reaches a drawn stage), the pin what she
+//     saw when it was fixed (her hand, and the cards played face up); Ana then plays a card face up (her keeper hands over
+//     its key) and draws, and all of it stays so, with nothing written
+//     through any of them: no warning, no error (7);
+//  6b. editing in context (COMPOSITION.md build step 14): Ana, seated, enters
+//     G from her room by its mirror's link (Enter goes where G acts: the
+//     room's first link); her general parts move into her G stage and
+//     nothing else changes, for her (still seated, the same docs running
+//     the same parts) or for Ben and Cara (their focus and parts where they
+//     were); entered, she draws, and both see it; Escape leaves;
+//  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
-//  7. no page errors.
+//  8. no page errors, and no warnings (a refused write would warn).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +50,7 @@ for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", 
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "links-probe"));
 const PORT = Number(arg("--port") ?? 4791);
-const b = await browser({ root: ROOT, port: PORT, cdp: Number(arg("--cdp") ?? PORT + 5000), page: `/sailing/probes/links-probe.html?seed=${Number(arg("--seed") ?? 1)}`, width: 1700, height: 490, show: process.argv.includes("--show"), timeout: 900_000 });
+const b = await browser({ root: ROOT, port: PORT, cdp: Number(arg("--cdp") ?? PORT + 5000), page: `/sailing/probes/links-probe.html?seed=${Number(arg("--seed") ?? 1)}`, width: 1950, height: 490, show: process.argv.includes("--show"), timeout: 900_000 });
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const FRAME = 1000 / 60;
@@ -105,10 +120,10 @@ try {
   check("1. G is a whole table of its own: its title, p1 and p2", shape.gameTitle === "Lost Cities table" && J(shape.seats) === J(["p1", "p2"]), { title: shape.gameTitle, seats: shape.seats });
 
   // 2. a stage for G in each view
-  await until("link('a')?.state === 'open' && __p.link('b')?.state === 'open'", 4000);
+  await until("link('a')?.open && __p.link('b')?.open", 4000);
   const st = { a: await P("stages('a')"), b: await P("stages('b')"), c: await P("stages('c')") };
   report.numbers.stages = st;
-  check("2. the room and the boat each open G's stage at their link; Cara's view is G's own", st.a.some((s) => s.url === ids.game && J(s.path) === J([ids.roomLink])) && st.b.some((s) => s.url === ids.game && J(s.path) === J([ids.boatLink])) && st.c[0].url === ids.game && (await P("link('a')")).state === "open", st);
+  check("2. the room and the boat each open G's stage at their link; Cara's view is G's own", st.a.some((s) => s.url === ids.game && J(s.path) === J([ids.roomLink])) && st.b.some((s) => s.url === ids.game && J(s.path) === J([ids.boatLink])) && st.c[0].url === ids.game && (await P("link('a')")).open === true && (await P("link('a')")).role === "acting", st);
   const run = shape.running;
   check("2. G's extensions run in its stage (tabletop, seats, the keeper, carry), never in the room's or the boat's", ["a", "b", "c"].every((w) => run[w].game?.includes("tabletop") && run[w].game?.includes("seats")) && !run.a.outer.includes("tabletop") && !run.b.outer.includes("tabletop") && !run.b.outer.includes("seats") && run.b.outer.includes("sailing"), run);
 
@@ -122,6 +137,10 @@ try {
   const claims = { c1: await P("claimedBy('c', 'p1')"), c2: await P("claimedBy('c', 'p2')"), a2: await P("claimedBy('a', 'p2')"), b1: await P("claimedBy('b', 'p1')") };
   const pres = { a: await P("presence('a')"), b: await P("presence('b')") };
   check("3. each seat's claim is held for everyone: Cara sees Ana at p1 and Ben at p2; Ana sees Ben's, Ben Ana's", claims.c1?.session === pres.a.mine && claims.c2?.session === pres.b.mine && claims.a2?.session === pres.b.mine && claims.b1?.session === pres.a.mine, claims);
+  // who's here is the view's (each says its body on every channel it acts on): Cara, viewing G alone, sees
+  // Ana (seated from her room) and Ben (seated aboard) as seated, not looking
+  const hereOk = await until(`hereBusy('c', ${J([pres.a.mine, pres.b.mine])})`, 3000);
+  check("3. who's here: Cara, viewing G alone, sees Ana and Ben seated where they sit (the room, the boat), not looking", hereOk, await P("here('c')"));
 
   // 4. dealt
   const dealt = await holds("phase() === 'playing'", 60_000);
@@ -156,17 +175,57 @@ try {
   await draw("b", "p2");
   await shot("played");
 
-  // 6. heel: the boat's world runs
+  // 6. I6, pinned, unwritable and mirrored, mid-play
+  const i6 = await P("i6()", 300_000);
+  check("6. I6: mid-play, the room links G live again (a mirror) and fixed at this version (a pin, its deps the docs reached through it); Ana opens G read-only in a view of her own", !!i6 && !i6.error && i6.deps > 0, i6);
+  const st6 = await P("i6Stages()");
+  report.numbers.i6 = { stages: st6 };
+  const runsG = (x) => !!x && ["tabletop", "card-table", "seats"].every((id) => x.running.includes(id));
+  check("6. the mirror and the pin are drawn stages of G and D a read-only one; each runs G's extensions, none may write; G still acts where Ana sits", st6.acting?.role === "acting" && st6.acting.writable === true && st6.mirror?.role === "mirror" && st6.pin?.role === "pinned" && st6.d?.role === "acting" && [st6.mirror, st6.pin, st6.d].every((x) => runsG(x) && x.writable === false) && st6.aLinks.mirror?.open && st6.aLinks.pin?.open && (await P("seats()")).p1?.player === (await P("people")).a, st6);
+  const sameFaces = (f) => J([...f.mirror].sort()) === J([...f.acting].sort()) && J([...f.d].sort()) === J([...f.acting].sort());
+  await holds("(() => { const f = __p.i6Faces(); return f.acting.length > 0 && JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  const f6 = await P("i6Faces()");
+  check("6. the mirror and D show Ana exactly the faces her acting stage shows (her hand), the pin what she saw when it was fixed (her hand and the cards face up)", f6.acting.length > 0 && sameFaces(f6) && J([...f6.pin].sort()) === J([...i6.pinFaces].sort()) && i6.pinHand.every((id) => f6.pin.includes(id)), { faces: f6, pinFaces: i6.pinFaces, why: await P(`i6Why(${J(i6.pinHand[0])})`) });
+  // Ana plays one face up (her keeper hands over its key in the open) and draws: the others take no part
+  const hand6 = (await P("where()")).p1;
+  if (hand6[0]) await play("a", hand6[0], -0.085, 1);
+  await draw("a", "p1");
+  await holds("(() => { const f = __p.i6Faces(); return JSON.stringify([...f.mirror].sort()) === JSON.stringify([...f.acting].sort()) && JSON.stringify([...f.d].sort()) === JSON.stringify([...f.acting].sort()); })()", 30_000);
+  const f6b = await P("i6Faces()");
+  check("6. after Ana's play and draw, the mirror and D still show what her acting stage shows, and the pin still shows what it was fixed at", sameFaces(f6b) && J([...f6b.pin].sort()) === J([...i6.pinFaces].sort()), { faces: f6b });
+  const warned = (await P("errors")).filter((e) => !EXPECTED.test(e));
+  check("6. nothing was written through the mirror, the pin or D: no warning, no error so far", warned.length === 0, warned.slice(0, 10));
+
+  // 6b. Ana enters G from her room, by the mirror's link: where G acts
+  {
+    const runsBefore = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
+    const seatsBefore = J(await P("seats()"));
+    const pinRefused = await P(`enter('a', ${J(i6.pinLink)})`);
+    const ok = await P(`enter('a', ${J(i6.mirrorLink)})`);
+    const placed = await until(`runsIn('a', 'scene.menu').length === 1 && __p.runsIn('a', 'scene.menu')[0].length === 1`, 3000);
+    check("6b. Enter on the mirror's link goes inside G where it acts (the room's first link); Enter on the pin is refused", ok && !pinRefused && J(await P("focusPath('a')")) === J([ids.roomLink]) && placed, { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), pinRefused });
+    const runsAfter = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
+    check("6b. entering changes nothing else: every stage in every view runs what its doc calls for as before, Ben's and Cara's focus and general parts where they were, Ana still seated, the seats as they were", J(runsAfter) === J(runsBefore) && J(await P("focusPath('b')")) === "[]" && J(await P("focusPath('c')")) === "[]" && J(await P("runsIn('b', 'scene.menu')")) === "[[]]" && J(await P("runsIn('c', 'scene.menu')")) === "[[]]" && (await P("body('a')")).id === "seat" && J(await P("seats()")) === seatsBefore, { runsBefore, runsAfter, b: await P("runsIn('b', 'scene.menu')"), c: await P("runsIn('c', 'scene.menu')"), body: await P("body('a')") });
+    // entered, she plays on: a draw through her key map (G's, the focus's)
+    const drawnIn = await draw("a", "p1");
+    if (drawnIn) check("6b. entered, Ana's draw lands, and Ben and Cara see it", !!(await until(`drawn(${J(drawnIn)}, 'b') && __p.drawn(${J(drawnIn)}, 'c')`, 3000)), { b: await P(`drawn(${J(drawnIn)}, 'b')`), c: await P(`drawn(${J(drawnIn)}, 'c')`) });
+    await P("focus('a')");
+    await b.key("Escape");
+    await until("focusPath('a').length === 0 && __p.runsIn('a', 'scene.menu').length === 1 && __p.runsIn('a', 'scene.menu')[0].length === 0", 3000);
+    check("6b. Escape leaves: Ana's focus back on her room, her general parts there, still seated", J(await P("focusPath('a')")) === "[]" && J(await P("runsIn('a', 'scene.menu')")) === "[[]]" && (await P("body('a')")).id === "seat", { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), body: await P("body('a')") });
+  }
+
+  // 7. heel: the boat's world runs
   await P("resume()");
   const lean = await P(`sampleLean(${J(ids.board)}, 8000)`, 120_000);
   report.numbers.lean = lean;
-  check("6. aboard, G's table leans with the boat in Ben's view; in Ana's room and in Cara's view it stays level", lean.b > 0.05 && lean.a < 1e-6 && lean.c < 1e-6, lean);
-  check("6. Ben's seat view rolls with the table (the camera's up is the table's); Ana's keeps the world's", lean.camOffTableB < 1e-6 && lean.camOffWorldA < 1e-9, lean);
+  check("7. aboard, G's table leans with the boat in Ben's view; in Ana's room and in Cara's view it stays level", lean.b > 0.05 && lean.a < 1e-6 && lean.c < 1e-6, lean);
+  check("7. Ben's seat view rolls with the table (the camera's up is the table's); Ana's keeps the world's", lean.camOffTableB < 1e-6 && lean.camOffWorldA < 1e-9, lean);
   await shot("heeled");
 
-  // 7.
+  // 8.
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
-  check("7. no page errors", errors.length === 0, errors.slice(0, 10));
+  check("8. no page errors, and no warnings", errors.length === 0, errors.slice(0, 10));
 } catch (err) {
   check(`ran to the end: ${err?.message ?? err}`, false, String(err?.stack ?? err));
 }

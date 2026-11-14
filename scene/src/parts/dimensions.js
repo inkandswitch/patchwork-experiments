@@ -27,6 +27,7 @@ import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { own } from "../stage/own.js";
+import { contentMatrix } from "../stage/scope.js";
 import { editing } from "../stage/bodies.js";
 
 /** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
@@ -137,7 +138,6 @@ export function surfaceGapper(THREE) {
     let cached = cache.get(root);
     if (!cached) {
       root.updateWorldMatrix?.(true, true);
-      const inv = root.matrixWorld.clone().invert();
       const prims = [];
       const lo = [Infinity, Infinity, Infinity];
       const hi = [-Infinity, -Infinity, -Infinity];
@@ -147,8 +147,10 @@ export function surfaceGapper(THREE) {
         if (!pos || !(o.isMesh || o.isLine || o.isPoints)) return;
         const mode = o.isMesh ? 4 : o.isLineSegments ? 1 : o.isLineLoop ? 2 : o.isLine ? 3 : 0;
         const copies = o.isInstancedMesh ? o.count : 1;
+        // (in the object's own frame: the frame choke point's one way in, whatever frame it's drawn in)
+        const inRoot = contentMatrix(root, o);
         for (let c = 0; c < copies; c++) {
-          const mm = inv.clone().multiply(o.matrixWorld);
+          const mm = new THREE.Matrix4().fromArray(inRoot);
           if (o.isInstancedMesh) mm.multiply((o.getMatrixAt(c, inst), inst));
           const m = mm.elements;
           const P = new Float32Array(pos.count * 3);

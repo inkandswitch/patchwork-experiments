@@ -18,16 +18,20 @@
 // Held verbs. A verb whose run() returns a session ({ end(), cancel(),
 // update?(dt) }) is held: it lasts as long as its key is down (winding a
 // capstan). update(dt) runs every frame, end() on the key's release,
-// cancel() when the window or the view loses focus, the target goes, or
-// this part stops. `hold: true` on a command only changes how it's shown
-// ("hold F"). A held verb keeps its target until its key comes up: while
-// anything is held, attention is pinned to that target, so a second key
-// (ease while hauling) works the same thing, and the prompt (scene.use)
-// stays on it. It reads the pin through `keymap` (api.collect).
+// cancel() when the window or the view loses focus, the target goes (from
+// its own doc, wherever that is), its extension stops there, or this part
+// stops. `hold: true` on a command only changes how it's shown ("hold F"). A
+// held verb keeps its target until its key comes up: while anything is held,
+// attention is pinned to that target's path (the links from the outermost
+// in, then its id: a target in a linked doc is pinned there, wherever the
+// look goes), so a second key (ease while hauling) works the same thing, and
+// the prompt (scene.use) stays on it. It reads the pin through `keymap`
+// (api.collect).
 
 import { commandState, controlKind, flatCommands } from "./toolbar-commands.js";
 import { mapInvocation, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
+import { samePath } from "../stage/paths.js";
 
 /** Does this look like a session (something a held verb returns)? */
 const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "function" || typeof r.cancel === "function");
@@ -37,7 +41,7 @@ const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "func
  * Each session's failure is its own.
  */
 export function heldSessions() {
-  const open = new Map(); // code → { session, target, ext, command, entry }
+  const open = new Map(); // code → { session, path, ext, command, entry }: path the target's (its stage's path, then its id)
   const call = (session, name, ...args) => {
     try {
       session?.[name]?.(...args);
@@ -59,24 +63,24 @@ export function heldSessions() {
     has: (code) => open.has(code),
     /** is this extension's command held? */
     holding: (ext, command) => [...open.values()].some((h) => h.ext === ext && h.command === command),
-    /** the target of the first held verb (what attention is pinned to), or undefined when nothing's held */
-    get target() {
-      return open.values().next().value?.target;
+    /** the path of the first held verb's target (what attention is pinned to), or undefined when nothing's held */
+    get path() {
+      return open.values().next().value?.path;
     },
-    /** the prompt's entries of the verbs held on `target`, as they were when pressed, first held first */
-    entries: (target) => [...open.values()].filter((h) => h.target === target && h.entry).map((h) => h.entry),
-    open(code, session, { target = null, ext = null, command = null, entry = null } = {}) {
+    /** the prompt's entries of the verbs held on the target at `path`, as they were when pressed, first held first */
+    entries: (path) => [...open.values()].filter((h) => samePath(h.path, path) && h.entry).map((h) => h.entry),
+    open(code, session, { path = [null], ext = null, command = null, entry = null } = {}) {
       close(code, "end"); // a press whose release we never heard
-      open.set(code, { session, target, ext, command, entry });
+      open.set(code, { session, path: Object.freeze([...path]), ext, command, entry });
     },
     tick(dt) {
       for (const h of [...open.values()]) call(h.session, "update", dt);
     },
     end: (code) => close(code, "end"),
     cancel: (code) => close(code, "cancel"),
-    /** cancel those whose target this says is gone */
+    /** cancel those whose target this says is gone: gone(path, ext) */
     cancelWhere(gone) {
-      for (const [code, h] of [...open]) if (gone(h.target, h.ext)) close(code, "cancel");
+      for (const [code, h] of [...open]) if (gone(h.path, h.ext)) close(code, "cancel");
     },
     cancelAll() {
       for (const code of [...open.keys()]) close(code, "cancel");
@@ -92,14 +96,39 @@ function create(api) {
     for (const fn of watchers) fn();
   };
 
-  /** Attention, pinned to the held verbs' target while any is held. */
+  /** Attention, pinned to the held verbs' target's path while any is held. */
   function attentionNow() {
-    const pinned = held.target;
-    return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null }) : api.attention();
+    const pinned = held.path;
+    return pinned !== undefined ? Object.freeze({ selected: pinned.at(-1), hit: null, pinned }) : api.attention();
+  }
+
+  /**
+   * Is a held verb's target gone: its stage no longer on the view (its link
+   * went), the target gone from that stage's doc, or its extension stopped
+   * there? Read from the target's own stage, wherever the focus is.
+   */
+  function gone(path, ext) {
+    const id = path.at(-1);
+    if (typeof api.path !== "function") return id != null && !api.scene().objects?.[id];
+    const at = api.path({ at: path }).find((r) => samePath(r.path, path.slice(0, -1)));
+    return !at || (id != null && !at.scene().objects?.[id]) || (ext != null && !at.runs(ext));
+  }
+  function sweep() {
+    const before = held.size;
+    held.cancelWhere(gone);
+    if (held.size !== before) {
+      wantLoop();
+      changed();
+    }
   }
 
   function wantLoop() {
-    if (held.size && !offLoop) offLoop = api.loop((dt) => held.tick(dt));
+    if (held.size && !offLoop)
+      offLoop = api.loop((dt) => {
+        // (a held verb goes with its target, checked every frame, since its doc needn't be the focus's)
+        sweep();
+        held.tick(dt);
+      });
     else if (!held.size && offLoop) {
       offLoop();
       offLoop = null;
@@ -144,7 +173,7 @@ function create(api) {
       return true;
     }
     if (isSession(out)) {
-      held.open(codeOf(ev), out, { target: inv.target, ext: inv.ext, command: command.id, entry: { ext: inv.ext, command, state } });
+      held.open(codeOf(ev), out, { path: [...(seg.reader?.path ?? []), inv.target], ext: inv.ext, command: command.id, entry: { ext: inv.ext, command, state } });
       wantLoop();
       changed();
     }
@@ -193,27 +222,21 @@ function create(api) {
     },
     // the held verbs, for the prompt (scene.use)
     keymap: Object.freeze({
-      /** the target attention is pinned to while a verb is held, else undefined */
-      pinned: () => held.target,
+      /** the path of the target attention is pinned to while a verb is held (its stage's path, then its id), else undefined */
+      pinned: () => held.path,
       holding: (ext, command) => held.holding(ext, command),
-      entries: (target) => held.entries(target),
+      /** the prompt's entries of the verbs held on the target at `path` */
+      entries: (path) => held.entries(path),
       /** call fn when what's held changes. @returns off */
       watch(fn) {
         watchers.add(fn);
         return () => watchers.delete(fn);
       },
     }),
-    update(scene, local, prev) {
-      // a held verb goes with its target, and with the extension whose verb it is
-      if (held.size && (prev?.scene !== scene || prev?.local?.running !== local.running)) {
-        const running = new Set((local.running ?? []).map((r) => r.id));
-        const before = held.size;
-        held.cancelWhere((t, ext) => (t != null && !scene.objects?.[t]) || (ext != null && !running.has(ext)));
-        if (held.size !== before) {
-          wantLoop();
-          changed();
-        }
-      }
+    update() {
+      // a held verb goes with its target, and with the extension whose verb it is: looked at whenever
+      // anything here changes, and every frame (wantLoop), since its doc needn't be the focus's
+      if (held.size) sweep();
     },
     dispose() {
       held.cancelAll();

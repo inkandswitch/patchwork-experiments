@@ -3,14 +3,15 @@
 // links is one pure function of the link graph, so what a view opens is
 // fixed by the graph and never by the order docs arrived in (invariant I3).
 //
-//   expand(root, docOf) → [{ path, url, heads, role, reason?, depth, parent, link }]
+//   expand(root, docOf) → [{ path, url, heads, deps, role, reason?, depth, parent, link }]
 //
 // - `path` is the links that lead to the occurrence (ids, outermost first);
 //   the root's is [].
 // - A link with no `at` names an identity (live); one with `at.heads` a
 //   value (pinned). Inside a pin every link is pinned too: at its own `at`,
 //   else at the heads the pin's `deps` hold for its url ("a pin is whole");
-//   a url missing there is closed "unpinned".
+//   a url missing there is closed "unpinned". A pinned occurrence carries the
+//   deps it is held by (`deps`), the heads of the docs reached through it.
 // - No identity repeats on a path: a live url already live on its path, or a
 //   pinned (url, heads) already on it, is closed "cycle". A pin of an older
 //   version of a doc is a different identity, so a doc may hold its own past.
@@ -60,7 +61,7 @@ export const identityOf = (url, heads) => (heads ? `${url}#${[...heads].sort().j
  * @param {(url: string, heads: string[] | null) => object | null | undefined} docOf
  *   a doc as the view has it: null if it can't be opened, undefined if it hasn't arrived
  * @param {{ budget?: number }} [o]
- * @returns {{ path: string[], url: string, heads: string[] | null, role: "acting" | "mirror" | "pinned" | "closed", reason?: string, depth: number, parent: number | null, link: string | null }[]}
+ * @returns {{ path: string[], url: string, heads: string[] | null, deps: object | null, role: "acting" | "mirror" | "pinned" | "closed", reason?: string, depth: number, parent: number | null, link: string | null }[]}
  */
 export function expand(root, docOf, { budget = Infinity } = {}) {
   const out = [];
@@ -74,7 +75,7 @@ export function expand(root, docOf, { budget = Infinity } = {}) {
       if (out.length >= budget) break;
       const ident = identityOf(occ.url, occ.heads);
       const n = out.length;
-      const base = { path: occ.path, url: occ.url, heads: occ.heads, depth: occ.path.length, parent: occ.parent, link: occ.link };
+      const base = { path: occ.path, url: occ.url, heads: occ.heads, deps: occ.heads ? (occ.deps ?? null) : null, depth: occ.path.length, parent: occ.parent, link: occ.link };
       if (occ.closed) {
         out.push({ ...base, role: "closed", reason: occ.closed });
         continue;

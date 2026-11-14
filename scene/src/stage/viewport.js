@@ -527,11 +527,14 @@ export class LabelLayer {
     this.onChange = onChange;
     this.groups = new Map(); // owner → Map(key → { el, world, ends, screen, rank, item })
     this.frames = new Map(); // owner → () => its frame's world matrix (column-major) or null: its positions are in that frame
+    this.shown = new Map(); // owner → () => are they shown now (a linked doc's, while its link's content is)
   }
-  /** An owner's labels; `frame`: positions are in that frame (a stage's), and follow it as it moves. */
-  sync(owner, items, frame = null) {
+  /** An owner's labels; `frame`: positions are in that frame (a stage's), and follow it as it moves; `shown`: whether they show now. */
+  sync(owner, items, frame = null, shown = null) {
     if (typeof frame === "function") this.frames.set(owner, frame);
     else this.frames.delete(owner);
+    if (typeof shown === "function") this.shown.set(owner, shown);
+    else this.shown.delete(owner);
     const prev = this.groups.get(owner) ?? new Map();
     const next = new Map();
     for (const item of items ?? []) {
@@ -576,6 +579,7 @@ export class LabelLayer {
     else {
       this.groups.delete(owner);
       this.frames.delete(owner);
+      this.shown.delete(owner);
     }
     this.onChange?.();
   }
@@ -591,8 +595,9 @@ export class LabelLayer {
       const fm = this.frames.get(owner)?.() ?? null;
       if (fm) m4.fromArray(fm);
       const project = fm ? (v) => projectWorld(v.clone().applyMatrix4(m4)) : projectWorld;
+      const hidden = this.shown.get(owner)?.() === false;
       for (const entry of entries.values()) {
-        const p = entry.screen ?? (entry.world ? project(entry.world) : null);
+        const p = hidden ? null : (entry.screen ?? (entry.world ? project(entry.world) : null));
         if (!p) {
           entry.el.style.display = "none";
           if (entry.leader) entry.leader.style.display = "none";
@@ -1408,13 +1413,21 @@ export class Viewport {
     g.name = `layer:${owner}`;
     g.userData.owner = owner;
     g.userData.onTop = !!onTop;
-    // a stage's layer hangs where its root does (under: the link's key): it follows that node's world matrix
+    // a stage's layer hangs where its root does (under: the link's key): an anchor the viewport owns
+    // follows that node's world matrix and is drawn only while the link's content is (a hidden link
+    // hides its doc's drawing too); what's in the layer is the owner's
+    let top = g;
     if (under != null) {
+      top = new Group();
+      top.name = `anchor:${owner}`;
+      top.userData.owner = owner;
+      top.userData.onTop = !!onTop;
+      top.matrixAutoUpdate = false;
+      top.add(g);
       g.userData.under = under;
-      g.matrixAutoUpdate = false;
       this.followLayer(g);
     }
-    if (this.ok) (onTop ? this.topScene : this.widgets).add(g);
+    if (this.ok) (onTop ? this.topScene : this.widgets).add(top);
     let set = this.layers.get(owner);
     if (!set) this.layers.set(owner, (set = new Set()));
     set.add(g);
@@ -1422,12 +1435,21 @@ export class Viewport {
     return g;
   }
 
-  /** Put a layer that hangs under a node where that node is drawn now. */
+  /** Put a layer that hangs under a node where that node is drawn now, and draw it only while that node's content is. */
   followLayer(g) {
-    const m = this.worldOf(g.userData.under);
-    if (m) g.matrix.fromArray(m);
-    else g.matrix.identity();
-    g.matrixWorldNeedsUpdate = true;
+    const anchor = g.parent;
+    if (!anchor) return;
+    const under = g.userData.under;
+    const m = this.worldOf(under);
+    if (m) anchor.matrix.fromArray(m);
+    else anchor.matrix.identity();
+    anchor.visible = this.contentShown(under);
+    anchor.matrixWorldNeedsUpdate = true;
+  }
+
+  /** Is what hangs in this node's body (a link's doc) drawn now? For a stage's labels and layers. */
+  contentShown(key) {
+    return !this.objects.has(key) || this.isShown(key);
   }
 
   /** Every layer that hangs under a node, where it is now (before drawing and picking). */
@@ -1441,8 +1463,9 @@ export class Viewport {
     if (!set) return;
     this.layers.delete(owner);
     for (const g of set) {
-      g.removeFromParent();
-      disposeObject(g);
+      const top = g.userData.under != null ? g.parent ?? g : g;
+      top.removeFromParent();
+      disposeObject(top);
     }
     this.invalidate();
   }
@@ -1497,7 +1520,10 @@ export class Viewport {
   // stay visible; hiding a GROUP object (kind "group", no geometry) hides its
   // whole `group` node, so everything below it goes too. Boxes, picking and
   // snapping look at bodies, so they never count a child's geometry as the
-  // parent's.
+  // parent's. A link's content is its doc (COMPOSITION.md §2): the roots of
+  // the stage it opens (keys of another stage, ./paths.js) hang in the
+  // link's body, so hiding a link hides its doc, as hiding any object hides
+  // what it's made of; a link has no GLB, so its body's own box is its hint.
   ensureObject(id) {
     let entry = this.objects.get(id);
     if (!entry) {
@@ -1533,13 +1559,14 @@ export class Viewport {
     return entry;
   }
 
-  /** Put an object's group under its parent's (null = the scene root). */
+  /** Put an object's group under its parent's (null = the scene root); a linked doc's root, in its link's body. */
   setParent(id, parentId) {
     const entry = this.objects.get(id);
     if (!entry) return;
     let target = this.content;
     if (parentId && parentId !== id) {
-      const p = this.ensureObject(parentId).group;
+      const pe = this.ensureObject(parentId);
+      const p = (parseKey(id)?.n ?? 0) !== (parseKey(parentId)?.n ?? 0) ? pe.body : pe.group;
       // never make a loop in the scene graph, whatever the caller says
       let loops = false;
       for (let o = p; o; o = o.parent) if (o === entry.group) loops = true;
@@ -1556,6 +1583,8 @@ export class Viewport {
     // Attached objects outlive their parent: move them to the root (the scene
     // doc gives them their new transforms).
     for (const child of [...entry.group.children]) if (child !== entry.body) this.content.add(child);
+    // (and a link's doc, hung in its body: its stage closes on its own)
+    for (const child of [...entry.body.children]) if (this.objects.get(child.userData?.objectId)?.group === child) this.content.add(child);
     this.removePlaceholder(entry);
     disposeObject(entry.body);
     entry.group.removeFromParent();
@@ -1815,11 +1844,21 @@ export class Viewport {
 
   // ─── visibility and boxes ─────────────────────────────────────────────────
 
-  /** Is this object drawn: its body and every node above it visible (groups hide their subtree)? Takes an id or an entry. */
-  isShown(entry) {
+  /**
+   * Is this object drawn: its body and every node above it visible (groups
+   * hide their subtree)? Takes an id or an entry. `inStage`: shown in its own
+   * stage, its doc's say only: the walk stops at its stage's root, so a host
+   * hiding the link it hangs in doesn't count (a stage's boxes are its own, I7).
+   */
+  isShown(entry, { inStage = false } = {}) {
     if (typeof entry === "string") entry = this.objects.get(entry);
     if (!entry || !entry.body.visible) return false;
-    for (let o = entry.group; o && o !== this.content; o = o.parent) if (!o.visible) return false;
+    const n = inStage ? (parseKey(entry.group.userData.objectId)?.n ?? 0) : null;
+    for (let o = entry.group; o && o !== this.content; o = o.parent) {
+      const at = o.userData?.objectId;
+      if (inStage && at != null && (parseKey(at)?.n ?? 0) !== n) return true; // the link's body: its host's
+      if (!o.visible) return false;
+    }
     return true;
   }
 
@@ -1828,12 +1867,12 @@ export class Viewport {
    * hint box while the GLB is still on its way (unless hints: false). For a
    * group, the union of its shown descendants' boxes.
    */
-  objectBox(id, { hints = true, within = null } = {}) {
-    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within });
+  objectBox(id, { hints = true, within = null, inStage = false } = {}) {
+    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within, inStage });
     const entry = this.objects.get(id);
     if (!entry) return null;
     if (entry.kind === "group") return null;
-    if (!this.isShown(entry)) return null;
+    if (!this.isShown(entry, { inStage })) return null;
     const local = entry.content ? entry.box : hints ? entry.hint : null;
     if (!local) return null;
     entry.body.updateWorldMatrix(true, false);
@@ -1854,10 +1893,10 @@ export class Viewport {
   }
 
   /** A group's box: the union of what's shown of what's in it. */
-  groupBox(gid, { hints = true, within = null } = {}) {
+  groupBox(gid, { hints = true, within = null, inStage = false } = {}) {
     const box = new Box3();
     for (const id of this.groupMembers.get(gid) ?? []) {
-      const b = this.objectBox(id, { hints, within });
+      const b = this.objectBox(id, { hints, within, inStage });
       if (b) box.union(b);
     }
     return box.isEmpty() ? null : box;
@@ -1883,7 +1922,8 @@ export class Viewport {
     const box = new Box3();
     for (const [id, e] of this.objects) {
       if (e.kind === "group" || (stage != null && (parseKey(id)?.n ?? 0) !== stage)) continue;
-      const b = this.objectBox(id, { hints, within });
+      // (one stage's: what its doc shows, whatever its host does with the link)
+      const b = this.objectBox(id, { hints, within, inStage: stage != null });
       if (b) box.union(b);
     }
     return box;
@@ -1896,12 +1936,13 @@ export class Viewport {
     return this.camera.getWorldDirection(new Vector3());
   }
 
-  /** @returns {{ position: number[], target: number[], fov: number } | null} (while held, target is straight ahead) */
+  /** @returns {{ position: number[], target: number[], fov: number, up: number[] } | null} (while held, target is straight ahead; up: the picture's, rolled as the camera is) */
   getCamera() {
     if (!this.ok) return null;
     const position = this.camera.position.toArray();
     const target = this.holds > 0 ? reseatTarget(position, this.forward().toArray(), this.holdDistance) : this.controls.target.toArray();
-    return { position, target, fov: this.camera.fov };
+    const up = new Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).toArray();
+    return { position, target, fov: this.camera.fov, up };
   }
 
   /**

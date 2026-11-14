@@ -4,7 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import { SEP, comparePaths, elementOf, keyOf, parseKey, samePath } from "./paths.js";
-import { frameOf, hitIn, rayIn, scopeViewport, similarityOf } from "./scope.js";
+import { contentMatrix, frameOf, hitIn, rayIn, scopeViewport, similarityOf } from "./scope.js";
+import { Group } from "three";
 import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
 const IDS = ["a", "o1x", "", "0", "12", `${SEP}x`, `${SEP}3${SEP}y`, `a${SEP}b`, "L/c7", " "];
@@ -155,5 +156,92 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     // the outermost has no root: riding its root rides nothing
     const top = scopeViewport(vp, { n: 0 });
     expect(top.rideSpec({ id: null })).toBe(null);
+  });
+
+  it("a box is asked for in the stage's frame, or in one of its objects' (`in`): the viewport boxes the object's own geometry within that frame, as its own stage shows it", () => {
+    const F = composeMatrix({ position: [10, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
+    const deck = multiplyMatrices(F, composeMatrix({ position: [1, 0, 0], rotation: [0, 0.3, 0], scale: 1 }));
+    const within = [];
+    const vp = {
+      ok: true,
+      objects: new Map(),
+      poses: new Map(),
+      worldOf: (k) => (k === keyOf(1, "deck") ? deck : null),
+      objectBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
+      groupBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
+    };
+    const sc = scopeViewport(vp, { n: 1, root: "L", frame: () => F });
+    expect(sc.objectBox("winch")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(sc.objectBox("winch", { in: "deck" })).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(sc.objectBox("winch", { in: "gone" })).toBe(null);
+    expect(within.map((w) => w[0])).toEqual([keyOf(1, "winch"), keyOf(1, "winch")]);
+    // the stage's frame: F's inverse; the deck's: its displayed world's inverse
+    const id = (m, inv) => multiplyMatrices(m, inv).every((v, i) => Math.abs(v - [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1][i]) < 1e-9);
+    expect(id(F, within[0][1])).toBe(true);
+    expect(id(deck, within[1][1])).toBe(true);
+    // shown as its own stage shows it: the host hiding the link it hangs in doesn't take a box away (I7)
+    expect(sc.groupBox("g")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(within.map((w) => w[2])).toEqual([true, true, true]);
+  });
+});
+
+// The frame audit (COMPOSITION.md §4, I7): what reads three.js matrices goes
+// through the choke point. Geometry inside an object is read in the object's
+// own frame (contentMatrix: the dimension tool's surface gaps), which every
+// frame above it cancels; the camera comes into a stage's frame with its up
+// turned as directions are (the axes triad, a sea around the camera).
+describe("I7: the frame audit", () => {
+  const leafUnder = (frame) => {
+    const outer = new Group();
+    outer.matrixAutoUpdate = false;
+    if (frame) outer.matrix.fromArray(frame);
+    const root = new Group();
+    root.position.set(0.5, -1, 2);
+    root.rotation.set(0.2, 0.4, 0);
+    const mid = new Group();
+    mid.position.set(1, 0, 0);
+    mid.rotation.set(0, 0, 0.7);
+    mid.scale.setScalar(1.5);
+    const leaf = new Group();
+    leaf.position.set(0, 2, -1);
+    outer.add(root);
+    root.add(mid);
+    mid.add(leaf);
+    outer.updateMatrixWorld(true);
+    return { root, leaf };
+  };
+
+  it("geometry in an object's own frame is the same under every frame to depth 3", () => {
+    const { root, leaf } = leafUnder(null);
+    const want = contentMatrix(root, leaf);
+    let n = 0;
+    for (const m of frames()) {
+      const u = leafUnder(m);
+      expect(close(contentMatrix(u.root, u.leaf), want, 1e-9)).toBe(true);
+      n++;
+    }
+    expect(n).toBeGreaterThan(100);
+  });
+
+  it("the camera in a stage's frame: position and target as points, up as a direction; set(get()) is where it was", () => {
+    const world = { position: [3, 4, 5], target: [0, 1, 0], fov: 50, up: [0, 1, 0] };
+    const tilted = { ...world, up: [Math.sin(0.3), Math.cos(0.3), 0] };
+    for (const m of frames())
+      for (const cam of [world, tilted]) {
+        const f = frameOf(m);
+        let set = null;
+        const sc = scopeViewport({ ok: true, objects: new Map(), poses: new Map(), getCamera: () => cam, setCamera: (c) => (set = c) }, { n: 1, root: "L", frame: () => m });
+        const got = sc.camera.get();
+        expect(close(got.position, f.pointIn(cam.position), 1e-8) && close(got.target, f.pointIn(cam.target), 1e-8)).toBe(true);
+        expect(close(got.up, f.dirIn(cam.up), 1e-9)).toBe(true);
+        // still a unit, still across the view as it was
+        const d = got.target.map((v, i) => v - got.position[i]);
+        const wd = cam.target.map((v, i) => v - cam.position[i]);
+        const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        expect(Math.abs(Math.hypot(...got.up) - 1)).toBeLessThan(1e-9);
+        expect(Math.abs(dot(got.up, d) / Math.hypot(...d) - dot(cam.up, wd) / Math.hypot(...wd))).toBeLessThan(1e-9);
+        sc.camera.set(got);
+        expect(close(set.position, cam.position, 1e-8) && close(set.target, cam.target, 1e-8) && close(set.up, cam.up, 1e-9)).toBe(true);
+      }
   });
 });

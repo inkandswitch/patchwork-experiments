@@ -42,11 +42,19 @@
 //     "Stand up") pops the seat: walking on her deck beside the table and
 //     facing it, the seat still A's; F once more, back in the seat view;
 // 11. screens of both views at anchor and under way.
-// 12. under way, seated (TOOLS.md build step 3): A selects a card on the table
-//     by its menu's Select (the first entry), and drags its halo's X arrow:
-//     the handles are in the card's parent's frame as drawn, so while she
-//     heels and sails on the card moves along the table's X only, and that
-//     is what's written, local to the same parent.
+// 12. under way, seated: the menu on a card has the card's verbs (the
+//     game's) and Select, which selects the link the card is in (the focus
+//     is the boat's: scene/COMPOSITION.md §5), not the card;
+// 13. editing in context (COMPOSITION.md build step 14), under way: A picks
+//     Edit on the body chip and clicks a card on the table (it selects the
+//     link: the focus is the boat's), then double-clicks it, which enters
+//     the game (the focus moves into G: the trail says where, the
+//     general parts run in G's stage); a click selects the card itself (the
+//     boat sees the link, G the card), and its halo's X arrow, in the card's
+//     parent's frame as drawn, moves it along the table's X only while she
+//     heels and sails on, written to G local to the same parent and nothing
+//     to the boat; B is untouched; Escape deselects, Escape again
+//     leaves, the general parts back in the boat's stage.
 // Prints a JSON checklist; exits non-zero if any check fails.
 //
 // Simulated time: both views run on the page's manual clock (window.__time),
@@ -295,7 +303,7 @@ try {
   check("1: the game is a doc of its own: every piece at its root, its own title and start", shape.pieces === 63 && shape.piecesAtGameRoot === 63 && shape.gameTitle === "Lost Cities table" && shape.gameStart === "seat", { pieces: shape.pieces, atRoot: shape.piecesAtGameRoot, title: shape.gameTitle, start: shape.gameStart });
   // titled by the game and its deck, never by the scene it was set down in (tabletop/GAME-FORMAT.md)
   check("1: a secure deck, named for the game, not the ship", shape.deckType === "secure-deck" && shape.deckTitle === "Lost Cities: Deck", { deckType: shape.deckType, deckTitle: shape.deckTitle });
-  check("1: it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", shape.start === "seat" && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { start: shape.start, sail: shape.sail, anchor: shape.anchor, home: shape.home });
+  check("1: it starts people through the game's link (as the game starts them), sail down, anchor down, a home view over the cockpit", shape.start === null && shape.startsThroughLink && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { start: shape.start, through: shape.startsThroughLink, sail: shape.sail, anchor: shape.anchor, home: shape.home });
   check("1: the seats are the game's, their views in its root frame (it rides the table by the link)", Object.values(shape.seats ?? {}).length === 2 && Object.values(shape.seats).every((s) => s.camera && !s.camera.in), shape.seats);
   // (view.start is read once, on arrival: A, who made it, is still where the template put them)
   check("A, who made it, is where it left them: Look", (await P("bodyLabel('a')")) === "Look", await P("bodyLabel('a')"));
@@ -578,6 +586,91 @@ try {
     const seat = await P("seatView('p1', 'a')");
     const cam2 = await P("cam('a')");
     check("10: F at it again: back in the seat view", again && Math.hypot(...cam2.position.map((v, i) => v - seat.position[i])) < 0.3, { cam: cam2.position, seat: seat.position, body: await P("body('a')") });
+  }
+
+  // ── 13: editing in context, under way (COMPOSITION.md build step 14) ──
+  {
+    await P("focus('a')");
+    const chip = await P("chip('a')");
+    if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
+    await until("chipItem('a', 'Edit')", 3000);
+    const item = await P("chipItem('a', 'Edit')");
+    if (item) await b.click(Math.round(item.x), Math.round(item.y));
+    await b.rest(500);
+    check("13: Edit on the body chip: the seat body leaves (nothing stands on Edit), the seat still A's", (await P("body('a')")).id === "edit" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
+    // she orbits to look down on the table from above (the orbit camera rides her hull: it stays there)
+    await P("setCam('a', __p.overTable('a'))");
+    await b.rest(600);
+    // a card of G's lying on the table in plain sight on A's screen: one played, not one in the deck's pile (the
+    // deck's keeper keeps those where it puts them) nor one under another
+    const w0 = await P("where()");
+    const pile0 = await P("pile()");
+    const played = w0.table.filter((x) => !pile0.includes(x));
+    let at = await until(`aimBest(${J(played)}, 'a')`, 3000);
+    let target = at?.id ?? null;
+    if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
+    else {
+      const bBody = await P("bodyLabel('b')");
+      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens, narrowing
+      // the canvas: let it settle and aim again, so the double-click lands on the card
+      await b.click(at.x, at.y);
+      await until(`selectionPath('a')?.length === 1`, 3000);
+      await b.rest(800);
+      // (the canvas is narrower now: a card in plain sight on it again, maybe another)
+      let atD = await until(`aimBest(${J(played)}, 'a')`, 3000);
+      if (atD) target = atD.id;
+      else check("13: with the inspector open, a card of G's is still in plain sight on A's screen", false, { played });
+      atD ??= at;
+      await b.dblclick(atD.x, atD.y);
+      await b.rest(400);
+      const entered = await until(`focusPath('a').length === 1`, 3000);
+      check("13: a double-click on a card of the game enters it: the focus is the link, the trail says where", entered && J(await P("focusPath('a')")) === J([ids.link]) && J(await P("trail('a')")) === J([await P("boatTitle()"), await P("linkName()")]), { focus: await P("focusPath('a')"), trail: await P("trail('a')"), aimed: atD, dbls: await P("dbls('a')") });
+      check("13: the general parts moved into G's stage (the halo runs there, and not in the boat's)", J(await P("runsIn('a', 'scene.halo')")) === J([[ids.link]]) && J(await P("runsIn('a', 'scene.menu')")) === J([[ids.link]]), { halo: await P("runsIn('a', 'scene.halo')"), menu: await P("runsIn('a', 'scene.menu')") });
+      // a click on the card selects it, now that the focus is in its doc (Edit's click, ahead of carrying)
+      const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
+      if (at2) await b.click(at2.x, at2.y);
+      await until(`halo('a')?.id === ${J(target)}`, 5000);
+      await b.rest(800); // (the inspector's tab opens with it, so the canvas narrows: let it settle before aiming)
+      const seen = await P("seen('a')");
+      check("13: a click selects the card itself: the boat sees the link, G the card", J(await P("selectionPath('a')")) === J([ids.link, target]) && seen.some(([p, x]) => p.length === 0 && x === ids.link) && seen.some(([p, x]) => J(p) === J([ids.link]) && x === target), { path: await P("selectionPath('a')"), seen });
+      const halo = await P("halo('a')");
+      check("13: its halo is on it, in its parent's frame (G's root: the table, by the link)", halo?.id === target && halo.parent === null, { halo, why: await P("haloWhy('a')") });
+      const h0 = await P("haloAt('a', 0)"), h1 = await P("haloAt('a', 0, 0.02)");
+      if (h0 && h1) {
+        const len = Math.hypot(h1.x - h0.x, h1.y - h0.y);
+        const u = [(h1.x - h0.x) / len, (h1.y - h0.y) / len];
+        const before = await P(`transform(${J(target)})`);
+        const parent = await P(`parentOf(${J(target)})`);
+        const boatLink0 = J(await P("linkRecord()"));
+        const hull0 = await P(`worldOf(${J(ids.hull)}, 'a')`);
+        const mid = await b.drag([h0.x, h0.y], [h0.x + u[0] * 40, h0.y + u[1] * 40], {
+          steps: 12,
+          beforeRelease: async () => {
+            await b.rest(600); // she sails on under the held arrow
+            return { hull: await P(`worldOf(${J(ids.hull)}, 'a')`) };
+          },
+        });
+        await b.rest(300);
+        const after = await P(`transform(${J(target)})`);
+        const hullMoved = Math.hypot(mid.hull[12] - hull0[12], mid.hull[13] - hull0[13], mid.hull[14] - hull0[14]);
+        const d = after.position.map((v, i) => v - before.position[i]);
+        // not turned: the same rotation, whichever way round a half turn is written (π or −π)
+        const sameTurn = before.rotation.every((v, i) => Math.abs(Math.atan2(Math.sin(v - after.rotation[i]), Math.cos(v - after.rotation[i]))) < 1e-6);
+        report.numbers.haloInContext = { before: before.position, after: after.position, hullMovedM: +hullMoved.toFixed(3), parent };
+        check("13: she moved under the drag (the parent is moving)", hullMoved > 0.05, report.numbers.haloInContext);
+        await shot("entered");
+        check("13: the card moved along its parent's X only, written to G local to the same parent, not turned; the boat's link untouched", d[0] > 0.003 && Math.abs(d[1]) < 1e-6 && Math.abs(d[2]) < 1e-6 && sameTurn && (await P(`parentOf(${J(target)})`)) === parent && (await P(`inGame(${J(target)})`)) && J(await P("linkRecord()")) === boatLink0, { d, before, after });
+      } else check("13: the card's X arrow is on A's screen", false, { h0, h1, halo: await P("halo('a')"), why: await P("haloWhy('a')") });
+      check("13: B is untouched: its focus the boat's, nothing selected, in the body it was in", J(await P("focusPath('b')")) === "[]" && (await P("selectionPath('b')")) === null && (await P("bodyLabel('b')")) === bBody, { focus: await P("focusPath('b')"), selected: await P("selectionPath('b')"), body: await P("bodyLabel('b')"), was: bBody });
+      await P("focus('a')");
+      await b.key("Escape");
+      await b.rest(300);
+      const deselected = (await P("selectionPath('a')")) === null && J(await P("focusPath('a')")) === J([ids.link]);
+      await b.key("Escape");
+      await b.rest(400);
+      check("13: Escape deselects, then leaves: the focus back on the boat, the trail gone, the general parts back in the boat's stage", deselected && J(await P("focusPath('a')")) === "[]" && (await P("trail('a')")) === null && (await until("runsIn('a', 'scene.halo').length === 1 && __p.runsIn('a', 'scene.halo')[0].length === 0", 3000)), { focus: await P("focusPath('a')"), trail: await P("trail('a')"), halo: await P("runsIn('a', 'scene.halo')") });
+      await shot("edited-in-context");
+    }
   }
 
   check("nothing failed to load", (await P("loading('a')")).errors === 0 && (await P("loading('b')")).errors === 0, { a: await P("loading('a')"), b: await P("loading('b')") });

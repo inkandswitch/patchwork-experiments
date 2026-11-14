@@ -194,6 +194,7 @@ export function commandsKey(list) {
       state.checked ?? null,
       state.value ?? null,
       Array.isArray(state.choices) ? state.choices.map((c) => [c?.value ?? null, c?.label ?? ""]) : null,
+      Array.isArray(state.options) ? state.options.map((c) => [c?.value ?? null, c?.label ?? ""]) : null,
     ]),
   );
 }

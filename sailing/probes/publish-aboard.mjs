@@ -20,7 +20,7 @@
 // bin's Card table in her cockpit and Lost Cities on the table (api.part),
 // and a home view over the cockpit is set. It checks:
 // - every piece is under the table and the table under the hull; the deck
-//   is a secure-deck (card-table is installed); it starts people at the table (the seat body), with the
+//   is a secure-deck (card-table is installed); it starts people through the game's link (as the game does: the seat body), with the
 //   sail down and the anchor down; each seat's view is in the table's frame;
 // - every object shows one of the scene's own files;
 // - with A and B seated, the secure deck reaches "playing" and each hand's
@@ -39,18 +39,20 @@
 // frame each time round.
 
 import { join, resolve, dirname } from "node:path";
-import { packageProblems, withPackages } from "./scene-packages.mjs";
+import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
 // the scene, the seats, the ship's, the table's and the secure deck's, and the two her
 // companionway's traits are for (its hatch's slide, its exit). In a real
-// shell the stage works these out from the registry; the probe page has none
-// that says where its plugins come from, so they're stated here.
-const PACKAGES = ["scene", "seats", "sailing", "tabletop", "card-table", "joints", "traversal"];
+// shell the stage works these out from the registry; the probe page
+// registers each package's plugins from its URL (?urls=), so the stages work
+// them out here too, and the probe checks that what each doc calls for is
+// within what is stated here.
+const PACKAGES = ["scene", "sailing", "tabletop", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
-// from. (The boat lists the game's too, for now: a view offers the packages of the outermost doc only, so a
-// viewer arriving at the boat without seats or tabletop would never be asked for what her linked game runs.)
+// from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
+// together, so a viewer arriving at the boat is asked for what her linked game runs too.
 const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -106,8 +108,11 @@ for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/ind
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-aboard"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
+// each package's URL, as its pushwork config (or PACKAGE_URL_<NAME>) gives it: the page registers its plugins from it
+const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES, "keep"])].map((p) => [p, pushworkUrl(p)]));
+const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
-const b = await browser({ root: ROOT, port: 4796, cdp: 9796, page: "/sailing/probes/aboard-probe.html", width: 1416, height: 530, show: !!args.show, timeout: 600_000 });
+const b = await browser({ root: ROOT, port: 4796, cdp: 9796, page: `/sailing/probes/aboard-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1416, height: 530, show: !!args.show, timeout: 600_000 });
 const js = (expr, ms = 60_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 60);
@@ -125,12 +130,22 @@ try {
   const s = await P("shape()");
   check("two docs: the boat holds one locked link to the game on the table, and none of its pieces or seats; the game every piece at its root", s.link?.parent === ids.table && s.link.locked && s.boatPieces === 0 && !s.boatSeats && s.pieces === 63 && s.piecesAtGameRoot === 63 && s.tableParent === ids.hull, { link: s.link, boatPieces: s.boatPieces, pieces: s.pieces, atRoot: s.piecesAtGameRoot });
   check("a secure deck", s.deckType === "secure-deck", s.deckType);
-  check("it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", s.start === "seat" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, sail: s.sail, anchor: s.anchor, home: s.home });
+  check("it starts people through the game's link (as the game starts them: watching from a seat), sail down, anchor down, a home view over the cockpit", s.start === null && s.startsThroughLink && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, through: s.startsThroughLink, sail: s.sail, anchor: s.anchor, home: s.home });
   check("the seats are the game's, their views in its root frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera && !x.camera.in), s.seats);
   // the scene is titled as asked; its deck by the game and the deck, never by the scene (tabletop/GAME-FORMAT.md)
   check(`titled “${TITLE}”, its deck “Lost Cities: Deck”`, s.title === TITLE && s.deckTitle === "Lost Cities: Deck", { title: s.title, deck: s.deckTitle });
   check("her companionway is under her, an exit that leads nowhere (\"Go below\"), the only exit; its hatch under it, shut", s.companionway?.parent === ids.hull && JSON.stringify(s.companionway.exit) === JSON.stringify({ verb: "Go below" }) && s.exits === 1 && s.hatch?.parent === ids.companionway && s.hatch.slide?.at === "closed", { companionway: s.companionway, hatch: s.hatch, exits: s.exits });
   check("everything loads", await until("loaded('a').loaded === __p.loaded('a').total", 120_000), await P("loaded('a')"));
+  // each doc calls for plugins of its own packages only: the boat for none of the game's (seats, the keeper),
+  // which the game lists; so a viewer arriving at the boat is asked for those by the game, not the boat
+  for (const [who, inGame, stated] of [["boat", false, PACKAGES], ["game", true, GAME_PACKAGES]]) {
+    const pk = await P(`packages('a', ${inGame})`);
+    const answering = [...new Set((pk?.answering ?? []).map((p) => folderOf(p.importUrl)))];
+    const listed = (pk?.listed ?? []).map(folderOf);
+    check(`the ${who} calls for plugins of its stated packages only, and lists only those`, !!pk && answering.includes("scene") && answering.every((p) => stated.includes(p)) && listed.every((p) => stated.includes(p)), { answering, listed, stated });
+  }
+  const boatPk = await P("packages('a')");
+  check("the boat calls for nothing of seats' or the keeper's, nor lists them", !["seats", "card-table"].some((p) => boatPk.answering.some((x) => folderOf(x.importUrl) === p) || boatPk.listed.includes(urls[p])), boatPk);
   const snap = await P("snapshot()");
   const strays = [snap.scene, snap.game].flatMap((u) => {
     const assets = new Set(Object.values(snap.docs[u].assets ?? {}).map((a) => a.url));
@@ -232,7 +247,7 @@ async function publish(snap) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
         const links = Object.values(got.objects ?? {}).filter((o) => o.providerId === "scene.link");
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-        else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
+        else if (got.objects?.[got.view?.start?.place]?.providerId !== "scene.link" || "body" in got.view.start) problem = `came back with view.start ${J(got.view?.start)}`;
         else if (!hull) problem = "came back without the ship";
         else if (links.length !== 1 || links[0].sourceUrl !== game.url) problem = `came back without one link to the game (${links.map((l) => l.sourceUrl).join(", ")})`;
         else if (got.claims) problem = "came back with claims";

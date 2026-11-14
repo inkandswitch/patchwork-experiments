@@ -8,9 +8,9 @@
 // card aboard selects the link it's in; outside the focus a Select does
 // nothing (verbs and carries still reach there: they don't go through here).
 //
-// Until links are open (COMPOSITION.md build step 12) there is one stage and
-// the focus is always []: a selection is [id]. The stage keeps it as
-// local.selected = id.
+// The view (stage/view.js) keeps both and changes them only through
+// selectionStep, so H10 holds there by construction; which links may be
+// entered (an open link whose doc acts) is the view's to say, as `link`.
 
 /** The element of the focus stage that `path` goes through, or null when it's outside the focus (or nothing). */
 export function atFocus(focus, path) {
@@ -27,13 +27,15 @@ export const selectionAtFocus = ({ focus, selected }) => selected == null || (se
  * - press { path }: the Edit body's plain click. On something in the focus
  *   it selects that element; on nothing ([]) it clears; outside, nothing.
  * - select { path }: the menu's Select: as a press, but on nothing, nothing.
- * - enter { path }: enter a link that is an element of the focus stage; the
- *   selection clears (it was in the stage left behind).
+ * - clear: no selection.
+ * - enter { path, link }: enter a link that is an element of the focus
+ *   stage (`link`: the view says it may be entered); the selection clears
+ *   (it was in the stage left behind).
  * - leave: out to the stage the focus is in, selection cleared; at the
  *   scene itself, nothing.
  * - escape: the selection if there is one, else the focus (Leave).
  * @param {{ focus: string[], selected: string[] | null }} state
- * @param {{ type: "press" | "select" | "enter" | "leave" | "escape", path?: string[], link?: boolean }} ev
+ * @param {{ type: "press" | "select" | "clear" | "enter" | "leave" | "escape", path?: string[], link?: boolean }} ev
  * @returns {{ focus: string[], selected: string[] | null }} the same object when nothing changes
  */
 export function selectionStep(state, ev) {
@@ -46,6 +48,8 @@ export function selectionStep(state, ev) {
       if (!at || (selected && sameKey(selected, at))) return state;
       return { focus, selected: at };
     }
+    case "clear":
+      return selected == null ? state : { focus, selected: null };
     case "enter": {
       const at = atFocus(focus, ev.path);
       if (!at || !ev.link || at.length !== ev.path.length) return state;
@@ -59,6 +63,25 @@ export function selectionStep(state, ev) {
     default:
       return state;
   }
+}
+
+/**
+ * The events that take the focus from `focus` to `to`: a leave for each
+ * level `to` doesn't share, then an enter for each link `to` goes on
+ * through, outermost first. Each enter's `link` is the caller's (whether
+ * that path may be entered). Pure.
+ * @param {string[]} focus  @param {string[]} to  @param {(path: string[]) => boolean} [link]
+ */
+export function focusSteps(focus, to, link = () => true) {
+  let common = 0;
+  while (common < focus.length && common < to.length && focus[common] === to[common]) common++;
+  const out = [];
+  for (let i = focus.length; i > common; i--) out.push({ type: "leave" });
+  for (let i = common + 1; i <= to.length; i++) {
+    const path = to.slice(0, i);
+    out.push({ type: "enter", path, link: !!link(path) });
+  }
+  return out;
 }
 
 const sameKey = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);

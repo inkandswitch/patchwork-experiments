@@ -4,6 +4,8 @@
 // attention. Every surface that shows a key asks hintFor with this, and the
 // key map dispatches with it, so what a surface shows is what a key does.
 
+import { elementOf } from "../stage/paths.js";
+
 /**
  * The command context keys are resolved in, from attention: its hit, else
  * the look (with a selection, attention's hit is null, but where the eye is
@@ -19,12 +21,15 @@ export function keyContext(api, attention) {
 
 /**
  * Attention as keys see it: pinned to a held verb's target while one is held
- * (scene.keys says which, as its "keymap" contribution), else api.attention().
+ * (scene.keys says which, as its "keymap" contribution: the target's full
+ * path, the links from the outermost in, then its id), else
+ * api.attention(). A pin is attention held to a path, as a selection is: each
+ * stage on it sees its own element of it.
  */
 export function keyAttention(api) {
   const km = (api.collect("keymap") ?? []).map((r) => r?.value).find((v) => v && typeof v.pinned === "function");
   const pinned = km?.pinned();
-  return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null }) : api.attention();
+  return Array.isArray(pinned) && pinned.length ? Object.freeze({ selected: pinned.at(-1), hit: null, pinned }) : api.attention();
 }
 
 /**
@@ -34,11 +39,14 @@ export function keyAttention(api) {
  */
 export function resolverState(api, attention = keyAttention(api)) {
   const view = api.view.get();
-  // the input path's stages, innermost first (COMPOSITION.md §5); the caller's
-  // own attention is the outermost's (a held verb pins it there)
-  const path = typeof api.path === "function" ? api.path() : [];
-  const segments = path.length > 1 ? path.map((seg) => {
-    const att = seg.stage === path.at(-1).stage ? attention : seg.attention();
+  // the input path's stages, innermost first, the focus always among them
+  // (COMPOSITION.md §5): each its own commands, in its own context, at its
+  // own element of attention; a held verb holds attention to its target's
+  // path, wherever the selection and the look have gone since
+  const pinned = Array.isArray(attention?.pinned) ? attention.pinned : null;
+  const path = typeof api.path === "function" ? api.path(pinned ? { at: pinned } : undefined) : [];
+  const segments = path.length ? path.map((seg) => {
+    const att = pinned ? Object.freeze({ selected: Array.isArray(seg.path) ? elementOf(pinned, seg.path) : pinned.at(-1), hit: null }) : seg.attention();
     return { stage: seg.stage, reader: seg, collected: seg.collect("commands"), ctx: keyContext(seg, att), attention: att };
   }) : null;
   return {

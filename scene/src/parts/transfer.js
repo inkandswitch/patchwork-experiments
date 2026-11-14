@@ -26,9 +26,17 @@
 //     the same Copy goes beside the last. Pasted in its own scene, it's a
 //     duplicate beside the original, on the same parent, each repeat one
 //     more width along.
+//   - Extract (on an object or group) makes it a scene of its own, linked
+//     here in its place; Bundle (on a link) copies the scene it shows into
+//     this one in its place, which then no longer follows it
+//     (COMPOSITION.md §8; the rule is ../extract.js). Each takes a set of
+//     the scene's root traits to go along (Extract: this scene's; Bundle:
+//     the linked scene's), offered as `options`: checkboxes in the
+//     inspector, none ticked; the menu takes none.
 // Keys, pastes and drops inside an embedded document are that document's.
-// Copying and pasting are the editor's (../stage/bodies.js): the commands,
-// ⌘C / ⌘V and a dropped row are taken only in the Edit body.
+// Copying, pasting, extracting and bundling are the editor's
+// (../stage/bodies.js): the commands, ⌘C / ⌘V and a dropped row are taken
+// only in the Edit body.
 
 import { isGroup } from "../groups.js";
 import { editing } from "../stage/bodies.js";
@@ -37,6 +45,8 @@ import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
 import { own } from "../stage/own.js";
+import { isLink, atOf } from "../stage/links.js";
+import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
 
 const RING_SEGMENTS = 48;
 /** A ring of unknown size: this fraction of its distance from the eye (the parts bin's). */
@@ -301,7 +311,76 @@ function create(api) {
     { capture: true },
   );
 
+  // ── extract and bundle ──────────────────────────────────────────────────
+  // trait names for the options, as the extensions describe them
+  let describes = new Map();
+  void traitRules(api).then((r) => {
+    if (live()) describes = r.describes;
+  });
+  const traitOptions = (keys) => keys.map((k) => ({ value: k, label: String(describes.get(k)?.name ?? k) }));
+  // a linked scene's root traits, by the url (and heads) it shows, kept in this stage's local state
+  // (so every surface asks for its commands again when they change): a pin's read once (a value
+  // doesn't change), a live link's followed as its doc changes, until this stops
+  const LINKED = "scene.transfer.linked";
+  const watched = new Map(); // key → stop watching (null while it's being found)
+  function rootTraitsOf(o) {
+    const at = atOf(o);
+    const key = at ? `${o.sourceUrl}#${at.heads.join(",")}` : o.sourceUrl;
+    const known = api.local.get()[LINKED]?.[key];
+    if (watched.has(key)) return known ?? [];
+    watched.set(key, null);
+    Promise.resolve(api.repo.find(o.sourceUrl))
+      .then((h) => {
+        if (!live()) return;
+        const read = () => {
+          const d = at ? h.view?.(at.heads)?.doc?.() : h.doc();
+          const keys = Object.keys(d?.traits ?? {});
+          const was = api.local.get()[LINKED]?.[key];
+          if (was && was.length === keys.length && was.every((k, i) => k === keys[i])) return;
+          api.local.swap((m) => ({ ...m, [LINKED]: { ...m[LINKED], [key]: Object.freeze(keys) } }));
+        };
+        read();
+        if (at || typeof h.on !== "function") return;
+        const changed = () => live() && read();
+        h.on("change", changed);
+        watched.set(key, () => h.off?.("change", changed));
+      })
+      .catch(() => watched.delete(key));
+    return [];
+  }
+  const traitsOf = (value) => (Array.isArray(value) ? value.filter((k) => typeof k === "string") : []);
+
   const commands = [
+    {
+      id: "extract",
+      edit: true,
+      name: "Extract",
+      show: ["menu", "inspector"],
+      state: (target, { scene }) => {
+        if (target == null || !scene?.objects?.[target]) return null;
+        if (!api.writable()) return { disabled: true, title: "view only" };
+        const doc = api.doc();
+        const can = extractable(doc, [target]);
+        if (!can.ok) return { disabled: true, title: can.reason };
+        return { title: "Make this a scene of its own, linked here in its place (tick what of this scene goes with it)", options: traitOptions(Object.keys(doc.traits ?? {})) };
+      },
+      run: (target, value) => void extractObjects(api, [target], traitsOf(value)),
+    },
+    {
+      id: "bundle",
+      edit: true,
+      name: "Bundle",
+      show: ["menu", "inspector"],
+      state: (target, { scene }) => {
+        const o = target != null ? scene?.objects?.[target] : null;
+        if (!isLink(o)) return null;
+        if (!api.writable()) return { disabled: true, title: "view only" };
+        const l = api.link?.(target);
+        if (!l?.open) return { disabled: true, title: l?.role === "closed" ? `Not open here (${l.reason ?? "closed"})` : "Not open here yet" };
+        return { title: "Copy the scene it shows into this one, in its place; the copy no longer follows it (tick what of that scene comes with it)", options: traitOptions(rootTraitsOf(o)) };
+      },
+      run: (target, value) => void bundleLink(api, target, traitsOf(value)),
+    },
     {
       id: "copy",
       edit: true,
@@ -344,6 +423,8 @@ function create(api) {
     dispose() {
       ring = null;
       layer = null;
+      for (const stop of watched.values()) stop?.();
+      watched.clear();
     },
     // for tests and probes
     paste,

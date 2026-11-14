@@ -15,7 +15,11 @@
 // (scene-render-controls on the render doc), the Version row (what version of
 // its source a render-doc object shows: Latest, or Fixed at… with Fix at this
 // version / Follow latest, which are also this extension's commands for the
-// menu) and the status line.
+// menu) and the status line. For a link (an object whose content is another
+// scene: COMPOSITION.md §1), a Linked scene row: what it is here (live,
+// shown again, fixed at a version, closed and why), Open, and what this
+// scene sets of it: its place, name, display, lock and its own traits on
+// it, never what's inside (Enter, scene.focus's command, goes in for that).
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
@@ -109,6 +113,17 @@ export function startBodies(collected, want = LOOK.id) {
   return out;
 }
 
+/** What the inspector's Linked scene row says of a link as the view has it ({ role, open, reason? }). Pure. */
+export function linkText(link) {
+  if (!link) return "";
+  const state = link.open ? "" : " · not open here yet";
+  if (link.role === "acting") return `Live${state}`;
+  if (link.role === "mirror") return `Live, shown again (Enter goes inside where it's linked first)${state}`;
+  if (link.role === "pinned") return `Fixed at a version${state}`;
+  const why = { unavailable: "it can't be opened here", cycle: "it would hold itself", unpinned: "inside a fixed version that doesn't hold it" }[link.reason] ?? link.reason ?? "closed";
+  return `Closed: ${why}`;
+}
+
 /** Did anything the inspector reads in local change (hover and notices don't count)? */
 function localChanged(a, b) {
   if (a === b) return false;
@@ -155,10 +170,17 @@ function create(api) {
   /** Where api.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
   const fixPointOf = (id) => (typeof api.fixPoint === "function" ? api.fixPoint(id) : null);
 
-  /** Fix an object at exactly what its render was last built from. */
+  /**
+   * Can it be fixed at a version: content that follows a doc as it changes
+   * (a render doc's build, or a link's scene doc), not a file.
+   */
+  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || api.loadState?.(id)?.content === "scene");
+  const notYet = (id) => (api.loadState?.(id)?.content === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
+
+  /** Fix an object at exactly what it shows now: its render's build, or a link's doc and every doc reached through it. */
   function fixVersion(id) {
     const point = fixPointOf(id);
-    if (!point) return void api.notify("It hasn't been built here yet, so there's no version to fix.", "error");
+    if (!point) return void api.notify("There's no version of it here to fix yet.", "error");
     apply(api.ops.setField(api.scene(), id, "at", point), "Fix at this version");
   }
 
@@ -463,8 +485,8 @@ function create(api) {
     const openFile = content === "file" ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
     const about = el("section", { class: "about", hidden: true });
     const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
-    // Which version of the source it shows (`at`); only a render doc can be fixed.
-    const version = o.renderUrl
+    // Which version of the source it shows (`at`): a render doc's, or a link's doc's.
+    const version = versioned(id, o)
       ? {
           text: el("span", { class: "version-text" }),
           fix: el("button", { type: "button", class: "button fix-version", onclick: () => fixVersion(id) }, "Fix at this version"),
@@ -473,6 +495,14 @@ function create(api) {
         }
       : null;
     const status = el("div", { class: "status-line", hidden: true });
+    // a link's: what it is here, and what this scene sets of it
+    const linkRow = api.link(id) && !group
+      ? {
+          text: el("span", { class: "link-text" }),
+          open: el("button", { type: "button", class: "button link open-linked", title: "Open the linked scene on its own", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open"),
+          note: el("p", { class: "hint link-note" }, "Its place, name, display, lock and behaviours here are this scene's. What's in it is its own: Enter to change that."),
+        }
+      : null;
 
     const root = el(
       "div",
@@ -498,6 +528,8 @@ function create(api) {
       openFile ? el("div", { class: "cluster" }, openFile) : null,
       about,
       controls ? el("div", { class: "panel-head build-head" }, el("h3", { class: "panel-title" }, "Build")) : null,
+      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Linked scene"), linkRow.text, linkRow.open) : null,
+      linkRow ? linkRow.note : null,
       version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
       version ? el("div", { class: "cluster version-actions" }, version.fix, version.follow) : null,
       controls,
@@ -533,6 +565,7 @@ function create(api) {
       status,
       statusKey: null,
       version,
+      linkRow,
       unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
     };
   }
@@ -628,6 +661,15 @@ function create(api) {
     fillAbout(scene);
     fillStatus(scene, local, o);
     fillVersion(o);
+    fillLink();
+  }
+
+  /** The Linked scene row: what the link is here, as the view has it. */
+  function fillLink() {
+    const r = view.linkRow;
+    if (!r) return;
+    const text = linkText(api.link(view.id));
+    if (r.text.textContent !== text) r.text.textContent = text;
   }
 
   /** The Version row: Latest or Fixed at…, and which button makes sense. */
@@ -651,16 +693,23 @@ function create(api) {
     if (v.text.title !== title) v.text.title = title;
     const point = fixPointOf(view.id);
     v.fix.disabled = !point || atKey(point) === key;
-    v.fix.title = !point ? "Not built here yet: nothing to fix" : "Keep showing exactly what is built now, whatever later edits to the source do";
+    v.fix.title = !point ? notYet(view.id) : "Keep showing exactly what it shows now, whatever later edits to the source do";
     v.follow.disabled = !at;
   }
 
+  // what's ticked of each command's options, for the selection shown (a new selection starts with none ticked)
+  let ticks = new Map();
+  let ticksFor = null;
   function fillCommands(scene, local) {
     const list = commandsFor(api.collect("commands"), view.id, api.context(null), ID);
     const key = commandsKey(list);
     if (key === view.commandsKey) return;
     view.commandsKey = key;
     const target = view.id;
+    if (ticksFor !== target) {
+      ticks = new Map();
+      ticksFor = target;
+    }
     // a disabled command's title is why it can't be used: written out after
     // the control, since a disabled button's tooltip is easy to never see
     const reasonOf = (state) => (state.disabled && state.title ? el("span", { class: "hint command-reason" }, String(state.title)) : null);
@@ -675,6 +724,22 @@ function create(api) {
         sel.addEventListener("change", () => api.run({ ext, command: command.id, target, value: state.choices[Number(sel.value)]?.value }));
         return [el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel), reason];
       }
+      // a command run with a set of its options (STAGE.md "A command"): a checkbox each, none ticked, then the button
+      const options = Array.isArray(state.options) && state.options.length && !state.disabled ? state.options : null;
+      const tickKey = `${ext}|${command.id}|${target}`;
+      if (options && !ticks.has(tickKey)) ticks.set(tickKey, new Set());
+      const ticked = options ? ticks.get(tickKey) : null;
+      const boxes = options
+        ? el(
+            "span",
+            { class: "command-options" },
+            options.map((o) => {
+              const box = el("input", { type: "checkbox", checked: ticked.has(o.value), dataset: { option: String(o.value) } });
+              box.addEventListener("change", () => (box.checked ? ticked.add(o.value) : ticked.delete(o.value)));
+              return el("label", { class: "toggle" }, box, ` ${o.label ?? String(o.value)}`);
+            }),
+          )
+        : null;
       const toggle = state.checked != null;
       const button = el(
         "button",
@@ -685,12 +750,12 @@ function create(api) {
           disabled: !!state.disabled,
           "aria-pressed": toggle ? String(!!state.checked) : null,
           dataset: { ext, command: command.id },
-          onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : { ext, command: command.id, target }),
+          onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : options ? { ext, command: command.id, target, value: options.map((o) => o.value).filter((v) => ticked.has(v)) } : { ext, command: command.id, target }),
         },
         // the verb's name for this target (STAGE.md "A command"), as the menu, toolbar and use prompt show it
         String(state.label ?? command.name ?? command.id),
       );
-      return [button, reason];
+      return options ? [el("span", { class: "command-with-options" }, button, boxes), reason] : [button, reason];
     }).filter(Boolean);
     view.commands.replaceChildren(...buttons);
     view.commands.hidden = !buttons.length;
@@ -759,9 +824,11 @@ function create(api) {
       return;
     }
     if (body.hidden) body.hidden = false;
-    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id));
+    // (what a link is here is the view's, and changes with no change to the doc)
+    const lk = api.link(id);
+    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
     const name = api.nameOf(id);
-    const ck = contentKey(id);
+    const ck = `${contentKey(id)}|${JSON.stringify(lk)}`;
     if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local) && last.name === name && last.content === ck) return;
     if (fresh) build(id, o);
     last = { scene, local, name, content: ck };
@@ -795,9 +862,9 @@ function create(api) {
       show: ["menu"],
       state: (target, { scene }) => {
         const o = objectOf(target, scene);
-        if (!o || isGroup(o) || !o.renderUrl || normalizeAt(o.at)) return null;
+        if (!versioned(target, o) || normalizeAt(o.at)) return null;
         const point = fixPointOf(target);
-        return point ? { title: "Keep showing exactly what is built now, whatever later edits to the source do" } : { title: "Not built here yet: nothing to fix", disabled: true };
+        return point ? { title: "Keep showing exactly what it shows now, whatever later edits to the source do" } : { title: notYet(target), disabled: true };
       },
       run: (target) => fixVersion(target),
     },
@@ -808,7 +875,7 @@ function create(api) {
       show: ["menu"],
       state: (target, { scene }) => {
         const o = objectOf(target, scene);
-        return o && !isGroup(o) && o.renderUrl && normalizeAt(o.at) ? { title: "Follow edits to the source again" } : null;
+        return versioned(target, o) && normalizeAt(o.at) ? { title: "Follow edits to the source again" } : null;
       },
       run: (target) => followLatest(target),
     },

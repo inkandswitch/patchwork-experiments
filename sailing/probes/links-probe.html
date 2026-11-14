@@ -8,7 +8,11 @@
        A (Ana)  a still room: a Card table with G linked onto it;
        B (Ben)  the sloop at anchor: the Card table in her cockpit, G linked
                 onto it (the Lost Cities part makes G and links it);
-       C (Cara) G open alone.
+       C (Cara) G open alone;
+       D (Ana again, made by i6()) G open alone in a second view of Ana's
+                whose handle refuses writes, as a viewer who may only read
+                has it; and, by i6(), the room links G twice more, live (a
+                mirror) and fixed at this version (a pin).
      All three views share G's one handle, as views in one page of one repo
      do, so the network carries nothing between them: only the stage's page
      bus does (scene/src/stage/presence.js). One manual clock (window.__time)
@@ -23,8 +27,9 @@
   html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
   body { display: flex; gap: 6px; }
   #a, #b, #c { width: 560px; height: 480px; flex: none; position: relative; }
+  #d { width: 240px; height: 200px; flex: none; position: relative; }
 </style>
-<div id="a"></div><div id="b"></div><div id="c"></div>
+<div id="a"></div><div id="b"></div><div id="c"></div><div id="d"></div>
 <script type="module">
 {
   let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
@@ -86,9 +91,10 @@ try {
   const people = { a: repo.add({ "@patchwork": { type: "contact" }, name: "Ana" }), b: repo.add({ "@patchwork": { type: "contact" }, name: "Ben" }), c: repo.add({ "@patchwork": { type: "contact" }, name: "Cara" }) };
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
-  const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c") };
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b"), c: document.getElementById("c"), d: document.getElementById("d") };
   for (const w of ["a", "b", "c"]) Object.assign(hosts[w], { repo, viewerId: people[w].url, time });
-  const dbg = { a: null, b: null, c: null };
+  Object.assign(hosts.d, { repo, viewerId: people.a.url, time });
+  const dbg = { a: null, b: null, c: null, d: null };
   const docs = { room: null, boat: null, game: null };
   const ids = {};
   const mount = (w, handle) => {
@@ -106,8 +112,11 @@ try {
     for (const id of ["scene.use", "scene.keys", "scene.add", "sailing"]) { const x = dbg[w].host.record(id)?.api; if (x) return x; }
     return null;
   };
-  /** the stage view w shows G in: its own (C), else the one its link opened */
-  const gStage = (w) => (dbg[w] ? dbg[w].view.stages().find((s) => s.url === docs.game?.url) ?? null : null);
+  /** the stage view w shows G in: its own (C, D), else the one its link opened where G acts */
+  const gStage = (w) => (dbg[w] ? dbg[w].view.stages().find((s) => s.url === docs.game?.url && s.acts) ?? null : null);
+  /** the stage of view w at a link of its outermost doc's */
+  const stageAtLink = (w, id) => dbg[w]?.view.stages().find((s) => s.path.length === 1 && s.path[0] === id) ?? null;
+  const facesIn = (st) => { const looks = st?.debug.looks(); return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; }); };
   const gKey = (w, id) => { const s = gStage(w); return s ? keyOf(s.n, id) : null; };
   const G = () => docs.game?.doc() ?? {};
   const gObjects = () => G().objects ?? {};
@@ -184,7 +193,48 @@ try {
     ids.game = docs.game.url;
     return { ...ids };
   }
+  async function i6() {
+    const aapi = apiOf("a");
+    const point = aapi.fixPoint(ids.roomLink);
+    if (!point) return { error: "the room's link has no version to fix" };
+    const pinHand = P.where().p1;
+    // what Ana sees now: the pin must go on showing exactly this
+    const pinFaces = facesIn(gStage("a"));
+    const base = JSON.parse(JSON.stringify(docs.room.doc().objects[ids.roomLink]));
+    ids.mirrorLink = `${ids.roomLink}~mirror`;
+    ids.pinLink = `${ids.roomLink}~pin`;
+    aapi.change((d) => {
+      const place = (id, x, extra) => {
+        d.objects[id] = { ...base, parent: null, transform: { position: [x, 0, 1.2], rotation: [0, 0, 0], scale: 1 }, ...extra };
+        d.order.push(id);
+      };
+      place(ids.mirrorLink, 0.8, {});
+      place(ids.pinLink, -0.8, { at: JSON.parse(JSON.stringify(point)) });
+    });
+    // D: G alone, for Ana, through a handle that refuses writes (Keyhive's "may only read", as the stage sees it)
+    const g = docs.game;
+    const readOnly = new Proxy(g, { get: (t, p) => (p === "isReadOnly" ? () => true : typeof t[p] === "function" ? t[p].bind(t) : t[p]) });
+    mount("d", readOnly);
+    const up = (st) => st?.debug.host.instanceOf("tabletop") && st.debug.host.instanceOf("card-table") && st.debug.host.instanceOf("seats");
+    const ok = await loaded(() => up(stageAtLink("a", ids.mirrorLink)) && up(stageAtLink("a", ids.pinLink)) && up(gStage("d")), 60_000);
+    if (!ok) return { error: "the mirror, the pin and D never all ran G's extensions", stages: P.i6Stages() };
+    return { pinHand, pinFaces, deps: Object.keys(point.deps ?? {}).length, mirrorLink: ids.mirrorLink, pinLink: ids.pinLink };
+  }
   Object.assign(P, {
+    /** view w's focus: the links entered ([]: its outermost doc) */
+    focusPath: (w) => dbg[w].view.atom.get().focus,
+    /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
+    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => [...s.path]),
+    /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
+    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id)]),
+    /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
+    enter(w, id) {
+      const c = dbg[w].view.focusStage()?.debug.host.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const st = c?.state(id);
+      if (!st || st.disabled) return false;
+      c.run(id);
+      return true;
+    },
     /** each view's stages: [{ n, url, path }] */
     stages: (w) => dbg[w].view.stages().map((s) => ({ n: s.n, url: s.url, path: [...s.path] })),
     link: (w) => (w === "a" ? apiOf("a").link(ids.roomLink) : w === "b" ? apiOf("b").link(ids.boatLink) : null),
@@ -217,7 +267,28 @@ try {
     hearsAll: () => ["a", "b", "c"].every((w) => { const p = P.presence(w); return p && ["a", "b", "c"].filter((x) => x !== w).every((x) => p.peers.includes(P.presence(x)?.mine)); }),
     claims: (w) => gStage(w)?.debug.claims().map((c) => c.kind) ?? [],
     claimedBy: (w, sid) => gStage(w)?.debug.host.record("seats")?.api.claimedBy(null, `seat:${sid}`) ?? null,
-    faces(w) { const looks = gStage(w)?.debug.looks(); return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; }); },
+    faces: (w) => facesIn(gStage(w)),
+    /**
+     * I6 with the real packages, mid-play (Ana seated at p1 in the room, Ben at p2 aboard, dealt): the
+     * room links G twice more, live (a mirror, Ana's own view seated in the acting stage) and fixed at
+     * this version (a pin: the room link's fixPoint); and Ana opens G alone in a second view (D) whose
+     * handle refuses writes. Link ids sort after the room link's, so G still acts where Ana sits.
+     */
+    i6: () => pumping(i6),
+    /** the faces each I6 stage shows: Ana's acting stage in the room, the mirror, the pin, and D */
+    i6Faces: () => ({ acting: facesIn(gStage("a")), mirror: facesIn(stageAtLink("a", ids.mirrorLink)), pin: facesIn(stageAtLink("a", ids.pinLink)), d: facesIn(gStage("d")) }),
+    /** what the pin's keeper and audience say of a card of Ana's hand (for a failing check's details) */
+    i6Why: (id) => {
+      const st = stageAtLink("a", ids.pinLink);
+      if (!st) return null;
+      const api = st.debug.host.record("tabletop")?.api;
+      const kept = st.debug.host.instanceOf("card-table");
+      return { audience: api?.audience(id) ?? "no api", shown: api?.shown(id) ?? null, look: st.debug.looks().get(id) ?? null, looks: st.debug.looks().size, hud: kept?.hud?.() ?? null, roster: api?.collect("roster").map((r) => r.value?.viewers?.(api.scene())) ?? null, packages: st.packages?.complete?.() ?? null, settled: st.debug.host.settled?.() ?? null, at: G().title };
+    },
+    i6Stages: () => {
+      const one = (st) => (st ? { role: st.role, writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);
+      return { acting: one(gStage("a")), mirror: one(stageAtLink("a", ids.mirrorLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { mirror: apiOf("a").link(ids.mirrorLink), pin: apiOf("a").link(ids.pinLink), room: apiOf("a").link(ids.roomLink) } };
+    },
     where() { const out = { p1: [], p2: [], table: [] }; for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id); return out; },
     /** the deck's pile, at its spot ([0.3, 0] in G's root frame), top first */
     pile() {
@@ -232,6 +303,10 @@ try {
     /** the camera's up in view w, and how far it leans */
     cameraUp(w) { const u = dbg[w].viewport.camera.up; return { up: [u.x, u.y, u.z], tilt: tiltDeg([u.x, u.y, u.z]) }; },
     hovered: (w) => gStage(w)?.debug.local.get().hovered ?? null,
+    /** who's here in view w's body chip: { session: text } */
+    here: (w) => Object.fromEntries([...hosts[w].querySelectorAll(".body-person")].map((e) => [e.dataset.session, e.textContent.trim()])),
+    /** does view w's who's here list each of these sessions, and none of them as looking or editing? */
+    hereBusy: (w, sessions) => { const h = P.here(w); return sessions.every((x) => typeof h[x] === "string" && !/· (look|edit)$/i.test(h[x])); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     pageOf(id, local, w) { const m = dbg[w].viewport.worldOf(gKey(w, id)); return m ? page(w, apply(m, local)) : null; },

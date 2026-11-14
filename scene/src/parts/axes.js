@@ -143,11 +143,14 @@ export default {
     }
 
     function drawTriad(renderer, size) {
-      const cam = api.camera.object;
-      if (!cam) return;
-      cam.getWorldDirection(dir).negate();
+      // the camera in this stage's frame (the focus doc's: the axes of what's being edited), turned and rolled as it is
+      const cam = api.camera.get();
+      if (!cam?.position || !cam.target) return;
+      dir.fromArray(cam.position).sub(tip.fromArray(cam.target));
+      if (dir.lengthSq() < 1e-18) return;
+      dir.normalize();
       triadCamera.position.copy(dir).multiplyScalar(4);
-      triadCamera.up.copy(cam.up);
+      triadCamera.up.fromArray(cam.up ?? [0, 1, 0]);
       triadCamera.lookAt(0, 0, 0);
       triadCamera.updateMatrixWorld();
       renderer.autoClear = false;

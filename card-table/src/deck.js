@@ -67,7 +67,8 @@ export function createParticipant({ handle, playerId, secret }) {
   let keys = null;
   const known = new Map(); // `${offset}:${epoch}` → face index (it never changes)
   let decoder = null;
-  const deckId = handle.url;
+  // which deck it is, for every key derived from it: its doc, at any version (a pin's handle, at fixed heads, names them after `#`)
+  const deckId = String(handle.url ?? "").split("#")[0];
 
   const doc = () => handle.doc() ?? {};
   const me = () => doc().participants?.find((p) => p.id === playerId) ?? null;
@@ -75,7 +76,9 @@ export function createParticipant({ handle, playerId, secret }) {
 
   async function myKeys() {
     if (keys || !playerId || !secret) return keys;
-    keys = playerKeys(typeof secret === "function" ? await secret() : secret);
+    // (no secret yet: one that may not make it waits for the one that may)
+    const s = typeof secret === "function" ? await secret() : secret;
+    keys = s ? playerKeys(s) : null;
     return keys;
   }
 

@@ -208,13 +208,8 @@ try {
         const gameUrl = objects()[made1].sourceUrl;
         const g = (await repo.find(gameUrl)).doc();
         const seats = Object.entries(seatsOf(g));
-        // its link's id says where it comes in the room's order (arriving watches from the first game's seat:
-        // a view's first acting stage is its links' first, by id), so Lost Cities is link-1
-        const link = `link-${ids.tables.length + 1}-${t.part.replace(/^tabletop\./, "")}`;
+        const link = made1;
         api.change((d) => {
-          d.objects[link] = d.objects[made1];
-          delete d.objects[made1];
-          d.order.splice(d.order.indexOf(made1), 1, link);
           d.objects[table].name = t.name;
           // a chair at each of its seats: a seat's camera is in the game's root frame, which sits at t.at on the table
           for (const [, s] of seats) {
@@ -227,9 +222,10 @@ try {
         });
         ids.tables.push({ table, link, game: gameUrl, part: t.part, seats: seats.map(([sid]) => sid) });
       }
-      // where the scene starts people: watching from a seat at the first table (the seat body), the home view across the room
+      // where the scene starts people: through Lost Cities' link, as that game starts them (watching from
+      // a seat: its seat body), the home view across the room (TOOLS.md §2: a start placed on a link)
       api.change((d) => {
-        d.view.start = { body: "seat", home: { position: [...HOME.position], target: [...HOME.target] } };
+        d.view.start = { place: ids.tables[0].link, home: { position: [...HOME.position], target: [...HOME.target] } };
       });
       dbg.a.view.select(null);
       // (each game's stage opens once its doc is found)

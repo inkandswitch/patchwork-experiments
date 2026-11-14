@@ -47,12 +47,25 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–12 have since been built (Build order, below). Since step 12 the
+Steps 1–15 have since been built, and step 16 decided (Build order,
+below). Since step 12 the
 stage composes docs: Lost Cities aboard is two docs (the boat, with a
 locked link to the game on its card table), and the Quiet games room links
-its games, its Lost Cities table the same game doc as the boat's. What
-follows is kept as the record of why; where it still holds, the step that
-left it says so.*
+its games, its Lost Cities table the same game doc as the boat's. Since
+step 13 pins and mirrors open: "Fitting out" is a sloop whose companionway
+is a fit-out fixed at a version, and one hatch linked live twice. Since
+step 14 a viewer enters a linked doc to select and edit what's in it, the
+boat live around them. Since step 15 a selection becomes a doc of its own,
+linked in its place, and a link is bundled back (the boat's card table and
+its game, extracted and bundled in Chrome). Step 16 was decided rather than
+built: nothing needs named frames yet, and the one workaround that looked
+like it did (the games room renaming its links to arrive at Lost Cities)
+went with a smaller rule, a start placed on a link. The links' loose ends
+are closed (Decisions, links loose ends): one packages prompt for every
+open doc, who's here and the held verbs' pins across docs, a hidden link
+hiding its doc, the frame audit, and finite harnesses for I4, I5 and I8.
+What follows is kept as the record of why; where it
+still holds, the step that left it says so.*
 
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
 (`src/stage/stage.js:336`). Every per-object table is keyed by a doc-local
@@ -194,7 +207,12 @@ outermost, until Enter moves it (section 5).
 
 So twenty linked games don't make twenty menus. A general part calls the
 focus stage's api, so the editor edits the focus's doc, but it is in no
-stage's running set. Carrying shows the other case: it is a trait part
+stage's running set. *As built (step 14):* each stage's host can run the
+general parts, and the view has the focus stage's alone do so; Enter and
+Leave start them in the stage entered and stop them in the one left by
+H2's busy half (`host.setGeneral`): one holding nothing at once, one
+holding a body, the tool, a session or a pose when it lets go, offering
+nothing meanwhile. What each doc runs is untouched (H1). Carrying shows the other case: it is a trait part
 (`scene.carry` on the things that can be carried), so each stage whose doc
 has carryable things runs its own, and a card aboard is carried by the
 game's stage, in the game's doc.
@@ -209,7 +227,8 @@ viewer starts in. Inner docs' spawns serve arrivals (section 9).
 **`collect` is the caller's.** A stage's extension collects from its own
 stage. A general part collects from every stage on the **input path**, the
 stages from the hit's innermost out to the outermost (under pointer lock
-the hit is the look ray's), each tagged with its stage. A command runs
+the hit is the look ray's), then the focus stage if it isn't among them,
+each tagged with its stage. A command runs
 as `api.run({ stage, ext, command, target })`, in its own stage and frame. A
 target never leaves its stage.
 
@@ -258,7 +277,9 @@ view computes them. A sea's water height doesn't, because only sailing
 knows it.
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
-applies; the stage's Look and Edit (the orbit camera) ride the focus stage's latest base ride. A seat
+applies; the stage's Look and Edit (the orbit camera) ride the latest base
+ride of any acting stage, wherever the focus is (it scopes selection, not
+the camera). A seat
 body rides the game's root; sailing's follow on her hull is base, and
 gives way to any other body with no flag. `camera.ride(null)` rides the
 stage's root, which is the link. `fallback` and `camera.riding()` go, and
@@ -281,6 +302,10 @@ stage's element of the path, in its frame.
 A press on a card aboard goes to tabletop, seats, then the game's carry, and
 only then to sailing, the boat's root and the body's default. A press on
 the deck never reaches the game: the doc boundary is the scope.
+
+The general parts come after every segment, wherever the hit is (they are
+the view's, in the focus stage): so with the focus inside a game aboard, a
+press on the deck still reaches the menu, the key map and the prompt.
 
 **The focus scopes selection, not input** (TOOLS.md §3, superseding
 decision 2's "edit stops at the focus"). Selecting a linked game's card
@@ -352,9 +377,15 @@ else changes.
   Every extension runs, so it looks as the place did, lenses and dressing
   included; nothing is claimed, so nobody is seated.
 - **A pin is whole.** `fixPoint(link)` holds the heads of every doc reached
-  through it in `deps`; a doc missing there is closed `"unpinned"`. Renders
-  show as of `deps`, never judged or rebuilt, so two hosts pinning one game
-  at different heads don't fight over its render docs.
+  through it in `deps`; a link inside the pin whose doc is missing there is
+  closed `"unpinned"`. Renders show as of `deps`, never judged or rebuilt,
+  so two hosts pinning one game at different heads don't fight over its
+  render docs. *As built:* "reached through it" is what the stages under
+  the link found through their repos **and** the pin's docs name by URL,
+  transitively (the game names its deck, the deck its card files). A doc an
+  extension finds that nothing in the pin names is the viewer's, not the
+  pin's (a player's secret): `fixPoint` never records it, and a pin's repo
+  finds such a doc as it is now (Decisions, step 13, 10 and 17).
 
 **Linearity.** Runtime state (a helm's angle, a keeper binding, a claim) has
 at most one writable holder among the docs a view reaches. A live link
@@ -376,13 +407,19 @@ expand(root, open) → [{ path, url, heads | null, role: "acting" | "mirror" | "
 - **A live doc acts at one occurrence per view**: the shallowest, then the
   smallest link id where two paths first differ. One viewer acting at two
   placements would run every extension twice under one session: two sims
-  stepping, two keepers dealing, two seats. The acting stage is keyed by
-  URL, so when a doc arrives and the choice changes, its frame moves and
-  its claims and channel go on.
+  stepping, two keepers dealing, two seats. *As built (step 13):* every
+  stage is keyed by its occurrence (path, role and identity), so when a doc
+  arrives and the choice changes, the stage that acted closes (its claims
+  go) and one opens where it acts now, with the mirror's stage closing in
+  its turn (Decisions, step 13, 7).
 - **Every other live occurrence is a mirror**: a read-only stage on the same
   live handle. It runs its extensions, so it looks the same, at its own
   placement. It is drawn, not acted on: its segment is never in the chain,
-  it offers no tool or body, and it never computes its clock. By the page
+  it offers no tool or body, and it never computes its clock. *As built:*
+  it draws into the world and nothing more (no chrome, camera, notices or
+  processes: one facet of the api), and hears its channel without speaking
+  on it. Its extensions read their own stage as anywhere (`api.collect`,
+  audience, looks), so a mirrored hand is shown to whoever its seat says. By the page
   bus it hears its own view's acting stage, so a carry shows in both. A
   part used twice in an assembly follows latest twice; a copied link shows
   the same game, not a dead box.
@@ -426,14 +463,26 @@ K). Both drop runtime traits and `copy: "drop"` fields.
   link at `p` (identity transform, `hint.bounds` from S's box), and clear
   references that now cross, with paste's notice. A crash between the two
   leaves an orphan doc and loses nothing.
-- **Bundle(L, K)**: copy the linked doc's records in with `planCopy`, ids
-  kept unless they collide, top-level transforms = link · local, K's traits
-  onto the host root (refused per key the host has: "This scene already has
-  Seats"), assets merged; remove the link. The linked doc is never written.
+- **Bundle(L, K)**: copy the linked doc's records in, ids kept unless they
+  collide, top-level transforms = link · local, K's traits onto the host
+  root (refused per key the host has: "This scene already has Seats"),
+  assets merged; remove the link. The linked doc is never written. A pin is
+  copied as its value: what in it follows a doc the pin holds (a link, a
+  built object) is copied fixed at the pin's heads for that doc, and render
+  docs are read as the pin holds them.
 
 Since neither carries runtime state, linearity holds under any
-interleaving, concurrent extracts included. `planCopy` gains
-`{ traits: K }`; paste passes none, so nothing adds a root trait for you.
+interleaving, concurrent extracts included. *As built* (Decisions, step 15
+review, 4): the copy rule is one set of pure pieces in `src/transfer.js`
+that paste, extract and bundle all call: `subtreeOf` (what S is),
+`cleanObject`/`cleanTraits` (runtime state left behind), `copyRefs` (ids
+mapped first, then every described reference follows its object, is kept
+or is cleared, an entry kept where the doc it lands in has it, a dropped
+field left behind), `renderSeed` and `assetsFor`. What differs is only
+placement, which is each operation's own: paste lands a copy at a point
+through `addObject` (`planCopy`), extract keeps every transform, bundle
+composes with the link. K is extract's and bundle's argument; paste takes
+none, so nothing adds a root trait for you.
 
 ## 9. Named frames, and going elsewhere
 
@@ -453,6 +502,10 @@ on its root. A GLB connector with a `name` is the same thing. Two consumers:
   arriving doc reads its own frame, so nothing crosses.
 
 A name the doc doesn't publish resolves to its root.
+
+*Not built (Decisions, step 16).* Arriving through a link is the smaller
+rule that the one consumer needed: a start whose place is one of the doc's
+links arrives as the linked doc starts people.
 
 ## 10. The private layer
 
@@ -548,14 +601,14 @@ Each is argued above and checkable over finite cases.
 | I1 | **One doc per extension.** Every read and write through an api goes to its stage's handle | Spy handles; run the scene parts', tabletop's, sailing's and the keepers' tests in a child stage; no other handle is touched |
 | I2 | **No reference crosses docs.** Parent, group and every `object` field name an object of the same doc; a link is the only edge between docs | Every assignment over ≤3 docs × ≤3 objects, foreign ids included: the composed relation is intra-doc plus link → child roots, and acyclic |
 | I3 | **Expansion is finite and fixed by the graph.** No identity repeats on a path; each live doc has exactly one acting occurrence, chosen by path order; the rest are mirrors; closed reasons are exact | Every link multigraph on ≤4 docs (live, pinned, self-pins, ≤2 links per pair) × every arrival order: terminates, and the final expansion is the same |
-| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | Lost Cities G × seats {none, p1, p1+p2} × card states × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and 20° heel, in Y, mirrored, focus inside and outside: identical |
-| I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone, in X, in Y; two in one page) on in-memory Automerge × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror |
+| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical (`src/stage/placement.test.js`: 1056 comparisons; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
+| I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone and in X in one page, on one repo and its page bus; in Y in a second page, on a repo of its own joined by an in-memory network, so its messages cross by the handle's broadcast) × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror (`src/stage/channels.test.js`: every ≤2 claims/releases by three views, 390 checks in five stages; every holder × leaver; a hold from each view) |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
-| I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field |
-| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the focus's latest base ride | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role |
-| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field when S has no edge outside | Every sibling set of a fixed 6-object scene with traits, refs, groups and a seats map × K ⊆ the root's traits |
+| I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field (`scope.test.js`, with the audit's: geometry in an object's own frame, the camera's up; `viewport.test.js`: a layer two links deep, every pose, moved; a box in its own stage whatever the host shows of the link) |
+| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the latest base ride of any acting stage, whatever the focus | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role; a sibling link's stage riding × every focus (`src/stage/chain-links.test.js`: every hit × focus × widget, every stack ≤3 × focus; the held tool across focus moves and the sibling's ride in `focus.test.js`) |
+| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside; each edge outside is cleared where it lives and said | Every set of roots of a fixed 7-object, two-cluster scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 1016 cases, 116 exact over four classes (p the root or not, the link grouped or not, S one block of the order or spread), each exact one again with the host holding T's ids; every concurrent edit to what T was made from refuses the extract (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
-| I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on ≤3 docs with one bound object and one claim |
+| I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
 
 ## Build order
 
@@ -663,7 +716,7 @@ ships alone and proves something.
     its own doc, cards carried without entering G, and G in two scenes, in
     a probe. The choke point can't catch code reading three.js
     `matrixWorld` directly (`dimensions.js`, camber's dressing); those need
-    an audit. *Built:* the view expands the outermost doc's links whenever a
+    an audit (done: step 13, and the links loose ends). *Built:* the view expands the outermost doc's links whenever a
     doc changes or a linked doc arrives (`relink`), and opens a stage for
     each live doc where it acts, keyed by URL, its root under the link's
     node, its frame the link's drawn placement composed up the path; an
@@ -693,16 +746,241 @@ ships alone and proves something.
     "not hers" in `boardsOn`, and `seatedView` asks whether the current
     body is another extension's. *Proved* by `sailing/probes/links-run.mjs`
     (below, worked example 3). Not done here: mirrors and pins open (13),
-    Enter/Leave (14); the packages card shows the focus doc's asks only; a
-    hidden link hides only its hint (its doc's stage still draws); "who's
-    here" shows people at a linked placement as "look" to a viewer of the
-    game alone (the body chip publishes on the focus doc's channel).
+    Enter/Leave (14); the packages card showed the focus doc's asks only; a
+    hidden link hid only its hint (its doc's stage still drew); "who's
+    here" showed people at a linked placement as "look" to a viewer of the
+    game alone (the body chip published on the focus doc's channel). All
+    three closed in the links loose ends (Decisions, links loose ends).
 13. **Pins and mirrors** (I6), which never compute. *Proves:* example 2; a
-    part repeated live.
+    part repeated live. *Built:* the view opens a stage for every occurrence
+    the expansion doesn't close, keyed by its path, role and identity
+    (`view.js` `relinkNow`): a live doc acts at the first in path order and
+    is a mirror (`role: "mirror"`, a read-only stage on the same live
+    handle) at the rest; a pinned link is a read-only stage on its doc at
+    the pinned heads (`pinHandle`: `handle.view(heads)`, drawn as its hint
+    until those heads arrive). `createStage({ role, deps })`: a stage that
+    doesn't act (pin, mirror) is **drawn**: its extensions run and draw into
+    the world, but it has no segment, body, tool, command or widget, puts no
+    chrome in the DOM, doesn't move the camera, select, notify or set
+    prefs, and starts no process; `view.acting()` and the input path pass
+    over it. A stage that doesn't act, or whose handle refuses writes, is
+    **read-only by construction**: its handle and repo come through
+    `stage/readonly.js`, whose writes and sends throw, and every write path
+    checks `writable()` first (change, addObject, remove, claim, pose.hold,
+    the own parts' edits, parts, templates, drops, files); package
+    reconcile writes nothing, the render manager builds nothing
+    (`readOnly`), and presence only listens (`listen: true`: no hello, keys,
+    sends, holds or bye; it hears its own session, which is how a mirror
+    hears its view's acting stage over the page bus). A pin has no channel:
+    no claim counts in it. `api.link(id)` → `{ role, open, reason? }`; the
+    stage's role is the view's (`stage.role`), not an extension's. **A pin is whole:** a stage's repo notes every doc it finds,
+    and `api.fixPoint(link)` (the view's `fixPointAt`) is the linked doc's
+    heads with, in `deps`, the heads of every live doc opened under it and
+    every doc their stages reached (render docs, files, a keeper's
+    container); a pin's repo finds those at their heads. The inspector's Fix
+    at this version and Follow latest take links as they take built
+    content. I6 (`readonly-stage.test.js`): a pin, a mirror and a live doc
+    whose handle refuses writes × every write, send, hold, claim, process,
+    own edit, part, template, drop, `api.handle` and `api.repo` write, then
+    a checkpoint's worth of world time, over docs whose `change` and
+    `broadcast` throw: nothing reaches them and the stage never reaches its
+    own refusal (no warning, no throw); for the drawn two, everything that
+    would act; the wrappers over every refused method. Pins and mirrors in a
+    view (`links-drawn.test.js`): roles and placements, an edit and a carry
+    shown in the mirror over the page bus, a press on a mirrored card
+    reaching the host as the link, the mirror acting once the acting link
+    goes, a pin unmoved by its doc going on, fixPoint holding a nested doc
+    and a container, Fix and Follow round trip. Presence's listening (every
+    way it could speak × a minute) and the render manager's read-only (six
+    reasons to build) have their own. *Proved* in Chrome by
+    `sailing/probes/pins-run.mjs` (27/27; "Fitting out": a sloop at anchor
+    whose companionway is a fit-out F fixed at a version, and one hatch W
+    that closes itself, linked live twice): F changed live in its own view
+    and the boat still shows it as fixed, with nothing written through the
+    pin; looking at the pin or the mirror S offers nothing; F on the acting
+    hatch opens it and the mirror shows it open at its own placement, then
+    both close two seconds on, W's clock computed by the acting stage alone;
+    writes through the pin and the mirror refused, quietly; Follow latest
+    shows F as it is, and Fix at this version pins it again with its files
+    in deps; under way, F and both hatches ride the hull to 9e-16.
+    `publish-fitout.mjs --dry-run` 9/9 (22 docs). The audit step 12 asked
+    for: the readers of three.js `matrixWorld` outside the viewport
+    (`dimensions.js`, `gltf-content.js`, sailing's `sim.js`) all take it
+    relative to a root, which is frame-invariant; `axes.js` reads
+    `camera.object` as a general part (the focus, the outermost); sailing's
+    `sea-view.js` takes `camera.object.position` in the world, wrong only
+    for a sea in a linked doc. Camber's dressing is Rising Tide's and wasn't
+    audited here. *Closed* in the links loose ends: `camera.object` went
+    from the api, `axes.js` and `sea-view.js` read `camera.get()` (in the
+    stage's frame, with `up`), `dimensions.js` reads through `scope.js`
+    `contentMatrix`, and Camber's dressing (a layer group placed at
+    `api.worldOf`) was right through the choke point and wrong only because
+    the viewport overwrote the layer's matrix, which a layer anchor fixed
+    (Decisions, links loose ends, 6). Not done here: Enter on a pin offering Follow latest
+    (14). *Review fixes* (Decisions, step 13, 16–24): a drawn stage's
+    extensions collect from their own stage (the roster reached a mirror as
+    nothing, so a mirrored hand was shown to nobody), and the drawn api is
+    one facet; `api.role` is gone; the stage's repo is an allowlist;
+    `fixPoint` records only what the pin's docs name, packages are read
+    through the view's repo, and a pin's stage is keyed by its deps too;
+    card-table's keeper takes no part where it may not write, and a deck is
+    the same deck at any version. Tested: I4 across acting, mirror and pin
+    × seats {none, p1, p1 + p2} (`links-drawn.test.js`); the I6 harness
+    with a spy on every read-only handle (the mirror's own output asserted
+    empty, and a mirror beside a silent acting stage); the keeper × its
+    writable twin {mine, mine pinned, theirs, none} (`card-table`). I6 as
+    the invariant names it is *proved* in Chrome by `links-run.mjs` step 6
+    (25/25): mid-play, the room links G again live and fixed, and Ana opens
+    G through a handle that refuses writes; the mirror and that view show
+    her exactly her acting stage's faces, the pin what she saw when it was
+    fixed, through her play and draw, with no warning or error.
+    `pins-run.mjs` 27/27 after the fixes.
 14. **Edit in context**: Enter, Leave, link rows in the outline and
-    inspector; H10 across docs.
-15. **Extract and bundle** (I9, I11).
+    inspector; H10 across docs. *Built:* the view's focus is a path of
+    links entered; focus and selection change only through `selectionStep`
+    (`src/selection.js`), so a selection is an element of the focus stage
+    whoever asks: an extension of any stage (`api.view.select` is cut at the
+    focus), Edit's click, the ladder, a link going. `api.view.enter(link)`
+    goes where the link's doc acts (a mirror's: where it's live; a pin and a
+    closed link aren't entered); leaving is the view's (Escape, the trail);
+    the view reaches any focus whose every link acts by leaves and enters
+    (`focusSteps`). A link that goes, is pinned, stops acting there or is
+    pointed at another doc leaves the focus out to the deepest stage still
+    acting. The general parts are offered by the focus stage and no other
+    (`host.setGeneral`); one holding something when the focus moves
+    finishes it where it was (a walk goes on; a held Measure stays held
+    while its stage is on the focus path). They are offered after every
+    segment wherever the hit is, and the input path always ends at the focus,
+    so outside an entered link verbs, carries, keys and the menu still work;
+    Edit's click outside the focus isn't Edit's and goes down the chain. The
+    resolver and the menu take a segment per stage on the input path
+    always, each stage's commands in its own context and run there (the
+    "outermost is the caller's" assumption went; a held verb pins attention
+    to its target's path: Decisions, links loose ends, 5); the toolbar holds the scene commands of
+    the stages on the focus path (TOOLS.md §6), not the pointer's, so it
+    doesn't change under the pointer (`api.path({ focus: true })`). A stage never sees the focus. `scene.focus`
+    offers Enter on a link (menu, inspector; everyone's, every body) and
+    takes a double-click on one; the outline's link rows say what the link
+    is here (linked, shown again, fixed, closed) and enter (→, or a
+    double-click); the inspector's Linked scene row says the same, with
+    Open and what the host sets of it. The trail, the view's own chrome
+    along the top while the focus is inside a link, names the outermost doc
+    and each link entered (each crumb a way out) and has Leave; Escape's
+    last rung leaves. Drawer tabs open as the focus moved open again inside.
+    *Proves* (`stage/focus.test.js`): H10 across docs over every reachable
+    focus and selection × every press (Edit's click), Select (each stage's
+    api), Enter, Leave and Escape, in a view of a host with a live link L to
+    B (B linking C live), a mirror R of B, a pin P of B and a closed link:
+    11 states × 37 events, each transition what the pure model says, the
+    focus and every link on its way a stage that acts, each stage seeing
+    its own element and never the focus (nothing it can read of the view
+    changes on a focus move but its element of the selection, and it has
+    no Leave and no `reopened`), the general parts in the focus stage
+    alone, nothing written; a raw `select` fails it at the first
+    transition. Every way a link can go while entered (removed, pinned, a
+    link ahead of it, pointed at a doc open here or not yet found) × the
+    focus at B or C; every body (Look, Edit, a general part's walk, a trait
+    part's seat) × Enter, Enter deeper, Leave, Leave two: the body stays,
+    the walk holding it isn't started again, nothing is offered twice; the
+    held tool × six moves: held while its stage is on the focus path, else
+    put down; a sibling link's ride applies whatever the focus (I8). In
+    `stage/host.test.js`, the view's move over every sequence of ≤4 of in,
+    out, busy, idle and a recheck (781): a general part stops only out and
+    idle, offers only in, is kept if it comes back before stopping. Another view of the same scene
+    untouched (its focus, parts and running sets, no doc written); a press
+    outside reaching its own parts then the general ones; double-click;
+    the host's toolbar command shown and run in the host while entered, the
+    bar unchanged as the pointer moves (the old toolbar fails it); the
+    Objects tab reopened inside. `focusSteps` over every pair of foci
+    in a two-wide, three-deep tree; every link state's labels. In Chrome:
+    `sailing/probes/aboard-run.mjs` step 13 (A, under way, picks Edit,
+    double-clicks a card to enter G, clicks it to select it, and drags its
+    halo's X arrow: along the table's X only while she heels, written to G,
+    the boat's link untouched; B untouched; Escape twice back out) and
+    `links-run.mjs` step 6b (Ana, seated in her room, enters G by its
+    mirror's link, where it acts; nothing else changes for anyone; she
+    draws entered; Escape leaves). Decisions, step 14, and its review
+    fixes. Not done here: the
+    clock chip shows the focus doc's only (TOOLS.md §6 wants a chip per doc
+    on the focus path); walk's avatars of others (drawn by a general part
+    from its stage's presence) are the focus doc's while you aren't walking
+    yourself (Decisions, step 14 review, 1); "who's here" and the packages
+    card, which had the same root, were made the view's in the links loose
+    ends; out of focus isn't tinted; in Edit the first click of a
+    double-click selects the link and opens the inspector, which narrows the
+    canvas under the second click (the probe aims again; a person on a small
+    part of a link may miss).
+15. **Extract and bundle** (I9, I11). *Built:* `src/extract.js`, as §8
+    says: Extract on an object or group (S: it, what's attached under it
+    and what's filed in it; its top objects share one parent p, else it's
+    refused) writes T whole with ids kept, runtime state left behind and
+    render docs copied with their builds, then the host in one change
+    (`extractHost`): S goes, a link to T at p with no transform of its own,
+    its hint S's box in p's frame, in the group S's outer members share,
+    where S's first member was in the order; references into S cleared and
+    said; a dimension with both ends on S goes to T, one with one end keeps
+    it frozen; a start placed on S moves to T and the host starts through the
+    link (step 16). Bundle on a link (`bundlePlan`) copies the doc it shows
+    (a pin's value: what in it follows a doc, a link or a built object,
+    fixed at the pin's deps, its render docs read as the pin holds them) in the link's
+    place, ids kept unless taken, top objects at link · local under the
+    link's parent and in its group, what hung on the link left where it is,
+    and never writes that doc. K is the commands' `options` (STAGE.md "A
+    command": the inspector's checkboxes, none ticked; the menu takes none).
+    Both are `scene.transfer`'s, edit-only, one undo step, the host written
+    once, computed from the host as it is when it's written (compare-and-set
+    on everything T was made from: its footprint). *Proves*
+    (`src/extract.test.js`, I9): every set of roots of a seven-object scene
+    in two clusters (a table with a lamp and a card on it; a shelf with a
+    crate and a wheel on it, filed in a group; a built object, both kinds of
+    reference, a runtime trait field, a claim, a `copy: "drop"` field, two
+    dimensions, a start on the crate, an order mixing the clusters) × every
+    K over three root traits, 1016 cases, each run through the doer on a
+    fake repo: refused exactly when the tops don't share a parent (584);
+    otherwise the host written once and nothing else that existed, the new
+    docs T and one render doc per built object, T and the host intra-doc
+    (I2), T and what comes back holding no runtime state; each edge outside
+    S (said independently of the code) cleared exactly where it now lives,
+    with paste's notice, the link ungrouped where S's outer members differ,
+    a dimension across frozen at its point, and no notice where nothing
+    crossed (316); bundled back, the host written once more and T never;
+    and where S has no edge outside (116: the whole scene 64, the table's
+    or the shelf's cluster at the root spread through the order 32, the
+    cargo group on the shelf as one block 16, the crate and wheel without
+    their group, the link filed in it, 4) the host is the original on every
+    field but runtime state and render doc identity, its order exact where
+    S was one block, else S one block where its first member was; each of
+    those 116 again with the host holding every id T has, every one coming
+    back new and every reference following it. Extract's compare-and-set:
+    eleven kinds of edit landing while T is made (a child attached under S,
+    something filed in a group of S, a member edited, S's order, p, a
+    dimension added with both or one end on S, one edited, the start moved
+    onto or off S, a trait of K edited) each refuse it with nothing written,
+    and four that touch nothing T was made from don't. Bundling a pin seeds
+    the render doc as the pin holds it and fixes the built object at the
+    pin's heads for its source (Decisions, step 15 review). I11
+    (`src/linearity.test.js`): A, B and C on real Automerge, B holding a
+    keeper-bound object with a claimed one under it; link A→B, pin A→B, link
+    C→B, copy into A or C, extract, bundle in A or C; every sequence of up to
+    three and every interleaving (a ‖ b, a ‖ b ‖ c, a ; (b ‖ c), (a ‖ b) ;
+    c, a ‖ (b ; c)) over every ordered choice, 2696: at most one doc holds
+    runtime state, and it is B. Dropping `cleanObject` from either direction
+    fails a harness. Through the stage (`src/parts/transfer.test.js`): the
+    view opens T where the link is, Undo puts the host back exactly, Bundle
+    leaves the linked doc's bytes alone, the inspector's checkboxes run
+    Extract with what's ticked. In Chrome: `sailing/probes/extract-run.mjs`
+    (25/25): Lost Cities aboard, the card table and the game's link on it
+    extracted into T, the game acting inside T (its stage's path the boat's
+    link, then T's) with its cards drawn where they were (0 m), Undo and Redo,
+    then Bundle: the boat back field for field, T unwritten, the game at its
+    first path, its cards where they were. Decisions, step 15.
 16. **Named frames and traversal**, when doom's exits or stations need them.
+    *Decided, not built* (Decisions, step 16): neither needs them yet. The
+    one workaround was arrival among linked docs, and it went with a start
+    placed on a link (`startArrival`, `src/stage/view.js`), which names no
+    place across a doc: the body is that doc's stage's or none
+    (`src/stage/links-live.test.js`: a sibling game offering the same body,
+    whether the named doc has none or is still starting, never takes it).
 
 ## What the stage doesn't do, and what it costs
 
@@ -759,3 +1037,635 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, links loose ends (2026-11-14, made unattended)
+
+The open items the links work (steps 10–15) left, closed on lane/compose.
+Each is general: none knows a game, a boat or a seat.
+
+1. **One packages prompt for every open doc.** Each stage still keeps its
+   doc's list and loads for it; the *prompt* is the view's: `view.packages`
+   is `unionPackages` over every open stage, acting or drawn (a pin's
+   content needs its providers as much as a live doc's), outermost first,
+   each URL once, asked about if any stage asks, else failed, else loading.
+   Only general parts see it (`projectView`), as only they see the focus: a
+   stage that read another doc's packages would depend on its placement
+   (I4). `api.packages` is a general part's view-wide (Load and Not now go
+   to every stage that asked) and any other extension's its own doc's, the
+   same split as `api.collect`; and `api.path` (the other stages' readers,
+   which carry the same information) is a general part's only (review fix
+   1). "Not now" is the view's, for the view's life (review fix 2). *Why not a doc rule* (a host listing its
+   links' packages): that was the stopgap; it made the host's list depend
+   on what it links, and a linked doc's packages are already its own list.
+   The publishers no longer list their games' packages for them (the boat:
+   scene, sailing, tabletop, joints, traversal; the room: scene, tabletop,
+   walk; publish-office checks the room lists no seats or keeper).
+2. **A start placed on a link, for the boat too.** `publish-aboard.mjs` now
+   writes `view.start = { place: <the game's link>, home }`, as the room
+   does, instead of `{ body: "seat" }`: with one linked game path order was
+   unambiguous, but naming the link says what is meant (arrive as the game
+   starts people) and needs no rule about which stage offers "seat". The
+   room's link-id renaming was retired at step 15.
+3. **A hidden link hides its doc.** A link's content is its doc, so the
+   roots of the stage it opens hang in the link's *body*, not its group
+   (`viewport.setParent`: a parent of another stage, which only a link can
+   be, takes the child in its body). Hiding the link then hides its doc by
+   the rule that already hides any object's content, for drawing, picking
+   and boxes; an attachment of the host's own stays shown, as before. The
+   stage's world layers hang in an anchor that is drawn only while the
+   link's content is (`contentShown`), and its labels likewise. *What
+   doesn't change:* the stage still runs (claims, presence, its clock), and
+   still loads its content: what it does is a function of its doc (I4), and
+   hiding is the host's display choice, not a reason to close an
+   occurrence. Its boxes (`api.box`, `groupBox`, `sceneBox`) are its own
+   doc's say too: shown-in-its-stage stops at the stage's root (review fix
+   7). Picking and rays stay the view's: they look at what is drawn, every
+   stage's (`pick` and `raycast` already hit the host's geometry, "not
+   mine" as id null), so a hidden link's doc isn't hit, as nothing hidden is. Removing a link moves its doc's roots out first (they
+   outlive it until the stage closes, as attachments do).
+4. **Who's here is the view's.** The viewer's body and held tool are the
+   view's (its atom), so the view says them on every channel it acts on
+   (`presence.announce`: top-level `body` and `held` in the presence
+   message, beside `viewer`), not a part on the focus doc's. A viewer of G
+   alone sees a sailor seated at G aboard as "Player 1", and entering a
+   game no longer turns you into "look" for the host's viewers. A drawn
+   stage's channel only listens, as before. The body chip reads `body`/
+   `held` from presence and publishes nothing. *Why top-level fields and
+   not a reserved extension key:* `viewer` is already the view's and sits
+   there; a reserved key would be a name every extension must avoid.
+5. **A held verb pins a path.** The pin is the target's full path (its
+   stage's path, then its id), the same thing a selection is, so each stage
+   on it sees its own element (`keyAttention` → `{ pinned }`;
+   `api.path({ at })` gives the stages on it). Its target holds in its own
+   doc wherever the look goes; a change to another doc is no reason to let
+   go; it lets go when the target goes from its own doc, its link goes, or
+   its extension stops there (checked whenever the key map's part updates
+   and every frame while held, against the target's own stage:
+   `reader.runs(ext)`, `reader.scene()`). *Why a path, not a stage number:*
+   stage numbers are the view's bookkeeping and change when an occurrence
+   closes and reopens; a path is what the selection already is.
+6. **The frame audit.** No extension reads three.js's world matrices or
+   holds the camera: `api.camera.object` is gone. `camera.get()` gives `up`
+   (the picture's, rolled as the camera is) beside position and target, and
+   the choke point turns it as a direction; the axes triad draws from it (so
+   it shows the focus doc's axes: what's being edited), and the sea is
+   drawn around the camera's position in its own stage's frame. Geometry
+   inside an object is read through `scope.js` `contentMatrix(root, node)`
+   (the dimension tool's surface gaps), invariant under every frame above
+   the root; sailing's `hullTriangles` keeps its own copy of the same rule
+   (packages don't import each other) and its own test of it. Camber's
+   dressing (a group in its layer placed at `api.worldOf`) was already
+   through the choke point and was wrong two links deep only because the
+   viewport overwrote the layer group's matrix to follow the link; a world
+   layer now hangs in an anchor the viewport owns, so the extension's
+   matrix is its own. Camber's repo needed no change.
+7. **Fix waits for what's on its way.** A link's fix point is null (Fix not
+   offered yet) while a doc its docs name is still being found by a stage
+   under it: a pin made then would leave that doc out of `deps` and show it
+   live. `stageRepo` notes a find on its way as `null` in `reached`.
+8. **Finite harnesses for I4, I5 and I8** (`placement.test.js`,
+   `channels.test.js`, `chain-links.test.js`), the cases the invariants
+   table names, each a fixed enumeration. I8's held tool across focus moves
+   and the sibling link's ride were already enumerated in `focus.test.js`
+   and weren't repeated.
+9. **"Watching" aboard.** Getting up from the seat you arrived in comes
+   back to Watching wherever seats are (the seat body without a seat), the
+   boat and the room alike: lane/loose made that call and fix (seats,
+   f1ecf3cb), general already, so nothing was done here.
+
+Not done, and why:
+- *Leaving Edit drops the selection* (decided on lane/loose, to do after
+  step 14's merge): it changes TOOLS.md Decisions 6 and the probes lane/loose
+  owns; left for the merge, where both lanes' tests can be run together.
+- *The clock chip per doc on the focus path*, *walk's avatars of others
+  from every channel*, *tinting out of focus*: new capabilities (TOOLS.md
+  §6), not defects.
+- *A closed link's hint can't be hovered or picked*: true of every object
+  drawn only as its hint (loading, or no provider here), not of links;
+  picking looks at content. Left as the general rule it is.
+
+## Decisions, links loose ends review (2026-11-14, made unattended)
+
+The review of the links loose ends found two design gaps and four places
+the harnesses claimed more than they enumerated. Each fixed, with a test
+that fails without it.
+
+1. **`api.path` is a general part's only.** Decision 1's reason (a stage
+   reading other docs would depend on its placement) held for
+   `view.packages` but not for `api.path`, whose readers hand out other
+   stages' scenes, packages, running sets and `run`. Now any other
+   extension's `api.path` is undefined, as it never had a use for one: only
+   the key map, the menu, the resolver and the toolbar call it, all
+   general. *Why undefined rather than its own reader:* a stage extension
+   already has its own scene, collect, context and look on its api; a
+   one-element path would be a second spelling of those. Checked for an
+   outermost stage's extension (`packages.test.js`) and for every G stage's,
+   linked, mirrored and two links deep (`placement.test.js`).
+2. **"Not now" is the view's.** The declined set moved from each stage's
+   packages module to the view (`view.declinedPackages`, shared by every
+   stage it opens), so a doc opened after the click (a link added, a
+   relink, a mirror that comes to act, a pin unpinned) isn't asked about
+   those URLs either, and a URL nobody declined still is. A stage
+   extension's own `api.packages.dismiss` declines view-wide too: one
+   viewer, one answer. `packages.test.js` "Not now holds for a doc opened
+   after it".
+3. **Who's here, on the manual clock.** `whos-here.test.js` runs both views
+   on one `manualTime` and checks the host's chip every frame for a
+   heartbeat and a send interval after Enter. The old 50 ms wall wait
+   passed with the regression (the coalesced send arrives at frame 14);
+   the new one fails on it (checked by making the view announce only on
+   the focus stage).
+4. **The I4 harness enumerates what the table says.** `seen()` now includes
+   the doc's clock and the stage's `api.clock.running()`; a card-state
+   factor (p2's card dealt, or played to the table) is added; the alone
+   view, with no link to enter, is checked outside only (it was counted
+   twice). 352 comparisons per seating, 1056 in all; G is a synthetic
+   two-extension game shaped like Lost Cities', and the table says so.
+5. **I5 crosses pages.** The third view (G in Y) is now on a second repo,
+   joined to the first by an in-memory network (`fake-repo.js` `connect`:
+   changes and ephemeral broadcasts cross, nothing echoes back), so what a
+   view in one page and a view in another must agree on goes by the
+   handle's broadcast, as in real Patchwork, beside the page bus within
+   each page. Turning the network's broadcasts off fails the claims and
+   holds cases. (The leave cases pass either way within the claim's grace,
+   as designed: a claim is in the doc, presence only says it lapsed.)
+6. **The boat's packages are checked, not asserted.** `aboard-probe.html`
+   registers each package's plugins from its URL (`?urls=`, as
+   office-probe does; sailing's plugin stub now keeps `importUrl` like
+   tabletop's), and `publish-aboard.mjs` checks that what the boat calls
+   for and lists is within its stated packages and names nothing of seats'
+   or the keeper's, and that the game's is within the game's.
+7. **A stage's boxes are its own doc's say.** See Decision 3, links loose
+   ends: `isShown(entry, { inStage })` stops at the stage's root, and the
+   scope's boxes ask for it; drawing, picking and rays keep the view's
+   rule. `viewport.test.js` "a hidden link hides its doc" checks the in-stage
+   box for each case, and that the linked doc hiding its own object does
+   take its box away.
+
+## Decisions, step 15 review (2026-11-14, made unattended)
+
+The review of steps 15 and 16 found the build narrower than its proof in
+four places and three small rough edges. Each is fixed; what was decided:
+
+1. **Arriving through a link arrives in that doc's stage or nowhere.**
+   `bodyDefs(caller, only)` reads only the linked doc's stage when the start
+   came through a link, and `enterBody` enters only there. While that stage
+   is starting or its packages may still come, arriving waits for it (with
+   no deadline: the same wait as any arrival before its body is on offer,
+   so a viewer slow on the package prompt still arrives); once it has
+   settled without the body, nobody arrives. Why: the place is that doc's
+   id, so entering a sibling's body with it is a reference across docs (I2)
+   and makes arrival depend on which stage started first (I4). The
+   reviewer's "give up after ARRIVE_WAIT_MS" was not taken: no other arrival
+   gives up while its body may still come.
+2. **Extract compares a footprint, not the records.** `footprint(doc,
+   roots, K)` is everything an extract reads: S worked out again (so a child
+   attached or a member filed meanwhile changes it), S's order, p, S's
+   records, K's traits, every dimension with an end on S, and the start.
+   The plan keeps it; `extractHost` recomputes it from the host as it is
+   and writes nothing unless it's equal. Why: one value, so nothing T was
+   made from can change unseen; the alternative, a check per hazard, is a
+   list someone extends wrongly. Edits that touch none of it (an object
+   outside S, a reference into S added from outside, which is cleared and
+   said as any other) don't refuse it.
+3. **I9's fixture has two clusters.** A table with a lamp and a card, and a
+   shelf with a crate and a wheel filed in a group, in an order mixing them:
+   so exact round trips exist with p not the root, with the link filed in a
+   shared group, with S spread through the order and as one block, and
+   every exact one is run again with the host holding T's ids. Each edge
+   kind is checked at its field: the reference cleared where it now lives
+   and paste's notice given, the link ungrouped, the dimension frozen.
+   Mutating bundle's id map, the link's group, the order rule or the start's
+   id mapping each fails the harness.
+4. **One copy rule, as pieces; placement per operation.** `fixRefs` is gone:
+   `copyRefs` (in `transfer.js`) is the rule for a copied object's
+   references, and paste, extract and bundle all call it, after mapping
+   every id first. Paste could only do that once `addObject` took an `id`
+   (made with `newId` beforehand), which it now does; so no copy writes a
+   reference twice. What stays in a doc when something leaves goes through
+   the same rewriter (`refEdits`). Root traits are cleaned by the same
+   `cleanTraits` as an object's. `planCopy` is not bundle's: it is paste's
+   placement (landing at a point, a duplicate beside, through `addObject`),
+   while extract keeps every transform and bundle composes with the link
+   and writes one change. Why: §8's "planCopy gains `{ traits }`" would have
+   put two placements paste never uses into paste's planner, and one copy
+   rule is about what a copy is, which is now one code path.
+5. **A pin's whole value comes with a bundle.** Anything in the pinned doc
+   that follows a doc the pin holds (a link, or a built object whose source
+   the pin holds) gets `at: { heads: deps[url], deps }`, the rule links
+   already had, now not a special case; a file object gets none (its file
+   never changes, and `at` means nothing there, as addObject has it). Each
+   render doc is read through `pinnedRepo(repo, deps)`, the repo a pinned
+   stage reads, so its copy is seeded with the pinned params and build.
+6. **Bundle's options follow a live link.** The cache in transfer's local
+   state stays (a command's state is synchronous), but for a live link it
+   subscribes to the found handle and rewrites its entry when the root
+   traits change, unsubscribing when transfer stops; a pin is read once.
+7. **One fresh object record.** `ops.newObjectRecord` is the shape
+   `addObject` and extract's link both write.
+8. **A box can be asked for in an object's frame.** `api.box(id, { in })`
+   boxes the object's own geometry within that object's displayed frame
+   (the viewport's `within`, as a stage's frame already was), and extract
+   asks for each object of S in p's frame; without a viewport, each hint
+   box is carried there from its own frame. No box is boxed again.
+
+## Decisions, step 16 (2026-11-14, made unattended)
+
+Named frames and traversal (§9) were to be built "when doom's exits or
+stations need them". Read against doom, traversal, sailing and the
+published examples, nothing needs them, so step 16 is this decision.
+
+1. **Named frames aren't built.** Precisely why:
+   - **Doom's exits** lead to a map's start: E1M1's exit switch carries
+     `traversal.exit.to` (the boat), and going there opens the boat as it
+     starts people. A Doom exit always goes to the next map's player start,
+     which is that map's `view.start`, so no exit lands anywhere a doc's own
+     start doesn't.
+   - **Stations** are objects of the ship's own doc, entered with their
+     local id as the place. A station in a linked fit-out would be inert
+     (step 13, decision 14), and worked example 2's station snapped to a
+     fit-out's published winch has no consumer built: no fit-out publishes
+     a frame, and carry doesn't snap across a link.
+   - **The one workaround was about arrival, not names.** The Quiet games
+     room renamed its links `link-1-lost-cities`… so that arriving, which
+     takes the first acting stage offering the start body, would pick Lost
+     Cities. That needed a way to say *which linked doc* you arrive in, not
+     a place inside it by name.
+2. **A start placed on a link arrives through it.** `view.start.place`
+   naming one of the doc's links hands arrival to that doc: its own
+   `view.start` (body and place), in its stage and only there, and on down
+   where that place is a link in turn (`startArrival`, pure). The host's
+   `body` isn't read then, and no other stage's body is entered: the place
+   is that doc's id (step 15 review, 1). Through a pin, a mirror or a closed link nobody arrives (Look,
+   nothing entered). Why: nothing crosses, the host names an object of its
+   own and the linked doc its own place, so the game arrives people the same
+   way alone and in the room (I4); and it composes, a room in a building
+   arrives through two links. The games room's publisher now writes
+   `{ place: <its Lost Cities link>, home }` and keeps the ids addObject
+   made. Extract uses the same rule to keep a start that was on what it
+   extracts (decisions, step 15, 9). Rejected: a body-and-stage pair in
+   `view.start` (`{ body, in: link }`), which says the same with a second
+   field and leaves the linked doc's own start unused.
+3. **When named frames come, the name is not the URL's fragment.**
+   traversal passes `to` as written, and `automerge:<id>#<heads>` already
+   means a version, so `url#name` would collide with it. A consumer that
+   needs a named landing gets its own field beside `to`. What would call for
+   them: an exit to a place other than a doc's start (a teleporter pair
+   across docs, a portal landing at a door), or a station snapped to a linked
+   fit-out's fitting. Then: `frames: { name: localId }` on the root, the
+   view's `go(url, name)`, carry snapping to a link's frames.
+
+## Decisions, step 15 (2026-11-14, made unattended)
+
+Made while building extract and bundle, with the project lead away.
+
+1. **They are `scene.transfer`'s commands**, beside Copy and Paste. Why:
+   §8 calls them one copy rule used in two directions, and transfer is
+   where the copy rule's verbs live; a part of their own would be a second
+   home for it.
+2. **S is the selection's subtree.** The selection is one value, so the
+   command extracts one target (an object, or a group with what's filed in
+   it); the plans take any set of roots, and the harness runs every set.
+   Why: no multiple selection exists to take a set from; when one does,
+   nothing below the command changes.
+3. **K is a command's `options`**, a set of values the inspector offers as
+   checkboxes, none ticked, the button running with what's ticked; other
+   surfaces run with none. Why: §8 asks for checkboxes, none ticked, nothing
+   inferred, and the contract had a one-of (`choices`) but no set. Cost: an
+   addition to the command contract whose two consumers are siblings. The
+   ticks are the inspector's, per selection, never stored.
+4. **Render docs are copied both ways**, seeded with their builds. Why: one
+   copy rule (paste does so), and one render doc shown by two docs' stages
+   would be built by both (step 13, decision 11). So I9 compares render
+   docs by what they hold, not by url.
+5. **The host's change is worked out when it's written**, from the host as
+   it is then, after T and the render copies are made; extract writes
+   nothing if anything T was made from changed meanwhile (its footprint:
+   step 15 review, 2; T is left unlinked: an orphan, nothing lost), and
+   bundle is planned again. Why: an edit to S
+   while T was being written would otherwise be missing from T and deleted
+   from the host.
+6. **Extract doesn't call `beforeRemove`.** References into S are cleared
+   by their descriptions, as paste clears them, and the doc's own maps are
+   handled by extract itself. Why: nothing leaves the world, it moves; the
+   one implementer (dimensions) would freeze measurements that move with S.
+7. **Dimensions go with both their ends.** One with both ends on S goes to
+   T (its points refreshed in T's frame); one with one end on S stays,
+   that end frozen where it is, as removing the object does; bundle brings
+   T's dimensions back, ids kept unless taken. Why: §2, a relation lives in
+   the doc that holds both its ends.
+8. **The link is filed in the group S's outer members share** (else none),
+   and bundle files T's ungrouped objects in the link's group. Why: so a
+   group S sat in comes back with it.
+9. **A start placed on S moves to T**, the host starting people through the
+   link (step 16, 2), and bundle puts T's start back, its place following
+   its id, the host's home kept. Why: arriving keeps working across an
+   extract, and it round-trips.
+10. **T is a scene made new from the host's look**: the first root's name as
+    its title (and the link's), the host's display prefs, its own start
+    unless one moved (decision 9) the datatype's (Edit), its packages what
+    reconcile would list for it here, the host's `"@patchwork"`. Why: T is
+    a new doc someone will open to build; its look shouldn't change.
+11. **Order.** The link goes where S's first member was; bundle puts T's
+    order in the link's place. So the order round-trips exactly when S is
+    one block of it, and otherwise S comes back as one block, every other
+    relative order kept. Why: a link is one row; the alternative, spreading
+    T's objects back to where they were, needs the host to remember T.
+12. **A reference to p becomes null in T, and stays null coming back.**
+    Why: §8 for the first; for the second, null in T is its root, which the
+    host can't tell from a reference that was always null. A reference to p
+    is an edge outside S.
+13. **Bundling a pin copies its value**: what in it follows a doc the pin
+    holds (a link, a built object) is copied fixed at the heads the pin held
+    that doc at, and its render docs are read as the pin holds them (step 15
+    review, 5). Why: a copy of a value is that
+    value, not today's.
+14. **Bundle is refused whole** for a ticked trait the host has ("This scene
+    already has Seats") or the linked doc lacks. Why: an edit happens or it
+    doesn't; §8's "refused per key" is which key the refusal names.
+15. **Bundle's options are read from the linked doc**, found by url (and
+    heads) and kept in transfer's own local state
+    (`scene.transfer.linked`), so the surfaces ask again when they come; a
+    live link's are followed as its doc changes (step 15 review, 6). Why: a command's state is synchronous, and the only way to
+    the linked doc's root traits is to find it, which an extension may do by
+    URL itself. Cost: the first time a link is selected its checkboxes come
+    a moment later. A host still never reads into a link to decide anything.
+16. **The aboard probe page passes a change's options through** to its
+    handle. Why: without the patches the edit recorder never recorded
+    anything there, so undo couldn't be probed on it.
+
+## Decisions, step 14 (2026-11-14, made unattended)
+
+Made while building Edit in context, with the project lead away.
+
+1. **The general parts move with the focus by stopping and starting.** Every
+   stage's host can run them; the view has the focus stage's alone do so
+   (`host.setGeneral`). *Revised in review (below, 1):* in the stage left
+   they stop by H2's busy half, not at once. Why: §3's "the view runs it
+   once, at the focus" with the one mechanism that exists (start, stop);
+   pointing a running part's api at another stage would be a second.
+   Cost: the chrome is made again on Enter and Leave; what that loses is
+   listed in the review decisions.
+2. **The general parts come after every segment, wherever the hit is, and
+   the input path always ends at the focus.** Why: with them only in the
+   focus stage's segment, entering a game would cut the boat's verbs off
+   from the menu, the keys and the prompt (TOOLS.md Decisions 4: outside
+   stays live), and the focus's scene commands (Frame all, Measure, Undo)
+   would leave the surfaces whenever the pointer was outside. It also
+   retired the resolver's, the menu's and the toolbar's assumption that
+   the caller's stage is the outermost: a segment per path stage always,
+   each stage's commands worked out in its own context and run in it (the
+   toolbar used to run another stage's command in its own, where it isn't),
+   and a held verb pins attention in the stage it was held in (to its
+   target's path since: Decisions, links loose ends, 5). The toolbar
+   takes the focus path, not the input path (TOOLS.md §6 says so, and a bar
+   that followed the pointer would change, and move the canvas, under it:
+   the aboard probe found that).
+3. **Enter goes where the doc acts.** A live link's there; a mirror's where
+   its doc is live (the same doc, drawn again: edited where it's played);
+   a pin and a closed link aren't entered, and Enter says why (a pin: Follow
+   latest to go inside). Why: a drawn stage has no chrome by construction
+   (step 13, 1), and a value isn't edited. Worked example 2's "Entering F
+   offers Follow latest" is that disabled Enter and the inspector's Follow
+   latest.
+4. **The focus can be any path whose every link acts**, reached by leaves
+   then enters, each a `selectionStep` (`focusSteps`). `api.view.enter`
+   from any stage moves it there. Why: one mechanism keeps H10, and a
+   mirror's Enter and the trail's crumbs move it more than a level.
+5. **No stage sees the focus**: `projectView` leaves it out. Why: an
+   extension that read it could act differently entered than not (I4), as
+   step 13's 21 removed `api.role`. *Tightened in review (below, 3):* nor
+   anything that moves with it.
+6. **Selecting from any stage is cut at the focus.** `api.view.select` in a
+   game's stage with the focus on the boat selects the link (it used to
+   store the game's path). Why: H10 by construction, whoever asks.
+7. **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+   Why: Edit can't select there, so it's Edit's to ignore, as a click on
+   nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
+   out there stay live.
+8. **A link that goes, is pinned or stops acting while entered leaves the
+   focus** out to the deepest stage still acting, the selection cleared.
+   Why: the focus is a stage that acts; the same cost as "the acting
+   occurrence can move".
+9. **The trail is the view's chrome, not a part.** Why: it names links in
+   several docs (each host's name for its link), which no stage's extension
+   may read; the view holds the stages and the focus. Shown only while the
+   focus is inside a link.
+10. **Drawer tabs reopen where the focus went**: the view keeps the tabs'
+    titles as the focus moved, and a general part asks
+    `api.view.reopened(title)` as it starts (review, 3). Why: entering from
+    the outline would otherwise close the outline it was entered from.
+11. **A link's outline row is entered, not expanded in place.** Why: the
+    outline shows the focus doc, where the selection lives; a linked doc's
+    rows shown from outside could be neither selected nor edited there.
+    Entering is one click (→) or a double-click, and the tab reopens inside.
+12. **Enter is everyone's, in every body**, and a double-click on a link
+    enters it in every body. Why: the selection is everyone's (TOOLS.md
+    §3), so is where it's scoped; §3 says a double-click on a link enters
+    it, with no body named. Cost: seated aboard, a double-click on a card
+    enters the game (play goes on: verbs reach through).
+13. **The camera stays where it is on Enter and Leave**, and Look and Edit
+    keep riding the latest base ride of any acting stage. Why: entered into
+    a game aboard, the boat's follow should still carry the camera. *Revised
+    in review (below, 4 and 5):* I8 and §4 now say "any acting stage", and
+    only a general part counts a focus move as placing the camera.
+14. **The clock chip and the packages card show the focus doc's**, being
+    general parts. Deferred: TOOLS.md §6's chip per doc on the focus path,
+    and every open doc's packages in one prompt (FOLLOWUPS). *The packages
+    prompt is every open doc's since* (Decisions, links loose ends, 1).
+
+## Decisions, step 14 review (2026-11-14, made unattended)
+
+The review found that moving the general parts by stop-and-start threw away
+what they held, and that the focus still showed through side doors.
+
+1. **A general part the view moves away keeps H2's busy half.** In the
+   stage left, one holding nothing stops at once; one holding a body, the
+   held tool, an open session or a pose hold lingers there until it lets
+   go, offering nothing (no commands, bodies, widgets or place in the
+   chain: `host.offering()`), while the stage entered starts its own. Back
+   in that stage before it stops, it is kept. A held tool still goes down
+   when its stage leaves the focus path (§5), and that's done before the
+   parts move, so its part then stops at once. Why: Enter is everyone's in
+   every body (decision 12), and stopping walk, the general part whose body
+   it is, dropped a walker to Look; a held Measure went down even on Enter
+   deeper, where its stage stays on the focus path. H2 already says a busy
+   part isn't torn down under someone; the view's move is one more cause of
+   a stop, so it takes the same rule, but not the 2 s grace, which is for a
+   peer's edit undone (a focus move isn't one, and the old chrome would
+   show twice for 2 s). Rejected: (a) re-pointing a running part at the new
+   focus stage (the review's option 3). A part's state is in its stage's
+   terms: walk's pose is in its stage's frame, a held tool and a body are
+   owned by a (stage, extension) key, `api.local` is the stage's, and its
+   subscriptions are on its stage's doc and channel. Re-pointing would move
+   all of these at once under the part, which can't be told without seeing
+   the focus (decision 5). (b) Splitting general parts into view-wide ones
+   (walk) and focus-following chrome (the review's option 2). That needs a
+   second kind of general part, declared by a flag. No principle tells the
+   kinds apart: a walk is a body, which any part may offer. The busy rule
+   covers walk while it matters, when you're walking. *What a restart still
+   loses*, for a part holding nothing: the DOM state of its chrome beyond
+   which drawer tabs were open (scroll, a tab's own expansion); its
+   `<ext>.*` keys in `api.local`, which are its stage's; and anything it
+   draws from its stage's presence. So once you stop walking while
+   entered, walk runs in the entered stage and draws that doc's walkers,
+   not the host's (the same root as the who's-here chip's deferral). A
+   busy part's docked tab stays with it until it stops. No shipped part
+   both owns a tab and holds something.
+2. **The focus is an occurrence, not a path.** When a stage on the focus
+   path closes in a relink, the focus leaves to the level above it before
+   anything reopens. So a link pointed at another doc counts as the link
+   going (decision 8), whether or not the new doc is already open in this
+   view. Why: before this, the focus stayed at the same path, in a
+   different doc, with a selection naming an id of the old one.
+3. **Nothing that moves with the focus is a stage's to read.** `reopen`
+   left the view's value; the view keeps the titles, and only a general
+   part's api has `view.reopened(title)`, answered once per title per move.
+   `api.view.leave()` went: leaving is the view's (Escape, the trail), and
+   no extension used it, while its false at the outermost told a stage
+   whether the viewer had entered anything. Escape's last rung ("leave")
+   shows to a stage's parts as no rung, and to the general parts as it is
+   (the body chip says what Esc does). H10's harness now asserts that
+   nothing a stage's part reads of the view changes on a focus move except
+   its element of the selection. That check found the Escape rung, which
+   the review had missed. Why: decision 5 means what it says; general parts
+   are the view's own, and their api says so.
+4. **I8 and §4 say what the code does: the latest base ride of any acting
+   stage, whatever the focus.** Why: the focus scopes selection, not input
+   (TOOLS.md §3), and the camera is the body's. Filtering rides by the
+   focus path would stop a linked boat's follow while the viewer is at the
+   room, and make where the camera goes depend on where you entered.
+   Proved with a sibling link riding × every focus.
+5. **A focus move counts as placing the camera only for the general
+   parts.** A stage's part's `api.camera.touched()` is "moved by the viewer
+   or restored as the view opened"; a general part's also counts "carried
+   across a focus move" (`view.cameraCarried`), so `scene.autoframe`,
+   started again in the stage entered, leaves the camera be. Why: the
+   general parts are the view's own and are restarted by the move, so for
+   them the camera really did come along. A stage's part must not learn of
+   the move (decision 3): sailing's quarter view waits for a camera nobody
+   placed. Tried and dropped: counting any extension's `camera.set` or
+   `frame` as placing it. That removes the flag, but autoframe's
+   provisional framing then counts, and sailing's quarter view never comes.
+
+## Decisions, step 13 (2026-11-14, made unattended)
+
+Made while building pins and mirrors, with the project lead away; each is
+the simplest reading of section 7 that held up, and says why.
+
+1. **A drawn stage draws into the world, and nothing more.** A pin's or a
+   mirror's extensions run, so it looks as its doc does (layers, labels,
+   styles, looks, lenses), but `overlay`, `edge`, `dock` and `popover` stay
+   out of the DOM, and it doesn't move the camera, select, notify, set a
+   pref, set the cursor, enter a body, hold a tool or run a command. Why:
+   chrome is input, and section 7 says a mirror is drawn, not acted on; a
+   seat picker or a HUD would otherwise appear once per repeat, and a pin's
+   would offer acts on a value.
+2. **Read-only by construction.** A read-only stage is handed its doc and
+   its repo through wrappers (`stage/readonly.js`) whose writes and sends
+   throw. The stage checks `writable()` before every write, so it never
+   reaches them; the I6 harness counts a warning or a throw as a failure.
+   Why: the property holds whatever an extension calls (`api.handle`, a
+   handle from `api.repo`), and a guard someone forgets shows up loudly.
+3. **Read-only is silent.** Every read-only stage's presence only listens,
+   including a live doc acting where its handle refuses writes (a
+   spectator). Why: section 7 has a read-only stage refuse `send` and
+   `pose.hold`; presence keys are speech on the same channel; one rule.
+4. **A pin has no channel.** No claim counts in it (nobody is seated) and
+   it hears nobody. Why: a value has no participants; on the live doc's
+   channel it would show today's people over an old version.
+5. **A mirror hears its own session.** Listening only, it accepts messages
+   from the view's own session. Why: one session per view, and that is how
+   it hears its view's acting stage of the same doc; it never speaks, so
+   nothing echoes.
+6. **No processes in a drawn stage**, replicated ones included:
+   `api.clock.process` is refused there and the spec is never started. Why:
+   "it never computes its clock". Its t is still read: a mirror follows the
+   computer, a pin reads the doc's `clock.t`.
+7. **Stages are keyed by occurrence** (path, role, identity). When one
+   changes (the acting link removed, a link pinned or followed), its stage
+   closes with everything opened under it, and another opens. This keeps
+   step 12's close and reopen rather than section 7's "keyed by URL, its
+   claims go on". Why: moving a live stage's nodes, frame and segment to
+   another placement is a second mechanism for a rare event, and "the
+   acting occurrence can move" is already a listed cost.
+8. **`api.link(id)` is `{ role, open, reason? }`**: the expansion's role
+   (acting, mirror, pinned, closed) and whether its doc is drawn. Why: the
+   old `state` folded two facts into one value.
+9. **A pin is whole without knowing any package.** `fixPoint` of a link
+   holds its doc's heads and, in `deps`, the heads of every live doc opened
+   under it and every doc their stages found through their repos (each
+   stage's repo notes what it finds): render docs, files, a keeper's
+   container. A pin nested under it is skipped (its own `at` holds it). Why:
+   the general reading of "every doc reached through it"; no package
+   declares its references.
+10. **A pin's repo finds listed docs at their heads and others as they
+    are**, read-only (the render pins' `pinnedRepo`). Why: the precedent,
+    and refusing an unlisted doc would starve a keeper of what it shows.
+11. **A drawn stage's render manager builds nothing** and writes no render
+    doc; it shows what is built. Why: the acting stage keeps renders built,
+    and two hosts pinning one doc at different heads must not fight.
+12. **Fix at this version and Follow latest apply to links** as to built
+    content: one verb (the inspector's), two consumers.
+13. **A pin at heads this replica hasn't got** is drawn as its hint
+    (`{ role: "pinned", open: false }`) until the live doc's changes bring
+    them.
+14. **The example's fit-out holds no stations.** Its companionway (a
+    joints slide, a traversal exit) is drawn in the pin and never acted on.
+    Sailing's stations are bound to a ship's simulation in their own doc,
+    so a fit-out of stations would be inert by design: worked example 2
+    puts stations in S.
+15. **Publishing a pin re-creates its doc's history.** Heads don't travel
+    between repos, so `publish-fitout.mjs` makes F as it was fixed, then
+    F's change, and writes the pin at F's server heads (its deps at the
+    files' server heads).
+
+
+Then, fixing the step's review (2026-11-14, also unattended):
+
+16. **A drawn stage's extensions collect from their own stage.** `reader.collect`
+    is ungated; only the view decides who is acted on (`view.acting()`,
+    `onPath`, `bodyDefs`, a cross-stage `api.run`). Why: gating collect hid a
+    roster from tabletop's audience in a mirror, so a mirrored hand was shown
+    to nobody (I4); input was already the view's to withhold.
+17. **What a pin holds is what its docs name.** `fixPoint` keeps a found doc
+    only if a doc of the pin names its URL (transitively). Why: a stage's
+    repo also finds a viewer's own docs (card-table's player secret, through
+    `api.repo`); recording those would publish a player's secret URL in the
+    host doc, and the found-set otherwise depended on load order. Naming is
+    data the docs already carry, so no package declares anything. Decision
+    10 stands (an unlisted doc is found live): it is how a pin can still
+    reach a viewer's secret, and §7 is reworded to match.
+18. **Packages are read through the view's repo.** Why: a package is the
+    viewer's to load, at live heads; it is never part of a pin.
+19. **A pin is keyed by its deps too.** Same heads, other deps: the stage
+    opens again. Deps written in another order are the same key. Why: a
+    stage should be a function of its occurrence.
+20. **The drawn api is one facet** (`drawnApi`), not a guard per method;
+    writes keep one check, `writable()`, at each write site, and the
+    read-only handle and repo beneath them. Why: the facet puts "what a
+    drawn stage may not do" in one table, so a new method is either
+    harmless or listed there. The write checks are not a second mechanism:
+    the wrappers are the guarantee, `writable()` is the stage asking before
+    it writes so it never reaches them (I6 counts reaching them as a
+    failure). The clock's reason for not computing in a drawn stage is
+    `"drawn"`.
+21. **No `api.role`.** Where a stage is placed is the view's to know;
+    `api.writable()` is the one question an extension may ask. Why: a role
+    invites branching on placement, which I4 forbids.
+22. **The stage's repo is an allowlist**: `find`, `create`, `create2`,
+    `peerId`. Why: anything else (`handles`, `findWithProgress`) hands out
+    raw writable handles and bypasses `reached`, so "read-only by
+    construction" held only by convention.
+23. **A read-only stage's presence holds the read-only handle.** It could
+    not speak if it tried; the page bus is keyed by the raw handle
+    (`rawHandle`), so it still hears its view's acting stage. Why: one
+    mechanism for silence, and the I6 harness can then tell a read-only
+    stage's own output from an acting stage's on the same doc.
+24. **A keeper takes no part where it may not write** (card-table): no
+    join, turn, key or secret is made there; it only reveals with what the
+    deck and the viewer's secret already hold. A deck's identity for its
+    keys is its doc URL without heads. Why: I6 failed on the real keeper in
+    a mirror and a pin; and a pin's deck handle names its heads in its url,
+    so keys derived from it differed and a pin showed every card's back.
+    Both are card-table's facts, not the stage's.

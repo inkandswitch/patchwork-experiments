@@ -41,9 +41,11 @@ shows its verb is the scene's, in every scene.
   to go later (a boat's companionway, a map's exit switch), and until then
   it's only a part.
 - `to` is passed on as written, `#…` and all (`automerge:<id>#<heads>` opens
-  that version, as any Patchwork link does). The note's named frames
-  (`url#name`, landing at a frame the other doc publishes) wait for the
-  stage's `api.go`.
+  that version, as any Patchwork link does). Named frames (landing at a
+  frame the other doc publishes) aren't built: every exit so far lands where
+  its doc starts people (scene/COMPOSITION.md, Decisions, step 16). When
+  one is needed, the name gets a field of its own beside `to`, since `#`
+  already means a version here.
 - The verb is trimmed and at most 40 characters.
 - The inspector's "Add behaviour…" offers it (Leads to, Verb). A copy keeps
   where it leads (it's about the object).

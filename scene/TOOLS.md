@@ -123,7 +123,11 @@ run in every body (what runs is the doc's), and show nothing outside it.
 
 A **place** is not a type: it is the object given to a body's `enter` (a
 seat, a station), or null for "here". `view.start` is read on arrival, and
-the scene's package list must include its body's package. Prefs keep
+the scene's package list must include its body's package. A place that is
+one of the doc's links arrives through it, as the linked doc starts people
+(its own `view.start`, in its stage and only there, and on down): the host names its own
+link and the linked doc its own place, so nothing crosses
+(COMPOSITION.md, Decisions, step 16). Prefs keep
 today's live rule, `view.prefs[k] ?? doc.view[k] ?? fallback` (since step 10
 the viewer's keys are `api.view`'s, and a pref falls back to the calling
 stage's doc).
@@ -189,6 +193,23 @@ key, until §6's bar of tools exists for games.
 Double-click on a link enters it (elsewhere it frames); Leave, Esc or the
 breadcrumb moves out. The chain always spans the whole path, so outside
 the focus verbs and carries still work; a Select there does nothing.
+*Built (COMPOSITION step 14):* Enter is `scene.focus`'s verb on a link (the
+menu, the inspector) and its double-click, everyone's in every body, as the
+selection is; it goes where the link's doc acts (a mirror's: where it's
+live), and a pin or a closed link says why it can't be entered. The
+breadcrumb is the view's trail along the top while the focus is inside a
+link, with Leave; Escape's last rung leaves. The general parts (the
+editor's chrome among them) move into the focus stage, so the halo, the
+inspector and the outline act on the entered doc's objects in its frame;
+one holding something (a walk's body, a held Measure) finishes it where it
+was, so Enter and Leave never change the body or drop the tool (the tool
+goes down only when its stage leaves the focus path);
+they are offered input after every segment wherever the hit is, so the
+menu, keys and prompt still reach outside. In Edit, a click outside the
+focus isn't Edit's (it can't select there) and goes down the chain. The
+outline's link rows say what each link is here and enter; drawer tabs
+open as the focus moved open again inside. Select's menu entry is the
+focus stage's alone, so it's offered only on what can be selected.
 
 ## 4. The body and the held tool
 
@@ -334,10 +355,14 @@ right-click Select still selects it (no handles, no inspector).*
 - **The bar of tools** holds the general tools and those of the stages on
   the focus path. *Built* as the toolbar, which is Edit's (Decisions 6):
   outside Edit there is no bar, and a package's toolbar command is in the
-  menu and on its key.
+  menu and on its key. Since COMPOSITION step 14 it is the focus path's:
+  each stage's scene commands from the focus out, worked out and run in
+  that stage, whatever the pointer is over.
 - **The body chip** offers Look and Edit first, then the bodies that can
   start here (Walk), then Leave while a body stands over the base. **Who's here** shows each person's body and held tool,
-  from presence (today only selection and hover, `select.js:143-146`).
+  from presence: the view says its viewer's on every channel it acts on, so
+  a person at another placement of this doc shows as what they're doing
+  there (COMPOSITION.md, Decisions, links loose ends, 4).
 - **The clock chip** is ▶ or ⏸ for each doc on the focus path that has a
   process, outermost first; its Pause acts on that doc. Who computes shows
   only on a stall ("waiting for Ben's machine") or when nobody here can.
@@ -639,7 +664,7 @@ and Dee still walks. To try his changes, he plays a copy.
   would have, every write after HEAR_MS, no close started while paused,
   every close at the first tick its wait had passed in world time.
 | H9 | **Reach**: a `reach` command runs ⇔ distance ≤ body.reach, else shows "too far" | {prompt, menu, key map} × body × {hit, no hit} × {in, out} |
-| H10 | **Selection at the focus**: the selected path ends at an element of the focus stage | Paths of depth ≤3 × every sequence of ≤3 of press, Select, Enter, Leave, Esc |
+| H10 | **Selection at the focus**: the selected path ends at an element of the focus stage | Paths of depth ≤3 × every sequence of ≤3 of press, Select, Enter, Leave, Esc. *Built:* the pure model over every sequence of ≤3 in a two-wide, three-deep tree (`src/selection.test.js`); across docs in a real view (`src/stage/focus.test.js`), every reachable focus and selection × all 37 events on nested live links, a mirror, a pin and a closed link (so every sequence of any length), the view agreeing with the model at each |
 | H11 | **Carry**: only with `scene.carry`, no veto, no holder, in its own doc's stage | Object × trait × veto × held × depth ≤2 × focus |
 
 COMPOSITION's I4 trades "× activity" for "× body × held tool × clock"; I8

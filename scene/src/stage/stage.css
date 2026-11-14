@@ -388,3 +388,35 @@
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* ─── the trail: where the focus is (view.js), while it's inside a link ───── */
+
+.scene-stage > .stage-edge > .stage-trail:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px var(--studio-space-xs, 0.375rem);
+  border-bottom: 1px solid var(--scene-border);
+  background: var(--scene-surface);
+  box-shadow: inset 3px 0 0 var(--scene-accent-fill);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.scene-stage .stage-trail > .trail-sep:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-stage .stage-trail > .trail-here:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-stage .stage-trail > .trail-leave:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-inline-start: auto;
+  font-size: 12px;
+  padding: 1px 10px;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { atFocus, selectionAtFocus, selectionStep } from "./selection.js";
+import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "./selection.js";
 
 // A tree two wide and three deep: every path names something through the
 // links it is inside. A path with something inside it is a link.
@@ -65,5 +65,47 @@ describe("H10: the selection is at the focus", () => {
     expect(selectionStep(st, { type: "select", path: ["a", "c", "e"] }).selected).toEqual(["a", "c"]);
     expect(selectionStep(st, { type: "select", path: ["b", "c"] })).toBe(st);
     expect(selectionStep(st, { type: "select", path: ["a"] })).toBe(st); // the focus itself is no element of it
+  });
+});
+
+describe("focusSteps: from any focus to any other, a leave a level, then an enter a link", () => {
+  // every focus in the tree: the scene itself, and every path that is a link
+  const FOCI = [[], ...PATHS.filter(isLink)];
+  it("over every pair of foci, with every link enterable: reaches it, the selection cleared on any move, H10 all the way", () => {
+    let pairs = 0;
+    for (const from of FOCI)
+      for (const to of FOCI)
+        for (const selected of [null, ...PATHS.filter((p) => p.length === from.length + 1 && atFocus(from, p))]) {
+          let st = { focus: from, selected };
+          for (const ev of focusSteps(from, to)) {
+            st = selectionStep(st, ev);
+            expect(selectionAtFocus(st)).toBe(true);
+          }
+          expect(st.focus).toEqual(to);
+          if (key(from) !== key(to)) expect(st.selected).toBe(null);
+          pairs++;
+        }
+    expect(pairs).toBeGreaterThan(FOCI.length ** 2);
+  });
+
+  it("a link that may not be entered stops it there: no deeper than the last enterable one", () => {
+    for (const from of FOCI)
+      for (const to of FOCI)
+        for (const shut of PATHS.filter(isLink)) {
+          const may = (p) => key(p) !== key(shut);
+          let st = { focus: from, selected: null };
+          for (const ev of focusSteps(from, to, may)) st = selectionStep(st, ev);
+          const blocked = to.length >= shut.length && key(to.slice(0, shut.length)) === key(shut) && !(from.length >= shut.length && key(from.slice(0, shut.length)) === key(shut));
+          if (!blocked) expect(st.focus).toEqual(to);
+          else expect(st.focus.length).toBeLessThan(shut.length);
+        }
+  });
+});
+
+describe("clear", () => {
+  it("clears a selection and nothing else", () => {
+    expect(selectionStep({ focus: ["a"], selected: ["a", "c"] }, { type: "clear" })).toEqual({ focus: ["a"], selected: null });
+    const st = { focus: ["a"], selected: null };
+    expect(selectionStep(st, { type: "clear" })).toBe(st);
   });
 });

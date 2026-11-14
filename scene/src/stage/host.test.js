@@ -324,4 +324,87 @@ describe("the host", () => {
       host.dispose();
     }
   }, 120_000);
+
+  // The view's move (setGeneral): H2's busy half. One general extension, the
+  // focus moving in and out, busy or not, over every sequence of up to four
+  // events (in, out, busy, idle, wait BUSY_RECHECK_MS): 781 sequences. After
+  // every event: in ⇒ running and offering, and started only if it wasn't
+  // running (back before it stopped, it's kept); out ⇒ offering nothing; it
+  // stops only while out and not busy, at once on going out idle, else at
+  // the recheck after it lets go. At most one instance at a time.
+  it("the view's move: over every order of ≤4 of in, out, busy, idle and a recheck, a general part stops only out and idle, and offers only in", async () => {
+    const EVENTS = ["in", "out", "busy", "idle", "recheck"];
+    const seqs = [[]];
+    for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
+    expect(seqs.length).toBe(781);
+    const settle = async () => {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    };
+    const quickTimers = () => {
+      let now = 0;
+      let n = 0;
+      const pending = new Map();
+      return {
+        setTimeout: (fn, ms) => (pending.set(++n, { fn, at: now + ms }), n),
+        clearTimeout: (k) => pending.delete(k),
+        async advance(ms) {
+          now += ms;
+          for (;;) {
+            const due = [...pending.entries()].filter(([, p]) => p.at <= now).sort((x, y) => x[1].at - y[1].at)[0];
+            if (!due) break;
+            pending.delete(due[0]);
+            due[1].fn();
+            await settle();
+          }
+        },
+      };
+    };
+    const one = [{ id: "walk" }];
+    for (const seq of seqs) {
+      log = [];
+      timers = quickTimers();
+      local = createAtom({ running: [] });
+      busy = new Set();
+      const reg = registry(one, { walk: mod("walk", log, { bodies: ["walk"] }) });
+      const host = createHost({
+        registry: async () => reg,
+        local,
+        makeApi: (rec) => ({ api: { id: rec.id, signal: rec.signal }, release: () => {} }),
+        busy: (id) => busy.has(id),
+        setTimer: timers.setTimeout,
+        clearTimer: timers.clearTimeout,
+      });
+      const lines = (k) => log.filter((l) => l === `${k}:walk`).length;
+      host.sync(doc());
+      await settle();
+      let atFocus = true;
+      let due = false; // out and idle, and its moment to stop has come
+      for (const e of seq) {
+        const where = seq.join(",") || "(none)";
+        const was = { creates: lines("create"), disposes: lines("dispose"), running: lines("create") > lines("dispose") };
+        const moved = (e === "in") !== atFocus && (e === "in" || e === "out");
+        if (e === "in" || e === "out") {
+          atFocus = e === "in";
+          host.setGeneral(atFocus);
+          await settle();
+        } else if (e === "busy") busy.add("walk");
+        else if (e === "idle") busy.delete("walk");
+        else await timers.advance(BUSY_RECHECK_MS);
+        const free = !atFocus && !busy.has("walk");
+        if (!free) due = false;
+        // (out again while out is no move: the view says so on every relink)
+        else if ((e === "out" && moved) || e === "recheck") due = true;
+        const running = lines("create") > lines("dispose");
+        expect(lines("create") - lines("dispose"), where).toBeLessThanOrEqual(1);
+        if (atFocus) {
+          expect([where, running, host.collect("bodies").length, host.offering().length]).toEqual([where, true, 1, 1]);
+          // started only if it had stopped
+          expect(lines("create") - was.creates, where).toBe(was.running ? 0 : 1);
+        } else expect([where, host.collect("bodies").length, host.offering().length]).toEqual([where, 0, 0]);
+        if (lines("dispose") > was.disposes) expect([where, atFocus, busy.has("walk")]).toEqual([where, false, false]);
+        if (due) expect([where, running]).toEqual([where, false]);
+      }
+      host.dispose();
+    }
+  }, 120_000);
 });

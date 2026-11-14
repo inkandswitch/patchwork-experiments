@@ -9,6 +9,12 @@
 // controls whose state changed, so a picker keeps its focus and a hover costs
 // nothing.
 //
+// Across linked docs it holds the scene commands of the stages on the focus
+// path, the focus first, out to the outermost (TOOLS.md §6: entered in a
+// game aboard, the game's and the boat's), each worked out in its own
+// stage's context and run there. It doesn't follow the pointer, so it
+// doesn't change under it.
+//
 // The toolbar is the editor's (../stage/bodies.js): it shows only in the Edit
 // body. Elsewhere (looking, walking, seated) there is no bar: a package's
 // command meant for it (arena's Play, the cups' Lift all) is still in the
@@ -16,7 +22,7 @@
 
 import css from "./toolbar.css?inline";
 import { applicable, cleanChoices, controlKey, controlKind, flatCommands, localChanged, tooltip } from "./toolbar-commands.js";
-import { hintFor } from "../keymap.js";
+import { hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 import { editing } from "../stage/bodies.js";
 
@@ -35,33 +41,34 @@ function create(api) {
   bar.append(row);
   edge.append(bar);
 
-  /** control key ("ext\0command") → { el, sig, kind, choices } */
+  /** control key ("stage\0ext\0command") → { el, sig, kind, choices } */
   const controls = new Map();
   let order = "";
 
-  const keyOf = (ext, id) => `${ext}\u0000${id}`;
-  const invoke = (ext, command, value) => api.run({ ext, command, target: null, value });
+  const keyOf = (ext, id, stage) => `${stage ?? ""}\u0000${ext}\u0000${id}`;
 
   function build(item) {
-    const { ext, command, state } = item;
+    const { ext, command, state, stage } = item;
+    // (run in the stage it's from)
+    const invoke = (value) => api.run({ ...(stage !== undefined ? { stage } : {}), ext, command: command.id, target: null, value });
+    const mine = () => controls.get(keyOf(ext, command.id, stage));
     const kind = controlKind(state);
     let el;
     if (kind === "choices") {
       el = document.createElement("select");
       el.className = "picker";
       el.addEventListener("change", () => {
-        const c = controls.get(keyOf(ext, command.id));
-        const choice = c?.choices?.[el.selectedIndex];
-        if (choice) invoke(ext, command.id, choice.value);
+        const choice = mine()?.choices?.[el.selectedIndex];
+        if (choice) invoke(choice.value);
       });
     } else {
       el = document.createElement("button");
       el.type = "button";
       el.className = "button";
       el.addEventListener("click", () => {
-        const c = controls.get(keyOf(ext, command.id));
-        if (c?.kind === "toggle") invoke(ext, command.id, !c.checked);
-        else invoke(ext, command.id);
+        const c = mine();
+        if (c?.kind === "toggle") invoke(!c.checked);
+        else invoke();
       });
     }
     el.dataset.ext = ext;
@@ -100,12 +107,14 @@ function create(api) {
 
   function render(scene, view) {
     const keys = resolverState(api);
-    // (each key is the resolver's: shown only where pressing it does this)
-    const items = editing(view) ? applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) })) : [];
+    // the focus path's stages, each its own commands in its own context (each key is the resolver's: shown only where pressing it does this)
+    const path = typeof api.path === "function" ? api.path({ focus: true }) : [];
+    const segs = path.length ? path.map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) })) : segmentsOf(keys);
+    const items = editing(view) ? segs.flatMap((seg) => applicable(flatCommands(seg.collected), null, seg.ctx, "toolbar").map((it) => ({ ...it, stage: seg.stage, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: seg.stage }, keys) }))) : [];
     const seen = new Set();
     const els = [];
     for (const item of items) {
-      const k = keyOf(item.ext, item.command.id);
+      const k = keyOf(item.ext, item.command.id, item.stage);
       if (seen.has(k)) continue;
       seen.add(k);
       const kind = controlKind(item.state);

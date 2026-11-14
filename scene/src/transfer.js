@@ -238,17 +238,22 @@ export function runtimeOf(describes) {
   return out;
 }
 
+/** Traits as they're copied (an object's, or a scene's root traits): a fresh plain copy without runtime state. Pure. */
+export function cleanTraits(traits, runtime = new Map()) {
+  const out = plain(traits) ?? {};
+  for (const [k, v] of Object.entries(out)) {
+    const r = runtime.get(k);
+    if (r === true) delete out[k];
+    else if (r && v && typeof v === "object" && !Array.isArray(v)) for (const key of r) delete v[key];
+  }
+  return out;
+}
+
 /** An object as it's copied: a fresh plain copy without runtime state. Pure. */
 export function cleanObject(o, runtime = new Map()) {
   const out = plain(o) ?? {};
   for (const f of RUNTIME_FIELDS) delete out[f];
-  if (out.traits && typeof out.traits === "object") {
-    for (const [k, v] of Object.entries(out.traits)) {
-      const r = runtime.get(k);
-      if (r === true) delete out.traits[k];
-      else if (r && v && typeof v === "object" && !Array.isArray(v)) for (const key of r) delete v[key];
-    }
-  }
+  if (out.traits && typeof out.traits === "object") out.traits = cleanTraits(out.traits, runtime);
   return out;
 }
 
@@ -268,49 +273,79 @@ export function refsOf(describes) {
   return out;
 }
 
+const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
 /**
- * A copied object's references, fixed before it's written (its `traits` are
- * a fresh copy, changed in place):
- *   - a `copy: "drop"` field is left behind;
- *   - an `object` field naming something copied with it is cleared now and
- *     set to that copy's new id once it's made (`later`); naming something
- *     else, it's kept in the same scene and cleared in another (`lost`);
- *   - an `entry` field is kept in the same scene, or when this scene's trait
- *     `of` has that key; else cleared (`entries`: what it needed).
- * Pure.
- * @returns {{ later: { trait, key, to }[], lost: { trait, key, label }[], entries: { trait, key, label, of }[] }}
+ * The described references in one object's traits, rewritten by two rules:
+ * `object(id)` → the id it names now (null: the root), or undefined to clear
+ * it; `entry(of, key)` → whether an entry of root trait `of` is kept. A null
+ * reference stays null; a `copy: "drop"` field is cleared when `drop` says
+ * so (a copy leaves it behind; an object staying where it is keeps its own).
+ * The one rewriter: what a copy does to its references (copyRefs) and what
+ * the objects left in a doc do when something leaves it or arrives
+ * (extract.js) both go through it. Pure.
+ * @returns {{ edits: { trait, key, to }[], lost: { trait, key, label }[], entries: { trait, key, label, of }[] }}
+ *   `to` undefined: clear it
  */
-export function fixRefs(traits, refs, { copied = new Set(), same = false, sceneTraits = {} } = {}) {
-  const out = { later: [], lost: [], entries: [] };
-  if (!traits || typeof traits !== "object") return out;
+export function refEdits(traits, refs, { object, entry, drop = false }) {
+  const out = { edits: [], lost: [], entries: [] };
+  if (!isMap(traits)) return out;
   for (const [k, v] of Object.entries(traits)) {
     const fields = refs?.get?.(k);
-    if (!fields || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    if (!fields || !isMap(v)) continue;
     for (const f of fields) {
       if (!(f.key in v)) continue;
       const val = v[f.key];
       if (f.drop) {
-        delete v[f.key];
+        if (drop) out.edits.push({ trait: k, key: f.key, to: undefined });
         continue;
       }
+      if (val == null) continue;
       if (f.kind === "object") {
-        if (typeof val === "string" && copied.has(val)) {
-          delete v[f.key];
-          out.later.push({ trait: k, key: f.key, to: val });
-        } else if (!same && val != null) {
-          delete v[f.key];
-          out.lost.push({ trait: k, key: f.key, label: f.label });
-        }
-      } else if (f.kind === "entry" && !same && val != null) {
-        const map = sceneTraits?.[f.of];
-        if (!(map && typeof map === "object" && typeof val === "string" && map[val] != null)) {
-          delete v[f.key];
-          out.entries.push({ trait: k, key: f.key, label: f.label, of: f.of });
-        }
+        const to = typeof val === "string" ? object(val) : undefined;
+        if (to === val) continue;
+        out.edits.push({ trait: k, key: f.key, to });
+        if (to === undefined) out.lost.push({ trait: k, key: f.key, label: f.label });
+      } else if (f.kind === "entry" && !entry(f.of, val)) {
+        out.edits.push({ trait: k, key: f.key, to: undefined });
+        out.entries.push({ trait: k, key: f.key, label: f.label, of: f.of });
       }
     }
   }
   return out;
+}
+
+/** Apply refEdits' edits to a traits map (plain or a draft's), in place. */
+export function applyRefEdits(traits, edits) {
+  for (const e of edits) {
+    const t = traits?.[e.trait];
+    if (!isMap(t)) continue;
+    if (e.to === undefined) delete t[e.key];
+    else t[e.key] = e.to;
+  }
+}
+
+/** Does a scene with these root traits have entry `key` of trait `of`? (An `entry` reference is kept by it.) */
+export const entryIn = (sceneTraits) => (of, key) => isMap(sceneTraits?.[of]) && typeof key === "string" && sceneTraits[of][key] != null;
+
+/**
+ * The copy rule for one copied object's references, the same for paste,
+ * extract and bundle (its `traits` are a fresh copy, changed in place):
+ *   - an `object` field naming a copied object follows it (`map`: old id →
+ *     its id in the copy, null for the copy's root); naming anything else
+ *     it is `outside(id)`: kept (paste in its own scene) or, undefined,
+ *     cleared (`lost`);
+ *   - an `entry` field is kept where `entries(of, key)` (the scene it lands
+ *     in has that entry), else cleared (`entries`: what it needed);
+ *   - a `copy: "drop"` field is left behind.
+ * Ids are mapped before anything is written, so every reference is written
+ * once, already right. Pure.
+ * @returns {{ lost: { trait, key, label }[], entries: { trait, key, label, of }[] }}
+ */
+export function copyRefs(traits, refs, { map = new Map(), outside = () => undefined, entries = () => false } = {}) {
+  const r = refEdits(traits, refs, { object: (v) => (map.has(v) ? map.get(v) : outside(v)), entry: entries, drop: true });
+  applyRefEdits(traits, r.edits);
+  return { lost: r.lost, entries: r.entries };
 }
 
 const lower = (s) => String(s).toLowerCase();
@@ -606,11 +641,12 @@ async function copyInto(api, payload, target, edit) {
   if (typeof t.beside === "function") t.beside = t.beside(roots);
   const plan = planCopy({ objects, order: source.order ?? [], roots, runtime, target: t });
 
-  // what the copies point at in the scene: their own parts (set once made),
-  // what's here, or nothing (STAGE.md, "Copying objects")
-  const copied = new Set(plan.items.map((it) => it.from));
+  // every copy's id, chosen before anything is written, so each reference is
+  // written once: to the copy of what it named, to what's here (in its own
+  // scene), or nothing (STAGE.md, "Copying objects"; the copy rule, copyRefs)
+  const map = new Map(plan.items.map((it) => [it.from, api.newId(it.group ? "g" : "o")]));
   const sceneTraits = api.doc()?.traits ?? {};
-  const fixes = new Map(plan.items.map((it) => [it.from, fixRefs(it.data.traits, refs, { copied, same, sceneTraits })]));
+  const fixes = new Map(plan.items.map((it) => [it.from, copyRefs(it.data.traits, refs, { map, outside: (v) => (same ? v : undefined), entries: same ? () => true : entryIn(sceneTraits) })]));
 
   // render docs: read each built object's, for its params and build
   const seeds = new Map();
@@ -628,7 +664,7 @@ async function copyInto(api, payload, target, edit) {
   );
   if (!live()) return null;
 
-  const map = new Map(); // source id → new id
+  const made = new Set(); // source ids whose copy is in the scene
   const before = t.before ?? null;
   const placeInOrder = (d, id) => {
     const at = before ? d.order.indexOf(before) : -1;
@@ -639,7 +675,6 @@ async function copyInto(api, payload, target, edit) {
   // groups first, in one change (what's filed in them is made after)
   const groupItems = plan.items.filter((it) => it.group);
   if (groupItems.length) {
-    for (const it of groupItems) map.set(it.from, api.newId("g"));
     change((d) => {
       for (const it of groupItems) {
         const id = map.get(it.from);
@@ -648,22 +683,23 @@ async function copyInto(api, payload, target, edit) {
         placeInOrder(d, id);
       }
     });
+    for (const it of groupItems) made.add(it.from);
   }
 
   // then each object, through the stage's addObject (render docs and all), parents first
   const failed = [];
   for (const it of plan.items) {
     if (it.group || !live()) continue;
-    const parent = it.top ? it.parentIn : (map.get(it.parent) ?? null);
-    const group = it.groupOf != null ? (map.get(it.groupOf) ?? null) : it.groupIn;
+    const parent = it.top ? it.parentIn : made.has(it.parent) ? map.get(it.parent) : null;
+    const group = it.groupOf != null ? (made.has(it.groupOf) ? map.get(it.groupOf) : null) : it.groupIn;
     // a parent that couldn't be made: this one goes at the root, where it would have been
     let transform = it.transform;
-    if (!it.top && it.parent != null && !map.has(it.parent)) transform = it.world ? decomposeMatrix(it.world) : null;
+    if (!it.top && it.parent != null && !made.has(it.parent)) transform = it.world ? decomposeMatrix(it.world) : null;
     const fields = {};
     for (const [k, v] of Object.entries(it.data)) if (!OWN_FIELDS.has(k)) fields[k] = v;
     if (!it.data.sourceUrl) {
       // nothing to show it from: written as it is, in its turn (what's under it needs it there)
-      const id = api.newId("o");
+      const id = map.get(it.from);
       change((d) => {
         const p = parent && d.objects[parent] && !isGroup(d.objects[parent]) ? parent : null;
         const gWanted = group !== undefined ? group : p ? (d.objects[p].group ?? null) : null;
@@ -671,12 +707,13 @@ async function copyInto(api, payload, target, edit) {
         d.objects[id] = { ...fields, name: it.data.name ?? "Object", sourceUrl: null, providerId: it.data.providerId ?? null, renderUrl: null, parent: p, group: g, transform: plain(transform ?? it.data.transform) };
         placeInOrder(d, id);
       });
-      map.set(it.from, id);
+      made.add(it.from);
       continue;
     }
     const seed = seeds.get(it.from);
     try {
-      const id = await api.addObject(it.data.sourceUrl, {
+      await api.addObject(it.data.sourceUrl, {
+        id: map.get(it.from),
         providerId: it.data.providerId ?? undefined,
         name: it.data.name || undefined,
         ...(parent ? { parent } : {}),
@@ -687,26 +724,28 @@ async function copyInto(api, payload, target, edit) {
         ...(seed ? { render: seed } : {}),
         ...(edit ? { edit } : {}),
       });
-      map.set(it.from, id);
+      made.add(it.from);
     } catch (err) {
       failed.push(`${it.data.name || "Object"}: ${err?.message ?? err}`);
     }
   }
   if (!live()) return null;
 
-  // references among the copies, to the copies' new ids, field by field
-  const later = [...fixes].flatMap(([from, f]) => f.later.filter((l) => map.has(from) && map.has(l.to)).map((l) => ({ id: map.get(from), ...l, to: map.get(l.to) })));
-  if (later.length) {
-    change((d) => {
-      for (const l of later) {
-        const tr = d.objects?.[l.id]?.traits?.[l.trait];
-        if (tr && typeof tr === "object") tr[l.key] = l.to;
-      }
-    });
+  // a copy that couldn't be made: what named it names nothing (the same rewriter, nothing copied)
+  const missing = new Set(plan.items.filter((it) => !made.has(it.from)).map((it) => map.get(it.from)));
+  if (missing.size) {
+    const unmade = [];
+    for (const it of plan.items) {
+      if (!made.has(it.from)) continue;
+      const r = refEdits(it.data.traits, refs, { object: (v) => (missing.has(v) ? undefined : v), entry: () => true });
+      if (r.edits.length) unmade.push({ id: map.get(it.from), edits: r.edits });
+      fixes.get(it.from).lost.push(...r.lost);
+    }
+    if (unmade.length) change((d) => unmade.forEach((u) => d.objects[u.id] && applyRefEdits(d.objects[u.id].traits, u.edits)));
   }
 
   // the files' assets: what names them in the source scene comes along, under the same key
-  const urls = plan.items.filter((it) => !it.group && map.has(it.from) && typeof it.data.sourceUrl === "string").map((it) => it.data.sourceUrl);
+  const urls = plan.items.filter((it) => !it.group && made.has(it.from) && typeof it.data.sourceUrl === "string").map((it) => it.data.sourceUrl);
   const assets = same ? {} : assetsFor(source.assets, urls, api.doc()?.assets);
   if (Object.keys(assets).length) {
     change((d) => {
@@ -715,7 +754,7 @@ async function copyInto(api, payload, target, edit) {
   }
 
   for (const f of failed) api.notify(`Couldn't copy ${f}`, "error");
-  const traitKeys = plan.items.filter((it) => map.has(it.from)).flatMap((it) => Object.keys(it.data.traits ?? {}));
+  const traitKeys = plan.items.filter((it) => made.has(it.from)).flatMap((it) => Object.keys(it.data.traits ?? {}));
   const needs = missingNeeds(describes, traitKeys, api.doc()?.traits);
   for (const n of needs) api.notify(needsText(n), "warn");
   // a field naming an entry of a scene trait: the trait is missing (a need,
@@ -723,7 +762,7 @@ async function copyInto(api, payload, target, edit) {
   const told = new Set(needs.map((n) => n.need));
   const nameOf = (k) => String(describes.get(k)?.name ?? k);
   for (const [from, f] of fixes) {
-    if (!map.has(from)) continue;
+    if (!made.has(from)) continue;
     for (const e of f.entries) {
       const key = `${e.trait}.${e.key}`;
       const has = sceneTraits[e.of] != null || api.doc()?.traits?.[e.of] != null;
@@ -739,9 +778,9 @@ async function copyInto(api, payload, target, edit) {
     }
   }
 
-  const made = roots.map((id) => map.get(id)).filter(Boolean);
-  if (made.length && api.view.get().selected !== made[0]) api.view.select(made[0]);
-  return made.length ? made : null;
+  const out = roots.filter((id) => made.has(id)).map((id) => map.get(id));
+  if (out.length && api.view.get().selected !== out[0]) api.view.select(out[0]);
+  return out.length ? out : null;
 }
 
 /**

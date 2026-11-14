@@ -284,3 +284,37 @@ export function shortUrl(url) {
 export function promptText(n) {
   return n === 1 ? "This scene uses a package you don't have." : `This scene uses ${n} packages you don't have.`;
 }
+
+/**
+ * Every open doc's packages as one prompt (STAGE.md, "Packages"): the union
+ * of the stages' `local.packages`, each URL once, in the order the lists
+ * first name it (the view gives them outermost first, by path). A URL any
+ * stage asks about is asked about; else one that failed anywhere has
+ * failed (the first error said); else it is loading. Its name is the first
+ * any stage has. `missing`: some stage misses one. Pure.
+ * @param {({ ask?: object[], loading?: object[], failed?: object[], missing?: boolean } | null | undefined)[]} lists
+ * @returns {{ ask: object[], loading: object[], failed: object[], missing: boolean }}
+ */
+export function unionPackages(lists) {
+  const RANK = { ask: 0, failed: 1, loading: 2 };
+  const by = new Map(); // url → { state, entry }
+  let missing = false;
+  for (const p of lists) {
+    if (!p) continue;
+    if (p.missing) missing = true;
+    for (const state of ["ask", "failed", "loading"])
+      for (const e of p[state] ?? []) {
+        if (typeof e?.url !== "string") continue;
+        const was = by.get(e.url);
+        if (!was) by.set(e.url, { state, entry: e });
+        else {
+          const name = was.entry.name ?? e.name ?? null;
+          const entry = RANK[state] < RANK[was.state] ? e : was.entry;
+          by.set(e.url, { state: RANK[state] < RANK[was.state] ? state : was.state, entry: { ...entry, name } });
+        }
+      }
+  }
+  const out = { ask: [], loading: [], failed: [] };
+  for (const { state, entry } of by.values()) out[state].push(Object.freeze({ ...entry, name: entry.name ?? null }));
+  return Object.freeze({ ask: Object.freeze(out.ask), loading: Object.freeze(out.loading), failed: Object.freeze(out.failed), missing: missing || by.size > 0 });
+}

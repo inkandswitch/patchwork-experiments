@@ -4,7 +4,11 @@
 //
 // Expand state, rows, the filter, keyboard navigation, row drag and drop,
 // New group. A double-click
-// on a row, or Enter in the filter, frames it. It reads the
+// on a row, or Enter in the filter, frames it. A link's row (an object whose
+// content is another scene) says what the link is here (linked, shown again,
+// fixed, closed) and, where it can be entered, has Enter (→): the outline
+// shows the focus doc, so going inside a link is entering it (a double-click
+// on its row does too), and the tab opens again inside (./focus.js). It reads the
 // doc through api.scene(), writes it through api.ops planners, and selects by
 // writing local.selected. Everything else is someone else's:
 //   - Remove runs scene.select's "remove" command when it's running (it owns
@@ -29,6 +33,16 @@ import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, row
 import { landings } from "./landing.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { own } from "../stage/own.js";
+import { enterState } from "./focus.js";
+
+/** What a link's row says it is, by its role here (api.link), and why. Pure. */
+export function linkMark(link) {
+  if (!link) return null;
+  if (link.role === "acting") return { text: "linked", title: "Another scene, placed here live: Enter to select and edit what's in it" };
+  if (link.role === "mirror") return { text: "shown again", title: "The same live scene, shown a second time: Enter goes inside where it's live" };
+  if (link.role === "pinned") return { text: "fixed", title: "Another scene, fixed at a version: Follow latest (the inspector) to go inside" };
+  return { text: "closed", title: `Another scene that isn't open here (${link.reason ?? "closed"})` };
+}
 
 /** The filter field appears once there are this many objects. */
 export const SEARCH_FROM = 8;
@@ -203,6 +217,13 @@ export default own({
     const views = new Set();
 
     const selectedId = () => api.view.get().selected ?? null;
+    /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
+    const enterable = (id) => {
+      const can = enterState(api.link(id));
+      return !!can && !can.disabled;
+    };
+    /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
+    const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => api.link(id)).filter(Boolean));
     function select(id) {
       if ((api.view.get().selected ?? null) !== id) api.view.select(id);
     }
@@ -500,8 +521,11 @@ export default own({
         const count = group ? el("span", { class: "count" }) : null;
         const pill = el("span", { class: "pill" });
         const fixedMark = group ? null : el("span", { class: "tag fixed-mark" }, "◷ fixed");
+        // a link's: what it is here, and Enter where it can be entered
+        const linkTag = group ? null : el("span", { class: "tag link-mark" });
+        const enterBtn = group ? null : el("button", { type: "button", class: "icon-button enter-link", title: "Enter: select and edit what's inside", "aria-label": "Enter", onclick: () => api.view.enter(id) }, "→");
         const remove = el("button", { type: "button", class: "icon-button remove", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeRow(id) }, "×");
-        const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (select(id), frameRow(id)) }, name, count);
+        const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (enterable(id) ? api.view.enter(id) : (select(id), frameRow(id))) }, name, count);
         // The name is the grab handle. Making the whole row draggable would
         // fight the colour input and the visibility checkbox inside it.
         main.draggable = true;
@@ -537,7 +561,7 @@ export default own({
         });
         main.addEventListener("dragend", () => endDrag({ scene: api.url }));
         const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
-        row = { li, twisty, vis, sw, name, count, pill, fixedMark, remove, main, group, label: null };
+        row = { li, twisty, vis, sw, name, count, pill, fixedMark, linkTag, enterBtn, remove, main, group, label: null };
         rows.set(id, row);
         return row;
       }
@@ -556,12 +580,14 @@ export default own({
         const status = api.local.get().status ?? null;
         const theme = loc.theme ?? null;
         // Nothing it shows changed (only the hover, or something else's local key)?
-        if (last && last.snap === snap && last.selected === selected && last.status === status && last.theme === theme && last.query === query && last.expandSeq === expandSeq && last.presenceSeq === presenceSeq) {
+        // (what each link is here comes from the view, not the doc)
+        const links = linksKey(snap);
+        if (last && last.snap === snap && last.selected === selected && last.status === status && last.theme === theme && last.query === query && last.expandSeq === expandSeq && last.presenceSeq === presenceSeq && last.links === links) {
           setHover(loc.hovered ?? null);
           refreshNames();
           return;
         }
-        last = { snap, selected, status, theme, query, expandSeq, presenceSeq };
+        last = { snap, selected, status, theme, query, expandSeq, presenceSeq, links };
         const m = derive(snap);
         const { objects, ids, kids, outline } = m;
         search.hidden = ids.length < SEARCH_FROM && !query;
@@ -583,7 +609,7 @@ export default own({
           const o = objects[id];
           const group = isGroup(o);
           const row = rowFor(id, group);
-          const { li, twisty, vis, sw, count, pill, fixedMark, remove } = row;
+          const { li, twisty, vis, sw, count, pill, fixedMark, linkTag, enterBtn, remove } = row;
           if (li.dataset.depth !== String(depth)) {
             li.dataset.depth = String(depth);
             li.style.setProperty("--depth", String(depth));
@@ -636,6 +662,17 @@ export default own({
               if (fixedMark.title !== t) fixedMark.title = t;
               if (fixedMark.parentNode !== li) li.insertBefore(fixedMark, pill.parentNode === li ? pill : remove);
             } else fixedMark.remove();
+          }
+          if (linkTag) {
+            const mark = linkMark(api.link(id));
+            if (mark) {
+              if (linkTag.textContent !== mark.text) linkTag.textContent = mark.text;
+              linkTag.title = mark.title;
+              if (linkTag.parentNode !== li) li.insertBefore(linkTag, remove);
+            } else linkTag.remove();
+            if (enterable(id)) {
+              if (enterBtn.parentNode !== li) li.insertBefore(enterBtn, remove);
+            } else enterBtn.remove();
           }
           return li;
         });

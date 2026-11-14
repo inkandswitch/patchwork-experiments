@@ -85,6 +85,20 @@ export function hitIn(f, hit, id) {
   return out;
 }
 
+/**
+ * A node's matrix in its content root's own frame (column-major 16): the one
+ * way geometry inside an object is read (a GLB's meshes under
+ * `api.content(id).root`). Every frame above the root cancels, a stage's
+ * included, so it is the same wherever the object is drawn. Duck-typed on
+ * three.js's Object3D (updateWorldMatrix, matrixWorld.elements). Pure but
+ * for bringing the two world matrices up to date.
+ */
+export function contentMatrix(root, node) {
+  root.updateWorldMatrix?.(true, false);
+  node.updateWorldMatrix?.(true, false);
+  return multiplyMatrices(invertMatrix(Array.from(root.matrixWorld.elements)), Array.from(node.matrixWorld.elements));
+}
+
 /** A world ray { origin, dir } in a frame. */
 export const rayIn = (f, r) => (r ? { origin: f.pointIn(r.origin), dir: f.dirIn(r.dir) } : null);
 
@@ -95,6 +109,7 @@ function cameraThrough(f, cam, out) {
   const p = out ? f.pointOut : f.pointIn;
   if (Array.isArray(cam.position)) c.position = p(cam.position);
   if (Array.isArray(cam.target)) c.target = p(cam.target);
+  if (Array.isArray(cam.up)) c.up = (out ? f.dirOut : f.dirIn)(cam.up);
   if (Array.isArray(cam.quaternion)) delete c.quaternion; // a frame turn on a quaternion: a target says the same (cameras here look at targets)
   return c;
 }
@@ -166,9 +181,14 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       const w = vp.worldOf(key(id));
       return w ? f().matrixIn(w) : null;
     },
-    // boxes, in this stage's frame
-    objectBox: (id, { hints = true } = {}) => box(vp.objectBox(key(id), { hints, within: within() })),
-    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within() })),
+    // boxes, in this stage's frame, or in one of its objects' (`in`: its displayed frame); what its
+    // own doc shows (I7): a host hiding the link doesn't take them away
+    objectBox: (id, { hints = true, in: frameId = null } = {}) => {
+      if (frameId == null) return box(vp.objectBox(key(id), { hints, within: within(), inStage: true }));
+      const w = vp.worldOf(key(frameId));
+      return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w), inStage: true })) : null;
+    },
+    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within(), inStage: true })),
     sceneBox: ({ hints = true } = {}) => box(vp.sceneBox({ hints, within: within(), stage: n })),
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),
@@ -198,7 +218,8 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     removeLayers: (owner) => vp.removeLayers(keyOf(n, owner)),
     labels: {
       // positions in this stage's frame, which the labels follow as it moves
-      sync: (owner, items) => vp.labels.sync(keyOf(n, owner), items, root ? () => f().matrix : null),
+      // (shown while the link's content is: a hidden link hides its doc's labels too)
+      sync: (owner, items) => vp.labels.sync(keyOf(n, owner), items, root ? () => f().matrix : null, root ? () => vp.contentShown(root) : null),
       clear: (owner) => vp.labels.clear(keyOf(n, owner)),
     },
     setExtent: (owner, b) => vp.setExtent(keyOf(n, owner), boxOut(f(), b)),
