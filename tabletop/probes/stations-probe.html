@@ -178,6 +178,8 @@ try {
     bodyLabel: (w) => dbg[w]?.local.get().body?.label ?? null,
     /** the body on top of view w's stack, and the stack (scene/TOOLS.md §4) */
     body: (w) => dbg[w]?.local.get().body?.id ?? null,
+    /** view w enters a body by id ("look": back to the base), as its body chip does */
+    enter: (w, id) => dbg[w].view.enterBody(id),
     stack: (w) => dbg[w]?.router.bodies().map((b) => b.id) ?? null,
     phase: () => { const u = deckUrlOf(objects()); return u ? repo.handles.get(u)?.doc()?.phase ?? null : null; },
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
