@@ -38,7 +38,7 @@ const setup = normalizeSetup({
   mesh,
   speed: Number(args.knots ?? 6) * KNOT,
   iterations: Number(args.iterations ?? DEFAULT_ITERATIONS[mode][mesh]),
-  attitude: { sinkage: Number(args.sinkage ?? 0), trim: Number(args.trim ?? 0) },
+  attitude: { sinkage: Number(args.sinkage ?? 0), trim: Number(args.trim ?? 0), heel: Number(args.heel ?? 0) },
   cores: Number(args.cores ?? 0),
   stop: args.stop ?? "settled",
   ...(args.warm ? { warmStart: args.warm } : {}),

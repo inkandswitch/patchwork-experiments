@@ -132,6 +132,8 @@ export function forceRow(cols, row, { half }) {
     Rp: -k * at("pressure_x"),
     Rv: -k * at("viscous_x"),
     Fz: k * at("total_z"),
+    // the side force (to port positive): a half model's is its symmetry plane's, so none
+    Fy: half ? 0 : at("total_y"),
   };
 }
 
@@ -141,7 +143,15 @@ export function forceRow(cols, row, { half }) {
  * positive in the floating frame. A half model's is doubled.
  */
 export function momentRow(cols, row, { half }) {
-  return { iter: row[cols.indexOf("Time")], My: (half ? 2 : 1) * row[cols.indexOf("total_y")] };
+  const at = (n) => row[cols.indexOf(n)];
+  return {
+    iter: at("Time"),
+    My: (half ? 2 : 1) * at("total_y"),
+    // roll about +x (starboard down positive, as heel) and yaw about +z (bow to port positive):
+    // a half model's cancel with their mirror image
+    Mx: half ? 0 : at("total_x"),
+    Mz: half ? 0 : at("total_z"),
+  };
 }
 
 /** The initial residual of each solved field, from a solverInfo.dat row. */

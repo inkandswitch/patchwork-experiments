@@ -143,12 +143,18 @@ export function summarize(caseDir, g, info, { cells = null, converged = null } =
   const Rp = stats(tail.map((s) => s.Rp));
   const Rv = stats(tail.map((s) => s.Rv));
   const Fz = stats(tail.map((s) => s.Fz));
+  const Fy = stats(tail.map((s) => s.Fy));
   let My = { mean: NaN };
+  let Mx = { mean: NaN };
+  let Mz = { mean: NaN };
   const momentFile = join(caseDir, "postProcessing/forces/0/moment.dat");
   if (existsSync(momentFile)) {
     const m = parseDat(readFileSync(momentFile, "utf8"));
     const ms = m.rows.map((r) => momentRow(m.cols, r, { half: g.half }));
-    My = stats(ms.slice(Math.max(0, ms.length - w)).map((s) => s.My));
+    const mt = ms.slice(Math.max(0, ms.length - w));
+    My = stats(mt.map((s) => s.My));
+    Mx = stats(mt.map((s) => s.Mx));
+    Mz = stats(mt.map((s) => s.Mz));
   }
   const { rho, nu } = g.water;
   const V = g.V;
@@ -182,6 +188,11 @@ export function summarize(caseDir, g, info, { cells = null, converged = null } =
     Fz: Fz.mean,
     // pitching moment about cofrX (on the waterline, mid-length), bow-down positive
     My: My.mean,
+    // what heel brings: the side force and the roll and yaw moments (about the same point)
+    Fy: Fy.mean,
+    Mx: Mx.mean,
+    Mz: Mz.mean,
+    heel: g.setup.attitude.heel,
     cofrX: g.cofr[0],
     Ct,
     Cv: Rv.mean / qS,

@@ -13,7 +13,7 @@ describe("running attitude from a double body", () => {
     const a = runningAttitude({ mode: "double-body", Fz: -k * 4 * 0.05, My: 0, cofrX: 2 }, info, setup);
     expect(a.sinkage).toBeCloseTo(0.05, 12);
     expect(a.trimDeg).toBeCloseTo(0, 12);
-    expect(a.attitude).toEqual({ sinkage: a.sinkage, trim: 0 });
+    expect(a.attitude).toEqual({ sinkage: a.sinkage, trim: 0, heel: 0 });
   });
   it("trims bow down for a bow-down moment about the LCF", () => {
     const My = k * (16 / 3) * 0.01; // 0.01 rad
