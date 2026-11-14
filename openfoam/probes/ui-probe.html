@@ -97,10 +97,26 @@
       return { case: caseHandle.url, server: serverHandle.url, file: file.url };
     },
     /** link a file (served under the probe's mounts) as the hull; `plugins`: another package's entry to register first */
-    async linkFile({ path, name, ext, plugins = null }) {
+    async linkFile({ path, name, ext, plugins = null, slowMs = 0 }) {
       if (plugins) for (const p of (await import(plugins)).plugins) getRegistry(p.type).register(p);
+      // count every build of every geometry reader (a .3dm conversion costs seconds)
+      for (const p of getRegistry("scene:source").filter(() => true)) {
+        if (p.counted) continue;
+        p.counted = true;
+        const load = p.load;
+        p.load = async () => {
+          const mod = await load();
+          if (!mod?.build) return mod;
+          return { ...mod, build: async (a) => { window.__p.builds = (window.__p.builds ?? 0) + 1; return mod.build(a); } };
+        };
+      }
       const bytes = new Uint8Array(await (await fetch(path)).arrayBuffer());
       const file = repo.add({ "@patchwork": { type: "file" }, name, extension: ext, content: bytes });
+      // a big doc arrives late over a real sync connection: make finding it slow
+      if (slowMs) {
+        const find = repo.find.bind(repo);
+        repo.find = (u) => (u === file.url ? new Promise((r) => setTimeout(r, slowMs)).then(() => find(u)) : find(u));
+      }
       caseHandle.change((d) => (d.hull = { url: file.url }));
       return file.url;
     },

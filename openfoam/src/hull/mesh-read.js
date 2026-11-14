@@ -250,7 +250,20 @@ export function glbTriangles(input) {
   const { json, bin, views } = input?.json ? input : readGLB(input);
   const units = glbUnits(json);
   const k = units.scale;
-  const out = [];
+  // a growing Float64Array, written in place: a big model is millions of
+  // triangles, and pushing their numbers into an array first cost 200 ms
+  let out = new Float64Array(1 << 16);
+  let n = 0;
+  const put = (a, b, c) => {
+    if (n + 3 > out.length) {
+      const grown = new Float64Array(out.length * 2);
+      grown.set(out);
+      out = grown;
+    }
+    out[n++] = a;
+    out[n++] = b;
+    out[n++] = c;
+  };
   const names = [];
   const meshes = json.meshes ?? [];
   const nodes = json.nodes ?? [];
@@ -263,7 +276,7 @@ export function glbTriangles(input) {
     const mesh = meshes[mi];
     if (!mesh) return;
     let used = false;
-    const from = Math.floor(out.length / 9);
+    const from = Math.floor(n / 9);
     for (const prim of mesh.primitives ?? []) {
       const mode = prim.mode ?? 4;
       if (!isTriangleMode(mode)) continue;
@@ -285,14 +298,14 @@ export function glbTriangles(input) {
           const Y = M[1] * x + M[5] * y + M[9] * z + M[13];
           const Z = M[2] * x + M[6] * y + M[10] * z + M[14];
           // glTF (Y-up, file units) → floating frame in metres: x = X, y = −Z, z = Y
-          out.push(k * X, 0 - k * Z, k * Y);
+          put(k * X, 0 - k * Z, k * Y);
         }
       used = true;
     }
     if (used) {
       const name = mesh.name ?? `mesh ${mi}`;
       names.push(name);
-      ranges.push({ name, from, to: Math.floor(out.length / 9) });
+      ranges.push({ name, from, to: Math.floor(n / 9) });
     }
   };
 
@@ -319,8 +332,7 @@ export function glbTriangles(input) {
     nodes.forEach((_, ni) => !children.has(ni) && walk(ni, IDENTITY, seen));
   } else meshes.forEach((_, mi) => emitMesh(mi, [IDENTITY]));
   // a triangle list has 9 numbers per triangle; drop a dangling partial one
-  const len = out.length - (out.length % 9);
-  const triangles = Float64Array.from(out.slice(0, len));
+  const triangles = out.slice(0, n - (n % 9));
   let zMin = Infinity;
   let zMax = -Infinity;
   for (let i = 2; i < triangles.length; i += 3) {
