@@ -495,9 +495,11 @@ try {
   const side = (await P(`read('${hull}', 'b')`)).apparentWind.angle < 0 ? 1 : -1;
   report.measured.tack = side > 0 ? "port" : "starboard";
 
-  // A comes aboard too, and finds the helm taken
+  // A comes aboard too (Enter: her view's centre is open water by now, and a click on the sea
+  // isn't the boat's since the sea is its own extension, WATER.md Decisions 12), and finds the helm taken
   await focus("a");
-  await until("window.__p.me('a')?.playing === true", 3000);
+  if (!(await P("me('a')")).playing) await press("Enter");
+  check("A comes aboard with Enter", await until("window.__p.me('a')?.playing === true", 3000), await P("me('a')"));
   await P(`place('a', '${hull}', [${wh[0] + 0.8}, ${wh[1] - 0.6}, ${wh[2] + 1.2}], 0.5, -0.45)`);
   await b.rest(500);
   const aimHA = await pointAt(wheel, "a");
