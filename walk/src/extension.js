@@ -1,6 +1,13 @@
 // The walk extension: the walk body (body.js), and everyone else who walks,
 // drawn where their presence says they stand (`avatar`: { feet, yaw, pitch },
-// 20 Hz while walking), named from their contact docs.
+// 20 Hz while walking, in the frame of the doc they walk in), named from
+// their contact docs.
+//
+// walk is a general part: the view runs it at the focus (create: the body,
+// and the others walking in the focus doc), and in every other doc that acts
+// here its half (elsewhere: the others walking there, drawn in that doc's
+// frame), so someone walking a boat's deck is seen from inside the game on
+// her table (scene/COMPOSITION.md §3, "Presence where it is").
 
 import { walkBody } from "./body.js";
 
@@ -11,7 +18,8 @@ export function hueOf(key) {
   return h % 360;
 }
 
-function create(api) {
+/** The others walking in this api's doc, drawn in its frame: { update, dispose }. */
+function people(api) {
   const THREE = api.THREE;
   const world = api.world();
   const labels = api.labels();
@@ -88,7 +96,6 @@ function create(api) {
   api.presence.watch(() => drawPeers());
 
   return {
-    bodies: [walkBody(api)],
     update: () => drawPeers(),
     dispose() {
       for (const a of avatars.values()) a.group.removeFromParent();
@@ -97,4 +104,12 @@ function create(api) {
   };
 }
 
-export default { create };
+/** At the focus: the walk body, and the others walking here. */
+function create(api) {
+  return { bodies: [walkBody(api)], ...people(api) };
+}
+
+/** In any other doc that acts here: the others walking there (the drawn facet: no body, no input). */
+const elsewhere = (api) => people(api);
+
+export default { create, elsewhere };
