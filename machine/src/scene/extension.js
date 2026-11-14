@@ -3,9 +3,13 @@
 //
 // The object's source (`sourceUrl`) is a machine doc (its kind, and the content it boots)
 // and its content is the cabinet scene:source "machine" builds; its trait,
-// `machine`, holds the session this object runs, so the object is one
-// running machine and a copy is another (the session is runtime: a copy
-// starts without one, and the first view able to makes it a new one).
+// `machine`, holds the session this object runs and the source it was made
+// for (`source`), so the object is one running machine and a copy is
+// another (both are runtime: a copy starts without them, and the first view
+// able to makes a new session). A session made for another source than the
+// object's (its source changed: a game given at once by two views, the
+// merge keeping the other) is no session of this object's: a new one is
+// made, for the source it has.
 //
 // On every view that can write the scene (a pin or a mirror never acts),
 // each machine object:
@@ -18,11 +22,12 @@
 // - plays what the engine plays from the screen (speaker.js): a panner at
 //   the screen, this view's ears where its eye is;
 // - has a seat per port at the screen (seating.js), the seats package's,
-//   laid when its session is made: sitting in port N's seat takes port N
+//   laid on the object, not lasting, when its session is made, and listed
+//   by port on the trait (`seats`): sitting in port N's seat takes port N
 //   and puts its pad in your hand; standing up gives the port back. Escape
 //   puts the pad down (the port stays yours while you sit); P picks it up.
-//   A machine with no seats is played by Play alone: P takes a free port
-//   with the pad, Escape gives it back.
+//   A machine whose trait lists no seats is played by Play alone: P takes a
+//   free port with the pad, Escape gives it back.
 //
 // The screen shows one player's view for everyone (the trait's `player`,
 // for a machine with a view per player: Doom), and its sound is that
@@ -35,17 +40,19 @@
 //
 // It lays out what is dropped: a machine doc anywhere is a new cabinet; a
 // ROM or an IWAD dropped on a cabinet with no game yet is that cabinet's
-// game (the scene:part, part.js, puts in an empty one).
+// game, a machine doc of its own (the scene:part, part.js, puts in an empty
+// cabinet).
 
 import { Screen, ASPECT, viewOf } from "../present/screen.js";
 import { listen, place, screenPanner } from "../present/sound.js";
 import { speaker } from "../present/speaker.js";
 import { WASM, MUSIC, bytes, load, portsOf, newSession, doomWads, gameOf } from "../patchwork/load.js";
-import { pad, KEYS } from "../patchwork/input.js";
+import { pad } from "../patchwork/input.js";
 import { runMachine } from "./running.js";
 import { retrying, makeSession } from "./start.js";
 import { screenOf } from "./cabinet.js";
-import { seatId, portOfSeat, seatsFor, placesFor, seatedPorts, follow, portToPlay } from "./seating.js";
+import { seatsFor, placesFor } from "./seating.js";
+import { hands } from "./hands.js";
 
 export const TRAIT = "machine";
 export const PROVIDER = "machine";
@@ -88,6 +95,12 @@ async function findLay(registry) {
 /** The roster the seats owner contributes (seats/README.md, "Conventions"), or null. */
 const rosterIn = (api) => api.collect("roster").find((c) => typeof c.value?.seats === "function")?.value ?? null;
 
+/** The session of a machine object's trait, if it was made for the source the object has now; else null (none yet, or another game's). */
+export const sessionOf = (o) => {
+  const t = o?.traits?.[TRAIT];
+  return t?.session && t.source && t.source === o.sourceUrl ? t.session : null;
+};
+
 const made = async (repo, value) => (repo.create2 ? await repo.create2(value) : repo.create(value));
 
 function create(api) {
@@ -98,7 +111,6 @@ function create(api) {
   const labels = api.labels();
   const plane = new THREE.PlaneGeometry(1, 1);
   const machines = new Map(); // object id → entry
-  let held = null; // { id, put }: the pad in this view's hand
   let stopLoop = null;
 
   // ---- sound: one AudioContext for this view, made with the first machine
@@ -121,9 +133,14 @@ function create(api) {
   api.listen(api.root, "keydown", wake, { capture: true });
 
   const traitOf = (id) => api.scene().objects?.[id]?.traits?.[TRAIT] ?? null;
+  /** The seat of each port that machine `id` laid, by port (its trait's), or null: a machine played by Play. */
+  const seatsOfMachine = (id, snap = api.scene()) => {
+    const s = snap.objects?.[id]?.traits?.[TRAIT]?.seats;
+    return Array.isArray(s) && s.length ? s : null;
+  };
 
   function entry(id, o) {
-    const e = { id, url: o.sourceUrl, session: o.traits[TRAIT].session ?? null, note: "Starting…", m: null, screen: null, mesh: null, view: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
+    const e = { id, url: o.sourceUrl, session: sessionOf(o), note: "Starting…", m: null, screen: null, mesh: null, view: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
     machines.set(id, e);
     e.stop = retrying({
       attempt: () => open(e),
@@ -192,17 +209,19 @@ function create(api) {
     return true;
   }
 
-  // A copy of a machine object, or one just laid out, has no session yet:
-  // the view holding the object's claim makes one (on the scene's world
-  // time, so its tick 0 is now) and writes it on the trait, laying a seat
-  // per port in the same change where something here owns seats; every view
-  // then opens it (start.js).
+  // A copy of a machine object, or one just laid out or given a game, has no
+  // session for its source yet: the view holding the object's claim makes
+  // one (on the scene's world time, so its tick 0 is now) and writes it on
+  // the trait with the source it's for, laying a seat per port on the
+  // object in the same change where something here owns seats, and listing
+  // them on the trait; every view then opens it (start.js).
   const sessionMaker = (e, doc) => {
     let seats = null;
     let lay = null;
+    const current = () => sessionOf(api.scene().objects?.[e.id]) !== null;
     return {
       claim: () => api.claim(e.id, "machine.session"),
-      has: () => e.gone || !!traitOf(e.id)?.session,
+      has: () => e.gone || current(),
       content: async () => {
         const b = (await api.repo.find(doc.content)).doc()?.bytes;
         return b?.length ? new Uint8Array(b) : null;
@@ -214,10 +233,15 @@ function create(api) {
       },
       write: (url) =>
         api.change((d) => {
-          const t = d.objects?.[e.id]?.traits?.[TRAIT];
-          if (!t || t.session) return;
+          const o = d.objects?.[e.id];
+          const t = o?.traits?.[TRAIT];
+          if (!t || o.sourceUrl !== e.url || (t.session && t.source === e.url)) return;
           t.session = url;
-          lay?.(d, seats);
+          t.source = e.url;
+          if (lay && seats) {
+            lay(d, seats, e.id);
+            t.seats = Object.keys(seats);
+          }
         }),
     };
   };
@@ -225,7 +249,7 @@ function create(api) {
   function close(e) {
     e.gone = true;
     e.stop?.();
-    if (held?.id === e.id) held.put();
+    pads.drop(e.id);
     machines.delete(e.id);
     e.mesh?.removeFromParent();
     e.mesh?.material.dispose();
@@ -242,7 +266,7 @@ function create(api) {
       const t = o?.traits?.[TRAIT];
       if (!t) continue;
       const e = machines.get(id);
-      if (e && e.session === (t.session ?? null) && e.url === o.sourceUrl) continue;
+      if (e && e.session === sessionOf(o) && e.url === o.sourceUrl) continue;
       if (e) close(e);
       entry(id, o);
     }
@@ -250,28 +274,20 @@ function create(api) {
     loop();
   }
 
-  // ---- the seats: which port this view sits at, per machine
+  // ---- the pad in hand, and the port it holds (hands.js)
 
-  /** The seats laid in this snapshot, and the seat this view sits in now (the roster's); none where nothing owns seats. */
-  function seating(snap = api.scene()) {
-    const roster = rosterIn(api);
-    if (!roster) return { laid: new Set(), sitting: null };
-    return { laid: new Set(roster.seats(snap).map((r) => r.id)), sitting: roster.sitting?.() ?? null };
-  }
-  /** Does machine `e` have seats here (its port 1's is laid)? */
-  const seated = (e, laid) => laid.has(seatId(e.id, 0));
-
-  // Sitting is holding: the port this view's seat names, taken (with the pad
-  // in hand) when it sits down and given back when it stands up. A port
-  // someone else still holds (their seat ended a moment ago, or they took it
-  // by Play where there are no seats for them) is asked for again next frame.
-  function followSeat(e, { laid, sitting }) {
-    if (!seated(e, laid)) return;
-    follow(e.m, portOfSeat(e.id, e.ports, sitting), {
-      pickUp: (port) => holdPad(e, port),
-      putDown: () => held?.id === e.id && held.put(),
-    });
-  }
+  /** Does machine `e` have seats (its trait lists them)? Then sitting is the one way to take a port. */
+  const seated = (e) => seatsOfMachine(e.id) !== null;
+  /** The seat this view sits in now, anywhere (the roster's: { of, seat }), or null: sitting nowhere, or nothing here owns seats. */
+  const sitting = () => rosterIn(api)?.sitting?.() ?? null;
+  const pads = hands({
+    machines,
+    hold: (spec, input) => api.hold(spec, input),
+    sitting,
+    seatsOf: (id) => seatsOfMachine(id),
+    prefer: (e) => playerOf(e.kind, traitOf(e.id)?.player, e.ports),
+    notify: (text) => api.notify(text),
+  });
 
   // Every frame while there are machines: step each host, show its picture
   // on its screen where its object is drawn, play its sound from there, take
@@ -286,7 +302,7 @@ function create(api) {
   }
   function frame() {
     const items = [];
-    const seats = seating();
+    const seat = sitting();
     if (audio) hear();
     for (const e of machines.values()) {
       const screen = api.content(e.id)?.extras?.machine?.screen;
@@ -294,7 +310,7 @@ function create(api) {
       if (at) m4.fromArray(at);
       const centre = screen && at ? new THREE.Vector3(...screen.center).applyMatrix4(m4) : null;
       if (e.m) {
-        followSeat(e, seats);
+        pads.follow(e, seat);
         e.m.frame();
         const player = playerOf(e.kind, traitOf(e.id)?.player, e.ports);
         if (e.view?.player !== player) e.view = Object.assign(viewOf(e.m.host, { player }), { player });
@@ -310,7 +326,7 @@ function create(api) {
           e.sound.out.feed(e.m.host);
         } else e.m.host.output(); // taken either way, so it never piles up
       }
-      const note = e.note ?? stoppedNote(e, seats);
+      const note = e.note ?? stoppedNote(e);
       if (note && centre) items.push({ key: `machine:${e.id}`, text: note, position: [centre.x, centre.y - (screen.height / 2) - 0.08, centre.z], className: "machine-note" });
     }
     labels.set(items);
@@ -324,70 +340,11 @@ function create(api) {
     listen(audio, { position: eye?.position ?? cam.position, forward, up: cam.up ?? [0, 1, 0] });
   }
 
-  function stoppedNote(e, { laid }) {
+  function stoppedNote(e) {
     if (!e.m || e.m.clock.running()) return null;
     if (!api.clock.running()) return null; // the world's own pause says so already
     if (e.m.holders().some(Boolean)) return "Paused";
-    return seated(e, laid) ? "Stopped while nobody plays: sit at it to play" : "Stopped while nobody plays: P to play";
-  }
-
-  // ---- the pad in hand
-
-  /** Puts machine `e`'s pad for `port` in this view's hand. Put down (Escape), it gives the port back only where the machine has no seats: a seat holds it while you sit. */
-  function holdPad(e, port) {
-    const mine = { id: e.id, put: null };
-    const input = {
-      key: (ev) => (e.pad.key(ev.code, true), true),
-      keyup: (ev) => (e.pad.key(ev.code, false), true),
-      put() {
-        if (held === mine) held = null;
-        e.pad.clear();
-        if (!seated(e, seating().laid)) e.m?.leave();
-      },
-    };
-    held = mine;
-    mine.put = api.hold({ name: `${e.title} · P${port + 1}`, keys: KEYS[e.kind] ?? [] }, input);
-  }
-
-  function play(id) {
-    const e = machines.get(id);
-    if (!e?.m) return;
-    if (held?.id === id) return void held.put();
-    const seats = seating();
-    if (seated(e, seats.laid)) {
-      // sitting at it: the pad back in hand (the port is the seat's)
-      const port = portOfSeat(e.id, e.ports, seats.sitting);
-      if (port !== null && e.m.host.seat?.port === port) holdPad(e, port);
-      return;
-    }
-    const port = portToPlay(e.m.holders(), playerOf(e.kind, traitOf(id)?.player, e.ports));
-    if (port === null || e.m.play(port) === null) return void api.notify("Every port on that machine is taken");
-    holdPad(e, port);
-  }
-
-  function verbOf(target) {
-    const e = target != null ? machines.get(target) : null;
-    if (!e) return null;
-    if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
-    if (held?.id === target) return { label: "Put the pad down" };
-    const seats = seating();
-    if (seated(e, seats.laid)) {
-      if (portOfSeat(e.id, e.ports, seats.sitting) === null) return { label: "Play", disabled: true, title: "Sit at one of its seats to play (F)" };
-      return { label: "Pick up the pad" };
-    }
-    if (!e.m.holders().includes(null)) return { label: "Play", disabled: true, title: "Every port is taken" };
-    return { label: "Play" };
-  }
-
-  // What P acts on: the machine looked at; looking at nothing of its own, the
-  // one you sit at or hold the pad of (seated, your hands are on it wherever
-  // the pointer is).
-  function playing(target) {
-    if (target != null) return target;
-    if (held) return held.id;
-    const { sitting } = seating();
-    for (const e of machines.values()) if (portOfSeat(e.id, e.ports, sitting) !== null) return e.id;
-    return null;
+    return seated(e) ? "Stopped while nobody plays: sit at it to play" : "Stopped while nobody plays: P to play";
   }
 
   sync();
@@ -396,11 +353,13 @@ function create(api) {
     update(scene, _local, prev) {
       if (scene !== prev?.scene) sync();
     },
-    // where each port's seat is on its cabinet (seats/README.md, "Conventions"): only for seats laid
+    // where each port's seat is on its cabinet (seats/README.md, "Conventions"): the seats its trait lists, which are the object's own
     seatPlaces(snap) {
-      const { laid } = seating(snap);
       const out = [];
-      for (const [id, o] of Object.entries(snap?.objects ?? {})) if (o?.traits?.[TRAIT]) out.push(...placesFor(id, seatedPorts(id, laid), laid));
+      for (const id of Object.keys(snap?.objects ?? {})) {
+        const seats = seatsOfMachine(id, snap);
+        if (seats) out.push(...placesFor(id, seats));
+      }
       return out;
     },
     commands: [
@@ -410,8 +369,8 @@ function create(api) {
         key: "p",
         reach: true,
         show: ["use", "menu"],
-        state: (target) => verbOf(playing(target)),
-        run: (target) => play(playing(target)),
+        state: (target) => pads.verb(target),
+        run: (target) => pads.play(target),
       },
     ],
     dispose() {
@@ -429,8 +388,8 @@ function create(api) {
  * A machine doc dropped (or pasted) in the scene: its cabinet, standing where
  * it was dropped, carrying the trait. Its session comes once it's in.
  * A ROM or an IWAD (a file doc) dropped on a cabinet with no game yet: that
- * cabinet's game, written on its machine doc (a game is chosen once, here or
- * in the Machine tool). Any other file is left to others.
+ * cabinet's game (give). Any other file, or a game file anywhere else, is
+ * left to others.
  */
 async function drop(ctx, info) {
   const type = info?.doc?.["@patchwork"]?.type;
@@ -447,7 +406,15 @@ async function drop(ctx, info) {
   return true;
 }
 
-/** A file dropped on a cabinet: its game, if the file makes one and the cabinet has none yet. */
+/**
+ * A file dropped on a cabinet: its game, if the file makes one and the
+ * cabinet has none yet. The game is a machine doc of its own (kind, content,
+ * title), its content a doc holding the bytes it boots; the cabinet's source
+ * is pointed at it, one write of one key, so two views giving one cabinet a
+ * game at once end with one of the two whole, never a mix. A session made
+ * meanwhile for the other is for another source, and gives way (sessionOf).
+ * A cabinet with a game already doesn't take it: it's left to others.
+ */
 export async function give(ctx, info) {
   const target = info.at?.hitId ?? null;
   const o = target != null ? ctx.scene().objects?.[target] : null;
@@ -455,17 +422,12 @@ export async function give(ctx, info) {
   const raw = info.doc.content;
   const game = gameOf(info.doc.name ?? "", raw instanceof Uint8Array ? raw : new Uint8Array(raw ?? []));
   if (!game) return false;
-  const machine = await ctx.repo.find(o.sourceUrl);
-  if (machine.doc()?.kind) {
-    ctx.notify?.("That machine already has a game: put in another cabinet (Parts) for this one");
-    return true;
-  }
-  const c = await made(ctx.repo, { title: game.title, bytes: game.content });
-  machine.change((d) => {
-    if (d.kind) return;
-    d.kind = game.kind;
-    d.content = c.url;
-    d.title = game.title;
+  if ((await ctx.repo.find(o.sourceUrl)).doc()?.kind) return false;
+  const content = await made(ctx.repo, { title: game.title, bytes: game.content });
+  const machine = await made(ctx.repo, { "@patchwork": { type: "machine" }, title: game.title, kind: game.kind, content: content.url });
+  ctx.change((d) => {
+    const t = d.objects?.[target];
+    if (t?.traits?.[TRAIT] && t.sourceUrl === o.sourceUrl) t.sourceUrl = machine.url;
   });
   return true;
 }
