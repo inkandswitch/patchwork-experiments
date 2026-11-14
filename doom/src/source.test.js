@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import source, { buildPart, notesOf } from "./source.js";
 import { FREEDOOM_NOTICE, noticeOf } from "./freedoom.js";
-import { mapModel } from "./parts.js";
+import { anchorOf, mapModel, placeIn } from "./parts.js";
 import { parseGLB, SAMPLER } from "./glb.js";
 import { plugins } from "./index.js";
 import { fixture, fixtureBytes } from "./test/fixture.js";
@@ -56,6 +56,65 @@ describe("building a part", () => {
     await expect(buildPart(fixture(), { map: "E1M1", door: 100, line: 407 })).rejects.toThrow(/not both/);
   });
 
+  it("every part says where its frame is: the map, its anchor in map units, the scale", async () => {
+    const m = mapModel(fixture(), "E1M1");
+    for (const [params, anchor] of [
+      [{ door: null }, [1272, 636, 0]],
+      [{ door: 100 }, [960, -152, 0]],
+      [{ line: 407 }, [-400, 1296, -120]],
+      [{ whole: true }, [1272, 636, 0]],
+    ]) {
+      const { json } = parseGLB((await buildPart(fixture(), { map: "E1M1", ...params })).glb);
+      expect(json.scenes[0].extras).toEqual({ doom: { map: "E1M1", anchor, unitsPerMetre: 36 } });
+      expect(anchor).toEqual(anchorOf(m, params.door ?? null, params.line ?? null));
+    }
+  });
+
+  it("the whole map: the static part at the root, each door and exit switch a node in it, exactly its own part at its own anchor", async () => {
+    const wad = fixture();
+    const m = mapModel(wad, "E1M1");
+    const whole = parseGLB((await buildPart(wad, { map: "E1M1", whole: true })).glb);
+    const nodes = whole.json.nodes;
+    expect(whole.json.scenes[0].nodes).toEqual([0]);
+    expect(nodes[0]).toMatchObject({ name: "E1M1", mesh: 0 });
+    expect(nodes[0].translation).toBeUndefined();
+    const kids = nodes[0].children.map((i) => nodes[i]);
+    expect(kids.map((n) => n.extras)).toEqual([10, 34, 48, 54, 64, 78, 79, 80, 81, 84, 100].map((door) => ({ door })).concat([{ line: 407 }]));
+    expect(kids.map((n) => n.name)).toEqual(["door-10", "door-34", "door-48", "door-54", "door-64", "door-78", "door-79", "door-80", "door-81", "door-84", "door-100", "exit-407"]);
+    // one material per texture across every node: the static part's 153, the exit switch's and the two flats
+    // only door undersides use (the static part draws no door's ceiling)
+    expect(whole.json.materials).toHaveLength(156);
+
+    /** A mesh's triangles by material name: { [material]: [positions, indices] }, read out of the GLB's buffer. */
+    const read = ({ json, bin }, mesh) => {
+      const acc = (i, T) => {
+        const a = json.accessors[i];
+        const v = json.bufferViews[a.bufferView];
+        const size = { SCALAR: 1, VEC2: 2, VEC3: 3 }[a.type];
+        return [...new T(bin.slice(v.byteOffset, v.byteOffset + v.byteLength).buffer, 0, a.count * size)];
+      };
+      const out = {};
+      for (const p of json.meshes[mesh].primitives) {
+        const ix = json.accessors[p.indices].componentType === 5125 ? Uint32Array : Uint16Array;
+        out[json.materials[p.material].name] = [acc(p.attributes.POSITION, Float32Array), acc(p.indices, ix), acc(p.attributes.TEXCOORD_0, Float32Array), acc(p.attributes.COLOR_0, Float32Array)];
+      }
+      return out;
+    };
+    const part = async (params) => parseGLB((await buildPart(wad, { map: "E1M1", ...params })).glb);
+    expect(read(whole, 0)).toEqual(read(await part({ door: null }), 0));
+    const origin = anchorOf(m, null);
+    for (const n of kids) {
+      const own = await part(n.extras);
+      expect([n.name, read(whole, n.mesh)]).toEqual([n.name, read(own, 0)]);
+      expect([n.name, n.translation]).toEqual([n.name, placeIn(origin, anchorOf(m, n.extras.door ?? null, n.extras.line ?? null))]);
+    }
+  });
+
+  it("the whole map has no door or exit switch of its own", async () => {
+    await expect(buildPart(fixture(), { map: "E1M1", whole: true, door: 100 })).rejects.toThrow(/no door or exit switch of its own/);
+    await expect(buildPart(fixture(), { map: "E1M1", whole: true, line: 407 })).rejects.toThrow(/no door or exit switch of its own/);
+  });
+
   it("the same doc and params build the same bytes", async () => {
     const one = await buildPart(fixture(), { map: "E1M1", door: 34 });
     const two = await buildPart(fixture(), { map: "E1M1", door: 34 });
@@ -68,11 +127,11 @@ describe("the scene:source", () => {
   const params = Object.fromEntries(meta.params.map((p) => [p.key, p.default]));
 
   it("is for .wad file docs, and its metadata is plain data", () => {
-    expect(meta).toMatchObject({ id: "doom-map", supportedDatatypes: ["file"], extensions: ["wad"], content: "built", version: 3 });
+    expect(meta).toMatchObject({ id: "doom-map", supportedDatatypes: ["file"], extensions: ["wad"], content: "built", version: 4 });
     const { load, ...rest } = meta;
     expect(structuredClone(rest)).toEqual(rest);
-    // which map, and which door or exit switch (neither: the static part); no scale: one for every part
-    expect(params).toEqual({ map: "", door: null, line: null });
+    // which map, and which door or exit switch (neither: the static part), or the whole map; no scale: one for every part
+    expect(params).toEqual({ map: "", door: null, line: null, whole: false });
   });
 
   it("builds from a file doc; the doc's notice goes in every GLB; the notes say what doesn't work here", async () => {
@@ -105,6 +164,12 @@ describe("the scene:source", () => {
     await expect(source.build({ doc, params: { map: "MAP01", door: null } })).rejects.toThrow(/no map MAP01 in this WAD: it has E1M1/);
     await expect(source.build({ doc, params })).rejects.toThrow(/which map\?: it has E1M1/);
     await expect(source.build({ doc: { content: "text" }, params })).rejects.toThrow(/no bytes/);
+  });
+
+  it("the whole map's notes say its doors are nodes in it", async () => {
+    const doc = { "@patchwork": { type: "file" }, name: "e1m1.wad", extension: "wad", content: fixtureBytes() };
+    const r = await source.build({ doc, params: { map: "E1M1", door: null, line: null, whole: true } });
+    expect(r.meta.notes).toMatch(/^E1M1, whole: 182 sectors; 11 doors and 1 exit switch are nodes of their own in it/);
   });
 
   it("notes for a door, and for an exit switch", () => {
