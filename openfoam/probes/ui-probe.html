@@ -1,0 +1,202 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>openfoam probe</title>
+<script type="importmap">
+  { "imports": { "@inkandswitch/patchwork-plugins": "/probes/plugins-stub.js" } }
+</script>
+<style>
+  /* just enough of a theme to see both ends of it */
+  [theme="light"] {
+    --editor-fill: #fbfbf9;
+    --editor-line: #1d1d1b;
+    --studio-primary: #35f7ca;
+    --studio-primary-line: #10201c;
+    --studio-link: #2a6fd6;
+    --studio-secondary: #d9822b;
+    --studio-modified: #8a4fd0;
+    --studio-danger: #d33;
+    --studio-added: #2a9d4b;
+  }
+  [theme="dark"] {
+    --editor-fill: #1b1c1e;
+    --editor-line: #e9e9e6;
+    --studio-primary: #35f7ca;
+    --studio-primary-line: #10201c;
+    --studio-link: #6aa5ff;
+    --studio-secondary: #f0a050;
+    --studio-modified: #b08cf0;
+    --studio-danger: #ff6b6b;
+    --studio-added: #4cc46f;
+  }
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: var(--editor-fill);
+  }
+  #host {
+    height: 100vh;
+  }
+</style>
+<div id="host"></div>
+<script type="module">
+  import { FakeRepo } from "/probes/fake-repo.js";
+  import { getRegistry } from "/probes/plugins-stub.js";
+  import { plugins } from "/dist/index.js";
+
+  const errors = [];
+  window.addEventListener("error", (e) => errors.push(String(e.error?.stack ?? e.message)));
+  window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason?.stack ?? e.reason)));
+  document.documentElement.setAttribute("theme", "light");
+
+  const repo = new FakeRepo();
+  window.repo = repo;
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const tool = async (id) => (await getRegistry("patchwork:tool").load(id)).module;
+  const datatype = async (id) => (await getRegistry("patchwork:datatype").load(id)).module;
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const revive = (v) => {
+    if (v && typeof v === "object" && typeof v.$bytes === "string") return b64(v.$bytes);
+    if (Array.isArray(v)) return v.map(revive);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, revive(x)]));
+    return v;
+  };
+  let caseHandle = null;
+  let serverHandle = null;
+  let cleanup = null;
+  const $ = (s) => document.querySelector(s);
+  const text = (s) => $(s)?.innerText ?? null;
+
+  window.__p = {
+    errors,
+    theme(t) {
+      document.documentElement.setAttribute("theme", t);
+      // canvases read their colours when drawn: redraw by nudging the doc
+      caseHandle?.change((d) => (d.title = d.title));
+    },
+    async setup({ hull = "/hulls/narrow-transom.glb", online = true } = {}) {
+      const bytes = new Uint8Array(await (await fetch(hull)).arrayBuffer());
+      const file = repo.add({ "@patchwork": { type: "file" }, name: hull.split("/").pop(), extension: "glb", mimeType: "model/gltf-binary", content: bytes });
+      serverHandle = repo.add({
+        "@patchwork": { type: "openfoam-server" },
+        title: "OpenFOAM on the probe",
+        protocol: 1,
+        daemon: { id: "d", host: "probe-host", platform: "darwin arm64", openfoam: "v2606", cores: 8, heartbeat: online ? Date.now() : 1, startedAt: Date.now() - 60000 },
+        requests: {},
+        handled: {},
+        active: null,
+      });
+      const dt = await datatype("openfoam-case");
+      const doc = { "@patchwork": { type: "openfoam-case" } };
+      dt.init(doc);
+      doc.title = "Narrow transom resistance";
+      doc.hull = { url: file.url };
+      doc.server = serverHandle.url;
+      caseHandle = repo.add(doc);
+      cleanup = (await tool("openfoam-case"))(caseHandle, $("#host"));
+      return { case: caseHandle.url, server: serverHandle.url, file: file.url };
+    },
+    change(code) {
+      caseHandle.change(new Function("d", code));
+    },
+    figures() {
+      return [...document.querySelectorAll(".preflight-figures tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim()));
+    },
+    runButton() {
+      const b = $(".openfoam .run");
+      return { text: b?.innerText, disabled: b?.disabled, why: text(".run-why") };
+    },
+    hullChip: () => text(".hull-chip"),
+    hullWarn: () => text(".hull-warn"),
+    server: () => text(".server-box"),
+    clickRun() {
+      $(".openfoam .run").click();
+    },
+    state() {
+      const c = caseHandle.doc();
+      const s = serverHandle.doc();
+      const runs = c.runs.map((u) => repo.handles.get(u)?.doc());
+      return {
+        runs: c.runs,
+        selected: c.selected,
+        requests: Object.values(s.requests).map((r) => r.run),
+        run0: runs[0] ? { status: runs[0].status, title: runs[0].title, stl: runs[0].hull?.stl?.byteLength, info: runs[0].hull?.info?.lwl, stages: runs[0].stages.length, setup: runs[0].setup } : null,
+      };
+    },
+    /** a dumped finished run (probes/local-run.mjs --dump), under its own urls, made the case's selected run */
+    async loadRun(path, { setAs = null } = {}) {
+      const dump = await (await fetch(path)).json();
+      for (const [url, doc] of Object.entries(dump.layers)) repo.add(revive(doc), url);
+      const run = revive(dump.run);
+      run.case = caseHandle.url;
+      const h = repo.add(run, setAs ?? undefined);
+      caseHandle.change((d) => {
+        d.runs.push(h.url);
+        d.selected = h.url;
+      });
+      return h.url;
+    },
+    /** drive a run doc as the daemon would: a partial run, mid-solve */
+    async midRun(path, fraction = 0.4) {
+      const dump = await (await fetch(path)).json();
+      const run = revive(dump.run);
+      const n = (k) => run.progress[k].length;
+      run.progress.forces = run.progress.forces.slice(0, Math.max(1, Math.round(n("forces") * fraction)));
+      run.progress.residuals = run.progress.residuals.slice(0, Math.max(1, Math.round(n("residuals") * fraction)));
+      run.progress.iteration = Math.round(run.progress.of * fraction);
+      run.status = "solving";
+      run.summary = null;
+      run.layers = {};
+      run.finishedAt = null;
+      run.startedAt = Date.now() - 95_000;
+      for (const s of run.stages) {
+        if (s.id === "solve") Object.assign(s, { status: "running", endedAt: null, note: null, tail: "Time = 212\n\nsmoothSolver:  Solving for Ux, Initial residual = 2.1e-05, Final residual = 1.9e-06, No Iterations 3\nGAMG:  Solving for p, Initial residual = 1.2e-04, Final residual = 1.1e-06, No Iterations 4" });
+        if (s.id === "results") Object.assign(s, { status: "pending", startedAt: null, endedAt: null, note: null });
+      }
+      run.case = caseHandle.url;
+      const h = repo.add(run);
+      caseHandle.change((d) => {
+        d.runs.push(h.url);
+        d.selected = h.url;
+      });
+      return h.url;
+    },
+    select(url) {
+      caseHandle.change((d) => (d.selected = url));
+    },
+    runView() {
+      return {
+        status: text(".status-chip"),
+        tiles: [...document.querySelectorAll(".tile")].map((t) => t.innerText.replace(/\n+/g, " | ")),
+        figures: [...document.querySelectorAll(".results-box table.figures tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim())),
+        tabs: [...document.querySelectorAll(".tabs button")].map((b) => b.innerText),
+        stages: [...document.querySelectorAll("ol.stages li")].map((li) => li.dataset.status),
+        charts: [...document.querySelectorAll(".run-view canvas")].length,
+        runs: [...document.querySelectorAll(".runs-table tr[data-url]")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim()),
+        curve: !$(".curve")?.hidden,
+      };
+    },
+    clickTab(i) {
+      document.querySelectorAll(".tabs button")[i]?.click();
+    },
+    async sceneBuild(params = {}) {
+      const p = getRegistry("scene:source").get("openfoam-results");
+      const mod = (await getRegistry("scene:source").load("openfoam-results")).module;
+      const full = Object.fromEntries(p.params.map((s) => [s.key, s.default]));
+      const { parseGLB } = await import("/src/glb.js");
+      const r = await mod.build({ doc: caseHandle.doc(), handle: caseHandle, url: caseHandle.url, params: { ...full, ...params }, repo });
+      const { json } = parseGLB(r.glb);
+      return { bytes: r.glb.byteLength, meshes: json.meshes.map((m) => m.name), legends: json.meshes.map((m) => m.extras?.legend?.title ?? null), notes: r.meta.notes, bounds: r.meta.bounds, deps: mod.dependencies(caseHandle.doc()).length };
+    },
+    scrollTo(sel) {
+      const el = $(sel);
+      const box = $(".openfoam");
+      if (el && box) box.scrollTop = el.offsetTop - 10;
+    },
+    unmount() {
+      cleanup?.();
+      return { left: $("#host").children.length };
+    },
+  };
+  window.__ready = true;
+</script>
