@@ -47,14 +47,15 @@ Two things a link is not:
 ## Where we are
 
 *As written, before build step 1; line references are to the code then.
-Steps 1–13 have since been built (Build order, below). Since step 12 the
+Steps 1–14 have since been built (Build order, below). Since step 12 the
 stage composes docs: Lost Cities aboard is two docs (the boat, with a
 locked link to the game on its card table), and the Quiet games room links
 its games, its Lost Cities table the same game doc as the boat's. Since
 step 13 pins and mirrors open: "Fitting out" is a sloop whose companionway
-is a fit-out fixed at a version, and one hatch linked live twice. What
-follows is kept as the record of why; where it still holds, the step that
-left it says so.*
+is a fit-out fixed at a version, and one hatch linked live twice. Since
+step 14 a viewer enters a linked doc to select and edit what's in it, the
+boat live around them. What follows is kept as the record of why; where it
+still holds, the step that left it says so.*
 
 **The stage is one doc.** `Stage(handle, element)` closes over one handle
 (`src/stage/stage.js:336`). Every per-object table is keyed by a doc-local
@@ -196,7 +197,10 @@ outermost, until Enter moves it (section 5).
 
 So twenty linked games don't make twenty menus. A general part calls the
 focus stage's api, so the editor edits the focus's doc, but it is in no
-stage's running set. Carrying shows the other case: it is a trait part
+stage's running set. *As built (step 14):* each stage's host can run the
+general parts, and the view has the focus stage's alone do so; Enter and
+Leave stop them in the stage left and start them in the one entered, at
+once (`host.setGeneral`), what each doc runs untouched (H1). Carrying shows the other case: it is a trait part
 (`scene.carry` on the things that can be carried), so each stage whose doc
 has carryable things runs its own, and a card aboard is carried by the
 game's stage, in the game's doc.
@@ -211,7 +215,8 @@ viewer starts in. Inner docs' spawns serve arrivals (section 9).
 **`collect` is the caller's.** A stage's extension collects from its own
 stage. A general part collects from every stage on the **input path**, the
 stages from the hit's innermost out to the outermost (under pointer lock
-the hit is the look ray's), each tagged with its stage. A command runs
+the hit is the look ray's), then the focus stage if it isn't among them,
+each tagged with its stage. A command runs
 as `api.run({ stage, ext, command, target })`, in its own stage and frame. A
 target never leaves its stage.
 
@@ -283,6 +288,10 @@ stage's element of the path, in its frame.
 A press on a card aboard goes to tabletop, seats, then the game's carry, and
 only then to sailing, the boat's root and the body's default. A press on
 the deck never reaches the game: the doc boundary is the scope.
+
+The general parts come after every segment, wherever the hit is (they are
+the view's, in the focus stage): so with the focus inside a game aboard, a
+press on the deck still reaches the menu, the key map and the prompt.
 
 **The focus scopes selection, not input** (TOOLS.md §3, superseding
 decision 2's "edit stops at the focus"). Selecting a linked game's card
@@ -790,7 +799,65 @@ ships alone and proves something.
     fixed, through her play and draw, with no warning or error.
     `pins-run.mjs` 27/27 after the fixes.
 14. **Edit in context**: Enter, Leave, link rows in the outline and
-    inspector; H10 across docs.
+    inspector; H10 across docs. *Built:* the view's focus is a path of
+    links entered; focus and selection change only through `selectionStep`
+    (`src/selection.js`), so a selection is an element of the focus stage
+    whoever asks: an extension of any stage (`api.view.select` is cut at the
+    focus), Edit's click, the ladder, a link going. `api.view.enter(link)`
+    goes where the link's doc acts (a mirror's: where it's live; a pin and a
+    closed link aren't entered) and `api.view.leave()` out a link; the view
+    reaches any focus whose every link acts by leaves and enters
+    (`focusSteps`). A link that goes, is pinned or stops acting there leaves
+    the focus out to the deepest stage still acting. The general parts run
+    in the focus stage and no other (`host.setGeneral`), offered after every
+    segment wherever the hit is, and the input path always ends at the focus,
+    so outside an entered link verbs, carries, keys and the menu still work;
+    Edit's click outside the focus isn't Edit's and goes down the chain. The
+    resolver and the menu take a segment per stage on the input path
+    always, each stage's commands in its own context and run there (the
+    "outermost is the caller's" assumption went; a held verb pins attention
+    in the stage it was held in); the toolbar holds the scene commands of
+    the stages on the focus path (TOOLS.md §6), not the pointer's, so it
+    doesn't change under the pointer (`api.path({ focus: true })`). A stage never sees the focus. `scene.focus`
+    offers Enter on a link (menu, inspector; everyone's, every body) and
+    takes a double-click on one; the outline's link rows say what the link
+    is here (linked, shown again, fixed, closed) and enter (→, or a
+    double-click); the inspector's Linked scene row says the same, with
+    Open and what the host sets of it. The trail, the view's own chrome
+    along the top while the focus is inside a link, names the outermost doc
+    and each link entered (each crumb a way out) and has Leave; Escape's
+    last rung leaves. Drawer tabs open as the focus moved open again inside.
+    *Proves* (`stage/focus.test.js`): H10 across docs over every reachable
+    focus and selection × every press (Edit's click), Select (each stage's
+    api), Enter, Leave and Escape, in a view of a host with a live link L to
+    B (B linking C live), a mirror R of B, a pin P of B and a closed link:
+    11 states × 37 events, each transition what the pure model says, the
+    focus and every link on its way a stage that acts, each stage seeing
+    its own element and never the focus, the general parts in the focus
+    stage alone, nothing written; a raw `select` fails it at the first
+    transition. Every way a link can go while entered (removed, pinned, a
+    link ahead of it) × the focus at B or C; another view of the same scene
+    untouched (its focus, parts and running sets, no doc written); a press
+    outside reaching its own parts then the general ones; double-click;
+    the host's toolbar command shown and run in the host while entered, the
+    bar unchanged as the pointer moves (the old toolbar fails it); the
+    Objects tab reopened inside. `focusSteps` over every pair of foci
+    in a two-wide, three-deep tree; every link state's labels. In Chrome:
+    `sailing/probes/aboard-run.mjs` step 13 (A, under way, picks Edit,
+    double-clicks a card to enter G, clicks it to select it, and drags its
+    halo's X arrow: along the table's X only while she heels, written to G,
+    the boat's link untouched; B untouched; Escape twice back out) and
+    `links-run.mjs` step 6b (Ana, seated in her room, enters G by its
+    mirror's link, where it acts; nothing else changes for anyone; she
+    draws entered; Escape leaves). Decisions, step 14. Not done here: the
+    clock chip and the packages card show the focus doc's only (TOOLS.md
+    §6 wants a chip per doc on the focus path); "who's here" is announced
+    on the focus doc's channel (as since step 12), so entering a game moves
+    a viewer's body chip there and viewers of the host see them as "look"
+    meanwhile; out of focus isn't tinted; in Edit the first click of a
+    double-click selects the link and opens the inspector, which narrows the
+    canvas under the second click (the probe aims again; a person on a small
+    part of a link may miss).
 15. **Extract and bundle** (I9, I11).
 16. **Named frames and traversal**, when doom's exits or stations need them.
 
@@ -849,6 +916,87 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, step 14 (2026-11-14, made unattended)
+
+Made while building Edit in context, with the project lead away.
+
+1. **The general parts move with the focus by stopping and starting.** Every
+   stage's host can run them; the view has the focus stage's alone do so
+   (`host.setGeneral`), and they stop at once in the stage left, not
+   lingering, since the view moved them, not the doc. Why: §3's "the view
+   runs it once, at the focus" with the one mechanism that exists (start,
+   stop); pointing a running part's api at another stage would be a second.
+   Cost: the chrome is made again on Enter and Leave.
+2. **The general parts come after every segment, wherever the hit is, and
+   the input path always ends at the focus.** Why: with them only in the
+   focus stage's segment, entering a game would cut the boat's verbs off
+   from the menu, the keys and the prompt (TOOLS.md Decisions 4: outside
+   stays live), and the focus's scene commands (Frame all, Measure, Undo)
+   would leave the surfaces whenever the pointer was outside. It also
+   retired the resolver's, the menu's and the toolbar's assumption that
+   the caller's stage is the outermost: a segment per path stage always,
+   each stage's commands worked out in its own context and run in it (the
+   toolbar used to run another stage's command in its own, where it isn't),
+   and a held verb pins attention in the stage it was held in. The toolbar
+   takes the focus path, not the input path (TOOLS.md §6 says so, and a bar
+   that followed the pointer would change, and move the canvas, under it:
+   the aboard probe found that).
+3. **Enter goes where the doc acts.** A live link's there; a mirror's where
+   its doc is live (the same doc, drawn again: edited where it's played);
+   a pin and a closed link aren't entered, and Enter says why (a pin: Follow
+   latest to go inside). Why: a drawn stage has no chrome by construction
+   (step 13, 1), and a value isn't edited. Worked example 2's "Entering F
+   offers Follow latest" is that disabled Enter and the inspector's Follow
+   latest.
+4. **The focus can be any path whose every link acts**, reached by leaves
+   then enters, each a `selectionStep` (`focusSteps`). `api.view.enter`
+   from any stage moves it there. Why: one mechanism keeps H10, and a
+   mirror's Enter and the trail's crumbs move it more than a level.
+5. **No stage sees the focus**: `projectView` leaves it out. Why: an
+   extension that read it could act differently entered than not (I4), as
+   step 13's 21 removed `api.role`.
+6. **Selecting from any stage is cut at the focus.** `api.view.select` in a
+   game's stage with the focus on the boat selects the link (it used to
+   store the game's path). Why: H10 by construction, whoever asks.
+7. **Edit's click outside the focus isn't Edit's**: it goes down the chain.
+   Why: Edit can't select there, so it's Edit's to ignore, as a click on
+   nothing with nothing selected is (TOOLS.md Decisions 6), and the verbs
+   out there stay live.
+8. **A link that goes, is pinned or stops acting while entered leaves the
+   focus** out to the deepest stage still acting, the selection cleared.
+   Why: the focus is a stage that acts; the same cost as "the acting
+   occurrence can move".
+9. **The trail is the view's chrome, not a part.** Why: it names links in
+   several docs (each host's name for its link), which no stage's extension
+   may read; the view holds the stages and the focus. Shown only while the
+   focus is inside a link.
+10. **Drawer tabs reopen where the focus went**, through the view's
+    `reopen` (the tabs' titles as the focus moved), read once by a tab as
+    its part starts. Why: entering from the outline would otherwise close
+    the outline it was entered from.
+11. **A link's outline row is entered, not expanded in place.** Why: the
+    outline shows the focus doc, where the selection lives; a linked doc's
+    rows shown from outside could be neither selected nor edited there.
+    Entering is one click (→) or a double-click, and the tab reopens inside.
+12. **Enter is everyone's, in every body**, and a double-click on a link
+    enters it in every body. Why: the selection is everyone's (TOOLS.md
+    §3), so is where it's scoped; §3 says a double-click on a link enters
+    it, with no body named. Cost: seated aboard, a double-click on a card
+    enters the game (play goes on: verbs reach through).
+13. **The camera stays where it is on Enter and Leave**, and Look and Edit
+    keep riding the latest base ride of any acting stage. Why: entered into
+    a game aboard, the boat's follow should still carry the camera; I8's
+    "the focus's latest base ride" is read as the latest on the focus path,
+    which is that in every example (nothing off the focus path rides the
+    camera). Since `scene.autoframe` is a general part, it starts again in
+    the stage entered, and would frame an untouched camera there; so a focus
+    move counts as placing the camera, as restoring it does
+    (`api.camera.touched()`: moved by the viewer, restored on opening, or
+    carried across a focus move).
+14. **The clock chip and the packages card show the focus doc's**, being
+    general parts. Deferred: TOOLS.md §6's chip per doc on the focus path,
+    and every open doc's packages in one prompt (FOLLOWUPS).
 
 ## Decisions, step 13 (2026-11-14, made unattended)
 

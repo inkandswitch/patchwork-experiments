@@ -291,7 +291,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     msg.textContent = `3D view unavailable: ${viewport.error?.message ?? "WebGL could not start"}.`;
     port.append(msg);
   }
-  let cameraRestored = false;
+  // has the camera been placed for this viewer, other than by their own hand: restored as the view
+  // opened (their saved camera, the doc's home), or carried across a focus move (Enter, Leave)?
+  let cameraPlaced = false;
   let cameraTimer = null;
   cleanups.push(
     viewport.onCameraEnd(() => {
@@ -561,11 +563,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // stage (H10), whoever asks: an extension of any stage, the Edit body, the
   // ladder, a link going.
 
-  /** Apply one selection event; a move of the focus moves what follows it. @returns did anything change */
-  function selectStep(ev) {
+  /** Apply selection events in turn, as one change; a move of the focus moves what follows it. @returns did anything change */
+  function selectSteps(evs) {
     const m = atom.get();
     const was = { focus: m.focus, selected: m.selected };
-    const next = selectionStep(was, ev);
+    const next = evs.reduce((st, ev) => selectionStep(st, ev), was);
     if (next === was) return false;
     const focus = samePath(m.focus, next.focus) ? m.focus : pathOf(next.focus);
     const selected = next.selected == null ? null : samePath(m.selected, next.selected) ? m.selected : pathOf(next.selected);
@@ -574,6 +576,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (focus !== m.focus) focusMoved(m);
     return true;
   }
+  /** Apply one selection event. */
+  const selectStep = (ev) => selectSteps([ev]);
   /** Select a path (null: none): the element of the focus stage it goes through; outside the focus, nothing (../selection.js). */
   const select = (path) => selectStep(path == null ? { type: "clear" } : { type: "select", path: [...path] });
 
@@ -592,12 +596,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const at = expansion.find((o) => o.role === "acting" && o.depth > 0 && o.url === url);
     return at && stageAt(at.path) ? pathOf(at.path) : null;
   }
-  /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (each one that acts). @returns did it get there */
+  /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (as far as each acts), as one change. @returns did it get there */
   function focusOn(p) {
-    for (const ev of focusSteps(atom.get().focus, p, (q) => !!stageAt(q))) if (ev.type === "enter" && !ev.link) break; else selectStep(ev);
+    selectSteps(focusSteps(atom.get().focus, p, (q) => !!stageAt(q)));
     return samePath(atom.get().focus, p);
   }
-  /** Enter the link at path `p` (an element of the focus stage, or deeper: Enter goes in a link at a time). */
+  /** Enter the link at path `p`, wherever the focus is: it moves to where that link's doc acts. */
   function enter(p) {
     const to = Array.isArray(p) ? enterable(p) : null;
     return to ? focusOn(to) : false;
@@ -617,6 +621,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    */
   function focusMoved(was) {
     if (dead) return;
+    // the camera stays where it is: the general parts started in the stage entered (scene.autoframe) don't frame it
+    cameraPlaced = true;
     atom.swap((m) => ({ ...m, reopen: Object.freeze({ tabs: Object.freeze([...(was.drawer?.tabs ?? [])]), shown: was.drawer?.shown ?? null }) }));
     placeGeneral();
     const held = router?.held();
@@ -837,7 +843,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const cam = initialCamera({ stored: readJSON(cameraKey), doc });
     if (cam && viewport.ok) {
       viewport.setCamera(cam);
-      cameraRestored = true;
+      cameraPlaced = true;
     }
   }
   let arriveTimer = false;
@@ -959,8 +965,20 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * reader (stage.js). Nothing under attention: the outermost, and the focus.
    * The focus is always on it, since the scene a surface speaks of (its
    * commands on nothing: Frame all, Measure, Undo) is the focus's.
+   * `focus: true` is the focus path instead: the focus stage out to the
+   * outermost, whatever attention is (the toolbar's: it doesn't follow the
+   * pointer).
    */
-  function inputPath({ look: lookOnly = false } = {}) {
+  function inputPath({ look: lookOnly = false, focus: focusOnly = false } = {}) {
+    if (focusOnly) {
+      const f = atom.get().focus;
+      const out = [];
+      for (let i = f.length; i >= 0; i--) {
+        const s = stageAt(f.slice(0, i));
+        if (s) out.push(s.reader);
+      }
+      return out;
+    }
     const sel = atom.get().selected;
     const l = !lookOnly && sel ? null : look();
     const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
@@ -1161,8 +1179,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     viewport,
     atom,
     router,
-    get cameraRestored() {
-      return cameraRestored;
+    get cameraPlaced() {
+      return cameraPlaced;
     },
     restoreCamera,
     // the stages

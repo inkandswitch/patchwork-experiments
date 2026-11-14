@@ -218,7 +218,10 @@ export default own({
 
     const selectedId = () => api.view.get().selected ?? null;
     /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
-    const enterable = (id) => !!api.link(id) && !enterState(api.link(id))?.disabled;
+    const enterable = (id) => {
+      const can = enterState(api.link(id));
+      return !!can && !can.disabled;
+    };
     /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
     const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => api.link(id)).filter(Boolean));
     function select(id) {

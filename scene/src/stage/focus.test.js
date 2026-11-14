@@ -20,6 +20,7 @@ import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selecti
 import { EDIT } from "./bodies.js";
 import focusPart from "../parts/focus.js";
 import outline from "../parts/outline.js";
+import toolbar from "../parts/toolbar.js";
 
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const J = JSON.stringify;
@@ -215,11 +216,15 @@ describe("Enter and Leave", () => {
     expect(host.view.enter("P")).toBe(false);
     expect(host.view.enter("X")).toBe(false);
     expect(host.view.enter("table")).toBe(false);
+    // nobody has placed the camera yet: something may frame it on opening (scene.autoframe)
+    expect(host.camera.touched()).toBe(false);
     // the mirror R enters B where it acts, at L
     expect(host.view.enter("R")).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
     expect(generalsAt(view)).toEqual(["L"]);
+    // the camera came along: the parts started in B (autoframe among them) find it placed, and leave it be
+    expect(stageOf(view, "L").debug.host.record("scene.focus").api.camera.touched()).toBe(true);
     // what the doc runs is untouched (H1): only the general parts moved
     const traitRun = (p) => stageOf(view, p).debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id);
     expect(traitRun("")).toEqual(["t.host"]);
@@ -341,6 +346,35 @@ describe("Enter and Leave", () => {
     } finally {
       other.unmount();
     }
+  });
+});
+
+describe("surfaces across docs", () => {
+  it("entered in B, the toolbar holds the focus path's commands, the host's among them (worked out in the host's context), runs each where it's from, and doesn't change under the pointer", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const ran = [];
+    const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
+    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: (api) => ({ commands: [{ id: "ring", name: "Ring", show: ["toolbar"], state: (t, ctx) => (t == null && ctx.scene.objects.table ? { title: "Ring the bell" } : null), run: () => ran.push(api.url) }] }) } };
+    const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
+    s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    const view = s.debug.view;
+    await until(() => stageOf(view, "L")?.debug, 3000);
+    view.enterBody(EDIT.id);
+    expect(s.api("t.host").view.enter("L")).toBe(true);
+    await until(() => stageOf(view, "L").debug.host.instanceOf("scene.toolbar"), 2000);
+    const labels = () => [...view.root.querySelectorAll(".toolbar button")].map((x) => x.textContent);
+    await until(() => labels().includes("Ring"), 2000);
+    const before = labels();
+    // the pointer over B's card, then the host's table: the bar stays as it is
+    for (const [i, hit] of [{ id: keyOf(stageOf(view, "L").n, "card") }, { id: "table" }, null].entries()) {
+      view.viewport.pick = () => (hit ? { ...hit, point: [0, 0, 0], normal: [0, 1, 0], distance: 3 } : null);
+      s.pointer("pointermove", 20 + i * 3, 20, { buttons: 0 });
+      await settle();
+      expect(labels()).toEqual(before);
+    }
+    [...view.root.querySelectorAll(".toolbar button")].find((x) => x.textContent === "Ring").click();
+    expect(ran).toEqual([s.handle.url]);
   });
 });
 

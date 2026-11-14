@@ -40,7 +40,8 @@ export default {
       input: {
         dblclick(ev) {
           const target = ev.hit?.id ?? null;
-          return target != null && !enterState(api.link(target))?.disabled ? enter(target) : false;
+          const can = target != null ? enterState(api.link(target)) : null;
+          return can && !can.disabled ? enter(target) : false;
         },
       },
     };

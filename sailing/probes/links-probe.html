@@ -221,6 +221,20 @@ try {
     return { pinHand, pinFaces, deps: Object.keys(point.deps ?? {}).length, mirrorLink: ids.mirrorLink, pinLink: ids.pinLink };
   }
   Object.assign(P, {
+    /** view w's focus: the links entered ([]: its outermost doc) */
+    focusPath: (w) => dbg[w].view.atom.get().focus,
+    /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
+    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => [...s.path]),
+    /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
+    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().filter((r) => r.scope !== "general").map((r) => r.id)]),
+    /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
+    enter(w, id) {
+      const c = dbg[w].view.focusStage()?.debug.host.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const st = c?.state(id);
+      if (!st || st.disabled) return false;
+      c.run(id);
+      return true;
+    },
     /** each view's stages: [{ n, url, path }] */
     stages: (w) => dbg[w].view.stages().map((s) => ({ n: s.n, url: s.url, path: [...s.path] })),
     link: (w) => (w === "a" ? apiOf("a").link(ids.roomLink) : w === "b" ? apiOf("b").link(ids.boatLink) : null),

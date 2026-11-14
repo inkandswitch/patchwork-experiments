@@ -369,11 +369,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return viewProjected;
   };
   const viewport = vp; // (the raw viewport, for what isn't spatial: frames, loops, invalidation)
-  let cameraRestored = false;
-  if (n === 0) {
-    view.restoreCamera(doc());
-    cameraRestored = view.cameraRestored;
-  }
+  if (n === 0) view.restoreCamera(doc());
 
   // ─── the plugin registry ──────────────────────────────────────────────────
 
@@ -2341,7 +2337,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
         ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
-        touched: () => viewport.touched() || cameraRestored,
+        /** has the camera been placed for this viewer: moved by them, restored as they open the view, or carried across a focus move? (nothing frames it on its own then) */
+        touched: () => viewport.touched() || view.cameraPlaced,
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
@@ -2477,7 +2474,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // path's first, innermost first), each item tagged with its `stage`, and
       // runs a command in the stage it names
       collect: (name) => (rec.scope === "general" ? view.collect(name) : reader.collect(name)),
-      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's) */
+      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost) */
       path: (o) => view.inputPath(o),
       audience: audienceOf,
       shown: shownTo,

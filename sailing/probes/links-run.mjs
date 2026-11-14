@@ -28,6 +28,12 @@
 //     saw when it was fixed (her hand, and the cards played face up); Ana then plays a card face up (her keeper hands over
 //     its key) and draws, and all of it stays so, with nothing written
 //     through any of them: no warning, no error (7);
+//  6b. editing in context (COMPOSITION.md build step 14): Ana, seated, enters
+//     G from her room by its mirror's link (Enter goes where G acts: the
+//     room's first link); her general parts move into her G stage and
+//     nothing else changes, for her (still seated, the same docs running
+//     the same parts) or for Ben and Cara (their focus and parts where they
+//     were); entered, she draws, and both see it; Escape leaves;
 //  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
@@ -185,6 +191,25 @@ try {
   check("6. after Ana's play and draw, the mirror and D still show what her acting stage shows, and the pin still shows what it was fixed at", sameFaces(f6b) && J([...f6b.pin].sort()) === J([...i6.pinFaces].sort()), { faces: f6b });
   const warned = (await P("errors")).filter((e) => !EXPECTED.test(e));
   check("6. nothing was written through the mirror, the pin or D: no warning, no error so far", warned.length === 0, warned.slice(0, 10));
+
+  // 6b. Ana enters G from her room, by the mirror's link: where G acts
+  {
+    const runsBefore = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
+    const seatsBefore = J(await P("seats()"));
+    const pinRefused = await P(`enter('a', ${J(i6.pinLink)})`);
+    const ok = await P(`enter('a', ${J(i6.mirrorLink)})`);
+    const placed = await until(`runsIn('a', 'scene.menu').length === 1 && __p.runsIn('a', 'scene.menu')[0].length === 1`, 3000);
+    check("6b. Enter on the mirror's link goes inside G where it acts (the room's first link); Enter on the pin is refused", ok && !pinRefused && J(await P("focusPath('a')")) === J([ids.roomLink]) && placed, { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), pinRefused });
+    const runsAfter = { a: await P("traitRuns('a')"), b: await P("traitRuns('b')"), c: await P("traitRuns('c')") };
+    check("6b. entering changes nothing else: every stage in every view runs what its doc calls for as before, Ben's and Cara's focus and general parts where they were, Ana still seated, the seats as they were", J(runsAfter) === J(runsBefore) && J(await P("focusPath('b')")) === "[]" && J(await P("focusPath('c')")) === "[]" && J(await P("runsIn('b', 'scene.menu')")) === "[[]]" && J(await P("runsIn('c', 'scene.menu')")) === "[[]]" && (await P("body('a')")).id === "seat" && J(await P("seats()")) === seatsBefore, { runsBefore, runsAfter, b: await P("runsIn('b', 'scene.menu')"), c: await P("runsIn('c', 'scene.menu')"), body: await P("body('a')") });
+    // entered, she plays on: a draw through her key map (G's, the focus's)
+    const drawnIn = await draw("a", "p1");
+    if (drawnIn) check("6b. entered, Ana's draw lands, and Ben and Cara see it", !!(await until(`drawn(${J(drawnIn)}, 'b') && __p.drawn(${J(drawnIn)}, 'c')`, 3000)), { b: await P(`drawn(${J(drawnIn)}, 'b')`), c: await P(`drawn(${J(drawnIn)}, 'c')`) });
+    await P("focus('a')");
+    await b.key("Escape");
+    await until("focusPath('a').length === 0 && __p.runsIn('a', 'scene.menu').length === 1 && __p.runsIn('a', 'scene.menu')[0].length === 0", 3000);
+    check("6b. Escape leaves: Ana's focus back on her room, her general parts there, still seated", J(await P("focusPath('a')")) === "[]" && J(await P("runsIn('a', 'scene.menu')")) === "[[]]" && (await P("body('a')")).id === "seat", { focus: await P("focusPath('a')"), menu: await P("runsIn('a', 'scene.menu')"), body: await P("body('a')") });
+  }
 
   // 7. heel: the boat's world runs
   await P("resume()");

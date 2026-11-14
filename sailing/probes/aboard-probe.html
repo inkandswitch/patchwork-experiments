@@ -132,6 +132,16 @@ try {
   const A = peer(scene), B = peer(scene);
   A.other = B; B.other = A;
   const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  // every double-click a host hears: what it landed on, and the view's focus just after (for step 13's report)
+  const dbls = { a: [], b: [] };
+  for (const w of ["a", "b"])
+    hosts[w].addEventListener("dblclick", (e) => {
+      const t = e.target;
+      const v = dbg[w]?.view;
+      const r = v?.canvas.getBoundingClientRect();
+      const hit = v && r ? v.viewport.pick(e.clientX - r.left, e.clientY - r.top) : null;
+      dbls[w].push({ on: `${t.tagName.toLowerCase()}.${String(t.className || "")}`, x: e.clientX, y: e.clientY, hit: hit?.id ? v.pathOfKey(hit.id) : null, focus: v?.atom.get().focus ?? null, top: r?.top, left: r?.left, w: r?.width, cam: v?.viewport.getCamera()?.position?.map((x) => +x.toFixed(3)), frame: window.__time?.frames?.() });
+    });
   hosts.a.repo = repo; hosts.b.repo = repo;
   hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
   hosts.a.time = time; hosts.b.time = time;
@@ -151,6 +161,8 @@ try {
   const gameObjects = () => game?.doc().objects ?? {};
   const inGame = (id) => !!game && !!gameObjects()[id];
   const gStage = (w) => (game && dbg[w] ? dbg[w].view.stages().find((x) => x.url === game.url) ?? null : null);
+  // the focus stage's debug: where the general parts (the halo, the inspector) run
+  const fdbg = (w) => dbg[w].view.focusStage()?.debug ?? dbg[w];
   const SEP = "\u001f";
   /** a viewport key (scene/src/stage/paths.js): the outermost stage's ids are their own */
   const keyIn = (w, id) => { if (!inGame(id)) return id; const n = gStage(w)?.n; return n == null ? null : n === 0 ? id : `${SEP}${n}${SEP}${id}`; };
@@ -335,22 +347,57 @@ try {
     // what a view hovers or has selected, in the doc it's in (G's, through the link; else the boat's)
     /** view w's selection as the view keeps it: a path, the links from the boat in, then the object */
     selectionPath: (w) => dbg[w].view.atom.get().selected,
+    /** is it one of G's objects? */
+    inGame: (id) => inGame(id),
+    /** the boat's title, and its name for the link to G (the trail's crumbs) */
+    boatTitle: () => scene?.doc().title ?? null,
+    linkName: () => objects()[ids.link]?.name ?? null,
+    /** the boat's link to G as the boat's doc holds it (the host's facts: placement, parent, lock) */
+    linkRecord: () => { const o = objects()[ids.link]; return o ? { parent: o.parent, transform: o.transform, locked: !!o.locked, sourceUrl: o.sourceUrl } : null; },
+    /** of these objects, the one in plain sight on view w's screen farthest from its edges: { id, x, y } (page px), or null */
+    aimBest(ids, w) {
+      const r = dbg[w].viewport.canvas.getBoundingClientRect();
+      let best = null;
+      for (const id of ids) {
+        const a = P.aimAt(id, w);
+        if (!a) continue;
+        const margin = Math.min(a.x - r.left, r.right - a.x, a.y - r.top, r.bottom - a.y);
+        if (!best || margin > best.margin) best = { ...a, id, margin };
+      }
+      return best ? { ...best, top: r.top, left: r.left, w: r.width, cam: dbg[w].viewport.getCamera()?.position?.map((v) => +v.toFixed(3)), frame: window.__time?.frames?.() } : null;
+    },
+    /** a camera over G's table, looking down on it from just A's side of above: { position, target } in the world */
+    overTable(w) { const m = dbg[w].viewport.worldOf(ids.link); return m ? { position: apply(m, [0, 0.95, 0.3]), target: apply(m, [0, 0, 0]) } : null; },
+    /** put view w's camera at `c` ({ position, target }, in the world): where a person would orbit it to */
+    setCam(w, c) { dbg[w].viewport.setCamera(c); return true; },
+    /** the double-clicks view w heard: [{ on, x, y, hit, focus, top, left, w, cam, frame }] (after the stage's own handling) */
+    dbls: (w) => dbls[w],
+    /** view w's focus: the links entered ([]: the boat) */
+    focusPath: (w) => dbg[w].view.atom.get().focus,
+    /** the trail (breadcrumb) view w shows while its focus is inside a link: its crumbs' text, or null */
+    trail: (w) => { const t = hosts[w].querySelector(".stage-trail"); return t ? [...t.querySelectorAll(".trail-crumb, .trail-here")].map((e) => e.textContent) : null; },
+    /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
+    runsIn: (w, ext) => dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext)).map((s) => s.path),
+    /** what each of view w's stages sees selected: [path, its element] */
+    seen: (w) => dbg[w].view.stages().filter((s) => s.acts).map((s) => [s.path, s.debug.local.get().selected ?? null]),
     hovered: (w) => gStage(w)?.debug.local.get().hovered ?? dbg[w].local.get().hovered ?? null,
     selected: (w) => gStage(w)?.debug.local.get().selected ?? dbg[w].local.get().selected ?? null,
     /** the right-click menu's items on a view's page: label and middle */
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { label: e.querySelector(".menu-label")?.textContent.trim() ?? "", x: r.x + r.width / 2, y: r.y + r.height / 2, disabled: e.disabled }; }),
+    // the halo is a general part: it runs in the focus stage (the boat's, until A enters G)
     /** what a view's halo is on, and the frame it's drawn in (its doc parent's) */
-    halo: (w) => { const h = dbg[w].host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
+    halo: (w) => { const h = fdbg(w).host.instanceOf("scene.halo")?.debug; return h?.target ? { ...h.target, parent: h.frame?.parentId ?? null } : null; },
     /** why a view's halo is or isn't on what it has selected */
-    haloWhy: (w) => { const l = dbg[w].local.get(); const o = dbg[w].scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: dbg[w].host.record("scene.halo")?.api?.writable?.() ?? null, dragging: dbg[w].host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
+    haloWhy: (w) => { const d = fdbg(w); const l = d.local.get(); const o = d.scene().objects[l.selected]; return { running: l.running.map((r) => r.id).includes("scene.halo"), held: l.held?.command ?? null, selected: l.selected ?? null, inScene: !!o, locked: !!o?.locked, kind: o?.kind ?? null, writable: d.host.record("scene.halo")?.api?.writable?.() ?? null, dragging: d.host.instanceOf("scene.halo")?.debug?.dragging ?? null }; },
     /** a halo arrow's point (a third along it), and `along` frame units further, on a view's page */
     haloAt(w, axis, along = 0) {
-      const h = dbg[w].host.instanceOf("scene.halo")?.debug;
+      const h = fdbg(w).host.instanceOf("scene.halo")?.debug;
       const x = h?.handles.find((k) => k.kind === "move" && k.axis === axis);
       if (!x) return null;
       const p = x.from.map((v, i) => v + (x.to[i] - v) / 3);
       p[axis] += along;
-      return page(w, h.frame.pointOut(p));
+      // (the halo's frame is in its stage's root frame: the focus stage's, G's once A has entered it; the world from there)
+      return page(w, dbg[w].view.focusStage().frame().pointOut(h.frame.pointOut(p)));
     },
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),

@@ -101,9 +101,31 @@ or identity closes, with what was opened under it, and opens again.
   removes `at`.
 - **One doc per extension.** An extension runs in a stage when that
   stage's doc has one of its traits; a general one (no traits) runs once,
-  in the focus (the outermost, until Enter moves it). Everything an api
-  reads and writes is its stage's doc: `null` is that doc's root, `api.url`
-  its url, every id one of its own. No reference crosses docs.
+  in the focus stage. Everything an api reads and writes is its stage's
+  doc: `null` is that doc's root, `api.url` its url, every id one of its
+  own. No reference crosses docs.
+- **The focus** (COMPOSITION.md §5, TOOLS.md §3) is the path of the links
+  the viewer has entered: the outermost ([]) until **Enter** moves it into
+  a link whose doc acts there. It scopes the selection (a selection is
+  always an element of the focus stage: H10), and the general parts run in
+  the focus stage and no other, so the editor (the halo, the inspector, the
+  outline, add, paste, undo) edits the focus's doc in its frame. It cuts no
+  segment: outside it, verbs, carries, keys and the menu still work. Enter
+  goes where a link's doc acts: a live link there, a mirror where its doc
+  is live (the same doc); a pin (a value) and a closed link aren't entered.
+  **Leave** moves it out a link: Escape's last rung, the trail's crumbs (the
+  view's breadcrumb along the top, shown while it's inside a link) and its
+  Leave. A link that goes, is pinned or stops acting there leaves the focus
+  out to the deepest stage still acting. Focus and selection change only
+  through `selectionStep` (`src/selection.js`), whoever asks. Where the
+  focus is is the view's: no stage sees it (an extension that did could act
+  differently entered than not, I4). The general parts' drawer tabs open
+  when the focus moved open again where it went (the view's `reopen`). The
+  general parts move with the focus at once (`host.setGeneral`); what each
+  doc runs is untouched (H1). `scene.focus` offers Enter on a link (the menu,
+  the inspector) and takes a double-click on one; the outline's link rows
+  say what the link is here and enter; the inspector has a Linked scene
+  row.
 - **Frames.** Everything spatial in an api is in its stage's root frame,
   through one choke point (`stage/scope.js`): `worldOf`, `box`, `sceneBox`,
   `pick`, `ray`, `raycast`, `project`, `camera.*`, labels, world layers,
@@ -114,17 +136,26 @@ or identity closes, with what was opened under it, and opens again.
 - **Paths.** The selection and hover are paths (the links from the
   outermost in, then the object); each stage sees its element
   (`api.view.get().selected`), and `api.view.select(target)` selects its
-  own target. One key grammar (`stage/paths.js`) names an object in the
+  own target, cut at the focus (outside it, nothing; inside a link of the
+  focus stage, the link). `api.view.enter(linkId)` and `api.view.leave()`
+  move the focus (false where they can't; a drawn stage's do nothing). One key grammar (`stage/paths.js`) names an object in the
   viewport and an extension at the router: the outermost's ids are their
   own, any other's `SEP n SEP id`.
 - **Input** goes a segment per stage on the hit's path, innermost first:
   each its holders, nearest first, then its root's, out to the outermost
-  whatever the focus. A general part collects from every acting stage (the
-  input path's first), each item tagged with its `stage`, and runs a
-  command with `api.run({ stage, ext, command, target })`; `api.path()` is
-  the input path's stages (each `{ stage, scene, collect, context,
-  attention, look, run, nameOf }`), which the key map, the use prompt and
-  the menu walk innermost first.
+  whatever the focus; then the general parts (the focus stage's), wherever
+  the hit is, with their stage's element of it (null off its path). A
+  general part collects from every acting stage (the input path's first),
+  each item tagged with its `stage`, and runs a command with
+  `api.run({ stage, ext, command, target })`; `api.path()` is the input
+  path's stages (each `{ stage, scene, collect, context, attention, look,
+  run, nameOf }`), attention's from the innermost out, then the focus stage
+  if it isn't among them, which the key map, the use prompt and the menu
+  walk a stage at a time, each in its own context (a held verb pins
+  attention in the stage it was held in). So the focus's scene commands
+  (Frame all, Measure, Undo) are on every surface wherever the pointer is.
+  `api.path({ focus: true })` is the focus path instead (the focus stage
+  out to the outermost): the toolbar's, which doesn't follow the pointer.
 - **Channels.** Presence, claims and pose holds are each doc's, on its
   channel, in its ids. Every stage of a view uses the view's one session.
   The **page bus** delivers a broadcast to every other presence on the same
@@ -142,7 +173,7 @@ or identity closes, with what was opened under it, and opens again.
 |---|---|---|---|---|
 | **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
 | **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
-| **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, focus, and the selection and hover as this stage's elements) | `api.local.swap(fn)`; `api.view.select(target)`, `api.setPref`, `api.notify` |
+| **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, reopen, and the selection and hover as this stage's elements; never the focus) | `api.local.swap(fn)`; `api.view.select(target)`, `api.view.enter(link)`, `api.view.leave()`, `api.setPref`, `api.notify` |
 
 (There is no fourth, private place yet: what is one viewer's alone, lasting
 and on all their devices. A keeper that needs one keeps it itself, as the
@@ -748,10 +779,13 @@ a tool to pick first, and there is no `local.tool` or `view.tool`:
   F is carry's Flip on every surface; Frame is `.`.
 - **Select** is the first entry of every target's menu (`scene.menu` puts
   `scene.select`'s Select first), whatever body you're in: the deliberate select,
-  in a game too. A plain click selects only as the Edit body's default
-  press, the stage's own (`editInput` in `stage.js`), offered after the
-  whole chain; Look has none. Where a selection may be is `src/selection.js`: an element of the
-  focus stage (H10); with one stage, any object.
+  in a game too. A plain click selects only as the Edit body's click
+  (`editInput` in `stage/view.js`), taken ahead of the chain, after only the
+  held tool and a widget (TOOLS.md Decisions 6), on something at the focus;
+  a click outside the focus isn't Edit's and goes down the chain. Look has
+  none. Where a selection may be is `src/selection.js`: an element of the
+  focus stage (H10): with the focus on the boat, a card aboard selects the
+  link it's in; Enter the link to select the card.
 - **The halo** (`scene.halo`) is the selection's handles, in the Edit body,
   where the doc is writable and no tool is held: a move arrow along each axis, a rotate ring
   about each and a scale handle at each corner, all outside the thing's box
@@ -1670,7 +1704,7 @@ taken out. It keeps the following:
 - **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn, { first? })`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 
-**Router** (`createRouter({ port, canvas, keyRoot, pick, pickWidget, ray, centerRay, chainFor, inputOf, base, cameraHeld, onHover, onCursor, onState, pointerWanted, selection, deselect, focusDepth, leaveFocus })`; `focusDepth` is 0 and `leaveFocus` does nothing until the focus can move, COMPOSITION.md step 14):
+**Router** (`createRouter({ port, canvas, keyRoot, pick, pickWidget, ray, centerRay, chainFor, inputOf, base, cameraHeld, onHover, onCursor, onState, pointerWanted, selection, deselect, focusDepth, leaveFocus })`; `focusDepth` is how many links the focus is inside, and `leaveFocus` leaves one: the ladder's last rung):
 - builds events with lazy `hit` and `widget`;
 - runs the chain through `chainFor(ev)`, the held tool before it and the
   top body after it;
