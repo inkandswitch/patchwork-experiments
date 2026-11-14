@@ -1,0 +1,113 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>machine in a scene probe</title>
+<!-- Driven by probes/scene.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT machine package (machine/dist) in a stub registry, on REAL Automerge
+     documents: two peers, each with its own replica of every doc
+     (probes/real-repo.js), a change or a message reaching the other a little
+     later. Two machine docs wait in peer a's repo (Doom on Freedoom's E1M1,
+     one player; the Super NES on Unarmed) for the runner to paste into the
+     scene.
+       #a  view A (Ana) of the scene, on peer a
+       #b  view B (Ben) of the scene, on peer b -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "../node_modules/@automerge/automerge/dist/mjs/entrypoints/fullfat_base64.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: grid; grid-template-columns: 720px 720px; grid-template-rows: 560px; gap: 8px; }
+  #a, #b { position: relative; overflow: hidden; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { content as doomContent } from "../src/doom.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const wad = new Uint8Array(await (await fetch("/wad")).arrayBuffer());
+  const rom = new Uint8Array(await (await fetch("../engines/snes/test/unarmed.sfc")).arrayBuffer());
+  // what each machine boots, as the Machine tool writes it: Doom's start arguments and WAD; a ROM
+  const doomBytes = doomContent({ wads: [wad], args: ["-skill", "3", "-warp", "1", "1", "-players", "1"] });
+  const doomRuns = await net.a.create2({ title: "freedoom1 · E1M1 · 1p", bytes: doomBytes });
+  const snesRuns = await net.a.create2({ title: "unarmed", bytes: rom });
+  const machines = {
+    doom: await net.a.create2({ "@patchwork": { type: "machine" }, title: "Freedoom", kind: "doom", content: doomRuns.url }),
+    snes: await net.a.create2({ "@patchwork": { type: "machine" }, title: "Unarmed", kind: "snes", content: snesRuns.url }),
+  };
+  const scene = { a: await net.a.create2({
+    "@patchwork": { type: "scene" }, title: "Machines", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, packages: [],
+    clock: { running: true, t: 0 },
+    view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { body: "edit" } },
+  }) };
+  scene.b = await net.b.find(scene.a.url);
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = net.a; hosts.b.repo = net.b;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  for (const h of Object.values(hosts)) h.time = time;
+  Tool(scene.a, hosts.a);
+  Tool(scene.b, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const docOf = (w) => scene[w].doc();
+  const rootOf = (w) => hosts[w].querySelector(".scene-stage");
+  const machineExt = (w) => dbg[w].host.record("machine")?.instance ?? null;
+
+  // every write to the scene doc (as peer a has it): how many, to show the machine writes nothing there while it plays
+  const writes = [];
+  scene.a.on("change", () => writes.push(Math.round(performance.now())));
+
+  window.__p = {
+    errors, machines: { doom: machines.doom.url, snes: machines.snes.url },
+    doc: (w = "a") => JSON.parse(JSON.stringify(docOf(w))),
+    writes: () => writes.length,
+    paste(w, text) {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", text);
+      rootOf(w).dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    },
+    running: (w) => (dbg[w]?.local.get().running ?? []).map((r) => r.id),
+    byUrl: (url, w = "a") => Object.entries(docOf(w).objects ?? {}).find(([, o]) => o.sourceUrl === url)?.[0] ?? null,
+    trait: (id, w = "a") => JSON.parse(JSON.stringify(docOf(w).objects?.[id]?.traits?.machine ?? null)),
+    setTransform: (id, position, rotation = [0, 0, 0]) => scene.a.change((d) => { d.objects[id].transform = { position, rotation, scale: 1 }; }),
+    /** what each machine on view w shows (the extension's machines()) */
+    shows: (w) => machineExt(w)?.machines() ?? null,
+    session: async (url) => { const h = await net.a.find(url); const d = h.doc(); return { clock: JSON.parse(JSON.stringify(d.clock)), seats: JSON.parse(JSON.stringify(d.seats ?? {})), checkpoints: Object.keys(d.checkpoints ?? {}).length }; },
+    clock: (w) => ({ t: dbg[w].clock.t(), computing: dbg[w].clock.computing(), doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
+    held: (w) => dbg[w].local.get().held ?? null,
+    select: (w, id) => dbg[w].local.swap((m) => ({ ...m, selected: id })),
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    notices: (w) => (dbg[w].local.get().notices ?? []).map((n) => n.text),
+    labels: (w) => [...hosts[w].querySelectorAll(".machine-note")].map((e) => e.textContent),
+    loaded(w) {
+      const os = Object.entries(docOf(w).objects ?? {});
+      return { total: os.length, loaded: os.filter(([id]) => dbg[w]?.viewport.contentOf(id)?.loaded).length };
+    },
+    setCamera: (w, c) => dbg[w].viewport.setCamera(c),
+    project: (w, p) => { const q = dbg[w].viewport.project(p); const r = dbg[w].viewport.canvas.getBoundingClientRect(); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible }; },
+  };
+  window.__ready = true;
+} catch (e) {
+  errors.push(`setup: ${e.stack || e}`);
+  window.__ready = true;
+}
+</script>

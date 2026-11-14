@@ -29,8 +29,11 @@ pnpm check:browser               # both engines in headless Chrome, against Node
 pnpm build:engines               # rebuilds engines/*/dist with emcc; the output is committed
 ```
 
-There is no Patchwork plugin yet. The scene extension (screens, sound, a
-station per port) is phase 2, and the host already offers what it needs.
+Two Patchwork tools (Machine, and Machine history) play a machine on its
+own. In a scene a machine is an object (`src/scene/`): its cabinet, its
+session run on the scene's world time, its picture on the cabinet's screen,
+and Play, the pad in hand. Sound, a station per port and the spectator's 3D
+view of Doom are still to come (HOST.md, "Phase 2b, in a scene").
 
 ## What is here
 
@@ -45,6 +48,7 @@ station per port) is phase 2, and the host already offers what it needs.
 | `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM, the queries' decoders, the listener, a camera |
 | `src/doom-music.js` | Doom's music player: `music(wasm, lumps, rate)`, following the engine's music record |
 | `src/content.js` | content provisioning: recipes, `identify`, a per-hash cache in IndexedDB, `provide(hash, …)` |
+| `src/scene/` | a machine in a scene: `extension.js` (scene:extension `machine`), `running.js` (one machine on one view: the host on world time, the process, the quiet stop), `cabinet.js` and `source.js` (scene:source `machine`: the cabinet GLB, its screen's place in its extras) |
 | `src/present/` | presentation for a scene (phase 2b): `screen.js` (a picture as a three.js texture), `sound.js` (WebAudio routing of `output()`), `doom-world.js` (Doom's things and sectors for a spectator), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
 | `src/test-tier.js` | the test tiers' flag |
 | `engines/machine.h` | the ABI, in C |
@@ -490,11 +494,10 @@ automerge-repo's scheduling; it is left open.
 
 ## Not done yet
 
-- **The scene extension** (phase 2): a screen as a texture
-  (`host.engine.frame(view)`), positional sound (`output()`, with Doom's
-  events carrying positions), and a body or station per port (`sit`,
-  `stand`). It waits for the stage's `api.clock`, which replaces the
-  session's own clock.
+- **The scene extension** (phase 2b): the clock, the process, queries
+  across the worker and the screen are built (HOST.md, "Phase 2b, in a
+  scene"); positional sound (`output()`, with Doom's events carrying
+  positions), a station per port and the spectator's world are not.
 - **A worker.** The Super NES's step (1.6 ms) and any catch-up belong off
   the frame thread. The host is pure computation over messages and
   documents, so it can move whole.
@@ -631,5 +634,6 @@ host.frame(); draw(host.picture(view)); play(host.output()); host.sit(0); host.s
 
 From "Not done yet" above, now done: the worker, ephemeral traffic,
 checkpoint garbage (they can't be deleted; every one stays linked), and
-rebasing before the oldest checkpoint. Still open: the scene extension,
-`api.clock`, and the host side's own list in HOST.md.
+rebasing before the oldest checkpoint. `api.clock` and the first half of
+the scene extension came after, in phase 2b (HOST.md). Still open: the rest
+of the scene extension, and the host side's own list in HOST.md.

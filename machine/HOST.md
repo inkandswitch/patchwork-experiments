@@ -196,17 +196,25 @@ Measured (`node bench/doc-shape.mjs 120`):
 
 The host never reads a wall clock to decide the tick. It reads a clock
 `{ t(), running() }` and steps to `floor(t · hz)`, with `hz` the engine's
-exact ratio. The stage's `api.clock` (TOOLS.md §7) is such a clock, and
-`Host.open(…, { clock })` takes it as is.
+exact ratio.
 
-Until `api.clock` lands, the session carries its own clock:
+The session carries the machine's own time, over a time its peers share:
+the scene's world time in a scene (`worldClock`, "Phase 2b, in a scene"
+below), a shared wall clock standing alone (the Machine tool):
 - **`SessionClock`:** `{ t, at, until? }` in the session document.
-  - At shared wall time `at` (ms) the world time was `t`. It runs at one
+  - At shared time `at` (ms) the machine's time was `t`. It runs at one
     second per second until `until`.
+  - A run starts at `at`, never before: a peer whose shared time is short
+    of it holds at `t`, so resuming never takes it below the tick it
+    stopped at. `at` is the offset that makes tick 0 the machine's first
+    moment, however far into the shared time it was made.
   - **Pause** writes `until` a quarter second ahead, so every peer has heard
     of it before reaching it and stops at the same tick. A peer that has
     already passed that tick rewinds to it, provided the tick is not below
     its floor.
+  - A stop once set stands until a resume: a second pause within its
+    margin would set an earlier one, which a peer ahead of the second
+    pauser may already have passed.
   - **Resume** clears `until`.
   - A pause or resume rewrites the whole object, so a pause and a resume at
     the same moment settle by last writer and never mix.
@@ -359,18 +367,9 @@ re-steps, not correctness.
 
 ## Not done yet
 
-- **The scene extension** (phase 2): screens as textures, positional audio, a
-  body or station per port.
-  - The host is ready for it: `host.engine.frame(view)`,
-    `host.engine.output()`, `host.seat`, `sit` and `stand`.
-- **Running the engine in a worker.** The SNES's 1.6 ms step and a joiner's
-  catch-up belong off the frame thread.
-  - Meanwhile `budget` bounds the stepping in a frame (10 ms).
-- **`api.clock`.** When it lands, pass it as `clock`. The session clock and
-  `SyncedWall` then go.
-  - Pausing then follows the stage's rules: immediate, not a quarter second
-    ahead. Exactness at the pause tick becomes best effort, through the
-    rewind.
+- **The scene extension:** half built ("Phase 2b, in a scene" below).
+- **Running the engine in a worker:** built ("Phase 2, the host side"),
+  not yet used in a scene.
 - **Deep rebases** to before the oldest retained checkpoint replay from
   genesis, loading every seat document. That is correct but slow for long
   sessions.
@@ -725,3 +724,143 @@ All finite, no randomness.
   their origins) is the scene extension's.
 - **`api.clock`**: when it lands, pass it as `clock`; the session clock and
   `SyncedWall` then go.
+
+## Phase 2b, in a scene
+
+A machine is an object in a scene (`src/scene/`): its source a machine doc
+(the engine's kind and the content it boots), its content a cabinet the
+`machine` scene:source builds, its trait `machine` holding the session this
+object runs. The stage is not changed: everything here is the extension
+contract (scene/STAGE.md) and a replicated process (TOOLS.md §7).
+
+```js
+// one machine on one view (running.js), what extension.js does for each object:
+const m = await runMachine({ repo, url: session, wasm, content, ports, world: api.clock,
+                             now: () => api.clock.now(), writable: () => api.writable(), by, input });
+m.frame();                       // every frame: the host steps to the world's t; the process while it runs
+screen.show(viewOf(m.host, { player })());
+m.play(port); m.leave();         // a port, and the clock started; the last to leave stops it
+```
+
+The first four of the eight wiring steps (FOLLOWUPS, "Machine phase 2b"):
+
+1. **The clock, with its offset.** `worldClock(handle, api.clock)` is the
+   session clock with world time for its shared time: `at` is world ms, so
+   a machine made hours into a world starts at tick 0, and pauses with its
+   world. Its own `until` stops it while the world runs on.
+2. **A replicated process.** While the machine runs, each view running its
+   host registers `api.clock.process({ replicated: true })`, with no step,
+   so that someone computes world time; while it's stopped, none.
+3. **Queries across the worker.** `host.query(kind)` on Host and
+   RemoteHost; the worker answers each kind asked for, for the state its
+   frame reached, again only when that state changed.
+4. **The screen.** The cabinet's GLB says where its screen is
+   (`extras.machine.screen`: centre, width, height, in the shape the
+   machine's pictures are meant to be seen); the extension draws a `Screen`
+   texture on a quad there, in the object's displayed frame, every frame.
+   It is unlit and not pickable: a press finds the cabinet behind it.
+
+And, to play it at all: **Play** (P, within reach) takes a free port (the
+one the screen shows if it's free) and puts the pad in hand as the held
+tool, its keys its own; Escape puts it down and gives the port back.
+
+### Decisions, made unattended (the lead was away)
+
+1. **The machine's time is its session clock over world time, not
+   `api.clock` passed as is.** The plan passed `api.clock` with the
+   machine's pause as the world's. But a machine stops while nobody plays
+   (quiet.js), and stopping a world because nobody is playing Doom in it
+   would stop the boat and the doors too. So the world's pause stops the
+   machine (world time stops), and the machine's own stop is its own
+   (`until`, in world time). `SyncedWall` stays, for the Machine tool alone,
+   which has no world.
+2. **The offset is `at`, and a run never starts before it.** Step 1's
+   `t0` is the session clock's `at` in world ms; `max(0, …)` became a rule
+   of the session clock, on the wall as in a world: a peer short of `at`
+   holds at `t`.
+3. **A stop once set stands.** Found by the exhaustive clock test: a
+   second pause inside the first's margin set an earlier stop, which a view
+   ahead of the second pauser had passed.
+4. **The process is registered only while the machine runs.** A machine
+   nobody plays keeps no world going (TOOLS.md §7, "Nobody present, no time
+   passes"), and the first player's resume brings the computer back.
+5. **The session is the object's, not the machine doc's.** The machine doc
+   is the program and what it boots; each object is one running game on
+   its own scene's clock. The trait's `session` is runtime: a copy of the
+   object starts a game of its own. The first view able to (writable, and
+   holding the object's `machine.session` claim) makes the session, on the
+   world's time, and writes it on the trait. The machine doc's own
+   `session` stays the Machine tool's, on the wall.
+6. **One picture per screen, for everyone.** The trait's `player` says
+   whose view the screen shows (Doom; the SNES has one picture): a screen
+   is a thing in the world, and everyone looking at it sees the same.
+7. **The screen's place is read from the cabinet**, as dice read a die,
+   never from a second copy of the numbers.
+8. **Play is a held tool** (`api.hold`): the input path the stage already
+   has, with no stage change. A station per port (step 6) decides where the
+   player's eye goes; it may sit on top of this or replace it.
+9. **In a scene the host runs on the page**, bounded by its 10 ms budget.
+   The worker is built and answers queries, but hosting it from a Patchwork
+   package needs a worker bundle that carries automerge-repo (an import map
+   does not reach a module worker) and an adapter on the tab's repo; that
+   is its own step.
+10. **A machine plays only where the scene can be written.** Pins and
+    mirrors never act; a read-only viewer sees a note. Spectating a
+    read-only scene is deferred.
+11. **The host's liveness runs on the stage's time** (`now: api.clock.now`:
+    reaping, chunks, messages), as STAGE.md "Time" asks; its CPU budget
+    stays on the wall.
+12. **`Screen` takes three.js as a parameter** (`api.THREE`): a texture
+    must be made by the three.js that draws it, and the package no longer
+    imports three anywhere.
+
+### Tests
+
+- **`host/clock.test.js`:** the session clock on world time over every
+  schedule of 4 steps of nothing, a pause or a resume by either of two
+  views whose world times are 0 to 3 steps (0.1 s) apart (2,500 cases):
+  resuming never takes a view back; a pause takes a view back only when
+  it's ahead of the pauser by more than the margin, and then to the stop;
+  between writes no view's t goes back; a stop once set stands; stopped,
+  both views agree on the tick. Also: tick 0 at creation however far into
+  the world; a paused world stops the machine; the quiet stop in world time
+  for seats ending at every tick 0–40. Mutation-checked: no clamp at `at`,
+  a second pause moving the stop, `running()` ignoring the world.
+- **`worker/remote.test.js`:** every sequence of 3 frames (the state kept,
+  re-stepped to the same tick, or stepped on) × the kinds asked for (729
+  cases): a kind is answered again exactly when the state changed since it
+  was last answered. And a real Super NES's work RAM reaching the page,
+  equal to the worker engine's at that tick. Mutation-checked.
+- **`scene/running.test.js`:** two views over automerge-repo in virtual
+  time, the follower's world 0 to 0.2 s behind: made 2 hours into a world it
+  starts at tick 0 and registers nothing; the process is registered exactly
+  while the machine runs, on both views, through a world pause; two
+  players, then none: both views stop at the same tick with the state the
+  documents give, and stay there while the world runs on. Mutation-checked:
+  the process always or never registered, no quiet stop, no world clock.
+- **`probes/scene.mjs`** (headless Chrome, two people on real Automerge
+  docs, simulated time): Doom (Freedoom E1M1) and the Super NES (Unarmed)
+  each pasted into a scene, played by keys from one view, watched from the
+  other. 32 checks: laid out and given a session; stopped at tick 0 on both
+  views with no world computed; P puts the pad in hand; both advance and
+  the world is computed, the picture moving with the keys (140 different
+  pictures of Doom as Ana walks; Unarmed's title, lore, controls and menu
+  as Ben presses Start); the two views drew the same picture for most
+  ticks both drew (Doom 169 of 169, the SNES 386 of 403: the rest drawn
+  from a prediction of the player's input and put right); Escape stops the
+  machine for both at the same tick, the same picture on both screens,
+  the session's stop at that tick, and the world no longer computed.
+
+### Not done yet
+
+- Steps 5–8: sound, a station per port, the spectator's 3D world, content
+  provisioning (a machine whose content isn't here).
+- The host in a worker, in a scene (decision 9).
+- A checkpoint nobody wrote in time is written by any peer a period later
+  (with a clock passed in there is no `SyncedWall` reference). The view
+  computing the world (`api.clock.computer()`) is the natural reference.
+- A read-only viewer spectating (decision 10).
+- The Machine tool's own changes here are mechanical (the content helpers
+  and `newSession` moved to load.js, the pad split from its DOM listeners)
+  and were not re-checked in a browser.
+

@@ -1,0 +1,273 @@
+// scene:extension "machine": a machine as an object in a scene, built only
+// from the scene's extension contract (scene/STAGE.md).
+//
+// The object's source (`sourceUrl`) is a machine doc (its kind, and the content it boots)
+// and its content is the cabinet scene:source "machine" builds; its trait,
+// `machine`, holds the session this object runs, so the object is one
+// running machine and a copy is another (the session is runtime: a copy
+// starts without one, and the first view able to makes it a new one).
+//
+// On every view that can write the scene (a pin or a mirror never acts),
+// each machine object:
+// - runs its session's host on the scene's world time (running.js): every
+//   present peer steps the engine itself, the machine pauses with the world,
+//   stops while nobody plays, and keeps a world going only while it runs;
+// - draws the engine's own picture on the cabinet's screen: a Screen
+//   texture on a quad where the cabinet's GLB says its screen is, in the
+//   object's displayed frame, every frame (nothing goes through the doc);
+// - offers Play: a port, and the pad in hand as the held tool, its keys its
+//   own; Escape puts it down and gives the port back.
+//
+// The screen shows one player's view for everyone (the trait's `player`): a
+// screen is a thing in the world, and everyone looking at it sees the same
+// picture.
+
+import { Screen, ASPECT, viewOf } from "../present/screen.js";
+import { WASM, bytes, load, portsOf, newSession } from "../patchwork/load.js";
+import { pad, KEYS } from "../patchwork/input.js";
+import { runMachine } from "./running.js";
+
+export const TRAIT = "machine";
+export const PROVIDER = "machine";
+
+// FNV-1a of a picture's bytes, for comparing what two views show.
+function fnv(rgba) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < rgba.length; i += 7) h = Math.imul(h ^ rgba[i], 0x01000193);
+  return (h >>> 0).toString(16);
+}
+
+function create(api) {
+  const { THREE } = api;
+  const layer = api.world();
+  layer.name = "machine.screens";
+  layer.userData.noPick = true;
+  const labels = api.labels();
+  const plane = new THREE.PlaneGeometry(1, 1);
+  const machines = new Map(); // object id → entry
+  let held = null; // { id, put }: the pad in this view's hand
+  let stopLoop = null;
+
+  const traitOf = (id) => api.scene().objects?.[id]?.traits?.[TRAIT] ?? null;
+
+  function entry(id, o) {
+    const e = { id, url: o.sourceUrl, session: o.traits[TRAIT].session ?? null, note: "Starting…", m: null, screen: null, mesh: null, view: null, pad: null, kind: null, title: null, gone: false, last: null };
+    machines.set(id, e);
+    open(e).catch((err) => {
+      if (!e.gone) e.note = `Couldn't start it: ${err?.message ?? err}`;
+    });
+    return e;
+  }
+
+  async function open(e) {
+    const say = (t) => void (e.gone || (e.note = t));
+    const doc = (await api.repo.find(e.url)).doc();
+    if (e.gone) return;
+    e.kind = doc?.kind ?? null;
+    e.title = doc?.title ?? "Machine";
+    if (!e.kind || !doc.content) return say("No game yet: open it in the Machine tool and choose one");
+    if (!api.writable()) return say("A machine plays only where the scene can be written");
+    if (!e.session) return void (await makeSession(e, doc));
+    const { session, content, wasm } = await load(api.repo, { session: e.session, content: doc.content, kind: e.kind }, say);
+    if (e.gone) return;
+    e.pad = pad(e.kind, session.doc().engine.inputBytes);
+    say("Joining…");
+    const m = await runMachine({
+      repo: api.repo,
+      url: e.session,
+      wasm,
+      content,
+      ports: portsOf(e.kind, content),
+      world: api.clock,
+      now: () => api.clock.now(),
+      writable: () => api.writable(),
+      by: api.viewer ?? null,
+      input: () => e.pad.sample(),
+    });
+    if (e.gone) return void m.close();
+    e.m = m;
+    e.screen = new Screen({ THREE, aspect: ASPECT[e.kind] ?? ASPECT.square });
+    e.mesh = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: e.screen.texture, toneMapped: false }));
+    e.mesh.matrixAutoUpdate = false;
+    e.mesh.raycast = () => {}; // the cabinet behind it is what a press finds
+    e.mesh.userData.noPick = true;
+    e.mesh.visible = false;
+    layer.add(e.mesh);
+    e.note = null;
+    loop();
+  }
+
+  // A copy of a machine object, or one just laid out, has no session yet:
+  // the view that claims the job makes one (on the scene's world time, so
+  // its tick 0 is now) and writes it on the trait; every view then opens it.
+  async function makeSession(e, doc) {
+    const release = api.claim(e.id, "machine.session");
+    if (!release) return void (e.note = "Starting…"); // someone else is making it
+    try {
+      const content = (await api.repo.find(doc.content)).doc()?.bytes;
+      if (!content?.length) throw new Error("what it runs isn't here yet");
+      const wasm = await bytes(WASM[e.kind]);
+      const s = await newSession(api.repo, { kind: e.kind, wasm, content: new Uint8Array(content), wall: api.clock.t() * 1000 });
+      if (e.gone || traitOf(e.id)?.session) return;
+      api.change((d) => {
+        const t = d.objects?.[e.id]?.traits?.[TRAIT];
+        if (t && !t.session) t.session = s.url;
+      });
+    } finally {
+      release();
+    }
+  }
+
+  function close(e) {
+    e.gone = true;
+    if (held?.id === e.id) held.put();
+    machines.delete(e.id);
+    e.mesh?.removeFromParent();
+    e.mesh?.material.dispose();
+    e.screen?.dispose();
+    e.m?.close();
+  }
+
+  // Each object with the trait has one entry, for the session its trait names.
+  function sync() {
+    const objects = api.scene().objects ?? {};
+    for (const [id, o] of Object.entries(objects)) {
+      const t = o?.traits?.[TRAIT];
+      if (!t) continue;
+      const e = machines.get(id);
+      if (e && e.session === (t.session ?? null) && e.url === o.sourceUrl) continue;
+      if (e) close(e);
+      entry(id, o);
+    }
+    for (const [id, e] of machines) if (!objects[id]?.traits?.[TRAIT]) close(e);
+    loop();
+  }
+
+  // Every frame while there are machines: step each host, show its picture
+  // on its screen where its object is drawn, and say what's up beside it.
+  const m4 = new THREE.Matrix4();
+  const local = new THREE.Matrix4();
+  function loop() {
+    if (machines.size && !stopLoop) stopLoop = api.loop(frame);
+    else if (!machines.size && stopLoop) {
+      stopLoop();
+      stopLoop = null;
+    }
+  }
+  function frame() {
+    const items = [];
+    for (const e of machines.values()) {
+      const screen = api.content(e.id)?.extras?.machine?.screen;
+      const at = api.worldOf(e.id);
+      const centre = screen && at ? new THREE.Vector3(...screen.center).applyMatrix4(m4.fromArray(at)) : null;
+      if (e.m) {
+        e.m.frame();
+        const player = e.kind === "doom" ? Math.max(0, Math.floor(traitOf(e.id)?.player ?? 0)) : 0;
+        if (e.view?.player !== player) e.view = Object.assign(viewOf(e.m.host, { player }), { player });
+        const p = e.view();
+        if (p) {
+          e.screen.show(p);
+          e.last = { tick: e.m.host.tick, hash: p.width ? fnv(p.rgba) : null };
+        }
+        if (screen && at) {
+          local.compose(new THREE.Vector3(...screen.center), new THREE.Quaternion(), new THREE.Vector3(screen.width, screen.height, 1));
+          e.mesh.matrix.multiplyMatrices(m4.fromArray(at), local);
+          e.mesh.matrixWorldNeedsUpdate = true;
+          e.mesh.visible = true;
+        }
+      }
+      const note = e.note ?? stoppedNote(e);
+      if (note && centre) items.push({ key: `machine:${e.id}`, text: note, position: [centre.x, centre.y - (screen.height / 2) - 0.08, centre.z], className: "machine-note" });
+    }
+    labels.set(items);
+  }
+
+  function stoppedNote(e) {
+    if (!e.m || e.m.clock.running()) return null;
+    if (!api.clock.running()) return null; // the world's own pause says so already
+    return e.m.holders().some(Boolean) ? "Paused" : "Stopped while nobody plays: P to play";
+  }
+
+  // ---- the pad in hand
+
+  function play(id) {
+    const e = machines.get(id);
+    if (!e?.m) return;
+    if (held?.id === id) return void held.put();
+    const port = e.m.play(Math.floor(traitOf(id)?.player ?? 0));
+    if (port == null) return void api.notify("Every port on that machine is taken");
+    const mine = { id, put: null };
+    const input = {
+      key: (ev) => (e.pad.key(ev.code, true), true),
+      keyup: (ev) => (e.pad.key(ev.code, false), true),
+      put() {
+        if (held === mine) held = null;
+        e.pad.clear();
+        e.m?.leave();
+      },
+    };
+    held = mine;
+    mine.put = api.hold({ name: `${e.title} · P${port + 1}`, keys: KEYS[e.kind] ?? [] }, input);
+  }
+
+  function verbOf(target) {
+    const e = target != null ? machines.get(target) : null;
+    if (!e) return null;
+    if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
+    if (held?.id === target) return { label: "Leave" };
+    if (!e.m.holders().includes(null)) return { label: "Play", disabled: true, title: "Every port is taken" };
+    return { label: "Play" };
+  }
+
+  sync();
+
+  return {
+    update(scene, _local, prev) {
+      if (scene !== prev?.scene) sync();
+    },
+    commands: [
+      {
+        id: "play",
+        name: "Play",
+        key: "p",
+        reach: true,
+        show: ["use", "menu"],
+        state: (target) => verbOf(target),
+        run: (target) => play(target),
+      },
+    ],
+    /** What each machine on this view shows: { [object id]: { tick, hash, seat, running, note } }. */
+    machines() {
+      const out = {};
+      for (const [id, e] of machines)
+        out[id] = { tick: e.m?.host.tick ?? null, shown: e.last, seat: e.m?.host.seat?.port ?? null, running: e.m?.clock.running() ?? false, note: e.note ?? stoppedNote(e), status: e.m ? { fault: e.m.host.status.fault, desync: e.m.host.status.desync?.length ?? 0 } : null };
+      return out;
+    },
+    dispose() {
+      for (const e of [...machines.values()]) close(e);
+      stopLoop?.();
+      stopLoop = null;
+      labels.set([]);
+      plane.dispose();
+    },
+  };
+}
+
+/**
+ * A machine doc dropped (or pasted) in the scene: its cabinet, standing where
+ * it was dropped, carrying the trait. Its session comes once it's in.
+ */
+async function drop(ctx, info) {
+  if (info?.doc?.["@patchwork"]?.type !== "machine") return false;
+  const p = info.at?.point;
+  const id = await ctx.addObject(info.url, {
+    providerId: PROVIDER,
+    group: info.group ?? null,
+    fields: { traits: { [TRAIT]: {} } },
+    ...(Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? { transform: { position: [...p], rotation: [0, 0, 0], scale: 1 } } : {}),
+  });
+  ctx.select?.(id);
+  return true;
+}
+
+export default { create, drop };
