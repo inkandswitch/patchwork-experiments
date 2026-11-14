@@ -601,10 +601,10 @@ Each is argued above and checkable over finite cases.
 | I1 | **One doc per extension.** Every read and write through an api goes to its stage's handle | Spy handles; run the scene parts', tabletop's, sailing's and the keepers' tests in a child stage; no other handle is touched |
 | I2 | **No reference crosses docs.** Parent, group and every `object` field name an object of the same doc; a link is the only edge between docs | Every assignment over ≤3 docs × ≤3 objects, foreign ids included: the composed relation is intra-doc plus link → child roots, and acyclic |
 | I3 | **Expansion is finite and fixed by the graph.** No identity repeats on a path; each live doc has exactly one acting occurrence, chosen by path order; the rest are mirrors; closed reasons are exact | Every link multigraph on ≤4 docs (live, pinned, self-pins, ≤2 links per pair) × every arrival order: terminates, and the final expansion is the same |
-| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | Lost Cities G × seats {none, p1, p1+p2} × card states × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and 20° heel, in Y, mirrored, focus inside and outside: identical (`src/stage/placement.test.js`: 1152 comparisons; mirrors and pins also `links-drawn.test.js`) |
-| I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone, in X, in Y; two in one page) on in-memory Automerge × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror (`src/stage/channels.test.js`: every ≤2 claims/releases by three views, 390 checks in five stages; every holder × leaver; a hold from each view) |
+| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical (`src/stage/placement.test.js`: 1056 comparisons; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
+| I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone and in X in one page, on one repo and its page bus; in Y in a second page, on a repo of its own joined by an in-memory network, so its messages cross by the handle's broadcast) × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror (`src/stage/channels.test.js`: every ≤2 claims/releases by three views, 390 checks in five stages; every holder × leaver; a hold from each view) |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
-| I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field (`scope.test.js`, with the audit's: geometry in an object's own frame, the camera's up; `viewport.test.js`: a layer two links deep, every pose, moved) |
+| I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field (`scope.test.js`, with the audit's: geometry in an object's own frame, the camera's up; `viewport.test.js`: a layer two links deep, every pose, moved; a box in its own stage whatever the host shows of the link) |
 | I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the latest base ride of any acting stage, whatever the focus | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role; a sibling link's stage riding × every focus (`src/stage/chain-links.test.js`: every hit × focus × widget, every stack ≤3 × focus; the held tool across focus moves and the sibling's ride in `focus.test.js`) |
 | I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside; each edge outside is cleared where it lives and said | Every set of roots of a fixed 7-object, two-cluster scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 1016 cases, 116 exact over four classes (p the root or not, the link grouped or not, S one block of the order or spread), each exact one again with the host holding T's ids; every concurrent edit to what T was made from refuses the extract (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
@@ -1052,7 +1052,9 @@ Each is general: none knows a game, a boat or a seat.
    stage that read another doc's packages would depend on its placement
    (I4). `api.packages` is a general part's view-wide (Load and Not now go
    to every stage that asked) and any other extension's its own doc's, the
-   same split as `api.collect`. *Why not a doc rule* (a host listing its
+   same split as `api.collect`; and `api.path` (the other stages' readers,
+   which carry the same information) is a general part's only (review fix
+   1). "Not now" is the view's, for the view's life (review fix 2). *Why not a doc rule* (a host listing its
    links' packages): that was the stopgap; it made the host's list depend
    on what it links, and a linked doc's packages are already its own list.
    The publishers no longer list their games' packages for them (the boat:
@@ -1075,7 +1077,11 @@ Each is general: none knows a game, a boat or a seat.
    doesn't change:* the stage still runs (claims, presence, its clock), and
    still loads its content: what it does is a function of its doc (I4), and
    hiding is the host's display choice, not a reason to close an
-   occurrence. Removing a link moves its doc's roots out first (they
+   occurrence. Its boxes (`api.box`, `groupBox`, `sceneBox`) are its own
+   doc's say too: shown-in-its-stage stops at the stage's root (review fix
+   7). Picking and rays stay the view's: they look at what is drawn, every
+   stage's (`pick` and `raycast` already hit the host's geometry, "not
+   mine" as id null), so a hidden link's doc isn't hit, as nothing hidden is. Removing a link moves its doc's roots out first (they
    outlive it until the stage closes, as attachments do).
 4. **Who's here is the view's.** The viewer's body and held tool are the
    view's (its atom), so the view says them on every channel it acts on
@@ -1137,6 +1143,64 @@ Not done, and why:
 - *A closed link's hint can't be hovered or picked*: true of every object
   drawn only as its hint (loading, or no provider here), not of links;
   picking looks at content. Left as the general rule it is.
+
+## Decisions, links loose ends review (2026-11-14, made unattended)
+
+The review of the links loose ends found two design gaps and four places
+the harnesses claimed more than they enumerated. Each fixed, with a test
+that fails without it.
+
+1. **`api.path` is a general part's only.** Decision 1's reason (a stage
+   reading other docs would depend on its placement) held for
+   `view.packages` but not for `api.path`, whose readers hand out other
+   stages' scenes, packages, running sets and `run`. Now any other
+   extension's `api.path` is undefined, as it never had a use for one: only
+   the key map, the menu, the resolver and the toolbar call it, all
+   general. *Why undefined rather than its own reader:* a stage extension
+   already has its own scene, collect, context and look on its api; a
+   one-element path would be a second spelling of those. Checked for an
+   outermost stage's extension (`packages.test.js`) and for every G stage's,
+   linked, mirrored and two links deep (`placement.test.js`).
+2. **"Not now" is the view's.** The declined set moved from each stage's
+   packages module to the view (`view.declinedPackages`, shared by every
+   stage it opens), so a doc opened after the click (a link added, a
+   relink, a mirror that comes to act, a pin unpinned) isn't asked about
+   those URLs either, and a URL nobody declined still is. A stage
+   extension's own `api.packages.dismiss` declines view-wide too: one
+   viewer, one answer. `packages.test.js` "Not now holds for a doc opened
+   after it".
+3. **Who's here, on the manual clock.** `whos-here.test.js` runs both views
+   on one `manualTime` and checks the host's chip every frame for a
+   heartbeat and a send interval after Enter. The old 50 ms wall wait
+   passed with the regression (the coalesced send arrives at frame 14);
+   the new one fails on it (checked by making the view announce only on
+   the focus stage).
+4. **The I4 harness enumerates what the table says.** `seen()` now includes
+   the doc's clock and the stage's `api.clock.running()`; a card-state
+   factor (p2's card dealt, or played to the table) is added; the alone
+   view, with no link to enter, is checked outside only (it was counted
+   twice). 352 comparisons per seating, 1056 in all; G is a synthetic
+   two-extension game shaped like Lost Cities', and the table says so.
+5. **I5 crosses pages.** The third view (G in Y) is now on a second repo,
+   joined to the first by an in-memory network (`fake-repo.js` `connect`:
+   changes and ephemeral broadcasts cross, nothing echoes back), so what a
+   view in one page and a view in another must agree on goes by the
+   handle's broadcast, as in real Patchwork, beside the page bus within
+   each page. Turning the network's broadcasts off fails the claims and
+   holds cases. (The leave cases pass either way within the claim's grace,
+   as designed: a claim is in the doc, presence only says it lapsed.)
+6. **The boat's packages are checked, not asserted.** `aboard-probe.html`
+   registers each package's plugins from its URL (`?urls=`, as
+   office-probe does; sailing's plugin stub now keeps `importUrl` like
+   tabletop's), and `publish-aboard.mjs` checks that what the boat calls
+   for and lists is within its stated packages and names nothing of seats'
+   or the keeper's, and that the game's is within the game's.
+7. **A stage's boxes are its own doc's say.** See Decision 3, links loose
+   ends: `isShown(entry, { inStage })` stops at the stage's root, and the
+   scope's boxes ask for it; drawing, picking and rays keep the view's
+   rule. `viewport.test.js` "a hidden link hides its doc" checks the in-stage
+   box for each case, and that the linked doc hiding its own object does
+   take its box away.
 
 ## Decisions, step 15 review (2026-11-14, made unattended)
 

@@ -49,7 +49,9 @@ A view shows one stage per open doc occurrence. The outermost doc's stage is
 the view's first; every **link** (an object through the `scene.link`
 source) whose doc is open opens another, its roots in the link's node (its
 body: a link's content is its doc, so hiding the link hides its doc, its
-layers and labels too, while its stage runs on), in the link's frame
+layers and labels too, while its stage runs on, its boxes still its own
+doc's say: `api.box`, `groupBox` and `sceneBox` ask what its stage shows,
+and drawing, picking and rays what the view draws), in the link's frame
 (COMPOSITION.md §2, §7). Expansion (`stage/links.js`) is a
 pure function of the link graph: a live doc **acts** at one occurrence per
 view, the first in path order (shallowest, then the smallest link id where
@@ -180,6 +182,9 @@ or identity closes, with what was opened under it, and opens again.
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  `api.path` is a general part's only, as `view.packages` is: the readers
+  are other docs, and a stage's extension reading them would depend on
+  where it is placed (I4); any other extension's `api.path` is undefined.
 - **Channels.** Presence, claims and pose holds are each doc's, on its
   channel, in its ids. Every stage of a view uses the view's one session.
   The **page bus** delivers a broadcast to every other presence on the same
@@ -803,8 +808,10 @@ yet). Every scene doc carries it:
 - **Each on its own.** One that fails is shown on the card with why, with
   **Try again** and **Dismiss**, and doesn't hold up the others. A failure
   isn't retried unasked.
-- **Not now** asks nothing more in this view. Opening the scene again asks
-  again.
+- **Not now** asks nothing more in this view: the view keeps the declined
+  URLs, so a doc opened after the click (a link added, a relink, a mirror
+  that comes to act) isn't asked about them either. Opening the scene again
+  asks again.
 - **Remembered.** A package that loaded on a click is remembered in
   `localStorage` (`scene-packages:accepted`, a JSON list of package URLs),
   and loads without asking in the next scene that lists it.
