@@ -18,16 +18,6 @@
 // holds something lingers until it lets go, offering nothing meanwhile (its
 // successor at the focus offers the same).
 //
-// Elsewhere (COMPOSITION.md §3, "Presence where it is"): a stage that acts
-// but isn't the focus runs, for each general part whose module has one, its
-// `elsewhere(api)`: the half that draws what is this doc's and not the
-// viewer's (other people walking, others' selections), handed the drawn
-// facet. Never alongside the whole part in the same stage: a general part
-// running or lingering here keeps its half out until it stops, and the
-// focus arriving stops the half before the whole part starts. A half is in
-// no running set: it is offered nothing and offers nothing (collect,
-// offering, instances, local.running and settled never count it).
-//
 // Running order (activeSet's order) is the only order anything here reports
 // in: local.running, instances(), collect(). The order extensions finished
 // loading in never counts.
@@ -101,8 +91,6 @@ export function createHost({
   // does this stage run the general extensions (no traits)? The focus does, and no other stage (COMPOSITION.md §3);
   // the view moves them with setGeneral
   general = true,
-  // does it run their halves where it isn't the focus? A stage that acts does; a pin or a mirror doesn't
-  halves = false,
 }) {
   let dead = false;
   const wanted = (metas, d) => activeSet({ metas, doc: d }).filter((w) => general || w.scope !== "general");
@@ -139,41 +127,32 @@ export function createHost({
 
   // ─── starting ─────────────────────────────────────────────────────────────
 
-  // (`half`: its elsewhere half, kept in `halfRecs`; a module without one leaves the record inert, "none")
-  function start(w, half = false) {
-    const rec = { id: w.id, meta: w.meta, scope: w.scope, half, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
-    (half ? halfRecs : recs).set(w.id, rec);
+  function start(w) {
+    const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", module: null, instance: null, api: null, release: null, controller: null, signal: null, linger: null };
+    recs.set(w.id, rec);
     (async () => {
       const loaded = await reg?.load?.(w.id);
       const mod = loaded?.module?.default ?? loaded?.module;
       if (dead || rec.state !== "loading") return;
       if (typeof mod?.create !== "function") throw new Error("its module has no create()");
       rec.module = mod;
-      if (half && typeof mod.elsewhere !== "function") {
-        rec.state = "none";
-        return;
-      }
       rec.controller = new AbortController();
       rec.signal = rec.controller.signal;
       const made = makeApi(rec);
       rec.api = made.api;
       rec.release = made.release;
       try {
-        rec.instance = (half ? mod.elsewhere(rec.api) : mod.create(rec.api)) ?? {};
+        rec.instance = mod.create(rec.api) ?? {};
       } catch (err) {
         teardown(rec);
         throw err;
       }
       rec.state = "running";
-      if (half) {
-        onChange();
-        return;
-      }
       publish();
       onChange();
     })().catch((err) => {
       if (rec.state === "loading") rec.state = "failed";
-      console.warn(`[scene] extension “${w.id}”${half ? "'s elsewhere" : ""} failed to start`, err);
+      console.warn(`[scene] extension “${w.id}” failed to start`, err);
     });
   }
 
@@ -202,41 +181,9 @@ export function createHost({
     rec.linger = null;
     const was = rec.state;
     rec.state = "stopped";
-    if (rec.half) {
-      halfRecs.delete(rec.id);
-      if (was === "running") teardown(rec);
-      return;
-    }
     recs.delete(rec.id);
     order = order.filter((id) => id !== rec.id);
     if (was === "running") teardown(rec);
-  }
-
-  // ─── elsewhere: the general parts' halves (a stage that acts, away from the focus) ──
-
-  const halfRecs = new Map(); // id → its half's record
-  /**
-   * Bring the halves up to date: away from the focus, in a stage that acts,
-   * one for each general part the registry has that isn't running (nor
-   * lingering) here; at the focus, none. A half stops before anything of its
-   * id starts, and starts only once that has stopped, so the two never hold
-   * the same id at once.
-   */
-  function syncHalves() {
-    if (dead) return;
-    const want = new Map();
-    if (halves && !general && isReady && lastDoc) {
-      for (const w of activeSet({ metas: listOf(reg), doc: lastDoc })) if (w.scope === "general" && !recs.has(w.id)) want.set(w.id, w);
-    }
-    let stopped = false;
-    for (const rec of [...halfRecs.values()]) {
-      if (want.has(rec.id)) continue;
-      const was = rec.state;
-      stop(rec);
-      stopped ||= was === "running";
-    }
-    for (const w of want.values()) if (!halfRecs.has(w.id)) start(w, true);
-    if (stopped) onChange();
   }
 
   // (`ms`: the first look; the view's move looks only at busy, so its first is a busy recheck)
@@ -252,7 +199,6 @@ export function createHost({
       stop(rec);
       publish();
       onChange();
-      syncHalves();
     };
     rec.linger = setTimer(check, ms);
   }
@@ -324,7 +270,6 @@ export function createHost({
     lastDoc = d;
     publish();
     if (stopped) onChange();
-    syncHalves();
   }
 
   /** local.running: the started extensions, in running order. */
@@ -445,12 +390,8 @@ export function createHost({
       }
       publish();
       if (stopped) onChange();
-      // what stopped is drawn here by its half from now; what lingers, once it lets go
-      syncHalves();
       return;
     }
-    // the halves go first: the whole parts start where they were
-    syncHalves();
     if (isReady && lastDoc) sync(lastDoc);
   }
 
@@ -462,7 +403,6 @@ export function createHost({
       if (r) stop(r);
     }
     for (const r of [...recs.values()]) stop(r);
-    for (const r of [...halfRecs.values()]) stop(r);
     dead = true;
     for (const off of offs) off();
     offs.length = 0;
@@ -518,10 +458,6 @@ export function createHost({
     general: () => general,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,
-    /** the general parts' halves running here (away from the focus, in a stage that acts), in registry order: what the stage updates, and nothing asks */
-    halves: () => [...halfRecs.values()].filter((r) => r.state === "running"),
-    /** the record of a general part's half here, being started, running or inert ("none": its module has no elsewhere) */
-    halfRecord: (id) => halfRecs.get(id) ?? null,
     /** is this extension lingering after the doc stopped calling for it? */
     lingering: (id) => recs.get(id)?.linger != null,
     dispose,

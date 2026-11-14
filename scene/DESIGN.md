@@ -117,8 +117,8 @@ selection is always in the focus doc, and the editor (the halo, the
 inspector, the outline, add, paste, undo) edits that doc in its frame. The
 focus scopes the selection, never input: outside it verbs, carries, keys and
 the menu still work, and the world around keeps running, its people drawn
-where they are: a general part that draws a doc's people (walk's avatars,
-others' selections) has a half the view runs in every other doc that acts.
+where they are: what draws a doc's people (walk's avatars, others'
+selections) is a part of every doc, so it runs wherever that doc is drawn.
 **Leave** goes back out (Escape's last rung, the trail along the top). No
 stage sees the focus.
 

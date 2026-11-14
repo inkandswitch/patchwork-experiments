@@ -1310,7 +1310,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       if (dead) return;
       local.swap(assoc("clock", status));
       // (the view puts the focus path's together for the clock chip: view.clocks)
-      view.clocksChanged?.();
+      view.clocksChanged();
     },
   });
 
@@ -1399,10 +1399,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const loc = local.get();
     const content = contentDirty;
     contentDirty = false;
-    // (and the general parts' halves, which nothing else asks: host.halves)
-    const running = [...host.instances(), ...host.halves()];
+    const running = host.instances();
     for (const r of running) {
-      const vw = viewValue(r.scope === "general" && !r.half);
+      const vw = viewValue(r.scope === "general");
       const was = seen.get(r.instance);
       const changed = !was || was.scene !== snap || was.local !== loc || was.view !== vw;
       if (!changed && !content) continue;
@@ -2155,8 +2154,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (bag.delete(give)) give();
       };
     };
-    // (a general part's half, run where the focus isn't, is a drawn extension of this stage's, not the view's: no path, no view-wide packages)
-    const general = rec.scope === "general" && !rec.half;
+    const general = rec.scope === "general";
     const viewNow = () => viewValue(general);
     let watched = viewNow(); // what api.view.watch last told of
     const ownEl = (el, parent) => {
@@ -2515,8 +2513,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       owned.delete(id);
     }
 
-    // a pin's or a mirror's extensions, and a general part's half (elsewhere: it draws this doc's, never acts), get the drawn facet
-    return { api: acts && !rec.half ? api : drawnApi(api), release };
+    return { api: acts ? api : drawnApi(api), release };
   }
 
   /**
@@ -2576,8 +2573,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
     general,
-    // away from the focus, a stage that acts draws the general parts' halves (elsewhere); a drawn one doesn't
-    halves: acts,
   });
   hostMade = true;
 

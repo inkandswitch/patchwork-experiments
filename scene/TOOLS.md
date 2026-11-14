@@ -370,13 +370,13 @@ right-click Select still selects it (no handles, no inspector).*
   a person at another placement of this doc shows as what they're doing
   there (COMPOSITION.md, Decisions, links loose ends, 4). It is the focus
   doc's list (Decisions 8).
-- **Other people in the world** (walk's avatars, peers' selection boxes)
-  are drawn in every doc that acts here, each in its own frame, not only
-  the focus doc: walk and `scene.select` are general parts with a half
-  (`elsewhere`) the view runs in every acting stage but the focus
-  (COMPOSITION.md §3, "Presence where it is"). Ben, inside the game on the
-  boat's table, still sees Ana walking the deck, heeling with her. A
-  mirror and a pin draw nobody.
+- **Other people in the world** (walk's avatars, others' selection boxes)
+  are drawn wherever their doc is, each in its own frame, not only in the
+  focus doc: `walk.people` and `scene.others` are parts of every doc
+  (`traits: ["*"]`), run in every stage whatever the focus (COMPOSITION.md
+  §3, "Presence where it is"). Ben, inside the game on the boat's table,
+  still sees Ana walking the deck, heeling with her. A mirror draws them
+  again; a pin, which has no channel, draws nobody.
 - **The clock chip** is ▶ or ⏸ for each doc on the focus path that has a
   process, outermost first; its Pause acts on that doc. Who computes shows
   only on a stall ("waiting for Ben's machine") or when nobody here can.
@@ -1124,8 +1124,9 @@ The project lead decided the five open questions on 2026-11-12.
    verb is on its key and in the menu.
 8. **Presence is drawn where it is; the clock chips are the focus path's**
    (decided unattended, 2026-11-14, presence lane). Other people (walk's
-   avatars, peers' selection boxes) are drawn in every acting stage, not
-   only the stages on the focus path: the focus scopes the selection and
+   avatars, others' selection boxes) are drawn in every stage that hears
+   their doc's channel (every one but a pin), not only the stages on the
+   focus path: the focus scopes the selection and
    the editor, and a sibling doc (Games night's dice table while the focus
    is in the room) is as live and as visible as one the focus is inside, so
    hiding its people would make the focus change what the world looks like.

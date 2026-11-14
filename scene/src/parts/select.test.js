@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
+import others from "./others.js";
 import { commandState } from "./toolbar-commands.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 import { FakeRepo } from "../test/fake-repo.js";
@@ -10,6 +11,7 @@ import { LINK } from "../stage/links.js";
 import { keyOf } from "../stage/paths.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
+const OTHERS = { meta: { id: "scene.others", traits: ["*"] }, module: others };
 const group = (name, parent = null, extra = {}) => ({ kind: "group", name, group: parent, visible: true, opacity: 1, ...extra });
 const layer = (name, grp, extra = {}) => object({ name, group: grp, ...extra });
 
@@ -35,8 +37,9 @@ const hitOn = (id) => {
 /** Boxes: the stage's (null without WebGL) replaced by a fixed one per id. */
 const boxes = (map) => {
   s.api("scene.select").box = (id) => map[id] ?? null;
+  if (s.api("scene.others")) s.api("scene.others").box = (id) => map[id] ?? null;
 };
-const helpers = () => [...(s.debug.viewport.layers.get("scene.select") ?? [])].flatMap((g) => g.children);
+const helpers = () => ["scene.select", "scene.others"].flatMap((k) => [...(s.debug.viewport.layers.get(k) ?? [])].flatMap((g) => g.children));
 const lastPresence = () => s.handle.broadcasts.filter((m) => m.type === "scene:presence" && !m.bye).at(-1);
 const mineSent = () => lastPresence()?.keys?.["scene.select"] ?? {};
 
@@ -162,8 +165,8 @@ describe("scene.select: presence", () => {
     await until(() => mineSent().selected === undefined && mineSent().hovered === undefined);
   });
 
-  it("draws its own selection box in the accent colour, and peers' in theirs", async () => {
-    await mount();
+  it("draws its own selection box in the accent colour, and (scene.others) peers' in theirs, mine over theirs on the same object", async () => {
+    await mount({ extensions: [OTHERS] });
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] }, b: { min: [2, 0, 0], max: [3, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
@@ -178,9 +181,11 @@ describe("scene.select: presence", () => {
     expect(mine.material.color.getHex()).toBe(c.getHex());
 
     peer("p1", { "scene.select": { selected: "b" } });
-    peer("p2", { "scene.select": { selected: "a" } }); // the same as mine: no second box
+    peer("p2", { "scene.select": { selected: "a" } }); // the same as mine: drawn under mine
     await settle();
-    expect(helpers().map((h) => h.userData.selection).sort()).toEqual(["peer:p1", "self"]);
+    expect(helpers().map((h) => h.userData.selection).sort()).toEqual(["peer:p1", "peer:p2", "self"]);
+    const order = Object.fromEntries(helpers().map((h) => [h.userData.selection, h.renderOrder]));
+    expect(order.self > order["peer:p2"]).toBe(true);
     const theirs = helpers().find((h) => h.userData.selection === "peer:p1");
     expect(theirs.box.min.toArray()).toEqual([2, 0, 0]);
     const rgb = peerColor(s.local.get().theme.remote, "viewer:p1");
@@ -189,14 +194,14 @@ describe("scene.select: presence", () => {
     // the peer deselects: their box goes
     peer("p1", { "scene.select": {} }, { seq: 2 });
     await settle();
-    expect(helpers().map((h) => h.userData.selection)).toEqual(["self"]);
+    expect(helpers().map((h) => h.userData.selection).sort()).toEqual(["peer:p2", "self"]);
 
     // a peer's selection of something that isn't there is ignored
     peer("p3", { "scene.select": { selected: "nope" } });
     await settle();
-    expect(helpers()).toHaveLength(1);
+    expect(helpers()).toHaveLength(2);
 
-    // deselecting takes my box away; p2's box on a (hidden under mine) shows
+    // deselecting takes my box away; p2's box on a (drawn under mine) is left
     s.local.swap((m) => ({ ...m, selected: null }));
     await settle();
     expect(helpers().map((h) => h.userData.selection)).toEqual(["peer:p2"]);
@@ -404,33 +409,39 @@ describe("select-peers", () => {
   });
 });
 
-describe("scene.select: away from the focus (its half)", () => {
-  // A host with a live link to G and a mirror of it. A peer on G's channel
-  // selects G's card. Whatever the focus, the card's peer box is drawn in G's
-  // acting stage, by select's whole part there (focus inside) or its half
-  // (focus outside); never in the mirror, never twice; and this view's own
-  // selection is only ever boxed in the focus doc.
-  it("every focus × a selection of mine or none: the peer's box in G's acting stage alone, mine only where the focus is", async () => {
+describe("scene.others: wherever its doc is", () => {
+  // A host with a live link L to G, a mirror R of it and a pin P of it. A
+  // peer on G's channel selects G's card. scene.others is a part of every
+  // doc, so whatever the focus, the card's peer box is drawn wherever G is
+  // drawn with its channel: L and R, never P (a pin has no channel), never
+  // the host (the peer is not in it), never twice. This view's own selection
+  // is scene.select's, only ever in the focus doc; a mirror hears this view's
+  // own session on G's channel, and draws no box for it.
+  it("every focus × a selection of mine or none: the peer's box in L and R, mine only where the focus is, and the parts of every doc never restart", async () => {
     const repo = new FakeRepo();
     const g = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }), die: object({ name: "Die" }) }, order: ["card", "die"] }));
-    const link = (name) => object({ name, sourceUrl: g.url, providerId: LINK, renderUrl: null });
-    s = await mountStage({ repo, extensions: [SELECT], doc: { objects: { table: object({ name: "Table" }), L: link("G"), R: link("G again") }, order: ["table", "L", "R"] } });
+    const link = (name, extra = {}) => object({ name, sourceUrl: g.url, providerId: LINK, renderUrl: null, ...extra });
+    s = await mountStage({ repo, extensions: [SELECT, OTHERS], doc: { objects: { table: object({ name: "Table" }), L: link("G"), R: link("G again"), P: link("G fixed", { at: { heads: g.heads() } }) }, order: ["table", "L", "R", "P"] } });
     const view = s.debug.view;
     const stageAt = (p) => view.stages().find((x) => x.path.join("/") === p);
-    await until(() => stageAt("L") && stageAt("R"), 2000);
+    await until(() => stageAt("L") && stageAt("R") && stageAt("P"), 2000);
     const { THREE } = s.api("scene.select");
     // (no WebGL here: every object has one box, and every link's frame is the host's)
     view.viewport.objectBox = () => new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1));
     view.viewport.worldOf = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     g.emit("ephemeral-message", { senderId: "p1", message: { type: "scene:presence", session: "p1", viewer: "viewer:p1", seq: 1, at: Date.now(), keys: { "scene.select": { selected: "card" } } } });
-    // each stage's boxes: [which, id] per helper in its select layer
+    // each stage's boxes: which, per helper in its two layers
     const drawn = () =>
       Object.fromEntries(
         view.stages().map((x) => [
           x.path.join("/"),
-          [...(view.viewport.layers.get(keyOf(x.n, "scene.select")) ?? [])].flatMap((l) => l.children.map((h) => h.userData.selection)).sort(),
+          ["scene.select", "scene.others"].flatMap((id) => [...(view.viewport.layers.get(keyOf(x.n, id)) ?? [])].flatMap((l) => l.children.map((h) => h.userData.selection))).sort(),
         ]),
       );
+    // the parts of every doc: one instance per stage, started once
+    const instances = () => view.stages().map((x) => [x.path.join("/"), x.debug.host.instanceOf("scene.others")]);
+    await until(() => instances().every(([, i]) => i), 2000);
+    const first = instances();
     let n = 0;
     for (const focus of [[], ["L"]]) {
       for (const mine of [null, "die"]) {
@@ -438,14 +449,15 @@ describe("scene.select: away from the focus (its half)", () => {
         await until(() => view.focusStage().debug.host.instanceOf("scene.select"), 2000);
         if (mine) view.select([...focus, focus.length ? mine : "table"]);
         else view.select(null);
-        const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), R: [] };
+        const want = { "": focus.length || !mine ? [] : ["self"], L: ["peer:p1", ...(focus.length && mine ? ["self"] : [])].sort(), R: ["peer:p1"], P: [] };
         await until(() => JSON.stringify(drawn()) === JSON.stringify(want), 2000).catch(() => expect([focus, mine, drawn()]).toEqual([focus, mine, want]));
-        // the half where the focus isn't, the whole part where it is; neither in the mirror
-        expect([focus, !!stageAt("L").debug.host.halfRecord("scene.select")]).toEqual([focus, !focus.length]);
-        expect(stageAt("R").debug.host.halfRecord("scene.select")).toBe(null);
+        // (and still, once this view has said what it selected on G's channel, which the mirror hears)
+        await settle();
+        expect([focus, mine, drawn()]).toEqual([focus, mine, want]);
+        expect(instances()).toEqual(first);
         n++;
       }
     }
     expect(n).toBe(4);
-  });
+  }, 30_000);
 });

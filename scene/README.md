@@ -49,9 +49,11 @@ when nothing is selected, until its ×, the toolbar or leaving Edit), the outlin
 (Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
 axes and bounds, and every command marked `edit: true` show only in the
 Edit body. Look, walk, seat and station show none of it.
-`scene.clock` is the clock chip (▶ or ⏸ for the doc's world time, in a slim
-bar on the top edge, shown only for a doc with a process: TOOLS.md §7);
-`scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the toolbar).
+`scene.clock` is the clock chips (▶ or ⏸ for each doc's world time on the
+focus path, in a slim bar on the top edge, shown only for a doc with a
+process: TOOLS.md §6, §7); `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the
+toolbar); `scene.others` draws everyone else's selection boxes, a part of
+every doc (`traits: ["*"]`), so they show wherever their doc is.
 
 The stage also answers **who may see what** (`api.audience`, from every
 package's `audience` policy) and draws **the veil** for a look that says

@@ -698,7 +698,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     reopening = { tabs: new Set(was.drawer?.tabs ?? []), shown: was.drawer?.shown ?? null };
     cameraCarried = true;
     placeGeneral();
-    clocksChanged();
     showTrail();
     router?.refresh();
   }
@@ -767,6 +766,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     return String(stageAt(p.slice(0, -1))?.reader.nameOf(p.at(-1)) || "Linked scene");
   }
   function showTrail() {
+    // (the chips name their docs as the trail does: whenever the trail looks again, so do they)
+    clocksChanged();
     const focus = atom.get().focus;
     const names = [];
     for (let i = 0; i <= focus.length; i++) names.push(nameAt(focus.slice(0, i)));
