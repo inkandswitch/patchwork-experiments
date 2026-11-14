@@ -17,7 +17,7 @@
 // (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
 // lets go of it with nothing to reconcile. Delete is a command on that ref;
 // Escape (the stage's ladder) and a click elsewhere in the view (Edit's
-// default press) clear it, as they clear any selection. This
+// click) clear it, as they clear any selection. This
 // extension lets go of a ref whose dimension went.
 
 import css from "./dimensions.css?inline";

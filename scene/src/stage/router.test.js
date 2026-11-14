@@ -327,6 +327,40 @@ describe("clicks on unclaimed presses", () => {
   });
 });
 
+describe("a body's ahead types", () => {
+  // Every case: a widget's owner there or not, the base taking clicks ahead
+  // or not, and each of widget, chain and body claiming or passing. Who is
+  // offered the click is the order, cut at the first claim: widget, chain,
+  // body; or, ahead, widget, body, chain.
+  const cases = [];
+  for (const widget of [false, true])
+    for (const ahead of [false, true])
+      for (let claims = 0; claims < 8; claims++) cases.push({ widget, ahead, claims: { w: !!(claims & 1), x: !!(claims & 2), body: !!(claims & 4) } });
+  it.each(cases)("widget $widget, ahead $ahead, claims $claims", ({ widget, ahead, claims }) => {
+    const t = setup();
+    const heard = [];
+    const input = (who) => ({ click: () => (heard.push(who), claims[who] || null) });
+    if (widget) t.inputs.w = input("w");
+    t.inputs.x = input("x");
+    t.chainFor.mockImplementation(() => ({ order: Object.keys(t.inputs), holderOf: () => null, widget: widget ? "w" : null }));
+    t.router.setBase({ id: "edit", input: input("body"), ahead: ahead ? ["click"] : [] });
+    down(t);
+    up(t);
+    const order = [...(widget ? ["w"] : []), ...(ahead ? ["body", "x"] : ["x", "body"])];
+    const first = order.findIndex((who) => claims[who]);
+    expect(heard).toEqual(first < 0 ? order : order.slice(0, first + 1));
+  });
+  it("a body's ahead types are only the ones it names: a press still goes down the chain first", () => {
+    const t = setup();
+    const heard = [];
+    t.inputs.x = { press: () => (heard.push("x"), null) };
+    t.router.setBase({ id: "edit", input: { press: () => (heard.push("body"), null) }, ahead: ["click"] });
+    down(t);
+    up(t);
+    expect(heard).toEqual(["x", "body"]);
+  });
+});
+
 describe("menu", () => {
   it("a still right release is a menu; the native one is always stopped", () => {
     const t = setup();

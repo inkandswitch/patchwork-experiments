@@ -196,11 +196,15 @@ describe("scene.handles on the stage", () => {
     await settle();
     expect(clicks).toEqual([]);
     expect(s.local.get().selected).toBe("a");
-    // elsewhere it's an ordinary click
+    // elsewhere it's Edit's click: it deselects (ahead of the chain, so nothing else hears it) ...
+    s.click(30, 30);
+    await settle();
+    expect(clicks).toEqual([]);
+    expect(s.local.get().selected).toBe(null);
+    // ... and with nothing selected, an ordinary click down the chain
     s.click(30, 30);
     await settle();
     expect(clicks).toEqual([30]);
-    expect(s.local.get().selected).toBe(null);
   });
 
   it("a cancelled drag writes nothing and puts the knob back", async () => {

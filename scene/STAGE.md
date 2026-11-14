@@ -679,9 +679,12 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
    on a table aboard a boat goes to the table's extension, then the boat's,
    then the scene's;
 4. **`general` scope**, in running order;
-5. **the top body's input** ("Bodies" below): Edit's default press is
-   Select (a click on an object selects it, on nothing clears), structurally
-   last; Look, walk, seat, sailing's aboard and station have no default press;
+5. **the top body's input** ("Bodies" below); Look, walk, seat, sailing's
+   aboard and station have no default press. A body may name event types it
+   takes **ahead** of steps 2–4 (after the held tool and a widget's owner
+   only): Edit takes `click`, so in Edit a plain click selects (an object)
+   or clears (nothing, with something selected) before any package's click
+   verb (TOOLS.md Decisions 6). Presses still go down the chain first;
 6. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held (a first-person body holds it).
@@ -827,8 +830,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,   // reach: metres, 
 ```
 
 The bodies there are: **Look** and **Edit** (the stage's, `src/stage/bodies.js`:
-both OrbitControls, no keys, no lock, reach ∞; Edit's default press
-selects and the editor's chrome is its alone, Look has neither),
+both OrbitControls, no keys, no lock, reach ∞; Edit takes a click ahead
+of the chain and selects with it, and the editor's chrome is its alone;
+Look has neither),
 **walk** (`walk/`: WASD, lock, 2 m, standing on
 whatever the rays hit and riding it), **seat** (`seats/`: no keys, no lock,
 2 m, `here: false`, riding its table), and sailing's **aboard** (her navmesh

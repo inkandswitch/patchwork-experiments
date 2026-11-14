@@ -8,8 +8,10 @@
 // and each extension's input all come in as functions.
 //
 // A press goes: the held tool, the chain (the widget's owner, the holders
-// nearest first, the general extensions), then the top body's default (in
-// Edit, Select; Look has none). A key goes: the open gesture's declared keys, the held
+// nearest first, the general extensions), then the top body's default (Look
+// has none). A body may take some event types `ahead` of the chain, after
+// only the tool and a widget: Edit takes a click, so a plain click in Edit
+// selects before any package's click does (TOOLS.md §3). A key goes: the open gesture's declared keys, the held
 // tool's, the top body's, then the chain (where the key map is the only
 // taker). Presses have a position, so the body comes last there; keys have
 // none, so what reserves them comes first.
@@ -164,7 +166,7 @@ function call(owner, obj, name, ...args) {
  * A body on the stack, as the router keeps it: its input (press, click,
  * menu, move, wheel, key, keyup, cursor, suspended, resumed), whether it
  * asks for pointer lock, and the keys it declares ([{ code, label }]).
- * @typedef {{ id: string, input?: object, lock?: boolean, keys?: { code: string, label?: string }[] }} RouterBody
+ * @typedef {{ id: string, input?: object, lock?: boolean, keys?: { code: string, label?: string }[], ahead?: string[] }} RouterBody  (ahead: event types it is offered before the chain, after the tool and a widget)
  */
 
 /**
@@ -176,7 +178,7 @@ function call(owner, obj, name, ...args) {
  *   pickWidget: (ev: object) => object | null,
  *   ray: (x: number, y: number) => { origin: any, dir: any },
  *   centerRay: () => { origin: any, dir: any },
- *   chainFor: (ev: object) => { order: string[], holderOf: (id: string) => string | null },
+ *   chainFor: (ev: object) => { order: string[], holderOf: (id: string) => string | null, widget?: string | null },  // widget: order[0], when it's the widget's owner
  *   inputOf: (id: string) => object | undefined,
  *   base: RouterBody,                    // the body at the bottom of the stack, always there (setBase changes it)
  *   cameraHeld: () => boolean,
@@ -220,7 +222,7 @@ export function createRouter(o) {
     });
 
   // The body stack, the base at the bottom; the held tool; the open popovers.
-  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], suspended: false });
+  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], ahead: b?.ahead ?? [], suspended: false });
   const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended }], top last
   const top = () => stack.at(-1);
   let tool = null; // { owner, command, name, input, keys, pointer }
@@ -230,14 +232,21 @@ export function createRouter(o) {
   const offerTo = (name, handlers, type, ev) => offer([name], () => handlers, type, () => withHolder(ev, null));
 
   // Offer an event: the held tool first, then the chain, then the top body
-  // (its default: in Edit, Select). The chain is only worked out if the
-  // tool passes, so an event the tool takes never picks.
+  // (its default). A type the top body takes `ahead` goes to it right after
+  // a widget's owner, before the rest of the chain. The chain is only worked
+  // out if the tool passes, so an event the tool takes never picks.
   function dispatch(type, ev) {
     if (tool) {
       const r = offerTo(tool.owner, tool.input, type, ev);
       if (r) return r;
     }
-    return offerChain(type, ev) ?? offerTo(top().owner ?? "scene", top().input, type, ev);
+    const body = top();
+    const toBody = () => offerTo(body.owner ?? "scene", body.input, type, ev);
+    const { order = [], holderOf, widget = null } = chainFor(ev) ?? {};
+    const via = (ids) => offer(ids, inputOf, type, (id) => withHolder(ev, holderOf?.(id) ?? null));
+    if (!body.ahead?.includes(type)) return via(order) ?? toBody();
+    const w = widget != null && order[0] === widget ? 1 : 0;
+    return via(order.slice(0, w)) ?? toBody() ?? via(order.slice(w));
   }
   function offerChain(type, ev) {
     const { order = [], holderOf } = chainFor(ev) ?? {};
@@ -801,7 +810,7 @@ export function createRouter(o) {
   function pushBody(owner, body) {
     if (disposed) return () => {};
     const prevTop = top();
-    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], suspended: false };
+    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], ahead: body.ahead ?? [], suspended: false };
     stack.push(entry);
     settle(prevTop);
     return () => popBody(entry);

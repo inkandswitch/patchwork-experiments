@@ -55,14 +55,22 @@ describe("scene.select: clicking", () => {
     expect(sel()).toBeNull();
   });
 
-  it("is the Edit body's default press: after every extension down the chain", async () => {
+  it("is the Edit body's click, ahead of every extension down the chain: a package's click verb never sees it", async () => {
     const log = [];
-    const after = { meta: { id: "t.after" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), false) } }) } };
-    await mount({ extensions: [after] });
+    const verb = { meta: { id: "t.verb" }, module: { create: () => ({ input: { click: (ev) => (log.push(ev.hit?.id ?? null), true) } }) } };
+    await mount({ extensions: [verb] });
     hitOn("a");
     s.click(20, 20);
-    expect(log).toEqual(["a"]); // offered first, though registered after scene.select
+    expect(log).toEqual([]);
     expect(sel()).toBe("a");
+    // on nothing it deselects, and that's Edit's too
+    hitOn(null);
+    s.click(20, 20);
+    expect(log).toEqual([]);
+    expect(sel()).toBeNull();
+    // on nothing with nothing selected Edit has nothing to do: the chain has it
+    s.click(20, 20);
+    expect(log).toEqual([null]);
   });
 
   it("a hit on something the doc no longer has selects nothing", async () => {

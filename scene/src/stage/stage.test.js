@@ -727,7 +727,8 @@ describe("the stage, mounted", () => {
     const clicks = [];
     exts["t.obj"] = recorder("t.obj", () => ({ input: { click: (ev) => (clicks.push(["obj", ev.holder, ev.hit?.id]), true) } }));
     exts["t.always"] = recorder("t.always", () => ({ input: { click: (ev) => (clicks.push(["always", ev.holder]), true), key: (ev) => (clicks.push(["key", ev.key]), true) } }));
-    const h = newScene({ objects: { p: card({ traits: { "t.obj": {} } }), c: card({ parent: "p" }) }, order: ["p", "c"] });
+    // in Look, where no body takes a click ahead of the chain (Edit does: select.test.js)
+    const h = newScene({ objects: { p: card({ traits: { "t.obj": {} } }), c: card({ parent: "p" }) }, order: ["p", "c"], view: { start: { body: "look" } } });
     const m = mount(h);
     await settle();
     const canvas = m.root.querySelector(".canvas");
@@ -756,6 +757,7 @@ describe("the stage, mounted", () => {
       traits: { "t.scene": {} },
       objects: { p: card({ traits: { "t.far": {} } }), c: card({ parent: "p", traits: { "t.near": {} } }) },
       order: ["p", "c"],
+      view: { start: { body: "look" } }, // the chain alone: in Edit a click goes to Select first
     });
     const m = mount(h);
     await settle();

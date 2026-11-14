@@ -503,6 +503,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
 
   const lookInput = {};
+  // Edit's click goes ahead of the chain: a plain click in Edit selects, before any package's click verb (TOOLS.md §3)
+  const EDIT_AHEAD = Object.freeze(["click"]);
   const editInput = {
     click(ev) {
       // a hit on something its doc no longer has is a hit on nothing
@@ -522,7 +524,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function setBase(b) {
     if (dead || !router) return;
     base = b;
-    router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [] });
+    router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [], ahead: b === EDIT ? EDIT_AHEAD : [] });
     if (b !== EDIT) putDownEditTool();
   }
   function putDownEditTool() {
@@ -712,7 +714,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const path = hit?.id != null ? pathOfKey(hit.id) : null;
     const order = [];
     const holders = new Map();
-    if (widgetWins(widget, hit)) order.push(widget.owner);
+    const won = widgetWins(widget, hit);
+    if (won) order.push(widget.owner);
     const on = path ? onPath(path) : [];
     for (const s of on.length ? on : [outermost()].filter(Boolean)) {
       const seg = s.segment(elementOf(path, s.path));
@@ -723,7 +726,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         holders.set(k, seg.holderOf(ext));
       }
     }
-    return { order, holderOf: (k) => holders.get(k) ?? null };
+    return { order, holderOf: (k) => holders.get(k) ?? null, widget: won ? widget.owner : null };
   }
   /**
    * The input path (COMPOSITION.md §3): the stages from attention's innermost

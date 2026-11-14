@@ -163,7 +163,7 @@ table or walking a level sees no editor.
 
 | Edit's (shows and runs only in Edit) | Everyone's (every body) |
 |---|---|
-| a plain click selecting (Edit's default press) | Select in every target's menu, Esc to deselect; the selection's box |
+| a plain click selecting (Edit's click, ahead of the chain) | Select in every target's menu, Esc to deselect; the selection's box |
 | the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
 | the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
 | the toolbar, all of it (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
@@ -215,9 +215,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   *orbit*, Decisions 6): both the orbit camera, OrbitControls, `frame` and
   `autoframe`. Reach ∞. Each rides the focus stage's latest base ride
   (sailing's follow on her hull). `.` frames the selection; F is free.
-  **Look** has no default press, like walk, seat and station; **Edit**'s
-  default press selects, and the editor's chrome is its alone (§3, "What
-  is Edit's"). Labels say what each is: "Look", "Edit".
+  **Look** has no default press, like walk, seat and station; **Edit**
+  takes a click ahead of the chain and selects with it (Decisions 6), and
+  the editor's chrome is its alone (§3, "What is Edit's"). Labels say what each is: "Look", "Edit".
 - **Where people start** (`view.start.body`, §2): `"edit"` starts them in
   Edit; anything else, or nothing, starts them in Look, and a package's body
   named there (walk, seat) is entered over Look once it's on offer. A
@@ -696,7 +696,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   *Built:* the router's stack holds only bodies, orbit (the stage's,
   `ORBIT` in `stage.js`) at the bottom, whose default press is Select,
   offered after the held tool and the whole chain: structurally last
-  (`scene.select` lost its click). `api.body` is `current`, `enter`,
+  (`scene.select` lost its click). (Since Decisions 6, Edit's click goes
+  ahead of the chain instead: a body may name types it takes `ahead`.) `api.body` is `current`, `enter`,
   `leave`, `eye`, `reach`; a body popped from under another takes those
   over it, and an extension stopping pops its own. The held tool is
   `local.held`; a command that declares `tool: { keys, pointer }` holds the
@@ -1011,6 +1012,16 @@ The project lead decided the five open questions on 2026-11-12.
      stack, the tools that make those writes and the aids drawn for them.
      Packages' verbs, carries, bodies and seats, menus with Select, and
      looking about are everyone's.
+   - **In Edit a plain click selects, before any package's click** (the
+     lead, 2026-11-14). A click on a card deck selects the deck rather than
+     dealing; a click on the ship selects her rather than coming aboard.
+     Edit takes `click` *ahead* of the chain: after the held tool and a
+     widget under the pointer (a knob, a control drawn in the world), before
+     every holder and general extension. A click on nothing with nothing
+     selected is Edit's to ignore, so it goes down the chain as before. Only
+     the click: a press (a drag, a carry) still goes down the chain first.
+     A package's click verb is reached outside Edit, or by its key and the
+     menu.
    - Nothing stands on Edit: entering any body from it turns the base to
      Look, and Leave falls back to Look, never to Edit (§4).
    - A doc names Edit to start people in it; naming nothing is Look. A scene

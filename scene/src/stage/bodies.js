@@ -1,8 +1,9 @@
 // The stage's own two bodies (TOOLS.md §4): Look and Edit. Both are the
 // orbit camera (OrbitControls, `frame`, `autoframe`, reach everywhere), and
 // one of them is always at the bottom of the body stack. They differ in one
-// thing: Edit is the editor. Its default press selects (a plain click on a
-// thing selects it, on nothing deselects), and the editor's chrome is its
+// thing: Edit is the editor. It takes a click ahead of the chain and
+// selects with it (a plain click on a thing selects it, before any
+// package's click verb; on nothing deselects), and the editor's chrome is its
 // alone (the halo's handles and knobs, the inspector, the grid, axes and
 // bounds, dimensions, the toolbar, and every command marked `edit: true`).
 // Look has no default press, like walk, seat and station.

@@ -2,10 +2,11 @@
 //
 // - Select is the first entry of every target's menu (scene.menu puts it
 //   there): the deliberate select, in a game too.
-// - A plain click selecting is the Edit body's default press (the stage's:
-//   stage.js, ../stage/bodies.js), offered after the held tool and the whole
-//   chain, so structurally last; Look, walk, seat and station have none, so
-//   there a plain click selects nothing (TOOLS.md §3, §4). Select is
+// - A plain click selecting is the Edit body's (the stage's: view.js,
+//   ../stage/bodies.js), which takes a click ahead of the chain, after only
+//   the held tool and a widget: in Edit a click selects before any package's
+//   click verb (TOOLS.md Decisions 6). Look, walk, seat and station have
+//   none, so there a plain click selects nothing (TOOLS.md §3, §4). Select is
 //   everyone's, in every body; what a selection shows beyond its box (the
 //   halo's handles, the inspector) is Edit's. Remove (Delete) is an edit, so
 //   Edit's too.
