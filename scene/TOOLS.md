@@ -235,7 +235,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
   2026-11-13: "roll with the table; the boat is how the boat is"). Other
   rides keep the world's up.
 - **walk**, one package's, replacing arena's and sailing's walkers. It
-  starts at the eye, else the spawn; its floor is whatever the ray hits.
+  starts at the eye if there is floor under it (within 10 m; decided unattended
+  2026-11-14, so an eye over nothing doesn't fall out of the world first),
+  else the spawn; its floor is whatever the ray hits.
   (Built in `walk/`, replacing arena's; sailing keeps its navmesh walker as
   a body of its own for now: see build step 6.)
 - **seat**, `seats/`'s (COMPOSITION decision 5), rides the seat: no
