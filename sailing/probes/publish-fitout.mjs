@@ -42,8 +42,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
 
 // What each doc's contents come from (scene/STAGE.md, "Packages"). The boat
-// lists her linked docs' too, for now: a view offers the packages of the
-// outermost doc only.
+// still lists joints and traversal, her linked docs' packages: written
+// before the view's one prompt covered every open doc (COMPOSITION.md,
+// Decisions, links loose ends 1), when only the outermost doc's were asked
+// about. Harmless (each linked doc lists its own); to drop, with a check of
+// what she calls for like publish-aboard's, at the next republish.
 const PACKAGES = { s: ["scene", "sailing", "joints", "traversal"], f: ["scene", "sailing", "joints", "traversal"], w: ["scene", "sailing", "joints"] };
 const SLIDE = "joints.slide";
 
@@ -113,7 +116,10 @@ try {
   await P("frame()");
   await b.step(2);
   report.shots.push(await b.shot(join(SHOTS, "publish-fitout.png")));
+  // the probe held her world still; she is published running, as every example is
+  await P("resume()");
   const snap = await P("snapshot()");
+  check("her world is published running", snap.docs[snap.scene]?.clock?.running !== false, snap.docs[snap.scene]?.clock);
   check("the snapshot has F as fixed (its hatch shut) and F now (open)", snap.fThen?.objects?.[ids.fHatch]?.traits?.[SLIDE]?.at === "closed" && snap.docs[snap.f].objects[ids.fHatch].traits[SLIDE].at === "open", { then: snap.fThen?.objects?.[ids.fHatch]?.traits?.[SLIDE], now: snap.docs[snap.f]?.objects?.[ids.fHatch]?.traits?.[SLIDE] });
   snapshot = { ...snap, fHatch: ids.fHatch, wHatch: ids.wHatch };
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
