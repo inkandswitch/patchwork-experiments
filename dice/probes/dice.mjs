@@ -224,9 +224,11 @@ try {
 
   // ── the die's own panel, docked in the stage's drawer ──
   {
-    // the bin put away, so the drawer is empty to start from
+    // the bin put away, and the inspector shut (it stays open once a selection opened it: TOOLS.md
+    // Decisions 6), so the drawer is empty to start from
     await click(await P(`rect('.toolbar [data-command="parts"]')`));
-    await until("count('.stage-drawer') === 0", 3000);
+    if ((await P(`rect('.toolbar [data-command="inspector"][aria-pressed="true"]')`)) != null) await click(await P(`rect('.toolbar [data-command="inspector"]')`));
+    check("the drawer is empty to start from (bin put away, inspector shut)", await until("count('.stage-drawer') === 0", 3000), await P("count('.stage-drawer')"));
     await b.rest(300);
     const canvas0 = await P("canvas('a')");
     const at = await P(`aimAt(${J(d20)}, 'a')`);
@@ -260,11 +262,11 @@ try {
 
   // ── rolling, in the same view: nothing to switch ──
   // attention is the selection if any, so keys would go to the d20 wherever
-  // A looks. Escape lets it go, and the inspector's tab with it.
+  // A looks. Escape lets it go; the inspector stays open, on the scene.
   check("the d20 is still selected (the viewer's)", (await P("selected('a')")) === d20, await P("selected('a')"));
   await P("focus('a')");
   await b.key("Escape");
-  check("…and Escape lets it go, so attention is the look again, and the inspector's tab goes", await until("selected('a') === null && __p.count('.stage-drawer') === 0", 2000), await P("selected('a')"));
+  check("…and Escape lets it go, so attention is the look again; the inspector stays open, on the scene", await until("selected('a') === null && __p.count('.stage-drawer [data-panel=\"inspector\"] .inspector[data-kind=\"scene\"]') === 1", 2000), await P("selected('a')"));
   await settled();
   await b.rest(400);
 

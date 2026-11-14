@@ -490,11 +490,11 @@ try {
   {
     await b.key("Escape");
     await clickEmpty();
-    // nothing selected (its tab gone with the selection): the toolbar's Inspector opens it on the Scene
-    await soon(`!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"]')`, 3000);
+    // nothing selected: the inspector, opened by the selections before, stays open, now on the Scene
+    // (TOOLS.md Decisions 6, "The inspector stays open"); its tab is shown to look at it
+    check("inspectorStaysOpenOnTheScene", await soon(`!!__p.hostA.querySelector('.stage-drawer [data-panel="inspector"] .inspector[data-kind="scene"]')`, 3000), await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`));
+    await A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === "Inspector"); e?.click(); return true; })()`);
     await b.rest(150);
-    await A(`(() => { const e = [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector"); e.click(); return true; })()`);
-    await soon(`!!__p.hostA.querySelector('.inspector[data-kind="scene"]')`, 3000);
     const startsIn = `(() => {
       const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
       return [...(r?.querySelectorAll('.starts-in input[data-body]') ?? [])].map((e) => [e.dataset.body, e.checked]);
