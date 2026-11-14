@@ -105,10 +105,10 @@ try {
   check("1. G is a whole table of its own: its title, p1 and p2", shape.gameTitle === "Lost Cities table" && J(shape.seats) === J(["p1", "p2"]), { title: shape.gameTitle, seats: shape.seats });
 
   // 2. a stage for G in each view
-  await until("link('a')?.state === 'open' && __p.link('b')?.state === 'open'", 4000);
+  await until("link('a')?.open && __p.link('b')?.open", 4000);
   const st = { a: await P("stages('a')"), b: await P("stages('b')"), c: await P("stages('c')") };
   report.numbers.stages = st;
-  check("2. the room and the boat each open G's stage at their link; Cara's view is G's own", st.a.some((s) => s.url === ids.game && J(s.path) === J([ids.roomLink])) && st.b.some((s) => s.url === ids.game && J(s.path) === J([ids.boatLink])) && st.c[0].url === ids.game && (await P("link('a')")).state === "open", st);
+  check("2. the room and the boat each open G's stage at their link; Cara's view is G's own", st.a.some((s) => s.url === ids.game && J(s.path) === J([ids.roomLink])) && st.b.some((s) => s.url === ids.game && J(s.path) === J([ids.boatLink])) && st.c[0].url === ids.game && (await P("link('a')")).open === true && (await P("link('a')")).role === "acting", st);
   const run = shape.running;
   check("2. G's extensions run in its stage (tabletop, seats, the keeper, carry), never in the room's or the boat's", ["a", "b", "c"].every((w) => run[w].game?.includes("tabletop") && run[w].game?.includes("seats")) && !run.a.outer.includes("tabletop") && !run.b.outer.includes("tabletop") && !run.b.outer.includes("seats") && run.b.outer.includes("sailing"), run);
 
