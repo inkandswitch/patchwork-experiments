@@ -52,6 +52,16 @@ export const plugins = [
   },
   {
     type: "patchwork:datatype",
+    id: "openfoam-hull",
+    name: "OpenFOAM hull (kept)",
+    icon: "Sailboat",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.js")).HullDatatype;
+    },
+  },
+  {
+    type: "patchwork:datatype",
     id: "openfoam-server",
     name: "OpenFOAM server",
     icon: "Server",

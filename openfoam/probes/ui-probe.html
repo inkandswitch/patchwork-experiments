@@ -97,7 +97,7 @@
       return { case: caseHandle.url, server: serverHandle.url, file: file.url };
     },
     /** link a file (served under the probe's mounts) as the hull; `plugins`: another package's entry to register first */
-    async linkFile({ path, name, ext, plugins = null, slowMs = 0 }) {
+    async linkFile({ path, name, ext, plugins = null, slowMs = 0, viaUi = false }) {
       if (plugins) for (const p of (await import(plugins)).plugins) getRegistry(p.type).register(p);
       // count every build of every geometry reader (a .3dm conversion costs seconds)
       for (const p of getRegistry("scene:source").filter(() => true)) {
@@ -117,8 +117,35 @@
         const find = repo.find.bind(repo);
         repo.find = (u) => (u === file.url ? new Promise((r) => setTimeout(r, slowMs)).then(() => find(u)) : find(u));
       }
-      caseHandle.change((d) => (d.hull = { url: file.url }));
+      if (viaUi) {
+        // as a person links it: pasted into the hull field
+        const input = $(".openfoam .hull-url");
+        input.value = file.url;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      } else caseHandle.change((d) => (d.hull = { url: file.url }));
       return file.url;
+    },
+    /** how often each url was asked of the repo (a big hull doc should be asked only when needed) */
+    countFinds() {
+      if (repo.__counting) return;
+      repo.__counting = true;
+      window.__p.finds = {};
+      const find = repo.find.bind(repo);
+      repo.find = (u) => {
+        window.__p.finds[u] = (window.__p.finds[u] ?? 0) + 1;
+        return find(u);
+      };
+    },
+    /** unmount the case tool and mount a fresh one on the same case: what reopening does */
+    async remount() {
+      cleanup?.();
+      cleanup = (await tool("openfoam-case"))(caseHandle, $("#host"));
+    },
+    hullLink: () => JSON.parse(JSON.stringify(caseHandle.doc().hull ?? null)),
+    click(sel) {
+      const el = $(sel);
+      el?.click();
+      return !!el;
     },
     change(code) {
       caseHandle.change(new Function("d", code));

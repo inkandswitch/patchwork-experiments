@@ -7,6 +7,8 @@ import { newRun, enqueue, daemonOnline, queueView, isTerminal, SERVER_TYPE } fro
 import { acquireHull, pathLabel } from "../hull/acquire.js";
 import { prepareHull, sinkageForVolume } from "../hull/prepare.js";
 import { partsOf, waterPlanes, defaultParts, hullTriangles } from "../hull/parts.js";
+import { makeStash, fromStash, stashCovers } from "../hull/stash.js";
+import { findWhenThere } from "../find.js";
 import { renderKey } from "../render-read.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
 import { drawHull } from "./fields.js";
@@ -157,6 +159,7 @@ export default function CaseTool(handle, element) {
     const u = parseAutomergeUrl(url);
     if (!u) return;
     if (u === handle.url) return;
+    acq.keep = true; // a hull someone chose: keep it with the case once it's read
     handle.change((d) => (d.hull = { url: u }));
   };
   hullUrl.addEventListener("change", () => {
@@ -185,7 +188,8 @@ export default function CaseTool(handle, element) {
   // arrive, while the case doc keeps changing: each of those used to start
   // another full read (five for one link, measured). A request that comes
   // in while one runs makes exactly one more afterwards.
-  const acq = { running: false, again: false };
+  // keep: write a stash after the next read of the original; fromSource: skip the stash once
+  const acq = { running: false, again: false, keep: false, fromSource: false };
   async function acquire() {
     if (acq.running) {
       acq.again = true;
@@ -204,20 +208,74 @@ export default function CaseTool(handle, element) {
         }
         hull.loading = true;
         renderHull();
-        const r = await acquireHull(repo, url).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
+        // the hull kept with the case, when it has one and it holds the parts wanted
+        let r = null;
+        const stashUrl = doc()?.hull?.stash;
+        if (stashUrl && !acq.fromSource) {
+          try {
+            r = fromStash((await findWhenThere(repo, stashUrl, { tries: 4 })).doc());
+          } catch {
+            r = null;
+          }
+          if (r) {
+            r.stashUrl = stashUrl;
+            if (!stashCovers(r.kept, wantedParts(r))) r = null; // parts it doesn't hold: read the original
+          }
+        }
+        const fromStashDoc = !!r;
+        if (!r) r = await acquireHull(repo, url).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
         if (disposed) return;
         if (doc()?.hull?.url !== url) {
           acq.again = true;
           continue;
         }
+        // written only after something someone did (a link, parts the stash lacks, Re-read, Keep), never just on open
+        const keep = !fromStashDoc && r.ok && acq.keep;
+        acq.keep = false;
+        acq.fromSource = false;
         hull = { ...hull, url, result: r, loading: false };
         prepared = null;
         prepare();
+        if (keep) await keepHull(r, url);
       } while (acq.again && !disposed);
     } finally {
       acq.running = false;
     }
   }
+  /** The parts the case wants from a read model: its choice, else the default. */
+  function wantedParts(r) {
+    const chosen = doc()?.hull?.parts;
+    if (Array.isArray(chosen)) return chosen;
+    const parts = r.parts ?? partsOf(r.triangles, r.ranges ?? []);
+    const water = waterPlanes(parts)[0] ?? null;
+    return defaultParts(parts, water ? water.min[2] : 0);
+  }
+
+  /** Keep the chosen parts of a model just read from its original with the case. */
+  let keepNote = null;
+  async function keepHull(r, url) {
+    const m = model();
+    const stash = makeStash({
+      triangles: r.triangles,
+      ranges: m.ranges,
+      parts: m.parts,
+      chosen: m.names,
+      source: { url, heads: r.heads ?? null, path: r.path, providerId: r.providerId ?? null, providerName: r.providerName ?? null, title: r.title },
+      now: Date.now(),
+    });
+    if (!stash) {
+      keepNote = "the hull is too big to keep with the case: it's read from the model each time";
+      renderHull();
+      return;
+    }
+    const h = await repo.create2(stash);
+    if (disposed) return;
+    handle.change((d) => {
+      if (d.hull?.url === url) d.hull.stash = h.url;
+    });
+    keepNote = null;
+  }
+
   async function watchHull() {
     const url = doc()?.hull?.url ?? null;
     // watching starts before the doc is found: a find can take a minute
@@ -228,6 +286,8 @@ export default function CaseTool(handle, element) {
     hull.watching = !!url;
     acquire();
     if (!url) return;
+    // a case with its hull kept doesn't load the original (it can be huge) just to watch it
+    if (doc()?.hull?.stash) return;
     try {
       const h = await repo.find(url);
       if (disposed || doc()?.hull?.url !== url) return;
@@ -271,7 +331,7 @@ export default function CaseTool(handle, element) {
   function model() {
     const r = hull.result;
     const ranges = r?.ranges?.length ? r.ranges : [{ name: "hull", from: 0, to: (r?.triangles?.length ?? 0) / 9 }];
-    const parts = r?.partsCache ?? (r ? (r.partsCache = partsOf(r.triangles, ranges)) : []);
+    const parts = r?.parts ?? r?.partsCache ?? (r ? (r.partsCache = partsOf(r.triangles, ranges)) : []);
     const water = waterPlanes(parts)[0] ?? null;
     const waterZ = water ? water.min[2] : 0;
     const chosen = doc()?.hull?.parts;
@@ -292,6 +352,12 @@ export default function CaseTool(handle, element) {
       }
       const s = setup();
       const m = model();
+      if (r.path === "stash" && !stashCovers(r.kept, m.names)) {
+        acq.fromSource = true;
+        acq.keep = true;
+        acquire();
+        return;
+      }
       const key = JSON.stringify([s.attitude, m.names, m.frame]);
       if (prepared?.attitudeKey === key && prepared.result === r) return renderHull();
       try {
@@ -330,7 +396,19 @@ export default function CaseTool(handle, element) {
     if (!d?.hull?.url) chip.innerHTML = `<span class="hint">No hull yet. Drop in a 3D file (GLB, STL, Rhino 3DM, … whatever a loaded package reads) or any hull document, from the sidebar or a scene, or paste its link.</span>`;
     else if (hull.loading && !r) chip.innerHTML = `<span class="chip">loading the hull…</span>`;
     else if (!r?.ok) chip.innerHTML = `<span class="chip">${esc(d.hull.url.slice(0, 22))}…</span><div class="warn">${esc(r?.error ?? "")}</div>`;
-    else chip.innerHTML = `<span class="chip" title="${esc(d.hull.url)}"><span class="dot" data-state="done"></span>${esc(r.title)} · ${esc(pathLabel(r))}</span>`;
+    else if (r.path === "stash")
+      chip.innerHTML = `<span class="chip" title="${esc(d.hull.url)}"><span class="dot" data-state="done"></span>${esc(r.title)} · kept with the case</span>
+        <div class="hint">read ${r.stash?.builtAt ? new Date(r.stash.builtAt).toLocaleString() : ""}${r.providerName ? ` by ${esc(r.providerName)}` : ""}; the original isn't loaded <button class="hull-reread">Re-read the model</button></div>`;
+    else
+      chip.innerHTML = `<span class="chip" title="${esc(d.hull.url)}"><span class="dot" data-state="done"></span>${esc(r.title)} · ${esc(pathLabel(r))}</span>${
+        d.hull.stash ? "" : `<div class="hint">${keepNote ? esc(keepNote) : `<button class="hull-keep">Keep the hull with this case</button> opens faster, and shares without the original`}</div>`
+      }`;
+    chip.querySelector(".hull-reread")?.addEventListener("click", () => {
+      acq.fromSource = true;
+      acq.keep = true;
+      acquire();
+    });
+    chip.querySelector(".hull-keep")?.addEventListener("click", () => hull.result?.ok && keepHull(hull.result, d.hull.url));
     renderParts();
     $(".hull-warn").innerHTML = prepared?.warnings?.length ? prepared.warnings.map((w) => `<div>${esc(w)}</div>`).join("") : prepared?.error ? `<div class="warn">${esc(prepared.error)}</div>` : "";
     renderPreflight();
@@ -503,7 +581,7 @@ export default function CaseTool(handle, element) {
           stl: p.stl,
           info: JSON.parse(JSON.stringify(p.info)),
           warnings: [...p.warnings],
-          source: { url: d.hull.url, path: r.path, title: r.title, providerId: r.providerId ?? null, parts: [...p.model.names] },
+          source: { url: d.hull.url, path: r.path, title: r.title, providerId: r.providerId ?? null, parts: [...p.model.names], stash: r.stashUrl ?? null },
           // how the analysis frame sits in the model's (the scene draws results back in the model's)
           frame: { ...p.model.frame },
         },

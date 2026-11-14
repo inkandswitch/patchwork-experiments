@@ -62,6 +62,12 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
   }
   const doc = h.doc();
   if (!doc) return { ok: false, error: "the hull isn't available" };
+  let heads = null;
+  try {
+    heads = h.heads?.() ?? null;
+  } catch {
+    heads = null;
+  }
   const type = doc?.["@patchwork"]?.type ?? null;
   if (OWN.has(type)) return { ok: false, error: "that's an OpenFOAM document, not a hull" };
   const cut = async (bytes) => glbTriangles(await decodeGLB(bytes));
@@ -76,11 +82,11 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
     }
     if (!r.glb) return { ok: false, pending: true, error: r.status === "error" && r.error ? `the render failed: ${r.error}` : `“${title}” isn't built yet` };
     const t = await cut(r.glb);
-    return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "render", title, providerId: doc.providerId ?? null, renderKey: renderKey(doc) };
+    return { ok: true, triangles: t.triangles, ranges: t.ranges, heads, path: "render", title, providerId: doc.providerId ?? null, renderKey: renderKey(doc) };
   }
   if (isGlbFile(doc)) {
     const t = await cut(fileBytes(doc));
-    return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "file", title: titleOf(doc), providerId: null };
+    return { ok: true, triangles: t.triangles, ranges: t.ranges, heads, path: "file", title: titleOf(doc), providerId: null };
   }
   const get = getRegistry ?? (await loadGetRegistry());
   if (!get) return { ok: false, error: "no plugin registry here, so nothing can build the hull" };
@@ -107,7 +113,7 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
       if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
       if (!(bytes instanceof Uint8Array)) throw new Error("it returned no GLB");
       const t = await cut(bytes);
-      return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "source", title: titleOf(doc), providerId: p.id, providerName: p.name ?? p.id };
+      return { ok: true, triangles: t.triangles, ranges: t.ranges, heads, path: "source", title: titleOf(doc), providerId: p.id, providerName: p.name ?? p.id };
     } catch (err) {
       notes.push(`${p.name ?? p.id} failed (${err?.message ?? err})`);
     }
