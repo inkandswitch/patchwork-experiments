@@ -1,7 +1,15 @@
 {
   "name": "model-viewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "View 3D files (glb, gltf, stl, 3mf, 3dm, obj, ply) in Patchwork, and use Rhino .3dm files in scenes.",
   "type": "module",
-  "main": "./index.js"
+  "main": "./index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "rhino3dm": "8.35.0",
+    "vitest": "^3.2.4"
+  }
 }

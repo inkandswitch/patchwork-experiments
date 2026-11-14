@@ -1,7 +1,7 @@
 // scene:source "file-3dm": Rhino .3dm → GLB (Y-up metres), one mesh per layer+colour.
 import { encodeGLB, computeBounds, computeNormals } from "./glb.js";
 
-const RHINO_URL = "https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/";
+export const RHINO_URL = "https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/";
 let rhinoPromise;
 export function loadRhino() {
   rhinoPromise ??= import(/* @vite-ignore */ RHINO_URL + "rhino3dm.module.min.js")
@@ -11,9 +11,26 @@ export function loadRhino() {
 }
 
 const METRES = { mm: 0.001, cm: 0.01, m: 1, in: 0.0254, ft: 0.3048 };
-// rhino UnitSystem enum values → metres per unit
-const RHINO_UNITS = { 1: 1e-6, 2: 0.001, 3: 0.01, 4: 1, 5: 1000, 6: 2.54e-8, 7: 2.54e-5, 8: 0.0254, 9: 0.3048, 10: 1609.344, 12: 1e-10, 13: 1e-9, 14: 1e-1, 15: 10, 16: 100, 17: 1e9, 18: 0.9144 };
-const UNIT_NAME = { 2: "mm", 3: "cm", 4: "m", 8: "in", 9: "ft" };
+// Metres per unit, keyed by rhino UnitSystem *name*: the numeric values are
+// openNURBS's and not in declaration order, so they're looked up at runtime.
+// None, CustomUnits and Unset have no scale here (rhino3dm doesn't expose a
+// custom unit's scale).
+export const RHINO_UNIT_METRES = {
+  Angstroms: 1e-10, Nanometers: 1e-9, Microns: 1e-6, Millimeters: 1e-3, Centimeters: 1e-2,
+  Decimeters: 0.1, Meters: 1, Dekameters: 10, Hectometers: 100, Kilometers: 1e3,
+  Megameters: 1e6, Gigameters: 1e9, Microinches: 2.54e-8, Mils: 2.54e-5, Inches: 0.0254,
+  Feet: 0.3048, Yards: 0.9144, Miles: 1609.344, PrinterPoints: 0.0254 / 72, PrinterPicas: 0.0254 / 6,
+  NauticalMiles: 1852, AstronomicalUnits: 1.495978707e11, LightYears: 9.4607304725808e15,
+  Parsecs: 3.0856775814913673e16,
+};
+const UNIT_LABEL = { Millimeters: "mm", Centimeters: "cm", Meters: "m", Inches: "in", Feet: "ft", Yards: "yd" };
+
+/** The file's unit system → { metres, label }, or null if it has no known scale. */
+export function rhinoUnit(rhino, value) {
+  for (const name in RHINO_UNIT_METRES)
+    if (enumVal(rhino.UnitSystem?.[name]) === value) return { metres: RHINO_UNIT_METRES[name], label: UNIT_LABEL[name] ?? name.toLowerCase() };
+  return null;
+}
 
 function fileBytes(doc) {
   const c = doc?.content;
@@ -143,8 +160,9 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
   const file = rhino.File3dm.fromByteArray(bytes);
   if (!file) throw new Error("Couldn't read .3dm: " + (safe(() => truncation(bytes)) ?? "rhino3dm rejected it (maybe from a newer Rhino version?)"));
   try {
-    const fileUnit = enumVal(safe(() => file.settings().modelUnitSystem));
-    const scale = params.unit && params.unit !== "auto" ? METRES[params.unit] : RHINO_UNITS[fileUnit] ?? 0.001;
+    const fileUnit = rhinoUnit(rhino, enumVal(safe(() => file.settings().modelUnitSystem)));
+    const forced = params.unit && params.unit !== "auto" ? params.unit : null;
+    const scale = forced ? METRES[forced] : fileUnit?.metres ?? 0.001;
     const layers = file.layers();
     const layerInfo = [];
     for (let i = 0; i < layers.count; i++) {
@@ -155,20 +173,39 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
     let objects = 0, skipped = 0, triangles = 0;
     const stats = { approx: 0 };
 
-    const add = (geo, attrs, xform, depth) => {
+    const shown = (a) => a.visible !== false && layerInfo[a.layerIndex]?.visible !== false;
+    const BY_PARENT = enumVal(rhino.ObjectColorSource?.ColorFromParent);
+    // An object's display colour. A block's parts keep their own colour
+    // unless they're set to "by parent", when they take the block's.
+    const colorOf = (attrs, parentColor) =>
+      (parentColor && BY_PARENT != null && enumVal(attrs?.colorSource) === BY_PARENT ? parentColor : null) ??
+      safe(() => attrs.drawColor(file)) ??
+      layerInfo[attrs?.layerIndex]?.color ??
+      { r: 200, g: 200, b: 200 };
+    let idefById = null;
+    const objTable = file.objects();
+
+    const add = (geo, attrs, xform, depth, parentColor) => {
       const t = enumVal(geo.objectType);
       if (enumVal(rhino.ObjectType?.InstanceReference) === t) {
         if (depth > 8) return;
-        const idefs = file.instanceDefinitions();
-        const id = geo.parentIdefId;
-        let def = null;
-        for (let i = 0; i < idefs.count; i++) { const d = idefs.get(i); if (d.id === id) { def = d; break; } }
+        if (!idefById) {
+          idefById = new Map();
+          const idefs = file.instanceDefinitions();
+          for (let i = 0; i < idefs.count; i++) { const d = idefs.get(i); idefById.set(d.id, d); }
+        }
+        const def = idefById.get(geo.parentIdefId);
         if (!def) { skipped++; return; }
         const x = xformArray(geo.xform);
         const combined = xform && x ? mul(xform, x) : x ?? xform;
+        const blockColor = colorOf(attrs, parentColor);
         for (const oid of def.getObjectIds()) {
-          const o = file.objects().findId(oid);
-          if (o) add(o.geometry(), attrs ?? o.attributes(), combined, depth + 1);
+          const o = objTable.findId(oid);
+          if (!o) continue;
+          // each part keeps its own layer, colour and visibility
+          const own = o.attributes();
+          if (!params.hidden && !shown(own)) continue;
+          add(o.geometry(), own, combined, depth + 1, blockColor);
         }
         return;
       }
@@ -177,7 +214,7 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       objects++;
       const li = attrs?.layerIndex ?? 0;
       const layer = layerInfo[li] ?? { name: "Default" };
-      const c = safe(() => attrs.drawColor(file)) ?? layer.color ?? { r: 200, g: 200, b: 200 };
+      const c = colorOf(attrs, parentColor);
       const hex = "#" + [c.r, c.g, c.b].map((v) => (v | 0).toString(16).padStart(2, "0")).join("");
       const key = li + hex;
       let g = groups.get(key);
@@ -194,17 +231,12 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       }
     };
 
-    const objs = file.objects();
-    for (let i = 0; i < objs.count; i++) {
-      const o = objs.get(i);
+    for (let i = 0; i < objTable.count; i++) {
+      const o = objTable.get(i);
       const attrs = o.attributes();
-      if (!params.hidden) {
-        if (attrs.visible === false) continue;
-        if (layerInfo[attrs.layerIndex]?.visible === false) continue;
-        if (attrs.isInstanceDefinitionObject) continue;
-      }
       if (attrs.isInstanceDefinitionObject) continue; // drawn through their references
-      try { add(o.geometry(), attrs, null, 0); } catch { skipped++; }
+      if (!params.hidden && !shown(attrs)) continue;
+      try { add(o.geometry(), attrs, null, 0, null); } catch { skipped++; }
     }
 
     const meshes = [];
@@ -234,7 +266,7 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
       if (!bounds) bounds = b;
       else for (let i = 0; i < 3; i++) { bounds.min[i] = Math.min(bounds.min[i], b.min[i]); bounds.max[i] = Math.max(bounds.max[i], b.max[i]); }
     }
-    const u = params.unit && params.unit !== "auto" ? params.unit : UNIT_NAME[fileUnit] ?? `unit ${fileUnit}`;
+    const u = forced ?? fileUnit?.label ?? "no known units; read as mm, set File units to change";
     return {
       kind: "glb",
       glb,

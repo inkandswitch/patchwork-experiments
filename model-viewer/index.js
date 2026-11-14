@@ -21,7 +21,8 @@ export const plugins = [
     extensions: ["3dm"],
     content: "built",
     cost: "expensive",
-    version: 1,
+    // 2: corrected unit table (yards, mega/gigametres); block parts keep their own layer and colour
+    version: 2,
     params: [
       {
         key: "unit", label: "File units", kind: "enum", default: "auto", cost: "cheap",

@@ -43,6 +43,9 @@ export default function ModelViewer(handle, element) {
   let disposed = false, raf = 0, ro = null, renderer = null, controls = null, model = null, scene, camera, grid, T;
   let wire = false;
   let loadedKey = null;
+  // one setup however many shows arrive while three.js is loading
+  let setupPromise = null;
+  const ensureSetup = () => (setupPromise ??= setup().catch((e) => { setupPromise = null; throw e; }));
 
   const btn = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = () => fn(b); return b; };
 
@@ -140,8 +143,8 @@ export default function ModelViewer(handle, element) {
     status.textContent = `Loading .${ext}…`;
     status.style.display = "";
     try {
-      if (!T) await setup();
-      if (disposed) return;
+      await ensureSetup();
+      if (disposed || !renderer) return;
       const { object, notes } = await loadModel(fileBytes(doc), ext);
       if (disposed || loadedKey !== key) return;
       disposeModel();
