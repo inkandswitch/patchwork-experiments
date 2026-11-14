@@ -20,6 +20,8 @@
 //   w.hide("A");  // its tab hidden: its visibilitychange listeners hear it
 
 import { vi } from "vitest";
+import { createOcean } from "../ocean.js";
+import { seaOffer, seaParams } from "../sea.js";
 
 /**
  * An empty scene doc, as the scene datatype's init writes one: every map a
@@ -71,7 +73,7 @@ export function multiply(a, b) {
   return out;
 }
 
-/** The shape of three.js that ocean-material.js asks for. */
+/** The shape of three.js the play parts ask for. */
 export function fakeThree() {
   class Vector2 {
     constructor(x = 0, y = 0) {
@@ -342,6 +344,29 @@ export function fakeWorld(doc, { content = {} } = {}) {
     return p ? multiply(worldOf(p), own) : own;
   }
 
+  // The world's water and ambients, as the water package and the stage give
+  // them to a doc that is its own world (one doc here: always the outermost).
+  // The reader is the evaluator itself, as water/'s is for the outermost at
+  // level 0 (its golden file pins water's evaluator to ocean.js bit for bit).
+  const memo = new Map();
+  const memoOf = (key, make) => {
+    if (!memo.has(key)) memo.set(key, make());
+    return memo.get(key);
+  };
+  function waterReader() {
+    const w = doc.traits?.water;
+    if (!w) return null;
+    const sea = doc.traits?.["sailing.sea"];
+    const p = sea ? seaParams(sea) : { wind: { speed: 0, from: 0 }, seed: 1, scale: 1 };
+    return memoOf(`water:${JSON.stringify(p)}`, () => ({ ...createOcean(p), level: 0 }));
+  }
+  function ambients() {
+    const out = { ...(seaOffer(doc.traits?.["sailing.sea"])?.ambient ?? {}) };
+    if (doc.traits?.water) out.water = { v: 1, level: Number(doc.traits.water.level) || 0, components: waterReader().components };
+    for (const k of Object.keys(out)) out[k] = memoOf(`ambient:${k}:${JSON.stringify(out[k])}`, () => structuredClone(out[k]));
+    return out;
+  }
+
   function join(session, { viewer = `viewer-${session}` } = {}) {
     const view = { session, viewer, here: true, keys: {}, at: Date.now(), loops: [], listeners: [], abort: new AbortController(), rate: null, processes: [] };
     views.set(session, view);
@@ -461,6 +486,13 @@ export function fakeWorld(doc, { content = {} } = {}) {
         view.listeners.push({ target, type, fn });
       },
       worldOf,
+      // conventions in this stage: the water package's reader of the world's water
+      collect: (name) => (name === "water" && doc.traits?.water ? [{ id: "water", value: waterReader() }] : []),
+      // the world's ambients: this doc's own, it being the outermost
+      ambient: (name) => {
+        const value = ambients()[name];
+        return value === undefined ? null : Object.freeze({ value, mine: true, frame: Object.freeze({ matrix: null }), clock: Object.freeze({ t: clock.t, running: running() }) });
+      },
       content: (id) => content[id] ?? null,
       loop(fn) {
         view.loops.push(fn);

@@ -282,7 +282,8 @@ function stage({ shipAt = [0, 0, 0], yaw = 0, touched = true } = {}) {
     },
   };
   s.ctx = {
-    sea: { ocean: { heightAt: () => 0 }, clock: () => 0, wind: null },
+    // a boat alone: her doc is the world (ctx.sea.world)
+    sea: { ocean: { heightAt: () => 0 }, clock: () => 0, wind: null, world: () => true },
     sim: { ships: () => ["hull"], stationsOf: () => ({ helm: "wheel", sail: null, anchor: null, ladder: "ladder" }), simulating: () => false },
   };
   // play.js runs the crew's tick each frame
@@ -603,6 +604,20 @@ describe("the crew", { timeout: 60_000 }, () => {
     expect(s.sets).toEqual([]);
     crew.dispose();
     expect(s.rides).toEqual([]);
+  });
+
+  it("linked into another world (a harbour), she doesn't ride the camera or place it: the harbour's view is the harbour's", () => {
+    const s = stage();
+    s.ctx.sea.world = () => false;
+    const crew = s.make();
+    s.frames(3);
+    expect(s.rides).toEqual([]);
+    expect(s.sets).toEqual([]);
+    // her doc becoming the world (opened alone) rides her again
+    s.ctx.sea.world = () => true;
+    s.frames(1);
+    expect(s.rides).toEqual([{ id: "hull", opts: { turn: false, rise: false } }]);
+    crew.dispose();
   });
 
   it("a click comes aboard wherever it reaches her: the sea or the sky, the ship, anything of her doc's (what nearer takes it, a card's carry or a linked game, already has)", () => {

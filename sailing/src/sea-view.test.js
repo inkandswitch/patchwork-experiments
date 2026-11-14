@@ -1,9 +1,13 @@
-// The sea: the sea from the doc, the water's extent, and createSeaView on a
-// fake stage (test/fakes.js), drawn at the doc's world time (the clock is the
-// stage's: scene/src/stage/clock.js), the same for everyone, editing or not.
+// The sea part (sea.js) and ctx.sea (sea-view.js): what a sea trait gives
+// away (waves for the water package, the wind and the sky as ambients), and
+// how a boat reads her world's water and wind, alone (exactly her own sea:
+// W1) and through a link's frame (the wind's half of W5), on a fake stage
+// (test/fakes.js) whose doc is its own world.
 import { describe, it, expect, afterEach } from "vitest";
 import { createOcean } from "./ocean.js";
-import { ATMOSPHERE, WATER_REACH, createSeaView, seaParams, waterExtent } from "./sea-view.js";
+import { createWind } from "./wind.js";
+import sea, { ATMOSPHERE, WIND_AMBIENT, seaOffer, seaParams } from "./sea.js";
+import { createSeaView, levelOf, windFor } from "./sea-view.js";
 import { FLOAT, SEA } from "./traits.js";
 import { emptyScene, fakeWorld } from "./test/fakes.js";
 
@@ -13,133 +17,125 @@ describe("the sea from the doc", () => {
     expect(seaParams({ wind: { speed: 12 }, seed: 9 })).toEqual({ wind: { speed: 12, from: 45 }, seed: 9, scale: 1 });
     expect(seaParams({ wind: { speed: -3, from: "x" }, scale: -1 })).toEqual({ wind: { speed: 0, from: 45 }, seed: 1, scale: 0 });
   });
-});
 
-describe("the water's extent (what the stage's near plane mustn't cut)", () => {
-  it("holds every crest and trough: the sum of the amplitudes bounds the surface, for calm to a gale", () => {
-    for (const speed of [0, 4, 8, 14, 22]) {
-      const ocean = createOcean({ wind: { speed, from: 30 }, seed: 3 });
-      const { min, max } = waterExtent(ocean);
-      expect(min).toEqual([-WATER_REACH, -max[1], -WATER_REACH]);
-      let hi = 0;
-      for (let i = 0; i < 400; i++) {
-        const h = ocean.heightAt((i * 7.31) % 200 - 100, (i * 13.7) % 200 - 100, i * 0.37);
-        hi = Math.max(hi, Math.abs(h));
-      }
-      expect(hi).toBeLessThan(max[1]);
-    }
-    expect(waterExtent(null).max[1]).toBe(0.5);
+  it("gives away plain data: the spectrum's components and the surface's look as water.waves; the wind's numbers and the sky as ambients", () => {
+    const trait = { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 };
+    const o = seaOffer(trait);
+    const ocean = createOcean(seaParams(trait));
+    expect(o.waves.components).toEqual(ocean.components);
+    expect(o.waves.look).toEqual({ seed: 2, wind: { speed: 8, from: 90 }, stats: ocean.stats });
+    expect(o.ambient).toEqual({ [WIND_AMBIENT]: { speed: 8, from: 90, seed: 2 }, atmosphere: ATMOSPHERE });
+    expect(JSON.parse(JSON.stringify(o))).toEqual(o);
+    expect(seaOffer(null)).toBeNull();
+  });
+
+  it("as an extension: offers them for the doc's trait, made again only when it changes, nothing without one", () => {
+    let doc = { traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2 } } };
+    const x = sea.create({ doc: () => doc });
+    const w1 = x["water.waves"];
+    expect(x["water.waves"]).toBe(w1);
+    expect(x.ambient().atmosphere).toBe(ATMOSPHERE);
+    doc = { traits: { [SEA]: { wind: { speed: 14, from: 90 }, seed: 2 } } };
+    expect(x["water.waves"]).not.toBe(w1);
+    doc = { traits: {} };
+    expect(x["water.waves"]).toBeUndefined();
+    expect(x.ambient()).toBeNull();
   });
 });
 
-// ─── on a fake stage ────────────────────────────────────────────────────────
+// ─── ctx.sea on a fake stage ────────────────────────────────────────────────
 
 const object = (extra) => ({ name: "Object", parent: null, group: null, visible: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...extra });
-
 function scene() {
   return {
     ...emptyScene(),
-    objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
-    order: ["buoy", "rock"],
-    traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 } },
+    objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }) },
+    order: ["buoy"],
+    traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 }, water: { level: 0 } },
   };
 }
 
-describe("createSeaView", () => {
+describe("createSeaView: a boat alone is her own world", () => {
   let w;
   afterEach(() => w?.done());
 
-  /** A sea view, ticked as play.js ticks it, with a process of its own (so its view can compute the clock). */
-  function seaOn(api) {
-    const sea = createSeaView(api);
-    api.clock.process({ step() {} });
-    api.loop(() => sea.tick());
-    return sea;
-  }
-
-  it("draws the ocean from the doc, lit as the sky is, and rebuilds it when the sea changes", () => {
-    const doc = scene();
-    w = fakeWorld(doc);
+  it("reads the world's water and wind, which are her own sea's exactly (W1), and knows her doc is the world", () => {
+    w = fakeWorld(scene());
     const api = w.join("A");
-    const sea = createSeaView(api);
-    expect(sea.atmosphere()).toBe(ATMOSPHERE);
-    expect(ATMOSPHERE.fog.color).toBe(ATMOSPHERE.sky.horizon);
-    expect(sea.ocean.heightAt(0, 0, 0)).toBeTypeOf("number");
-    expect(sea.wind.at(0, 0, 0)).toHaveLength(2);
-    const before = sea.ocean;
-    sea.update(w.scene());
-    expect(sea.ocean).toBe(before); // the same sea: not rebuilt
-    w.change((d) => (d.traits[SEA].wind.speed = 14));
-    sea.update(w.scene());
-    expect(sea.ocean).not.toBe(before);
-    expect(sea.ocean.stats.hs).toBeGreaterThan(before.stats.hs);
+    const s = createSeaView(api);
+    const own = createOcean(seaParams(scene().traits[SEA]));
+    const wind = createWind({ speed: 8, from: 90, seed: 2 });
+    for (const [x, z, t] of [[0, 0, 0], [37.5, -100, 13.37], [1000, 5, 1e4]]) {
+      expect(s.ocean.heightAt(x, z, t) === own.heightAt(x, z, t)).toBe(true);
+      const [a, b] = s.wind.at(x, z, t);
+      const [c, d] = wind.at(x, z, t);
+      expect(a === c && b === d).toBe(true);
+    }
+    expect(s.world()).toBe(true);
   });
 
-  it("no sea trait, no sea: no surface and no sky, until one is added", () => {
+  it("no water trait, no water: nothing sails, though the sea's wind still blows", () => {
     const doc = scene();
-    delete doc.traits[SEA];
+    delete doc.traits.water;
     w = fakeWorld(doc);
-    const api = w.join("A");
-    const sea = createSeaView(api);
-    expect(sea.ocean).toBe(null);
-    expect(sea.atmosphere()).toBe(null);
-    sea.tick(); // draws nothing, and doesn't throw
-    w.change((d) => (d.traits[SEA] = {}));
-    sea.update(w.scene());
-    expect(sea.ocean).not.toBe(null);
-    expect(sea.atmosphere()).toBe(ATMOSPHERE);
-    w.change((d) => delete d.traits[SEA]);
-    sea.update(w.scene());
-    expect(sea.ocean).toBe(null);
+    const s = createSeaView(w.join("A"));
+    expect(s.ocean).toBeNull();
+    expect(s.wind).not.toBeNull();
   });
 
-  it("is drawn at the doc's world time, the same on every view, and keeps nothing of its own in presence", () => {
-    const doc = scene();
-    w = fakeWorld(doc);
-    const sa = seaOn(w.join("A"));
-    const sb = seaOn(w.join("B"));
+  it("its time is the doc's world time, the same on every view; paused, it stands still", () => {
+    w = fakeWorld(scene());
+    const a = w.join("A");
+    const sa = createSeaView(a);
+    const sb = createSeaView(w.join("B"));
+    a.clock.process({ step() {} });
+    a.loop(() => sa.tick());
     w.tick(1 / 60, 60);
     expect(sa.clock()).toBeCloseTo(1, 6);
     expect(sb.clock()).toBe(sa.clock());
-    expect(w.view("A").keys.sailing?.clock).toBeUndefined();
-    // paused, the sea stands still
     w.join("C").clock.pause();
     w.tick(1 / 60, 60);
     expect(sa.clock()).toBeCloseTo(1, 6);
   });
 });
 
-describe("the sea while someone edits", () => {
-  let w;
-  afterEach(() => w?.done());
-  // each view runs the whole extension: its sea, and the ships' process
-  function seaOn(api) {
-    const sea = createSeaView(api);
-    api.clock.process({ step() {} });
-    api.loop(() => sea.tick());
-    return sea;
-  }
+describe("the world's wind through a link (windFor): mapped by the frame, at the world's time", () => {
+  const value = { speed: 9, from: 250, seed: 7 };
+  const raw = createWind(value);
+  const place = (yaw, t, s = 1) => [Math.cos(yaw) * s, 0, -Math.sin(yaw) * s, 0, 0, s, 0, 0, Math.sin(yaw) * s, 0, Math.cos(yaw) * s, 0, t[0], t[1], t[2], 1];
+  for (const yawDeg of [0, 30, 90, 137, 180])
+    for (const s of [0.5, 1, 2])
+      it(`yaw ${yawDeg}°, scale ${s}: the wind at a point is the world's there, turned and scaled into the frame`, () => {
+        const yaw = (yawDeg * Math.PI) / 180;
+        for (const t0 of [[0, 0, 0], [40, 0, 25], [-40, 2, -25]]) {
+          const M = place(yaw, t0, s);
+          const timing = { mine: false, delta: 50, running: true, worldT: 0 };
+          const wf = windFor(value, { matrix: M }, timing);
+          for (const x of [-30, 0, 30])
+            for (const z of [-30, 0, 30])
+              for (const t of [0, 3.7, 1000]) {
+                const xw = M[0] * x + M[8] * z + M[12], zw = M[2] * x + M[10] * z + M[14];
+                const [vx, vz] = raw.at(xw, zw, t + 50);
+                // back into the frame: Rᵀ v / s
+                const ex = (M[0] * vx + M[2] * vz) / (s * s), ez = (M[8] * vx + M[10] * vz) / (s * s);
+                const [gx, gz] = wf.at(x, z, t);
+                expect(Math.abs(gx - ex)).toBeLessThan(1e-9);
+                expect(Math.abs(gz - ez)).toBeLessThan(1e-9);
+              }
+        }
+      });
 
-  // There is no editing sea: every view runs the same sailing extension, so
-  // one that is selecting things and holding a tool draws the same sea at
-  // the same world time as the one sailing her, and it runs on; only a
-  // pause stops it (scene TOOLS.md §7: editing never stops the sea).
-  it("an editor's view draws the sailor's sea at the sailor's time; it runs on, and only a pause stops it", () => {
-    const doc = scene();
-    w = fakeWorld(doc);
-    const sailor = w.join("P");
-    const sp = seaOn(sailor);
-    w.tick(1 / 60, 60);
-    const editor = w.join("E");
-    // (what the editor selects or holds runs nothing different: scene's H1)
-    const se = seaOn(editor);
-    w.tick(1 / 60, 60);
-    expect(se.clock()).toBeCloseTo(sp.clock(), 6);
-    expect(se.clock()).toBeGreaterThan(1.5);
-    editor.clock.pause();
-    const t = se.clock();
-    w.tick(1 / 60, 60);
-    expect(se.clock()).toBeCloseTo(t, 6);
-    expect(sp.clock()).toBeCloseTo(t, 6);
+  it("a tilted frame has no wind; no value, none; the world's own is the wind as made", () => {
+    const tilt = (5 * Math.PI) / 180;
+    expect(levelOf({ matrix: [1, 0, 0, 0, 0, Math.cos(tilt), Math.sin(tilt), 0, 0, -Math.sin(tilt), Math.cos(tilt), 0, 0, 0, 0, 1] })).toBeNull();
+    expect(windFor(value, { matrix: [1, 0, 0, 0, 0, Math.cos(tilt), Math.sin(tilt), 0, 0, -Math.sin(tilt), Math.cos(tilt), 0, 0, 0, 0, 1] }, { mine: false })).toBeNull();
+    expect(windFor(null, null, { mine: true })).toBeNull();
+    const mine = windFor(value, { matrix: null }, { mine: true });
+    expect(mine.at(3, 4, 5)).toEqual(raw.at(3, 4, 5));
+  });
+
+  it("a paused world's wind is frozen at its latched time", () => {
+    const wf = windFor(value, { matrix: place(0.3, [5, 0, 5]) }, { mine: false, delta: 9, running: false, worldT: 42 });
+    expect(wf.at(1, 2, 0)).toEqual(wf.at(1, 2, 100));
   });
 });
