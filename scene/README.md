@@ -74,8 +74,9 @@ nothing.
 
 **Body** (`scene.body`, `src/parts/body.js`) is the body chip ("Look ▾",
 "Edit ▾", "Walk ▾": Look or Edit, a body that can start here, or Leave the
-one you're in), who's here (each person's body and held tool, from
-presence) and the Esc hint (the layer the next Escape pops). The stage's
+one you're in), who's here (each person in the focus doc, with their body
+and held tool, which every view says on every channel it acts on: someone
+seated at a game linked elsewhere shows seated) and the Esc hint (the layer the next Escape pops). The stage's
 own bodies are Look and Edit (`src/stage/bodies.js`), both the orbit
 camera; others come with packages (`walk`, `seats`, sailing's). Nothing
 stands on Edit: walking or sitting down from it leaves it, and Leave comes
@@ -708,7 +709,9 @@ MaterialRule = {
   URLs (`automerge:<id>`, bare, or `https://…`). The stage keeps it true: it
   adds the package of every registered plugin the doc calls for (a
   provider, a trait's extension, a part that was used), and offers a viewer
-  the listed ones they don't have, in one prompt (STAGE.md, "Packages").
+  the listed ones they don't have, in one prompt for every doc open in the
+  view (STAGE.md, "Packages"): a scene lists only its own contents'
+  packages, never its linked docs'.
   `@patchwork.suggestedImportUrl` is the scene package itself, so a viewer
   with nothing installed is offered the scene tool, which offers the rest.
   A doc written whole (a publish script, another tool) writes both:

@@ -360,7 +360,9 @@ right-click Select still selects it (no handles, no inspector).*
   that stage, whatever the pointer is over.
 - **The body chip** offers Look and Edit first, then the bodies that can
   start here (Walk), then Leave while a body stands over the base. **Who's here** shows each person's body and held tool,
-  from presence (today only selection and hover, `select.js:143-146`).
+  from presence: the view says its viewer's on every channel it acts on, so
+  a person at another placement of this doc shows as what they're doing
+  there (COMPOSITION.md, Decisions, links loose ends, 4).
 - **The clock chip** is ▶ or ⏸ for each doc on the focus path that has a
   process, outermost first; its Pause acts on that doc. Who computes shows
   only on a stall ("waiting for Ben's machine") or when nobody here can.

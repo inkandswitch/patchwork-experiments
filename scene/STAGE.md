@@ -47,8 +47,10 @@ below). Where it is going is [TOOLS.md](TOOLS.md) and
 
 A view shows one stage per open doc occurrence. The outermost doc's stage is
 the view's first; every **link** (an object through the `scene.link`
-source) whose doc is open opens another, its root under the link's node, in
-the link's frame (COMPOSITION.md §2, §7). Expansion (`stage/links.js`) is a
+source) whose doc is open opens another, its roots in the link's node (its
+body: a link's content is its doc, so hiding the link hides its doc, its
+layers and labels too, while its stage runs on), in the link's frame
+(COMPOSITION.md §2, §7). Expansion (`stage/links.js`) is a
 pure function of the link graph: a live doc **acts** at one occurrence per
 view, the first in path order (shallowest, then the smallest link id where
 paths differ), and is a **mirror** at every other; a link with `at` is
@@ -143,7 +145,14 @@ or identity closes, with what was opened under it, and opens again.
   extents, and every event's `ray`, `hit` and widget. A frame is a
   similarity: points by it, directions by its rotation, distances by its
   scale. A hit on anything not of this doc is `{ id: null, point, normal,
-  distance }`; a hit inside one of this doc's links is the link.
+  distance }`; a hit inside one of this doc's links is the link. A world
+  layer hangs in an anchor the viewport owns, at the stage's root, so what
+  an extension places in it is in the stage's frame (a group at
+  `api.worldOf(id)` lands on the object, however deep the link). Geometry
+  inside an object is read in the object's own frame (`scope.js`
+  `contentMatrix(root, node)`), which every frame above it cancels. No
+  extension reads three.js's world matrices or holds the camera (COMPOSITION.md
+  "Decisions, links loose ends").
 - **Paths.** The selection and hover are paths (the links from the
   outermost in, then the object); each stage sees its element
   (`api.view.get().selected`), and `api.view.select(target)` selects its
@@ -152,7 +161,10 @@ or identity closes, with what was opened under it, and opens again.
   link of the caller's (false where it can't; a drawn stage's does
   nothing). Leaving is the view's (Escape, the trail). One key grammar (`stage/paths.js`) names an object in the
   viewport and an extension at the router: the outermost's ids are their
-  own, any other's `SEP n SEP id`.
+  own, any other's `SEP n SEP id`. A held verb pins attention to its
+  target's path (`scene.keys`' `keymap.pinned()`), so its target holds in
+  its own doc wherever the look goes, and it lets go when the target goes
+  from that doc, its link goes, or its extension stops there.
 - **Input** goes a segment per stage on the hit's path, innermost first:
   each its holders, nearest first, then its root's, out to the outermost
   whatever the focus; then the general parts (the focus stage's), wherever
@@ -767,11 +779,18 @@ yet). Every scene doc carries it:
 
 **Loading.** The listed packages none of whose plugins is registered here
 (`missingPackages`) are this viewer's to load.
-- **One prompt.** They're published as `local.packages` and shown by
-  `scene.packages` as one card over the view: "This scene uses 2 packages
-  you don't have.", each by its own name (its `package.json`'s, read from
-  its folder; never asked of an `https:` host) and its URL, with **Load**
-  and **Not now**.
+- **One prompt, for every open doc.** Each stage publishes its doc's as
+  `local.packages`; the view puts every open stage's together (acting or
+  drawn: a pin's content needs its providers too; `unionPackages`, each URL
+  once, asked about if any stage asks) as `view.packages`, which only the
+  general parts see, and `scene.packages` shows it as one card over the
+  view: "This scene uses 2 packages you don't have.", each by its own name
+  (its `package.json`'s, read from its folder; never asked of an `https:`
+  host) and its URL, with **Load** and **Not now**, which go to every stage
+  that asked. So a host lists only what its own contents come from, and a
+  viewer arriving at it is asked for what its linked games run too.
+  (`api.packages` is a general part's view-wide, any other extension's its
+  own doc's.)
 - **Load** loads each as the module watcher would, on this thread:
   `importPackage` (`@inkandswitch/patchwork-filesystem`) at the folder's
   current heads, then `registerPlugins(plugins, url)`
@@ -1061,7 +1080,7 @@ that extension.
 |---|---|
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
-| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its stage's `time.now()`: "Time"), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
+| `presence` | `{ set(key, value), get() → { [session]: { viewer, body, held, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `body` (`{ id, label }`) and `held` (`{ name }` or null) are what that peer's view says of its viewer on every channel it acts on (who's here: someone seated at a game linked elsewhere shows seated to a viewer of the game alone). `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its stage's `time.now()`: "Time"), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
 | `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
 | `notify(text, kind?)` | |
 | `packages` | `{ load(urls?) → Promise, dismiss(urls?) }`: the viewer's answer to the packages prompt (see "Packages"). `load` is a yes: it loads what's asked about or failed (all, or those of `urls` among them) and remembers what loads. `dismiss` asks no more in this view |
@@ -1091,7 +1110,7 @@ that extension.
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
 | `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | a raycast hit is `{ id, point, normal, distance, back }`: `normal` faces the ray; `back` says the ray met the face from behind (from inside a closed solid) |
-| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `touched()`: the camera has been placed for this viewer (moved by them, or restored as the view opened; to a general part, also carried across a focus move), so nothing frames it on its own. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
+| `camera` | `{ get() → { position, target, fov, up }, set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `touched()`: the camera has been placed for this viewer (moved by them, or restored as the view opened; to a general part, also carried across a focus move), so nothing frames it on its own. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held. Everything is in the stage's frame (`get().up`: the picture's up, rolled as the camera is, turned as directions are); the three.js camera is the view's, and no extension holds it |
 
 **Bodies, the held tool, attention** (TOOLS.md §3–§5; "The input chain" above)
 
@@ -1802,8 +1821,9 @@ taken out. It keeps the following:
 `pageBus(handle, receive)`, delivers what it broadcasts to every other
 presence on the same handle in the page):
 - **messages** (on `handle.broadcast`):
-  - `scene:presence` carries `{ session, viewer, seq, at, keys }` or
-    `{ session, bye: true }`;
+  - `scene:presence` carries `{ session, viewer, seq, at, keys, body?, held? }`
+    or `{ session, bye: true }`: `body` and `held` the view's (its body and
+    held tool, `presence.announce`), said on every channel it acts on;
   - `scene:send` carries `{ session, viewer, ext, kind, n, data }`, `n`
     counting this session's sends, so one delivered twice is told once;
   - `scene:pose` carries `{ session, viewer, id, parent, transform, since, seq, at, every }`
