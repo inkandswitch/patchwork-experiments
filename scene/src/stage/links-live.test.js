@@ -247,6 +247,54 @@ describe("arriving through a link", () => {
     expect(entered).toEqual([["GB", "p2"]]);
   });
 
+  // A place is the linked doc's (I2: nothing crosses docs), so arriving
+  // through a link enters that doc's stage's body or none. Another linked
+  // game offering the same body never takes it: not when the named doc
+  // offers no such body, and not while the named doc's stage is starting
+  // (the sibling started first).
+  for (const gb of ["offers no such body", "is still starting"]) {
+    it(`a start placed on a link whose doc ${gb}: never a sibling's body with that doc's place`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const entered = [];
+      const seat = { create: (api) => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: (place) => (entered.push([api.url, place]), { input: {} }) }] }) };
+      let open = () => {};
+      // (the harness's load returns this: GB's extension loads when the gate opens)
+      const gated = new Promise((r) => (open = () => r(seat)));
+      const repo = new FakeRepo();
+      const ga = repo.add(emptyScene({ title: "GA", objects: {}, order: [], traits: { "t.game": {} } }));
+      const gbDoc = repo.add(emptyScene({ title: "GB", objects: {}, order: [], traits: gb === "is still starting" ? { "t.gb": {} } : {}, view: { start: { body: "t.sit", place: "p2" } } }));
+      s = await mountStage({
+        repo,
+        extensions: [
+          { meta: { id: "t.seatish", traits: ["t.game"] }, module: seat },
+          { meta: { id: "t.gbseat", traits: ["t.gb"] }, module: gated },
+        ],
+        doc: {
+          objects: { "link-a": object({ name: "A", sourceUrl: ga.url, providerId: LINK, renderUrl: null }), "link-b": object({ name: "B", sourceUrl: gbDoc.url, providerId: LINK, renderUrl: null }) },
+          order: ["link-a", "link-b"],
+          view: { start: { place: "link-b" } },
+        },
+      });
+      await until(() => s.debug.view.stages().length === 3);
+      const ga1 = s.debug.view.stages().find((x) => x.url === ga.url);
+      await until(() => ga1.debug.host.instanceOf("t.seatish"));
+      await settle();
+      await settle();
+      expect(entered).toEqual([]);
+      expect(s.debug.view.atom.get().body.id).toBe("look");
+      if (gb === "offers no such body") {
+        // settled without it: nobody arrives
+        expect(s.debug.view.arriving()).toBe(null);
+        return;
+      }
+      // still waiting on GB; once its extension is in, GB's body, GB's place
+      expect(s.debug.view.arriving()).not.toBe(null);
+      open();
+      await until(() => s.debug.view.atom.get().body.id === "t.sit");
+      expect(entered).toEqual([[gbDoc.url, "p2"]]);
+    });
+  }
+
   it("a start placed on a pinned link, a mirror or a closed one arrives nowhere: Look, nothing entered", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     for (const kind of ["pinned", "mirror", "closed"]) {

@@ -704,6 +704,12 @@ describe("the stage, mounted", () => {
     expect(h.doc().order).toEqual([id, "p", "g"]);
     const attached = await api.addObject(file.url, { parent: "p" });
     expect(h.doc().objects[attached].parent).toBe("p");
+    // an id made beforehand (a copy maps its ids first): that one, and never one the scene has
+    const mine = api.newId("o");
+    expect(await api.addObject(file.url, { id: mine })).toBe(mine);
+    expect(h.doc().objects[mine]).toMatchObject({ sourceUrl: file.url, visible: true, wireframe: false });
+    await expect(api.addObject(file.url, { id: "p" })).rejects.toThrow(/already has an object/);
+    expect(h.doc().objects.p).toEqual(card());
     await expect(api.addObject("not a url")).rejects.toThrow(/automerge URL/);
     // (a scene in itself is a link its expansion closes, a cycle: links.test.js)
     const txt = repo.add({ "@patchwork": { type: "essay" } });

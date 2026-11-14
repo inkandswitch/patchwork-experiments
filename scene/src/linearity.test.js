@@ -81,7 +81,7 @@ const OPS = {
     const plan = extractPlan(b, ["x"], { runtime: RUNTIME, refs: REFS });
     const url = `automerge:T${r.tag}${++r.n}`;
     w.set(url, Automerge.from(plan.doc()));
-    const host = extractHost(b, b, plan, { link: `L-${r.tag}-${++r.n}`, url, refs: REFS });
+    const host = extractHost(b, plan, { link: `L-${r.tag}-${++r.n}`, url, refs: REFS });
     w.set(B_, Automerge.change(w.get(B_), host.change));
   },
   "bundle in A": (w, r) => bundleFirst(w, A, r),

@@ -459,14 +459,26 @@ K). Both drop runtime traits and `copy: "drop"` fields.
   link at `p` (identity transform, `hint.bounds` from S's box), and clear
   references that now cross, with paste's notice. A crash between the two
   leaves an orphan doc and loses nothing.
-- **Bundle(L, K)**: copy the linked doc's records in with `planCopy`, ids
-  kept unless they collide, top-level transforms = link · local, K's traits
-  onto the host root (refused per key the host has: "This scene already has
-  Seats"), assets merged; remove the link. The linked doc is never written.
+- **Bundle(L, K)**: copy the linked doc's records in, ids kept unless they
+  collide, top-level transforms = link · local, K's traits onto the host
+  root (refused per key the host has: "This scene already has Seats"),
+  assets merged; remove the link. The linked doc is never written. A pin is
+  copied as its value: what in it follows a doc the pin holds (a link, a
+  built object) is copied fixed at the pin's heads for that doc, and render
+  docs are read as the pin holds them.
 
 Since neither carries runtime state, linearity holds under any
-interleaving, concurrent extracts included. `planCopy` gains
-`{ traits: K }`; paste passes none, so nothing adds a root trait for you.
+interleaving, concurrent extracts included. *As built* (Decisions, step 15
+review, 4): the copy rule is one set of pure pieces in `src/transfer.js`
+that paste, extract and bundle all call: `subtreeOf` (what S is),
+`cleanObject`/`cleanTraits` (runtime state left behind), `copyRefs` (ids
+mapped first, then every described reference follows its object, is kept
+or is cleared, an entry kept where the doc it lands in has it, a dropped
+field left behind), `renderSeed` and `assetsFor`. What differs is only
+placement, which is each operation's own: paste lands a copy at a point
+through `addObject` (`planCopy`), extract keeps every transform, bundle
+composes with the link. K is extract's and bundle's argument; paste takes
+none, so nothing adds a root trait for you.
 
 ## 9. Named frames, and going elsewhere
 
@@ -590,7 +602,7 @@ Each is argued above and checkable over finite cases.
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field |
 | I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the latest base ride of any acting stage, whatever the focus | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role; a sibling link's stage riding × every focus |
-| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside | Every set of roots of a fixed 6-object scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 504 cases (`src/extract.test.js`) |
+| I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside; each edge outside is cleared where it lives and said | Every set of roots of a fixed 7-object, two-cluster scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 1016 cases, 116 exact over four classes (p the root or not, the link grouped or not, S one block of the order or spread), each exact one again with the host holding T's ids; every concurrent edit to what T was made from refuses the extract (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
 
@@ -899,28 +911,44 @@ ships alone and proves something.
     said; a dimension with both ends on S goes to T, one with one end keeps
     it frozen; a start placed on S moves to T and the host starts through the
     link (step 16). Bundle on a link (`bundlePlan`) copies the doc it shows
-    (a pin's value, its live links fixed at the pin's deps) in the link's
+    (a pin's value: what in it follows a doc, a link or a built object,
+    fixed at the pin's deps, its render docs read as the pin holds them) in the link's
     place, ids kept unless taken, top objects at link · local under the
     link's parent and in its group, what hung on the link left where it is,
     and never writes that doc. K is the commands' `options` (STAGE.md "A
     command": the inspector's checkboxes, none ticked; the menu takes none).
     Both are `scene.transfer`'s, edit-only, one undo step, the host written
     once, computed from the host as it is when it's written (compare-and-set
-    on S and K). *Proves* (`src/extract.test.js`, I9): every set of roots of
-    a six-object scene (a table with a lamp and a card on it, a crate and a
-    wheel in a group: a built object, both kinds of reference, a runtime
-    trait field, a claim, a `copy: "drop"` field, three dimensions, a start
-    on the crate) × every K over three root traits, 504 cases, each run
-    through the doer on a fake repo: refused exactly when the tops don't
-    share a parent (168); otherwise the host written once and nothing else
-    that existed, the new docs T and one render doc per built object, T and
-    the host intra-doc (I2), T and what comes back holding no runtime state;
-    bundled back, the host written once more and T never; and where S has no
-    edge outside (64 cases, said independently of the code: no reference of
-    either kind across S, its outer members in one group, no dimension
-    across) the host is the original on every field but runtime state and
-    render doc identity (whose seeds agree), its order exact where S was one
-    block of it, else S one block where its first member was. I11
+    on everything T was made from: its footprint). *Proves*
+    (`src/extract.test.js`, I9): every set of roots of a seven-object scene
+    in two clusters (a table with a lamp and a card on it; a shelf with a
+    crate and a wheel on it, filed in a group; a built object, both kinds of
+    reference, a runtime trait field, a claim, a `copy: "drop"` field, two
+    dimensions, a start on the crate, an order mixing the clusters) × every
+    K over three root traits, 1016 cases, each run through the doer on a
+    fake repo: refused exactly when the tops don't share a parent (584);
+    otherwise the host written once and nothing else that existed, the new
+    docs T and one render doc per built object, T and the host intra-doc
+    (I2), T and what comes back holding no runtime state; each edge outside
+    S (said independently of the code) cleared exactly where it now lives,
+    with paste's notice, the link ungrouped where S's outer members differ,
+    a dimension across frozen at its point, and no notice where nothing
+    crossed (316); bundled back, the host written once more and T never;
+    and where S has no edge outside (116: the whole scene 64, the table's
+    or the shelf's cluster at the root spread through the order 32, the
+    cargo group on the shelf as one block 16, the crate and wheel without
+    their group, the link filed in it, 4) the host is the original on every
+    field but runtime state and render doc identity, its order exact where
+    S was one block, else S one block where its first member was; each of
+    those 116 again with the host holding every id T has, every one coming
+    back new and every reference following it. Extract's compare-and-set:
+    eleven kinds of edit landing while T is made (a child attached under S,
+    something filed in a group of S, a member edited, S's order, p, a
+    dimension added with both or one end on S, one edited, the start moved
+    onto or off S, a trait of K edited) each refuse it with nothing written,
+    and four that touch nothing T was made from don't. Bundling a pin seeds
+    the render doc as the pin holds it and fixes the built object at the
+    pin's heads for its source (Decisions, step 15 review). I11
     (`src/linearity.test.js`): A, B and C on real Automerge, B holding a
     keeper-bound object with a claimed one under it; link A→B, pin A→B, link
     C→B, copy into A or C, extract, bundle in A or C; every sequence of up to
@@ -940,7 +968,9 @@ ships alone and proves something.
     *Decided, not built* (Decisions, step 16): neither needs them yet. The
     one workaround was arrival among linked docs, and it went with a start
     placed on a link (`startArrival`, `src/stage/view.js`), which names no
-    place across a doc.
+    place across a doc: the body is that doc's stage's or none
+    (`src/stage/links-live.test.js`: a sibling game offering the same body,
+    whether the named doc has none or is still starting, never takes it).
 
 ## What the stage doesn't do, and what it costs
 
@@ -998,6 +1028,73 @@ The five open questions were put to the project lead and answered:
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
 
+## Decisions, step 15 review (2026-11-14, made unattended)
+
+The review of steps 15 and 16 found the build narrower than its proof in
+four places and three small rough edges. Each is fixed; what was decided:
+
+1. **Arriving through a link arrives in that doc's stage or nowhere.**
+   `bodyDefs(caller, only)` reads only the linked doc's stage when the start
+   came through a link, and `enterBody` enters only there. While that stage
+   is starting or its packages may still come, arriving waits for it (with
+   no deadline: the same wait as any arrival before its body is on offer,
+   so a viewer slow on the package prompt still arrives); once it has
+   settled without the body, nobody arrives. Why: the place is that doc's
+   id, so entering a sibling's body with it is a reference across docs (I2)
+   and makes arrival depend on which stage started first (I4). The
+   reviewer's "give up after ARRIVE_WAIT_MS" was not taken: no other arrival
+   gives up while its body may still come.
+2. **Extract compares a footprint, not the records.** `footprint(doc,
+   roots, K)` is everything an extract reads: S worked out again (so a child
+   attached or a member filed meanwhile changes it), S's order, p, S's
+   records, K's traits, every dimension with an end on S, and the start.
+   The plan keeps it; `extractHost` recomputes it from the host as it is
+   and writes nothing unless it's equal. Why: one value, so nothing T was
+   made from can change unseen; the alternative, a check per hazard, is a
+   list someone extends wrongly. Edits that touch none of it (an object
+   outside S, a reference into S added from outside, which is cleared and
+   said as any other) don't refuse it.
+3. **I9's fixture has two clusters.** A table with a lamp and a card, and a
+   shelf with a crate and a wheel filed in a group, in an order mixing them:
+   so exact round trips exist with p not the root, with the link filed in a
+   shared group, with S spread through the order and as one block, and
+   every exact one is run again with the host holding T's ids. Each edge
+   kind is checked at its field: the reference cleared where it now lives
+   and paste's notice given, the link ungrouped, the dimension frozen.
+   Mutating bundle's id map, the link's group, the order rule or the start's
+   id mapping each fails the harness.
+4. **One copy rule, as pieces; placement per operation.** `fixRefs` is gone:
+   `copyRefs` (in `transfer.js`) is the rule for a copied object's
+   references, and paste, extract and bundle all call it, after mapping
+   every id first. Paste could only do that once `addObject` took an `id`
+   (made with `newId` beforehand), which it now does; so no copy writes a
+   reference twice. What stays in a doc when something leaves goes through
+   the same rewriter (`refEdits`). Root traits are cleaned by the same
+   `cleanTraits` as an object's. `planCopy` is not bundle's: it is paste's
+   placement (landing at a point, a duplicate beside, through `addObject`),
+   while extract keeps every transform and bundle composes with the link
+   and writes one change. Why: §8's "planCopy gains `{ traits }`" would have
+   put two placements paste never uses into paste's planner, and one copy
+   rule is about what a copy is, which is now one code path.
+5. **A pin's whole value comes with a bundle.** Anything in the pinned doc
+   that follows a doc the pin holds (a link, or a built object whose source
+   the pin holds) gets `at: { heads: deps[url], deps }`, the rule links
+   already had, now not a special case; a file object gets none (its file
+   never changes, and `at` means nothing there, as addObject has it). Each
+   render doc is read through `pinnedRepo(repo, deps)`, the repo a pinned
+   stage reads, so its copy is seeded with the pinned params and build.
+6. **Bundle's options follow a live link.** The cache in transfer's local
+   state stays (a command's state is synchronous), but for a live link it
+   subscribes to the found handle and rewrites its entry when the root
+   traits change, unsubscribing when transfer stops; a pin is read once.
+7. **One fresh object record.** `ops.newObjectRecord` is the shape
+   `addObject` and extract's link both write.
+8. **A box can be asked for in an object's frame.** `api.box(id, { in })`
+   boxes the object's own geometry within that object's displayed frame
+   (the viewport's `within`, as a stage's frame already was), and extract
+   asks for each object of S in p's frame; without a viewport, each hint
+   box is carried there from its own frame. No box is boxed again.
+
 ## Decisions, step 16 (2026-11-14, made unattended)
 
 Named frames and traversal (§9) were to be built "when doom's exits or
@@ -1022,9 +1119,10 @@ published examples, nothing needs them, so step 16 is this decision.
      a place inside it by name.
 2. **A start placed on a link arrives through it.** `view.start.place`
    naming one of the doc's links hands arrival to that doc: its own
-   `view.start` (body and place), in its stage, and on down where that
-   place is a link in turn (`startArrival`, pure). The host's `body` isn't
-   read then. Through a pin, a mirror or a closed link nobody arrives (Look,
+   `view.start` (body and place), in its stage and only there, and on down
+   where that place is a link in turn (`startArrival`, pure). The host's
+   `body` isn't read then, and no other stage's body is entered: the place
+   is that doc's id (step 15 review, 1). Through a pin, a mirror or a closed link nobody arrives (Look,
    nothing entered). Why: nothing crosses, the host names an object of its
    own and the linked doc its own place, so the game arrives people the same
    way alone and in the room (I4); and it composes, a room in a building
@@ -1068,8 +1166,9 @@ Made while building extract and bundle, with the project lead away.
    docs by what they hold, not by url.
 5. **The host's change is worked out when it's written**, from the host as
    it is then, after T and the render copies are made; extract writes
-   nothing if S or K's traits changed meanwhile (T is left unlinked: an
-   orphan, nothing lost), and bundle is planned again. Why: an edit to S
+   nothing if anything T was made from changed meanwhile (its footprint:
+   step 15 review, 2; T is left unlinked: an orphan, nothing lost), and
+   bundle is planned again. Why: an edit to S
    while T was being written would otherwise be missing from T and deleted
    from the host.
 6. **Extract doesn't call `beforeRemove`.** References into S are cleared
@@ -1102,15 +1201,18 @@ Made while building extract and bundle, with the project lead away.
     Why: §8 for the first; for the second, null in T is its root, which the
     host can't tell from a reference that was always null. A reference to p
     is an edge outside S.
-13. **Bundling a pin copies its value**; a live link inside it is copied
-    fixed at the heads the pin held it at. Why: a copy of a value is that
+13. **Bundling a pin copies its value**: what in it follows a doc the pin
+    holds (a link, a built object) is copied fixed at the heads the pin held
+    that doc at, and its render docs are read as the pin holds them (step 15
+    review, 5). Why: a copy of a value is that
     value, not today's.
 14. **Bundle is refused whole** for a ticked trait the host has ("This scene
     already has Seats") or the linked doc lacks. Why: an edit happens or it
     doesn't; §8's "refused per key" is which key the refusal names.
 15. **Bundle's options are read from the linked doc**, found by url (and
-    heads) once and kept in transfer's own local state
-    (`scene.transfer.linked`), so the surfaces ask again when they come. Why: a command's state is synchronous, and the only way to
+    heads) and kept in transfer's own local state
+    (`scene.transfer.linked`), so the surfaces ask again when they come; a
+    live link's are followed as its doc changes (step 15 review, 6). Why: a command's state is synchronous, and the only way to
     the linked doc's root traits is to find it, which an extension may do by
     URL itself. Cost: the first time a link is selected its checkboxes come
     a moment later. A host still never reads into a link to decide anything.

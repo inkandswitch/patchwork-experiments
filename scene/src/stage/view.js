@@ -729,10 +729,14 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
   let router = null;
 
-  /** Every body on offer: each acting stage's, the caller's first; the first to offer an id has it. */
-  function bodyDefs(first = null) {
+  /**
+   * Every body on offer: each acting stage's, the caller's first; the first
+   * to offer an id has it. `only`: the caller's alone (a start through a
+   * link arrives in that doc's stage or nowhere: a place never crosses docs).
+   */
+  function bodyDefs(first = null, only = false) {
     const out = new Map();
-    const order = first?.acts ? [first, ...acting().filter((s) => s !== first)] : acting();
+    const order = only ? (first?.acts ? [first] : []) : first?.acts ? [first, ...acting().filter((s) => s !== first)] : acting();
     for (const s of order) {
       for (const [id, found] of s.bodyDefs()) {
         if (out.has(id)) continue;
@@ -806,7 +810,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * frame, and what it answers goes on top of the stack, over Look. "look"
    * and "edit" are the stage's: every body leaves and that one is the base.
    */
-  function enterBody(id, place = null, caller = null) {
+  function enterBody(id, place = null, caller = null, only = false) {
     if (dead || !router) return false;
     const stageB = stageBody(id);
     if (stageB) {
@@ -814,7 +818,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       setBase(stageB);
       return true;
     }
-    const found = bodyDefs(caller).get(id);
+    const found = bodyDefs(caller, only).get(id);
     if (!found) return false;
     const { stage, ext, def } = found;
     let sitting;
@@ -872,10 +876,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // The outermost doc's, read once: on arrival, and again after a template
   // has written one for its maker. A start whose place is one of the doc's
   // links arrives through it: as the linked doc starts people, in its stage
-  // (and so on down, a place there being a link in turn). Its body is
-  // entered once that stage (else the first acting stage) offers it and the
-  // content is in, or ARRIVE_WAIT_MS after it came on offer. Until then it
-  // waits as long as the body may still come.
+  // (and so on down, a place there being a link in turn), and only there:
+  // that stage offers the body or nobody arrives, as a place is that doc's.
+  // Otherwise the first acting stage to offer it does. Its body is entered
+  // once offered and the content is in, or ARRIVE_WAIT_MS after it came on
+  // offer. Until then it waits as long as the body may still come.
   let arrival = null; // { offered, based }
   function arrive() {
     if (!outermost()) return;
@@ -945,18 +950,26 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     const all = [...stages.values()];
     const unsettled = (s) => s.starting() || s.packages.coming();
-    const caller = at.through ? at.stage : null;
-    const offer = bodyDefs(caller).get(at.body);
+    // through a link: that doc's stage alone offers it (its place is that doc's)
+    const only = at.through;
+    const caller = only ? at.stage : null;
+    const offer = bodyDefs(caller, only).get(at.body);
     if (offer) {
       a.offered ??= time.now();
       // a stage ahead of the offering one in acting order, or a link still on its way, may offer
       // it too, and its offer is the one arriving takes (unless the start named the stage, through
       // a link); and the content first
       const order = acting();
-      const ahead = caller ? [] : order.slice(0, order.indexOf(offer.stage));
-      if ((linksPending() || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
+      const ahead = only ? [] : order.slice(0, order.indexOf(offer.stage));
+      if (((!only && linksPending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
       arrival = null;
-      enterBody(at.body, at.place, caller);
+      enterBody(at.body, at.place, caller, only);
+      return;
+    }
+    if (only) {
+      // that stage may still bring it (starting, or its packages on their way); else nobody arrives
+      if (unsettled(at.stage)) requestFlushSoon();
+      else if (at.stage.packages.complete()) arrival = null;
       return;
     }
     // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)

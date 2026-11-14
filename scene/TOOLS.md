@@ -125,7 +125,7 @@ A **place** is not a type: it is the object given to a body's `enter` (a
 seat, a station), or null for "here". `view.start` is read on arrival, and
 the scene's package list must include its body's package. A place that is
 one of the doc's links arrives through it, as the linked doc starts people
-(its own `view.start`, in its stage, and on down): the host names its own
+(its own `view.start`, in its stage and only there, and on down): the host names its own
 link and the linked doc its own place, so nothing crosses
 (COMPOSITION.md, Decisions, step 16). Prefs keep
 today's live rule, `view.prefs[k] ?? doc.view[k] ?? fallback` (since step 10

@@ -7,7 +7,9 @@ import {
   cleanObject,
   describesOf,
   entryText,
-  fixRefs,
+  copyRefs,
+  entryIn,
+  refEdits,
   fromScene,
   hintBoxOf,
   liftOf,
@@ -250,31 +252,49 @@ describe("references in traits", () => {
     expect(refs.has("t.seats")).toBe(false);
   });
 
-  it("an object field naming a copied object is set later (to its copy); naming something else, kept in the same scene and cleared in another", () => {
+  it("copyRefs: an object field naming a copied object follows it (null: the copy's root); naming something else, outside says (kept in its own scene, else cleared and reported)", () => {
+    const map = new Map([["lever", "c1"], ["door", "c2"], ["deck", null]]);
     const into = { "t.lever": { target: "door", speed: 2 } };
-    expect(fixRefs(into, refs, { copied: new Set(["lever", "door"]), same: false })).toMatchObject({ later: [{ trait: "t.lever", key: "target", to: "door" }], lost: [] });
-    expect(into["t.lever"]).toEqual({ speed: 2 });
-    const same = { "t.lever": { target: "door" } };
-    expect(fixRefs(same, refs, { copied: new Set(["lever"]), same: true })).toMatchObject({ later: [], lost: [] });
-    expect(same["t.lever"].target).toBe("door");
-    const across = { "t.lever": { target: "door" } };
-    expect(fixRefs(across, refs, { copied: new Set(["lever"]), same: false }).lost).toEqual([{ trait: "t.lever", key: "target", label: "Target" }]);
+    expect(copyRefs(into, refs, { map })).toEqual({ lost: [], entries: [] });
+    expect(into["t.lever"]).toEqual({ target: "c2", speed: 2 });
+    const toRoot = { "t.lever": { target: "deck" } };
+    copyRefs(toRoot, refs, { map });
+    expect(toRoot["t.lever"].target).toBe(null);
+    const same = { "t.lever": { target: "wall" } };
+    expect(copyRefs(same, refs, { map, outside: (v) => v })).toEqual({ lost: [], entries: [] });
+    expect(same["t.lever"].target).toBe("wall");
+    const across = { "t.lever": { target: "wall" } };
+    expect(copyRefs(across, refs, { map }).lost).toEqual([{ trait: "t.lever", key: "target", label: "Target" }]);
     expect(across["t.lever"]).toEqual({});
+    const none = { "t.lever": { target: null } };
+    copyRefs(none, refs, { map });
+    expect(none["t.lever"]).toEqual({ target: null });
   });
 
-  it("an entry field is kept where this scene has that entry, else cleared and reported; a copy: drop field is left behind", () => {
+  it("copyRefs: an entry field is kept where the scene it lands in has that entry, else cleared and reported; a copy: drop field is left behind", () => {
     const here = { "t.zone": { seat: "seat_1" } };
-    expect(fixRefs(here, refs, { sceneTraits: { "t.seats": { seat_1: { name: "N" } } } }).entries).toEqual([]);
+    expect(copyRefs(here, refs, { entries: entryIn({ "t.seats": { seat_1: { name: "N" } } }) }).entries).toEqual([]);
     expect(here["t.zone"].seat).toBe("seat_1");
     const there = { "t.zone": { seat: "seat_1" } };
-    expect(fixRefs(there, refs, { sceneTraits: {} }).entries).toEqual([{ trait: "t.zone", key: "seat", label: "Seat", of: "t.seats" }]);
+    expect(copyRefs(there, refs, { entries: entryIn({}) }).entries).toEqual([{ trait: "t.zone", key: "seat", label: "Seat", of: "t.seats" }]);
     expect(there["t.zone"]).toEqual({});
     const sameScene = { "t.zone": { seat: "seat_9" } };
-    fixRefs(sameScene, refs, { same: true, sceneTraits: {} });
+    copyRefs(sameScene, refs, { entries: () => true });
     expect(sameScene["t.zone"].seat).toBe("seat_9");
     const card = { "t.hidden": { by: "automerge:deck" } };
-    fixRefs(card, refs, { same: true });
+    copyRefs(card, refs, { entries: () => true, outside: (v) => v });
     expect(card["t.hidden"]).toEqual({});
+  });
+
+  it("refEdits, for what stays where it is: a dropped field kept, a reference cleared or kept by rule, null left alone", () => {
+    const traits = { "t.lever": { target: "a" }, "t.zone": { seat: "p9" }, "t.hidden": { by: "automerge:x" } };
+    const r = refEdits(traits, refs, { object: (v) => (v === "a" ? undefined : v), entry: () => false });
+    expect(r.edits).toEqual([
+      { trait: "t.lever", key: "target", to: undefined },
+      { trait: "t.zone", key: "seat", to: undefined },
+    ]);
+    expect(r.lost).toEqual([{ trait: "t.lever", key: "target", label: "Target" }]);
+    expect(refEdits({ "t.lever": { target: null } }, refs, { object: () => undefined, entry: () => true }).edits).toEqual([]);
   });
 
   it("the notices: a missing scene trait by its name (no article for a plural), a missing entry", () => {

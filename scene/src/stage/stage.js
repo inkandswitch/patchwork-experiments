@@ -1801,7 +1801,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * best match), with a render doc of its own when the provider's content is
    * "built", and none when it is "file".
    * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
-   * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
+   * @param {{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
+   *   id: the new object's id, made with newId beforehand (a copy maps every
+   *   id before it writes anything, so its references are written once);
+   *   refused when the scene has it;
    *   parent: attach to that object (and join its group, unless `group` says);
    *   group: file in that group; before: its place in the order; heads (or
    *   heads in the URL itself): add it fixed at that version of its source (`at`);
@@ -1837,7 +1840,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const renderHandle = contentOf(provider) !== "built" ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
     if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
-    const id = newId("o");
+    const id = typeof opts.id === "string" && opts.id ? opts.id : newId("o");
+    if (doc().objects?.[id]) throw new Error(`This scene already has an object “${id}”.`);
     const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
     const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
     // fresh copies: automerge won't take a value that is already in a document
@@ -1847,19 +1851,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
       const groupWanted = opts.group !== undefined ? opts.group : parent ? resolveGroups(d.objects).get(parent) ?? null : null;
       const group = groupWanted && isGroup(d.objects[groupWanted]) ? groupWanted : null;
-      d.objects[id] = {
-        name,
-        sourceUrl: url,
-        providerId: provider.id,
-        renderUrl: renderHandle?.url ?? null,
-        parent,
-        group,
-        visible: true,
-        color: null,
-        opacity: 1,
-        wireframe: false,
-        transform: { position: [...transform.position], rotation: [...transform.rotation], scale: transform.scale },
-      };
+      d.objects[id] = ops.newObjectRecord({ name, sourceUrl: url, providerId: provider.id, renderUrl: renderHandle?.url ?? null, parent, group, transform });
       // the rest of a copied object: its traits, tags, colour… (never what's settled above)
       if (fields) for (const [k, v] of Object.entries(fields)) if (!ADD_OWNS.has(k) && v !== undefined) d.objects[id][k] = v;
       // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
@@ -2259,7 +2251,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // content
       nameOf,
       content: (oid) => scope.contentOf(oid),
-      box: (oid, { hints = true } = {}) => scope.objectBox(oid, { hints }),
+      box: (oid, { hints = true, in: frameId = null } = {}) => scope.objectBox(oid, { hints, in: frameId }),
       groupBox: (gid, { hints = true } = {}) => scope.groupBox(gid, { hints }),
       sceneBox: () => scope.sceneBox(),
       worldOf: displayedWorld,

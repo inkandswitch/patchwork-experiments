@@ -566,6 +566,25 @@ describe("Extract and Bundle", () => {
     expect(s.local.get().edits.undo).toBe("Bundle");
   });
 
+  it("Bundle's options follow a live link's doc: a root trait added there appears, one removed goes", async () => {
+    await mount();
+    run("extract", "winch", ["t.sea"]);
+    await until(() => linkId());
+    const id = linkId();
+    const url = s.doc().objects[id].sourceUrl;
+    await until(() => s.api("scene.transfer").link(id)?.open);
+    const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
+    const values = () => cmd.state(id, { scene: { objects: s.doc().objects } }).options.map((o) => o.value);
+    await until(() => values().length === 1);
+    expect(values()).toEqual(["t.sea"]);
+    s.repo.handles.get(url).change((d) => (d.traits["t.lever"] = {}));
+    await until(() => values().length === 2);
+    expect(values()).toEqual(["t.sea", "t.lever"]);
+    s.repo.handles.get(url).change((d) => delete d.traits["t.sea"]);
+    await until(() => values().length === 1);
+    expect(values()).toEqual(["t.lever"]);
+  });
+
   it("neither is offered outside Edit, nor where the scene can't be written; Bundle only on a link, and not on one that isn't open", async () => {
     await mount();
     const api = s.api("scene.transfer");

@@ -22,9 +22,12 @@
 //
 // References (I2: none crosses docs). Ids are kept: T is a fresh doc, so
 // nothing collides; in bundle an id the host already has is made new, and
-// every reference to it follows. Only described references are rewritten
-// (an `object` field, an `entry` field naming a key of a root trait), as
-// with paste, plus the doc's own: parent, group, the dimensions' anchors and
+// every reference to it follows. A copied object's described references go
+// through paste's own rule (transfer.js copyRefs: the ids mapped first, a
+// reference to a copied object follows it, any other is cleared, an entry is
+// kept where the doc it lands in has it, a dropped field left behind); what
+// stays in the host goes through the same rewriter (refEdits). The doc's own
+// references are this module's: parent, group, the dimensions' anchors and
 // `view.start.place`.
 //   - extract: in T, a reference to an object of S is kept, one to p becomes
 //     null (T's root is where p was), any other is cleared; an entry is kept
@@ -51,24 +54,34 @@
 //
 // Both are edits (api.edits: undo takes them back as one step), and each
 // writes the host once, in one change, computed from the host as it is at
-// that moment; the objects copied must still be as they were read, else
-// nothing is written (T, made already, is left unlinked: an orphan doc,
-// nothing lost).
+// that moment. Extract's compare-and-set is on everything T was made from
+// (its footprint: S worked out again, S's records and order, p, K's traits,
+// the dimensions touching S, the start): any of it changed, nothing is
+// written (T, made already, is left unlinked: an orphan doc, nothing lost).
+// Bundle is planned again against the host as it is.
+//
+// A pin is whole (§7): bundling one copies its value. Everything in it that
+// follows a doc the pin holds (a link, a built object) is copied fixed where
+// the pin held that doc (`at: { heads: deps[url], deps }`, as a link's own
+// `at` says), and each render doc copied is read as the pin holds it.
 
 import { SceneDatatype, newRenderDoc, seededRenderDoc } from "./datatype.js";
 import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "./transform.js";
 import { detachAnchor, resolveAnchor } from "./anchors.js";
-import { orderedIds } from "./ops.js";
+import { newObjectRecord, orderedIds } from "./ops.js";
 import { listedPackages, packageUrl, packagesToList } from "./packages.js";
+import { pinnedRepo } from "./build.js";
 import { LINK, atOf, isLink } from "./stage/links.js";
-import { assetsFor, cleanObject, describesOf, entryText, hintBoxOf, lostText, missingNeeds, needsText, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
+import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, missingNeeds, needsText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const strings = (v) => (Array.isArray(v) ? [...new Set(v.filter((s) => typeof s === "string" && s))] : []);
 const IDENTITY = Object.freeze({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
+/** These keys of a map, those it has. */
+const pick = (m, keys) => Object.fromEntries(keys.filter((k) => isMap(m) && m[k] !== undefined).map((k) => [k, m[k]]));
 
 /** Is this transform the identity, exactly? */
 function isIdentity(t) {
@@ -82,81 +95,37 @@ export function composeTransforms(a, b) {
   return decomposeMatrix(multiplyMatrices(composeMatrix(a), composeMatrix(b)));
 }
 
-/** A root trait's value as it's copied: without its runtime keys (or nothing, when the whole trait is runtime). Pure. */
-function cleanTrait(k, v, runtime) {
-  const r = runtime.get(k);
-  if (r === true) return undefined;
-  const out = plain(v);
-  if (r && isMap(out)) for (const key of r) delete out[key];
-  return out;
-}
-
 /**
- * The described references in one object's traits, rewritten by two rules:
- * `object(id)` → the id it names now (null: the root), or undefined to clear
- * it; `entry(of, key)` → whether an entry of root trait `of` is kept. A null
- * reference stays null; a `copy: "drop"` field is cleared when `drop` says
- * so (a copy leaves it behind; the host's own objects keep theirs). Pure.
- * @returns {{ edits: { trait, key, to }[], lost: { trait, key, label }[], entries: { trait, key, label, of }[] }}
- *   `to` undefined: clear it
+ * The box what `ids` draw takes in the frame of `parent` (null: the doc's
+ * root): each object's own box asked for in that frame (`box(id, parent)`:
+ * the stage's, from its geometry as drawn), else its hint box (its own
+ * frame) carried there by the doc's transforms. Each is one object's own box
+ * in that frame, never a box boxed again. Pure.
  */
-export function refEdits(traits, refs, { object, entry, drop = false }) {
-  const out = { edits: [], lost: [], entries: [] };
-  if (!isMap(traits)) return out;
-  for (const [k, v] of Object.entries(traits)) {
-    const fields = refs.get(k);
-    if (!fields || !isMap(v)) continue;
-    for (const f of fields) {
-      if (!(f.key in v)) continue;
-      const val = v[f.key];
-      if (f.drop) {
-        if (drop) out.edits.push({ trait: k, key: f.key, to: undefined });
-        continue;
-      }
-      if (val == null) continue;
-      if (f.kind === "object") {
-        const to = typeof val === "string" ? object(val) : undefined;
-        if (to === val) continue;
-        out.edits.push({ trait: k, key: f.key, to });
-        if (to === undefined) out.lost.push({ trait: k, key: f.key, label: f.label });
-      } else if (f.kind === "entry" && !entry(f.of, val)) {
-        out.edits.push({ trait: k, key: f.key, to: undefined });
-        out.entries.push({ trait: k, key: f.key, label: f.label, of: f.of });
-      }
-    }
-  }
-  return out;
-}
-
-/** Apply refEdits' edits to a traits map (plain or a draft's), in place. */
-function applyRefEdits(traits, edits) {
-  for (const e of edits) {
-    const t = traits?.[e.trait];
-    if (!isMap(t)) continue;
-    if (e.to === undefined) delete t[e.key];
-    else t[e.key] = e.to;
-  }
-}
-
-/** The world box of what `ids` draw, in the frame of `parent` (null: the root), from `box(id)` (the stage's frame) else the doc's hints. Pure. */
-function boxIn(objects, ids, parent, box) {
+export function boxIn(objects, ids, parent, box = null) {
   const parents = resolveParents(objects);
   const inv = parent ? invertMatrix(worldMatrix(objects, parent, parents)) : null;
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
+  const add = (p) => {
+    for (let i = 0; i < 3; i++) {
+      min[i] = Math.min(min[i], p[i]);
+      max[i] = Math.max(max[i], p[i]);
+    }
+  };
   for (const id of ids) {
     if (isGroup(objects[id])) continue;
-    const b = box?.(id) ?? hintBoxOf(objects, id, parents);
-    if (!b || !Array.isArray(b.min) || !Array.isArray(b.max)) continue;
-    for (const x of [b.min[0], b.max[0]])
-      for (const y of [b.min[1], b.max[1]])
-        for (const z of [b.min[2], b.max[2]]) {
-          const p = inv ? applyMatrix(inv, [x, y, z]) : [x, y, z];
-          for (let i = 0; i < 3; i++) {
-            min[i] = Math.min(min[i], p[i]);
-            max[i] = Math.max(max[i], p[i]);
-          }
-        }
+    const b = box?.(id, parent) ?? null;
+    if (b && Array.isArray(b.min) && Array.isArray(b.max)) {
+      add(b.min);
+      add(b.max);
+      continue;
+    }
+    const h = objects[id]?.hint?.bounds;
+    if (!Array.isArray(h?.min) || !Array.isArray(h?.max)) continue;
+    const w = worldMatrix(objects, id, parents);
+    const m = inv ? multiplyMatrices(inv, w) : w;
+    for (let i = 0; i < 8; i++) add(applyMatrix(m, [i & 1 ? h.max[0] : h.min[0], i & 2 ? h.max[1] : h.min[1], i & 4 ? h.max[2] : h.min[2]]));
   }
   return min.every(Number.isFinite) ? { min, max } : null;
 }
@@ -190,13 +159,38 @@ export function extractable(doc, roots) {
 }
 
 /**
+ * Everything an extract of `roots` with root traits K reads of a doc, as
+ * one value: S worked out again, its order, p, S's records, K's traits, the
+ * dimensions with an end on S, and the start. Two equal footprints make the
+ * same T and the same host change: what extract compares before it writes.
+ * Null when it can't be extracted. Pure.
+ */
+export function footprint(doc, roots, traits) {
+  const which = extractable(doc, roots);
+  if (!which.ok) return null;
+  const S = new Set(which.ids);
+  const dims = Object.entries(isMap(doc.dimensions) ? doc.dimensions : {}).filter(([, d]) => ENDS.some((e) => attached(d?.[e], S)));
+  return JSON.stringify({
+    ids: which.ids,
+    listed: which.listed,
+    parent: which.parent,
+    objects: which.ids.map((id) => doc.objects[id]),
+    traits: strings(traits).map((k) => doc.traits?.[k] ?? null),
+    dims,
+    start: doc.view?.start ?? null,
+  });
+}
+
+/**
  * What extracting `roots` with root traits `traits` (K) would make, from one
  * read of the host doc (S and p as `extractable` says). Pure.
  * @param {object} doc  the host doc
  * @param {string[]} roots
- * @param {{ traits?: string[], runtime?: Map, refs?: Map, box?: (id) => object | null }} [o]
+ * @param {{ traits?: string[], runtime?: Map, refs?: Map, box?: (id, frame) => object | null }} [o]
+ *   box: an object's box in the frame of `frame` (an object id; null: the root), as drawn
  * @returns {{ ok: false, reason: string } | {
- *   ok: true, ids: string[], parent: string | null, group: string | null, traits: string[],
+ *   ok: true, asked: string[], ids: string[], parent: string | null, group: string | null, traits: string[],
+ *   footprint: string,   // what it was made from (extractHost compares it)
  *   built: string[],   // the objects of S with a render doc: each gets a copy
  *   doc(o: { renders?: Map, packages?: object[] }): object,   // T, whole
  *   lost: { id, trait, key, label }[], entries: { id, trait, key, label, of }[],   // what T's objects lose
@@ -219,7 +213,10 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
   const gs = [...new Set(outer.map((id) => groups.get(id) ?? null))];
   const group = gs.length === 1 ? gs[0] : null;
 
-  const Kset = new Set(K);
+  // the copy rule (transfer.js copyRefs): ids kept, a reference to p is T's root, an entry kept where K brings it
+  const map = new Map(ids.map((id) => [id, id]));
+  if (p != null) map.set(p, null);
+  const kTraits = pick(rootTraits, K);
   const lost = [];
   const entries = [];
   const tObjects = {};
@@ -227,12 +224,7 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
     const o = cleanObject(objects[id], runtime);
     if (!isGroup(o)) o.parent = S.has(parents.get(id) ?? "") ? parents.get(id) : null;
     o.group = S.has(groups.get(id) ?? "") ? groups.get(id) : null;
-    const r = refEdits(o.traits, refs, {
-      object: (v) => (S.has(v) ? v : v === p ? null : undefined),
-      entry: (of, key) => Kset.has(of) && isMap(rootTraits[of]) && rootTraits[of][key] != null,
-      drop: true,
-    });
-    applyRefEdits(o.traits, r.edits);
+    const r = copyRefs(o.traits, refs, { map, entries: entryIn(kTraits) });
     for (const l of r.lost) lost.push({ id, ...l });
     for (const e of r.entries) entries.push({ id, ...e });
     tObjects[id] = o;
@@ -248,11 +240,7 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
     tDims[did] = out;
   }
 
-  const tTraits = {};
-  for (const k of K) {
-    const v = cleanTrait(k, rootTraits[k], runtime);
-    if (v !== undefined) tTraits[k] = v;
-  }
+  const tTraits = cleanTraits(kTraits, runtime);
   const urls = ids.map((id) => tObjects[id].sourceUrl).filter((u) => typeof u === "string");
   const start = startOfDoc(doc);
   const startMoves = typeof start?.place === "string" && S.has(start.place);
@@ -260,10 +248,12 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
 
   return {
     ok: true,
+    asked,
     ids,
     parent: p,
     group,
     traits: K,
+    footprint: footprint(doc, asked, K),
     built,
     lost,
     entries,
@@ -298,23 +288,23 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
  * The host's one change for an extract: written against the host as it is
  * now (`doc`), from the plan made when T was. Removes S and K's root
  * traits, puts the link at p, clears the references that now cross, keeps
- * or freezes the dimensions, and moves a start placed on S. Null when S or
- * K's traits are no longer as the plan read them (nothing is written). Pure.
+ * or freezes the dimensions, and moves a start placed on S. Null when
+ * anything T was made from is no longer as the plan read it (its
+ * footprint): nothing is written. Pure.
  * @returns {null | { change(d): void, lost: { id, trait, key, label }[], entries: { id, trait, key, label, of }[] }}
  */
-export function extractHost(doc, before, plan, { link, url, refs = new Map() }) {
-  const objects = isMap(doc?.objects) ? doc.objects : {};
+export function extractHost(doc, plan, { link, url, refs = new Map() }) {
+  // compare-and-set: what T was made from must be what's here
+  if (footprint(doc, plan.asked, plan.traits) !== plan.footprint) return null;
+  const objects = doc.objects;
   const S = new Set(plan.ids);
-  // compare-and-set: what was copied must be what's here
-  for (const id of plan.ids) if (JSON.stringify(plain(objects[id])) !== JSON.stringify(plain(before.objects?.[id]))) return null;
-  for (const k of plan.traits) if (JSON.stringify(plain(doc.traits?.[k])) !== JSON.stringify(plain(before.traits?.[k]))) return null;
-  if (plan.parent != null && !objects[plan.parent]) return null;
   const Kset = new Set(plan.traits);
   const lost = [];
   const entries = [];
   const refFixes = [];
   for (const [id, o] of Object.entries(objects)) {
     if (S.has(id) || !isMap(o?.traits)) continue;
+    // what stays: a reference into S is cleared, and an entry of a trait K took
     const r = refEdits(o.traits, refs, { object: (v) => (S.has(v) ? undefined : v), entry: (of) => !Kset.has(of) });
     if (!r.edits.length) continue;
     refFixes.push({ id, edits: r.edits });
@@ -329,17 +319,7 @@ export function extractHost(doc, before, plan, { link, url, refs = new Map() }) 
   const order = Array.isArray(doc.order) ? doc.order : [];
   const at = order.findIndex((id) => S.has(id));
   const record = {
-    name: plan.title,
-    sourceUrl: url,
-    providerId: LINK,
-    renderUrl: null,
-    parent: plan.parent,
-    group: plan.group != null && isGroup(objects[plan.group]) ? plan.group : null,
-    visible: true,
-    color: null,
-    opacity: 1,
-    wireframe: false,
-    transform: plain(IDENTITY),
+    ...newObjectRecord({ name: plan.title, sourceUrl: url, providerId: LINK, parent: plan.parent, group: plan.group != null && isGroup(objects[plan.group]) ? plan.group : null }),
     ...(plan.hint ? { hint: { bounds: plain(plan.hint) } } : {}),
   };
   const start = startOfDoc(doc);
@@ -377,8 +357,8 @@ export function extractHost(doc, before, plan, { link, url, refs = new Map() }) 
  * `linkId`'s place. Ids kept unless the host has them (`newId(prefix)` makes
  * one). Refused when a trait of K is the host's already, or the link isn't
  * one. `renders`: old render doc url → its copy's. `deps`: a pinned link's
- * (a live link inside the pinned doc is copied fixed at the heads the pin
- * held it at). Pure.
+ * (what in it follows a doc the pin holds, a link or a built object, is
+ * copied fixed at the heads the pin held that doc at). Pure.
  * @returns {{ ok: false, reason: string } | { ok: true, change(d): void, map: Map, tops: string[], lost, entries, needsTraits: string[] }}
  */
 export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map(), refs = new Map(), describes = new Map(), newId, renders = new Map(), deps = null } = {}) {
@@ -409,12 +389,10 @@ export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map
   const tGroups = resolveGroups(tObjects);
   const lParent = typeof L.parent === "string" && objects[L.parent] && !isGroup(objects[L.parent]) ? L.parent : null;
   const lGroup = typeof L.group === "string" && isGroup(objects[L.group]) ? L.group : null;
-  const after = { ...hostTraits };
-  const addTraits = {};
-  for (const k of K) {
-    const v = cleanTrait(k, tTraitsAll[k], runtime);
-    if (v !== undefined) addTraits[k] = after[k] = v;
-  }
+  const addTraits = cleanTraits(pick(tTraitsAll, K), runtime);
+  const after = { ...hostTraits, ...addTraits };
+  // a pin is whole: what in it follows a doc the pin holds is copied fixed where the pin held that doc
+  const fixedAt = (o) => (deps && (isLink(o) || typeof o?.renderUrl === "string") && !atOf(o) && Array.isArray(deps[o.sourceUrl]) ? { heads: [...deps[o.sourceUrl]], deps: plain(deps) } : null);
   const lost = [];
   const entries = [];
   const made = {};
@@ -432,15 +410,10 @@ export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map
       o.transform = composeTransforms(L.transform, o.transform);
       tops.push(to);
     }
+    const at = fixedAt(tObjects[id]);
+    if (at) o.at = at;
     if (typeof o.renderUrl === "string") o.renderUrl = renders.get(o.renderUrl) ?? null;
-    // inside a pinned doc a live link was shown at the pin's heads: its copy stays there
-    if (deps && isLink(o) && !atOf(o) && Array.isArray(deps[o.sourceUrl])) o.at = { heads: [...deps[o.sourceUrl]], deps: plain(deps) };
-    const r = refEdits(o.traits, refs, {
-      object: (v) => (T.has(v) ? map.get(v) : undefined),
-      entry: (of, key) => isMap(after[of]) && after[of][key] != null,
-      drop: true,
-    });
-    applyRefEdits(o.traits, r.edits);
+    const r = copyRefs(o.traits, refs, { map, entries: entryIn(after) });
     for (const l of r.lost) lost.push({ id: to, ...l });
     for (const e of r.entries) entries.push({ id: to, ...e });
     made[to] = o;
@@ -474,6 +447,7 @@ export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map
   const refFixes = [];
   for (const [id, o] of Object.entries(objects)) {
     if (id === linkId || !isMap(o?.traits)) continue;
+    // what stays: a reference to the link is cleared
     const r = refEdits(o.traits, refs, { object: (v) => (v === linkId ? undefined : v), entry: () => true });
     if (!r.edits.length) continue;
     refFixes.push({ id, edits: r.edits });
@@ -551,8 +525,13 @@ export async function traitRules(api) {
   return { describes, runtime: runtimeOf(describes), refs: refsOf(describes) };
 }
 
-/** A render doc of its own for each of these objects' (old url → new url), seeded with the build it had. */
-async function copyRenders(api, objects, ids) {
+/**
+ * A render doc of its own for each of these objects' (old url → new url),
+ * seeded with the build it had: as it is now, or, with `deps` (a pin's), as
+ * the pin holds it, through the same repo a pinned stage reads.
+ */
+async function copyRenders(api, objects, ids, deps = null) {
+  const repo = deps ? pinnedRepo(api.repo, deps) : api.repo;
   const out = new Map();
   await Promise.all(
     ids.map(async (id) => {
@@ -561,7 +540,7 @@ async function copyRenders(api, objects, ids) {
       if (typeof from !== "string" || out.has(from)) return;
       let seed = null;
       try {
-        seed = renderSeed((await api.repo.find(from))?.doc?.());
+        seed = renderSeed((await repo.find(from))?.doc?.());
       } catch {
         seed = null;
       }
@@ -603,7 +582,7 @@ export async function extractObjects(api, roots, traits = []) {
   const { describes, runtime, refs } = await traitRules(api);
   if (!live()) return null;
   const before = api.doc();
-  const plan = extractPlan(before, roots, { traits, runtime, refs, box: (id) => api.box?.(id) ?? null });
+  const plan = extractPlan(before, roots, { traits, runtime, refs, box: (id, frame) => api.box?.(id, { in: frame }) ?? null });
   if (!plan.ok) {
     api.notify(plan.reason, "error");
     return null;
@@ -616,7 +595,7 @@ export async function extractObjects(api, roots, traits = []) {
   const handle = await api.repo.create2(plan.doc({ renders, packages }));
   if (!live() || !api.writable()) return null;
   const link = api.newId("o");
-  const host = extractHost(api.doc(), before, plan, { link, url: handle.url, refs });
+  const host = extractHost(api.doc(), plan, { link, url: handle.url, refs });
   if (!host) {
     api.notify("It changed while it was being extracted: nothing was changed here. Try again.", "error");
     return null;
@@ -663,7 +642,7 @@ export async function bundleLink(api, linkId, traits = []) {
     api.notify(check.reason, "error");
     return null;
   }
-  const renders = await copyRenders(api, linked.objects, orderedIds(linked));
+  const renders = await copyRenders(api, linked.objects, orderedIds(linked), at?.deps ?? null);
   if (!live() || !api.writable()) return null;
   // planned again against the host as it is now (the copies above took a moment)
   const plan = bundlePlan(api.doc(), linkId, linked, { traits, runtime, refs, describes, newId: api.newId, renders, deps: at?.deps ?? null });

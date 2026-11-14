@@ -166,8 +166,12 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       const w = vp.worldOf(key(id));
       return w ? f().matrixIn(w) : null;
     },
-    // boxes, in this stage's frame
-    objectBox: (id, { hints = true } = {}) => box(vp.objectBox(key(id), { hints, within: within() })),
+    // boxes, in this stage's frame, or in one of its objects' (`in`: its displayed frame)
+    objectBox: (id, { hints = true, in: frameId = null } = {}) => {
+      if (frameId == null) return box(vp.objectBox(key(id), { hints, within: within() }));
+      const w = vp.worldOf(key(frameId));
+      return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w) })) : null;
+    },
     groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within() })),
     sceneBox: ({ hints = true } = {}) => box(vp.sceneBox({ hints, within: within(), stage: n })),
     // picking, in this stage's frame; "not mine" is id null

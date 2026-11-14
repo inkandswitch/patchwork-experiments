@@ -156,4 +156,26 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     const top = scopeViewport(vp, { n: 0 });
     expect(top.rideSpec({ id: null })).toBe(null);
   });
+
+  it("a box is asked for in the stage's frame, or in one of its objects' (`in`): the viewport boxes the object's own geometry within that frame", () => {
+    const F = composeMatrix({ position: [10, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
+    const deck = multiplyMatrices(F, composeMatrix({ position: [1, 0, 0], rotation: [0, 0.3, 0], scale: 1 }));
+    const within = [];
+    const vp = {
+      ok: true,
+      objects: new Map(),
+      poses: new Map(),
+      worldOf: (k) => (k === keyOf(1, "deck") ? deck : null),
+      objectBox: (k, o) => (within.push([k, o.within]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
+    };
+    const sc = scopeViewport(vp, { n: 1, root: "L", frame: () => F });
+    expect(sc.objectBox("winch")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(sc.objectBox("winch", { in: "deck" })).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(sc.objectBox("winch", { in: "gone" })).toBe(null);
+    expect(within.map((w) => w[0])).toEqual([keyOf(1, "winch"), keyOf(1, "winch")]);
+    // the stage's frame: F's inverse; the deck's: its displayed world's inverse
+    const id = (m, inv) => multiplyMatrices(m, inv).every((v, i) => Math.abs(v - [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1][i]) < 1e-9);
+    expect(id(F, within[0][1])).toBe(true);
+    expect(id(deck, within[1][1])).toBe(true);
+  });
 });

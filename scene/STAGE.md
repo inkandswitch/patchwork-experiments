@@ -370,7 +370,11 @@ seats you, else watching from the first seat's view (writing nothing).
 A place that is one of the doc's links arrives **through** it: as the
 linked doc starts people (its own `view.start`, body and place, in its
 stage; and on down, where that place is a link in turn: `startArrival` in
-`src/stage/view.js`), whatever the host's `body` says. So the Quiet games
+`src/stage/view.js`), whatever the host's `body` says, and **only there**:
+that stage offers the body or nobody arrives. Another linked doc offering a
+body of the same id never takes it, not even while that stage is still
+starting or its packages are on their way (it waits for that stage as
+above): its place is that doc's id, meaningless in any other. So the Quiet games
 room starts people through its Lost Cities link, and the game decides how
 (its seat body). Nothing crosses: the host names its own link, the linked
 doc its own place. Through a pin, a mirror or a closed link nobody arrives
@@ -513,7 +517,12 @@ view's side is `scene.transfer`, editing only).
     or a notice names the missing entry.
     A field with `copy: "drop"` is left behind (a keeper's container, which
     holds one slot per object: the copy has no slot there).
-    `url` and other fields are copied as they are.
+    `url` and other fields are copied as they are. Every copy's id is
+    chosen before anything is written (`addObject`'s `id`), so each
+    reference is written once, already right. This is the one copy rule:
+    extract and bundle (COMPOSITION.md §8) go through the same
+    `copyRefs`, and the objects left in a doc when something leaves it
+    through the same rewriter (`refEdits`).
   - **What a trait needs.** When a copied trait's description `needs` a scene
     trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
     to the scene."). Nothing adds a scene trait for you.
@@ -1064,12 +1073,12 @@ that extension.
 | `nameOf(id)` | what this viewer sees, lenses applied |
 | `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test). Never change it, with one exception: **dressing**. An extension may move, scale or hide `root` and the nodes in it for objects that carry one of its own traits, each view for itself (a buoy bobbing on the waves, a sail lowered), and puts them back when it stops. Dressing is only a look: `box`, `worldOf`, picking and the shadow map go by the object's pose, not the dressed nodes, and nothing is sent |
 | `loadState(id)` | where its content was routed at sync, `content`: `"built"` (the render manager), `"file"` (the GLB queue) or `null` (nothing to load: its provider isn't here, phase `"no-provider"`), with a copy of what the manager or the queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…); null for a group or an unknown id. See README.md, "Content is routed at sync" |
-| `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
+| `box(id, { hints, in })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null. `in`: an object's id, for the box in that object's displayed frame (from the object's own geometry, never a world box boxed again) |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
 | `audience(id)` → `"all"` \| viewer[] \| `null` | who may see what this object is: every running extension's `audience` answer for it, merged. `null`: unknown, tell nobody. See "Audience" |
 | `shown(id)` → `"all"` \| viewer[] \| `null` | who it is turned toward, before anything screens it (the union of the `show`s alone). `audience ⊆ shown` |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render?, edit? }`. `id`: the new object's, made with `newId` beforehand (a copy maps its ids first, so its references are written once); refused when the scene has it. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`). `fields`: more of the object, in the same change (a copy's traits, tags, colour…; never the fields addObject sets itself, nor `claims` or `saved`). `render`: a render doc to start the new one from: its `params` when it's by the same provider, and its build too when it's of the same source (a copy's) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix an object at exactly what it shows now: a render-doc object at what its render was last built from; a live link at its doc's heads, with every doc reached through it in `deps`; else null (not built or open here yet, not loaded, a file, already fixed). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info, { edit? })` | offer a dropped doc to the extensions that lay out its datatype; with `edit`, the drop context's `change` and `addObject` are that edit's |
