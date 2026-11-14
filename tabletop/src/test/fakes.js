@@ -449,13 +449,16 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
  * @param {{ content?: { [id]: object }, registries?: { [type]: object } }} [o]
  */
 export function fakeDrop(doc, { content, registries = {} } = {}) {
-  const calls = { created: [], notices: [], made: [], changes: 0, log: [] };
+  const calls = { created: [], notices: [], made: [], changes: 0, log: [], added: [] };
   let n = 0;
+  const docs = new Map(); // url → a doc made here (a game part's game doc), which its handle reads and writes
   const repo = {
     async create2(d) {
       calls.created.push(d);
       calls.log.push({ op: "create", type: d?.["@patchwork"]?.type ?? null });
-      return { url: `automerge:file${calls.created.length}` };
+      const url = `automerge:file${calls.created.length}`;
+      docs.set(url, d);
+      return { url, doc: () => d, change: (fn) => fn(d) };
     },
   };
   const scene = () => {
@@ -477,6 +480,17 @@ export function fakeDrop(doc, { content, registries = {} } = {}) {
       fn(doc);
     },
     newId: (prefix) => `${prefix}${++n}`,
+    /** the stage's addObject: a link to a scene doc (scene.link), as an object of this doc */
+    async addObject(url, opts = {}) {
+      const id = `o${++n}`;
+      calls.added.push({ url, opts });
+      const t = opts.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
+      doc.objects[id] = { name: docs.get(url)?.title ?? "Linked", sourceUrl: url, providerId: "scene.link", renderUrl: null, parent: opts.parent ?? null, transform: t, ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.fields ?? {}) };
+      doc.order.push(id);
+      return id;
+    },
+    /** a doc made here, by url */
+    made: (url) => docs.get(url) ?? null,
     registry: async (type) => registries[type] ?? null,
     notify: (text, kind) => calls.notices.push({ text, kind }),
     ...(content ? { content: (id) => content[id] ?? null } : {}),

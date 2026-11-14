@@ -1,7 +1,8 @@
 // The seat body (scene/TOOLS.md §4; COMPOSITION.md decision 5 puts it
 // here): a viewer sitting in a seat, the eye where the seat's camera says,
-// riding the object that camera is `in` (a table aboard a ship), so the
-// table holds still in front of them however she rolls. It reserves no
+// riding the object that camera is `in`, else its doc's root (a game linked
+// onto a table aboard a ship rides the table), rolling with it, so the table
+// holds still in front of them however she rolls. It reserves no
 // keys, so D draws; it doesn't lock the pointer; and it needs a place (a
 // seat), so the body chip doesn't offer it: the picker and the seat's verb
 // enter it. Sitting pushes it over whatever body you had (walking her deck,
@@ -71,8 +72,12 @@ export function seatBody(api, { left } = {}) {
             if (again) api.camera.set(again);
           },
         },
-        // the body's ride: the only one while seated
-        ride: frame ? { id: cam.in, at: [...(cam.target ?? [0, 0, 0])] } : null,
+        // the body's ride, the only one while seated: the object the seat's
+        // camera is `in`, else the doc's root (a game linked onto a table
+        // aboard rides the table; the outermost doc's root is the world: no
+        // ride), at the spot it looks at, rolling with it (the boat is how the
+        // boat is)
+        ride: { id: cam.in ?? null, at: [...(cam.target ?? [0, 0, 0])], tilt: true },
         leave() {
           if (gone) return;
           gone = true;

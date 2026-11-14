@@ -9,9 +9,10 @@
 // - The game page's "Set up a table" (tool.js) writes it onto a fresh scene
 //   doc; each kind shows the game's own GLB doc, which redraws when the game
 //   changes, and the game is each object's About.
-// - A template or a game's part (table/template.js) writes it into the
-//   scene it was opened in; each kind's GLB is the scene's own file
-//   (ctx.file), so the table stands alone.
+// - A template (table/template.js) writes it into the scene it was opened
+//   in, and a game's part into a game doc of its own that it links onto what
+//   it was put on; each kind's GLB is that doc's own file, so the table
+//   stands alone.
 //
 // The scene doc's shape is the scene package's (scene/README.md), with this
 // package's traits on it (src/table/visibility.js); this package only writes
@@ -327,49 +328,6 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
   };
 }
 
-/**
- * A layout set down on something: the same table, every piece placed in the
- * frame of `parent` (an object id) at `transform` there, rather than at the
- * scene's root. Each piece the layout puts at the root goes under `parent`,
- * its transform composed with `transform`; each seat's camera is moved the
- * same way and says it's in `parent`'s frame (`camera.in`), so a seat's view
- * goes where the table goes (a table aboard a ship). Pure: a new layout.
- * @param {ReturnType<typeof tableLayout>} layout
- * @param {{ parent?: string | null, transform?: { position?, rotation?, scale? } | null }} [at]
- */
-export function placeLayout(layout, { parent = null, transform = null } = {}) {
-  const t = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, ...(transform ?? {}) };
-  const plain = t.rotation.every((v) => !Number(v)) && (Number(t.scale) || 1) === 1;
-  // a turn or a scale: whole matrices; a plain shift: just added, so the numbers stay as they were
-  const M = plain ? null : composeMatrix(t);
-  const shift = (p) => p.map((v, i) => +(Number(v) + Number(t.position[i] ?? 0)).toFixed(6));
-  const place = (tr) => (plain ? { ...tr, position: shift(tr.position ?? [0, 0, 0]) } : decompose(multiply(M, composeMatrix(tr))));
-  const point = (p) => (plain ? shift(p) : apply(M, p).map((v) => +v.toFixed(6)));
-  const objects = {};
-  for (const [oid, o] of Object.entries(layout.objects)) {
-    const c = copy(o);
-    if (c.kind !== "group" && (c.parent ?? null) === null) {
-      c.parent = parent;
-      c.transform = place(c.transform ?? {});
-    }
-    objects[oid] = c;
-  }
-  const seats = {};
-  for (const [sid, s] of Object.entries(layout.seats ?? {})) {
-    const c = copy(s);
-    if (c.camera) {
-      c.camera = { ...c.camera, position: point(c.camera.position), target: point(c.camera.target ?? [0, 0, 0]) };
-      if (parent) c.camera.in = parent;
-      else delete c.camera.in;
-    }
-    seats[sid] = c;
-  }
-  const start = layout.view?.start;
-  const home = start?.home;
-  const view = { ...layout.view, ...(start ? { start: { ...start, ...(home ? { home: { ...home, position: point(home.position), target: point(home.target ?? [0, 0, 0]) } } : {}) } } : {}) };
-  return { ...layout, objects, seats, view };
-}
-
 /** The container and slot a card names before its container exists ({ deck, slot } under tabletop.card), or null. */
 const deckRef = (o) => {
   const c = o?.traits?.[CARD];
@@ -394,38 +352,25 @@ export function bound(oid, o, { binds = {}, bags = {} } = {}) {
 }
 
 /**
- * Write a layout into a scene doc (inside a change, or onto a plain skeleton):
- * its objects and their order, each bound (above); the seats, through their
- * owner's `lay` (which adds them to the scene's, under other ids where
- * another table's seats have these: each hand is given its seat's id as
- * written, from what `lay` returns); and the
- * view and the game's origin (not with `view: false`: a table set down in a
- * scene that's already somewhere, such as aboard a ship, leaves that
- * scene's view, home, units and origin as they are). Throws, writing
- * nothing, if a card's container has no binding.
+ * Write a layout into a scene doc (inside a change, or onto a plain
+ * skeleton): its objects and their order, each bound (above); the seats,
+ * through their owner's `lay`; and the view and the game's origin. A game is
+ * a doc of its own (scene/COMPOSITION.md: a game part makes one and links it
+ * onto what it was put on), so all of it is the game's to write. Throws,
+ * writing nothing, if a card's container has no binding.
  * @param {object} d  the scene doc (a draft)
  * @param {ReturnType<typeof tableLayout>} layout
  * @param {{ binds?: { [key]: (slot: number) => object }, bags?: { [oid]: object } }} made  what makeHolders made
- * @param {{ view?: boolean, seats?: ((d: object, seats: object) => unknown) | null }} [o]
+ * @param {{ seats?: ((d: object, seats: object) => unknown) | null }} [o]
  *   seats: the seats owner's lay (table/made-with.js findSeats); without one no seats are written
  */
-export function writeTable(d, layout, made = {}, { view = true, seats = null } = {}) {
+export function writeTable(d, layout, made = {}, { seats = null } = {}) {
   const written = layout.order.map((oid) => [oid, bound(oid, layout.objects[oid], made)]);
   for (const [oid, o] of written) {
     d.objects[oid] = o;
     d.order.push(oid);
   }
-  if (typeof seats === "function") {
-    // the owner may seat this table's players under other ids (a scene with
-    // another table already): each hand goes to its seat by the id it got
-    const ids = seats(d, copy(layout.seats ?? {}));
-    for (const [oid, o] of written) {
-      const z = o.traits?.[ZONE];
-      const to = ids && typeof ids === "object" ? ids[z?.seat] : null;
-      if (typeof to === "string" && to !== z.seat) d.objects[oid].traits[ZONE].seat = to;
-    }
-  }
-  if (!view) return;
+  if (typeof seats === "function") seats(d, copy(layout.seats ?? {}));
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? copy(v) : v;
   if (layout.origin) d.origin = copy(layout.origin);
 }
