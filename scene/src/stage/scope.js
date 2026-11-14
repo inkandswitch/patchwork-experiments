@@ -181,13 +181,14 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       const w = vp.worldOf(key(id));
       return w ? f().matrixIn(w) : null;
     },
-    // boxes, in this stage's frame, or in one of its objects' (`in`: its displayed frame)
+    // boxes, in this stage's frame, or in one of its objects' (`in`: its displayed frame); what its
+    // own doc shows (I7): a host hiding the link doesn't take them away
     objectBox: (id, { hints = true, in: frameId = null } = {}) => {
-      if (frameId == null) return box(vp.objectBox(key(id), { hints, within: within() }));
+      if (frameId == null) return box(vp.objectBox(key(id), { hints, within: within(), inStage: true }));
       const w = vp.worldOf(key(frameId));
-      return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w) })) : null;
+      return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w), inStage: true })) : null;
     },
-    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within() })),
+    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within(), inStage: true })),
     sceneBox: ({ hints = true } = {}) => box(vp.sceneBox({ hints, within: within(), stage: n })),
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),

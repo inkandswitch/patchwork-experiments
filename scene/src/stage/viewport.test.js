@@ -896,7 +896,8 @@ describe("riding along (camera.ride)", () => {
 // any object hides what it's made of, while an attachment of the link's own
 // doc stays shown. Every case of the link shown / hidden / under a hidden
 // group × the child an attachment (same stage) or a linked doc's root
-// (another stage): drawn, picked, boxed, its stage's layers and labels.
+// (another stage): drawn, picked, boxed, its stage's layers and labels; and
+// boxed in its own stage, which only its own doc's display decides.
 describe("a hidden link hides its doc", () => {
   const LINKED = keyOf(1, "card");
   const cases = [];
@@ -930,6 +931,16 @@ describe("a hidden link hides its doc", () => {
       expect(vp.contentShown("L")).toBe(linkDrawn);
       expect(!!vp.pickWidget(100, 50)).toBe(linkDrawn);
       expect(label.style.display).toBe(linkDrawn ? "" : "none");
+      // its own stage's boxes (api.box, groupBox, sceneBox: I7, "boxes are S's own"): a linked root's is its
+      // doc's say, whatever the host does with the link; an attachment's, its own doc's (the host's) as drawn
+      expect(vp.objectBox(key, { inStage: true }) != null).toBe(child === "attachment" ? shown : true);
+      if (child === "linked root") {
+        expect(vp.sceneBox({ stage: 1 }).isEmpty()).toBe(false);
+        // and its own doc hiding it does take it away
+        vp.applyDisplay(key, { visible: false, transform: { position: [0, 0, 0] } }, "L");
+        expect(vp.objectBox(key, { inStage: true })).toBe(null);
+        expect(vp.sceneBox({ stage: 1 }).isEmpty()).toBe(true);
+      }
     });
   }
 

@@ -158,7 +158,7 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     expect(top.rideSpec({ id: null })).toBe(null);
   });
 
-  it("a box is asked for in the stage's frame, or in one of its objects' (`in`): the viewport boxes the object's own geometry within that frame", () => {
+  it("a box is asked for in the stage's frame, or in one of its objects' (`in`): the viewport boxes the object's own geometry within that frame, as its own stage shows it", () => {
     const F = composeMatrix({ position: [10, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
     const deck = multiplyMatrices(F, composeMatrix({ position: [1, 0, 0], rotation: [0, 0.3, 0], scale: 1 }));
     const within = [];
@@ -167,7 +167,8 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
       objects: new Map(),
       poses: new Map(),
       worldOf: (k) => (k === keyOf(1, "deck") ? deck : null),
-      objectBox: (k, o) => (within.push([k, o.within]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
+      objectBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
+      groupBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
     };
     const sc = scopeViewport(vp, { n: 1, root: "L", frame: () => F });
     expect(sc.objectBox("winch")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
@@ -178,6 +179,9 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     const id = (m, inv) => multiplyMatrices(m, inv).every((v, i) => Math.abs(v - [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1][i]) < 1e-9);
     expect(id(F, within[0][1])).toBe(true);
     expect(id(deck, within[1][1])).toBe(true);
+    // shown as its own stage shows it: the host hiding the link it hangs in doesn't take a box away (I7)
+    expect(sc.groupBox("g")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(within.map((w) => w[2])).toEqual([true, true, true]);
   });
 });
 

@@ -1,8 +1,11 @@
 // I5, channels (COMPOSITION.md §6, Invariants): an object's claims, holds
 // and sends travel on its doc's channel, wherever the doc is open. Three
-// views of one game G in one page, on one repo (the page bus the only
-// carrier, on a manual clock): G alone, G linked into X (and mirrored
-// there), G linked into Y through X (and mirrored there, by X's own link).
+// views of one game G on a manual clock, in two pages: G alone and G linked
+// into X (and mirrored there) in one page, on one repo, where the page bus
+// carries between them; G linked into Y through X (and mirrored there, by
+// X's own link) in a second page, on a repo of its own joined to the first
+// by an in-memory network (fake-repo's connect), so what crosses pages goes
+// by its handle's broadcast, as in real Patchwork.
 // Every sequence of up to two claims and releases of one seat by the three
 // views, then every holder × every view leaving: `claimedBy` agrees in
 // every stage of G once delivered, as a first-come model says; a hold (a
@@ -13,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
-import { FakeRepo } from "../test/fake-repo.js";
+import { FakeRepo, connect } from "../test/fake-repo.js";
 import { manualTime } from "./time.js";
 import { LINK } from "./links.js";
 
@@ -35,13 +38,17 @@ async function world() {
   const G = repo.add(emptyScene({ title: "G", objects: { c: object({ name: "Card" }) }, order: ["c"], traits: { "t.game": {} } }));
   const X = repo.add(emptyScene({ title: "X", objects: { L: link(G.url), M: link(G.url, { transform: { position: [4, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["L", "M"] }));
   const Y = repo.add(emptyScene({ title: "Y", objects: { LX: link(X.url) }, order: ["LX"] }));
+  // the second page's repo: the same three docs, and the network between
+  const far = new FakeRepo();
+  for (const h of [G, X, Y]) far.add(h.doc(), h.url);
+  cleanups.push(connect(repo, far));
   // the harness registers the extension (its own view: an empty scene)
   const h = await mountStage({ repo, extensions: [CARD], doc: {}, time });
   cleanups.push(() => h.unmount());
   const { default: Stage } = await import("./stage.js");
-  const open = (handle, who) => {
+  const open = (handle, who, on = repo) => {
     const el = document.createElement("div");
-    el.repo = repo;
+    el.repo = on;
     el.viewerId = `viewer:${who}`;
     el.time = time;
     el.packageSettleMs = 0;
@@ -57,7 +64,7 @@ async function world() {
     cleanups.push(leave);
     return { v: el.querySelector(".scene-stage").__sceneDebug.view, leave };
   };
-  const views = [open(G, "ana"), open(X, "ben"), open(Y, "cara")];
+  const views = [open(G, "ana"), open(X, "ben"), open(far.handles.get(Y.url), "cara", far)];
   const gStages = (i) => views[i].v.stages().filter((st) => st.url === G.url);
   const api = (st) => st.debug.host.record("t.card")?.api ?? null;
   await time.until(() => views.every((_, i) => gStages(i).length === (i === 0 ? 1 : 2) && gStages(i).every((st) => api(st))), { frames: 600, what: "every stage of G" });

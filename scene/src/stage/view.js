@@ -707,7 +707,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // this viewer is asked about is the view's: the union over every open
   // stage, acting or drawn (a pin's content needs its providers too), as
   // view.packages, which only the general parts see (projectView). A yes or
-  // a not now goes to every stage that asked.
+  // a not now goes to every stage that asked; a not now is kept here, for the
+  // view's life, so a doc opened after it (a link added, a relink, a mirror
+  // that comes to act) isn't asked about those packages either.
+  const declinedPackages = new Set();
   const stagesInOrder = () => [...stages.values()].sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
   function packagesChanged() {
     if (dead) return;
@@ -1332,6 +1335,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     reopened,
     packages,
     packagesChanged,
+    /** "Not now"'s packages, the view's: every stage's packages module shares it */
+    declinedPackages,
     // the stages
     addStage,
     removeStage,

@@ -257,6 +257,10 @@ describe("loading: the listed packages this viewer doesn't have", () => {
       // a part that isn't general sees no union, and its api.packages is its own doc's
       expect("packages" in s.api("t.own").view.get()).toBe(false);
       expect("packages" in s.api("scene.packages").view.get()).toBe(true);
+      // nor the other stages' readers (their packages, scenes, runs): api.path is a general part's only
+      expect(s.api("t.own").path).toBeUndefined();
+      expect(typeof s.api("scene.packages").path).toBe("function");
+      for (const st of s.debug.view.stages()) for (const r of st.debug.host.running()) if (r.scope !== "general") expect(st.debug.host.record(r.id).api.path).toBeUndefined();
       await s.api("t.own").packages.load();
       await settle();
       expect(imported.map((u) => u.split("#")[0])).toEqual([SAILING]);
@@ -283,6 +287,31 @@ describe("loading: the listed packages this viewer doesn't have", () => {
       await settle();
       await press(s, "dismiss");
       expect(stageAsks(s)).toEqual([[], [], []]);
+      expect(card(s).hidden).toBe(true);
+      expect(imported).toEqual([]);
+    });
+
+    // "Not now" is the view's: a doc opened after the click (here a second
+    // link, to a game listing the dismissed package and one more) asks only
+    // about what wasn't dismissed
+    it("Not now holds for a doc opened after it", async () => {
+      const { s } = await linked();
+      await until(() => viewAsks(s).length === 2);
+      await settle();
+      await press(s, "dismiss");
+      const OTHER = folder(repo, "@tiny/other").url;
+      const g2 = repo.add(emptyScene({ title: "G2", objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: TERRAIN }, { url: OTHER }] }));
+      s.change((d) => {
+        d.objects.M = object({ name: "Game 2", sourceUrl: g2.url, providerId: LINK, renderUrl: null });
+        d.order.push("M");
+      });
+      await until(() => s.debug.view.stages().length === 4);
+      await until(() => viewAsks(s).length === 1);
+      await settle();
+      expect(viewAsks(s)).toEqual([OTHER]);
+      expect(stageAsks(s)).toEqual([[], [], [], [OTHER]]);
+      expect([...card(s).querySelectorAll(".package")].map((li) => li.dataset.url)).toEqual([OTHER]);
+      await press(s, "dismiss");
       expect(card(s).hidden).toBe(true);
       expect(imported).toEqual([]);
     });

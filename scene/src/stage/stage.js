@@ -412,6 +412,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     plugins: patchworkPlugins,
     local,
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
+    // ("Not now" is the view's: a doc opened after it isn't asked again either)
+    declined: view.declinedPackages,
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
     ...(view.packageSettleMs != null ? { settleMs: view.packageSettleMs } : {}),
   });
@@ -2459,8 +2461,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // path's first, innermost first), each item tagged with its `stage`, and
       // runs a command in the stage it names
       collect: (name) => (rec.scope === "general" ? view.collect(name) : reader.collect(name)),
-      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's) */
-      path: (o) => view.inputPath(o),
+      /**
+       * the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's).
+       * A general part's only: the other stages' readers are other docs (their packages, their scenes, what they run), which a stage's extension reading would make it depend on its placement (I4)
+       */
+      path: general ? (o) => view.inputPath(o) : undefined,
       audience: audienceOf,
       shown: shownTo,
       // (in another stage only if it acts: a pin or a mirror is never acted on)

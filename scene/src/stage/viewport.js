@@ -1844,11 +1844,21 @@ export class Viewport {
 
   // ─── visibility and boxes ─────────────────────────────────────────────────
 
-  /** Is this object drawn: its body and every node above it visible (groups hide their subtree)? Takes an id or an entry. */
-  isShown(entry) {
+  /**
+   * Is this object drawn: its body and every node above it visible (groups
+   * hide their subtree)? Takes an id or an entry. `inStage`: shown in its own
+   * stage, its doc's say only: the walk stops at its stage's root, so a host
+   * hiding the link it hangs in doesn't count (a stage's boxes are its own, I7).
+   */
+  isShown(entry, { inStage = false } = {}) {
     if (typeof entry === "string") entry = this.objects.get(entry);
     if (!entry || !entry.body.visible) return false;
-    for (let o = entry.group; o && o !== this.content; o = o.parent) if (!o.visible) return false;
+    const n = inStage ? (parseKey(entry.group.userData.objectId)?.n ?? 0) : null;
+    for (let o = entry.group; o && o !== this.content; o = o.parent) {
+      const at = o.userData?.objectId;
+      if (inStage && at != null && (parseKey(at)?.n ?? 0) !== n) return true; // the link's body: its host's
+      if (!o.visible) return false;
+    }
     return true;
   }
 
@@ -1857,12 +1867,12 @@ export class Viewport {
    * hint box while the GLB is still on its way (unless hints: false). For a
    * group, the union of its shown descendants' boxes.
    */
-  objectBox(id, { hints = true, within = null } = {}) {
-    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within });
+  objectBox(id, { hints = true, within = null, inStage = false } = {}) {
+    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within, inStage });
     const entry = this.objects.get(id);
     if (!entry) return null;
     if (entry.kind === "group") return null;
-    if (!this.isShown(entry)) return null;
+    if (!this.isShown(entry, { inStage })) return null;
     const local = entry.content ? entry.box : hints ? entry.hint : null;
     if (!local) return null;
     entry.body.updateWorldMatrix(true, false);
@@ -1883,10 +1893,10 @@ export class Viewport {
   }
 
   /** A group's box: the union of what's shown of what's in it. */
-  groupBox(gid, { hints = true, within = null } = {}) {
+  groupBox(gid, { hints = true, within = null, inStage = false } = {}) {
     const box = new Box3();
     for (const id of this.groupMembers.get(gid) ?? []) {
-      const b = this.objectBox(id, { hints, within });
+      const b = this.objectBox(id, { hints, within, inStage });
       if (b) box.union(b);
     }
     return box.isEmpty() ? null : box;
@@ -1912,7 +1922,8 @@ export class Viewport {
     const box = new Box3();
     for (const [id, e] of this.objects) {
       if (e.kind === "group" || (stage != null && (parseKey(id)?.n ?? 0) !== stage)) continue;
-      const b = this.objectBox(id, { hints, within });
+      // (one stage's: what its doc shows, whatever its host does with the link)
+      const b = this.objectBox(id, { hints, within, inStage: stage != null });
       if (b) box.union(b);
     }
     return box;

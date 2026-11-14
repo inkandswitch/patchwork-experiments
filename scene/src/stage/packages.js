@@ -149,10 +149,11 @@ export function resetPackages() {
  *   plugins: object | Promise<object | null>,    // the host's @inkandswitch/patchwork-plugins (or a promise of it)
  *   local: { get(): object, swap(fn): object },  // the stage's local atom (local.packages out)
  *   providerIds?: () => Iterable<string>,        // the providers render docs have asked the stage for
+ *   declined?: Set<string>,                      // "Not now": the view's, shared by every stage it opens
  *   settleMs?: number,
  * }} o
  */
-export function createPackages({ repo, handle, plugins, local, providerIds = () => [], settleMs = PACKAGE_SETTLE_MS }) {
+export function createPackages({ repo, handle, plugins, local, providerIds = () => [], declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
   let dead = false;
   let mod = null; // the plugins module, once it's here
   let settled = !(settleMs > 0);
@@ -162,7 +163,6 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   let completeFor = null; // { doc, stamp, value }: complete()'s last answer
   let stamp = 0; // bumped whenever what's registered or loaded here may have changed
   const used = new Set(); // importUrls of the parts and templates run in this view
-  const declined = new Set(); // "Not now", until the scene is opened again
   const failed = new Map(); // url → what went wrong
   const accepted = readAccepted();
   const offs = [];
