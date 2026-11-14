@@ -246,6 +246,17 @@ export class Host {
   }
 
   /**
+   * What the engine says of the state under `kind` (engine-defined: Doom's
+   * things and sectors, the Super NES's RAMs; ENGINE.md), as bytes, for the
+   * tick the host is at; null while loading or for a kind the engine lacks.
+   * The same on a RemoteHost, whose worker answers it for the frame shown.
+   */
+  query(kind) {
+    if (this.#loading) return null;
+    return this.engine?.query(kind) ?? null;
+  }
+
+  /**
    * What the machine played since the last call, each tick once and in order
    * (output.js): { tick, audio?: { rate, channels, samples }, events? }, and
    * among them corrections { tick, events, was } and gaps { gap: [from, to] }.

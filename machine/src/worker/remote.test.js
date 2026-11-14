@@ -50,7 +50,7 @@ function pair() {
 }
 
 // A peer whose host runs in a "worker": its page repo is on the network.
-async function remote(net, name, url, port) {
+async function remote(net, name, url, port, engine = { wasm, content }) {
   const repo = new Repo({ peerId: name, network: [net.adapter(name)] });
   const [page, worker] = pair();
   const served = serve(worker, { now: () => Date.now() + SKEWS["abcd".indexOf(name)] });
@@ -63,8 +63,7 @@ async function remote(net, name, url, port) {
       const [port1, port2] = pair();
       return { port1, port2 };
     },
-    wasm,
-    content,
+    ...engine,
     id: name,
     input: () => input(port, p.host ? p.host.target() : 0),
   }).then((h) => ((p.host = h), (done = true)));
@@ -210,3 +209,67 @@ test("a view is drawn again when the state changes at the same tick (a rollback)
   expect(await frame()).toBe(1);
   expect(drawn).toBe(3);
 });
+
+test("a query is answered again exactly when the state changed since that kind was last answered, per kind", async () => {
+  // Every sequence of 3 frames, each keeping the state, re-stepping it to the same tick
+  // (revision) or stepping it on (tick), and asking for kind 0, kind 1 or both.
+  const CHANGES = ["same", "revision", "tick"];
+  const ASKS = [[0], [1], [0, 1]];
+  let cases = 0;
+  for (const c1 of CHANGES) for (const c2 of CHANGES) for (const c3 of CHANGES)
+    for (const a1 of ASKS) for (const a2 of ASKS) for (const a3 of ASKS) {
+      const [page, worker] = pair();
+      const served = serve(worker);
+      const answered = [];
+      served.host = {
+        tick: 10, revision: 1, status: {}, stats: null, loading: false, seat: null,
+        frame() {}, target: () => 10, output: () => [], picture: () => null,
+        query: (kind) => (answered.push(kind), new Uint8Array([kind, served.host.tick, served.host.revision])),
+      };
+      const answers = [];
+      page.addEventListener("message", ({ data }) => answers.push(data.result.answers));
+      const last = new Map(); // kind -> the state it was last answered at
+      for (const [change, ask] of [[null, a1], [c1, a2], [c2, a3], [c3, [0, 1]]]) {
+        if (change === "revision") served.host.revision++;
+        if (change === "tick") served.host.tick++;
+        page.postMessage({ m: "frame", id: 1, input: null, clock: null, views: [], queries: ask });
+        await vi.advanceTimersByTimeAsync(1);
+        const at = `${served.host.tick}:${served.host.revision}`;
+        const want = ask.filter((k) => last.get(k) !== at);
+        expect(Object.keys(answers.at(-1)).map(Number)).toEqual(want);
+        for (const k of want) {
+          expect([...answers.at(-1)[k]]).toEqual([k, served.host.tick, served.host.revision]);
+          last.set(k, at);
+        }
+      }
+      cases++;
+    }
+  expect(cases).toBe(27 * 27);
+});
+
+test("a RemoteHost's query reaches the page for the state its worker reached, from a real engine (the Super NES's work RAM)", async () => {
+  const snes = readFileSync(new URL("../../engines/snes/dist/snes.wasm", import.meta.url));
+  const rom = new Uint8Array(readFileSync(new URL("../../engines/snes/test/unarmed.sfc", import.meta.url)));
+  const net = new SimNet({ latency: [5] });
+  const c = peer(net, "c");
+  const handle = await createSession(c.repo, { wasm: snes, content: rom, wall: c.now() });
+  const a = await remote(net, "a", handle.url, 0, { wasm: snes, content: rom });
+  const host = a.host;
+  expect(host.query(0)).toBe(null); // nothing asked for yet
+  await Promise.all([host.sit(0), vi.advanceTimersByTimeAsync(50)]);
+  let checked = 0;
+  for (let k = 0; k < 40; k++) {
+    host.query(0);
+    host.query(9); // a kind the engine lacks: never answered
+    await run([a], FRAME);
+    const wram = host.query(0);
+    const h = a.served.host;
+    if (!wram || h.tick !== host.tick) continue;
+    expect(wram.length).toBe(131072);
+    expect(wram).toEqual(h.engine.query(0));
+    expect(host.query(9)).toBe(null);
+    checked++;
+  }
+  expect(host.tick).toBeGreaterThan(20);
+  expect(checked).toBeGreaterThan(5);
+}, 30_000);
