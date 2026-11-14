@@ -782,27 +782,36 @@ Then steps 5, 6 and 8 (round 2):
    gone, and so is `sound.js`'s `pcm` sink, which nothing used once the
    speaker took the stream. Doom's eyes and things are asked of the host
    only on a frame that needs them, at most once each.
-6. **A seat per port** (`src/scene/seating.js`). The view that makes a
-   machine's session also lays a seat per port in the same change, with the
-   seats package's `lay` (found by `roster: true`, never by name): "<title>
-   · P<n>", each a view of the screen from a little in front of it, side by
-   side, in the cabinet's frame. The machine contributes `seatPlaces`: a
-   strip across the cabinet's front below the screen, divided into one place
-   per port, so each seat has a name tag and a look at the cabinet is a look
-   at the seat whose part of it the look lands on. **Sitting is holding**:
-   each frame, the port this view's seat names (the roster's `sitting()`)
-   is the port it should hold; sitting down takes it and puts its pad in
-   hand, standing up (or watching, or moving to another seat, or leaving)
-   gives it back. Input is the host's as ever: messages first, the seat's
-   own input document after. Escape puts the pad down and the port stays
-   yours while you sit; P picks it up again.
+6. **A seat per port** (`src/scene/seating.js`, `src/scene/hands.js`).
+   The view that makes a machine's session also lays a seat per port in the
+   same change, with the seats package's `lay` (found by `roster: true`,
+   never by name), **on the machine's object**: the cabinet's own seats,
+   copied and removed with it, never a table's players. They don't last
+   (`lasting: false`): a port is held only while someone sits at it, and
+   nothing about who sat there is written. They are "<title> · P<n>", each
+   a view of the screen from a little in front of it, side by side, in the
+   cabinet's frame, and the trait lists them by port (`seats: ["p1", …]`),
+   so which port a seat is, and whether the machine has seats at all, is
+   the trait's to say. The machine contributes `seatPlaces`: a strip across
+   the cabinet's front below the screen, divided into one place per port,
+   so each seat has a name tag and a look at the cabinet is a look at the
+   seat whose part of it the look lands on. **Sitting is holding**: each
+   frame, the port of the seat this view sits in (the roster's `sitting()`,
+   `{ of, seat }`) is the port it should hold; sitting down takes it and
+   puts its pad in hand, standing up (or watching, or moving to another
+   seat, or leaving) gives it back, and the seat with it. Input is the
+   host's as ever: messages first, the seat's own input document after.
+   Escape puts the pad down and the port stays yours while you sit; P
+   picks it up again.
 8. **Content** (`src/scene/part.js`, `give` in `extension.js`). The
    machine's `scene:part`, Machine, puts an empty cabinet in from the parts
    bin: a machine doc of its own with no game. A ROM (.sfc, .smc) or an
    IWAD dropped on a cabinet that has no game is its game (`gameOf` in
-   `load.js`, shared with the Machine tool): a content doc holding the
-   bytes, and the kind, content and title written on the machine doc. Its
-   session and seats then come as for any machine object.
+   `load.js`, shared with the Machine tool): a new machine doc (kind,
+   content, title), its content a doc holding the bytes, and the cabinet's
+   source pointed at it. Its session and seats then come as for any machine
+   object; the trait's `source` says which source its session was made
+   for.
 
 ### Decisions, made unattended (the lead was away)
 
@@ -928,39 +937,38 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
     the roster's `sitting()`: the seat body on top, in one of this
     machine's seats. Standing up from the seat (the seats package's Stand
     up, or walking off from it) gives the port back, so a machine everyone
-    has got up from stops (Decision 4), though the seat stays yours to come
-    back to. Escape pops the held tool, never the body (scene/TOOLS.md §5),
-    so it puts the pad down and keeps the port. That needed one addition
-    to the seats package: `roster.sitting()` (its claim says whose a seat
-    is, which outlasts getting up; sitting is what a port follows).
+    has got up from stops (Decision 4). Standing up frees the seat too
+    (Decision 29); walking off from it keeps it for you to come back to.
+    Escape pops the held tool, never the body (scene/TOOLS.md §5), so it
+    puts the pad down and keeps the port. That needed one addition to the
+    seats package: `roster.sitting()`.
 21. **A machine with no seats is played by Play alone.** Where no seats
-    owner was installed when its session was made (or a viewer hasn't the
-    seats package), P takes a free port with the pad and Escape gives it
-    back, as in round 1. A machine with seats has one way to take a port,
-    sitting, and P only picks the pad back up. Seats are laid once, with
-    the session; a machine made without them doesn't get them later.
+    owner was installed when its session was made, its trait lists no
+    seats, and P takes a free port with the pad and Escape gives it back,
+    as in round 1. A machine whose trait lists seats has one way to take a
+    port, sitting, and P only picks the pad back up, for every viewer: one
+    without the seats package can't take a port by Play from under a seat
+    (review, round 2). Seats are laid with a session; a machine made
+    without them doesn't get them later.
 22. **P acts on the machine you sit at, wherever the pointer is.** Seated,
     the pointer is free and the look follows it, so "the machine looked
-    at" is a coin toss. The Play command answers for the scene's own
-    target (nothing of its own looked at) with the machine whose pad you
-    hold or whose seat you sit in.
+    at" is a coin toss. The Play command answers for a look at anything
+    that isn't a machine (another object, or nothing) with the machine
+    whose pad you hold or whose seat you sit in. (Round 2 did this only for
+    a look at nothing; the review caught it.)
 23. **Several places on one object** (the seats package's `placeOn`): a
     look at the cabinet is at the place it lands in, else your own among
     them if you sit at one (seated, you look at the middle), else the
     nearest. Before, a look at an object with several places always meant
     the first.
-24. **A machine lays its seats in the doc it stands in**, like any table,
-    and STAGE.md's convention is one table's seats to a doc. So a machine
-    shares a doc with no other seated game: a games room links its games
-    (as Games night does), and a card table's roster would otherwise count
-    the machine's seats as its players. A roster scoped per table would
-    lift this; with tables and machines both laying seats, that is a seats
-    change with two consumers, left for the lead.
-25. **A game is chosen once.** A ROM or an IWAD dropped on a cabinet that
-    already has one is refused, and said: a session is made for its
-    content, so changing a machine doc's game under running sessions would
-    strand them. The Machine tool already chooses once. Put in another
-    cabinet for another game.
+24. *(Superseded by 29.)* A machine laid its seats in the doc's own seats,
+    so it couldn't share a doc with a seated game.
+25. **A game is chosen once.** A cabinet that already has a game doesn't
+    take a ROM or an IWAD dropped on it: the drop is left to the other
+    packages and the stage, as any drop the machine doesn't lay out (the
+    review: taking it only to refuse it swallowed a file someone else could
+    lay out). The Machine tool already chooses once. Put in another cabinet
+    for another game.
 26. **Content lives in documents.** The plan's step 8 kept game files out
     of documents (each peer supplying its own copy, found by a recipe and a
     cache: `content.js`). Licences don't bind this research, so a dropped
@@ -972,7 +980,65 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
 28. **`play(port)` takes exactly that port.** Choosing a port (the
     screen's player if free, else the first free) is Play's, a pure
     `portToPlay`; a seat asks for its own port and no other. Host.sit is
-    the one judge of whether a port is free.
+    the one judge of whether a port is free. A seat doesn't ask for a port
+    `holders()` shows someone holding (it isn't polled by a refusal every
+    frame); it asks again once that port shows free, and Host.sit still
+    refuses it while its last holder's seat is ending.
+
+Round 2's review (Decisions 29-34):
+
+29. **A machine's seats are its own, and don't last.** The review found
+    the card table's ideas leaking into the machine through the seats it
+    borrowed: one roster per doc (so a machine's ports counted as a card
+    table's players, and as parties to an undo), a player kept after
+    standing up (so a cabinet everyone had once sat at read "Ana (away)"
+    on every port, and a newcomer was asked to "take their seat? You'll see
+    what's theirs"), and seats that outlived their cabinet. One cause, one
+    change to the seats package, with two consumers: seats have an owner,
+    the doc (a table's, on the scene, as before) or an object (a machine's,
+    on the object: copied and removed with it, never in the roster); and a
+    seat may say `lasting: false`, held only by the claim of whoever sits
+    in it, writing nothing. The two are separate: an object's seats may
+    last, the doc's may not. The picker shows one owner's seats, those of
+    what has your attention. Decision 24 goes.
+30. **Which port a seat is, is the machine's trait's.** Round 2 packed
+    machine and port into the seat's id (`<object>.p<n>`) and parsed it
+    back, and worked out whether a machine had seats from the local
+    roster. Now the trait lists the seat of each port (`seats`), written in
+    the change that lays them; the port is its index there, and a machine
+    has seats exactly when its trait lists some, whatever is installed
+    here.
+31. **A game given in the scene is a machine doc of its own.** A drop on an
+    empty cabinet makes a new machine doc and points the cabinet's source
+    at it, rather than writing kind, content and title into the empty doc.
+    One key in one write: two views giving one cabinet a game at once end
+    with one of the two whole, never one's kind with the other's content.
+    (The review suggested a claim around the write; a drop's context has no
+    `claim`, scene/STAGE.md, "Drops".) It also keeps a copy of an empty
+    cabinet, which shares its empty doc, from getting the game too. And a
+    session says which source it was made for (the trait's `source`,
+    runtime like `session`): a session a view made meanwhile for the source
+    that lost the merge is not this object's, and a new one is made.
+32. **A dropped file's bytes are copied into a content doc.** The review
+    asked to point the machine at the dropped file doc, or say why not. A
+    session is made for its content, and a content doc is a value nobody
+    edits; a file doc is whoever dropped it's, and a Machine tool or a file
+    tool may change it. Content docs also have one shape (`{ title, bytes
+    }`), and Doom's isn't the WAD's bytes at all (its start arguments come
+    with them). The file doc is left as it was: nothing points at it, and
+    an unreferenced doc costs nothing but storage.
+33. **A WAD dropped on a cabinet where the doom package is installed too**
+    goes to whichever of the two is first in registry order: both lay out
+    dropped WAD files (doom's as a map). The general answer is a stage
+    rule, offer a drop on an object to that object's extensions first, but
+    the stage takes a rule only with two unrelated consumers, and this is
+    one. With Decision 25, a cabinet that has a game no longer takes a WAD,
+    so the overlap is only an empty cabinet's. Left for the lead, with the
+    rule written down here as the proposal.
+34. **The pad and the port are `hands.js`.** What sitting, Escape and P do
+    moved out of the extension into a module of its own, given the
+    machines, the held-tool slot, the roster's `sitting` and the trait's
+    seats, so it is tested directly rather than only by a browser probe.
 
 ### Tests
 
@@ -1032,13 +1098,27 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
   follow their things frame by frame and nothing is asked while nothing
   plays; hearing another player stops the old mix. Mutation-checked (the
   route's port fixed at 0; things asked every frame).
-- **`scene/seating.test.js`:** seat ids round-trip for six look-alike
-  object ids × 1-4 ports and no other id reads as a seat; the seats laid
-  (names, frames, eyes in front, none in one place) for both machines × 1-4
-  ports; the places partition the cabinet's front for every subset of seats
-  laid; `seatedPorts` over 16 subsets; `seatStep` over every wanted × held
-  port, doing it leaves the view holding what it wants; `portToPlay` over
-  every way 1-4 ports are held × every preferred port (98 cases).
+- **`scene/seating.test.js`:** a view's port over every seat it could sit
+  in (this machine's listed and unlisted, another object's or the doc's of
+  the same name, none) × 1-4 ports; the seats laid (names, not lasting,
+  frames, eyes in front, none in one place) for both machines × 1-4 ports;
+  the places partition the cabinet's front, each the machine's own seat;
+  `follow` on a stub machine over every wanted × held port × the wanted
+  one free, held, or just let go (67 cases): the calls it makes, that it
+  never asks for a port someone plainly holds, and where it ends;
+  `portToPlay` over every way 1-4 ports are held × every preferred port
+  (98 cases). Mutation-checked (a held port asked for).
+- **`scene/hands.test.js`** (review, round 2): a machine with seats, over
+  every seat a view could sit in (none, either of this machine's, another
+  machine's, the doc's own, another object's) × the pad in hand or put down
+  × P looking at this machine, another, another object or nothing (48
+  cases): the port follows the seat, Escape keeps it, P's verb and what it
+  does, nothing noticed, and getting up gives the port back. A machine
+  without seats, over three ways its ports are held × the pad × a seat sat
+  in elsewhere × the four looks (48 cases): Play's port, full said, Escape
+  gives it back. Mutation-checked (Escape always giving the port back; P
+  on another object being that object; no fall back to the seat; a seated
+  machine offered without sitting).
 - **`scene/running.test.js`, a seat drives the port:** two views over
   automerge-repo, b sitting at P2; a follows each of the 27 sequences of
   three wants (none, P1, P2), 400 ms each: a holds what it wants unless b
@@ -1050,15 +1130,33 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
 - **`scene/extension.test.js`:** a file dropped on each of five targets
   (nothing, a gone id, a plain object, a cabinet with no game, one with a
   game) × four files (a ROM, an IWAD, a PWAD, a text file): only a ROM or an
-  IWAD on a cabinet with no game becomes its game; on one with a game it's
-  refused and said; anywhere else it's left to others. The part puts in a
-  machine doc of its own with the trait, where it was put.
+  IWAD on a cabinet with no game becomes its game, a new machine doc the
+  cabinet's source now points at, no doc that was there changed; anywhere
+  else, or on a cabinet with a game, it's left to others, unsaid. Two views
+  giving one cabinet a game at once, over three pairs of files × either
+  merge winner: one game, whole, and a session made for the loser is none
+  of the cabinet's. `sessionOf` over 27 sources × sessions × stamps. The
+  part puts in a machine doc of its own with the trait, where it was put.
+  Mutation-checked (a session for another source taken; a second key
+  written by a drop).
 - **`patchwork/load.test.js`:** `gameOf` over eight names × five kinds of
   bytes.
 - **seats/`seats.test.js`:** `placeOn` over 1-4 places × two poses × who
   sits × 156 points never on a boundary (4,368 cases), and through
-  `seatLookedAt`; `roster.sitting()` seated, stood up, and walking off from
-  the seat. Mutation-checked.
+  `seatLookedAt` among an object's own seats; `roster.sitting()` seated,
+  stood up, and walking off from the seat. An object's own seats beside a
+  table's (review, round 2): the picker follows attention to the cabinet,
+  a thing on it, the table, or nothing; sitting at the cabinet claims on
+  the cabinet, writes nothing, keeps your table seat, and the table's
+  roster and parties never count it; every one of eight ways of getting up
+  (Stand up, the chip's Leave, Watching, the table, the other port,
+  leaving, a crash, the cabinet removed) frees the port for the next
+  person, never "away", with no seat entry changed, and someone gone and
+  back comes back to nothing; a copied cabinet's seats are its own;
+  `seatState` over lasting × player × claim (30 cases). Mutation-checked
+  (every seat lasting; the roster counting an object's seats; Leave
+  keeping the claim; a removed seat's claim kept; the picker never an
+  object's; a brief seat written like a lasting one).
 - **`probes/seats.mjs`** (headless Chrome, two people on real Automerge
   docs, simulated time; scene, seats and machine built): Ana puts in an
   empty cabinet from the parts bin and drops Unarmed's ROM on it; a view
@@ -1072,7 +1170,15 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
   eye, and played the console's stream; Escape puts Ana's pad down with
   port 0 still hers, P picks it up; Ana watches and her port is given back
   while Ben plays on; Ben gets up and the machine stops on both views at
-  one tick with one picture. 28 checks.
+  one tick with one picture. 28 checks. After round 2's review, 33: the game
+  is a machine doc of its own the cabinet points at, the empty doc left as
+  it was; the four seats are on the cabinet, not lasting, listed by port on
+  the trait, and the scene's own seats untouched; sitting writes nothing
+  but the sitter's claim on the cabinet; and when Ana watches her seat is
+  free, its claim gone, never "away". The probe page's `select` now selects
+  through `api.view.select` (it had been writing a `selected` field into
+  the stage's local state, which nothing reads as the selection; Ana's
+  picker had worked only because her pointer was over her view).
 - **`probes/scene.mjs`** now also checks each view's sound: Doom's music
   and the pistol from the WAD's own lump (22,050 Hz in Freedoom), and the
   Super NES's stream. 40 checks.
@@ -1102,17 +1208,9 @@ Made in round 2 (steps 5, 6 and 8), also unattended:
 
 - Step 7, the spectator's 3D world (and with it Doom's `world()` sound
   route, sounds at their origins).
-- A cabinet removed leaves its seats in the scene's seats: only the seats
-  package writes them, and it has no `unlay`. Its picker still lists them,
-  and sitting in one does nothing (its frame is gone). Either the seats
-  package hides a seat whose camera's frame is gone, or it grows a way to
-  take seats back.
-- A roster per table, so a machine can share a doc with a card game
-  (Decision 24).
-- A WAD dropped on a cabinet where the doom package is installed too goes
-  to whichever of the two is first in registry order: both lay out `file`
-  drops of WADs (doom's as a map). A drop onto an object offered first to
-  that object's extensions would settle it; that would be a stage rule.
+- A WAD dropped on an empty cabinet where the doom package is installed
+  too goes to whichever of the two is first in registry order (Decision
+  33): the stage rule that would settle it waits for a second consumer.
 - Doom's mouse in a seat (Decision 15 stands: keys only).
 - The host in a worker, in a scene (decision 9).
 - A checkpoint nobody wrote in time is written by any peer a period later

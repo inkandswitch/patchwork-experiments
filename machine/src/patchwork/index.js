@@ -62,8 +62,9 @@ export const plugins = [
         on: "object",
         blurb: "An existing game, run as is, in step for everyone here; its picture and sound come from its screen. Sit at one of its seats to play that port (the pad in hand; Escape puts it down, P picks it up), stand up to give it back; where it has no seats, P plays and Escape gives the port back. It stops while nobody plays",
         fields: [{ key: "player", label: "Screen shows player (Doom, from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
-        // the session is this object's running game: a copy starts a game of its own
-        runtime: ["session"],
+        // the session (and the source it was made for) is this object's running game: a copy starts a game of its own.
+        // `seats` (the seat of each port, laid on the object with it) describes the cabinet, and goes with a copy as its seats do
+        runtime: ["session", "source"],
       },
     },
     // a machine doc is a new cabinet; a ROM or an IWAD dropped on a cabinet with no game is its game

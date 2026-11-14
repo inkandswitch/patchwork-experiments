@@ -1,7 +1,7 @@
 // The machine extension's own pure parts, over their bounded spaces, and its
 // surface: what the scene's extension contract asks of it and nothing more.
 import * as THREE from "three";
-import ext, { playerOf, screenMatrix, give } from "./extension.js";
+import ext, { playerOf, screenMatrix, give, sessionOf } from "./extension.js";
 import part from "./part.js";
 import { screenOf } from "./cabinet.js";
 
@@ -66,44 +66,102 @@ function plainRepo(docs = {}) {
   return { docs, find: async (url) => handle(url), create2: async (value) => ((docs[`automerge:d${++n}`] = structuredClone(value)), handle(`automerge:d${n}`)) };
 }
 
-test("a file dropped on a cabinet with no game is its game; on one with a game it's refused, said; anywhere else it's left to others", async () => {
+const iwadBytes = () => {
   const iwad = new Uint8Array(28);
   iwad.set(new TextEncoder().encode("IWAD"));
   new DataView(iwad.buffer).setInt32(8, 12, true); // no lumps: MAP01
-  const FILES = {
-    rom: { name: "unarmed.sfc", content: new Uint8Array(64).fill(3) },
-    iwad: { name: "freedoom1.wad", content: iwad },
-    pwad: { name: "mod.wad", content: new Uint8Array(12).fill(1) },
-    text: { name: "readme.txt", content: new Uint8Array(4) },
+  return iwad;
+};
+const FILES = {
+  rom: { name: "unarmed.sfc", content: new Uint8Array(64).fill(3) },
+  iwad: { name: "freedoom1.wad", content: iwadBytes() },
+  pwad: { name: "mod.wad", content: new Uint8Array(12).fill(1) },
+  text: { name: "readme.txt", content: new Uint8Array(4) },
+};
+/** A scene with a plain object, an empty cabinet and one with a game, and a drop context on it. */
+function dropScene() {
+  const repo = plainRepo({ "automerge:empty": { "@patchwork": { type: "machine" }, title: "Machine" }, "automerge:playing": { title: "Doom", kind: "doom", content: "automerge:c" } });
+  const d = {
+    objects: {
+      plain: { sourceUrl: "automerge:x", traits: {} },
+      empty: { sourceUrl: "automerge:empty", traits: { machine: {} } },
+      playing: { sourceUrl: "automerge:playing", traits: { machine: { session: "automerge:s", source: "automerge:playing" } } },
+    },
   };
+  const notices = [];
+  const ctx = { repo, scene: () => structuredClone(d), change: (fn) => fn(d), notify: (t) => notices.push(t) };
+  return { repo, d, ctx, notices };
+}
+const fileDrop = (file, hitId) => ({ url: "automerge:file", doc: { "@patchwork": { type: "file" }, ...file }, at: hitId ? { point: [0, 1, 0], hitId } : null });
+
+test("a file dropped on a cabinet with no game is its game, a machine doc of its own the cabinet now points at; anywhere else, or on a cabinet with a game, it's left to others", async () => {
   const TARGETS = ["nothing", "unknown", "plain", "empty", "playing"];
   let cases = 0;
   for (const target of TARGETS)
     for (const [what, file] of Object.entries(FILES)) {
-      const repo = plainRepo({ "automerge:empty": { title: "Machine" }, "automerge:playing": { title: "Doom", kind: "doom", content: "automerge:c" } });
-      const objects = {
-        plain: { sourceUrl: "automerge:x", traits: {} },
-        empty: { sourceUrl: "automerge:empty", traits: { machine: {} } },
-        playing: { sourceUrl: "automerge:playing", traits: { machine: { session: "automerge:s" } } },
-      };
-      const notices = [];
-      const ctx = { repo, scene: () => ({ objects }), notify: (t) => notices.push(t) };
+      const { repo, d, ctx, notices } = dropScene();
+      const before = structuredClone(d);
       const hitId = { nothing: null, unknown: "gone", plain: "plain", empty: "empty", playing: "playing" }[target];
-      const took = await give(ctx, { url: "automerge:file", doc: { "@patchwork": { type: "file" }, ...file }, at: hitId ? { point: [0, 1, 0], hitId } : null });
+      const took = await give(ctx, fileDrop(file, hitId));
       const makes = what === "rom" || what === "iwad";
-      const onCabinet = target === "empty" || target === "playing";
-      expect(took).toBe(onCabinet && makes);
-      if (target === "empty" && makes) {
-        const m = repo.docs["automerge:empty"];
-        expect(m.kind).toBe(what === "rom" ? "snes" : "doom");
+      expect(took).toBe(target === "empty" && makes);
+      // no machine doc that was there is changed (a copy of the cabinet, sharing its doc, keeps its own)
+      expect(repo.docs["automerge:empty"]).toEqual({ "@patchwork": { type: "machine" }, title: "Machine" });
+      expect(repo.docs["automerge:playing"]).toEqual({ title: "Doom", kind: "doom", content: "automerge:c" });
+      if (took) {
+        const url = d.objects.empty.sourceUrl;
+        expect(url).not.toBe("automerge:empty");
+        const m = repo.docs[url];
+        expect(m).toMatchObject({ "@patchwork": { type: "machine" }, kind: what === "rom" ? "snes" : "doom" });
         expect(repo.docs[m.content].bytes.length).toBeGreaterThanOrEqual(file.content.length);
         expect(repo.docs[m.content].title).toBe(m.title);
-      } else expect(repo.docs["automerge:empty"]).toEqual({ title: "Machine" });
-      expect(repo.docs["automerge:playing"]).toEqual({ title: "Doom", kind: "doom", content: "automerge:c" });
-      expect(notices.length).toBe(target === "playing" && makes ? 1 : 0);
+        // the source is all that changed in the scene
+        expect({ ...d, objects: { ...d.objects, empty: { ...d.objects.empty, sourceUrl: "automerge:empty" } } }).toEqual(before);
+      } else expect(d).toEqual(before);
+      expect(notices).toEqual([]);
       cases++;
     }
   expect(cases).toBe(20);
+});
+
+test("two views giving one cabinet a game at once: each writes one key, so the merge keeps one game whole; a session made for the other gives way", async () => {
+  // both views read the cabinet empty, then both write; a merge keeps one of two writes to one key, either way round
+  for (const winner of [0, 1])
+    for (const [a, b] of [["rom", "iwad"], ["iwad", "rom"], ["rom", "rom"]]) {
+      const { repo, d, ctx } = dropScene();
+      const writes = [];
+      const racing = { ...ctx, change: (fn) => writes.push(fn) }; // held back: each sees the cabinet as it was
+      expect(await give(racing, fileDrop(FILES[a], "empty"))).toBe(true);
+      expect(await give(racing, fileDrop(FILES[b], "empty"))).toBe(true);
+      const results = writes.map((fn) => {
+        const copy = structuredClone(d);
+        fn(copy);
+        return copy.objects.empty.sourceUrl;
+      });
+      d.objects.empty.sourceUrl = results[winner];
+      const m = repo.docs[d.objects.empty.sourceUrl];
+      expect(m.kind).toBe([a, b][winner] === "rom" ? "snes" : "doom"); // one game, whole: its kind and its content together
+      expect(repo.docs[m.content].title).toBe(m.title);
+      // a session a view made meanwhile for the losing source is no session of this cabinet's
+      const loser = results[1 - winner];
+      expect(sessionOf({ sourceUrl: d.objects.empty.sourceUrl, traits: { machine: { session: "automerge:s1", source: loser } } })).toBe(null);
+      expect(sessionOf({ sourceUrl: d.objects.empty.sourceUrl, traits: { machine: { session: "automerge:s1", source: d.objects.empty.sourceUrl } } })).toBe("automerge:s1");
+    }
+});
+
+test("an object's session is its own only if it was made for the source it has now", () => {
+  const SOURCES = [undefined, "automerge:a", "automerge:b"];
+  let cases = 0;
+  for (const sourceUrl of SOURCES)
+    for (const session of [undefined, null, "automerge:s"])
+      for (const source of SOURCES) {
+        const o = { sourceUrl, traits: { machine: { ...(session !== undefined ? { session } : {}), ...(source ? { source } : {}) } } };
+        expect(sessionOf(o)).toBe(session && source && source === sourceUrl ? session : null);
+        cases++;
+      }
+  expect(sessionOf(null)).toBe(null);
+  expect(sessionOf({ sourceUrl: "automerge:a", traits: {} })).toBe(null);
+  expect(cases).toBe(27);
 });
 
 test("the part puts in an empty cabinet: a machine doc of its own with no game, the machine trait, where it was put", async () => {

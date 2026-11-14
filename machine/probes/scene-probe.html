@@ -196,8 +196,9 @@ try {
     session: async (url) => { const h = await net.a.find(url); const d = h.doc(); return { clock: JSON.parse(JSON.stringify(d.clock)), seats: JSON.parse(JSON.stringify(d.seats ?? {})), checkpoints: Object.keys(d.checkpoints ?? {}).length }; },
     clock: (w) => ({ t: dbg[w].clock.t(), computing: dbg[w].clock.computing(), doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
     held: (w) => dbg[w].local.get().held ?? null,
-    select: (w, id) => dbg[w].local.swap((m) => ({ ...m, selected: id })),
-    selected: (w) => dbg[w].local.get().selected ?? null,
+    // the view's selection (api.view, what extensions read as attention), through an extension's api
+    select: (w, id) => machineApi(w).view.select(id),
+    selected: (w) => machineApi(w).view.get().selected ?? null,
     notices: (w) => (dbg[w].local.get().notices ?? []).map((n) => n.text),
     labels: (w) => [...hosts[w].querySelectorAll(".machine-note")].map((e) => e.textContent),
     loaded(w) {

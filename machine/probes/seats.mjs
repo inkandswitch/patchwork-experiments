@@ -8,9 +8,10 @@
 // (probes/scene-probe.html?seats). The success criteria:
 //  1. content: Ana puts an empty cabinet in from the parts bin (the
 //     machine's scene:part) and drops Unarmed's ROM on it, as a file from the
-//     desktop: the cabinet's machine doc takes the game, a view makes its
-//     session, and a seat per port is laid in the same change (the seats
-//     package's lay), each seat's view in the cabinet's frame;
+//     desktop: the cabinet's source becomes a machine doc of its own with
+//     the game, a view makes its session, and a seat per port is laid on the
+//     cabinet in the same change (the seats package's lay), not lasting, each
+//     seat's view in the cabinet's frame, listed by port on the trait;
 //  2. seats: Ana sits at P1 and Ben at P2 with the seats picker. Each is in
 //     the seat body, looking at the screen from their seat, with that port's
 //     pad in hand; the session gives port 0 to Ana and port 1 to Ben, and
@@ -26,7 +27,8 @@
 //  5. Escape puts Ana's pad down and her port stays hers (she still sits);
 //     P picks it up again, wherever her pointer is;
 //  6. standing up gives the port back: Ana watches (the picker) and her
-//     seat in the session ends while Ben plays on; Ben gets up and the
+//     seat in the session ends while Ben plays on, the seat free again
+//     (never "away": nothing was written); Ben gets up and the
 //     machine stops on both views at one tick, with one picture;
 //  7. no errors.
 // Prints a JSON report; exits non-zero if any check fails.
@@ -100,17 +102,22 @@ try {
   check("content: the empty cabinet says how to give it a game", (await P(`labels("a")`)).some((t) => /No game yet/.test(t)), await P(`labels("a")`));
   const front = await P(`project("a", [0, 0.6, 0.36])`);
   await P(`dropFile("a", "unarmed.sfc", ${front.x}, ${front.y})`);
-  const given = await b.waitFor(`(async () => { const d = await __p.machineDoc(${JSON.stringify(machineUrl)}); return d.kind ? d : null })()`, 30_000);
-  check("content: a ROM dropped on it is its game (kind, content, title)", given?.kind === "snes" && !!given.content && /unarmed/.test(given.title ?? ""), given);
+  const given = await b.waitFor(`(async () => { const u = __p.doc().objects["${id}"].sourceUrl; if (u === ${JSON.stringify(machineUrl)}) return null; const d = await __p.machineDoc(u); return d.kind ? d : null })()`, 30_000);
+  check("content: a ROM dropped on it is its game, a machine doc of its own the cabinet now points at (kind, content, title)", given?.kind === "snes" && !!given.content && /unarmed/.test(given.title ?? ""), given);
+  const emptyAfter = await P(`machineDoc(${JSON.stringify(machineUrl)})`);
+  check("content: the empty machine doc is left as it was", !!emptyAfter && emptyAfter.kind === null, emptyAfter);
   const session = await b.waitFor(`__p.trait("${id}")?.session`, 120_000);
   check("content: a view made its session", !!session);
-  const seats = await P(`doc().traits.seats ?? null`);
-  const sids = [1, 2, 3, 4].map((n) => `${id}.p${n}`);
+  const seats = await P(`doc().objects["${id}"].traits.seats ?? null`);
+  const sids = [1, 2, 3, 4].map((n) => `p${n}`);
   check(
-    "content: a seat per port laid with it, each named for the game, its view in the cabinet's frame looking at the screen",
-    !!seats && sids.every((s) => seats[s]?.camera?.in === id && /unarmed · P\d/.test(seats[s].name) && seats[s].player === null) && Object.keys(seats).length === 4,
+    "content: a seat per port laid on the cabinet with it, not lasting, each named for the game, its view in the cabinet's frame looking at the screen",
+    !!seats && sids.every((s) => seats[s]?.camera?.in === id && /unarmed · P\d/.test(seats[s].name) && seats[s].player === null && seats[s].lasting === false) && Object.keys(seats).length === 4,
     seats,
   );
+  const listed = await P(`trait("${id}")`);
+  check("content: the machine's trait lists its seats by port, and says which source its session is for", JSON.stringify(listed?.seats) === JSON.stringify(sids) && listed?.source === (await P(`doc().objects["${id}"].sourceUrl`)), listed);
+  check("content: the scene's own seats are untouched (the cabinet's are its own)", (await P(`doc().traits.seats ?? null`)) === null, await P(`doc().traits.seats ?? null`));
   const ready = await b.waitFor(`(() => { const s = [__p.shows("a")?.["${id}"], __p.shows("b")?.["${id}"]]; return s.every((x) => x && x.tick !== null && x.shown) })()`, 180_000);
   check("both views opened it and show a picture", !!ready, await both(id));
   await b.step(30);
@@ -118,7 +125,9 @@ try {
   await shot("given");
 
   // ---- 2. seats: Ana at P1, Ben at P2
+  // (the picker shows the seats of what has your attention: each looks at the cabinet first)
   await P(`select("a", "${id}")`);
+  await P(`select("b", "${id}")`);
   await b.step(5);
   report.numbers.options = await P(`seatOptions("a")`);
   await P(`pickSeat("a", "${sids[0]}")`);
@@ -136,6 +145,8 @@ try {
   check("seats: the session gives port 0 to Ana and port 1 to Ben", open(0)?.by === viewers.a && open(1)?.by === viewers.b && held.filter((s) => s.until === null).length === 2, held);
   const running = await both(id);
   check("seats: the machine runs on both views", running.every((s) => s.running), running);
+  const written = await P(`doc().objects["${id}"].traits.seats`);
+  check("seats: sitting wrote nothing on the seats (each is its sitter's claim, on the cabinet)", sids.every((s) => written[s].player === null) && (await P(`doc().objects["${id}"].claims?.["seat:p1"]?.viewer`)) === viewers.a, { written, claims: await P(`doc().objects["${id}"].claims ?? null`) });
   await shot("seated");
 
   // ---- 3. input: Ana's Start, Ben's Right, each landing in its own seat's document
@@ -193,6 +204,7 @@ try {
   await b.step(60);
   held = await P(`inputs(${JSON.stringify(session)})`);
   check("Ana watches: out of the seat body, the pad gone, port 0 given back", (await P(`body("a")`)) !== "seat" && !(await P(`held("a")`)) && !open(0) && open(1)?.by === viewers.b, { body: await P(`body("a")`), seats: held });
+  check("and her seat is free: no claim left, and Ben's picker doesn't call it away", !(await P(`doc().objects["${id}"].claims?.["seat:p1"]`)) && !(await P(`seatOptions("b")`)).some(([, t]) => /away/.test(t)), { claims: await P(`doc().objects["${id}"].claims ?? null`), options: await P(`seatOptions("b")`) });
   check("Ben plays on", (await both(id)).every((s) => s.running), await both(id));
   await P(`pickSeat("b", "")`);
   const still = await b.waitFor(`(() => { const s = [__p.shows("a")?.["${id}"], __p.shows("b")?.["${id}"]]; return s.every((x) => !x.running) && s[0].tick === s[1].tick && s[0].shown?.tick === s[0].tick && s[1].shown?.tick === s[1].tick })()`, 60_000);

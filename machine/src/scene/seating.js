@@ -2,28 +2,32 @@
 // places are, and which port a view holds. Pure: extension.js does the rest.
 //
 // Seats are the seats package's, met only through its conventions (seats/
-// README.md): its `lay(d, seats)` writes them when the machine's session is
-// made, the places given here (`seatPlaces`) say where each port's seat is
-// on the cabinet, and its roster says which seat this view is sitting in
-// now. The machine never reads or writes the seats trait itself.
-//
-// A port is held by the view sitting in its seat: sitting down at port N's
-// seat takes port N, and standing up (or watching, or sitting elsewhere, or
-// leaving) gives it back. A machine with no seats (no seats package where it
-// was made) is played by Play alone: the pad in hand holds a port.
+// README.md): its `lay(d, seats, of)` writes them on the machine's object
+// when its session is made (an object's own seats: copied and removed with
+// it, never a table's players), not lasting (a port is held only while
+// someone sits at it: nothing is written, and getting up frees it); the
+// places given here (`seatPlaces`) say where each port's seat is on the
+// cabinet; and its roster says which seat this view is sitting in now. The
+// machine never reads or writes the seats trait itself. What it keeps is
+// its own: the trait's `seats`, the seat id of each port, in port order,
+// written in the same change. A machine whose trait lists seats is played
+// by sitting at them; one that lists none (no seats package where it was
+// made) by Play alone: the pad in hand holds a port.
 
 import { BODY } from "./cabinet.js";
 
-/** Port `port`'s seat on machine object `id`. */
-export const seatId = (id, port) => `${id}.p${port + 1}`;
+/** The seat ids a machine with `ports` ports lays, in port order: what its trait's `seats` lists. */
+export const portSeats = (ports) => Array.from({ length: ports }, (_, p) => `p${p + 1}`);
 
-/** The port seat `sid` is on machine object `id`, or null. */
-export function portOfSeat(id, ports, sid) {
-  if (typeof sid !== "string" || !sid.startsWith(`${id}.p`)) return null;
-  const n = sid.slice(id.length + 2);
-  if (!/^[1-9][0-9]*$/.test(n)) return null;
-  const port = Number(n) - 1;
-  return port < ports ? port : null;
+/**
+ * The port this view's seat (`sitting`, the roster's: { of, seat } | null)
+ * is on machine object `id`, whose trait lists `seats` (by port) and which
+ * has `ports` ports; null when it sits at none of them.
+ */
+export function portOf(id, seats, ports, sitting) {
+  if (!Array.isArray(seats) || sitting?.of !== id) return null;
+  const port = seats.indexOf(sitting.seat);
+  return port >= 0 && port < ports ? port : null;
 }
 
 /** How far in front of the screen a seated player's eye is (m), and how far apart the seats are. */
@@ -34,17 +38,19 @@ const SPREAD = 0.3;
 const across = (port, ports) => (port - (ports - 1) / 2) * SPREAD;
 
 /**
- * The seats machine object `id` lays: one per port, named "<title> · P<n>",
- * each a view of the screen from a little in front of it, side by side, in
- * the object's frame (so a seat rides the cabinet when it's moved). `screen`
- * is the cabinet's (cabinet.js screenOf: what the cabinet is built from).
+ * The seats machine object `id` lays on itself: one per port (portSeats),
+ * named "<title> · P<n>", not lasting, each a view of the screen from a
+ * little in front of it, side by side, in the object's frame (so a seat
+ * rides the cabinet when it's moved). `screen` is the cabinet's (cabinet.js
+ * screenOf: what the cabinet is built from).
  */
 export function seatsFor(id, { title, ports, screen }) {
   const [x, y, z] = screen.center;
   const out = {};
-  for (let p = 0; p < ports; p++)
-    out[seatId(id, p)] = {
+  for (const [p, sid] of portSeats(ports).entries())
+    out[sid] = {
       name: `${title || "Machine"} · P${p + 1}`,
+      lasting: false,
       camera: { position: [x + across(p, ports), y + 0.05, z + EYE_DISTANCE], target: [x, y, z], in: id },
     };
   return out;
@@ -54,27 +60,15 @@ export function seatsFor(id, { title, ports, screen }) {
 const PANEL = [0.85, 1.0];
 
 /**
- * Where each port's seat is on machine object `id`: a strip across the
- * cabinet's front below the screen, divided into one place per port, in the
- * object's frame (what `seatPlaces` contributes: a name tag on each, and a
- * look at one is a look at its seat). Only for the seats `laid`.
+ * Where each port's seat is on machine object `id`, whose trait lists
+ * `seats` (by port): a strip across the cabinet's front below the screen,
+ * divided into one place per port, in the object's frame (what `seatPlaces`
+ * contributes: a name tag on each, and a look at one is a look at its seat).
  */
-export function placesFor(id, ports, laid) {
-  const W = BODY.width, D = BODY.depth;
-  const out = [];
-  for (let p = 0; p < ports; p++) {
-    const seat = seatId(id, p);
-    if (!laid.has(seat)) continue;
-    out.push({ seat, id, min: [-W / 2 + (p * W) / ports, PANEL[0], D / 2 - 0.01], max: [-W / 2 + ((p + 1) * W) / ports, PANEL[1], D / 2 + 0.01] });
-  }
-  return out;
-}
-
-/** How many ports machine object `id` has seats for, among the seat ids laid (its seats are P1..PN). */
-export function seatedPorts(id, laid) {
-  let n = 0;
-  while (laid.has(seatId(id, n))) n++;
-  return n;
+export function placesFor(id, seats) {
+  if (!Array.isArray(seats)) return [];
+  const W = BODY.width, D = BODY.depth, n = seats.length;
+  return seats.map((seat, p) => ({ seat, of: id, id, min: [-W / 2 + (p * W) / n, PANEL[0], D / 2 - 0.01], max: [-W / 2 + ((p + 1) * W) / n, PANEL[1], D / 2 + 0.01] }));
 }
 
 /**
@@ -92,8 +86,10 @@ export function seatStep(want, have) {
  * One frame of following a seat on one machine (runMachine's `m`): the port
  * this view should hold is `want` (its seat's port, or null). Standing, the
  * pad is put down (`putDown`) and the port given back; sitting, the port is
- * taken if it's free and the pad put in hand (`pickUp(port)`); a port still
- * held by someone else is asked for again on the next frame.
+ * taken if it's free and the pad put in hand (`pickUp(port)`). A port
+ * someone else plainly holds (`holders`) isn't asked for; it, or one whose
+ * holder has only just stood up (Host.sit, the judge, refuses it a moment
+ * longer), is asked for again on the next frame.
  */
 export function follow(m, want, { pickUp, putDown }) {
   const step = seatStep(want, m.host.seat?.port ?? null);
@@ -101,7 +97,7 @@ export function follow(m, want, { pickUp, putDown }) {
     putDown();
     m.leave();
   }
-  if ((step === "sit" || step === "move") && m.play(want) !== null) pickUp(want);
+  if ((step === "sit" || step === "move") && m.holders()[want] === null && m.play(want) !== null) pickUp(want);
 }
 
 /**
