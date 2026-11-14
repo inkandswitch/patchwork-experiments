@@ -252,6 +252,12 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         },
         watch: () => () => {},
       },
+      // (the view's keys and the stage's in one value here: a fake world has one stage)
+      view: {
+        get: () => localState,
+        watch: () => () => {},
+        select: () => {},
+      },
       claim(id, kind, { onLost } = {}) {
         const f = holderOf(id)?.claims?.[kind];
         if (f && f.session !== session && live(f, session)) return null;
@@ -393,7 +399,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         const prev = v.seen ? { scene: v.seen, local: v.seenLocal } : undefined;
         v.seen = s;
         v.seenLocal = l;
-        v.instance.update?.(s, l, prev);
+        v.instance.update?.(s, l, prev && { ...prev, view: prev.local }, l);
       }
     },
     /** Run every view's loops, `n` frames of `dt` seconds. */

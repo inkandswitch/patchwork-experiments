@@ -400,7 +400,7 @@ describe("the stage, mounted", () => {
     await settle();
     const r = exts["t.scene"];
     const first = r.updates.at(-1);
-    expect(first.prev).toEqual({ scene: null, local: null });
+    expect(first.prev).toEqual({ scene: null, local: null, view: null });
     expect(first.scene.objects.a.name).toBe("Card");
     expect(first.scene.world("a")[0]).toBe(1);
     const n = r.updates.length;
@@ -577,7 +577,7 @@ describe("the stage, mounted", () => {
         throw new Error("no room");
       };
       expect(await api.template("t.template")).toBe(false);
-      expect(api.local.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
+      expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
     } finally {
       template = null;
     }
@@ -620,7 +620,7 @@ describe("the stage, mounted", () => {
         throw new Error("no room");
       };
       expect(await api.part("t.part", null)).toBe(null);
-      expect(api.local.get().notices.at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
+      expect(api.view.get().notices.at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
     } finally {
       partCreate = null;
     }
@@ -720,7 +720,7 @@ describe("the stage, mounted", () => {
     await settle(1);
     expect(fn).toHaveBeenCalledTimes(1);
     api.notify("Hello", "error");
-    expect(api.local.get().notices.at(-1)).toMatchObject({ text: "Hello", kind: "error", from: "t.always" });
+    expect(api.view.get().notices.at(-1)).toMatchObject({ text: "Hello", kind: "error", from: "t.always" });
   });
 
   it("routes input down the chain: an objects extension gets a click on its object, with holder", async () => {

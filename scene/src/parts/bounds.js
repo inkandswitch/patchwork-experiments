@@ -38,7 +38,7 @@ export default {
     const labels = api.labels();
     const shown = () => api.pref("bounds", false) === true;
     // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
-    const drawn = () => shown() && editing(api.local.get());
+    const drawn = () => shown() && editing(api.view.get());
     let key = null;
 
     function clear() {
@@ -49,10 +49,10 @@ export default {
       }
     }
 
-    function redraw(scene, local) {
+    function redraw(scene, view) {
       const on = drawn();
       const unit = api.pref("units", "m");
-      const selected = local.selected ?? null;
+      const selected = view.selected ?? null;
       const items = [];
       const boxes = [];
       if (on) {
@@ -63,11 +63,11 @@ export default {
           if (id !== selected) boxes.push(b);
         }
       }
-      const next = JSON.stringify([unit, items.map((i) => [i.key, i.position]), boxes, local.theme?.muted]);
+      const next = JSON.stringify([unit, items.map((i) => [i.key, i.position]), boxes, view.theme?.muted]);
       if (next === key) return;
       key = next;
       clear();
-      const m = local.theme?.muted;
+      const m = view.theme?.muted;
       const col = Array.isArray(m) ? new THREE.Color().setRGB(m[0], m[1], m[2], THREE.SRGBColorSpace) : new THREE.Color(0x808080);
       for (const b of boxes) {
         const h = new THREE.Box3Helper(new THREE.Box3(new THREE.Vector3(...b.min), new THREE.Vector3(...b.max)), col);
@@ -92,11 +92,11 @@ export default {
           run: () => api.setPref("bounds", !shown()),
         },
       ],
-      update(scene, local, prev) {
-        const was = prev.local;
-        const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.selected === was.selected && local.body === was.body) return;
-        redraw(scene, local);
+      update(scene, local, prev, view) {
+        const was = prev.view;
+        const content = scene === prev.scene && local === prev.local && view === was;
+        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.selected === was.selected && view.body === was.body) return;
+        redraw(scene, view);
       },
       dispose() {
         clear();

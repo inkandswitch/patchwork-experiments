@@ -24,7 +24,6 @@
 //   deselects as a rung of the stage's ladder (stage/ladder.js), not a key.
 
 import { peerColor, peerSelections } from "../peers.js";
-import { selectionStep } from "../selection.js";
 import { own } from "../stage/own.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
@@ -57,26 +56,13 @@ export function create(api) {
   // the doc, the theme or presence changes (not every frame)
   let targets = [];
 
-  const selected = () => api.local.get().selected ?? null;
+  const selected = () => api.view.get().selected ?? null;
 
-  // One stage, so the focus is the scene's own ([]) and a selection is [id].
-  const FOCUS = Object.freeze([]);
-  const stateOf = (m) => ({ focus: FOCUS, selected: m.selected != null ? [m.selected] : null });
-
-  /** Apply a selection event (../selection.js) to this view's selection. */
-  function step(ev) {
-    api.local.swap((m) => {
-      const was = stateOf(m);
-      const next = selectionStep(was, ev);
-      if (next === was) return m;
-      const id = next.selected?.[0] ?? null;
-      return (m.selected ?? null) === id ? m : { ...m, selected: id };
-    });
-  }
-  const select = (id) => step(id == null ? { type: "escape" } : { type: "select", path: [id] });
+  /** Select a target of this stage's (null: nothing); the view keeps it as a path (stage/view.js). */
+  const select = (id) => api.view.select(id ?? null);
 
   function computeTargets() {
-    const loc = api.local.get();
+    const loc = api.view.get();
     const objects = api.scene().objects ?? {};
     const theme = loc.theme ?? {};
     const out = [];
@@ -152,23 +138,23 @@ export function create(api) {
     if (targets.length) drawBoxes();
   });
 
-  function update(scene, local, prev) {
-    const sel = local.selected ?? null;
+  function update(scene, local, prev, view) {
+    const sel = view.selected ?? null;
     // the selection's object went (removed here or by a peer); a ref that
     // names no object is left to the extension that made it
     if (sel != null && !scene.objects?.[sel] && (!isRef(sel) || prev?.scene?.objects?.[sel])) {
       select(null);
       return;
     }
-    const was = prev?.local;
+    const was = prev?.view;
     if (!was || sel !== (was.selected ?? null)) {
       // peers are told any target; their surfaces mark only what they know
       api.presence.set("selected", sel ?? undefined);
       api.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
     }
-    if (!was || local.hovered !== was.hovered) api.presence.set("hovered", local.hovered ?? undefined);
+    if (!was || view.hovered !== was.hovered) api.presence.set("hovered", view.hovered ?? undefined);
     // only the hover (or something else of no concern here) changed
-    if (was && scene === prev.scene && local !== was && sel === (was.selected ?? null) && local.theme === was.theme) return;
+    if (was && scene === prev.scene && (local !== prev.local || view !== was) && sel === (was.selected ?? null) && view.theme === was.theme) return;
     // the doc, the selection or the theme changed, or content loaded (same scene and local)
     refresh();
   }
@@ -178,9 +164,9 @@ export function create(api) {
       id: "select",
       name: "Select",
       show: ["menu"],
-      state: (target, { scene, local }) => {
+      state: (target, { scene, view }) => {
         if (target == null || !scene?.objects?.[target]) return null;
-        return local?.selected === target ? { disabled: true, title: "Already selected" } : { title: "Select this" };
+        return view?.selected === target ? { disabled: true, title: "Already selected" } : { title: "Select this" };
       },
       run: (target) => select(target),
     },

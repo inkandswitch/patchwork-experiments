@@ -115,7 +115,7 @@ export default {
         ring.raycast = () => {};
         layer.add(ring);
       }
-      const theme = api.local.get().theme ?? {};
+      const theme = api.view.get().theme ?? {};
       const rgb = (land.snapped ? theme.accent : theme.muted) ?? (land.snapped ? [0.2, 0.9, 0.75] : [0.5, 0.5, 0.5]);
       ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
       ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
@@ -411,10 +411,10 @@ export default {
         edit: true,
         name: "Snap",
         show: ["toolbar"],
-        state(target, { scene, local }) {
+        state(target, { scene, view }) {
           if (target != null) return null;
           return {
-            checked: (local?.prefs?.snap ?? scene?.d?.view?.snap ?? true) !== false,
+            checked: (view?.prefs?.snap ?? scene?.d?.view?.snap ?? true) !== false,
             title: "Put pieces down on the nearest snap point (hold Alt to place freely)",
           };
         },
@@ -433,11 +433,11 @@ export default {
       input: {
         press(ev) {
           if (ev.button != null && ev.button !== 0) return null;
-          if (api.local.get().held != null) return null;
+          if (api.view.get().held != null) return null;
           return carry(ev.holder, ev);
         },
         cursor(ev) {
-          if (open || api.local.get().held != null) return null;
+          if (open || api.view.get().held != null) return null;
           return canCarry(ev.holder) ? "grab" : null;
         },
       },

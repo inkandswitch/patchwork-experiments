@@ -740,7 +740,7 @@ async function copyInto(api, payload, target, edit) {
   }
 
   const made = roots.map((id) => map.get(id)).filter(Boolean);
-  if (made.length) api.local.swap((m) => (m.selected === made[0] ? m : { ...m, selected: made[0] }));
+  if (made.length && api.view.get().selected !== made[0]) api.view.select(made[0]);
   return made.length ? made : null;
 }
 

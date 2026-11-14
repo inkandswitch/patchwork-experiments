@@ -79,10 +79,10 @@ export default {
     }
 
     return {
-      update(scene, local, prev) {
+      update(scene, local, prev, view) {
         // a doc change, content arriving (same scene and local) or load status; not hover
         const was = prev.local;
-        if (was && scene === prev.scene && local !== was && local.status === was.status) return;
+        if (was && scene === prev.scene && (local !== was || view !== prev.view) && local.status === was.status) return;
         render(scene);
       },
     };

@@ -43,6 +43,7 @@ import { defaultSnapRadius } from "../carry-rules.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
 import { createRides } from "./ride.js";
 import { realTime } from "./time.js";
+import { parseKey } from "./paths.js";
 
 const DEFAULT_THEME = {
   bg: [0.96, 0.96, 0.96],
@@ -525,8 +526,12 @@ export class LabelLayer {
     parent.append(this.el);
     this.onChange = onChange;
     this.groups = new Map(); // owner → Map(key → { el, world, ends, screen, rank, item })
+    this.frames = new Map(); // owner → () => its frame's world matrix (column-major) or null: its positions are in that frame
   }
-  sync(owner, items) {
+  /** An owner's labels; `frame`: positions are in that frame (a stage's), and follow it as it moves. */
+  sync(owner, items, frame = null) {
+    if (typeof frame === "function") this.frames.set(owner, frame);
+    else this.frames.delete(owner);
     const prev = this.groups.get(owner) ?? new Map();
     const next = new Map();
     for (const item of items ?? []) {
@@ -568,7 +573,10 @@ export class LabelLayer {
       leader?.remove();
     }
     if (next.size) this.groups.set(owner, next);
-    else this.groups.delete(owner);
+    else {
+      this.groups.delete(owner);
+      this.frames.delete(owner);
+    }
     this.onChange?.();
   }
   /** Remove an owner's labels. */
@@ -576,9 +584,13 @@ export class LabelLayer {
     if (this.groups.has(owner)) this.sync(owner, []);
   }
   /** Place every label; project(Vector3) → { x, y } port px, or null when it can't be seen. */
-  update(project) {
+  update(projectWorld) {
     const placed = [];
-    for (const entries of this.groups.values()) {
+    const m4 = new Matrix4();
+    for (const [owner, entries] of this.groups) {
+      const fm = this.frames.get(owner)?.() ?? null;
+      if (fm) m4.fromArray(fm);
+      const project = fm ? (v) => projectWorld(v.clone().applyMatrix4(m4)) : projectWorld;
       for (const entry of entries.values()) {
         const p = entry.screen ?? (entry.world ? project(entry.world) : null);
         if (!p) {
@@ -900,7 +912,8 @@ export class Viewport {
   /** Everything that doesn't need WebGL or a scene graph. The labels exist even when WebGL doesn't, so syncing them is always safe. */
   initState() {
     /** group id → the ids of the objects in it (at any depth): a group has no node of its own */
-    this.groupMembers = new Map();
+    this.groupMembers = new Map(); // the union of groupSets
+    this.groupSets = new Map(); // stage number → its groups' members
     this.objects = new Map(); // id → { group, body, content, gen, display, parentId, … } (ensureObject)
     /** objectId → a held local transform, shown instead of the doc's (setPose) */
     this.poses = new Map();
@@ -930,8 +943,8 @@ export class Viewport {
     this.depthDirty = true;
     this.depthBox = null;
     this.sceneRadius = 1;
-    this.materialRules = [];
-    this.materialRulesKey = "[]";
+    // each stage's material rules (stage number → { rules, key }), applied to its own objects
+    this.materialRules = new Map();
     /** the extensions' atmosphere, cleaned (setAtmosphere); null: the stage's own look */
     this.atmosphere = null;
     this.atmosphereKey = "null";
@@ -1170,6 +1183,7 @@ export class Viewport {
     if (!this.ok) return;
     const tStart = performance.now();
     const r = this.renderer;
+    this.followLayers();
     this.fitDepth();
     if (this.shadows) this.fitSun();
 
@@ -1389,17 +1403,36 @@ export class Viewport {
    * ones). onTop groups are drawn in a second pass over everything.
    * @returns {Group}
    */
-  worldLayer(owner, { onTop = false } = {}) {
+  worldLayer(owner, { onTop = false, under = null } = {}) {
     const g = new Group();
     g.name = `layer:${owner}`;
     g.userData.owner = owner;
     g.userData.onTop = !!onTop;
+    // a stage's layer hangs where its root does (under: the link's key): it follows that node's world matrix
+    if (under != null) {
+      g.userData.under = under;
+      g.matrixAutoUpdate = false;
+      this.followLayer(g);
+    }
     if (this.ok) (onTop ? this.topScene : this.widgets).add(g);
     let set = this.layers.get(owner);
     if (!set) this.layers.set(owner, (set = new Set()));
     set.add(g);
     this.invalidate();
     return g;
+  }
+
+  /** Put a layer that hangs under a node where that node is drawn now. */
+  followLayer(g) {
+    const m = this.worldOf(g.userData.under);
+    if (m) g.matrix.fromArray(m);
+    else g.matrix.identity();
+    g.matrixWorldNeedsUpdate = true;
+  }
+
+  /** Every layer that hangs under a node, where it is now (before drawing and picking). */
+  followLayers() {
+    for (const set of this.layers.values()) for (const g of set) if (g.userData.under != null) this.followLayer(g);
   }
 
   /** Remove and dispose every world group this owner made (geometry, materials, textures). */
@@ -1432,6 +1465,7 @@ export class Viewport {
     for (const set of this.layers.values()) for (const g of set) collect(g);
     if (!meshes.length) return null;
     // a widget moved since the last frame is picked where it is now
+    this.followLayers();
     this.widgets.updateMatrixWorld();
     this.topScene.updateMatrixWorld();
     this.rayFrom(x, y);
@@ -1614,7 +1648,7 @@ export class Viewport {
       disposeObject(prepared.content);
       return;
     }
-    applyMaterialRules(prepared.materials, this.materialRules);
+    applyMaterialRules(prepared.materials, this.rulesOf(id));
     // Compile its shaders before it's drawn, off the main thread where the
     // browser can (KHR_parallel_shader_compile), so a new material doesn't
     // stall the first frame it appears in. While it waits it's in
@@ -1682,19 +1716,24 @@ export class Viewport {
    * The scene's material rules (README.md, "`scene` — the composition"), applied to every
    * loaded material now and to every GLB that loads later.
    */
-  setMaterialRules(rules) {
+  /** Stage `n`'s material rules, onto its own objects (paths.js keys say whose an object is). */
+  setMaterialRules(rules, n = 0) {
     const clean = sanitizeRules(rules);
     const key = rulesKey(clean);
-    if (key === this.materialRulesKey) return;
-    this.materialRules = clean;
-    this.materialRulesKey = key;
+    if (key === (this.materialRules.get(n)?.key ?? "[]")) return;
+    this.materialRules.set(n, { rules: clean, key });
     if (!this.ok) return;
-    for (const entry of this.objects.values()) {
-      if (!entry.materials.length) continue;
+    for (const [id, entry] of this.objects) {
+      if (!entry.materials.length || (parseKey(id)?.n ?? 0) !== n) continue;
       applyMaterialRules(entry.materials, clean);
       this.applyMaterials(entry);
     }
     this.invalidate();
+  }
+
+  /** The material rules of the stage an object's key is in. */
+  rulesOf(id) {
+    return this.materialRules.get(parseKey(id)?.n ?? 0)?.rules ?? [];
   }
 
   /**
@@ -1789,8 +1828,8 @@ export class Viewport {
    * hint box while the GLB is still on its way (unless hints: false). For a
    * group, the union of its shown descendants' boxes.
    */
-  objectBox(id, { hints = true } = {}) {
-    if (this.groupMembers.has(id)) return this.groupBox(id, { hints });
+  objectBox(id, { hints = true, within = null } = {}) {
+    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within });
     const entry = this.objects.get(id);
     if (!entry) return null;
     if (entry.kind === "group") return null;
@@ -1798,7 +1837,8 @@ export class Viewport {
     const local = entry.content ? entry.box : hints ? entry.hint : null;
     if (!local) return null;
     entry.body.updateWorldMatrix(true, false);
-    const world = entry.body.matrixWorld;
+    // in a frame (`within`: its inverse world matrix, a stage's), the body's matrix in that frame
+    const world = within ? new Matrix4().fromArray(within).multiply(entry.body.matrixWorld) : entry.body.matrixWorld;
     // Only an axis-aligned (unrotated) world matrix maps the cached box
     // exactly; under a rotation, box each piece under its own matrix, as
     // three's setFromObject does, so the bounds don't grow with the angle.
@@ -1814,33 +1854,36 @@ export class Viewport {
   }
 
   /** A group's box: the union of what's shown of what's in it. */
-  groupBox(gid, { hints = true } = {}) {
+  groupBox(gid, { hints = true, within = null } = {}) {
     const box = new Box3();
     for (const id of this.groupMembers.get(gid) ?? []) {
-      const b = this.objectBox(id, { hints });
+      const b = this.objectBox(id, { hints, within });
       if (b) box.union(b);
     }
     return box.isEmpty() ? null : box;
   }
 
-  /** Who is in each group (group id → object ids, at any depth). */
-  setGroups(members) {
+  /** Who is in each of stage `n`'s groups (group key → object keys, at any depth). */
+  setGroups(members, n = 0) {
     const next = new Map([...members].map(([g, ids]) => [g, [...ids]]));
-    const same = next.size === this.groupMembers.size && [...next].every(([g, ids]) => {
-      const was = this.groupMembers.get(g);
-      return was && was.length === ids.length && was.every((x, i) => x === ids[i]);
+    const was = this.groupSets.get(n) ?? new Map();
+    const same = next.size === was.size && [...next].every(([g, ids]) => {
+      const w = was.get(g);
+      return w && w.length === ids.length && w.every((x, i) => x === ids[i]);
     });
     if (same) return;
-    this.groupMembers = next;
+    if (next.size) this.groupSets.set(n, next);
+    else this.groupSets.delete(n);
+    this.groupMembers = new Map([...this.groupSets.values()].flatMap((m) => [...m]));
     this.invalidate();
   }
 
   /** The union of every shown object's box (an empty Box3 when nothing is shown). */
-  sceneBox({ hints = true } = {}) {
+  sceneBox({ hints = true, within = null, stage = null } = {}) {
     const box = new Box3();
     for (const [id, e] of this.objects) {
-      if (e.kind === "group") continue;
-      const b = this.objectBox(id, { hints });
+      if (e.kind === "group" || (stage != null && (parseKey(id)?.n ?? 0) !== stage)) continue;
+      const b = this.objectBox(id, { hints, within });
       if (b) box.union(b);
     }
     return box;

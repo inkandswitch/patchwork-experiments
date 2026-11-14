@@ -262,7 +262,7 @@ function create(api) {
       return fail(err?.message ?? String(err));
     }
     if (!live()) return id;
-    api.local.swap((m) => ((m.selected ?? null) === id ? m : { ...m, selected: id }));
+    if ((api.view.get().selected ?? null) !== id) api.view.select(id);
     return id;
   }
 
@@ -319,7 +319,7 @@ function create(api) {
   // Anywhere in the stage takes a drop (the side panels too), unless something under it already did (an outline row, which stops
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
-  const adding = () => editing(api.local.get());
+  const adding = () => editing(api.view.get());
   api.listen(root, "dragenter", (e) => {
     if (!adding() || !inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     depth++;
@@ -369,9 +369,9 @@ function create(api) {
   });
 
   return {
-    update(scene, local, prev) {
-      if (scene === prev.scene && local.body === prev.local?.body) return;
-      const none = !scene.ids.length && editing(local);
+    update(scene, local, prev, view) {
+      if (scene === prev.scene && view.body === prev.view?.body) return;
+      const none = !scene.ids.length && editing(view);
       if (empty.hidden !== !none) empty.hidden = !none;
     },
     dispose() {

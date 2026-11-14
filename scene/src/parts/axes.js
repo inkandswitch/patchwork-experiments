@@ -70,7 +70,7 @@ export default {
 
     const shown = () => api.pref("axes", true) !== false;
     // what's drawn: shown, and only in the Edit body (the aids are the editor's: ../stage/bodies.js)
-    const drawn = () => shown() && editing(api.local.get());
+    const drawn = () => shown() && editing(api.view.get());
     let key = null;
     let theme = null;
 
@@ -195,12 +195,12 @@ export default {
           run: () => api.setPref("axes", !shown()),
         },
       ],
-      update(scene, local, prev) {
-        const was = prev.local;
-        const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.body === was.body) return;
-        if (!triad.children.length || local.theme !== theme) {
-          theme = local.theme;
+      update(scene, local, prev, view) {
+        const was = prev.view;
+        const content = scene === prev.scene && local === prev.local && view === was;
+        if (was && scene === prev.scene && !content && view.prefs === was.prefs && view.theme === was.theme && view.body === was.body) return;
+        if (!triad.children.length || view.theme !== theme) {
+          theme = view.theme;
           key = null;
           buildTriad();
         }

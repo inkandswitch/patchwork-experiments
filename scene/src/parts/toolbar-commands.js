@@ -44,7 +44,7 @@ export function flatCommands(collected) {
  * @returns {object | null}
  */
 export function commandState(command, target, ctx) {
-  if (!inBody(command, ctx?.local)) return null;
+  if (!inBody(command, ctx?.view)) return null;
   let s;
   if (typeof command?.state !== "function") s = target == null ? {} : null;
   else {

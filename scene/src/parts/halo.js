@@ -98,7 +98,7 @@ function create(api) {
   // ─── drawing ──────────────────────────────────────────────────────────────
 
   function colours() {
-    const theme = api.local.get().theme ?? {};
+    const theme = api.view.get().theme ?? {};
     const rgb = (c, f) => new THREE.Color().setRGB(...(Array.isArray(c) ? c : f), THREE.SRGBColorSpace);
     return {
       axis: [theme.axisX, theme.axisY, theme.axisZ].map((c, i) => rgb(c, AXIS_FALLBACK[i])),
@@ -149,7 +149,7 @@ function create(api) {
   function draw() {
     const p = placement();
     const P = frame?.P?.() ?? null;
-    const theme = api.local.get().theme;
+    const theme = api.view.get().theme;
     const eye = p ? eyeIn() : null;
     const live = p ? p.handles.filter((h) => usable(h, eye)) : [];
     const key = p ? JSON.stringify([P, live.map(handlePoints).map((ps) => [ps[0], ps[ps.length - 1]]), p.radius, theme?.accent, theme?.axisX]) : "";
@@ -206,7 +206,7 @@ function create(api) {
   /** Put the halo on what's selected now (never mid-drag). */
   function reconcile() {
     if (drag) return;
-    const next = haloTarget(doc(), api.local.get(), api.writable());
+    const next = haloTarget(doc(), api.view.get(), api.writable());
     const same = next && target && next.id === target.id && next.kind === target.kind;
     if (!same) {
       target = next;
@@ -336,9 +336,9 @@ function create(api) {
 
   return {
     input,
-    update(scene, local, prev) {
-      const p = prev?.local;
-      if (p && scene === prev.scene && local.selected === p.selected && local.held === p.held && local.body === p.body && local.theme === p.theme && local.status === p.status) return;
+    update(scene, local, prev, view) {
+      const p = prev?.view;
+      if (p && scene === prev.scene && view.selected === p.selected && view.held === p.held && view.body === p.body && view.theme === p.theme && local.status === prev.local?.status) return;
       reconcile();
     },
     dispose() {

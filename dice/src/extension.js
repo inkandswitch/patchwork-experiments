@@ -718,7 +718,7 @@ async function drop(ctx, info) {
     fields: { traits: { [DIE]: {}, [CARRY]: {} } },
     ...(Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? { transform: { position: [...p], rotation: [0, 0, 0], scale: 1 } } : {}),
   });
-  ctx.local?.swap?.((m) => ((m.selected ?? null) === id ? m : { ...m, selected: id }));
+  ctx.select?.(id);
   return true;
 }
 

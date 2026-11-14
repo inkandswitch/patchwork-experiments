@@ -30,9 +30,9 @@ export const stageBody = (id) => (id === LOOK.id ? LOOK : id === EDIT.id ? EDIT 
 /**
  * Is this view editing (its body is Edit)? Every piece of editing chrome
  * asks this and nothing else, so what Edit shows is decided in one place.
- * @param {{ body?: { id?: string } } | null | undefined} local
+ * @param {{ body?: { id?: string } } | null | undefined} view  api.view.get()
  */
-export const editing = (local) => local?.body?.id === EDIT.id;
+export const editing = (view) => view?.body?.id === EDIT.id;
 
 /**
  * Does a command apply in this body? A command that says `edit: true` is
@@ -40,7 +40,7 @@ export const editing = (local) => local?.body?.id === EDIT.id;
  * prompt, inspector) only while editing. Everything else applies in every
  * body.
  */
-export const inBody = (command, local) => command?.edit !== true || editing(local);
+export const inBody = (command, view) => command?.edit !== true || editing(view);
 
 /**
  * The stack after entering body `id` (the model the stage keeps; ids only,

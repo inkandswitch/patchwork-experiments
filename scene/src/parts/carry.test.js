@@ -76,7 +76,7 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
 const press = (id, extra = {}) => ({ type: "press", button: 0, x: 10, y: 10, hit: id ? { id, point: [0, 0.1, 0], distance: 1 } : null, holder: id ?? null, ...extra });
 const move = (x, z, extra = {}) => ({ type: "move", ray: down(x, z), alt: false, ...extra });
 const command = (id) => s.instance("scene.carry").commands.find((c) => c.id === id);
-const stateOf = (id, target = null) => command(id).state(target, { scene: s.api("scene.carry").scene(), local: s.local.get() });
+const stateOf = (id, target = null) => command(id).state(target, { scene: s.api("scene.carry").scene(), view: s.api("scene.carry").view.get() });
 const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transform));
 
 describe("scene.carry commands", () => {

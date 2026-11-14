@@ -103,7 +103,7 @@ function create(api) {
     closeMenu();
     const box = el("div", "body-menu");
     box.setAttribute("role", "menu");
-    const local = api.local.get();
+    const local = api.view.get();
     const item = (label, fn, { checked = null } = {}) => {
       const b = el("button", "menu-item", label);
       b.type = "button";
@@ -140,7 +140,7 @@ function create(api) {
 
   let shown = "";
   function render() {
-    const local = api.local.get();
+    const local = api.view.get();
     const list = whoIsHere(api.presence.get(), api.id, api.session ?? null, local);
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : local.escape?.hint ? `Esc: ${local.escape.hint}` : "";
     const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, esc]);
@@ -164,7 +164,7 @@ function create(api) {
   // publish this view's body and held tool, for everyone's "who's here"
   let published = "";
   function publish() {
-    const local = api.local.get();
+    const local = api.view.get();
     const body = { id: local.body?.id ?? LOOK.id, label: local.body?.label ?? LOOK.label };
     const held = local.held ? { name: local.held.name } : undefined;
     const key = JSON.stringify([body, held ?? null]);

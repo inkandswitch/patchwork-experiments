@@ -51,7 +51,7 @@ describe("scene.frame: commands and double-click", () => {
     expect(camera.frames.at(-1)).toEqual(B2);
     world.boxes = { a: B1 };
     s.local.swap((m) => ({ ...m, selected: "a" }));
-    expect(c.state(null, { local: s.local.get() })).toMatchObject({ label: "Frame selection" });
+    expect(c.state(null, { view: s.local.get() })).toMatchObject({ label: "Frame selection" });
     expect(run(s, "frame")).toBe(true);
     expect(camera.frames.at(-1)).toEqual(B1);
     s.unmount();

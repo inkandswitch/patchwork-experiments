@@ -33,7 +33,7 @@ export function keyAttention(api) {
  * @returns {{ gesture, tool, body, collected, ctx, attention }}
  */
 export function resolverState(api, attention = keyAttention(api)) {
-  const local = api.local.get();
+  const local = api.view.get();
   return {
     gesture: local.gesture ?? null,
     tool: local.held ?? null,

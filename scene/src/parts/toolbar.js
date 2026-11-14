@@ -21,7 +21,7 @@ import { resolverState } from "./resolver.js";
 import { editing } from "../stage/bodies.js";
 
 /** Does the toolbar show? Only in Edit, with something on it. Pure. */
-export const toolbarShown = (local, count) => editing(local) && count > 0;
+export const toolbarShown = (view, count) => editing(view) && count > 0;
 
 function create(api) {
   api.style(css);
@@ -98,10 +98,10 @@ function create(api) {
     }
   }
 
-  function render(scene, local) {
+  function render(scene, view) {
     const keys = resolverState(api);
     // (each key is the resolver's: shown only where pressing it does this)
-    const items = editing(local) ? applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) })) : [];
+    const items = editing(view) ? applicable(flatCommands(keys.collected), null, keys.ctx, "toolbar").map((it) => ({ ...it, key: hintFor({ ext: it.ext, command: it.command, target: null }, keys) })) : [];
     const seen = new Set();
     const els = [];
     for (const item of items) {
@@ -124,13 +124,13 @@ function create(api) {
       order = nextOrder;
       row.replaceChildren(...els);
     }
-    edge.hidden = !toolbarShown(local, els.length);
+    edge.hidden = !toolbarShown(view, els.length);
   }
 
   return {
-    update(scene, local, prev) {
-      if (prev?.scene === scene && !localChanged(prev?.local, local)) return;
-      render(scene, local);
+    update(scene, local, prev, view) {
+      if (prev?.scene === scene && !localChanged(prev?.local, local) && !localChanged(prev?.view, view)) return;
+      render(scene, view);
     },
   };
 }

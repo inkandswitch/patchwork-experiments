@@ -84,8 +84,11 @@ export function createHost({
   lingerMs = LINGER_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
+  // does this stage run the general extensions (no traits)? The focus does; a linked doc's stage doesn't (COMPOSITION.md §3)
+  general = true,
 }) {
   let dead = false;
+  const wanted = (metas, d) => activeSet({ metas, doc: d }).filter((w) => general || w.scope !== "general");
   let isReady = false;
   let reg = null;
   // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
@@ -228,7 +231,7 @@ export function createHost({
 
   function syncNow(d) {
     const metas = listOf(reg);
-    const set = activeSet({ metas, doc: d });
+    const set = wanted(metas, d);
     const registered = new Set(metas.map((m) => m?.id));
     const want = new Map(set.map((w) => [w.id, w]));
     for (const w of set) {
@@ -369,7 +372,7 @@ export function createHost({
     // registered since, which no "changed" event has told of yet, isn't running either)
     const metas = listOf(reg);
     if (!settledFor || settledFor.doc !== lastDoc || settledFor.n !== metas.length) {
-      settledFor = { doc: lastDoc, n: metas.length, ids: activeSet({ metas, doc: lastDoc }).map((w) => w.id) };
+      settledFor = { doc: lastDoc, n: metas.length, ids: wanted(metas, lastDoc).map((w) => w.id) };
     }
     return settledFor.ids;
   }

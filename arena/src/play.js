@@ -185,7 +185,7 @@ export default {
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
       const now = api.clock.now();
       const reloading = now < reloadUntil;
-      const walking = api.local.get()?.body?.id === "walk";
+      const walking = api.view.get()?.body?.id === "walk";
       const key = JSON.stringify([holding, walking, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
@@ -307,7 +307,7 @@ export default {
 
     /** Walk in (at a spawn point) with the gun in hand. */
     function start() {
-      if (api.local.get()?.body?.id !== "walk") {
+      if (api.view.get()?.body?.id !== "walk") {
         const spots = Object.entries(scene?.objects ?? {}).filter(([, o]) => o?.traits?.[SPAWN]).map(([id]) => id);
         const spot = spots.length ? spots[Math.floor(Math.random() * spots.length)] : null;
         if (!api.body.enter("walk", spot)) api.notify("Walking needs the walk package; you can still shoot from here.");
@@ -316,9 +316,9 @@ export default {
     }
 
     return {
-      update(s, local, prev) {
+      update(s, local, prev, view) {
         scene = s;
-        if (s !== prev?.scene || local?.body !== prev?.local?.body) render();
+        if (s !== prev?.scene || view?.body !== prev?.view?.body) render();
       },
       receive(type, data, from) {
         if (type !== "shot" || !Array.isArray(data?.from) || !Array.isArray(data?.to)) return;

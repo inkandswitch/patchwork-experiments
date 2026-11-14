@@ -8,9 +8,9 @@
 import { SPAWN } from "./body.js";
 
 /** Walk from here: on a spawn point, unless already walking. Pure. */
-export function walkFromState(target, { scene, local } = {}) {
+export function walkFromState(target, { scene, view } = {}) {
   if (target == null || !scene?.objects?.[target]?.traits?.[SPAWN]) return null;
-  if (local?.body?.id === "walk") return null;
+  if (view?.body?.id === "walk") return null;
   return { title: "Start walking here, facing the way it faces" };
 }
 

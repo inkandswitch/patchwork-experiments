@@ -35,7 +35,7 @@ describe("scene.notices", () => {
     says = { items: [{ text: "Waiting for Bob", state: "loading" }] };
     const talker = {
       create: () => ({
-        hud: (scene, local) => (local.selected ? [...says.items, { text: `picked ${local.selected}`, state: "info" }] : says.items),
+        hud: (scene, local, view) => (view.selected ? [...says.items, { text: `picked ${view.selected}`, state: "info" }] : says.items),
       }),
     };
     s = await mountStage({

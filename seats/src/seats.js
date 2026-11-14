@@ -405,7 +405,7 @@ function create(api) {
       return { ...s, seat: null, label: "Watching", leave() {} };
     },
   };
-  const seated = () => api.local.get()?.body?.id === body.id;
+  const seated = () => api.view.get()?.body?.id === body.id;
   /** Down to the seat body, if it's in the stack under another (walking her deck from it). */
   function downToSeat() {
     for (let n = 0; sitting != null && !seated() && n < 8; n++) if (!api.body.leave()) break;
@@ -440,7 +440,7 @@ function create(api) {
   const drawnIn = (snap) => (id) => api.worldOf(id) ?? (snap?.objects?.[id] ? snap.world(id) : null);
   /** Walking: in a body over the stage's Look or Edit (depth 0) that isn't the seat. */
   const walking = () => {
-    const b = api.local.get()?.body;
+    const b = api.view.get()?.body;
     return (b?.depth ?? 0) > 0 && b.id !== body.id;
   };
 

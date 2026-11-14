@@ -89,7 +89,7 @@ function create(api) {
   let offWatch = null;
 
   const keymap = () => api.collect("keymap").map((r) => r.value).find((v) => v && typeof v.pinned === "function") ?? null;
-  const locked = () => !!api.local.get().pointer?.locked;
+  const locked = () => !!api.view.get().pointer?.locked;
 
   function refresh() {
     const km = keymap();
@@ -98,7 +98,7 @@ function create(api) {
     const keys = resolverState(api);
     const { collected, ctx, attention } = keys;
     // while a gesture is open (a carry), its keys come first and nothing under the pointer is what they do: no prompt
-    const gesture = api.local.get().gesture != null;
+    const gesture = api.view.get().gesture != null;
     const found = gesture ? null : pinned !== undefined ? heldEntries(collected, pinned, km.entries(pinned), ctx) : promptEntries(collected, attention, ctx);
     if (found) {
       current = { target: found.target, hit: ctx.hit, entries: found.entries.map((e) => ({ ...e, key: hintFor({ ext: e.ext, command: e.command, target: found.target }, keys) })) };
@@ -169,7 +169,7 @@ function create(api) {
   // A loop runs only while the eye moves on its own: a body over the
   // stage's Look or Edit (walking, at a station: what's in reach changes
   // every frame).
-  const moving = () => (api.local.get().body?.depth ?? 0) > 0;
+  const moving = () => (api.view.get().body?.depth ?? 0) > 0;
   function wantLoop() {
     const need = moving();
     if (need && !offLoop) offLoop = api.loop(() => refresh());

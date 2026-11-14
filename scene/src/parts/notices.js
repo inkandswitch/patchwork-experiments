@@ -91,13 +91,13 @@ function create(api) {
     }
   }
 
-  function hudItems(scene, local) {
+  function hudItems(scene, local, view) {
     const out = loadSummary(scene.objects, local.status);
     for (const { id, value } of api.collect("hud")) {
       if (typeof value !== "function") continue;
       let items;
       try {
-        items = value(scene, local);
+        items = value(scene, local, view);
       } catch (err) {
         console.warn(`[scene] extension “${id}”: hud failed`, err);
         continue;
@@ -114,8 +114,8 @@ function create(api) {
     return out;
   }
 
-  function renderHud(scene, local) {
-    const items = hudItems(scene, local);
+  function renderHud(scene, local, view) {
+    const items = hudItems(scene, local, view);
     const key = JSON.stringify(items);
     if (key === hudKey) return;
     hudKey = key;
@@ -133,10 +133,10 @@ function create(api) {
   }
 
   return {
-    update(scene, local, prev) {
-      if (local.notices !== prev?.local?.notices) renderToasts(local.notices);
+    update(scene, local, prev, view) {
+      if (view.notices !== prev?.view?.notices) renderToasts(view.notices);
       // a hover alone changes no pill
-      if (prev?.scene !== scene || localChanged(prev?.local, local)) renderHud(scene, local);
+      if (prev?.scene !== scene || localChanged(prev?.local, local) || localChanged(prev?.view, view)) renderHud(scene, local, view);
     },
     dispose() {
       for (const cancel of timers) cancel();

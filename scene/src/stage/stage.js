@@ -1,44 +1,43 @@
-// patchwork:tool "scene", rebuilt as a stage (STAGE.md): the doc, loading and
-// building object content, rendering, picking, the camera rig, drawing
-// layers, the input router, presence and lenses, and nothing else. It has no
-// UI of its own and no opinion about what a click means: everything a person
-// sees or does beyond a rendered scene and an orbiting camera comes from a
-// `scene:extension`, which gets an api (makeApi below) and is started and
-// stopped by the host (host.js).
+// patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
+// open doc (COMPOSITION.md §2). This file is the stage: the doc, loading and
+// building object content, lenses and veils, the audience, presence and
+// claims on its doc's channel, its clock, its extensions and the api each
+// gets. It has no UI of its own and no opinion about what a click means:
+// everything a person sees or does beyond a rendered scene and an orbiting
+// camera comes from a `scene:extension`, which gets an api (makeApi below)
+// and is started and stopped by the host (host.js). The view holds what is
+// the viewer's: the mount, the viewport, the router, the body stack and the
+// held tool, the selection and the camera.
+//
+// A stage works in its own ids and its own root frame. Everything spatial
+// goes through its scope of the viewport (./scope.js), the one choke point
+// where its frame and its keys (./paths.js) meet the view's.
 //
 // The parts, in the order they're wired:
-//   - the mount: four edges around a port (a CSS grid; an empty edge takes no
-//     room), and the drawer at the right while anything is docked (dock.js). The port holds the viewport's canvas and labels, and the
-//     extensions' overlays. The root is focusable and hears the keys.
-//   - local state (atom.js): one frozen value shared by the stage and every
-//     extension; prefs are kept per scene in localStorage. Where this viewer
-//     is (the body stack) is not kept: arriving starts where the doc says
-//     (view.start, read once).
-//   - the viewport, its theme, and the camera (this viewer's, in localStorage).
+//   - local state (atom.js): the stage's own (running, status, edits, clock,
+//     packages, and extensions' keys); the view's is `api.view`.
 //   - content, routed at sync by the kind its provider makes (providers.js
 //     routeOf): the render manager for "built", the GLB queue for "file";
 //     their state → local.status.
-//   - presence, and other views' pose holds shown on the viewport, played
-//     back smoothly (smooth.js); this view's holds in the one order
-//     (holds.js); claims, which are doc fields that count only while their
-//     holder's session is in presence.
+//   - presence on its doc's channel, and other views' pose holds shown on the
+//     viewport, played back smoothly (smooth.js); this view's holds in the one
+//     order (holds.js); claims, which are doc fields that count only while
+//     their holder's session is in presence.
 //   - the doc's world time (clock.js): the "clock" claim, processes,
 //     checkpoints, following; what the chip shows → local.clock.
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
-//   - the router (router.js): DOM input → events, down the chain.
+//   - what the view asks of it: its segment of the input chain, its inputs
+//     (hearing events in its frame), its bodies and widgets.
 //   - the doc loop: derive, the running set, display and content; then the
 //     update flush (once per UI pass): each instance's update(), scheduled
 //     work, lenses, atmosphere.
 
-import css from "./stage.css?inline";
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
 import { Counter } from "@automerge/automerge";
-import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
-import { createRouter } from "./router.js";
 import { HEARTBEAT_MS, createPresence } from "./presence.js";
 import { realTime } from "./time.js";
 import { createHolds } from "./holds.js";
@@ -49,12 +48,12 @@ import { createPackages } from "./packages.js";
 import { mergeAudience, mergeShown } from "./audience.js";
 import { DEFAULT_BOUNDS, veilBounds, veilGLB, veilKey } from "./veil.js";
 import { chainOrder, holdersFor } from "./chain.js";
-import { createDrawer } from "./dock.js";
 import { createEdits } from "../undo.js";
 import { isOwn } from "./own.js";
-import { selectionStep } from "../selection.js";
-import { escapeHint } from "./ladder.js";
-import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
+import { isStageBody } from "./bodies.js";
+import { createView, projectView } from "./view.js";
+import { scopeViewport, hitIn, rayIn } from "./scope.js";
+import { elementOf, keyOf, parseKey, pathOf } from "./paths.js";
 import { lookChain } from "../keymap.js";
 import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
@@ -70,10 +69,11 @@ import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
+// the view's pure parts, where they have always been imported from
+export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, cleanPrefs, initialCamera, startOf, widgetWins, withNotice } from "./view.js";
+
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
-/** How long after the orbit stops the camera is saved. */
-const CAMERA_SAVE_MS = 500;
 /**
  * How long a claim whose holder isn't in presence still counts, from when
  * this view first read it so. A peer that has just joined writes its claim
@@ -82,10 +82,6 @@ const CAMERA_SAVE_MS = 500;
  * covers a hello that went missing.
  */
 export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
-/** How long a notice stays in local.notices. */
-const NOTICE_MS = 6_000;
-/** How long, once view.start's body is on offer, arriving waits for the content before entering it anyway (ms). */
-export const ARRIVE_WAIT_MS = 20_000;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
 // single remote edit answers immediately; past that, the rest of a burst is
@@ -93,13 +89,10 @@ export const ARRIVE_WAIT_MS = 20_000;
 const UI_BUDGET_MS = 4;
 const UI_PASSES = 3;
 const EDGES = ["top", "right", "bottom", "left"];
-
+/** Is this one of the router's events (so a stage hands it on in its own frame)? */
+const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
 
-// The stage's own bodies, Look and Edit (./bodies.js, TOOLS.md §4): the
-// orbit camera, one of them always at the bottom of the stack. As local.body:
-const baseLocal = (b) => Object.freeze({ id: b.id, label: b.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
-const BASE_LOCAL = Object.freeze({ [LOOK.id]: baseLocal(LOOK), [EDIT.id]: baseLocal(EDIT) });
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 /** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
 const cpuNow = () => globalThis.performance?.now?.() ?? Date.now();
@@ -141,32 +134,6 @@ export function hitChain(id, parents, groups, objects = null) {
     up.push(p);
   }
   return [id, ...up, ...groupChain(groups, id).filter((g) => !objects || objects[g])];
-}
-
-/**
- * The widget under the pointer from several candidates: an onTop one beats
- * any other, else the nearest (a widget that gives no distance counts as
- * nearest of all: it says "I have something here").
- * @param {{ owner: string, onTop?: boolean, distance?: number }[]} candidates
- */
-export function bestWidget(candidates) {
-  let best = null;
-  const dist = (w) => (Number.isFinite(w?.distance) ? w.distance : 0);
-  for (const w of candidates) {
-    if (!w || w.owner == null) continue;
-    if (!best) best = w;
-    else if (!!w.onTop !== !!best.onTop) best = w.onTop ? w : best;
-    else if (dist(w) < dist(best)) best = w;
-  }
-  return best;
-}
-
-/** Does this widget come before the object hit (onTop, or no further away)? */
-export function widgetWins(widget, hit) {
-  if (!widget || widget.owner == null) return false;
-  if (widget.onTop || !hit) return true;
-  const d = Number.isFinite(widget.distance) ? widget.distance : 0;
-  return d <= (hit.distance ?? Infinity);
 }
 
 /**
@@ -221,51 +188,6 @@ export function sameTransform(a, b, eps = 1e-6) {
   const y = normalizeTransform(b);
   const close = (p, q) => Math.abs(p - q) <= eps;
   return x.position.every((v, i) => close(v, y.position[i])) && x.rotation.every((v, i) => close(v, y.rotation[i])) && close(x.scale, y.scale);
-}
-
-const isVec3 = (v) => Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((n) => Number.isFinite(Number(n)));
-
-/** A camera as saved (position, target, fov?), checked; null if it isn't one. */
-export function cleanCamera(c) {
-  if (!c || typeof c !== "object" || !isVec3(c.position)) return null;
-  const out = { position: c.position.slice(0, 3).map(Number) };
-  if (isVec3(c.target)) out.target = c.target.slice(0, 3).map(Number);
-  if (Number.isFinite(Number(c.fov)) && c.fov != null) out.fov = Number(c.fov);
-  return out;
-}
-
-/**
- * Where the doc starts people (TOOLS.md §2): `view.start = { body, place,
- * home }`, read once on arrival. `body` is a body's id ("look" and "edit"
- * are the stage's, ./bodies.js; none is Look), `place` what its enter is
- * given (a spawn point's object id, a seat's id), `home` the camera. Pure.
- * @returns {{ body: string | null, place: string | null, home: object | null }}
- */
-export function startOf(doc) {
-  const s = doc?.view?.start;
-  if (!s || typeof s !== "object") return { body: null, place: null, home: null };
-  const body = typeof s.body === "string" && s.body ? s.body : null;
-  const place = typeof s.place === "string" && s.place ? s.place : null;
-  return { body, place, home: cleanCamera(s.home) };
-}
-
-/**
- * Where the camera starts (STAGE.md, "Saving"): this viewer's saved camera,
- * else the doc's suggested home (view.start.home), else null
- * (a frame extension frames on first content).
- */
-export function initialCamera({ stored = null, doc = null } = {}) {
-  return cleanCamera(stored) ?? startOf(doc).home ?? null;
-}
-
-/**
- * The notices after one more: a notice saying what one still showing says
- * (the same text and kind) replaces it, so it shows once (three tables laid
- * at once each saying "Pick a seat" is one prompt), timed from now. Pure.
- * @param {readonly object[] | undefined} list  @param {{ text: string, kind: string }} n
- */
-export function withNotice(list, n) {
-  return Object.freeze([...(list ?? []).filter((x) => x.text !== n.text || x.kind !== n.kind), n]);
 }
 
 const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
@@ -338,59 +260,41 @@ function timings(size = 400) {
   };
 }
 
-/** This browser's own viewer id, kept in localStorage (a fresh one each time if that's unavailable). */
-function localViewer() {
-  const fresh = `viewer:${Math.random().toString(36).slice(2, 12)}`;
-  try {
-    const ls = globalThis.localStorage;
-    const v = ls?.getItem("scene-viewer");
-    if (v) return v;
-    ls?.setItem("scene-viewer", fresh);
-  } catch {
-    // private window: a viewer for this session only
-  }
-  return fresh;
-}
-
-function readJSON(key) {
-  try {
-    const raw = globalThis.localStorage?.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeJSON(key, value) {
-  try {
-    if (value == null) globalThis.localStorage?.removeItem(key);
-    else globalThis.localStorage?.setItem(key, JSON.stringify(value));
-  } catch {
-    // private window, or full: this viewer's choice lasts the session
-  }
-}
-
-/** A viewer's prefs as stored: a plain object. */
-export function cleanPrefs(v) {
-  return Object.freeze(v && typeof v === "object" && !Array.isArray(v) ? { ...v } : {});
-}
-
 // ─── the tool ───────────────────────────────────────────────────────────────
 
 /**
- * The patchwork:tool render function: mount the stage for a scene doc.
+ * The patchwork:tool render function: mount a view (./view.js) for a scene
+ * doc, and the doc's stage in it, the outermost.
  * @param {object} handle  the scene's DocHandle
- * @param {HTMLElement} element  where to mount (element.repo, element.viewerId optional)
+ * @param {HTMLElement} element  where to mount (element.repo, element.viewerId, element.time optional)
  * @returns {() => void} cleanup
  */
 export default function Stage(handle, element) {
-  const repo = element.repo ?? globalThis.repo;
+  const view = createView(element, { url: handle.url ?? "scene" });
+  view.addStage((n) => createStage({ handle, view, n }));
+  return () => view.dispose();
+}
+
+/**
+ * One open doc's stage (COMPOSITION.md §2): its handle, derive and snapshot,
+ * content, lenses and veils, the audience, its extensions, claims, its
+ * channel, packages and clock, and its own atom (`api.local`). It sees only
+ * its doc, in its own root frame; the view (./view.js) is everything it
+ * shares with the others.
+ * @param {{
+ *   handle: object, view: object, n: number,
+ *   path?: string[],                   // the links that lead to it ([]: the outermost)
+ *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
+ *   under?: string | null,             // the viewport key its root hangs under (the link's)
+ *   general?: boolean,                 // does it run the general extensions (the focus does)
+ * }} o
+ */
+export function createStage({ handle, view, n, path = [], frame = () => null, under = null, general = true }) {
+  const repo = view.repo;
   const sceneUrl = handle.url ?? "scene";
   let dead = false;
   const cleanups = [];
-  // the one source of time everything here moves with (time.js): the
-  // browser's, unless the host element brings its own (a probe's manual clock)
-  const time = element.time ?? realTime();
+  const time = view.time;
   const timers = new Set(); // cancels of what later() set
   const later = (fn, ms) => {
     const cancel = time.after(ms, () => {
@@ -403,123 +307,46 @@ export default function Stage(handle, element) {
   const perf = { sync: timings(), flush: timings() };
   const raf = (f) => time.frame(f);
   const caf = (cancel) => cancel?.();
-
-  // ─── the mount ────────────────────────────────────────────────────────────
-
-  const style = document.createElement("style");
-  style.textContent = css;
-  const root = document.createElement("div");
-  root.className = "scene-tool scene-stage";
-  root.tabIndex = 0;
-  const edges = {};
-  for (const side of EDGES) {
-    const e = document.createElement("div");
-    e.className = "stage-edge";
-    e.dataset.edge = side;
-    edges[side] = e;
-  }
-  const port = document.createElement("div");
-  port.className = "viewport";
-  root.append(edges.top, edges.left, port, edges.right, edges.bottom);
-  element.append(style, root);
-  // the drawer: what extensions dock (api.dock), outermost at the right
-  // what's docked and shown, as local.drawer (so the toolbar's toggles hear of it)
-  const drawer = createDrawer({
-    parent: edges.right,
-    onChange: (d) => {
-      if (dead) return;
-      local.swap((m) => (JSON.stringify(m.drawer) === JSON.stringify(d) ? m : { ...m, drawer: Object.freeze({ tabs: Object.freeze([...d.tabs]), shown: d.shown }) }));
-    },
-  });
-
+  const { root, port, edges, drawer } = view;
+  const vp = view.viewport;
+  /** An extension of this stage, as the view and the router name it. */
+  const ownerKey = (ext) => keyOf(n, ext);
+  /** This stage's element of the path a viewport key names (null: not its own, nor inside one of its links). */
+  const elementOfKey = (key) => elementOf(view.pathOfKey(key), path);
+  // the viewport as this stage sees it: its ids, its frame (./scope.js, the one choke point)
+  const scope = scopeViewport(vp, { n, root: under, frame, elementOf: elementOfKey });
   const doc = () => handle.doc() ?? {};
-  // Who is looking (extensions' business: seats, say): the account's contact,
-  // else this browser's own id. (element.viewerId lets a probe put two viewers on one page.)
-  const viewer = element.viewerId ?? globalThis.accountDocHandle?.doc?.()?.contactUrl ?? localViewer();
+  const viewer = view.viewer;
+  let stage = null; // what the view knows this stage by (made at the end)
 
-  // ─── local state ──────────────────────────────────────────────────────────
-
-  const prefsKey = `scene-prefs:${sceneUrl}`;
-  const cameraKey = `scene-camera:${sceneUrl}`;
+  // ─── local state: the stage's own (COMPOSITION.md §3) ─────────────────────
   const local = createAtom({
-    hovered: null,
-    // the body on top of the stack (TOOLS.md §4): Look or Edit, the stage's,
-    // until another is entered; Look until arriving says otherwise
-    body: BASE_LOCAL.look,
-    // the held tool: { ext, command, name, keys, pointer }, or null
-    held: null,
-    // the open gesture's declared keys ({ owner, keys }), or null
-    gesture: null,
-    // the pointer: { locked, lock, wanted, released, refused } (stage/pointer.js)
-    pointer: Object.freeze({ locked: false, lock: false, wanted: false, released: false, refused: false }),
-    // the layer the next Escape pops, and what its hint says (stage/ladder.js)
-    escape: Object.freeze({ layer: null, hint: "" }),
     running: Object.freeze([]),
     status: Object.freeze({}),
-    theme: null,
-    notices: Object.freeze([]),
-    // the labels of the steps undo and redo would take, in the focus doc (src/undo.js)
+    // the labels of the steps undo and redo would take, in this doc (src/undo.js)
     edits: Object.freeze({ undo: null, redo: null }),
-    // the drawer's tabs, by title, and the one shown (dock.js)
-    drawer: Object.freeze({ tabs: Object.freeze([]), shown: null }),
     // the doc's clock as the chip shows it (clock.js status), once known
     clock: null,
-    prefs: cleanPrefs(readJSON(prefsKey)),
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
-    // (`missing`: a listed package isn't here, or that isn't known yet: the audience is unknown meanwhile)
     packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]), missing: true }),
   });
-
-  // Another tab of this viewer changed its prefs for this scene: take theirs,
-  // so neither tab writes back a stale copy over the other's choice.
-  const onStorage = (e) => {
-    if (e.key !== prefsKey) return;
-    const next = cleanPrefs(readJSON(prefsKey));
-    local.swap((m) => (JSON.stringify(m.prefs) === JSON.stringify(next) ? m : { ...m, prefs: next }));
-  };
-  globalThis.addEventListener?.("storage", onStorage);
-  cleanups.push(() => globalThis.removeEventListener?.("storage", onStorage));
-
-  // ─── the viewport ─────────────────────────────────────────────────────────
-
-  const viewport = new Viewport({ port, themeRoot: root, time });
-  local.swap(assoc("theme", viewport.theme));
-  cleanups.push(viewport.onTheme((t) => local.swap(assoc("theme", t))));
-  // Without WebGL there's still a canvas-sized element for the router, so
-  // keys, overlays and widgetAt keep working (and tests can press on it).
-  let canvas = viewport.canvas;
-  if (!viewport.ok) {
-    canvas = document.createElement("canvas");
-    canvas.className = "canvas";
-    port.insertBefore(canvas, viewport.labels.el);
-    const msg = document.createElement("div");
-    msg.className = "no-webgl";
-    msg.textContent = `3D view unavailable: ${viewport.error?.message ?? "WebGL could not start"}.`;
-    port.append(msg);
-  }
-
-  // The camera is this viewer's: from localStorage, else the doc's home, else
-  // left for a frame extension.
-  let cameraRestored = false;
-  {
-    const cam = initialCamera({ stored: readJSON(cameraKey), doc: doc() });
-    if (cam && viewport.ok) {
-      viewport.setCamera(cam);
-      cameraRestored = true;
+  /** The view's value as this stage sees it (view.js projectView), the same value while the view's is. */
+  let viewSeen = null;
+  let viewProjected = null;
+  const viewValue = () => {
+    const v = view.atom.get();
+    if (v !== viewSeen) {
+      viewSeen = v;
+      viewProjected = projectView(v, n, path);
     }
+    return viewProjected;
+  };
+  const viewport = vp; // (the raw viewport, for what isn't spatial: frames, loops, invalidation)
+  let cameraRestored = false;
+  if (n === 0) {
+    view.restoreCamera(doc());
+    cameraRestored = view.cameraRestored;
   }
-  let cameraTimer = null;
-  cleanups.push(
-    viewport.onCameraEnd(() => {
-      cameraTimer?.();
-      cameraTimer = later(() => {
-        cameraTimer = null;
-        if (dead || viewport.held) return;
-        const cam = cleanCamera(viewport.getCamera());
-        if (cam) writeJSON(cameraKey, cam);
-      }, CAMERA_SAVE_MS);
-    }),
-  );
 
   // ─── the plugin registry ──────────────────────────────────────────────────
 
@@ -582,7 +409,7 @@ export default function Stage(handle, element) {
     local,
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
-    ...(element.packageSettleMs != null ? { settleMs: element.packageSettleMs } : {}),
+    ...(view.packageSettleMs != null ? { settleMs: view.packageSettleMs } : {}),
   });
   cleanups.push(() => packages.dispose());
 
@@ -701,7 +528,7 @@ export default function Stage(handle, element) {
     },
     onGLB: async (id, bytes) => {
       try {
-        await viewport.setGLB(id, bytes);
+        await scope.setGLB(id, bytes);
         if (dead) return;
         objState.set(id, { ...(objState.get(id) ?? {}), parseError: null });
       } catch (err) {
@@ -718,7 +545,7 @@ export default function Stage(handle, element) {
     read: (h) => fileBytes(h.doc()),
     parse: async (id, bytes) => {
       try {
-        await viewport.setGLB(id, bytes);
+        await scope.setGLB(id, bytes);
       } catch (err) {
         console.warn("[scene] GLB failed to parse", err);
         throw new Error(`GLB failed to load: ${err?.message ?? err}`);
@@ -754,7 +581,7 @@ export default function Stage(handle, element) {
     const hk = b ? `${b.min}|${b.max}` : "";
     if (hintKeys.get(id) !== hk) {
       hintKeys.set(id, hk);
-      viewport.setHint(id, b ?? null);
+      scope.setHint(id, b ?? null);
     }
     return !!hk;
   }
@@ -784,8 +611,8 @@ export default function Stage(handle, element) {
   // each object's new parent is already in place when it's attached to it.
   function applyDoc(m) {
     const { d, objects, parents, attachOrder, inherited } = m;
-    viewport.setMaterialRules(d.materialRules);
-    viewport.setGroups(m.members);
+    scope.setMaterialRules(d.materialRules);
+    scope.setGroups(m.members);
     const tracked = new Set(manager.ids());
     let rerouted = false;
     for (const { id } of attachOrder) {
@@ -811,7 +638,7 @@ export default function Stage(handle, element) {
       const key = displayKey(o, parent, inh);
       if (displayKeys.get(id) !== key) {
         displayKeys.set(id, key);
-        viewport.applyDisplay(id, o, parent, inh);
+        scope.applyDisplay(id, o, parent, inh);
       }
       const shown = o.visible !== false && inh.visible;
       // a veil stands in for it, whatever it is made of: nothing of its own is loaded while it's veiled
@@ -819,7 +646,7 @@ export default function Stage(handle, element) {
         if (tracked.has(id)) manager.untrack(id);
         queue.remove(id);
         applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
-        const b = veilBounds(o.hint?.bounds) ?? veilBounds(objState.get(id)?.bounds) ?? veilBounds(viewport.contentOf(id)?.box) ?? DEFAULT_BOUNDS;
+        const b = veilBounds(o.hint?.bounds) ?? veilBounds(objState.get(id)?.bounds) ?? veilBounds(scope.contentOf(id)?.box) ?? DEFAULT_BOUNDS;
         const vk = veilKey(b);
         if (veils.get(id) !== vk) {
           veils.set(id, vk);
@@ -859,12 +686,12 @@ export default function Stage(handle, element) {
       applyHint(id, o.hint?.bounds);
       noteMissing(id, o);
     }
-    for (const id of new Set([...tracked, ...viewport.objects.keys(), ...queue.ids(), ...displayKeys.keys()])) {
+    for (const id of new Set([...tracked, ...scope.ids(), ...queue.ids(), ...displayKeys.keys()])) {
       if (objects[id]) continue;
       manager.untrack(id);
       queue.remove(id);
       routes.delete(id);
-      viewport.removeObject(id);
+      scope.removeObject(id);
       if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
       hintKeys.delete(id);
@@ -894,7 +721,7 @@ export default function Stage(handle, element) {
   function showVeil(id, vk, bounds) {
     let bytes = veilBytes.get(vk);
     if (!bytes) veilBytes.set(vk, (bytes = veilGLB(bounds)));
-    Promise.resolve(viewport.setGLB(id, bytes))
+    Promise.resolve(scope.setGLB(id, bytes))
       .catch((err) => console.warn("[scene] the veil failed to draw", err))
       .then(() => {
         if (!dead) afterGLB();
@@ -1085,7 +912,7 @@ export default function Stage(handle, element) {
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  const presence = createPresence({ handle, viewer, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
+  const presence = createPresence({ handle, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
   const remotePosed = new Set(); // object ids showing another view's pose
   const playing = new Set(); // of those, the ones still playing back (smooth.js)
   let poseLoopOff = null;
@@ -1115,7 +942,7 @@ export default function Stage(handle, element) {
       } else ({ transform: t, settled } = playback(h, time.now()));
     }
     if (t) {
-      viewport.setPose(id, t);
+      scope.setPose(id, t);
       remotePosed.add(id);
       if (settled) playing.delete(id);
       else {
@@ -1124,7 +951,7 @@ export default function Stage(handle, element) {
       }
     } else if (remotePosed.delete(id)) {
       playing.delete(id);
-      viewport.setPose(id, null);
+      scope.setPose(id, null);
     } else return;
     displayChanged();
   }
@@ -1146,7 +973,7 @@ export default function Stage(handle, element) {
         continue;
       }
       const p = playback(h, t);
-      viewport.setPose(id, p.transform);
+      scope.setPose(id, p.transform);
       if (p.settled) playing.delete(id);
     }
     if (!playing.size) stopPoseLoop();
@@ -1182,16 +1009,16 @@ export default function Stage(handle, element) {
    * shown pose in place of its transform.
    */
   function displayedWorld(oid) {
-    const w = viewport.worldOf(oid);
+    const w = scope.worldOf(oid);
     if (w) return w;
     const m = derive();
     if (!m.objects[oid]) return null;
-    if (!viewport.poses.size) return scene().world(oid);
+    if (!scope.posed) return scene().world(oid);
     let out = null;
     const seen = new Set();
     for (let id = oid; id != null && m.objects[id] && !seen.has(id); id = m.parents.get(id) ?? null) {
       seen.add(id);
-      const local = composeMatrix(viewport.poses.get(id) ?? m.objects[id].transform);
+      const local = composeMatrix(scope.poseOf(id) ?? m.objects[id].transform);
       out = out ? multiplyMatrices(local, out) : local;
     }
     return out;
@@ -1227,11 +1054,11 @@ export default function Stage(handle, element) {
     shown: (id, t) => {
       remotePosed.delete(id);
       playing.delete(id);
-      viewport.setPose(id, t);
+      scope.setPose(id, t);
       displayChanged();
     },
     unshown: (id) => {
-      viewport.setPose(id, null);
+      scope.setPose(id, null);
       applyRemoteHold(id);
       displayChanged();
     },
@@ -1538,27 +1365,29 @@ export default function Stage(handle, element) {
     }
     const snap = scene();
     const loc = local.get();
+    const vw = viewValue();
     const content = contentDirty;
     contentDirty = false;
     const running = host.instances();
     for (const r of running) {
       const was = seen.get(r.instance);
-      const changed = !was || was.scene !== snap || was.local !== loc;
+      const changed = !was || was.scene !== snap || was.local !== loc || was.view !== vw;
       if (!changed && !content) continue;
-      seen.set(r.instance, { scene: snap, local: loc });
+      const now = { scene: snap, local: loc, view: vw };
+      seen.set(r.instance, now);
       if (typeof r.instance.update !== "function") continue;
       try {
-        r.instance.update(snap, loc, was ?? { scene: null, local: null });
+        r.instance.update(snap, loc, was ?? { scene: null, local: null, view: null }, vw);
         // What's shown changed in the same flush as the doc or local state
         // (a rebuilt GLB lands with its status going back to idle): say so
-        // too, the one way the contract has (prev === this scene and local),
+        // too, the one way the contract has (prev === this scene, local and view),
         // or a part that skips a status-only change never sees the new box.
-        if (content && changed && was) r.instance.update(snap, loc, { scene: snap, local: loc });
+        if (content && changed && was) r.instance.update(snap, loc, now, vw);
       } catch (err) {
         console.warn(`[scene] extension “${r.id}”: update failed`, err);
       }
     }
-    tryArrive();
+    view.tryArrive();
     const work = scheduled;
     scheduled = [];
     for (const { rec, fn } of work) {
@@ -1602,10 +1431,11 @@ export default function Stage(handle, element) {
       }),
     );
     const atmKey = JSON.stringify(atm);
+    // (the outermost doc's atmosphere is the view's: COMPOSITION.md §3)
     if (atmKey !== lastAtmosphereKey) {
       lastAtmosphereKey = atmKey;
       atmosphere = atm;
-      viewport.setAtmosphere(atm);
+      if (n === 0) viewport.setAtmosphere(atm);
     }
     const ms = cpuNow() - t0;
     spend(ms);
@@ -1615,20 +1445,55 @@ export default function Stage(handle, element) {
   // ─── ownership and the api ────────────────────────────────────────────────
 
   const owned = new Map(); // extension id → what it holds (see makeApi)
-  let router = null; // made once the host is (below): extensions only start after both exist
-  const extCursors = new Map(); // extension id → cursor (latest set last)
-  let routerCursor = null;
+  const router = view.router;
 
-  function applyCursor() {
-    const mine = [...extCursors.values()].at(-1) ?? null;
-    const c = mine ?? routerCursor ?? "";
-    if (canvas.style.cursor !== c) canvas.style.cursor = c;
+  // An event of the router's (world, keys) in this stage's frame (./scope.js):
+  // its hit is this stage's element of the hit's path ("not mine": id null),
+  // its point, normal and distance, its ray and its widget's point, in this
+  // stage's frame; a widget's owner is this stage's extension id when it is one.
+  function eventIn(ev) {
+    const f = scope.frame();
+    const d = Object.getOwnPropertyDescriptors(ev);
+    const memo = {};
+    const lazy = (k, fn) => ({ enumerable: true, configurable: true, get: () => (k in memo ? memo[k] : (memo[k] = fn())) });
+    return Object.defineProperties({}, {
+      ...d,
+      hit: lazy("hit", () => {
+        const h = ev.hit;
+        return h ? hitIn(f, h, h.id == null ? null : elementOfKey(h.id)) : null;
+      }),
+      ray: lazy("ray", () => rayIn(f, ev.ray)),
+      widget: lazy("widget", () => {
+        const w = ev.widget;
+        if (!w) return w;
+        const p = parseKey(w.owner);
+        return { ...w, owner: p && p.n === n ? p.id : w.owner, ...(Array.isArray(w.point) ? { point: f.pointIn(w.point) } : {}), ...(Number.isFinite(w.distance) ? { distance: f.lengthIn(w.distance) } : {}) };
+      }),
+    });
+  }
+  // An input or a session whose every method hears the router's events in this stage's frame.
+  const framedOf = new WeakMap();
+  function framed(obj) {
+    if (!obj || typeof obj !== "object") return obj;
+    let f = framedOf.get(obj);
+    if (!f)
+      framedOf.set(
+        obj,
+        (f = new Proxy(obj, {
+          get(target, k) {
+            const v = Reflect.get(target, k, target);
+            return typeof v === "function" ? (...args) => v.apply(target, args.map((a) => (isEvent(a) ? eventIn(a) : a))) : v;
+          },
+        })),
+      );
+    return f;
   }
 
   // A session an extension's press returned, counted while it's open (a
-  // stopping extension lingers while it has one).
-  function trackSession(own, s) {
-    if (!s || typeof s !== "object") return s;
+  // stopping extension lingers while it has one), hearing events in this stage's frame.
+  function trackSession(own, raw) {
+    if (!raw || typeof raw !== "object") return raw;
+    const s = framed(raw);
     own.sessions++;
     let open = true;
     const done = () => {
@@ -1637,13 +1502,13 @@ export default function Stage(handle, element) {
       own.sessions--;
     };
     const props = {
-      end: { value: (ev) => (done(), s.end?.call(s, ev)) },
-      cancel: { value: () => (done(), s.cancel?.call(s)) },
+      end: { value: (ev) => (done(), s.end?.(ev)) },
+      cancel: { value: () => (done(), s.cancel?.()) },
     };
-    if (typeof s.tap === "function")
+    if (typeof raw.tap === "function")
       props.tap = {
         value: (ev) => {
-          const r = s.tap.call(s, ev);
+          const r = s.tap(ev);
           if (r) done();
           return r;
         },
@@ -1651,11 +1516,12 @@ export default function Stage(handle, element) {
     return Object.create(s, props);
   }
 
-  // Input (an extension's, a body's or the held tool's) whose press sessions are counted.
+  // Input (an extension's, a body's or the held tool's) whose press sessions are counted, in this stage's frame.
   function withSessions(own, input, extra = {}) {
-    return Object.create(input, {
+    const f = framed(input);
+    return Object.create(f, {
       press: {
-        get: () => (typeof input.press === "function" ? (ev) => trackSession(own, input.press.call(input, ev)) : undefined),
+        get: () => (typeof input.press === "function" ? (ev) => trackSession(own, f.press(ev)) : undefined),
       },
       ...extra,
     });
@@ -1704,31 +1570,10 @@ export default function Stage(handle, element) {
     else change(fn);
   }
 
-  function setPref(key, value) {
-    if (typeof key !== "string") return;
-    local.swap((m) => {
-      const prefs = m.prefs ?? {};
-      if (value === undefined ? !(key in prefs) : prefs[key] === value) return m;
-      const next = { ...prefs };
-      if (value === undefined) delete next[key];
-      else next[key] = value;
-      return { ...m, prefs: Object.freeze(next) };
-    });
-  }
-  const pref = (key, fallback) => local.get().prefs?.[key] ?? doc().view?.[key] ?? fallback;
-
-  let noticeSeq = 0;
-  function notify(text, kind = "info", from = null) {
-    if (dead) return null;
-    const n = Object.freeze({ id: `n${++noticeSeq}`, text: String(text ?? ""), kind: kind ?? "info", at: time.now(), from });
-    local.swap((m) => ({ ...m, notices: withNotice(m.notices, n) }));
-    later(() => {
-      if (!dead) local.swap((m) => (m.notices?.includes(n) ? { ...m, notices: Object.freeze(m.notices.filter((x) => x !== n)) } : m));
-    }, NOTICE_MS);
-    return n.id;
-  }
-
-  const boxOut = (b) => (b && !b.isEmpty() ? { min: b.min.toArray(), max: b.max.toArray() } : null);
+  const setPref = (key, value) => view.setPref(key, value);
+  /** A pref: the viewer's, else this doc's suggestion (COMPOSITION.md §3), else the fallback. */
+  const pref = (key, fallback) => view.atom.get().prefs?.[key] ?? doc().view?.[key] ?? fallback;
+  const notify = (text, kind = "info", from = null) => (dead ? null : view.notify(text, kind, from));
 
   /**
    * Remove in one change, after every running extension's beforeRemove
@@ -1780,7 +1625,7 @@ export default function Stage(handle, element) {
       if (!st || st.disabled) return false;
       if (c.tool) {
         const held = router?.held();
-        if (held && held.owner === ext && held.command === c.id) {
+        if (held && held.owner === ownerKey(ext) && held.command === c.id) {
           if (value !== true) router.putDown();
           return true;
         }
@@ -1798,13 +1643,9 @@ export default function Stage(handle, element) {
   }
 
   // ─── bodies, attention and the command context (TOOLS.md §3, §4) ──────────
-
-  // The bodies entered, bottom first, over the base: { ext, def, sitting, pop }.
-  const sittings = [];
-  // The base, at the bottom of the stack: Look or Edit (./bodies.js). Nothing
-  // stands on Edit: entering any other body turns it to Look first.
-  let base = LOOK;
-  const topSitting = () => sittings.at(-1) ?? null;
+  // The stack and the slot are the view's; a body or a tool an extension of
+  // this stage puts there hears events in this stage's frame, and is its own
+  // (a stopping extension's go with it).
 
   /** Every running extension's bodies, by id (the first to offer an id has it). */
   function bodyDefs() {
@@ -1821,174 +1662,37 @@ export default function Stage(handle, element) {
     }
     return out;
   }
-
-  const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
-
-  /** The eye: the top body's, else the camera's. { position, direction } in the world, or null. */
-  function bodyEye() {
-    const s = topSitting();
-    if (s && typeof s.sitting.eye === "function") {
-      try {
-        const e = s.sitting.eye();
-        if (Array.isArray(e?.position) && e.position.length === 3) return { position: [...e.position], direction: Array.isArray(e.direction) ? [...e.direction] : null };
-      } catch (err) {
-        console.warn(`[scene] body “${s.def.id}”: eye failed`, err);
-      }
-    }
-    if (!viewport.ok || !viewport.camera) return null;
-    const p = viewport.camera.getWorldPosition(new THREE.Vector3());
-    return { position: p.toArray(), direction: viewport.forward().toArray() };
-  }
-  const bodyReach = () => reachOf(topSitting()?.def ?? base);
-
-  /**
-   * Make Look or Edit the base (./bodies.js): every body standing on it
-   * leaves, and leaving Edit puts down a tool held through an editing
-   * command (Measure), whose input is the editor's.
-   */
-  function setBase(b) {
-    if (dead || !router) return;
-    base = b;
-    router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [] });
-    if (b !== EDIT) putDownEditTool();
-  }
-  function putDownEditTool() {
-    const held = router?.held();
-    if (!held?.command) return;
-    let c = null;
-    try {
-      c = (host.instanceOf(held.owner)?.commands ?? []).find((k) => k?.id === held.command) ?? null;
-    } catch {
-      c = null;
-    }
-    if (c?.edit === true) router.putDown();
-  }
-
-  /**
-   * Enter body `id` at `place` (TOOLS.md §2: the object a body is given, a
-   * seat or a station, or null for "here"): its enter runs, and what it
-   * answers ({ input, eye(), ride?, keys?, label?, leave() }) goes on top of the
-   * stack, over Look (entered from Edit, the base turns to Look first: no
-   * editing while walking or seated). "look" and "edit" are the stage's:
-   * every body leaves and that one is the base. False when no running
-   * extension offers it or it can't enter.
-   */
-  function enterBody(id, place = null) {
-    if (dead || !router) return false;
-    const stage = stageBody(id);
-    if (stage) {
-      arrival = null; // they went somewhere themselves
-      setBase(stage);
-      return true;
-    }
-    const found = bodyDefs().get(id);
-    if (!found) return false;
-    const own = owned.get(found.ext);
-    if (!own) return false;
-    let sitting;
-    try {
-      sitting = found.def.enter(place ?? null);
-    } catch (err) {
-      console.warn(`[scene] body “${id}”: enter failed`, err);
-      return false;
-    }
-    if (!sitting || typeof sitting !== "object") return false;
-    const rec = { ext: found.ext, def: found.def, sitting, pop: null, place: place ?? null };
-    if (base === EDIT) setBase(LOOK); // nothing stands on Edit
+  /** A body of this stage's going on the stack: its input, the extension's (null if it has stopped). */
+  function bodyInput(ext, rec, input, left) {
+    const own = owned.get(ext);
+    if (!own) return null;
     own.bodies.add(rec);
-    sittings.push(rec);
-    const input = withSessions(own, sitting.input ?? {}, {
-      left: { value: () => leftBody(rec) },
-    });
-    rec.pop = router.pushBody(found.ext, { id, input, lock: !!found.def.lock, keys: sitting.keys ?? found.def.keys ?? [] });
-    applyBodyRide();
-    return true;
+    return withSessions(own, input, { left: { value: left } });
   }
-
-  // A body went off the stack (left, popped with one under it, or its extension stopped).
-  function leftBody(rec) {
-    const i = sittings.indexOf(rec);
-    if (i < 0) return;
-    sittings.splice(i, 1);
-    owned.get(rec.ext)?.bodies.delete(rec);
-    try {
-      rec.sitting.leave?.();
-    } catch (err) {
-      console.warn(`[scene] body “${rec.def.id}”: leave failed`, err);
-    }
-    applyBodyRide();
+  const bodyLeft = (rec) => owned.get(rec.ext)?.bodies.delete(rec);
+  /** The eye, in this stage's frame: { position, direction } or null. */
+  function bodyEye() {
+    const e = view.bodyEye();
+    if (!e) return null;
+    const f = scope.frame();
+    return { position: f.pointIn(e.position), direction: Array.isArray(e.direction) ? f.dirIn(e.direction) : null };
   }
+  /** The top body's reach, in this stage's frame (m). */
+  const bodyReach = () => scope.frame().lengthIn(view.bodyReach());
+  const enterBody = (id, place = null) => view.enterBody(id, place, stage);
 
-  /** Leave the top body (never the base, Look or Edit): the one under it carries on. */
-  const leaveBody = () => (sittings.length ? !!router?.leave() : false);
-
-  // ─── arriving: view.start (TOOLS.md §2) ───────────────────────────────────
-  // Read once: on arrival, and again after a template has written one for
-  // its maker. Its body is entered once a running extension offers it and
-  // the content is in (a walker started before its floor has loaded falls
-  // through it), or ARRIVE_WAIT_MS after it came on offer whatever is still
-  // loading. Until then it waits as long as the body may still come: a
-  // package loading, or asked about and accepted later (the person a table
-  // starts seated takes their time over the prompt), still enters it. The
-  // viewer entering a body first, or everything the doc calls for here and
-  // started (or failed to) with no extension offering that body, ends the
-  // wait: nothing is entered.
-  // The base is set at once (Edit only where the doc says "edit": ./bodies.js
-  // startBase); a package's body is entered over Look when it comes.
-  let arrival = null; // { body, place, offered } still to enter; offered: when the body was first on offer
-  function arrive() {
-    const { body, place } = startOf(doc());
-    setBase(startBase(body));
-    arrival = body && !isStageBody(body) ? { body, place, offered: null } : null;
-    requestFlush();
-  }
   /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
   function contentIn() {
     if (!viewport.ok) return true;
     const status = local.get().status ?? {};
     for (const [oid, o] of Object.entries(doc().objects ?? {})) {
       if (!o || isGroup(o) || o.visible === false) continue;
-      if (viewport.contentOf(oid)?.loaded) continue;
+      if (scope.contentOf(oid)?.loaded) continue;
       const st = status[oid]?.state;
       if (st === "error" || st === "warn") continue;
       return false;
     }
     return true;
-  }
-  let arriveTimer = false;
-  function requestFlushSoon() {
-    if (arriveTimer) return;
-    arriveTimer = true;
-    later(() => {
-      arriveTimer = false;
-      requestFlush();
-    }, 250);
-  }
-  function tryArrive() {
-    const a = arrival;
-    if (!a || dead || !router) return;
-    if (sittings.length) {
-      arrival = null; // they went somewhere themselves
-      return;
-    }
-    if (bodyDefs().has(a.body)) {
-      a.offered ??= time.now();
-      if (!contentIn() && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
-      arrival = null;
-      enterBody(a.body, a.place);
-      return;
-    }
-    // nothing here offers it, and nothing more is coming: the wait is over
-    if (packages.complete() && !host.starting()) arrival = null;
-    // an extension starting (which says nothing when one fails) or a package loading: look again soon. A
-    // package waiting on the viewer (asked, declined, failed) needs no looking: a yes changes the registry
-    else if (host.starting() || packages.coming()) requestFlushSoon();
-  }
-
-  /** The camera rides the top body's ride, if it has one; else the orbit camera's base rides apply. */
-  function applyBodyRide() {
-    const r = topSitting()?.sitting?.ride ?? null;
-    viewport.bodyRide?.(r && typeof r === "object" && typeof r.id === "string" ? r : null);
   }
 
   /**
@@ -1997,7 +1701,7 @@ export default function Stage(handle, element) {
    */
   function holdTool(ext, t, input) {
     const own = owned.get(ext);
-    if (!own || !router) return noop;
+    if (!own) return noop;
     let put = null;
     const wrapped = withSessions(own, input, {
       put: {
@@ -2007,33 +1711,25 @@ export default function Stage(handle, element) {
         },
       },
     });
-    put = router.hold(ext, { command: t.command ?? null, name: String(t.name ?? t.command ?? ext), input: wrapped, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
+    put = view.holdTool(ownerKey(ext), t, wrapped);
     own.tool = put;
     return put;
   }
 
-  // Where the look is: under lock, the eye ray's hit; else the pointer's (the last hover).
-  let hoverHit = null; // { id, point, distance }
+  /** Where the look is, in this stage's frame, when it is on something of this stage's (or in one of its links): { id, point, distance }, else null. */
   function look() {
-    if (local.get().pointer?.locked) {
-      let h = null;
-      try {
-        const r = viewport.centerRay();
-        h = r ? viewport.raycast(r.origin, r.dir) : null;
-      } catch {
-        h = null; // nothing to cast into (no WebGL)
-      }
-      return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
-    }
-    const hovered = local.get().hovered ?? null;
-    if (hovered == null) return null;
-    return hoverHit && hoverHit.id === hovered ? hoverHit : { id: hovered, point: null, distance: null };
+    const h = view.look();
+    if (!h) return null;
+    const el = elementOfKey(h.id);
+    if (el == null) return null;
+    const f = scope.frame();
+    return { id: el, point: Array.isArray(h.point) ? f.pointIn(h.point) : null, distance: Number.isFinite(h.distance) ? f.lengthIn(h.distance) : null };
   }
 
-  /** Attention (TOOLS.md §3): the selection if any, else the look. */
+  /** Attention (TOOLS.md §3): the selection if any, else the look; this stage's elements of them. */
   function attention() {
-    const selected = local.get().selected ?? null;
-    return Object.freeze({ selected, hit: selected != null ? null : look() });
+    const selected = viewValue().selected ?? null;
+    return Object.freeze({ selected, hit: view.atom.get().selected != null ? null : look() });
   }
 
   /** How far a target is from the eye: to the hit when it's on the target (or under it), else to its box. */
@@ -2043,9 +1739,9 @@ export default function Stage(handle, element) {
       if (Number.isFinite(hit.distance)) return hit.distance;
       if (Array.isArray(hit.point)) return Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]);
     }
-    const b = viewport.ok ? viewport.objectBox(target, { hints: true }) : null;
-    if (b && !b.isEmpty()) {
-      const q = [0, 1, 2].map((i) => Math.max(b.min.getComponent(i), Math.min(from[i], b.max.getComponent(i))));
+    const b = viewport.ok ? scope.objectBox(target, { hints: true }) : null;
+    if (b) {
+      const q = [0, 1, 2].map((i) => Math.max(b.min[i], Math.min(from[i], b.max[i])));
       return Math.hypot(q[0] - from[0], q[1] - from[1], q[2] - from[2]);
     }
     const m = displayedWorld(target);
@@ -2054,13 +1750,13 @@ export default function Stage(handle, element) {
 
   /**
    * The context every surface passes to a command's state and run: the
-   * scene, local, the eye (`from`), the body's `reach`, the look's `hit`
-   * (when it's the surface's) and `distance(target)`.
+   * scene, local, the view, the eye (`from`), the body's `reach`, the look's
+   * `hit` (when it's the surface's) and `distance(target)`; all in this stage's frame.
    */
   function context(hit = null) {
     const eye = bodyEye();
     const from = eye?.position ?? null;
-    return { scene: scene(), local: local.get(), from, reach: bodyReach(), hit: hit ?? null, distance: (target) => distanceFrom(from, hit, target) };
+    return { scene: scene(), local: local.get(), view: viewValue(), from, reach: bodyReach(), hit: hit ?? null, distance: (target) => distanceFrom(from, hit, target) };
   }
 
   async function providersFor(url, sourceDoc) {
@@ -2288,12 +1984,14 @@ export default function Stage(handle, element) {
       file: sceneFile,
       // read-only: a part squaring itself to what it's dropped on reads that
       // object's GLB extras (a hull's stated bow)
-      content: (oid) => viewport.contentOf(oid),
+      content: (oid) => scope.contentOf(oid),
       // read-only: an object's displayed world matrix (as api.worldOf), so a
       // drop on something moving lands where it's seen
       worldOf: displayedWorld,
       registry: getRegistry,
       local: Object.freeze({ get: local.get, swap: local.swap }),
+      /** select one of this doc's objects (the view keeps the selection) */
+      select: (oid) => view.select(oid == null ? null : [...path, oid]),
       notify: (text, kind) => notify(text, kind, id),
     });
   }
@@ -2338,7 +2036,7 @@ export default function Stage(handle, element) {
     if (dead) return null;
     packages.used("scene:part", partId);
     const id = typeof made === "string" && doc().objects?.[made] ? made : null;
-    if (id) local.swap((m) => (m.selected === id ? m : { ...m, selected: id }));
+    if (id) view.select([...path, id]);
     return id;
   }
 
@@ -2372,7 +2070,7 @@ export default function Stage(handle, element) {
     }
     if (dead) return false;
     packages.used("scene:template", templateId);
-    arrive();
+    if (n === 0) view.arrive();
     return true;
   }
 
@@ -2423,6 +2121,7 @@ export default function Stage(handle, element) {
         if (bag.delete(give)) give();
       };
     };
+    let watched = viewValue(); // what api.view.watch last told of
     const ownEl = (el, parent) => {
       if (!live()) return el;
       own.els.add(el);
@@ -2479,6 +2178,28 @@ export default function Stage(handle, element) {
             ),
           ),
       }),
+      /**
+       * The viewer's (COMPOSITION.md §3), as this stage sees it: the body,
+       * the held tool, the pointer, theme, notices, prefs, the drawer, and
+       * the selection and hover as this stage's elements of their paths.
+       * select(target) selects this stage's target (null: nothing).
+       */
+      view: Object.freeze({
+        get: viewValue,
+        watch: (fn, select) =>
+          acquire(own.offs, () =>
+            view.atom.watch(() => {
+              const next = viewValue();
+              const prev = watched;
+              watched = next;
+              if (next === prev) return;
+              if (typeof select === "function" ? select(next) !== select(prev) : true) fn(next, prev);
+            }),
+          ),
+        select: (target) => {
+          if (live()) view.select(target == null ? null : [...path, target]);
+        },
+      }),
       pref,
       setPref,
       presence: Object.freeze({
@@ -2501,10 +2222,10 @@ export default function Stage(handle, element) {
 
       // content
       nameOf,
-      content: (oid) => viewport.contentOf(oid),
-      box: (oid, { hints = true } = {}) => boxOut(viewport.objectBox(oid, { hints })),
-      groupBox: (gid, { hints = true } = {}) => boxOut(viewport.groupBox(gid, { hints })),
-      sceneBox: () => boxOut(viewport.sceneBox()),
+      content: (oid) => scope.contentOf(oid),
+      box: (oid, { hints = true } = {}) => scope.objectBox(oid, { hints }),
+      groupBox: (gid, { hints = true } = {}) => scope.groupBox(gid, { hints }),
+      sceneBox: () => scope.sceneBox(),
       worldOf: displayedWorld,
       focus: (ids) => {
         if (!live()) return;
@@ -2544,37 +2265,38 @@ export default function Stage(handle, element) {
         : {}),
 
       // picking and camera
-      pick: (x, y, opts) => viewport.pick(x, y, opts),
-      ray: (x, y) => viewport.ray(x, y),
-      raycast: (origin, dir, opts) => viewport.raycast(origin, dir, opts),
-      project: (p) => viewport.project(p),
+      pick: (x, y, opts) => scope.pick(x, y, opts),
+      ray: (x, y) => scope.ray(x, y),
+      raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
+      project: (p) => scope.project(p),
       camera: Object.freeze({
         get object() {
           return viewport.camera ?? null;
         },
-        get: () => viewport.getCamera(),
-        set: (cam) => viewport.setCamera(cam),
-        frame: (box) => viewport.frame(box),
+        // in this stage's frame (./scope.js)
+        get: () => scope.camera.get(),
+        set: (cam) => scope.camera.set(cam),
+        frame: (box) => scope.camera.frame(box),
         hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own */
-        ride: (oid, opts) => acquire(own.offs, () => viewport.ride(oid, opts)),
+        /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
+        ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         touched: () => viewport.touched() || cameraRestored,
-        watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),
+        watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
 
       // drawing
       THREE,
-      world: ({ onTop = false } = {}) => (live() ? viewport.worldLayer(id, { onTop }) : new THREE.Group()),
+      world: ({ onTop = false } = {}) => (live() ? scope.worldLayer(id, { onTop }) : new THREE.Group()),
       // each call is its own set (an extension may keep several)
       labels: () => {
         const key = `${id}#${(own.labelSets = (own.labelSets ?? 0) + 1)}`;
         own.labelKeys = [...(own.labelKeys ?? []), key];
         return Object.freeze({
           set: (items) => {
-            if (live()) viewport.labels.sync(key, items ?? []);
+            if (live()) scope.labels.sync(key, items ?? []);
           },
         });
       },
@@ -2595,7 +2317,7 @@ export default function Stage(handle, element) {
         if (!live() || !el) return noop;
         // an open drawer wants the pointer (stage/pointer.js)
         const close = acquire(own.offs, () => {
-          const off = drawer.dock(id, el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
+          const off = drawer.dock(ownerKey(id), el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
           return () => (off?.(), router?.refresh());
         });
         router?.refresh();
@@ -2613,10 +2335,7 @@ export default function Stage(handle, element) {
           return () => target.removeEventListener(type, fn, opts);
         }),
       cursor: (name) => {
-        if (!live()) return;
-        extCursors.delete(id);
-        if (name) extCursors.set(id, String(name));
-        applyCursor();
+        if (live()) view.cursor(ownerKey(id), name);
       },
       pose: Object.freeze({
         /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
@@ -2627,7 +2346,7 @@ export default function Stage(handle, element) {
       claim: (oid, kind, { onLost } = {}) => (live() ? takeClaim(id, own, oid ?? null, kind, onLost) : null),
       claimedBy: (oid, kind) => claimedBy(oid ?? null, kind),
       extent: (box) => {
-        if (live()) viewport.setExtent(id, box ?? null);
+        if (live()) scope.setExtent(id, box ?? null);
       },
       invalidate: () => viewport.invalidate(),
       loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
@@ -2665,12 +2384,12 @@ export default function Stage(handle, element) {
       // bodies, the held tool, attention (TOOLS.md §3–§5)
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
-        current: () => local.get().body,
+        current: () => viewValue().body,
         /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never the base: Look or Edit) */
-        leave: () => (live() ? leaveBody() : false),
-        /** the eye: { position, direction } in the world, or null */
+        leave: () => (live() ? view.leaveBody() : false),
+        /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
         /** the top body's reach (m; Look's and Edit's are Infinity) */
         reach: () => bodyReach(),
@@ -2685,7 +2404,7 @@ export default function Stage(handle, element) {
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
-      popover: (close) => (live() && router && typeof close === "function" ? acquire(own.offs, () => router.popover(id, close)) : noop),
+      popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
       /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
       context: (hit) => context(hit),
       /** attention: { selected, hit } (the selection, else the look) */
@@ -2703,8 +2422,8 @@ export default function Stage(handle, element) {
     function release() {
       // 1–2: its open session, its bodies and its held tool (the router
       // cancels, pops, puts down and unlocks), then its camera holds
-      router?.stopOwner(id);
-      for (const rec of [...own.bodies]) leftBody(rec);
+      router.stopOwner(ownerKey(id));
+      view.leaveBodiesOf(stage, id);
       own.tool = null;
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
@@ -2723,17 +2442,17 @@ export default function Stage(handle, element) {
       own.frame.clear();
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
-      viewport.removeLayers(id);
+      scope.removeLayers(id);
       // 7: labels, overlays, edges, docked panes, styles, listeners and watchers, cursor, extent, focus
-      for (const key of own.labelKeys ?? []) viewport.labels.clear(key);
-      drawer.closeOwner(id);
-      router?.refresh();
+      for (const key of own.labelKeys ?? []) scope.labels.clear(key);
+      drawer.closeOwner(ownerKey(id));
+      router.refresh();
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
-      if (extCursors.delete(id)) applyCursor();
-      viewport.setExtent(id, null);
+      view.cursor(ownerKey(id), null);
+      scope.setExtent(id, null);
       if (focusBy.delete(id) && !dead) applyDoc(derive());
       owned.delete(id);
     }
@@ -2764,216 +2483,75 @@ export default function Stage(handle, element) {
     onChange: resync,
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
+    general,
   });
   hostMade = true;
 
-  // ─── the router ───────────────────────────────────────────────────────────
+  // ─── what the view asks of this stage ──────────────────────────────────────
 
-  let picking = false;
-  // The widget under the pointer: the viewport's (meshes in world groups) and
-  // every running extension's widgetAt; onTop beats the rest, else nearest.
-  function pickWidget(ev) {
-    if (picking) return null; // a widgetAt that reads ev.widget
-    picking = true;
+  // Its extensions' widgets under the pointer (each hearing the event in this
+  // stage's frame), owners as the view's keys, distances in the world.
+  function widgetsAt(ev) {
+    const out = [];
+    const f = scope.frame();
+    for (const r of host.running()) {
+      const input = r.instance.input;
+      if (typeof input?.widgetAt !== "function") continue;
+      try {
+        const w = input.widgetAt(eventIn(ev));
+        if (w && typeof w === "object") out.push({ ...w, owner: ownerKey(r.id), onTop: !!w.onTop, ...(Number.isFinite(w.distance) ? { distance: f.lengthOut(w.distance) } : {}) });
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: widgetAt failed`, err);
+      }
+    }
+    return out;
+  }
+
+  // This stage's segment of the chain (COMPOSITION.md §5) for its element of
+  // the hit's path: its holders, nearest first, then its root's, then (in the
+  // focus) the general ones.
+  function segment(element) {
+    const running = host.running();
+    const m = derive();
+    const chain = element != null && m.objects[element] ? hitChain(element, m.parents, m.groups, m.objects) : [];
+    const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? m.d : m.objects[oid]));
+    const order = chainOrder({ running, holders });
+    return { order, holderOf: (ext) => holders.get(ext)?.id ?? null };
+  }
+
+  /** One of this stage's extensions' commands, or null. */
+  function commandOf(ext, command) {
     try {
-      const out = [];
-      if (ev?.x != null && ev?.y != null) {
-        const w = viewport.pickWidget(ev.x, ev.y);
-        if (w) out.push(w);
-      }
-      for (const r of host.running()) {
-        const input = r.instance.input;
-        if (typeof input?.widgetAt !== "function") continue;
-        try {
-          const w = input.widgetAt(ev);
-          if (w && typeof w === "object") out.push({ ...w, owner: r.id, onTop: !!w.onTop });
-        } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: widgetAt failed`, err);
-        }
-      }
-      return bestWidget(out);
-    } finally {
-      picking = false;
+      return (host.instanceOf(ext)?.commands ?? []).find((k) => k?.id === command) ?? null;
+    } catch {
+      return null;
     }
   }
 
-  function chainFor(ev) {
-    const running = host.running();
-    const m = derive();
-    const widget = ev.widget;
-    const hit = ev.hit;
-    const chain = hit?.id && m.objects[hit.id] ? hitChain(hit.id, m.parents, m.groups, m.objects) : [];
-    const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? m.d : m.objects[oid]));
-    const order = chainOrder({ running, widgetOwner: widgetWins(widget, hit) ? widget.owner : null, holders });
-    return { order, holderOf: (id) => holders.get(id)?.id ?? null };
-  }
+  // ─── the stage's atom, the flush ──────────────────────────────────────────
 
-  // The selection (TOOLS.md §3; ../selection.js is its model, H10): one
-  // stage, so the focus is the scene's own and a selection is [id].
-  const FOCUS = Object.freeze([]);
-  function selectStep(ev) {
-    local.swap((m) => {
-      const was = { focus: FOCUS, selected: m.selected != null ? [m.selected] : null };
-      const next = selectionStep(was, ev);
-      if (next === was) return m;
-      const sid = next.selected?.[0] ?? null;
-      return (m.selected ?? null) === sid ? m : { ...m, selected: sid };
-    });
-  }
+  cleanups.push(local.watch(() => requestFlush()));
 
-  // The base bodies' input (./bodies.js). Edit's default press is Select,
-  // offered after the held tool and the whole chain, so structurally last. A
-  // click on an object selects it; on nothing, it clears whatever is
-  // selected (a group is never hit: groups are selected from the outline).
-  // Look has no default press, like walk, seat and station: a plain click
-  // there selects nothing (the menu's Select still does). Either's drag is
-  // OrbitControls', which hears what nobody claimed.
-  const lookInput = {};
-  const editInput = {
-    click(ev) {
-      const oid = ev?.hit?.id ?? null;
-      const on = oid != null && !!doc().objects?.[oid];
-      if (!on && local.get().selected == null) return false;
-      selectStep({ type: "press", path: on ? [oid] : [] });
-      return true;
-    },
-  };
-
-  router = createRouter({
-    time,
-    port,
-    canvas,
-    keyRoot: root,
-    pick: (x, y, opts) => viewport.pick(x, y, opts),
-    pickWidget,
-    ray: (x, y) => viewport.ray(x, y),
-    centerRay: () => viewport.centerRay(),
-    chainFor,
-    inputOf,
-    base: { id: base.id, lock: false, keys: [], input: base === EDIT ? editInput : lookInput },
-    cameraHeld: () => viewport.held,
-    onHover: (ev) => {
-      const h = ev?.hit ?? null;
-      hoverHit = h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
-      local.swap(assoc("hovered", h?.id ?? null));
-    },
-    onCursor: (name) => {
-      routerCursor = name;
-      applyCursor();
-    },
-    onState: (st) => {
-      if (dead) return;
-      local.swap((m) => ({ ...m, ...localOfRouter(st, m) }));
-    },
-    // a selection or an open drawer wants the pointer (stage/pointer.js)
-    pointerWanted: () => local.get().selected != null || drawer.state().order.length > 0,
-    selection: () => local.get().selected != null,
-    deselect: () => selectStep({ type: "escape" }),
-    // one stage: the focus is the scene's own (COMPOSITION.md build step 14 moves it)
-    focusDepth: () => 0,
-    leaveFocus: noop,
-  });
-
-  // The router's state as local's fields: the body (with its label and
-  // reach, which the stage knows), the held tool, the gesture's keys, the
-  // pointer and the ladder's next rung. A field that didn't change keeps its
-  // value, so a watcher can compare by identity.
-  function localOfRouter(st, m) {
-    const s = topSitting();
-    const body = s && s.def.id === st.body.id
-      ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.ext, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
-      : BASE_LOCAL[base.id];
-    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-    const held = st.held ? Object.freeze({ ...st.held }) : null;
-    const pointer = Object.freeze({ ...st.pointer });
-    const escape = Object.freeze({ layer: st.escape, hint: escapeHint(st.escape, { tool: st.held?.name ?? null }) });
-    return {
-      body: same(m.body, body) ? m.body : body,
-      held: same(m.held, held) ? m.held : held,
-      gesture: same(m.gesture, st.gesture) ? m.gesture : st.gesture ? Object.freeze(st.gesture) : null,
-      pointer: same(m.pointer, pointer) ? m.pointer : pointer,
-      escape: same(m.escape, escape) ? m.escape : escape,
-    };
-  }
-
-  // ─── local → storage, the running set, the flush ──────────────────────────
-
-  cleanups.push(
-    local.watch((next, prev) => {
-      if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
-      // the selection wants the pointer, and is the ladder's rung
-      if (next.selected !== prev.selected) router?.refresh();
-      requestFlush();
-    }),
-  );
-
-  // ─── focus ────────────────────────────────────────────────────────────────
-
-  // Keys are heard on the root, so focus that left an element inside the
-  // stage for nowhere (the clicked button was replaced, as a HUD's Play is
-  // once pressed, or hidden, or moved: an outline row re-filed under its new
-  // parent) comes back to the root, and keys keep working. Chrome blurs a
-  // moved element with the element still connected and focus on <body>, just
-  // as when someone clicks the page outside the stage; only the click tells
-  // the two apart, so a press outside (or the window losing focus) means it
-  // left for the page.
-  let pressedOutside = -Infinity;
-  const onPressAnywhere = (e) => {
-    if (!root.contains(e.target)) pressedOutside = time.now();
-  };
-  document.addEventListener("pointerdown", onPressAnywhere, true);
-  const refocus = (e) => {
-    // focus on its way to something (it gets there after this event's microtasks)
-    if (e.type === "focusout" && e.relatedTarget) return;
-    queueMicrotask(() => {
-      if (dead || !root.isConnected) return;
-      const a = document.activeElement;
-      if (a && a !== document.body) return;
-      if (e.type === "focusout") {
-        if (time.now() - pressedOutside < 1000) return; // left for the page
-        if (typeof document.hasFocus === "function" && !document.hasFocus()) return; // the window went
-      }
-      root.focus({ preventScroll: true });
-    });
-  };
-  root.addEventListener("click", refocus);
-  root.addEventListener("focusout", refocus);
-  cleanups.push(() => {
-    document.removeEventListener("pointerdown", onPressAnywhere, true);
-    root.removeEventListener("click", refocus);
-    root.removeEventListener("focusout", refocus);
-  });
-
-  // ─── leaving the page ─────────────────────────────────────────────────────
-
-  // Patchwork doesn't run the tool's cleanup when the tab closes, so peers
-  // would keep this view (its avatar, its selection) until it times out. On
-  // pagehide it lets go of its claims and says bye at once; restored from
-  // the back-forward cache, it comes back as a new session and takes its
+  // ─── leaving the page (the view's pagehide and pageshow) ──────────────────
+  // It lets go of its claims and says bye at once; restored from the
+  // back-forward cache, it comes back as the view's new session and takes its
   // claims back (unless someone else has taken one meanwhile: then that
-  // extension is told it lost it). Its claims would lapse with the bye
-  // anyway; deleting them only tells peers sooner, if the write gets out.
-  const onPageHide = () => {
+  // extension is told it lost it).
+  function pageHide() {
     if (away) return;
     // world time stops here first: a checkpoint, and the clock let go
     clock.letGo();
     eraseClaims([...claims.values()]);
     away = true;
     presence.goodbye();
-  };
-  const onPageShow = (e) => {
-    if (!e.persisted || !away) return;
+  }
+  function pageShow(session) {
+    if (!away) return;
     away = false;
-    presence.hello();
+    presence.hello(session);
     recheckClaims();
     clockCheck();
-  };
-  globalThis.addEventListener?.("pagehide", onPageHide);
-  globalThis.addEventListener?.("pageshow", onPageShow);
-  cleanups.push(() => {
-    globalThis.removeEventListener?.("pagehide", onPageHide);
-    globalThis.removeEventListener?.("pageshow", onPageShow);
-  });
+  }
 
   // ─── the doc loop ─────────────────────────────────────────────────────────
 
@@ -2995,10 +2573,6 @@ export default function Stage(handle, element) {
   }
   handle.on("change", sync);
   cleanups.push(() => handle.off("change", sync));
-  warnUnusable();
-  sync();
-  // where the doc starts people: once, now
-  arrive();
 
   // ─── probes ───────────────────────────────────────────────────────────────
 
@@ -3007,7 +2581,10 @@ export default function Stage(handle, element) {
       return viewport.renderer ?? null;
     },
     viewport,
-    local,
+    /** what a probe reads as "local": this stage's atom and the view's as it sees it, in one value */
+    local: Object.freeze({ get: () => ({ ...viewValue(), ...local.get() }), swap: (fn) => local.swap(fn) }),
+    stageLocal: local,
+    view,
     host,
     router,
     presence,
@@ -3041,10 +2618,8 @@ export default function Stage(handle, element) {
       loaded: [...viewport.objects.values()].filter((e) => e.content).length,
     }),
   };
-  root.__sceneDebug = debug;
-  globalThis.__sceneDebug = debug;
 
-  return () => {
+  function dispose() {
     if (dead) return;
     // world time stops first (one checkpoint, with every process's save), then
     // the extensions, while everything they hold is still there to give back
@@ -3054,7 +2629,6 @@ export default function Stage(handle, element) {
     clockLoopOff = null;
     stopPoseLoop();
     dead = true;
-    router.dispose();
     presence.dispose();
     if (flushFrame != null) caf(flushFrame);
     if (uiResetReq != null) caf(uiResetReq);
@@ -3069,9 +2643,47 @@ export default function Stage(handle, element) {
     }
     queue.dispose();
     manager.dispose();
-    viewport.dispose();
+    for (const id of scope.ids()) scope.removeObject(id);
+    view.removeStage(stage);
+    if (root.__sceneDebug === debug) delete root.__sceneDebug;
     if (globalThis.__sceneDebug === debug) delete globalThis.__sceneDebug;
-    root.remove();
-    style.remove();
-  };
+  }
+
+  stage = Object.freeze({
+    n,
+    path: Object.freeze([...path]),
+    url: handle.url ?? null,
+    handle,
+    doc,
+    scene,
+    scope,
+    frame: () => scope.frame(),
+    packages,
+    debug,
+    requestFlush,
+    starting: () => host.starting(),
+    contentIn,
+    bodyDefs,
+    bodyInput,
+    bodyLeft,
+    commandOf,
+    inputOf,
+    widgetsAt,
+    segment,
+    displayedWorld,
+    pageHide,
+    pageShow,
+    /** the first sync, once the view knows this stage (and, for the outermost, arriving: once, now) */
+    start() {
+      if (n === 0) {
+        root.__sceneDebug = debug;
+        globalThis.__sceneDebug = debug;
+      }
+      warnUnusable();
+      sync();
+      if (n === 0) view.arrive();
+    },
+    dispose,
+  });
+  return stage;
 }

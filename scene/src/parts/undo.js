@@ -32,7 +32,7 @@ function create(api) {
   api.listen(root, "keydown", (e) => {
     const which = undoKey(e);
     // undo is the editor's (../stage/bodies.js): only in Edit
-    if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.local.get())) return;
+    if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.view.get())) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
     e.preventDefault();
     if (!e.repeat) take(which);

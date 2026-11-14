@@ -23,7 +23,7 @@ async function mount({ objects = { a: object({ name: "A" }), b: object({ name: "
 
 const sel = () => s.local.get().selected ?? null;
 const run = (command, target = null, value) => s.api("scene.select").run({ ext: "scene.select", command, target, value });
-const state = (command, target = null) => s.instance("scene.select").commands.find((c) => c.id === command).state(target, { scene: s.api("scene.select").scene(), local: s.local.get() });
+const state = (command, target = null) => s.instance("scene.select").commands.find((c) => c.id === command).state(target, { scene: s.api("scene.select").scene(), view: s.api("scene.select").view.get() });
 /** Make the viewport's pick say this object is under the pointer (there is no WebGL here). */
 const hitOn = (id) => {
   s.debug.viewport.pick = () => (id ? { id, point: [0, 0, 0], normal: [0, 1, 0], distance: 1 } : null);

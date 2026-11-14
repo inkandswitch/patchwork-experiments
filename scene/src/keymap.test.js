@@ -62,13 +62,14 @@ const ALL_KEYS = [...new Set(flatCommands(COLLECTED).flatMap(({ command }) => ke
  */
 function apiFor({ body, tool, gesture, attention, look, box }) {
   return {
-    local: { get: () => ({ gesture, held: tool, body }) },
+    view: { get: () => ({ gesture, held: tool, body }) },
     collect: () => COLLECTED,
     attention: () => attention,
     look: () => (attention.selected == null ? attention.hit : look),
     context: (hit = null) => ({
       scene,
       local: {},
+      view: { body },
       from: [0, 0, 0],
       reach: body.reach,
       hit,

@@ -57,6 +57,10 @@ export function wallAt(get) {
   return Object.freeze({ manual: false, now: get, frame: real.frame, after: real.after });
 }
 
+// the view's keys (stage/view.js), and those of them that are paths
+const VIEW_KEYS = new Set(["hovered", "selected", "body", "held", "gesture", "pointer", "escape", "theme", "notices", "drawer", "prefs", "focus"]);
+const PATHS = new Set(["hovered", "selected"]);
+
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
@@ -90,7 +94,28 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     debug,
     canvas,
     port,
-    local: debug.local,
+    // the outermost stage's atom and the view's as it sees it, read as one; a
+    // swap's changes go where each key lives (the selection and hover as
+    // paths of the outermost stage's)
+    local: Object.freeze({
+      get: debug.local.get,
+      swap(fn) {
+        const before = debug.local.get();
+        const next = fn(before);
+        if (next === before) return;
+        debug.view.atom.swap((v) => {
+          let o = v;
+          for (const k of VIEW_KEYS) if (next[k] !== before[k]) o = { ...o, [k]: PATHS.has(k) ? (next[k] == null ? null : Object.freeze([next[k]])) : next[k] };
+          return o;
+        });
+        debug.stageLocal.swap((m) => {
+          let o = m;
+          for (const k of Object.keys(next)) if (!VIEW_KEYS.has(k) && next[k] !== before[k]) o = { ...o, [k]: next[k] };
+          return o;
+        });
+      },
+      watch: (fn) => debug.stageLocal.watch(fn),
+    }),
     host: debug.host,
     /** the api an extension got */
     api: (id) => debug.host.record(id)?.api ?? null,

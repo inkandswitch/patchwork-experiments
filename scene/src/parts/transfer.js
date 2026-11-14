@@ -112,7 +112,7 @@ function create(api) {
   const port = api.port;
   const root = api.root ?? port;
   const selectedTarget = () => {
-    const sel = api.local.get().selected ?? null;
+    const sel = api.view.get().selected ?? null;
     return sel != null && api.scene().objects[sel] ? sel : null;
   };
 
@@ -150,7 +150,7 @@ function create(api) {
       ring.raycast = () => {};
       layer.add(ring);
     }
-    const theme = api.local.get().theme ?? {};
+    const theme = api.view.get().theme ?? {};
     const rgb = (land.snapped ? theme.accent : theme.muted) ?? (land.snapped ? [0.2, 0.9, 0.75] : [0.5, 0.5, 0.5]);
     ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
     const eye = api.camera.get()?.position;
@@ -182,7 +182,7 @@ function create(api) {
     return fromScene(dt, api.url);
   }
 
-  const on = () => editing(api.local.get());
+  const on = () => editing(api.view.get());
   api.listen(root, "dragover", (e) => {
     if (!on() || e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
     if (!inPort(e) || ownRow(e.dataTransfer) === true) return hideRing();

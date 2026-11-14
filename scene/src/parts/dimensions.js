@@ -213,6 +213,14 @@ export function create(api) {
     const id = dimensionIdOf(target, scene?.objects);
     return id != null && scene?.d?.dimensions?.[id] ? id : null;
   };
+  // What this reads, as one value: the view's (the selection, prefs, theme)
+  // with the stage's load status; the same value while neither changes.
+  let seenL = null;
+  let seenV = null;
+  let seenS = null;
+  const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status }))));
+  const now = () => seen(api.local.get(), api.view.get());
+  let lastSeen = null; // what update() was last given
   const selectedOf = (scene, local) => dimensionOf(local?.selected ?? null, scene);
   const unitsOf = (scene, local) => local?.prefs?.units ?? scene?.d?.view?.units ?? "m";
   const gap = (oid, local) => surfaceGap(api.content(oid)?.root ?? null, local);
@@ -239,12 +247,12 @@ export function create(api) {
 
   /** Select a dimension (its ref is the selection); null lets go of the selected one, if a dimension is selected. */
   function select(id) {
-    api.local.swap((m) => {
-      const cur = m.selected ?? null;
-      if (id == null) return dimensionIdOf(cur, api.scene().objects) != null ? { ...m, selected: null } : m;
-      const next = dimensionRef(id);
-      return cur === next ? m : { ...m, selected: next };
-    });
+    const cur = api.view.get().selected ?? null;
+    if (id == null) {
+      if (dimensionIdOf(cur, api.scene().objects) != null) api.view.select(null);
+      return;
+    }
+    if (cur !== dimensionRef(id)) api.view.select(dimensionRef(id));
   }
 
   /** Save a measured dimension (two anchors) and select it. @returns {string | null} its id */
@@ -272,7 +280,7 @@ export function create(api) {
       },
       { label: "Delete dimension" },
     );
-    if (api.local.get().selected === dimensionRef(id)) select(null);
+    if (api.view.get().selected === dimensionRef(id)) select(null);
   }
 
   function clearLayer() {
@@ -322,7 +330,7 @@ export function create(api) {
         rank: 3,
         data: { id: d.id, selected: d.selected, detached: d.detached, offsurface: d.offSurface },
         // selecting one is the editor's (../stage/bodies.js): only in Edit
-        onPointerDown: () => editing(api.local.get()) && select(d.id),
+        onPointerDown: () => editing(api.view.get()) && select(d.id),
       })),
     );
     api.invalidate();
@@ -363,7 +371,7 @@ export function create(api) {
     if (!list.length) return;
     if (currentPoseKey() === poseKey) return;
     gen++;
-    refresh(api.scene(), api.local.get());
+    refresh(api.scene(), now());
   });
 
   function update(scene, local, prev) {
@@ -372,7 +380,7 @@ export function create(api) {
     // the selected dimension went (deleted here or by a peer)
     const id = dimensionIdOf(target, scene.objects);
     if (id != null && !scene.d?.dimensions?.[id]) {
-      api.local.swap((m) => (m.selected === target ? { ...m, selected: null } : m));
+      if (api.view.get().selected === target) api.view.select(null);
       return;
     }
     // same scene and local: content loaded, so "off surface" may have changed
@@ -465,9 +473,11 @@ export function create(api) {
   commands.push(tabToggle(tab, { id: "dimensions", name: "Dimensions", title: "The dimensions saved in this scene" }));
 
   return {
-    update(scene, local, prev) {
-      update(scene, local, prev);
-      tab.update(scene, local);
+    update(scene, local, prev, view) {
+      const s = seen(local, view);
+      update(scene, s, { scene: prev?.scene ?? null, local: prev?.scene ? lastSeen : null });
+      lastSeen = s;
+      tab.update(scene, s);
     },
     commands,
     tab,

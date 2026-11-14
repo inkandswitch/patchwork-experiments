@@ -32,10 +32,10 @@ export const GRAB_PX = 12;
 /**
  * May the selection's knobs show? Only in Edit, where the scene may be
  * written, and while no other extension holds the tool. Pure.
- * @param {object} local  api.local.get()  @param {boolean} writable  @param {string} self  this part's id
+ * @param {object} view  api.view.get()  @param {boolean} writable  @param {string} self  this part's id
  */
-export function knobsShown(local, writable, self) {
-  return editing(local) && !!writable && (local?.held == null || local.held.ext === self);
+export function knobsShown(view, writable, self) {
+  return editing(view) && !!writable && (view?.held == null || view.held.ext === self);
 }
 
 /** The provider (scene:source metadata) an object was built by, or null. */
@@ -138,7 +138,7 @@ export default own({
 
     /** The selected object, if it's one with a provider that declares handles: { id, o, provider }. */
     function target() {
-      const local = api.local.get();
+      const local = api.view.get();
       if (!editing(local) || !api.writable()) return null;
       const id = local.selected ?? null;
       const o = id ? api.doc()?.objects?.[id] : null;
@@ -202,13 +202,13 @@ export default own({
 
     /** Is another extension in charge of the pointer (a held tool)? */
     function standingDown() {
-      const held = api.local.get().held;
+      const held = api.view.get().held;
       return held != null && held.ext !== api.id;
     }
 
     /** Each spec's world line, while the object is shown and has its content. */
     function lines() {
-      if (!sub || !specs.length || !knobsShown(api.local.get(), api.writable(), api.id)) return [];
+      if (!sub || !specs.length || !knobsShown(api.view.get(), api.writable(), api.id)) return [];
       const c = api.content(sub.id);
       if (!c?.loaded || !c.box || !api.box(sub.id)) return [];
       const m = api.worldOf(sub.id);
@@ -234,7 +234,7 @@ export default own({
     function draw() {
       if (dead()) return;
       const ls = lines();
-      const accent = api.local.get().theme?.accent ?? [0.2, 0.97, 0.79];
+      const accent = api.view.get().theme?.accent ?? [0.2, 0.97, 0.79];
       const key = ls.length ? JSON.stringify([rgbKey(accent), ls.map(({ spec, line }) => [spec.key, spec.label, valueOf(spec), line])]) : "";
       if (key === drawn) return;
       drawn = key;
@@ -365,11 +365,11 @@ export default own({
 
     return {
       input,
-      update(scene, local, prev) {
-        const pl = prev?.local;
+      update(scene, local, prev, view) {
+        const pl = prev?.view;
         // only the hover (or something else we don't read) changed: nothing to do.
         // (status: an object's content arriving moves where its handles go)
-        if (pl && pl !== local && prev.scene === scene && ["selected", "held", "body", "theme", "status"].every((k) => pl[k] === local[k])) return;
+        if (pl && (pl !== view || prev.local !== local) && prev.scene === scene && local.status === prev.local?.status && ["selected", "held", "body", "theme"].every((k) => pl[k] === view[k])) return;
         // the selection, its object, the provider, the held tool, theme, a move or content arriving
         refresh();
       },

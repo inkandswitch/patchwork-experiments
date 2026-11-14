@@ -61,12 +61,12 @@ export function groupRoots(scene, gid) {
  * no tool is held (a held tool takes every press), on an object that
  * isn't locked or a group with something it can move.
  * @param {object} scene  api.scene()
- * @param {object} local  api.local.get()
+ * @param {object} view  api.view.get()
  * @param {boolean} writable  api.writable()
  */
-export function haloTarget(scene, local, writable = true) {
-  if (!editing(local) || !writable || local?.held != null) return null;
-  const id = local?.selected;
+export function haloTarget(scene, view, writable = true) {
+  if (!editing(view) || !writable || view?.held != null) return null;
+  const id = view?.selected;
   const o = id != null ? scene?.objects?.[id] : null;
   if (!o) return null;
   if (isGroup(o)) return groupRoots(scene, id).length ? { kind: "group", id } : null;

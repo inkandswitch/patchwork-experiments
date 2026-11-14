@@ -113,7 +113,7 @@ describe("the spawn point's trait part (walk.spawn)", () => {
     const scene = { objects: { pad: { traits: { "walk.spawn": {} } }, crate: {} } };
     for (const body of ["look", "edit", "seat", "walk"])
       for (const target of ["pad", "crate", null, "gone"]) {
-        const st = walkFromState(target, { scene, local: { body: { id: body } } });
+        const st = walkFromState(target, { scene, view: { body: { id: body } } });
         expect(!!st, `${body} ${target}`).toBe(target === "pad" && body !== "walk");
       }
   });

@@ -121,6 +121,14 @@ function create(api) {
   api.style(css);
 
   const selectedOf = (local) => local?.selected ?? null;
+  // What the inspector reads, as one value: the view's (the selection, the
+  // body, prefs) with the stage's load status and edits; the same value
+  // while neither changes, so its "did anything change" checks hold.
+  let seenL = null;
+  let seenV = null;
+  let seenS = null;
+  const seen = (local, view) => (local === seenL && view === seenV ? seenS : ((seenL = local), (seenV = view), (seenS = Object.freeze({ ...view, status: local?.status, edits: local?.edits, running: local?.running }))));
+  const now = () => seen(api.local.get(), api.view.get());
   const units = () => api.pref("units", "m");
 
   // ─── doc writes, through the planners ──────────────────────────────────────
@@ -156,7 +164,7 @@ function create(api) {
 
   const followLatest = (id) => apply(api.ops.setField(api.scene(), id, "at", undefined), "Follow latest");
 
-  const select = (id) => api.local.swap((m) => ((m.selected ?? null) === (id ?? null) ? m : { ...m, selected: id ?? null }));
+  const select = (id) => api.view.select(id ?? null);
 
   const startsName = `starts-in-${++startsGroups}`;
 
@@ -761,7 +769,7 @@ function create(api) {
     queueNames();
   }
 
-  const refreshNow = (force = false) => refresh(api.scene(), api.local.get(), force);
+  const refreshNow = (force = false) => refresh(api.scene(), now(), force);
 
   // A lens is applied after the extensions' updates in the same flush, and
   // doesn't flush again: look at the names once it has.
@@ -837,7 +845,7 @@ function create(api) {
       state: (target, { scene }) => (isGroup(objectOf(target, scene)) ? { title: "Move what's in this group up a level, where it is, and remove the group" } : null),
       run: (target) => {
         const plan = apply(api.ops.ungroup(api.scene(), target), "Ungroup");
-        if (plan && selectedOf(api.local.get()) === target) select(null);
+        if (plan && selectedOf(api.view.get()) === target) select(null);
       },
     },
   ];
@@ -856,7 +864,7 @@ function create(api) {
       last = null;
       showEmpty();
       return {
-        update: (scene, local) => refresh(scene, local),
+        update: (scene, local) => refresh(scene, local), // (the value follow() passed: seen())
         dispose() {
           teardown();
           if (body === host) {
@@ -901,13 +909,13 @@ function create(api) {
       asked = open;
       if (!open) dismissed = lastSel;
       else dismissed = null;
-      follow(api.scene(), api.local.get());
+      follow(api.scene(), now());
     },
   });
 
   return {
     commands,
-    update: (scene, local) => follow(scene, local),
+    update: (scene, local, prev, view) => follow(scene, seen(local, view)),
     /** for tests and probes: the tab's element, and whether it's docked */
     tab,
     dispose() {

@@ -202,9 +202,9 @@ export default own({
     let pendingReveal = null; // a selection that isn't in the scene yet
     const views = new Set();
 
-    const selectedId = () => api.local.get().selected ?? null;
+    const selectedId = () => api.view.get().selected ?? null;
     function select(id) {
-      api.local.swap((l) => ((l.selected ?? null) === id ? l : { ...l, selected: id }));
+      if ((api.view.get().selected ?? null) !== id) api.view.select(id);
     }
 
     /** Point the camera at a row's object (or the group's members). */
@@ -551,9 +551,9 @@ export default own({
 
       function draw() {
         const snap = api.scene();
-        const loc = api.local.get();
+        const loc = api.view.get();
         const selected = loc.selected ?? null;
-        const status = loc.status ?? null;
+        const status = api.local.get().status ?? null;
         const theme = loc.theme ?? null;
         // Nothing it shows changed (only the hover, or something else's local key)?
         if (last && last.snap === snap && last.selected === selected && last.status === status && last.theme === theme && last.query === query && last.expandSeq === expandSeq && last.presenceSeq === presenceSeq) {
@@ -713,9 +713,9 @@ export default own({
       commands: [tabToggle(tab, { id: "objects", name: "Objects", title: "Everything in the scene, as a tree: select, rename, re-file" })],
       tab,
 
-      update(scene, local, prev) {
-        const was = prev?.local?.selected ?? null;
-        const sel = local.selected ?? null;
+      update(scene, local, prev, view) {
+        const was = prev?.view?.selected ?? null;
+        const sel = view.selected ?? null;
         // A new selection is revealed: at once, or when it arrives (a row
         // just added); one that never arrives is let go when it changes.
         if (sel !== was) pendingReveal = sel;

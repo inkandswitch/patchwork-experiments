@@ -28,11 +28,11 @@ export default own({
           id: "frame",
           name: "Frame all",
           key: ".",
-          state: (target, { local } = {}) => {
+          state: (target, { view } = {}) => {
             if (target != null) return null;
-            return selectedBox(local) ? { label: "Frame selection", title: "Frame the selection (.)" } : { title: "Frame everything (.)" };
+            return selectedBox(view) ? { label: "Frame selection", title: "Frame the selection (.)" } : { title: "Frame everything (.)" };
           },
-          run: () => api.camera.frame(selectedBox(api.local.get()) ?? api.sceneBox()),
+          run: () => api.camera.frame(selectedBox(api.view.get()) ?? api.sceneBox()),
         },
         {
           id: "set-home",
@@ -59,7 +59,7 @@ export default own({
       ],
       input: {
         dblclick(ev) {
-          const target = frameTarget(api.scene(), ev.hit?.id ?? null, api.local.get().selected ?? null);
+          const target = frameTarget(api.scene(), ev.hit?.id ?? null, api.view.get().selected ?? null);
           const box = target ? api.box(target) : null;
           if (!box) return false;
           api.camera.frame(box);

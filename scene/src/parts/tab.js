@@ -28,7 +28,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
 
   /** Dock it (if it isn't); `show: false` puts it behind a pane already shown, a tab to pick. */
   function open({ show = true } = {}) {
-    if (close || !editing(api.local.get())) return;
+    if (close || !editing(api.view.get())) return;
     if (!view) {
       try {
         view = mount(body) ?? null;
@@ -47,7 +47,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
       },
     });
     try {
-      view?.update?.(api.scene(), api.local.get());
+      view?.update?.(api.scene(), api.local.get(), api.view.get());
     } catch (err) {
       console.warn(`[scene] the ${title} tab failed to update`, err);
     }
@@ -59,11 +59,11 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     c?.();
   }
   // out of Edit, the tab goes
-  api.local.watch?.(
+  api.view.watch?.(
     () => api.schedule(() => {
-      if (close && !editing(api.local.get())) shut();
+      if (close && !editing(api.view.get())) shut();
     }),
-    (m) => m.body,
+    (v) => v.body,
   );
 
   return {
@@ -73,10 +73,10 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     isOpen: () => !!close,
     /** the panel's element (for tests and probes) */
     body,
-    update(scene, local) {
+    update(scene, local, viewValue) {
       if (!close) return;
       try {
-        view?.update?.(scene, local);
+        view?.update?.(scene, local, viewValue);
       } catch (err) {
         console.warn(`[scene] the ${title} tab failed to update`, err);
       }

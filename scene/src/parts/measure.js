@@ -113,7 +113,7 @@ export function create(api) {
       api.invalidate();
       return;
     }
-    const theme = api.local.get().theme ?? {};
+    const theme = api.view.get().theme ?? {};
     const dimCol = color(theme.dim, 0xe68019);
     const accent = color(theme.accent, 0x33e6bf);
     const aw = a ? anchorWorld(a, api.scene().objects, worldOf) : null;
@@ -257,12 +257,12 @@ export function create(api) {
 
   return {
     commands,
-    update(scene, local, prev) {
+    update(scene, local, prev, view) {
       if (!holding) return;
-      const was = prev?.local;
+      const was = prev?.view;
       // the first point follows its object; the units or theme may have changed
       const moved = a?.objectId && scene !== prev?.scene;
-      if (!was || moved || local.prefs !== was.prefs || local.theme !== was.theme) draw();
+      if (!was || moved || view.prefs !== was.prefs || view.theme !== was.theme) draw();
     },
     dispose() {
       cancelFrame();
