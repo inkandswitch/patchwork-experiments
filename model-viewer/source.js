@@ -283,6 +283,8 @@ export async function convert3dm(bytes, params = {}, name = "3DM") {
 export default {
   async build({ doc, params }) {
     const name = String(doc?.name ?? "3DM").replace(/\.[^.]+$/, "");
-    return convert3dm(fileBytes(doc), params ?? {}, name);
+    // off the main thread when a worker starts (offthread.js); the same bytes either way
+    const { convertOffThread } = await import("./offthread.js");
+    return convertOffThread(fileBytes(doc), params ?? {}, name);
   },
 };

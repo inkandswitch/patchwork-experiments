@@ -34,8 +34,8 @@ export async function loadModel(bytes, ext) {
       object = (await gltf(ext === "glb" ? buf(bytes) : text(bytes))).scene;
       break;
     case "3dm": {
-      const { convert3dm } = await import("./source.js");
-      const r = await convert3dm(bytes, {}, "model");
+      const { convertOffThread } = await import("./offthread.js");
+      const r = await convertOffThread(bytes, {}, "model");
       object = (await gltf(buf(r.glb))).scene;
       notes = r.meta.notes;
       break;
