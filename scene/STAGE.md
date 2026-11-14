@@ -116,13 +116,24 @@ or identity closes, with what was opened under it, and opens again.
   **Leave** moves it out a link: Escape's last rung, the trail's crumbs (the
   view's breadcrumb along the top, shown while it's inside a link) and its
   Leave. A link that goes, is pinned or stops acting there leaves the focus
-  out to the deepest stage still acting. Focus and selection change only
-  through `selectionStep` (`src/selection.js`), whoever asks. Where the
-  focus is is the view's: no stage sees it (an extension that did could act
-  differently entered than not, I4). The general parts' drawer tabs open
-  when the focus moved open again where it went (the view's `reopen`). The
-  general parts move with the focus at once (`host.setGeneral`); what each
-  doc runs is untouched (H1). `scene.focus` offers Enter on a link (the menu,
+  out to the deepest stage still acting; so does one pointed at another doc
+  (a new occurrence at the same path is not the one entered). Focus and
+  selection change only through `selectionStep` (`src/selection.js`),
+  whoever asks. Where the focus is is the view's: no stage sees it (an
+  extension that did could act differently entered than not, I4): it isn't
+  in `api.view.get()`, Escape's last rung (leave) shows there as no rung,
+  a stage has no Leave, and a focus move doesn't count as placing the
+  camera. The general parts, the view's own, are the exception: they see
+  Escape's ladder whole, find the camera placed after a focus move
+  (`api.camera.touched()`: it came along), and `api.view.reopened(title)` (theirs alone) says
+  whether a drawer tab of that title was open as the focus last moved, once
+  per title, so a tab open as the focus moved opens again where it went.
+  The general parts move with the focus (`host.setGeneral`): the stage
+  entered starts them; in the stage left, one holding nothing stops at
+  once, and one holding something (a body: walk; the held tool: Measure; a
+  session; a pose hold) lingers there, offering nothing, until it lets go,
+  so a walk or a measurement goes on across Enter and Leave (back in that
+  stage before then, it's kept). What each doc runs is untouched (H1). `scene.focus` offers Enter on a link (the menu,
   the inspector) and takes a double-click on one; the outline's link rows
   say what the link is here and enter; the inspector has a Linked scene
   row.
@@ -137,8 +148,9 @@ or identity closes, with what was opened under it, and opens again.
   outermost in, then the object); each stage sees its element
   (`api.view.get().selected`), and `api.view.select(target)` selects its
   own target, cut at the focus (outside it, nothing; inside a link of the
-  focus stage, the link). `api.view.enter(linkId)` and `api.view.leave()`
-  move the focus (false where they can't; a drawn stage's do nothing). One key grammar (`stage/paths.js`) names an object in the
+  focus stage, the link). `api.view.enter(linkId)` moves the focus into a
+  link of the caller's (false where it can't; a drawn stage's does
+  nothing). Leaving is the view's (Escape, the trail). One key grammar (`stage/paths.js`) names an object in the
   viewport and an extension at the router: the outermost's ids are their
   own, any other's `SEP n SEP id`.
 - **Input** goes a segment per stage on the hit's path, innermost first:
@@ -173,7 +185,7 @@ or identity closes, with what was opened under it, and opens again.
 |---|---|---|---|---|
 | **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
 | **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
-| **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, reopen, and the selection and hover as this stage's elements; never the focus) | `api.local.swap(fn)`; `api.view.select(target)`, `api.view.enter(link)`, `api.view.leave()`, `api.setPref`, `api.notify` |
+| **Local** | no (this view) | no | `api.local.get()` (the stage's: `running`, `status`, `edits`, `clock`, `packages`, extensions' keys); `api.view.get()` (the viewer's: body, held, gesture, pointer, escape, theme, notices, prefs, drawer, and the selection and hover as this stage's elements; never the focus) | `api.local.swap(fn)`; `api.view.select(target)`, `api.view.enter(link)`, `api.setPref`, `api.notify` |
 
 (There is no fourth, private place yet: what is one viewer's alone, lasting
 and on all their devices. A keeper that needs one keeps it itself, as the
@@ -560,6 +572,11 @@ describes: {
   peer's edit doesn't tear down someone's game.
 - One still loading stops at once (it holds nothing), and so does one whose
   plugin left the registry (uninstalled: there's no code to keep running).
+- A general part the view moves away (the focus moved: `host.setGeneral`)
+  keeps the busy half: holding nothing, it stops at once (the 2 s are for
+  a peer's edit undone, and a focus move isn't one); holding something,
+  it lingers, offering nothing (no commands, bodies, widgets or place in
+  the chain: its successor at the focus offers them), until it lets go.
 
 When an extension stops:
 1. cancel its open session;
@@ -1014,7 +1031,7 @@ that extension.
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
 | `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | a raycast hit is `{ id, point, normal, distance, back }`: `normal` faces the ray; `back` says the ray met the face from behind (from inside a closed solid) |
-| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
+| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, at? }) → off, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `touched()`: the camera has been placed for this viewer (moved by them, or restored as the view opened; to a general part, also carried across a focus move), so nothing frames it on its own. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
 
 **Bodies, the held tool, attention** (TOOLS.md §3–§5; "The input chain" above)
 

@@ -197,6 +197,9 @@ breadcrumb is the view's trail along the top while the focus is inside a
 link, with Leave; Escape's last rung leaves. The general parts (the
 editor's chrome among them) move into the focus stage, so the halo, the
 inspector and the outline act on the entered doc's objects in its frame;
+one holding something (a walk's body, a held Measure) finishes it where it
+was, so Enter and Leave never change the body or drop the tool (the tool
+goes down only when its stage leaves the focus path);
 they are offered input after every segment wherever the hit is, so the
 menu, keys and prompt still reach outside. In Edit, a click outside the
 focus isn't Edit's (it can't select there) and goes down the chain. The

@@ -98,6 +98,8 @@ export function withNotice(list, n) {
   return Object.freeze([...(list ?? []).filter((x) => x.text !== n.text || x.kind !== n.kind), n]);
 }
 
+const NO_ESCAPE = Object.freeze({ layer: null, hint: "" });
+
 /** A viewer's prefs as stored: a plain object. */
 export function cleanPrefs(v) {
   return Object.freeze(v && typeof v === "object" && !Array.isArray(v) ? { ...v } : {});
@@ -109,10 +111,13 @@ export function cleanPrefs(v) {
  * owner as its extension's id where they are its own (else the view's key,
  * which no id of a stage's equals), and not the focus: where the viewer has
  * entered is the view's, and a stage that read it could act differently
- * entered than not (I4). Pure.
+ * entered than not (I4). So Escape's last rung (leave an entered link) is
+ * shown as no rung, but to the general parts (`general`), the view's own,
+ * whose chrome says what Escape does. Pure.
  * @param {object} v  the view's value  @param {number} n  the stage's number  @param {string[]} prefix  its path
+ * @param {{ general?: boolean }} [o]
  */
-export function projectView(v, n, prefix) {
+export function projectView(v, n, prefix, { general = false } = {}) {
   const own = (key) => {
     if (key == null) return null;
     const p = parseKey(key);
@@ -122,6 +127,7 @@ export function projectView(v, n, prefix) {
   const { focus: _focus, ...rest } = v;
   return Object.freeze({
     ...rest,
+    ...(!general && v.escape?.layer === "focus" ? { escape: NO_ESCAPE } : {}),
     selected: elementOf(v.selected, prefix),
     hovered: elementOf(v.hovered, prefix),
     body: v.body?.ext != null ? Object.freeze({ ...v.body, ext: own(v.body.ext) }) : v.body,
@@ -264,9 +270,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
-    // the drawer's tabs as the focus last moved ({ tabs, shown } by title): the general parts' tabs
-    // close with them and open again in the focus they move to (parts/tab.js)
-    reopen: null,
   });
   const onStorage = (e) => {
     if (e.key !== prefsKey) return;
@@ -292,8 +295,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     port.append(msg);
   }
   // has the camera been placed for this viewer, other than by their own hand: restored as the view
-  // opened (their saved camera, the doc's home), or carried across a focus move (Enter, Leave)?
+  // opened (their saved camera, the doc's home)? And has it been carried across a focus move, which
+  // only the general parts are told (they start again where the focus went: scene.autoframe there
+  // leaves it be)?
   let cameraPlaced = false;
+  let cameraCarried = false;
   let cameraTimer = null;
   cleanups.push(
     viewport.onCameraEnd(() => {
@@ -436,6 +442,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const o = want.get(k);
       if (!(o && rec.key === occKey(o) && stages.get(rec.stage.n) === rec.stage)) closing.push(rec.stage.path);
     }
+    // the focus is an occurrence, not a path: one whose stage closes is left now, so a new one opened at
+    // the same path (the link pointed at another doc) is the link going, not the focus staying (Decisions 8)
+    const focusNow = atom.get().focus;
+    const cut = closing.filter((p) => p.length <= focusNow.length && p.every((x, i) => x === focusNow[i])).reduce((a, p) => (a == null || p.length < a ? p.length : a), null);
+    if (cut != null) focusOn(focusNow.slice(0, cut - 1));
     for (const p of closing)
       for (const [k, rec] of [...opened])
         if (rec.stage.path.length >= p.length && p.every((x, i) => x === rec.stage.path[i])) {
@@ -614,24 +625,33 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const at = focusStage();
     for (const s of stages.values()) s.setGeneral(s === at);
   }
+  // The drawer's tabs as the focus last moved, by title, for the general parts that start where it went
+  // (parts/tab.js). The view's: only a general part is handed it, a title once (`reopened`).
+  let reopening = null;
   /**
-   * The focus moved (from the view's value `was`): the general parts move to
-   * the stage it's in (their drawer tabs reopen there), a tool held from a
-   * stage it left behind is put down, and the trail shows where it is.
+   * The focus moved (from the view's value `was`): a tool held from a stage
+   * it left behind is put down, the general parts move to the stage it's in
+   * (one still holding something finishes it where it was: host.setGeneral),
+   * their drawer tabs open again there, and the trail shows where it is.
    */
   function focusMoved(was) {
     if (dead) return;
-    // the camera stays where it is: the general parts started in the stage entered (scene.autoframe) don't frame it
-    cameraPlaced = true;
-    atom.swap((m) => ({ ...m, reopen: Object.freeze({ tabs: Object.freeze([...(was.drawer?.tabs ?? [])]), shown: was.drawer?.shown ?? null }) }));
-    placeGeneral();
     const held = router?.held();
     const p = held ? parseKey(held.owner) : null;
     const s = p ? stages.get(p.n) : null;
     // (a stage on the focus path is one whose path the focus starts with)
     if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown();
+    reopening = { tabs: new Set(was.drawer?.tabs ?? []), shown: was.drawer?.shown ?? null };
+    cameraCarried = true;
+    placeGeneral();
     showTrail();
     router?.refresh();
+  }
+  /** Was a tab titled `title` open as the focus last moved? Answered once per title per move: { show } or null. */
+  function reopened(title) {
+    if (!reopening?.tabs.has(title)) return null;
+    reopening.tabs.delete(title);
+    return { show: reopening.shown === title || !reopening.shown };
   }
 
   // ─── the trail: where the focus is (TOOLS.md §6's breadcrumb) ─────────────
@@ -1182,7 +1202,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     get cameraPlaced() {
       return cameraPlaced;
     },
+    /** the camera has come along across a focus move (a general part's api.camera.touched) */
+    get cameraCarried() {
+      return cameraCarried;
+    },
     restoreCamera,
+    reopened,
     // the stages
     addStage,
     removeStage,

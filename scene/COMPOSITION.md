@@ -199,8 +199,10 @@ So twenty linked games don't make twenty menus. A general part calls the
 focus stage's api, so the editor edits the focus's doc, but it is in no
 stage's running set. *As built (step 14):* each stage's host can run the
 general parts, and the view has the focus stage's alone do so; Enter and
-Leave stop them in the stage left and start them in the one entered, at
-once (`host.setGeneral`), what each doc runs untouched (H1). Carrying shows the other case: it is a trait part
+Leave start them in the stage entered and stop them in the one left by
+H2's busy half (`host.setGeneral`): one holding nothing at once, one
+holding a body, the tool, a session or a pose when it lets go, offering
+nothing meanwhile. What each doc runs is untouched (H1). Carrying shows the other case: it is a trait part
 (`scene.carry` on the things that can be carried), so each stage whose doc
 has carryable things runs its own, and a card aboard is carried by the
 game's stage, in the game's doc.
@@ -265,7 +267,9 @@ view computes them. A sea's water height doesn't, because only sailing
 knows it.
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
-applies; the stage's Look and Edit (the orbit camera) ride the focus stage's latest base ride. A seat
+applies; the stage's Look and Edit (the orbit camera) ride the latest base
+ride of any acting stage, wherever the focus is (it scopes selection, not
+the camera). A seat
 body rides the game's root; sailing's follow on her hull is base, and
 gives way to any other body with no flag. `camera.ride(null)` rides the
 stage's root, which is the link. `fallback` and `camera.riding()` go, and
@@ -575,7 +579,7 @@ Each is argued above and checkable over finite cases.
 | I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone, in X, in Y; two in one page) on in-memory Automerge × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field |
-| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the focus's latest base ride | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role |
+| I8 | **Chain and camera.** Inner segments before outer, out to the outermost whatever the focus; each (stage, extension) once; no segment, tool or body from a mirror; no held tool from a stage off the focus path; the applied ride is the current body's, and Look's and Edit's is the latest base ride of any acting stage, whatever the focus | `chainOrder` over depth ≤3 × hit × holder placement × focus × held tool; every body stack ≤3 × rides in each stage role; a sibling link's stage riding × every focus |
 | I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field when S has no edge outside | Every sibling set of a fixed 6-object scene with traits, refs, groups and a seats map × K ⊆ the root's traits |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on ≤3 docs with one bound object and one claim |
@@ -805,11 +809,14 @@ ships alone and proves something.
     whoever asks: an extension of any stage (`api.view.select` is cut at the
     focus), Edit's click, the ladder, a link going. `api.view.enter(link)`
     goes where the link's doc acts (a mirror's: where it's live; a pin and a
-    closed link aren't entered) and `api.view.leave()` out a link; the view
-    reaches any focus whose every link acts by leaves and enters
-    (`focusSteps`). A link that goes, is pinned or stops acting there leaves
-    the focus out to the deepest stage still acting. The general parts run
-    in the focus stage and no other (`host.setGeneral`), offered after every
+    closed link aren't entered); leaving is the view's (Escape, the trail);
+    the view reaches any focus whose every link acts by leaves and enters
+    (`focusSteps`). A link that goes, is pinned, stops acting there or is
+    pointed at another doc leaves the focus out to the deepest stage still
+    acting. The general parts are offered by the focus stage and no other
+    (`host.setGeneral`); one holding something when the focus moves
+    finishes it where it was (a walk goes on; a held Measure stays held
+    while its stage is on the focus path). They are offered after every
     segment wherever the hit is, and the input path always ends at the focus,
     so outside an entered link verbs, carries, keys and the menu still work;
     Edit's click outside the focus isn't Edit's and goes down the chain. The
@@ -833,10 +840,20 @@ ships alone and proves something.
     B (B linking C live), a mirror R of B, a pin P of B and a closed link:
     11 states × 37 events, each transition what the pure model says, the
     focus and every link on its way a stage that acts, each stage seeing
-    its own element and never the focus, the general parts in the focus
-    stage alone, nothing written; a raw `select` fails it at the first
+    its own element and never the focus (nothing it can read of the view
+    changes on a focus move but its element of the selection, and it has
+    no Leave and no `reopened`), the general parts in the focus stage
+    alone, nothing written; a raw `select` fails it at the first
     transition. Every way a link can go while entered (removed, pinned, a
-    link ahead of it) × the focus at B or C; another view of the same scene
+    link ahead of it, pointed at a doc open here or not yet found) × the
+    focus at B or C; every body (Look, Edit, a general part's walk, a trait
+    part's seat) × Enter, Enter deeper, Leave, Leave two: the body stays,
+    the walk holding it isn't started again, nothing is offered twice; the
+    held tool × six moves: held while its stage is on the focus path, else
+    put down; a sibling link's ride applies whatever the focus (I8). In
+    `stage/host.test.js`, the view's move over every sequence of ≤4 of in,
+    out, busy, idle and a recheck (781): a general part stops only out and
+    idle, offers only in, is kept if it comes back before stopping. Another view of the same scene
     untouched (its focus, parts and running sets, no doc written); a press
     outside reaching its own parts then the general ones; double-click;
     the host's toolbar command shown and run in the host while entered, the
@@ -849,12 +866,15 @@ ships alone and proves something.
     the boat's link untouched; B untouched; Escape twice back out) and
     `links-run.mjs` step 6b (Ana, seated in her room, enters G by its
     mirror's link, where it acts; nothing else changes for anyone; she
-    draws entered; Escape leaves). Decisions, step 14. Not done here: the
+    draws entered; Escape leaves). Decisions, step 14, and its review
+    fixes. Not done here: the
     clock chip and the packages card show the focus doc's only (TOOLS.md
     §6 wants a chip per doc on the focus path); "who's here" is announced
     on the focus doc's channel (as since step 12), so entering a game moves
     a viewer's body chip there and viewers of the host see them as "look"
-    meanwhile; out of focus isn't tinted; in Edit the first click of a
+    meanwhile, and walk's avatars of others (drawn by a general part from
+    its stage's presence) are the focus doc's while you aren't walking
+    yourself (Decisions, step 14 review, 1); out of focus isn't tinted; in Edit the first click of a
     double-click selects the link and opens the inspector, which narrows the
     canvas under the second click (the probe aims again; a person on a small
     part of a link may miss).
@@ -923,11 +943,12 @@ Made while building Edit in context, with the project lead away.
 
 1. **The general parts move with the focus by stopping and starting.** Every
    stage's host can run them; the view has the focus stage's alone do so
-   (`host.setGeneral`), and they stop at once in the stage left, not
-   lingering, since the view moved them, not the doc. Why: §3's "the view
-   runs it once, at the focus" with the one mechanism that exists (start,
-   stop); pointing a running part's api at another stage would be a second.
-   Cost: the chrome is made again on Enter and Leave.
+   (`host.setGeneral`). *Revised in review (below, 1):* in the stage left
+   they stop by H2's busy half, not at once. Why: §3's "the view runs it
+   once, at the focus" with the one mechanism that exists (start, stop);
+   pointing a running part's api at another stage would be a second.
+   Cost: the chrome is made again on Enter and Leave; what that loses is
+   listed in the review decisions.
 2. **The general parts come after every segment, wherever the hit is, and
    the input path always ends at the focus.** Why: with them only in the
    focus stage's segment, entering a game would cut the boat's verbs off
@@ -955,7 +976,8 @@ Made while building Edit in context, with the project lead away.
    mirror's Enter and the trail's crumbs move it more than a level.
 5. **No stage sees the focus**: `projectView` leaves it out. Why: an
    extension that read it could act differently entered than not (I4), as
-   step 13's 21 removed `api.role`.
+   step 13's 21 removed `api.role`. *Tightened in review (below, 3):* nor
+   anything that moves with it.
 6. **Selecting from any stage is cut at the focus.** `api.view.select` in a
    game's stage with the focus on the boat selects the link (it used to
    store the game's path). Why: H10 by construction, whoever asks.
@@ -971,10 +993,10 @@ Made while building Edit in context, with the project lead away.
    several docs (each host's name for its link), which no stage's extension
    may read; the view holds the stages and the focus. Shown only while the
    focus is inside a link.
-10. **Drawer tabs reopen where the focus went**, through the view's
-    `reopen` (the tabs' titles as the focus moved), read once by a tab as
-    its part starts. Why: entering from the outline would otherwise close
-    the outline it was entered from.
+10. **Drawer tabs reopen where the focus went**: the view keeps the tabs'
+    titles as the focus moved, and a general part asks
+    `api.view.reopened(title)` as it starts (review, 3). Why: entering from
+    the outline would otherwise close the outline it was entered from.
 11. **A link's outline row is entered, not expanded in place.** Why: the
     outline shows the focus doc, where the selection lives; a linked doc's
     rows shown from outside could be neither selected nor edited there.
@@ -986,17 +1008,86 @@ Made while building Edit in context, with the project lead away.
     enters the game (play goes on: verbs reach through).
 13. **The camera stays where it is on Enter and Leave**, and Look and Edit
     keep riding the latest base ride of any acting stage. Why: entered into
-    a game aboard, the boat's follow should still carry the camera; I8's
-    "the focus's latest base ride" is read as the latest on the focus path,
-    which is that in every example (nothing off the focus path rides the
-    camera). Since `scene.autoframe` is a general part, it starts again in
-    the stage entered, and would frame an untouched camera there; so a focus
-    move counts as placing the camera, as restoring it does
-    (`api.camera.touched()`: moved by the viewer, restored on opening, or
-    carried across a focus move).
+    a game aboard, the boat's follow should still carry the camera. *Revised
+    in review (below, 4 and 5):* I8 and §4 now say "any acting stage", and
+    only a general part counts a focus move as placing the camera.
 14. **The clock chip and the packages card show the focus doc's**, being
     general parts. Deferred: TOOLS.md §6's chip per doc on the focus path,
     and every open doc's packages in one prompt (FOLLOWUPS).
+
+## Decisions, step 14 review (2026-11-14, made unattended)
+
+The review found that moving the general parts by stop-and-start threw away
+what they held, and that the focus still showed through side doors.
+
+1. **A general part the view moves away keeps H2's busy half.** In the
+   stage left, one holding nothing stops at once; one holding a body, the
+   held tool, an open session or a pose hold lingers there until it lets
+   go, offering nothing (no commands, bodies, widgets or place in the
+   chain: `host.offering()`), while the stage entered starts its own. Back
+   in that stage before it stops, it is kept. A held tool still goes down
+   when its stage leaves the focus path (§5), and that's done before the
+   parts move, so its part then stops at once. Why: Enter is everyone's in
+   every body (decision 12), and stopping walk, the general part whose body
+   it is, dropped a walker to Look; a held Measure went down even on Enter
+   deeper, where its stage stays on the focus path. H2 already says a busy
+   part isn't torn down under someone; the view's move is one more cause of
+   a stop, so it takes the same rule, but not the 2 s grace, which is for a
+   peer's edit undone (a focus move isn't one, and the old chrome would
+   show twice for 2 s). Rejected: (a) re-pointing a running part at the new
+   focus stage (the review's option 3). A part's state is in its stage's
+   terms: walk's pose is in its stage's frame, a held tool and a body are
+   owned by a (stage, extension) key, `api.local` is the stage's, and its
+   subscriptions are on its stage's doc and channel. Re-pointing would move
+   all of these at once under the part, which can't be told without seeing
+   the focus (decision 5). (b) Splitting general parts into view-wide ones
+   (walk) and focus-following chrome (the review's option 2). That needs a
+   second kind of general part, declared by a flag. No principle tells the
+   kinds apart: a walk is a body, which any part may offer. The busy rule
+   covers walk while it matters, when you're walking. *What a restart still
+   loses*, for a part holding nothing: the DOM state of its chrome beyond
+   which drawer tabs were open (scroll, a tab's own expansion); its
+   `<ext>.*` keys in `api.local`, which are its stage's; and anything it
+   draws from its stage's presence. So once you stop walking while
+   entered, walk runs in the entered stage and draws that doc's walkers,
+   not the host's (the same root as the who's-here chip's deferral). A
+   busy part's docked tab stays with it until it stops. No shipped part
+   both owns a tab and holds something.
+2. **The focus is an occurrence, not a path.** When a stage on the focus
+   path closes in a relink, the focus leaves to the level above it before
+   anything reopens. So a link pointed at another doc counts as the link
+   going (decision 8), whether or not the new doc is already open in this
+   view. Why: before this, the focus stayed at the same path, in a
+   different doc, with a selection naming an id of the old one.
+3. **Nothing that moves with the focus is a stage's to read.** `reopen`
+   left the view's value; the view keeps the titles, and only a general
+   part's api has `view.reopened(title)`, answered once per title per move.
+   `api.view.leave()` went: leaving is the view's (Escape, the trail), and
+   no extension used it, while its false at the outermost told a stage
+   whether the viewer had entered anything. Escape's last rung ("leave")
+   shows to a stage's parts as no rung, and to the general parts as it is
+   (the body chip says what Esc does). H10's harness now asserts that
+   nothing a stage's part reads of the view changes on a focus move except
+   its element of the selection. That check found the Escape rung, which
+   the review had missed. Why: decision 5 means what it says; general parts
+   are the view's own, and their api says so.
+4. **I8 and §4 say what the code does: the latest base ride of any acting
+   stage, whatever the focus.** Why: the focus scopes selection, not input
+   (TOOLS.md §3), and the camera is the body's. Filtering rides by the
+   focus path would stop a linked boat's follow while the viewer is at the
+   room, and make where the camera goes depend on where you entered.
+   Proved with a sibling link riding × every focus.
+5. **A focus move counts as placing the camera only for the general
+   parts.** A stage's part's `api.camera.touched()` is "moved by the viewer
+   or restored as the view opened"; a general part's also counts "carried
+   across a focus move" (`view.cameraCarried`), so `scene.autoframe`,
+   started again in the stage entered, leaves the camera be. Why: the
+   general parts are the view's own and are restarted by the move, so for
+   them the camera really did come along. A stage's part must not learn of
+   the move (decision 3): sailing's quarter view waits for a camera nobody
+   placed. Tried and dropped: counting any extension's `camera.set` or
+   `frame` as placing it. That removes the flag, but autoframe's
+   provisional framing then counts, and sailing's quarter view never comes.
 
 ## Decisions, step 13 (2026-11-14, made unattended)
 

@@ -357,16 +357,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // the listed packages this viewer doesn't have (STAGE.md, "Packages")
     packages: Object.freeze({ ask: Object.freeze([]), loading: Object.freeze([]), failed: Object.freeze([]), missing: true }),
   });
-  /** The view's value as this stage sees it (view.js projectView), the same value while the view's is. */
-  let viewSeen = null;
-  let viewProjected = null;
-  const viewValue = () => {
+  /** The view's value as this stage sees it (view.js projectView), the same value while the view's is; `general`: as its general parts, the view's own, see it. */
+  const seenBy = [null, null].map((_, g) => ({ general: g === 1, from: null, value: null }));
+  const viewValue = (general = false) => {
     const v = view.atom.get();
-    if (v !== viewSeen) {
-      viewSeen = v;
-      viewProjected = projectView(v, n, path);
+    const c = seenBy[general ? 1 : 0];
+    if (v !== c.from) {
+      c.from = v;
+      c.value = projectView(v, n, path, { general: c.general });
     }
-    return viewProjected;
+    return c.value;
   };
   const viewport = vp; // (the raw viewport, for what isn't spatial: frames, loops, invalidation)
   if (n === 0) view.restoreCamera(doc());
@@ -1403,11 +1403,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     const snap = scene();
     const loc = local.get();
-    const vw = viewValue();
     const content = contentDirty;
     contentDirty = false;
     const running = host.instances();
     for (const r of running) {
+      const vw = viewValue(r.scope === "general");
       const was = seen.get(r.instance);
       const changed = !was || was.scene !== snap || was.local !== loc || was.view !== vw;
       if (!changed && !content) continue;
@@ -2168,7 +2168,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (bag.delete(give)) give();
       };
     };
-    let watched = viewValue(); // what api.view.watch last told of
+    const general = rec.scope === "general";
+    const viewNow = () => viewValue(general);
+    let watched = viewNow(); // what api.view.watch last told of
     const ownEl = (el, parent) => {
       if (!live()) return el;
       own.els.add(el);
@@ -2234,11 +2236,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * select(target) selects this stage's target (null: nothing).
        */
       view: Object.freeze({
-        get: viewValue,
+        get: viewNow,
         watch: (fn, select) =>
           acquire(own.offs, () =>
             view.atom.watch(() => {
-              const next = viewValue();
+              const next = viewNow();
               const prev = watched;
               watched = next;
               if (next === prev) return;
@@ -2250,8 +2252,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         /** move the focus into this stage's link `target` (where its doc acts: a mirror's, where it's live): false if it can't be entered */
         enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
-        /** move the focus out one link: false at the scene itself */
-        leave: () => (live() ? view.leave() : false),
+        // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
+        // a general part, the view's own, is told what moving the focus closed of its: was a tab
+        // titled `title` open as the focus last moved here? Once per title per move ({ show } | null)
+        ...(general ? { reopened: (title) => (live() ? view.reopened(String(title)) : null) } : {}),
       }),
       pref,
       setPref,
@@ -2337,8 +2341,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
         ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
-        /** has the camera been placed for this viewer: moved by them, restored as they open the view, or carried across a focus move? (nothing frames it on its own then) */
-        touched: () => viewport.touched() || view.cameraPlaced,
+        /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? To a general part, the view's own, also: carried across a focus move */
+        touched: () => viewport.touched() || view.cameraPlaced || (general && view.cameraCarried),
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
@@ -2441,7 +2445,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // bodies, the held tool, attention (TOOLS.md §3–§5)
       body: Object.freeze({
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
-        current: () => viewValue().body,
+        current: () => viewNow().body,
         /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never the base: Look or Edit) */
@@ -2540,7 +2544,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop, enter: () => false, leave: () => false }),
+      view: facet(api.view, { select: noop, enter: () => false }),
       setPref: noop,
       notify: () => null,
       overlay: () => loose("stage-overlay"),
@@ -2590,7 +2594,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function widgetsAt(ev) {
     const out = [];
     const f = scope.frame();
-    for (const r of host.running()) {
+    for (const r of host.offering()) {
       const input = r.instance.input;
       if (typeof input?.widgetAt !== "function") continue;
       try {
@@ -2615,8 +2619,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const order = chainOrder({ running, holders });
     return { order, holderOf: (ext) => holders.get(ext)?.id ?? null };
   }
-  /** The general extensions it runs (while it is the focus), in running order. */
-  const generals = () => host.running().filter((r) => r.scope === "general").map((r) => r.id);
+  /** The general extensions it runs (while it is the focus), in running order: not one the view moved away that still finishes what it holds. */
+  const generals = () => host.offering().filter((r) => r.scope === "general").map((r) => r.id);
 
   /** One of this stage's extensions' commands, or null. */
   function commandOf(ext, command) {
