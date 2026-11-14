@@ -58,7 +58,11 @@ export class SessionClock {
   /**
    * Stops the machine `margin` seconds from now (for everyone). A stop
    * already set stands: a second pause in its margin would set one earlier,
-   * which a peer ahead of the second pauser may have passed.
+   * which a peer ahead of the second pauser may have passed. That holds for
+   * pauses made in sequence, each pauser having seen the stop before. Two
+   * made at once each write a stop, the merge keeps one, and a peer that had
+   * passed the one kept goes back to it: its timeline rewinds, as for a
+   * pause that reaches a peer ahead of the pauser by more than the margin.
    */
   pause(margin = 0.25) {
     if (this.#state().until !== undefined) return;

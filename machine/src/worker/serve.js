@@ -62,13 +62,16 @@ export function serve(endpoint, local = {}) {
         pictures[view] = p;
         transfer.push(p.rgba.buffer);
       }
-      // A query is answered again only when the state changed, as a view is drawn.
+      // A query is asked of the host again only when the state changed, as a
+      // view is drawn: each answer copies the state, and a kind the engine
+      // can't answer (null, not loading) is remembered too, so it isn't
+      // asked every frame. A null while loading isn't the engine's answer.
       const answers = {};
       for (const kind of queries) {
         if (asked.get(kind) === at) continue;
         const a = host.query(kind);
+        if (a || !host.loading) asked.set(kind, at);
         if (!a) continue;
-        asked.set(kind, at);
         answers[kind] = a;
         transfer.push(a.buffer);
       }

@@ -18,23 +18,44 @@
 // - offers Play: a port, and the pad in hand as the held tool, its keys its
 //   own; Escape puts it down and gives the port back.
 //
-// The screen shows one player's view for everyone (the trait's `player`): a
-// screen is a thing in the world, and everyone looking at it sees the same
-// picture.
+// The screen shows one player's view for everyone (the trait's `player`,
+// for a machine with a view per player: Doom): a screen is a thing in the
+// world, and everyone looking at it sees the same picture.
+//
+// Starting is patient (start.js): a session nobody has written yet, or
+// content still syncing, is asked for again on the stage's time, so a view
+// that fails or leaves while making the session never strands the object.
 
 import { Screen, ASPECT, viewOf } from "../present/screen.js";
 import { WASM, bytes, load, portsOf, newSession } from "../patchwork/load.js";
 import { pad, KEYS } from "../patchwork/input.js";
 import { runMachine } from "./running.js";
+import { retrying, makeSession } from "./start.js";
 
 export const TRAIT = "machine";
 export const PROVIDER = "machine";
+/** ms between tries at starting a machine that couldn't start yet (the stage's time). */
+export const RETRY_MS = 2000;
 
-// FNV-1a of a picture's bytes, for comparing what two views show.
-function fnv(rgba) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < rgba.length; i += 7) h = Math.imul(h ^ rgba[i], 0x01000193);
-  return (h >>> 0).toString(16);
+/**
+ * The port whose view the screen shows, and which Play offers first: the
+ * trait's `player` for a machine with a view per player (Doom), within its
+ * ports; 0 for one with one picture (the Super NES), whatever the trait says.
+ */
+export function playerOf(kind, player, ports) {
+  if (kind !== "doom") return 0;
+  const p = Math.floor(Number(player ?? 0));
+  return Number.isFinite(p) ? Math.max(0, Math.min(ports - 1, p)) : 0;
+}
+
+/**
+ * The screen's matrix, into `out`: the unit quad scaled to the screen's
+ * width and height at its centre (`extras.machine.screen`, the cabinet's
+ * frame), then by the object's displayed world matrix (`at`, api.worldOf).
+ */
+export function screenMatrix(THREE, at, screen, out = new THREE.Matrix4()) {
+  const local = new THREE.Matrix4().compose(new THREE.Vector3(...screen.center), new THREE.Quaternion(), new THREE.Vector3(screen.width, screen.height, 1));
+  return out.multiplyMatrices(new THREE.Matrix4().fromArray(at), local);
 }
 
 function create(api) {
@@ -51,75 +72,86 @@ function create(api) {
   const traitOf = (id) => api.scene().objects?.[id]?.traits?.[TRAIT] ?? null;
 
   function entry(id, o) {
-    const e = { id, url: o.sourceUrl, session: o.traits[TRAIT].session ?? null, note: "Starting…", m: null, screen: null, mesh: null, view: null, pad: null, kind: null, title: null, gone: false, last: null };
+    const e = { id, url: o.sourceUrl, session: o.traits[TRAIT].session ?? null, note: "Starting…", m: null, screen: null, mesh: null, view: null, pad: null, kind: null, title: null, ports: 1, gone: false, stop: null };
     machines.set(id, e);
-    open(e).catch((err) => {
-      if (!e.gone) e.note = `Couldn't start it: ${err?.message ?? err}`;
+    e.stop = retrying({
+      attempt: () => open(e),
+      after: (ms, fn) => api.clock.after(ms, fn),
+      every: RETRY_MS,
+      failed: (err) => void (e.gone || (e.note = `Couldn't start it yet: ${err?.message ?? err}. Trying again`)),
     });
     return e;
   }
 
+  // One try at starting the machine: true once it runs (or its session is
+  // written, which opens a new entry for it), false to try again later.
   async function open(e) {
     const say = (t) => void (e.gone || (e.note = t));
     const doc = (await api.repo.find(e.url)).doc();
-    if (e.gone) return;
+    if (e.gone) return true;
     e.kind = doc?.kind ?? null;
     e.title = doc?.title ?? "Machine";
-    if (!e.kind || !doc.content) return say("No game yet: open it in the Machine tool and choose one");
-    if (!api.writable()) return say("A machine plays only where the scene can be written");
-    if (!e.session) return void (await makeSession(e, doc));
+    if (!e.kind || !doc.content) return say("No game yet: open it in the Machine tool and choose one"), false;
+    if (!api.writable()) return say("A machine plays only where the scene can be written"), false;
+    if (!e.session) {
+      const made = await makeSession(sessionMaker(e, doc));
+      if (!made) say("Starting…"); // another view is making it: it may fail or leave
+      return made;
+    }
     const { session, content, wasm } = await load(api.repo, { session: e.session, content: doc.content, kind: e.kind }, say);
-    if (e.gone) return;
+    if (e.gone) return true;
     e.pad = pad(e.kind, session.doc().engine.inputBytes);
+    e.ports = portsOf(e.kind, content);
     say("Joining…");
     const m = await runMachine({
       repo: api.repo,
       url: e.session,
       wasm,
       content,
-      ports: portsOf(e.kind, content),
+      ports: e.ports,
       world: api.clock,
       now: () => api.clock.now(),
       writable: () => api.writable(),
       by: api.viewer ?? null,
       input: () => e.pad.sample(),
     });
-    if (e.gone) return void m.close();
+    if (e.gone) return m.close(), true;
     e.m = m;
     e.screen = new Screen({ THREE, aspect: ASPECT[e.kind] ?? ASPECT.square });
     e.mesh = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: e.screen.texture, toneMapped: false }));
     e.mesh.matrixAutoUpdate = false;
     e.mesh.raycast = () => {}; // the cabinet behind it is what a press finds
     e.mesh.userData.noPick = true;
+    e.mesh.name = `machine.screen:${e.id}`;
     e.mesh.visible = false;
     layer.add(e.mesh);
     e.note = null;
     loop();
+    return true;
   }
 
   // A copy of a machine object, or one just laid out, has no session yet:
-  // the view that claims the job makes one (on the scene's world time, so
-  // its tick 0 is now) and writes it on the trait; every view then opens it.
-  async function makeSession(e, doc) {
-    const release = api.claim(e.id, "machine.session");
-    if (!release) return void (e.note = "Starting…"); // someone else is making it
-    try {
-      const content = (await api.repo.find(doc.content)).doc()?.bytes;
-      if (!content?.length) throw new Error("what it runs isn't here yet");
-      const wasm = await bytes(WASM[e.kind]);
-      const s = await newSession(api.repo, { kind: e.kind, wasm, content: new Uint8Array(content), wall: api.clock.t() * 1000 });
-      if (e.gone || traitOf(e.id)?.session) return;
+  // the view holding the object's claim makes one (on the scene's world
+  // time, so its tick 0 is now) and writes it on the trait; every view then
+  // opens it (start.js).
+  const sessionMaker = (e, doc) => ({
+    claim: () => api.claim(e.id, "machine.session"),
+    has: () => e.gone || !!traitOf(e.id)?.session,
+    content: async () => {
+      const b = (await api.repo.find(doc.content)).doc()?.bytes;
+      return b?.length ? new Uint8Array(b) : null;
+    },
+    create: async (content) => (await newSession(api.repo, { kind: e.kind, wasm: await bytes(WASM[e.kind]), content, wall: api.clock.t() * 1000 })).url,
+    write: (url) =>
       api.change((d) => {
         const t = d.objects?.[e.id]?.traits?.[TRAIT];
-        if (t && !t.session) t.session = s.url;
-      });
-    } finally {
-      release();
-    }
-  }
+        if (t && !t.session) t.session = url;
+      }),
+  });
 
   function close(e) {
     e.gone = true;
+    e.stop?.();
     if (held?.id === e.id) held.put();
     machines.delete(e.id);
     e.mesh?.removeFromParent();
@@ -146,7 +178,6 @@ function create(api) {
   // Every frame while there are machines: step each host, show its picture
   // on its screen where its object is drawn, and say what's up beside it.
   const m4 = new THREE.Matrix4();
-  const local = new THREE.Matrix4();
   function loop() {
     if (machines.size && !stopLoop) stopLoop = api.loop(frame);
     else if (!machines.size && stopLoop) {
@@ -162,16 +193,11 @@ function create(api) {
       const centre = screen && at ? new THREE.Vector3(...screen.center).applyMatrix4(m4.fromArray(at)) : null;
       if (e.m) {
         e.m.frame();
-        const player = e.kind === "doom" ? Math.max(0, Math.floor(traitOf(e.id)?.player ?? 0)) : 0;
+        const player = playerOf(e.kind, traitOf(e.id)?.player, e.ports);
         if (e.view?.player !== player) e.view = Object.assign(viewOf(e.m.host, { player }), { player });
-        const p = e.view();
-        if (p) {
-          e.screen.show(p);
-          e.last = { tick: e.m.host.tick, hash: p.width ? fnv(p.rgba) : null };
-        }
+        e.screen.show(e.view());
         if (screen && at) {
-          local.compose(new THREE.Vector3(...screen.center), new THREE.Quaternion(), new THREE.Vector3(screen.width, screen.height, 1));
-          e.mesh.matrix.multiplyMatrices(m4.fromArray(at), local);
+          screenMatrix(THREE, at, screen, e.mesh.matrix);
           e.mesh.matrixWorldNeedsUpdate = true;
           e.mesh.visible = true;
         }
@@ -194,7 +220,7 @@ function create(api) {
     const e = machines.get(id);
     if (!e?.m) return;
     if (held?.id === id) return void held.put();
-    const port = e.m.play(Math.floor(traitOf(id)?.player ?? 0));
+    const port = e.m.play(playerOf(e.kind, traitOf(id)?.player, e.ports));
     if (port == null) return void api.notify("Every port on that machine is taken");
     const mine = { id, put: null };
     const input = {
@@ -236,13 +262,6 @@ function create(api) {
         run: (target) => play(target),
       },
     ],
-    /** What each machine on this view shows: { [object id]: { tick, hash, seat, running, note } }. */
-    machines() {
-      const out = {};
-      for (const [id, e] of machines)
-        out[id] = { tick: e.m?.host.tick ?? null, shown: e.last, seat: e.m?.host.seat?.port ?? null, running: e.m?.clock.running() ?? false, note: e.note ?? stoppedNote(e), status: e.m ? { fault: e.m.host.status.fault, desync: e.m.host.status.desync?.length ?? 0 } : null };
-      return out;
-    },
     dispose() {
       for (const e of [...machines.values()]) close(e);
       stopLoop?.();
