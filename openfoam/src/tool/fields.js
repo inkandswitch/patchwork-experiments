@@ -23,11 +23,13 @@ const css = (el, name, fallback) => cssColor(el, name, fallback);
  */
 function fanCCW(g, a, b, c) {
   const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  // a triangle seen edge-on covers nothing: skip it (a big model has thousands)
+  if (Math.abs(cross) < 0.02) return;
   const [p, q] = cross < 0 ? [c, b] : [b, c];
+  // fill() closes each sub-path itself; an explicit closePath per triangle doubled the cost
   g.moveTo(a[0], a[1]);
   g.lineTo(p[0], p[1]);
   g.lineTo(q[0], q[1]);
-  g.closePath();
 }
 const rgb = (c) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
 

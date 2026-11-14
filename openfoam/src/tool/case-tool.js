@@ -180,41 +180,77 @@ export default function CaseTool(handle, element) {
   });
 
   let reacquire = null;
+  // One acquisition at a time. Reading a model can cost seconds (a 92 MB
+  // Rhino file is converted whole), and a big hull doc takes a while to
+  // arrive, while the case doc keeps changing: each of those used to start
+  // another full read (five for one link, measured). A request that comes
+  // in while one runs makes exactly one more afterwards.
+  const acq = { running: false, again: false };
   async function acquire() {
-    const url = doc()?.hull?.url ?? null;
-    if (!url) {
-      hull = { ...hull, url: null, result: null };
-      prepared = null;
-      renderHull();
+    if (acq.running) {
+      acq.again = true;
       return;
     }
-    hull.loading = true;
-    renderHull();
-    const r = await acquireHull(repo, url).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
-    if (disposed || doc()?.hull?.url !== url) return;
-    hull = { ...hull, url, result: r, loading: false };
-    prepared = null;
-    prepare();
+    acq.running = true;
+    try {
+      do {
+        acq.again = false;
+        const url = doc()?.hull?.url ?? null;
+        if (!url) {
+          hull = { ...hull, url: null, result: null };
+          prepared = null;
+          renderHull();
+          break;
+        }
+        hull.loading = true;
+        renderHull();
+        const r = await acquireHull(repo, url).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
+        if (disposed) return;
+        if (doc()?.hull?.url !== url) {
+          acq.again = true;
+          continue;
+        }
+        hull = { ...hull, url, result: r, loading: false };
+        prepared = null;
+        prepare();
+      } while (acq.again && !disposed);
+    } finally {
+      acq.running = false;
+    }
   }
   async function watchHull() {
     const url = doc()?.hull?.url ?? null;
-    if (url === hull.url && hull.sub) return;
+    // watching starts before the doc is found: a find can take a minute
+    if (url === hull.url && hull.watching) return;
     hull.sub?.();
     hull.sub = null;
     hull.url = url;
+    hull.watching = !!url;
     acquire();
     if (!url) return;
     try {
       const h = await repo.find(url);
       if (disposed || doc()?.hull?.url !== url) return;
       let key = renderKey(h.doc());
+      const headsOf = () => {
+        try {
+          return String(h.heads?.() ?? "");
+        } catch {
+          return "";
+        }
+      };
+      let heads = headsOf();
       const on = () => {
         const isRender = h.doc()?.["@patchwork"]?.type === "scene-render";
-        // a render rebuilds only when its GLB does; anything else, on any edit
+        // a render rebuilds only when its GLB does; anything else, when its heads move
         if (isRender) {
           const k = renderKey(h.doc());
           if (k === key) return;
           key = k;
+        } else {
+          const now = headsOf();
+          if (now && now === heads) return;
+          heads = now;
         }
         clearTimeout(reacquire);
         reacquire = setTimeout(acquire, 400);
@@ -345,7 +381,13 @@ export default function CaseTool(handle, element) {
     canvas.hidden = false;
     const s = setup();
     const i = prepared.info;
-    drawHull(canvas, prepared.mesh, i);
+    // drawing a big hull is tens of thousands of path segments: only when it, the width or the theme changes
+    const drawKey = `${(canvas.parentElement?.clientWidth ?? 0)}|${document.documentElement.getAttribute("theme") ?? ""}`;
+    if (canvas.__drawn !== prepared || canvas.__drawKey !== drawKey) {
+      drawHull(canvas, prepared.mesh, i);
+      canvas.__drawn = prepared;
+      canvas.__drawKey = drawKey;
+    }
     const { rho, nu, source } = waterProperties(s.water, s.temperature);
     const L = i.lwl > 0 ? i.lwl : i.loa;
     const V = s.speed;
