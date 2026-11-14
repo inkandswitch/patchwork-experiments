@@ -11,9 +11,6 @@ importers:
       fflate:
         specifier: ^0.8.2
         version: 0.8.3
-      three:
-        specifier: ^0.186.1
-        version: 0.186.1
     devDependencies:
       '@inkandswitch/patchwork-bootloader':
         specifier: ^0.3.2
@@ -24,6 +21,9 @@ importers:
       happy-dom:
         specifier: ^15.11.7
         version: 15.11.7
+      three:
+        specifier: ^0.186.1
+        version: 0.186.1
       vite:
         specifier: ^7.1.9
         version: 7.3.7(@types/node@20.19.43)

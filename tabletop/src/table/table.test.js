@@ -1,6 +1,6 @@
 // The table (extension.js, visibility.js): its policy over every
 // case, Shuffle through whatever keeps a card, Draw, a card turning face up
-// over your own hand, the hand as the tool in play, and what it tells the
+// over your own hand, a Draw from the seat body, and what it tells the
 // others. Seats and keepers are stand-ins (test/stand-ins.js): the table
 // meets them only through the stage's conventions.
 import { afterEach, describe, it, expect, vi } from "vitest";

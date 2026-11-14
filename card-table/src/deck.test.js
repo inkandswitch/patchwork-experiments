@@ -27,7 +27,7 @@ describe("the group", () => {
       expect(isResidue(encodeCard(i))).toBe(true);
       expect(isResidue(encrypt(encodeCard(i), k))).toBe(true);
     }
-  });
+  }, 60_000); // exhaustive and CPU-bound: ~1 s alone, ~11 s seen with other suites building alongside
 
   it("decodes cards back to their index, and nothing else", () => {
     const dec = cardDecoder(60);
