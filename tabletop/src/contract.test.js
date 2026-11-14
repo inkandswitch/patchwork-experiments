@@ -137,3 +137,31 @@ describe("every valid game lays out with no code of its own", () => {
     });
   }
 });
+
+describe("Draw Dominoes on the Card table (TABLE: 0.76 m across x, 1.2 m along z)", () => {
+  // Every rack's footprint (its zone, turned by its yaw) lies on the table's top and no two overlap,
+  // for 2, 3 and 4 players: side racks at ±0.33 m, not ±0.42 (which hung 7.5 cm off a 0.76 m top).
+  it("every rack on the top, none overlapping, for every player count", async () => {
+    const { TABLE } = await import("./table/parts.js");
+    const { GAMES } = await import("./test/games.js");
+    for (const n of [2, 3, 4]) {
+      const g = GAMES[`draw-dominoes-${n}`];
+      const zone = g.pieces.rack.zone;
+      const boxes = g.setup
+        .filter((s) => s.piece === "rack")
+        .map((s) => {
+          const [x, , z] = s.at.position;
+          const yaw = s.at.rotation?.[1] ?? 0;
+          const across = Math.abs(Math.sin(yaw)) > 0.5; // turned a quarter: its length along z
+          const [hx, hz] = across ? [(zone.max[2] - zone.min[2]) / 2, (zone.max[0] - zone.min[0]) / 2] : [(zone.max[0] - zone.min[0]) / 2, (zone.max[2] - zone.min[2]) / 2];
+          return { id: s.id, min: [x - hx, z - hz], max: [x + hx, z + hz] };
+        });
+      expect(boxes, `${n} players`).toHaveLength(n);
+      for (const b of boxes) {
+        expect(Math.max(Math.abs(b.min[0]), Math.abs(b.max[0])), `${n}: ${b.id} across`).toBeLessThanOrEqual(TABLE.w / 2);
+        expect(Math.max(Math.abs(b.min[1]), Math.abs(b.max[1])), `${n}: ${b.id} along`).toBeLessThanOrEqual(TABLE.l / 2);
+      }
+      for (const a of boxes) for (const b of boxes) if (a !== b) expect(a.max[0] <= b.min[0] || b.max[0] <= a.min[0] || a.max[1] <= b.min[1] || b.max[1] <= a.min[1], `${n}: ${a.id} and ${b.id}`).toBe(true);
+    }
+  });
+});
