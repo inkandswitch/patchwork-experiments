@@ -80,6 +80,18 @@ export const plugins = [
   },
   {
     type: "scene:source",
+    id: "scene.link",
+    name: "Linked scene",
+    icon: "Link",
+    supportedDatatypes: ["scene"],
+    params: [],
+    // A scene doc placed in another: a link (COMPOSITION.md §1). Its object
+    // gets no render doc; the view opens a stage for the linked doc and
+    // draws it where the link is (stage/links.js).
+    content: "scene",
+  },
+  {
+    type: "scene:source",
     id: "file-stl",
     name: "STL file",
     icon: "Box",

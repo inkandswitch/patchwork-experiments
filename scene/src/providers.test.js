@@ -41,7 +41,7 @@ describe("content kinds (COMPOSITION.md §1)", () => {
   const VALUES = [undefined, null, "", "file", "built", "scene", "passthrough", "File", true, 1, {}, ["file"]];
 
   it("contentOf: a provider's kind is exactly one of CONTENT_KINDS, else null", () => {
-    expect(CONTENT_KINDS).toEqual(["file", "built"]);
+    expect(CONTENT_KINDS).toEqual(["file", "built", "scene"]);
     for (const v of VALUES) {
       const kind = contentOf({ id: "p", content: v });
       expect(kind).toBe(CONTENT_KINDS.includes(v) ? v : null);

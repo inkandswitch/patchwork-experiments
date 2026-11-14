@@ -10,9 +10,13 @@ import { isGroup } from "./groups.js";
  *     doc; the stage shows the file as it is (the GLB queue).
  *   - "built": the provider builds a GLB from the source into a render doc of
  *     the object's own (the render manager).
- * A source that declares neither is not one the stage can use.
+ *   - "scene": the source doc is a scene, a world of its own: the object is a
+ *     link (stage/links.js), and the view shows it by opening a stage for it.
+ *     The stage's one point of recursion; only the scene's own `scene.link`
+ *     source makes it.
+ * A source that declares none of these is not one the stage can use.
  */
-export const CONTENT_KINDS = Object.freeze(["file", "built"]);
+export const CONTENT_KINDS = Object.freeze(["file", "built", "scene"]);
 
 /** The kind of content a provider (scene:source metadata) makes, or null if it declares none the stage knows. */
 export const contentOf = (provider) => (CONTENT_KINDS.includes(provider?.content) ? provider.content : null);
@@ -26,7 +30,7 @@ export const contentOf = (provider) => (CONTENT_KINDS.includes(provider?.content
  * show either.
  * @param {object} o  the object, as the doc stores it
  * @param {(providerId: string) => string | null} kindOf  the content kind of a registered provider, else null
- * @returns {"file" | "built" | null}
+ * @returns {"file" | "built" | "scene" | null}
  */
 export function routeOf(o, kindOf) {
   if (!o || typeof o !== "object" || isGroup(o)) return null;

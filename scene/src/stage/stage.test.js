@@ -705,7 +705,7 @@ describe("the stage, mounted", () => {
     const attached = await api.addObject(file.url, { parent: "p" });
     expect(h.doc().objects[attached].parent).toBe("p");
     await expect(api.addObject("not a url")).rejects.toThrow(/automerge URL/);
-    await expect(api.addObject(h.url)).rejects.toThrow(/itself/);
+    // (a scene in itself is a link its expansion closes, a cycle: links.test.js)
     const txt = repo.add({ "@patchwork": { type: "essay" } });
     await expect(api.addObject(txt.url)).rejects.toThrow(/No scene provider/);
   });

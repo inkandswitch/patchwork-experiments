@@ -679,6 +679,15 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
         }
         continue;
       }
+      if (route === "scene") {
+        // a link: the view opens a stage for its doc (stage/links.js); here
+        // it is drawn as its hint, the room the host gives it
+        if (tracked.has(id)) manager.untrack(id);
+        queue.remove(id);
+        applyHint(id, o.hint?.bounds);
+        if (objState.delete(id)) statusDirty = true;
+        continue;
+      }
       // Nothing to load (no provider here says what it is): drawn as its
       // hint, as anything is while its content hasn't arrived.
       if (tracked.has(id)) manager.untrack(id);
@@ -1760,7 +1769,7 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
   }
 
   async function providersFor(url, sourceDoc) {
-    if (url && parseAutomergeUrl(url) === handle.url) return [];
+    // (a scene in itself is a link whose expansion closes it: a cycle, links.js)
     return matchProviders(listProviders(), describeSource(sourceDoc));
   }
 
@@ -1796,7 +1805,6 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     if (!link) throw new Error("That doesn't look like an automerge URL.");
     const url = link.url;
     const heads = opts.heads?.length ? opts.heads : link.heads;
-    if (url === handle.url) throw new Error("A scene can't contain itself.");
     let source;
     try {
       source = await repo.find(url);
@@ -1846,7 +1854,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
       if (hint) d.objects[id].hint = hint;
       // A URL with heads names a version: show that one. (A file object is
       // shown straight from its file, so it has nothing to fix.)
-      if (heads?.length && renderHandle) d.objects[id].at = { heads: [...heads] };
+      // A link with heads is a pinned value of that scene (links.js).
+      if (heads?.length && (renderHandle || contentOf(provider) === "scene")) d.objects[id].at = { heads: [...heads] };
       const at = opts.before ? d.order.indexOf(opts.before) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
       else d.order.push(id);

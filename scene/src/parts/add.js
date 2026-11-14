@@ -226,7 +226,8 @@ function create(api) {
     if (!link) return fail("That doesn't look like an automerge URL.");
     const url = link.url;
     const version = heads?.length ? heads : link.heads;
-    if (url === api.url) return fail("A scene can't contain itself.");
+    // (a live link to itself would only be closed, a cycle: stage/links.js; a version of itself is fine)
+    if (url === api.url && !version?.length) return fail("A scene can't contain itself.");
     let source;
     try {
       source = await api.repo.find(url);
