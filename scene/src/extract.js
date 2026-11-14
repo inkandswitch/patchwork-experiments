@@ -205,7 +205,7 @@ export function extractable(doc, roots) {
 export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs = new Map(), box = null } = {}) {
   const which = extractable(doc, roots);
   if (!which.ok) return which;
-  const { asked, ids, listed, tops, parent: p } = which;
+  const { asked, ids, listed, parent: p } = which;
   const objects = doc.objects;
   const K = strings(traits);
   const rootTraits = isMap(doc?.traits) ? doc.traits : {};
@@ -228,7 +228,7 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
     if (!isGroup(o)) o.parent = S.has(parents.get(id) ?? "") ? parents.get(id) : null;
     o.group = S.has(groups.get(id) ?? "") ? groups.get(id) : null;
     const r = refEdits(o.traits, refs, {
-      object: (v) => (S.has(v) ? v : v === p && p != null ? null : undefined),
+      object: (v) => (S.has(v) ? v : v === p ? null : undefined),
       entry: (of, key) => Kset.has(of) && isMap(rootTraits[of]) && rootTraits[of][key] != null,
       drop: true,
     });
@@ -261,7 +261,6 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
   return {
     ok: true,
     ids,
-    tops,
     parent: p,
     group,
     traits: K,
@@ -269,7 +268,6 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
     lost,
     entries,
     title,
-    startMoves,
     hint: boxIn(objects, ids, p, box),
     doc({ renders = new Map(), packages = [] } = {}) {
       const t = {};
@@ -353,7 +351,8 @@ export function extractHost(doc, before, plan, { link, url, refs = new Map() }) 
       for (const id of plan.ids) delete d.objects[id];
       for (let i = d.order.length - 1; i >= 0; i--) if (S.has(d.order[i])) d.order.splice(i, 1);
       d.objects[link] = plain(record);
-      d.order.splice(at >= 0 ? Math.min(order.slice(0, at).filter((id) => !S.has(id)).length, d.order.length) : d.order.length, 0, link);
+      // where S's first member was (nothing of S comes before it)
+      d.order.splice(at >= 0 ? at : d.order.length, 0, link);
       for (const k of plan.traits) if (d.traits && k in d.traits) delete d.traits[k];
       for (const f of refFixes) applyRefEdits(d.objects[f.id].traits, f.edits);
       for (const f of dimFixes) {
@@ -460,10 +459,12 @@ export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map
     for (const e of ENDS) {
       const a = out[e];
       if (!isMap(a)) continue;
-      if (attached(a, T)) out[e] = { ...a, objectId: map.get(a.objectId), world: null };
-      else out[e] = { objectId: null, local: null, world: applyMatrix(lWorld, resolveAnchor(a, tObjects).world) };
+      if (!attached(a, T)) out[e] = { objectId: null, local: null, world: applyMatrix(lWorld, resolveAnchor(a, tObjects).world) };
+      else {
+        const moved = { ...a, objectId: map.get(a.objectId) };
+        out[e] = { ...moved, world: resolveAnchor(moved, afterObjects).world };
+      }
     }
-    for (const e of ENDS) if (isMap(out[e]) && out[e].objectId) out[e].world = resolveAnchor(out[e], afterObjects).world;
     dims[to] = out;
   }
   // what's attached to the link stays where it is, on the link's parent

@@ -1109,8 +1109,8 @@ Made while building extract and bundle, with the project lead away.
     already has Seats") or the linked doc lacks. Why: an edit happens or it
     doesn't; §8's "refused per key" is which key the refusal names.
 15. **Bundle's options are read from the linked doc**, found by url (and
-    heads) once and cached; the surfaces ask again through a local key of
-    transfer's. Why: a command's state is synchronous, and the only way to
+    heads) once and kept in transfer's own local state
+    (`scene.transfer.linked`), so the surfaces ask again when they come. Why: a command's state is synchronous, and the only way to
     the linked doc's root traits is to find it, which an extension may do by
     URL itself. Cost: the first time a link is selected its checkboxes come
     a moment later. A host still never reads into a link to decide anything.

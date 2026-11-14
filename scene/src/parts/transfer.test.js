@@ -542,9 +542,9 @@ describe("Extract and Bundle", () => {
     expect(JSON.parse(JSON.stringify(s.doc()))).toEqual(before);
   });
 
-  it("Bundle in Edit: the linked scene copied back in its place; the linked doc untouched; one undo step", async () => {
+  it("Bundle in Edit: the linked scene copied back in its place, with the root traits ticked; the linked doc untouched; one undo step", async () => {
     await mount();
-    run("extract", "winch", []);
+    run("extract", "winch", ["t.sea"]);
     await until(() => linkId());
     const id = linkId();
     const url = s.doc().objects[id].sourceUrl;
@@ -552,8 +552,12 @@ describe("Extract and Bundle", () => {
     const linked = JSON.stringify(s.repo.handles.get(url).doc());
     const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
     expect(cmd.state(id, { scene: { objects: s.doc().objects } })).toMatchObject({ title: expect.stringContaining("no longer follows") });
-    expect(run("bundle", id, [])).toBe(true);
+    // its root traits, read from the linked doc once, are its options
+    await until(() => cmd.state(id, { scene: { objects: s.doc().objects } }).options.length === 1);
+    expect(cmd.state(id, { scene: { objects: s.doc().objects } }).options).toEqual([{ value: "t.sea", label: "Sea" }]);
+    expect(run("bundle", id, ["t.sea"])).toBe(true);
     await until(() => !s.doc().objects[id]);
+    expect(s.doc().traits["t.sea"]).toEqual({ level: 0 });
     expect(s.doc().objects.winch).toMatchObject({ parent: "deck", transform: T([1, 0, 0]) });
     expect(s.doc().objects.handle).toMatchObject({ parent: "winch", traits: { "t.lever": { target: "winch" } } });
     expect(s.doc().order).toEqual(["deck", "winch", "handle", "sign"]);

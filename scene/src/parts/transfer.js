@@ -318,23 +318,22 @@ function create(api) {
     if (live()) describes = r.describes;
   });
   const traitOptions = (keys) => keys.map((k) => ({ value: k, label: String(describes.get(k)?.name ?? k) }));
-  // a linked scene's root traits, by the url (and heads) it shows: read once, then the surfaces asked again
-  const linkedTraits = new Map();
+  // a linked scene's root traits, by the url (and heads) it shows: found once, kept in this stage's
+  // local state (so every surface asks for its commands again when they come)
+  const LINKED = "scene.transfer.linked";
+  const finding = new Set();
   function rootTraitsOf(o) {
     const at = atOf(o);
     const key = at ? `${o.sourceUrl}#${at.heads.join(",")}` : o.sourceUrl;
-    if (linkedTraits.has(key)) return linkedTraits.get(key);
-    linkedTraits.set(key, []);
+    const known = api.local.get()[LINKED]?.[key];
+    if (known || finding.has(key)) return known ?? [];
+    finding.add(key);
     Promise.resolve(api.repo.find(o.sourceUrl))
       .then((h) => {
         const d = at ? h.view?.(at.heads)?.doc?.() : h.doc();
-        const keys = Object.keys(d?.traits ?? {});
-        if (!live() || !keys.length) return;
-        linkedTraits.set(key, keys);
-        // (a local change: every surface asks for its commands again)
-        api.local.swap((m) => ({ ...m, "scene.transfer.linked": (m["scene.transfer.linked"] ?? 0) + 1 }));
+        if (live()) api.local.swap((m) => ({ ...m, [LINKED]: { ...m[LINKED], [key]: Object.freeze(Object.keys(d?.traits ?? {})) } }));
       })
-      .catch(() => {});
+      .catch(() => finding.delete(key));
     return [];
   }
   const traitsOf = (value) => (Array.isArray(value) ? value.filter((k) => typeof k === "string") : []);
