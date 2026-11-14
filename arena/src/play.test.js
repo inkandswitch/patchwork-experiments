@@ -89,6 +89,7 @@ function fakeApi(doc) {
     raycast: () => null,
     worldOf: () => null,
     local: { get: () => local },
+    view: { get: () => local },
     body: {
       enter(id, place) {
         calls.entered.push([id, place]);
