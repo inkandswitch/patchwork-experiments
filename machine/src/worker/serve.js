@@ -2,8 +2,8 @@
 // own automerge-repo whose one peer is the page's repo, over a MessagePort.
 // Each frame request carries what only the page has (this peer's input, and
 // the clock if the page keeps it) and is answered with what the page shows:
-// the host's state, the pictures it asked for and the output since the last
-// frame, their buffers transferred.
+// the host's state, the pictures and query answers it asked for and the
+// output since the last frame, their buffers transferred.
 //
 // `endpoint` is the worker's global scope, or anything with postMessage and
 // addEventListener("message") (the tests use an in-process pair).
@@ -21,6 +21,7 @@ export function serve(endpoint, local = {}) {
   let input = null;
   let clock = null; // { t, running }, as the page last read it
   const drawn = new Map(); // view -> the tick and revision last drawn
+  const asked = new Map(); // query kind -> the tick and revision last answered
   const live = () => served.host ?? fail("closed");
 
   const reply = (msg, transfer = []) => endpoint.postMessage(msg, transfer);
@@ -44,7 +45,7 @@ export function serve(endpoint, local = {}) {
       return { url: h.url, id: h.id, delay: h.delay, state: state(h) };
     },
 
-    frame({ input: bytes, clock: c, views }, transfer) {
+    frame({ input: bytes, clock: c, views, queries = [] }, transfer) {
       const host = live();
       input = bytes;
       clock = c;
@@ -61,6 +62,16 @@ export function serve(endpoint, local = {}) {
         pictures[view] = p;
         transfer.push(p.rgba.buffer);
       }
+      // A query is answered again only when the state changed, as a view is drawn.
+      const answers = {};
+      for (const kind of queries) {
+        if (asked.get(kind) === at) continue;
+        const a = host.query(kind);
+        if (!a) continue;
+        asked.set(kind, at);
+        answers[kind] = a;
+        transfer.push(a.buffer);
+      }
       // The host keeps what it delivered (to compare re-simulations with), so
       // the page gets copies.
       const output = host.output().map((o) => {
@@ -69,7 +80,7 @@ export function serve(endpoint, local = {}) {
         transfer.push(samples.buffer);
         return { ...o, audio: { ...o.audio, samples } };
       });
-      return { state: state(host), pictures, output };
+      return { state: state(host), pictures, answers, output };
     },
 
     sit({ port }) {
