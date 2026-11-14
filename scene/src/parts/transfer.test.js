@@ -4,7 +4,7 @@
 // this scene's own rows dropped in the view do nothing; Copy and Paste.
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import transfer, { besideOffset, clipText, pasteStep } from "./transfer.js";
 import menuPart from "./menu.js";
@@ -485,5 +485,113 @@ describe("the menu's Copy", () => {
       Object.defineProperty(globalThis, "navigator", { value: nav, configurable: true });
     }
     expect(writeText).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Extract and bundle through the stage (COMPOSITION.md §8; the exhaustive
+// harness is ../extract.test.js): the commands in Edit, the link the view
+// opens, one undo step each, and the inspector's checkboxes for K.
+describe("Extract and Bundle", () => {
+  const META = { id: "t.parts", traits: ["t.sea", "t.lever"], describes: { "t.sea": { name: "Sea", on: "scene" }, "t.lever": { name: "Lever", fields: [{ key: "target", kind: "object", label: "Target" }] } } };
+  const PARTS = { meta: META, module: { create: () => ({}) } };
+  async function mount(extra = []) {
+    s = await mountStage({
+      extensions: [{ meta: { id: "scene.transfer" }, module: transfer }, PARTS, ...extra],
+      doc: {
+        objects: {
+          deck: object({ name: "Deck" }),
+          winch: object({ name: "Winch", parent: "deck", transform: T([1, 0, 0]) }),
+          handle: object({ name: "Handle", parent: "winch", traits: { "t.lever": { target: "winch" } } }),
+          sign: object({ name: "Sign", traits: { "t.lever": { target: "winch" } } }),
+        },
+        order: ["deck", "winch", "handle", "sign"],
+        traits: { "t.sea": { level: 0 } },
+      },
+    });
+    s.api("scene.transfer").body.enter("edit");
+    await settle();
+  }
+  const run = (command, target, value) => s.api("scene.transfer").run({ ext: "scene.transfer", command, target, value });
+  const linkId = () => Object.keys(s.doc().objects).find((id) => s.doc().objects[id].providerId === "scene.link");
+
+  it("Extract in Edit: a new scene with the winch and its handle, linked at the deck; the view opens it; one undo puts it all back", async () => {
+    await mount();
+    const before = JSON.parse(JSON.stringify(s.doc()));
+    const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "extract");
+    expect(cmd.state("winch", { scene: { objects: s.doc().objects } })).toMatchObject({ options: [{ value: "t.sea", label: "Sea" }] });
+    expect(run("extract", "winch", ["t.sea"])).toBe(true);
+    await until(() => linkId());
+    const id = linkId();
+    const link = s.doc().objects[id];
+    expect(link).toMatchObject({ name: "Winch", parent: "deck", transform: T() });
+    const t = s.repo.handles.get(link.sourceUrl).doc();
+    expect(Object.keys(t.objects).sort()).toEqual(["handle", "winch"]);
+    expect(t.objects.winch).toMatchObject({ parent: null, transform: T([1, 0, 0]) });
+    expect(t.traits).toEqual({ "t.sea": { level: 0 } });
+    expect(s.doc().traits["t.sea"]).toBeUndefined();
+    // the sign's lever pointed into what left: cleared, and said
+    expect(s.doc().objects.sign.traits["t.lever"].target).toBeUndefined();
+    expect(notices()).toContain("warn: This lever's target was left behind: choose one in the inspector.");
+    // the link is selected, and the view opened its doc
+    expect(s.local.get().selected).toBe(id);
+    await until(() => s.debug.view.stages().some((x) => x.url === link.sourceUrl));
+    expect(s.api("scene.transfer").link(id)).toMatchObject({ role: "acting", open: true });
+    // one step
+    expect(s.local.get().edits.undo).toBe("Extract");
+    expect(s.api("scene.transfer").undo()).toBe(true);
+    expect(JSON.parse(JSON.stringify(s.doc()))).toEqual(before);
+  });
+
+  it("Bundle in Edit: the linked scene copied back in its place; the linked doc untouched; one undo step", async () => {
+    await mount();
+    run("extract", "winch", []);
+    await until(() => linkId());
+    const id = linkId();
+    const url = s.doc().objects[id].sourceUrl;
+    await until(() => s.api("scene.transfer").link(id)?.open);
+    const linked = JSON.stringify(s.repo.handles.get(url).doc());
+    const cmd = s.instance("scene.transfer").commands.find((c) => c.id === "bundle");
+    expect(cmd.state(id, { scene: { objects: s.doc().objects } })).toMatchObject({ title: expect.stringContaining("no longer follows") });
+    expect(run("bundle", id, [])).toBe(true);
+    await until(() => !s.doc().objects[id]);
+    expect(s.doc().objects.winch).toMatchObject({ parent: "deck", transform: T([1, 0, 0]) });
+    expect(s.doc().objects.handle).toMatchObject({ parent: "winch", traits: { "t.lever": { target: "winch" } } });
+    expect(s.doc().order).toEqual(["deck", "winch", "handle", "sign"]);
+    expect(JSON.stringify(s.repo.handles.get(url).doc())).toBe(linked);
+    expect(s.local.get().selected).toBe("winch");
+    expect(s.local.get().edits.undo).toBe("Bundle");
+  });
+
+  it("neither is offered outside Edit, nor where the scene can't be written; Bundle only on a link, and not on one that isn't open", async () => {
+    await mount();
+    const api = s.api("scene.transfer");
+    api.body.enter("look");
+    await settle();
+    expect(run("extract", "winch", [])).toBe(false);
+    api.body.enter("edit");
+    const cmds = s.instance("scene.transfer").commands;
+    const ctx = { scene: { objects: s.doc().objects } };
+    expect(cmds.find((c) => c.id === "bundle").state("winch", ctx)).toBe(null);
+    expect(cmds.find((c) => c.id === "extract").state(null, ctx)).toBe(null);
+    s.change((d) => {
+      d.objects.gone = object({ name: "Gone", providerId: "scene.link", sourceUrl: "automerge:2j9knnaaaaaaaaaaaaaaaaaaaaaa" });
+    });
+    await settle();
+    expect(cmds.find((c) => c.id === "bundle").state("gone", { scene: { objects: s.doc().objects } })).toMatchObject({ disabled: true, title: "Not open here (unavailable)" });
+  });
+
+  it("the inspector shows a command's options as checkboxes, none ticked, and runs it with what's ticked", async () => {
+    const { default: inspector } = await import("./inspector.js");
+    await mount([{ meta: { id: "scene.inspector" }, module: inspector }]);
+    s.local.swap((m) => ({ ...m, selected: "winch" }));
+    await settle();
+    const host = s.root.querySelector(".inspector [data-command='extract']")?.parentElement;
+    expect(host?.className).toBe("command-with-options");
+    const boxes = [...host.querySelectorAll("input[type=checkbox]")];
+    expect(boxes.map((b) => [b.dataset.option, b.checked])).toEqual([["t.sea", false]]);
+    boxes[0].click();
+    host.querySelector("[data-command='extract']").click();
+    await until(() => linkId());
+    expect(s.repo.handles.get(s.doc().objects[linkId()].sourceUrl).doc().traits).toEqual({ "t.sea": { level: 0 } });
   });
 });

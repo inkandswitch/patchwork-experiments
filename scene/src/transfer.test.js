@@ -25,7 +25,7 @@ import {
   subtreeOf,
   summaryTypes,
 } from "./transfer.js";
-import { seededRenderDoc } from "./stage/stage.js";
+import { seededRenderDoc } from "./datatype.js";
 import { composeMatrix, decomposeMatrix, invertMatrix as invert, multiplyMatrices } from "./transform.js";
 import { worldMatrix } from "./hierarchy.js";
 

@@ -73,7 +73,7 @@ import { commandState } from "../parts/toolbar-commands.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
-import { newRenderDoc } from "../datatype.js";
+import { newRenderDoc, seededRenderDoc } from "../datatype.js";
 import { atKey, defaultParams } from "../staleness.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf } from "../providers.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
@@ -217,27 +217,6 @@ const CONTESTED_TEXT = "A collaborator built it differently (another provider ve
  */
 /** What addObject settles itself, which its `fields` never override. */
 const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
-
-/**
- * A new render doc started from another's (a copied object's): its params,
- * when it was by the same provider, and the build it had (GLB, record,
- * bounds) when it was of the same source too, so a copy shows at once and
- * rebuilds only when something changes. Pure; fresh copies throughout.
- */
-export function seededRenderDoc(fresh, seed) {
-  if (!seed || typeof seed !== "object" || seed.providerId !== fresh.providerId) return fresh;
-  const copy = (v) => JSON.parse(JSON.stringify(v));
-  const out = { ...fresh };
-  if (seed.params && typeof seed.params === "object") out.params = copy(seed.params);
-  if (seed.pinned === true) out.pinned = true;
-  if (seed.parent === fresh.parent && typeof seed.glbUrl === "string" && seed.builtFrom && typeof seed.builtFrom === "object") {
-    out.glbUrl = seed.glbUrl;
-    out.builtFrom = copy(seed.builtFrom);
-    out.builtAt = Number.isFinite(seed.builtAt) ? seed.builtAt : null;
-    out.bounds = seed.bounds ? copy(seed.bounds) : null;
-  }
-  return out;
-}
 
 export function statusOf(o, s) {
   if (!o || isGroup(o) || !s) return null;

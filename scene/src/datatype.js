@@ -56,6 +56,27 @@ export function newRenderDoc({ title, parent, providerId, params }) {
   };
 }
 
+/**
+ * A new render doc started from another's (a copied object's): its params,
+ * when it was by the same provider, and the build it had (GLB, record,
+ * bounds) when it was of the same source too, so a copy shows at once and
+ * rebuilds only when something changes. Pure; fresh copies throughout.
+ */
+export function seededRenderDoc(fresh, seed) {
+  if (!seed || typeof seed !== "object" || seed.providerId !== fresh.providerId) return fresh;
+  const copy = (v) => JSON.parse(JSON.stringify(v));
+  const out = { ...fresh };
+  if (seed.params && typeof seed.params === "object") out.params = copy(seed.params);
+  if (seed.pinned === true) out.pinned = true;
+  if (seed.parent === fresh.parent && typeof seed.glbUrl === "string" && seed.builtFrom && typeof seed.builtFrom === "object") {
+    out.glbUrl = seed.glbUrl;
+    out.builtFrom = copy(seed.builtFrom);
+    out.builtAt = Number.isFinite(seed.builtAt) ? seed.builtAt : null;
+    out.bounds = seed.bounds ? copy(seed.bounds) : null;
+  }
+  return out;
+}
+
 export const RENDER_SUFFIX = " (3D render)";
 
 export const SceneRenderDatatype = {

@@ -697,12 +697,19 @@ function create(api) {
     v.follow.disabled = !at;
   }
 
+  // what's ticked of each command's options, for the selection shown (a new selection starts with none ticked)
+  let ticks = new Map();
+  let ticksFor = null;
   function fillCommands(scene, local) {
     const list = commandsFor(api.collect("commands"), view.id, api.context(null), ID);
     const key = commandsKey(list);
     if (key === view.commandsKey) return;
     view.commandsKey = key;
     const target = view.id;
+    if (ticksFor !== target) {
+      ticks = new Map();
+      ticksFor = target;
+    }
     // a disabled command's title is why it can't be used: written out after
     // the control, since a disabled button's tooltip is easy to never see
     const reasonOf = (state) => (state.disabled && state.title ? el("span", { class: "hint command-reason" }, String(state.title)) : null);
@@ -717,6 +724,22 @@ function create(api) {
         sel.addEventListener("change", () => api.run({ ext, command: command.id, target, value: state.choices[Number(sel.value)]?.value }));
         return [el("label", { class: "toggle" }, `${command.name ?? command.id} `, sel), reason];
       }
+      // a command run with a set of its options (STAGE.md "A command"): a checkbox each, none ticked, then the button
+      const options = Array.isArray(state.options) && state.options.length && !state.disabled ? state.options : null;
+      const tickKey = `${ext}|${command.id}|${target}`;
+      if (options && !ticks.has(tickKey)) ticks.set(tickKey, new Set());
+      const ticked = options ? ticks.get(tickKey) : null;
+      const boxes = options
+        ? el(
+            "span",
+            { class: "command-options" },
+            options.map((o) => {
+              const box = el("input", { type: "checkbox", checked: ticked.has(o.value), dataset: { option: String(o.value) } });
+              box.addEventListener("change", () => (box.checked ? ticked.add(o.value) : ticked.delete(o.value)));
+              return el("label", { class: "toggle" }, box, ` ${o.label ?? String(o.value)}`);
+            }),
+          )
+        : null;
       const toggle = state.checked != null;
       const button = el(
         "button",
@@ -727,12 +750,12 @@ function create(api) {
           disabled: !!state.disabled,
           "aria-pressed": toggle ? String(!!state.checked) : null,
           dataset: { ext, command: command.id },
-          onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : { ext, command: command.id, target }),
+          onclick: () => api.run(toggle ? { ext, command: command.id, target, value: !state.checked } : options ? { ext, command: command.id, target, value: options.map((o) => o.value).filter((v) => ticked.has(v)) } : { ext, command: command.id, target }),
         },
         // the verb's name for this target (STAGE.md "A command"), as the menu, toolbar and use prompt show it
         String(state.label ?? command.name ?? command.id),
       );
-      return [button, reason];
+      return options ? [el("span", { class: "command-with-options" }, button, boxes), reason] : [button, reason];
     }).filter(Boolean);
     view.commands.replaceChildren(...buttons);
     view.commands.hidden = !buttons.length;
