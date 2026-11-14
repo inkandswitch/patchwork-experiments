@@ -7,6 +7,7 @@ import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
 import { lineChart, seriesColors, formatNumber } from "./charts.js";
 import { runningAttitude } from "../attitude.js";
 import { findWhenThere } from "../find.js";
+import { waveProfile } from "../waveprofile.js";
 import { fieldPlot } from "./fields.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -159,6 +160,9 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
         <tr><td>C<sub>F0</sub> (ITTC-57)</td><td>${fmtC(s.Cf0)}</td><td></td><td class="method">0.075 / (log₁₀Re − 2)², Re = ${s.Re.toExponential(2)} on L = ${s.L.toFixed(2)} m</td></tr>
         <tr><td>Vertical force F<sub>z</sub></td><td>${fmtN(s.Fz)}</td><td></td><td class="method">${free ? "pressure and buoyancy on the hull held fixed; minus the weight, what would sink or lift it" : "suction of the double body: the hull would squat (sink) by this"}</td></tr>
         ${attRow}
+        ${!s.half && Number.isFinite(s.Fy) ? `<tr><td>Side force F<sub>y</sub></td><td>${fmtN(s.Fy)}</td><td></td><td class="method">to port positive${Math.abs(s.heel ?? 0) > 1e-9 ? `; heeled ${Math.abs(s.heel)}° to ${s.heel > 0 ? "starboard" : "port"}, no leeway` : ""}</td></tr>` : ""}
+        ${!s.half && Number.isFinite(s.Mx) ? `<tr><td>Heeling moment M<sub>x</sub></td><td>${(s.Mx / 1000).toFixed(2)} kN·m</td><td></td><td class="method">about the waterline at mid-length; starboard down positive, as heel</td></tr>` : ""}
+        ${!s.half && Number.isFinite(s.Mz) ? `<tr><td>Yaw moment M<sub>z</sub></td><td>${(s.Mz / 1000).toFixed(2)} kN·m</td><td></td><td class="method">bow to port positive</td></tr>` : ""}
         <tr><td>y⁺ on the hull</td><td>${s.yPlus ? `${s.yPlus.average.toFixed(0)}` : "–"}</td><td></td><td class="method">${s.yPlus ? `average; ${s.yPlus.min.toFixed(0)}–${s.yPlus.max.toFixed(0)}. Spalding's wall function holds at any y⁺` : ""}</td></tr>
         <tr><td>Mesh</td><td>${s.cells ? s.cells.toLocaleString("en") : "–"}</td><td></td><td class="method">cells${run.mesh?.layers ? `, ${run.mesh.layers.achieved.toFixed(1)}/${run.mesh.layers.target} wall layers` : ""}${run.mesh && !run.mesh.ok ? `, ${run.mesh.failedChecks} mesh checks failed` : ""}</td></tr>
         <tr><td>Converged</td><td>${s.stoppedBy === "residuals" || s.converged ? "yes" : s.stoppedBy === "settled" ? "settled" : "no"}</td><td></td><td class="method">${
@@ -173,6 +177,8 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
         <div class="tabs" role="tablist"></div>
         <div class="cluster"><label class="hint">Colour by <select class="plot-field" style="width:auto"></select></label><span class="hint plot-view"></span></div>
         <div class="plot-host"></div>
+        <div class="profile-host" hidden></div>
+        <div class="hint profile-note" hidden></div>
       </div>
       ${run.notes?.length ? `<div class="hint">${esc(run.notes.join("; "))}</div>` : ""}
     `;
@@ -188,6 +194,7 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
     if (resultsFor !== key) return;
     const views = [
       free && layers.freeSurface && { id: "waves", label: "Wave pattern", layer: "freeSurface", view: "plan", fields: ["eta", "Cp", "speed"], under: "hull", focus: true },
+      free && layers.freeSurface && { id: "profile", label: "Wave profile", chart: true },
       !free && layers.waterplane && { id: "waterplane", label: "Waterplane", layer: "waterplane", view: "plan", fields: ["Cp", "ux", "speed"], under: "hull", focus: true },
       layers.hull && { id: "hull", label: "Hull", layer: "hull", view: "profile", fields: ["Cp", "Cf"] },
       layers.wake && { id: "wake", label: "Wake", layer: "wake", view: "wake", fields: ["ux", "speed", "Cp"] },
@@ -198,10 +205,38 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
     const select = box.querySelector(".plot-field");
     const plot = fieldPlot(box.querySelector(".plot-host"));
     plots.push(plot);
+    // the wave profile along the hull: where the water surface meets it (src/waveprofile.js)
+    let profileChart = null;
+    const showProfile = () => {
+      const b = run.hull?.info?.bounds;
+      const prof = b ? waveProfile(layers.freeSurface, { xMin: b.min[0], xMax: b.max[0] }) : [];
+      if (!profileChart) {
+        profileChart = lineChart(box.querySelector(".profile-host"), { height: 220, xLabel: "x (m), bow →", yLabel: "water height at the hull (m)", format: (v) => v.toFixed(2) });
+        plots.push(profileChart);
+      }
+      const colors = seriesColors(root);
+      const name = { both: "Both sides (half model)", port: "Port", starboard: "Starboard" };
+      profileChart.update(prof.map((p, i) => ({ name: name[p.side], color: colors[i === 0 ? 1 : 2], points: p.points })));
+      const all = prof.flatMap((p) => p.points.map((q) => ({ ...p, x: q[0], z: q[1] })));
+      const note = box.querySelector(".profile-note");
+      if (!all.length) note.textContent = "no contact line found between the water and the hull";
+      else {
+        const crest = all.reduce((a, q) => (q.z > a.z ? q : a));
+        const trough = all.reduce((a, q) => (q.z < a.z ? q : a));
+        const head = (s.V * s.V) / (2 * 9.80665);
+        note.textContent = `Highest ${crest.z.toFixed(2)} m at x = ${crest.x.toFixed(2)} m${crest.side === "both" ? "" : ` (${crest.side})`}, lowest ${trough.z.toFixed(2)} m at x = ${trough.x.toFixed(2)} m. Still water is 0; V²/2g, the height of full stagnation, is ${head.toFixed(2)} m. Where the water meets the hull: the edge of the water surface along it, averaged in stations along the length.`;
+      }
+    };
     let cur = views[0];
     const show = (v, field) => {
       cur = v;
       tabs.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.id === v.id)));
+      const chart = !!v.chart;
+      box.querySelector(".plot-host").hidden = chart;
+      box.querySelector(".profile-host").hidden = !chart;
+      box.querySelector(".profile-note").hidden = !chart;
+      select.closest(".cluster").hidden = chart;
+      if (chart) return showProfile();
       select.innerHTML = v.fields.filter((f) => layers[v.layer]?.fields[f]).map((f) => `<option value="${f}">${esc(FIELD_INFO[f]?.label ?? f)} (${esc(FIELD_INFO[f]?.unit ?? "")})</option>`).join("");
       if (field) select.value = field;
       box.querySelector(".plot-view").textContent = { plan: "from above, bow right", profile: "from starboard, bow right", wake: `a section ${(s.L * 0.05).toFixed(2)} m behind the stern, from astern` }[v.view];

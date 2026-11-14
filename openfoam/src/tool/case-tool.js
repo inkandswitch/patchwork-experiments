@@ -49,6 +49,7 @@ export default function CaseTool(handle, element) {
           <div class="hull-warn hint"></div>
           <label class="field"><span>Sinkage</span><input type="number" step="0.01" data-k="sinkage" title="Metres the hull is lowered from as drawn (negative raises it)"></label>
           <label class="field"><span>Trim</span><input type="number" step="0.1" data-k="trim" title="Degrees, bow down positive"></label>
+          <label class="field"><span>Heel</span><span class="pair"><input type="number" step="1" data-k="heel" title="Degrees, starboard down positive. A heeled hull runs the full domain (no symmetry plane), at about twice the cells"><button class="keep-displacement" title="Heeling about the centreline changes what's under water: sink the hull until it displaces what it does upright">Keep displacement</button></span></label>
           <label class="field"><span>Float at</span><span class="pair"><input type="number" step="1" class="float-mass" placeholder="mass"><select class="float-unit"><option value="kg">kg</option><option value="t">t</option></select><button class="float-go">Set</button></span></label>
         </div>
         <div class="section">
@@ -113,7 +114,7 @@ export default function CaseTool(handle, element) {
   const title = $(".title");
   title.addEventListener("change", () => handle.change((d) => (d.title = title.value)));
   const fieldValue = (k, s) => {
-    if (k === "sinkage" || k === "trim") return s.attitude[k];
+    if (k === "sinkage" || k === "trim" || k === "heel") return s.attitude[k];
     if (k === "speed") return s.speedUnit === "kn" ? +(s.speed / KNOT).toFixed(3) : +s.speed.toFixed(3);
     if (k === "warmStart") return s.warmStart ?? "";
     return s[k];
@@ -126,8 +127,8 @@ export default function CaseTool(handle, element) {
       handle.change((d) => {
         const s = normalizeSetup(d.setup);
         if (!d.setup) d.setup = s;
-        if (k === "sinkage" || k === "trim") {
-          if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0 };
+        if (k === "sinkage" || k === "trim" || k === "heel") {
+          if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
           d.setup.attitude[k] = raw;
         } else if (k === "speed") d.setup.speed = s.speedUnit === "kn" ? raw * KNOT : raw;
         else if (k === "warmStart") d.setup.warmStart = raw || null;
@@ -370,20 +371,35 @@ export default function CaseTool(handle, element) {
     }, 120);
   }
 
+  $(".keep-displacement").addEventListener("click", () => {
+    if (!hull.result?.ok) return;
+    const s = setup();
+    const md = model();
+    const tris = hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame);
+    // what it displaces upright at this sinkage and trim, then the sinkage that displaces that heeled
+    const upright = prepareHull(tris, { ...s.attitude, heel: 0 }).info.volume;
+    const sink = sinkageForVolume(tris, upright, { trim: s.attitude.trim, heel: s.attitude.heel });
+    if (sink == null) return void ($(".hull-warn").textContent = "the hull can't displace its upright volume at this heel");
+    handle.change((d) => {
+      if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
+      d.setup.attitude.sinkage = +sink.toFixed(4);
+    });
+  });
+
   $(".float-go").addEventListener("click", () => {
     const m = Number($(".float-mass").value) * ($(".float-unit").value === "t" ? 1000 : 1);
     if (!(m > 0) || !hull.result?.ok) return;
     const s = setup();
     const { rho } = waterProperties(s.water, s.temperature);
     const md = model();
-    const sink = sinkageForVolume(hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame), m / rho, s.attitude.trim);
+    const sink = sinkageForVolume(hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame), m / rho, { trim: s.attitude.trim, heel: s.attitude.heel });
     const why = $(".hull-warn");
     if (sink == null) {
       why.textContent = `the whole hull displaces less than ${(m / 1000).toFixed(2)} t`;
       return;
     }
     handle.change((d) => {
-      if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0 };
+      if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
       d.setup.attitude.sinkage = +sink.toFixed(4);
     });
   });
@@ -487,7 +503,17 @@ export default function CaseTool(handle, element) {
         ${row("Reynolds number", reynolds(V, L, nu).toExponential(2), `ν = ${nu.toExponential(3)} m²/s (${source})`)}
         ${row("Friction alone", fmtN(fr.R), `ITTC-57 C<sub>F</sub> = ${(fr.Cf * 1000).toFixed(3)}×10⁻³ on the wetted area: the floor the CFD's total should sit above`)}
         ${s.mode === "free-surface" ? row("Wavelength at this speed", `${waveLength(V).toFixed(2)} m`, `${pv.dom.freeSurface ? `${pv.dom.freeSurface.cellsPerWave.toFixed(0)} cells a wave near the hull` : ""}`) : ""}
-        ${row("Model", pv.half ? "half (y ≤ 0)" : "full", pv.half ? "the hull is symmetric, so a symmetry plane halves the cost" : i.symmetric ? "full domain asked for" : "the hull isn't symmetric")}
+        ${row(
+          "Model",
+          pv.half ? "half (y ≤ 0)" : "full",
+          pv.half
+            ? "the hull is symmetric, so a symmetry plane halves the cost"
+            : Math.abs(s.attitude.heel) > 1e-9
+              ? `heeled ${Math.abs(s.attitude.heel)}° to ${s.attitude.heel > 0 ? "starboard" : "port"}: no symmetry plane${s.domain === "half" ? " (a half model can't be heeled)" : ""}`
+              : i.symmetric
+                ? "full domain asked for"
+                : "the hull isn't symmetric",
+        )}
         ${row("Cells", `≈ ${Math.round(cells / 1000)}k`, `${s.mesh} preset; checkMesh gives the real count (to within a factor of two or so)`)}
         ${row("Time", `${s.stop === "settled" || s.mode === "double-body" ? "at most " : ""}≈ ${formatDuration(secs)}`, `on ${cores} cores, ${s.iterations} iterations${s.stop === "settled" || s.mode === "double-body" ? "; it stops sooner once the resistance settles" : ""}`)}
       </table>`;
@@ -679,11 +705,20 @@ export default function CaseTool(handle, element) {
   }
   function renderCurve() {
     const done = (doc()?.runs ?? []).map((u) => runHandles.get(u)?.doc()).filter((r) => r?.status === "done" && r.summary);
-    const byMode = {};
-    for (const r of done) (byMode[r.summary.mode] ??= []).push([r.summary.V / KNOT, r.summary.Rt]);
-    const series = Object.entries(byMode)
-      .filter(([, pts]) => new Set(pts.map((p) => p[0].toFixed(3))).size >= 2)
-      .map(([mode, pts], i) => ({ name: mode === "free-surface" ? "Free surface" : "Double body", color: seriesColors(root)[i], points: pts.sort((a, b) => a[0] - b[0]) }));
+    // one line per analysis and heel: a heeled run's drag isn't a point on the upright curve
+    const lines = {};
+    for (const r of done) {
+      const heel = r.summary.heel ?? r.setup?.attitude?.heel ?? 0;
+      (lines[`${r.summary.mode}|${heel}`] ??= { mode: r.summary.mode, heel, pts: [] }).pts.push([r.summary.V / KNOT, r.summary.Rt]);
+    }
+    const series = Object.values(lines)
+      .filter((l) => new Set(l.pts.map((p) => p[0].toFixed(3))).size >= 2)
+      .slice(0, 4)
+      .map((l, i) => ({
+        name: `${l.mode === "free-surface" ? "Free surface" : "Double body"}${l.heel ? `, ${Math.abs(l.heel)}° heel` : ""}`,
+        color: seriesColors(root)[i],
+        points: l.pts.sort((a, b) => a[0] - b[0]),
+      }));
     $(".curve").hidden = !series.length;
     if (series.length) curveChart.update(series);
   }

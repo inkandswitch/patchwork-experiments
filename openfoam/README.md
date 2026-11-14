@@ -76,6 +76,43 @@ buoyancy and the sign of its drag (`src/setup.test.js` holds the invariant).
 Water is seawater (35 g/kg) or fresh, 0–30 °C: EOS-80 density, Vogel and
 Sharqawy (2010) viscosity, within 0.5% of ITTC 7.5-02-01-03 at 15 °C.
 
+### Heel
+
+`attitude.heel` heels the hull about the waterline's centreline (starboard
+down positive) before trim and sinkage. A heeled hull has no symmetry plane,
+so it always runs the full domain (about twice the cells), whatever the
+domain setting says. Heeling changes what's under water: **Keep
+displacement** solves the sinkage that restores the upright displacement.
+Both analyses work heeled (a double body's symmetry plane is still the
+waterplane). The run adds the side force (to port positive), and the roll
+and yaw moments about the waterline at mid-length (starboard down and bow
+to port positive). No leeway yet: the stream stays along x.
+
+Measured, narrow-transom at 6 kn, double body, the same displacement:
+upright 770 N on a half model of 123k cells; heeled 20° to starboard (the
+hull rises 6 cm to keep its displacement) 934 N on a full model of 267k
+cells, the extra almost all pressure drag, with a 562 N side force to
+starboard and a 5.2 kN·m yaw moment, bow to port.
+
+The symmetry check that decides "half if symmetric" compares the hull's
+extent, its area centroid and its area's y·z and y·x products (exact over
+each triangle, so a symmetric surface split into triangles one way still
+reads as symmetric). A shape turned about the centreline can keep its extent
+and centroid, but not those products.
+
+### The wave profile along the hull
+
+A free-surface run's results include **Wave profile**: the height of the
+water where it meets the hull, along its length, for each side (one line for
+a half model). It is read from the water surface the run keeps: where that
+surface meets the hull it stops, and within the hull's length that edge is
+the only one it has (`src/waveprofile.js`). The edge is averaged into
+stations along the length, about six edges each, so a coarse mesh's
+zig-zag along its cells doesn't show as spikes. On the coarse 6 kn
+narrow-transom run: a 0.25 m crest at the bow (about half of V²/2g), a
+0.25 m trough aft of amidships, a rise at the stern, climbing both
+overhangs.
+
 ### What the figures are
 
 Each force is the mean over the last tenth of the iterations (at least 20),

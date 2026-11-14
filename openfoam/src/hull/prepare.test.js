@@ -123,3 +123,36 @@ describe("a model that isn't one shell", () => {
     expect(info.reliable).toBe(true);
   });
 });
+
+describe("heel", () => {
+  it("turns starboard down for positive heel, about the waterline's centreline", () => {
+    // a point on the port side at the waterline rises; one on starboard sinks
+    const t = applyAttitude([0, 0.5, 0, 0, -0.5, 0, 1, 0, -0.5], { heel: 30 });
+    expect(t[2]).toBeCloseTo(0.25, 12);
+    expect(t[5]).toBeCloseTo(-0.25, 12);
+    // the centreline stays: a point on it moves only by the heel of its height
+    expect(t[7]).toBeCloseTo(0.25, 12);
+  });
+  it("heels the box about its centre: the same volume, a wider waterline, a deeper draft", () => {
+    // a 1 × 1 section turned 45° about its centre: half of it is still under water,
+    // the waterline is its diagonal, and its lowest corner is half a diagonal down
+    const { info } = prepareHull(boxTriangles(), { heel: 45 });
+    expect(info.volume).toBeCloseTo(2, 9);
+    expect(info.bwl).toBeCloseTo(Math.SQRT2, 9);
+    expect(info.draft).toBeCloseTo(Math.SQRT2 / 2, 9);
+    expect(info.attitude.heel).toBe(45);
+    // a square at 45° is a diamond, still mirror-symmetric; and a square section has the
+    // same second moments every way it's turned, so take a flatter section to see the heel
+    const flat = Float64Array.from(boxTriangles(), (v, i) => (i % 3 === 2 ? v * 0.6 : v));
+    expect(prepareHull(flat).info.symmetric).toBe(true);
+    expect(prepareHull(flat, { heel: 30 }).info.symmetric).toBe(false);
+  });
+  it("keeps a displacement at heel: the sinkage for the upright volume", () => {
+    // a box with its waterline off-centre (sunk 0.2): heeling changes its volume, and the solve brings it back
+    const upright = prepareHull(boxTriangles(), { sinkage: 0.2 }).info.volume;
+    const heeled = prepareHull(boxTriangles(), { sinkage: 0.2, heel: 20 }).info.volume;
+    expect(Math.abs(heeled - upright)).toBeGreaterThan(1e-3);
+    const s = sinkageForVolume(boxTriangles(), upright, { heel: 20 });
+    expect(prepareHull(boxTriangles(), { sinkage: s, heel: 20 }).info.volume).toBeCloseTo(upright, 9);
+  });
+});

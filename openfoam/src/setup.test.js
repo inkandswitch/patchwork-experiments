@@ -24,7 +24,7 @@ describe("setup", () => {
     expect(s.mode).toBe("double-body");
     expect(s.speed).toBe(0.05);
     expect(s.temperature).toBe(30);
-    expect(s.attitude).toEqual({ sinkage: 0, trim: 10 });
+    expect(s.attitude).toEqual({ sinkage: 0, trim: 10, heel: 0 });
     expect(s.iterations).toBe(50);
     expect(normalizeSetup(undefined)).toEqual(defaultSetup());
   });
@@ -86,4 +86,15 @@ describe("domain", () => {
             expect(far.level).toBe(Math.max(1, d.freeSurface.level - 1));
           }
         });
+});
+
+describe("heel and the half model", () => {
+  it("never halves a heeled hull, whatever's asked", () => {
+    for (const domain of ["auto", "half", "full"]) expect(isHalfModel({ domain, attitude: { heel: 10 } }, { symmetric: true })).toBe(false);
+    expect(isHalfModel({ domain: "auto", attitude: { heel: 0 } }, { symmetric: true })).toBe(true);
+  });
+  it("clamps the heel", () => {
+    expect(normalizeSetup({ attitude: { heel: 99 } }).attitude.heel).toBe(60);
+    expect(normalizeSetup({}).attitude.heel).toBe(0);
+  });
 });

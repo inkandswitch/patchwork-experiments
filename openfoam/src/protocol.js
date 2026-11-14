@@ -113,7 +113,8 @@ export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title 
 export function runTitle(setup, hullTitle) {
   const kn = (setup.speed / (1852 / 3600)).toFixed(1);
   const what = setup.mode === "free-surface" ? "free surface" : "double body";
-  return `${hullTitle ? `${hullTitle} · ` : ""}${kn} kn · ${what} · ${setup.mesh}`;
+  const heel = Math.abs(setup.attitude?.heel ?? 0) > 1e-9 ? ` · ${Math.abs(setup.attitude.heel)}° heel to ${setup.attitude.heel > 0 ? "starboard" : "port"}` : "";
+  return `${hullTitle ? `${hullTitle} · ` : ""}${kn} kn${heel} · ${what} · ${setup.mesh}`;
 }
 
 /** People: ask the daemon to stop. `finish` keeps what it has (writes now); otherwise it is killed. */

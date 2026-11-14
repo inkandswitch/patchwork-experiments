@@ -39,21 +39,28 @@ export function boundsOf(xyz) {
 }
 
 /**
- * The hull at its attitude: trimmed by `trim` degrees (bow down positive)
+ * The hull at its attitude: heeled by `heel` degrees about the waterline's
+ * centreline (the x-axis; starboard down positive: a right-hand turn about
+ * +x, so port rises), then trimmed by `trim` degrees (bow down positive)
  * about (pivotX, 0, 0), then lowered by `sinkage` metres. A rigid motion, so
  * lengths, areas and volumes are kept.
  * @param {Float64Array|number[]} tris  9 numbers a triangle
  */
-export function applyAttitude(tris, { sinkage = 0, trim = 0 } = {}, pivotX = 0) {
+export function applyAttitude(tris, { sinkage = 0, trim = 0, heel = 0 } = {}, pivotX = 0) {
   const th = (trim * Math.PI) / 180;
   const c = Math.cos(th);
   const s = Math.sin(th);
+  const ph = (heel * Math.PI) / 180;
+  const ch = Math.cos(ph);
+  const sh = Math.sin(ph);
   const out = new Float64Array(tris.length);
   for (let i = 0; i < tris.length; i += 3) {
+    // heel: (y, z) turned about x
+    const y = tris[i + 1] * ch - tris[i + 2] * sh;
+    const z = tris[i + 1] * sh + tris[i + 2] * ch;
     const dx = tris[i] - pivotX;
-    const z = tris[i + 2];
     out[i] = pivotX + dx * c + z * s;
-    out[i + 1] = tris[i + 1];
+    out[i + 1] = y;
     // bow (dx > 0) goes down for trim > 0
     out[i + 2] = -dx * s + z * c - sinkage;
   }
@@ -379,22 +386,49 @@ export function hydrostatics({ points: p, faces }) {
 
 /**
  * Is the hull symmetric about y = 0 (so a half model with a symmetry plane is
- * exact)? By its extent and its area-weighted centroid in y.
+ * exact)? By its extent and its area-weighted centroid in y, and by the
+ * area's y·z and y·x products, which a mirror image cancels: a shape turned
+ * about the centreline can keep its extent and centroid (a square turned 30°
+ * about its centre does), but not those.
  */
 export function isSymmetric({ points: p, faces }, L) {
   const { min, max } = boundsOf(p);
   const tol = 1e-3 * Math.max(L, 1e-6);
   if (Math.abs(min[1] + max[1]) > tol) return false;
-  let ay = 0, a = 0;
+  let a = 0, ay = 0, ax = 0, az = 0;
+  const tri = [];
   for (let f = 0; f < faces.length; f += 3) {
     const i = faces[f] * 3, j = faces[f + 1] * 3, k = faces[f + 2] * 3;
     const ux = p[j] - p[i], uy = p[j + 1] - p[i + 1], uz = p[j + 2] - p[i + 2];
     const vx = p[k] - p[i], vy = p[k + 1] - p[i + 1], vz = p[k + 2] - p[i + 2];
     const A = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+    const cx = (p[i] + p[j] + p[k]) / 3, cy = (p[i + 1] + p[j + 1] + p[k + 1]) / 3, cz = (p[i + 2] + p[j + 2] + p[k + 2]) / 3;
     a += A;
-    ay += (A * (p[i + 1] + p[j + 1] + p[k + 1])) / 3;
+    ay += A * cy;
+    ax += A * cx;
+    az += A * cz;
+    tri.push(A, cx, cy, cz);
   }
-  return a > 0 && Math.abs(ay / a) <= tol;
+  if (!(a > 0) || Math.abs(ay / a) > tol) return false;
+  // exact second moments over each triangle (∫ f g dA = A/12 (Σ f_i g_i + Σ f_i Σ g_i)
+  // for linear f, g), so they don't depend on how a face was split into triangles
+  let syy = 0, szz = 0, sxx = 0, syz = 0, syx = 0;
+  const m2 = (A, f, g) => (A / 12) * (f[0] * g[0] + f[1] * g[1] + f[2] * g[2] + (f[0] + f[1] + f[2]) * (g[0] + g[1] + g[2]));
+  for (let f = 0; f < faces.length; f += 3) {
+    const i = faces[f] * 3, j = faces[f + 1] * 3, k = faces[f + 2] * 3;
+    const A = tri[(f / 3) * 4];
+    const X = [p[i], p[j], p[k]], Y = [p[i + 1], p[j + 1], p[k + 1]], Z = [p[i + 2], p[j + 2], p[k + 2]];
+    syy += m2(A, Y, Y);
+    szz += m2(A, Z, Z);
+    sxx += m2(A, X, X);
+    syz += m2(A, Y, Z);
+    syx += m2(A, Y, X);
+  }
+  const my = ay / a, mx = ax / a, mz = az / a;
+  const Iyy = syy - a * my * my, Izz = szz - a * mz * mz, Ixx = sxx - a * mx * mx;
+  const Iyz = syz - a * my * mz, Iyx = syx - a * my * mx;
+  // a mirror image about y = 0 has no y·z or y·x product: a correlation of a thousandth at most
+  return Math.abs(Iyz) <= 1e-3 * Math.sqrt(Math.max(Iyy * Izz, 0)) && Math.abs(Iyx) <= 1e-3 * Math.sqrt(Math.max(Iyy * Ixx, 0));
 }
 
 /** Binary STL of a mesh (float32, little-endian; normals from the winding). */
@@ -496,22 +530,25 @@ export function prepareHull(tris, attitude = {}) {
     bounds: { min: b.min, max: b.max },
     asDrawn: { min: b0.min, max: b0.max, loa: L0 },
     symmetric: isSymmetric(mesh, L),
-    attitude: { sinkage: attitude.sinkage ?? 0, trim: attitude.trim ?? 0, pivotX },
+    attitude: { sinkage: attitude.sinkage ?? 0, trim: attitude.trim ?? 0, heel: attitude.heel ?? 0, pivotX },
     ...hydro,
   };
   return { mesh, stl: encodeSTL(mesh), info, warnings };
 }
 
 /**
- * The sinkage that floats the hull at a displaced volume (m³), at its trim:
- * bisection on hydrostatics(), which only grows as the hull goes down.
- * Null when the volume is out of reach (more than the whole hull displaces).
+ * The sinkage that floats the hull at a displaced volume (m³), at its trim
+ * and heel: bisection on hydrostatics(), which only grows as the hull goes
+ * down. Null when the volume is out of reach (more than the whole hull
+ * displaces). Heeling about the centreline changes what is under water, so
+ * this is also how a heeled hull keeps its upright displacement.
+ * @param {{ trim?: number, heel?: number }} [at]
  */
-export function sinkageForVolume(tris, target, trim = 0) {
+export function sinkageForVolume(tris, target, { trim = 0, heel = 0 } = {}) {
   const b0 = boundsOf(tris);
   const pivotX = (b0.min[0] + b0.max[0]) / 2;
   const diag = Math.hypot(...b0.max.map((v, k) => v - b0.min[k]));
-  const base = weld(applyAttitude(tris, { trim }, pivotX), Math.max(1e-9, 1e-6 * diag));
+  const base = weld(applyAttitude(tris, { trim, heel }, pivotX), Math.max(1e-9, 1e-6 * diag));
   let mesh = closeHoles(orient(base));
   mesh = { points: mesh.points, faces: mesh.faces };
   if (signedVolume(mesh) < 0) mesh = flipAll(mesh);

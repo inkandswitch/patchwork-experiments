@@ -18,7 +18,7 @@ import { G, waterProperties } from "./setup.js";
  * @param {object} summary  a finished double-body run's summary (Fz, My, cofrX)
  * @param {object} info     the run's frozen hull info (awp, lcf, il, attitude)
  * @param {object} setup    the run's setup (water, temperature)
- * @returns {{ sinkage: number, trimDeg: number, attitude: { sinkage: number, trim: number }, why: string } | null}
+ * @returns {{ sinkage: number, trimDeg: number, attitude: { sinkage: number, trim: number, heel: number }, why: string } | null}
  *   sinkage/trimDeg: the change at the LCF; attitude: the hull inputs that put it there
  *   (sinkage and trim as prepareHull takes them, added to the run's own)
  */
@@ -33,12 +33,12 @@ export function runningAttitude(summary, info, setup) {
   // prepareHull trims about the as-drawn mid-length (pivotX), then lowers: trimming
   // there by θ moves the LCF down by (x_LCF − pivotX)·sin θ, which the sinkage makes up
   const pivotX = info.attitude?.pivotX ?? lcf;
-  const base = { sinkage: info.attitude?.sinkage ?? 0, trim: info.attitude?.trim ?? 0 };
+  const base = { sinkage: info.attitude?.sinkage ?? 0, trim: info.attitude?.trim ?? 0, heel: info.attitude?.heel ?? 0 };
   const dSink = s - (lcf - pivotX) * Math.sin(th);
   return {
     sinkage: s,
     trimDeg: (th * 180) / Math.PI,
-    attitude: { sinkage: base.sinkage + dSink, trim: base.trim + (th * 180) / Math.PI },
+    attitude: { sinkage: base.sinkage + dSink, trim: base.trim + (th * 180) / Math.PI, heel: base.heel },
     why: "the double body's dynamic lift and moment on the waterplane's stiffness; linear and without waves",
   };
 }

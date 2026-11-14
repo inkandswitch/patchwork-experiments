@@ -42,6 +42,9 @@ describe("dat tables", () => {
     expect(r.Rt).toBeCloseTo(r.Rp + r.Rv, 4); // the file keeps 9 significant figures
     expect(r.Rt).toBeGreaterThan(0);
     expect(forceRow(cols, last, { half: false }).Rt).toBeCloseTo(r.Rt / 2, 9);
+    // a half model's side force is the symmetry plane's: none; a full model's is read
+    expect(r.Fy).toBe(0);
+    expect(forceRow(cols, last, { half: false }).Fy).toBe(last[cols.indexOf("total_y")]);
   });
   it("reads solverInfo's initial residuals, words as NaN", () => {
     const { cols, rows } = parseDat(fx("solverInfo.dat"));

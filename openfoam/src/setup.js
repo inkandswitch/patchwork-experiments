@@ -16,7 +16,9 @@
  * @property {number} temperature      °C, 0–30
  * @property {{ sinkage: number, trim: number }} attitude
  *   sinkage: metres the hull is lowered from as drawn (negative raises it);
- *   trim: degrees, bow down positive, about the hull's mid-length on the waterline
+ *   trim: degrees, bow down positive, about the hull's mid-length on the waterline;
+ *   heel: degrees, starboard down positive, about the waterline's centreline
+ *   (a heeled hull has no symmetry plane, so it always runs the full domain)
  * @property {MeshPreset} mesh
  * @property {number} iterations       solver iterations (steady, or LTS pseudo-time)
  * @property {"auto"|"half"|"full"} domain   half: y ≤ 0 with a symmetry plane, for a symmetric hull
@@ -52,7 +54,7 @@ export function defaultSetup() {
     speedUnit: "kn",
     water: "salt",
     temperature: 15,
-    attitude: { sinkage: 0, trim: 0 },
+    attitude: { sinkage: 0, trim: 0, heel: 0 },
     mesh: "coarse",
     iterations: DEFAULT_ITERATIONS["double-body"].coarse,
     domain: "auto",
@@ -84,6 +86,7 @@ export function normalizeSetup(s) {
     attitude: {
       sinkage: clamp(num(s.attitude?.sinkage, 0), -50, 50),
       trim: clamp(num(s.attitude?.trim, 0), -10, 10),
+      heel: clamp(num(s.attitude?.heel, 0), -60, 60),
     },
     mesh,
     iterations: Math.round(clamp(num(s.iterations, DEFAULT_ITERATIONS[mode][mesh]), 50, 20000)),
@@ -319,8 +322,12 @@ export function hullExtent(info) {
   };
 }
 
-/** A half model (y ≤ 0, symmetry at y = 0)? "auto": when the hull is symmetric. */
+/**
+ * A half model (y ≤ 0, symmetry at y = 0)? "auto": when the hull is
+ * symmetric. Never when it's heeled: a heeled hull isn't, whatever's asked.
+ */
 export function isHalfModel(setup, info) {
+  if (Math.abs(setup.attitude?.heel ?? 0) > 1e-9) return false;
   if (setup.domain === "full") return false;
   if (setup.domain === "half") return true;
   return info.symmetric === true;
