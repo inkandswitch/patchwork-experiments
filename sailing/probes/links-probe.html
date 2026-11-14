@@ -3,8 +3,8 @@
 <title>links probe</title>
 <!-- Driven by probes/links-run.mjs: one Lost Cities game doc G, linked live
      into two scenes (scene/COMPOSITION.md, worked example 3), on the BUILT
-     scene, seats, sailing, tabletop, card-table, keep, joints and traversal
-     plugins in a stub registry, on ONE in-memory repo:
+     scene, seats, sailing, tabletop, card-table, keep, joints, traversal and
+     walk plugins in a stub registry, on ONE in-memory repo:
        A (Ana)  a still room: a Card table with G linked onto it;
        B (Ben)  the sloop at anchor: the Card table in her cockpit, G linked
                 onto it (the Lost Cities part makes G and links it);
@@ -81,7 +81,7 @@ const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0]
 const TABLE_TOP = [0, 0.7006, 0];
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js", "../../keep/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../../walk/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -332,6 +332,47 @@ try {
       return null;
     },
     resume() { apiOf("b").clock.resume(); return apiOf("b").clock.t(); },
+    // ─── presence where it is (scene/COMPOSITION.md §3; TOOLS.md §6) ───
+    /** view w's clock chips, outermost first: { doc, text } (doc: the name it shows, "" at the outermost) */
+    chips: (w) => [...hosts[w].querySelectorAll(".clock-chip")].map((c) => ({ doc: c.querySelector(".clock-doc").hidden ? "" : c.querySelector(".clock-doc").textContent, text: c.querySelector(".clock-text").textContent })),
+    /** view w's stage of G at its outermost link (the room's, the boat's), entered or left */
+    enterG(w) { return P.enter(w, w === "a" ? ids.roomLink : ids.boatLink); },
+    leaveG(w) { dbg[w].view.leave(); return dbg[w].view.atom.get().focus.length; },
+    session: (w) => dbg[w].view.session,
+    /** in each of view w's stages of G (path, role): what its part `ext` draws in its world layer, by the whole part or its half */
+    layerIn(w, ext) {
+      // (a pin's url names G at its heads: G's stages are those whose url starts with G's)
+      return dbg[w].view.stages().filter((s) => typeof s.url === "string" && s.url.startsWith(docs.game?.url)).map((s) => {
+        const groups = [...(dbg[w].viewport.layers.get(keyOf(s.n, ext)) ?? [])];
+        return { path: s.path.join("/"), role: s.role, half: s.debug.host.halfRecord(ext)?.state === "running", whole: !!s.debug.host.instanceOf(ext), children: groups.flatMap((g) => g.children) };
+      });
+    },
+    /** each stage of G's peer selection boxes in view w */
+    peerBoxes: (w) => P.layerIn(w, "scene.select").map(({ children, ...x }) => ({ ...x, boxes: children.map((h) => h.userData.selection).sort() })),
+    /** each stage of G's avatars in view w, and the first one's world position (its layer followed to where its stage's root is drawn now) */
+    avatars(w) {
+      dbg[w].viewport.followLayers();
+      return P.layerIn(w, "walk").map(({ children, ...x }) => {
+        const g = children[0];
+        let top = g;
+        while (top?.parent) top = top.parent;
+        top?.updateMatrixWorld(true);
+        const e = g?.matrixWorld.elements;
+        return { ...x, n: children.length, at: e ? [e[12], e[13], e[14]] : null };
+      });
+    },
+    /** where Cara's avatar should be drawn in view w now: her feet (G's frame, as she says them on G's channel) through G's root as w draws it */
+    caraIn(w) {
+      const st = gStage(w);
+      const feet = st?.debug.presence.get()[dbg.c.view.session]?.keys?.walk?.avatar?.feet;
+      const link = w === "a" ? keyOf(0, ids.roomLink) : keyOf(0, ids.boatLink);
+      const m = dbg[w].viewport.worldOf(link);
+      return feet && m ? apply(m, feet) : null;
+    },
+    /** Cara walks (her view is G alone): off the seat body she watched from, onto walk */
+    caraWalks() { if (dbg.c.view.atom.get().body?.id !== "look") dbg.c.view.enterBody("look"); return !!dbg.c.view.enterBody("walk"); },
+    caraSelects(id) { dbg.c.view.select(id == null ? null : [id]); return dbg.c.view.atom.get().selected; },
+    stepFrames: async (n) => { for (let i = 0; i < n; i++) await time.step(1, { draw: false }); return n; },
     /** sample, frame by frame for `ms` of the page's clock, how far a G card leans in each view, and B's camera's up against G's table */
     async sampleLean(id, ms = 6000) {
       const out = { a: [], b: [], c: [], camB: [], camA: [] };
