@@ -1532,7 +1532,8 @@ a scene:part in index.js under "Sailing":
   2, the rest 1). `ctx.file` is
   required: there is no other way a part makes its files.
 - The template is the Sloop part's objects with her way on, the landmarks
-  (the buoy and islet parts, locked, in a group), the home view and "play".
+  (the buoy and islet parts, locked, in a group), and where people start
+  (`view.start`: a home view only, so Look).
   At anchor, her stations' settings are set over the parts' own
   (`sloopObjects(..., { settings })`): the sail lowered, the anchor down.
 
