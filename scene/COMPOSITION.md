@@ -62,8 +62,10 @@ their folder settles on; an arrival whose body refuses when offered is
 asked again until the wait ends; leaving Edit puts the selection down. The
 published examples are Lost Cities aboard (the boat, with the game linked
 locked on her table), the Quiet games room (the same game doc on one of its
-tables) and Fitting out (a fit-out pinned at a version, a hatch linked live
-twice). Still open:
+tables), Fitting out (a fit-out pinned at a version, a hatch linked live
+twice) and Games night (a mashup: the room and the Liar's dice table linked
+unchanged into a new doc). Each was checked in the real Patchwork on
+2026-11-14 (FOLLOWUPS "Final fixer"). Still open:
 - the clock chip shows the focus doc's clock only (TOOLS.md §6 wants one
   per doc on the focus path), and walk's avatars of others are the focus
   doc's while you aren't walking (the same root: presence drawn by a
@@ -75,11 +77,16 @@ twice). Still open:
   lead's call whether a click on nothing in Edit should stop there;
 - the first click of a double-click on a link selects it, and if the
   inspector was shut that opens it and narrows the canvas under the second
-  click, which can then miss a small link. Since the inspector stays open
+  click, which can then miss a small link (seen in the real Patchwork on
+  2026-11-14: the first double-click on Lost Cities aboard's game selected
+  the table, the second entered). Since the inspector stays open
   (TOOLS Decisions 6) this happens only on the first selection of an Edit
   visit or after its ×; an overlaid drawer was rejected there, so the
   remaining fix is opening the inspector a beat after a click that may
-  become a double-click.
+  become a double-click;
+- a doc's packages list grows as parts are added and isn't pruned when
+  they go;
+- two linked docs that each draw a sea draw two (no shared water surface).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -1068,6 +1075,49 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, final fixer (2026-11-14, made unattended)
+
+1. **An arrival whose body refuses is asked again** until `ARRIVE_WAIT_MS`
+   after the offer (view.js `tryArrive`). A seat refusing at the moment it
+   is offered (not yet laid) used to leave the viewer in Look for good.
+   Consequence found by the stations probe: the maker of a table, after its
+   template, is seated watching as its `view.start` says (TOOLS §2), which
+   the old code skipped by accident.
+2. **A press is where the look is** (router `onPointerDown` hands its hit to
+   `onHover` before dispatching). Since step 14 the menu takes its sections
+   from the look's path, and the look moved only on the next frame after a
+   pointer move, so a right-click within a frame of moving, a touch long
+   press (no hover at all) and every probe's right-click got the previous
+   hover's menu or the scene's. Rejected: passing the press's hit to the
+   menu through `api.path({ hit })`, which would give the path a second
+   notion of where the pointer is; one look, updated by the press, keeps
+   the use prompt, the keys and the menu on the same thing.
+3. **Leaving Edit puts the selection down; the toolbar is one row with no
+   scrollbar; no tie rule for verbs beyond running order**: TOOLS.md
+   Decisions 6 and 7.
+4. **The mashup is Games night**: the Quiet games room and the Liar's dice
+   table, both published, linked into a new doc by a generic publisher
+   (`scene/probes/publish-links.mjs`: named links at positions, a start
+   through one, one linked doc's display prefs). No code was written for
+   it. Rejected for tonight: a harbour of two linked boats, because each
+   boat's doc draws its own sea at the same height and the stage has no
+   notion of a water surface (SCOPE §9 lists water height as not built);
+   making one in `scene` would be sailing leaking into the stage. Recorded
+   as NEXT PHASE (a water surface as its own package that boats find by
+   trait). Also rejected: dice cups on the Lost Cities table, since since
+   step 12 a game is its own doc and the Quiet games room already shows
+   several games' docs in one room; Games night adds what it didn't: whole
+   published scenes (one made before links existed) linked unchanged, and
+   arrival two links deep.
+5. **Fitting out lists each doc's own packages exactly** (S scene and
+   sailing; F scene, joints, traversal; W scene and joints), checked in the
+   page as "what the doc calls for equals what it states". A doc's packages
+   list grows as parts are added and isn't pruned when they go (S, as the
+   tools made it, still lists the companionway's joints and traversal):
+   recorded as a stage gap, not fixed tonight (a prune would have to know
+   which package each remaining object needs, the registry's question, and
+   a doc edited while a package is missing must not lose it).
 
 ## Decisions, step 9 (2026-11-14, made unattended)
 

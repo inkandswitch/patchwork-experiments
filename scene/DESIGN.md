@@ -257,6 +257,10 @@ Lost Cities table the same game doc as the boat's: one person plays in the
 room and another aboard, the table heeling only aboard. *Fitting out* is a
 sloop whose companionway is a fit-out pinned at a version, and one hatch
 linked live twice: the second is a mirror, opening when the first does.
+*Games night* is a doc of two links and nothing else: the Quiet games room
+and the Liar's dice table, both published before it, linked unchanged; it
+starts people through the room's link, which starts them through its Lost
+Cities link, so they arrive watching at that game two links down.
 
 **Doom's E1M1.** Dropping a WAD lays out its first map: the doom package's
 provider builds a GLB of the static map, one per door and one per exit

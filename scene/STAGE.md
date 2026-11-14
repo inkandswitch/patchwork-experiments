@@ -39,7 +39,7 @@ each build step.
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
-| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock). Keys and the use prompt go to it. |
+| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
