@@ -66,6 +66,7 @@
 // keys typed in it are its own (STAGE.md, "Keys").
 
 import { cupsOf } from "./cup.js";
+import { endedWhy } from "./lots.js";
 import { CARRY, DIE, PROVIDER } from "./ids.js";
 import { AIR_SECONDS, LAND_SECONDS, ROLL_SKID, airborne, builtOf, faceOfSeed, faceUp, landing, rollPlan, scaleOf, seedFromLots, seedOfThrow, turnTo } from "./roll.js";
 
@@ -317,8 +318,8 @@ function create(api) {
         // given up (lots.js GONE): someone's client didn't see me here, or mine lost my part
         // (a `gone` in my name my client didn't write is a forgery: said so instead)
         if (st?.phase === "ended") {
-          const forged = [...new Set([...(st.forged ?? []), ...(st.fault?.why === "forged" ? [api.viewer] : [])])];
-          return fail(`That roll didn't land: ${forged.length ? forgedLine(forged, false) : st.gone.includes(api.viewer) ? "your client lost its part of the lots" : `${list(st.gone.map(whoOf))} gave its lots up, not seeing you here`}. Nothing was rolled.`, false);
+          const why = endedWhy(st, api.viewer, { forged: (vs) => forgedLine(vs, false), lost: "your client lost its part of the lots", gaveUp: (vs) => `${list(vs.map(whoOf))} gave its lots up, not seeing you here` });
+          return fail(`That roll didn't land: ${why}. Nothing was rolled.`, false);
         }
         if (api.clock.now() - started > THROW_MS) {
           // (should the doc draw it after all, it lands and is told so, saying this view was told it didn't)

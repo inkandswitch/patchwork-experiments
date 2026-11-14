@@ -356,6 +356,20 @@ export const KEPT = Object.freeze({ to: Object.freeze([]), opened: false });
  * when it can't say (a part of the draw from before it came: a reload, or
  * another browser), and then anyone could.
  */
+/**
+ * Why my attempt came to nothing once it ended (GONE), in words: a forgery
+ * said first (a `gone` in my name my client didn't write is one: its fault
+ * "forged"), else my client lost my part, else whoever gave it up. One rule
+ * for the throw (extension.js) and the panel (tool.js), each in its own
+ * words (`words.forged(viewers)`, `words.lost`, `words.gaveUp(viewers)`). Pure.
+ */
+export function endedWhy(st, me, words) {
+  const forged = [...new Set([...(st?.forged ?? []), ...(st?.fault?.why === "forged" ? [me] : [])])];
+  if (forged.length) return words.forged(forged);
+  const gone = st?.gone ?? [];
+  return gone.includes(me) ? words.lost : words.gaveUp(gone);
+}
+
 export function knewWith(knew, told) {
   if (knew === "all" || !told || told.opened) return "all";
   return sorted([...knew, ...told.to]);

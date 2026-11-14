@@ -7,7 +7,7 @@
 // opens only when it's addressed to it (seal.test.js checks the real ones).
 
 import { createHash } from "node:crypto";
-import { COMMIT_MS, KEPT, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, knewWith, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
+import { COMMIT_MS, KEPT, STALE_MS, MAX_OF, OPEN_MS, commitOf, complete, contributorsOf, endedWhy, couldKnow, derive, due, endable, faultOf, goneOf, knewOf, knewWith, membersFor, newRound, opensRight, roundOf, seed32, seedOf } from "./lots.js";
 import { sha256 } from "./sha256.js";
 
 const nonceOf = (v, id) => sha256(`nonce|${v}|${id}`);
@@ -766,5 +766,22 @@ describe("sha256", () => {
       expect(sha256(s)).toBe(createHash("sha256").update(s).digest("hex"));
     }
     expect(sha256("ünïcødé ✓")).toBe(createHash("sha256").update("ünïcødé ✓").digest("hex"));
+  });
+});
+
+describe("endedWhy: why an ended attempt of mine came to nothing, the same order on every surface", () => {
+  const words = { forged: (vs) => `forged:${vs.join("+")}`, lost: "lost", gaveUp: (vs) => `gaveUp:${vs.join("+")}` };
+  it("every case over me and one other: a forgery (said, or a `gone` in my name I didn't write) first, then my part lost, then who gave up", () => {
+    let cases = 0;
+    for (const forged of [[], ["me"], ["bo"], ["me", "bo"]])
+      for (const fault of [null, "forged", "other"])
+        for (const gone of [[], ["me"], ["bo"], ["me", "bo"]]) {
+          const st = { forged, fault: fault ? { why: fault } : null, gone };
+          const fs = [...new Set([...forged, ...(fault === "forged" ? ["me"] : [])])];
+          const want = fs.length ? `forged:${fs.join("+")}` : gone.includes("me") ? "lost" : `gaveUp:${gone.join("+")}`;
+          expect(endedWhy(st, "me", words), JSON.stringify(st)).toBe(want);
+          cases++;
+        }
+    expect(cases).toBe(48);
   });
 });
