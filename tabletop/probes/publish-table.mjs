@@ -234,7 +234,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`game ${game.url}: ${glbs.length} pieces, each its own GLB`);
-console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts people ${JSON.stringify(s.view.start?.body ?? "orbit")}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
+console.log(`table ${scene.url}: ${objects.length} objects, ${hidden.length} cards kept by the ${deckTypes.join(", ")}, ${Object.keys(s.traits.seats).length} seats, starts people ${JSON.stringify(s.view.start?.body ?? "look")}; packages: ${s.packages.map((e) => e.url).join(" ")}`);
 const made = [game.url, scene.url, ...Object.values(deckUrls), ...glbs];
 
 if (DRY) {
@@ -302,10 +302,10 @@ async function fromTemplate(gameId) {
     check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
     // a game with seats starts people in the seat body (view.start), where a press picks a piece up
     const tabled = TABLES[gameId].seats > 0;
-    const lands = tabled ? "Watching" : "Orbit";
-    check(`the view starts people ${tabled ? "in the seat body" : "in orbit (no body)"}, with no view.activity or view.tool`, (tabled ? d.view?.start?.body === "seat" : !("body" in (d.view?.start ?? {}))) && !("activity" in (d.view ?? {})) && !("tool" in (d.view ?? {})), d.view);
+    const lands = tabled ? "Watching" : "Look";
+    check(`the view starts people ${tabled ? "in the seat body" : "in Look (no body named)"}, with no view.activity or view.tool`, (tabled ? d.view?.start?.body === "seat" : !("body" in (d.view?.start ?? {}))) && !("activity" in (d.view ?? {})) && !("tool" in (d.view ?? {})), d.view);
     check(`every piece not fixed to the table carries scene.carry (${d.loose})`, d.loose > 0 && d.carried === d.loose, { loose: d.loose, carried: d.carried });
-    check(`A lands ${lands === "Orbit" ? "in orbit" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
+    check(`A lands ${lands === "Look" ? "in Look" : "watching from a seat"}`, await until(`bodyLabel('a') === ${JSON.stringify(lands)}`, 20_000), await P("bodyLabel('a')"));
     // What the table needs is the stage's to say, not this script's: A's stage
     // lists the package of every plugin the scene calls for (and of the
     // template it ran) and names the scene package as the suggested import.

@@ -96,7 +96,7 @@ try {
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    /** the body a view is in, by what its chip says ("Watching", "Seated", "Orbit") */
+    /** the body a view is in, by what its chip says ("Watching", "Seated", "Look") */
     body: (w) => dbg[w].local.get().body?.label ?? null,
     phase: () => deck.doc()?.phase ?? null,
     hud: (w) => [...hosts[w].querySelectorAll(".scene-hud, .hud, [class*=hud]")].map((e) => e.textContent.trim()).filter(Boolean),

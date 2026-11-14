@@ -104,7 +104,7 @@ try {
     seats: () => seatsOf(scene.doc()),
     picker: (w) => select(w)?.options.length ?? 0,
     pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
-    /** the body a view is in, by what its chip says ("Watching", "Seated", "Orbit") */
+    /** the body a view is in, by what its chip says ("Watching", "Seated", "Look") */
     body: (w) => dbg[w].local.get().body?.label ?? null,
     /** is a drawer tab of the stage's own open in view w (its panel id: "parts", "objects", "inspector") */
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
@@ -156,6 +156,8 @@ try {
     pickAt: (x, y, w = "a") => { const r = canvasRect(w); const h = dbg[w].viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id ?? null, point: h.point?.map(r6) }; },
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    /** the body chip's menu item starting `label` ("Look", "Edit", "Seated"…), in view w */
+    chipItem(w, label) { const e = [...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     rect(sel, w = "a") { const e = hosts[w].querySelector(sel); if (!e) return null; e.scrollIntoView?.({ block: "center" }); const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height } : null; },
     binParts: (w = "a") => [...hosts[w].querySelectorAll('.scene-parts .parts-group[data-category="Tabletop"] .part')].map((b) => b.dataset.part),
     camera: (w = "a") => { const c = dbg[w].viewport.getCamera(); return JSON.parse(JSON.stringify(c)); },
