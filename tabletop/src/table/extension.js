@@ -283,26 +283,30 @@ export default {
         entry.stop?.();
         drawing.delete(id);
       };
+      // someone took it first (a peer's hold, or ours refused: a carry or the halo here has it), moved it or
+      // removed it: theirs; the next card, `retries` times
+      const theirs = () => {
+        stop();
+        const s = api.scene();
+        const regions = zones(s);
+        const next = rest.filter((x) => canDraw(s, regions, x));
+        if (retries > 0 && next.length) return glide(next, slot, retries - 1);
+        return api.notify("Someone drew that one");
+      };
       entry.stop = api.loop((dt) => {
         const now = api.scene().objects?.[id];
-        // a peer took hold of it first, moved it or removed it: theirs
         if (!now || api.heldBy(id) != null || !sameTransform(now.transform, from)) {
-          stop();
           if (now) api.pose.release(id);
-          const s = api.scene();
-          const regions = zones(s);
-          const next = rest.filter((x) => canDraw(s, regions, x));
-          if (retries > 0 && next.length) return glide(next, slot, retries - 1);
-          return api.notify("Someone drew that one");
+          return theirs();
         }
         t = Math.min(1, t + (Number(dt) || 0) / DRAW_SECONDS);
-        if (t < 1) return api.pose.hold(id, between(from, to, t));
+        if (t < 1) return void (api.pose.hold(id, between(from, to, t)) || theirs());
         stop();
         api.change(api.ops.setTransform(api.scene(), id, to));
         api.pose.release(id, { landed: true });
         announce("drew", { n: 1, ...nounOf(api.scene(), id) });
       });
-      api.pose.hold(id, from);
+      if (!api.pose.hold(id, from)) theirs();
     }
 
 
