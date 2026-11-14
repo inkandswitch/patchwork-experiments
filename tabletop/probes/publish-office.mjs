@@ -44,9 +44,10 @@ import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs";
 
-// the scene, the seats, the tables and their pieces, the keeper (the decks'
-// players shuffle them), and walk (the entrance mat is a spawn point)
-const PACKAGES = ["scene", "seats", "tabletop", "card-table", "walk"];
+// the room's own: the scene, the tables (tabletop's), and walk (the entrance
+// mat is a spawn point). Each game lists its own (GAME_PACKAGES): a view
+// offers every open doc's packages together (scene/STAGE.md, "Packages")
+const PACKAGES = ["scene", "tabletop", "walk"];
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1, art: 0, game: 1 };
 const args = {};
@@ -88,7 +89,7 @@ const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
 for (const p of ["scene", "seats", "tabletop", "card-table", "keep", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-office"));
-const urls = Object.fromEntries(PACKAGES.map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries([...new Set([...PACKAGES, ...GAME_PACKAGES])].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 
 const { browser, checklist, sleep } = await import("./cdp.mjs");
@@ -134,8 +135,10 @@ try {
     check("each game's picker lists its own seats", J(pickers.map((x) => x?.options)) === J([["", "p1", "p2"], ["", "p1", "p2", "p3"], ["", "p1", "p2"]]), pickers);
     const pk = await P("packages('a')");
     const answering = new Set(pk.answering.map((p) => folderOf(p.importUrl)));
-    // (the room's own stage calls for the scene's and the spawn point's; seats, tabletop and the keeper are its games')
+    // (the room's own stage calls for the scene's and the spawn point's; seats and the keeper are its games', which
+    // each game lists: the view asks for every open doc's together, so the room doesn't list them for its games)
     check("the stage lists the package of every plugin the room calls for, each one stated", ["scene", "walk"].every((p) => answering.has(p) && pk.listed.includes(urls[p])) && [...answering].every((p) => PACKAGES.includes(p)) && (pk.suggested == null || pk.suggested === urls.scene), { answering: [...answering], listed: pk.listed.map(folderOf), suggested: pk.suggested });
+    check("the room lists none of its games' packages for them (seats, the keeper)", !["seats", "card-table"].some((p) => pk.listed.includes(urls[p])), { listed: pk.listed.map(folderOf) });
     snapshot = await P("snapshot()");
     report.shots.push(await b.shot(join(SHOTS, "office-built.png")));
     await P("openB()");
@@ -190,7 +193,6 @@ async function art() {
 // ─── publish the room as it was before anyone sat ───────────────────────────
 async function publish(snapshot0) {
   let snap = snapshot0;
-  // the room lists its games' packages too, for now: a view offers the outermost doc's packages only
   const docs = { ...snap.docs, [snap.scene]: withPackages(snap.docs[snap.scene], PACKAGES) };
   for (const g of snap.games) docs[g] = withPackages(snap.docs[g], GAME_PACKAGES);
   // the room's Lost Cities links the given game (the boat's): its own game doc, deck and files aren't published
