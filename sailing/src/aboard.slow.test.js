@@ -127,7 +127,6 @@ function join(w, session, hull) {
       eye: () => s.bodies.at(-1).sitting?.eye?.() ?? null,
     },
     camera: {
-      object: base.camera.object,
       get: () => ({ ...s.cam }),
       set: (c) => (s.cam = { ...s.cam, ...c }),
       hold: () => (s.held++, () => s.held--),
