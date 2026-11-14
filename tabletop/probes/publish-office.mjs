@@ -17,7 +17,7 @@
 // (api.part), Lost Cities first, a chair at each of its seats (Santorini,
 // wider than the Card table, on a low table of the room's own, with a
 // cushion at each seat); the doc
-// starts people watching from a seat (view.start's seat body) with a home
+// starts people through Lost Cities' link (view.start's place: as that game starts them, watching from a seat) with a home
 // view across the room. It checks:
 // - each table holds a locked link to a game doc of its own (each with its own seats and hands; Santorini.s under
 //   other ids where those were taken; Dominoes' too), each seat's view in
@@ -127,7 +127,7 @@ try {
       s.games,
     );
     check("a chair or a cushion at every seat, a spawn point at the doors", s.chairs === 7 && s.spawn === 1, s);
-    check("it starts people watching from a seat (the seat body), at home across the room; no grid or axes", s.start?.body === "seat" && !!s.start?.home && s.view.grid === false && s.view.axes === false, { start: s.start, view: s.view });
+    check("it starts people through Lost Cities' link (as that game starts them: watching from a seat), at home across the room; no grid or axes", s.start?.place === ids.tables[0].link && s.start?.body === undefined && !!s.start?.home && s.view.grid === false && s.view.axes === false, { start: s.start, view: s.view });
     check(`titled “${TITLE}”, two decks kept by the joint keeper`, s.title === TITLE && s.decks.length === 2 && s.decks.every((d) => d.type === "secure-deck"), { title: s.title, decks: s.decks });
     check("every object shows one of its own doc's files (a link shows its game)", (await P("strays()")).length === 0, await P("strays()"));
     const pickers = await P("pickers('a')");
@@ -251,7 +251,7 @@ async function publish(snapshot0) {
       if (!problem && url === scene.url) {
         const links = Object.values(got.objects ?? {}).filter((o) => o.providerId === "scene.link");
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-        else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
+        else if (got.objects?.[got.view?.start?.place]?.providerId !== "scene.link") problem = `came back with view.start ${J(got.view?.start)}`;
         else if (links.length !== 3) problem = `came back with ${links.length} links`;
         else if (GAME && !links.some((l) => l.sourceUrl === GAME)) problem = `came back without its link to ${GAME}`;
         else if (got.claims) problem = "came back with claims";
