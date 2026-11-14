@@ -141,7 +141,7 @@ try {
 
   // 7. writes through the drawn stages
   const tried = await P("tryWrites()");
-  check("7. every write tried through the pin and the mirror is refused, quietly", ["pinned", "mirror"].every((k) => tried[k].change === "quiet" && tried[k].claim === null && tried[k].hold === false && tried[k].run === false && tried[k].writable === false) && tried.pinned.role === "pinned" && tried.mirror.role === "mirror", tried);
+  check("7. every write tried through the pin and the mirror is refused, quietly", ["pinned", "mirror"].every((k) => tried[k].change === "quiet" && tried[k].claim === null && tried[k].hold === false && tried[k].run === false && tried[k].writable === false) && tried.pinned.role === "pinned" && tried.mirror.role === "mirror" && !tried.pinned.hasRole && !tried.mirror.hasRole, tried);
   check("7. and none of it reached a doc", (await P("writes")).pin === 0 && (await P("slideOf('f')"))?.at === "open" && (await P("pinnedSlide()"))?.at === "closed", await P("writes"));
 
   // 8. Follow latest, Fix at this version
