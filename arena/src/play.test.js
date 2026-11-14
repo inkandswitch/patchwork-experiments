@@ -179,7 +179,7 @@ describe("playing", () => {
     const { ATMOSPHERE, LOOKS } = await import("./play.js");
     const at = (look) => {
       x.update({ d: { traits: { "arena.level": look === undefined ? {} : { look } } }, objects: {} }, {}, {});
-      return x.atmosphere();
+      return (x.ambient()?.atmosphere ?? null);
     };
     expect(at("arena")).toBe(ATMOSPHERE);
     expect(at("sky")).toEqual({ sky: ATMOSPHERE.sky });
@@ -298,14 +298,14 @@ describe("playing", () => {
   });
 
   it("a laid-out level has the arena's sky, haze and shadowing sun; any other scene keeps its own", () => {
-    expect(x.atmosphere()).toBeNull();
+    expect((x.ambient()?.atmosphere ?? null)).toBeNull();
     // a target added to a boat: a bare level trait, no look
     doc.traits = { "arena.level": {} };
     x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
-    expect(x.atmosphere()).toBeNull();
+    expect((x.ambient()?.atmosphere ?? null)).toBeNull();
     doc.traits = { "arena.level": { look: "arena" } };
     x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
-    const a = x.atmosphere();
+    const a = (x.ambient()?.atmosphere ?? null);
     expect(a).toBe(ATMOSPHERE);
     expect(a.sun.shadows).toBe(true);
     expect(a.fog.far).toBeGreaterThan(a.fog.near);

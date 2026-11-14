@@ -346,9 +346,10 @@ export default {
       ],
       // only a laid-out level has the arena's look (see the top): adding a
       // target to a boat writes the level trait too, but not its look
-      atmosphere: () => {
+      // (the world's ambient: STAGE.md, "Ambients"; a level linked into another world takes that world's)
+      ambient: () => {
         const look = scene?.d?.traits?.["arena.level"]?.look;
-        return typeof look === "string" && Object.hasOwn(LOOKS, look) ? LOOKS[look] : null;
+        return typeof look === "string" && Object.hasOwn(LOOKS, look) ? { atmosphere: LOOKS[look] } : null;
       },
       dispose() {
         tracerLoop?.();
