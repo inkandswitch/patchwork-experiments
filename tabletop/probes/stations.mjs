@@ -96,6 +96,11 @@ try {
   check("A is at the table, its seat picker up", await until("picker('a') === 3", 30_000), await P("bodyLabel('a')"));
   await P("open('b')");
   check("B too", await until("picker('b') === 3", 30_000));
+  // the table starts people watching from a seat (its view.start, read again after the template for
+  // its maker: TOOLS.md §2); each leaves to Look from the chip for what follows
+  check("each arrives watching from a seat, as the table starts people", (await until("body('a') === 'seat'", 3000)) && (await until("body('b') === 'seat'", 3000)), { a: await P("body('a')"), b: await P("body('b')") });
+  await P("enter('a', 'look')");
+  await P("enter('b', 'look')");
   const tray1 = await P("tray('p1')"), tray2 = await P("tray('p2')");
   report.seats = { p1: await P("seatCam('p1')"), p2: await P("seatCam('p2')") };
 
