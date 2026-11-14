@@ -458,15 +458,17 @@ The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
   pedestal, origin on the floor under its middle. Locked (nobody carries the
   table about in play), with one connector at the middle of its top tagged
   `"tabletop.game"`, which a game takes.
-- **Lost Cities**: the whole game's table (the template's layout,
-  `setUp` with the game's id: `gamePart("lost-cities")`), set down on what it was put on: every piece under that
-  object in its frame (on a Card table: squarely in the middle of the top),
-  each seat's camera `in` it, its deck kept by a joint keeper where one is installed.
-  It brings its own seats (a second table in one scene gets seats of its
-  own, `p1-2`…: the seats package's `lay`), and leaves the scene's
-  view, home, units and title alone. So a game aboard a ship is three steps:
-  start from *Ship at anchor* (sailing), drop a Card table in her cockpit,
-  drop Lost Cities on the table; everything rides with her.
+- **Lost Cities**: the whole game's table as a game doc of its own (the
+  template's layout, `setUp` with the game's id, in a new scene doc:
+  `gamePart("lost-cities")`), linked where it was put, under that object,
+  squared to it (on a Card table: squarely in the middle of the top),
+  locked (scene's COMPOSITION.md §8: a game part makes a game doc and links
+  it). The game doc has everything of the game's: its pieces, seats, title,
+  `view.start`, files and its deck, kept by a joint keeper where one is
+  installed; the host gains one object, the link. So a game aboard a ship is
+  three steps: start from *Ship at anchor* (sailing), drop a Card table in
+  her cockpit, drop Lost Cities on the table; it rides with her, and the
+  same game doc can be linked into another scene as well.
 - **Santorini**: the same for Santorini (no deck: everything in plain
   sight), a seat for each worker colour.
 - **Draw Dominoes, 2 / 3 / 4 players**: the same for Draw Dominoes. Its
@@ -502,7 +504,7 @@ are none.
 | `src/pieces.js` | a game doc's pieces → GLB file docs (`drawn`), redrawn when they change, carrying their files' origins |
 | `src/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the game page, the tests and the probe pages start a scene doc from |
 | `src/scene-package.js` | where the scene package comes from, for a new table's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as bag's) |
-| `src/setup.js` | the one table writer: a game → a layout and what its containers and bags hold (shuffle, deal, stack, spread; pure), set down on something (`placeLayout`), and writing it into a scene doc |
+| `src/setup.js` | the one table writer: a game → a layout and what its containers and bags hold (shuffle, deal, stack, spread; pure), and writing it into a scene doc (always the whole doc's: a game part writes a game doc of its own) |
 | `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `makeHolders` |
 | `src/table/template.js` | laying a registered game out in a drop context's scene by its id (`setUp`, the `tables` convention), and the templates |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
