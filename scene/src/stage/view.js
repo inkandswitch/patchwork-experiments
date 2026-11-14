@@ -399,6 +399,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     };
     return addStage((n) => openStage({ handle, view: api, n, path: o.path, frame, under: keyOf(parent.n, linkId), general: false }));
   }
+  /** Is a linked doc still on its way: one being found, or acting with no stage open for it yet? */
+  function linksPending() {
+    for (const d of docs.values()) if (d.state === "loading") return true;
+    return expansion.some((o) => o.role === "acting" && o.depth > 0 && !linked.has(o.url));
+  }
   /** A link's state as the view has it ({ state: "open" | "mirror" | "pinned" | "closed" | "acting", reason? }), by its path; null if it isn't one. */
   const linkState = (p) => linkStates.get(pathKey(p)) ?? null;
 
@@ -638,9 +643,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       enterBody(a.body, a.place);
       return;
     }
+    // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)
     const all = [...stages.values()];
-    if (all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
-    else if (all.some((s) => s.starting() || s.packages.coming())) requestFlushSoon();
+    const pending = linksPending();
+    if (!pending && all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
+    else if (pending || all.some((s) => s.starting() || s.packages.coming())) requestFlushSoon();
   }
 
   // ─── the look and attention (TOOLS.md §3) ─────────────────────────────────
@@ -952,6 +959,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     tryArrive,
     relink,
     linkState,
+    /** what arriving still waits to enter (view.start's body), for probes and tests */
+    arriving: () => (arrival ? { ...arrival } : null),
+    linksPending: () => linksPending(),
     /** the expansion as it stands (links.js), for probes and tests */
     expansion: () => expansion,
     dispose,

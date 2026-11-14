@@ -250,7 +250,7 @@ async function drawOne(label) {
   check(`${label}: D lands a card in A's tray`, landed && !!drawn, { before: before.p1.length, after: after.p1.length });
   if (!drawn) return null;
   const pose = await P(`onTable(${J(drawn)})`);
-  check(`${label}: …under the table, square to it`, pose.parent === (await P("ids")).table && pose.up > 0.999, pose);
+  check(`${label}: …on the table (G's, linked onto it), square to it`, pose.game && pose.parent === null && pose.up > 0.999, pose);
   check(`${label}: A sees its face, B doesn't`, (await holds(`faces('a').includes(${J(drawn)})`, 20_000)) && !(await P("faces('b')")).includes(drawn) && (await P("faces('b')")).length === facesB, { a: (await P("faces('a')")).includes(drawn), b: (await P("faces('b')")).includes(drawn) });
   return drawn;
 }
@@ -269,7 +269,7 @@ async function playOne(label, card, column) {
   const k = Math.max(0, Math.min(11, Math.round((pose.local[2] - 0.11) / 0.022)));
   const want = [column, 0.7006, +(0.11 + k * 0.022).toFixed(4)];
   const d = Math.hypot(pose.local[0] - want[0], pose.local[2] - want[2]);
-  check(`${label}: a card carried onto an expedition column snaps to its slot, square to the table, on the table (not the boom)`, d < 0.002 && pose.up > 0.999 && Math.abs(pose.local[1] - want[1]) < 0.006 && pose.parent === ids.table, { pose, want, d: +d.toFixed(4) });
+  check(`${label}: a card carried onto an expedition column snaps to its slot, square to the table, on the table (not the boom)`, d < 0.002 && pose.up > 0.999 && Math.abs(pose.local[1] - want[1]) < 0.006 && pose.game && pose.parent === null, { pose, want, d: +d.toFixed(4) });
   // Flip it where it lies
   await P("focus('a')");
   await hover(card, "/Flip/");
@@ -290,13 +290,15 @@ try {
   check("built through the start screen and the parts bin", !ids.error && ids.table && ids.board, ids);
   const shape = await P("shape()");
   // ── 1 ──
-  check("1: every piece under the table, the table under the hull, locked", shape.pieces === 63 && shape.piecesUnderTable === 63 && shape.tableParent === ids.hull && shape.tableLocked, shape);
+  // Lost Cities aboard is two docs (scene/COMPOSITION.md, worked example 1): the boat, with a locked link to the game on its card table
+  check("1: the boat holds one link to the game, locked, on the table, and none of its pieces or seats; the table under the hull, locked", shape.link?.parent === ids.table && shape.link.locked && shape.link.providerId === "scene.link" && shape.boatPieces === 0 && !shape.boatSeats && shape.tableParent === ids.hull && shape.tableLocked, { link: shape.link, boatPieces: shape.boatPieces, boatSeats: shape.boatSeats });
+  check("1: the game is a doc of its own: every piece at its root, its own title and start", shape.pieces === 63 && shape.piecesAtGameRoot === 63 && shape.gameTitle === "Lost Cities table" && shape.gameStart === "seat", { pieces: shape.pieces, atRoot: shape.piecesAtGameRoot, title: shape.gameTitle, start: shape.gameStart });
   // titled by the game and its deck, never by the scene it was set down in (tabletop/GAME-FORMAT.md)
   check("1: a secure deck, named for the game, not the ship", shape.deckType === "secure-deck" && shape.deckTitle === "Lost Cities: Deck", { deckType: shape.deckType, deckTitle: shape.deckTitle });
   check("1: it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", shape.start === "seat" && shape.sail?.raised === 0 && shape.anchor?.down === true && shape.anchor?.rode === 25 && !!shape.home, { start: shape.start, sail: shape.sail, anchor: shape.anchor, home: shape.home });
-  check("1: the seats' views are in the table's frame", Object.values(shape.seats ?? {}).length === 2 && Object.values(shape.seats).every((s) => s.camera?.in === ids.table), shape.seats);
+  check("1: the seats are the game's, their views in its root frame (it rides the table by the link)", Object.values(shape.seats ?? {}).length === 2 && Object.values(shape.seats).every((s) => s.camera && !s.camera.in), shape.seats);
   // (view.start is read once, on arrival: A, who made it, is still where the template put them)
-  check("A, who made it, is where it left them: orbit", (await P("bodyLabel('a')")) === "Orbit", await P("bodyLabel('a')"));
+  check("A, who made it, is where it left them: Look", (await P("bodyLabel('a')")) === "Look", await P("bodyLabel('a')"));
   await P("openB()");
   check("B arrives watching from a seat (view.start), both pickers up", await loads("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000), { b: await P("bodyLabel('b')") });
   check("everything loads in both views", await loads("loaded('a').loaded === __p.loaded('a').total && __p.loaded('b').loaded === __p.loaded('b').total", 120_000), { a: await P("loaded('a')"), b: await P("loaded('b')") });
@@ -444,13 +446,15 @@ try {
     // (on the tray, at its edge nearest the seat)
     const tray1 = await P(`pageOf(${J(ids.hand1)}, [0, 0, 0.065], 'a')`);
     const near1 = tray1 ? tags.filter((t) => /Player 1/.test(t.text)).map((t) => Math.hypot(t.x - tray1.x, t.y - tray1.y)) : [];
-    // (tray1 null: A's own tray is off A's screen. The seat's ride follows the table's turn and rise, never its
-    // roll or pitch (STAGE.md "Riding"), and the table stands across her, so her heel tips it toward A)
+    // (the seat's view rolls with the table, its camera's up the table's: her heel no longer tips A's own tray off screen)
     check("8: the name tags stay on their trays", near1.length === 1 && near1[0] < 30, { tags, tray1, heelDeg: +(((await P("read('a')"))?.heel ?? NaN) * 180 / Math.PI).toFixed(1) });
+    const off = await P("upOffTable('a')");
+    check("8: under way, A's seat view rolls with the table (the camera's up is the table's) and A's own tray stays on screen", off != null && off < 1e-6 && !!tray1, { off, tray1, heelDeg: +(((await P("read('a')"))?.heel ?? NaN) * 180 / Math.PI).toFixed(1) });
     await shot("under-way-played");
   }
 
-  // ── 12: a halo drag under a moving parent, under way ──
+  // ── 12: selecting a game's card from outside selects the link (scene/COMPOSITION.md §5), under way ──
+  // (the game is a doc of its own: editing a piece inside it is Enter's, build step 14, not a halo from the boat)
   {
     const lying = (await P("where()")).table[0] ?? null;
     const target = card ?? lying;
@@ -459,38 +463,12 @@ try {
       await b.click(at.x, at.y, { button: "right" });
       await b.rest(200);
       const items = await P("menu('a')");
-      check("12: the menu on a card, seated and playing, has Select first", items[0]?.label === "Select" && !items[0].disabled, items.map((i) => i.label));
-      if (items[0]?.label === "Select") await b.click(items[0].x, items[0].y);
-      // (extensions hear the selection at the stage's next flush: a frame, slow on two software-rendered views;
-      // and the inspector's drawer tab opens with it, so the canvas narrows: let it settle before aiming)
-      await until(`halo('a')?.id === ${J(target)}`, 5000);
-      await b.rest(800);
-      const halo = await P("halo('a')");
-      check("12: Select selects it, and its halo is on it, in its parent's frame", (await P("selected('a')")) === target && halo?.id === target && halo.parent === (await P(`parentOf(${J(target)})`)), { selected: await P("selected('a')"), halo, why: await P("haloWhy('a')") });
-      const h0 = await P("haloAt('a', 0)"), h1 = await P("haloAt('a', 0, 0.02)");
-      if (h0 && h1) {
-        const len = Math.hypot(h1.x - h0.x, h1.y - h0.y);
-        const u = [(h1.x - h0.x) / len, (h1.y - h0.y) / len];
-        const before = await P(`transform(${J(target)})`);
-        const parent = await P(`parentOf(${J(target)})`);
-        const hull0 = await P(`worldOf(${J(ids.hull)}, 'a')`);
-        const mid = await b.drag([h0.x, h0.y], [h0.x + u[0] * 40, h0.y + u[1] * 40], {
-          steps: 12,
-          beforeRelease: async () => {
-            await b.rest(600); // she sails on under the held arrow
-            return { hull: await P(`worldOf(${J(ids.hull)}, 'a')`) };
-          },
-        });
-        await b.rest(300);
-        const after = await P(`transform(${J(target)})`);
-        const hullMoved = Math.hypot(mid.hull[12] - hull0[12], mid.hull[13] - hull0[13], mid.hull[14] - hull0[14]);
-        const d = after.position.map((v, i) => v - before.position[i]);
-        // not turned: the same rotation, whichever way round a half turn is written (π or −π)
-        const sameTurn = before.rotation.every((v, i) => Math.abs(Math.atan2(Math.sin(v - after.rotation[i]), Math.cos(v - after.rotation[i]))) < 1e-6);
-        report.numbers.haloUnderWay = { before: before.position, after: after.position, hullMovedM: +hullMoved.toFixed(3), parent };
-        check("12: she moved under the drag (the parent is moving)", hullMoved > 0.05, report.numbers.haloUnderWay);
-        check("12: the card moved along its parent's X only, written local to the same parent, not turned", d[0] > 0.003 && Math.abs(d[1]) < 1e-6 && Math.abs(d[2]) < 1e-6 && sameTurn && (await P(`parentOf(${J(target)})`)) === parent, { d, before, after });
-      } else check("12: the card's X arrow is on A's screen", false, { h0, h1 });
+      const sel = items.find((i) => i.label === "Select");
+      check("12: the menu on a card, seated and playing, has the card's verbs (the game's) and Select (the boat's, on the link)", items.some((i) => /Flip/.test(i.label)) && !!sel && !sel.disabled, items.map((i) => i.label));
+      if (sel) await b.click(sel.x, sel.y);
+      await b.rest(300);
+      const path = await P("selectionPath('a')");
+      check("12: Select selects the link the card is in, not the card: the boat sees the link, the game nothing", J(path) === J([ids.link]) && (await P("selected('a')")) === ids.link, { path, selected: await P("selected('a')") });
       await P("focus('a')");
       await b.key("Escape");
     } else check("12: a card lies on the table on A's screen", false, { card, lying });
@@ -558,7 +536,7 @@ try {
     await P("focus('a')");
     // off the seat (the chip's Leave: the seat stays A's), then aboard from orbit
     await leaveBody("a", "Seated");
-    check("10: the chip's Leave stands A up from the seat into orbit, the seat still A's", (await P("body('a')")).id === "orbit" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
+    check("10: the chip's Leave stands A up from the seat into Look, the seat still A's", (await P("body('a')")).id === "look" && (await P("seats()")).p1?.player === viewers.a, { body: await P("body('a')"), seats: await P("seats()") });
     await b.key("Enter");
     await until("me('a').playing && __p.walking('a')", 5000);
     // standing in the cockpit aft of the table, looking at her own tray
@@ -569,7 +547,7 @@ try {
     if (back) await b.key("f");
     await b.rest(600);
     const sat = await P("body('a')");
-    check("10: F sits A down: the seat body over the crew's, the walker waiting", JSON.stringify(sat.stack) === '["orbit","aboard","seat"]' && !(await P("me('a')")).playing, sat);
+    check("10: F sits A down: the seat body over the crew's, the walker waiting", JSON.stringify(sat.stack) === '["look","aboard","seat"]' && !(await P("me('a')")).playing, sat);
     const offered = await hover(ids.hand1, /Stand up/);
     check("10: seated, a look at A's own tray offers Stand up (F)", offered, { prompt: await P("prompt('a')"), hovered: await P("hovered('a')") });
     const told0 = (await P("notices('a')")).length;
@@ -580,7 +558,7 @@ try {
     const wk = await P("walker('a')");
     const tbl = await P(`hullLocal(${J(ids.table)})`);
     const plan = me?.position ? Math.hypot(me.position[0] - tbl[0], me.position[2] - tbl[2]) : null;
-    check("10: Stand up pops the seat: walking on her deck from the seat's eye (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5 && JSON.stringify((await P("body('a')")).stack) === '["orbit","aboard"]', { me, wk, tbl, plan, body: await P("body('a')") });
+    check("10: Stand up pops the seat: walking on her deck from the seat's eye (the walker asserted every step), beside the table", up && wk?.mode === "walking" && wk.ship === ids.hull && plan != null && plan < 1.5 && JSON.stringify((await P("body('a')")).stack) === '["look","aboard"]', { me, wk, tbl, plan, body: await P("body('a')") });
     // facing the table: the camera looks toward it, across the deck
     const cam = await P("cam('a')");
     const tw = (await P(`worldOf(${J(ids.table)}, 'a')`)).slice(12, 15);

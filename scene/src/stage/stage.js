@@ -1697,6 +1697,8 @@ export function createStage({ handle, view, n, path = [], frame = () => null, un
     const status = local.get().status ?? {};
     for (const [oid, o] of Object.entries(doc().objects ?? {})) {
       if (!o || isGroup(o) || o.visible === false) continue;
+      // a link's content is its doc's, whose stage answers for it
+      if (routes.get(oid) === "scene") continue;
       if (scope.contentOf(oid)?.loaded) continue;
       const st = status[oid]?.state;
       if (st === "error" || st === "warn") continue;

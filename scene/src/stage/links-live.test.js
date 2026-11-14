@@ -204,3 +204,19 @@ describe("one game in two views of one page: claims and presence per doc, over t
     }
   });
 });
+
+describe("arriving through a link", () => {
+  it("a host whose view.start names a body its linked doc offers waits for that doc, and enters it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => ({ input: {} }) }] }) } };
+    const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} } }));
+    s = await mountStage({
+      repo,
+      extensions: [SEATISH],
+      doc: { objects: { L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null }) }, order: ["L"], view: { start: { body: "t.sit" } } },
+    });
+    await until(() => s.debug.view.atom.get().body.id === "t.sit");
+    expect(s.debug.view.atom.get().body.label).toBe("Sitting");
+  });
+});
