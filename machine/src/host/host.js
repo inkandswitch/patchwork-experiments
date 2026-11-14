@@ -249,7 +249,10 @@ export class Host {
    * What the engine says of the state under `kind` (engine-defined: Doom's
    * things and sectors, the Super NES's RAMs; ENGINE.md), as bytes, for the
    * tick the host is at; null while loading or for a kind the engine lacks.
-   * The same on a RemoteHost, whose worker answers it for the frame shown.
+   * Each call copies the state out of the engine (Doom walks its things, the
+   * Super NES copies a RAM), and nothing is cached here: ask once a state.
+   * The same on a RemoteHost, whose worker answers it for the frame shown
+   * and asks its host again only when the state changed.
    */
   query(kind) {
     if (this.#loading) return null;

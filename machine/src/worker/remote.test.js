@@ -210,11 +210,13 @@ test("a view is drawn again when the state changes at the same tick (a rollback)
   expect(drawn).toBe(3);
 });
 
-test("a query is answered again exactly when the state changed since that kind was last answered, per kind", async () => {
+test("a query is asked of the host and answered again exactly when the state changed since that kind was last asked, per kind", async () => {
   // Every sequence of 3 frames, each keeping the state, re-stepping it to the same tick
-  // (revision) or stepping it on (tick), and asking for kind 0, kind 1 or both.
+  // (revision) or stepping it on (tick), and asking for kind 0, kind 1 or kind 2, which
+  // the engine can't answer (null), or two of them. The host is asked a kind only when
+  // the state changed since it was last asked that kind, answered or not.
   const CHANGES = ["same", "revision", "tick"];
-  const ASKS = [[0], [1], [0, 1]];
+  const ASKS = [[0], [1], [2], [0, 1], [1, 2]];
   let cases = 0;
   for (const c1 of CHANGES) for (const c2 of CHANGES) for (const c3 of CHANGES)
     for (const a1 of ASKS) for (const a2 of ASKS) for (const a3 of ASKS) {
@@ -224,27 +226,56 @@ test("a query is answered again exactly when the state changed since that kind w
       served.host = {
         tick: 10, revision: 1, status: {}, stats: null, loading: false, seat: null,
         frame() {}, target: () => 10, output: () => [], picture: () => null,
-        query: (kind) => (answered.push(kind), new Uint8Array([kind, served.host.tick, served.host.revision])),
+        query: (kind) => (answered.push(kind), kind === 2 ? null : new Uint8Array([kind, served.host.tick, served.host.revision])),
       };
       const answers = [];
       page.addEventListener("message", ({ data }) => answers.push(data.result.answers));
-      const last = new Map(); // kind -> the state it was last answered at
-      for (const [change, ask] of [[null, a1], [c1, a2], [c2, a3], [c3, [0, 1]]]) {
+      const last = new Map(); // kind -> the state it was last asked at
+      for (const [change, ask] of [[null, a1], [c1, a2], [c2, a3], [c3, [0, 1, 2]]]) {
         if (change === "revision") served.host.revision++;
         if (change === "tick") served.host.tick++;
+        answered.length = 0;
         page.postMessage({ m: "frame", id: 1, input: null, clock: null, views: [], queries: ask });
         await vi.advanceTimersByTimeAsync(1);
         const at = `${served.host.tick}:${served.host.revision}`;
         const want = ask.filter((k) => last.get(k) !== at);
-        expect(Object.keys(answers.at(-1)).map(Number)).toEqual(want);
+        expect(answered).toEqual(want); // asked of the host: each copies the state
+        expect(Object.keys(answers.at(-1)).map(Number)).toEqual(want.filter((k) => k !== 2));
         for (const k of want) {
-          expect([...answers.at(-1)[k]]).toEqual([k, served.host.tick, served.host.revision]);
+          if (k !== 2) expect([...answers.at(-1)[k]]).toEqual([k, served.host.tick, served.host.revision]);
           last.set(k, at);
         }
       }
       cases++;
     }
-  expect(cases).toBe(27 * 27);
+  expect(cases).toBe(27 * 125);
+});
+
+test("a query that comes back null while the host is loading is asked again once it has loaded, the state unchanged", async () => {
+  for (const kinds of [[0], [2], [0, 2]]) {
+    const [page, worker] = pair();
+    const served = serve(worker);
+    const answered = [];
+    served.host = {
+      tick: 10, revision: 1, status: {}, stats: null, loading: true, seat: null,
+      frame() {}, target: () => 10, output: () => [], picture: () => null,
+      query: (kind) => (answered.push(kind), served.host.loading || kind === 2 ? null : new Uint8Array([kind])),
+    };
+    const answers = [];
+    page.addEventListener("message", ({ data }) => answers.push(data.result.answers));
+    const frame = async () => {
+      answered.length = 0;
+      page.postMessage({ m: "frame", id: 1, input: null, clock: null, views: [], queries: kinds });
+      await vi.advanceTimersByTimeAsync(1);
+      return [...answered];
+    };
+    expect(await frame()).toEqual(kinds); // loading: nothing to answer yet
+    expect(await frame()).toEqual(kinds); // still loading: asked again
+    served.host.loading = false; // loaded at the same tick and revision
+    expect(await frame()).toEqual(kinds);
+    expect(Object.keys(answers.at(-1)).map(Number)).toEqual(kinds.filter((k) => k !== 2));
+    expect(await frame()).toEqual([]); // loaded, nothing changed: not asked again, null or not
+  }
 });
 
 test("a RemoteHost's query reaches the page for the state its worker reached, from a real engine (the Super NES's work RAM)", async () => {

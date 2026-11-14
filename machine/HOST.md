@@ -722,8 +722,9 @@ All finite, no randomness.
   automerge-repo peer.
 - **Playing the output** (an AudioWorklet fed by the PCM, Doom's lumps at
   their origins) is the scene extension's.
-- **`api.clock`**: when it lands, pass it as `clock`; the session clock and
-  `SyncedWall` then go.
+- **`api.clock`** landed, and is not passed as `clock` as is: a machine in
+  a scene keeps its session clock, over world time (Phase 2b, Decision 1).
+  `SyncedWall` stays for the Machine tool, which has no world.
 
 ## Phase 2b, in a scene
 
@@ -749,8 +750,10 @@ The first four of the eight wiring steps (FOLLOWUPS, "Machine phase 2b"):
    a machine made hours into a world starts at tick 0, and pauses with its
    world. Its own `until` stops it while the world runs on.
 2. **A replicated process.** While the machine runs, each view running its
-   host registers `api.clock.process({ replicated: true })`, with no step,
-   so that someone computes world time; while it's stopped, none.
+   host registers `api.clock.process({ replicated: true, step() {} })`, so
+   that someone computes world time; while it's stopped, none. Its step
+   does nothing: the host is pulled from world time on every frame, not
+   stepped (Decision 13).
 3. **Queries across the worker.** `host.query(kind)` on Host and
    RemoteHost; the worker answers each kind asked for, for the state its
    frame reached, again only when that state changed.
@@ -778,9 +781,15 @@ tool, its keys its own; Escape puts it down and gives the port back.
    `t0` is the session clock's `at` in world ms; `max(0, …)` became a rule
    of the session clock, on the wall as in a world: a peer short of `at`
    holds at `t`.
-3. **A stop once set stands.** Found by the exhaustive clock test: a
-   second pause inside the first's margin set an earlier stop, which a view
-   ahead of the second pauser had passed.
+3. **A stop once set stands, for pauses made in sequence.** Found by the
+   exhaustive clock test: a second pause inside the first's margin set an
+   earlier stop, which a view ahead of the second pauser had passed. The
+   rule holds when the second pauser has seen the first stop. Two pauses
+   made at once (each written before the other arrives) each write a stop,
+   Automerge's last writer keeps one, and a view that had passed it goes
+   back to it: its timeline rewinds, as it does for a pause that reaches a
+   view ahead of the pauser by more than the margin. The views still meet
+   at the stop kept. A pause and a resume made at once settle the same way.
 4. **The process is registered only while the machine runs.** A machine
    nobody plays keeps no world going (TOOLS.md §7, "Nobody present, no time
    passes"), and the first player's resume brings the computer back.
@@ -792,8 +801,11 @@ tool, its keys its own; Escape puts it down and gives the port back.
    world's time, and writes it on the trait. The machine doc's own
    `session` stays the Machine tool's, on the wall.
 6. **One picture per screen, for everyone.** The trait's `player` says
-   whose view the screen shows (Doom; the SNES has one picture): a screen
-   is a thing in the world, and everyone looking at it sees the same.
+   whose view the screen shows: a screen is a thing in the world, and
+   everyone looking at it sees the same. It applies only to a machine with
+   a view per player (Doom), clamped to the machine's ports, so a 1-player
+   Doom set to player 3 shows player 0. The Super NES has one picture, and
+   its screen and Play ignore the field (`playerOf`).
 7. **The screen's place is read from the cabinet**, as dice read a die,
    never from a second copy of the numbers.
 8. **Play is a held tool** (`api.hold`): the input path the stage already
@@ -812,7 +824,54 @@ tool, its keys its own; Escape puts it down and gives the port back.
     stays on the wall.
 12. **`Screen` takes three.js as a parameter** (`api.THREE`): a texture
     must be made by the three.js that draws it, and the package no longer
-    imports three anywhere.
+    imports three anywhere. Nor does it declare three as a peer dependency;
+    its tests take three from devDependencies.
+
+Made after review (round 1), also unattended:
+
+13. **The machine is pulled, not stepped; the process only keeps world time
+    going.** The replicated process's step is a no-op, written out
+    (`step() {}`) because STAGE.md's process has a step. Making the host a
+    stepped process would need two paths: the host must run on every
+    frame while it's stopped too (a view that went past a stop rewinds to
+    it, late inputs re-simulate, checkpoints settle, a resume is noticed),
+    and a process is registered only while the machine runs (Decision 4).
+    It also keeps its own rate (35 Hz, 60.1 Hz) and rolls back, which a
+    forward-only step on the stage's 1/60 s grid can't say. **For the
+    lead:** with this, the stage's replicated stepping (`stepTo` over
+    replicated processes, paused up to `clock.t`) has no consumer that
+    steps. The machine uses a process only to make world time pass. The
+    stage could shrink "replicated" to that (a process every view has,
+    never saved, with nothing to step), or keep the grid for a future
+    deterministic simulation that is stepped. That is a stage decision,
+    left to you.
+14. **Starting is patient** (`src/scene/start.js`). A view that doesn't win
+    the object's `machine.session` claim asks again every 2 s on the
+    stage's time (`api.clock.after`). So does the claim holder when it
+    can't make the session yet (the content still syncing, a fetch
+    failing), and so does a view whose start failed for any reason. A
+    holder that leaves lets its claim lapse (STAGE.md, "Claims"), and the
+    next view to ask takes it. "No game yet" and a scene that can't be
+    written are asked again too, since either can change. Retrying never
+    stops on its own: a machine that can't start says why beside its
+    screen and keeps trying, which costs one doc read every 2 s.
+15. **Doom in a scene plays by keys only for now.** Its mouse turns and
+    fires through pointer lock (`movementX`), and in a scene the pointer
+    belongs to the body (it looks around). A held tool declaring
+    `pointer: true` asks for the pointer free, the opposite of what Doom
+    needs. Where the mouse goes belongs with step 6's stations, which
+    decide where a player's eye and hands are.
+16. **The extension's surface is the contract** (`update`, `commands`,
+    `dispose`). The probe reads what it checks from the stage's own debug
+    surface and the scene graph: the screen mesh (named
+    `machine.screen:<id>`), the texture actually drawn, and each view's
+    session replica and world time. Nothing in the extension exists only
+    for the probe.
+17. **A query is asked of the host once per state, answered or not.** The
+    worker remembers a null answer (a kind the engine lacks) as it does an
+    answer, so the Super NES isn't asked for a kind it can't answer on
+    every frame (each ask copies the state). A null while loading isn't
+    the engine's answer, and is asked again.
 
 ### Tests
 
@@ -824,32 +883,66 @@ tool, its keys its own; Escape puts it down and gives the port back.
   between writes no view's t goes back; a stop once set stands; stopped,
   both views agree on the tick. Also: tick 0 at creation however far into
   the world; a paused world stops the machine; the quiet stop in world time
-  for seats ending at every tick 0–40. Mutation-checked: no clamp at `at`,
-  a second pause moving the stop, `running()` ignoring the world.
+  for seats ending at every tick 0–40. And pauses and resumes made at once:
+  two replicas, each write reaching the other 0 or 1 steps later, either
+  writer winning a tie (10,000 cases): a view's t goes back only onto a
+  stop it had passed, or, running, when a write made at once overruled its
+  own; the replicas end equal and the views at one tick (Decision 3).
+  Mutation-checked: no clamp at `at`, a second pause moving the stop,
+  `running()` ignoring the world, no clamp at the stop.
 - **`worker/remote.test.js`:** every sequence of 3 frames (the state kept,
-  re-stepped to the same tick, or stepped on) × the kinds asked for (729
-  cases): a kind is answered again exactly when the state changed since it
-  was last answered. And a real Super NES's work RAM reaching the page,
-  equal to the worker engine's at that tick. Mutation-checked.
+  re-stepped to the same tick, or stepped on) × the kinds asked for, among
+  them one the engine can't answer (3,375 cases): the host is asked a kind,
+  and the page answered, exactly when the state changed since that kind
+  was last asked, answered or not; a null while loading is asked again
+  once loaded. And a real Super NES's work RAM reaching the page, equal to
+  the worker engine's at that tick. Mutation-checked (a null not
+  remembered; a null remembered while loading).
 - **`scene/running.test.js`:** two views over automerge-repo in virtual
   time, the follower's world 0 to 0.2 s behind: made 2 hours into a world it
   starts at tick 0 and registers nothing; the process is registered exactly
   while the machine runs, on both views, through a world pause; two
   players, then none: both views stop at the same tick with the state the
-  documents give, and stay there while the world runs on. Mutation-checked:
-  the process always or never registered, no quiet stop, no world clock.
+  documents give, and stay there while the world runs on; the process is
+  STAGE.md's shape (`replicated`, `step`) and stepping it moves nothing.
+  Mutation-checked: the process always or never registered, no quiet stop,
+  no world clock, a process with no step.
+- **`scene/start.test.js`:** two or three views, each making the session
+  fine, failing once or leaving while at it; the content there at once, a
+  little later or much later; the views opening together or one after
+  another (204 cases): some view that stayed writes the session, exactly
+  once, and every view stops asking. And `retrying` over every sequence of
+  three outcomes × when it's cancelled. Mutation-checked: no retry when the
+  claim isn't won, none after a throw, giving up when the content isn't
+  there.
+- **`scene/extension.test.js`:** the extension's surface is `update`,
+  `commands`, `dispose`; `playerOf` over both machines × 1–4 ports × 15
+  values of the field (never a view the machine lacks; the SNES always 0);
+  `screenMatrix` over 180 poses (the quad's corners on the screen
+  rectangle's, through the object's matrix). Mutation-checked.
+- **`manifest.test.js`:** every dependency and peer dependency is imported
+  by the package's own code (three is no longer one).
 - **`probes/scene.mjs`** (headless Chrome, two people on real Automerge
   docs, simulated time): Doom (Freedoom E1M1) and the Super NES (Unarmed)
   each pasted into a scene, played by keys from one view, watched from the
-  other. 32 checks: laid out and given a session; stopped at tick 0 on both
-  views with no world computed; P puts the pad in hand; both advance and
-  the world is computed, the picture moving with the keys (140 different
-  pictures of Doom as Ana walks; Unarmed's title, lore, controls and menu
-  as Ben presses Start); the two views drew the same picture for most
-  ticks both drew (Doom 169 of 169, the SNES 386 of 403: the rest drawn
-  from a prediction of the player's input and put right); Escape stops the
+  other. 38 checks: laid out and given a session; stopped at tick 0 on both
+  views with no world computed; the picture on the cabinet's screen as the
+  stage draws it (each corner of the quad 0.0849 m from the bezel face's
+  corner, the bezel's width inset and 2 mm proud, read from the GLB's own
+  vertices), and again after the cabinet is moved and turned, on both
+  views; P puts the pad in hand; both advance and the world is computed,
+  the picture moving with the keys (about 135 different pictures of Doom
+  as Ana walks; Unarmed's title, lore, controls and menu as Ben presses
+  Start); the two views drew the same picture for most ticks both drew
+  (the rest drawn from a prediction of the player's input and put right;
+  in the last run Doom 159 of 169, the SNES 402 of 402); Escape stops the
   machine for both at the same tick, the same picture on both screens,
-  the session's stop at that tick, and the world no longer computed.
+  held there while the world runs on, the session's stop at that tick,
+  and the world no longer computed. What each view shows is read from the
+  stage and the view's own session replica (Decision 16): the hash is of
+  the texture drawn, and the tick is the one the view's clock names, which
+  the host steps to. Pairing pictures by that tick makes the mismatch
+  count vary a little between runs; it stays far under the 10% allowed.
 
 ### Not done yet
 
@@ -860,6 +953,9 @@ tool, its keys its own; Escape puts it down and gives the port back.
   (with a clock passed in there is no `SyncedWall` reference). The view
   computing the world (`api.clock.computer()`) is the natural reference.
 - A read-only viewer spectating (decision 10).
+- Doom's mouse in a scene (Decision 15): it plays by keys there.
+- Whether the stage keeps its replicated grid stepping (Decision 13), the
+  lead's call.
 - The Machine tool's own changes here are mechanical (the content helpers
   and `newSession` moved to load.js, the pad split from its DOM listeners)
   and were not re-checked in a browser.

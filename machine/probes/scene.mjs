@@ -22,7 +22,13 @@
 //     tick with the same picture on the screen, and the world stops being
 //     computed;
 //  5. the same for the Super NES (Unarmed), played by Ben;
-//  6. no errors. Screenshots of each moment.
+//  6. the picture sits on the cabinet's screen as the stage draws it (the
+//     quad's corners against the bezel's own vertices), and still does after
+//     the cabinet is moved and turned, on both views;
+//  7. no errors. Screenshots of each moment.
+// What a view shows is read from the stage (the screen mesh, the texture it
+// draws) and the view's own replica of the session, never from the
+// extension, which has no surface for probes.
 // Prints a JSON report; exits non-zero if any check fails.
 //
 // Simulated time: both views and the two peers' network run on the page's
@@ -130,14 +136,26 @@ try {
     check(`${kind}: the screen says it's stopped`, (await P(`labels("${who}")`)).some((t) => /nobody plays/.test(t)), await P(`labels("${who}")`));
     await shot(`${kind}-stopped`);
 
+    // the picture on the cabinet's screen, where it stands and moved and turned
+    const BEZEL = 0.06, PROUD = 0.002, CORNER = Math.hypot(BEZEL, BEZEL, PROUD);
+    const placed = (p) => !!p && p.faceCorners === 4 && p.corners.every((d) => Math.abs(d - CORNER) < 1e-4) && Math.abs(p.centres - PROUD) < 1e-4;
+    const at0 = [await P(`placement("a", "${id}")`), await P(`placement("b", "${id}")`)];
+    check(`${kind}: the picture sits on the cabinet's screen, on both views`, at0.every(placed), at0);
+    await P(`setTransform("${id}", [${c[0] + 0.3}, 0, ${c[2] - 0.4}], [0, 0.7, 0])`);
+    await b.step(60);
+    const at1 = [await P(`placement("a", "${id}")`), await P(`placement("b", "${id}")`)];
+    check(`${kind}: and after the cabinet is moved and turned`, at1.every(placed) && at1.every((p) => p.world?.[12] !== at0[0].world?.[12]), at1);
+    await P(`setTransform("${id}", ${JSON.stringify(c)})`);
+    await b.step(60);
+
     // play: select it and press P, the pad in hand
     // a click on the cabinet (in Edit, a plain click selects), then P
     const front = await P(`project("${who}", [${c[0]}, 1.0, ${c[2] + 0.36}])`);
     await b.click(front.x, front.y);
     report.numbers[`${kind}-selected`] = await P(`selected("${who}")`);
     await b.key("p");
-    const held = await P(`held("${who}")`);
-    check(`${kind}: P takes a port and puts the pad in ${who}'s hand (the held tool)`, !!held && /P1/.test(held.name ?? ""), held ?? { selected: await P(`selected("${who}")`), notices: await P(`notices("${who}")`), shows: await both(id) });
+    const tool = await P(`held("${who}")`);
+    check(`${kind}: P takes a port and puts the pad in ${who}'s hand (the held tool)`, !!tool && /P1/.test(tool.name ?? ""), tool ?? { selected: await P(`selected("${who}")`), notices: await P(`notices("${who}")`), shows: await both(id) });
     const playing = await sample(id, frames, keys);
     const during = await both(id);
     report.numbers[`${kind}-playing`] = { ...playing, during };
@@ -155,6 +173,9 @@ try {
     report.numbers[`${kind}-stopped`] = end;
     check(`${kind}: stopped again, both views at the same tick`, !!still && end[0].tick === end[1].tick && end[0].tick > 60 && end.every((s) => !s.running), end);
     check(`${kind}: and the same picture on both screens`, !!end[0].shown?.hash && end[0].shown.hash === end[1].shown?.hash, end.map((s) => s.shown));
+    await b.step(60);
+    const held = await both(id);
+    check(`${kind}: and the pictures hold there while the world runs on`, held.every((s, i) => s.shown?.hash === end[i].shown?.hash && s.tick === end[i].tick), held.map((s) => s.shown));
     const settled = await b.waitFor(`!__p.clock("a").computing && !__p.clock("b").computing`, 30_000);
     check(`${kind}: and the world is no longer computed for it`, !!settled, [await P(`clock("a")`), await P(`clock("b")`)]);
     const sess = await P(`session(${JSON.stringify(session)})`);

@@ -3,10 +3,15 @@
 //
 // - The stage's world time passes only while some view computes it, and a
 //   view computes only for a process (scene/STAGE.md, "World time"). So
-//   while the machine runs this view registers a replicated process, with
-//   no step: the host pulls its tick from t() itself, and the process is
-//   there to be counted. While the machine is stopped it registers none, so
-//   a machine nobody plays keeps no world going.
+//   while the machine runs this view registers a replicated process; while
+//   it's stopped, none, so a machine nobody plays keeps no world going. The
+//   process's step does nothing: the host is pulled, not stepped. It reads
+//   its tick from t() on every frame, running or not (a view that went past
+//   a stop rewinds to it, late inputs re-simulate, checkpoints settle while
+//   it's stopped too), at its own rate (35 Hz, 60.1 Hz) and with rollback,
+//   which a forward-only step on the stage's 1/60 s grid can't say. What the
+//   machine needs from the process is only that world time passes
+//   (HOST.md, Phase 2b, Decisions 13).
 // - Nobody holds a port: the machine stops where the last player left it
 //   (quiet.js), in world time. Every view writes the same stop.
 //
@@ -81,7 +86,7 @@ export async function runMachine(o) {
       if (closed) return;
       host.frame();
       const runs = clock.running();
-      if (runs && !removeProcess) removeProcess = o.world.process({ replicated: true });
+      if (runs && !removeProcess) removeProcess = o.world.process({ replicated: true, step() {} }); // the host is pulled, not stepped (above)
       else if (!runs && removeProcess) {
         removeProcess();
         removeProcess = null;

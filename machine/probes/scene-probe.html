@@ -26,6 +26,7 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
 import { content as doomContent } from "../src/doom.js";
+import { worldClock, tickAt } from "../src/host/clock.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -70,7 +71,85 @@ try {
   const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
   const docOf = (w) => scene[w].doc();
   const rootOf = (w) => hosts[w].querySelector(".scene-stage");
-  const machineExt = (w) => dbg[w].host.record("machine")?.instance ?? null;
+  const machineApi = (w) => dbg[w].host.record("machine")?.api ?? null;
+
+  // What a machine on view w shows, read without the extension's help (it has
+  // no surface for probes): the screen mesh in the stage's scene graph and the
+  // texture it draws, and the tick from that view's own replica of the session
+  // and its own world time, through this package's clock (the tick the host
+  // steps to). FNV-1a of the drawn bytes, to compare two views' pictures.
+  const fnv = (rgba) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < rgba.length; i += 7) h = Math.imul(h ^ rgba[i], 0x01000193);
+    return (h >>> 0).toString(16);
+  };
+  const screenMesh = (w, id) => {
+    const vp = dbg[w].viewport;
+    return vp.scene?.getObjectByName(`machine.screen:${id}`) ?? vp.topScene?.getObjectByName(`machine.screen:${id}`) ?? null;
+  };
+  const replicas = { a: new Map(), b: new Map() }; // session url -> handle | null (being found), per peer
+  const replica = (w, url) => {
+    if (!replicas[w].has(url)) {
+      replicas[w].set(url, null);
+      net[w].find(url).then((h) => replicas[w].set(url, h));
+    }
+    return replicas[w].get(url);
+  };
+  function shows(w) {
+    const out = {};
+    for (const [id, o] of Object.entries(docOf(w).objects ?? {})) {
+      const t = o?.traits?.machine;
+      if (!t) continue;
+      const h = t.session ? replica(w, t.session) : null;
+      const s = h?.doc();
+      if (!s?.engine) {
+        out[id] = { tick: null, running: false, shown: null };
+        continue;
+      }
+      const clock = worldClock(h, { t: () => dbg[w].clock.t(), running: () => docOf(w).clock?.running !== false });
+      const tick = tickAt(clock, s.engine.hz);
+      const mesh = screenMesh(w, id);
+      const img = mesh?.material?.map?.image;
+      // drawn once the mesh is placed; a machine that has drawn nothing yet (the Super NES at tick 0) shows black, 1 by 1
+      const shown = mesh?.visible && img?.data ? { tick, hash: fnv(img.data), size: [img.width, img.height] } : null;
+      out[id] = { tick, running: clock.running(), shown };
+    }
+    return out;
+  }
+
+  // The screen against the cabinet as the stage draws it: the quad's corners
+  // (the mesh's world matrix) and the bezel's front face (the GLB's own
+  // vertices, through its node's world matrix). The screen is the bezel's
+  // face inset by the bezel's width and standing just proud of it.
+  function placement(w, id) {
+    const mesh = screenMesh(w, id);
+    const root = machineApi(w)?.content(id)?.root;
+    if (!mesh || !root) return null;
+    let bezel = null;
+    root.traverse((n) => { if (!bezel && n.isMesh && (n.name === "bezel" || n.parent?.name === "bezel")) bezel = n; });
+    if (!bezel) return null;
+    const V = mesh.position.constructor;
+    mesh.updateWorldMatrix(true, false);
+    bezel.updateWorldMatrix(true, false);
+    const quad = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([x, y]) => new V(x, y, 0).applyMatrix4(mesh.matrixWorld));
+    const pos = bezel.geometry.getAttribute("position");
+    let zmax = -Infinity;
+    for (let i = 0; i < pos.count; i++) zmax = Math.max(zmax, pos.getZ(i));
+    const face = [];
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getZ(i) - zmax) > 1e-6) continue;
+      const v = new V(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(bezel.matrixWorld);
+      if (!face.some((f) => f.distanceTo(v) < 1e-6)) face.push(v);
+    }
+    const mid = (ps) => ps.reduce((a, p) => a.add(p), new V()).multiplyScalar(1 / ps.length);
+    return {
+      // each corner of the picture to the nearest corner of the bezel's face
+      corners: quad.map((q) => Math.min(...face.map((f) => f.distanceTo(q)))),
+      centres: mid(quad).distanceTo(mid(face)),
+      faceCorners: face.length,
+      world: machineApi(w).worldOf(id),
+    };
+  }
 
   // every write to the scene doc (as peer a has it): how many, to show the machine writes nothing there while it plays
   const writes = [];
@@ -89,8 +168,9 @@ try {
     byUrl: (url, w = "a") => Object.entries(docOf(w).objects ?? {}).find(([, o]) => o.sourceUrl === url)?.[0] ?? null,
     trait: (id, w = "a") => JSON.parse(JSON.stringify(docOf(w).objects?.[id]?.traits?.machine ?? null)),
     setTransform: (id, position, rotation = [0, 0, 0]) => scene.a.change((d) => { d.objects[id].transform = { position, rotation, scale: 1 }; }),
-    /** what each machine on view w shows (the extension's machines()) */
-    shows: (w) => machineExt(w)?.machines() ?? null,
+    /** what each machine on view w shows: { [id]: { tick, running, shown: { tick, hash, size } | null } } */
+    shows,
+    placement,
     session: async (url) => { const h = await net.a.find(url); const d = h.doc(); return { clock: JSON.parse(JSON.stringify(d.clock)), seats: JSON.parse(JSON.stringify(d.seats ?? {})), checkpoints: Object.keys(d.checkpoints ?? {}).length }; },
     clock: (w) => ({ t: dbg[w].clock.t(), computing: dbg[w].clock.computing(), doc: JSON.parse(JSON.stringify(docOf(w).clock ?? null)) }),
     held: (w) => dbg[w].local.get().held ?? null,

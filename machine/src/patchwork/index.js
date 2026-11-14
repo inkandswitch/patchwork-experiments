@@ -61,7 +61,7 @@ export const plugins = [
         name: "Machine",
         on: "object",
         blurb: "An existing game, run as is, in step for everyone here; its picture is on its screen. P plays (a free port, the pad in hand); Escape gives the port back. It stops while nobody plays",
-        fields: [{ key: "player", label: "Screen shows player (from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
+        fields: [{ key: "player", label: "Screen shows player (Doom, from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
         // the session is this object's running game: a copy starts a game of its own
         runtime: ["session"],
       },

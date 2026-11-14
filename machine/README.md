@@ -497,17 +497,12 @@ automerge-repo's scheduling; it is left open.
 - **The scene extension** (phase 2b): the clock, the process, queries
   across the worker and the screen are built (HOST.md, "Phase 2b, in a
   scene"); positional sound (`output()`, with Doom's events carrying
-  positions), a station per port and the spectator's world are not.
-- **A worker.** The Super NES's step (1.6 ms) and any catch-up belong off
-  the frame thread. The host is pure computation over messages and
-  documents, so it can move whole.
-- **Ephemeral traffic.** One message per frame that has new input is a
-  lot through a sync server for a 60 Hz engine. Sending at most every other
-  frame would halve it, costing up to a frame of latency.
-- **Checkpoint garbage.** Superseded checkpoint documents, 2.5 MB each for
-  Doom, are no longer referenced. Nothing deletes them.
-- **From HOST.md:**
-  - rebasing to before the oldest checkpoint replays from genesis.
+  positions), a station per port, the spectator's world, and Doom's mouse
+  in a scene (it plays by keys there) are not.
+- **The host in a worker, in a scene.** The worker is built (below, and
+  `src/worker/`) and answers queries, but in a scene the host runs on the
+  page: hosting the worker from a Patchwork package needs a worker bundle
+  that carries automerge-repo (HOST.md, Phase 2b, decision 9).
 - **From the engines:**
   - views other than player 0 restart the status bar's face;
   - the SNES has no PAL timing, and cartridges that need firmware are

@@ -27,11 +27,17 @@ function world(t, running = true) {
     s: t,
     run: running,
     processes: new Set(),
+    steps: [],
     t: () => w.s,
     running: () => w.run,
     process(spec) {
-      expect(spec).toEqual({ replicated: true }); // counted, never stepped: the host pulls its tick
+      // a process as STAGE.md has it (step is not optional), replicated; its step does
+      // nothing, since the host pulls its tick from t() on every frame
+      expect(Object.keys(spec).sort()).toEqual(["replicated", "step"]);
+      expect(spec.replicated).toBe(true);
+      expect(typeof spec.step).toBe("function");
       w.processes.add(spec);
+      w.steps.push(spec.step);
       return () => w.processes.delete(spec);
     },
   };
@@ -146,6 +152,21 @@ test("play takes the preferred port when free, else the first free, and none whe
   expect(a.m.play(0)).toBe(2); // already seated: the same port
   await frames([a, b], 300);
   expect(b.m.play(2)).toBe(0);
+  await a.m.close();
+  await b.m.close();
+});
+
+test("the process's step moves nothing: stepped on the stage's grid or not, the host is where world time puts it", async () => {
+  const { a, b } = await views({ born: 10 });
+  a.m.play(0);
+  await frames([a, b], 600);
+  for (const p of [a, b]) {
+    expect(p.world.steps.length).toBe(1);
+    const [tick, hash] = [p.host.tick, p.host.engine.hash()];
+    // a quarter second of the stage's grid, as the stage would step a replicated process
+    for (let k = 1; k <= 15; k++) p.world.steps[0](1 / 60, p.world.s + k / 60);
+    expect([p.host.tick, p.host.engine.hash()]).toEqual([tick, hash]);
+  }
   await a.m.close();
   await b.m.close();
 });
