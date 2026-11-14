@@ -11,6 +11,10 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    // Node 26 defines a global localStorage of its own (undefined without
+    // --localstorage-file) that shadows happy-dom's; turned off here, the
+    // tests read happy-dom's on any Node (a no-op on Node 24)
+    poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] }, threads: { execArgv: ["--no-experimental-webstorage"] } },
     globals: true,
     passWithNoTests: true,
     // the hull and statics tests build real meshes; a loaded machine can take a while
