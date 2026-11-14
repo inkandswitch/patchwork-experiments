@@ -11,7 +11,7 @@
 // which a template's context has.
 
 import { PIECES, WIND, newSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
-import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP } from "./traits.js";
+import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WATER_TRAIT, newWater } from "./traits.js";
 
 export { SEA, SHIP, WIND, partObject };
 
@@ -101,6 +101,7 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
   );
   ctx.change((d) => {
     d.traits[SEA] = newSea({ wind, seed });
+    d.traits[WATER_TRAIT] = newWater();
     // people start off her quarter, in Look (no body named: the stage's orbit
     // camera, not the editor), where a click comes aboard (crew.js: an
     // untouched camera follows her quarter wherever she has sailed to)

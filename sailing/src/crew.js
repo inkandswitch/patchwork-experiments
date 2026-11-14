@@ -466,11 +466,13 @@ export function createCrew(api, ctx) {
   // ship goes (sideways only: no bobbing), so a sailing ship stays in view:
   // a base ride (the stage's camera.ride), which a body with a ride of its
   // own (a seat at a table aboard her) wins over with no flag. A camera nobody has moved (not
-  // even from a saved view) starts off the ship's quarter.
+  // even from a saved view) starts off the ship's quarter. Only where her doc
+  // is the world (a boat alone): linked into a harbour, the camera is the
+  // harbour's to place, and two boats there would fight over it.
   let riding = null; // { ship, off }
   let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
   function follow() {
-    const ship = ctx.sim?.ships?.()[0] ?? null;
+    const ship = ctx.sea?.world?.() ? (ctx.sim?.ships?.()[0] ?? null) : null;
     const m = ship ? frameOfShip(ship) : null;
     if (riding && riding.ship !== (m ? ship : null)) {
       riding.off?.();

@@ -69,6 +69,8 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
   ctx.change((d) => {
     d.traits[SEA] = { wind: { speed: WIND.speed, from: WIND.from }, seed, scale: WIND.scale };
+    // the water package's: this world has water, its level the chart's y = 0 (mean water level); the sea above makes its waves
+    d.traits.water = { level: 0 };
     // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard
     d.view.start = { home: { position: [...HOME.position], target: [...HOME.target] } };
     if (!d.title || /^untitled/i.test(d.title)) d.title = "Cadboro Bay";
