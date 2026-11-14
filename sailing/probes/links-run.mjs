@@ -137,6 +137,10 @@ try {
   const claims = { c1: await P("claimedBy('c', 'p1')"), c2: await P("claimedBy('c', 'p2')"), a2: await P("claimedBy('a', 'p2')"), b1: await P("claimedBy('b', 'p1')") };
   const pres = { a: await P("presence('a')"), b: await P("presence('b')") };
   check("3. each seat's claim is held for everyone: Cara sees Ana at p1 and Ben at p2; Ana sees Ben's, Ben Ana's", claims.c1?.session === pres.a.mine && claims.c2?.session === pres.b.mine && claims.a2?.session === pres.b.mine && claims.b1?.session === pres.a.mine, claims);
+  // who's here is the view's (each says its body on every channel it acts on): Cara, viewing G alone, sees
+  // Ana (seated from her room) and Ben (seated aboard) as seated, not looking
+  const hereOk = await until(`hereBusy('c', ${J([pres.a.mine, pres.b.mine])})`, 3000);
+  check("3. who's here: Cara, viewing G alone, sees Ana and Ben seated where they sit (the room, the boat), not looking", hereOk, await P("here('c')"));
 
   // 4. dealt
   const dealt = await holds("phase() === 'playing'", 60_000);

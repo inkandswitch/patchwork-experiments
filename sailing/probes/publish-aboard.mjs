@@ -20,7 +20,7 @@
 // bin's Card table in her cockpit and Lost Cities on the table (api.part),
 // and a home view over the cockpit is set. It checks:
 // - every piece is under the table and the table under the hull; the deck
-//   is a secure-deck (card-table is installed); it starts people at the table (the seat body), with the
+//   is a secure-deck (card-table is installed); it starts people through the game's link (as the game does: the seat body), with the
 //   sail down and the anchor down; each seat's view is in the table's frame;
 // - every object shows one of the scene's own files;
 // - with A and B seated, the secure deck reaches "playing" and each hand's
@@ -47,10 +47,10 @@ import { packageProblems, withPackages } from "./scene-packages.mjs";
 // companionway's traits are for (its hatch's slide, its exit). In a real
 // shell the stage works these out from the registry; the probe page has none
 // that says where its plugins come from, so they're stated here.
-const PACKAGES = ["scene", "seats", "sailing", "tabletop", "card-table", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "tabletop", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
-// from. (The boat lists the game's too, for now: a view offers the packages of the outermost doc only, so a
-// viewer arriving at the boat without seats or tabletop would never be asked for what her linked game runs.)
+// from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
+// together, so a viewer arriving at the boat is asked for what her linked game runs too.
 const GAME_PACKAGES = ["scene", "seats", "tabletop", "card-table"];
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -125,7 +125,7 @@ try {
   const s = await P("shape()");
   check("two docs: the boat holds one locked link to the game on the table, and none of its pieces or seats; the game every piece at its root", s.link?.parent === ids.table && s.link.locked && s.boatPieces === 0 && !s.boatSeats && s.pieces === 63 && s.piecesAtGameRoot === 63 && s.tableParent === ids.hull, { link: s.link, boatPieces: s.boatPieces, pieces: s.pieces, atRoot: s.piecesAtGameRoot });
   check("a secure deck", s.deckType === "secure-deck", s.deckType);
-  check("it starts people at the table (the seat body), sail down, anchor down, a home view over the cockpit", s.start === "seat" && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, sail: s.sail, anchor: s.anchor, home: s.home });
+  check("it starts people through the game's link (as the game starts them: watching from a seat), sail down, anchor down, a home view over the cockpit", s.start === null && s.startsThroughLink && s.sail?.raised === 0 && s.anchor?.down === true && !!s.home, { start: s.start, through: s.startsThroughLink, sail: s.sail, anchor: s.anchor, home: s.home });
   check("the seats are the game's, their views in its root frame", Object.values(s.seats ?? {}).length === 2 && Object.values(s.seats).every((x) => x.camera && !x.camera.in), s.seats);
   // the scene is titled as asked; its deck by the game and the deck, never by the scene (tabletop/GAME-FORMAT.md)
   check(`titled “${TITLE}”, its deck “Lost Cities: Deck”`, s.title === TITLE && s.deckTitle === "Lost Cities: Deck", { title: s.title, deck: s.deckTitle });
@@ -232,7 +232,7 @@ async function publish(snap) {
         const hull = Object.values(got.objects ?? {}).find((o) => o.traits?.["sailing.ship"]);
         const links = Object.values(got.objects ?? {}).filter((o) => o.providerId === "scene.link");
         if (packageProblems(got, PACKAGES).length) problem = `came back wrong: ${packageProblems(got, PACKAGES).join("; ")}`;
-        else if (got.view?.start?.body !== "seat") problem = `came back with view.start ${J(got.view?.start)}`;
+        else if (got.objects?.[got.view?.start?.place]?.providerId !== "scene.link" || "body" in got.view.start) problem = `came back with view.start ${J(got.view?.start)}`;
         else if (!hull) problem = "came back without the ship";
         else if (links.length !== 1 || links[0].sourceUrl !== game.url) problem = `came back without one link to the game (${links.map((l) => l.sourceUrl).join(", ")})`;
         else if (got.claims) problem = "came back with claims";
