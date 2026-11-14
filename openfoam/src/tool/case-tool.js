@@ -6,6 +6,7 @@ import { normalizeSetup, MODE_LABELS, MESH_PRESETS, DEFAULT_ITERATIONS, KNOT, wa
 import { newRun, enqueue, daemonOnline, queueView, isTerminal, SERVER_TYPE } from "../protocol.js";
 import { acquireHull, pathLabel } from "../hull/acquire.js";
 import { prepareHull, sinkageForVolume } from "../hull/prepare.js";
+import { partsOf, waterPlanes, defaultParts, hullTriangles } from "../hull/parts.js";
 import { renderKey } from "../render-read.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
 import { drawHull } from "./fields.js";
@@ -39,8 +40,10 @@ export default function CaseTool(handle, element) {
           <h2>Hull</h2>
           <div class="drop hull-drop">
             <div class="hull-chip"></div>
-            <div class="cluster" style="margin-top:6px"><input type="text" class="hull-url" placeholder="Drop a hull, or paste its link"><button class="hull-unlink" hidden>Unlink</button></div>
+            <div class="cluster" style="margin-top:6px"><input type="text" class="hull-url" placeholder="Drop a 3D file or hull here, or paste its link"><button class="hull-unlink" hidden>Unlink</button></div>
           </div>
+          <label class="field"><span>Bow points</span><select class="hull-bow" title="Which way the model's bow points; the analysis turns it to +x"><option value="+x">+x</option><option value="-x">−x</option></select></label>
+          <div class="hull-parts"></div>
           <div class="hull-warn hint"></div>
           <label class="field"><span>Sinkage</span><input type="number" step="0.01" data-k="sinkage" title="Metres the hull is lowered from as drawn (negative raises it)"></label>
           <label class="field"><span>Trim</span><input type="number" step="0.1" data-k="trim" title="Degrees, bow down positive"></label>
@@ -223,6 +226,24 @@ export default function CaseTool(handle, element) {
     }
   }
 
+  /**
+   * The model as read, and what of it is the hull: its parts (a GLB's named
+   * meshes: a Rhino file's layers), the ones chosen (the case's, else those
+   * reaching the waterline), the water plane if it draws one (its z is the
+   * waterline), and which way its bow points.
+   */
+  function model() {
+    const r = hull.result;
+    const ranges = r?.ranges?.length ? r.ranges : [{ name: "hull", from: 0, to: (r?.triangles?.length ?? 0) / 9 }];
+    const parts = r?.partsCache ?? (r ? (r.partsCache = partsOf(r.triangles, ranges)) : []);
+    const water = waterPlanes(parts)[0] ?? null;
+    const waterZ = water ? water.min[2] : 0;
+    const chosen = doc()?.hull?.parts;
+    const names = Array.isArray(chosen) ? chosen.filter((n) => parts.some((p) => p.name === n)) : defaultParts(parts, waterZ);
+    const bow = doc()?.hull?.bow === "-x" ? "-x" : "+x";
+    return { ranges, parts, water, names, frame: { bow, waterZ } };
+  }
+
   let prepTimer = null;
   function prepare() {
     clearTimeout(prepTimer);
@@ -234,10 +255,12 @@ export default function CaseTool(handle, element) {
         return;
       }
       const s = setup();
-      const key = JSON.stringify(s.attitude);
+      const m = model();
+      const key = JSON.stringify([s.attitude, m.names, m.frame]);
       if (prepared?.attitudeKey === key && prepared.result === r) return renderHull();
       try {
-        prepared = { ...prepareHull(r.triangles, s.attitude), attitudeKey: key, result: r };
+        if (!m.names.length) throw new Error("no parts chosen for the hull");
+        prepared = { ...prepareHull(hullTriangles(r.triangles, m.ranges, m.names, m.frame), s.attitude), attitudeKey: key, result: r, model: m };
       } catch (err) {
         prepared = { error: String(err?.message ?? err), attitudeKey: key, result: r };
       }
@@ -250,7 +273,8 @@ export default function CaseTool(handle, element) {
     if (!(m > 0) || !hull.result?.ok) return;
     const s = setup();
     const { rho } = waterProperties(s.water, s.temperature);
-    const sink = sinkageForVolume(hull.result.triangles, m / rho, s.attitude.trim);
+    const md = model();
+    const sink = sinkageForVolume(hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame), m / rho, s.attitude.trim);
     const why = $(".hull-warn");
     if (sink == null) {
       why.textContent = `the whole hull displaces less than ${(m / 1000).toFixed(2)} t`;
@@ -267,13 +291,46 @@ export default function CaseTool(handle, element) {
     const chip = $(".hull-chip");
     $(".hull-unlink").hidden = !d?.hull?.url;
     const r = hull.result;
-    if (!d?.hull?.url) chip.innerHTML = `<span class="hint">No hull yet. Drag one in from a scene's outline (or the sidebar), or paste its link.</span>`;
+    if (!d?.hull?.url) chip.innerHTML = `<span class="hint">No hull yet. Drop in a 3D file (GLB, STL, Rhino 3DM, … whatever a loaded package reads) or any hull document, from the sidebar or a scene, or paste its link.</span>`;
     else if (hull.loading && !r) chip.innerHTML = `<span class="chip">loading the hull…</span>`;
     else if (!r?.ok) chip.innerHTML = `<span class="chip">${esc(d.hull.url.slice(0, 22))}…</span><div class="warn">${esc(r?.error ?? "")}</div>`;
     else chip.innerHTML = `<span class="chip" title="${esc(d.hull.url)}"><span class="dot" data-state="done"></span>${esc(r.title)} · ${esc(pathLabel(r))}</span>`;
+    renderParts();
     $(".hull-warn").innerHTML = prepared?.warnings?.length ? prepared.warnings.map((w) => `<div>${esc(w)}</div>`).join("") : prepared?.error ? `<div class="warn">${esc(prepared.error)}</div>` : "";
     renderPreflight();
     renderRunButton();
+  }
+
+  const bowSel = $(".hull-bow");
+  bowSel.addEventListener("change", () => handle.change((d) => d.hull && (d.hull.bow = bowSel.value)));
+  function renderParts() {
+    const box = $(".hull-parts");
+    const r = hull.result;
+    if (document.activeElement !== bowSel) bowSel.value = doc()?.hull?.bow === "-x" ? "-x" : "+x";
+    bowSel.closest("label").hidden = !r?.ok;
+    if (!r?.ok) return void (box.innerHTML = "");
+    const m = model();
+    if (m.parts.length < 2) return void (box.innerHTML = "");
+    const chosen = new Set(m.names);
+    const key = JSON.stringify([m.parts.map((p) => p.name), [...chosen], m.water?.name]);
+    if (box.dataset.key === key) return;
+    box.dataset.key = key;
+    const tag = (p) => (p === m.water ? `water plane: the waterline (z = ${m.frame.waterZ.toFixed(3)} m)` : p.min[2] <= m.frame.waterZ ? "meets the water" : "above the water");
+    box.innerHTML = `<details ${Array.isArray(doc()?.hull?.parts) ? "open" : ""}><summary class="hint">Hull: ${chosen.size} of ${m.parts.length} parts${m.water ? `; waterline from “${esc(m.water.name)}”` : ""}</summary>
+      ${m.parts
+        .map(
+          (p) => `<label class="part" style="display:flex;gap:6px;align-items:baseline"><input type="checkbox" data-part="${esc(p.name)}" ${chosen.has(p.name) ? "checked" : ""} ${p === m.water ? "disabled" : ""}>
+          <span>${esc(p.name)}</span><span class="hint">${p.triangles.toLocaleString("en")} triangles · ${tag(p)}</span></label>`,
+        )
+        .join("")}
+      ${Array.isArray(doc()?.hull?.parts) ? `<button class="parts-reset">Back to what meets the water</button>` : ""}</details>`;
+    box.querySelectorAll("input[data-part]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        const names = [...box.querySelectorAll("input[data-part]:checked")].map((x) => x.dataset.part);
+        handle.change((d) => d.hull && (d.hull.parts = names));
+      }),
+    );
+    box.querySelector(".parts-reset")?.addEventListener("click", () => handle.change((d) => d.hull && delete d.hull.parts));
   }
 
   // ------------------------------------------------------------ pre-flight
@@ -400,7 +457,14 @@ export default function CaseTool(handle, element) {
         caseUrl: handle.url,
         serverUrl: server.url,
         setup: s,
-        hull: { stl: p.stl, info: JSON.parse(JSON.stringify(p.info)), warnings: [...p.warnings], source: { url: d.hull.url, path: r.path, title: r.title, providerId: r.providerId ?? null } },
+        hull: {
+          stl: p.stl,
+          info: JSON.parse(JSON.stringify(p.info)),
+          warnings: [...p.warnings],
+          source: { url: d.hull.url, path: r.path, title: r.title, providerId: r.providerId ?? null, parts: [...p.model.names] },
+          // how the analysis frame sits in the model's (the scene draws results back in the model's)
+          frame: { ...p.model.frame },
+        },
         by,
         now: Date.now(),
       });
@@ -516,7 +580,7 @@ export default function CaseTool(handle, element) {
     watchHull();
     watchServer();
     watchRuns();
-    const a = JSON.stringify(setup().attitude);
+    const a = JSON.stringify([setup().attitude, doc()?.hull?.parts ?? null, doc()?.hull?.bow ?? "+x"]);
     if (a !== lastAttitude) {
       lastAttitude = a;
       prepare();

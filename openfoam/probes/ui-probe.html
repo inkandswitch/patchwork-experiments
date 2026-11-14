@@ -96,6 +96,14 @@
       cleanup = (await tool("openfoam-case"))(caseHandle, $("#host"));
       return { case: caseHandle.url, server: serverHandle.url, file: file.url };
     },
+    /** link a file (served under the probe's mounts) as the hull; `plugins`: another package's entry to register first */
+    async linkFile({ path, name, ext, plugins = null }) {
+      if (plugins) for (const p of (await import(plugins)).plugins) getRegistry(p.type).register(p);
+      const bytes = new Uint8Array(await (await fetch(path)).arrayBuffer());
+      const file = repo.add({ "@patchwork": { type: "file" }, name, extension: ext, content: bytes });
+      caseHandle.change((d) => (d.hull = { url: file.url }));
+      return file.url;
+    },
     change(code) {
       caseHandle.change(new Function("d", code));
     },

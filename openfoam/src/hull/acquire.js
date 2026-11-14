@@ -76,11 +76,11 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
     }
     if (!r.glb) return { ok: false, pending: true, error: r.status === "error" && r.error ? `the render failed: ${r.error}` : `“${title}” isn't built yet` };
     const t = await cut(r.glb);
-    return { ok: true, triangles: t.triangles, path: "render", title, providerId: doc.providerId ?? null, renderKey: renderKey(doc) };
+    return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "render", title, providerId: doc.providerId ?? null, renderKey: renderKey(doc) };
   }
   if (isGlbFile(doc)) {
     const t = await cut(fileBytes(doc));
-    return { ok: true, triangles: t.triangles, path: "file", title: titleOf(doc), providerId: null };
+    return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "file", title: titleOf(doc), providerId: null };
   }
   const get = getRegistry ?? (await loadGetRegistry());
   if (!get) return { ok: false, error: "no plugin registry here, so nothing can build the hull" };
@@ -107,12 +107,18 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
       if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
       if (!(bytes instanceof Uint8Array)) throw new Error("it returned no GLB");
       const t = await cut(bytes);
-      return { ok: true, triangles: t.triangles, path: "source", title: titleOf(doc), providerId: p.id, providerName: p.name ?? p.id };
+      return { ok: true, triangles: t.triangles, ranges: t.ranges, path: "source", title: titleOf(doc), providerId: p.id, providerName: p.name ?? p.id };
     } catch (err) {
       notes.push(`${p.name ?? p.id} failed (${err?.message ?? err})`);
     }
   }
-  return { ok: false, error: notes.length ? notes.join("; ") : `nothing installed here can build a ${type ?? "document of this kind"} (no scene:source)` };
+  const what = type === "file" ? (ext ? `.${ext} files` : "this kind of file") : `${type ?? "this kind of"} documents`;
+  return {
+    ok: false,
+    error: notes.length
+      ? `couldn't read the hull: ${notes.join("; ")}`
+      : `nothing loaded here reads ${what}: load a package that does (a geometry reader for them, registered as a scene:source), or link a GLB`,
+  };
 }
 
 export function pathLabel(r) {

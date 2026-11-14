@@ -241,7 +241,8 @@ function nodeInstances(json, bin, views, node) {
  * instances expanded), then the GLB's units; line and point primitives are
  * skipped; strips and fans are unrolled.
  * @param {Uint8Array|ArrayBuffer|{ json, bin, views }} input  GLB bytes, or decodeGLB()'s result
- * @returns {{ triangles: Float64Array, meshes: string[], units: ReturnType<typeof glbUnits>, zMin: number, zMax: number, instances: number }}
+ * @returns {{ triangles: Float64Array, meshes: string[], ranges: { name: string, from: number, to: number }[], units: ReturnType<typeof glbUnits>, zMin: number, zMax: number, instances: number }}
+ *   ranges: the triangles (by index) each named mesh gave, in order (a mesh drawn by several nodes gives several)
  *   zMin / zMax: the triangles' extent up the floating z (null with no triangles).
  *   instances: how many copies GPU-instanced nodes drew (0 with none).
  */
@@ -255,11 +256,14 @@ export function glbTriangles(input) {
   const nodes = json.nodes ?? [];
 
   let instances = 0;
+  // which triangles came from which named mesh: a model's parts (a Rhino file's layers, say)
+  const ranges = [];
   /** Emit a mesh once per matrix in Ms (reading its accessors once). */
   const emitMesh = (mi, Ms) => {
     const mesh = meshes[mi];
     if (!mesh) return;
     let used = false;
+    const from = Math.floor(out.length / 9);
     for (const prim of mesh.primitives ?? []) {
       const mode = prim.mode ?? 4;
       if (!isTriangleMode(mode)) continue;
@@ -285,7 +289,11 @@ export function glbTriangles(input) {
         }
       used = true;
     }
-    if (used) names.push(mesh.name ?? `mesh ${mi}`);
+    if (used) {
+      const name = mesh.name ?? `mesh ${mi}`;
+      names.push(name);
+      ranges.push({ name, from, to: Math.floor(out.length / 9) });
+    }
   };
 
   const walk = (ni, parent, seen) => {
@@ -320,6 +328,6 @@ export function glbTriangles(input) {
     if (triangles[i] > zMax) zMax = triangles[i];
   }
   if (!triangles.length) zMin = zMax = null;
-  return { triangles, meshes: names, units, zMin, zMax, instances };
+  return { triangles, meshes: names, ranges, units, zMin, zMax, instances };
 }
 

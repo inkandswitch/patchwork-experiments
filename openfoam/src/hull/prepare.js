@@ -22,6 +22,9 @@
 
 /** @typedef {{ points: Float64Array, faces: Uint32Array }} Mesh  points xyz…, faces abc… */
 
+/** More openings than this and the model isn't a shell with a missing transom or deck: it's left open. */
+export const MAX_OPENINGS = 4;
+
 /** Bounds of a flat xyz array. */
 export function boundsOf(xyz) {
   const min = [Infinity, Infinity, Infinity];
@@ -456,14 +459,26 @@ export function prepareHull(tris, attitude = {}) {
   const oriented = orient(welded);
   if (oriented.conflicts) warnings.push(`${oriented.conflicts} edges couldn't be wound consistently (a non-orientable patch)`);
   const stats0 = edgeStats(oriented);
+  // a shell with an opening or two (a transom or deck it doesn't draw) is
+  // closed; a model of many separate surfaces (a hull, a keel and a rudder
+  // drawn apart, with seams) isn't one shell, and fanning its seams makes
+  // nonsense: it's left as it is. The mesher copes with either; the
+  // displacement and wetted area need a closed shell, and say so.
   let closed = closeHoles(oriented);
-  if (closed.loops.length)
+  let mesh;
+  if (closed.loops.length > MAX_OPENINGS || closed.open) {
+    mesh = { points: oriented.points, faces: oriented.faces };
     warnings.push(
-      `closed ${closed.loops.length} opening${closed.loops.length > 1 ? "s" : ""} in the shell (${closed.loops.map((l) => `${l.edges} edges`).join(", ")}): a transom or deck the model doesn't draw`,
+      `the model isn't one closed shell (${stats0.boundary} open edges${closed.loops.length ? ` in ${closed.loops.length} or more seams` : ""}): the mesher copes, but the displacement and wetted area here aren't reliable`,
     );
-  if (closed.open) warnings.push(`${closed.open} boundary edges couldn't be chained into a loop and stay open`);
+  } else {
+    if (closed.loops.length)
+      warnings.push(
+        `closed ${closed.loops.length} opening${closed.loops.length > 1 ? "s" : ""} in the shell (${closed.loops.map((l) => `${l.edges} edges`).join(", ")}): a transom or deck the model doesn't draw`,
+      );
+    mesh = { points: closed.points, faces: closed.faces };
+  }
   if (stats0.nonManifold) warnings.push(`${stats0.nonManifold} non-manifold edges (three or more faces on one edge)`);
-  let mesh = { points: closed.points, faces: closed.faces };
   if (signedVolume(mesh) < 0) mesh = flipAll(mesh);
   const stats = edgeStats(mesh);
   const b = boundsOf(mesh.points);
@@ -473,6 +488,8 @@ export function prepareHull(tris, attitude = {}) {
   const info = {
     triangles: mesh.faces.length / 3,
     closed: stats.boundary === 0,
+    // the volume, LCB and waterplane read a closed shell; an open model's are rough
+    reliable: stats.boundary === 0 && !oriented.conflicts,
     boundaryEdges: stats.boundary,
     loa: L,
     beam: b.max[1] - b.min[1],

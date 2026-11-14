@@ -190,14 +190,40 @@ once.
 
 ## The hull
 
-`src/hull/acquire.js` takes whatever a scene can show, by the paths
-flow-field takes: a `scene-render` (preferred: exactly what the scene shows),
-a GLB `file`, or any doc a `scene:source` can build (built with its
-defaults). `src/hull/prepare.js` then places it at its attitude, welds,
-winds every face consistently, **closes any opening** (camber draws some
-transoms as no face at all, and an open shell fills with water in the
-mesher), measures it below the waterline (volume, LCB, wetted area, LWL,
-BWL, draft) and writes binary STL. "Float at" solves the sinkage for a
+Link the hull itself: a 3D file (GLB, or anything a loaded package reads:
+a Rhino `.3dm` through [model-viewer](../model-viewer)'s `file-3dm` reader,
+an STL through the scene's), a camber hull, any doc a geometry reader can
+build, or a scene's render of one. No scene is needed; a scene is just
+another place the same hull is shown. (Geometry readers are registered as
+`scene:source`, the scene package's name for them; nothing here needs a
+scene beyond that name.) `src/hull/acquire.js` gets triangles and the
+model's named parts (`model-viewer` gives one per Rhino layer and colour).
+
+**Parts** (`src/hull/parts.js`). A real model is the whole boat: Jim's
+37 ft Daysailor is 29 parts and 1.4 million triangles, with the rig, the
+sails, a dodger and 630,000 triangles of deck hardware. The hull is, by
+default, every part that isn't a water plane or tall (more than half the
+wet length above the waterline: the rig), and either meets the waterline
+band (its lowest point within 2% of the wet length above it) or is long and
+low (80% of the length, within 10% above the waterline: topsides, a deck).
+For the Daysailor that is Hull Bottom (with its keel, bulb and rudder),
+Topsides and Deck. The case lists every part and lets you choose. A part
+that looks like a water plane (flat, three times the rest's length) is
+never hull; its height is the waterline.
+
+**Bow direction.** The analysis wants the bow to +x; a model drawn the other
+way (Jim's, bow at x = 0) is turned a half-turn about z. The run keeps the
+turn and the waterline datum, so the scene draws results back in the
+model's own frame.
+
+`src/hull/prepare.js` then places it at its attitude, welds, winds every
+face consistently, closes up to four openings (camber draws some transoms as
+no face at all, and an open shell fills with water in the mesher), measures
+it below the waterline (volume, LCB, waterplane area, LCF and longitudinal
+inertia, wetted area, LWL, BWL, draft) and writes binary STL. A model of
+many separate surfaces (more openings than that: hull pieces, seams) is left
+open: the mesher copes, and the displacement and wetted area are flagged as
+unreliable instead of being made up. "Float at" solves the sinkage for a
 displacement by bisection.
 
 ## Tests and probes

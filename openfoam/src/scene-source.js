@@ -71,6 +71,6 @@ export default {
         hullTriangles = null;
       }
     }
-    return buildResultsGLB({ layers, params, mode: run.setup?.mode, hullTriangles, notes });
+    return buildResultsGLB({ layers, params, mode: run.setup?.mode, hullTriangles, notes, frame: run.hull?.frame ?? null });
   },
 };

@@ -52,6 +52,14 @@ describe("the GLB", () => {
     // z up → Y up
     expect(meta.bounds.max[1]).toBe(1);
   });
+  it("draws a bow-to-−x model's results back in its own frame", () => {
+    const plain = buildResultsGLB({ layers: { hull: tri }, params, mode: "double-body" }).meta.bounds;
+    const turned = buildResultsGLB({ layers: { hull: tri }, params, mode: "double-body", frame: { bow: "-x", waterZ: 0.5 } }).meta.bounds;
+    // x and the glTF Z flip; the waterline datum lifts Y
+    expect(turned.min[0]).toBe(-plain.max[0]);
+    expect(turned.max[1]).toBe(plain.max[1] + 0.5);
+    expect(turned.min[2]).toBe(-plain.max[2]);
+  });
   it("draws the frozen hull plain when there are no results yet", () => {
     const { glb } = buildResultsGLB({ layers: {}, params, mode: "double-body", hullTriangles: Float64Array.from([0, 0, 0, 1, 0, 0, 0, 0, 1]) });
     expect(parseGLB(glb).json.meshes[0].name).toMatch(/no results yet/);
