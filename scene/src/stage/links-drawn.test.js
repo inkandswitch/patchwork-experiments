@@ -31,10 +31,12 @@ function extensions(log) {
       meta: { id: "t.card", traits: ["t.card"] },
       module: {
         create: (api) => {
-          api.clock.process({ start: () => log.push(`start ${api.role}`), step: () => {} });
+          // (an extension can't tell where it is placed: it can tell whether it may write)
+          const as = () => (api.writable() ? "writable" : "read-only");
+          api.clock.process({ start: () => log.push(`start ${as()}`), step: () => {} });
           const box = api.scene().traits["t.game"]?.box;
-          if (box) api.repo.find(box).then((h) => log.push(`box ${api.role} ${h.doc().n}`));
-          return { input: { press: (ev) => (log.push(`press ${api.role} ${ev.hit?.id}`), null) } };
+          if (box) api.repo.find(box).then((h) => log.push(`box ${as()} ${h.doc().n}`));
+          return { input: { press: (ev) => (log.push(`press ${as()} ${ev.hit?.id}`), null) } };
         },
       },
     },
@@ -77,7 +79,7 @@ describe("a live doc linked twice: one acting, one mirror", () => {
     expect(stageAt(s, "L2").url).toBe(m.game.url);
     expect(stageAt(s, "L2").frame().pointOut([0, 0, 0])).toEqual([5, 0, 0]);
     await settle();
-    expect(m.log.filter((e) => e.startsWith("start"))).toEqual(["start acting"]);
+    expect(m.log.filter((e) => e.startsWith("start"))).toEqual(["start writable"]);
   });
 
   it("an edit to G shows in both; a carry held in the acting stage shows in the mirror, over the page bus", async () => {
@@ -112,7 +114,7 @@ describe("a live doc linked twice: one acting, one mirror", () => {
       return [...m.log];
     };
     expect(await press(stageAt(s, "L2"))).toEqual(["host L2"]);
-    expect(await press(stageAt(s, "L1"))).toEqual(["press acting card", "host L1"]);
+    expect(await press(stageAt(s, "L1"))).toEqual(["press writable card", "host L1"]);
   });
 
   it("the acting link removed: the mirror's occurrence acts, in a stage of its own", async () => {
@@ -154,7 +156,7 @@ describe("pinned: its doc at the pinned heads", () => {
     expect(pin.doc().title).toBe("G then");
     expect(stageAt(s, "P")).toBe(pin);
     await until(() => log.some((e) => e.startsWith("box")));
-    expect(log).toEqual(["box pinned 1"]);
+    expect(log).toEqual(["box read-only 1"]);
   });
 
   it("a pin at heads not here yet is drawn as its hint until they arrive", async () => {
@@ -176,7 +178,7 @@ describe("fixing a link at a version, and following latest again", () => {
     const inner = repo.add(emptyScene({ title: "K", objects: {}, order: [] }));
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }), K: link(inner.url) }, order: ["card", "K"], traits: { "t.game": { box: box.url } } }));
     s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
-    await until(() => running(stageAt(s, "L")) && stageAt(s, "L", "K") && log.some((e) => e.startsWith("box acting")));
+    await until(() => running(stageAt(s, "L")) && stageAt(s, "L", "K") && log.some((e) => e.startsWith("box writable")));
     const host = s.api("t.host");
     const point = host.fixPoint("L");
     expect(point).toEqual({ heads: game.heads(), deps: { [box.url]: box.heads(), [inner.url]: inner.heads() } });
@@ -191,13 +193,67 @@ describe("fixing a link at a version, and following latest again", () => {
     await settle();
     expect(stageAt(s, "L").doc().title).toBe("G");
     expect(stageAt(s, "L", "K").doc().title).toBe("K");
-    await until(() => log.includes("box pinned 1"));
+    await until(() => log.includes("box read-only 1"));
     // Follow latest: live again, acting, as G is now
     host.change((d) => delete d.objects.L.at);
     await until(() => stageAt(s, "L")?.role === "acting" && running(stageAt(s, "L")));
     expect(stageAt(s, "L").doc().title).toBe("G later");
     expect(stageAt(s, "L", "K").role).toBe("acting");
-    await until(() => log.includes("box acting 2"));
+    await until(() => log.includes("box writable 2"));
+  });
+
+  it("fixPoint holds only what the pin's docs name: a doc found that nothing names (a player's secret) is never recorded, one a named doc names (a deck's card file) is, and a listed package's folder is never reached", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = [];
+    const repo = new FakeRepo();
+    const file = repo.add({ "@patchwork": { type: "file" }, name: "red-7.glb" });
+    const deck = repo.add({ faces: [{ sourceUrl: file.url }] });
+    const secret = repo.add({ deckSecret: "00" });
+    const pkgFile = repo.add({ content: JSON.stringify({ name: "a-package" }) });
+    const folder = repo.add({ docs: [{ name: "package.json", url: pkgFile.url }] });
+    const found = [];
+    const find = repo.find.bind(repo);
+    repo.find = (url, ...rest) => (found.push(url), find(url, ...rest));
+    const keeper = {
+      meta: { id: "t.keep", traits: ["t.game"] },
+      module: {
+        create: (api) => {
+          (async () => {
+            const d = await api.repo.find(api.scene().traits["t.game"].deck);
+            await api.repo.find(d.doc().faces[0].sourceUrl);
+            await api.repo.find(secret.url); // the viewer's own: named by no doc of the game's
+            log.push("kept");
+          })();
+          return {};
+        },
+      },
+    };
+    const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }) }, order: ["card"], traits: { "t.game": { deck: deck.url } }, packages: [{ url: folder.url }] }));
+    s = await mountStage({ repo, extensions: [keeper, ...extensions(log)], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    await until(() => log.includes("kept") && found.includes(pkgFile.url));
+    expect(s.api("t.host").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads(), [file.url]: file.heads() } });
+  });
+
+  it("a pin is a function of its whole occurrence: its deps changed under the same heads, it opens again at them", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const log = [];
+    const repo = new FakeRepo();
+    const box = repo.add({ n: 1 });
+    const boxThen = box.heads();
+    const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }) }, order: ["card"], traits: { "t.game": { box: box.url } } }));
+    box.change((d) => (d.n = 2));
+    const heads = game.heads();
+    s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
+    await until(() => log.includes("box read-only 1"));
+    const pin = stageAt(s, "P");
+    s.change((d) => (d.objects.P.at.deps[box.url] = box.heads()));
+    await until(() => log.includes("box read-only 2"));
+    expect(stageAt(s, "P")).not.toBe(pin);
+    // and the same deps written in another order are the same occurrence: nothing reopens
+    const now = stageAt(s, "P");
+    s.change((d) => (d.objects.P.at.deps = { [box.url]: [...box.heads()].reverse() }));
+    await settle();
+    expect(stageAt(s, "P")).toBe(now);
   });
 
   it("a link not open here has no version to fix", async () => {
@@ -231,4 +287,83 @@ describe("fixing a link at a version, and following latest again", () => {
     await until(() => stageAt(s, "L")?.role === "acting");
     expect("at" in s.doc().objects.L).toBe(false);
   });
+});
+
+// I4, placement independence, over the drawn stages: a stage's audience and
+// looks are functions of its doc and the registry, never of whether it acts,
+// mirrors or is pinned. A game G in the shape of Lost Cities' (seats owned by
+// one extension, which contributes the roster; a table whose audience reads
+// the roster, as tabletop's does; a lens showing this viewer what its
+// audience lets it see, as a keeper does), linked live twice and pinned at
+// its heads now, × seats {none, p1, p1 + p2}: every card's audience, shown
+// and look agree across the three stages.
+describe("placement independence (I4) in a mirror and a pin", () => {
+  const ME = "automerge:ana";
+  const BEN = "automerge:ben";
+  const game = [
+    {
+      meta: { id: "t.seats", traits: ["t.game"] },
+      module: {
+        create: () => ({
+          roster: {
+            viewers: (snap) => Object.values(snap.traits["t.game"].seats ?? {}).filter(Boolean),
+            playerAt: (snap, seat) => snap.traits["t.game"].seats?.[seat] ?? null,
+          },
+        }),
+      },
+    },
+    {
+      meta: { id: "t.table", traits: ["t.game"] },
+      module: {
+        create: (api) => {
+          const roster = () => api.collect("roster").map((r) => r.value).find((r) => typeof r?.playerAt === "function") ?? null;
+          return {
+            // a hand card is shown to the player in its seat, and to nobody while the seat is empty; one on the table to all
+            audience: (snap) => (id) => {
+              const seat = snap.objects[id]?.traits?.["t.hand"]?.seat;
+              if (!seat) return snap.objects[id]?.traits?.["t.card"] ? { show: "all" } : null;
+              const who = roster()?.playerAt(snap, seat);
+              return { show: who ? [who] : [], only: who ? [who] : [] };
+            },
+            looks: () => {
+              const out = new Map();
+              for (const id of Object.keys(api.scene().objects)) {
+                if (!api.scene().objects[id].traits?.["t.card"]) continue;
+                const a = api.audience(id);
+                out.set(id, a === "all" || (Array.isArray(a) && a.includes(api.viewer)) ? { name: `face ${id}` } : { veil: true });
+              }
+              return out;
+            },
+          };
+        },
+      },
+    },
+  ];
+  const card = (seat) => object({ name: "Card", traits: { "t.card": {}, ...(seat ? { "t.hand": { seat } } : {}) } });
+
+  for (const [name, seats] of [["none", {}], ["p1", { p1: ME }], ["p1 + p2", { p1: ME, p2: BEN }]]) {
+    it(`seats ${name}: the acting stage, the mirror and the pin agree on every card's audience, shown and look`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const repo = new FakeRepo();
+      const g = repo.add(emptyScene({ title: "G", objects: { h1: card("p1"), h2: card("p2"), t: card(null) }, order: ["h1", "h2", "t"], traits: { "t.game": { seats } } }));
+      const heads = g.heads();
+      const objects = { L1: link(g.url, { parent: null, transform: at(0) }), L2: link(g.url, { parent: null, transform: at(5) }), P: link(g.url, { parent: null, transform: at(-5), at: { heads } }) };
+      s = await mountStage({ repo, viewerId: ME, extensions: game, doc: { objects, order: Object.keys(objects) } });
+      const ready = (st) => st?.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.looks().size === 3;
+      await until(() => ["L1", "L2", "P"].every((k) => ready(stageAt(s, k))));
+      const seen = (k) => {
+        const st = stageAt(s, k);
+        const api = st.debug.host.record("t.table").api;
+        return ["h1", "h2", "t"].map((id) => [id, api.audience(id), api.shown(id), JSON.stringify(st.debug.looks().get(id))]);
+      };
+      expect(["L1", "L2", "P"].map((k) => stageAt(s, k).role)).toEqual(["acting", "mirror", "pinned"]);
+      const acting = seen("L1");
+      expect(seen("L2")).toEqual(acting);
+      expect(seen("P")).toEqual(acting);
+      // and what that is: my hand's face is mine when I sit at p1; an empty seat's hand is nobody's
+      const mine = acting.find(([id]) => id === "h1");
+      expect(mine[1]).toEqual(seats.p1 ? [ME] : []);
+      expect(JSON.parse(mine[3])).toEqual(seats.p1 ? { name: "face h1" } : { veil: true });
+    });
+  }
 });

@@ -14,6 +14,28 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
+// Every refused method tried on a read-only handle the stage was given (its doc's, and so its
+// presence's): a read-only stage's own output, told apart from an acting stage on the same doc.
+const tried = vi.hoisted(() => []);
+vi.mock("./readonly.js", async (importOriginal) => {
+  const m = await importOriginal();
+  const spied = new WeakSet();
+  return {
+    ...m,
+    readOnlyHandle(h) {
+      const ro = m.readOnlyHandle(h);
+      if (!ro || ro === h || spied.has(ro)) return ro;
+      const out = new Proxy(ro, {
+        get(t, p) {
+          const v = Reflect.get(t, p);
+          return m.REFUSED.includes(p) ? (...a) => (tried.push(`${String(p)} ${h.url}`), v(...a)) : v;
+        },
+      });
+      spied.add(out);
+      return out;
+    },
+  };
+});
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
@@ -62,6 +84,8 @@ const PROBE = {
   },
 };
 const OWN = { meta: { id: "t.own", traits: ["t.game"] }, module: own({ create: () => ({}) }) };
+/** A general part (no trait: it runs in the focus, the host here), as the command bar or the menu is. */
+const GENERAL = { meta: { id: "t.general" }, module: { create: () => ({}) } };
 const PART = { meta: { id: "t.part" }, module: { create: (ctx) => ctx.addObject(ctx.url) } };
 const TEMPLATE = { meta: { id: "t.template" }, module: { create: (ctx) => ctx.change((d) => (d.title = "templated")) } };
 
@@ -76,9 +100,12 @@ afterEach(() => {
  * Mount a host with G linked as `role`: "pinned" (G at an older version),
  * "mirror" (G linked live twice: the second link's stage), "readonly" (G
  * linked once, live, its handle refusing writes as a viewer who may only
- * read would have it). → the stage under test and what's logged.
+ * read would have it), "mirror of a reader" (both: G linked live twice, its
+ * handle refusing writes, so its acting stage is silent too and anything on
+ * G's handle would be the mirror's). → the stage under test and what's logged.
  */
 async function mount(role) {
+  tried.length = 0;
   const repo = new FakeRepo();
   const time = manualTime({ yieldTo: () => Promise.resolve() });
   const g = repo.add(gameDoc("G then"));
@@ -87,7 +114,8 @@ async function mount(role) {
   const log = [];
   const arm = { on: false };
   armed(g, log, arm);
-  if (role === "readonly") g.isReadOnly = () => true;
+  if (role === "readonly" || role === "mirror of a reader") g.isReadOnly = () => true;
+  const twice = role === "mirror" || role === "mirror of a reader";
   // a pin's handle is G's view at those heads: it refuses as G does
   const view = g.view.bind(g);
   g.view = (heads) => {
@@ -104,9 +132,9 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects =
-    role === "pinned" ? { P: link({ at: { heads: then } }) } : role === "mirror" ? { L1: link(), L2: link({ transform: { ...T, position: [3, 0, 0] } }) } : { L1: link() };
-  s = await mountStage({ repo, time, extensions: [PROBE, OWN], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
-  const want = role === "pinned" ? ["P"] : role === "mirror" ? ["L2"] : ["L1"];
+    role === "pinned" ? { P: link({ at: { heads: then } }) } : twice ? { L1: link(), L2: link({ transform: { ...T, position: [3, 0, 0] } }) } : { L1: link() };
+  s = await mountStage({ repo, time, extensions: [PROBE, OWN, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  const want = role === "pinned" ? ["P"] : twice ? ["L2"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle(1);
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
   return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api, ownApi: stage.debug.host.record("t.own").api };
@@ -120,7 +148,8 @@ function watchConsole() {
   return said;
 }
 
-const ROLES = ["pinned", "mirror", "readonly"];
+const ROLES = ["pinned", "mirror", "readonly", "mirror of a reader"];
+const ROLE = { pinned: "pinned", mirror: "mirror", readonly: "acting", "mirror of a reader": "mirror" };
 
 describe("I6: a read-only stage writes nothing", () => {
   for (const role of ROLES) {
@@ -129,8 +158,12 @@ describe("I6: a read-only stage writes nothing", () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
       const { api, ownApi, g } = m;
-      expect(api.role).toBe(role === "readonly" ? "acting" : role);
+      expect(m.stage.role).toBe(ROLE[role]);
+      expect("role" in api).toBe(false); // where it's placed is the view's, never an extension's to branch on (I4)
       expect(api.writable()).toBe(false);
+      // since it opened: nothing of its own tried on its handle (its presence's hello and keys included)
+      await m.time.advance(HEARTBEAT_MS + 1, { draw: false });
+      expect(tried).toEqual([]);
       const docBefore = JSON.stringify(api.doc());
       const hostBefore = JSON.stringify(s.doc());
       const gBefore = g.heads().join();
@@ -164,6 +197,8 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("addObject refuses", await api.addObject(g.url).then(() => false, (e) => /read-only/.test(e.message)));
       // the handle and the repo it was handed refuse (the only refusals it reaches are these, asked for directly)
       for (const what of REFUSED) ok(`api.handle.${what} refuses`, (() => { try { api.handle[what]?.(() => {}); return typeof api.handle[what] !== "function"; } catch (e) { return /read-only/.test(e.message); } })());
+      // (those were asked for directly: from here, anything tried on its handle is the stage's own)
+      tried.length = 0;
       const found = await api.repo.find(s.handle.url);
       ok("a handle the repo gives out refuses", (() => { try { found.change((d) => (d.title = "through the repo")); return false; } catch (e) { return /read-only/.test(e.message); } })());
       ok("the repo makes no doc", await api.repo.create2({}).then(() => false, (e) => /read-only/.test(e.message)));
@@ -172,8 +207,8 @@ describe("I6: a read-only stage writes nothing", () => {
       else ok("a claim by a session not heard from counts for the grace", api.claimedBy(null, "held")?.session === "s-old");
 
       // over time: claims rechecked, the clock ticked past a checkpoint, heartbeats, a pose's keepalive
-      // (a mirror shares G's handle with G's acting stage, whose heartbeats go out on it: from here
-      // its log is read for anything of the mirror's instead)
+      // (a mirror shares G's handle with G's acting stage, which speaks on it when it may write: the
+      // mirror's own output is what it tries on its read-only handle, `tried`)
       if (role === "mirror") m.arm.on = false;
       await m.time.advance(CHECKPOINT_MS + HEARTBEAT_MS + 1000 / CLOCK_HZ, { draw: false });
       await settle();
@@ -187,8 +222,10 @@ describe("I6: a read-only stage writes nothing", () => {
       expect(JSON.stringify(api.doc())).toBe(docBefore);
       expect(g.heads().join()).toBe(gBefore);
       expect(JSON.stringify(s.doc())).toBe(hostBefore);
-      // nothing it did reached G's handle: for a mirror, only the acting stage's heartbeats, with none of the mirror's keys
-      const acting = (e) => role === "mirror" && /^broadcast \S+ scene:presence /.test(e) && !e.includes('"here"');
+      // nothing it did reached G's handle, nor tried to: beside a writable acting stage, G's handle carries
+      // that stage's presence alone; beside a silent one, nothing at all
+      expect(tried).toEqual([]);
+      const acting = (e) => role === "mirror" && /^broadcast \S+ scene:presence /.test(e);
       expect(m.log.filter((e) => !acting(e))).toEqual([]);
       // and the stage never reached its own refusal: nothing warned or threw on its way
       expect(said).toEqual([]);
@@ -197,7 +234,7 @@ describe("I6: a read-only stage writes nothing", () => {
   }
 
   for (const role of ["pinned", "mirror"]) {
-    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, camera, selection, notice or pref`, async () => {
+    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, camera, selection, notice or pref; its extensions still collect from it`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
@@ -206,16 +243,20 @@ describe("I6: a read-only stage writes nothing", () => {
       const before = view.atom.get();
       const steps = [];
       const ok = (what, v) => steps.push([what, !!v]);
-      ok("no segment", stage.segment("card").order.length === 0);
-      ok("no bodies", stage.bodyDefs().size === 0 && view.bodyDefs().get("t.sit")?.stage !== stage);
-      ok("no commands", stage.reader.collect("commands").length === 0 && !view.collect("commands").some((c) => c.stage === stage.n));
-      ok("no widgets", stage.widgetsAt({ x: 1, y: 1 }).length === 0);
+      const hit = { id: `\u001f${stage.n}\u001fcard`, point: [0, 0, 0], distance: 1 };
+      ok("no segment in the chain, even for a hit on its own card", !view.chainFor({ hit, widget: null }).order.some((k) => k.startsWith(`\u001f${stage.n}\u001f`)));
+      ok("no bodies", view.bodyDefs().get("t.sit")?.stage !== stage && view.bodyDefs(stage).get("t.sit")?.stage !== stage);
+      ok("no commands", !view.collect("commands").some((c) => c.stage === stage.n));
+      ok("no widgets", !String(view.pickWidget({ x: 1, y: 1 })?.owner ?? "").startsWith(`\u001f${stage.n}\u001f`));
+      // what its own extensions read of it, they read as anywhere (I4: a roster, a keymap, a lens)
+      ok("its extensions collect from their own stage", api.collect("commands").some((c) => c.id === "t.probe"));
       ok("not acting", !view.acting().includes(stage));
       ok("off the input path", !view.onPath([...stage.path, "card"]).includes(stage));
       ok("body.enter refuses", api.body.enter("t.sit") === false);
       ok("hold refuses", api.hold({ name: "Tool" }, {}) && view.router.held() == null);
       ok("run refuses", api.run({ ext: "t.probe", command: "poke" }) === false);
-      ok("a general part can't run one of its commands either", stage.reader.run({ ext: "t.probe", command: "poke" }) === false && view.stage(0).debug.host.record("t.probe") == null);
+      const general = view.stage(0).debug.host.record("t.general").api;
+      ok("a general part can't run one of its commands either", general.run({ stage: stage.n, ext: "t.probe", command: "poke" }) === false && api.doc().title !== "poked");
       const el = api.overlay();
       const edge = api.edge("right");
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
@@ -260,6 +301,21 @@ describe("the read-only handle and repo, over everything they refuse", () => {
       expect(readOnlyHandle(ro)).toBe(ro);
     });
   }
+
+  it("the repo is an allowlist: find, create, create2 and peerId, and no other door to a handle (handles, findWithProgress)", async () => {
+    const repo = new FakeRepo();
+    repo.peerId = "peer:x";
+    repo.findWithProgress = () => ({ handle: null });
+    for (const readOnly of [false, true]) {
+      const r = stageRepo(repo, { readOnly });
+      expect(Object.keys(r).sort()).toEqual(["create", "create2", "find", "peerId"]);
+      expect(r.peerId).toBe("peer:x");
+      expect(r.handles).toBe(undefined);
+      expect(r.findWithProgress).toBe(undefined);
+      if (readOnly) await expect(r.create2({ n: 1 })).rejects.toThrow(/read-only/);
+      else expect((await r.create2({ n: 1 })).doc().n).toBe(1);
+    }
+  });
 
   it("the repo notes what it finds; with a pin's deps a listed doc is found at its heads, an unlisted one as it is", async () => {
     const repo = new FakeRepo();

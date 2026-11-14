@@ -67,24 +67,37 @@ or identity closes, with what was opened under it, and opens again.
   chain, offer no body, tool, command or widget, put no chrome in the DOM
   (`overlay`, `edge`, `dock`, `popover` stay out of it), don't move the
   camera, select, notify or set prefs, and register no process (it is
-  never started). A mirror hears its doc's channel (and, over the page bus,
-  its view's acting stage of the same doc, so a carry shows in both) and
-  says nothing on it; a pin has no channel, so no claim counts in it and
-  nobody is seated. `api.role` says which a stage is.
+  never started). All of that is one facet of the api (`drawnApi` in
+  `stage/stage.js`), and the view asks only stages that act for segments,
+  bodies, widgets and commands (`view.acting()`). What its extensions read
+  of their own stage they read as anywhere: `api.collect` (a roster, a
+  keymap), `api.audience`, `api.shown`, looks; so a mirror and a pin show
+  what the acting stage shows (I4). A mirror hears its doc's channel (and,
+  over the page bus, its view's acting stage of the same doc, so a carry
+  shows in both) and says nothing on it; a pin has no channel, so no claim
+  counts in it. Seats are the doc's, so a pin's roster is who sat when it
+  was fixed. Where a stage is placed is the view's to know (`stage.role`):
+  an extension has no `api.role` to branch on, only `api.writable()`.
 - **Read-only.** A stage is read-only when it doesn't act or its handle
   refuses writes (`api.writable()` false). It is then given its doc and its
   repo read-only (`stage/readonly.js`): `change`, `addObject`, `remove`,
   `claim`, `send`, `pose.hold`, the stage's own edits, parts, templates and
   drops are refused, package reconcile writes nothing, the render manager
-  builds nothing, presence only listens, and every handle the repo gives
-  out refuses writes, so a keeper in it can't write its container either
-  (invariant I6). A pin's repo finds each doc its `deps` lists at those
-  heads.
+  builds nothing, presence only listens (and holds the read-only handle,
+  which refuses to broadcast), and every handle the repo gives out refuses
+  writes, so a keeper in it can't write its container either (invariant
+  I6). The stage's repo is exactly `find`, `create`, `create2` and
+  `peerId`. A pin's repo finds each doc its `deps` lists at those heads,
+  and any other doc as it is now (a viewer's own: a player's secret).
 - **Fixing a link.** `api.fixPoint(linkId)` is where the inspector's Fix at
   this version fixes a live link: `{ heads, deps? }`, its doc's heads and
-  in `deps` the heads of every doc reached through it (the live docs opened
-  under it, and every doc their stages found through their repos: render
-  docs, files, a keeper's container), so a pin is whole. Follow latest
+  in `deps` the heads of every doc reached through it: of the docs its
+  stages hold or found through their repos (the live docs opened under it,
+  render docs, files, a keeper's container), those its doc names by URL, or
+  a doc so named names. A doc found that nothing in the pin names (a
+  player's secret) is the viewer's and is never recorded; packages are
+  read through the view's repo and never reached. A pin is keyed by its
+  url, heads and deps: change its deps and it opens again. Follow latest
   removes `at`.
 - **One doc per extension.** An extension runs in a stage when that
   stage's doc has one of its traits; a general one (no traits) runs once,
@@ -921,7 +934,6 @@ that extension.
 | `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal`, `Counter` | `Counter` is the stage's automerge Counter. `session`: this view's presence session, what its claims and holds name (two tabs of one viewer are two sessions; it changes on coming back from the back-forward cache) |
 | `doc()`, `change(fn)`, `newId(prefix)` | |
 | `writable()` | may this view write the doc: false in a pin or a mirror, and where the handle refuses writes (Keyhive's to answer, in time). The halo shows no handles where it's false |
-| `role` | `"acting"`, or `"mirror"` / `"pinned"` for a stage that is drawn and never acted on ("Views, stages and links") |
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids, { edit? })` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids. With `edit` (an `edits` step), the change is that edit's |

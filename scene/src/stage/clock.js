@@ -94,7 +94,7 @@ export function readClock(d) {
  * @param {{ acts: boolean, writable: boolean, visible: boolean, settled: boolean, complete: boolean }} v
  */
 export function eligibility({ acts, writable, visible, settled, complete }) {
-  const why = !acts ? "pinned" : !writable ? "view only" : !complete ? "missing a package" : !settled ? "starting" : !visible ? "hidden" : null;
+  const why = !acts ? "drawn" : !writable ? "view only" : !complete ? "missing a package" : !settled ? "starting" : !visible ? "hidden" : null;
   return { ok: why === null, why };
 }
 

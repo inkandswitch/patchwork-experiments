@@ -18,7 +18,7 @@ describe("the doc's clock", () => {
   it("says why a view can't compute, first reason first", () => {
     const yes = { acts: true, writable: true, visible: true, settled: true, complete: true };
     expect(eligibility(yes)).toEqual({ ok: true, why: null });
-    expect(eligibility({ ...yes, acts: false, writable: false }).why).toBe("pinned");
+    expect(eligibility({ ...yes, acts: false, writable: false }).why).toBe("drawn");
     expect(eligibility({ ...yes, writable: false }).why).toBe("view only");
     expect(eligibility({ ...yes, complete: false }).why).toBe("missing a package");
     expect(eligibility({ ...yes, settled: false }).why).toBe("starting");

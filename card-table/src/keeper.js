@@ -80,6 +80,10 @@ export function playing(api, scene) {
 /** @param {object} api  @param {{ secret?: (viewer: string) => Promise<Uint8Array> | Uint8Array }} [o]  secret: the player's secret (default: their account's; player-secret.js) */
 export function create(api, { secret } = {}) {
   const { repo, viewer } = api;
+  // A stage that may not write its doc (a pin, a mirror, a viewer who may only read) takes no part:
+  // it joins nothing, takes no turn, hands over no key and makes no secret. It only reveals, with
+  // what the doc and this viewer's secret already hold; the stage that acts does the rest.
+  const writable = () => api.writable?.() !== false;
   const decks = new Map(); // url → { handle, participant, faces: Map slot → item, line, problem, off, queued, running, rerun }
   let bound = bindings({}, TRAIT);
   let scene = null;
@@ -120,7 +124,7 @@ export function create(api, { secret } = {}) {
     deck.running = true;
     try {
       const t = tableFor(url);
-      await deck.participant.step(t);
+      if (writable()) await deck.participant.step(t);
       if (dead) return;
       // what this viewer may see, of this deck's
       const mine = [];
@@ -182,7 +186,7 @@ export function create(api, { secret } = {}) {
         if (dead || decks.get(url) !== deck) return;
         if (!Array.isArray(h?.doc?.()?.faces)) throw new Error("it isn't a secure deck");
         deck.handle = h;
-        deck.participant = createParticipant({ handle: h, playerId: viewer, secret: () => (secret ? secret(viewer) : secretFor({ repo, viewer })) });
+        deck.participant = createParticipant({ handle: h, playerId: viewer, secret: () => (secret ? secret(viewer) : secretFor({ repo, viewer, make: writable() })) });
         const onChange = () => {
           // the doc's public state decides whether anything can be shown (dealt): look at once, then step
           refresh();
@@ -249,7 +253,7 @@ export function create(api, { secret } = {}) {
         const mine = [...new Set(ids ?? [])].map((id) => bound.of.get(id)).filter(Boolean);
         const key = mine[0]?.key;
         const deck = key ? decks.get(key) : null;
-        if (!deck?.participant) return 0;
+        if (!deck?.participant || !writable()) return 0;
         return deck.participant.shuffle(mine.filter((b) => b.key === key).map((b) => b.slot));
       },
     }),

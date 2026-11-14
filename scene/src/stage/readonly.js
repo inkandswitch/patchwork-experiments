@@ -24,6 +24,7 @@ const refusal = (url, what) => () => {
 };
 
 const READ_ONLY = Symbol("read-only");
+const RAW = Symbol("raw handle");
 
 /** Is this a handle (it can be changed)? */
 const isHandle = (v) => !!v && typeof v === "object" && typeof v.change === "function" && typeof v.doc === "function";
@@ -35,6 +36,7 @@ export function readOnlyHandle(handle) {
   return new Proxy(handle, {
     get(target, prop) {
       if (prop === READ_ONLY) return true;
+      if (prop === RAW) return target;
       if (prop === "isReadOnly") return () => true;
       if (REFUSED.includes(prop)) return refusal(target.url, String(prop));
       const v = Reflect.get(target, prop, target);
@@ -47,6 +49,8 @@ export function readOnlyHandle(handle) {
     },
   });
 }
+/** The handle a read-only one reads (itself, if it isn't one): which doc it is, for what's keyed by that (presence's page bus). */
+export const rawHandle = (h) => h?.[RAW] ?? h;
 /** Is this handle one a read-only stage was given? */
 export const isReadOnlyHandle = (h) => !!h?.[READ_ONLY];
 
@@ -54,11 +58,14 @@ export const isReadOnlyHandle = (h) => !!h?.[READ_ONLY];
 export const handleReadOnly = (h) => isReadOnlyHandle(h) || (typeof h?.isReadOnly === "function" && !!h.isReadOnly());
 
 /**
- * The repo a stage gives its extensions and its content: `find` notes each
- * doc found in `reached` (url → handle); with `deps` ({ url: heads }, a pin's)
- * a listed doc is found at those heads (build.js pinnedRepo: an unlisted one is
- * found as it is now); read-only, every handle it gives out refuses writes and
- * it makes no docs.
+ * The repo a stage gives its extensions and its content: exactly `find`,
+ * `create`, `create2` and `peerId`, nothing else of the repo's (no
+ * `handles`, no `findWithProgress`: a door around `find` would hand out
+ * writable handles and miss `reached`). `find` notes each doc found in
+ * `reached` (url → handle); with `deps` ({ url: heads }, a pin's) a listed
+ * doc is found at those heads (build.js pinnedRepo: an unlisted one is found
+ * as it is now); read-only, every handle it gives out refuses writes and it
+ * makes no docs.
  * @param {object} repo
  * @param {{ readOnly?: boolean, deps?: object | null, reached?: Map<string, object> }} o
  */
@@ -71,12 +78,13 @@ export function stageRepo(repo, { readOnly = false, deps = null, reached = null 
     return readOnly ? readOnlyHandle(h) : h;
   }
   const refuse = (what) => () => Promise.reject(new Error(`Cannot ${what}: this stage is read-only.`));
-  return new Proxy(base, {
-    get(target, prop) {
-      if (prop === "find") return find;
-      if (readOnly && (prop === "create" || prop === "create2" || prop === "import" || prop === "clone" || prop === "delete")) return refuse(`${String(prop)} a document`);
-      const v = Reflect.get(target, prop, target);
-      return typeof v === "function" ? v.bind(target) : v;
+  const make = (what) => (readOnly || typeof repo[what] !== "function" ? refuse(`${what} a document`) : (...args) => repo[what](...args));
+  return Object.freeze({
+    find,
+    create: make("create"),
+    create2: make("create2"),
+    get peerId() {
+      return repo.peerId;
     },
   });
 }

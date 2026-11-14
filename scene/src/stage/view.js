@@ -161,6 +161,27 @@ function newSession() {
 
 // ─── the view ───────────────────────────────────────────────────────────────
 
+/** A doc's URL without a path or heads (what `deps` is keyed by). */
+const docUrl = (u) => String(u ?? "").split(/[/#]/)[0];
+/** A pin's deps as a key: the same docs at the same heads give the same key, in any order. */
+const depsKey = (deps) =>
+  JSON.stringify(
+    Object.keys(deps ?? {})
+      .sort()
+      .map((u) => [u, [...(deps[u] ?? [])].sort()]),
+  );
+/** Every doc URL a doc names, anywhere in it (bytes skipped), without paths or heads. */
+function urlsIn(doc) {
+  const out = new Set();
+  const walk = (v) => {
+    if (typeof v === "string") {
+      if (v.startsWith("automerge:")) out.add(docUrl(v));
+    } else if (v && typeof v === "object" && !ArrayBuffer.isView(v)) for (const x of Object.values(v)) walk(x);
+  };
+  walk(doc);
+  return out;
+}
+
 /**
  * Mount a view in `element` (element.repo, element.viewerId and element.time
  * optional). Its stages come after, the outermost first (./stage.js).
@@ -325,7 +346,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   let expansion = [];
   let linkStates = new Map(); // path key → { role, open, reason? }
   const pathKey = (p) => p.join("\u001f");
-  const occKey = (o) => `${o.role}|${identityOf(o.url, o.heads)}`;
+  // (a pin's deps are part of what it is: the same heads held with other deps show other docs)
+  const occKey = (o) => `${o.role}|${identityOf(o.url, o.heads)}|${o.heads ? depsKey(o.deps) : ""}`;
   /** A doc's live handle as the view has it: found once, watched for changes; null if it can't be opened, undefined while on its way. */
   function liveHandle(u) {
     let d = docs.get(u);
@@ -440,26 +462,39 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /**
    * Where fixing the link at path `p` would fix it (COMPOSITION.md §7, "a pin
    * is whole"): `{ heads, deps? }`, the heads of its doc as this view has it,
-   * and in `deps` the heads of every doc reached through it: the live docs
-   * opened under it and every doc their stages found through their repos
-   * (render docs, files, a keeper's container). Null when no live stage is
-   * open there.
+   * and in `deps` the heads of every doc reached through it: of the docs the
+   * stages opened under it hold or found through their repos (live linked
+   * docs, render docs, files, a keeper's container), those its doc names by
+   * URL, or a doc so named names, and so on. A doc an extension found that
+   * nothing in the pin names is the viewer's, not the pin's (a player's
+   * secret): never recorded. Null when no live stage is open there.
    */
   function fixPointAt(p) {
     const at = opened.get(pathKey(p))?.stage;
     if (!at || at.role === "pinned") return null;
     const heads = at.handle.heads?.();
     if (!Array.isArray(heads) || !heads.length) return null;
-    const deps = {};
-    const note = (u, h) => {
-      const hs = h?.heads?.();
-      if (u !== at.url && !deps[u] && Array.isArray(hs) && hs.length) deps[u] = [...hs];
-    };
+    const found = new Map(); // url → handle: what the stages under it hold or found
     for (const { stage: s } of opened.values()) {
       // (a pin under it is fixed already, by its own `at`)
       if (s.role === "pinned" || s.path.length < p.length || !p.every((x, i) => x === s.path[i])) continue;
-      if (s !== at) note(s.url, s.handle);
-      for (const [u, h] of s.reached) note(u, h);
+      if (s !== at) found.set(docUrl(s.url), s.handle);
+      for (const [u, h] of s.reached) if (!found.has(docUrl(u))) found.set(docUrl(u), h);
+    }
+    const deps = {};
+    const seen = new Set([docUrl(at.url)]);
+    for (let next = [at.handle.doc()]; next.length; ) {
+      const docs = next;
+      next = [];
+      for (const d of docs)
+        for (const u of urlsIn(d)) {
+          const h = found.get(u);
+          const hs = h?.heads?.();
+          if (seen.has(u) || !Array.isArray(hs) || !hs.length) continue;
+          seen.add(u);
+          deps[u] = [...hs];
+          next.push(h.doc());
+        }
     }
     return Object.keys(deps).length ? { heads: [...heads], deps } : { heads: [...heads] };
   }
@@ -524,7 +559,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Every body on offer: each acting stage's, the caller's first; the first to offer an id has it. */
   function bodyDefs(first = null) {
     const out = new Map();
-    const order = first ? [first, ...acting().filter((s) => s !== first)] : acting();
+    const order = first?.acts ? [first, ...acting().filter((s) => s !== first)] : acting();
     for (const s of order) {
       for (const [id, found] of s.bodyDefs()) {
         if (out.has(id)) continue;
@@ -1005,6 +1040,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     onPath,
     inputPath,
     collect,
+    /** the chain for an event, and the widget under it (the router's; for probes and tests) */
+    chainFor,
+    pickWidget,
     requestFlush,
     // the viewer's
     notify,

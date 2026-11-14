@@ -64,10 +64,28 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
     if (w.startsWith("screened:")) return { audience: [w.slice(9)], shown: "all" };
     return { audience: [w], shown: [w] };
   };
-  t.join = (viewer, { roster: has = true } = {}) => {
-    const c = { unknown: false, scheduled: 0 };
+  /**
+   * A client for `viewer`. `writable: false` is a stage that may not write (a pin, a mirror, a reader):
+   * its deck handle refuses every write, as a read-only stage's repo hands it out, and counts each
+   * one tried. `secret` is the player's (one per viewer by default, so a viewer's two clients share it).
+   */
+  t.secrets = {};
+  t.join = (viewer, { roster: has = true, writable = true, at = null } = {}) => {
+    const c = { unknown: false, scheduled: 0, refused: 0 };
+    const readOnlyDeck = {
+      // (a pin's handle is the deck at fixed heads: its url names them)
+      url: at ? `${deck.url}#${at}` : deck.url,
+      doc: () => deck.doc(),
+      on: deck.on,
+      off: deck.off,
+      change() {
+        c.refused++;
+        throw new Error("Cannot change the deck: it is read-only here.");
+      },
+    };
     const api = {
-      repo: { find: async (url) => (url === DECK ? deck : Promise.reject(new Error("unavailable"))) },
+      repo: { find: async (url) => (url === DECK ? (writable ? deck : readOnlyDeck) : Promise.reject(new Error("unavailable"))) },
+      writable: () => writable,
       viewer,
       collect: (name) => (name === "roster" && has ? [{ id: "seats", value: roster }] : []),
       audience: (id) => (c.unknown ? null : audienceOf(id).audience),
@@ -75,7 +93,7 @@ function table({ seated = ["me", "you"], open = [] } = {}) {
       schedule: () => c.scheduled++,
       notify() {},
     };
-    const secret = newSecret();
+    const secret = (t.secrets[viewer] ??= newSecret());
     c.x = create(api, { secret: () => secret });
     c.update = () => c.x.update({ objects });
     c.looks = () => Object.fromEntries([...c.x.looks()].map(([id, l]) => [id, l.veil ? "veil" : l.name]));
@@ -228,6 +246,46 @@ describe("the joint keeper", () => {
     x.dispose();
   });
 
+  // I6 (scene/COMPOSITION.md): in a stage that may not write, the keeper never reaches a refusal.
+  // Over every case of who else is at the table: the viewer's own acting client (a mirror, or a pin
+  // beside the game played live), the other player only (a reader whose writable client is away),
+  // or nobody.
+  for (const twin of ["mine", "mine, pinned", "theirs", "none"]) {
+    it(`a client that may not write takes no part and writes nothing (its writable twin: ${twin}); it shows what the doc and its secret already hold`, async () => {
+      const warned = [];
+      vi.spyOn(console, "warn").mockImplementation((...a) => warned.push(a.map(String).join(" ")));
+      const t = table();
+      Object.assign(t.where, { c0: "me", c1: "you", c2: "public" });
+      const pinned = twin === "mine, pinned";
+      const ro = t.join("me", { writable: false, ...(pinned ? { at: "h1" } : {}) });
+      if (twin.startsWith("mine")) t.join("me");
+      if (twin !== "none") t.join("you");
+      const settle = async () => {
+        for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
+      };
+      if (twin.startsWith("mine")) {
+        // dealt by the writable clients (a pin's deck is the same deck: its keys are the same); the read-only one shows exactly what its twin shows
+        await until(() => t.dealt() && t.clients.you.looks().c1 && t.clients.you.looks().c1 !== "veil");
+        await until(() => JSON.stringify(ro.looks()) === JSON.stringify(t.clients.me.looks()) && ro.looks().c0 && ro.looks().c0 !== "veil");
+        expect(Object.keys(ro.looks()).sort()).toEqual(["c0", "c2"]);
+        // a shuffle asked of it is refused before the doc is reached
+        expect(ro.x.keeper.shuffle(["c0", "c1"])).toBe(0);
+      } else {
+        // nobody who may write joins for "me": the deck waits, and the read-only client shows nothing
+        await settle();
+        expect(t.deck.doc().phase).toBe("waiting");
+        expect(t.deck.doc().participants.map((p) => p.id)).not.toContain("me");
+        expect(ro.looks()).toEqual({});
+      }
+      t.update();
+      await settle();
+      expect(ro.refused).toBe(0);
+      expect(warned).toEqual([]);
+      expect(ro.status().filter((x) => /problem/.test(x))).toEqual([]);
+      t.dispose();
+    }, 60000);
+  }
+
   it("the rule it shows by (rule.js): the item only inside the audience, the veil only when it's turned toward you", () => {
     const face = { name: "X" };
     const look = (audience, shown, known = true, ready = true) => lookFor({ ready, audience, shown, viewer: "me", look: known ? face : null });
@@ -298,6 +356,26 @@ describe("a player's secret", () => {
     const again = await accountSecret({ repo, account: repo.handleFor(account.url) });
     expect([...again]).toEqual([...first]);
     expect(await secretFor({ repo, viewer: "automerge:me", account })).toEqual(first);
+  });
+
+  it("one that may not make it (a stage that may not write) gets null until it's made, and writes nothing", async () => {
+    const repo = memoryRepo();
+    const account = await repo.create2({ contactUrl: "automerge:me" });
+    const writes = [];
+    const ro = { ...repo, create2: async () => (writes.push("create2"), null) };
+    const roAccount = { url: account.url, doc: () => account.doc(), change: () => writes.push("account") };
+    expect(await accountSecret({ repo: ro, account: roAccount, make: false })).toBe(null);
+    expect(await secretFor({ repo: ro, viewer: "automerge:me", account: roAccount, make: false })).toBe(null);
+    // linked, but its doc has no secret yet (another device is making it)
+    const empty = await repo.create2({ title: "Player secrets" });
+    account.change((d) => (d.playerSecretsUrl = empty.url));
+    const roFind = { ...ro, find: async (url) => ({ ...repo.handleFor(url), change: () => writes.push("secrets") }) };
+    expect(await accountSecret({ repo: roFind, account: roAccount, make: false })).toBe(null);
+    expect(writes).toEqual([]);
+    // made: read as it is
+    const made = await accountSecret({ repo, account });
+    expect([...(await accountSecret({ repo: roFind, account: roAccount, make: false }))]).toEqual([...made]);
+    expect(writes).toEqual([]);
   });
 
   it("falls back to this browser's own, per viewer, outside an account", async () => {

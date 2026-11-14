@@ -33,6 +33,7 @@
 // stage shows poses and extensions read keys. Time comes in through now /
 // setTimer / clearTimer so tests can drive it.
 
+import { rawHandle } from "./readonly.js";
 import { addSample, clockOffset, playoutDelay } from "./smooth.js";
 
 export const PRESENCE = "scene:presence";
@@ -144,12 +145,14 @@ export function winningHold(holds) {
 // page bus delivers each broadcast to every other presence on the same
 // handle in the page, as the network delivers it to other pages: a copy, a
 // task later. Presences on different handles (different repos, connected by
-// a network) are left to the network, so nothing is heard twice.
+// a network) are left to the network, so nothing is heard twice. A
+// read-only stage's handle (./readonly.js) is its doc's handle: the same bus.
 const buses = new WeakMap(); // handle → Set of receivers on it in this page
 
 /** Join the page bus for `handle`: deliver(msg) to the others, and leave(). */
 export function pageBus(handle, receive) {
   if (!handle || typeof handle !== "object") return { deliver() {}, leave() {} };
+  handle = rawHandle(handle);
   let set = buses.get(handle);
   if (!set) buses.set(handle, (set = new Set()));
   set.add(receive);

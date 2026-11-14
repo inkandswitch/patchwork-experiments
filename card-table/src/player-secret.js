@@ -18,11 +18,13 @@ export const SECRETS_FIELD = "playerSecretsUrl";
 
 /**
  * The account's secret: from its player-secrets doc, made (and linked) the
- * first time.
- * @param {{ repo, account }} o  account: the account doc's handle
+ * first time, unless `make` is false (a stage that may not write): then
+ * null until it has been made.
+ * @param {{ repo, account, make?: boolean }} o  account: the account doc's handle
  */
-export async function accountSecret({ repo, account }) {
+export async function accountSecret({ repo, account, make = true }) {
   let url = account.doc()?.[SECRETS_FIELD];
+  if (!url && !make) return null;
   if (!url) {
     const made = await repo.create2({ "@patchwork": { type: "player-secrets" }, title: "Player secrets", deckSecret: toHex(newSecret()) });
     account.change((d) => {
@@ -33,6 +35,7 @@ export async function accountSecret({ repo, account }) {
   }
   const h = await repo.find(url);
   let hex = h.doc()?.deckSecret;
+  if (!hex && !make) return null;
   if (!hex) {
     h.change((d) => {
       if (!d.deckSecret) d.deckSecret = toHex(newSecret());
@@ -64,8 +67,8 @@ export function browserSecret(viewer, storage = globalThis.localStorage) {
  * The secret for this viewer: the account's when the viewer is the account's
  * contact (the usual case in Patchwork), else this browser's own.
  */
-export async function secretFor({ repo, viewer, account = globalThis.accountDocHandle }) {
+export async function secretFor({ repo, viewer, account = globalThis.accountDocHandle, make = true }) {
   const contact = account?.doc?.()?.contactUrl;
-  if (repo && account && contact && contact === viewer) return accountSecret({ repo, account });
+  if (repo && account && contact && contact === viewer) return accountSecret({ repo, account, make });
   return browserSecret(viewer);
 }

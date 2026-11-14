@@ -354,9 +354,15 @@ else changes.
   Every extension runs, so it looks as the place did, lenses and dressing
   included; nothing is claimed, so nobody is seated.
 - **A pin is whole.** `fixPoint(link)` holds the heads of every doc reached
-  through it in `deps`; a doc missing there is closed `"unpinned"`. Renders
-  show as of `deps`, never judged or rebuilt, so two hosts pinning one game
-  at different heads don't fight over its render docs.
+  through it in `deps`; a link inside the pin whose doc is missing there is
+  closed `"unpinned"`. Renders show as of `deps`, never judged or rebuilt,
+  so two hosts pinning one game at different heads don't fight over its
+  render docs. *As built:* "reached through it" is what the stages under
+  the link found through their repos **and** the pin's docs name by URL,
+  transitively (the game names its deck, the deck its card files). A doc an
+  extension finds that nothing in the pin names is the viewer's, not the
+  pin's (a player's secret): `fixPoint` never records it, and a pin's repo
+  finds such a doc as it is now (Decisions, step 13, 10 and 17).
 
 **Linearity.** Runtime state (a helm's angle, a keeper binding, a claim) has
 at most one writable holder among the docs a view reaches. A live link
@@ -388,7 +394,9 @@ expand(root, open) → [{ path, url, heads | null, role: "acting" | "mirror" | "
   placement. It is drawn, not acted on: its segment is never in the chain,
   it offers no tool or body, and it never computes its clock. *As built:*
   it draws into the world and nothing more (no chrome, camera, notices or
-  processes), and hears its channel without speaking on it. By the page
+  processes: one facet of the api), and hears its channel without speaking
+  on it. Its extensions read their own stage as anywhere (`api.collect`,
+  audience, looks), so a mirrored hand is shown to whoever its seat says. By the page
   bus it hears its own view's acting stage, so a carry shows in both. A
   part used twice in an assembly follows latest twice; a copied link shows
   the same game, not a dead box.
@@ -724,8 +732,8 @@ ships alone and proves something.
     (`readOnly`), and presence only listens (`listen: true`: no hello, keys,
     sends, holds or bye; it hears its own session, which is how a mirror
     hears its view's acting stage over the page bus). A pin has no channel:
-    no claim counts in it. `api.role`; `api.link(id)` → `{ role, open,
-    reason? }`. **A pin is whole:** a stage's repo notes every doc it finds,
+    no claim counts in it. `api.link(id)` → `{ role, open, reason? }`; the
+    stage's role is the view's (`stage.role`), not an extension's. **A pin is whole:** a stage's repo notes every doc it finds,
     and `api.fixPoint(link)` (the view's `fixPointAt`) is the linked doc's
     heads with, in `deps`, the heads of every live doc opened under it and
     every doc their stages reached (render docs, files, a keeper's
@@ -763,9 +771,24 @@ ships alone and proves something.
     `sea-view.js` takes `camera.object.position` in the world, wrong only
     for a sea in a linked doc. Camber's dressing is Rising Tide's and wasn't
     audited here. Not done here: Enter on a pin offering Follow latest
-    (14); a mirrored secure deck's faces (a keeper's keys are its
-    instance's, so a mirror's keeper may show backs where the acting one
-    shows faces; not checked).
+    (14). *Review fixes* (Decisions, step 13, 16–24): a drawn stage's
+    extensions collect from their own stage (the roster reached a mirror as
+    nothing, so a mirrored hand was shown to nobody), and the drawn api is
+    one facet; `api.role` is gone; the stage's repo is an allowlist;
+    `fixPoint` records only what the pin's docs name, packages are read
+    through the view's repo, and a pin's stage is keyed by its deps too;
+    card-table's keeper takes no part where it may not write, and a deck is
+    the same deck at any version. Tested: I4 across acting, mirror and pin
+    × seats {none, p1, p1 + p2} (`links-drawn.test.js`); the I6 harness
+    with a spy on every read-only handle (the mirror's own output asserted
+    empty, and a mirror beside a silent acting stage); the keeper × its
+    writable twin {mine, mine pinned, theirs, none} (`card-table`). I6 as
+    the invariant names it is *proved* in Chrome by `links-run.mjs` step 6
+    (25/25): mid-play, the room links G again live and fixed, and Ana opens
+    G through a handle that refuses writes; the mirror and that view show
+    her exactly her acting stage's faces, the pin what she saw when it was
+    fixed, through her play and draw, with no warning or error.
+    `pins-run.mjs` 27/27 after the fixes.
 14. **Edit in context**: Enter, Leave, link rows in the outline and
     inspector; H10 across docs.
 15. **Extract and bundle** (I9, I11).
@@ -898,3 +921,53 @@ the simplest reading of section 7 that held up, and says why.
     between repos, so `publish-fitout.mjs` makes F as it was fixed, then
     F's change, and writes the pin at F's server heads (its deps at the
     files' server heads).
+
+
+Then, fixing the step's review (2026-11-14, also unattended):
+
+16. **A drawn stage's extensions collect from their own stage.** `reader.collect`
+    is ungated; only the view decides who is acted on (`view.acting()`,
+    `onPath`, `bodyDefs`, a cross-stage `api.run`). Why: gating collect hid a
+    roster from tabletop's audience in a mirror, so a mirrored hand was shown
+    to nobody (I4); input was already the view's to withhold.
+17. **What a pin holds is what its docs name.** `fixPoint` keeps a found doc
+    only if a doc of the pin names its URL (transitively). Why: a stage's
+    repo also finds a viewer's own docs (card-table's player secret, through
+    `api.repo`); recording those would publish a player's secret URL in the
+    host doc, and the found-set otherwise depended on load order. Naming is
+    data the docs already carry, so no package declares anything. Decision
+    10 stands (an unlisted doc is found live): it is how a pin can still
+    reach a viewer's secret, and §7 is reworded to match.
+18. **Packages are read through the view's repo.** Why: a package is the
+    viewer's to load, at live heads; it is never part of a pin.
+19. **A pin is keyed by its deps too.** Same heads, other deps: the stage
+    opens again. Deps written in another order are the same key. Why: a
+    stage should be a function of its occurrence.
+20. **The drawn api is one facet** (`drawnApi`), not a guard per method;
+    writes keep one check, `writable()`, at each write site, and the
+    read-only handle and repo beneath them. Why: the facet puts "what a
+    drawn stage may not do" in one table, so a new method is either
+    harmless or listed there. The write checks are not a second mechanism:
+    the wrappers are the guarantee, `writable()` is the stage asking before
+    it writes so it never reaches them (I6 counts reaching them as a
+    failure). The clock's reason for not computing in a drawn stage is
+    `"drawn"`.
+21. **No `api.role`.** Where a stage is placed is the view's to know;
+    `api.writable()` is the one question an extension may ask. Why: a role
+    invites branching on placement, which I4 forbids.
+22. **The stage's repo is an allowlist**: `find`, `create`, `create2`,
+    `peerId`. Why: anything else (`handles`, `findWithProgress`) hands out
+    raw writable handles and bypasses `reached`, so "read-only by
+    construction" held only by convention.
+23. **A read-only stage's presence holds the read-only handle.** It could
+    not speak if it tried; the page bus is keyed by the raw handle
+    (`rawHandle`), so it still hears its view's acting stage. Why: one
+    mechanism for silence, and the I6 harness can then tell a read-only
+    stage's own output from an acting stage's on the same doc.
+24. **A keeper takes no part where it may not write** (card-table): no
+    join, turn, key or secret is made there; it only reveals with what the
+    deck and the viewer's secret already hold. A deck's identity for its
+    keys is its doc URL without heads. Why: I6 failed on the real keeper in
+    a mirror and a pin; and a pin's deck handle names its heads in its url,
+    so keys derived from it differed and a pin showed every card's back.
+    Both are card-table's facts, not the stage's.

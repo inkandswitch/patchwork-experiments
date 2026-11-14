@@ -429,8 +429,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // viewer doesn't have are offered (STAGE.md, "Packages"). The render
   // manager reports the provider each render doc names (objState), so one a
   // render doc asks for is listed even when the object's own field differs.
+  // (through the view's repo, not the stage's: a package is the viewer's to load, at its live heads,
+  // never a doc this one reaches, so fixing a link never records one)
   const packages = createPackages({
-    repo,
+    repo: view.repo,
     handle,
     plugins: patchworkPlugins,
     local,
@@ -950,9 +952,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  // its doc's channel: a read-only stage hears it and says nothing; a pin, a value, has none
+  // its doc's channel: a read-only stage hears it and says nothing (its handle refuses to broadcast, too); a pin, a value, has none
   const channel = role !== "pinned";
-  const presence = createPresence({ handle: channel ? given : null, listen: readOnly, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
+  const presence = createPresence({ handle: channel ? handle : null, listen: readOnly, viewer, session: view.session, now: time.now, setTimer: (fn, ms) => time.after(ms, fn), clearTimer: (cancel) => cancel?.() });
   const remotePosed = new Set(); // object ids showing another view's pose
   const playing = new Set(); // of those, the ones still playing back (smooth.js)
   let poseLoopOff = null;
@@ -1688,10 +1690,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // this stage puts there hears events in this stage's frame, and is its own
   // (a stopping extension's go with it).
 
-  /** Every running extension's bodies, by id (the first to offer an id has it); none from a stage that doesn't act. */
+  /** Every running extension's bodies, by id (the first to offer an id has it); the view asks only a stage that acts. */
   function bodyDefs() {
     const out = new Map();
-    if (!acts) return out;
     for (const { id: ext, value } of host.collect("bodies")) {
       for (const def of Array.isArray(value) ? value : []) {
         if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || isStageBody(def.id)) continue;
@@ -2172,9 +2173,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       };
     };
     let watched = viewValue(); // what api.view.watch last told of
-    // (a stage that doesn't act puts no chrome in the view: what it makes stays out of the DOM; its styles go in, since what it draws may need them)
-    const ownEl = (el, parent, { chrome = true } = {}) => {
-      if (!live() || (chrome && !acts)) return el;
+    const ownEl = (el, parent) => {
+      if (!live()) return el;
       own.els.add(el);
       // (which stage it is: several docs' extensions share one view's DOM)
       el.dataset.stage = String(n);
@@ -2201,8 +2201,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       change,
       /** may this view write the doc? (not in a pin or a mirror, nor where the handle refuses: Keyhive's to answer, in time) */
       writable,
-      /** does this stage act ("acting"), or is it drawn ("mirror", "pinned")? (COMPOSITION.md §7) */
-      role,
       newId,
       scene,
       ops,
@@ -2252,13 +2250,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
             }),
           ),
         select: (target) => {
-          if (live() && acts) view.select(target == null ? null : [...path, target]);
+          if (live()) view.select(target == null ? null : [...path, target]);
         },
       }),
       pref,
-      setPref: (key, value) => {
-        if (acts) setPref(key, value);
-      },
+      setPref,
       presence: Object.freeze({
         set: (key, value) => {
           if (live()) presence.set(id, key, value);
@@ -2273,7 +2269,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       send: (type, data) => {
         if (live()) presence.send(id, type, data);
       },
-      notify: (text, kind) => (acts ? notify(text, kind, id) : null),
+      notify: (text, kind) => notify(text, kind, id),
       /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
       packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
@@ -2335,17 +2331,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         },
         // in this stage's frame (./scope.js)
         get: () => scope.camera.get(),
-        // the camera is the viewer's: only a stage that acts moves it
-        set: (cam) => {
-          if (acts) scope.camera.set(cam);
-        },
-        frame: (box) => {
-          if (acts) scope.camera.frame(box);
-        },
-        hold: () => (acts ? acquire(own.cameraHolds, () => viewport.hold()) : noop),
+        set: (cam) => scope.camera.set(cam),
+        frame: (box) => scope.camera.frame(box),
+        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
         /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
-        ride: (oid, opts) => (acts ? acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)) : noop),
-        limit: (spec) => (acts ? acquire(own.offs, () => viewport.limit(spec)) : noop),
+        ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
+        limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         touched: () => viewport.touched() || cameraRestored,
         watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom); never while it's held */
@@ -2379,7 +2370,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       },
       /** dock an element of this extension's in the drawer, under a tab: closed by close(), its × (which calls onClose), or the extension stopping */
       dock: (el, { title, onClose, embed = true, show = true } = {}) => {
-        if (!live() || !el || !acts) return noop;
+        if (!live() || !el) return noop;
         // an open drawer wants the pointer (stage/pointer.js)
         const close = acquire(own.offs, () => {
           const off = drawer.dock(ownerKey(id), el, { title, embed, show, onClose: () => (onClose?.(), queueMicrotask(() => router?.refresh())) });
@@ -2392,7 +2383,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         const el = document.createElement("style");
         el.textContent = String(text ?? "");
         el.dataset.owner = id;
-        return ownEl(el, root, { chrome: false });
+        return ownEl(el, root);
       },
       listen: (target, type, fn, opts) =>
         acquire(own.offs, () => {
@@ -2400,7 +2391,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           return () => target.removeEventListener(type, fn, opts);
         }),
       cursor: (name) => {
-        if (live() && acts) view.cursor(ownerKey(id), name);
+        if (live()) view.cursor(ownerKey(id), name);
       },
       pose: Object.freeze({
         /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
@@ -2434,9 +2425,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         computer: () => claimedBy(null, CLOCK),
         pause: () => clock.pause(),
         resume: () => clock.resume(),
-        /** (a pin or a mirror computes nothing: its processes are never started) */
         process: (spec) => {
-          if (!acts) return noop;
           const off = acquire(own.processes, () => clock.process(spec));
           clockFrames();
           return off;
@@ -2453,9 +2442,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
         current: () => viewValue().body,
         /** enter body `id` (any running extension's, or the stage's "look" or "edit") at `place`: false if none offers it or it can't */
-        enter: (bid, place) => (live() && acts ? enterBody(bid, place) : false),
+        enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never the base: Look or Edit) */
-        leave: () => (live() && acts ? view.leaveBody() : false),
+        leave: () => (live() ? view.leaveBody() : false),
         /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
         /** the top body's reach (m; Look's and Edit's are Infinity) */
@@ -2467,11 +2456,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * and its input. Whatever was held is put down. @returns put
        */
       hold: (tool, input) => {
-        if (!live() || !acts || !input || !tool || typeof tool.name !== "string") return noop;
+        if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). @returns release, for when it closes itself */
-      popover: (close) => (live() && acts && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
+      popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(ownerKey(id), close)) : noop),
       /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
       context: (hit) => context(hit),
       /** attention: { selected, hit } (the selection, else the look) */
@@ -2488,7 +2477,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       path: (o) => view.inputPath(o),
       audience: audienceOf,
       shown: shownTo,
-      run: (inv) => (!acts ? false : inv?.stage != null && inv.stage !== n ? (view.stage(inv.stage)?.reader.run(inv) ?? false) : run(inv)),
+      // (in another stage only if it acts: a pin or a mirror is never acted on)
+      run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.acting().find((s) => s.n === inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
 
     function release() {
@@ -2529,7 +2519,40 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       owned.delete(id);
     }
 
-    return { api, release };
+    return { api: acts ? api : drawnApi(api), release };
+  }
+
+  /**
+   * A drawn stage's api (COMPOSITION.md §7): the acting api less everything
+   * that acts, all in this one place. A pin's or a mirror's extensions run
+   * and draw into the world (layers, labels, looks, styles) and read all
+   * they like; what would take input, put chrome in the view, move the
+   * viewer's camera, select, notify, set a pref, enter a body, hold a tool,
+   * compute or run a command is inert here: a noop, an element kept out of
+   * the DOM, or the answer the acting api gives when it can't. Writes need
+   * nothing here: a drawn stage is read-only, so writable() is false and
+   * each write refuses on that, the handle and repo it holds refuse too
+   * (./readonly.js), and the view never asks it for a segment, a body or a
+   * widget (view.acting()).
+   */
+  function drawnApi(api) {
+    const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
+    const loose = (className) => Object.assign(document.createElement("div"), { className });
+    return facet(api, {
+      view: facet(api.view, { select: noop }),
+      setPref: noop,
+      notify: () => null,
+      overlay: () => loose("stage-overlay"),
+      edge: () => loose("stage-edge-part"),
+      dock: () => noop,
+      popover: () => noop,
+      cursor: noop,
+      camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop, limit: () => noop }),
+      clock: facet(api.clock, { process: () => noop }),
+      body: facet(api.body, { enter: () => false, leave: () => false }),
+      hold: () => noop,
+      run: () => false,
+    });
   }
 
   // ─── the host ─────────────────────────────────────────────────────────────
@@ -2565,7 +2588,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // stage's frame), owners as the view's keys, distances in the world.
   function widgetsAt(ev) {
     const out = [];
-    if (!acts) return out;
     const f = scope.frame();
     for (const r of host.running()) {
       const input = r.instance.input;
@@ -2584,8 +2606,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // the hit's path: its holders, nearest first, then its root's, then (in the
   // focus) the general ones.
   function segment(element) {
-    // a pin or a mirror is drawn, never acted on: it has no segment (I8)
-    if (!acts) return { order: [], holderOf: () => null };
     const running = host.running();
     const m = derive();
     const chain = element != null && m.objects[element] ? hitChain(element, m.parents, m.groups, m.objects) : [];
@@ -2732,11 +2752,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const reader = Object.freeze({
     stage: n,
     scene,
-    collect: (name) => (acts ? host.collect(name).map((x) => ({ ...x, stage: n })) : []),
+    collect: (name) => host.collect(name).map((x) => ({ ...x, stage: n })),
     context: (hit) => context(hit),
     attention: () => attention(),
     look: () => look(),
-    run: (inv) => (acts ? run(inv) : false),
+    run: (inv) => run(inv),
     nameOf: (oid) => nameOf(oid),
   });
 
