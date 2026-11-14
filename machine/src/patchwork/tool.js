@@ -2,35 +2,19 @@
 // every viewer steps from a shared input log (../host). Pick a port to play;
 // everyone else watches the same game.
 import { compile } from "../engine.js";
-import { createSession, Host } from "../host/host.js";
+import { Host } from "../host/host.js";
 import { seating } from "../host/session.js";
 import { content as doomContent, lumps } from "../doom.js";
 import { History } from "../history/history.js";
 import { inputs, HELP } from "./input.js";
 import { audio } from "./audio.js";
-import { WASM, bytes, load } from "./load.js";
+import { WASM, bytes, load, doomWads, portsOf, newSession } from "./load.js";
 import { traced } from "./traced.js";
-import { CHECKPOINT_SECONDS } from "./datatype.js";
 import { quietClock } from "./quiet.js";
 import css from "./tool.css?inline";
 
 const MUSIC = new URL("../../engines/doom/dist/music.wasm", import.meta.url);
 const create = async (repo, value) => (repo.create2 ? await repo.create2(value) : repo.create(value));
-
-// Content records (doom.js content()): u32 length + bytes, the first the
-// start arguments, then the WADs.
-function records(b) {
-  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const out = [];
-  for (let at = 0; at + 4 <= b.length; ) {
-    const n = v.getUint32(at, true);
-    out.push(b.subarray(at + 4, at + 4 + n));
-    at += 4 + n;
-  }
-  return out;
-}
-const doomArgs = (b) => new TextDecoder().decode(records(b)[0]).split("\0").filter(Boolean);
-const doomWads = (b) => records(b).slice(1);
 
 const el = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -85,9 +69,8 @@ export default function MachineTool(handle, element) {
         const wasm = await bytes(WASM[kind]);
         await compile(wasm); // refuses a broken engine before anything is written
         const c = await create(repo, { title, bytes: content });
-        const session = await createSession(repo, { wasm, content, seconds: { every: CHECKPOINT_SECONDS[kind] } });
         // Time starts stopped: it runs while someone holds a port.
-        session.change((d) => void (d.clock = { t: 0, at: Date.now(), until: 0 }));
+        const session = await newSession(repo, { kind, wasm, content, wall: Date.now() });
         handle.change((d) => {
           d.kind = kind;
           d.content = c.url;
@@ -131,7 +114,7 @@ export default function MachineTool(handle, element) {
     const engine = host.engine;
     const [num, den] = session.doc().engine.hz;
     const hz = num / den;
-    const ports = kind === "doom" ? +(doomArgs(contentBytes)[doomArgs(contentBytes).indexOf("-players") + 1] ?? 1) : 4;
+    const ports = portsOf(kind, contentBytes);
     const input = inputs(kind, root, engine.inputBytes);
     let watching = 0;
     let sound = null;

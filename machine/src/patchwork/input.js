@@ -20,35 +20,37 @@ export const HELP = {
   snes: "Arrows · Z = B · X = A · A = Y · S = X · Q / W = L / R · Enter = Start · Backspace = Select · or a gamepad",
 };
 
-/** Keyboard, mouse and gamepad state for one element, sampled per tick. */
-export function inputs(kind, element, inputBytes) {
+/**
+ * The keys each machine's pad reads, by code, for a held tool to declare
+ * (scene/STAGE.md, "The held tool": its declared keys are its own).
+ */
+export const KEYS = {
+  doom: [
+    ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Turn left"], ["ArrowRight", "Turn right"],
+    ["KeyW", "Forward"], ["KeyS", "Back"], ["KeyA", "Strafe left"], ["KeyD", "Strafe right"],
+    ["Comma", "Strafe left"], ["Period", "Strafe right"], ["AltLeft", "Strafe"], ["AltRight", "Strafe"],
+    ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["ControlLeft", "Fire"], ["ControlRight", "Fire"],
+    ["Space", "Use"], ["KeyE", "Use"],
+    ...[1, 2, 3, 4, 5, 6, 7].map((n) => [`Digit${n}`, `Weapon ${n}`]),
+  ].map(([code, label]) => ({ code, label })),
+  snes: Object.keys(SNES_KEYS).map((code) => ({ code, label: code })),
+};
+
+/**
+ * One port's pad: the keys held down, the mouse's turn and its button, and a
+ * gamepad if one is connected, sampled once a tick as the port's input bytes.
+ * Fed by whatever hears the events: the Machine tool's element (inputs()
+ * below), or a scene's held tool.
+ */
+export function pad(kind, inputBytes) {
   const down = new Set();
   let mouse = 0; // mickeys since the last sample
   let fire = false;
-  const key = (e) => {
-    if (e.metaKey) return;
-    if (e.type === "keydown") down.add(e.code);
-    else down.delete(e.code);
-    if (/^Arrow|^Space$|^Backspace$|^Enter$|^Key[ZXASQWED]$/.test(e.code)) e.preventDefault();
-  };
-  const blur = () => down.clear();
-  const move = (e) => {
-    if (document.pointerLockElement) mouse += e.movementX;
-  };
-  const press = (e) => {
-    if (e.button === 0 && document.pointerLockElement) fire = e.type === "mousedown";
-  };
-  element.addEventListener("keydown", key);
-  element.addEventListener("keyup", key);
-  element.addEventListener("blur", blur);
-  document.addEventListener("mousemove", move);
-  document.addEventListener("mousedown", press);
-  document.addEventListener("mouseup", press);
-  const pad = () => [...(navigator.getGamepads?.() ?? [])].find(Boolean);
+  const gamepad = () => [...(globalThis.navigator?.getGamepads?.() ?? [])].find(Boolean);
 
   const doom = () => {
     const has = (...c) => c.some((x) => down.has(x));
-    const g = pad();
+    const g = gamepad();
     const run = has("ShiftLeft", "ShiftRight") ? 1 : 0;
     const strafe = has("AltLeft", "AltRight");
     let forward = 0, side = 0, turn = 0, buttons = 0;
@@ -76,7 +78,7 @@ export function inputs(kind, element, inputBytes) {
   const snes = () => {
     let b = 0;
     for (const c of down) b |= SNES_KEYS[c] ?? 0;
-    const g = pad();
+    const g = gamepad();
     if (g) {
       g.buttons.forEach((x, i) => x.pressed && (b |= SNES_PAD[i] ?? 0));
       const [lx, ly] = g.axes;
@@ -91,7 +93,52 @@ export function inputs(kind, element, inputBytes) {
     return out;
   };
   return {
+    /** A key went down (true) or up (false), by its code. */
+    key(code, isDown) {
+      if (isDown) down.add(code);
+      else down.delete(code);
+    },
+    /** The mouse turned by dx mickeys (Doom). */
+    turn(dx) {
+      mouse += dx;
+    },
+    /** The mouse's button (Doom fires). */
+    fire(isDown) {
+      fire = isDown;
+    },
+    /** Everything let go (focus lost, the pad put down). */
+    clear() {
+      down.clear();
+      fire = false;
+      mouse = 0;
+    },
     sample: kind === "doom" ? doom : snes,
+  };
+}
+
+/** Keyboard, mouse and gamepad state for one element, sampled per tick. */
+export function inputs(kind, element, inputBytes) {
+  const p = pad(kind, inputBytes);
+  const key = (e) => {
+    if (e.metaKey) return;
+    p.key(e.code, e.type === "keydown");
+    if (/^Arrow|^Space$|^Backspace$|^Enter$|^Key[ZXASQWED]$/.test(e.code)) e.preventDefault();
+  };
+  const blur = () => p.clear();
+  const move = (e) => {
+    if (document.pointerLockElement) p.turn(e.movementX);
+  };
+  const press = (e) => {
+    if (e.button === 0 && document.pointerLockElement) p.fire(e.type === "mousedown");
+  };
+  element.addEventListener("keydown", key);
+  element.addEventListener("keyup", key);
+  element.addEventListener("blur", blur);
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mousedown", press);
+  document.addEventListener("mouseup", press);
+  return {
+    sample: p.sample,
     dispose() {
       element.removeEventListener("keydown", key);
       element.removeEventListener("keyup", key);
