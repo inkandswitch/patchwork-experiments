@@ -1,9 +1,11 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// The walk body (scene/TOOLS.md §4), in two scene:extensions:
+// The walk body (scene/TOOLS.md §4), in three scene:extensions:
 // - "walk", general (it runs wherever this package is installed),
-//   contributing `bodies: [walk]` and drawing the others who walk;
+//   contributing `bodies: [walk]`;
+// - "walk.people", a part of every doc (traits ["*"]): the others who walk,
+//   drawn in whichever doc they walk in, wherever the focus is;
 // - "walk.spawn", the spawn point's trait part: a spawn point is a trait the
 //   body reads, written by whatever lays a level out (arena's spawn part,
 //   doom's layout). Declaring it is what makes a doc with spawn points call
@@ -17,6 +19,15 @@ export const plugins = [
     name: "Walk",
     async load() {
       return (await import("./extension.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "walk.people",
+    name: "People walking",
+    traits: ["*"],
+    async load() {
+      return (await import("./people.js")).default;
     },
   },
   {
