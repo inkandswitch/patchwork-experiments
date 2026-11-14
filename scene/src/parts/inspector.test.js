@@ -514,8 +514,9 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
   it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, and of 3 of an object, nothing, ×, Look, Edit: open exactly as the rule says", async () => {
     // The rule, as a model: in Edit, open once a selection (of something it
     // shows) or the toolbar opened it, until × / toolbar off (then shut until
-    // the selection changes) or leaving Edit; out of Edit, shut; back in
-    // Edit, open on an object selected that wasn't shut by hand.
+    // the selection changes) or leaving Edit, which also puts the selection
+    // down (TOOLS.md Decisions 6); out of Edit, shut; back in Edit, open on
+    // an object selected (in Look, by the menu) that wasn't shut by hand.
     const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit"];
     const model = (m, e) => {
       const sel = { obj: "a", obj2: "b", ref: "dimension:d1", none: null }[e];
@@ -527,7 +528,7 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
       if (e === "x") return m.open ? { ...m, open: false, dismissed: true } : m;
       if (e === "on") return m.edit ? { ...m, open: true, dismissed: false } : m;
       if (e === "off") return m.edit ? { ...m, open: false, dismissed: true } : m;
-      if (e === "look") return { ...m, edit: false, open: false };
+      if (e === "look") return m.edit ? { ...m, edit: false, open: false, sel: null, dismissed: m.sel === null ? m.dismissed : false } : { ...m, open: false };
       if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && (m.sel === "a" || m.sel === "b") };
       return m;
     };

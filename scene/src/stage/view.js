@@ -835,14 +835,19 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   /**
    * Make Look or Edit the base (./bodies.js): every body standing on it
-   * leaves, and leaving Edit puts down a tool held through an editing
-   * command (Measure), whose input is the editor's.
+   * leaves, and leaving Edit puts down what Edit holds: a tool held through
+   * an editing command (Measure), whose input is the editor's, and the
+   * selection (attention is the selection, so a selection kept from Edit
+   * would aim F and the use prompt at what was last edited). The focus
+   * stays: it is where the viewer is, as the camera is.
    */
   function setBase(b) {
     if (dead || !router) return;
+    const leavingEdit = base === EDIT && b !== EDIT;
     base = b;
     router.setBase({ id: b.id, input: b === EDIT ? editInput : lookInput, lock: false, keys: [], ahead: b === EDIT ? EDIT_AHEAD : [] });
     if (b !== EDIT) putDownEditTool();
+    if (leavingEdit) selectStep({ type: "clear" });
   }
   function putDownEditTool() {
     const held = router?.held();
@@ -927,7 +932,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // that stage offers the body or nobody arrives, as a place is that doc's.
   // Otherwise the first acting stage to offer it does. Its body is entered
   // once offered and the content is in, or ARRIVE_WAIT_MS after it came on
-  // offer. Until then it waits as long as the body may still come.
+  // offer. Until then it waits as long as the body may still come. A body
+  // that refuses when entered is asked again until ARRIVE_WAIT_MS after the
+  // offer.
   let arrival = null; // { offered, based }
   function arrive() {
     if (!outermost()) return;
@@ -1008,9 +1015,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       // a link); and the content first
       const order = acting();
       const ahead = only ? [] : order.slice(0, order.indexOf(offer.stage));
-      if (((!only && linksPending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && time.now() - a.offered < ARRIVE_WAIT_MS) return requestFlushSoon();
-      arrival = null;
-      enterBody(at.body, at.place, caller, only);
+      const waiting = time.now() - a.offered < ARRIVE_WAIT_MS;
+      if (((!only && linksPending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && waiting) return requestFlushSoon();
+      // a body may refuse at the moment it's offered (its doc not yet in, a seat not yet
+      // laid): the start stays pending and is offered again until ARRIVE_WAIT_MS after the offer
+      if (enterBody(at.body, at.place, caller, only) || !waiting) arrival = null;
+      else requestFlushSoon();
       return;
     }
     if (only) {

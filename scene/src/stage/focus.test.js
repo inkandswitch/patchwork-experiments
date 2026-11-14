@@ -612,3 +612,42 @@ describe("the camera's rides don't depend on the focus (I8)", () => {
     expect(current()).toBe(null);
   });
 });
+
+describe("leaving Edit puts the selection down (TOOLS.md Decisions 6)", () => {
+  // Attention is the selection, so a selection kept from Edit would aim F and
+  // the use prompt at what was last edited. Every body changed from × to
+  // (Look, Edit, a walk and a seat over Look) × the focus (the scene, one
+  // link in, two) × a selection or none: the selection goes exactly when the
+  // body leaves Edit; the focus never moves. 4 × 4 × 3 × 2 = 96 cases.
+  const BODIES = ["look", "edit", "t.walk", "t.seat"];
+  const FOCI = [[], ["L"], ["L", "M"]];
+  const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
+  it("every body × every body × every focus × a selection or none: cleared exactly on leaving Edit, the focus kept", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const started = {};
+    const m = await mountNested({ extra: holders(started) });
+    s = m.s;
+    const { view } = m;
+    let cases = 0;
+    for (const focus of FOCI) {
+      expect(view.focusOn(focus)).toBe(true);
+      await placed(view);
+      await until(() => view.focusStage().debug.host.instanceOf("t.walk"), 2000);
+      for (const from of BODIES)
+        for (const to of BODIES)
+          for (const withSel of [false, true]) {
+            const name = `${J(focus)} ${from} → ${to}${withSel ? " selected" : ""}`;
+            view.enterBody("look");
+            expect(view.enterBody(from), name).toBe(true);
+            const sel = withSel ? [...focus, ELEMENT[focus.join("/")]] : null;
+            view.select(sel);
+            expect(J(view.atom.get().selected), name).toBe(J(sel));
+            if (from !== to) expect(view.enterBody(to), name).toBe(true);
+            const want = from === "edit" && to !== "edit" ? null : sel;
+            expect([name, J(view.atom.get().selected), J(view.atom.get().focus)]).toEqual([name, J(want), J(focus)]);
+            cases++;
+          }
+    }
+    expect(cases).toBe(96);
+  }, 60_000);
+});

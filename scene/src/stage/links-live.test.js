@@ -6,11 +6,11 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "./links.js";
-import { startArrival } from "./view.js";
+import { ARRIVE_WAIT_MS, startArrival } from "./view.js";
 import { keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import keys from "../parts/keys.js";
@@ -316,6 +316,45 @@ describe("arriving through a link", () => {
       s = null;
     }
   });
+
+  // A body may refuse at the moment it's offered (a seat not yet laid, its
+  // doc not yet in). The start stays pending and the body is asked again
+  // until ARRIVE_WAIT_MS after the offer; past that, nobody arrives. Every
+  // case: refusals 0, 1, 2 or past the wait, × a start the host's stage
+  // answers or one placed on a link (answered in the linked doc's stage).
+  for (const through of [false, true])
+    for (const refusals of [0, 1, 2, "past the wait"]) {
+      it(`a body that refuses ${refusals === "past the wait" ? "until past ARRIVE_WAIT_MS" : `${refusals} time(s)`} when offered${through ? ", through a link" : ""}: ${refusals === "past the wait" ? "nobody arrives" : "entered on the next try"}`, async () => {
+        vi.spyOn(console, "warn").mockImplementation(() => {});
+        let clockNow = 1_000_000;
+        const asked = [];
+        const enter = (place) => {
+          asked.push(place);
+          if (refusals === "past the wait") {
+            clockNow += ARRIVE_WAIT_MS / 2; // each refusal takes half the wait
+            return null;
+          }
+          return asked.length > refusals ? { input: {} } : null;
+        };
+        const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter }] }) } };
+        const repo = new FakeRepo();
+        const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit", place: "p1" } } }));
+        const doc = through
+          ? { objects: { L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null }) }, order: ["L"], view: { start: { place: "L" } } }
+          : { objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit", place: "p1" } } };
+        s = await mountStage({ repo, extensions: [SEATISH], doc, time: wallAt(() => clockNow) });
+        if (refusals === "past the wait") {
+          await until(() => s.debug.view.arriving() === null, 3000);
+          expect(s.debug.view.atom.get().body.id).toBe("look");
+          // asked at the offer, again within the wait, once at its end, then no more
+          expect(asked).toEqual(["p1", "p1", "p1"]);
+          return;
+        }
+        await until(() => s.debug.view.atom.get().body.id === "t.sit", 3000);
+        expect(asked).toEqual(Array(refusals + 1).fill("p1"));
+        expect(s.debug.view.arriving()).toBe(null);
+      });
+    }
 
   // Two linked games offer the start body. Which one a viewer arrives in is
   // the doc's structure (links in path order), never which game's doc came

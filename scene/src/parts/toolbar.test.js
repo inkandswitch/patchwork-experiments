@@ -155,3 +155,27 @@ describe("scene.toolbar", () => {
     expect(bar().querySelectorAll("[data-command]")).toHaveLength(0);
   });
 });
+
+// In a narrow view the toolbar wrapped to a second row, so the canvas under
+// it lost height whenever the view narrowed or a command came on offer. It is
+// one row that scrolls sideways: no rule on the bar or its row wraps, and
+// no control shrinks to fit (it would squash a label instead of scrolling).
+describe("the toolbar is one row at any width", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const css = readFileSync(fileURLToPath(import.meta.url).replace(/toolbar\.test\.js$/, "toolbar.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ sel: sel.trim().replace(/\s+/g, " "), body }));
+  const rule = (pred) => rules.find((r) => pred(r.sel.replace(/:where\(.*$/, "").trim()));
+  it("the bar doesn't wrap and scrolls sideways", () => {
+    const bar = rule((s) => s.endsWith(".toolbar"));
+    expect(bar.body).toMatch(/flex-wrap:\s*nowrap/);
+    expect(bar.body).toMatch(/overflow-x:\s*auto/);
+  });
+  it("its row doesn't wrap, and its controls keep their size", () => {
+    expect(rule((s) => s.endsWith(".toolbar .tools")).body).toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule((s) => s.endsWith(".toolbar .tools >")).body).toMatch(/flex-shrink:\s*0/);
+  });
+  it("no rule here makes anything wrap", () => {
+    for (const r of rules) expect(r.body, r.sel).not.toMatch(/flex-wrap:\s*wrap/);
+  });
+});

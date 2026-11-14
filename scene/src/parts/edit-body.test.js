@@ -142,7 +142,7 @@ describe("the editor is the Edit body", () => {
     expect(cases).toBe(5 * 3 * 2);
   }, 60_000);
 
-  it("leaving Edit takes its chrome with it: the inspector shuts, a held Measure is put down; coming back, the selection's inspector opens again", async () => {
+  it("leaving Edit takes what Edit holds with it: the inspector shuts, a held Measure and the selection are put down; coming back and selecting, the inspector opens again", async () => {
     const { default: measure } = await import("./measure.js");
     PARTS.push({ meta: { id: "scene.measure" }, module: measure });
     try {
@@ -161,9 +161,12 @@ describe("the editor is the Edit body", () => {
       expect(chrome().inspector).toBe(false);
       // Measure isn't on offer outside Edit: not run, not on a key
       expect(api.run({ ext: "scene.measure", command: "measure" })).toBe(false);
-      // the selection is still there (yours, in every body); Edit shows its chrome again
-      expect(s.local.get().selected).toBe("a");
+      // the selection went with Edit (attention is the selection: F would act on what was last edited)
+      expect(s.local.get().selected).toBe(null);
       api.body.enter("edit");
+      await settle();
+      expect(chrome()).toMatchObject({ inspector: false, handles: false, toolbar: true });
+      s.local.swap((m) => ({ ...m, selected: "a" }));
       await settle();
       expect(chrome()).toMatchObject({ inspector: true, handles: true, toolbar: true });
     } finally {
