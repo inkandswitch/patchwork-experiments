@@ -1,6 +1,9 @@
 // scene.inspector: the "inspector" for local.selected, a drawer tab
-// (TOOLS.md §6). Chrome follows attention: the tab is open while something
-// is selected (its × shuts it until the selection changes), and the
+// (TOOLS.md §6). Chrome follows attention: in Edit the tab opens on the
+// first selection and then stays open, showing whatever is selected and the
+// scene when nothing is (TOOLS.md Decisions 6, "The inspector stays open"),
+// so the canvas doesn't change width at every select and deselect. Its ×
+// shuts it until the selection changes; leaving Edit shuts it; the
 // toolbar's Inspector opens it with nothing selected, on the scene.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
@@ -850,9 +853,9 @@ function create(api) {
     },
   ];
 
-  // ─── the tab: open while something is selected, or when asked ────────────
+  // ─── the tab: opened by a selection (or when asked), then open until shut ──
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
-  let dismissed = null; // the selection whose tab the viewer closed (its ×): shut until the selection changes
+  let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
   const tab = drawerTab(api, {
     id: "inspector",
@@ -877,7 +880,7 @@ function create(api) {
     },
     onClosed: () => {
       asked = false;
-      dismissed = lastSel;
+      dismissed = true;
     },
   });
   /** Is the selection something this inspector shows (a scene object or group)? */
@@ -886,12 +889,13 @@ function create(api) {
     const sel = selectedOf(local);
     if (sel !== lastSel) {
       lastSel = sel;
-      dismissed = null;
+      dismissed = false;
     }
     // the inspector is the editor's (../stage/bodies.js): only in Edit, where
-    // it follows the selection
+    // a selection opens it and it stays open (on the scene when nothing is
+    // selected) until its × or the toolbar shuts it, or Edit is left
     if (!editing(local)) asked = false;
-    const want = editing(local) && (asked || (shows(scene, sel) && dismissed !== sel));
+    const want = editing(local) && (asked || (!dismissed && (shows(scene, sel) || tab.isOpen())));
     // following the selection, it comes in behind a tab the viewer is using (the parts bin)
     if (want) tab.open({ show: asked });
     else tab.close();
@@ -907,8 +911,7 @@ function create(api) {
     run(_target, value) {
       const open = value === undefined ? !tab.isOpen() : !!value;
       asked = open;
-      if (!open) dismissed = lastSel;
-      else dismissed = null;
+      dismissed = !open;
       follow(api.scene(), now());
     },
   });
