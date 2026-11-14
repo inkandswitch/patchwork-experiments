@@ -23,7 +23,7 @@ import { DECK, SWIM, easeEye, look, lookDir } from "./walk.js";
 import { bake, sweptAbout } from "./navmesh.js";
 import * as walker from "./walker.js";
 import { apply, headingOf, invert, matrixOf, multiply, onHeading, rotateM } from "./frames.js";
-import { HELM, HOOK, JIB, QUARTER, SAIL, WINCH, isUnder, partsOf, sailingThing, shipOf } from "./traits.js";
+import { HELM, HOOK, JIB, QUARTER, SAIL, WINCH, isUnder, partsOf, shipOf } from "./traits.js";
 import { bodyBoxOf, bodyOf, frameMatrix, placeIn, shipFrame } from "./body.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
@@ -76,30 +76,27 @@ export function placeOf(a, worldOf) {
 }
 
 /**
- * Does a click come aboard? On the sea or the sky (nothing hit), a ship or
- * anything of hers (a sailing trait or tag: the mast, the wheel), or
- * anything not aboard a ship at all (the islet, its lighthouse, a buoy):
- * yes. On something aboard her that isn't hers (a card or the table in her
- * cockpit, which the hand takes a click on), no: it goes on down the chain.
- * `seated`: the viewer is in a body that isn't the crew's or the stage's Look or Edit (a seat at
- * a table aboard her: seatedView); then only the sea or the sky does (the
- * hull round the table is where stray clicks land), or the button, or Enter.
+ * Does a click come aboard? Anywhere it reaches her (what nearer takes it
+ * already has: a card's carry, a game linked onto her table, whose segment
+ * of the chain comes first, scene/COMPOSITION.md §5), yes. `seated`: the
+ * viewer is in another extension's body (a seat at a table aboard her:
+ * seatedView); then only the sea or the sky does (the hull round the table
+ * is where stray clicks land), or the button, or Enter.
  * @param {{ objects }} scene  @param {{ id?: string } | null} hit  @param {{ seated?: boolean }} [o]
  */
 export function boardsOn(scene, hit, { seated = false } = {}) {
-  const id = hit?.id;
-  if (id == null) return true;
-  if (seated) return false;
-  const o = scene?.objects?.[id];
-  if (!o) return true;
-  const ship = shipOf(scene, id);
-  return ship == null || ship === id || sailingThing(o);
+  if (hit?.id == null) return true;
+  return !seated;
 }
 
-/** Is this viewer in a body over the stage's Look or Edit (depth 0) that isn't the crew's own (a seat at a table aboard her: scene/TOOLS.md §4)? */
+/**
+ * Is this viewer in another extension's body over the stage's Look or Edit
+ * (a seat at a table aboard her: scene/TOOLS.md §4)? Then the crew isn't
+ * driving: a body is its extension's, and hers are `aboard` and `station`.
+ */
 export const seatedView = (api) => {
   const b = api?.body?.current?.();
-  return (b?.depth ?? 0) > 0 && !["aboard", "station"].includes(b.id);
+  return (b?.depth ?? 0) > 0 && b.ext !== api.id;
 };
 
 /** A stable hue for a person. */
@@ -116,10 +113,11 @@ const r3 = (v) => Math.round(v * 1000) / 1000;
 
 /**
  * The objects whose geometry is baked into a ship's navmesh: herself, and
- * everything attached under her that's hers (a sailing trait or tag) or
- * locked furniture (a card table), but not what moves: the sail station's
- * subtree (the boom and sail swing) and the anchor (it hangs, and lies on
- * the bottom), nor unlocked loose pieces (cards, dice), nor anything hidden.
+ * everything attached under her (her fittings, a card table), but not what
+ * moves: the sail station's subtree (the boom and sail swing) and the anchor
+ * (it hangs, and lies on the bottom), nor what can be carried (scene.carry:
+ * a die, a bag), nor anything hidden. A game played aboard is a doc of its
+ * own, linked onto her table: nothing of it is hers.
  * The wheel (the helm) turns about its axle, so it's `swept`.
  * @returns {Array<{ id: string, swept: boolean }>}  in id order
  */
@@ -137,7 +135,8 @@ export function bakedObjects(scene, ship) {
     if (!o || o.kind === "group" || o.visible === false) continue;
     if (id !== ship) {
       if (!isUnder(scene, id, ship) || moving(id)) continue;
-      if (!sailingThing(o) && !o.locked) continue;
+      // what can be carried (a die, a bag) is loose: never floor
+      if (o.traits?.["scene.carry"]) continue;
     }
     out.push({ id, swept: !!o.traits?.[HELM] });
   }
