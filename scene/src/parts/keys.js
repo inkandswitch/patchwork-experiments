@@ -63,11 +63,15 @@ export function heldSessions() {
     get target() {
       return open.values().next().value?.target;
     },
+    /** the stage the first held verb was held in (its target's), or undefined */
+    get stage() {
+      return open.values().next().value?.stage;
+    },
     /** the prompt's entries of the verbs held on `target`, as they were when pressed, first held first */
     entries: (target) => [...open.values()].filter((h) => h.target === target && h.entry).map((h) => h.entry),
-    open(code, session, { target = null, ext = null, command = null, entry = null } = {}) {
+    open(code, session, { target = null, stage = undefined, ext = null, command = null, entry = null } = {}) {
       close(code, "end"); // a press whose release we never heard
-      open.set(code, { session, target, ext, command, entry });
+      open.set(code, { session, target, stage, ext, command, entry });
     },
     tick(dt) {
       for (const h of [...open.values()]) call(h.session, "update", dt);
@@ -95,7 +99,7 @@ function create(api) {
   /** Attention, pinned to the held verbs' target while any is held. */
   function attentionNow() {
     const pinned = held.target;
-    return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null }) : api.attention();
+    return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null, stage: held.stage }) : api.attention();
   }
 
   function wantLoop() {
@@ -144,7 +148,7 @@ function create(api) {
       return true;
     }
     if (isSession(out)) {
-      held.open(codeOf(ev), out, { target: inv.target, ext: inv.ext, command: command.id, entry: { ext: inv.ext, command, state } });
+      held.open(codeOf(ev), out, { target: inv.target, stage: seg.stage, ext: inv.ext, command: command.id, entry: { ext: inv.ext, command, state } });
       wantLoop();
       changed();
     }
@@ -195,6 +199,8 @@ function create(api) {
     keymap: Object.freeze({
       /** the target attention is pinned to while a verb is held, else undefined */
       pinned: () => held.target,
+      /** the stage the pinned target is in (undefined: nothing held, or one stage) */
+      pinnedStage: () => held.stage,
       holding: (ext, command) => held.holding(ext, command),
       entries: (target) => held.entries(target),
       /** call fn when what's held changes. @returns off */

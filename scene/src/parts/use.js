@@ -103,6 +103,8 @@ function create(api) {
     let seg = null;
     if (!gesture)
       for (const s of segmentsOf(keys)) {
+        // (a held verb's target is in the stage it was held in)
+        if (pinned !== undefined && s.stage !== undefined && km.pinnedStage?.() !== undefined && s.stage !== km.pinnedStage()) continue;
         found = pinned !== undefined ? heldEntries(s.collected, pinned, km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
         if (found?.entries.length) {
           seg = s;

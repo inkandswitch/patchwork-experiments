@@ -18,13 +18,14 @@ export function keyContext(api, attention) {
 }
 
 /**
- * Attention as keys see it: pinned to a held verb's target while one is held
- * (scene.keys says which, as its "keymap" contribution), else api.attention().
+ * Attention as keys see it: pinned to a held verb's target, in the stage it
+ * was held in, while one is held (scene.keys says which, as its "keymap"
+ * contribution), else api.attention().
  */
 export function keyAttention(api) {
   const km = (api.collect("keymap") ?? []).map((r) => r?.value).find((v) => v && typeof v.pinned === "function");
   const pinned = km?.pinned();
-  return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null }) : api.attention();
+  return pinned !== undefined ? Object.freeze({ selected: pinned, hit: null, stage: km.pinnedStage?.() }) : api.attention();
 }
 
 /**
@@ -34,11 +35,13 @@ export function keyAttention(api) {
  */
 export function resolverState(api, attention = keyAttention(api)) {
   const view = api.view.get();
-  // the input path's stages, innermost first (COMPOSITION.md §5); the caller's
-  // own attention is the outermost's (a held verb pins it there)
+  // the input path's stages, innermost first, the focus always among them
+  // (COMPOSITION.md §5): each its own commands, in its own context, at its
+  // own element of attention; a held verb pins attention in its own stage
   const path = typeof api.path === "function" ? api.path() : [];
-  const segments = path.length > 1 ? path.map((seg) => {
-    const att = seg.stage === path.at(-1).stage ? attention : seg.attention();
+  const pinnedIn = attention?.stage;
+  const segments = path.length ? path.map((seg) => {
+    const att = pinnedIn !== undefined && seg.stage === pinnedIn ? attention : seg.attention();
     return { stage: seg.stage, reader: seg, collected: seg.collect("commands"), ctx: keyContext(seg, att), attention: att };
   }) : null;
   return {

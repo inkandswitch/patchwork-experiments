@@ -127,10 +127,12 @@ describe("a live link opens a stage for its doc", () => {
     expect(s.debug.view.atom.get().hovered).toEqual(["L", "card"]);
     expect(gapi.view.get().hovered).toBe("card");
     expect(hapi.view.get().hovered).toBe("L");
-    // the game selects its card: the host sees the link selected
+    // the game selects its card with the focus on the host: the selection is the element of the focus stage it's in, the link (H10)
     gapi.view.select("card");
-    expect(s.debug.view.atom.get().selected).toEqual(["L", "card"]);
+    expect(s.debug.view.atom.get().selected).toEqual(["L"]);
     expect(hapi.view.get().selected).toBe("L");
+    expect(gapi.view.get().selected).toBe(null);
+    gapi.view.select(null);
     // in Edit, a click on the card from outside selects the link (the focus is the host's)
     hapi.body.enter("edit");
     s.click(20, 20);

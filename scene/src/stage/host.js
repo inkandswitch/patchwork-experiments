@@ -84,7 +84,8 @@ export function createHost({
   lingerMs = LINGER_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
-  // does this stage run the general extensions (no traits)? The focus does; a linked doc's stage doesn't (COMPOSITION.md §3)
+  // does this stage run the general extensions (no traits)? The focus does, and no other stage (COMPOSITION.md §3);
+  // the view moves them with setGeneral
   general = true,
 }) {
   let dead = false;
@@ -351,6 +352,30 @@ export function createHost({
     return false;
   }
 
+  /**
+   * Run the general extensions here, or stop running them (the focus moved:
+   * COMPOSITION.md §3, §5). What the doc runs is untouched (H1): only the
+   * view's parts come or go, and they go at once, not lingering, since the
+   * view moved them, not the doc. Starting is as for any extension.
+   */
+  function setGeneral(on) {
+    if (dead || general === !!on) return;
+    general = !!on;
+    settledFor = null;
+    if (!general) {
+      let stopped = false;
+      for (const rec of [...recs.values()])
+        if (rec.scope === "general") {
+          stop(rec);
+          stopped = true;
+        }
+      publish();
+      if (stopped) onChange();
+      return;
+    }
+    if (isReady && lastDoc) sync(lastDoc);
+  }
+
   /** Stop everything (last first) and stop listening. */
   function dispose() {
     if (dead) return;
@@ -408,6 +433,9 @@ export function createHost({
     collect,
     inputOf,
     drop,
+    setGeneral,
+    /** does it run the general extensions (it is the focus)? */
+    general: () => general,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,
     /** is this extension lingering after the doc stopped calling for it? */

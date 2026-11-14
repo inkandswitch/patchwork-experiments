@@ -273,3 +273,9 @@
   flex: none;
   white-space: nowrap;
 }
+
+/* a link's row: what the link is here, and Enter (→) where it can be entered */
+.scene-stage .scene-outline .link-mark:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  white-space: nowrap;
+}

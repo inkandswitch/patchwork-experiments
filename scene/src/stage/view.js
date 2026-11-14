@@ -11,6 +11,13 @@
 // stage in, then the object. Each stage sees its own element of them
 // (`project`), so an extension reads `view.selected` as an id of its own doc
 // and never sees another doc's.
+//
+// The focus (COMPOSITION.md §5, TOOLS.md §3) is the path of the links
+// entered: [] the outermost, until Enter moves it into a link whose doc acts.
+// It scopes the selection (../selection.js, H10: a selection is an element
+// of the focus stage) and is where the general parts run (§3: the editor
+// edits the focus's doc); it cuts no segment, so verbs and carries outside
+// it still work. Focus and selection change only through selectionStep.
 
 import * as THREE from "three";
 import css from "./stage.css?inline";
@@ -20,7 +27,7 @@ import { createRouter } from "./router.js";
 import { createDrawer } from "./dock.js";
 import { escapeHint } from "./ladder.js";
 import { EDIT, LOOK, isStageBody, stageBody, startBase } from "./bodies.js";
-import { selectionStep } from "../selection.js";
+import { atFocus, focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
 import { expand, identityOf } from "./links.js";
@@ -100,7 +107,9 @@ export function cleanPrefs(v) {
  * The view's value as one stage sees it (COMPOSITION.md §3): the selection
  * and hover as its element of their paths, the body's and the held tool's
  * owner as its extension's id where they are its own (else the view's key,
- * which no id of a stage's equals). Pure.
+ * which no id of a stage's equals), and not the focus: where the viewer has
+ * entered is the view's, and a stage that read it could act differently
+ * entered than not (I4). Pure.
  * @param {object} v  the view's value  @param {number} n  the stage's number  @param {string[]} prefix  its path
  */
 export function projectView(v, n, prefix) {
@@ -109,8 +118,10 @@ export function projectView(v, n, prefix) {
     const p = parseKey(key);
     return p && p.n === n ? p.id : key;
   };
+  // (where the focus is is the view's: a stage never learns where the viewer has entered)
+  const { focus: _focus, ...rest } = v;
   return Object.freeze({
-    ...v,
+    ...rest,
     selected: elementOf(v.selected, prefix),
     hovered: elementOf(v.hovered, prefix),
     body: v.body?.ext != null ? Object.freeze({ ...v.body, ext: own(v.body.ext) }) : v.body,
@@ -253,6 +264,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
+    // the drawer's tabs as the focus last moved ({ tabs, shown } by title): the general parts' tabs
+    // close with them and open again in the focus they move to (parts/tab.js)
+    reopen: null,
   });
   const onStorage = (e) => {
     if (e.key !== prefsKey) return;
@@ -296,8 +310,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const stages = new Map(); // number → stage, the outermost 0
   let nextStage = 0;
   const outermost = () => stages.get(0) ?? null;
-  /** The stage selection is scoped by: the outermost, until Enter moves it (COMPOSITION.md step 14). */
-  const focusStage = () => outermost();
+  /** The acting stage whose path is `p` exactly, or null. */
+  function stageAt(p) {
+    for (const s of stages.values()) if (s.acts && samePath(s.path, p)) return s;
+    return null;
+  }
+  /** The stage selection is scoped by, and the general parts run in: the one at the focus (the outermost until Enter moves it). */
+  const focusStage = () => stageAt(atom.get().focus) ?? outermost();
   /**
    * The stages that act, outermost first, then by path: a doc's structure,
    * not the order its links' docs arrived in. A pin or a mirror is drawn and
@@ -440,6 +459,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const was = linkStates;
     linkStates = states;
     if (JSON.stringify([...was]) !== JSON.stringify([...states])) for (const s of stages.values()) s.linksChanged();
+    // the focus is a stage that acts: one whose link went, closed, or now mirrors or pins its doc is left
+    const focus = atom.get().focus;
+    let keep = focus;
+    while (keep.length && !stageAt(keep)) keep = keep.slice(0, -1);
+    if (keep.length < focus.length) focusOn(keep);
+    else placeGeneral();
+    showTrail();
   }
   /** Open a linked doc's stage, its root under the link's node, in the link's frame, acting or drawn as its occurrence says. */
   function openLinked(handle, parent, o) {
@@ -530,21 +556,119 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── selection ────────────────────────────────────────────────────────────
 
-  /** Store a selection path (null: none). The selection scoped by the focus (COMPOSITION.md §5, ../selection.js). */
-  function select(path) {
-    const next = path == null ? null : pathOf(path);
-    atom.swap((m) => (samePath(m.selected, next) ? m : { ...m, selected: next }));
-  }
-  /** Apply a selection event (../selection.js) with paths cut at the focus: a linked thing's part selects the link. */
+  // The focus and the selection change here only, a selectionStep at a time
+  // (../selection.js), so the selection is always an element of the focus
+  // stage (H10), whoever asks: an extension of any stage, the Edit body, the
+  // ladder, a link going.
+
+  /** Apply one selection event; a move of the focus moves what follows it. @returns did anything change */
   function selectStep(ev) {
+    const m = atom.get();
+    const was = { focus: m.focus, selected: m.selected };
+    const next = selectionStep(was, ev);
+    if (next === was) return false;
+    const focus = samePath(m.focus, next.focus) ? m.focus : pathOf(next.focus);
+    const selected = next.selected == null ? null : samePath(m.selected, next.selected) ? m.selected : pathOf(next.selected);
+    if (focus === m.focus && selected === m.selected) return false;
+    atom.swap((v) => ({ ...v, focus, selected }));
+    if (focus !== m.focus) focusMoved(m);
+    return true;
+  }
+  /** Select a path (null: none): the element of the focus stage it goes through; outside the focus, nothing (../selection.js). */
+  const select = (path) => selectStep(path == null ? { type: "clear" } : { type: "select", path: [...path] });
+
+  /**
+   * Where Enter on the link at path `p` goes: there, if its doc acts there;
+   * if it's a mirror, where that doc acts (a mirror is the same live doc,
+   * drawn again: it's edited where it's live); else null (a pin is a value,
+   * a closed link has no stage).
+   */
+  function enterable(p) {
+    const st = linkState(p);
+    if (!st?.open) return null;
+    if (st.role === "acting") return stageAt(p) ? pathOf(p) : null;
+    if (st.role !== "mirror") return null;
+    const url = expansion.find((o) => o.depth > 0 && samePath(o.path, p))?.url;
+    const at = expansion.find((o) => o.role === "acting" && o.depth > 0 && o.url === url);
+    return at && stageAt(at.path) ? pathOf(at.path) : null;
+  }
+  /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (each one that acts). @returns did it get there */
+  function focusOn(p) {
+    for (const ev of focusSteps(atom.get().focus, p, (q) => !!stageAt(q))) if (ev.type === "enter" && !ev.link) break; else selectStep(ev);
+    return samePath(atom.get().focus, p);
+  }
+  /** Enter the link at path `p` (an element of the focus stage, or deeper: Enter goes in a link at a time). */
+  function enter(p) {
+    const to = Array.isArray(p) ? enterable(p) : null;
+    return to ? focusOn(to) : false;
+  }
+  /** Leave: the focus one link out. */
+  const leave = () => selectStep({ type: "leave" });
+
+  /** The general parts run in the focus stage and no other (COMPOSITION.md §3). */
+  function placeGeneral() {
+    const at = focusStage();
+    for (const s of stages.values()) s.setGeneral(s === at);
+  }
+  /**
+   * The focus moved (from the view's value `was`): the general parts move to
+   * the stage it's in (their drawer tabs reopen there), a tool held from a
+   * stage it left behind is put down, and the trail shows where it is.
+   */
+  function focusMoved(was) {
+    if (dead) return;
+    atom.swap((m) => ({ ...m, reopen: Object.freeze({ tabs: Object.freeze([...(was.drawer?.tabs ?? [])]), shown: was.drawer?.shown ?? null }) }));
+    placeGeneral();
+    const held = router?.held();
+    const p = held ? parseKey(held.owner) : null;
+    const s = p ? stages.get(p.n) : null;
+    // (a stage on the focus path is one whose path the focus starts with)
+    if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown();
+    showTrail();
+    router?.refresh();
+  }
+
+  // ─── the trail: where the focus is (TOOLS.md §6's breadcrumb) ─────────────
+  // The view's own chrome, shown only while the focus is inside a link: the
+  // outermost doc's title, then each link entered by its host's name for it,
+  // each a way back out to there, and Leave.
+  const trail = document.createElement("nav");
+  trail.className = "stage-trail";
+  trail.setAttribute("aria-label", "Where you are");
+  let trailKey = "";
+  function showTrail() {
     const focus = atom.get().focus;
-    atom.swap((m) => {
-      const was = { focus, selected: m.selected };
-      const next = selectionStep(was, ev);
-      if (next === was) return m;
-      const sel = next.selected ? pathOf(next.selected.slice(0, focus.length + 1)) : null;
-      return samePath(m.selected, sel) ? m : { ...m, selected: sel };
+    const names = [String(outermost()?.doc()?.title || "Scene")];
+    for (let i = 0; i < focus.length; i++) names.push(String(stageAt(focus.slice(0, i))?.reader.nameOf(focus[i]) || "Linked scene"));
+    const key = focus.length ? JSON.stringify(names) : "";
+    if (key === trailKey) return;
+    trailKey = key;
+    if (!focus.length) {
+      trail.remove();
+      trail.replaceChildren();
+      return;
+    }
+    const parts = names.flatMap((name, i) => {
+      const last = i === names.length - 1;
+      const crumb = document.createElement(last ? "span" : "button");
+      crumb.className = last ? "trail-here" : "button link trail-crumb";
+      crumb.textContent = name;
+      if (last) crumb.setAttribute("aria-current", "location");
+      else {
+        crumb.type = "button";
+        crumb.title = `Back out to ${name}`;
+        crumb.addEventListener("click", () => focusOn(atom.get().focus.slice(0, i)));
+      }
+      return i ? [Object.assign(document.createElement("span"), { className: "trail-sep", textContent: "›" }), crumb] : [crumb];
     });
+    const out = document.createElement("button");
+    out.type = "button";
+    out.className = "button trail-leave";
+    out.textContent = "Leave";
+    out.title = "Back out one level (Esc)";
+    out.addEventListener("click", () => leave());
+    trail.replaceChildren(...parts, out);
+    if (!trail.isConnected) edges.top.prepend(trail);
   }
 
   // ─── bodies and the held tool (TOOLS.md §4) ───────────────────────────────
@@ -602,6 +726,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const p = ev?.hit?.id != null ? parseKey(ev.hit.id) : null;
       const path = p && stages.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(ev.hit.id) : null;
       if (!path && atom.get().selected == null) return false;
+      // outside the focus it can't select, so the click isn't Edit's: it goes down the chain (verbs out there still work)
+      if (path && !atFocus(atom.get().focus, path)) return false;
       selectStep({ type: "press", path: path ?? [] });
       return true;
     },
@@ -797,7 +923,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * The chain for an event (COMPOSITION.md §5): the widget's owner, then one
    * segment per stage on the hit's path, innermost first (each its holders,
    * nearest first, then its root's), out to the outermost whatever the
-   * focus. Owners are keys (stage, extension).
+   * focus, then the general parts (the focus stage's). Owners are keys
+   * (stage, extension).
    */
   function chainFor(ev) {
     const widget = ev.widget;
@@ -817,20 +944,31 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         holders.set(k, seg.holderOf(ext));
       }
     }
+    // then the general parts, the view's, wherever the hit is: in the focus stage, its element of the path (null off it)
+    const at = focusStage();
+    for (const ext of at?.generals() ?? []) {
+      const k = keyOf(at.n, ext);
+      if (!order.includes(k)) order.push(k);
+    }
     return { order, holderOf: (k) => holders.get(k) ?? null, widget: won ? widget.owner : null };
   }
   /**
    * The input path (COMPOSITION.md §3): the stages from attention's innermost
    * out to the outermost (the selection's path, else the look's; `look: true`
-   * the look's), each as its reader (stage.js). Nothing under attention: the
-   * outermost alone.
+   * the look's), then the focus stage if it isn't among them, each as its
+   * reader (stage.js). Nothing under attention: the outermost, and the focus.
+   * The focus is always on it, since the scene a surface speaks of (its
+   * commands on nothing: Frame all, Measure, Undo) is the focus's.
    */
   function inputPath({ look: lookOnly = false } = {}) {
     const sel = atom.get().selected;
     const l = !lookOnly && sel ? null : look();
     const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
     const on = path ? onPath(path) : [];
-    return (on.length ? on : [outermost()].filter(Boolean)).map((s) => s.reader);
+    const out = on.length ? on : [outermost()].filter(Boolean);
+    const at = focusStage();
+    if (at && !out.includes(at)) out.push(at);
+    return out.map((s) => s.reader);
   }
   /** What every acting stage offers as `name`: the input path's stages first, innermost first; each item tagged with its stage. */
   function collect(name) {
@@ -878,10 +1016,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     },
     pointerWanted: () => atom.get().selected != null || drawer.state().order.length > 0,
     selection: () => atom.get().selected != null,
-    deselect: () => selectStep({ type: "escape" }),
-    // the focus is the outermost's (COMPOSITION.md build step 14 moves it)
-    focusDepth: () => 0,
-    leaveFocus: noop,
+    deselect: () => selectStep({ type: "clear" }),
+    focusDepth: () => atom.get().focus.length,
+    leaveFocus: () => leave(),
   });
 
   // The router's state as the view's fields. A field that didn't change keeps its value.
@@ -1049,6 +1186,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     setPref,
     select,
     selectStep,
+    enter,
+    leave,
+    focusOn,
+    enterable,
+    stageAt,
     look,
     bodyDefs,
     bodyEye,

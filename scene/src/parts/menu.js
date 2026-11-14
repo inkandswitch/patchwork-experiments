@@ -135,11 +135,14 @@ function create(api) {
     keys = resolverState(api);
     menuHit = hit;
     // The pointer's path (COMPOSITION.md §5): a section per stage on it,
-    // innermost first, each its element's verbs in its own context; then the
-    // scene's. In one stage, one section.
-    const path = typeof api.path === "function" ? api.path({ look: true }) : [];
+    // innermost first, each its element's verbs in its own context, titled
+    // with its name; then the scene's, each stage's in its own
+    // context. The focus is always on the path, so its scene (Frame all, Set
+    // home view) is offered wherever the pointer is.
+    const path = typeof api.path === "function" ? api.path({ look: true }) : null;
     const sections = [];
-    if (path.length > 1) {
+    let forScene;
+    if (path?.length) {
       for (const seg of path) {
         const l = seg.look();
         const t = l?.id ?? null;
@@ -147,9 +150,12 @@ function create(api) {
         const own = menuEntries(seg.collect("commands"), t, seg.context(l)).forObject;
         if (own.length) sections.push({ target: t, name: seg.nameOf(t), hit: l, entries: own });
       }
+      forScene = path.flatMap((seg) => menuEntries(seg.collect("commands"), null, seg.context(null)).forScene);
+    } else {
+      const m = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
+      if (m.forObject.length) sections.push({ target, name: api.nameOf(target), hit, entries: m.forObject });
+      forScene = m.forScene;
     }
-    const { forObject: rootObject, forScene } = menuEntries(api.collect("commands"), target != null && ctx.scene.objects?.[target] ? target : null, ctx);
-    if (!sections.length && rootObject.length) sections.push({ target, name: api.nameOf(target), hit, entries: rootObject.filter((e) => e.stage === undefined || e.stage === path.at(-1)?.stage) });
     const forObject = sections.flatMap((x) => x.entries);
     if (!forObject.length && !forScene.length) return false;
     const el = document.createElement("div");

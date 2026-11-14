@@ -15,7 +15,11 @@
 // (scene-render-controls on the render doc), the Version row (what version of
 // its source a render-doc object shows: Latest, or Fixed at… with Fix at this
 // version / Follow latest, which are also this extension's commands for the
-// menu) and the status line.
+// menu) and the status line. For a link (an object whose content is another
+// scene: COMPOSITION.md §1), a Linked scene row: what it is here (live,
+// shown again, fixed at a version, closed and why), Open, and what this
+// scene sets of it: its place, name, display, lock and its own traits on
+// it, never what's inside (Enter, scene.focus's command, goes in for that).
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
 // Starts in: the body everyone who opens the scene arrives in
@@ -107,6 +111,17 @@ export function startBodies(collected, want = LOOK.id) {
   }
   if (want && !out.some(([id]) => id === want)) out.push([want, want]);
   return out;
+}
+
+/** What the inspector's Linked scene row says of a link as the view has it ({ role, open, reason? }). Pure. */
+export function linkText(link) {
+  if (!link) return "";
+  const state = link.open ? "" : " · not open here yet";
+  if (link.role === "acting") return `Live${state}`;
+  if (link.role === "mirror") return `Live, shown again (Enter goes inside where it's linked first)${state}`;
+  if (link.role === "pinned") return `Fixed at a version${state}`;
+  const why = { unavailable: "it can't be opened here", cycle: "it would hold itself", unpinned: "inside a fixed version that doesn't hold it" }[link.reason] ?? link.reason ?? "closed";
+  return `Closed: ${why}`;
 }
 
 /** Did anything the inspector reads in local change (hover and notices don't count)? */
@@ -480,6 +495,14 @@ function create(api) {
         }
       : null;
     const status = el("div", { class: "status-line", hidden: true });
+    // a link's: what it is here, and what this scene sets of it
+    const linkRow = api.link(id) && !group
+      ? {
+          text: el("span", { class: "link-text" }),
+          open: el("button", { type: "button", class: "button link open-linked", title: "Open the linked scene on its own", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open"),
+          note: el("p", { class: "hint link-note" }, "Its place, name, display, lock and behaviours here are this scene's. What's in it is its own: Enter to change that."),
+        }
+      : null;
 
     const root = el(
       "div",
@@ -505,6 +528,8 @@ function create(api) {
       openFile ? el("div", { class: "cluster" }, openFile) : null,
       about,
       controls ? el("div", { class: "panel-head build-head" }, el("h3", { class: "panel-title" }, "Build")) : null,
+      linkRow ? el("div", { class: "field link-row" }, el("span", {}, "Linked scene"), linkRow.text, linkRow.open) : null,
+      linkRow ? linkRow.note : null,
       version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
       version ? el("div", { class: "cluster version-actions" }, version.fix, version.follow) : null,
       controls,
@@ -540,6 +565,7 @@ function create(api) {
       status,
       statusKey: null,
       version,
+      linkRow,
       unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
     };
   }
@@ -635,6 +661,15 @@ function create(api) {
     fillAbout(scene);
     fillStatus(scene, local, o);
     fillVersion(o);
+    fillLink();
+  }
+
+  /** The Linked scene row: what the link is here, as the view has it. */
+  function fillLink() {
+    const r = view.linkRow;
+    if (!r) return;
+    const text = linkText(api.link(view.id));
+    if (r.text.textContent !== text) r.text.textContent = text;
   }
 
   /** The Version row: Latest or Fixed at…, and which button makes sense. */
@@ -766,9 +801,11 @@ function create(api) {
       return;
     }
     if (body.hidden) body.hidden = false;
-    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id));
+    // (what a link is here is the view's, and changes with no change to the doc)
+    const lk = api.link(id);
+    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(api.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
     const name = api.nameOf(id);
-    const ck = contentKey(id);
+    const ck = `${contentKey(id)}|${JSON.stringify(lk)}`;
     if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local) && last.name === name && last.content === ck) return;
     if (fresh) build(id, o);
     last = { scene, local, name, content: ck };

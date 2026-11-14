@@ -107,8 +107,10 @@ export const plugins = [
     },
   },
   // ─── extensions: the parts the scene editor is made of ───
-  // All but carry declare no traits, so each runs in every scene ("general"
-  // scope), in this order, which is the order input is offered to them.
+  // All but carry declare no traits ("general" scope): the view runs them
+  // once, in the focus stage (the outermost doc until Enter moves the focus
+  // into a link: COMPOSITION.md §3, §5), in this order, which is the order
+  // input is offered to them, after every stage's own parts.
   // Carry runs by trait, where the doc has something carryable. Chrome
   // follows attention, never the doc (TOOLS.md §1), and the editor's chrome
   // is the Edit body's (src/stage/bodies.js): the toolbar, the halo and its
@@ -175,6 +177,15 @@ export const plugins = [
     name: "Context menu",
     async load() {
       return (await import("./parts/menu.js")).default;
+    },
+  },
+  {
+    // Enter a link: the focus, which scopes the selection, moves into it (COMPOSITION.md §5)
+    type: "scene:extension",
+    id: "scene.focus",
+    name: "Enter",
+    async load() {
+      return (await import("./parts/focus.js")).default;
     },
   },
   {

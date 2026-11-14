@@ -10,7 +10,9 @@
 //
 // The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
 // while the body is Edit, and shuts when the body stops being Edit (not
-// the viewer closing it: onClosed isn't told).
+// the viewer closing it: onClosed isn't told). The parts that own tabs are
+// general, so they move with the focus (Enter, Leave): a tab open as the
+// focus moved opens again where it went (the view's `reopen`).
 
 import { editing } from "../stage/bodies.js";
 
@@ -58,6 +60,11 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     close = null;
     c?.();
   }
+  // the focus moved here with this tab open (stage/view.js `reopen`): it opens again, in the scene the focus is in now
+  queueMicrotask(() => {
+    const again = api.view.get().reopen;
+    if (!api.signal?.aborted && !close && again?.tabs?.includes(title)) open({ show: again.shown === title || !again.shown });
+  });
   // out of Edit, the tab goes
   api.view.watch?.(
     () => api.schedule(() => {

@@ -302,7 +302,7 @@ export default function Stage(handle, element) {
  *   path?: string[],                   // the links that lead to it ([]: the outermost)
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
- *   general?: boolean,                 // does it run the general extensions (the focus does)
+ *   general?: boolean,                 // does it start out running the general extensions (the focus does; the view moves them)
  *   role?: "acting" | "mirror" | "pinned",  // does it act, or is it drawn (links.js expand)
  *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
@@ -2252,6 +2252,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
+        /** move the focus into this stage's link `target` (where its doc acts: a mirror's, where it's live): false if it can't be entered */
+        enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
+        /** move the focus out one link: false at the scene itself */
+        leave: () => (live() ? view.leave() : false),
       }),
       pref,
       setPref,
@@ -2539,7 +2543,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop }),
+      view: facet(api.view, { select: noop, enter: () => false, leave: () => false }),
       setPref: noop,
       notify: () => null,
       overlay: () => loose("stage-overlay"),
@@ -2603,16 +2607,19 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   // This stage's segment of the chain (COMPOSITION.md §5) for its element of
-  // the hit's path: its holders, nearest first, then its root's, then (in the
-  // focus) the general ones.
+  // the hit's path: its holders, nearest first, then its root's. The general
+  // ones (it runs them while it is the focus) are the view's, offered after
+  // every segment: generals().
   function segment(element) {
-    const running = host.running();
+    const running = host.running().filter((r) => r.scope !== "general");
     const m = derive();
     const chain = element != null && m.objects[element] ? hitChain(element, m.parents, m.groups, m.objects) : [];
     const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? m.d : m.objects[oid]));
     const order = chainOrder({ running, holders });
     return { order, holderOf: (ext) => holders.get(ext)?.id ?? null };
   }
+  /** The general extensions it runs (while it is the focus), in running order. */
+  const generals = () => host.running().filter((r) => r.scope === "general").map((r) => r.id);
 
   /** One of this stage's extensions' commands, or null. */
   function commandOf(ext, command) {
@@ -2786,6 +2793,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     inputOf,
     widgetsAt,
     segment,
+    generals,
+    /** run the general extensions here (it is the focus), or not: the view's to say (view.js) */
+    setGeneral: (on) => host.setGeneral(on),
     displayedWorld,
     pageHide,
     pageShow,
