@@ -32,6 +32,7 @@ import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath } from "./paths.js";
 import { expand, identityOf, isLink } from "./links.js";
 import { viewAt } from "../build.js";
+import { unionPackages } from "../packages.js";
 import { multiplyMatrices } from "../transform.js";
 
 /** How many stages a view opens at most, nearest first (COMPOSITION.md §7: the budget is the view's). */
@@ -147,9 +148,11 @@ export function projectView(v, n, prefix, { general = false } = {}) {
     return p && p.n === n ? p.id : key;
   };
   // (where the focus is is the view's: a stage never learns where the viewer has entered)
-  const { focus: _focus, ...rest } = v;
+  // (nor every open doc's packages: the union is the view's prompt, its general parts')
+  const { focus: _focus, packages: _packages, ...rest } = v;
   return Object.freeze({
     ...rest,
+    ...(general && v.packages ? { packages: v.packages } : {}),
     ...(!general && v.escape?.layer === "focus" ? { escape: NO_ESCAPE } : {}),
     selected: elementOf(v.selected, prefix),
     hovered: elementOf(v.hovered, prefix),
@@ -293,6 +296,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     prefs: cleanPrefs(readJSON(prefsKey)),
     // the stage selection is scoped by (COMPOSITION.md §5): the outermost's ([]) until Enter moves it
     focus: Object.freeze([]),
+    // every open doc's packages this viewer doesn't have (unionPackages): the general parts' prompt
+    packages: unionPackages([]),
   });
   const onStorage = (e) => {
     if (e.key !== prefsKey) return;
@@ -360,10 +365,26 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const s = make(n);
     stages.set(n, s);
     s.start();
+    s.announce(announced());
+    packagesChanged();
     return s;
+  }
+  // Who's here (COMPOSITION.md §6): the viewer's body and held tool are the
+  // view's, so the view says them on every channel it acts on, not a part on
+  // the focus doc's: whoever has a doc open sees what a person at any
+  // placement of it is doing (a viewer of the game alone sees the boat's
+  // sailor seated at it). A drawn stage's channel only listens.
+  const announced = () => {
+    const v = atom.get();
+    return { body: { id: v.body?.id ?? LOOK.id, label: v.body?.label ?? LOOK.label }, held: v.held ? { name: v.held.name } : null };
+  };
+  function announce() {
+    const a = announced();
+    for (const s of stages.values()) s.announce(a);
   }
   function removeStage(s) {
     if (stages.get(s.n) === s) stages.delete(s.n);
+    packagesChanged();
     for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
@@ -536,12 +557,14 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!at || at.role === "pinned") return null;
     const heads = at.handle.heads?.();
     if (!Array.isArray(heads) || !heads.length) return null;
-    const found = new Map(); // url → handle: what the stages under it hold or found
+    // url → handle: what the stages under it hold or found; null: a find still on its way, so it
+    // can't be fixed yet if its docs name that one (a pin missing it would show it live)
+    const found = new Map();
     for (const { stage: s } of opened.values()) {
       // (a pin under it is fixed already, by its own `at`)
       if (s.role === "pinned" || s.path.length < p.length || !p.every((x, i) => x === s.path[i])) continue;
       if (s !== at) found.set(docUrl(s.url), s.handle);
-      for (const [u, h] of s.reached) if (!found.has(docUrl(u))) found.set(docUrl(u), h);
+      for (const [u, h] of s.reached) if (!found.get(docUrl(u))) found.set(docUrl(u), h);
     }
     const deps = {};
     const seen = new Set([docUrl(at.url)]);
@@ -550,7 +573,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       next = [];
       for (const d of docs)
         for (const u of urlsIn(d)) {
+          if (seen.has(u)) continue;
           const h = found.get(u);
+          if (h === null) return null; // named, and still on its way: not yet
           const hs = h?.heads?.();
           if (seen.has(u) || !Array.isArray(hs) || !hs.length) continue;
           seen.add(u);
@@ -676,6 +701,25 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     reopening.tabs.delete(title);
     return { show: reopening.shown === title || !reopening.shown };
   }
+
+  // ─── packages: every open doc's, one prompt (STAGE.md, "Packages") ────────
+  // Each stage keeps its doc's list and loads for it (./packages.js); what
+  // this viewer is asked about is the view's: the union over every open
+  // stage, acting or drawn (a pin's content needs its providers too), as
+  // view.packages, which only the general parts see (projectView). A yes or
+  // a not now goes to every stage that asked.
+  const stagesInOrder = () => [...stages.values()].sort((a, b) => comparePaths(a.path, b.path) || a.n - b.n);
+  function packagesChanged() {
+    if (dead) return;
+    const next = unionPackages(stagesInOrder().map((s) => s.reader.packages()));
+    atom.swap((m) => (JSON.stringify(m.packages) === JSON.stringify(next) ? m : { ...m, packages: next }));
+  }
+  const packages = Object.freeze({
+    load: (urls) => Promise.all(stagesInOrder().map((s) => s.packages.load(urls))).then(() => {}),
+    dismiss: (urls) => {
+      for (const s of stagesInOrder()) s.packages.dismiss(urls);
+    },
+  });
 
   // ─── the trail: where the focus is (TOOLS.md §6's breadcrumb) ─────────────
   // The view's own chrome, shown only while the focus is inside a link: the
@@ -1065,7 +1109,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * outermost, whatever attention is (the toolbar's: it doesn't follow the
    * pointer).
    */
-  function inputPath({ look: lookOnly = false, focus: focusOnly = false } = {}) {
+  function inputPath({ look: lookOnly = false, focus: focusOnly = false, at = null } = {}) {
     if (focusOnly) {
       const f = atom.get().focus;
       const out = [];
@@ -1075,13 +1119,14 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       }
       return out;
     }
-    const sel = atom.get().selected;
+    // (`at`: a full path attention is held to, a held verb's target, whatever the selection and the look)
+    const sel = Array.isArray(at) && at.length ? at : atom.get().selected;
     const l = !lookOnly && sel ? null : look();
     const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
     const on = path ? onPath(path) : [];
     const out = on.length ? on : [outermost()].filter(Boolean);
-    const at = focusStage();
-    if (at && !out.includes(at)) out.push(at);
+    const f = focusStage();
+    if (f && !out.includes(f)) out.push(f);
     return out.map((s) => s.reader);
   }
   /** What every acting stage offers as `name`: the input path's stages first, innermost first; each item tagged with its stage. */
@@ -1175,6 +1220,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   cleanups.push(
     atom.watch((next, prev) => {
       if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
+      if (next.body !== prev.body || next.held !== prev.held) announce();
       if (next.selected !== prev.selected) router?.refresh();
       requestFlush();
     }),
@@ -1284,6 +1330,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     },
     restoreCamera,
     reopened,
+    packages,
+    packagesChanged,
     // the stages
     addStage,
     removeStage,

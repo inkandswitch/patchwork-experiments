@@ -643,3 +643,34 @@ describe("listening only", () => {
     l.dispose();
   });
 });
+
+// What the view says of the viewer (COMPOSITION.md §6): its body and held
+// tool, beside `viewer`, on every channel it acts on; cleaned on the way in;
+// a listening presence says none of it.
+describe("the view's body and held tool", () => {
+  it("go out with the state, cleaned, and only when they change; a listener says nothing", () => {
+    a.announce({ body: { id: "seat", label: "Player 1", extra: 1 }, held: { name: "Measure", ext: "x" } });
+    clock.advance(1000);
+    expect(b.get().sa).toMatchObject({ viewer: "alice", body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    expect(Object.keys(b.get().sa.body)).toEqual(["id", "label"]);
+    const before = sent("A", "scene:presence").length;
+    a.announce({ body: { id: "seat", label: "Player 1" }, held: { name: "Measure" } });
+    clock.advance(100);
+    expect(sent("A", "scene:presence").length).toBe(before);
+    a.announce({ body: { id: "look", label: "Look" }, held: null });
+    clock.advance(1000);
+    expect(b.get().sa).toMatchObject({ body: { id: "look", label: "Look" }, held: null });
+    // what isn't a body or a tool is nothing
+    for (const [body, held] of [[{ id: 3, label: "x" }, { name: 4 }], ["seat", "Measure"], [null, undefined]]) {
+      a.announce({ body, held });
+      clock.advance(1000);
+      expect([b.get().sa.body, b.get().sa.held]).toEqual([null, null]);
+    }
+    const hc = bus.makeHandle("C");
+    const quiet = createPresence({ handle: hc, viewer: "cara", session: "sc", listen: true, now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer });
+    quiet.announce({ body: { id: "walk", label: "Walk" }, held: null });
+    clock.advance(HEARTBEAT_MS * 2);
+    expect(sent("C", "scene:presence")).toEqual([]);
+    expect("sc" in b.get()).toBe(false);
+  });
+});

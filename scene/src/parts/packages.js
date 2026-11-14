@@ -1,12 +1,14 @@
-// scene.packages: the prompt for the packages a scene lists and this viewer
-// doesn't have (STAGE.md, "Packages"). One card for all of them, over the
-// view:
+// scene.packages: the prompt for the packages the open docs list and this
+// viewer doesn't have (STAGE.md, "Packages"). One card for all of them, over
+// the view, whichever doc lists each (the host's, a linked game's, a pin's):
 //   - asked about: "This scene uses 2 packages you don't have.", each by its
 //     own name and its URL, with Load and Not now;
 //   - loading: the same rows, greyed, with nothing to press;
 //   - failed: the row says why, with Try again and Dismiss.
-// The stage decides what's in each list (local.packages) and does the
-// loading (api.packages); this only shows it and passes on the click.
+// Each stage decides what's in its doc's list and does the loading; the view
+// puts them together (view.packages, which a general part sees, and
+// api.packages, which to a general part is the view's); this only shows it
+// and passes on the click.
 
 import css from "./packages.css?inline";
 import { promptText, shortUrl } from "../packages.js";
@@ -16,7 +18,7 @@ import { promptText, shortUrl } from "../packages.js";
  * actions: [{ id, label, primary? }], warn }`, or null when there's nothing
  * to say. Asking comes before failures, and both before loading; the
  * actions are for what's asked about, else for what failed. Pure.
- * @param {{ ask?: object[], loading?: object[], failed?: object[] } | null} p  local.packages
+ * @param {{ ask?: object[], loading?: object[], failed?: object[] } | null} p  view.packages
  */
 export function cardOf(p) {
   const ask = p?.ask ?? [];
@@ -108,8 +110,8 @@ function create(api) {
   });
 
   return {
-    update(scene, local, prev) {
-      if (local.packages !== prev?.local?.packages) render(local.packages);
+    update(scene, local, prev, view) {
+      if (view?.packages !== prev?.view?.packages) render(view?.packages);
     },
   };
 }

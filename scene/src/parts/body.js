@@ -8,8 +8,10 @@
 //   that thing's verb instead), and Leave pops the top body (never Look or
 //   Edit): standing up returns to walking, and from walking or a seat to
 //   Look.
-// - Who's here: each person present, with their body and held tool, from
-//   presence (this part publishes this view's as `body` and `held`).
+// - Who's here: each person present in the focus doc, with their body and
+//   held tool, from presence (the view says every viewer's on every channel
+//   it acts on: a person at another placement of this doc shows as what
+//   they're doing there).
 // - The Esc hint names the layer the next Escape pops (stage/ladder.js),
 //   and after the browser has released the pointer, that a click takes it
 //   back.
@@ -27,19 +29,17 @@ const el = (tag, cls, text) => {
 
 /**
  * Who's here, from presence: [{ session, viewer, body, held, you }], this
- * view first, the others in session order; a person with no body published
- * yet is in Look. Pure.
- * @param {object} presence  api.presence.get()
- * @param {string} ext  this part's id (where body and held are published)
+ * view first, the others in session order; a person whose view hasn't said
+ * its body yet is in Look. Pure.
+ * @param {object} presence  api.presence.get() (each peer's `body` and `held`, as its view says them)
  * @param {string | null} self  this view's session
- * @param {{ body?: { id, label }, held?: { name } | null }} mine  this view's local
+ * @param {{ body?: { id, label }, held?: { name } | null }} mine  this view's
  */
-export function whoIsHere(presence, ext, self, mine) {
+export function whoIsHere(presence, self, mine) {
   const out = [{ session: self, viewer: null, body: mine?.body?.label ?? LOOK.label, held: mine?.held?.name ?? null, you: true }];
   for (const [session, p] of Object.entries(presence ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (session === self) continue;
-    const k = p?.keys?.[ext] ?? {};
-    out.push({ session, viewer: p?.viewer ?? null, body: typeof k.body?.label === "string" ? k.body.label : LOOK.label, held: typeof k.held?.name === "string" ? k.held.name : null, you: false });
+    out.push({ session, viewer: p?.viewer ?? null, body: typeof p?.body?.label === "string" ? p.body.label : LOOK.label, held: typeof p?.held?.name === "string" ? p.held.name : null, you: false });
   }
   return out;
 }
@@ -141,7 +141,7 @@ function create(api) {
   let shown = "";
   function render() {
     const local = api.view.get();
-    const list = whoIsHere(api.presence.get(), api.id, api.session ?? null, local);
+    const list = whoIsHere(api.presence.get(), api.session ?? null, local);
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : local.escape?.hint ? `Esc: ${local.escape.hint}` : "";
     const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, esc]);
     if (key === shown) return;
@@ -161,24 +161,10 @@ function create(api) {
     hint.hidden = !esc;
   }
 
-  // publish this view's body and held tool, for everyone's "who's here"
-  let published = "";
-  function publish() {
-    const local = api.view.get();
-    const body = { id: local.body?.id ?? LOOK.id, label: local.body?.label ?? LOOK.label };
-    const held = local.held ? { name: local.held.name } : undefined;
-    const key = JSON.stringify([body, held ?? null]);
-    if (key === published) return;
-    published = key;
-    api.presence.set("body", body);
-    api.presence.set("held", held);
-  }
-
   api.presence.watch(() => api.schedule(render));
 
   return {
     update() {
-      publish();
       render();
     },
     dispose() {

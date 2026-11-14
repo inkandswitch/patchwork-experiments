@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { encodeGLB } from "../glb.js";
+import { keyOf } from "./paths.js";
+import { scopeViewport } from "./scope.js";
 import { prepareGLB } from "../gltf-content.js";
 import { defaultSnapRadius } from "../carry-rules.js";
 import {
@@ -886,5 +888,105 @@ describe("riding along (camera.ride)", () => {
     vp.applyDisplay("hull", { transform: { position: [9, 0, 0] } });
     vp.stepRide();
     expect(r6(vp.camera.position.toArray())).toEqual(r6(before));
+  });
+});
+
+// A link's content is its doc (COMPOSITION.md §2): the roots of the stage it
+// opens hang in the link's body, so hiding the link hides its doc, as hiding
+// any object hides what it's made of, while an attachment of the link's own
+// doc stays shown. Every case of the link shown / hidden / under a hidden
+// group × the child an attachment (same stage) or a linked doc's root
+// (another stage): drawn, picked, boxed, its stage's layers and labels.
+describe("a hidden link hides its doc", () => {
+  const LINKED = keyOf(1, "card");
+  const cases = [];
+  for (const how of ["shown", "hidden", "group hidden"]) for (const child of ["attachment", "linked root"]) cases.push([how, child]);
+
+  for (const [how, child] of cases) {
+    it(`link ${how}, its child ${child === "attachment" ? "an attachment of the host's" : "a linked doc's root"}`, () => {
+      const vp = headless();
+      lookFrom(vp, [0, 0, 10]);
+      vp.applyDisplay("G", { kind: "group", visible: how !== "group hidden" });
+      vp.applyDisplay("L", { visible: how !== "hidden", transform: { position: [0, 0, 0] } }, "G", { visible: how !== "group hidden", opacity: 1 });
+      const key = child === "attachment" ? "a" : LINKED;
+      cube(vp, key, [0, 0, 0], 1);
+      vp.applyDisplay(key, { transform: { position: [0, 0, 0] } }, "L");
+      const entry = vp.objects.get(key);
+      // where it hangs: a linked root in the link's body, an attachment beside it; either way the link's frame
+      expect(entry.group.parent).toBe(child === "attachment" ? vp.objects.get("L").group : vp.objects.get("L").body);
+      // a linked doc's layer and labels hang where its root does
+      const layer = vp.worldLayer(keyOf(1, "seats"), { under: "L" });
+      layer.add(new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial()));
+      vp.labels.sync(keyOf(1, "seats"), [{ key: "x", text: "Seat", position: [0, 0, 0] }], () => null, () => vp.contentShown("L"));
+      vp.followLayers();
+      vp.labels.update(() => ({ x: 1, y: 1 }));
+      const label = [...vp.labels.groups.get(keyOf(1, "seats")).values()][0].el;
+
+      const linkDrawn = how === "shown";
+      const shown = child === "attachment" ? how !== "group hidden" : linkDrawn;
+      expect(vp.isShown(key)).toBe(shown);
+      expect(vp.pickTargets().includes(entry.body)).toBe(shown);
+      expect(vp.objectBox(key) != null).toBe(shown);
+      expect(vp.contentShown("L")).toBe(linkDrawn);
+      expect(!!vp.pickWidget(100, 50)).toBe(linkDrawn);
+      expect(label.style.display).toBe(linkDrawn ? "" : "none");
+    });
+  }
+
+  it("the link's frame is its doc's, hanging in the body or not; removing the link leaves its doc's roots in the world", () => {
+    const vp = headless();
+    vp.applyDisplay("L", { transform: { position: [10, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 } });
+    cube(vp, LINKED, [0, 0, 0], 1);
+    vp.applyDisplay(LINKED, { transform: { position: [1, 0, 0] } }, "L");
+    cube(vp, "a", [0, 0, 0], 1);
+    vp.applyDisplay("a", { transform: { position: [1, 0, 0] } }, "L");
+    expect(r6(vp.worldOf(LINKED))).toEqual(r6(vp.worldOf("a")));
+    vp.removeObject("L");
+    for (const k of [LINKED, "a"]) expect(vp.objects.get(k).group.parent).toBe(vp.content);
+  });
+});
+
+// I7 for what a linked doc draws (the frame audit): a layer of a stage two
+// links deep hangs where its root does, and a group the extension places in
+// it at an object's displayed matrix in the stage's frame (as Camber's
+// dressing does, from api.worldOf) lands on the object in the world, for
+// every pose of the two links over a finite set, and again after the links
+// move. (Before the layer's anchor, the viewport put the layer group itself
+// at the root, overwriting the matrix the extension set on it.)
+describe("I7: a linked doc's layers, two links deep", () => {
+  const POSES = [
+    { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+    { position: [10, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 },
+    { position: [-1, 2.5, 3], rotation: [0.35, 0, 0], scale: 1 },
+    { position: [0, 1, 0], rotation: [0.3, 1.1, -0.7], scale: 0.5 },
+  ];
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+  it("every pose of each link, held and then moved: the extension's group is on the object", () => {
+    let n = 0;
+    for (const p1 of POSES)
+      for (const p2 of POSES) {
+        const vp = headless();
+        const L2 = keyOf(1, "L2");
+        const X = keyOf(2, "x");
+        vp.applyDisplay("L1", { transform: p1 });
+        vp.applyDisplay(L2, { transform: p2 }, "L1");
+        vp.applyDisplay(X, { transform: { position: [1, 0.5, 0], rotation: [0, 0.4, 0], scale: 1 } }, L2);
+        const sc = scopeViewport(vp, { n: 2, root: L2, frame: () => vp.worldOf(L2) });
+        const layer = sc.worldLayer("dress");
+        layer.matrixAutoUpdate = false;
+        const place = () => {
+          layer.matrix.fromArray(sc.worldOf("x"));
+          vp.followLayers();
+          layer.updateMatrixWorld(true);
+          layer.parent.updateMatrixWorld(true);
+          return near(Array.from(layer.matrixWorld.elements), vp.worldOf(X));
+        };
+        expect(place()).toBe(true);
+        // the outer link moves (a heel, a drift): the layer follows, the group stays on the object
+        vp.applyDisplay("L1", { transform: { ...p1, rotation: [0.35, p1.rotation[1], 0] } });
+        expect(place()).toBe(true);
+        n++;
+      }
+    expect(n).toBe(16);
   });
 });

@@ -416,6 +416,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     ...(view.packageSettleMs != null ? { settleMs: view.packageSettleMs } : {}),
   });
   cleanups.push(() => packages.dispose());
+  // the view asks every open doc's together (view.packages): tell it when this one's change
+  let packagesSeen = local.get().packages;
+  cleanups.push(
+    local.watch(() => {
+      const p = local.get().packages;
+      if (p === packagesSeen) return;
+      packagesSeen = p;
+      view.packagesChanged?.();
+    }),
+  );
 
   // ─── derived structure, once per doc snapshot ─────────────────────────────
 
@@ -2245,8 +2255,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (live()) presence.send(id, type, data);
       },
       notify: (text, kind) => notify(text, kind, id),
-      /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
-      packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
+      /**
+       * the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask
+       * again in this view. A general part's, the view's own: every open doc's (view.packages)
+       */
+      packages: general ? view.packages : Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
       // content
       nameOf,
@@ -2301,10 +2314,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
       project: (p) => scope.project(p),
       camera: Object.freeze({
-        get object() {
-          return viewport.camera ?? null;
-        },
-        // in this stage's frame (./scope.js)
+        // in this stage's frame (./scope.js): { position, target, fov, up }; the three.js camera is the view's, never an extension's
         get: () => scope.camera.get(),
         set: (cam) => scope.camera.set(cam),
         frame: (box) => scope.camera.frame(box),
@@ -2449,7 +2459,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // path's first, innermost first), each item tagged with its `stage`, and
       // runs a command in the stage it names
       collect: (name) => (rec.scope === "general" ? view.collect(name) : reader.collect(name)),
-      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost) */
+      /** the input path's stages, innermost first: each { stage, scene, collect, context, attention, look, run, nameOf } (look: true for the look's path, not the selection's; focus: true for the focus path, the focus stage out to the outermost; at: a full path, a held verb's target's) */
       path: (o) => view.inputPath(o),
       audience: audienceOf,
       shown: shownTo,
@@ -2730,13 +2740,19 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // what the view's general parts read of this stage, and run in it
   const reader = Object.freeze({
     stage: n,
+    /** its path in the view (the links from the outermost in): a full path's prefix names the stage its last id is in */
+    path: Object.freeze([...path]),
     scene,
+    /** does it run this extension now? */
+    runs: (extId) => host.running().some((r) => r.id === extId),
     collect: (name) => host.collect(name).map((x) => ({ ...x, stage: n })),
     context: (hit) => context(hit),
     attention: () => attention(),
     look: () => look(),
     run: (inv) => run(inv),
     nameOf: (oid) => nameOf(oid),
+    /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */
+    packages: () => local.get().packages,
   });
 
   stage = Object.freeze({
@@ -2766,6 +2782,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     widgetsAt,
     segment,
     generals,
+    /** what the view says of the viewer on this doc's channel: its body and held tool (presence.announce) */
+    announce: (state) => presence.announce(state),
     /** run the general extensions here (it is the focus), or not: the view's to say (view.js) */
     setGeneral: (on) => host.setGeneral(on),
     displayedWorld,

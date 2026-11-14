@@ -234,6 +234,26 @@ describe("fixing a link at a version, and following latest again", () => {
     expect(s.api("t.host").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads(), [file.url]: file.heads() } });
   });
 
+  // A find still on its way when Fix is asked: a pin made then would leave
+  // that doc out of deps and show it live. So there's no fix point while a
+  // doc the game names is still being found; once it's in, the whole one.
+  it("no fix point while a doc the game names is still on its way; once found, it is held too", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const deck = repo.add({ cards: 3 });
+    let arrive = null;
+    const find = repo.find.bind(repo);
+    repo.find = (url, ...rest) => (url === deck.url ? new Promise((r) => (arrive = () => r(find(url, ...rest)))) : find(url, ...rest));
+    const keeper = { meta: { id: "t.keep", traits: ["t.game"] }, module: { create: (api) => (void api.repo.find(api.scene().traits["t.game"].deck), {}) } };
+    const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": { deck: deck.url } } }));
+    s = await mountStage({ repo, extensions: [keeper, ...extensions([])], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    await until(() => arrive != null && stageAt(s, "L")?.debug.host.instanceOf("t.keep"));
+    expect(s.api("t.host").fixPoint("L")).toBe(null);
+    arrive();
+    await until(() => s.api("t.host").fixPoint("L") != null);
+    expect(s.api("t.host").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads() } });
+  });
+
   it("a pin is a function of its whole occurrence: its deps changed under the same heads, it opens again at them", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const log = [];

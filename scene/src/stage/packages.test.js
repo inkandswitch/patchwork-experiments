@@ -12,6 +12,7 @@ import { imported, resetPackagesServed, servePackage } from "../test/filesystem-
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
 import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
+import { LINK } from "./links.js";
 
 const HEAD = "H".repeat(48);
 const PROMPT = { meta: { id: "scene.packages" }, module: packagesPart };
@@ -222,6 +223,69 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     TERRAIN = folder(repo, "@tiny/terrain").url;
     servePackage(SAILING, sailingPackage());
     servePackage(TERRAIN, terrainPackage());
+  });
+
+  // Every open doc's packages are one prompt (the view's: view.packages,
+  // which only the general parts see): a host listing one package, a game it
+  // links live listing another, and the same game pinned (a drawn stage,
+  // which asks too) — the card offers both once; a yes loads both, each for
+  // the stage that asked; a not now quiets both. An extension that isn't
+  // general sees its own doc's only.
+  describe("every open doc's packages, one prompt", () => {
+    const OWN = { meta: { id: "t.own", traits: ["sailing.sea"] }, module: { create: () => ({}) } };
+    const linked = async (extra = []) => {
+      const game = repo.add(emptyScene({ title: "G", objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: TERRAIN }] }));
+      const link = (o) => object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null, ...o });
+      const doc = { traits: { "sailing.sea": {} }, packages: [{ url: SAILING }], objects: { L: link({}), P: link({ at: { heads: game.heads() } }) }, order: ["L", "P"] };
+      const s = await mount({ extensions: [PROMPT, OWN, ...extra], repo, doc });
+      await until(() => s.debug.view.stages().length === 3);
+      return { s, game };
+    };
+    const viewAsks = (s) => s.debug.view.atom.get().packages.ask.map((e) => e.url);
+    const stageAsks = (s) => s.debug.view.stages().map((st) => st.reader.packages().ask.map((e) => e.url));
+
+    it("the card offers the host's and the linked game's, each once, by name", async () => {
+      const { s } = await linked();
+      await until(() => viewAsks(s).length === 2 && s.debug.view.atom.get().packages.ask.every((e) => e.name));
+      await settle();
+      expect(stageAsks(s)).toEqual([[SAILING], [TERRAIN], [TERRAIN]]);
+      expect([...card(s).querySelectorAll(".package")].map((li) => [li.dataset.url, li.querySelector(".package-name").textContent])).toEqual([
+        [SAILING, "@tiny/sailing"],
+        [TERRAIN, "@tiny/terrain"],
+      ]);
+      expect(card(s).querySelector(".packages-title").textContent).toBe("This scene uses 2 packages you don't have.");
+      // a part that isn't general sees no union, and its api.packages is its own doc's
+      expect("packages" in s.api("t.own").view.get()).toBe(false);
+      expect("packages" in s.api("scene.packages").view.get()).toBe(true);
+      await s.api("t.own").packages.load();
+      await settle();
+      expect(imported.map((u) => u.split("#")[0])).toEqual([SAILING]);
+      expect(viewAsks(s)).toEqual([TERRAIN]);
+    });
+
+    it("Load loads every doc's; each stage that asked has it then", async () => {
+      const { s } = await linked();
+      await until(() => viewAsks(s).length === 2);
+      await settle();
+      await press(s, "load");
+      await until(() => getRegistry("scene:source").has("terrain-mesh") && running(s).includes("sailing.sea"));
+      await settle();
+      expect(imported.map((u) => u.split("#")[0]).sort()).toEqual([SAILING, TERRAIN].sort());
+      expect(stageAsks(s)).toEqual([[], [], []]);
+      expect(s.debug.view.atom.get().packages).toEqual({ ask: [], loading: [], failed: [], missing: false });
+      expect(card(s).hidden).toBe(true);
+      expect(accepted().sort()).toEqual([SAILING, TERRAIN].sort());
+    });
+
+    it("Not now quiets every doc's, and loads nothing", async () => {
+      const { s } = await linked();
+      await until(() => viewAsks(s).length === 2);
+      await settle();
+      await press(s, "dismiss");
+      expect(stageAsks(s)).toEqual([[], [], []]);
+      expect(card(s).hidden).toBe(true);
+      expect(imported).toEqual([]);
+    });
   });
 
   it("asks once, for all of them, by name and URL; nothing is imported before a yes", async () => {

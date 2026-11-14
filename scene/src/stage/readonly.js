@@ -62,19 +62,31 @@ export const handleReadOnly = (h) => isReadOnlyHandle(h) || (typeof h?.isReadOnl
  * `create`, `create2` and `peerId`, nothing else of the repo's (no
  * `handles`, no `findWithProgress`: a door around `find` would hand out
  * writable handles and miss `reached`). `find` notes each doc found in
- * `reached` (url → handle); with `deps` ({ url: heads }, a pin's) a listed
+ * `reached` (url → handle; null while its find is on its way); with `deps` ({ url: heads }, a pin's) a listed
  * doc is found at those heads (build.js pinnedRepo: an unlisted one is found
  * as it is now); read-only, every handle it gives out refuses writes and it
  * makes no docs.
  * @param {object} repo
- * @param {{ readOnly?: boolean, deps?: object | null, reached?: Map<string, object> }} o
+ * @param {{ readOnly?: boolean, deps?: object | null, reached?: Map<string, object | null> }} o
  */
 export function stageRepo(repo, { readOnly = false, deps = null, reached = null } = {}) {
   if (!repo) return repo;
   const base = deps ? pinnedRepo(repo, deps) : repo;
   async function find(url, ...rest) {
-    const h = await base.find(url, ...rest);
-    if (reached && typeof url === "string" && isHandle(h)) reached.set(url, h);
+    // (`reached` notes a find on its way as null, so fixing a link waits for it: view.js fixPointAt)
+    const noting = reached && typeof url === "string" && !reached.get(url);
+    if (noting) reached.set(url, null);
+    let h;
+    try {
+      h = await base.find(url, ...rest);
+    } catch (err) {
+      if (noting && reached.get(url) === null) reached.delete(url);
+      throw err;
+    }
+    if (reached && typeof url === "string") {
+      if (isHandle(h)) reached.set(url, h);
+      else if (reached.get(url) === null) reached.delete(url);
+    }
     return readOnly ? readOnlyHandle(h) : h;
   }
   const refuse = (what) => () => Promise.reject(new Error(`Cannot ${what}: this stage is read-only.`));

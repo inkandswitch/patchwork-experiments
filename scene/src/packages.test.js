@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { SceneDatatype } from "./datatype.js";
-import { answeringPlugins, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, promptText, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage } from "./packages.js";
+import { answeringPlugins, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, promptText, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
@@ -388,5 +388,52 @@ describe("naming a package for a person", () => {
     expect(shortUrl(`https://tools.example.com/${"a".repeat(60)}/index.js`)).toHaveLength(45);
     expect(promptText(1)).toBe("This scene uses a package you don't have.");
     expect(promptText(3)).toBe("This scene uses 3 packages you don't have.");
+  });
+});
+
+describe("every open doc's packages as one prompt (unionPackages)", () => {
+  // One URL over three stages, in each absent, asked about, failed or
+  // loading, with a name or not: all 8³ = 512 assignments (URLs don't
+  // interact, so a second one is checked only for order). The rule: asked
+  // about anywhere wins, then failed (the first failing stage's error), then
+  // loading; the first name any stage has; each URL once.
+  const STATES = [null, "ask", "failed", "loading"];
+  const RANK = { ask: 0, failed: 1, loading: 2 };
+  it("every assignment of one URL's state and name over three stages", () => {
+    let n = 0;
+    const each = [];
+    for (const st of STATES) for (const named of [false, true]) each.push({ st, named });
+    for (const a of each)
+      for (const b of each)
+        for (const c of each) {
+          const per = [a, b, c];
+          const lists = per.map(({ st, named }, i) => {
+            const l = { ask: [], failed: [], loading: [], missing: st != null };
+            if (st) l[st].push({ url: "u", name: named ? `n${i}` : null, ...(st === "failed" ? { error: `e${i}` } : {}) });
+            return l;
+          });
+          const u = unionPackages(lists);
+          const present = per.map((p, i) => ({ ...p, i })).filter((p) => p.st);
+          if (!present.length) {
+            expect(u).toEqual({ ask: [], failed: [], loading: [], missing: false });
+          } else {
+            const best = Math.min(...present.map((p) => RANK[p.st]));
+            const state = Object.keys(RANK).find((k) => RANK[k] === best);
+            const name = present.find((p) => p.named);
+            const firstFailed = present.find((p) => p.st === "failed");
+            const want = { url: "u", name: name ? `n${name.i}` : null, ...(state === "failed" ? { error: `e${firstFailed.i}` } : {}) };
+            for (const k of Object.keys(RANK)) expect(u[k]).toEqual(k === state ? [want] : []);
+            expect(u.missing).toBe(true);
+          }
+          n++;
+        }
+    expect(n).toBe(512);
+  });
+
+  it("each URL once, in the order the lists first name it; missing if any stage misses one, even one it was told not now about", () => {
+    const u = unionPackages([{ ask: [{ url: "b", name: null }], loading: [], failed: [] }, null, { ask: [{ url: "a", name: null }, { url: "b", name: "B" }], loading: [], failed: [] }]);
+    expect(u.ask.map((e) => [e.url, e.name])).toEqual([["b", "B"], ["a", null]]);
+    expect(unionPackages([{ ask: [], loading: [], failed: [], missing: true }]).missing).toBe(true);
+    expect(unionPackages([]).missing).toBe(false);
   });
 });

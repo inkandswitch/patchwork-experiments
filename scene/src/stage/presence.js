@@ -2,7 +2,11 @@
 // tell it (STAGE.md, "Three places for state" and "Inside the stage"). Three
 // kinds of ephemeral message go over handle.broadcast:
 //
-//   scene:presence  this view's whole state, keys namespaced by extension. It
+//   scene:presence  this view's whole state, keys namespaced by extension,
+//                   and what the view itself says of the viewer on every
+//                   channel it acts on: its body and held tool (`body`,
+//                   `held`: COMPOSITION.md §6, so whoever has this doc open
+//                   sees what a person at any placement of it is doing). It
 //                   goes out coalesced, at the highest rate any extension
 //                   asked for, and again as a heartbeat. Peers drop a view
 //                   they haven't heard from in a while, or at once on a bye.
@@ -101,6 +105,16 @@ export function cleanKeys(keys) {
   const out = {};
   for (const [ext, m] of Object.entries(keys)) if (isObj(m)) out[ext] = m;
   return out;
+}
+
+/** A body as presence carries it: `{ id, label }`, both strings; null if it isn't one. */
+export function cleanBody(v) {
+  return isObj(v) && isStr(v.id) && typeof v.label === "string" ? Object.freeze({ id: v.id, label: v.label }) : null;
+}
+
+/** A held tool as presence carries it: `{ name }`; null if it isn't one (nothing held). */
+export function cleanHeld(v) {
+  return isObj(v) && typeof v.name === "string" ? Object.freeze({ name: v.name }) : null;
 }
 
 /**
@@ -229,6 +243,8 @@ export function createPresence({
 
   // ─── this view's state ─────────────────────────────────────────────────────
   let keys = {}; // { [ext]: { [key]: value } }, replaced, never mutated
+  let body = null; // the view's: its body ({ id, label }) and held tool ({ name } | null), the same on every channel it acts on
+  let heldTool = null;
   const rates = new Map(); // ext → hz
   let seq = 0;
   let sentAt = -Infinity;
@@ -247,7 +263,7 @@ export function createPresence({
     sendTimer = null;
     if (dead || away || listen) return;
     sentAt = now();
-    broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys });
+    broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys, ...(body ? { body } : {}), ...(heldTool ? { held: heldTool } : {}) });
     clearTimer(heartbeat);
     heartbeat = setTimer(sendState, HEARTBEAT_MS);
   }
@@ -272,6 +288,17 @@ export function createPresence({
       if (mine && key in mine && same(mine[key], value)) return;
       keys = { ...keys, [ext]: { ...mine, [key]: value } };
     }
+    requestSend();
+  }
+
+  /** What the view says of the viewer here: its body and held tool (the view's, on every channel it acts on). */
+  function announce(state) {
+    if (dead) return;
+    const b = cleanBody(state?.body);
+    const h = cleanHeld(state?.held);
+    if (same(b, body) && same(h, heldTool)) return;
+    body = b;
+    heldTool = h;
     requestSend();
   }
 
@@ -345,6 +372,8 @@ export function createPresence({
     const k = cleanKeys(msg.keys);
     if (!k) return;
     const v = typeof msg.viewer === "string" ? msg.viewer : null;
+    const b = cleanBody(msg.body);
+    const h = cleanHeld(msg.held);
     const p = peers.get(s);
     if (p && msg.seq <= p.seq) return; // older than what we have
     const fresh = !p;
@@ -355,8 +384,8 @@ export function createPresence({
     peers.set(s, entry);
     // A heartbeat that changes nothing keeps the record (and `at`, the local
     // time this state last changed), so watchers aren't woken for it.
-    if (!entry.record || entry.record.viewer !== v || !same(entry.record.keys, k)) {
-      entry.record = Object.freeze({ viewer: v, at: now(), keys: k });
+    if (!entry.record || entry.record.viewer !== v || !same(entry.record.keys, k) || !same(entry.record.body, b) || !same(entry.record.held, h)) {
+      entry.record = Object.freeze({ viewer: v, body: b, held: h, at: now(), keys: k });
       peersChanged();
     }
     // Someone new: tell them about us now rather than at our next heartbeat.
@@ -696,6 +725,7 @@ export function createPresence({
       return session;
     },
     set,
+    announce,
     clear,
     get,
     watch: subscribe(watchers),

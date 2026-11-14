@@ -26,6 +26,7 @@ import css from "./use.css?inline";
 import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
 import { attentionPath, hintFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
+import { samePath } from "../stage/paths.js";
 
 /** How many verbs the prompt shows. */
 export const MAX_VERBS = 3;
@@ -103,9 +104,9 @@ function create(api) {
     let seg = null;
     if (!gesture)
       for (const s of segmentsOf(keys)) {
-        // (a held verb's target is in the stage it was held in)
-        if (pinned !== undefined && s.stage !== undefined && km.pinnedStage?.() !== undefined && s.stage !== km.pinnedStage()) continue;
-        found = pinned !== undefined ? heldEntries(s.collected, pinned, km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
+        // (a held verb's target is in its own stage: the one whose path its path goes on from)
+        if (pinned !== undefined && Array.isArray(s.reader?.path) && !samePath(s.reader.path, pinned.slice(0, -1))) continue;
+        found = pinned !== undefined ? heldEntries(s.collected, pinned.at(-1), km.entries(pinned), s.ctx) : promptEntries(s.collected, s.attention, s.ctx);
         if (found?.entries.length) {
           seg = s;
           break;
