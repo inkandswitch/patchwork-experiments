@@ -13,13 +13,19 @@ import { encodeGLB, computeNormals, MODE } from "./glb.js";
 import { bakeColors, bakeColorsAlpha, robustRange, symmetricRange, legendStops, toLinear, sampleColormap } from "./colormap.js";
 import { FIELD_INFO } from "./protocol.js";
 
-/** floating (x, y, z) → glTF (x, z, −y) */
-function toGltf(pos) {
+/**
+ * analysis (x, y, z) → the model's floating frame (its bow direction and
+ * waterline, as the run froze them) → glTF (x, z, −y). The results then sit
+ * on the model's own render wherever the scene puts it.
+ */
+function toGltf(pos, frame = null) {
+  const s = frame?.bow === "-x" ? -1 : 1;
+  const dz = Number.isFinite(frame?.waterZ) ? frame.waterZ : 0;
   const out = new Float32Array(pos.length);
   for (let i = 0; i < pos.length; i += 3) {
-    out[i] = pos[i];
-    out[i + 1] = pos[i + 2];
-    out[i + 2] = -pos[i + 1];
+    out[i] = s * pos[i];
+    out[i + 1] = pos[i + 2] + dz;
+    out[i + 2] = -s * pos[i + 1];
   }
   return out;
 }
@@ -129,9 +135,10 @@ export function fadeAlpha(name, values, range, fade) {
  * @param {"double-body"|"free-surface"} o.mode
  * @param {Float64Array|null} [o.hullTriangles] the frozen hull (floating frame), drawn plain while a run has no results
  * @param {string[]} [o.notes]
+ * @param {{ bow: "+x"|"-x", waterZ: number }} [o.frame]  the model's frame, as the run froze it
  * @returns {{ kind: "glb", glb: Uint8Array, meta: { bounds: object|null, notes: string } }}
  */
-export function buildResultsGLB({ layers, params, mode, hullTriangles = null, notes = [] }) {
+export function buildResultsGLB({ layers, params, mode, hullTriangles = null, notes = [], frame = null }) {
   const meshes = [];
   const said = [...notes];
   const free = mode === "free-surface";
@@ -148,7 +155,7 @@ export function buildResultsGLB({ layers, params, mode, hullTriangles = null, no
       for (let i = 2; i < positions.length; i += 3) positions[i] *= exaggerate;
     }
     const range = fieldRange(field, values);
-    const pos = toGltf(positions);
+    const pos = toGltf(positions, frame);
     const prim = {
       positions: pos,
       indices: geom.indices,
@@ -170,7 +177,7 @@ export function buildResultsGLB({ layers, params, mode, hullTriangles = null, no
   if (hull && params.hull !== "off") {
     const g = mirrorTriangles(hull, mirrorOf(hull));
     if (params.hull === "plain") {
-      const pos = toGltf(g.positions);
+      const pos = toGltf(g.positions, frame);
       meshes.push({ name: "Hull", primitives: [{ positions: pos, indices: g.indices, normals: computeNormals(pos, g.indices) }] });
     } else {
       const m = surfaceMesh("Hull", g, params.hull === "Cf" ? "Cf" : "Cp", { lit: true });
@@ -178,7 +185,7 @@ export function buildResultsGLB({ layers, params, mode, hullTriangles = null, no
     }
   } else if (!hull && hullTriangles?.length) {
     // no results yet: the hull as it was frozen for the run
-    const pos = toGltf(Float32Array.from(hullTriangles));
+    const pos = toGltf(Float32Array.from(hullTriangles), frame);
     meshes.push({ name: "Hull (no results yet)", primitives: [{ positions: pos, normals: computeNormals(pos) }] });
   }
 
@@ -216,7 +223,7 @@ export function buildResultsGLB({ layers, params, mode, hullTriangles = null, no
       const range = fieldRange("speed", values);
       meshes.push({
         name: "Streamlines",
-        primitives: [{ positions: toGltf(g.positions), indices: g.indices, mode: MODE.LINES, colors: bakeColors(values, range, "viridis"), unlit: true }],
+        primitives: [{ positions: toGltf(g.positions, frame), indices: g.indices, mode: MODE.LINES, colors: bakeColors(values, range, "viridis"), unlit: true }],
         extras: { legend: legend("speed", range) },
       });
     }

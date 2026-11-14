@@ -107,3 +107,19 @@ describe("STL", () => {
     expect(prepareHull(back).info.volume).toBeCloseTo(2, 5);
   });
 });
+
+describe("a model that isn't one shell", () => {
+  it("is left open, and its hydrostatics flagged, when it has many openings", () => {
+    // five separate open boxes (each missing its bow face): five openings, more than a transom and a deck
+    const parts = [0, 10, 20, 30, 40].flatMap((dx) => Array.from(boxTriangles({ open: true }), (v, i) => (i % 3 === 0 ? v + dx : v)));
+    const { info, warnings } = prepareHull(Float64Array.from(parts));
+    expect(info.closed).toBe(false);
+    expect(info.reliable).toBe(false);
+    expect(warnings.join()).toMatch(/isn't one closed shell/);
+  });
+  it("still closes a shell with one opening", () => {
+    const { info } = prepareHull(boxTriangles({ open: true }));
+    expect(info.closed).toBe(true);
+    expect(info.reliable).toBe(true);
+  });
+});
