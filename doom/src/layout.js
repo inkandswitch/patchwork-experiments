@@ -43,8 +43,6 @@ export const SPAWN_PART = "arena.spawn";
 export const EXIT = "traversal.exit";
 export const exitTrait = () => ({ verb: "Exit" });
 
-export { placeIn };
-
 /** A Doom angle (degrees, 0 east, counter-clockwise) as a turn about +Y that faces an object's -z that way. */
 export const yawOf = (angle) => ((angle - 90) * Math.PI) / 180;
 
