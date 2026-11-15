@@ -18,6 +18,7 @@
 // come from setup.js's domainFor(), in hull lengths. A symmetric hull is cut
 // at y = 0 (half model, y ≤ 0) unless the setup asks for the full domain.
 
+import { createHash } from "node:crypto";
 import { normalizeSetup, waterProperties, domainForHull, hullExtent, isHalfModel, AIR, G } from "../src/setup.js";
 
 const HEADER = (cls, object, location) => `/*--------------------------------*- C++ -*----------------------------------*\\
@@ -707,4 +708,23 @@ export function caseFiles(setup, info, { cores = 1 } = {}) {
   };
   if (g.setup.mode === "free-surface") files["system/setFieldsDict"] = setFieldsDict();
   return { files, geometry: g, patches: PATCHES(g) };
+}
+
+/**
+ * A run's recipe: every file the daemon writes to make its OpenFOAM case
+ * (the dictionaries and the initial fields), kept in the run doc so the case
+ * can be made again without this daemon, and a digest over them and the hull
+ * STL, so two runs with the same digest were the same case (whatever their
+ * titles or setups say). The STL is in the run already, so it isn't repeated.
+ * @param {Record<string, string>} files  path → text
+ * @param {Uint8Array} stl
+ * @returns {{ digest: string, files: Uint8Array, count: number }}
+ */
+export function caseRecipe(files, stl) {
+  const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  const bytes = new TextEncoder().encode(JSON.stringify(sorted));
+  const h = createHash("sha256");
+  h.update(bytes);
+  h.update(stl);
+  return { digest: h.digest("hex"), files: bytes, count: Object.keys(sorted).length };
 }

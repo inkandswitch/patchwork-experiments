@@ -63,3 +63,27 @@ for (const mode of ["double-body", "free-surface"])
       expect(cd).toMatch(/legacy true/);
     });
   });
+
+describe("a run's recipe", async () => {
+  const { caseRecipe } = await import("./case.mjs");
+  const stl = new Uint8Array([1, 2, 3]);
+  it("keeps every file, and the digest doesn't depend on their order", () => {
+    const a = caseRecipe({ "system/b": "B", "system/a": "A" }, stl);
+    const b = caseRecipe({ "system/a": "A", "system/b": "B" }, stl);
+    expect(a.digest).toBe(b.digest);
+    expect(a.count).toBe(2);
+    expect(JSON.parse(new TextDecoder().decode(a.files))).toEqual({ "system/a": "A", "system/b": "B" });
+  });
+  it("changes with any file, and with the hull", () => {
+    const a = caseRecipe({ "system/a": "A" }, stl);
+    expect(caseRecipe({ "system/a": "A2" }, stl).digest).not.toBe(a.digest);
+    expect(caseRecipe({ "system/a": "A" }, new Uint8Array([1, 2, 4])).digest).not.toBe(a.digest);
+  });
+  it("is small: the whole case for both analyses, in kilobytes", () => {
+    for (const mode of ["double-body", "free-surface"]) {
+      const { files, geometry } = caseFiles(normalizeSetup({ mode }), info, { cores: 8 });
+      const r = caseRecipe({ ...files, ...zeroFiles(geometry) }, stl);
+      expect(r.files.byteLength).toBeLessThan(40_000);
+    }
+  });
+});

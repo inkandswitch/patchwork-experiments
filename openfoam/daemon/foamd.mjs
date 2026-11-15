@@ -27,12 +27,32 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, hostname, platform, arch } from "node:os";
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { dirname as dirOf } from "node:path";
+import { fileURLToPath } from "node:url";
 import { foamEnvironment, foamVersion, defaultCores } from "./foam.mjs";
 import { runJob } from "./runner.mjs";
 import { newServer, pendingRequests, activeRuns, isTerminal, HEARTBEAT_MS, PROTOCOL_VERSION, SERVER_TYPE } from "../src/protocol.js";
 
 const VERSION = "0.1.0";
+
+/**
+ * This daemon's own code: the git commit it runs from, and whether the
+ * package has changes on top (a run's case is written by this code, so it
+ * belongs with what a run was made from). Null outside a git checkout.
+ */
+function codeCommit() {
+  const here = dirOf(fileURLToPath(import.meta.url));
+  try {
+    const head = spawnSync("git", ["-C", here, "rev-parse", "--short=12", "HEAD"], { encoding: "utf8" });
+    if (head.status !== 0) return null;
+    const dirty = spawnSync("git", ["-C", here, "status", "--porcelain", "--", ".."], { encoding: "utf8" });
+    return { commit: head.stdout.trim(), dirty: dirty.status === 0 && dirty.stdout.trim().length > 0 };
+  } catch {
+    return null;
+  }
+}
+const CODE = codeCommit();
 
 function parseArgs(argv) {
   const out = {};
@@ -98,6 +118,8 @@ export async function main(argv = process.argv.slice(2)) {
     cores,
     jobs,
     version: VERSION,
+    commit: CODE?.commit ?? null,
+    dirty: CODE?.dirty ?? null,
     protocol: PROTOCOL_VERSION,
     startedAt,
     heartbeat: Date.now(),
@@ -209,7 +231,7 @@ export async function main(argv = process.argv.slice(2)) {
       d.active[next.id] = { run: next.run, since: Date.now() };
     });
     say(`running ${next.id} (${h.doc().title})${next.by ? ` for ${next.by}` : ""}; ${running.size} of ${jobs} slots busy`);
-    runJob({ repo, handle: h, env, workDir: join(stateDir, "runs"), cores, daemon: { id: config.daemonId, host: hostname(), openfoam: foam }, say, signal: abort.signal })
+    runJob({ repo, handle: h, env, workDir: join(stateDir, "runs"), cores, daemon: { id: config.daemonId, host: hostname(), platform: `${platform()} ${arch()}`, openfoam: foam, version: VERSION, commit: CODE?.commit ?? null, dirty: CODE?.dirty ?? null }, say, signal: abort.signal })
       .then((status) => markHandled(next.id, status))
       .catch((err) => {
         say(`run ${next.id}: ${err?.stack ?? err}`);

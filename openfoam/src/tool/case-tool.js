@@ -14,6 +14,8 @@ import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.
 import { drawHull } from "./fields.js";
 import { mountRunView, fmtN, fmtW } from "./run-view.js";
 import { lineChart, seriesColors } from "./charts.js";
+import { geometryDigest, variantKey, variantLetters, setupFromRun } from "../inputs.js";
+import { version as TOOL_VERSION } from "../../package.json";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const repoOf = (handle) => handle?.repo ?? window.repo;
@@ -34,15 +36,20 @@ export default function CaseTool(handle, element) {
   style.textContent = css;
   const root = document.createElement("div");
   root.className = "openfoam";
-  // Four parts, in the order work goes: the model (what the hull is), the
-  // setup of the next run (how it floats, the flow, the solver, where it
-  // runs, and what that will cost), the runs going now, and the finished
-  // runs to read. Each folds away.
+  // Two tabs. "Model setup": the model (what the hull is) and the setup of
+  // the next run (how it floats, the flow, the solver, where it runs, and
+  // what that will cost). "Runs": the runs going now, and the finished runs
+  // to read and compare. Each part is summed up in a line under its heading.
   root.innerHTML = `
-    <div class="case flow">
+    <div class="case flow" style="--flow-space:12px">
       <input class="title" aria-label="Title">
-      <details class="phase" data-phase="model" open>
-        <summary><span class="n">1</span><span class="name">Model</span><span class="sum model-sum"></span></summary>
+      <div class="tabs case-tabs" role="tablist">
+        <button role="tab" data-tab="setup">Model setup</button>
+        <button role="tab" data-tab="runs">Runs <span class="tab-sum runs-tab-sum"></span></button>
+      </div>
+      <div class="tab-panel flow" data-tab="setup">
+      <section class="phase" data-phase="model">
+        <div class="phase-head"><span class="name">Model</span><span class="sum model-sum"></span></div>
         <div class="phase-body cols">
           <div class="flow col-form" style="--flow-space:8px">
             <div class="drop hull-drop">
@@ -58,9 +65,9 @@ export default function CaseTool(handle, element) {
             <div class="model-figures"></div>
           </div>
         </div>
-      </details>
-      <details class="phase" data-phase="setup" open>
-        <summary><span class="n">2</span><span class="name">Run setup</span><span class="sum setup-sum"></span></summary>
+      </section>
+      <section class="phase" data-phase="setup">
+        <div class="phase-head"><span class="name">Run setup</span><span class="sum setup-sum"></span></div>
         <div class="phase-body cols">
           <div class="flow col-form">
             <fieldset>
@@ -102,25 +109,37 @@ export default function CaseTool(handle, element) {
             </div>
           </div>
         </div>
-      </details>
-      <details class="phase" data-phase="running" open>
-        <summary><span class="n">3</span><span class="name">Running</span><span class="sum running-sum"></span></summary>
+      </section>
+      </div>
+      <div class="tab-panel flow" data-tab="runs" hidden>
+      <section class="phase" data-phase="running">
+        <div class="phase-head"><span class="name">Running</span><span class="sum running-sum"></span></div>
         <div class="phase-body flow">
           <div class="running-list"></div>
           <div class="live-host"></div>
         </div>
-      </details>
-      <details class="phase" data-phase="results" open>
-        <summary><span class="n">4</span><span class="name">Results</span><span class="sum results-sum"></span></summary>
+      </section>
+      <section class="phase" data-phase="results">
+        <div class="phase-head"><span class="name">Results</span><span class="sum results-sum"></span></div>
         <div class="phase-body flow">
           <div class="runs-table"></div>
           <div class="curve" hidden><h3>Resistance against speed</h3><div class="curve-chart"></div></div>
           <div class="result-host"></div>
         </div>
-      </details>
+      </section>
+      </div>
     </div>`;
   element.append(style, root);
   const $ = (s) => root.querySelector(s);
+  // which tab: a viewer's own (not in the doc). A case with runs opens on them.
+  let tab = null;
+  const showTab = (t) => {
+    tab = t;
+    root.querySelectorAll(".case-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+    root.querySelectorAll(".tab-panel").forEach((p) => (p.hidden = p.dataset.tab !== t));
+    if (t === "setup") renderPreflight();
+  };
+  root.querySelectorAll(".case-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   // a double-body run's predicted running attitude, as the setup of a free-surface run
   const useAttitude = (attitude) =>
       handle.change((d) => {
@@ -133,8 +152,27 @@ export default function CaseTool(handle, element) {
         }
       });
   // the run going now (stages, convergence, stop), and the finished run being read
-  const liveView = mountRunView($(".live-host"), { repo, showTitle: true });
-  const resultView = mountRunView($(".result-host"), { repo, showTitle: true, onUseAttitude: useAttitude });
+  const variantOf = (run) => (run ? (variants.get(variantKey(run)) ?? null) : null);
+  const liveView = mountRunView($(".live-host"), { repo, showTitle: true, variant: variantOf });
+  const resultView = mountRunView($(".result-host"), {
+    repo,
+    showTitle: true,
+    variant: variantOf,
+    onUseAttitude: (a) => {
+      useAttitude(a);
+      showTab("setup");
+    },
+    onReuse: (run) => {
+      reuseRun(run);
+      showTab("setup");
+    },
+    onRerun: (run) => rerun(run),
+    others: () =>
+      runLists()
+        .finished.filter(({ r }) => r.status === "done")
+        .map(({ u, r }) => ({ url: u, title: r.title, letter: variantOf(r) })),
+    runDoc: (u) => runHandles.get(u)?.doc() ?? null,
+  });
   const curveChart = lineChart($(".curve-chart"), { height: 180, xLabel: "speed (kn)", markers: true, format: (v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)) });
 
   // ------------------------------------------------------------ state
@@ -142,6 +180,7 @@ export default function CaseTool(handle, element) {
   let prepared = null; // { mesh, stl, info, warnings, attitudeKey }
   let server = { url: null, handle: null, sub: null };
   const runHandles = new Map(); // url → handle (subscribed)
+  let variants = new Map(); // variantKey → "A", "B", … over the case's runs, oldest first
   const runSubs = [];
   let disposed = false;
 
@@ -652,6 +691,11 @@ export default function CaseTool(handle, element) {
     const d = doc();
     const p = prepared;
     const r = hull.result;
+    // the hull's geometry before it's floated: which variation of the model this is (src/inputs.js)
+    const tris = hullTriangles(r.triangles, p.model.ranges, p.model.names, p.model.frame);
+    const geometry = { digest: await geometryDigest(tris), triangles: tris.length / 9 };
+    const heads = r.heads ?? r.stash?.source?.heads ?? null;
+    showTab("runs");
     for (const speed of speeds) {
       const s = normalizeSetup({ ...setup(), speed });
       const run = newRun({
@@ -662,12 +706,23 @@ export default function CaseTool(handle, element) {
           stl: p.stl,
           info: JSON.parse(JSON.stringify(p.info)),
           warnings: [...p.warnings],
-          source: { url: d.hull.url, path: r.path, title: r.title, providerId: r.providerId ?? null, parts: [...p.model.names], stash: r.stashUrl ?? null },
+          source: {
+            url: d.hull.url,
+            heads: Array.isArray(heads) ? [...heads].map(String).sort() : null,
+            path: r.path,
+            title: r.title,
+            providerId: r.providerId ?? null,
+            providerName: r.providerName ?? null,
+            parts: [...p.model.names],
+            stash: r.stashUrl ?? null,
+          },
           // how the analysis frame sits in the model's (the scene draws results back in the model's)
           frame: { ...p.model.frame },
+          geometry,
         },
         by,
         now: Date.now(),
+        made: { tool: "openfoam", version: TOOL_VERSION },
       });
       const suggested = d["@patchwork"]?.suggestedImportUrl;
       if (suggested) run["@patchwork"].suggestedImportUrl = suggested;
@@ -681,6 +736,38 @@ export default function CaseTool(handle, element) {
     }
   }
   $(".run").addEventListener("click", () => runAt([setup().speed]));
+
+  /** Put a run's setup, and the hull it was read from, back into the case. */
+  function reuseRun(run) {
+    const { setup: s, hull: h } = setupFromRun(run);
+    handle.change((d) => {
+      d.setup = s;
+      if (!h) return;
+      const same = d.hull?.url === h.url;
+      const next = { url: h.url, bow: h.bow };
+      if (h.parts) next.parts = h.parts;
+      // the case's kept hull serves it if it's of the same doc (it's re-read when it lacks a part)
+      const stash = same ? (d.hull.stash ?? h.stash) : h.stash;
+      if (stash) next.stash = stash;
+      d.hull = next;
+    });
+  }
+  /** A new run with a finished one's setup and its frozen hull, exactly. */
+  async function rerun(run) {
+    if (!server.handle || server.error) return;
+    const by = await whoAmI(repo);
+    const copy = JSON.parse(JSON.stringify({ setup: run.setup, hull: { ...run.hull, stl: null } }));
+    copy.hull.stl = new Uint8Array(run.hull.stl);
+    const rh = await repo.create2(
+      newRun({ caseUrl: handle.url, serverUrl: server.url, setup: copy.setup, hull: copy.hull, by, now: Date.now(), title: `${run.title} (again)`, made: { tool: "openfoam", version: TOOL_VERSION } }),
+    );
+    handle.change((x) => {
+      if (!Array.isArray(x.runs)) x.runs = [];
+      x.runs.push(rh.url);
+      x.selected = rh.url;
+    });
+    server.handle.change((x) => enqueue(x, rh.url, { now: Date.now(), by }));
+  }
   $(".run-sweep").addEventListener("click", () => {
     const s = setup();
     const k = s.speedUnit === "kn" ? KNOT : 1;
@@ -726,6 +813,8 @@ export default function CaseTool(handle, element) {
   function renderRuns() {
     const d = doc();
     const { going, finished } = runLists();
+    variants = variantLetters((d?.runs ?? []).map((u) => runHandles.get(u)?.doc()));
+    const many = variants.size > 1;
     const live = liveRun(going);
     const result = resultRun(finished);
 
@@ -748,15 +837,17 @@ export default function CaseTool(handle, element) {
     const solving = going.filter(({ r }) => r && r.status !== "queued").length;
     const waiting = going.filter(({ r }) => r?.status === "queued").length;
     $(".running-sum").textContent = going.length ? [solving && `${solving} running`, waiting && `${waiting} waiting`].filter(Boolean).join(", ") : "nothing running";
+    root.querySelector('[data-phase="running"]').hidden = !going.length;
 
     // finished: the table, the speed curve, and the one being read
     $(".runs-table").innerHTML = !finished.length
       ? `<div class="hint">No finished runs yet.</div>`
-      : `<table class="figures"><tr><th>Run</th><th>Status</th><th>R<sub>T</sub></th><th>Power</th><th></th></tr>${finished
+      : `<table class="figures"><tr>${many ? `<th title="The hull's variation: runs with one letter ran the same geometry">Hull</th>` : ""}<th>Run</th><th>Status</th><th>R<sub>T</sub></th><th>Power</th><th></th></tr>${finished
           .map(({ u, r }) => {
             const s = r.summary;
             const extra = !s ? "" : s.mode === "free-surface" ? `Cr ${(s.Cr * 1000).toFixed(2)}e-3` : `1+k ${s.formFactor?.toFixed(3)}`;
             return `<tr data-click data-url="${u}" ${u === result ? "data-selected" : ""}>
+              ${many ? `<td title="${esc(r.hull?.source?.title ?? "")}${r.hull?.geometry?.digest ? ` · ${r.hull.geometry.digest.slice(0, 10)}` : ""}"><b>${esc(variantOf(r) ?? "")}</b></td>` : ""}
               <td><span class="dot" data-state="${dotOf(r.status)}" style="display:inline-block;margin-right:6px"></span>${esc(r.title)}</td>
               <td>${esc(r.status)}</td>
               <td>${s ? fmtN(s.Rt) : ""}</td><td>${s ? fmtW(s.power) : ""}</td><td>${extra}</td></tr>`;
@@ -764,10 +855,15 @@ export default function CaseTool(handle, element) {
           .join("")}</table>`;
     selectOn($(".runs-table"));
     const done = finished.filter(({ r }) => r.status === "done").length;
-    $(".results-sum").textContent = finished.length ? `${done} done${finished.length > done ? `, ${finished.length - done} stopped or failed` : ""}` : "none yet";
+    $(".results-sum").textContent = finished.length
+      ? `${done} done${finished.length > done ? `, ${finished.length - done} stopped or failed` : ""}${many ? `; ${variants.size} variations of the hull (A–${[...variants.values()].at(-1)})` : ""}`
+      : "none yet";
+    $(".runs-tab-sum").textContent = going.length ? `· ${solving ? `${solving} running` : `${waiting} waiting`}` : finished.length ? `· ${finished.length}` : "";
     renderCurve();
     renderWarmOptions();
     showSelected();
+    liveView.refresh();
+    resultView.refresh();
   }
   /** The run to watch going: the selected one if it's going, else the one furthest along. */
   function liveRun(going = runLists().going) {
@@ -800,17 +896,19 @@ export default function CaseTool(handle, element) {
   }
   function renderCurve() {
     const done = (doc()?.runs ?? []).map((u) => runHandles.get(u)?.doc()).filter((r) => r?.status === "done" && r.summary);
-    // one line per analysis and heel: a heeled run's drag isn't a point on the upright curve
+    // one line per hull variation, analysis and heel: a heeled run's drag isn't a point on the upright curve
     const lines = {};
+    const many = variants.size > 1;
     for (const r of done) {
       const heel = r.summary.heel ?? r.setup?.attitude?.heel ?? 0;
-      (lines[`${r.summary.mode}|${heel}`] ??= { mode: r.summary.mode, heel, pts: [] }).pts.push([r.summary.V / KNOT, r.summary.Rt]);
+      const v = many ? variantOf(r) : null;
+      (lines[`${v}|${r.summary.mode}|${heel}`] ??= { v, mode: r.summary.mode, heel, pts: [] }).pts.push([r.summary.V / KNOT, r.summary.Rt]);
     }
     const series = Object.values(lines)
       .filter((l) => new Set(l.pts.map((p) => p[0].toFixed(3))).size >= 2)
       .slice(0, 4)
       .map((l, i) => ({
-        name: `${l.mode === "free-surface" ? "Free surface" : "Double body"}${l.heel ? `, ${Math.abs(l.heel)}° heel` : ""}`,
+        name: `${l.v ? `${l.v}: ` : ""}${l.mode === "free-surface" ? "Free surface" : "Double body"}${l.heel ? `, ${Math.abs(l.heel)}° heel` : ""}`,
         color: seriesColors(root)[i],
         points: l.pts.sort((a, b) => a[0] - b[0]),
       }));
@@ -839,6 +937,7 @@ export default function CaseTool(handle, element) {
     renderHull();
     renderRuns();
     showSelected();
+    if (tab === null) showTab(doc()?.runs?.length ? "runs" : "setup");
   }
   render();
   handle.on("change", render);
@@ -846,8 +945,7 @@ export default function CaseTool(handle, element) {
   // the hull drawing is a canvas too
   const themeWatch = typeof MutationObserver === "function" ? new MutationObserver(() => renderPreflight()) : null;
   themeWatch?.observe(document.documentElement, { attributes: true, attributeFilter: ["theme", "class", "style"] });
-  // and isn't drawn while its part is folded away
-  root.querySelector('[data-phase="model"]').addEventListener("toggle", () => renderPreflight());
+
 
   return () => {
     disposed = true;
