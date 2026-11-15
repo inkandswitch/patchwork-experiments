@@ -114,8 +114,10 @@ const objects = {
   snes: record(snes.title, SNES, PROVIDER, rSnes.url, SNES_AT, { [TRAIT]: {} }),
   world: record(`${MAP} · ${base}`, file.url, MAP_SOURCE, rWorld.url, WORLD_AT, { [WORLD]: { machine: "doom", source: DOOM } }),
 };
-// in front of the cabinets and the map, looking at them, a person's eye high
-const home = { position: [-0.4, 2.2, 5.2], target: [-0.4, 0.9, 0] };
+// in front of the cabinets and the map, looking at them from far enough back that a narrow pane (Patchwork's,
+// between its sidebars) has both cabinets and the map in frame
+const mid = (SNES_AT.position[0] - 0.45 + WORLD_AT.position[0] + (extent.max[0] - extent.min[0]) * WORLD_AT.scale / 2) / 2;
+const home = { position: [+mid.toFixed(3), 2.8, 8.5], target: [+mid.toFixed(3), 0.8, 0] };
 const doc = {
   "@patchwork": scenePatchwork(),
   title: TITLE,
