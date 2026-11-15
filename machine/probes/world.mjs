@@ -140,13 +140,6 @@ try {
     const shut = v.doors.filter((d) => !near(d.y, floors[d.door], 1e-3));
     check(`${w}: every door of doom/'s map shut, where it was built`, v.doors.length === 11 && !shut.length, { doors: v.doors.length, shut });
   }
-  {
-    const eye = await P(`toWorld("a", "${wid}", [-560, 256, 44])`);
-    const at = await P(`toWorld("a", "${wid}", [-300, 256, 24])`);
-    for (const w of ["a", "b"]) await P(`setCamera("${w}", { position: ${JSON.stringify(eye)}, target: ${JSON.stringify(at)}, near: 0.001 })`);
-    await shot("tick0-start");
-    await lookAtWorld();
-  }
   report.numbers.tick0 = { things: at0[0].things.length, lumps: new Set(at0[0].things.map((t) => t.lump)).size, scale: at0[0].scale };
   await shot("tick0");
 
