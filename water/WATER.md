@@ -1,15 +1,15 @@
 # One sea for a world: a design note
 
-A note to decide from, not a contract, written 2026-11-14 and not yet
-built. It answers the last line of COMPOSITION.md's "Where we are": *two
+A note to decide from, written 2026-11-14, and built the same day in the
+lane `lane/scene` (see "Where it stands", at the end). It answers the last line of COMPOSITION.md's "Where we are": *two
 linked docs that each draw a sea draw two.* The mashup it unblocks is a
 harbour holding two boats, each a doc of its own, floating on one sea.
 
 Three designs were drafted for it independently. This note scores them,
 picks one, grafts the best parts of the other two onto it, and says what
 to build. It changes one sentence of an accepted decision (COMPOSITION
-Decision 1, see "Decisions" 1), so **nothing here is built until the lead
-says yes to that**.
+Decision 1, see "Decisions" 1). The lead's "kick those off" on the shared
+water package was taken as that yes (Decisions 14): say so if it wasn't.
 
 ## The problem
 
@@ -426,6 +426,71 @@ Doc edits with step 1:
     Kept as a candidate for bounded water (a pond as an object), where a
     value per place is needed.
 
+## Decisions, building it (2026-11-14, made unattended)
+
+14. **Built on the lead's "kick those off".** The lead asked for the three
+    suggested next pieces to start, the shared water package among them,
+    and this note's design needs Decision 1's amended sentence, so the
+    request was taken as the yes. Everything is in the lane, unmerged and
+    unpublished, so a no costs a branch.
+15. **The water value carries `look`** (`{ seed, wind: { speed, from },
+    stats }`), beside `v`, `level` and `components`. Reason: the drawn
+    surface's fine detail, roughness and foam line need the wind and the
+    sea's statistics, which only the wave maker knows; physics never reads
+    them. It is optional, and plain JSON like the rest.
+16. **Ambients stack per name, the later value whole.** The atmosphere used
+    to stack field by field. The only case that differs is two extensions
+    both offering one (arena's sky-only look over a sea), which no doc
+    has; whole values keep one merge rule for every name.
+17. **A refused offer is a console warning**, as every other contribution
+    failure is (`[scene] extension “x”: ambient “y” refused: …`), not a
+    toast: it is a programming error, not news for the viewer. Probes treat
+    warnings as failures.
+18. **τ is non-decreasing only while co-computed and running** (W6
+    amended). Where the world is paused between latches, or followed by a
+    slewing view, τ can step back by at most one frame; within a frame it
+    never does. Clamping it would put state in a pure reader for a
+    one-frame effect nobody sees.
+19. **A boat rides the camera and shows her HUD only where her doc is the
+    world (her water ambient is `mine`) or someone is aboard**, not "while
+    computing her". Reason: one view computing the harbour computes both
+    boats, so "computing her" would make the camera follow one boat and
+    both HUDs show, against W12. Her HUD also needs a ship: a doc with
+    floats and no ship shows none.
+20. **The last `water.waves` contributor wins whole**, no superposition.
+    One wave maker exists; adding waves from two would need a rule for
+    their looks too. Revisit with a second wave maker.
+21. **Sailing reads its scale from the water ambient's frame** and refuses
+    to sail at another scale (no ocean, a notice once). The wind is read
+    through the same frame and its own latched time (sea-view.js), a few
+    lines copied from water's rule, since sailing can't import water.
+22. **The harbour publisher turns each boat by her own wind's `from` less
+    the harbour's**, so a boat on a reach stays on her reach and one at
+    anchor lies head to wind. It adds no islet or buoys (the boats bring
+    their landmarks) and no `hint.bounds` (the links publisher doesn't
+    either). It refuses a boat with no water trait: every boat must be
+    republished first.
+23. **The Chrome probe builds its boats from the templates** in the page,
+    not the published ones, which predate water.
+24. **sailing-run's A comes aboard with Enter.** Her view's centre is open
+    sea by then, and a click on the sea is no longer the boat's
+    (Decisions 12). Every other check of sailing-run, aboard-run and
+    pins-run matches scene-stage's results exactly, including their
+    pre-existing failures.
+25. **S2 (one playout moment per peer) is not built.** It only matters on a
+    follower, where the harbour's waves are played about 100 ms behind a
+    boat's pose: a hull a few centimetres off the drawn sea, bounded and
+    cosmetic. Building it right means one playout moment per session
+    across every channel of the view, which touches pose playback in every
+    stage, and W8 with it. It is the next piece; nothing else waits on it.
+26. **walk's reader (build step 8) is not built.** The reader's second
+    consumer is still to come; the stage change itself has its two
+    (atmosphere and water). Cadboro Bay's template writes `water`, so walk
+    can read it when it's built.
+27. **W7 is not extended.** `placement.test.js` runs unchanged and green;
+    that ambients depend on the outermost alone is W2's test. Adding an
+    ambient read to I4's G would compare values that differ by design.
+
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
@@ -455,3 +520,29 @@ has a mutation check: revert it and the named test fails.
 - Whether a boat in a dry room resting at her saved pose is the right
   meaning, or an inner world should be able to keep its own water (an
   explicit scope boundary, unbuilt until two consumers ask).
+
+## Where it stands (2026-11-14, lane/scene)
+
+Built: S1 (scene ambients, the atmosphere on them, arena moved), the water
+package (surface, convert, material, extension), sailing's split (sea.js,
+the sea-view adapter, ride and HUD only where involved, templates and the
+Sloop writing `water`), terrain's template writing `water`, the harbour
+probe, and a harbour publisher run dry. Not built: S2 (Decisions 25),
+walk's reader (26), republishing the boats and publishing the harbour
+(step 6 and 7: from the lane nothing is published).
+
+Where each invariant is checked:
+
+| | Where | Mutation checked |
+|---|---|---|
+| W1 | `water/src/surface.test.js` and `sailing/src/ocean-golden.test.js` against one golden file (5 seas × 64 points × every query, bit for bit); `water/src/convert.test.js` (the outermost's reader is the evaluator unwrapped); `sailing/src/sea-view.test.js` (alone, ocean and wind `===` her own sea's) | dropping the `mine` shortcut changes nothing observable: the identity mapping is exact in IEEE arithmetic, so the shortcut is for speed only |
+| W2 | `scene/src/stage/ambients-stage.test.js` (20 cases) | each stage reading its own offer: 16 fail |
+| W3 | `water/src/extension.test.js` (9 configurations) | drawing without `mine`: 6 fail |
+| W4 | `scene/src/stage/ambients.test.js` | — (by construction: every non-JSON kind refused) |
+| W5 | `water/src/convert.test.js` (5 yaws × 3 scales × 5 moves × 2 rises × 7×7 × 3 times, composed two and three deep, tilts); the wind in `sailing/src/sea-view.test.js` | heights without the scale: 11 fail; velocities unrotated: 15 fail |
+| W6 | `water/src/convert.test.js` (every ≤3-frame sequence over 5 dts with pauses and resumes × co-computed × both tick orders) | τ = t: 6 fail; no zero velocity: 1 fails |
+| W9 | `scene/src/stage/stage.test.js`, `arena/src/play.test.js` | — |
+| W10 | `water/src/extension.test.js` (600 frames × 5×5 points, two boats); in Chrome, `sailing/probes/harbour-run.mjs` | each stage reading its own offer: 5 fail |
+| W11 | `water/src/extension.test.js` (dry room, one and two boats, the outermost's package missing, 600 frames) | as W10 |
+| W12 | `sailing/probes/harbour-run.mjs`: 22/22 | — |
+

@@ -172,5 +172,6 @@ seeing it, is built from general pieces, none of them a ship feature:
 - Menu sections by holder within one doc (they are by doc).
 - One shared part drawing people from presence: the walk package and
   sailing each draw their own.
-- Ephemeral effects as sends simulated locally (cannonballs, spray), water
-  height as a contribution other extensions read, and positional sound.
+- Ephemeral effects as sends simulated locally (cannonballs, spray), and
+  positional sound. (Water height crosses docs now, as the world's ambient
+  water: water/WATER.md.)

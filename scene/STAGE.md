@@ -1226,6 +1226,7 @@ How the camera parts behave:
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
+| `ambient(name)` → `null \| { value, mine, frame, clock }` | the world's ambient under `name` ("Ambients"): the outermost stage's stacked value (frozen plain JSON, the same object to every caller until it changes), `mine` (this is the outermost stage), this stage's frame (scope.js: the world is the outermost's root) and the outermost's world time now, `{ t, running }`. null when the outermost offers none. Read it once a frame and compare identities: nothing is pushed |
 | `clock` | `{ t(), running(), computer(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time; `computer()` is who computes it (`{ viewer, session, mine }` or null). See "World time". And the stage's own time, which acts and liveness run on and which never pauses: `now()` (ms), `after(ms, fn) → cancel`, `frame(fn(now)) → cancel` (once, at the next frame); what they set is cancelled when the extension stops. See "Time" |
 
 How poses and loops behave:
@@ -1485,7 +1486,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
 | `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). `null`, or no extension answering: no stake. One that throws (`parties(scene)` or its function) can't be told, and the take-back is refused, as a throwing audience policy hides |
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
-| `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
+| `ambient()` → `{ [name]: json \| null }` or null | the stage, every flush: the values a world has once (its atmosphere, its water) that this extension offers. Stacked per name in running order (a later value wins whole, `null` clears), copied into frozen plain JSON (a value that isn't is refused, with a warning); the outermost stage's are the view's. See "Ambients" below |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
@@ -1764,25 +1765,39 @@ objects' own (closed) looks and is offered it.
 | a listed package (a policy's, or any) | the audience is unknown here: this viewer's keepers show closed looks and hand nothing over, so a shuffle that needs them waits, and its HUD names who |
 | the seats' owner | no roster: a hand is nobody's, a deck waits for players |
 
-**Atmosphere.** How the world around the objects looks: a sky, fog, a sun.
+**Ambients.** Some things a world has once, however many things it holds:
+its sky, its water. An extension offers them with `ambient() → { [name]:
+value | null }`; a stage stacks its extensions' offers per name in running
+order (the later value whole, `null` clearing an earlier one, nothing
+keeping it), and copies each into frozen plain JSON, so what crosses is data
+by construction: a function, a cycle, a handle or a Map is refused, and a
+reader can neither call into the provider nor see it change underfoot. **A
+world's ambients are its outermost doc's**: every stage in the view reads
+those with `api.ambient(name)`, and nothing a linked doc offers reaches its
+host or a sibling. A linked world brings its things, not its weather. Each
+reader evaluates the value with its own code, in its own frame and time; the
+stage never reads inside one. Names are a package's to document (an
+unprefixed name is a convention below; a package's own is prefixed, as
+sailing's `sailing.wind`).
+
+**Atmosphere** (the ambient `atmosphere`). How the world around the objects
+looks: a sky, fog, a sun. The viewport shows the outermost doc's.
 
 ```js
-atmosphere() → null | {
+ambient() → { atmosphere: null | {
   sky?: { top, horizon, bottom },          // sRGB hex ("#rrggbb"); a missing one takes a neighbour's
   fog?: { color?, near, far },             // metres from the eye; color defaults to the sky's horizon
   sun?: { direction: [x, y, z],            // toward the sun (need not be unit)
           color?, intensity?,              // default white, the key light's 1.5
           shadows?: boolean },             // default false
   exposure?: number,                       // scales every light; default 1
-}
+} }
 ```
 
-- The stage asks every running extension at every flush and stacks the
-  answers in running order, as it does lenses: a later extension's field
-  wins whole (one sky, never a top from one and a horizon from another), a
-  field left undefined is kept, and `null` clears an earlier one's. The
-  viewport hears only a change (by key). Something that changes on its own
-  (a day passing) asks for a flush with `api.schedule`.
+- Stacked as every ambient is: a later extension's atmosphere wins whole
+  (one atmosphere, never a sky from one and a sun from another). The
+  viewport hears only a change. Something that changes on its own (a day
+  passing) asks for a flush with `api.schedule`.
 - **None at all is the stage's own look, exactly**: the theme's background,
   no fog, the white key light high to one side, no shadows. The editor
   never gives one.
@@ -1804,6 +1819,19 @@ atmosphere() → null | {
   ladder of quarter octaves, so its shadows don't crawl as things move; its
   biases are a texel or so in metres. The map is redrawn only when something
   moves or the frame does.
+
+**Water** (the ambient `water`; provided by the `water` package:
+[water/WATER.md](../water/WATER.md)). A world has water when its outermost
+doc has the scene trait `water: { level }` and the water package. The value
+is `{ v: 1, level, components: [{ dir: [dx, dz], k, omega, amp, steep,
+phase }], look? }`: Gerstner waves in the outermost doc's root frame, on its
+world time. Whoever makes waves contributes them in the water's own stage
+as `water.waves`, `{ components, look? }` (sailing's sea does); none is flat
+water at `level`. In every stage that runs it, the water package
+contributes `water`, a reader of the world's water in that stage's frame
+and on its clock (`heightAt`, `sampleAt`, `normalAt`, `velocityAt`,
+`displaced`, `components`), or null where there is none (a dry world, a
+tilted frame, another version). Only the outermost's draws the surface.
 
 ---
 
@@ -1864,7 +1892,7 @@ parts or the router's. One per view, shared by its stages, each through its
 - **Widgets:** `worldLayer(owner, { onTop })` and `pickWidget(x, y)`.
 - **Labels:** `labels.sync(owner, items)`.
 - **Poses:** `setPose(id, transform | null)`, `worldOf(id)`.
-- **Atmosphere:** `setAtmosphere(merged | null)` (sky, fog, sun; the
+- **Atmosphere:** `setAtmosphere(atmosphere | null)`, the outermost stage's ambient (sky, fog, sun; the
   pure parts are `cleanAtmosphere`, `lighting`, `shadowFocus`,
   `ladderRadius`, `lightBasis` and `shadowFrame`).
 - **Depth:** near sits halfway to the nearest geometry (`nearestClear`: each

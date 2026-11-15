@@ -26,8 +26,10 @@ The core is in two parts. A **stage** is a doc's, one per open doc:
   all on the doc's own channel;
 - the doc's **clock**: world time, computed by one view, and the processes
   stepped on it;
-- the audience (who may see what an object is), the veil, lenses and the
-  atmosphere (sky, fog, sun).
+- the audience (who may see what an object is), the veil, lenses and its
+  ambients (the values a world has once: its atmosphere, its water). The
+  outermost doc's ambients are the view's, read by every stage as plain
+  data.
 
 The **view** is the viewer's, one per mounted tool, shared by every stage
 it opens:
@@ -244,7 +246,11 @@ scene's carry moves them, snapping to the board's connectors. Dice and bags
 are packages of their own on the same table. None of them knows the others
 by name: they meet through conventions (`roster`, `seatPlaces`, `keeper`).
 
-**The sailboat.** A sea is a scene trait; a sloop is a hull with
+**The sailboat.** A sea is two scene traits: `water` (the water package's:
+this world has water) and `sailing.sea` (sailing's: what drives it, its
+waves and wind). The world's water is the outermost doc's, so a boat alone
+sails on her own sea and a boat linked into a harbour on the harbour's, one
+surface drawn. A sloop is a hull with
 `sailing.ship` and her fittings attached under her, each with a trait
 (helm, sail, winches, windlass, ladder). Her physics is a process on the
 doc's clock: one view steps it and streams her pose, the rest draw her
@@ -264,7 +270,9 @@ linked live twice: the second is a mirror, opening when the first does.
 *Games night* is a doc of two links and nothing else: the Quiet games room
 and the Liar's dice table, both published before it, linked unchanged; it
 starts people through the room's link, which starts them through its Lost
-Cities link, so they arrive watching at that game two links down.
+Cities link, so they arrive watching at that game two links down. A
+*Harbour* (water/WATER.md; built, not yet published) is water, a sea and
+two boats linked live: both float on its water and sail in its wind.
 
 **Doom's E1M1.** Dropping a WAD lays out its first map: the doom package's
 provider builds a GLB of the static map, one per door and one per exit

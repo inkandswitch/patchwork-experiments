@@ -29,7 +29,7 @@ modules share.
 | Module | Pure? | What it is |
 |---|---|---|
 | `ocean.js` | yes | The sea: a wind-driven directional wave spectrum sampled into Gerstner components, and the queries `heightAt(x, z, t)`, `normalAt`, `velocityAt` (the water's orbital velocity) that physics and walking use. The same component list feeds the shader, so what floats is what you see |
-| `ocean-material.js` | no (takes `THREE`) | The surface: a camera-following grid and a `ShaderMaterial` running the same Gerstner sum in the vertex shader, with finer normal-only detail, Fresnel sky reflection, subsurface tint, crest foam, sun glint, scene fog |
+| `sea.js` | yes but for create() | The sea part, its own scene:extension on `sailing.sea`: it gives the spectrum's components and the surface's look away as `water.waves` (the water package's convention) and offers the ambients `sailing.wind` and `atmosphere`; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surface itself (camera-following grid, Gerstner shader, detail, foam, glint) is the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
@@ -42,7 +42,7 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea: the ocean and sky drawn (`drawSea`) at the doc's world time (`api.clock.t`), only while the scene has a sea |
+| `sea-view.js` | stage side thin | ctx.sea, an adapter: its ocean is the water package's reader (`api.collect("water")`: the world's water in this stage's frame and time), its wind the world's `sailing.wind` ambient read through the same frame and a latched time (`windFor`), its clock `api.clock.t`. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -114,10 +114,7 @@ sea.sampleAt(x, z, t, out?) → [y, nx, ny, nz]   // height and normal from one 
 sea.displaced(x0, z0, t, out?) → [x, y, z, J]   // the forward Gerstner map the shader runs
 // normalAt, velocityAt and wind.at take an optional out array last
 
-const surface = createOceanSurface(api.THREE, sea, opts?)   // ocean-material.js
-surface.object                                       // add to an api.world() group; never picked
-surface.update(t, cameraPosition, atmosphere.sun, atmosphere.sky)   // every frame
-surface.setSea(sea); surface.dispose()
+// (the drawn surface is the water package's material.js, which draws the world's water)
 
 ship.hullSpeed; state.acc  // the substep remainder; position/velocity are the body origin's, spin world ω
 state.boom                 // where the boom is (radians, + to starboard); missing: where the wind puts it
@@ -1624,11 +1621,11 @@ api.loop((dt) => {
 
 ```js
 // sea-view.js — createSeaView(api) → ctx.sea
-ctx.sea.ocean            // the current createOcean(...) (rebuilt when sailing.sea changes), null with no sea trait
-ctx.sea.wind             // the current createWind(...), or null
+ctx.sea.ocean            // the world's water as this stage reads it (the water package's reader), null with none, tilted or at another scale
+ctx.sea.wind             // the world's wind (sailing.wind) as this stage reads it, or null
 ctx.sea.clock()          // the sea's time t (s): the doc's world time, api.clock.t()
-ctx.sea.atmosphere()     // { sky, fog, sun, exposure } for the stage, or null with no sea
-ctx.sea.tick()           // the surface drawn at that time
+ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard
+ctx.sea.tick()           // after every clock has ticked: the wind's time offset for the next frame's reads
 
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)

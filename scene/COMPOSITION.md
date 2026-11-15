@@ -85,8 +85,11 @@ path. Still open:
   remaining fix is opening the inspector a beat after a click that may
   become a double-click;
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go;
-- two linked docs that each draw a sea draw two (no shared water surface).
+  they go.
+
+Two linked docs that each have a sea now share one: a world's ambients are
+its outermost doc's (section 3, and [water/WATER.md](../water/WATER.md),
+built in the lane on 2026-11-14 and waiting to be merged and published).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -246,8 +249,14 @@ The general parts that present others' contributions (STAGE.md's surfaces:
 the key map, menu, notices, the packages card) run in every view, showing
 nothing when nothing offers them anything. The view offers the union of
 what its acting stages offer: commands, tools and bodies. The outermost doc
-gives the defaults: the atmosphere and `view.start`, the body and place a
-viewer starts in. Inner docs' spawns serve arrivals (section 9).
+gives the defaults: its ambients and `view.start`, the body and place a
+viewer starts in. An ambient is a named value a world has once, however
+many things it holds: its atmosphere, its water. Each stage offers some
+(`instance.ambient()`, stacked per name), the stage copies each offer into
+frozen plain JSON, and every stage in the view reads the outermost's with
+`api.ambient(name)` and its own code. A linked world brings its things, not
+its weather: a boat alone has her sea; linked into a harbour, she floats on
+the harbour's; in a dry room she has none. Inner docs' spawns serve arrivals (section 9).
 
 **Presence where it is.** What a doc's people are doing (someone walking,
 someone's selection) is that doc's, so it is drawn where the doc is, in
@@ -320,8 +329,9 @@ walker in a linked level stands on the host's floor.
 
 **The view answers space; no doc's code runs for another.** Rays, hits, the
 ground and published frames (section 9) cross a doc boundary because the
-view computes them. A sea's water height doesn't, because only sailing
-knows it.
+view computes them. A world's ambients do too, as plain data its outermost
+doc offers; each stage reads them with its own code (the water package
+evaluates the outermost's water in each stage's frame and time).
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
 applies; the stage's Look and Edit (the orbit camera) ride the latest base
@@ -657,6 +667,7 @@ Each is argued above and checkable over finite cases.
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
 | I12 | **Presence where it is.** Every stage that acts or mirrors draws its doc's people, in its frame, by one instance of a part of every doc that no focus move or body restarts; a pin draws nobody; nobody draws this view; the body stays the focus's general part's (or where it lingers); the clock chips are the focus path's docs with a process, outermost first, each acting on its own doc and naming it as the trail does | Activation over every subset of six extensions (one of every doc among them) × four docs (`stage-pure.test.js`, 256); every focus over a tree with acting stages at depth 0–3, a sibling off the focus path, a mirror (with its links) and a pin × where the body is held (nowhere, each acting stage) × before and after letting it go, one other person present in each doc from a view of their own: who is drawn in which stage and in which stage's layer, which instance draws them, where the body part runs, the clocks and the chips' names (55 states, `src/stage/presence-where.test.js`); every chip pausing its own doc only; chip names after each link on the path is renamed; `scene.others` × focus × own selection over an acting link, a mirror and a pin (`select.test.js`); walk's two parts × every set of four kinds of peer (`walk/src/extension.test.js`); the real packages in `sailing/probes/links-run.mjs` 7b |
+| I13 | **One world's ambients** (WATER.md W2, W4). Every stage's `api.ambient(name)` is the outermost stage's stacked value or null, the same frozen object to every caller, `mine` exactly at the outermost; an offer is copied into frozen plain JSON, and one that isn't (a function, a cycle, a handle, a Map, a non-finite number) is refused | Every link shape (alone, linked, mirrored, pinned, two deep) × the outermost offering {nothing, one extension, the other, both in running order} × every linked doc offering both × focus {outside, inside} × body {look, edit, walk}: values, identity, `mine` and the viewport's sky (`src/stage/ambients-stage.test.js`, 20 cases; mutation: each stage reading its own offer fails 16); every offer kind and every pair of running-order offers {nothing, null, A, B} (`src/stage/ambients.test.js`) |
 
 ## Build order
 
@@ -1058,7 +1069,8 @@ ships alone and proves something.
   geometry.
 - **Act on a mirror or play a pin**, or give one live doc state per
   placement. Live is shared; copy to differ.
-- **Run another doc's code for you.** Space crosses; water height doesn't.
+- **Run another doc's code for you.** Space crosses, and the world's
+  ambients cross as data; no doc's code runs for another.
 - **Read a doc's own statement of where it is** (IFC's georeference). The
   host places it.
 
@@ -1084,7 +1096,10 @@ The costs:
 The five open questions were put to the project lead and answered:
 
 1. **A host never reads into what it contains.** Accepted. The only
-   couplings across a link are space and published frames.
+   couplings across a link are space, published frames and the outermost
+   doc's ambients, as data. (The ambients clause was added on 2026-11-14 by
+   water/WATER.md, Decisions 1; nothing from a contained doc reaches its
+   host, so the first sentence holds as written.)
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
    [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on
