@@ -23,9 +23,21 @@ pnpm install && pnpm build && pnpm test
    finds node 22+ on PATH or in nvm, and installs its dependencies the first
    time). On a server: `daemon/start.sh --bashrc /usr/lib/openfoam/openfoam2606/etc/bashrc`.
    It prints an **inbox** link.
-3. **A case.** New document → "OpenFOAM case". Drag a hull in from a scene's
-   outline (or paste its link), paste the inbox link into **Server**, press
-   **Run**.
+3. **A case.** New document → "OpenFOAM case". It reads top to bottom in
+   four parts, each folding away and summed up in a line:
+   1. **Model**: what the hull is. Drop in a 3D file or hull (or paste its
+      link), choose its parts and which way its bow points; see it drawn in
+      profile and plan with its waterline, length, beam, draft, displacement
+      and wetted area.
+   2. **Run setup**: how it floats (sinkage, trim, heel, or a mass to float
+      at), the flow (analysis, speed, water), the solver, and the server
+      (paste the inbox link). Beside it, what to expect: Froude and Reynolds
+      numbers, the friction floor, cells and time. Then **Run**, or a sweep.
+   3. **Running**: the runs going or waiting, and the one furthest along
+      (or the one you pick): its stages, convergence, Finish now, Cancel.
+   4. **Results**: the finished runs with their resistance, the curve
+      against speed, and the one you pick: its figures and plots, with how
+      it ran folded underneath.
 4. **The scene.** Drag the case into the scene with the hull. It draws the
    hull coloured by pressure, the waterplane or the wave pattern, and
    streamlines (the selected run if it's finished, else the newest finished one).
@@ -35,7 +47,7 @@ pnpm install && pnpm build && pnpm test
 | type | id | what |
 |---|---|---|
 | `patchwork:datatype` | `openfoam-case` | "OpenFOAM case": a hull link, a setup, a server, the runs it has made |
-| `patchwork:tool` | `openfoam-case` | set up, pre-flight, run, progress, results |
+| `patchwork:tool` | `openfoam-case` | model, run setup, running, results |
 | `patchwork:datatype` | `openfoam-run` (unlisted) | one analysis, frozen when asked for; the daemon writes its progress and results |
 | `patchwork:tool` | `openfoam-run` | the same run view, on its own |
 | `patchwork:datatype` | `openfoam-server` (unlisted) | a daemon's inbox and status |

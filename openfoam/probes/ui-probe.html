@@ -151,7 +151,7 @@
       caseHandle.change(new Function("d", code));
     },
     figures() {
-      return [...document.querySelectorAll(".preflight-figures tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim()));
+      return [...document.querySelectorAll(".model-figures tr, .estimate-figures tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim()));
     },
     runButton() {
       const b = $(".openfoam .run");
@@ -215,20 +215,33 @@
     select(url) {
       caseHandle.change((d) => (d.selected = url));
     },
-    runView() {
+    /** which: "live" (the run going, in Running) or "result" (the finished run being read, in Results) */
+    runView(which = "result") {
+      const host = $(which === "live" ? ".live-host" : ".result-host");
+      const v = host?.querySelector(".run-view");
+      const all = (s) => [...(host?.querySelectorAll(s) ?? [])];
       return {
-        status: text(".status-chip"),
-        tiles: [...document.querySelectorAll(".tile")].map((t) => t.innerText.replace(/\n+/g, " | ")),
-        figures: [...document.querySelectorAll(".results-box table.figures tr")].map((tr) => [...tr.children].map((td) => td.innerText.trim())),
-        tabs: [...document.querySelectorAll(".tabs button")].map((b) => b.innerText),
-        stages: [...document.querySelectorAll("ol.stages li")].map((li) => li.dataset.status),
-        charts: [...document.querySelectorAll(".run-view canvas")].length,
+        shown: !!v && !v.hidden,
+        title: host?.querySelector(".run-title")?.innerText ?? null,
+        status: host?.querySelector(".status-chip")?.innerText ?? null,
+        tiles: all(".tile").map((t) => t.innerText.replace(/\n+/g, " | ")),
+        figures: all(".results-box table.figures tr").map((tr) => [...tr.children].map((td) => td.innerText.trim())),
+        tabs: all(".tabs button").map((b) => b.innerText),
+        stages: all("ol.stages li").map((li) => li.dataset.status),
+        howOpen: host?.querySelector("details.how")?.open ?? null,
+        how: host?.querySelector(".how-sum")?.innerText ?? null,
+        charts: all(".run-view canvas").length,
         runs: [...document.querySelectorAll(".runs-table tr[data-url]")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim()),
+        going: [...document.querySelectorAll(".running-list tr[data-url]")].map((tr) => tr.innerText.replace(/\s+/g, " ").trim()),
         curve: !$(".curve")?.hidden,
       };
     },
+    /** the four parts, each with its one-line summary */
+    phases() {
+      return [...document.querySelectorAll(".phase")].map((d) => ({ phase: d.dataset.phase, name: d.querySelector(".name").innerText, sum: d.querySelector(".sum").innerText, open: d.open }));
+    },
     clickTab(i) {
-      document.querySelectorAll(".tabs button")[i]?.click();
+      document.querySelectorAll(".result-host .tabs button")[i]?.click();
     },
     async sceneBuild(params = {}) {
       const p = getRegistry("scene:source").get("openfoam-results");
@@ -242,7 +255,7 @@
     scrollTo(sel) {
       const el = $(sel);
       const box = $(".openfoam");
-      if (el && box) box.scrollTop = el.offsetTop - 10;
+      if (el && box) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - 10;
     },
     unmount() {
       cleanup?.();

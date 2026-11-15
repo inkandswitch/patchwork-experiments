@@ -64,6 +64,14 @@ try {
   check("the server shows online with its cores", /online/.test(await P("server()")) && /8 cores/.test(await P("server()")), await P("server()"));
   const rb = await P("runButton()");
   check("Run is enabled and names the speed", rb.disabled === false && /6\.00 kn/.test(rb.text), rb);
+  const ph = await P("phases()");
+  report.phases = ph;
+  check(
+    "four parts in order (model, run setup, running, results), each summed up in a line",
+    ph.map((x) => x.phase).join() === "model,setup,running,results" && /narrow-transom/.test(ph[0].sum) && /9\.91 m/.test(ph[0].sum) && /6\.00 kn/.test(ph[1].sum) && /nothing running/.test(ph[2].sum) && /none yet/.test(ph[3].sum),
+    ph,
+  );
+  check("nothing going or finished: neither run view shows", !(await P(`runView("live")`)).shown && !(await P(`runView("result")`)).shown);
   await shot("1-preflight");
 
   // sinkage moves the waterline and the figures follow
@@ -81,28 +89,31 @@ try {
   report.afterRun = st;
   check("Run makes a run doc (queued, STL frozen, setup copied) and files it in the inbox", st.run0?.status === "queued" && st.run0.stl > 84 && st.requests[0] === st.runs[0] && st.selected === st.runs[0] && Math.abs(st.run0.info - 9.91) < 0.01, st);
   await sleep(300);
-  check("the queued run says it waits for the daemon", /Queued/.test((await P("runView()")).status ?? ""), await P("runView()"));
-  await shot("2-queued", { scroll: ".run-host" });
+  check("the queued run shows under Running, waiting for the daemon", /Queued/.test((await P(`runView("live")`)).status ?? "") && /1 waiting/.test((await P("phases()"))[2].sum), await P(`runView("live")`));
+  await shot("2-queued", { scroll: '[data-phase="running"]' });
 
   if (DONE) {
     await P(`midRun("/runs/done.json", 0.45)`);
     await sleep(500);
-    const mid = await P("runView()");
+    const mid = await P(`runView("live")`);
     report.mid = mid;
-    check("a run mid-solve shows its stage, its progress and both charts", /Solving/.test(mid.status) && mid.stages.includes("running") && mid.charts >= 2, mid);
-    await shot("3-solving", { scroll: ".run-host" });
+    check("a run mid-solve shows under Running: its stage, its progress and both charts, unfolded", /Solving/.test(mid.status) && mid.stages.includes("running") && mid.charts >= 2 && mid.howOpen === true, mid);
+    check("with two going, Running lists both and watches the one solving", mid.going.length === 2 && /Solving/.test(mid.status), mid.going);
+    await shot("3-solving", { scroll: '[data-phase="running"]' });
 
     const done = await P(`loadRun("/runs/done.json")`);
     await until("window.__p.runView().tiles.length === 4", 20_000);
     const rv = await P("runView()");
     report.done = rv;
-    check("a finished run shows four tiles and its figures", rv.tiles.length === 4 && rv.figures.length >= 8 && /Done/.test(rv.status), rv);
+    check("a finished run shows under Results: four tiles and its figures", rv.tiles.length === 4 && rv.figures.length >= 8 && /Done/.test(rv.status), rv);
+    check("its stages and convergence fold into How it ran", rv.howOpen === false && /How it ran/.test(rv.how) && rv.stages.length > 3, rv.how);
+    check("and Running still watches the run going", /Solving/.test((await P(`runView("live")`)).status ?? ""));
     check("it offers its plots", rv.tabs.length >= 3, rv.tabs);
-    await shot("4-results", { scroll: ".results-box" });
+    await shot("4-results", { scroll: ".result-host" });
     for (let i = 0; i < rv.tabs.length; i++) {
       await P(`clickTab(${i})`);
       await sleep(300);
-      await shot(`5-plot-${i}-${rv.tabs[i].replace(/\W+/g, "-").toLowerCase()}`, { scroll: ".plots" });
+      await shot(`5-plot-${i}-${rv.tabs[i].replace(/\W+/g, "-").toLowerCase()}`, { scroll: ".result-host .plots" });
     }
     const sb = await P("sceneBuild()");
     report.scene = sb;
@@ -113,13 +124,13 @@ try {
       await P(`loadRun("/runs/done2.json")`);
       await until("window.__p.runView().curve === true", 10_000);
       const rv2 = await P("runView()");
-      check("two finished runs at different speeds draw the resistance curve", rv2.curve && rv2.runs.length >= 3, rv2.runs);
-      await shot("6-curve", { scroll: ".runs-box" });
+      check("two finished runs at different speeds draw the resistance curve, and Results lists only finished runs", rv2.curve && rv2.runs.length === 2, rv2.runs);
+      await shot("6-curve", { scroll: '[data-phase="results"]' });
       await P(`select(${JSON.stringify(done)})`);
     }
     await P(`theme("dark")`);
     await sleep(400);
-    await shot("7-dark-results", { scroll: ".results-box" });
+    await shot("7-dark-results", { scroll: ".result-host" });
     await shot("8-dark-top");
     await P(`theme("light")`);
     await shot("9-phone", { w: 390, h: 844 });
