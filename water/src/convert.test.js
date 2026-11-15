@@ -7,7 +7,7 @@ import { createTiming, latch, levelOf, readerFor, tauOf } from "./convert.js";
 import golden from "./test/golden.json";
 const harbour = golden.seas.find((s) => s.name === "Harbour");
 const sloop = golden.seas.find((s) => s.name === "Ship at sea");
-const value = (sea, level = 0) => ({ v: 1, level, components: sea.components, look: { seed: sea.seed, wind: sea.wind } });
+const value = (sea, level = 0) => ({ v: 1, level, components: sea.components, look: { seed: sea.seed } });
 
 // ─── 4×4 column-major matrices, the long way (the check doesn't share convert.js's algebra) ───
 const mul = (A, B) => {

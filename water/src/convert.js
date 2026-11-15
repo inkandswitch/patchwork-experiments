@@ -63,7 +63,8 @@ export const tauOf = (timing, t) => (timing.mine ? t : timing.running ? t + timi
 /**
  * The world's water as seen from a frame, on a timing: sailing's ocean
  * shape (heightAt, sampleAt, normalAt, velocityAt, displaced, components,
- * stats, plus level, seed and wind for the surface's look). null when there's
+ * stats, plus level and seed for the surface's look; the wind is its own
+ * ambient, not the water's). null when there's
  * no value, its version isn't this package's, or the frame is tilted.
  * @param {{ v: number, level: number, components: object[], look?: object } | null} value
  * @param {{ matrix: number[] | null } | null} frame
@@ -76,7 +77,7 @@ export function readerFor(value, frame, timing) {
   const level = Number(value.level) || 0;
   const surface = createSurface(value.components);
   const look = value.look ?? {};
-  const extras = { level, seed: look.seed ?? 1, wind: look.wind ?? { speed: 0, from: 0 }, stats: look.stats ?? { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 } };
+  const extras = { level, seed: look.seed ?? 1, stats: look.stats ?? { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 } };
   // the world itself, at its own time and level 0: the evaluator as it is (W1: alone is today)
   if (timing.mine && f.identity && level === 0) return Object.freeze({ ...surface, ...extras });
 
