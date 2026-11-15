@@ -89,7 +89,7 @@ const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
 // each package's plugins registered from its URL, so the page can say which package each plugin is from
-const urls = Object.fromEntries(["scene", "sailing", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
+const urls = Object.fromEntries(["scene", "sailing", "water", "joints", "traversal"].map((p) => [p, pushworkUrl(p)]));
 const folderOf = (u) => Object.entries(urls).find(([, v]) => v === u)?.[0] ?? u;
 const { browser, checklist, sleep } = await import("./cdp.mjs");
 const b = await browser({ root: ROOT, port: 4797, cdp: 9797, page: `/sailing/probes/pins-probe.html?urls=${encodeURIComponent(JSON.stringify(urls))}`, width: 1700, height: 570, show: !!args.show, timeout: 600_000 });
