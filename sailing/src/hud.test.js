@@ -205,7 +205,8 @@ describe("the HUD", () => {
       worldOf: () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
     };
     const ctx = {
-      sea: { wind: { at: () => [0, -5] }, clock: () => 0 },
+      // a boat alone: her doc is the world
+      sea: { wind: { at: () => [0, -5] }, clock: () => 0, world: () => true },
       sim: {
         ships: () => ["hull"],
         read: () => ({ speed: 2, heading: 0, apparentWind: { speed: 6, angle: 0.5 } }),
@@ -230,6 +231,24 @@ describe("the HUD", () => {
     // the panel is up already: the ship is there to read
     expect(s.root.querySelector(".sail-panel").hidden).toBe(false);
     expect(s.root.querySelector('[data-k="speed"]').textContent).toBe("3.9 kn");
+  });
+
+  it("shows only where her doc is the world, or while you're aboard: linked into a harbour nobody sees it until they come aboard; with no ship, nobody does", () => {
+    const me = { current: { playing: false } };
+    const s = stage(me);
+    const shown = () => s.root.style.display !== "none";
+    expect(shown()).toBe(true);
+    s.ctx.sea.world = () => false;
+    s.tick();
+    expect(shown()).toBe(false);
+    me.current = { playing: true, on: "hull" };
+    s.tick();
+    expect(shown()).toBe(true);
+    me.current = { playing: false };
+    s.ctx.sea.world = () => true;
+    s.ctx.sim.ships = () => [];
+    s.tick();
+    expect(shown()).toBe(false);
   });
 
   it("aboard: the crosshair's state, the hint line, and the numbers as they change", () => {
