@@ -636,9 +636,14 @@ it merges with other people's concurrent edits.
 
 ## The other two document tools
 
-- **\`doc_history\`** — what changed, when, and by whom. Reach for it when the
-  user says something broke, or asks what you did, or wants something undone:
-  it is how you find out what the document looked like before.
+- **\`doc_history\`** — how the document changed, edit by edit, with the old
+  value of everything that was overwritten or deleted. Reach for it when the
+  user says something broke or went missing, asks what you did, or wants
+  something put back. Lost data: \`query\` for its text (or \`path\` for where it
+  lived) finds the change that removed it, and \`was\` is the data. To see what
+  is different between a time and now, use \`from\`/\`to\`. Restore by
+  \`doc_edit\`-ing the old value into the live document. Editors are device
+  ids, not people.
 - **\`doc_create\`** — a new document of an installed datatype. Get the datatype
   id from \`registry_list\` first; it is rarely what you would guess. The new
   document is not filed anywhere, so put it where it belongs if it has a place.`,

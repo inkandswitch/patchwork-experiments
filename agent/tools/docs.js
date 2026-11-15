@@ -12,7 +12,8 @@
 
 import { hostImport } from "./host.js"
 import { applyOps, OpError } from "./ops.js"
-import { previewJson, shape, bytes } from "./format.js"
+import { previewJson, preview, shape, bytes } from "./format.js"
+import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -264,43 +265,155 @@ export const docCreate = {
   },
 }
 
+/** Values in a history are evidence, not content: enough to recognise, with doc_read for the rest. */
+const EDIT_PREVIEW = { maxString: 200, maxItems: 10, maxDepth: 4 }
+const EDITS_PER_CHANGE = 8
+const EDITS_PER_COMPARE = 60
+const DEFAULT_SCAN = 500
+
 export const docHistory = {
   id: "doc_history",
   name: "Document history",
   target: { fields: ["url"], fallback: "subject" },
-  description:
-    "Summarize a document's change history: how many changes, by whom, and the most recent ones. Useful for 'what changed recently' and for finding what to undo.",
+  description: [
+    "See how a document changed. Every edit is listed with its `path`, what it did (set, insert, delete, increment, format), the new `value`, and `was` — the value it replaced or removed. That old value is how you recover lost data.",
+    "",
+    "Three ways to use it:",
+    "- **Recent changes** (no options): the last `limit` changes, newest first, each with its time, editor and edits.",
+    "- **When did X go?** Pass `query` (text or regex, matched against values written AND removed) and/or `path` (only edits at, under or above it). This searches back through up to `scan` changes, not just `limit`, and lists only the changes that matched, with a snippet. If it stopped before the beginning, the result gives a `skip` to continue further back.",
+    "- **Compare two versions.** Pass `from` and optionally `to` (default: now). Each is either a version URL from an earlier result (`before`/`after`) or a time like '2026-11-14T09:00'. You get the net edits between them — the right tool when text was typed one keystroke per change, or to see what is different now from how it was on a given day. Narrow it with `path`/`query`. Bisect with two compares to pin down when something happened.",
+    "",
+    "Long values are cut short. For the whole thing, doc_read a `before`/`after`/`from` URL — a read-only snapshot — with the edit's `path`. Never edit through those URLs; to restore, doc_edit the live document. This tool changes nothing.",
+    "",
+    "Times are each writer's own clock. `editor` is an automerge actor id: a device or session, not a person.",
+  ].join("\n"),
   where: "worker",
   risk: "read",
   input_schema: {
     type: "object",
     properties: {
       url: { type: "string", description: "Document to describe. Defaults to the session's document." },
-      limit: { type: "number", description: "How many recent changes to describe. Default 20." },
+      path: {
+        type: "array",
+        items: { type: ["string", "number"] },
+        description: "Only edits at, under or above this path, e.g. ['tasks', 3].",
+      },
+      query: { type: "string", description: "Only edits whose new or removed value matches this (case-insensitive text or regex)." },
+      from: { type: "string", description: "Compare from this version: a version URL from an earlier result, or a time (ISO, e.g. '2026-11-14T09:00')." },
+      to: { type: "string", description: "Compare to this version. Same forms as `from`. Default: the current document." },
+      limit: { type: "number", description: "How many changes to list. Default 20." },
+      skip: { type: "number", description: "Start this many changes back from the newest. Use the `skip` an earlier result gave to keep going." },
+      scan: { type: "number", description: `With path or query: how many changes to search before stopping. Default ${DEFAULT_SCAN}.` },
     },
   },
   async execute(input, ctx) {
-    const url = targetUrl(input, ctx)
-    const { handle } = await findDoc(url, ctx)
+    // A version URL pins heads; the history belongs to the document behind it.
+    const url = targetUrl(input, ctx).split("#")[0]
+    const { handle, doc } = await findDoc(url, ctx)
     const automerge = await hostImport("automerge")
-    const changes = automerge.getAllChanges(handle.doc())
-    const limit = input.limit ?? 20
+    const { stringifyAutomergeUrl, encodeHeads, decodeHeads } = await hostImport("repo")
 
-    const decoded = changes.slice(-limit).map((change) => {
-      const meta = automerge.decodeChange(change)
-      return {
-        actor: meta.actor.slice(0, 8),
-        time: meta.time ? new Date(meta.time * 1000).toISOString() : null,
-        message: meta.message ?? null,
-        ops: meta.ops?.length ?? 0,
+    const versionUrl = (hashes) =>
+      hashes.length ? stringifyAutomergeUrl({ documentId: handle.documentId, heads: encodeHeads(hashes) }) : null
+
+    let pattern = null
+    if (input.query) {
+      try {
+        pattern = new RegExp(input.query, "i")
+      } catch {
+        pattern = new RegExp(input.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
       }
-    })
+    }
+    const filtering = Boolean(pattern || input.path)
 
-    return previewJson({ url, totalChanges: changes.length, recent: decoded })
+    /** The edits worth showing, each with the snippet that matched. */
+    const select = (edits) => {
+      const kept = []
+      for (const edit of edits) {
+        if (input.path && !touchesPath(edit, input.path)) continue
+        let match = null
+        if (pattern) {
+          match = matchEdit(edit, pattern, { shown: EDIT_PREVIEW.maxString })
+          if (match === null) continue
+        }
+        kept.push(match ? { ...edit, match } : edit)
+      }
+      return kept
+    }
+    const show = (edits, cap) => edits.slice(0, cap).map((edit) => preview(edit, EDIT_PREVIEW))
+
+    // ---- Compare two versions --------------------------------------------
+    if (input.from || input.to) {
+      const resolve = (version, name) => {
+        if (!version || version === "now") return automerge.getHeads(doc)
+        if (version.startsWith("automerge:")) {
+          const [, heads] = version.split("#")
+          if (!heads) throw new Error(`\`${name}\` is a document URL with no version in it. Use a before/after URL from an earlier result, or a time.`)
+          return decodeHeads(heads.split("|"))
+        }
+        const when = new Date(version)
+        if (Number.isNaN(when.getTime())) throw new Error(`\`${name}\` must be a version URL or a time like '2026-11-14T09:00', not '${version}'.`)
+        return headsAt(automerge, doc, when)
+      }
+      const fromHeads = input.from ? resolve(input.from, "from") : []
+      const toHeads = resolve(input.to, "to")
+      const edits = select(editsBetween(automerge, doc, fromHeads, toHeads))
+
+      return previewJson({
+        url,
+        from: versionUrl(fromHeads) ?? "(empty document)",
+        to: versionUrl(toHeads),
+        edits: edits.length,
+        ...(edits.length > EDITS_PER_COMPARE
+          ? { note: `Showing the first ${EDITS_PER_COMPARE}. Narrow with path or query, or compare a shorter span.` }
+          : {}),
+        changes: show(edits, EDITS_PER_COMPARE),
+      })
+    }
+
+    // ---- Walk the changes, newest first -------------------------------------
+    const all = automerge.getAllChanges(doc)
+    const limit = input.limit ?? 20
+    const skip = input.skip ?? 0
+    const scan = filtering ? input.scan ?? DEFAULT_SCAN : limit
+
+    const listed = []
+    let index = all.length - 1 - skip
+    let scanned = 0
+    for (; index >= 0 && scanned < scan && listed.length < limit; index--, scanned++) {
+      const meta = automerge.decodeChange(all[index])
+      const edits = select(editsOfChange(automerge, doc, meta))
+      if (filtering && !edits.length) continue
+      listed.push({
+        time: meta.time ? new Date(meta.time * 1000).toISOString() : null,
+        editor: meta.actor.slice(0, 8),
+        ...(meta.message ? { message: meta.message } : {}),
+        edits: show(edits, EDITS_PER_CHANGE),
+        ...(edits.length > EDITS_PER_CHANGE ? { moreEdits: edits.length - EDITS_PER_CHANGE } : {}),
+        before: versionUrl(meta.deps) ?? "(empty document)",
+        after: versionUrl([meta.hash]),
+      })
+    }
+
+    const remaining = index + 1
+    return previewJson({
+      url,
+      totalChanges: all.length,
+      searched: `${scanned} change${scanned === 1 ? "" : "s"}, starting ${skip} back from the newest`,
+      ...(remaining > 0 ? { olderChangesLeft: remaining, skip: skip + scanned } : {}),
+      ...(filtering && !listed.length ? { found: "nothing in the changes searched" } : {}),
+      changes: listed,
+    })
   },
   summarize(input, output) {
-    const match = String(output ?? "").match(/"totalChanges":\s*(\d+)/)
-    return `history · ${match ? match[1] : "?"} changes`
+    const text = String(output ?? "")
+    if (input?.from || input?.to) {
+      const match = text.match(/"edits":\s*(\d+)/)
+      return `compared versions · ${match ? match[1] : "?"} edits`
+    }
+    const total = text.match(/"totalChanges":\s*(\d+)/)
+    const what = input?.query ? `"${input.query}" in history` : input?.path ? `history of /${input.path.join("/")}` : "history"
+    return `${what} · ${total ? total[1] : "?"} changes`
   },
 }
 
