@@ -813,6 +813,28 @@ Then steps 5, 6 and 8 (round 2):
    object; the trait's `source` says which source its session was made
    for.
 
+Then step 7 (round 3):
+
+7. **The spectator's 3D world** (`src/present/spectator.js`,
+   `src/present/asked.js`, worlds in `extension.js`). "Lay out its world",
+   on a Doom cabinet's menu, puts doom/'s map of the level the game is on
+   beside the cabinet: doom/'s scene:source (`doom-map`, by id) over a WAD
+   file doc of the IWAD the machine runs, with `whole: true` (the whole map
+   as one part, each door a node in it), a model 3 m across, its lowest
+   floor at the cabinet's feet, turned as the cabinet is. It carries the
+   machine's trait `machine.world: { machine: <the cabinet's id> }`. Every
+   view running that machine then draws its game in the map, every frame,
+   from the engine's state: each thing Doom draws a billboard at its feet,
+   turned to the eye with the rotation Doom would show a viewer there,
+   lit as its sector, in the map's displayed frame (scale included); each
+   door node moved up by how far its sector's ceiling stands above its
+   floor (dressing: the map carries the machine's trait). The frame is the
+   map's own say (its GLB's `extras.doom`: map, anchor, units per metre),
+   so nothing here keeps a copy of doom/'s rule. On another level, between
+   levels, or with the machine gone, the map is as built: no things, every
+   door shut. Each state is asked of the host once (`asking`), shared by
+   the speaker and every world.
+
 ### Decisions, made unattended (the lead was away)
 
 1. **The machine's time is its session clock over world time, not
@@ -1040,7 +1062,77 @@ Round 2's review (Decisions 29-34):
     machines, the held-tool slot, the roster's `sitting` and the trait's
     seats, so it is tested directly rather than only by a browser probe.
 
+Made in round 3 (step 7), also unattended:
+
+35. **The world is doom/'s map, laid out by the machine, with its doors as
+    nodes.** A machine's world needs doom/'s geometry and the engine's
+    motion. doom/'s own layout (a dropped WAD) makes doors that people
+    open (`joints.slide`), and a door moved by two owners would rise twice;
+    a stage object may be dressed only by an extension whose trait it
+    carries. So doom/'s source gained one param, `whole` (the map in one
+    part, a node per door and per exit switch, each exactly its own part
+    at its own anchor), and the machine lays out that one object with its
+    own trait. Rejected: the machine computing doom/'s door list and
+    anchors itself (a second copy of doom/'s line specials), and attaching
+    to a walkable map by stripping its slides (one package rewriting
+    another's layout). Nothing changed in the stage.
+36. **The map says where its frame is.** doom/'s parts now carry
+    `extras.doom = { map, anchor, unitsPerMetre }`, as the cabinet's GLB
+    says where its screen is (Decision 7); `doomWorld(wads, map, frame)`
+    places things in the frame given. Its own copy of doom/'s anchor rule
+    stays only as the default, and the tests hold the two equal.
+37. **A world shows one machine, named by the object's id in its trait.**
+    Not a match by map name or WAD: two cabinets of one IWAD on one level
+    would both claim it. A copy of the world shows the same game; a copy of
+    the cabinet runs a game of its own, which no map shows until one is
+    laid out for it (traits are copied as they are; ids in them are not
+    remapped).
+38. **The world's WAD is a file doc of the IWAD's bytes, made when the
+    world is laid out.** doom/'s source takes a `file` doc; the machine's
+    content doc is its own records (start arguments and WADs). So the IWAD
+    is stored twice (28 MB for Freedoom). A slice of only what drawing the
+    map needs (doom/'s `make-fixture.mjs` makes one, 1.5 MB for E1M1) would
+    be the next step if the storage matters; licences don't bind this
+    research and Automerge's costs are assumed fixed upstream. A game
+    booting PWADs isn't offered a world yet (doom/ reads one WAD file).
+39. **What is drawn is what Doom draws.** Things whose flags say NOSECTOR
+    are left out, as Doom leaves them out; a thing's sprite is the one
+    Doom would pick for a viewer where the eye is (rotation by bearing,
+    mirrored lumps, fullbright), lit as doom/ lights its walls (the sector's
+    level read as sRGB); a spectre is a dark see-through shape where Doom
+    draws a fuzz. The player's own body is drawn too: a spectator sees
+    every player. Doom's diminishing light with distance is not drawn
+    (doom/'s walls don't have it either).
+40. **Doors only, for now.** The engine moves every door, lift and floor;
+    the whole map moves the plain doors doom/ makes parts of. Locked and
+    remote doors (E1M1's 51, 71, 77, 145) and lifts (98, 103) are drawn
+    where they rest. A part per moving sector of every kind is doom/'s to
+    add (a lift is a floor and the strips of wall it uncovers), and the
+    machine's dressing would move it unchanged (`doorAt` for ceilings, the
+    sector's `rise.floor` for floors).
+
 ### Tests
+
+- **`present/spectator.test.js`:** the billboard for 4 sprite shapes
+  (offsets either side and wholly to one side), mirrored or not, from 16
+  bearings at 3 heights, through 32 map poses (moved, turned, tipped, at 1
+  and 1/36 scale): 12,288 cases, each checking the feet through the frame,
+  the quad's four corners against Doom's span to the viewer's left and
+  right (a mirrored lump right to left), and that it faces the eye. The
+  door nodes moved by `doorAt` and put back (by rest(), and by a new
+  root). Over the 4-player demo (needs the IWAD; every 105th tic, every tic
+  in test:full): every thing Doom draws stands where the engine's own
+  record puts it through the map's frame, worked out in the test from the
+  raw query and doom/'s frame rule; every player's body where the players
+  record says; every door node's underside at the engine's ceiling; doors
+  10 and 100 reach exactly the travel doom/ builds them with, and the
+  other nine never move. Mutation-checked: the viewer's right reversed,
+  the mirror's place, the frame left out, the door's rest left out,
+  doom-world's z axis flipped.
+- **`present/asked.test.js`:** one ask per kind per run of frames at one
+  state, for every subset of 3 kinds asked at each of 7 frames over a run
+  with a rollback (56 cases); a RemoteHost asked as is; a null asked again.
+  Mutation-checked (no memo).
 
 - **`host/clock.test.js`:** the session clock on world time over every
   schedule of 4 steps of nothing, a pause or a resume by either of two
@@ -1206,8 +1298,13 @@ Round 2's review (Decisions 29-34):
 
 ### Not done yet
 
-- Step 7, the spectator's 3D world (and with it Doom's `world()` sound
-  route, sounds at their origins).
+- In the spectator's world: Doom's `world()` sound route (each sound at
+  its origin in the map, through the map's frame), lifts, floors, and
+  locked and remote doors (Decision 40), and a world that follows the game
+  to its next level (today a world is of one map, and shows nothing while
+  the game is elsewhere; laying out another is a click).
+- Being a Doom player from the 3D world (the HUD puzzle): README.md, "Being
+  a player from the 3D world", has what step 7 showed about it.
 - A WAD dropped on an empty cabinet where the doom package is installed
   too goes to whichever of the two is first in registry order (Decision
   33): the stage rule that would settle it waits for a second consumer.

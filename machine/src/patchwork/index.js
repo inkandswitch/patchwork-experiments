@@ -51,11 +51,11 @@ export const plugins = [
   },
   {
     // a machine in a scene: its session run on the scene's world time, its picture and sound at the cabinet's
-    // screen, a seat per port, and Play, the pad in hand (../scene/extension.js)
+    // screen, a seat per port, and Play, the pad in hand; a Doom's world drawn in doom/'s map (../scene/extension.js)
     type: "scene:extension",
     id: "machine",
     name: "Machines",
-    traits: ["machine"],
+    traits: ["machine", "machine.world"],
     describes: {
       machine: {
         name: "Machine",
@@ -65,6 +65,11 @@ export const plugins = [
         // the session (and the source it was made for) is this object's running game: a copy starts a game of its own.
         // `seats` (the seat of each port, laid on the object with it) describes the cabinet, and goes with a copy as its seats do
         runtime: ["session", "source"],
+      },
+      "machine.world": {
+        name: "Machine's world",
+        on: "object",
+        blurb: "A Doom map showing a machine's game: its monsters, players and doors move here as the game has them, read from the running engine. Laid out from the machine (Lay out its world)",
       },
     },
     // a machine doc is a new cabinet; a ROM or an IWAD dropped on a cabinet with no game is its game
