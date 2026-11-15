@@ -66,9 +66,12 @@ try {
   check("Run is enabled and names the speed", rb.disabled === false && /6\.00 kn/.test(rb.text), rb);
   const ph = await P("phases()");
   report.phases = ph;
+  const tb = await P("tabs()");
+  check("two tabs, and a case with no runs opens on Model setup", tb.labels.length === 2 && /Model setup/.test(tb.labels[0]) && /Runs/.test(tb.labels[1]) && tb.selected === "setup", tb);
   check(
-    "four parts in order (model, run setup, running, results), each summed up in a line",
-    ph.map((x) => x.phase).join() === "model,setup,running,results" && /narrow-transom/.test(ph[0].sum) && /9\.91 m/.test(ph[0].sum) && /6\.00 kn/.test(ph[1].sum) && /nothing running/.test(ph[2].sum) && /none yet/.test(ph[3].sum),
+    "Model setup holds the model and the run setup, each summed up in a line; Runs holds running and results",
+    ph.map((x) => `${x.tab}:${x.phase}`).join() === "setup:model,setup:setup,runs:running,runs:results" &&
+      ph[0].shown && ph[1].shown && !ph[3].shown && /narrow-transom/.test(ph[0].sum) && /9\.91 m/.test(ph[0].sum) && /6\.00 kn/.test(ph[1].sum) && /none yet/.test(ph[3].sum),
     ph,
   );
   check("nothing going or finished: neither run view shows", !(await P(`runView("live")`)).shown && !(await P(`runView("result")`)).shown);
@@ -88,6 +91,8 @@ try {
   const st = await P("state()");
   report.afterRun = st;
   check("Run makes a run doc (queued, STL frozen, setup copied) and files it in the inbox", st.run0?.status === "queued" && st.run0.stl > 84 && st.requests[0] === st.runs[0] && st.selected === st.runs[0] && Math.abs(st.run0.info - 9.91) < 0.01, st);
+  check("and keeps what it was made from: the hull's geometry digest and heads, the tool's version", /^[0-9a-f]{64}$/.test(st.run0.geometry ?? "") && st.run0.triangles > 100 && Array.isArray(st.run0.heads) && st.run0.made === "0.1.0", st.run0);
+  check("Run switches to the Runs tab", (await P("tabs()")).selected === "runs", await P("tabs()"));
   await sleep(300);
   check("the queued run shows under Running, waiting for the daemon", /Queued/.test((await P(`runView("live")`)).status ?? "") && /1 waiting/.test((await P("phases()"))[2].sum), await P(`runView("live")`));
   await shot("2-queued", { scroll: '[data-phase="running"]' });
@@ -97,7 +102,7 @@ try {
     await sleep(500);
     const mid = await P(`runView("live")`);
     report.mid = mid;
-    check("a run mid-solve shows under Running: its stage, its progress and both charts, unfolded", /Solving/.test(mid.status) && mid.stages.includes("running") && mid.charts >= 2 && mid.howOpen === true, mid);
+    check("a run mid-solve shows under Running: its stage, its progress and both charts, with no tabs", /Solving/.test(mid.status) && mid.stages.includes("running") && mid.charts >= 2 && mid.howShown === true && mid.tabs.length === 0, mid);
     check("with two going, Running lists both and watches the one solving", mid.going.length === 2 && /Solving/.test(mid.status), mid.going);
     await shot("3-solving", { scroll: '[data-phase="running"]' });
 
@@ -106,10 +111,11 @@ try {
     const rv = await P("runView()");
     report.done = rv;
     check("a finished run shows under Results: four tiles and its figures", rv.tiles.length === 4 && rv.figures.length >= 8 && /Done/.test(rv.status), rv);
-    check("its stages and convergence fold into How it ran", rv.howOpen === false && /How it ran/.test(rv.how) && rv.stages.length > 3, rv.how);
+    check("its stages and convergence move to the How it ran tab", rv.howShown === false && rv.tabs.includes("How it ran") && /iterations/.test(rv.how) && rv.stages.length > 3, rv);
     check("and Running still watches the run going", /Solving/.test((await P(`runView("live")`)).status ?? ""));
     check("it offers its plots", rv.tabs.length >= 3, rv.tabs);
     await shot("4-results", { scroll: ".result-host" });
+    check("a finished run's tabs: figures, its plots, inputs, how it ran", rv.tabs[0] === "Figures" && rv.tabs.at(-2) === "Inputs" && rv.tabs.at(-1) === "How it ran", rv.tabs);
     for (let i = 0; i < rv.tabs.length; i++) {
       await P(`clickTab(${i})`);
       await sleep(300);
@@ -126,6 +132,14 @@ try {
       const rv2 = await P("runView()");
       check("two finished runs at different speeds draw the resistance curve, and Results lists only finished runs", rv2.curve && rv2.runs.length === 2, rv2.runs);
       await shot("6-curve", { scroll: '[data-phase="results"]' });
+      const cmp = await P(`compare(${JSON.stringify(done)})`);
+      report.compare = cmp;
+      check(
+        "Inputs sets two runs side by side: the speed is what differs, and the results show the change",
+        cmp.options >= 1 && cmp.differs.some((r) => r[0] === "Speed") && !cmp.differs.some((r) => r[0] === "Geometry" || r[0] === "Parts") && cmp.results.some((r) => r[0] === "Total resistance" && /%/.test(r[3])),
+        cmp,
+      );
+      await shot("6b-compare", { scroll: ".result-host" });
       await P(`select(${JSON.stringify(done)})`);
     }
     await P(`theme("dark")`);

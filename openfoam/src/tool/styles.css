@@ -52,41 +52,35 @@
   max-width: 1100px;
 }
 
-/* the four parts: model, run setup, running, results */
-.openfoam .phase {
+/* two tabs (model setup, runs), each of two parts with a heading and a one-line summary */
+.openfoam .case-tabs {
+  margin-bottom: 0;
+}
+.openfoam .case-tabs button {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 14px;
+}
+.openfoam .case-tabs .tab-sum {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--openfoam-muted);
+}
+.openfoam .phase + .phase {
   border-top: 1px solid var(--openfoam-border);
   padding-top: var(--studio-space-sm, 10px);
 }
-.openfoam .phase > summary {
+.openfoam .phase-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  cursor: pointer;
-  list-style: none;
   padding: 2px 0 var(--studio-space-sm, 10px);
 }
-.openfoam .phase > summary::-webkit-details-marker {
-  display: none;
-}
-.openfoam .phase > summary .n {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: inline-grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--openfoam-panel);
-  border: 1px solid var(--openfoam-border);
-  color: var(--openfoam-muted);
-  align-self: center;
-}
-.openfoam .phase > summary .name {
+.openfoam .phase-head .name {
   font-size: 15px;
   font-weight: 600;
 }
-.openfoam .phase > summary .sum {
+.openfoam .phase-head .sum {
   color: var(--openfoam-muted);
   font-size: 12px;
   min-width: 0;
@@ -94,16 +88,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.openfoam .phase > summary::after {
-  content: "▾";
-  margin-left: auto;
-  color: var(--openfoam-faint);
-}
-.openfoam .phase:not([open]) > summary::after {
-  content: "▸";
-}
 .openfoam .phase-body {
-  padding: 0 0 var(--studio-space-md, 16px) 30px;
+  padding: 0 0 var(--studio-space-md, 16px);
 }
 .openfoam .cols {
   display: grid;
@@ -114,9 +100,6 @@
 @container (max-width: 720px) {
   .openfoam .cols {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .openfoam .phase-body {
-    padding-left: 0;
   }
 }
 .openfoam fieldset {
@@ -146,14 +129,27 @@
   display: block;
   width: 100%;
 }
-.openfoam details.how > summary {
-  cursor: pointer;
+/* a run's inputs, and another's beside them */
+.openfoam table.inputs tr.group td {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--openfoam-muted);
-  font-size: 12px;
-  padding: 4px 0;
+  padding-top: 10px;
+  text-align: left;
 }
-.openfoam details.how[open] > summary {
-  margin-bottom: 8px;
+.openfoam table.figures.inputs td,
+.openfoam table.figures.inputs th {
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+.openfoam table.inputs tr[data-differs] td {
+  background: color-mix(in oklch, var(--openfoam-accent), transparent 82%);
+}
+.openfoam table.inputs tr[data-differs] td:first-child {
+  box-shadow: inset 3px 0 0 var(--openfoam-accent);
 }
 .openfoam .run-view .run-title {
   font-size: 14px;

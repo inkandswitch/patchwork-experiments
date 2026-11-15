@@ -7,7 +7,7 @@
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { caseFiles, zeroFiles, inletResetDict } from "./case.mjs";
+import { caseFiles, zeroFiles, inletResetDict, caseRecipe } from "./case.mjs";
 import { run as runFoam } from "./foam.mjs";
 import { datTail, forceRow, residualColumns, parseCheckMesh, parseLayers } from "./parse.mjs";
 import { readLayers, summarize } from "./results.mjs";
@@ -183,6 +183,11 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     }
     mkdirSync(join(dir, "constant/triSurface"), { recursive: true });
     writeFileSync(join(dir, "constant/triSurface/hull.stl"), stl);
+    // what makes this case, kept with the run (the initial fields are written after meshing, but known now)
+    const recipe = caseRecipe({ ...files, ...zeroFiles(g) }, stl);
+    change((d) => {
+      d.recipe = recipe;
+    });
     done("prepare", `${g.half ? "half" : "full"} model, ${np} core${np > 1 ? "s" : ""}; the case is in ${dir.startsWith(homedir()) ? "~" + dir.slice(homedir().length) : dir}`);
 
     // ---- mesh

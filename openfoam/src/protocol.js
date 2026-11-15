@@ -84,8 +84,15 @@ export function initCase(doc, setup) {
  * @param {object} o.hull      { stl: Uint8Array, info, source, warnings }
  * @param {string} [o.by]      who asked (a name, for the queue)
  * @param {number} o.now
+ *
+ * A run doc, as asked for. `hull` is everything about the hull the run uses
+ * (its STL, measurements, frame, where it came from, its geometry digest);
+ * `made` the tool that asked ({ tool, version }). The daemon adds `daemon`
+ * (where and with what it ran) and `recipe` (the case files it wrote): see
+ * src/inputs.js for reading them back.
+ * @param {{ tool: string, version: string }} [o.made]
  */
-export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title }) {
+export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title, made = null }) {
   return {
     "@patchwork": { type: RUN_TYPE },
     title: title ?? runTitle(setup, hull?.source?.title),
@@ -96,6 +103,8 @@ export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title 
     requestedBy: by,
     setup,
     hull,
+    made,
+    recipe: null,
     status: "queued",
     control: { cancel: false, finish: false },
     daemon: null,

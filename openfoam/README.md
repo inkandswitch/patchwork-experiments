@@ -23,21 +23,18 @@ pnpm install && pnpm build && pnpm test
    finds node 22+ on PATH or in nvm, and installs its dependencies the first
    time). On a server: `daemon/start.sh --bashrc /usr/lib/openfoam/openfoam2606/etc/bashrc`.
    It prints an **inbox** link.
-3. **A case.** New document → "OpenFOAM case". It reads top to bottom in
-   four parts, each folding away and summed up in a line:
-   1. **Model**: what the hull is. Drop in a 3D file or hull (or paste its
-      link), choose its parts and which way its bow points; see it drawn in
-      profile and plan with its waterline, length, beam, draft, displacement
-      and wetted area.
-   2. **Run setup**: how it floats (sinkage, trim, heel, or a mass to float
-      at), the flow (analysis, speed, water), the solver, and the server
-      (paste the inbox link). Beside it, what to expect: Froude and Reynolds
-      numbers, the friction floor, cells and time. Then **Run**, or a sweep.
-   3. **Running**: the runs going or waiting, and the one furthest along
-      (or the one you pick): its stages, convergence, Finish now, Cancel.
-   4. **Results**: the finished runs with their resistance, the curve
-      against speed, and the one you pick: its figures and plots, with how
-      it ran folded underneath.
+3. **A case.** New document → "OpenFOAM case". It has two tabs:
+   - **Model setup**: the **Model** (drop in a 3D file or hull, or paste
+     its link; choose its parts and which way its bow points; see it drawn
+     with its waterline, length, beam, draft, displacement and wetted area)
+     and the **Run setup** (how it floats: sinkage, trim, heel, or a mass to
+     float at; the flow; the solver; the server, where you paste the inbox
+     link). Beside the setup, what to expect: Froude and Reynolds numbers,
+     the friction floor, cells and time. Then **Run**, or a sweep of speeds.
+   - **Runs**: what's **Running** (stages, convergence, Finish now, Cancel)
+     and the **Results**: the finished runs with their resistance, the curve
+     against speed, and the one you pick, in tabs: Figures, each plot,
+     Inputs, How it ran.
 4. **The scene.** Drag the case into the scene with the hull. It draws the
    hull coloured by pressure, the waterplane or the wave pattern, and
    streamlines (the selected run if it's finished, else the newest finished one).
@@ -47,12 +44,41 @@ pnpm install && pnpm build && pnpm test
 | type | id | what |
 |---|---|---|
 | `patchwork:datatype` | `openfoam-case` | "OpenFOAM case": a hull link, a setup, a server, the runs it has made |
-| `patchwork:tool` | `openfoam-case` | model, run setup, running, results |
+| `patchwork:tool` | `openfoam-case` | model setup (model, run setup) and runs (running, results, inputs and comparison) |
 | `patchwork:datatype` | `openfoam-run` (unlisted) | one analysis, frozen when asked for; the daemon writes its progress and results |
 | `patchwork:tool` | `openfoam-run` | the same run view, on its own |
 | `patchwork:datatype` | `openfoam-server` (unlisted) | a daemon's inbox and status |
 | `patchwork:tool` | `openfoam-server` | is it up, what runs, what waits, what it did |
 | `scene:source` | `openfoam-results` | a case (or a run) as a GLB: hull by Cp or Cf, the water surface, wake and centre planes, streamlines |
+
+## What a run keeps, and comparing runs
+
+A run doc keeps everything it was made from, so it can be made again and
+set against another:
+
+- **the setup**, as it was;
+- **the hull**: the closed STL it ran (in the analysis frame, floated), its
+  measurements, and where it came from: the doc, its **heads** (the version
+  read), the reader, the parts, the bow, the waterline;
+- **the hull's geometry digest**: SHA-256 of its triangles in the analysis
+  frame *before* it's floated, rounded to float32. The same hull at another
+  sinkage, trim or heel has the same digest; a changed model, or other parts,
+  has another. Each digest is a **variation** of the hull, lettered A, B, …
+  in the order the case first ran it. The runs table and the speed curve
+  split by variation once there's more than one;
+- **the tool that asked** (`made`: this package's version);
+- from the daemon: **where and with what it ran** (host, OpenFOAM version,
+  cores, the daemon's version and git commit, marked when it has changes)
+  and the **recipe**: every file it wrote for the OpenFOAM case (dictionaries
+  and initial fields, 15–20 KB), with a digest over them and the STL. Two
+  runs with one recipe digest were the same OpenFOAM case.
+
+A finished run's **Inputs** tab lists all of this, grouped as the setup is.
+**Compare with** sets another finished run beside it: the inputs that
+differ are marked, and the headline results are side by side with the
+change. **Set up the case from this run** puts its setup and hull link back
+into the case (to change one thing and run again); **Run again exactly**
+makes a new run with its setup and its frozen STL.
 
 ## The analyses
 
