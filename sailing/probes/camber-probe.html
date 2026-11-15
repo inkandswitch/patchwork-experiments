@@ -42,7 +42,7 @@ const EXAMPLE = q.get("example") ?? "cuvature-kink-with-unmodified-pchip.json";
 const SEED = Number(q.get("seed") ?? 20251105);
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "/camber/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "/camber/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

@@ -164,8 +164,8 @@ export function sailRow(s, k, v = {}) {
  *   the line saying where they are (`guide`, walking her deck) and where to raise a
  *   lowered sail (`advice`, under way); seated: the view rides something
  *   (a seat at a table aboard her: crew.js seatedView), where the keys mean
- *   that thing's verbs, so the walking keys aren't offered and a click on the
- *   view doesn't come aboard (Enter or the button does)
+  *   that thing's verbs, so the walking keys aren't offered and a click on
+ *   her doesn't come aboard (Enter or the button does)
  */
 export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null, seated = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
@@ -319,8 +319,11 @@ export function createHud(api, ctx) {
       seated: seatedView(api),
     });
     put("state", model.state, (v) => root.setAttribute("data-state", v));
+    // shown while you're aboard, or where her doc is the world (a boat alone) and she's there: in a
+    // harbour of two boats, each one's HUD stays away until you come aboard her (WATER.md)
+    put("shown", !!me.playing || (!!ctx.sea?.world?.() && !!ship), (v) => (root.style.display = v ? "" : "none"));
     put("seated", model.seated, (v) => root.toggleAttribute("data-seated", v));
-    // before coming aboard the hint is a button (a click on the view does the same)
+    // before coming aboard the hint is a button (a click on her does the same)
     const lobby = model.state === "lobby";
     put("lobby", lobby, (v) => ((button.hidden = !v), (hint.hidden = v)));
     put("hint", model.hint, (v) => ((lobby ? button : hint).textContent = v));

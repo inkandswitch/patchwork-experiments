@@ -3,7 +3,7 @@
 // (scene/COMPOSITION.md, worked example 3). All in one headless Chrome, one
 // page, one repo (links-probe.html).
 //
-//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, traversal/) pnpm build
+//   (in scene/, seats/, sailing/, tabletop/, card-table/, keep/, joints/, traversal/, walk/) pnpm build
 //   node probes/links-run.mjs [--shots <dir>] [--show] [--seed 1] [--port 4791] [--cdp 9791]
 //
 // It checks:
@@ -37,6 +37,16 @@
 //  7. with the boat's world running, a card leans with her in Ben's view
 //     and stays upright in Ana's and Cara's; Ben's seat view rolls with the
 //     table (the camera's up is the table's), Ana's keeps the world's;
+//  7b. presence where it is (scene/COMPOSITION.md §3, TOOLS.md §6): with the
+//     boat's world running, Ben enters G: his clock chips are the focus
+//     path's, so the boat's chip stays, named; he leaves. Cara (G alone)
+//     selects a card: Ben (outside G) and Ana (outside G, in the room) see
+//     her box in their G stage and Ana's mirror of G, drawn by scene.others
+//     (a part of every doc), and Ana's pin of G draws none. Cara walks on G's
+//     table: Ben and Ana draw her, by walk.people (a part of every doc),
+//     where her feet are through G's frame in each (heeling aboard, level in
+//     the room, and again in Ana's mirror through its own link); the pin
+//     draws nobody;
 //  8. no page errors, and no warnings (a refused write would warn).
 // Prints a JSON checklist; exits non-zero if any check fails.
 import { join, resolve, dirname } from "node:path";
@@ -46,7 +56,7 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "seats", "sailing", "tabletop", "card-table", "keep", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "seats", "sailing", "water", "tabletop", "card-table", "keep", "joints", "traversal", "walk"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "links-probe"));
 const PORT = Number(arg("--port") ?? 4791);
@@ -222,6 +232,37 @@ try {
   check("7. aboard, G's table leans with the boat in Ben's view; in Ana's room and in Cara's view it stays level", lean.b > 0.05 && lean.a < 1e-6 && lean.c < 1e-6, lean);
   check("7. Ben's seat view rolls with the table (the camera's up is the table's); Ana's keeps the world's", lean.camOffTableB < 1e-6 && lean.camOffWorldA < 1e-9, lean);
   await shot("heeled");
+
+  // 7b. presence where it is
+  {
+    const entered = await P("enterG('b')");
+    const chipsIn = await until("chips('b').length === 1 && __p.chips('b')[0].doc === 'Lost Cities aboard'", 4000);
+    report.numbers.chipsInG = await P("chips('b')");
+    check("7b. Ben enters G with the boat's world running: his clock chips are the focus path's, so the boat's stays, named (G has no process, so no chip of its own)", entered && chipsIn && (await P("chips('b')"))[0].text.startsWith("▶"), { entered, chips: await P("chips('b')"), focus: await P("focusPath('b')") });
+    await P("leaveG('b')");
+    const chipsOut = await until("focusPath('b').length === 0 && __p.chips('b').length === 1 && __p.chips('b')[0].doc === ''", 4000);
+    check("7b. back out, one doc on the path: one chip, unnamed, as before", chipsOut, { chips: await P("chips('b')"), focus: await P("focusPath('b')") });
+
+    const card = (await P("where()")).table[0] ?? (await P("where()")).p1[0];
+    await P(`caraSelects(${J(card)})`);
+    const box = `peer:${await P("session('c')")}`;
+    const seen = await until(`peerBoxes('b').some((x) => x.role === 'acting' && x.boxes.includes(${J(box)})) && __p.peerBoxes('a').filter((x) => x.role !== 'pinned' && x.boxes.includes(${J(box)})).length === 2`, 4000);
+    const boxes = { a: await P("peerBoxes('a')"), b: await P("peerBoxes('b')") };
+    report.numbers.peerBoxes = boxes;
+    check("7b. Cara selects a card in G: Ben and Ana, each outside G, see her box in their G stage, and Ana in her mirror of G too, drawn by scene.others, which runs in every stage of G; Ana's pin of G draws none", seen && J(boxes.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && [...boxes.a, ...boxes.b].every((x) => x.runs && J(x.boxes) === J(x.role === "pinned" ? [] : [box])), boxes);
+    await P("caraSelects(null)");
+
+    const walks = await P("caraWalks()");
+    await P("stepFrames(30)");
+    const drawnBoth = await until("avatars('b').some((x) => x.role === 'acting' && x.n === 1) && __p.avatars('a').filter((x) => x.role !== 'pinned' && x.n === 1).length === 2", 4000);
+    await P("stepFrames(1)");
+    const av = { a: await P("avatars('a')"), b: await P("avatars('b')"), wantA: await P("caraIn('a')"), wantB: await P("caraIn('b')"), wantMirror: await P("caraIn('a', true)") };
+    report.numbers.avatars = av;
+    const at = (w, role = "acting") => av[w].find((x) => x.role === role)?.at;
+    const near = (p, q) => !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-6;
+    check("7b. Cara walks on G's table: Ben and Ana draw her by walk.people in their G stage, where her feet are through G's frame in each (heeling aboard, level in the room), and Ana again in her mirror through its link; the pin draws nobody", walks && drawnBoth && J(av.a.map((x) => x.role).sort()) === J(["acting", "mirror", "pinned"]) && near(at("a"), av.wantA) && near(at("b"), av.wantB) && near(at("a", "mirror"), av.wantMirror) && [...av.a, ...av.b].every((x) => x.runs && x.n === (x.role === "pinned" ? 0 : 1)), av);
+    await shot("presence");
+  }
 
   // 8.
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));

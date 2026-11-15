@@ -11,7 +11,7 @@
 // which a template's context has.
 
 import { PIECES, WIND, newSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
-import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP } from "./traits.js";
+import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WATER_TRAIT, newWater } from "./traits.js";
 
 export { SEA, SHIP, WIND, partObject };
 
@@ -74,7 +74,7 @@ export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [
  * Lay out a sloop under way on open water in one change: the sea trait,
  * the Sloop part with way on, landmarks in a group, the editor's home view
  * from the stern quarter (view.start's home: TOOLS.md §2), where whoever
- * opens it (its maker too) sees her and a click comes aboard (crew.js).
+ * opens it (its maker too) sees her and a click on her comes aboard (crew.js).
  *
  * `anchored`: lying at anchor instead, head to wind, still, her sail down
  * and her anchor down (AT_ANCHOR), off the islet (ANCHORAGE). Raising the
@@ -101,8 +101,9 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
   );
   ctx.change((d) => {
     d.traits[SEA] = newSea({ wind, seed });
+    d.traits[WATER_TRAIT] = newWater();
     // people start off her quarter, in Look (no body named: the stage's orbit
-    // camera, not the editor), where a click comes aboard (crew.js: an
+    // camera, not the editor), where a click on her comes aboard (crew.js: an
     // untouched camera follows her quarter wherever she has sailed to)
     d.view.start = { home: { position: turn(QUARTER.position, course, at), target: turn(QUARTER.target, course, at) } };
     writeObjects(d, ship);

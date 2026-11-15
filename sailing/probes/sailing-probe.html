@@ -67,7 +67,7 @@ function peer(handle) {
 }
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }

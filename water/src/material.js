@@ -1,4 +1,4 @@
-// The sea's surface: a grid that follows the camera and a ShaderMaterial
+// The water's surface: a grid that follows the camera and a ShaderMaterial
 // that runs the ocean's own Gerstner sum on it, so the water drawn is the
 // water things float on. Takes THREE as a parameter (the stage hands
 // extensions api.THREE) and never imports it.
@@ -18,7 +18,7 @@
 // own colour with a turquoise lift through the crests toward the sun, foam
 // where the waves pinch hardest (the Gerstner Jacobian), and the scene's fog.
 
-import { prng } from "./wind.js";
+import { prng } from "./prng.js";
 
 const G = 9.81;
 const TAU = Math.PI * 2;

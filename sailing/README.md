@@ -18,17 +18,19 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **From the template.** In an empty scene, pick **Ship at sea** on the start
   screen. It lays out a sloop under way on a beam reach (sail up, anchor
   up), a sea with a north-easterly breeze, two buoys and an islet upwind,
-  and starts people off her quarter (Look, the orbit camera: a click comes aboard). Or **Ship at anchor**: the same sloop lying head to
+  and starts people off her quarter (Look, the orbit camera: a click on her comes aboard). Or **Ship at anchor**: the same sloop lying head to
   wind at anchor off the islet in a moderate breeze, sail down, anchor down,
   somewhere still to set things up aboard (a card table in her cockpit:
   tabletop's *Card table* and *Lost Cities* parts) and to get under way
   from (raise the sail, weigh the anchor).
-- **Coming aboard.** Click the sea, the sky, the ship, a fitting of hers or
-  the shore (or press Enter). A click on something else aboard her, a card
-  on a table in her cockpit say, isn't a way aboard: it's that thing's (the
-  scene's carry picks the card up). Seated at a table aboard her (the seat body),
-  only Enter, the button or a click on the open sea or sky comes
-  aboard, so a stray click on the benches round the table doesn't throw you
+- **Coming aboard.** Click her, her hull or a fitting of hers (or press
+  Enter, or the HUD's button). The sea, the sky and the shore are the
+  world's, not hers, so a click on them doesn't come aboard (since 2026-11-14:
+  the sea became its own part, water/WATER.md Decisions 24). A click on
+  something else aboard her, a card on a table in her cockpit say, isn't a
+  way aboard: it's that thing's (the scene's carry picks the card up).
+  Seated at a table aboard her (the seat body), only Enter or the button
+  comes aboard, so a stray click on the benches round the table doesn't throw you
   into first person; the HUD then offers *Come aboard (Enter)* top left,
   without the walking keys (S and D are the table's Shuffle and Draw), and
   before you're aboard its panel is just the dial, top left, clear of your
@@ -108,7 +110,7 @@ any other hull (camber's): its contract describes the stock hull only.
 
 ## Controls
 
-Click the view (or press Enter) to come aboard; the body chip's Leave goes
+Click her (or press Enter) to come aboard; the body chip's Leave goes
 back to the view off her quarter (Escape releases the pointer, and never
 your body: scene/TOOLS.md §5). Where pointer lock is refused, drag to look.
 

@@ -52,7 +52,7 @@ import { staticChecks, walkReport, watchWalk } from "./navprobe.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["sailing/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+for (const p of ["sailing/dist/index.js", "water/dist/index.js", "scene/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "sailing-shots"));
 const UNTIL = arg("--until"); // stop after this section (for working on the probe)
@@ -495,9 +495,11 @@ try {
   const side = (await P(`read('${hull}', 'b')`)).apparentWind.angle < 0 ? 1 : -1;
   report.measured.tack = side > 0 ? "port" : "starboard";
 
-  // A comes aboard too, and finds the helm taken
+  // A comes aboard too (Enter: her view's centre is open water by now, and a click on the sea
+  // is the world's, not the boat's: the ships' part holds no scene trait, WATER.md Decisions 24), and finds the helm taken
   await focus("a");
-  await until("window.__p.me('a')?.playing === true", 3000);
+  if (!(await P("me('a')")).playing) await press("Enter");
+  check("A comes aboard with Enter", await until("window.__p.me('a')?.playing === true", 3000), await P("me('a')"));
   await P(`place('a', '${hull}', [${wh[0] + 0.8}, ${wh[1] - 0.6}, ${wh[2] + 1.2}], 0.5, -0.45)`);
   await b.rest(500);
   const aimHA = await pointAt(wheel, "a");

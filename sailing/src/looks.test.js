@@ -1,7 +1,7 @@
 // What each view dresses for itself: floats on the waves, the sail's belly
 // and how far it's raised. The pure maths, then createLooks on a fake stage.
 import { describe, it, expect, afterEach } from "vitest";
-import { createOcean } from "./ocean.js";
+import { createOcean } from "./test/ocean.js";
 import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";
@@ -131,7 +131,7 @@ describe("createLooks", () => {
       ...emptyScene(),
       objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
       order: ["buoy", "rock"],
-      traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 } },
+      traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 }, water: { level: 0 } },
     };
     const root = fakeNode();
     const rock = fakeNode();
