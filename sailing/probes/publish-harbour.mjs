@@ -6,15 +6,16 @@
 // the harbour. Prints its Patchwork URL.
 //
 //   (in sailing/) node probes/publish-harbour.mjs \
-//     --boat "Ship at sea=automerge:…@-15,0,-35" \
-//     --boat "Lost Cities aboard=automerge:…@15,0,25" \
-//     [--title Harbour] [--wind 5,250] [--seed 7] [--scale 0.5] [--dry-run] [--offline] [--sync wss://…] [--settle 8000]
+//     --boat "Ship at sea=automerge:…@-45,0,-125" \
+//     --boat "Lost Cities aboard=automerge:…@-13,0,4" --home 6,28,70:0,0,-10 \
+//     [--title Harbour] [--wind 5,250] [--seed 7] [--scale 0.5] [--home px,py,pz:tx,ty,tz] [--dry-run] [--offline] [--sync wss://…] [--settle 8000]
 //
 // --boat NAME=URL@x,y,z places a live, locked link there. Each boat is turned
 // so the harbour's wind meets her as her own sea's wind did (her yaw is her
 // wind's `from` less the harbour's), so a boat laid out on a reach is on a
 // reach here and one at anchor lies head to wind. People start in Look over
-// the boats.
+// the boats, from --home if given, else from far enough out to see every
+// link's origin.
 //
 // It checks each boat on the server first (a scene, with the water trait
 // beside her sea: a boat published before water existed can't float on
@@ -27,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { packageProblems, pushworkUrl } from "./scene-packages.mjs";
 
-const ARITY = { title: 1, boat: 1, wind: 1, seed: 1, scale: 1, "dry-run": 0, offline: 0, sync: 1, settle: 1 };
+const ARITY = { title: 1, boat: 1, wind: 1, seed: 1, scale: 1, home: 1, "dry-run": 0, offline: 0, sync: 1, settle: 1 };
 const args = { boat: [] };
 const bad = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -103,6 +104,10 @@ for (const b of boats) {
   };
 }
 const span = Math.max(40, ...boats.map((b) => Math.hypot(b.position[0], b.position[2])));
+const home = args.home
+  ? (([p, t]) => ({ position: p, target: t }))(args.home.split(":").map((s) => s.split(",").map(Number)))
+  : { position: [0, +(span * 0.9).toFixed(2), +(span * 2.2).toFixed(2)], target: [0, 0, 0] };
+if (![...home.position, ...home.target].every(Number.isFinite) || home.position.length !== 3 || home.target.length !== 3) throw new Error(`--home ${J(args.home)}: want px,py,pz:tx,ty,tz`);
 const doc = {
   "@patchwork": { type: "scene", suggestedImportUrl: urlOf("scene") },
   title: args.title ?? "Harbour",
@@ -114,7 +119,7 @@ const doc = {
   assets: {},
   packages: PACKAGES.map((p) => ({ url: urlOf(p) })),
   clock: { running: true, t: 0 },
-  view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { home: { position: [0, +(span * 0.9).toFixed(2), +(span * 2.2).toFixed(2)], target: [0, 0, 0] } } },
+  view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { home } },
 };
 console.error(J({ title: doc.title, sea, boats: boats.map((b) => ({ id: b.id, name: b.name, at: b.position, yawDeg: Number.isFinite(b.from) ? (b.from - windFrom) % 360 : null })), start: doc.view.start }, null, 1));
 if (problems.length) console.error(`${DRY ? "would NOT publish" : "NOT publishing"}:\n  ${problems.join("\n  ")}`);

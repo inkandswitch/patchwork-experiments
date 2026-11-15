@@ -599,15 +599,19 @@ Each is fixed here with a test that fails without the fix, or answered.
     wrong value" as W11. An array element that is undefined, or a hole, is
     copied as `null`, as JSON writes it (it used to throw). STAGE.md
     "Ambients" says both.
-38. **The published harbour's boats sit inside the home view** (decided
-    at integration, 2026-11-14). The first harbour placed its boats 40 m
-    either side of the middle. In the real Patchwork's narrow pane, Look's
-    home view (the publisher's, 88 m out) showed neither boat, only the
-    sea and an islet. The republished harbour puts Ship at sea at
-    (-15, 0, -35) and Lost Cities aboard at (15, 0, 25), so both are in
-    frame on arrival with the publisher's home unchanged. Ship at sea is
-    under way and sails out of the view within a minute; she is a ship at
-    sea, and the harbour doesn't hold her.
+38. **The published harbour frames the boat at anchor, and Ship at sea
+    sails through it** (decided at integration, 2026-11-14). The first
+    harbour placed its boats 40 m either side of the middle. In the real
+    Patchwork's narrow pane, Look's home view (88 m out) showed neither
+    boat, only the sea and an islet. Ship at sea is under way at about
+    3 m/s and the world's time persists, so no placement keeps her in
+    view: by the time a viewer has loaded, she has sailed on. The
+    republished harbour lays Lost Cities aboard out so her hull, lying to
+    her anchor about 13 m off her link, is near the middle (link at
+    (-13, 0, 4)). Ship at sea starts 130 m upwind of her course
+    (-45, 0, -125), so in the first minute of the world she sails through
+    the view past the anchored boat. The publisher gained `--home`; the
+    home is (6, 28, 70) looking at (0, 0, -10).
 
 ## Invariants
 
