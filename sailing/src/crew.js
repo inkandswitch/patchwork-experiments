@@ -76,20 +76,6 @@ export function placeOf(a, worldOf) {
 }
 
 /**
- * Does a click come aboard? Anywhere it reaches her (what nearer takes it
- * already has: a card's carry, a game linked onto her table, whose segment
- * of the chain comes first, scene/COMPOSITION.md §5), yes. `seated`: the
- * viewer is in another extension's body (a seat at a table aboard her:
- * seatedView); then only the sea or the sky does (the hull round the table
- * is where stray clicks land), or the button, or Enter.
- * @param {{ objects }} scene  @param {{ id?: string } | null} hit  @param {{ seated?: boolean }} [o]
- */
-export function boardsOn(scene, hit, { seated = false } = {}) {
-  if (hit?.id == null) return true;
-  return !seated;
-}
-
-/**
  * Is this viewer in another extension's body over the stage's Look or Edit
  * (a seat at a table aboard her: scene/TOOLS.md §4)? Then the crew isn't
  * driving: a body is its extension's, and hers are `aboard` and `station`.
@@ -467,8 +453,10 @@ export function createCrew(api, ctx) {
   // a base ride (the stage's camera.ride), which a body with a ride of its
   // own (a seat at a table aboard her) wins over with no flag. A camera nobody has moved (not
   // even from a saved view) starts off the ship's quarter. Only where her doc
-  // is the world (a boat alone): linked into a harbour, the camera is the
-  // harbour's to place, and two boats there would fight over it.
+  // is the world (a boat alone: ctx.sea.world(), the wind ambient's `mine`,
+  // a read that depends on placement on purpose, COMPOSITION I4): linked
+  // into a harbour, the camera is the harbour's to place, and two boats there
+  // would fight over it.
   let riding = null; // { ship, off }
   let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
   function follow() {
@@ -872,11 +860,17 @@ export function createCrew(api, ctx) {
 
   return {
     input: {
-      // a click on the sea, the sky, the ship or the shore comes aboard (Enter
-      // does too: stations.js's "aboard"); not one on something else aboard
-      // her, nor (seated at a table aboard) anything but the sea and sky (boardsOn)
-      click(ev) {
-        if (playing || !boardsOn(api.scene(), ev?.hit ?? null, { seated: seatedView(api) })) return false;
+      // a click that reaches her comes aboard (Enter does too: stations.js's
+      // "aboard"; and the HUD's button). It reaches her only through
+      // something of hers, her hull, a fitting or what's aboard her, nearer
+      // takers (a card's carry, a game linked onto her table) first (scene
+      // STAGE.md, "Input"): the ships' part holds no scene trait, so the
+      // world's sea, sky and shore aren't hers to take. Seated at a table
+      // aboard (another extension's body), a click on her is a stray one
+      // round the table, and doesn't throw you out of the game: the button
+      // or Enter does.
+      click() {
+        if (playing || seatedView(api)) return false;
         start();
         return true;
       },

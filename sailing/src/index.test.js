@@ -17,6 +17,15 @@ describe("sailing's plugins", () => {
     ]);
   });
 
+  it("the ships' part holds no scene trait, so a click reaches her only through something of hers (her hull, a fitting, what's aboard), never the world's sea, sky or shore (WATER.md Decisions 24)", () => {
+    const ships = byId("sailing");
+    expect(ships.traits.length).toBeGreaterThan(0);
+    for (const t of ships.traits) expect([t, ships.describes[t]?.on]).toEqual([t, "object"]);
+    // the sea is a scene trait, and its part is the sea's alone
+    expect(byId("sailing.sea").traits).toEqual(["sailing.sea"]);
+    expect(byId("sailing.sea").describes["sailing.sea"].on).toBe("scene");
+  });
+
   it("offers its parts under Sailing, each saying what it does, the rig's pieces with their connector tags", () => {
     const parts = plugins.filter((p) => p.type === "scene:part");
     for (const p of parts) {

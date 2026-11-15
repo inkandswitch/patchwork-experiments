@@ -20,7 +20,7 @@
 //   w.hide("A");  // its tab hidden: its visibilitychange listeners hear it
 
 import { vi } from "vitest";
-import { createOcean } from "../ocean.js";
+import { createOcean } from "./ocean.js";
 import { seaOffer, seaParams } from "../sea.js";
 
 /**
@@ -346,8 +346,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
 
   // The world's water and ambients, as the water package and the stage give
   // them to a doc that is its own world (one doc here: always the outermost).
-  // The reader is the evaluator itself, as water/'s is for the outermost at
-  // level 0 (its golden file pins water's evaluator to ocean.js bit for bit).
+  // The reader is water's evaluator itself (a copy, ./surface.js), as water's
+  // reader is for the outermost at level 0; the golden file pins the copy.
   const memo = new Map();
   const memoOf = (key, make) => {
     if (!memo.has(key)) memo.set(key, make());

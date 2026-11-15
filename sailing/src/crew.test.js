@@ -4,7 +4,7 @@
 // walker.test.js's; here, that the crew drives it: invariant I is asserted
 // after every step (__SAILING_ASSERT__).
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { bakedObjects, behind, boardsOn, createCrew, ease, ladderTop, navInput, navKey, placeOf, seatedView, trianglesOf } from "./crew.js";
+import { bakedObjects, behind, createCrew, ease, ladderTop, navInput, navKey, placeOf, seatedView, trianglesOf } from "./crew.js";
 import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
 import { shipOf } from "./traits.js";
@@ -620,48 +620,30 @@ describe("the crew", { timeout: 60_000 }, () => {
     crew.dispose();
   });
 
-  it("a click comes aboard wherever it reaches her: the sea or the sky, the ship, anything of her doc's (what nearer takes it, a card's carry or a linked game, already has)", () => {
-    const s = stage();
-    s.api.scene().objects.table = { locked: true };
-    s.api.scene().objects.mast = { tags: ["sailing.mast"] };
-    s.api.scene().parents.set("table", "hull");
-    s.api.scene().parents.set("mast", "hull");
-    const scene = s.api.scene();
-    expect(boardsOn(scene, null)).toBe(true);
-    expect(boardsOn(scene, { id: "hull" })).toBe(true);
-    expect(boardsOn(scene, { id: "wheel" })).toBe(true);
-    expect(boardsOn(scene, { id: "mast" })).toBe(true);
-    expect(boardsOn(scene, { id: "table" })).toBe(true);
-    const crew = s.make();
-    s.ctx.crew = crew;
-    expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);
-    expect(crew.me().playing).toBe(true);
+  it("a click that reaches her comes aboard, whatever of hers it hit: the ship, a fitting, the table (what nearer takes it, a card's carry or a linked game, already has)", () => {
+    for (const id of ["hull", "wheel", "mast", "table"]) {
+      const s = stage();
+      s.api.scene().objects.table = { locked: true };
+      s.api.scene().objects.mast = { tags: ["sailing.mast"] };
+      s.api.scene().parents.set("table", "hull");
+      s.api.scene().parents.set("mast", "hull");
+      const crew = s.make();
+      s.ctx.crew = crew;
+      expect([id, crew.input.click({ hit: { id } })]).toEqual([id, true]);
+      expect(crew.me().playing).toBe(true);
+      // aboard, a click is the walker's, not another boarding
+      expect(crew.input.click({ hit: { id } })).toBe(false);
+      crew.dispose();
+    }
   });
 
-  it("a click on the shore comes aboard: the islet and its lighthouse, at the root, are nobody's", () => {
+  it("seated at a table aboard (a body that isn't the crew's), no click comes aboard: the hull round the table is where stray clicks land", () => {
     const s = stage();
-    s.api.scene().objects.islet = { name: "Islet" };
-    s.api.scene().objects.light = { name: "Lighthouse" };
-    s.api.scene().parents.set("light", "islet");
-    expect(boardsOn(s.api.scene(), { id: "islet" })).toBe(true);
-    expect(boardsOn(s.api.scene(), { id: "light" })).toBe(true);
-    const crew = s.make();
-    s.ctx.crew = crew;
-    expect(crew.input.click({ hit: { id: "islet" } })).toBe(true);
-    expect(crew.me().playing).toBe(true);
-  });
-
-  it("seated at a table aboard (a body that isn't the crew's), only the sea or the sky comes aboard: not the hull round the table", () => {
-    const s = stage();
-    s.api.scene().objects.islet = { name: "Islet" };
-    expect(boardsOn(s.api.scene(), { id: "hull" }, { seated: true })).toBe(false);
-    expect(boardsOn(s.api.scene(), { id: "islet" }, { seated: true })).toBe(false);
-    expect(boardsOn(s.api.scene(), null, { seated: true })).toBe(true);
     const crew = s.make();
     s.ctx.crew = crew;
     s.bodies.push({ id: "seat", def: { label: "Seated" }, sitting: { input: {} } });
     expect(seatedView(s.api)).toBe(true);
-    expect(crew.input.click({ hit: { id: "hull" } })).toBe(false);
+    for (const id of ["hull", "wheel", "table"]) expect([id, crew.input.click({ hit: { id } })]).toEqual([id, false]);
     expect(crew.me().playing).toBe(false);
     // in Look: not seated
     s.bodies.pop();

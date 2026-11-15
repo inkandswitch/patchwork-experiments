@@ -6,17 +6,20 @@
 //
 //   - `water.waves` (the water package's convention, collected in this
 //     stage): the Gerstner components ocean.js's spectrum makes for the
-//     trait, and the look the drawn surface needs (seed, wind, stats). The
+//     trait, and what only the wave maker knows of them (seed, stats). The
 //     water package evaluates and draws them.
-//   - ambients (scene STAGE.md, "Ambients"): `sailing.wind`, the wind's
-//     plain numbers, which every boat in this world reads (sea-view.js); and
-//     the atmosphere, a bright maritime day. Where this doc is the outermost,
-//     they are the world's.
+//   - ambients (scene STAGE.md, "Ambients"): `wind`, the world's wind as
+//     plain numbers ({ speed, from, seed, gustiness }: wind.js makes it a
+//     wind), which every boat's physics reads (sea-view.js) and the water
+//     package's surface reads for its roughness and foam: one copy of one
+//     fact; and the atmosphere, a bright maritime day. Where this doc is the
+//     outermost, they are the world's.
 //
 // Pure but for create().
 
-import { createOcean } from "./ocean.js";
+import { seaWaves } from "./ocean.js";
 import { SEA } from "./traits.js";
+import { GUSTINESS } from "./wind.js";
 
 /** A bright maritime day: blue overhead, a pale horizon the far sea hazes into, the sun high to one side. */
 export const ATMOSPHERE = Object.freeze({
@@ -26,8 +29,8 @@ export const ATMOSPHERE = Object.freeze({
   exposure: 1,
 });
 
-/** The ambient name of a world's wind. */
-export const WIND_AMBIENT = "sailing.wind";
+/** The ambient name of a world's wind (STAGE.md, "Wind"): { speed (m/s), from (degrees), seed, gustiness (0..1) }. */
+export const WIND_AMBIENT = "wind";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
 
@@ -44,15 +47,15 @@ export function seaParams(trait) {
 /**
  * What a sea trait gives away: the waves for the water package and the
  * ambients, all plain JSON. null for no trait.
- * @returns {{ waves: { components: object[], look: { seed, wind, stats } }, ambient: object } | null}
+ * @returns {{ waves: { components: object[], look: { seed, stats } }, ambient: object } | null}
  */
 export function seaOffer(trait) {
   if (!trait) return null;
   const p = seaParams(trait);
-  const o = createOcean(p);
+  const o = seaWaves(p);
   return {
-    waves: { components: o.components, look: { seed: o.seed, wind: { ...o.wind }, stats: { ...o.stats } } },
-    ambient: { [WIND_AMBIENT]: { speed: p.wind.speed, from: p.wind.from, seed: p.seed }, atmosphere: ATMOSPHERE },
+    waves: { components: o.components, look: { seed: o.seed, stats: { ...o.stats } } },
+    ambient: { [WIND_AMBIENT]: { speed: p.wind.speed, from: p.wind.from, seed: p.seed, gustiness: GUSTINESS }, atmosphere: ATMOSPHERE },
   };
 }
 

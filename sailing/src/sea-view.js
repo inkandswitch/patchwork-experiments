@@ -8,10 +8,16 @@
 //     this stage's clock. A boat alone is her own world, and it is her own
 //     sea exactly; linked into a harbour, it is the harbour's; in a dry room,
 //     or tilted, there is none, and nothing sails.
-//   - wind: the world's `sailing.wind` ambient (sea.js), made into a wind
+//   - wind: the world's `wind` ambient (sea.js offers it), made into a wind
 //     here (wind.js) and read the same way: mapped by this stage's frame, at
 //     the world's time for this stage's t, the offset latched once a frame
 //     after every clock has ticked (the water package's rule, copied: tick()).
+//     Its speed and from are in this stage's frame too.
+//   - world(): is her doc the world (the outermost: a boat alone)? Read from
+//     the wind ambient's `mine`, which her own sea offers wherever she is the
+//     world, so it holds whatever packages are installed; elsewhere the wind
+//     is another doc's, or nobody's (a dry room). Her camera ride and HUD
+//     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
 //   - clock: the doc's world time, api.clock.t() (scene TOOLS.md §7): the
 //     computing view's own, every other view's following it.
 //
@@ -40,25 +46,31 @@ export function levelOf(frame) {
 
 /**
  * The world's wind as a stage reads it: the ambient's numbers made into a
- * wind, its at(x, z, t) in the stage's frame (velocities by the rotation and
- * scale) and the stage's time (τ from `timing`). The world itself gets the
- * wind as made, unwrapped. null for no value or a tilted frame. Pure.
- * @param {{ speed, from, seed } | null} value  @param {{ matrix } | null} frame
+ * wind, every part of it in the stage's frame: at(x, z, t) (velocities by the
+ * rotation and scale, at τ from `timing`), its mean `speed` by the scale and
+ * `from` by the rotation, so at() with no gusts blows `speed` from `from`.
+ * The world itself gets the wind as made, unwrapped. null for no value or a
+ * tilted frame. Pure.
+ * @param {{ speed, from, seed, gustiness? } | null} value  @param {{ matrix } | null} frame
  * @param {{ mine: boolean, delta: number, running: boolean, worldT: number }} timing
  */
 export function windFor(value, frame, timing) {
   if (!value) return null;
   const f = levelOf(frame);
   if (!f) return null;
-  const raw = createWind({ speed: value.speed, from: value.from, seed: value.seed });
+  const raw = createWind({ speed: value.speed, from: value.from, seed: value.seed, gustiness: value.gustiness });
   if (timing.mine && f.identity) return raw;
   const { a, b, c, d, s, tx, tz } = f;
   const s2 = s * s;
   const W = [0, 0];
   const tau = (t) => (timing.mine ? t : timing.running ? t + timing.delta : timing.worldT);
+  // the mean wind's downwind direction, turned into the frame (Rᵀ, as at() turns velocities), as a compass bearing it blows from
+  const rad = (raw.from * Math.PI) / 180;
+  const dx = -Math.sin(rad), dz = Math.cos(rad);
+  const from = ((Math.atan2(-(a * dx + b * dz), c * dx + d * dz) * 180) / Math.PI + 360) % 360;
   return {
     speed: raw.speed / s,
-    from: raw.from,
+    from,
     gustiness: raw.gustiness,
     at(x, z, t, out = [0, 0]) {
       raw.at(a * x + c * z + tx, b * x + d * z + tz, tau(t), W);
@@ -129,7 +141,7 @@ export function createSeaView(api) {
     /** the sea's time: the doc's world time (s) */
     clock: () => api.clock.t(),
     /** is this boat's doc the world (the outermost: a boat alone)? Her camera ride and her HUD show only then, or while you're aboard */
-    world: () => !!api.ambient(WATER)?.mine,
+    world: () => !!api.ambient(WIND_AMBIENT)?.mine,
     /** One frame, after every clock has ticked: the wind's offset for the next frame's reads. */
     tick() {
       const a = refreshWind();

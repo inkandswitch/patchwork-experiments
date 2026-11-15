@@ -121,7 +121,7 @@ export default {
     const { hull } = await layOut(ctx, handle.url);
     ctx.notify?.(
       hull
-        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sails down. Click the sea (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
+        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sails down. Click her (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
         : "Cadboro Bay, with no boat: install the sailing tools to sail here.",
       "info",
     );

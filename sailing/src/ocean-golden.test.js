@@ -1,17 +1,22 @@
-// W1's golden file (probes/ocean-golden.mjs): sailing's ocean.js answers
-// every query on its grid exactly as recorded, and water/ keeps a verbatim
-// copy its own evaluator is checked against, so the two agree bit for bit.
+// W1's golden file (probes/ocean-golden.mjs, recorded from sailing's own
+// evaluator before it moved to the water package): sailing's spectrum
+// (ocean.js, which runs) makes exactly the recorded components, and the copy
+// of water's evaluator its fakes use (test/surface.js) answers every query on
+// the grid exactly as recorded. water/ keeps a verbatim copy of the file its
+// surface.js is checked against, so the fakes and the real reader agree bit
+// for bit.
 import { describe, expect, it } from "vitest";
-import { createOcean } from "./ocean.js";
+import { seaWaves } from "./ocean.js";
+import { createOcean } from "./test/ocean.js";
 
 import golden from "./test/ocean-golden.json";
 const same = (a, b) => (Array.isArray(a) ? a.length === b.length && a.every((v, i) => same(v, b[i])) : a === b);
 
-describe("sailing's ocean.js against the golden file", () => {
+describe("sailing's spectrum and its fakes' evaluator against the golden file", () => {
   for (const sea of golden.seas)
     it(`${sea.name}: the same components, and every query on the grid, exactly`, () => {
+      expect(JSON.parse(JSON.stringify(seaWaves(sea).components))).toEqual(sea.components);
       const o = createOcean(sea);
-      expect(JSON.parse(JSON.stringify(o.components))).toEqual(sea.components);
       let bad = 0;
       for (const s of sea.samples) {
         const { x, z, t } = s;

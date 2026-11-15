@@ -4,8 +4,8 @@
 // W1) and through a link's frame (the wind's half of W5), on a fake stage
 // (test/fakes.js) whose doc is its own world.
 import { describe, it, expect, afterEach } from "vitest";
-import { createOcean } from "./ocean.js";
-import { createWind } from "./wind.js";
+import { createOcean } from "./test/ocean.js";
+import { GUSTINESS, createWind } from "./wind.js";
 import sea, { ATMOSPHERE, WIND_AMBIENT, seaOffer, seaParams } from "./sea.js";
 import { createSeaView, levelOf, windFor } from "./sea-view.js";
 import { FLOAT, SEA } from "./traits.js";
@@ -18,13 +18,21 @@ describe("the sea from the doc", () => {
     expect(seaParams({ wind: { speed: -3, from: "x" }, scale: -1 })).toEqual({ wind: { speed: 0, from: 45 }, seed: 1, scale: 0 });
   });
 
-  it("gives away plain data: the spectrum's components and the surface's look as water.waves; the wind's numbers and the sky as ambients", () => {
+  it("gives away plain data: the spectrum's components and what only it knows of them (seed, stats) as water.waves; the world's wind and the sky as ambients, the wind once", () => {
     const trait = { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 };
     const o = seaOffer(trait);
     const ocean = createOcean(seaParams(trait));
     expect(o.waves.components).toEqual(ocean.components);
-    expect(o.waves.look).toEqual({ seed: 2, wind: { speed: 8, from: 90 }, stats: ocean.stats });
-    expect(o.ambient).toEqual({ [WIND_AMBIENT]: { speed: 8, from: 90, seed: 2 }, atmosphere: ATMOSPHERE });
+    expect(o.waves.look).toEqual({ seed: 2, stats: ocean.stats });
+    expect(WIND_AMBIENT).toBe("wind");
+    expect(o.ambient).toEqual({ wind: { speed: 8, from: 90, seed: 2, gustiness: GUSTINESS }, atmosphere: ATMOSPHERE });
+    // one copy of one fact: nothing but the wind ambient says how the wind blows
+    const says = (v, path = "") => (v && typeof v === "object" ? Object.entries(v).flatMap(([k, x]) => says(x, `${path}.${k}`)) : [path]);
+    expect(says(o).filter((p) => /speed|from|gust/.test(p))).toEqual([".ambient.wind.speed", ".ambient.wind.from", ".ambient.wind.gustiness"]);
+    // and it makes the wind sailing sails in, exactly
+    const made = createWind(o.ambient.wind);
+    const own = createWind({ speed: 8, from: 90, seed: 2 });
+    expect(made.at(3, 4, 5)).toEqual(own.at(3, 4, 5));
     expect(JSON.parse(JSON.stringify(o))).toEqual(o);
     expect(seaOffer(null)).toBeNull();
   });
@@ -74,13 +82,23 @@ describe("createSeaView: a boat alone is her own world", () => {
     expect(s.world()).toBe(true);
   });
 
-  it("no water trait, no water: nothing sails, though the sea's wind still blows", () => {
+  it("no water trait, no water: nothing sails, though the sea's wind still blows; her doc is still the world (her ride and HUD don't hang on water)", () => {
     const doc = scene();
     delete doc.traits.water;
     w = fakeWorld(doc);
     const s = createSeaView(w.join("A"));
     expect(s.ocean).toBeNull();
     expect(s.wind).not.toBeNull();
+    expect(s.world()).toBe(true);
+  });
+
+  it("whether her doc is the world is the wind's `mine` alone: every combination of the water and wind ambients × mine", () => {
+    for (const water of [null, false, true])
+      for (const wind of [null, false, true]) {
+        const amb = { water, wind };
+        const api = { ambient: (name) => (amb[name] == null ? null : { value: {}, mine: amb[name], frame: { matrix: null }, clock: { t: 0, running: true } }), collect: () => [], clock: { t: () => 0 } };
+        expect([water, wind, createSeaView(api).world()]).toEqual([water, wind, wind === true]);
+      }
   });
 
   it("its time is the doc's world time, the same on every view; paused, it stands still", () => {
@@ -132,6 +150,22 @@ describe("the world's wind through a link (windFor): mapped by the frame, at the
     expect(windFor(null, null, { mine: true })).toBeNull();
     const mine = windFor(value, { matrix: null }, { mine: true });
     expect(mine.at(3, 4, 5)).toEqual(raw.at(3, 4, 5));
+  });
+
+  it("its speed and from are in the frame too: with no gusts, at() blows `speed` from `from`, every yaw × scale × bearing", () => {
+    for (const yawDeg of [0, 30, 90, 137, 180, 270])
+      for (const s of [0.5, 1, 2])
+        for (const from of [0, 45, 250, 359]) {
+          const yaw = (yawDeg * Math.PI) / 180;
+          const wf = windFor({ speed: 9, from, seed: 7, gustiness: 0 }, { matrix: place(yaw, [40, 0, 25], s) }, { mine: false, delta: 0, running: true, worldT: 0 });
+          const [vx, vz] = wf.at(3, -4, 5);
+          expect(Math.hypot(vx, vz)).toBeCloseTo(wf.speed, 9);
+          const a = (wf.from * Math.PI) / 180;
+          // downwind is (−sin from, cos from)
+          expect(vx / wf.speed).toBeCloseTo(-Math.sin(a), 9);
+          expect(vz / wf.speed).toBeCloseTo(Math.cos(a), 9);
+          expect(wf.from >= 0 && wf.from < 360).toBe(true);
+        }
   });
 
   it("a paused world's wind is frozen at its latched time", () => {

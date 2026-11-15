@@ -68,14 +68,17 @@ function gustNoise(x, y, z, seed) {
   return Math.max(-1, Math.min(1, n));
 }
 
+/** How gusty a sea's wind is: speed ±30%, direction ± about 10°. */
+export const GUSTINESS = 0.3;
+
 /**
  * The wind.
  * @param {{ speed?: number, from?: number, seed?: number|string, gustiness?: number }} o
  *   speed m/s, from degrees (the compass direction it blows from), gustiness 0..1
  */
-export function createWind({ speed = 0, from = 0, seed = 1, gustiness = 0.3 } = {}) {
+export function createWind({ speed = 0, from = 0, seed = 1, gustiness = GUSTINESS } = {}) {
   const base = Math.max(0, Number(speed) || 0);
-  const g = Math.min(1, Math.max(0, Number(gustiness ?? 0.3)));
+  const g = Math.min(1, Math.max(0, Number(gustiness ?? GUSTINESS)));
   const [dx, dz] = downwind(from);
   const sSeed = seedOf(seed);
   const vSeed = (sSeed ^ 0x68e31da4) >>> 0 || 1;
