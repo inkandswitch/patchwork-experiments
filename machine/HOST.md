@@ -1184,6 +1184,27 @@ Round 3's review (Decisions 41-45):
     render docs, so the first view builds them. The cabinets' sessions and
     seats are their traits' and are made by the first view that can write
     the scene, so the published doc carries none.
+47. **The Arcade's row is Doom, its world, then the SNES, and the home
+    view is worked out from the pane** (decided by the final fixer,
+    2026-11-14). As first published, the two cabinets stood 1.2 m apart
+    with the world on Doom's right. In Patchwork's narrow pane the left
+    cabinet was cut off at the pane's edge, and the two notes ("Stopped
+    while nobody plays: sit at it to play", about 230 px each, centred
+    under each screen) overlapped, so the stage's labels showed one of them
+    straddling both cabinets. Now the SNES stands past Doom's world, the
+    same 0.6 m gap from it as the world's from Doom, so the cabinets'
+    labels are 4.65 m apart. Once the first view has laid the seats, the
+    label a visitor sees at each cabinet is a seat's tag ("Doom · Freedoom
+    E1M1 · co-op · P1 · free", about 260 px, drawn at the seat beside the
+    cabinet), which outranks the note; a first relayout sized for the notes
+    cut the Doom tag off at the pane's edge on every later visit. The
+    publisher now works the camera's distance out from the tag's width and
+    a 640 by 800 px pane with 45° of field: about 15.5 m from the row's
+    middle. arcade-check asserts that every corner of each cabinet's bezel
+    and of its bounding box projects inside the pane, and that each cabinet
+    shows one label of its own, whole inside the pane; it is run on a first
+    visit (notes) and a later one (tags). Both screens are black on
+    arrival, by design: a machine runs only while someone plays it.
 
 ### Tests
 
@@ -1433,6 +1454,9 @@ Round 3's review (Decisions 41-45):
   lead's call.
 - The Machine tool's own changes here are mechanical (the content helpers
   and `newSession` moved to load.js, the pad split from its DOM listeners;
-  in round 2 its sound on the speaker and its game from `gameOf`) and were
-  not re-checked in a browser.
+  in round 2 its sound on the speaker and its game from `gameOf`). Checked
+  in the real Patchwork by the final fixer on 2026-11-14 (the session's
+  verify.mjs): the published Doom co-op and SNES machine docs open, "P1:
+  play" starts each and its tick count rises; the empty Machine entry
+  shows its chooser.
 

@@ -36,6 +36,7 @@ import { doomArgs, doomWads } from "../src/patchwork/load.js";
 import { doomWorld } from "../src/present/doom-world.js";
 import { besideCabinet, MAP_SOURCE, WORLD } from "../src/scene/worlds.js";
 import { PROVIDER, TRAIT } from "../src/scene/extension.js";
+import { BODY } from "../src/scene/cabinet.js";
 
 const ARITY = { doom: 1, snes: 1, title: 1, "dry-run": 0, sync: 1, settle: 1 };
 const args = {};
@@ -96,12 +97,27 @@ const record = (name, sourceUrl, providerId, renderUrl, transform, traits) => ({
   visible: true, color: null, opacity: 1, wireframe: false, transform, traits,
 });
 const at = (x, z = 0, yaw = 0) => ({ position: [x, 0, z], rotation: [0, yaw, 0], scale: 1 });
-const DOOM_AT = at(-1.6), SNES_AT = at(-2.8);
+// Doom's cabinet, its world beside it (worlds.js besideCabinet: on its right), and the SNES past the world, a gap
+// as wide as the world's from it: so each cabinet's note, centred under its screen, has room of its own
+const DOOM_AT = at(-1.6);
 const matrix = (t) => new THREE.Matrix4().compose(new THREE.Vector3(...t.position), new THREE.Quaternion().setFromEuler(new THREE.Euler(...t.rotation)), new THREE.Vector3(t.scale, t.scale, t.scale)).toArray();
 const WORLD_AT = besideCabinet(THREE, matrix(DOOM_AT), extent);
+const worldRight = WORLD_AT.position[0] + extent.max[0] * WORLD_AT.scale;
+const SNES_AT = at(+(worldRight + 0.6 + BODY.width / 2).toFixed(3));
+// In front of the cabinets and the map, far enough back that Patchwork's pane between its sidebars (about 640 px
+// wide by 800 tall at 1440 × 900; 45° of field top to bottom) holds both cabinets whole and each one's label beside
+// its own. The widest label is a seat's tag once the first view has laid the seats ("Doom · Freedoom E1M1 · co-op ·
+// P1 · free", about 260 px; before then, the machine's note, about 230 px), drawn at its seat, up to 0.3 m outside
+// its cabinet's middle. At distance D the pane is about 0.33 D m either side of its middle, and the tag about
+// 0.135 D m either side of its own, so the outer tag fits when 0.33 D ≥ (half the row − 0.45 + 0.3) + 0.135 D, that is
+// D ≥ (half the row − 0.15) / 0.195; with 15% to spare.
+const left = DOOM_AT.position[0] - BODY.width / 2, right = SNES_AT.position[0] + BODY.width / 2;
+const mid = (left + right) / 2;
+const D = Math.max(8.5, (1.15 * ((right - left) / 2 - 0.15)) / 0.195);
+const home = { position: [+mid.toFixed(3), 3.2, +D.toFixed(2)], target: [+mid.toFixed(3), 0.8, 0] };
 
 if (DRY) {
-  console.log(J({ title: TITLE, map: MAP, doomAt: DOOM_AT, snesAt: SNES_AT, worldAt: WORLD_AT, extent }, null, 1));
+  console.log(J({ title: TITLE, map: MAP, doomAt: DOOM_AT, snesAt: SNES_AT, worldAt: WORLD_AT, home, extent }, null, 1));
   process.exit(0);
 }
 
@@ -114,10 +130,6 @@ const objects = {
   snes: record(snes.title, SNES, PROVIDER, rSnes.url, SNES_AT, { [TRAIT]: {} }),
   world: record(`${MAP} · ${base}`, file.url, MAP_SOURCE, rWorld.url, WORLD_AT, { [WORLD]: { machine: "doom", source: DOOM } }),
 };
-// in front of the cabinets and the map, looking at them from far enough back that a narrow pane (Patchwork's,
-// between its sidebars) has both cabinets and the map in frame
-const mid = (SNES_AT.position[0] - 0.45 + WORLD_AT.position[0] + (extent.max[0] - extent.min[0]) * WORLD_AT.scale / 2) / 2;
-const home = { position: [+mid.toFixed(3), 2.8, 8.5], target: [+mid.toFixed(3), 0.8, 0] };
 const doc = {
   "@patchwork": scenePatchwork(),
   title: TITLE,
