@@ -11,7 +11,7 @@
 // in Edit, Look).
 
 import { applyMatrix } from "./transform.js";
-import { seatsOf } from "./model.js";
+import { refOf, seatAt } from "./model.js";
 
 /**
  * Where a seat puts the camera, in the world: its camera with `position` and
@@ -35,12 +35,13 @@ export const SEAT_REACH = 2;
 
 /**
  * The seat body, on one extension's api, as the stage's `bodies` takes it.
- * `enter(sid)` puts the view in seat `sid` as it is drawn now and, when its
+ * `enter(place)` puts the view in the seat `place` names (a seat id, the
+ * doc's own; or { of, seat }, object `of`'s) as it is drawn now and, when its
  * camera is in a frame, rides that frame at the spot the seat looks at; it
- * answers the sitting ({ seat, input, ride, leave() }), or null (no such
- * seat, no camera, or its frame gone: the view stays as it is).
+ * answers the sitting ({ seat: { of, seat }, input, ride, leave() }), or null
+ * (no such seat, no camera, or its frame gone: the view stays as it is).
  * @param {object} api
- * @param {{ left?: (sid: string) => void }} [hooks]  told when a sitting ends (stood up, Leave, or popped)
+ * @param {{ left?: (ref: { of: string | null, seat: string }) => void }} [hooks]  told when a sitting ends (stood up, Leave, or popped)
  */
 export function seatBody(api, { left } = {}) {
   /** An object's matrix as drawn (a held pose included), else as the doc has it; null if it's gone. */
@@ -53,21 +54,22 @@ export function seatBody(api, { left } = {}) {
     reach: SEAT_REACH,
     // it needs a seat: the chip doesn't offer it
     here: false,
-    enter(sid) {
+    enter(place) {
+      const ref = refOf(place);
       const snap = api.scene();
-      const cam = seatsOf(snap)[sid]?.camera;
+      const cam = seatAt(snap, ref)?.camera;
       const frame = cam?.in ? drawn(snap, cam.in) : null;
       const pose = seatPose(cam, frame);
       if (!pose) return null;
       api.camera.set(pose);
       let gone = false;
       return {
-        seat: sid,
+        seat: ref,
         input: {
           // a body over it went (walking her deck, from here): the seat's view again, as it is drawn now
           resumed() {
             const snapNow = api.scene();
-            const camNow = seatsOf(snapNow)[sid]?.camera;
+            const camNow = seatAt(snapNow, ref)?.camera;
             const again = seatPose(camNow, camNow?.in ? drawn(snapNow, camNow.in) : null);
             if (again) api.camera.set(again);
           },
@@ -81,7 +83,7 @@ export function seatBody(api, { left } = {}) {
         leave() {
           if (gone) return;
           gone = true;
-          left?.(sid);
+          left?.(ref);
         },
       };
     },

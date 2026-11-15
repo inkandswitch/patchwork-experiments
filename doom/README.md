@@ -35,6 +35,7 @@ id in the registry; it imports none of their code.
 | `map` | string | the map's name (`"E1M1"`, `"MAP01"`). There is no default map: a render doc names one, and one that doesn't is an error listing the WAD's maps |
 | `door` | integer or null | a door, by its sector |
 | `line` | integer or null | an exit switch, by its line. With neither, the static part (below); with both, an error |
+| `whole` | boolean | the whole map as one part, for something that moves the doors itself (below); with a door or a line, an error |
 
 A part's GLB is Y-up metres with its origin at the part's anchor: the
 static part's is the middle of the map at height 0, a door's the middle of
@@ -46,6 +47,21 @@ per-vertex grey (with Doom's fake contrast: east–west walls a little darker,
 north–south a little lighter). One primitive per texture, so a part draws in
 one call per texture it uses. `asset.copyright` is the WAD doc's notice
 (below). The render's notes say what of the map doesn't work here.
+
+Every part's scene extras say where its frame is: `doom: { map, anchor,
+unitsPerMetre }`, the anchor in map units `[x, y, z]`. Whatever draws into a
+part's frame (the machine package's 3D view of a running Doom) reads the
+frame from the part, rather than keeping a copy of the rule.
+
+**The whole map** (`whole: true`) is the static part at the root of its
+GLB with a node in it per door and per exit switch: each node is exactly
+that part's own geometry, at its anchor (in the static part's frame), its
+node's extras saying which (`{ door: <sector> }` or `{ line: <line> }`). At
+rest it is the map with every door shut. It is for something that moves
+the doors itself: a running game shown in the map (the machine package
+moves each door's node by the engine's ceiling) rather than people opening
+them. The tests check every node against the part of its own, primitive by
+primitive, and its place.
 
 The params are one per object, so each part can be rebuilt on its own.
 Every part is built at the same scale, 36 map units to the metre
@@ -228,7 +244,9 @@ Freedoom gets an About saying so.
   reachable on foot from the player 1 start.
 - `source.test.js`: the static GLB (153 primitives: E1M1's 154 textures but
   the exit switch's; unlit, NEAREST, PNGs, copyright), a door's frame, an exit
-  switch's (one wall, SW1GRAY), the same bytes twice, a Freedoom WAD's notice
+  switch's (one wall, SW1GRAY), every part's frame in its extras, the whole
+  map (12 nodes, each exactly its own part at its own anchor; 156 materials,
+  one per texture), the same bytes twice, a Freedoom WAD's notice
   in its GLBs before any drop, the notes, failures (no default map).
 - `layout.test.js`: the drop against a stand-in drop context: into an empty
   scene, the group, the 13 parts and their params, the parent, the slides,

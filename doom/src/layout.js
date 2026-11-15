@@ -31,7 +31,7 @@
 // (the walk package, listed by whoever publishes the scene).
 
 import { freedoomVersion, noticeOf, originOf } from "./freedoom.js";
-import { anchorOf, mapModel, thingAt, UNITS_PER_METRE } from "./parts.js";
+import { anchorOf, mapModel, placeIn, thingAt, UNITS_PER_METRE } from "./parts.js";
 import { wadOf } from "./source.js";
 
 export const PROVIDER = "doom-map";
@@ -42,12 +42,6 @@ export const SPAWN_PART = "arena.spawn";
 /** An object that leads elsewhere (traversal's trait): an exit switch's, with its verb and no destination. */
 export const EXIT = "traversal.exit";
 export const exitTrait = () => ({ verb: "Exit" });
-
-/** A part's place in its parent's frame (metres, Y up), from the two anchors (map units). */
-export function placeIn(parentAnchor, anchor) {
-  const k = UNITS_PER_METRE;
-  return [(anchor[0] - parentAnchor[0]) / k, (anchor[2] - parentAnchor[2]) / k, -(anchor[1] - parentAnchor[1]) / k];
-}
 
 /** A Doom angle (degrees, 0 east, counter-clockwise) as a turn about +Y that faces an object's -z that way. */
 export const yawOf = (angle) => ((angle - 90) * Math.PI) / 180;

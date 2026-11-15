@@ -2,6 +2,7 @@
 // without a copy, an upload only for a new picture, the GPU texture freed
 // only for a new size, and each machine's shape. All finite.
 import { readFileSync } from "node:fs";
+import * as THREE from "three";
 import { NearestFilter, SRGBColorSpace, Vector2 } from "three";
 import { compile } from "../engine.js";
 import { ASPECT, Screen, viewOf } from "./screen.js";
@@ -17,7 +18,7 @@ function watch(screen) {
 
 describe("Screen", () => {
   test("is one pixel-art sRGB texture whose top row is the picture's", () => {
-    const t = new Screen().texture;
+    const t = new Screen({ THREE }).texture;
     expect([t.magFilter, t.minFilter]).toEqual([NearestFilter, NearestFilter]);
     expect(t.generateMipmaps).toBe(false);
     expect(t.colorSpace).toBe(SRGBColorSpace);
@@ -31,7 +32,7 @@ describe("Screen", () => {
   });
 
   test("shows each new picture without copying it, once, in the same texture", () => {
-    const s = new Screen();
+    const s = new Screen({ THREE });
     const seen = watch(s);
     const t = s.texture;
     const v0 = t.version;
@@ -57,7 +58,7 @@ describe("Screen", () => {
     const sizes = [[320, 200], [256, 224], [256, 239]];
     for (let code = 0; code < 81; code++) {
       const seq = [0, 1, 2, 3].map((i) => Math.floor(code / 3 ** i) % 3);
-      const s = new Screen();
+      const s = new Screen({ THREE });
       const seen = watch(s);
       const t = s.texture;
       let changes = 0;
@@ -76,7 +77,7 @@ describe("Screen", () => {
   });
 
   test("an empty picture is black; a picture of the wrong length is refused", () => {
-    const s = new Screen({ aspect: ASPECT.doom });
+    const s = new Screen({ THREE, aspect: ASPECT.doom });
     s.show(picture(320, 200, 7));
     s.show({ width: 0, height: 0, rgba: new Uint8ClampedArray(0) }); // a camera outside a level
     expect([s.texture.image.width, s.texture.image.height]).toEqual([1, 1]);
@@ -87,7 +88,7 @@ describe("Screen", () => {
 
   test("has each machine's shape at every size it draws", () => {
     const shape = (aspect, w, h) => {
-      const s = new Screen({ aspect });
+      const s = new Screen({ THREE, aspect });
       s.show(picture(w, h));
       return s.aspect;
     };
@@ -109,7 +110,7 @@ describe("Screen", () => {
     const e = (await compile(wasm)).boot(rom);
     for (let f = 0; f < 300; f++) e.step(pads(FOUR_PLAYERS, f));
     const p = e.frame(0);
-    const s = new Screen({ aspect: ASPECT.snes });
+    const s = new Screen({ THREE, aspect: ASPECT.snes });
     s.show(p);
     expect([s.texture.image.width, s.texture.image.height]).toEqual([256, 224]);
     expect(Buffer.from(s.texture.image.data).equals(Buffer.from(p.rgba))).toBe(true);
@@ -166,7 +167,7 @@ describe("viewOf", () => {
     const same = picture(256, 224);
     const remote = { engine: null, picture: (v) => (asked++, v === 1 ? same : null) };
     const next = viewOf(remote, { player: 1 });
-    const s = new Screen();
+    const s = new Screen({ THREE });
     for (let i = 0; i < 5; i++) s.show(next());
     expect(asked).toBe(5);
     expect(s.stats.uploads).toBe(1);

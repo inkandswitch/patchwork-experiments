@@ -23,9 +23,8 @@
 //   Super NES: 256 dots at 8:7 (wider than tall), over 224 or 239 lines,
 //              the same shape in hi-res (512 wide) and interlace (448/478).
 //
-// The only module here that imports three (a peer dependency: the scene's).
-
-import { ClampToEdgeWrapping, DataTexture, NearestFilter, RGBAFormat, SRGBColorSpace, UnsignedByteType } from "three";
+// three is passed in, never imported: a texture has to be made by the
+// three.js that draws it, which in a scene is the stage's (`api.THREE`).
 
 /** Display aspect (width / height) of a picture of w by h, per machine. */
 export const ASPECT = {
@@ -48,14 +47,18 @@ export class Screen {
   #shown = null; // the picture the texture holds
   #aspect;
 
-  /** @param {{ aspect?: (w: number, h: number) => number }} o   ASPECT.doom, ASPECT.snes, ... (default square) */
-  constructor({ aspect = ASPECT.square } = {}) {
+  /**
+   * @param {{ THREE: object, aspect?: (w: number, h: number) => number }} o
+   *   THREE: the three.js that draws the texture (a scene's `api.THREE`);
+   *   aspect: ASPECT.doom, ASPECT.snes, ... (default square)
+   */
+  constructor({ THREE, aspect = ASPECT.square }) {
     this.#shape = aspect;
-    const t = new DataTexture(BLACK.rgba, 1, 1, RGBAFormat, UnsignedByteType);
-    t.colorSpace = SRGBColorSpace;
-    t.magFilter = t.minFilter = NearestFilter;
+    const t = new THREE.DataTexture(BLACK.rgba, 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.magFilter = t.minFilter = THREE.NearestFilter;
     t.generateMipmaps = false;
-    t.wrapS = t.wrapT = ClampToEdgeWrapping;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.flipY = false;
     t.repeat.set(1, -1);
     t.offset.set(0, 1);

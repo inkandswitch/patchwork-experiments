@@ -1,5 +1,5 @@
 // A Host whose engine runs in a worker. The page keeps the surface (frame,
-// sit, stand, pause, resume, picture, output, status, stats) and the things
+// sit, stand, pause, resume, picture, query, output, status, stats) and the things
 // only it has: this peer's input, the clock if the page keeps one, and the
 // repo. The worker (serve.js) runs the Host, engine and timeline, and has an
 // automerge-repo of its own, whose one peer is the page's repo over a
@@ -39,6 +39,8 @@ export class RemoteHost {
   #out = false; // a frame request is out
   #views = new Set(); // views asked for since the last frame request
   #pictures = new Map(); // view -> { width, height, rgba }
+  #kinds = new Set(); // query kinds asked for since the last frame request
+  #answers = new Map(); // kind -> bytes, for the newest state the worker reported
   #queue = [];
   #target = 0;
   #info = {};
@@ -114,12 +116,15 @@ export class RemoteHost {
     const clock = this.#clock ? { t: this.#clock.t(), running: this.#clock.running() } : null;
     const views = [...this.#views];
     this.#views.clear();
-    this.#call("frame", { input, clock, views }).then(
-      ({ state, pictures, output }) => {
+    const queries = [...this.#kinds];
+    this.#kinds.clear();
+    this.#call("frame", { input, clock, views, queries }).then(
+      ({ state, pictures, answers = {}, output }) => {
         this.#out = false;
         if (this.#closed) return;
         this.#update(state);
         for (const [view, p] of Object.entries(pictures)) this.#pictures.set(+view, p);
+        for (const [kind, a] of Object.entries(answers)) this.#answers.set(+kind, a);
         this.#queue.push(...output);
       },
       (e) => {
@@ -133,6 +138,16 @@ export class RemoteHost {
   picture(view = 0) {
     this.#views.add(view);
     return this.#pictures.get(view) ?? null;
+  }
+
+  /**
+   * The newest answer to query `kind` (Host.query) the worker sent; asking is
+   * what makes it answer, as for pictures. Answered for the state the
+   * worker's frame reached, so it goes with the picture of the same frame.
+   */
+  query(kind) {
+    this.#kinds.add(kind);
+    return this.#answers.get(kind) ?? null;
   }
 
   /** What the machine played since the last call (Host.output). */

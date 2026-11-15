@@ -6,7 +6,7 @@
 // without a bye, and merges written by hand.
 import { afterEach, describe, it, expect, vi } from "vitest";
 import Seats from "./seats.js";
-import { BENCH_RADIUS, CONFIRM_MS, SEATS, arrivalSeat, cleanPlaces, lay, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
+import { BENCH_RADIUS, CONFIRM_MS, SEATS, allSeats, arrivalSeat, cleanPlaces, lay, mySeat, placeOn, rosterOf, seatLookedAt, seatOf, seatState, seatTagAt, seatVerb, seatsOf } from "./model.js";
 import { applyMatrix as apply } from "./transform.js";
 import * as fakes from "./test/fake-world.js";
 import { emptyScene } from "./test/empty-scene.js";
@@ -405,7 +405,11 @@ describe("which seat a look is at (pure)", () => {
   const drawn = (id) => w.scene().world(id);
   const tbl = (p) => apply(snap.world("tbl"), p);
   const from = tbl([0.3, 1.5, 1.1]);
-  const at = (target, point) => seatLookedAt({ snap, target, point, seats, places: cleanPlaces(seatPlaces(snap), snap.objects), drawn });
+  const at = (target, point) => {
+    const r = seatLookedAt({ snap, target, point, places: cleanPlaces(seatPlaces(snap), snap.objects), drawn });
+    if (r) expect(r.of).toBeNull(); // the table's seats are the doc's own
+    return r?.seat ?? null;
+  };
   afterEach(() => w.done?.());
 
   it("a tray: its seat, with or without a point (reach is the stage's: the verb says reach: true)", () => {
@@ -444,6 +448,58 @@ describe("which seat a look is at (pure)", () => {
     const x = Seats.create(w.join("Z", { ext: "seats" }));
     expect(x.bodies.map((b) => [b.id, b.here, b.lock, b.reach, b.keys])).toEqual([["seat", false, false, 2, []]]);
     expect(x.commands.find((c) => c.id === "seat").reach).toBe(true);
+  });
+});
+
+describe("several places on one object (a machine's ports along its front)", () => {
+  // N places side by side along x on one object, each 0.25 wide, at
+  // y 0.8..1, z 0.3..0.4 in its frame; the object as it stands, or moved and
+  // turned. Points on a grid in the object's frame, never on a boundary (a
+  // turn's rounding would make "on" a coin toss), and who sits: nobody, or
+  // each place's seat.
+  const boxes = (n) => Array.from({ length: n }, (_, i) => ({ seat: `s${i}`, of: "m", id: "m", min: [i * 0.25, 0.8, 0.3], max: [(i + 1) * 0.25, 1, 0.4] }));
+  // a seat of m's, as placeOn names it
+  const M = (seat) => (seat == null ? null : { of: "m", seat });
+  const c = Math.cos(0.7), s = Math.sin(0.7);
+  const poses = [
+    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 2, 0.5, -3, 1],
+  ];
+  const xs = Array.from({ length: 26 }, (_, i) => -0.2 + i * 0.0573);
+  it("the place the point is in; else your own, if you sit at one of them; else the nearest; with no point, yours or the first", () => {
+    let cases = 0;
+    for (const n of [1, 2, 3, 4]) {
+      const trays = boxes(n);
+      for (const m of poses)
+        for (const mine of [null, ...trays.map((z) => z.seat)])
+          for (const x of xs)
+            for (const y of [0.5, 0.91, 1.3])
+              for (const z of [0.35, 0.7]) {
+                const inX = x > 0 && x < n * 0.25;
+                const column = Math.min(n - 1, Math.max(0, Math.floor(x / 0.25)));
+                const inside = inX && y > 0.8 && y < 1 && z > 0.3 && z < 0.4;
+                const want = n === 1 ? "s0" : inside ? `s${column}` : (mine ?? `s${column}`);
+                expect(placeOn(trays, m, apply(m, [x, y, z]), M(mine))).toEqual(M(want));
+                cases++;
+              }
+      for (const mine of [null, ...trays.map((z) => z.seat)]) expect(placeOn(trays, null, null, M(mine))).toEqual(M(n === 1 ? "s0" : (mine ?? "s0")));
+      // your own seat at another object (or the doc's of the same name) is not one of these
+      for (const other of [{ of: "k", seat: "s1" }, { of: null, seat: "s1" }]) expect(placeOn(trays, null, null, other)).toEqual(M("s0"));
+    }
+    expect(cases).toBe((1 + 2 + 3 + 4 + 4) * 2 * 26 * 3 * 2);
+  });
+
+  it("through seatLookedAt: a look at the object is at the place the rule picks, among its own seats", () => {
+    // the seats are m's own (on m), as a machine lays its ports; the doc has seats of the same names, which are never these
+    const snap = { objects: { m: { traits: { [SEATS]: { s0: { name: "P1", lasting: false }, s1: { name: "P2", lasting: false } } } } }, traits: { [SEATS]: { s0: { name: "Table 1" } } }, parents: new Map(), world: () => poses[1] };
+    const at = (p, mine = null) => seatLookedAt({ snap, target: "m", point: apply(poses[1], p), places: boxes(2), drawn: () => poses[1], mine: M(mine) });
+    expect(at([0.1, 0.9, 0.35])).toEqual(M("s0"));
+    expect(at([0.4, 0.9, 0.35])).toEqual(M("s1"));
+    expect(at([0.4, 1.3, 0.35])).toEqual(M("s1")); // above the places: the nearest
+    expect(at([0.24, 1.3, 0.35], "s1")).toEqual(M("s1")); // seated at P2, looking at the middle: your own
+    expect(at([0.1, 0.9, 0.35], "s1")).toEqual(M("s0")); // but a look on P1's place is P1's
+    // a place for a seat its owner doesn't have counts for nothing
+    expect(seatLookedAt({ snap, target: "m", point: null, places: [{ ...boxes(1)[0], seat: "s9" }], drawn: () => poses[1] })).toBeNull();
   });
 });
 
@@ -600,6 +656,7 @@ describe("standing up", () => {
     const t = await cockpit({ ...SEATS0(), p1: { ...SEATS0().p1, player: "carol" } }, { views: [["C", "carol", { walking: true }]] });
     await t.pickSeat("C", "p1"); // (in the seat's view, over the walk)
     expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["tbl"]);
+    expect(t.x.C.roster.sitting()).toEqual({ of: null, seat: "p1" });
     const eye = t.at([0, 1.2, 0.95]);
     expect(t.look("C", "hand1", null, eye)).toMatchObject({ label: "Stand up" });
     const writes = vi.spyOn(t.api.C, "change");
@@ -610,6 +667,7 @@ describe("standing up", () => {
     expect(t.player("p1")).toBe("carol");
     expect(t.claim("p1")?.session).toBe("C");
     expect(t.notices("C")).toContain("You got up from Player 1; it's still yours.");
+    expect(t.x.C.roster.sitting()).toBeNull(); // up: not sitting, though the seat is still yours
     expect(t.w.view("C").rides).toEqual([]);
     // walking now: the place offers sitting back down
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
@@ -625,6 +683,7 @@ describe("standing up", () => {
     t.api.C.body.enter("walk"); // up out of it, walking (sailing's Enter does this from a seat)
     t.api.C.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
     expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat", "walk"]);
+    expect(t.x.C.roster.sitting()).toBeNull(); // walking off from it is not sitting
     expect(t.look("C", "hand1")).toMatchObject({ label: "Back to your seat" });
     await t.press("C", "hand1");
     expect(t.w.view("C").bodies.map((b) => b.id)).toEqual(["look", "seat"]);
@@ -836,7 +895,9 @@ describe("lay: seats written into a scene being set up", () => {
 
   it("places: only well-formed ones on objects that are there", () => {
     const objects = { tray: {} };
-    expect(cleanPlaces([{ seat: "p1", id: "tray", min: [0, 0, 0], max: ["1", 1, 1] }, { seat: "p1", id: "gone", min: [0, 0, 0], max: [1, 1, 1] }, { seat: 3, id: "tray", min: [], max: [] }, null, { seat: "p1", id: "tray" }], objects)).toEqual([{ seat: "p1", id: "tray", min: [0, 0, 0], max: [1, 1, 1] }]);
+    expect(cleanPlaces([{ seat: "p1", id: "tray", min: [0, 0, 0], max: ["1", 1, 1] }, { seat: "p1", id: "gone", min: [0, 0, 0], max: [1, 1, 1] }, { seat: 3, id: "tray", min: [], max: [] }, null, { seat: "p1", id: "tray" }], objects)).toEqual([{ seat: "p1", of: null, id: "tray", min: [0, 0, 0], max: [1, 1, 1] }]);
+    // an object's seat: `of` names an object that's there
+    expect(cleanPlaces([{ seat: "p1", of: "tray", id: "tray", min: [0, 0, 0], max: [1, 1, 1] }, { seat: "p1", of: "gone", id: "tray", min: [0, 0, 0], max: [1, 1, 1] }, { seat: "p1", of: 7, id: "tray", min: [0, 0, 0], max: [1, 1, 1] }], objects)).toEqual([{ seat: "p1", of: "tray", id: "tray", min: [0, 0, 0], max: [1, 1, 1] }]);
   });
 });
 
@@ -922,3 +983,281 @@ describe("arriving seated (view.start = { body: \"seat\" }, no seat named)", () 
 });
 
 
+
+// ─── an object's own seats ──────────────────────────────────────────────────
+
+describe("an object's own seats (a machine's ports): its own, and held only while someone sits in them", () => {
+  // The table (the doc's own seats p1, p2, on hand trays) and a cabinet m
+  // with a knob on it. m's two seats are laid on m (lay(d, …, "m")), not
+  // lasting, each a view of m's front in m's frame; their places are a strip
+  // across m's front, given (`seatPlaces`) with `of: m`.
+  const PORTS = "t.ports";
+  const portPlaces = (snap) =>
+    Object.entries(snap.objects).flatMap(([id, o]) => (o?.traits?.[PORTS] ? ["p1", "p2"].map((seat, i) => ({ seat, of: id, id, min: [i * 0.3 - 0.3, 0.8, 0.29], max: [i * 0.3, 1, 0.31] })) : []));
+  const both = (snap) => [...seatPlaces(snap), ...portPlaces(snap)];
+  const PORT_SEATS = {
+    p1: { name: "Cab · P1", lasting: false, camera: { position: [-0.15, 1.2, 1.2], target: [0, 1.2, 0], in: "m" } },
+    p2: { name: "Cab · P2", lasting: false, camera: { position: [0.15, 1.2, 1.2], target: [0, 1.2, 0], in: "m" } },
+  };
+  // the table's seats, each with a view
+  const tableSeats = () => ({ p1: { name: "Player 1", player: null, camera: { position: [0, 1.2, 1], target: [0, 0, 0.5] } }, p2: { name: "Player 2", player: null, camera: { position: [0, 1.2, -1], target: [0, 0, -0.5] } } });
+  function arcadeDoc() {
+    const objs = { ...objects(), m: { name: "Cabinet", transform: T([2, 0, 0]), traits: { [PORTS]: true } }, knob: { name: "Knob", parent: "m", transform: T([0, 1, 0.3]) } };
+    const d = sceneOf(objs, { [SEATS]: tableSeats() });
+    lay(d, PORT_SEATS, "m");
+    return d;
+  }
+  async function arcade(views = [["C", "carol"], ["D", "dan"]]) {
+    const w = fakes.fakeWorld(arcadeDoc());
+    const t = { w, api: {}, x: {} };
+    t.step = async () => {
+      for (let i = 0; i < 3; i++) {
+        w.flush();
+        await vi.advanceTimersByTimeAsync(0);
+      }
+    };
+    t.join = async (session, viewer) => {
+      t.api[session] = w.join(session, { viewer, ext: "seats" });
+      w.view(session).collected = { seatPlaces: both };
+      t.x[session] = w.attach(session, Seats.create(t.api[session]));
+      await t.step();
+    };
+    /** Attention on `id` (selected), or on nothing. */
+    t.attend = async (session, id) => {
+      t.api[session].local.swap((l) => ({ ...l, selected: id }));
+      await t.step();
+    };
+    const sel = (session) => w.view(session).overlay.querySelector(".seats-pick");
+    t.options = (session) => (sel(session).closest(".seats-bar").hidden ? null : [...sel(session).options].map((o) => o.textContent));
+    t.pick = async (session, value) => {
+      sel(session).value = value;
+      sel(session).dispatchEvent(new Event("change"));
+      await t.step();
+    };
+    t.portClaim = (sid, id = "m") => w.doc.objects[id]?.claims?.[KIND(sid)] ?? null;
+    t.notices = (session) => w.view(session).notices.map((n) => n.text);
+    t.body = (session) => t.api[session].local.get().body.id;
+    /** Every seat's entry, the doc's own and every object's, as the doc has it. */
+    t.seatsNow = () => JSON.stringify(allSeats(w.doc));
+    for (const [s, v] of views) await t.join(s, v);
+    return t;
+  }
+
+  it("the picker shows the seats of what has your attention: the cabinet's (or the cabinet's, for a thing on it), else the table's; nothing, hidden", async () => {
+    const t = await arcade();
+    const cab = ["Watching", "Cab · P1", "Cab · P2"];
+    const table = ["Watching", "Player 1", "Player 2"];
+    for (const [at, want] of [
+      [null, null],
+      ["m", cab],
+      ["knob", cab],
+      ["board", table],
+      ["hand1", table],
+      ["m", cab],
+      [null, null],
+    ]) {
+      await t.attend("C", at);
+      expect([at, t.options("C")]).toEqual([at, want]);
+    }
+    // the look and the selection, on different things: whichever is on something with seats of its own, the look first
+    for (const [look, selected, want] of [
+      ["board", "m", cab],
+      ["m", "board", cab],
+      ["knob", null, cab],
+      ["board", null, table],
+      ["board", "hand1", table],
+    ]) {
+      t.api.C.look = () => ({ id: look, point: null, distance: null });
+      await t.attend("C", "hand2"); // (attention moves: the picker is drawn again)
+      await t.attend("C", selected);
+      expect([look, selected, t.options("C")]).toEqual([look, selected, want]);
+    }
+    t.w.done();
+  });
+
+  it("sitting at the cabinet: its claim, on the cabinet; nothing written; the table's seat stays yours, and the table's roster and parties never count the cabinet", async () => {
+    const t = await arcade();
+    await t.attend("C", "board");
+    await t.pick("C", "p1");
+    expect(t.w.doc.traits[SEATS].p1.player).toBe("carol");
+    // seated, the picker is the seat's owner's, wherever attention is: up first (the seat stays hers)
+    await t.attend("C", "m");
+    expect(t.options("C")).toEqual(["Watching", "Player 1", "Player 2"]);
+    t.api.C.body.leave();
+    await t.attend("C", null);
+    await t.attend("C", "m");
+    const before = JSON.stringify(t.w.doc.objects.m.traits[SEATS]);
+    await t.pick("C", "p1");
+    expect(t.portClaim("p1")).toEqual({ viewer: "carol", session: "C" });
+    expect(JSON.stringify(t.w.doc.objects.m.traits[SEATS])).toBe(before); // nothing written: the claim is the whole of it
+    expect(t.w.doc.traits[SEATS].p1.player).toBe("carol"); // her hand at the table is still hers
+    expect(t.x.C.roster.sitting()).toEqual({ of: "m", seat: "p1" });
+    expect(t.body("C")).toBe("seat");
+    expect(t.w.view("C").rides.map((r) => r.id)).toEqual(["m"]);
+    expect(t.options("C")).toEqual(["Watching", "Cab · P1", "Cab · P2"]);
+    // the table's roster is the table's: the cabinet's seats are never its players
+    const r = t.x.C.roster;
+    const snap = t.w.scene();
+    expect(r.seats(snap)).toEqual([{ id: "p1", name: "Player 1", viewer: "carol" }, { id: "p2", name: "Player 2", viewer: null }]);
+    expect([r.viewers(snap), r.open(snap), r.nameOf(snap, "carol")]).toEqual([["carol"], ["Player 2"], "Player 1"]);
+    expect(t.x.C.parties(snap)("anything")).toEqual(["carol"]);
+    // Dan, at the cabinet: P1 is taken, and stays Carol's while she's here
+    await t.attend("D", "m");
+    expect(t.options("D")).toEqual(["Watching", "Cab · P1 (taken)", "Cab · P2"]);
+    await t.pick("D", "p1");
+    expect(t.notices("D").at(-1)).toBe("Someone is sitting there.");
+    expect(t.portClaim("p1").session).toBe("C");
+    // name tags: one on each of the cabinet's places, and the table's
+    const tags = Object.fromEntries(t.w.view("D").labels.map((l) => [l.key, l.text]));
+    expect(tags).toEqual({ hand1: "Player 1 · someone", hand2: "Player 2 · free", "m:p1": "Cab · P1 · someone", "m:p2": "Cab · P2 · free" });
+    t.w.done();
+  });
+
+  // Every way Carol can stop sitting at the cabinet's P1. After each, P1 is
+  // free for Dan (never "away": nobody asks him to take over), no seat entry
+  // anywhere changed, and Carol sits where the way put her (nowhere, the
+  // table's p1, or the cabinet's P2). Leaving, she comes back to nothing.
+  const WAYS = ["stand up", "the chip's Leave", "watching", "the table", "the other port", "leaving", "a crash", "the cabinet removed"];
+  for (const way of WAYS)
+    it(`up from the cabinet by ${way}: P1 is free, and nothing was ever written`, async () => {
+      const t = await arcade();
+      await t.attend("C", "m");
+      await t.pick("C", "p1");
+      expect(t.portClaim("p1")?.session).toBe("C");
+      const seatsBefore = t.seatsNow();
+      switch (way) {
+        case "stand up": {
+          const cmd = t.x.C.commands.find((c) => c.id === "seat");
+          const ctx = { scene: t.api.C.scene(), local: t.api.C.local.get(), from: null, hit: { id: "m", point: null, distance: null } };
+          expect(cmd.state("m", ctx)).toEqual({ label: "Stand up", title: "Get up from Cab · P1" });
+          cmd.run("m", undefined, ctx);
+          break;
+        }
+        case "the chip's Leave":
+          t.api.C.body.leave();
+          break;
+        case "watching":
+          await t.pick("C", "");
+          break;
+        case "the table":
+          await t.attend("C", null); // (seated at the cabinet, the picker is the cabinet's: up first, then the table's)
+          t.api.C.body.leave();
+          await t.attend("C", "board");
+          await t.pick("C", "p1");
+          break;
+        case "the other port":
+          await t.pick("C", "p2");
+          break;
+        case "leaving":
+          t.w.leave("C");
+          break;
+        case "a crash":
+          t.w.leave("C", { bye: false });
+          t.w.grace = false;
+          await vi.advanceTimersByTimeAsync(6500);
+          break;
+        case "the cabinet removed":
+          t.w.change((d) => {
+            delete d.objects.m;
+            delete d.objects.knob;
+            d.order = d.order.filter((id) => id !== "m" && id !== "knob");
+          });
+          break;
+      }
+      await t.step();
+      const removed = way === "the cabinet removed";
+      const gone = way === "leaving" || way === "a crash";
+      // nothing written to any seat, by any of it (the table's p1 is Carol's only when she sat there)
+      if (way === "the table") expect(t.w.doc.traits[SEATS].p1.player).toBe("carol");
+      else if (!removed) expect(t.seatsNow()).toBe(seatsBefore);
+      else expect(t.seatsNow()).toBe(JSON.stringify(allSeats({ traits: { [SEATS]: tableSeats() } })));
+      // where Carol sits now
+      if (!gone) expect(t.x.C.roster.sitting()).toEqual(way === "the table" ? { of: null, seat: "p1" } : way === "the other port" ? { of: "m", seat: "p2" } : null);
+      if (!gone && way !== "the table" && way !== "the other port") expect(t.body("C")).toBe("look");
+      // P1 is free for Dan, and his to take; or, removed, the cabinet's seats are nowhere
+      await t.attend("D", removed ? null : "m");
+      await t.attend("D", removed ? "board" : "m");
+      if (removed) {
+        expect(t.options("D")).toEqual(["Watching", "Player 1", "Player 2"]);
+        expect(t.w.view("D").labels.map((l) => l.key)).toEqual(["hand1", "hand2"]);
+        expect(t.x.C.roster.sitting()).toBeNull();
+      } else {
+        expect(t.options("D")[1]).toBe("Cab · P1");
+        await t.pick("D", "p1");
+        expect(t.portClaim("p1")).toEqual({ viewer: "dan", session: "D" });
+        expect(t.x.D.roster.sitting()).toEqual({ of: "m", seat: "p1" });
+      }
+      // gone and back (a new session, the same viewer): nothing to come back to
+      if (gone) {
+        await t.join("C2", "carol");
+        await t.attend("C2", "m");
+        expect(t.options("C2")[1]).toBe("Cab · P1 (taken)");
+        expect(t.x.C2.roster.sitting()).toBeNull();
+        expect(t.portClaim("p1").session).toBe("D");
+      }
+      t.w.done();
+    });
+
+  it("a copy of the cabinet has seats of its own: sitting at one's P1 is nothing to the other's", async () => {
+    const t = await arcade();
+    t.w.change((d) => {
+      const { claims, ...rest } = structuredClone(d.objects.m);
+      d.objects.m2 = { ...rest, transform: T([4, 0, 0]) };
+      d.order.push("m2");
+    });
+    await t.step();
+    await t.attend("C", "m");
+    await t.pick("C", "p1");
+    await t.attend("D", "m2");
+    expect(t.options("D")).toEqual(["Watching", "Cab · P1", "Cab · P2"]);
+    await t.pick("D", "p1");
+    expect([t.portClaim("p1", "m")?.session, t.portClaim("p1", "m2")?.session]).toEqual(["C", "D"]);
+    expect([t.x.C.roster.sitting(), t.x.D.roster.sitting()]).toEqual([{ of: "m", seat: "p1" }, { of: "m2", seat: "p1" }]);
+    // removing one takes its seats with it, and leaves the other's
+    t.w.change((d) => {
+      delete d.objects.m;
+      d.order = d.order.filter((id) => id !== "m");
+    });
+    await t.step();
+    expect(t.x.C.roster.sitting()).toBeNull();
+    expect(t.x.D.roster.sitting()).toEqual({ of: "m2", seat: "p1" });
+    expect(t.portClaim("p1", "m2")?.session).toBe("D");
+    t.w.done();
+  });
+
+  it("seatState for a seat that doesn't last: its claim alone says (your other tab's is that tab's); never away", () => {
+    const by = (viewer, mine = false) => ({ viewer, session: `s-${viewer}`, mine });
+    let cases = 0;
+    for (const keeps of [true, false])
+      for (const player of [null, "a", "b"])
+        for (const b of [null, by("a", true), by("a"), by("b"), by(null)]) {
+          const seat = { name: "S", player, ...(keeps ? {} : { lasting: false }) };
+          const got = seatState(seat, b, "a");
+          if (keeps) expect(got).toBe(seatState({ name: "S", player }, b, "a")); // as ever
+          else expect(got).toBe(b ? (b.mine ? "mine" : "taken") : "free");
+          cases++;
+        }
+    expect(cases).toBe(30);
+  });
+
+  it("the roster, mySeat and lay over owners: the doc's own seats are the table's; an object's are laid on it, and only where it is", () => {
+    const snap = arcadeDoc();
+    snap.objects.m.traits[SEATS].p1.player = "carol"; // (a player written on a seat that doesn't last is no one)
+    expect(rosterOf(snap).map((r) => r.id)).toEqual(["p1", "p2"]);
+    expect(rosterOf({ traits: { [SEATS]: { p1: { name: "P", player: "carol", lasting: false } } } })).toEqual([{ id: "p1", name: "P", viewer: null }]);
+    expect(mySeat(snap, "carol")).toBeNull();
+    snap.objects.m.traits[SEATS].p2.lasting = true;
+    snap.objects.m.traits[SEATS].p2.player = "carol";
+    expect(mySeat(snap, "carol")).toEqual({ of: "m", seat: "p2" });
+    expect(allSeats(snap).map(({ of, seat }) => [of, seat])).toEqual([[null, "p1"], [null, "p2"], ["m", "p1"], ["m", "p2"]]);
+    // lay on an object: on it; on one that isn't there: nothing; laid again: lasting as said now
+    const d = { traits: {}, objects: { m: {} } };
+    lay(d, { p1: { name: "P1", lasting: false } }, "m");
+    lay(d, { p1: { name: "P1" } }, "gone");
+    expect(d).toEqual({ traits: {}, objects: { m: { traits: { [SEATS]: { p1: { name: "P1", player: null, lasting: false } } } } } });
+    lay(d, { p1: { name: "P1" } }, "m");
+    expect(d.objects.m.traits[SEATS].p1).toEqual({ name: "P1", player: null });
+    lay(d, { p1: { name: "P1", lasting: false } }, "m");
+    expect(d.objects.m.traits[SEATS].p1).toEqual({ name: "P1", player: null, lasting: false });
+  });
+});

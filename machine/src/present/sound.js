@@ -34,6 +34,7 @@
 //
 // The audio graph only; no engine, network or host here. A sink takes
 // output items through push(item), in the order host.output() gives them.
+// speaker.js puts these together for a machine of each kind.
 
 import { events as decodeEvents, HZ as DOOM_HZ } from "../doom.js";
 
@@ -272,29 +273,6 @@ export function place(node, { position, forward, up }) {
 /** The scene's camera as the context's listener (for the world route): position, forward, up. */
 export function listen(ctx, pose) {
   place(ctx.listener, { up: [0, 1, 0], ...pose });
-}
-
-/**
- * The PCM sink: a machine's audio stream (the Super NES's), at one place in
- * the scene. push(item) takes host.output()'s items; its PannerNode is
- * `panner`, to place at the screen.
- */
-export function pcm(ctx, { out = ctx.destination, panner = screenPanner(ctx), ...stream } = {}) {
-  panner.connect(out);
-  const s = new Stream(ctx, { ...stream, out: panner });
-  return {
-    panner,
-    stream: s,
-    push(item) {
-      if (item.gap) s.gap();
-      else if (item.audio) s.push(item.audio);
-    },
-    place: (pose) => place(panner, pose),
-    close() {
-      s.close();
-      panner.disconnect();
-    },
-  };
 }
 
 // ---------------------------------------------------------------------

@@ -141,6 +141,43 @@ test("two peers take the same port at once: one gets it, everywhere", async () =
   await settle(peers);
 }, 30_000);
 
+test("the engine is asked a query once a state and kind; every answer is of the state the host is in, rollbacks included", async () => {
+  // Two peers over a WAN, both playing: late inputs roll a's state back and re-step it. Each frame a
+  // asks some of kinds 0, 1 and 9 (one the engine lacks: null), each twice; the 8 subsets in turn.
+  const net = new SimNet({ latency: WAN });
+  const { peers } = await session(net, 2);
+  peers.forEach((p, i) => ((p.port = i), p.host.sit(i)));
+  await run(peers, 500);
+  const host = peers[0].host;
+  const engine = host.engine;
+  const own = engine.query.bind(engine);
+  let calls = 0;
+  engine.query = (kind) => (calls++, own(kind), kind === 9 ? null : { kind, hash: engine.hash() });
+  const last = new Map(); // kind -> the state (tick and revision) it was last asked in
+  let want = 0, same = 0, moved = 0, prev = null;
+  for (let f = 0; f < 240; f++) {
+    await run(peers, FRAME);
+    const kinds = [0, 1, 9].filter((_, i) => (f % 8) & (1 << i));
+    const state = `${host.tick}:${host.revision}`;
+    for (const k of kinds) {
+      const first = host.query(k);
+      expect(host.query(k)).toBe(first); // the same answer to everyone in one state
+      if (k === 9) expect(first).toBe(null);
+      else expect(first).toEqual({ kind: k, hash: engine.hash() }); // of the state the engine is in now
+      if (last.get(k) !== state) want++;
+      last.set(k, state);
+    }
+    if (state === prev) same++;
+    else moved++;
+    prev = state;
+  }
+  expect(calls).toBe(want); // once a state and kind
+  expect(same).toBeGreaterThan(0); // frames that didn't step
+  expect(moved).toBeGreaterThan(0);
+  expect(host.stats.rewinds).toBeGreaterThan(0);
+  await settle(peers);
+}, 30_000);
+
 test("a holder who vanishes loses the rest of the seat; the others carry on", async () => {
   const net = new SimNet({ latency: WAN, loss: LOSSY });
   const { peers } = await session(net, 3, { reap: 2 });
