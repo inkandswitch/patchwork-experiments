@@ -120,8 +120,13 @@ try {
 
   async function machine(kind, { who, at, keys, frames }) {
     const url = await P(`machines.${kind}`);
-    await P(`paste("a", ${JSON.stringify(url)})`);
-    const id = await b.waitFor(`__p.byUrl(${JSON.stringify(url)})`, 30_000);
+    // pasted again until the stage takes it: its add part starts once the registry has been quiet a moment (real
+    // time), which the doom package's import used to cover when the page registered it at the start (as world.mjs)
+    let id = null;
+    for (let i = 0; i < 6 && !id; i++) {
+      await P(`paste("a", ${JSON.stringify(url)})`);
+      id = await b.waitFor(`__p.byUrl(${JSON.stringify(url)})`, 5_000);
+    }
     check(`${kind}: the pasted machine doc is laid out as a cabinet with the machine trait`, !!id && (await P(`doc().objects["${id}"].providerId`)) === "machine", { id });
     if (at) await P(`setTransform("${id}", ${JSON.stringify(at)})`);
     const session = await b.waitFor(`__p.trait("${id}")?.session`, 120_000);
