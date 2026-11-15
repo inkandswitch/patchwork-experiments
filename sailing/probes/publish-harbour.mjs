@@ -6,8 +6,8 @@
 // the harbour. Prints its Patchwork URL.
 //
 //   (in sailing/) node probes/publish-harbour.mjs \
-//     --boat "Ship at sea=automerge:…@-40,0,0" \
-//     --boat "Lost Cities aboard=automerge:…@40,0,0" \
+//     --boat "Ship at sea=automerge:…@-15,0,-35" \
+//     --boat "Lost Cities aboard=automerge:…@15,0,25" \
 //     [--title Harbour] [--wind 5,250] [--seed 7] [--scale 0.5] [--dry-run] [--offline] [--sync wss://…] [--settle 8000]
 //
 // --boat NAME=URL@x,y,z places a live, locked link there. Each boat is turned

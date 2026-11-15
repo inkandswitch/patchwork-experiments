@@ -599,6 +599,15 @@ Each is fixed here with a test that fails without the fix, or answered.
     wrong value" as W11. An array element that is undefined, or a hole, is
     copied as `null`, as JSON writes it (it used to throw). STAGE.md
     "Ambients" says both.
+38. **The published harbour's boats sit inside the home view** (decided
+    at integration, 2026-11-14). The first harbour placed its boats 40 m
+    either side of the middle. In the real Patchwork's narrow pane, Look's
+    home view (the publisher's, 88 m out) showed neither boat, only the
+    sea and an islet. The republished harbour puts Ship at sea at
+    (-15, 0, -35) and Lost Cities aboard at (15, 0, 25), so both are in
+    frame on arrival with the publisher's home unchanged. Ship at sea is
+    under way and sails out of the view within a minute; she is a ship at
+    sea, and the harbour doesn't hold her.
 
 ## Invariants
 
@@ -647,6 +656,9 @@ sailing's split (sea.js, the sea-view adapter, ride and HUD only where her
 doc is the world, templates and the Sloop writing `water`), one `wind`
 ambient, terrain's template writing `water`, the harbour probe, a harbour
 publisher run dry, and the review's fixes (Decisions 28–37). Not built: S2
-and W8 (Decisions 25), walk's reader (26), republishing the boats and
-publishing the harbour (steps 6 and 7: from the lane nothing is published).
+and W8 (Decisions 25), walk's reader (26). Steps 6 and 7 were done at
+integration (2026-11-14, scene-stage): every sea example was republished
+with the water trait (Ship at sea, Lost Cities aboard, Fitting out, Cadboro
+Bay), and the Harbour, holding Ship at sea and Lost Cities aboard, was
+published and checked in the real Patchwork (Decision 38).
 Where each invariant is checked is the table above.
