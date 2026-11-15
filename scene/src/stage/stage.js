@@ -1434,7 +1434,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       displayChanged();
     }
     // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
-    // the outermost doc's are the world's (COMPOSITION.md §3), and its atmosphere the viewport's
+    // the outermost doc's are the world's (COMPOSITION.md §3), which the view reads (view.ambient)
     const offered = mergeAmbients(
       running.map((r) => {
         try {
@@ -1448,9 +1448,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       (ext, name, err) => console.warn(`[scene] extension “${ext}”: ambient “${name}” refused: ${err.message}`),
     );
     if (offered !== ambients) {
-      const atmosphereWas = ambients.atmosphere;
       ambients = offered;
-      if (n === 0 && ambients.atmosphere !== atmosphereWas) viewport.setAtmosphere(ambients.atmosphere ?? null);
+      view.ambientsChanged?.();
     }
     const ms = cpuNow() - t0;
     spend(ms);
@@ -2386,9 +2385,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * outermost's world time as of now; null when it offers none.
        */
       ambient: (name) => {
-        const world = view.outermost();
-        const value = world?.ambients()[name];
+        const value = view.ambient(name);
         if (value === undefined) return null;
+        const world = view.outermost();
         return Object.freeze({ value, mine: world === stage, frame: scope.frame(), clock: Object.freeze(world.worldTime()) });
       },
       invalidate: () => viewport.invalidate(),
@@ -2689,9 +2688,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     veils: () => new Map(veils),
     audience: audienceOf,
     shown: shownTo,
-    /** its ambients (./ambients.js), and the atmosphere among them */
+    /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
-    atmosphere: () => ambients.atmosphere ?? null,
     /** the drawer: the docked elements in tab order, and the one shown */
     drawer: () => drawer.state(),
     /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */

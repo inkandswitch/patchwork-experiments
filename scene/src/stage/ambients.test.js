@@ -69,6 +69,15 @@ describe("only data crosses, by construction (W4)", () => {
     }).toThrow(TypeError);
   });
 
+  it("an undefined array element or a hole is null, as JSON writes it; a nested one too", () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const sparse = [1, , 3];
+    const v = { list: sparse, gaps: [undefined, { deep: [undefined] }], none: new Array(2) };
+    expect(frozenJSON(v)).toEqual(JSON.parse(JSON.stringify(v)));
+    expect(frozenJSON(v)).toEqual({ list: [1, null, 3], gaps: [null, { deep: [null] }], none: [null, null] });
+    expect(mergeAmbients([{ id: "p", offer: { w: sparse } }])).toEqual({ w: [1, null, 3] });
+  });
+
   it("undefined properties are left out, as JSON leaves them; numbers keep every bit", () => {
     const x = 0.1 + 0.2;
     expect(frozenJSON({ a: undefined, b: x, c: [-0, 5e-324, 1.7976931348623157e308] })).toEqual({ b: x, c: [-0, 5e-324, 1.7976931348623157e308] });
@@ -79,19 +88,29 @@ describe("only data crosses, by construction (W4)", () => {
 describe("stacking per name (mergeAmbients)", () => {
   const A = { sky: { top: "#000" } };
   const B = { sun: { direction: [0, 1, 0] } };
-  // every running order of two extensions, each offering {nothing, null, A, B} under one name
-  const choices = [undefined, null, A, B];
+  // a value that isn't plain JSON: refused, and it stacks as null
+  const BAD = { refused: true };
+  const valueOf = (v) => (v === BAD ? { f: () => 0 } : v);
+  const label = (v) => (v === BAD ? "a refused value" : (JSON.stringify(v) ?? "nothing"));
+  // every running order of two extensions, each offering {nothing, null, A, B, a refused value} under one name
+  const choices = [undefined, null, A, B, BAD];
   for (const first of choices)
     for (const second of choices)
-      it(`first ${JSON.stringify(first) ?? "nothing"}, then ${JSON.stringify(second) ?? "nothing"}: the later value whole, null clearing, nothing keeping`, () => {
-        const offer = (v) => (v === undefined ? {} : { atmosphere: v });
-        const m = mergeAmbients([
-          { id: "one", offer: offer(first) },
-          { id: "two", offer: offer(second) },
-        ]);
+      it(`first ${label(first)}, then ${label(second)}: the later value whole, null or a refusal clearing, nothing keeping`, () => {
+        const offer = (v) => (v === undefined ? {} : { atmosphere: valueOf(v) });
+        const refused = [];
+        const m = mergeAmbients(
+          [
+            { id: "one", offer: offer(first) },
+            { id: "two", offer: offer(second) },
+          ],
+          EMPTY,
+          (id) => refused.push(id),
+        );
         const want = second === undefined ? first : second;
-        if (want == null) expect(m).toBe(EMPTY);
+        if (want == null || want === BAD) expect(m).toBe(EMPTY);
         else expect(m).toEqual({ atmosphere: want });
+        expect(refused).toEqual([first, second].flatMap((v, i) => (v === BAD ? [["one", "two"][i]] : [])));
       });
 
   it("an equal value keeps its identity across flushes; a changed one doesn't; the whole is the same object when nothing changed", () => {

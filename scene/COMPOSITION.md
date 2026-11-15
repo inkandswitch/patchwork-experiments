@@ -89,7 +89,8 @@ path. Still open:
 
 Two linked docs that each have a sea now share one: a world's ambients are
 its outermost doc's (section 3, and [water/WATER.md](../water/WATER.md),
-built in the lane on 2026-11-14 and waiting to be merged and published).
+built in the lane on 2026-11-14, waiting for the lead's yes to the amended
+Decision 1, then to be merged and published).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -329,9 +330,10 @@ walker in a linked level stands on the host's floor.
 
 **The view answers space; no doc's code runs for another.** Rays, hits, the
 ground and published frames (section 9) cross a doc boundary because the
-view computes them. A world's ambients do too, as plain data its outermost
-doc offers; each stage reads them with its own code (the water package
-evaluates the outermost's water in each stage's frame and time).
+view computes them. A world's ambients and its world time do too (proposed,
+Decision 1), as plain data its outermost doc offers; each stage reads them
+with its own code (the water package evaluates the outermost's water in
+each stage's frame and time).
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
 applies; the stage's Look and Edit (the orbit camera) ride the latest base
@@ -658,7 +660,7 @@ Each is argued above and checkable over finite cases.
 | I1 | **One doc per extension.** Every read and write through an api goes to its stage's handle | Spy handles; run the scene parts', tabletop's, sailing's and the keepers' tests in a child stage; no other handle is touched |
 | I2 | **No reference crosses docs.** Parent, group and every `object` field name an object of the same doc; a link is the only edge between docs | Every assignment over ≤3 docs × ≤3 objects, foreign ids included: the composed relation is intra-doc plus link → child roots, and acyclic |
 | I3 | **Expansion is finite and fixed by the graph.** No identity repeats on a path; each live doc has exactly one acting occurrence, chosen by path order; the rest are mirrors; closed reasons are exact | Every link multigraph on ≤4 docs (live, pinned, self-pins, ≤2 links per pair) × every arrival order: terminates, and the final expansion is the same |
-| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical (`src/stage/placement.test.js`: 1056 comparisons; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
+| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors. The reads that do depend on placement are space (frames, rays, hits) and `api.ambient`: its `value` is the world's, the same wherever the caller sits, and its `mine` (the caller is the world), `frame` and `clock` say where the caller sits. An extension that branches on them (water draws only where `mine`; a boat rides the camera and shows her HUD only where `mine`) acts differently by placement, on purpose and only through these (WATER.md W7) | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical, and beside each comparison the ambient read: the world's value (G's alone, the outermost host's linked), `mine` exactly alone, the stage's own frame, the outermost's clock (`src/stage/placement.test.js`: 1056 comparisons; mutation: a stage's own offer serving itself when it isn't the world fails all 3; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
 | I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone and in X in one page, on one repo and its page bus; in Y in a second page, on a repo of its own joined by an in-memory network, so its messages cross by the handle's broadcast) × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror (`src/stage/channels.test.js`: every ≤2 claims/releases by three views, 390 checks in five stages; every holder × leaver; a hold from each view) |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field (`scope.test.js`, with the audit's: geometry in an object's own frame, the camera's up; `viewport.test.js`: a layer two links deep, every pose, moved; a box in its own stage whatever the host shows of the link) |
@@ -1070,7 +1072,8 @@ ships alone and proves something.
 - **Act on a mirror or play a pin**, or give one live doc state per
   placement. Live is shared; copy to differ.
 - **Run another doc's code for you.** Space crosses, and the world's
-  ambients cross as data; no doc's code runs for another.
+  ambients and world time cross as data (proposed, Decision 1); no doc's
+  code runs for another.
 - **Read a doc's own statement of where it is** (IFC's georeference). The
   host places it.
 
@@ -1096,10 +1099,14 @@ The costs:
 The five open questions were put to the project lead and answered:
 
 1. **A host never reads into what it contains.** Accepted. The only
-   couplings across a link are space, published frames and the outermost
-   doc's ambients, as data. (The ambients clause was added on 2026-11-14 by
-   water/WATER.md, Decisions 1; nothing from a contained doc reaches its
-   host, so the first sentence holds as written.)
+   couplings across a link are space and published frames.
+   *Proposed 2026-11-14, pending the lead's explicit yes
+   ([water/WATER.md](../water/WATER.md), Decisions 1 and 14):* "...space,
+   published frames, and the outermost doc's ambients and world time, as
+   data." Nothing from a contained doc reaches its host under the proposal,
+   so the first sentence would hold as written. It is built only in the
+   unmerged lane `lane/scene`; until the lead says yes, the accepted
+   sentence above is the one in force.
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
    [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on

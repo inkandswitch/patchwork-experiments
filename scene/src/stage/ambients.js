@@ -18,8 +18,9 @@ const PLAIN = new Set([Object.prototype, null]);
 /**
  * A frozen plain-JSON copy of `v`: objects whose prototype is Object's (or
  * null), arrays, strings, finite numbers, booleans and null. A property
- * whose value is undefined is left out, as JSON leaves it. Throws a
- * TypeError naming the path for anything else.
+ * whose value is undefined is left out, and an array element that is
+ * undefined (or a hole) is null, as JSON writes them. Throws a TypeError
+ * naming the path for anything else.
  * @param {any} v  @param {string} [at]
  */
 export function frozenJSON(v, at = "", seen = new Set()) {
@@ -34,7 +35,8 @@ export function frozenJSON(v, at = "", seen = new Set()) {
   let out;
   if (Array.isArray(v)) {
     out = [];
-    for (let i = 0; i < v.length; i++) out.push(frozenJSON(v[i], `${at}[${i}]`, seen));
+    // a hole or an undefined element is null, as JSON writes it
+    for (let i = 0; i < v.length; i++) out.push(v[i] === undefined ? null : frozenJSON(v[i], `${at}[${i}]`, seen));
   } else {
     if (!PLAIN.has(Object.getPrototypeOf(v))) throw new TypeError(`${at || "value"} is a ${v.constructor?.name ?? "non-plain object"}, not plain JSON`);
     out = {};
@@ -51,8 +53,10 @@ export function frozenJSON(v, at = "", seen = new Set()) {
  * The ambients a stage offers: each extension's `ambient()` answer, stacked
  * in running order per name, a later value winning whole and `null` clearing
  * an earlier one (mergeLooks' and the old atmosphere's rule, one level up).
- * An offer that isn't plain JSON is refused (left out) and reported through
- * `refuse(id, name, error)`. A value equal (as JSON) to the one in `prev`
+ * An offer that isn't plain JSON is refused and reported through
+ * `refuse(id, name, error)`, and stacks as null: it clears what came before
+ * it under that name, so a broken override leaves no value rather than
+ * quietly falling back to someone else's (never the wrong value). A value equal (as JSON) to the one in `prev`
  * under the same name is `prev`'s, so a reader comparing identities sees a
  * change only when there is one.
  * @param {Iterable<{ id: string, offer: object | null }>} offers
@@ -74,6 +78,7 @@ export function mergeAmbients(offers, prev = EMPTY, refuse = () => {}) {
       try {
         out[name] = frozenJSON(v, name);
       } catch (err) {
+        out[name] = null;
         refuse(id, name, err);
       }
     }

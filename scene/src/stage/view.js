@@ -391,9 +391,24 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (stages.get(s.n) === s) stages.delete(s.n);
     packagesChanged();
     clocksChanged();
+    ambientsChanged();
     for (const [k, rec] of opened) if (rec.stage === s) opened.delete(k);
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
+  }
+  // A world's ambients (STAGE.md, "Ambients") are its outermost stage's: the
+  // one read path, which every stage's api.ambient and the viewport's
+  // atmosphere both go through, so the viewport is a reader like any other.
+  /** The world's ambient `name`: the outermost stage's frozen value, or undefined. */
+  const ambient = (name) => outermost()?.ambients()[name];
+  let atmosphereShown; // what the viewport was last told (undefined: nothing yet)
+  /** A stage's ambients changed (it flushed new ones, or it went): the viewport shows the world's atmosphere. */
+  function ambientsChanged() {
+    if (dead) return;
+    const atm = ambient("atmosphere") ?? null;
+    if (atm === (atmosphereShown ?? null)) return;
+    atmosphereShown = atm;
+    viewport.setAtmosphere(atm);
   }
   /** The full path a viewport key names (the stage's path, then its id), or null. */
   function pathOfKey(key) {
@@ -1390,6 +1405,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     stages: () => [...stages.values()],
     stage: (n) => stages.get(n) ?? null,
     outermost,
+    ambient,
+    ambientsChanged,
     focusStage,
     acting,
     pathOfKey,

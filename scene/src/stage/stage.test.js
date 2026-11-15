@@ -474,7 +474,8 @@ describe("the stage, mounted", () => {
     const m = mount(newScene());
     const spy = vi.spyOn(m.debug.viewport, "setAtmosphere");
     await settle();
-    expect(m.debug.atmosphere()).toBeNull();
+    expect(m.debug.ambients().atmosphere).toBeUndefined();
+    expect(m.debug.atmosphere).toBeUndefined();
     expect(spy).not.toHaveBeenCalled();
     expect(m.debug.viewport.atmosphere).toBeNull();
   });
