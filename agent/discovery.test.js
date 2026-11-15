@@ -62,6 +62,13 @@ describe("walkTree", () => {
     expect(seen).toContain("ok")
   })
 
+  it("loads only folders, never the documents in them", async () => {
+    const loaded = []
+    const repo = { async find(url) { loaded.push(url); return ctx.repo.find(url) } }
+    await walkTree(repo, "automerge:root", () => false)
+    expect(loaded).toEqual(["automerge:root", "automerge:recipes"])
+  })
+
   it("honours the visit budget", async () => {
     const result = await walkTree(ctx.repo, "automerge:root", () => false, { maxVisits: 1 })
     expect(result.truncated).toBe(true)

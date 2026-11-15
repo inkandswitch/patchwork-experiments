@@ -30,6 +30,10 @@ function searchRoot(input, ctx) {
 /**
  * Walk a folder tree breadth-first, calling `visit` for each entry.
  * Cycles are possible (a folder can link itself), hence `seen`.
+ *
+ * Only folders are loaded. The folder listing already says what each entry is,
+ * so opening every document just to learn it is not a folder would pull the
+ * whole account into memory for a name search.
  */
 export async function walkTree(repo, rootUrl, visit, { maxVisits = DEFAULT_MAX_VISITS } = {}) {
   const seen = new Set([rootUrl])
@@ -52,14 +56,14 @@ export async function walkTree(repo, rootUrl, visit, { maxVisits = DEFAULT_MAX_V
       const entryPath = path ? `${path}/${entry.name}` : entry.name
       const stop = await visit({ entry, path: entryPath, parentUrl: url })
       if (stop) return { visits, truncated: false }
-      if (!seen.has(entry.url)) {
+      if (entry.type === "folder" && !seen.has(entry.url)) {
         seen.add(entry.url)
         queue.push({ url: entry.url, path: entryPath })
       }
     }
   }
 
-  return { visits, truncated: visits >= maxVisits }
+  return { visits, truncated: queue.length > 0 }
 }
 
 export const docSearch = {
