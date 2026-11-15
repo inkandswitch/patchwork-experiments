@@ -210,11 +210,22 @@ test("a view is drawn again when the state changes at the same tick (a rollback)
   expect(drawn).toBe(3);
 });
 
-test("a query is asked of the host and answered again exactly when the state changed since that kind was last asked, per kind", async () => {
+/** A host's query as Host.query answers it: once a state (tick and revision) per kind, the same answer within it; kind 2 the engine lacks (null); null while loading. */
+const querying = (h) => {
+  const kept = new Map();
+  return (kind) => {
+    if (h.loading) return null;
+    const key = `${kind}@${h.tick}:${h.revision}`;
+    if (!kept.has(key)) kept.set(key, kind === 2 ? null : new Uint8Array([kind, h.tick, h.revision]));
+    return kept.get(key);
+  };
+};
+
+test("a query's answer is sent to the page exactly when the host has a new one for that kind", async () => {
   // Every sequence of 3 frames, each keeping the state, re-stepping it to the same tick
   // (revision) or stepping it on (tick), and asking for kind 0, kind 1 or kind 2, which
-  // the engine can't answer (null), or two of them. The host is asked a kind only when
-  // the state changed since it was last asked that kind, answered or not.
+  // the engine can't answer (null), or two of them. A kind's answer is sent only when the
+  // state changed since it was last asked, and never a null.
   const CHANGES = ["same", "revision", "tick"];
   const ASKS = [[0], [1], [2], [0, 1], [1, 2]];
   let cases = 0;
@@ -222,24 +233,18 @@ test("a query is asked of the host and answered again exactly when the state cha
     for (const a1 of ASKS) for (const a2 of ASKS) for (const a3 of ASKS) {
       const [page, worker] = pair();
       const served = serve(worker);
-      const answered = [];
-      served.host = {
-        tick: 10, revision: 1, status: {}, stats: null, loading: false, seat: null,
-        frame() {}, target: () => 10, output: () => [], picture: () => null,
-        query: (kind) => (answered.push(kind), kind === 2 ? null : new Uint8Array([kind, served.host.tick, served.host.revision])),
-      };
+      served.host = { tick: 10, revision: 1, status: {}, stats: null, loading: false, seat: null, frame() {}, target: () => 10, output: () => [], picture: () => null };
+      served.host.query = querying(served.host);
       const answers = [];
       page.addEventListener("message", ({ data }) => answers.push(data.result.answers));
       const last = new Map(); // kind -> the state it was last asked at
       for (const [change, ask] of [[null, a1], [c1, a2], [c2, a3], [c3, [0, 1, 2]]]) {
         if (change === "revision") served.host.revision++;
         if (change === "tick") served.host.tick++;
-        answered.length = 0;
         page.postMessage({ m: "frame", id: 1, input: null, clock: null, views: [], queries: ask });
         await vi.advanceTimersByTimeAsync(1);
         const at = `${served.host.tick}:${served.host.revision}`;
         const want = ask.filter((k) => last.get(k) !== at);
-        expect(answered).toEqual(want); // asked of the host: each copies the state
         expect(Object.keys(answers.at(-1)).map(Number)).toEqual(want.filter((k) => k !== 2));
         for (const k of want) {
           if (k !== 2) expect([...answers.at(-1)[k]]).toEqual([k, served.host.tick, served.host.revision]);
@@ -251,30 +256,24 @@ test("a query is asked of the host and answered again exactly when the state cha
   expect(cases).toBe(27 * 125);
 });
 
-test("a query that comes back null while the host is loading is asked again once it has loaded, the state unchanged", async () => {
+test("nothing is sent while the host is loading; once it has loaded, its answers are, once", async () => {
   for (const kinds of [[0], [2], [0, 2]]) {
     const [page, worker] = pair();
     const served = serve(worker);
-    const answered = [];
-    served.host = {
-      tick: 10, revision: 1, status: {}, stats: null, loading: true, seat: null,
-      frame() {}, target: () => 10, output: () => [], picture: () => null,
-      query: (kind) => (answered.push(kind), served.host.loading || kind === 2 ? null : new Uint8Array([kind])),
-    };
+    served.host = { tick: 10, revision: 1, status: {}, stats: null, loading: true, seat: null, frame() {}, target: () => 10, output: () => [], picture: () => null };
+    served.host.query = querying(served.host);
     const answers = [];
     page.addEventListener("message", ({ data }) => answers.push(data.result.answers));
     const frame = async () => {
-      answered.length = 0;
       page.postMessage({ m: "frame", id: 1, input: null, clock: null, views: [], queries: kinds });
       await vi.advanceTimersByTimeAsync(1);
-      return [...answered];
+      return Object.keys(answers.at(-1)).map(Number);
     };
-    expect(await frame()).toEqual(kinds); // loading: nothing to answer yet
-    expect(await frame()).toEqual(kinds); // still loading: asked again
+    expect(await frame()).toEqual([]); // loading: nothing to answer yet
+    expect(await frame()).toEqual([]);
     served.host.loading = false; // loaded at the same tick and revision
-    expect(await frame()).toEqual(kinds);
-    expect(Object.keys(answers.at(-1)).map(Number)).toEqual(kinds.filter((k) => k !== 2));
-    expect(await frame()).toEqual([]); // loaded, nothing changed: not asked again, null or not
+    expect(await frame()).toEqual(kinds.filter((k) => k !== 2));
+    expect(await frame()).toEqual([]); // loaded, nothing changed: nothing new to send
   }
 });
 

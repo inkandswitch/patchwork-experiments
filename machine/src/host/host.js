@@ -107,6 +107,7 @@ export class Host {
   #off = [];
   #outputs;
   #revision = 0; // counts steps and restores (see revision)
+  #answers = { at: null, kinds: new Map() }; // the engine's answers to queries in one state (see query)
   #trace = null;
 
   /**
@@ -249,14 +250,22 @@ export class Host {
    * What the engine says of the state under `kind` (engine-defined: Doom's
    * things and sectors, the Super NES's RAMs; ENGINE.md), as bytes, for the
    * tick the host is at; null while loading or for a kind the engine lacks.
-   * Each call copies the state out of the engine (Doom walks its things, the
-   * Super NES copies a RAM), and nothing is cached here: ask once a state.
-   * The same on a RemoteHost, whose worker answers it for the frame shown
-   * and asks its host again only when the state changed.
+   * Asking copies the state out of the engine (Doom walks its things, the
+   * Super NES copies a RAM), so the engine is asked once a state and kind:
+   * every reader of one state (a speaker, a 3D world, a worker answering its
+   * page) gets the same answer, which nobody may change. A state is a tick
+   * and a revision, as for a picture (a timeline going back to a snapshot
+   * moves the tick alone). The engine's null (a kind it lacks) is kept
+   * too. While loading the answer is null and nothing is kept. A RemoteHost
+   * answers from what its worker last sent, which is this, asked there.
    */
   query(kind) {
     if (this.#loading) return null;
-    return this.engine?.query(kind) ?? null;
+    const at = `${this.tick}:${this.#revision}`;
+    if (this.#answers.at !== at) this.#answers = { at, kinds: new Map() };
+    const kinds = this.#answers.kinds;
+    if (!kinds.has(kind)) kinds.set(kind, this.engine?.query(kind) ?? null);
+    return kinds.get(kind);
   }
 
   /**
