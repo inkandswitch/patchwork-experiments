@@ -4,7 +4,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fade } from "../host/output.js";
 import { FakeAudioContext } from "./fake-audio.js";
-import { doom, doomMix, listen, pcm, Resampler, screen, Stream, world } from "./sound.js";
+import { doom, doomMix, listen, place, Resampler, screen, screenPanner, Stream, world } from "./sound.js";
 import { lumps as wadLumps } from "../doom.js";
 import { music } from "../doom-music.js";
 import { FULL } from "../test-tier.js";
@@ -273,23 +273,14 @@ describe("Stream", () => {
 // ---------------------------------------------------------------------
 // The PCM sink.
 
-describe("pcm", () => {
-  test("routes delivered audio through its panner and a gap to a restart; corrections carry no samples", () => {
+describe("placing", () => {
+  test("a screen's panner is placed where the scene says, facing its way", () => {
     const ctx = new FakeAudioContext({ sampleRate: RATE });
-    const sink = pcm(ctx);
-    sink.place({ position: [1, 2, 3], forward: [0, 0, 1] });
-    expect([sink.panner.positionX.value, sink.panner.positionY.value, sink.panner.positionZ.value]).toEqual([1, 2, 3]);
-    expect(sink.panner.orientationZ.value).toBe(1);
-    expect([...sink.panner.outputs]).toEqual([ctx.destination]);
-    sink.push({ tick: 0, audio: tick(0), events: new Uint8Array() });
-    sink.push({ tick: 0, events: new Uint8Array(), was: new Uint8Array() });
-    sink.push({ gap: [1, 9] });
-    sink.push({ tick: 9, audio: tick(9) });
-    expect(sink.stream.stats).toMatchObject({ chunks: 2, restarts: 2 });
-    const out = ctx.render(0, RATE);
-    expect(maxJump(out)).toBeLessThanOrEqual(BOUND);
-    sink.close();
-    expect(ctx.render(0, RATE)[0].every((x) => x === 0)).toBe(true);
+    const panner = screenPanner(ctx);
+    place(panner, { position: [1, 2, 3], forward: [0, 0, 1] });
+    expect([panner.positionX.value, panner.positionY.value, panner.positionZ.value]).toEqual([1, 2, 3]);
+    expect(panner.orientationZ.value).toBe(1);
+    expect(panner.panningModel).toBe("equalpower");
   });
 
   test("listen() puts the context's listener at the scene's camera", () => {

@@ -196,17 +196,25 @@ Measured (`node bench/doc-shape.mjs 120`):
 
 The host never reads a wall clock to decide the tick. It reads a clock
 `{ t(), running() }` and steps to `floor(t · hz)`, with `hz` the engine's
-exact ratio. The stage's `api.clock` (TOOLS.md §7) is such a clock, and
-`Host.open(…, { clock })` takes it as is.
+exact ratio.
 
-Until `api.clock` lands, the session carries its own clock:
+The session carries the machine's own time, over a time its peers share:
+the scene's world time in a scene (`worldClock`, "Phase 2b, in a scene"
+below), a shared wall clock standing alone (the Machine tool):
 - **`SessionClock`:** `{ t, at, until? }` in the session document.
-  - At shared wall time `at` (ms) the world time was `t`. It runs at one
+  - At shared time `at` (ms) the machine's time was `t`. It runs at one
     second per second until `until`.
+  - A run starts at `at`, never before: a peer whose shared time is short
+    of it holds at `t`, so resuming never takes it below the tick it
+    stopped at. `at` is the offset that makes tick 0 the machine's first
+    moment, however far into the shared time it was made.
   - **Pause** writes `until` a quarter second ahead, so every peer has heard
     of it before reaching it and stops at the same tick. A peer that has
     already passed that tick rewinds to it, provided the tick is not below
     its floor.
+  - A stop once set stands until a resume: a second pause within its
+    margin would set an earlier one, which a peer ahead of the second
+    pauser may already have passed.
   - **Resume** clears `until`.
   - A pause or resume rewrites the whole object, so a pause and a resume at
     the same moment settle by last writer and never mix.
@@ -359,18 +367,9 @@ re-steps, not correctness.
 
 ## Not done yet
 
-- **The scene extension** (phase 2): screens as textures, positional audio, a
-  body or station per port.
-  - The host is ready for it: `host.engine.frame(view)`,
-    `host.engine.output()`, `host.seat`, `sit` and `stand`.
-- **Running the engine in a worker.** The SNES's 1.6 ms step and a joiner's
-  catch-up belong off the frame thread.
-  - Meanwhile `budget` bounds the stepping in a frame (10 ms).
-- **`api.clock`.** When it lands, pass it as `clock`. The session clock and
-  `SyncedWall` then go.
-  - Pausing then follows the stage's rules: immediate, not a quarter second
-    ahead. Exactness at the pause tick becomes best effort, through the
-    rewind.
+- **The scene extension:** half built ("Phase 2b, in a scene" below).
+- **Running the engine in a worker:** built ("Phase 2, the host side"),
+  not yet used in a scene.
 - **Deep rebases** to before the oldest retained checkpoint replay from
   genesis, loading every seat document. That is correct but slow for long
   sessions.
@@ -723,5 +722,701 @@ All finite, no randomness.
   automerge-repo peer.
 - **Playing the output** (an AudioWorklet fed by the PCM, Doom's lumps at
   their origins) is the scene extension's.
-- **`api.clock`**: when it lands, pass it as `clock`; the session clock and
-  `SyncedWall` then go.
+- **`api.clock`** landed, and is not passed as `clock` as is: a machine in
+  a scene keeps its session clock, over world time (Phase 2b, Decision 1).
+  `SyncedWall` stays for the Machine tool, which has no world.
+
+## Phase 2b, in a scene
+
+A machine is an object in a scene (`src/scene/`): its source a machine doc
+(the engine's kind and the content it boots), its content a cabinet the
+`machine` scene:source builds, its trait `machine` holding the session this
+object runs. The stage is not changed: everything here is the extension
+contract (scene/STAGE.md) and a replicated process (TOOLS.md §7).
+
+```js
+// one machine on one view (running.js), what extension.js does for each object:
+const m = await runMachine({ repo, url: session, wasm, content, ports, world: api.clock,
+                             now: () => api.clock.now(), writable: () => api.writable(), by, input });
+m.frame();                       // every frame: the host steps to the world's t; the process while it runs
+screen.show(viewOf(m.host, { player })());
+m.play(port); m.leave();         // a port, and the clock started; the last to leave stops it
+```
+
+The first four of the eight wiring steps (FOLLOWUPS, "Machine phase 2b"):
+
+1. **The clock, with its offset.** `worldClock(handle, api.clock)` is the
+   session clock with world time for its shared time: `at` is world ms, so
+   a machine made hours into a world starts at tick 0, and pauses with its
+   world. Its own `until` stops it while the world runs on.
+2. **A replicated process.** While the machine runs, each view running its
+   host registers `api.clock.process({ replicated: true, step() {} })`, so
+   that someone computes world time; while it's stopped, none. Its step
+   does nothing: the host is pulled from world time on every frame, not
+   stepped (Decision 13).
+3. **Queries across the worker.** `host.query(kind)` on Host and
+   RemoteHost; the worker answers each kind asked for, for the state its
+   frame reached, again only when that state changed.
+4. **The screen.** The cabinet's GLB says where its screen is
+   (`extras.machine.screen`: centre, width, height, in the shape the
+   machine's pictures are meant to be seen); the extension draws a `Screen`
+   texture on a quad there, in the object's displayed frame, every frame.
+   It is unlit and not pickable: a press finds the cabinet behind it.
+
+And, to play it at all: **Play** (P, within reach) takes a free port (the
+one the screen shows if it's free) and puts the pad in hand as the held
+tool, its keys its own; Escape puts it down and gives the port back.
+
+Then steps 5, 6 and 8 (round 2):
+
+5. **Sound** (`src/present/speaker.js`). A machine's speaker plays what
+   `host.output()` delivers on one AudioContext, through `sound.js`: Doom's
+   events from the WAD's own lumps, mixed as Doom mixes them for the player
+   the screen shows (`screen()`), and its music by its own OPL code; any
+   other engine's PCM stream. The Machine tool and the scene use the same
+   speaker and differ only in where it comes out: the tool's out is the
+   context's destination, the scene's a panner at the screen, placed every
+   frame where the cabinet is drawn, with the context's listener at the
+   view's eye (the top body's, else the camera's). The tool's own
+   `audio.js`, which duplicated part of `sound.js` with a rougher mix, is
+   gone, and so is `sound.js`'s `pcm` sink, which nothing used once the
+   speaker took the stream. Doom's eyes and things are asked of the host
+   only on a frame that needs them, at most once each.
+6. **A seat per port** (`src/scene/seating.js`, `src/scene/hands.js`).
+   The view that makes a machine's session also lays a seat per port in the
+   same change, with the seats package's `lay` (found by `roster: true`,
+   never by name), **on the machine's object**: the cabinet's own seats,
+   copied and removed with it, never a table's players. They don't last
+   (`lasting: false`): a port is held only while someone sits at it, and
+   nothing about who sat there is written. They are "<title> · P<n>", each
+   a view of the screen from a little in front of it, side by side, in the
+   cabinet's frame, and the trait lists them by port (`seats: ["p1", …]`),
+   so which port a seat is, and whether the machine has seats at all, is
+   the trait's to say. The machine contributes `seatPlaces`: a strip across
+   the cabinet's front below the screen, divided into one place per port,
+   so each seat has a name tag and a look at the cabinet is a look at the
+   seat whose part of it the look lands on. **Sitting is holding**: each
+   frame, the port of the seat this view sits in (the roster's `sitting()`,
+   `{ of, seat }`) is the port it should hold; sitting down takes it and
+   puts its pad in hand, standing up (or watching, or moving to another
+   seat, or leaving) gives it back, and the seat with it. Input is the
+   host's as ever: messages first, the seat's own input document after.
+   Escape puts the pad down and the port stays yours while you sit; P
+   picks it up again.
+8. **Content** (`src/scene/part.js`, `give` in `extension.js`). The
+   machine's `scene:part`, Machine, puts an empty cabinet in from the parts
+   bin: a machine doc of its own with no game. A ROM (.sfc, .smc) or an
+   IWAD dropped on a cabinet that has no game is its game (`gameOf` in
+   `load.js`, shared with the Machine tool): a new machine doc (kind,
+   content, title), its content a doc holding the bytes, and the cabinet's
+   source pointed at it. Its session and seats then come as for any machine
+   object; the trait's `source` says which source its session was made
+   for.
+
+Then step 7 (round 3):
+
+7. **The spectator's 3D world** (`src/present/spectator.js`, what decides
+   in `src/scene/worlds.js`, wired in `extension.js`). "Lay out its world",
+   on a Doom cabinet's menu, puts doom/'s map of the level the game is on
+   beside the cabinet: doom/'s scene:source (`doom-map`, by id) over a WAD
+   file doc of the IWAD the machine runs, with `whole: true` (the whole map
+   as one part, each door a node in it), a model 3 m across, its lowest
+   floor at the cabinet's feet, turned as the cabinet is. It carries the
+   machine's trait `machine.world: { machine, source }`: the cabinet's id
+   and the machine doc it ran then. Every
+   view running that machine then draws its game in the map, every frame,
+   from the engine's state: each thing Doom draws a billboard at its feet,
+   turned to the eye with the rotation Doom would show a viewer there,
+   lit as its sector, in the map's displayed frame (scale included); each
+   door node moved up by how far its sector's ceiling stands above its
+   floor (dressing: the map carries the machine's trait). The frame is the
+   map's own say (its GLB's `extras.doom`: map, anchor, units per metre).
+   On another level, between levels, with the machine gone, or once the
+   cabinet runs another game than the one the world was laid out for, the
+   map is as built: no things, every door shut. The host answers each
+   query once a state (`Host.query`), so the speaker and every world share
+   one answer.
+
+### Decisions, made unattended (the lead was away)
+
+1. **The machine's time is its session clock over world time, not
+   `api.clock` passed as is.** The plan passed `api.clock` with the
+   machine's pause as the world's. But a machine stops while nobody plays
+   (quiet.js), and stopping a world because nobody is playing Doom in it
+   would stop the boat and the doors too. So the world's pause stops the
+   machine (world time stops), and the machine's own stop is its own
+   (`until`, in world time). `SyncedWall` stays, for the Machine tool alone,
+   which has no world.
+2. **The offset is `at`, and a run never starts before it.** Step 1's
+   `t0` is the session clock's `at` in world ms; `max(0, …)` became a rule
+   of the session clock, on the wall as in a world: a peer short of `at`
+   holds at `t`.
+3. **A stop once set stands, for pauses made in sequence.** Found by the
+   exhaustive clock test: a second pause inside the first's margin set an
+   earlier stop, which a view ahead of the second pauser had passed. The
+   rule holds when the second pauser has seen the first stop. Two pauses
+   made at once (each written before the other arrives) each write a stop,
+   Automerge's last writer keeps one, and a view that had passed it goes
+   back to it: its timeline rewinds, as it does for a pause that reaches a
+   view ahead of the pauser by more than the margin. The views still meet
+   at the stop kept. A pause and a resume made at once settle the same way.
+4. **The process is registered only while the machine runs.** A machine
+   nobody plays keeps no world going (TOOLS.md §7, "Nobody present, no time
+   passes"), and the first player's resume brings the computer back.
+5. **The session is the object's, not the machine doc's.** The machine doc
+   is the program and what it boots; each object is one running game on
+   its own scene's clock. The trait's `session` is runtime: a copy of the
+   object starts a game of its own. The first view able to (writable, and
+   holding the object's `machine.session` claim) makes the session, on the
+   world's time, and writes it on the trait. The machine doc's own
+   `session` stays the Machine tool's, on the wall.
+6. **One picture per screen, for everyone.** The trait's `player` says
+   whose view the screen shows: a screen is a thing in the world, and
+   everyone looking at it sees the same. It applies only to a machine with
+   a view per player (Doom), clamped to the machine's ports, so a 1-player
+   Doom set to player 3 shows player 0. The Super NES has one picture, and
+   its screen and Play ignore the field (`playerOf`).
+7. **The screen's place is read from the cabinet**, as dice read a die,
+   never from a second copy of the numbers.
+8. **Play is a held tool** (`api.hold`): the input path the stage already
+   has, with no stage change. A station per port (step 6) decides where the
+   player's eye goes; it may sit on top of this or replace it.
+9. **In a scene the host runs on the page**, bounded by its 10 ms budget.
+   The worker is built and answers queries, but hosting it from a Patchwork
+   package needs a worker bundle that carries automerge-repo (an import map
+   does not reach a module worker) and an adapter on the tab's repo; that
+   is its own step.
+10. **A machine plays only where the scene can be written.** Pins and
+    mirrors never act; a read-only viewer sees a note. Spectating a
+    read-only scene is deferred.
+11. **The host's liveness runs on the stage's time** (`now: api.clock.now`:
+    reaping, chunks, messages), as STAGE.md "Time" asks; its CPU budget
+    stays on the wall.
+12. **`Screen` takes three.js as a parameter** (`api.THREE`): a texture
+    must be made by the three.js that draws it, and the package no longer
+    imports three anywhere. Nor does it declare three as a peer dependency;
+    its tests take three from devDependencies.
+
+Made after review (round 1), also unattended:
+
+13. **The machine is pulled, not stepped; the process only keeps world time
+    going.** The replicated process's step is a no-op, written out
+    (`step() {}`) because STAGE.md's process has a step. Making the host a
+    stepped process would need two paths: the host must run on every
+    frame while it's stopped too (a view that went past a stop rewinds to
+    it, late inputs re-simulate, checkpoints settle, a resume is noticed),
+    and a process is registered only while the machine runs (Decision 4).
+    It also keeps its own rate (35 Hz, 60.1 Hz) and rolls back, which a
+    forward-only step on the stage's 1/60 s grid can't say. **For the
+    lead:** with this, the stage's replicated stepping (`stepTo` over
+    replicated processes, paused up to `clock.t`) has no consumer that
+    steps. The machine uses a process only to make world time pass. The
+    stage could shrink "replicated" to that (a process every view has,
+    never saved, with nothing to step), or keep the grid for a future
+    deterministic simulation that is stepped. That is a stage decision,
+    left to you.
+14. **Starting is patient** (`src/scene/start.js`). A view that doesn't win
+    the object's `machine.session` claim asks again every 2 s on the
+    stage's time (`api.clock.after`). So does the claim holder when it
+    can't make the session yet (the content still syncing, a fetch
+    failing), and so does a view whose start failed for any reason. A
+    holder that leaves lets its claim lapse (STAGE.md, "Claims"), and the
+    next view to ask takes it. "No game yet" and a scene that can't be
+    written are asked again too, since either can change. Retrying never
+    stops on its own: a machine that can't start says why beside its
+    screen and keeps trying, which costs one doc read every 2 s.
+15. **Doom in a scene plays by keys only for now.** Its mouse turns and
+    fires through pointer lock (`movementX`), and in a scene the pointer
+    belongs to the body (it looks around). A held tool declaring
+    `pointer: true` asks for the pointer free, the opposite of what Doom
+    needs. Where the mouse goes belongs with step 6's stations, which
+    decide where a player's eye and hands are.
+16. **The extension's surface is the contract** (`update`, `commands`,
+    `dispose`). The probe reads what it checks from the stage's own debug
+    surface and the scene graph: the screen mesh (named
+    `machine.screen:<id>`), the texture actually drawn, and each view's
+    session replica and world time. Nothing in the extension exists only
+    for the probe.
+17. **A query is asked of the host once per state, answered or not.** The
+    worker remembers a null answer (a kind the engine lacks) as it does an
+    answer, so the Super NES isn't asked for a kind it can't answer on
+    every frame (each ask copies the state). A null while loading isn't
+    the engine's answer, and is asked again. (Since round 3's review the
+    rule is Host.query's own, Decision 41; the worker sends an answer when
+    the host's is a new one.)
+
+Made in round 2 (steps 5, 6 and 8), also unattended:
+
+18. **Sound is the screen's, for everyone at it.** The speaker mixes Doom
+    for the player the screen shows (the trait's `player`), as Decision 6
+    has the picture: what you hear at a screen is what its picture would
+    sound like, out of a panner at the screen. A seated player hears the
+    screen's player's mix too, not their own; their own view of Doom is the
+    screen's only when the screen shows them. The spectator's route
+    (`world(toScene)`: sounds at their origins in a 3D Doom) belongs with
+    step 7.
+19. **One AudioContext per extension instance**, made with the first
+    machine to run and woken by the first press in the stage. A view with
+    machines in two linked docs has two contexts, each in its own stage's
+    frame (panners and listener alike), which is what keeps them right.
+20. **Sitting is holding, and Escape doesn't stand you up.** A port follows
+    the roster's `sitting()`: the seat body on top, in one of this
+    machine's seats. Standing up from the seat (the seats package's Stand
+    up, or walking off from it) gives the port back, so a machine everyone
+    has got up from stops (Decision 4). Standing up frees the seat too
+    (Decision 29); walking off from it keeps it for you to come back to.
+    Escape pops the held tool, never the body (scene/TOOLS.md §5), so it
+    puts the pad down and keeps the port. That needed one addition to the
+    seats package: `roster.sitting()`.
+21. **A machine with no seats is played by Play alone.** Where no seats
+    owner was installed when its session was made, its trait lists no
+    seats, and P takes a free port with the pad and Escape gives it back,
+    as in round 1. A machine whose trait lists seats has one way to take a
+    port, sitting, and P only picks the pad back up, for every viewer: one
+    without the seats package can't take a port by Play from under a seat
+    (review, round 2). Seats are laid with a session; a machine made
+    without them doesn't get them later.
+22. **P acts on the machine you sit at, wherever the pointer is.** Seated,
+    the pointer is free and the look follows it, so "the machine looked
+    at" is a coin toss. The Play command answers for a look at anything
+    that isn't a machine (another object, or nothing) with the machine
+    whose pad you hold or whose seat you sit in. (Round 2 did this only for
+    a look at nothing; the review caught it.)
+23. **Several places on one object** (the seats package's `placeOn`): a
+    look at the cabinet is at the place it lands in, else your own among
+    them if you sit at one (seated, you look at the middle), else the
+    nearest. Before, a look at an object with several places always meant
+    the first.
+24. *(Superseded by 29.)* A machine laid its seats in the doc's own seats,
+    so it couldn't share a doc with a seated game.
+25. **A game is chosen once.** A cabinet that already has a game doesn't
+    take a ROM or an IWAD dropped on it: the drop is left to the other
+    packages and the stage, as any drop the machine doesn't lay out (the
+    review: taking it only to refuse it swallowed a file someone else could
+    lay out). The Machine tool already chooses once. Put in another cabinet
+    for another game.
+26. **Content lives in documents.** The plan's step 8 kept game files out
+    of documents (each peer supplying its own copy, found by a recipe and a
+    cache: `content.js`). Licences don't bind this research, so a dropped
+    ROM or IWAD goes into a content doc, as the Machine tool and the
+    published examples already do, and `content.js` stays unused by the
+    scene.
+27. **An IWAD in a scene boots four players** (the most Doom has, a seat
+    each), at skill 3, at its first map. A PWAD alone makes no game.
+28. **`play(port)` takes exactly that port.** Choosing a port (the
+    screen's player if free, else the first free) is Play's, a pure
+    `portToPlay`; a seat asks for its own port and no other. Host.sit is
+    the one judge of whether a port is free. A seat doesn't ask for a port
+    `holders()` shows someone holding (it isn't polled by a refusal every
+    frame); it asks again once that port shows free, and Host.sit still
+    refuses it while its last holder's seat is ending.
+
+Round 2's review (Decisions 29-34):
+
+29. **A machine's seats are its own, and don't last.** The review found
+    the card table's ideas leaking into the machine through the seats it
+    borrowed: one roster per doc (so a machine's ports counted as a card
+    table's players, and as parties to an undo), a player kept after
+    standing up (so a cabinet everyone had once sat at read "Ana (away)"
+    on every port, and a newcomer was asked to "take their seat? You'll see
+    what's theirs"), and seats that outlived their cabinet. One cause, one
+    change to the seats package, with two consumers: seats have an owner,
+    the doc (a table's, on the scene, as before) or an object (a machine's,
+    on the object: copied and removed with it, never in the roster); and a
+    seat may say `lasting: false`, held only by the claim of whoever sits
+    in it, writing nothing. The two are separate: an object's seats may
+    last, the doc's may not. The picker shows one owner's seats, those of
+    what has your attention. Decision 24 goes.
+30. **Which port a seat is, is the machine's trait's.** Round 2 packed
+    machine and port into the seat's id (`<object>.p<n>`) and parsed it
+    back, and worked out whether a machine had seats from the local
+    roster. Now the trait lists the seat of each port (`seats`), written in
+    the change that lays them; the port is its index there, and a machine
+    has seats exactly when its trait lists some, whatever is installed
+    here.
+31. **A game given in the scene is a machine doc of its own.** A drop on an
+    empty cabinet makes a new machine doc and points the cabinet's source
+    at it, rather than writing kind, content and title into the empty doc.
+    One key in one write: two views giving one cabinet a game at once end
+    with one of the two whole, never one's kind with the other's content.
+    (The review suggested a claim around the write; a drop's context has no
+    `claim`, scene/STAGE.md, "Drops".) It also keeps a copy of an empty
+    cabinet, which shares its empty doc, from getting the game too. And a
+    session says which source it was made for (the trait's `source`,
+    runtime like `session`): a session a view made meanwhile for the source
+    that lost the merge is not this object's, and a new one is made.
+32. **A dropped file's bytes are copied into a content doc.** The review
+    asked to point the machine at the dropped file doc, or say why not. A
+    session is made for its content, and a content doc is a value nobody
+    edits; a file doc is whoever dropped it's, and a Machine tool or a file
+    tool may change it. Content docs also have one shape (`{ title, bytes
+    }`), and Doom's isn't the WAD's bytes at all (its start arguments come
+    with them). The file doc is left as it was: nothing points at it, and
+    an unreferenced doc costs nothing but storage.
+33. **A WAD dropped on a cabinet where the doom package is installed too**
+    goes to whichever of the two is first in registry order: both lay out
+    dropped WAD files (doom's as a map). The general answer is a stage
+    rule, offer a drop on an object to that object's extensions first, but
+    the stage takes a rule only with two unrelated consumers, and this is
+    one. With Decision 25, a cabinet that has a game no longer takes a WAD,
+    so the overlap is only an empty cabinet's. Left for the lead, with the
+    rule written down here as the proposal.
+34. **The pad and the port are `hands.js`.** What sitting, Escape and P do
+    moved out of the extension into a module of its own, given the
+    machines, the held-tool slot, the roster's `sitting` and the trait's
+    seats, so it is tested directly rather than only by a browser probe.
+
+Made in round 3 (step 7), also unattended:
+
+35. **The world is doom/'s map, laid out by the machine, with its doors as
+    nodes.** A machine's world needs doom/'s geometry and the engine's
+    motion. doom/'s own layout (a dropped WAD) makes doors that people
+    open (`joints.slide`), and a door moved by two owners would rise twice;
+    a stage object may be dressed only by an extension whose trait it
+    carries. So doom/'s source gained one param, `whole` (the map in one
+    part, a node per door and per exit switch, each exactly its own part
+    at its own anchor), and the machine lays out that one object with its
+    own trait. Rejected: the machine computing doom/'s door list and
+    anchors itself (a second copy of doom/'s line specials), and attaching
+    to a walkable map by stripping its slides (one package rewriting
+    another's layout). Nothing changed in the stage.
+36. **The map says where its frame is.** doom/'s parts now carry
+    `extras.doom = { map, anchor, unitsPerMetre }`, as the cabinet's GLB
+    says where its screen is (Decision 7); `doomWorld(wads, map, frame)`
+    places things in the frame given, and drawing uses nothing else. Its
+    own copy of doom/'s anchor rule is the default, and one production
+    path uses it: "Lay out its world" works out where the map goes beside
+    the cabinet before doom/ has built anything, so from the extent in
+    the default frame (`besideCabinet`, which places the extent it is
+    given and assumes nothing about where the anchor is inside it). If
+    doom/ changed its anchor rule, a world laid out afterwards would stand
+    off its place beside the cabinet by the difference; its things would
+    still be drawn right, since they follow `extras.doom`. The world probe
+    holds the two rules equal for E1M1. Rejected (round 3's review):
+    moving the map once it is built (a second write, by one view, racing
+    whoever moves it first), and building the map here to read its frame
+    (doom/'s geometry twice, for a placement).
+37. **A world shows one machine, named by the object's id in its trait.**
+    Not a match by map name or WAD: two cabinets of one IWAD on one level
+    would both claim it. A copy of the world shows the same game; a copy of
+    the cabinet runs a game of its own, which no map shows until one is
+    laid out for it (traits are copied as they are; ids in them are not
+    remapped).
+38. **The world's WAD is a file doc of the IWAD's bytes, one per game.**
+    doom/'s source takes a `file` doc; the machine's content doc is its own
+    records (start arguments and WADs). So the IWAD is stored twice (28 MB
+    for Freedoom), once per game, not once per click: laying out another
+    world reuses the file doc of a world already laid out for the same
+    machine doc (its trait's `source`), and a view makes at most one for a
+    machine however often the command runs (`wadFile`). A slice of only
+    what drawing the map needs (doom/'s `make-fixture.mjs` makes one,
+    1.5 MB for E1M1) would be the next step if the storage matters;
+    licences don't bind this research and Automerge's costs are assumed
+    fixed upstream. A game booting more than its IWAD isn't offered a
+    world: the command is disabled and says why (doom/ builds a map from
+    one WAD file, and a PWAD's things over the IWAD's map would be wrong).
+39. **What is drawn is what Doom draws.** Things whose flags say NOSECTOR
+    are left out, as Doom leaves them out; a thing's sprite is the one
+    Doom would pick for a viewer where the eye is (rotation by bearing,
+    mirrored lumps, fullbright), lit as doom/ lights its walls (the sector's
+    level read as sRGB); a spectre is a dark see-through shape where Doom
+    draws a fuzz. The player's own body is drawn too: a spectator sees
+    every player. Doom's diminishing light with distance is not drawn
+    (doom/'s walls don't have it either).
+40. **Doors only, for now.** The engine moves every door, lift and floor;
+    the whole map moves the plain doors doom/ makes parts of. Locked and
+    remote doors (E1M1's 51, 71, 77, 145) and lifts (98, 103) are drawn
+    where they rest. A part per moving sector of every kind is doom/'s to
+    add (a lift is a floor and the strips of wall it uncovers), and the
+    machine's dressing would move it unchanged (`doorAt` for ceilings, the
+    sector's `rise.floor` for floors).
+
+Round 3's review (Decisions 41-45):
+
+41. **The host answers a query once a state.** Round 3 wrapped the host
+    (`asked.js`) so the speaker and the worlds would share one answer a
+    frame; the worker had its own memo, with another rule for nulls. Now
+    there is one rule, `Host.query`'s: the engine is asked once per kind
+    per state (tick and revision, as a picture is), its null kept like
+    any answer, nothing kept while loading. Every reader of one state
+    gets the same answer, which nobody changes. The worker sends an
+    answer when it is a new one, without transferring its buffer (the
+    host keeps it), so an answer crosses as a copy of a few kilobytes.
+    `asked.js` and the worker's per-kind memo are gone.
+42. **What decides a world is `worlds.js`, pure, apart from what draws.**
+    Whether a world draws (`stateOf`), the command's state
+    (`worldCommand`), where a world goes (`besideCabinet`) and its WAD
+    (`wadFile`), each tested over its whole bounded space, rather than one
+    path through a Chrome probe. A world keeps its map's doomWorld for one
+    machine entry and one frame: a machine closed and opened again is
+    another entry and reads its WADs again.
+43. **A world names the game it was laid out for** (`source` on its
+    trait, the cabinet's `sourceUrl` then). A cabinet given another game
+    keeps its id, and the world would have drawn the new game's things
+    over the old game's map whenever the map names matched. Now such a
+    world rests, and its WAD file doc is reused only for worlds of the
+    same game.
+44. **Whether doom/'s map source is here is read when asked**, on the live
+    registry. The stage starts and stops only the extensions that come or
+    go (scene/STAGE.md), so the machine is not restarted when the doom
+    package arrives after it, or leaves. The world probe installs the doom
+    package after the machine has started.
+45. **Beside a scaled cabinet.** The world's turn is the cabinet's without
+    its scale (round 3 read a turn off the scaled matrix, wrong for any
+    scale but 1). The gap from the cabinet's middle to the map's near edge
+    grows with the cabinet's scale, since its side is further out; the
+    map's own size and floor height don't. The near edge, the middle front
+    to back and the lowest floor are taken from the extent as given, not
+    from the anchor being the map's middle.
+
+### Tests
+
+- **`present/spectator.test.js`:** the billboard for 4 sprite shapes
+  (offsets either side and wholly to one side), mirrored or not, from 16
+  bearings at 3 heights, through 32 map poses (moved, turned, tipped, at 1
+  and 1/36 scale): 12,288 cases, each checking the feet through the frame,
+  the quad's four corners against Doom's span to the viewer's left and
+  right (a mirrored lump right to left), and that it faces the eye. The
+  door nodes moved by `doorAt` and put back (by rest(), and by a new
+  root). Over the 4-player demo (needs the IWAD; every 105th tic, every tic
+  in test:full): every thing Doom draws stands where the engine's own
+  record puts it through the map's frame, worked out in the test from the
+  raw query and doom/'s frame rule; every player's body where the players
+  record says; every door node's underside at the engine's ceiling; doors
+  10 and 100 reach exactly the travel doom/ builds them with, and the
+  other nine never move. Mutation-checked: the viewer's right reversed,
+  the mirror's place, the frame left out, the door's rest left out,
+  doom-world's z axis flipped.
+- **`scene/worlds.test.js`** (round 3's review): whether a world draws,
+  over its machine (none, a Super NES, a Doom starting, one running) ×
+  the source on its trait (its machine's, another, none) × its content
+  (none, building, built without a frame, built) × the WADs having the
+  map × the level (none, on the map, on another, between levels) × the
+  things and sectors answered or not (1,536 cases, one drawing); its map
+  read again for another machine entry or another frame and only then;
+  the command's state over 7 machine entries × the map source here or
+  not; where a world goes for 3 extents × 2 positions × 5 turns × 2 tilts
+  × 3 cabinet scales (180 cases: turned as the cabinet, its near edge
+  GAP times the cabinet's scale to its right, centred front to back, its
+  lowest floor at the cabinet's feet, never enlarged); its WAD file doc
+  over 5 scenes, three clicks at once and one more making at most one,
+  and a failed make tried again; the map source installed after the
+  extension started, and removed; a world's group made and gone with the
+  trait and with the extension. Mutation-checked: the registry read once,
+  no PWAD check, the cached map keyed without the entry, no source check,
+  the turn from the scaled matrix, the gap not scaled, the extent assumed
+  centred on the anchor, no memo of the file doc, no reuse, a failure
+  kept.
+- **`host/host.test.js`**, query (round 3's review): two peers over a WAN,
+  rolling back, 240 frames each asking a subset of three kinds (one the
+  engine lacks) twice: the same answer twice in a state, of the state the
+  engine is in (its hash), the engine asked exactly once per kind per
+  state. Mutation-checked (no memo).
+- **`probes/world.mjs`** (headless Chrome, two views on real Automerge,
+  the built scene, doom and machine packages, real keys; 22 checks).
+  "Lay out its world" says it needs the doom package until the package is
+  installed, after the machine's extension started, then is offered with
+  no reload; the map carries the trait naming the cabinet and its game,
+  and both views build it and draw the game. At tick 0, on both views:
+  210 sprites, one at each spawn the WAD's THINGS give at skill 3 (read
+  there, not from the engine), on the floor doom/ drew (a ray straight
+  down) but the two that hang; all 11 doors shut. Ana steers the marine
+  by the arrow keys to door 100 (469 tics) and presses E. At every tic her
+  body stands on the floor Doom puts it on, worked out in the page from
+  the WAD's lines (the highest floor under her 16-unit box, as
+  P_CheckPosition takes it), or falls to it (the tic she steps off at the
+  height she stood, then lower each tic), or her box is on a lift (Doom
+  moves it, doom/ draws it at rest; 102 tics). On both views the door
+  node's height is 2 units for each tic since tick 473, at every sample,
+  up to 124 units. After Escape both views draw the same things and
+  doors; with the map moved, turned and scaled every thing keeps its
+  place in it; no page errors. (Round 3's report said more of the walk
+  and the door than its probe checked, which passed with 70% of samples
+  on the floor and only asked the door's heights to be even and rising.)
+
+- **`host/clock.test.js`:** the session clock on world time over every
+  schedule of 4 steps of nothing, a pause or a resume by either of two
+  views whose world times are 0 to 3 steps (0.1 s) apart (2,500 cases):
+  resuming never takes a view back; a pause takes a view back only when
+  it's ahead of the pauser by more than the margin, and then to the stop;
+  between writes no view's t goes back; a stop once set stands; stopped,
+  both views agree on the tick. Also: tick 0 at creation however far into
+  the world; a paused world stops the machine; the quiet stop in world time
+  for seats ending at every tick 0–40. And pauses and resumes made at once:
+  two replicas, each write reaching the other 0 or 1 steps later, either
+  writer winning a tie (10,000 cases): a view's t goes back only onto a
+  stop it had passed, or, running, when a write made at once overruled its
+  own; the replicas end equal and the views at one tick (Decision 3).
+  Mutation-checked: no clamp at `at`, a second pause moving the stop,
+  `running()` ignoring the world, no clamp at the stop.
+- **`worker/remote.test.js`:** every sequence of 3 frames (the state kept,
+  re-stepped to the same tick, or stepped on) × the kinds asked for, among
+  them one the engine can't answer (3,375 cases), over a host answering as
+  Host.query does: the page is sent a kind's answer exactly when the state
+  changed since that kind was last asked, and never a null; nothing while
+  loading, then the answers once. And a real Super NES's work RAM reaching
+  the page, equal to the worker engine's at that tick.
+- **`scene/running.test.js`:** two views over automerge-repo in virtual
+  time, the follower's world 0 to 0.2 s behind: made 2 hours into a world it
+  starts at tick 0 and registers nothing; the process is registered exactly
+  while the machine runs, on both views, through a world pause; two
+  players, then none: both views stop at the same tick with the state the
+  documents give, and stay there while the world runs on; the process is
+  STAGE.md's shape (`replicated`, `step`) and stepping it moves nothing.
+  Mutation-checked: the process always or never registered, no quiet stop,
+  no world clock, a process with no step.
+- **`scene/start.test.js`:** two or three views, each making the session
+  fine, failing once or leaving while at it; the content there at once, a
+  little later or much later; the views opening together or one after
+  another (204 cases): some view that stayed writes the session, exactly
+  once, and every view stops asking. And `retrying` over every sequence of
+  three outcomes × when it's cancelled. Mutation-checked: no retry when the
+  claim isn't won, none after a throw, giving up when the content isn't
+  there.
+- **`scene/extension.test.js`:** the extension's surface is `update`,
+  `commands`, `dispose`; `playerOf` over both machines × 1–4 ports × 15
+  values of the field (never a view the machine lacks; the SNES always 0);
+  `screenMatrix` over 180 poses (the quad's corners on the screen
+  rectangle's, through the object's matrix). Mutation-checked.
+- **`manifest.test.js`:** every dependency and peer dependency is imported
+  by the package's own code (three is no longer one).
+- **`present/speaker.test.js`** (round 2): a PCM speaker plays delivered
+  audio out of the node it's given, restarts after a gap, ignores
+  corrections; a Doom speaker over every port shown × every event's player
+  (none, 0-3) × an origin or none (40 cases): a player's own sound and an
+  origin-less one play unplaced, any other is Doom's mix for the player
+  shown, and the eyes are asked once and only for a placed sound; voices
+  follow their things frame by frame and nothing is asked while nothing
+  plays; hearing another player stops the old mix. Mutation-checked (the
+  route's port fixed at 0; things asked every frame).
+- **`scene/seating.test.js`:** a view's port over every seat it could sit
+  in (this machine's listed and unlisted, another object's or the doc's of
+  the same name, none) × 1-4 ports; the seats laid (names, not lasting,
+  frames, eyes in front, none in one place) for both machines × 1-4 ports;
+  the places partition the cabinet's front, each the machine's own seat;
+  `follow` on a stub machine over every wanted × held port × the wanted
+  one free, held, or just let go (67 cases): the calls it makes, that it
+  never asks for a port someone plainly holds, and where it ends;
+  `portToPlay` over every way 1-4 ports are held × every preferred port
+  (98 cases). Mutation-checked (a held port asked for).
+- **`scene/hands.test.js`** (review, round 2): a machine with seats, over
+  every seat a view could sit in (none, either of this machine's, another
+  machine's, the doc's own, another object's) × the pad in hand or put down
+  × P looking at this machine, another, another object or nothing (48
+  cases): the port follows the seat, Escape keeps it, P's verb and what it
+  does, nothing noticed, and getting up gives the port back. A machine
+  without seats, over three ways its ports are held × the pad × a seat sat
+  in elsewhere × the four looks (48 cases): Play's port, full said, Escape
+  gives it back. Mutation-checked (Escape always giving the port back; P
+  on another object being that object; no fall back to the seat; a seated
+  machine offered without sitting).
+- **`scene/running.test.js`, a seat drives the port:** two views over
+  automerge-repo, b sitting at P2; a follows each of the 27 sequences of
+  three wants (none, P1, P2), 400 ms each: a holds what it wants unless b
+  holds it, the pad is picked up once per port taken and put down once per
+  port given back, two views never hold one port; then b gets up, a takes
+  P2 if still waiting for it, and the machine stops exactly when nobody
+  holds a port. Mutation-checked (a move that doesn't stand first; the pad
+  never put down).
+- **`scene/extension.test.js`:** a file dropped on each of five targets
+  (nothing, a gone id, a plain object, a cabinet with no game, one with a
+  game) × four files (a ROM, an IWAD, a PWAD, a text file): only a ROM or an
+  IWAD on a cabinet with no game becomes its game, a new machine doc the
+  cabinet's source now points at, no doc that was there changed; anywhere
+  else, or on a cabinet with a game, it's left to others, unsaid. Two views
+  giving one cabinet a game at once, over three pairs of files × either
+  merge winner: one game, whole, and a session made for the loser is none
+  of the cabinet's. `sessionOf` over 27 sources × sessions × stamps. The
+  part puts in a machine doc of its own with the trait, where it was put.
+  Mutation-checked (a session for another source taken; a second key
+  written by a drop).
+- **`patchwork/load.test.js`:** `gameOf` over eight names × five kinds of
+  bytes.
+- **seats/`seats.test.js`:** `placeOn` over 1-4 places × two poses × who
+  sits × 156 points never on a boundary (4,368 cases), and through
+  `seatLookedAt` among an object's own seats; `roster.sitting()` seated,
+  stood up, and walking off from the seat. An object's own seats beside a
+  table's (review, round 2): the picker follows attention to the cabinet,
+  a thing on it, the table, or nothing; sitting at the cabinet claims on
+  the cabinet, writes nothing, keeps your table seat, and the table's
+  roster and parties never count it; every one of eight ways of getting up
+  (Stand up, the chip's Leave, Watching, the table, the other port,
+  leaving, a crash, the cabinet removed) frees the port for the next
+  person, never "away", with no seat entry changed, and someone gone and
+  back comes back to nothing; a copied cabinet's seats are its own;
+  `seatState` over lasting × player × claim (30 cases). Mutation-checked
+  (every seat lasting; the roster counting an object's seats; Leave
+  keeping the claim; a removed seat's claim kept; the picker never an
+  object's; a brief seat written like a lasting one).
+- **`probes/seats.mjs`** (headless Chrome, two people on real Automerge
+  docs, simulated time; scene, seats and machine built): Ana puts in an
+  empty cabinet from the parts bin and drops Unarmed's ROM on it; a view
+  makes its session and lays four seats; Ana sits at P1 and Ben at P2 with
+  the seats picker, each in the seat body looking from their seat with
+  their port's pad, the session giving port 0 to Ana and port 1 to Ben;
+  Ana's Start lands in port 0's seat document and not port 1's, Ben's Right
+  in port 1's and not port 0's, and the two views drew the same picture
+  for every one of 349 ticks both drew; each view made one AudioContext,
+  its panner at the screen's centre and its listener at that view's seat
+  eye, and played the console's stream; Escape puts Ana's pad down with
+  port 0 still hers, P picks it up; Ana watches and her port is given back
+  while Ben plays on; Ben gets up and the machine stops on both views at
+  one tick with one picture. 28 checks. After round 2's review, 33: the game
+  is a machine doc of its own the cabinet points at, the empty doc left as
+  it was; the four seats are on the cabinet, not lasting, listed by port on
+  the trait, and the scene's own seats untouched; sitting writes nothing
+  but the sitter's claim on the cabinet; and when Ana watches her seat is
+  free, its claim gone, never "away". The probe page's `select` now selects
+  through `api.view.select` (it had been writing a `selected` field into
+  the stage's local state, which nothing reads as the selection; Ana's
+  picker had worked only because her pointer was over her view).
+- **`probes/scene.mjs`** now also checks each view's sound: Doom's music
+  and the pistol from the WAD's own lump (22,050 Hz in Freedoom), and the
+  Super NES's stream. 40 checks.
+- **`probes/scene.mjs`** (headless Chrome, two people on real Automerge
+  docs, simulated time): Doom (Freedoom E1M1) and the Super NES (Unarmed)
+  each pasted into a scene, played by keys from one view, watched from the
+  other. 38 checks: laid out and given a session; stopped at tick 0 on both
+  views with no world computed; the picture on the cabinet's screen as the
+  stage draws it (each corner of the quad 0.0849 m from the bezel face's
+  corner, the bezel's width inset and 2 mm proud, read from the GLB's own
+  vertices), and again after the cabinet is moved and turned, on both
+  views; P puts the pad in hand; both advance and the world is computed,
+  the picture moving with the keys (about 135 different pictures of Doom
+  as Ana walks; Unarmed's title, lore, controls and menu as Ben presses
+  Start); the two views drew the same picture for most ticks both drew
+  (the rest drawn from a prediction of the player's input and put right;
+  in the last run Doom 159 of 169, the SNES 402 of 402); Escape stops the
+  machine for both at the same tick, the same picture on both screens,
+  held there while the world runs on, the session's stop at that tick,
+  and the world no longer computed. What each view shows is read from the
+  stage and the view's own session replica (Decision 16): the hash is of
+  the texture drawn, and the tick is the one the view's clock names, which
+  the host steps to. Pairing pictures by that tick makes the mismatch
+  count vary a little between runs; it stays far under the 10% allowed.
+
+### Not done yet
+
+- In the spectator's world: Doom's `world()` sound route (each sound at
+  its origin in the map, through the map's frame), lifts, floors, and
+  locked and remote doors (Decision 40), and a world that follows the game
+  to its next level (today a world is of one map, and shows nothing while
+  the game is elsewhere; laying out another is a click).
+- Being a Doom player from the 3D world (the HUD puzzle): README.md, "Being
+  a player from the 3D world", has what step 7 showed about it.
+- A WAD dropped on an empty cabinet where the doom package is installed
+  too goes to whichever of the two is first in registry order (Decision
+  33): the stage rule that would settle it waits for a second consumer.
+- Doom's mouse in a seat (Decision 15 stands: keys only).
+- The host in a worker, in a scene (decision 9).
+- A checkpoint nobody wrote in time is written by any peer a period later
+  (with a clock passed in there is no `SyncedWall` reference). The view
+  computing the world (`api.clock.computer()`) is the natural reference.
+- A read-only viewer spectating (decision 10).
+- Whether the stage keeps its replicated grid stepping (Decision 13), the
+  lead's call.
+- The Machine tool's own changes here are mechanical (the content helpers
+  and `newSession` moved to load.js, the pad split from its DOM listeners;
+  in round 2 its sound on the speaker and its game from `gameOf`) and were
+  not re-checked in a browser.
+

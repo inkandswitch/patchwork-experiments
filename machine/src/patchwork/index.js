@@ -33,4 +33,62 @@ export const plugins = [
       return (await import("./history-tool.js")).default;
     },
   },
+  {
+    // a machine doc → its cabinet, the screen's place said in its extras (../scene/cabinet.js)
+    type: "scene:source",
+    id: "machine",
+    content: "built",
+    name: "Machine",
+    icon: "Gamepad2",
+    supportedDatatypes: ["machine"],
+    params: [],
+    cost: "cheap",
+    // bump when the same kind would build to a different cabinet
+    version: 1,
+    async load() {
+      return (await import("../scene/source.js")).default;
+    },
+  },
+  {
+    // a machine in a scene: its session run on the scene's world time, its picture and sound at the cabinet's
+    // screen, a seat per port, and Play, the pad in hand; a Doom's world drawn in doom/'s map (../scene/extension.js)
+    type: "scene:extension",
+    id: "machine",
+    name: "Machines",
+    traits: ["machine", "machine.world"],
+    describes: {
+      machine: {
+        name: "Machine",
+        on: "object",
+        blurb: "An existing game, run as is, in step for everyone here; its picture and sound come from its screen. Sit at one of its seats to play that port (the pad in hand; Escape puts it down, P picks it up), stand up to give it back; where it has no seats, P plays and Escape gives the port back. It stops while nobody plays",
+        fields: [{ key: "player", label: "Screen shows player (Doom, from 0)", kind: "number", default: 0, min: 0, max: 3, step: 1 }],
+        // the session (and the source it was made for) is this object's running game: a copy starts a game of its own.
+        // `seats` (the seat of each port, laid on the object with it) describes the cabinet, and goes with a copy as its seats do
+        runtime: ["session", "source"],
+      },
+      "machine.world": {
+        name: "Machine's world",
+        on: "object",
+        blurb: "A Doom map showing a machine's game: its monsters, players and doors move here as the game has them, read from the running engine. Laid out from the machine (Lay out its world)",
+      },
+    },
+    // a machine doc is a new cabinet; a ROM or an IWAD dropped on a cabinet with no game is its game
+    drops: ["machine", "file"],
+    async load() {
+      return (await import("../scene/extension.js")).default;
+    },
+  },
+  {
+    // an empty cabinet from the parts bin: drop a ROM or an IWAD on it (../scene/part.js)
+    type: "scene:part",
+    id: "machine",
+    name: "Machine",
+    icon: "Gamepad2",
+    category: "Games",
+    description: "A cabinet for an existing game: drop a Super NES ROM or a Doom IWAD on it, and sit at it to play",
+    traits: ["machine"],
+    async load() {
+      return (await import("../scene/part.js")).default;
+    },
+  },
 ];

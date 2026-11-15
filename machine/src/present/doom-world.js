@@ -5,7 +5,7 @@
 // out. No HUD and no player's view: this is the 3D world seen from outside
 // the game, never a way to play it.
 //
-//   const world = doomWorld([iwad], "E1M1");
+//   const world = doomWorld([iwad], "E1M1", content.extras.doom);   // the frame: the map part's own say
 //   const state = world.read({ things: engine.query(QUERY.things), sectors: engine.query(QUERY.sectors) });
 //   for (const s of world.look(state, viewerMetres)) draw(s.position, world.image(s.lump, s.translation), s);
 //
@@ -18,7 +18,10 @@
 // map's vertex bounds, each rounded as Math.round does, at height 0
 // (doom/src/parts.js:68-76, mapModel's centre; anchorOf at :119-128). So a
 // position here is in that static part's own frame, and a scene places it
-// by the static object's transform as it places the part itself. Facing
+// by the static object's transform as it places the part itself. Every part
+// doom/ builds also says where its frame is (its GLB's extras.doom: map,
+// anchor, unitsPerMetre); given as `frame`, that is what places things, and
+// the rule above is only the default (the tests hold the two equal). Facing
 // follows doom/src/layout.js:51 (yawOf): a turn about +Y of an object whose
 // front is -z, which for Doom's angle a (counterclockwise from east) is
 // a - π/2.
@@ -323,6 +326,67 @@ export function decodePicture(bytes, palette, translation = 0) {
   return { width, height, left, top, rgba, opaque, overrun };
 }
 
+/**
+ * The name of the map a game is on (doom.js level(): its episode and map),
+ * as its WADs name their maps: ExMy, or MAPxx in a game without episodes
+ * (WADs with no E1M1: Doom II's, G_InitNew's gamemode commercial).
+ */
+export function mapOf(wads, level) {
+  const episodic = directory(...wads).some((l) => l.name === "E1M1");
+  return episodic ? `E${level.episode}M${level.map}` : `MAP${String(level.map).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------
+// Drawing it
+
+/**
+ * How high a door of doom/'s stands open (metres), from read()'s sector:
+ * its ceiling above the floor it shuts to, which is where the map has its
+ * floor (doom/ builds a door's part shut at its floor at rest, and a door
+ * moved up by this is where the engine has its underside).
+ */
+export const doorAt = (sector) => sector.gap + sector.rise.floor;
+
+/**
+ * A light level (0-255) as the linear grey doom/ multiplies its textures by:
+ * the level read as an sRGB value (doom/src/parts.js lightOf), so a thing
+ * is lit as the walls around it are.
+ */
+export function greyOf(level) {
+  const f = Math.max(0, Math.min(255, level)) / 255;
+  return f <= 0.04045 ? f / 12.92 : Math.pow((f + 0.055) / 1.055, 2.4);
+}
+
+/**
+ * Where a thing's billboard is, in the frame look() was given the eye in:
+ * an upright quad standing at the thing's feet and turned about the
+ * vertical to face the eye, as Doom draws a sprite (r_things.c:527-532:
+ * the picture spans `left` to the viewer's left of the thing and `width -
+ * left` to its right, and hangs from `top` above its feet).
+ *   { feet, right, facing, x: [from, to], y: [from, to], flip }
+ * `right` is the viewer's right and `facing` the way the quad faces (to the
+ * eye), both level unit vectors; x along `right` and y up are metres from
+ * the feet. A mirrored lump flips the picture, not those offsets
+ * (r_things.c:554-563). An eye straight above or below the thing faces it
+ * north (-z): every way is as good.
+ */
+export function billboard(sprite, eye) {
+  const [px, , pz] = sprite.position;
+  let dx = eye[0] - px;
+  let dz = eye[2] - pz;
+  const d = Math.hypot(dx, dz);
+  if (d > 0) (dx /= d), (dz /= d);
+  else (dx = 0), (dz = -1);
+  return {
+    feet: sprite.position,
+    right: [dz, 0, -dx],
+    facing: [dx, 0, dz],
+    x: [-sprite.left, sprite.width - sprite.left],
+    y: [sprite.top - sprite.height, sprite.top],
+    flip: sprite.flip,
+  };
+}
+
 // ---------------------------------------------------------------------
 // The world
 
@@ -330,11 +394,13 @@ export function decodePicture(bytes, palette, translation = 0) {
  * A map of WAD files (the IWAD first, then any PWADs), ready to read the
  * engine's queries of a game on that map.
  */
-export function doomWorld(wads, mapName) {
+export function doomWorld(wads, mapName, frame = {}) {
   const dir = directory(...wads);
   const map = mapLumps(dir, mapName);
-  const anchor = anchorOf(map.VERTEXES);
-  const k = UNITS_PER_METRE;
+  // the frame things are placed in: the part's own say (its GLB's extras.doom) when given, else doom/'s rule for its static part
+  const [ax, ay, az = 0] = frame.anchor ?? anchorOf(map.VERTEXES);
+  const anchor = [ax, ay, az];
+  const k = frame.unitsPerMetre ?? UNITS_PER_METRE;
   const lumps = view(map.SECTORS);
   const rest = Array.from({ length: map.SECTORS.length / 26 }, (_, i) => ({
     floor: lumps.getInt16(i * 26, true),
@@ -349,9 +415,19 @@ export function doomWorld(wads, mapName) {
   const images = new Map();
 
   /** Map units [x, y, z] as metres in the static part's frame. */
-  const metres = ([x, y, z]) => [(x - anchor[0]) / k, z / k, -(y - anchor[1]) / k];
+  const metres = ([x, y, z]) => [(x - ax) / k, (z - az) / k, -(y - ay) / k];
   /** Metres in the static part's frame as map units [x, y, z]. */
-  const units = ([x, y, z]) => [x * k + anchor[0], -z * k + anchor[1], y * k];
+  const units = ([x, y, z]) => [x * k + ax, -z * k + ay, y * k + az];
+  // the map's extent in the frame, metres: its vertexes across, its lowest floor to its highest ceiling
+  const vx = view(map.VERTEXES);
+  const xs = [], ys = [];
+  for (let at = 0; at + 4 <= map.VERTEXES.length; at += 4) xs.push(vx.getInt16(at, true)), ys.push(vx.getInt16(at + 2, true));
+  const zs = rest.flatMap((r) => [r.floor, r.ceiling]);
+  const lo = [Math.min(...xs), Math.max(...ys), Math.min(...zs)];
+  const hi = [Math.max(...xs), Math.min(...ys), Math.max(...zs)];
+  const name = mapName.toUpperCase();
+  const episodic = /^E(\d)M(\d)$/.exec(name);
+  const numbered = /^MAP(\d\d)$/.exec(name);
   /** A lump's picture header, without decoding it. */
   const picture = (lump) => {
     if (!pictures.has(lump)) {
@@ -364,12 +440,23 @@ export function doomWorld(wads, mapName) {
   };
 
   return {
-    map: mapName.toUpperCase(),
-    /** The doom/ static part's origin, in map units [x, y] (its height is 0). */
+    map: name,
+    /** The frame's origin, in map units [x, y, z]: doom/'s static part's (its height 0) unless the frame said otherwise. */
     anchor,
     metres,
     units,
     sprites,
+
+    /** The map's box in the frame (metres): its vertexes across, its lowest floor to its highest ceiling, as the map has them. */
+    extent: { min: metres(lo), max: metres(hi) },
+
+    /** Is the game (doom.js level()) playing this map? Not between levels, nor on another map. */
+    playing(level) {
+      if (level?.state !== "level") return false;
+      if (episodic) return level.episode === +episodic[1] && level.map === +episodic[2];
+      if (numbered) return level.map === +numbered[1];
+      return false;
+    },
 
     /**
      * The world at this tic, the same for every viewer: { things, sectors }.
@@ -391,8 +478,8 @@ export function doomWorld(wads, mapName) {
       const sec = decodeSectors(sectors);
       return {
         sectors: sec.map((s, i) => ({
-          floor: s.floor / k,
-          ceiling: s.ceiling / k,
+          floor: (s.floor - az) / k,
+          ceiling: (s.ceiling - az) / k,
           light: s.light,
           gap: (s.ceiling - s.floor) / k,
           rise: { floor: (s.floor - rest[i].floor) / k, ceiling: (s.ceiling - rest[i].ceiling) / k },

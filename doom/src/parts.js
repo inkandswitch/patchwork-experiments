@@ -132,6 +132,12 @@ export function anchorOf(model, door = null, line = null) {
   return [Math.round((Math.min(...xs) + Math.max(...xs)) / 2), Math.round((Math.min(...ys) + Math.max(...ys)) / 2), d.closed];
 }
 
+/** A part's place in its parent's frame (metres, Y up), from the two anchors (map units). */
+export function placeIn(parentAnchor, anchor) {
+  const k = UNITS_PER_METRE;
+  return [(anchor[0] - parentAnchor[0]) / k, (anchor[2] - parentAnchor[2]) / k, -(anchor[1] - parentAnchor[1]) / k];
+}
+
 /** Where a thing stands, in map units: its place, on the floor of the sector it's in. */
 export function thingAt(model, index) {
   const t = model.map.things[index];

@@ -3,9 +3,11 @@
 // wall clock itself, so peers agree on the tick exactly as far as they agree
 // on t, and a pause stops every peer at the same tick.
 //
-// The stage's api.clock (TOOLS.md §7) is such a clock. Until it lands,
-// SessionClock is one kept in the session document, with SyncedWall as the
-// shared wall time it needs.
+// SessionClock is one kept in the session document: a run of the machine's
+// time over some time every peer shares. Standing alone (the Machine tool),
+// that is SyncedWall, a wall clock the session's peers agree on. In a scene
+// it is the scene's world time (worldClock below), so a machine there pauses
+// with its world, and still stops on its own while nobody plays.
 
 /** The tick a clock is at. hz is [num, den], as the engine declares it. */
 export function tickAt(clock, [num, den]) {
@@ -13,13 +15,21 @@ export function tickAt(clock, [num, den]) {
 }
 
 /**
- * The stand-in for api.clock: { t, at, until? } in the session document. t
- * was the world time at synced wall time `at` (ms); it runs at one second per
- * second until `until`, if set. Pausing sets `until` a little ahead (the
- * margin), so that every peer has heard of the pause before it reaches that
- * time and stops at exactly the same tick; resuming clears it. A pause or
- * resume rewrites the whole object, so two at once settle by Automerge's
- * last-writer rule and never mix.
+ * The machine's time, as { t, at, until? } in the session document: t was
+ * the machine's time when the shared time was `at` (ms); it runs at one
+ * second per second from there until `until`, if set. Pausing sets `until` a
+ * little ahead (the margin), so that every peer has heard of the pause
+ * before it reaches that time and stops at exactly the same tick; resuming
+ * clears it. A pause or resume rewrites the whole object, so two at once
+ * settle by Automerge's last-writer rule and never mix.
+ *
+ * A run starts at `at`, never before: a peer whose shared time is still
+ * short of it (a scene's follower trails the view computing its world by up
+ * to 200 ms) holds at t until it gets there, so resuming never takes a peer
+ * back below the tick it was stopped at. `at` is the offset that makes the
+ * machine's tick 0 its first moment, however far into the shared time it was
+ * made (a scene hours into its world starts its machine at tick 0, not at
+ * hours of ticks to replay).
  */
 export class SessionClock {
   #handle;
@@ -37,7 +47,7 @@ export class SessionClock {
 
   t() {
     const { t, at, until } = this.#state();
-    return Math.min(until ?? Infinity, t + (this.#wall() - at) / 1000);
+    return Math.min(until ?? Infinity, t + Math.max(0, this.#wall() - at) / 1000);
   }
 
   running() {
@@ -45,12 +55,20 @@ export class SessionClock {
     return until === undefined || this.t() < until;
   }
 
-  /** Stops the world `margin` seconds from now (for everyone). */
+  /**
+   * Stops the machine `margin` seconds from now (for everyone). A stop
+   * already set stands: a second pause in its margin would set one earlier,
+   * which a peer ahead of the second pauser may have passed. That holds for
+   * pauses made in sequence, each pauser having seen the stop before. Two
+   * made at once each write a stop, the merge keeps one, and a peer that had
+   * passed the one kept goes back to it: its timeline rewinds, as for a
+   * pause that reaches a peer ahead of the pauser by more than the margin.
+   */
   pause(margin = 0.25) {
+    if (this.#state().until !== undefined) return;
     const t = this.t();
-    const until = this.running() ? t + margin : t;
     this.#handle.change((d) => {
-      d.clock = { t, at: this.#wall(), until };
+      d.clock = { t, at: this.#wall(), until: t + margin };
     });
   }
 
@@ -61,6 +79,27 @@ export class SessionClock {
       d.clock = { t, at: this.#wall() };
     });
   }
+}
+
+/**
+ * A session's clock on a scene's world time (`api.clock`: scene/STAGE.md,
+ * "World time"; or anything with t() in seconds and running()). The shared
+ * time is world time, which every view of the scene has: no wall clock to
+ * agree on, and a paused world stops the machine too. Its own `until` stops
+ * it while the world runs on (nobody plays: quiet.js). The machine pulls its
+ * tick from t(); it is not stepped by the world. Its `at` is world ms
+ * (`world.t() * 1000`: createSession's `wall`, quietClock's `now`).
+ * @param handle  the session document's
+ * @param world   { t() seconds, running() }
+ */
+export function worldClock(handle, world) {
+  const own = new SessionClock(handle, () => world.t() * 1000);
+  return {
+    t: () => own.t(),
+    running: () => world.running() && own.running(),
+    pause: (margin) => own.pause(margin),
+    resume: () => own.resume(),
+  };
 }
 
 /**
