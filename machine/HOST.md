@@ -1168,6 +1168,22 @@ Round 3's review (Decisions 41-45):
     map's own size and floor height don't. The near edge, the middle front
     to back and the lowest floor are taken from the extent as given, not
     from the anchor being the map's middle.
+46. **The published example is a small Arcade of its own, not a cabinet in
+    the Quiet games room** (decided at integration, 2026-11-14). The Arcade
+    (`probes/publish-arcade.mjs`) holds the two machine docs already
+    published, linked as cabinets' sources and never copied, and Doom's
+    world laid out beside them as "Lay out its world" lays it out. Putting
+    a cabinet in the room instead would have made tabletop's publisher
+    write a machine, so one package's publisher would know another's
+    objects. The room would also have to list machine and doom for every
+    viewer of a room whose game is shared with the boat. And it would
+    change the room's start, Watching at Lost Cities, which is the shared-game
+    proof. A doc of its own lists only its own packages (scene, machine,
+    doom, seats), and like any scene it can be linked into a mashup later
+    with no code. The publisher writes the objects in node with fresh
+    render docs, so the first view builds them. The cabinets' sessions and
+    seats are their traits' and are made by the first view that can write
+    the scene, so the published doc carries none.
 
 ### Tests
 
