@@ -29,7 +29,7 @@ export const ATMOSPHERE = Object.freeze({
   exposure: 1,
 });
 
-/** The ambient name of a world's wind (STAGE.md, "Wind"): { speed (m/s), from (degrees), seed, gustiness (0..1) }. */
+/** The ambient name of a world's wind (sailing/DESIGN.md, "Conventions"; STAGE.md names it): { speed (m/s), from (degrees), seed, gustiness (0..1) }. */
 export const WIND_AMBIENT = "wind";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);

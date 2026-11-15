@@ -1832,30 +1832,16 @@ ambient() → { atmosphere: null | {
   biases are a texel or so in metres. The map is redrawn only when something
   moves or the frame does.
 
-**Water** (the ambient `water`; provided by the `water` package:
-[water/WATER.md](../water/WATER.md)). A world has water when its outermost
-doc has the scene trait `water: { level }` and the water package. The value
-is `{ v: 1, level, components: [{ dir: [dx, dz], k, omega, amp, steep,
-phase }], look? }`: Gerstner waves in the outermost doc's root frame, on its
-world time, and `look` (`{ seed, stats }`) what only their maker knows of
-them. Whoever makes waves contributes them in the water's own stage as
-`water.waves`, `{ components, look? }` (sailing's sea does); none is flat
-water at `level`. In every stage that runs it, the water package
-contributes `water`, a reader of the world's water in that stage's frame
-and on its clock (`heightAt`, `sampleAt`, `normalAt`, `velocityAt`,
-`displaced`, `components`), or null where there is none (a dry world, a
-tilted frame, another version). Only the outermost's draws the surface,
-roughened by the world's wind.
+**Water** (the ambient `water` and the contribution `water.waves`;
+provided by the `water` package). Whether a world has water, and its waves,
+as data whatever floats reads in its own frame and time. Its value, its
+reader and who draws it are the package's to document:
+[water/WATER.md](../water/WATER.md), "The water package".
 
-**Wind** (the ambient `wind`; offered by sailing's sea,
-[sailing/DESIGN.md](../sailing/DESIGN.md)). How the world's air moves:
-`{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
-compass bearing it blows from in degrees (0 from −Z, 90 from +X), in the
-outermost doc's root frame on its world time; `seed` and `gustiness` (0..1)
-make its gusts (sailing's `wind.js`). Two readers: sailing's physics, which
-makes it a wind in each stage's frame, and the water package's surface,
-whose fine waves, roughness and foam follow it. One copy: nothing else
-carries it.
+**Wind** (the ambient `wind`; offered by sailing's sea). How the world's
+air moves, read by sailing's physics and the water package's surface. Its
+value and compass convention are sailing's to document:
+[sailing/DESIGN.md](../sailing/DESIGN.md), "Conventions".
 
 ---
 
