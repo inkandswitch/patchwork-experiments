@@ -23,6 +23,15 @@ modules share.
   *from*, in degrees, measured from −Z (north) toward +X (east), as sailors
   say it. A wind "from 0" blows toward +Z. Velocities in code are vectors.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
+- **The `wind` ambient** (scene/STAGE.md, "Conventions", names it; this
+  package's sea offers it). How the world's air moves:
+  `{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
+  compass bearing it blows from in degrees (as above: 0 from −Z, 90 from
+  +X), in the outermost doc's root frame on its world time; `seed` and
+  `gustiness` (0..1) make its gusts (`wind.js`). Two readers: this
+  package's physics, which makes it a wind in each stage's frame
+  (`sea-view.js`), and the water package's surface, whose fine waves,
+  roughness and foam follow it. One copy: nothing else carries it.
 
 ## Modules (sailing/src)
 
