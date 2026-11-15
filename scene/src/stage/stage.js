@@ -43,7 +43,7 @@
 //     (hearing events in its frame), its bodies and widgets.
 //   - the doc loop: derive, the running set, display and content; then the
 //     update flush (once per UI pass): each instance's update(), scheduled
-//     work, lenses, atmosphere.
+//     work, lenses, ambients (./ambients.js).
 
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
@@ -66,6 +66,7 @@ import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { isLink } from "./links.js";
 import { isStageBody } from "./bodies.js";
 import { createView, projectView } from "./view.js";
+import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
 import { elementOf, keyOf, parseKey, pathOf } from "./paths.js";
 import { lookChain } from "../keymap.js";
@@ -172,24 +173,6 @@ export function mergeLooks(lenses, objects) {
     }
   }
   return out;
-}
-
-/**
- * Atmospheres stacked in running order, as lenses are: each one's fields
- * (sky, fog, sun, exposure) over the earlier ones', a field left undefined
- * kept, null clearing it. A field's value is taken whole (one sky, not a top
- * from here and a horizon from there). null when nothing is left.
- * @param {Iterable<object | null>} list
- * @returns {{ sky?, fog?, sun?, exposure? } | null}
- */
-export function mergeAtmosphere(list) {
-  const out = {};
-  for (const a of list ?? []) {
-    if (!a || typeof a !== "object") continue;
-    for (const k of ["sky", "fog", "sun", "exposure"]) if (a[k] !== undefined) out[k] = a[k];
-  }
-  for (const k of Object.keys(out)) if (out[k] == null) delete out[k];
-  return Object.keys(out).length ? out : null;
 }
 
 /** A stable key for a lens map, to tell whether it changed. */
@@ -587,8 +570,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const veils = new Map(); // id → veilKey of the veil it is shown as (a look with `veil: true`)
   const veilBytes = new Map(); // veilKey → its GLB
   let lastLooksKey = "[]";
-  let atmosphere = null; // the running extensions' atmosphere, merged (mergeAtmosphere)
-  let lastAtmosphereKey = "null";
+  let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
   const nameOf = (id) => looks.get(id)?.name ?? derive().objects[id]?.name ?? null;
 
   // ─── the doc → the viewport ───────────────────────────────────────────────
@@ -1307,7 +1289,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     viewer,
     now: time.now,
     onStatus: (status) => {
-      if (!dead) local.swap(assoc("clock", status));
+      if (dead) return;
+      local.swap(assoc("clock", status));
+      // (the view puts the focus path's together for the clock chip: view.clocks)
+      view.clocksChanged();
     },
   });
 
@@ -1448,23 +1433,23 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // names through a lens changed: let every extension read them again
       displayChanged();
     }
-    // the atmosphere, stacked the same way; the viewport hears only a change
-    const atm = mergeAtmosphere(
+    // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
+    // the outermost doc's are the world's (COMPOSITION.md §3), which the view reads (view.ambient)
+    const offered = mergeAmbients(
       running.map((r) => {
         try {
-          return r.instance.atmosphere?.() ?? null;
+          return { id: r.id, offer: r.instance.ambient?.() ?? null };
         } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: atmosphere failed`, err);
-          return null;
+          console.warn(`[scene] extension “${r.id}”: ambient failed`, err);
+          return { id: r.id, offer: null };
         }
       }),
+      ambients,
+      (ext, name, err) => console.warn(`[scene] extension “${ext}”: ambient “${name}” refused: ${err.message}`),
     );
-    const atmKey = JSON.stringify(atm);
-    // (the outermost doc's atmosphere is the view's: COMPOSITION.md §3)
-    if (atmKey !== lastAtmosphereKey) {
-      lastAtmosphereKey = atmKey;
-      atmosphere = atm;
-      if (n === 0) viewport.setAtmosphere(atm);
+    if (offered !== ambients) {
+      ambients = offered;
+      view.ambientsChanged?.();
     }
     const ms = cpuNow() - t0;
     spend(ms);
@@ -2392,6 +2377,19 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
+      /**
+       * One of the world's ambients (STAGE.md, "Ambients"): the outermost
+       * doc's value under `name` (frozen plain JSON, the same object until it
+       * changes), with `mine` (this is the outermost stage), this stage's
+       * frame (scope.js: the world is the outermost's root) and the
+       * outermost's world time as of now; null when it offers none.
+       */
+      ambient: (name) => {
+        const value = view.ambient(name);
+        if (value === undefined) return null;
+        const world = view.outermost();
+        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), clock: Object.freeze(world.worldTime()) });
+      },
       invalidate: () => viewport.invalidate(),
       loop: (fn) => acquire(own.frame, () => viewport.addLoop(fn)),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
@@ -2690,7 +2688,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     veils: () => new Map(veils),
     audience: audienceOf,
     shown: shownTo,
-    atmosphere: () => atmosphere,
+    /** its ambients (./ambients.js), the atmosphere among them */
+    ambients: () => ambients,
     /** the drawer: the docked elements in tab order, and the one shown */
     drawer: () => drawer.state(),
     /** does this extension hold a body, the held tool, an open session or a pose (so a doc-caused stop waits)? */
@@ -2758,6 +2757,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     nameOf: (oid) => nameOf(oid),
     /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */
     packages: () => local.get().packages,
+    /** may this view write its doc? */
+    writable: () => writable(),
+    /** its doc's world time: what its chip shows (local.clock: ./clock.js status, null with no process), and pause or resume it by name (anyone who may write) */
+    clock: Object.freeze({ status: () => local.get().clock, pause: () => clock.pause(), resume: () => clock.resume() }),
   });
 
   stage = Object.freeze({
@@ -2769,6 +2772,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     reached,
     path: Object.freeze([...path]),
     url: handle.url ?? null,
+    /** what its extensions offer as ambients (./ambients.js): the world's, read through api.ambient, when it's the outermost */
+    ambients: () => ambients,
+    /** its doc's world time now: { t, running } (what api.ambient's clock says of the outermost) */
+    worldTime: () => ({ t: clock.t(), running: clock.running() }),
     handle,
     doc,
     scene,

@@ -107,11 +107,12 @@ export const plugins = [
     },
   },
   // ─── extensions: the parts the scene editor is made of ───
-  // All but carry declare no traits ("general" scope): the view runs them
+  // All but carry and others declare no traits ("general" scope): the view runs them
   // once, in the focus stage (the outermost doc until Enter moves the focus
   // into a link: COMPOSITION.md §3, §5), in this order, which is the order
   // input is offered to them, after every stage's own parts.
-  // Carry runs by trait, where the doc has something carryable. Chrome
+  // Carry runs by trait, where the doc has something carryable; others in
+  // every doc (traits ["*"]), wherever the focus is. Chrome
   // follows attention, never the doc (TOOLS.md §1), and the editor's chrome
   // is the Edit body's (src/stage/bodies.js): the toolbar, the halo and its
   // knobs, the inspector (a drawer tab while something is selected), the
@@ -283,6 +284,18 @@ export const plugins = [
     name: "Selection",
     async load() {
       return (await import("./parts/select.js")).default;
+    },
+  },
+  {
+    // everyone else's selection boxes: a part of every doc, so they show
+    // wherever their doc is drawn, whatever the focus (COMPOSITION.md §3,
+    // "Presence where it is")
+    type: "scene:extension",
+    id: "scene.others",
+    name: "Others' selections",
+    traits: ["*"],
+    async load() {
+      return (await import("./parts/others.js")).default;
     },
   },
   {

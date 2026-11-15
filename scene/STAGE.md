@@ -109,7 +109,8 @@ or identity closes, with what was opened under it, and opens again.
   removes `at`.
 - **One doc per extension.** An extension runs in a stage when that
   stage's doc has one of its traits; a general one (no traits) runs once,
-  in the focus stage. Everything an api reads and writes is its stage's
+  in the focus stage; one of every doc (`traits: ["*"]`) runs in every
+  stage. Everything an api reads and writes is its stage's
   doc: `null` is that doc's root, `api.url` its url, every id one of its
   own. No reference crosses docs.
 - **The focus** (COMPOSITION.md §5, TOOLS.md §3) is the path of the links
@@ -141,7 +142,17 @@ or identity closes, with what was opened under it, and opens again.
   once, and one holding something (a body: walk; the held tool: Measure; a
   session; a pose hold) lingers there, offering nothing, until it lets go,
   so a walk or a measurement goes on across Enter and Leave (back in that
-  stage before then, it's kept). What each doc runs is untouched (H1). `scene.focus` offers Enter on a link (the menu,
+  stage before then, it's kept). What each doc runs is untouched (H1).
+  **Presence where it is.** What a doc's people are doing is drawn where
+  that doc is, by a part of every doc (`traits: ["*"]`, "Activation"):
+  `walk.people` (the others walking) and `scene.others` (everyone else's
+  selection boxes). It runs in every stage, as that doc's own part, and
+  the focus moving never starts or stops it, so it draws every doc's
+  people, not only the focus path's: the focus scopes the selection and
+  the editor, and a sibling doc is as live as one the focus is inside. A
+  pin draws nobody (a value has no channel); a mirror hears its doc's
+  channel, so it draws them again, as it draws their carried cards again.
+  `scene.focus` offers Enter on a link (the menu,
   the inspector) and takes a double-click on one; the outline's link rows
   say what the link is here and enter; the inspector has a Linked scene
   row.
@@ -186,6 +197,10 @@ or identity closes, with what was opened under it, and opens again.
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  A reader also has `writable()` and its doc's `clock` (`status()`, as
+  `local.clock`; `pause()`, `resume()`), so the clock chip shows and
+  pauses each doc on the focus path (`view.clocks` says when any of them
+  changed).
   `api.path` is a general part's only, as `view.packages` is: the readers
   are other docs, and a stage's extension reading them would depend on
   where it is placed (I4); any other extension's `api.path` is undefined.
@@ -264,6 +279,7 @@ the calls named here, never swapped.
 | `drawer` | `api.dock` | `{ tabs, shown }`: the drawer's tabs by title, in docking order, and the one shown (null with none docked), so a surface showing whether a tab is open (the toolbar's Objects, Inspector) hears when it closes |
 | `prefs` | `api.setPref` | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `packages` | the view (general parts only) | every open doc's packages this viewer doesn't have, one prompt's worth (see "Packages") |
+| `clocks` | the view (general parts only) | the focus path's clocks, outermost first: `[{ stage, name, status }]`, one per stage on the path whose `clock` is not null, `name` the trail's for that doc. The clock chip's: a chip per doc, Pause and Resume through each stage's reader (`clock`) |
 
 Private local state lives in the extension's closure, or under a key prefixed
 `<id>.`. Another extension doesn't write it: it runs one of the owner's
@@ -271,14 +287,16 @@ commands instead (measure saves through `scene.dimensions`' `add`).
 
 Presence keys are the extension's own too, with one shared convention: the
 selection extension (`scene.select`) publishes `selected` (any target) and
-`hovered`, and surfaces (the outline) read them to mark peers' rows (objects
-only). Peer colours come from `src/peers.js`, so a peer's box and row match.
+`hovered`, and surfaces read them: the outline marks peers' rows (objects
+only) and `scene.others` draws their boxes. Peer colours come from
+`src/peers.js`, so a peer's box and row match. Likewise walk's body (`walk`)
+says `avatar` and `walk.people` draws it.
 
 ## Activation
 
 ```js
 { type: "scene:extension", id, name,
-  traits?:     string[],              // active when the scene or any object has one of these trait keys
+  traits?:     string[],              // active when the scene or any object has one of these trait keys ("*": every doc, held by its scene)
   drops?:      string[],              // may lay out a dropped doc of this datatype ("*": any)
   describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
   …                                   // any other plain data: the stage ignores it, others may read it from
@@ -306,7 +324,7 @@ scope:
 
 | Scope | Reason | Offered input at ("The input chain") |
 |---|---|---|
-| `scene` | a scene trait | step 3, every event: at its nearest holder, which is the scene unless the hit chain reaches one of its objects first |
+| `scene` | a scene trait, or `traits: ["*"]` (every doc calls for it: what draws a doc's people, wherever the doc is) | step 3, every event: at its nearest holder, which is the scene unless the hit chain reaches one of its objects first (always the scene, for `"*"`) |
 | `objects` | only object traits | step 3, and only when the event's hit chain reaches one of its objects (one with its trait) |
 | `general` | it declares no traits at all (a general-purpose part: the key map, the menu, notices, the inspector, the walk body) | step 4 |
 
@@ -1208,6 +1226,7 @@ How the camera parts behave:
 | `pose` | `{ hold(id, transform, { yields? }) → boolean, release(id, { landed? }) }`. `hold` says whether the hold stands: holds go in one order (see "Holding a pose"), and one that doesn't rank first is refused |
 | `heldBy(id, { yields? })` | the peer session whose hold on this object ranks ahead of this view's, or null: the one it has, or else one it would begin now, of the kind `yields` says (by default what it holds, else a person's). So a person isn't kept off by a peer's yielding hold, and of two that grabbed it at once exactly one is told to let go (the carry and the halo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
+| `ambient(name)` → `null \| { value, mine, frame, clock }` | the world's ambient under `name` ("Ambients"): the outermost stage's stacked value (frozen plain JSON, the same object to every caller until it changes), `mine` (this is the outermost stage), this stage's frame (scope.js: the world is the outermost's root) and the outermost's world time now, `{ t, running }`. null when the outermost offers none. Read it once a frame and compare identities: nothing is pushed |
 | `clock` | `{ t(), running(), computer(), pause(), resume(), process({ start?(t), step(dt, t), save?(d), stop?(), replicated? }) → remove }`: the doc's world time; `computer()` is who computes it (`{ viewer, session, mine }` or null). See "World time". And the stage's own time, which acts and liveness run on and which never pauses: `now()` (ms), `after(ms, fn) → cancel`, `frame(fn(now)) → cancel` (once, at the next frame); what they set is cancelled when the extension stops. See "Time" |
 
 How poses and loops behave:
@@ -1467,7 +1486,7 @@ per person and per focus doc, as inverse changes (`src/undo.js`):
 | `audience(scene)` → `(id) → { show?, only? } \| null` | the stage, for `api.audience` and `api.shown`: this extension's policy for who may see what an object is. See "Audience" |
 | `parties(scene)` → `(id) → viewer[] \| null` | the stage, when an edit that showed or decided something is taken back ("Undo"): who has a stake in this object (seats: the people seated, here or away; not watchers). `null`, or no extension answering: no stake. One that throws (`parties(scene)` or its function) can't be told, and the take-back is refused, as a throwing audience policy hides |
 | `decided(before, after)` → id[] | the stage, when an edit of its own is recorded ("Undo"): the objects whose outcome that change took from shared randomness or hidden state. Nothing answers it yet: no stage edit draws or rolls |
-| `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
+| `ambient()` → `{ [name]: json \| null }` or null | the stage, every flush: the values a world has once (its atmosphere, its water) that this extension offers. Stacked per name in running order (a later value wins whole, `null` clears), copied into frozen plain JSON (a value that isn't is refused, with a warning); the outermost stage's are the view's. See "Ambients" below |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
@@ -1746,25 +1765,46 @@ objects' own (closed) looks and is offered it.
 | a listed package (a policy's, or any) | the audience is unknown here: this viewer's keepers show closed looks and hand nothing over, so a shuffle that needs them waits, and its HUD names who |
 | the seats' owner | no roster: a hand is nobody's, a deck waits for players |
 
-**Atmosphere.** How the world around the objects looks: a sky, fog, a sun.
+**Ambients.** Some things a world has once, however many things it holds:
+its sky, its water. An extension offers them with `ambient() → { [name]:
+value | null }`; a stage stacks its extensions' offers per name in running
+order (the later value whole, `null` clearing an earlier one, nothing
+keeping it), and copies each into frozen plain JSON, so what crosses is data
+by construction: a function, a cycle, a handle or a Map is refused, and a
+reader can neither call into the provider nor see it change underfoot. A
+property that is undefined is left out and an array element that is
+undefined (or a hole) is null, as JSON writes them. A refused value stacks
+as `null`: it clears what an earlier extension offered under that name, so
+a broken override leaves no value rather than quietly falling back to
+someone else's. **A world's ambients are its outermost doc's**: one read
+path (`view.ambient`) serves every stage's `api.ambient(name)` and the
+viewport's atmosphere alike, and nothing a linked doc offers reaches its
+host or a sibling. A linked world brings its things, not its weather. Each
+reader evaluates the value with its own code, in its own frame and time; the
+stage never reads inside one. `value` is the same wherever the caller sits;
+`mine`, `frame` and `clock` say where it sits (I4 names them among the
+reads that depend on placement). Names are a package's to document: an
+unprefixed name is a convention below, and a package's own would be
+prefixed.
+
+**Atmosphere** (the ambient `atmosphere`). How the world around the objects
+looks: a sky, fog, a sun. The viewport shows the outermost doc's.
 
 ```js
-atmosphere() → null | {
+ambient() → { atmosphere: null | {
   sky?: { top, horizon, bottom },          // sRGB hex ("#rrggbb"); a missing one takes a neighbour's
   fog?: { color?, near, far },             // metres from the eye; color defaults to the sky's horizon
   sun?: { direction: [x, y, z],            // toward the sun (need not be unit)
           color?, intensity?,              // default white, the key light's 1.5
           shadows?: boolean },             // default false
   exposure?: number,                       // scales every light; default 1
-}
+} }
 ```
 
-- The stage asks every running extension at every flush and stacks the
-  answers in running order, as it does lenses: a later extension's field
-  wins whole (one sky, never a top from one and a horizon from another), a
-  field left undefined is kept, and `null` clears an earlier one's. The
-  viewport hears only a change (by key). Something that changes on its own
-  (a day passing) asks for a flush with `api.schedule`.
+- Stacked as every ambient is: a later extension's atmosphere wins whole
+  (one atmosphere, never a sky from one and a sun from another). The
+  viewport hears only a change. Something that changes on its own (a day
+  passing) asks for a flush with `api.schedule`.
 - **None at all is the stage's own look, exactly**: the theme's background,
   no fog, the white key light high to one side, no shadows. The editor
   never gives one.
@@ -1787,6 +1827,31 @@ atmosphere() → null | {
   biases are a texel or so in metres. The map is redrawn only when something
   moves or the frame does.
 
+**Water** (the ambient `water`; provided by the `water` package:
+[water/WATER.md](../water/WATER.md)). A world has water when its outermost
+doc has the scene trait `water: { level }` and the water package. The value
+is `{ v: 1, level, components: [{ dir: [dx, dz], k, omega, amp, steep,
+phase }], look? }`: Gerstner waves in the outermost doc's root frame, on its
+world time, and `look` (`{ seed, stats }`) what only their maker knows of
+them. Whoever makes waves contributes them in the water's own stage as
+`water.waves`, `{ components, look? }` (sailing's sea does); none is flat
+water at `level`. In every stage that runs it, the water package
+contributes `water`, a reader of the world's water in that stage's frame
+and on its clock (`heightAt`, `sampleAt`, `normalAt`, `velocityAt`,
+`displaced`, `components`), or null where there is none (a dry world, a
+tilted frame, another version). Only the outermost's draws the surface,
+roughened by the world's wind.
+
+**Wind** (the ambient `wind`; offered by sailing's sea,
+[sailing/DESIGN.md](../sailing/DESIGN.md)). How the world's air moves:
+`{ speed, from, seed, gustiness }`, speed in m/s at 10 m, `from` the
+compass bearing it blows from in degrees (0 from −Z, 90 from +X), in the
+outermost doc's root frame on its world time; `seed` and `gustiness` (0..1)
+make its gusts (sailing's `wind.js`). Two readers: sailing's physics, which
+makes it a wind in each stage's frame, and the water package's surface,
+whose fine waves, roughness and foam follow it. One copy: nothing else
+carries it.
+
 ---
 
 ## Inside the stage (for whoever builds it)
@@ -1799,7 +1864,7 @@ atmosphere() → null | {
 | `stage/dock.js` | the drawer: its model (pure) and its tabs and panes |
 | `stage/audience.js` | merging policies' answers: `shown`, `audience` (pure) |
 | `stage/veil.js` | the veil's drawing, from bounds alone (pure but for the GLB encoding) |
-| `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages |
+| `stage/view.js` | the view: the mount, the viewport, the router, the body stack and held tool, the selection and hover as paths, notices, prefs, the camera's saving, the session, the stages and the links it opens (expansion, child stages), the input chain across stages, the input path, collect across stages, the focus path's clocks |
 | `stage/paths.js` | the key grammar (a stage's object in the viewport, a stage's extension at the router) and a stage's element of a path (pure) |
 | `stage/scope.js` | one stage's view of the viewport: its keys and its frame, the one choke point every spatial call goes through; similarities and their conversions (pure parts exported) |
 | `stage/links.js` | what a link is, and expansion (pure) |
@@ -1846,7 +1911,7 @@ parts or the router's. One per view, shared by its stages, each through its
 - **Widgets:** `worldLayer(owner, { onTop })` and `pickWidget(x, y)`.
 - **Labels:** `labels.sync(owner, items)`.
 - **Poses:** `setPose(id, transform | null)`, `worldOf(id)`.
-- **Atmosphere:** `setAtmosphere(merged | null)` (sky, fog, sun; the
+- **Atmosphere:** `setAtmosphere(atmosphere | null)`, the world's ambient as the view reads it (`view.ambient("atmosphere")`, told on a change: sky, fog, sun; the
   pure parts are `cleanAtmosphere`, `lighting`, `shadowFocus`,
   `ladderRadius`, `lightBasis` and `shadowFrame`).
 - **Depth:** near sits halfway to the nearest geometry (`nearestClear`: each

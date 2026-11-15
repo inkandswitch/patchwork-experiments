@@ -77,7 +77,7 @@ function urlsIn(doc, out = new Set()) {
 }
 
 try {
-  const urls = REPLAY ? ["../../scene/dist/index.js", "../../sailing/dist/index.js"] : ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../dist/index.js"];
+  const urls = REPLAY ? ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js"] : ["../../scene/dist/index.js", "../../sailing/dist/index.js", "../../water/dist/index.js", "../dist/index.js"];
   for (const url of urls) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);

@@ -51,7 +51,8 @@ export function holdersFor(running, hitChain, traitsOf) {
   for (const r of running) {
     const mine = Array.isArray(r.meta?.traits) ? r.meta.traits : [];
     if (!mine.length) continue;
-    const depth = keys.findIndex((ks) => ks.some((t) => mine.includes(t)));
+    // (a part of every doc, traits ["*"], is the scene's: activation.js)
+    const depth = mine.includes("*") ? links.length - 1 : keys.findIndex((ks) => ks.some((t) => mine.includes(t)));
     if (depth >= 0) out.set(r.id, { id: links[depth], depth });
   }
   return out;

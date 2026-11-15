@@ -65,11 +65,11 @@ locked on her table), the Quiet games room (the same game doc on one of its
 tables), Fitting out (a fit-out pinned at a version, a hatch linked live
 twice) and Games night (a mashup: the room and the Liar's dice table linked
 unchanged into a new doc). Each was checked in the real Patchwork on
-2026-11-14 (FOLLOWUPS "Final fixer"). Still open:
-- the clock chip shows the focus doc's clock only (TOOLS.md §6 wants one
-  per doc on the focus path), and walk's avatars of others are the focus
-  doc's while you aren't walking (the same root: presence drawn by a
-  general part is the focus doc's);
+2026-11-14 (FOLLOWUPS "Final fixer"). Since then, presence is drawn where
+it is (section 3): a part of every doc (`traits: ["*"]`: walk's avatars,
+`scene.others`' selection boxes) draws each doc's people wherever that doc
+is drawn, in its frame, and the clock chips are one per doc on the focus
+path. Still open:
 - out of focus isn't tinted;
 - in Edit, a click on sky or sea with nothing selected isn't Edit's (TOOLS
   Decisions 6), so it goes down the chain and comes aboard the boat
@@ -85,8 +85,12 @@ unchanged into a new doc). Each was checked in the real Patchwork on
   remaining fix is opening the inspector a beat after a click that may
   become a double-click;
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go;
-- two linked docs that each draw a sea draw two (no shared water surface).
+  they go.
+
+Two linked docs that each have a sea now share one: a world's ambients are
+its outermost doc's (section 3, and [water/WATER.md](../water/WATER.md),
+built in the lane on 2026-11-14, waiting for the lead's yes to the amended
+Decision 1, then to be merged and published).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -246,8 +250,36 @@ The general parts that present others' contributions (STAGE.md's surfaces:
 the key map, menu, notices, the packages card) run in every view, showing
 nothing when nothing offers them anything. The view offers the union of
 what its acting stages offer: commands, tools and bodies. The outermost doc
-gives the defaults: the atmosphere and `view.start`, the body and place a
-viewer starts in. Inner docs' spawns serve arrivals (section 9).
+gives the defaults: its ambients and `view.start`, the body and place a
+viewer starts in. An ambient is a named value a world has once, however
+many things it holds: its atmosphere, its water. Each stage offers some
+(`instance.ambient()`, stacked per name), the stage copies each offer into
+frozen plain JSON, and every stage in the view reads the outermost's with
+`api.ambient(name)` and its own code. A linked world brings its things, not
+its weather: a boat alone has her sea; linked into a harbour, she floats on
+the harbour's; in a dry room she has none. Inner docs' spawns serve arrivals (section 9).
+
+**Presence where it is.** What a doc's people are doing (someone walking,
+someone's selection) is that doc's, so it is drawn where the doc is, in
+its frame, whatever the focus. That needs no new kind of part: an
+extension whose traits are `["*"]` is called for by every doc (as
+`drops: ["*"]` takes any datatype), so it runs in every stage as that
+doc's own part, held by its scene, and never moves or restarts when the
+focus does. walk's people (`walk.people`) and everyone else's selection
+boxes (`scene.others`) are its two consumers, and they share nothing but
+the rule. The general parts keep what is the viewer's: the walk body
+(`walk`), this view's selection and its box (`scene.select`). A part of
+every doc reads the doc's channel like any part: a pin has none, so it
+draws nobody; a mirror hears its doc's (a read-only stage listens and says
+nothing), so it draws the people again, as it already draws their carried cards
+again. Neither part draws this view (a mirror hears this view's own
+session). A part with nothing of the doc's to draw (the menu, the
+inspector, the toolbar) stays general, so twenty linked games still don't
+make twenty menus. *Built 2026-11-14 (presence lane), and reworked after
+review the same day from a general part's second entry point to this:*
+`activation.js` (`"*"`), `chain.js` (held by the scene), walk split into
+`walk` and `walk.people`, `scene.select` split into itself and
+`scene.others`.
 
 **`collect` is the caller's.** A stage's extension collects from its own
 stage. A general part collects from every stage on the **input path**, the
@@ -298,8 +330,10 @@ walker in a linked level stands on the host's floor.
 
 **The view answers space; no doc's code runs for another.** Rays, hits, the
 ground and published frames (section 9) cross a doc boundary because the
-view computes them. A sea's water height doesn't, because only sailing
-knows it.
+view computes them. A world's ambients and its world time do too (proposed,
+Decision 1), as plain data its outermost doc offers; each stage reads them
+with its own code (the water package evaluates the outermost's water in
+each stage's frame and time).
 
 **The camera is the body's** (TOOLS.md §4). The current body's ride
 applies; the stage's Look and Edit (the orbit camera) ride the latest base
@@ -626,7 +660,7 @@ Each is argued above and checkable over finite cases.
 | I1 | **One doc per extension.** Every read and write through an api goes to its stage's handle | Spy handles; run the scene parts', tabletop's, sailing's and the keepers' tests in a child stage; no other handle is touched |
 | I2 | **No reference crosses docs.** Parent, group and every `object` field name an object of the same doc; a link is the only edge between docs | Every assignment over ≤3 docs × ≤3 objects, foreign ids included: the composed relation is intra-doc plus link → child roots, and acyclic |
 | I3 | **Expansion is finite and fixed by the graph.** No identity repeats on a path; each live doc has exactly one acting occurrence, chosen by path order; the rest are mirrors; closed reasons are exact | Every link multigraph on ≤4 docs (live, pinned, self-pins, ≤2 links per pair) × every arrival order: terminates, and the final expansion is the same |
-| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical (`src/stage/placement.test.js`: 1056 comparisons; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
+| I4 | **Placement independence.** A stage's snapshot, running set, `audience`, `looks` and `shown` are functions of its doc and the registry: never of its host, the focus, the viewer's body or held tool, or whether it acts or mirrors. The reads that do depend on placement are space (frames, rays, hits) and `api.ambient`: its `value` is the world's, the same wherever the caller sits, and its `mine` (the caller is the world), `frame` and `clock` say where the caller sits. An extension that branches on them (water draws only where `mine`; a boat rides the camera and shows her HUD only where `mine`) acts differently by placement, on purpose and only through these (WATER.md W7) | A synthetic G shaped like Lost Cities' (seats with a roster and a seat body; a table whose audience reads the roster; a lens) × seats {none, p1, p1+p2} × card state {dealt, played to the table} × body {look, edit, walk, seat} × held tool {none, measure} × clock {running, paused}: G alone, in X at 0° and mirrored at 20° heel, in X' at 20° heel, in Y two links deep (mirrored there too), focus inside and outside the link (outside only alone): snapshot, running set, audience, shown, looks and the clock identical, and beside each comparison the ambient read: the world's value (G's alone, the outermost host's linked), `mine` exactly alone, the stage's own frame, the outermost's clock (`src/stage/placement.test.js`: 1056 comparisons; mutation: a stage's own offer serving itself when it isn't the world fails all 3; mirrors and pins also `links-drawn.test.js`; the real Lost Cities in `links-run`) |
 | I5 | **Channels.** An object's claims, holds and sends travel on its doc's channel | Three views of G (alone and in X in one page, on one repo and its page bus; in Y in a second page, on a repo of its own joined by an in-memory network, so its messages cross by the handle's broadcast) × every claim/release/leave order: `claimedBy` agrees once delivered; a carry in one shows in the others and in a mirror (`src/stage/channels.test.js`: every ≤2 claims/releases by three views, 390 checks in five stages; every holder × leaver; a hold from each view) |
 | I6 | **A read-only stage writes nothing**, through its api or its repo | Read-only handles whose `change` and `broadcast` throw; the Lost Cities probe against G pinned, unwritable and mirrored: no throw |
 | I7 | **Frames.** For a similarity frame of S, points map by it, directions and normals by its rotation, distances by its scale; boxes are S's own | Property test over depth ≤3 × held and moving link poses × every spatial call and event field (`scope.test.js`, with the audit's: geometry in an object's own frame, the camera's up; `viewport.test.js`: a layer two links deep, every pose, moved; a box in its own stage whatever the host shows of the link) |
@@ -634,6 +668,8 @@ Each is argued above and checkable over finite cases.
 | I9 | **Extract and bundle.** Each is one host change and writes no other existing doc; `bundle(extract(S, K), K)` equals the original on every non-runtime field (render doc identity aside) when S has no edge outside; each edge outside is cleared where it lives and said | Every set of roots of a fixed 7-object, two-cluster scene with traits, refs of both kinds, a group, dimensions, a start on an object and a seats map × K ⊆ the root's three traits: 1016 cases, 116 exact over four classes (p the root or not, the link grouped or not, S one block of the order or spread), each exact one again with the host holding T's ids; every concurrent edit to what T was made from refuses the extract (`src/extract.test.js`) |
 | I10 | **Selection, hover and keys.** Each stage sees its own element of a path or null; keys visit attention's path (the selection's, else the look's), innermost first, and every hint is computed by the same resolver | Every pair of paths of depth ≤3 × target × body × held tool |
 | I11 | **Linearity.** Runtime state has at most one writable holder among reachable docs | Every sequence and every interleaving of ≤3 of link, pin, copy, extract, bundle on 3 docs with one bound object and one claim, merged on Automerge: 2696 (`src/linearity.test.js`) |
+| I12 | **Presence where it is.** Every stage that acts or mirrors draws its doc's people, in its frame, by one instance of a part of every doc that no focus move or body restarts; a pin draws nobody; nobody draws this view; the body stays the focus's general part's (or where it lingers); the clock chips are the focus path's docs with a process, outermost first, each acting on its own doc and naming it as the trail does | Activation over every subset of six extensions (one of every doc among them) × four docs (`stage-pure.test.js`, 256); every focus over a tree with acting stages at depth 0–3, a sibling off the focus path, a mirror (with its links) and a pin × where the body is held (nowhere, each acting stage) × before and after letting it go, one other person present in each doc from a view of their own: who is drawn in which stage and in which stage's layer, which instance draws them, where the body part runs, the clocks and the chips' names (55 states, `src/stage/presence-where.test.js`); every chip pausing its own doc only; chip names after each link on the path is renamed; `scene.others` × focus × own selection over an acting link, a mirror and a pin (`select.test.js`); walk's two parts × every set of four kinds of peer (`walk/src/extension.test.js`); the real packages in `sailing/probes/links-run.mjs` 7b |
+| I13 | **One world's ambients** (WATER.md W2, W4). Every stage's `api.ambient(name)` is the outermost stage's stacked value or null, the same frozen object to every caller, `mine` exactly at the outermost; an offer is copied into frozen plain JSON, and one that isn't (a function, a cycle, a handle, a Map, a non-finite number) is refused | Every link shape (alone, linked, mirrored, pinned, two deep) × the outermost offering {nothing, one extension, the other, both in running order} × every linked doc offering both × focus {outside, inside} × body {look, edit, walk}: values, identity, `mine` and the viewport's sky (`src/stage/ambients-stage.test.js`, 20 cases; mutation: each stage reading its own offer fails 16); every offer kind and every pair of running-order offers {nothing, null, A, B} (`src/stage/ambients.test.js`) |
 
 ## Build order
 
@@ -1035,7 +1071,9 @@ ships alone and proves something.
   geometry.
 - **Act on a mirror or play a pin**, or give one live doc state per
   placement. Live is shared; copy to differ.
-- **Run another doc's code for you.** Space crosses; water height doesn't.
+- **Run another doc's code for you.** Space crosses, and the world's
+  ambients and world time cross as data (proposed, Decision 1); no doc's
+  code runs for another.
 - **Read a doc's own statement of where it is** (IFC's georeference). The
   host places it.
 
@@ -1062,6 +1100,13 @@ The five open questions were put to the project lead and answered:
 
 1. **A host never reads into what it contains.** Accepted. The only
    couplings across a link are space and published frames.
+   *Proposed 2026-11-14, pending the lead's explicit yes
+   ([water/WATER.md](../water/WATER.md), Decisions 1 and 14):* "...space,
+   published frames, and the outermost doc's ambients and world time, as
+   data." Nothing from a contained doc reaches its host under the proposal,
+   so the first sentence would hold as written. It is built only in the
+   unmerged lane `lane/scene`; until the lead says yes, the accepted
+   sentence above is the one in force.
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
    [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on
@@ -1075,6 +1120,62 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, presence where it is (2026-11-14, made unattended)
+
+1. **A part of every doc (`traits: ["*"]`), not a general part with a
+   second entry point.** The first build gave a general part's module an
+   optional `elsewhere(api)`, a "half" the host ran in every acting stage
+   but the focus. Review found it a new lifecycle concept: a second set of
+   records, a rule keeping half and whole apart that had to interlock with
+   lingering, a stop and start on every focus move, and a module written
+   in two halves by whether it is at the focus, which is close to what "no
+   stage sees the focus" guards against. It also handed the half the drawn
+   facet in a stage that acts, which blocks almost nothing there, so "a
+   half only draws" was a convention. The fix is an activation rule that
+   already had a precedent (`drops: ["*"]`): one line in `docReason` and
+   one in `holdersFor`. What draws a doc's people is then an ordinary part
+   of that doc, with an ordinary part's honest capabilities, which never
+   depends on the focus, so there is nothing to keep apart and nothing to
+   linger. The other options weighed: running every general part in every
+   acting stage (it would draw the grid, axes and halo at every link,
+   since no part can tell it isn't at the focus), and letting the focus
+   part reach into the other stages (three new capabilities, and a
+   lingering walk drawing its stage twice).
+2. **Every stage that hears the doc's channel, not the focus path.** See
+   TOOLS.md Decisions 8: the focus scopes the editor, never what the world
+   shows.
+3. **A mirror draws the people again.** The first build said a mirror draws
+   nobody because it has no channel; that was wrong (only a pin has none: a
+   mirror listens, and already plays back peers' carried cards). With a
+   part of every doc a mirror draws its doc's people and selection boxes as
+   it draws everything else of its doc. Keeping them out of mirrors would
+   need the stage to tell a part it is a mirror, a special case for no
+   reason anyone has given.
+4. **A part of every doc may write, as any part of a doc may.** In an
+   acting stage it gets the full api a trait part gets; neither consumer
+   writes or speaks. Nothing claims it is drawn-only, so there is no
+   restriction to keep true.
+5. **The chips are fed by the view, acted on through readers.** The view
+   gathers the focus path's clock statuses into `view.clocks` (general
+   parts only), as it gathers every open doc's packages into
+   `view.packages`, so the chip hears a change in any doc on the path; a
+   reader's `clock` pauses and resumes its doc. Each entry carries the
+   trail's name for its doc, and the view gathers them again whenever it
+   draws the trail again (`showTrail`), so a renamed link renames its chip
+   at once and the two never disagree. A chip shows its name only while the
+   focus is inside a link.
+6. **The chip's plumbing has one consumer, and is exempt.** `view.clocks`,
+   a reader's `clock` and its `writable()` serve only `scene.clock`. The
+   rule that a stage addition needs two consumers is there to keep a
+   package's needs out of the stage; the world clock and its chip are both
+   the stage's own (TOOLS.md §6 puts the world bar in the stage), so this
+   is the stage talking to itself across docs, as `view.packages` is for
+   the packages prompt. If a package ever reads them, that is the second
+   consumer, and they stay as they are.
+7. **Who's here is unchanged** (the focus doc's list): it already lists
+   everyone with that doc open anywhere. One list per doc on the focus
+   path, like the chips, is left for when it's asked for.
 
 ## Decisions, final fixer (2026-11-14, made unattended)
 

@@ -2,12 +2,16 @@
 // runs wherever the doc has a sailing trait, whatever anyone is doing.
 // This file only joins the parts; each is its own module with its own tests:
 //
-//   sea-view.js  the sea: its clock, the drawn ocean, the sky        (createSeaView)
+//   sea-view.js  the sea: the world's water and wind, and the clock  (createSeaView)
 //   sim.js       the ships: who simulates, physics, poses, controls  (createSim)
 //   crew.js      people: walking the deck, swimming, avatars, camera (createCrew)
 //   looks.js     what each view dresses for itself: floats, the sail (createLooks)
 //   stations.js  the helm, the sail, the anchor, the ladder: verbs   (stationCommands)
 //   hud.js       crosshair, wind, speed, heading, hints              (createHud)
+//
+// The sea itself (its waves, wind and sky) is another extension, sea.js,
+// which gives them away as data; the water package draws and evaluates the
+// world's water, and this extension reads it through ctx.sea.
 //
 // They meet through one context object, `ctx`, which each fills in as it's
 // made (ctx.sea, ctx.sim, ctx.crew), and they import nothing of each other
@@ -15,8 +19,8 @@
 // doc is in traits.js, of the maths in frames.js.
 //
 // The ships step as a process of the doc's clock (sim.js), before any of
-// this. Then one loop runs the rest, in the order a frame needs: the sea
-// drawn at the world's time, the ships' following (what the computer
+// this. Then one loop runs the rest, in the order a frame needs: the sea's
+// time offset latched, the ships' following (what the computer
 // publishes), then the people standing on them as they now are, then what's
 // dressed and read off them. This is also the one place the presence rate
 // is set: the computer streams poses at RATE, someone aboard at 20 Hz, a
@@ -62,7 +66,6 @@ export default {
       update(scene, local, prev) {
         for (const p of parts) p.update?.(scene, local, prev);
       },
-      atmosphere: () => ctx.sea.atmosphere(),
       commands: stationCommands(api, ctx),
       input: ctx.crew.input,
       // the crew's bodies (scene/TOOLS.md §4): walking her deck, and standing at a station

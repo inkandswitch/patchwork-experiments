@@ -9,11 +9,16 @@ const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") :
 export const traitKeys = (o) => (o?.traits && typeof o.traits === "object" ? Object.keys(o.traits) : []);
 
 /**
- * Why the doc calls for this extension: "scene" (a scene trait), "objects"
- * (only object traits), or null.
+ * Why the doc calls for this extension: "scene" (a scene trait, or any doc
+ * at all: `traits: ["*"]`, as `drops: ["*"]` takes any datatype), "objects"
+ * (only object traits), or null. An extension of every doc runs in every
+ * stage, as that doc's own part, wherever the focus is: what it draws is the
+ * doc's, never the viewer's (other people: COMPOSITION.md §3, "Presence
+ * where it is").
  */
 export function docReason(meta, d) {
   const traits = new Set(list(meta?.traits));
+  if (traits.has("*")) return "scene";
   for (const k of traitKeys(d)) if (traits.has(k)) return "scene";
   for (const o of Object.values(d?.objects ?? {})) {
     if (!o) continue;

@@ -28,7 +28,11 @@ export const JIB = "sailing.jib";
 export const WINCH = "sailing.winch";
 
 // Other packages' traits that sailing's parts carry, written in the shapes
-// those packages document (sailing reads neither, and imports neither):
+// those packages document (sailing imports none of them):
+/** the water package's: this world has water, at `level` (m). Its waves are the sea's (sea.js contributes them). */
+export const WATER_TRAIT = "water";
+/** Water at the level a sea's waves are about: what a template or the Sloop writes beside a sea. */
+export const newWater = () => ({ level: 0 });
 /** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
 export const SLIDE = "joints.slide";
 /** traversal's exit: an object that leads to another document; the companionway is one, leading nowhere until a scene says where. */

@@ -15,6 +15,9 @@
 // walk, seat} × held tool {none, one} × focus {outside, inside the link (a
 // view with a link to enter)}: every one of G's stages agrees with G alone,
 // every time, the doc's clock and what each stage's clock says among it.
+// The one read that does depend on placement, api.ambient (W7), is checked
+// beside it: its value is the world's (G's own alone, its outermost host's
+// linked), and `mine`, `frame` and `clock` say where G sits.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -49,6 +52,8 @@ const EXTENSIONS = [
       create: (api) => {
         const roster = () => api.collect("roster").map((r) => r.value).find((r) => typeof r?.playerAt === "function") ?? null;
         return {
+          // G offers an ambient of its own, which counts only where G is the world
+          ambient: () => ({ "t.x": { by: api.doc().title } }),
           audience: (snap) => (id) => {
             const seat = snap.objects[id]?.traits?.["t.hand"]?.seat;
             if (!seat) return snap.objects[id]?.traits?.["t.card"] ? { show: "all" } : null;
@@ -68,6 +73,8 @@ const EXTENSIONS = [
       },
     },
   },
+  // what every host offers as its world's ambient "t.x"
+  { meta: { id: "t.host", traits: ["t.host"] }, module: { create: (api) => ({ ambient: () => ({ "t.x": { by: api.doc().title } }) }) } },
   // a body anyone can take anywhere (a general part's, as walk's is)
   { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {}, leave() {} }) }] }) } },
 ];
@@ -113,15 +120,28 @@ function seen(st) {
   });
 }
 
+/**
+ * The reads that do depend on placement, and only as I4 says (W7): what
+ * api.ambient gives one of G's stages. Its value is the world's (G's own
+ * alone, its outermost host's when linked, whatever G offers), `mine` holds
+ * exactly where G is the world, its frame is the stage's own and its clock
+ * the outermost's world time.
+ */
+function ambientSeen(st, world) {
+  const a = st.debug.host.record("t.table").api.ambient("t.x");
+  return { value: a.value, mine: a.mine, frame: a.frame?.matrix ?? null, running: a.clock.running, want: { value: world.ambients()["t.x"], mine: world === st, frame: st.frame()?.matrix ?? null, running: world.worldTime().running } };
+}
+
 describe("placement independence (I4): G alone, linked, heeled, mirrored, two links deep", () => {
   for (const [name, seats] of [["none", {}], ["p1", { p1: ME }], ["p1 + p2", { p1: ME, p2: BEN }]]) {
     it(`seats ${name}: every stage of G agrees with G alone, × clock × card state × body × held tool × focus`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const repo = new FakeRepo();
       const G = repo.add(emptyScene({ title: "G", objects: { h1: card("p1"), h2: card("p2"), t: card(null) }, order: ["h1", "h2", "t"], traits: { "t.game": { seats } } }));
-      const X = repo.add(emptyScene({ title: "X", objects: { L: link(G.url, { transform: FLAT }), M: link(G.url, { transform: HEEL }) }, order: ["L", "M"] }));
-      const X2 = repo.add(emptyScene({ title: "X'", objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
-      const Y = repo.add(emptyScene({ title: "Y", objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
+      const host = { "t.host": {} };
+      const X = repo.add(emptyScene({ title: "X", traits: host, objects: { L: link(G.url, { transform: FLAT }), M: link(G.url, { transform: HEEL }) }, order: ["L", "M"] }));
+      const X2 = repo.add(emptyScene({ title: "X'", traits: host, objects: { L: link(G.url, { transform: HEEL }) }, order: ["L"] }));
+      const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
       // the first view registers the extensions (the harness's), on G itself
       const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
@@ -173,6 +193,14 @@ describe("placement independence (I4): G alone, linked, heeled, mirrored, two li
                 for (const st of gStages(v)) {
                   const got = seen(st);
                   if (got !== want) throw new Error(`${where} ${st.role}, focus ${focus}, body ${body}, held ${held}, ${state}:\n${got}\n≠\n${want}`);
+                  // W7: the ambient read is the world's, and says where G sits
+                  const amb = ambientSeen(st, v.outermost());
+                  expect(amb.value).toBe(amb.want.value);
+                  expect(amb.value).toEqual({ by: where === "alone" ? "G" : where });
+                  expect(amb.mine).toBe(where === "alone");
+                  expect(amb.mine).toBe(amb.want.mine);
+                  expect(amb.frame).toEqual(amb.want.frame);
+                  expect(amb.running).toBe(amb.want.running);
                   checked++;
                 }
                 release?.();

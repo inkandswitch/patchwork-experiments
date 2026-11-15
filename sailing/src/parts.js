@@ -20,7 +20,7 @@
 // metadata does, so the carry snaps it to the same stand the bin does.
 
 import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
-import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WINCH } from "./traits.js";
+import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WATER_TRAIT, WINCH, newWater } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
@@ -282,7 +282,7 @@ export async function sloopFiles(ctx) {
 /**
  * The sloop as a part: on the water where she's put (at the scene's root,
  * where a ship sails), her bow the way the bin faced her, at rest with her
- * sail up. A ship brings her sea: a scene without one gets one.
+ * sail up. A ship brings her sea: a scene without one gets one, and water for it.
  */
 export const sloop = {
   async create(ctx, at) {
@@ -292,6 +292,7 @@ export const sloop = {
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {
       if (!d.traits[SEA]) d.traits[SEA] = newSea();
+      if (!d.traits[WATER_TRAIT]) d.traits[WATER_TRAIT] = newWater();
       writeObjects(d, objects);
     });
     return objects[0][0];

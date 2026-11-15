@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { createShip } from "./physics.js";
 import { contractShip, windFrom } from "./test/agreement-harness.js";
-import { createOcean } from "./ocean.js";
+import { createOcean } from "./test/ocean.js";
 import sloop from "./test/rig-contract/sloop-12m.json";
 
 const shipOf = (c) => contractShip(c);

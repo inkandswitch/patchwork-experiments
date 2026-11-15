@@ -49,7 +49,7 @@ import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs
 // registers each package's plugins from its URL (?urls=), so the stages work
 // them out here too, and the probe checks that what each doc calls for is
 // within what is stated here.
-const PACKAGES = ["scene", "sailing", "tabletop", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "water", "tabletop", "joints", "traversal"];
 // The game is a doc of its own (scene/COMPOSITION.md, worked example 1), and lists what its contents come
 // from; the boat lists only her own (the table is tabletop's): a view offers every open doc's packages
 // together, so a viewer arriving at the boat is asked for what her linked game runs too.

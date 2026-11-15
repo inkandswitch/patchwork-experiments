@@ -135,7 +135,11 @@ Each stage is its own scope, and nothing is taught across a link.
   game's seats, then sailing (at the link's chain: sole, hull) and the
   host's scene traits.
 - **General parts are the focus stage's**, offered after every segment
-  wherever the hit is. The key map, the use prompt and the menu walk the
+  wherever the hit is. What draws a doc's people (walk's avatars, others'
+  selection boxes) is no general part's: it is a part of every doc
+  (`traits: ["*"]`), which runs in every stage as that doc's own, held by
+  its scene, in that stage's frame (COMPOSITION.md §3, "Presence where it
+  is"). The key map, the use prompt and the menu walk the
   input path a doc at a time, each doc's commands in its own context.
 - **Drawn stages have no segment.** A press on a mirrored card or a pinned
   fit-out reaches the host as the link.
@@ -168,5 +172,6 @@ seeing it, is built from general pieces, none of them a ship feature:
 - Menu sections by holder within one doc (they are by doc).
 - One shared part drawing people from presence: the walk package and
   sailing each draw their own.
-- Ephemeral effects as sends simulated locally (cannonballs, spray), water
-  height as a contribution other extensions read, and positional sound.
+- Ephemeral effects as sends simulated locally (cannonballs, spray), and
+  positional sound. (Water height crosses docs now, as the world's ambient
+  water: water/WATER.md.)

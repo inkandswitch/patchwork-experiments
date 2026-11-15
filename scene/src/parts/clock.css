@@ -33,3 +33,15 @@
   padding: 1px 10px;
   border-radius: var(--studio-radius-round, 9999px);
 }
+
+.scene-stage .clock-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  gap: var(--studio-space-m, 1rem);
+}
+
+.scene-stage .clock-chip > .clock-doc:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+}
+
+.scene-stage .clock-chip > .clock-doc[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}

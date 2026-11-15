@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
-import { bestWidget, hitChain, initialCamera, mergeAtmosphere, mergeLooks, sameTransform, startOf, statusOf, widgetWins, withNotice } from "./stage.js";
+import { bestWidget, hitChain, initialCamera, mergeLooks, sameTransform, startOf, statusOf, widgetWins, withNotice } from "./stage.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const registries = new Map();
@@ -449,26 +449,33 @@ describe("the stage, mounted", () => {
     expect(m.debug.looks().get("a")).toEqual({ name: "Ace of spades", sourceUrl: null });
   });
 
-  it("atmosphere: the running extensions' merged in running order, handed to the viewport; gone when its giver stops", async () => {
-    exts["t.edit"] = recorder("t.edit", () => ({ atmosphere: () => ({ sky: { top: "#336699" }, fog: { color: "#ffffff", near: 10, far: 90 }, exposure: 1.2 }) }));
-    exts["t.always"] = recorder("t.always", () => ({ atmosphere: () => ({ fog: null, sun: { direction: [0, 1, 0], shadows: true } }) }));
+  it("ambients: the running extensions' offers stacked per name in running order, the later whole; the atmosphere among them is the viewport's; gone when its giver stops", async () => {
+    exts["t.edit"] = recorder("t.edit", () => ({ ambient: () => ({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.weather": { rain: 2 } }) }));
+    exts["t.always"] = recorder("t.always", () => ({ ambient: () => ({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } }, "t.weather": null }) }));
     const m = mount(newScene());
     await settle();
-    // t.edit runs before t.always: its fog is cleared by the later null, its sky and exposure kept
-    const merged = { sky: { top: "#336699" }, exposure: 1.2, sun: { direction: [0, 1, 0], shadows: true } };
-    expect(m.debug.atmosphere()).toEqual(merged);
-    expect(m.debug.viewport.atmosphere).toEqual({ sky: { top: "#336699", horizon: "#336699", bottom: "#336699" }, sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true }, exposure: 1.2 });
-    uninstall("t.edit");
+    // t.edit runs before t.always: its atmosphere is replaced whole by the later one, its weather cleared by the later null
+    expect(m.debug.ambients()).toEqual({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } } });
+    expect(Object.isFrozen(m.debug.ambients().atmosphere.sun.direction)).toBe(true);
+    expect(m.debug.viewport.atmosphere).toEqual({ sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true } });
+    // the outermost stage's are the world's, to its own extensions too
+    const a = exts["t.edit"].api.ambient("atmosphere");
+    expect(a.value).toBe(m.debug.ambients().atmosphere);
+    expect(a.mine).toBe(true);
+    expect(a.clock).toEqual({ t: expect.any(Number), running: expect.any(Boolean) });
+    expect(exts["t.edit"].api.ambient("t.weather")).toBeNull();
+    uninstall("t.always");
     await settle();
-    expect(m.debug.atmosphere()).toEqual({ sun: { direction: [0, 1, 0], shadows: true } });
-    expect(m.debug.viewport.atmosphere.sky).toBeUndefined();
+    expect(m.debug.ambients()).toEqual({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.weather": { rain: 2 } });
+    expect(m.debug.viewport.atmosphere.sky.top).toBe("#336699");
   });
 
-  it("no extension gives an atmosphere: the viewport is never told one", async () => {
+  it("no extension offers an atmosphere: the viewport is never told one", async () => {
     const m = mount(newScene());
     const spy = vi.spyOn(m.debug.viewport, "setAtmosphere");
     await settle();
-    expect(m.debug.atmosphere()).toBeNull();
+    expect(m.debug.ambients().atmosphere).toBeUndefined();
+    expect(m.debug.atmosphere).toBeUndefined();
     expect(spy).not.toHaveBeenCalled();
     expect(m.debug.viewport.atmosphere).toBeNull();
   });
@@ -1130,14 +1137,3 @@ describe("another view's hold, played back", () => {
   });
 });
 
-describe("mergeAtmosphere", () => {
-  it("later fields win per field, whole; undefined keeps, null clears; nothing is null", () => {
-    expect(mergeAtmosphere([])).toBeNull();
-    expect(mergeAtmosphere([null, undefined, 3])).toBeNull();
-    expect(mergeAtmosphere([{ sky: { top: "#000" } }, { sky: { horizon: "#fff" } }])).toEqual({ sky: { horizon: "#fff" } });
-    expect(mergeAtmosphere([{ fog: { color: "#fff", far: 9 }, exposure: 2 }, { fog: undefined, sun: { direction: [1, 1, 0] } }])).toEqual({ fog: { color: "#fff", far: 9 }, exposure: 2, sun: { direction: [1, 1, 0] } });
-    expect(mergeAtmosphere([{ fog: { color: "#fff", far: 9 } }, { fog: null }])).toBeNull();
-    // only the fields the stage knows
-    expect(mergeAtmosphere([{ weather: "rain" }])).toBeNull();
-  });
-});

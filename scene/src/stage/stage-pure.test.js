@@ -59,19 +59,24 @@ describe("activation: traits only (TOOLS.md §1)", () => {
     for (const d of [{}, { traits: { "game.board": {} } }]) expect(ids(activeSet({ metas: decorated, doc: d }))).toEqual(ids(activeSet({ metas: plain, doc: d })));
   });
 
-  // Exhaustive over a finite world: every subset of five extensions (one of each
-  // kind: scene trait, object trait, both, none, a trait nobody writes) × every
+  // Exhaustive over a finite world: every subset of six extensions (one of each
+  // kind: scene trait, object trait, both, none, a trait nobody writes, every
+  // doc's) × every
   // doc made of {no trait, scene trait, object trait, both}. What runs, and in
   // what order, is the rule and nothing else.
-  it("over every subset of five extensions × four docs: scope = the rule, order = scene, objects, general, each once", () => {
+  it("over every subset of six extensions (one of each kind, and one of every doc: traits [\"*\"]) × four docs: scope = the rule, order = scene, objects, general, each once", () => {
     const pool = [
       { id: "s", traits: ["t.s"] },
       { id: "o", traits: ["t.o"] },
       { id: "so", traits: ["t.s", "t.o"] },
       { id: "g" },
       { id: "x", traits: ["t.x"] },
+      { id: "any", traits: ["*"] },
     ];
     const docs = [{}, { traits: { "t.s": {} } }, { objects: { a: { traits: { "t.o": {} } } } }, { traits: { "t.s": {} }, objects: { a: { traits: { "t.o": {} } } } }];
+    // the rule, spelt out: every doc calls for "any" (and only it, of these, with nothing in the doc)
+    const reason = { s: [null, "scene", null, "scene"], o: [null, null, "objects", "objects"], so: [null, "scene", "objects", "scene"], g: Array(4).fill("general"), x: Array(4).fill(null), any: Array(4).fill("scene") };
+    for (const m of pool) for (const [i, d] of docs.entries()) expect([m.id, i, ownReason(m, d)]).toEqual([m.id, i, reason[m.id][i]]);
     const rank = { scene: 0, objects: 1, general: 2 };
     let cases = 0;
     for (let mask = 0; mask < 1 << pool.length; mask++) {
@@ -88,7 +93,7 @@ describe("activation: traits only (TOOLS.md §1)", () => {
         cases++;
       }
     }
-    expect(cases).toBe(128);
+    expect(cases).toBe(256);
   });
 });
 
@@ -117,6 +122,15 @@ describe("the input chain", () => {
     expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", { id: "card", depth: 1 }], ["arena", { id: "crate", depth: 2 }]]);
     expect([...holders([])]).toEqual([["tabletop", { id: null, depth: 0 }]]);
     expect([...holders(["crate"])]).toEqual([["tabletop", { id: null, depth: 1 }], ["arena", { id: "crate", depth: 0 }]]);
+  });
+
+  it("a part of every doc (traits [\"*\"]) is held by the scene, whatever the hit and whatever traits the doc has", () => {
+    const any = [{ id: "any", meta: { traits: ["*"] }, scope: "scene" }];
+    for (const scene of [[], ["tabletop.seats"]])
+      for (const chain of [[], ["card"], ["table", "card", "crate"]]) {
+        const h = holdersFor(any, chain, (id) => (id === null ? scene : (traits[id] ?? [])));
+        expect([scene, chain, [...h]]).toEqual([scene, chain, [["any", { id: null, depth: chain.length }]]]);
+      }
   });
 
   // SCOPE.md's sailing case: a card on the saloon table of a boat in an arena level.

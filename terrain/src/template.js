@@ -69,6 +69,8 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
   ctx.change((d) => {
     d.traits[SEA] = { wind: { speed: WIND.speed, from: WIND.from }, seed, scale: WIND.scale };
+    // the water package's: this world has water, its level the chart's y = 0 (mean water level); the sea above makes its waves
+    d.traits.water = { level: 0 };
     // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard
     d.view.start = { home: { position: [...HOME.position], target: [...HOME.target] } };
     if (!d.title || /^untitled/i.test(d.title)) d.title = "Cadboro Bay";
@@ -119,7 +121,7 @@ export default {
     const { hull } = await layOut(ctx, handle.url);
     ctx.notify?.(
       hull
-        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sails down. Click the sea (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
+        ? "Cadboro Bay, a summer afternoon: a 4 m/s south-westerly. Your sloop is on the club's moorings, head to wind, sails down. Click her (or press Enter) to come aboard; raise the sail and let go the mooring (hold F at the windlass) to sail."
         : "Cadboro Bay, with no boat: install the sailing tools to sail here.",
       "info",
     );

@@ -1,155 +1,152 @@
-// The sea (DESIGN.md, "Play"): the drawn ocean and the sky. ctx.sea
-// is what the other parts read: the ocean and wind they float and sail on,
-// and the time to ask them at.
+// ctx.sea (DESIGN.md, "Play"): what the other parts read of the sea, the
+// ocean and wind they float and sail on and the time to ask them at. It
+// makes and draws no sea of its own. A boat sails on her world's water,
+// which is the outermost doc's (water/WATER.md):
 //
-// The sea's time is the doc's world time, api.clock.t() (scene TOOLS.md
-// §7): the computing view's own, and every other view's following it at the
-// moment whose held poses it's drawing, so a hull sits on the waves drawn
-// under it. Paused, or with nobody computing, the sea stands still.
+//   - ocean: the water package's reader, collected in this stage (its
+//     contribution `water`): the world's water in this stage's frame, on
+//     this stage's clock. A boat alone is her own world, and it is her own
+//     sea exactly; linked into a harbour, it is the harbour's; in a dry room,
+//     or tilted, there is none, and nothing sails.
+//   - wind: the world's `wind` ambient (sea.js offers it), made into a wind
+//     here (wind.js) and read the same way: mapped by this stage's frame, at
+//     the world's time for this stage's t, the offset latched once a frame
+//     after every clock has ticked (the water package's rule, copied: tick()).
+//     Its speed and from are in this stage's frame too.
+//   - world(): is her doc the world (the outermost: a boat alone)? Read from
+//     the wind ambient's `mine`, which her own sea offers wherever she is the
+//     world, so it holds whatever packages are installed; elsewhere the wind
+//     is another doc's, or nobody's (a dry room). Her camera ride and HUD
+//     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
+//   - clock: the doc's world time, api.clock.t() (scene TOOLS.md §7): the
+//     computing view's own, every other view's following it.
 //
-// drawSea is the drawing part: the ocean built from the scene's sailing.sea
-// trait, its surface following the camera, and the atmosphere the surface
-// is lit to match. A scene with no sea trait gets neither.
+// A boat at another scale than her world's doesn't sail (gravity doesn't
+// scale): no ocean, and a notice once.
 
-import { createOcean } from "./ocean.js";
 import { createWind } from "./wind.js";
-import { createOceanSurface } from "./ocean-material.js";
-import { SEA } from "./traits.js";
+import { WIND_AMBIENT } from "./sea.js";
 
-/** A bright maritime day: blue overhead, a pale horizon the far sea hazes into, the sun high to one side. */
-export const ATMOSPHERE = Object.freeze({
-  sky: Object.freeze({ top: "#2f6db5", horizon: "#cfe2ee", bottom: "#a9c6d8" }),
-  fog: Object.freeze({ color: "#cfe2ee", near: 300, far: 9000 }),
-  sun: Object.freeze({ direction: Object.freeze([0.55, 0.7, -0.45]), color: "#fff3df", intensity: 2.2, shadows: true }),
-  exposure: 1,
-});
-
-// ─── the sea from the doc (pure) ────────────────────────────────────────────
-
-const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
-
-/** The sea trait with its defaults filled in (index.js describes them): { wind: { speed, from }, seed, scale }. */
-export function seaParams(trait) {
-  const t = trait ?? {};
-  return {
-    wind: { speed: Math.max(0, num(t.wind?.speed, 7)), from: num(t.wind?.from, 45) },
-    seed: num(t.seed, 1),
-    scale: Math.max(0, num(t.scale, 1)),
-  };
-}
-
-// ─── drawing (stage side) ───────────────────────────────────────────────────
+/** The water package's contribution that is the world's water as this stage reads it. */
+export const WATER = "water";
+const EPS = 1e-9;
 
 /**
- * The sea as it's drawn: the ocean and wind from the doc's
- * sailing.sea trait (rebuilt when it changes), and its surface in a world
- * group; nothing, and no atmosphere, while the scene has no sea trait. The
- * owner runs the loop: draw(t) once a frame.
- * @param {any} api
+ * A frame (scope.js's { matrix }, column-major; null matrix: the identity)
+ * as a level placement's numbers, or null when it tilts.
  */
-export function drawSea(api) {
-  let key = null;
-  let ocean = null;
-  let wind = null;
-  let surface = null;
-  const group = api.world();
+export function levelOf(frame) {
+  const m = frame?.matrix ?? null;
+  if (!m) return { a: 1, b: 0, c: 0, d: 1, s: 1, tx: 0, tz: 0, identity: true };
+  const s = m[5];
+  if (!(s > 0)) return null;
+  for (const i of [1, 4, 6, 9]) if (Math.abs(m[i]) > EPS * s) return null;
+  return { a: m[0], b: m[2], c: m[8], d: m[10], s, tx: m[12], tz: m[14], identity: false };
+}
 
-  function build(trait) {
-    if (!trait) {
-      if (key === null) return;
-      key = null;
-      ocean = wind = null;
-      surface?.dispose();
-      surface = null;
-      api.extent?.(null);
-      api.invalidate();
-      return;
-    }
-    const p = seaParams(trait);
-    const k = JSON.stringify(p);
-    if (k === key) return;
-    key = k;
-    ocean = createOcean(p);
-    api.extent?.(waterExtent(ocean));
-    wind = createWind({ ...p.wind, seed: p.seed });
-    if (surface) surface.setSea(ocean);
-    else {
-      surface = createOceanSurface(api.THREE, ocean, { sun: ATMOSPHERE.sun, sky: ATMOSPHERE.sky });
-      group.add(surface.object);
-    }
-    api.invalidate();
-  }
-  build(api.doc()?.traits?.[SEA]);
-
+/**
+ * The world's wind as a stage reads it: the ambient's numbers made into a
+ * wind, every part of it in the stage's frame: at(x, z, t) (velocities by the
+ * rotation and scale, at τ from `timing`), its mean `speed` by the scale and
+ * `from` by the rotation, so at() with no gusts blows `speed` from `from`.
+ * The world itself gets the wind as made, unwrapped. null for no value or a
+ * tilted frame. Pure.
+ * @param {{ speed, from, seed, gustiness? } | null} value  @param {{ matrix } | null} frame
+ * @param {{ mine: boolean, delta: number, running: boolean, worldT: number }} timing
+ */
+export function windFor(value, frame, timing) {
+  if (!value) return null;
+  const f = levelOf(frame);
+  if (!f) return null;
+  const raw = createWind({ speed: value.speed, from: value.from, seed: value.seed, gustiness: value.gustiness });
+  if (timing.mine && f.identity) return raw;
+  const { a, b, c, d, s, tx, tz } = f;
+  const s2 = s * s;
+  const W = [0, 0];
+  const tau = (t) => (timing.mine ? t : timing.running ? t + timing.delta : timing.worldT);
+  // the mean wind's downwind direction, turned into the frame (Rᵀ, as at() turns velocities), as a compass bearing it blows from
+  const rad = (raw.from * Math.PI) / 180;
+  const dx = -Math.sin(rad), dz = Math.cos(rad);
+  const from = ((Math.atan2(-(a * dx + b * dz), c * dx + d * dz) * 180) / Math.PI + 360) % 360;
   return {
-    get ocean() {
-      return ocean;
-    },
-    get wind() {
-      return wind;
-    },
-    atmosphere: () => (ocean ? ATMOSPHERE : null),
-    update(scene) {
-      build(scene?.traits?.[SEA]);
-    },
-    /** The surface at time t, around the camera. */
-    draw(t) {
-      // around the camera as this stage has it (in its frame: a sea in a linked doc is drawn in that doc's)
-      const at = api.camera.get()?.position;
-      if (at) surface?.update(t, at, ATMOSPHERE.sun, ATMOSPHERE.sky);
-    },
-    dispose() {
-      surface?.dispose();
-      surface = null;
-      if (key !== null) api.extent?.(null);
+    speed: raw.speed / s,
+    from,
+    gustiness: raw.gustiness,
+    at(x, z, t, out = [0, 0]) {
+      raw.at(a * x + c * z + tx, b * x + d * z + tz, tau(t), W);
+      out[0] = (a * W[0] + b * W[1]) / s2;
+      out[1] = (c * W[0] + d * W[1]) / s2;
+      return out;
     },
   };
 }
 
-/** How far the water reaches across (m): past the fog, where it's drawn to. */
-export const WATER_REACH = 20_000;
+const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
 
 /**
- * The water as the stage's near plane must not cut it (api.extent): a slab
- * WATER_REACH across, as high and deep as every wave's amplitude together (no
- * crest or trough can pass that), and 0.5 m more. The surface is drawn in a
- * world group the stage doesn't measure, its waves in the shader. Pure.
- */
-export function waterExtent(ocean) {
-  let h = 0.5;
-  for (const c of ocean?.components ?? []) h += Math.abs(c.amp) || 0;
-  return { min: [-WATER_REACH, -h, -WATER_REACH], max: [WATER_REACH, h, WATER_REACH] };
-}
-
-/**
- * ctx.sea: the sea. play.js ticks it first each frame, to draw it at
- * the doc's world time.
+ * ctx.sea. play.js ticks it first each frame.
  * @param {any} api
  */
 export function createSeaView(api) {
-  const sea = drawSea(api);
+  const timing = { mine: false, delta: 0, running: true, worldT: 0 };
+  let wind = null;
+  let windFrom = null; // { value, key, mine }
+  let scaled = false; // said once: at another scale, she doesn't sail
+
+  function latch(clock) {
+    timing.running = !!clock.running;
+    timing.worldT = Number(clock.t) || 0;
+    timing.delta = timing.worldT - api.clock.t();
+  }
+
+  function refreshWind() {
+    const a = api.ambient(WIND_AMBIENT);
+    if (!a) {
+      wind = null;
+      windFrom = null;
+      return null;
+    }
+    const key = frameKey(a.frame);
+    if (!windFrom || windFrom.value !== a.value || windFrom.key !== key || windFrom.mine !== a.mine) {
+      timing.mine = a.mine;
+      if (!a.mine && !windFrom) latch(a.clock);
+      wind = windFor(a.value, a.frame, timing);
+      windFrom = { value: a.value, key, mine: a.mine };
+    }
+    return a;
+  }
+
+  /** Is this stage at its world's scale (always, for a boat alone)? Sailing needs it. */
+  function sameScale() {
+    const a = api.ambient(WATER);
+    const s = a ? (levelOf(a.frame)?.s ?? 1) : 1;
+    const ok = Math.abs(s - 1) <= EPS;
+    if (!ok && !scaled) {
+      scaled = true;
+      api.notify?.("At another scale than the water it's on, a boat doesn't sail (gravity doesn't scale)", "info");
+    }
+    return ok;
+  }
 
   return {
+    /** the world's water here (the water package's reader), or null: no water, tilted, or at another scale */
     get ocean() {
-      return sea.ocean;
+      const w = api.collect(WATER).find((c) => c.value)?.value ?? null;
+      return w && sameScale() ? w : null;
     },
     get wind() {
-      return sea.wind;
+      if (!windFrom) refreshWind();
+      return wind;
     },
     /** the sea's time: the doc's world time (s) */
     clock: () => api.clock.t(),
-    atmosphere: sea.atmosphere,
-    update(scene) {
-      sea.update(scene);
-    },
-    /** One frame: the surface drawn at the doc's world time. */
+    /** is this boat's doc the world (the outermost: a boat alone)? Her camera ride and her HUD show only then, or while you're aboard */
+    world: () => !!api.ambient(WIND_AMBIENT)?.mine,
+    /** One frame, after every clock has ticked: the wind's offset for the next frame's reads. */
     tick() {
-      const t = api.clock.t();
-      sea.draw(t);
-      return t;
-    },
-    dispose() {
-      sea.dispose();
+      const a = refreshWind();
+      if (a && !a.mine) latch(a.clock);
+      return api.clock.t();
     },
   };
 }

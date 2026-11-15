@@ -48,7 +48,7 @@ import { packageProblems, pushworkUrl, withPackages } from "./scene-packages.mjs
 // as the page made them list more: a doc's packages list grows as parts are
 // added and isn't pruned when they go, so S still lists the companionway's
 // joints and traversal. Published, each lists the packages here.)
-const PACKAGES = { s: ["scene", "sailing"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
+const PACKAGES = { s: ["scene", "sailing", "water"], f: ["scene", "joints", "traversal"], w: ["scene", "joints"] };
 const SLIDE = "joints.slide";
 
 const ARITY = { sync: 1, settle: 1, "dry-run": 0, show: 0, shots: 1, title: 1 };
@@ -84,7 +84,7 @@ const TITLE = typeof args.title === "string" ? args.title : "Fitting out";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-for (const p of ["scene", "sailing", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
+for (const p of ["scene", "sailing", "water", "joints", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist: build it first`);
 const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "sailing-fitout"));
 
 // ─── make it in the browser, with the tools ─────────────────────────────────
