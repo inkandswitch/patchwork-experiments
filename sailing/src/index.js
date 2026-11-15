@@ -13,7 +13,7 @@
 //   stops her; a pause does), walks her deck (the "aboard" body) and works
 //   her stations (the "station" body);
 // - the "ship-at-sea" template lays out a sloop under way in an empty scene,
-//   seen from her quarter (view.start's home), so a click comes aboard;
+//   seen from her quarter (view.start's home), so a click on her comes aboard;
 //   "ship-at-anchor" lays her out lying at anchor off an islet, sail down,
 //   in a moderate breeze;
 // - parts for the editor's parts bin (scene:part): the sloop whole (she

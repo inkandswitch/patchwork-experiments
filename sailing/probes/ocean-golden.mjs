@@ -1,13 +1,16 @@
-// The golden file water/'s evaluator and sailing's ocean.js are both pinned
-// to (WATER.md, W1): for each template sea, its components (sailing's
-// spectrum) and every query on a fixed grid, as sailing's ocean.js answers
-// them. Writes src/test/ocean-golden.json; copy it verbatim to
-// water/src/test/golden.json (packages don't import each other, so each
-// keeps its own copy, and each test checks its own evaluator against it).
+// The golden file water/'s evaluator and sailing's test copy of it are both
+// pinned to (WATER.md, W1): for each template sea, its components (sailing's
+// spectrum) and every query on a fixed grid. Recorded on 2026-11-14 from
+// sailing's own evaluator, before it moved to the water package; running
+// this again records what the copy in src/test/ answers, so do it only to
+// change the spectrum or the evaluator on purpose, in both packages. Writes
+// src/test/ocean-golden.json; copy it verbatim to water/src/test/golden.json
+// (packages don't import each other, so each keeps its own copy, and each
+// test checks its own evaluator against it).
 //
 //   node probes/ocean-golden.mjs
 import { writeFileSync } from "node:fs";
-import { createOcean } from "../src/ocean.js";
+import { createOcean } from "../src/test/ocean.js";
 
 export const SEAS = [
   { name: "Ship at sea", wind: { speed: 7, from: 45 }, seed: 1, scale: 1 },

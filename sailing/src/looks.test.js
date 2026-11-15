@@ -1,7 +1,7 @@
 // What each view dresses for itself: floats on the waves, the sail's belly
 // and how far it's raised. The pure maths, then createLooks on a fake stage.
 import { describe, it, expect, afterEach } from "vitest";
-import { createOcean } from "./ocean.js";
+import { createOcean } from "./test/ocean.js";
 import { FLAT, LOOK, boomToPort, createLooks, floatPose, fullness, ropeIndex, ropeTube } from "./looks.js";
 import { createSeaView } from "./sea-view.js";
 import { FLOAT, JIB, SAIL, SEA, SHIP, WINCH } from "./traits.js";

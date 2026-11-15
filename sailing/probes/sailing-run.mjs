@@ -496,7 +496,7 @@ try {
   report.measured.tack = side > 0 ? "port" : "starboard";
 
   // A comes aboard too (Enter: her view's centre is open water by now, and a click on the sea
-  // isn't the boat's since the sea is its own extension, WATER.md Decisions 12), and finds the helm taken
+  // is the world's, not the boat's: the ships' part holds no scene trait, WATER.md Decisions 24), and finds the helm taken
   await focus("a");
   if (!(await P("me('a')")).playing) await press("Enter");
   check("A comes aboard with Enter", await until("window.__p.me('a')?.playing === true", 3000), await P("me('a')"));
