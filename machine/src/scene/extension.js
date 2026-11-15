@@ -44,7 +44,6 @@
 // cabinet).
 
 import { Screen, ASPECT, viewOf } from "../present/screen.js";
-import { asking } from "../present/asked.js";
 import { doomWorld, mapOf } from "../present/doom-world.js";
 import { Spectator } from "../present/spectator.js";
 import { QUERY, level as decodeLevel } from "../doom.js";
@@ -57,19 +56,10 @@ import { retrying, makeSession } from "./start.js";
 import { screenOf } from "./cabinet.js";
 import { seatsFor, placesFor } from "./seating.js";
 import { hands } from "./hands.js";
+import { WORLD, MAP_SOURCE, registered, worldCommand, stateOf, besideCabinet, wadFile } from "./worlds.js";
 
 export const TRAIT = "machine";
 export const PROVIDER = "machine";
-/**
- * The trait of a map that shows a machine's game (`{ machine: <object id> }`):
- * doom/'s whole map (its scene:source, by id, with `whole: true`), in which
- * that machine's Doom is drawn, things and doors, from the engine's state.
- */
-export const WORLD = "machine.world";
-/** doom/'s scene:source, which builds a Doom map's parts from a WAD file doc (met by id, never imported). */
-export const MAP_SOURCE = "doom-map";
-/** How big a world is laid out (m, its longer side across): a model of the level beside the cabinet, to walk around. */
-export const WORLD_SIZE = 3;
 /** ms between tries at starting a machine that couldn't start yet (the stage's time). */
 export const RETRY_MS = 2000;
 
@@ -154,7 +144,7 @@ function create(api) {
   };
 
   function entry(id, o) {
-    const e = { id, url: o.sourceUrl, session: sessionOf(o), note: "Starting…", m: null, asked: null, content: null, screen: null, mesh: null, view: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
+    const e = { id, url: o.sourceUrl, session: sessionOf(o), note: "Starting…", m: null, content: null, screen: null, mesh: null, view: null, pad: null, sound: null, kind: null, title: null, ports: 1, gone: false, stop: null };
     machines.set(id, e);
     e.stop = retrying({
       attempt: () => open(e),
@@ -199,7 +189,6 @@ function create(api) {
     });
     if (e.gone) return m.close(), true;
     e.m = m;
-    e.asked = asking(m.host); // the engine's state, asked once a state by everything that reads it (the speaker, the worlds)
     e.content = content;
     e.screen = new Screen({ THREE, aspect: ASPECT[e.kind] ?? ASPECT.square });
     e.mesh = new THREE.Mesh(plane, new THREE.MeshBasicMaterial({ map: e.screen.texture, toneMapped: false }));
@@ -343,7 +332,7 @@ function create(api) {
         if (e.sound?.out) {
           if (centre) place(e.sound.panner, { position: centre.toArray(), forward: new THREE.Vector3(0, 0, 1).transformDirection(m4).toArray() });
           e.sound.out.port = player;
-          e.sound.out.feed(e.asked);
+          e.sound.out.feed(e.m.host);
         } else e.m.host.output(); // taken either way, so it never piles up
       }
       const note = e.note ?? stoppedNote(e);
@@ -355,12 +344,13 @@ function create(api) {
 
   // ---- worlds: a map showing a machine's game (WORLD). Its things and doors
   // are drawn from the engine's state while the machine is a Doom that runs
-  // here and the game is on the map's level; otherwise the map is as built
-  // (every door shut, no things).
+  // here, the game it was laid out for, and the game is on the map's level;
+  // otherwise the map is as built (every door shut, no things). worlds.js
+  // decides; this draws.
 
-  const worlds = new Map(); // map object id → { id, view: Spectator, world: doomWorld | null, key }
+  const worlds = new Map(); // map object id → { id, view: Spectator, world: doomWorld | null, e, key } (worlds.js stateOf keeps the last three)
   function world(id) {
-    const w = { id, view: new Spectator({ THREE }), world: null, key: null };
+    const w = { id, view: new Spectator({ THREE }), world: null, e: null, key: null };
     w.view.group.name = `machine.world:${id}`;
     layer.add(w.view.group);
     worlds.set(id, w);
@@ -371,62 +361,38 @@ function create(api) {
     worlds.delete(w.id);
   }
   function show(w) {
-    const e = machines.get(traitOf(w.id, WORLD)?.machine);
+    const trait = traitOf(w.id, WORLD);
     const c = api.content(w.id);
-    const frame = c?.loaded && c.extras?.doom ? api.worldOf(w.id) : null;
-    const state = e?.m && e.kind === "doom" && frame ? stateOf(e, w, c.extras.doom) : null;
+    const state = stateOf(w, trait, machines.get(trait?.machine), c);
     if (!state) return w.view.rest();
-    w.view.draw({ world: w.world, state, frame, eye: eye(), root: c.root });
-  }
-  // The engine's world at its tick, read for map `doom` (the part's own say of its frame), or null: not playing that map.
-  function stateOf(e, w, doom) {
-    const key = `${e.id}:${doom.map}:${doom.anchor}:${doom.unitsPerMetre}`;
-    if (w.key !== key) {
-      w.key = key;
-      try {
-        w.world = doomWorld(doomWads(e.content), doom.map, { anchor: doom.anchor, unitsPerMetre: doom.unitsPerMetre });
-      } catch {
-        w.world = null; // a map these WADs don't have: nothing of this game is on it
-      }
-    }
-    const lvl = e.asked.query(QUERY.level);
-    if (!w.world || !lvl || !w.world.playing(decodeLevel(lvl))) return null;
-    const things = e.asked.query(QUERY.things);
-    const sectors = e.asked.query(QUERY.sectors);
-    return things && sectors ? w.world.read({ things, sectors }) : null;
+    w.view.draw({ world: w.world, state, frame: api.worldOf(w.id), eye: eye(), root: c.root });
   }
   /** This view's eye in the stage's frame: the top body's, else the camera's. */
   const eye = () => api.body.eye()?.position ?? api.camera.get().position;
 
   /**
    * Lays out the world of Doom machine `e` beside its cabinet: doom/'s whole
-   * map of the level it's on (or was last on, between levels), from a WAD file doc
-   * of the IWAD it runs, carrying the trait that has this machine drawn in
-   * it. A model, WORLD_SIZE across, its lowest floor at the cabinet's feet,
-   * turned as the cabinet is. The map's source is doom/'s, asked for by id:
-   * without the doom package nothing builds it, and the command says so.
+   * map of the level it's on (or was last on, between levels), from a WAD
+   * file doc of the IWAD it runs (worlds.js wadFile: one per game), carrying
+   * the trait that has this machine drawn in it (worlds.js besideCabinet
+   * says where). The map's source is doom/'s, asked for by id: without the
+   * doom package nothing builds it, and the command says so. Where it goes
+   * is worked out before doom/ has built it, so in the frame machine's
+   * doomWorld gives by default (HOST.md, Decision 36).
    */
   async function layOut(e) {
     const wads = doomWads(e.content);
-    const lvl = e.asked.query(QUERY.level);
+    const lvl = e.m.host.query(QUERY.level);
     if (!lvl) throw new Error("its game hasn't loaded yet");
     const name = mapOf(wads, decodeLevel(lvl));
-    const dw = doomWorld(wads, name);
     const base = (e.title ?? "Doom").split(" · ")[0];
-    const file = await made(api.repo, { "@patchwork": { type: "file" }, name: `${base}.wad`, extension: "wad", mimeType: "application/octet-stream", content: wads[0] });
-    const { min, max } = dw.extent;
-    const scale = Math.min(1, WORLD_SIZE / Math.max(max[0] - min[0], max[2] - min[2]));
-    // beside the cabinet, to its right, in its frame: then into the world as the cabinet stands
-    const cab = new THREE.Matrix4().fromArray(api.scene().world(e.id));
-    const local = new THREE.Vector3(0.6 + ((max[0] - min[0]) * scale) / 2, -min[1] * scale, 0);
-    const position = local.applyMatrix4(cab).toArray();
-    const turn = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().setFromRotationMatrix(cab));
-    const id = await api.addObject(file.url, {
+    const file = await wadFile(api, e, base);
+    const id = await api.addObject(file, {
       providerId: MAP_SOURCE,
       name: `${name} · ${base}`,
       render: { providerId: MAP_SOURCE, params: { map: name, door: null, line: null, whole: true } },
-      transform: { position, rotation: [turn.x, turn.y, turn.z], scale },
-      fields: { traits: { [WORLD]: { machine: e.id } } },
+      transform: besideCabinet(THREE, api.scene().world(e.id), doomWorld(wads, name).extent),
+      fields: { traits: { [WORLD]: { machine: e.id, source: e.url } } },
     });
     api.view.select(id);
     return id;
@@ -447,11 +413,8 @@ function create(api) {
     return seated(e) ? "Stopped while nobody plays: sit at it to play" : "Stopped while nobody plays: P to play";
   }
 
-  // doom/'s map source, here or not (late-bound: the registry, by id)
-  let mapSource = false;
-  Promise.resolve(api.registry?.("scene:source"))
-    .then((reg) => (mapSource = !!reg?.filter?.((p) => p?.id === MAP_SOURCE)?.length))
-    .catch(() => {});
+  // doom/'s map source, here or not now (late-bound: the registry, by id, read when asked)
+  const mapSource = registered(api.registry, "scene:source", MAP_SOURCE);
 
   sync();
 
@@ -482,16 +445,11 @@ function create(api) {
         id: "world",
         name: "Lay out its world",
         show: ["menu", "inspector"],
-        state: (target) => {
-          const e = target != null ? machines.get(target) : null;
-          if (!e || e.kind !== "doom") return null;
-          if (!e.m) return { disabled: true, title: e.note ?? "Starting…" };
-          if (!mapSource) return { disabled: true, title: "Needs the doom package, which builds Doom's maps" };
-          return { title: "A model of the level beside it, its monsters, players and doors moving as the game has them" };
-        },
+        state: (target) => worldCommand(target != null ? machines.get(target) : null, mapSource()),
         run: (target) => {
           const e = machines.get(target);
-          if (e?.m && e.kind === "doom") layOut(e).catch((err) => api.notify(`Couldn't lay out its world: ${err?.message ?? err}`, "error"));
+          const state = worldCommand(e, mapSource());
+          if (state && !state.disabled) layOut(e).catch((err) => api.notify(`Couldn't lay out its world: ${err?.message ?? err}`, "error"));
         },
       },
     ],

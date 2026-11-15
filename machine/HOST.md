@@ -815,25 +815,27 @@ Then steps 5, 6 and 8 (round 2):
 
 Then step 7 (round 3):
 
-7. **The spectator's 3D world** (`src/present/spectator.js`,
-   `src/present/asked.js`, worlds in `extension.js`). "Lay out its world",
+7. **The spectator's 3D world** (`src/present/spectator.js`, what decides
+   in `src/scene/worlds.js`, wired in `extension.js`). "Lay out its world",
    on a Doom cabinet's menu, puts doom/'s map of the level the game is on
    beside the cabinet: doom/'s scene:source (`doom-map`, by id) over a WAD
    file doc of the IWAD the machine runs, with `whole: true` (the whole map
    as one part, each door a node in it), a model 3 m across, its lowest
    floor at the cabinet's feet, turned as the cabinet is. It carries the
-   machine's trait `machine.world: { machine: <the cabinet's id> }`. Every
+   machine's trait `machine.world: { machine, source }`: the cabinet's id
+   and the machine doc it ran then. Every
    view running that machine then draws its game in the map, every frame,
    from the engine's state: each thing Doom draws a billboard at its feet,
    turned to the eye with the rotation Doom would show a viewer there,
    lit as its sector, in the map's displayed frame (scale included); each
    door node moved up by how far its sector's ceiling stands above its
    floor (dressing: the map carries the machine's trait). The frame is the
-   map's own say (its GLB's `extras.doom`: map, anchor, units per metre),
-   so nothing here keeps a copy of doom/'s rule. On another level, between
-   levels, or with the machine gone, the map is as built: no things, every
-   door shut. Each state is asked of the host once (`asking`), shared by
-   the speaker and every world.
+   map's own say (its GLB's `extras.doom`: map, anchor, units per metre).
+   On another level, between levels, with the machine gone, or once the
+   cabinet runs another game than the one the world was laid out for, the
+   map is as built: no things, every door shut. The host answers each
+   query once a state (`Host.query`), so the speaker and every world share
+   one answer.
 
 ### Decisions, made unattended (the lead was away)
 
@@ -939,7 +941,9 @@ Made after review (round 1), also unattended:
     worker remembers a null answer (a kind the engine lacks) as it does an
     answer, so the Super NES isn't asked for a kind it can't answer on
     every frame (each ask copies the state). A null while loading isn't
-    the engine's answer, and is asked again.
+    the engine's answer, and is asked again. (Since round 3's review the
+    rule is Host.query's own, Decision 41; the worker sends an answer when
+    the host's is a new one.)
 
 Made in round 2 (steps 5, 6 and 8), also unattended:
 
@@ -1079,22 +1083,38 @@ Made in round 3 (step 7), also unattended:
 36. **The map says where its frame is.** doom/'s parts now carry
     `extras.doom = { map, anchor, unitsPerMetre }`, as the cabinet's GLB
     says where its screen is (Decision 7); `doomWorld(wads, map, frame)`
-    places things in the frame given. Its own copy of doom/'s anchor rule
-    stays only as the default, and the tests hold the two equal.
+    places things in the frame given, and drawing uses nothing else. Its
+    own copy of doom/'s anchor rule is the default, and one production
+    path uses it: "Lay out its world" works out where the map goes beside
+    the cabinet before doom/ has built anything, so from the extent in
+    the default frame (`besideCabinet`, which places the extent it is
+    given and assumes nothing about where the anchor is inside it). If
+    doom/ changed its anchor rule, a world laid out afterwards would stand
+    off its place beside the cabinet by the difference; its things would
+    still be drawn right, since they follow `extras.doom`. The world probe
+    holds the two rules equal for E1M1. Rejected (round 3's review):
+    moving the map once it is built (a second write, by one view, racing
+    whoever moves it first), and building the map here to read its frame
+    (doom/'s geometry twice, for a placement).
 37. **A world shows one machine, named by the object's id in its trait.**
     Not a match by map name or WAD: two cabinets of one IWAD on one level
     would both claim it. A copy of the world shows the same game; a copy of
     the cabinet runs a game of its own, which no map shows until one is
     laid out for it (traits are copied as they are; ids in them are not
     remapped).
-38. **The world's WAD is a file doc of the IWAD's bytes, made when the
-    world is laid out.** doom/'s source takes a `file` doc; the machine's
-    content doc is its own records (start arguments and WADs). So the IWAD
-    is stored twice (28 MB for Freedoom). A slice of only what drawing the
-    map needs (doom/'s `make-fixture.mjs` makes one, 1.5 MB for E1M1) would
-    be the next step if the storage matters; licences don't bind this
-    research and Automerge's costs are assumed fixed upstream. A game
-    booting PWADs isn't offered a world yet (doom/ reads one WAD file).
+38. **The world's WAD is a file doc of the IWAD's bytes, one per game.**
+    doom/'s source takes a `file` doc; the machine's content doc is its own
+    records (start arguments and WADs). So the IWAD is stored twice (28 MB
+    for Freedoom), once per game, not once per click: laying out another
+    world reuses the file doc of a world already laid out for the same
+    machine doc (its trait's `source`), and a view makes at most one for a
+    machine however often the command runs (`wadFile`). A slice of only
+    what drawing the map needs (doom/'s `make-fixture.mjs` makes one,
+    1.5 MB for E1M1) would be the next step if the storage matters;
+    licences don't bind this research and Automerge's costs are assumed
+    fixed upstream. A game booting more than its IWAD isn't offered a
+    world: the command is disabled and says why (doom/ builds a map from
+    one WAD file, and a PWAD's things over the IWAD's map would be wrong).
 39. **What is drawn is what Doom draws.** Things whose flags say NOSECTOR
     are left out, as Doom leaves them out; a thing's sprite is the one
     Doom would pick for a viewer where the eye is (rotation by bearing,
@@ -1110,6 +1130,44 @@ Made in round 3 (step 7), also unattended:
     add (a lift is a floor and the strips of wall it uncovers), and the
     machine's dressing would move it unchanged (`doorAt` for ceilings, the
     sector's `rise.floor` for floors).
+
+Round 3's review (Decisions 41-45):
+
+41. **The host answers a query once a state.** Round 3 wrapped the host
+    (`asked.js`) so the speaker and the worlds would share one answer a
+    frame; the worker had its own memo, with another rule for nulls. Now
+    there is one rule, `Host.query`'s: the engine is asked once per kind
+    per state (tick and revision, as a picture is), its null kept like
+    any answer, nothing kept while loading. Every reader of one state
+    gets the same answer, which nobody changes. The worker sends an
+    answer when it is a new one, without transferring its buffer (the
+    host keeps it), so an answer crosses as a copy of a few kilobytes.
+    `asked.js` and the worker's per-kind memo are gone.
+42. **What decides a world is `worlds.js`, pure, apart from what draws.**
+    Whether a world draws (`stateOf`), the command's state
+    (`worldCommand`), where a world goes (`besideCabinet`) and its WAD
+    (`wadFile`), each tested over its whole bounded space, rather than one
+    path through a Chrome probe. A world keeps its map's doomWorld for one
+    machine entry and one frame: a machine closed and opened again is
+    another entry and reads its WADs again.
+43. **A world names the game it was laid out for** (`source` on its
+    trait, the cabinet's `sourceUrl` then). A cabinet given another game
+    keeps its id, and the world would have drawn the new game's things
+    over the old game's map whenever the map names matched. Now such a
+    world rests, and its WAD file doc is reused only for worlds of the
+    same game.
+44. **Whether doom/'s map source is here is read when asked**, on the live
+    registry. The stage starts and stops only the extensions that come or
+    go (scene/STAGE.md), so the machine is not restarted when the doom
+    package arrives after it, or leaves. The world probe installs the doom
+    package after the machine has started.
+45. **Beside a scaled cabinet.** The world's turn is the cabinet's without
+    its scale (round 3 read a turn off the scaled matrix, wrong for any
+    scale but 1). The gap from the cabinet's middle to the map's near edge
+    grows with the cabinet's scale, since its side is further out; the
+    map's own size and floor height don't. The near edge, the middle front
+    to back and the lowest floor are taken from the extent as given, not
+    from the anchor being the map's middle.
 
 ### Tests
 
@@ -1129,10 +1187,52 @@ Made in round 3 (step 7), also unattended:
   other nine never move. Mutation-checked: the viewer's right reversed,
   the mirror's place, the frame left out, the door's rest left out,
   doom-world's z axis flipped.
-- **`present/asked.test.js`:** one ask per kind per run of frames at one
-  state, for every subset of 3 kinds asked at each of 7 frames over a run
-  with a rollback (56 cases); a RemoteHost asked as is; a null asked again.
-  Mutation-checked (no memo).
+- **`scene/worlds.test.js`** (round 3's review): whether a world draws,
+  over its machine (none, a Super NES, a Doom starting, one running) ×
+  the source on its trait (its machine's, another, none) × its content
+  (none, building, built without a frame, built) × the WADs having the
+  map × the level (none, on the map, on another, between levels) × the
+  things and sectors answered or not (1,536 cases, one drawing); its map
+  read again for another machine entry or another frame and only then;
+  the command's state over 7 machine entries × the map source here or
+  not; where a world goes for 3 extents × 2 positions × 5 turns × 2 tilts
+  × 3 cabinet scales (180 cases: turned as the cabinet, its near edge
+  GAP times the cabinet's scale to its right, centred front to back, its
+  lowest floor at the cabinet's feet, never enlarged); its WAD file doc
+  over 5 scenes, three clicks at once and one more making at most one,
+  and a failed make tried again; the map source installed after the
+  extension started, and removed; a world's group made and gone with the
+  trait and with the extension. Mutation-checked: the registry read once,
+  no PWAD check, the cached map keyed without the entry, no source check,
+  the turn from the scaled matrix, the gap not scaled, the extent assumed
+  centred on the anchor, no memo of the file doc, no reuse, a failure
+  kept.
+- **`host/host.test.js`**, query (round 3's review): two peers over a WAN,
+  rolling back, 240 frames each asking a subset of three kinds (one the
+  engine lacks) twice: the same answer twice in a state, of the state the
+  engine is in (its hash), the engine asked exactly once per kind per
+  state. Mutation-checked (no memo).
+- **`probes/world.mjs`** (headless Chrome, two views on real Automerge,
+  the built scene, doom and machine packages, real keys; 22 checks).
+  "Lay out its world" says it needs the doom package until the package is
+  installed, after the machine's extension started, then is offered with
+  no reload; the map carries the trait naming the cabinet and its game,
+  and both views build it and draw the game. At tick 0, on both views:
+  210 sprites, one at each spawn the WAD's THINGS give at skill 3 (read
+  there, not from the engine), on the floor doom/ drew (a ray straight
+  down) but the two that hang; all 11 doors shut. Ana steers the marine
+  by the arrow keys to door 100 (469 tics) and presses E. At every tic her
+  body stands on the floor Doom puts it on, worked out in the page from
+  the WAD's lines (the highest floor under her 16-unit box, as
+  P_CheckPosition takes it), or falls to it (the tic she steps off at the
+  height she stood, then lower each tic), or her box is on a lift (Doom
+  moves it, doom/ draws it at rest; 102 tics). On both views the door
+  node's height is 2 units for each tic since tick 473, at every sample,
+  up to 124 units. After Escape both views draw the same things and
+  doors; with the map moved, turned and scaled every thing keeps its
+  place in it; no page errors. (Round 3's report said more of the walk
+  and the door than its probe checked, which passed with 70% of samples
+  on the floor and only asked the door's heights to be even and rising.)
 
 - **`host/clock.test.js`:** the session clock on world time over every
   schedule of 4 steps of nothing, a pause or a resume by either of two
@@ -1151,12 +1251,11 @@ Made in round 3 (step 7), also unattended:
   `running()` ignoring the world, no clamp at the stop.
 - **`worker/remote.test.js`:** every sequence of 3 frames (the state kept,
   re-stepped to the same tick, or stepped on) × the kinds asked for, among
-  them one the engine can't answer (3,375 cases): the host is asked a kind,
-  and the page answered, exactly when the state changed since that kind
-  was last asked, answered or not; a null while loading is asked again
-  once loaded. And a real Super NES's work RAM reaching the page, equal to
-  the worker engine's at that tick. Mutation-checked (a null not
-  remembered; a null remembered while loading).
+  them one the engine can't answer (3,375 cases), over a host answering as
+  Host.query does: the page is sent a kind's answer exactly when the state
+  changed since that kind was last asked, and never a null; nothing while
+  loading, then the answers once. And a real Super NES's work RAM reaching
+  the page, equal to the worker engine's at that tick.
 - **`scene/running.test.js`:** two views over automerge-repo in virtual
   time, the follower's world 0 to 0.2 s behind: made 2 hours into a world it
   starts at tick 0 and registers nothing; the process is registered exactly

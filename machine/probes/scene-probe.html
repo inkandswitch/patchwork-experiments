@@ -55,15 +55,17 @@ const audio = { contexts: [], panners: [], started: [] };
     return start.apply(this, a);
   };
 }
-// ?seats: the seats package too (probes/seats.mjs); ?doom: the doom package too, which builds Doom's maps (probes/world.mjs)
+// ?seats: the seats package too (probes/seats.mjs). The doom package, which builds Doom's maps (probes/world.mjs), is
+// installed when the probe asks (__p.install("doom")), after the machine's extension has started, as a package listed on a
+// scene doc may load after another one
 const SEATS = new URLSearchParams(location.search).has("seats");
-const DOOM = new URLSearchParams(location.search).has("doom");
+const install = async (url) => {
+  const { plugins } = await import(url);
+  for (const p of plugins) getRegistry(p.type).register(p);
+};
 
 try {
-  for (const url of ["../../scene/dist/index.js", ...(SEATS ? ["../../seats/dist/index.js"] : []), ...(DOOM ? ["../../doom/dist/index.js"] : []), "../dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  for (const url of ["../../scene/dist/index.js", ...(SEATS ? ["../../seats/dist/index.js"] : []), "../dist/index.js"]) await install(url);
   const time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
@@ -249,6 +251,41 @@ try {
     return finders.get(map)(Math.round(x * 65536), Math.round(y * 65536));
   };
 
+  // The floor Doom stands a body of radius r at (x, y) on, from the WAD (map units, sectors at rest): the highest floor of its
+  // centre's sector and of both sides of every line its box crosses (P_CheckPosition and PIT_CheckLine, p_map.c; the box
+  // test P_BoxOnLineSide, p_maputl.c), and the sectors those are. Things are left out (a body stands on the floor here).
+  const linesOf = new Map();
+  function floorUnder(map, x, y, r) {
+    if (!linesOf.has(map)) {
+      const m = mapLumps(directory(wad), map);
+      const dv = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+      const V = dv(m.VERTEXES), L = dv(m.LINEDEFS), S = dv(m.SIDEDEFS), F = dv(m.SECTORS);
+      const vx = (i) => [V.getInt16(i * 4, true), V.getInt16(i * 4 + 2, true)];
+      const sectorOfSide = (sd) => (sd === 0xffff ? null : S.getUint16(sd * 30 + 28, true));
+      const lines = Array.from({ length: m.LINEDEFS.length / 14 }, (_, i) => {
+        const [x1, y1] = vx(L.getUint16(i * 14, true));
+        const [x2, y2] = vx(L.getUint16(i * 14 + 2, true));
+        return { x1, y1, dx: x2 - x1, dy: y2 - y1, box: [Math.min(x1, x2), Math.max(x1, x2), Math.min(y1, y2), Math.max(y1, y2)], sectors: [sectorOfSide(L.getUint16(i * 14 + 10, true)), sectorOfSide(L.getUint16(i * 14 + 12, true))] };
+      });
+      linesOf.set(map, { lines, floor: (s) => F.getInt16(s * 26, true) });
+    }
+    const { lines, floor } = linesOf.get(map);
+    const side = (l, px, py) => ((py - l.y1) * l.dx - (px - l.x1) * l.dy >= 0 ? 1 : 0); // R_PointOnLineSide's cross product: 1 back, 0 front
+    const [left, right, bottom, top] = [x - r, x + r, y - r, y + r];
+    const sectors = [sectorOf(map, x, y)];
+    for (const l of lines) {
+      if (right <= l.box[0] || left >= l.box[1] || top <= l.box[2] || bottom >= l.box[3]) continue;
+      let p1, p2;
+      if (l.dy === 0) [p1, p2] = l.dx > 0 ? [top > l.y1, bottom > l.y1] : [!(top > l.y1), !(bottom > l.y1)];
+      else if (l.dx === 0) [p1, p2] = l.dy > 0 ? [right < l.x1, left < l.x1] : [!(right < l.x1), !(left < l.x1)];
+      else if (l.dx * l.dy > 0) [p1, p2] = [side(l, left, top), side(l, right, bottom)];
+      else [p1, p2] = [side(l, right, top), side(l, left, bottom)];
+      if (+p1 === +p2) continue; // the box is wholly on one side
+      for (const s of l.sectors) if (s !== null) sectors.push(s);
+    }
+    return { floor: Math.max(...sectors.map(floor)), sectors: [...new Set(sectors)] };
+  }
+
   // a point in map units, in the world (the map's frame, as its content says), for the camera
   function toWorld(w, wid, [x, y, z]) {
     const c = machineApi(w)?.content(wid);
@@ -261,6 +298,8 @@ try {
   }
 
   window.__p = {
+    install: (name) => install({ doom: "../../doom/dist/index.js" }[name]),
+    floorUnder,
     worldView,
     sectorOf,
     toWorld,
