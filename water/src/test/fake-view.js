@@ -116,6 +116,9 @@ export function fakeView(specs) {
 /** A wave maker standing in for sailing's sea: contributes these components as `water.waves`. */
 export const waves = (components, look) => ({ create: () => ({ "water.waves": { components, ...(look ? { look } : {}) } }) });
 
+/** Whoever makes the weather, standing in for sailing's sea: offers the world's wind ambient. */
+export const windOf = (wind) => ({ create: () => ({ ambient: () => ({ wind }) }) });
+
 /** Count the ocean meshes drawn across the view (one surface each). */
 export const surfaces = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "ocean").length, 0), 0);
 

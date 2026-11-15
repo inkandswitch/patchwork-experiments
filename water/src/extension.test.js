@@ -5,15 +5,16 @@
 // randomized.
 import { afterEach, describe, expect, it } from "vitest";
 import golden from "./test/golden.json";
-import water, { TRAIT, WAVES, waterExtent, waterValue } from "./extension.js";
-import { fakeView, placement, surfaces, waves } from "./test/fake-view.js";
+import water, { TRAIT, WAVES, WIND, waterExtent, waterValue } from "./extension.js";
+import { fakeView, placement, surfaces, waves, windOf } from "./test/fake-view.js";
 import { createSurface } from "./surface.js";
 
 const sea = (name) => golden.seas.find((s) => s.name === name);
 const H_SEA = sea("Harbour");
 const A_SEA = sea("Ship at sea");
 const B_SEA = sea("Ship at anchor");
-const wet = (s, level = 0) => ({ doc: { title: s.name, traits: { [TRAIT]: { level } } }, extensions: [waves(s.components, { seed: s.seed, wind: s.wind }), water] });
+const wet = (s, level = 0) => ({ doc: { title: s.name, traits: { [TRAIT]: { level } } }, extensions: [waves(s.components, { seed: s.seed }), windOf(s.wind), water] });
+const flat = (title, level = 0) => ({ doc: { title, traits: { [TRAIT]: { level } } }, extensions: [water] });
 const dry = (title) => ({ doc: { title, traits: {} }, extensions: [] });
 // the harbour's link poses (WATER.md, "Which doc holds what")
 const AT_A = placement(0, [-40, 0, 0]);
@@ -150,10 +151,52 @@ describe("no water holds still, never the wrong water (W11)", () => {
 });
 
 describe("a reason for time to pass", () => {
-  it("registers one process with no state wherever it runs and acts; none in a drawn stage", () => {
-    v = fakeView([wet(H_SEA), { ...wet(A_SEA), matrix: AT_A, drawn: true }]);
+  // every configuration W3 names, plus flat water: a process with no state is
+  // held exactly where the doc is the world and its water has waves (a
+  // contained doc's reader runs on the world's clock; flat water doesn't move)
+  const cases = [...configurations(), ["flat water alone", [flat("Pond")], true], ["a boat in a flat-water harbour", [flat("Pond"), { ...wet(A_SEA), matrix: AT_A }], true]];
+  for (const [label, specs] of cases)
+    it(`${label}: a process only where the doc is the world and has waves`, () => {
+      v = fakeView(specs);
+      for (let i = 0; i < 3; i++) v.frame();
+      v.stages.forEach((s, n) => {
+        const waved = (specs[n].extensions ?? []).length > 1;
+        expect([label, n, s.processes]).toEqual([label, n, n === 0 && specs[n].doc.traits[TRAIT] && waved ? 1 : 0]);
+      });
+    });
+
+  it("waves stilled, or the water gone: the process goes; waves back: it comes back", () => {
+    v = fakeView([wet(H_SEA)]);
+    v.frame();
     expect(v.stages[0].processes).toBe(1);
-    expect(v.stages[1].processes).toBe(0);
+    v.stages[0].instances[0]["water.waves"].components = [];
+    v.frame();
+    expect(v.stages[0].processes).toBe(0);
+    v.stages[0].instances[0]["water.waves"].components = H_SEA.components;
+    v.frame();
+    expect(v.stages[0].processes).toBe(1);
+    delete v.stages[0].doc.traits[TRAIT];
+    v.frame();
+    expect(v.stages[0].processes).toBe(0);
+  });
+
+  it(`the drawn surface's wind is the world's ${WIND} ambient (none is calm), not the water's`, () => {
+    const windOfSurface = () => {
+      const u = v.stages[0].instances.at(-1).debug.surface.object.material.uniforms.uWind.value;
+      return [u.x, u.y].map((x) => Math.round(x * 1e9) / 1e9 + 0);
+    };
+    for (const [from, want] of [[0, [0, 1]], [90, [-1, 0]], [180, [0, -1]], [270, [1, 0]]]) {
+      v = fakeView([{ ...wet(H_SEA), extensions: [waves(H_SEA.components, { seed: H_SEA.seed }), windOf({ speed: 9, from }), water] }]);
+      v.frame();
+      expect(windOfSurface()).toEqual(want);
+      // the water's own value carries no wind
+      expect(v.stages[0].instances.at(-1).ambient().water.look).toEqual({ seed: H_SEA.seed });
+      v.dispose();
+    }
+    // no wind offered: calm, from the north
+    v = fakeView([{ ...wet(H_SEA), extensions: [waves(H_SEA.components, { seed: H_SEA.seed, wind: { speed: 9, from: 90 } }), water] }]);
+    v.frame();
+    expect(windOfSurface()).toEqual([0, 1]);
   });
 
   it("a tilted link: no reader there, and it says so once", () => {
