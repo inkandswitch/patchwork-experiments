@@ -185,7 +185,7 @@ describe.skipIf(!haveIwad)("doom's world (needs engines/doom/test/freedoom1.wad)
     expect(UNITS_PER_METRE).toBe(36);
     const world = doomWorld(wads, "E1M1");
     const map = mapLumps(lumpDir, "E1M1");
-    expect(world.anchor).toEqual(anchorOf(map.VERTEXES));
+    expect(world.anchor).toEqual([...anchorOf(map.VERTEXES), 0]);
     const [ax, ay] = world.anchor;
     expect(world.metres([ax, ay, 0])).toEqual([0, 0, -0]);
     expect(world.metres([ax + 36, ay, 0])).toEqual([1, 0, -0]); // east

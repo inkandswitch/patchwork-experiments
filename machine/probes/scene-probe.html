@@ -27,6 +27,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
 import { content as doomContent } from "../src/doom.js";
 import { worldClock, tickAt } from "../src/host/clock.js";
+import { directory, mapLumps, sectorFinder } from "../src/present/doom-world.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
@@ -54,11 +55,12 @@ const audio = { contexts: [], panners: [], started: [] };
     return start.apply(this, a);
   };
 }
-// ?seats: the seats package too (probes/seats.mjs)
+// ?seats: the seats package too (probes/seats.mjs); ?doom: the doom package too, which builds Doom's maps (probes/world.mjs)
 const SEATS = new URLSearchParams(location.search).has("seats");
+const DOOM = new URLSearchParams(location.search).has("doom");
 
 try {
-  for (const url of ["../../scene/dist/index.js", ...(SEATS ? ["../../seats/dist/index.js"] : []), "../dist/index.js"]) {
+  for (const url of ["../../scene/dist/index.js", ...(SEATS ? ["../../seats/dist/index.js"] : []), ...(DOOM ? ["../../doom/dist/index.js"] : []), "../dist/index.js"]) {
     const { plugins } = await import(url);
     for (const p of plugins) getRegistry(p.type).register(p);
   }
@@ -70,6 +72,7 @@ try {
   const rom = new Uint8Array(await (await fetch("../engines/snes/test/unarmed.sfc")).arrayBuffer());
   // what each machine boots, as the Machine tool writes it: Doom's start arguments and WAD; a ROM
   const doomBytes = doomContent({ wads: [wad], args: ["-skill", "3", "-warp", "1", "1", "-players", "1"] });
+  window.__doomArgs = { skill: 3, players: 1 };
   const doomRuns = await net.a.create2({ title: "freedoom1 · E1M1 · 1p", bytes: doomBytes });
   const snesRuns = await net.a.create2({ title: "unarmed", bytes: rom });
   const machines = {
@@ -177,7 +180,101 @@ try {
   const writes = [];
   scene.a.on("change", () => writes.push(Math.round(performance.now())));
 
+  // A machine's world (probes/world.mjs), read from the stage without the
+  // extension's help: the map object's content (its extras, its door nodes,
+  // its floors, as doom/ built them) and the scene graph's things (the
+  // groups named thing:<id> in machine.world:<map id>), each in map units
+  // through the map's own frame (extras.doom: anchor, unitsPerMetre).
+  function worldView(w, wid) {
+    const api = machineApi(w);
+    const c = api?.content(wid);
+    const doom = c?.loaded ? c.extras?.doom : null;
+    const vp = dbg[w].viewport;
+    const group = vp.scene?.getObjectByName(`machine.world:${wid}`) ?? null;
+    if (!doom || !group) return null;
+    const T = api.THREE;
+    const k = doom.unitsPerMetre;
+    const [ax, ay, az] = doom.anchor;
+    c.root.updateWorldMatrix(true, true);
+    const units = (p) => { const l = c.root.worldToLocal(p.clone()); return [l.x * k + ax, -l.z * k + ay, l.y * k + az]; };
+    const ray = new T.Raycaster();
+    const scale = new T.Vector3().setFromMatrixScale(c.root.matrixWorld).x;
+    const things = group.children.map((h) => {
+      h.updateWorldMatrix(true, false);
+      const p = new T.Vector3().setFromMatrixPosition(h.matrixWorld);
+      // the floor doom/ drew under its feet: straight down from a little above them, at the
+      // feet and half a unit to each side (a thing centred on a line between two floors is in
+      // the sector Doom's BSP says, which a ray straight down the line can't tell)
+      const floors = [[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5]].map(([dx, dz]) => {
+        const o = c.root.localToWorld(c.root.worldToLocal(p.clone()).add(new T.Vector3(dx / k, 0, dz / k)));
+        ray.set(o.add(new T.Vector3(0, 0.25 * scale, 0)), new T.Vector3(0, -1, 0));
+        const hit = ray.intersectObject(c.root, true)[0];
+        return hit ? units(hit.point)[2] : null;
+      }).filter((f) => f !== null);
+      return { id: h.userData.id, lump: h.userData.lump ?? null, at: units(p), floors };
+    });
+    const doors = [];
+    c.root.traverse((n) => { if (Number.isInteger(n.userData?.door)) doors.push({ door: n.userData.door, y: n.position.y * k }); });
+    return { map: doom.map, scale, world: api.worldOf(wid), things, doors };
+  }
+  // What a game on this WAD's map spawns at its start (P_SpawnMapThing, p_mobj.c): its THINGS for
+  // the skill (bit 1, 2 or 4) in one player's game, no deathmatch starts, player 1's start alone,
+  // nothing multiplayer-only (flag 16); a teleport destination (14) is NOSECTOR, never drawn.
+  function spawns(map, { skill, players = 1 }) {
+    const t = mapLumps(directory(wad), map).THINGS;
+    const v = new DataView(t.buffer, t.byteOffset, t.byteLength);
+    const bit = skill <= 2 ? 1 : skill >= 4 ? 4 : 2;
+    const out = [];
+    for (let at = 0; at + 10 <= t.length; at += 10) {
+      const [x, y, angle, type, flags] = [0, 2, 4, 6, 8].map((o) => v.getInt16(at + o, true));
+      if (type === 11 || type === 14) continue;
+      if (type >= 1 && type <= 4) { if (type <= players) out.push({ x, y, angle, type }); continue; }
+      if (players === 1 && flags & 16) continue;
+      if (!(flags & bit)) continue;
+      out.push({ x, y, angle, type });
+    }
+    return out;
+  }
+  // E1M1's door sectors' floors, where each door shuts (map units), from the WAD
+  function floors(map) {
+    const s = mapLumps(directory(wad), map).SECTORS;
+    const v = new DataView(s.buffer, s.byteOffset, s.byteLength);
+    return Array.from({ length: s.length / 26 }, (_, i) => v.getInt16(i * 26, true));
+  }
+
+  // the sector Doom's BSP puts a point in (map units)
+  const finders = new Map();
+  const sectorOf = (map, x, y) => {
+    if (!finders.has(map)) finders.set(map, sectorFinder(mapLumps(directory(wad), map)));
+    return finders.get(map)(Math.round(x * 65536), Math.round(y * 65536));
+  };
+
+  // a point in map units, in the world (the map's frame, as its content says), for the camera
+  function toWorld(w, wid, [x, y, z]) {
+    const c = machineApi(w)?.content(wid);
+    const doom = c?.extras?.doom;
+    if (!doom) return null;
+    const [ax, ay, az] = doom.anchor;
+    const k = doom.unitsPerMetre;
+    c.root.updateWorldMatrix(true, false);
+    return c.root.localToWorld(new (machineApi(w).THREE.Vector3)((x - ax) / k, (z - az) / k, -(y - ay) / k)).toArray();
+  }
+
   window.__p = {
+    worldView,
+    sectorOf,
+    toWorld,
+    spawns,
+    floors,
+    worldId: (w = "a") => Object.entries(docOf(w).objects ?? {}).find(([, o]) => o?.traits?.["machine.world"])?.[0] ?? null,
+    object: (id, w = "a") => JSON.parse(JSON.stringify(docOf(w).objects?.[id] ?? null)),
+    run: (w, command, target) => machineApi(w).run({ ext: "machine", command, target }),
+    commandState(w, command, target) {
+      const rec = dbg[w].host.record("machine");
+      const c = rec?.instance?.commands?.find((x) => x.id === command);
+      return c ? c.state(target, machineApi(w).context()) : "no command";
+    },
+    setObject: (id, transform) => scene.a.change((d) => { d.objects[id].transform = transform; }),
     errors, machines: { doom: machines.doom.url, snes: machines.snes.url },
     doc: (w = "a") => JSON.parse(JSON.stringify(docOf(w))),
     writes: () => writes.length,

@@ -34,8 +34,10 @@ own. In a scene a machine is an object (`src/scene/`): its cabinet, its
 session run on the scene's world time, its picture and sound at the
 cabinet's screen, a seat per port (sit down to play that port, stand up to
 give it back), and an empty cabinet from the parts bin that takes a ROM or
-an IWAD dropped on it. The spectator's 3D view of Doom is still to come
-(HOST.md, "Phase 2b, in a scene").
+an IWAD dropped on it. And a Doom's world beside it: "Lay out its world"
+puts doom/'s own 3D map of the level beside the cabinet, and the game is
+drawn in it from the engine's state, every frame, its monsters, players
+and doors where the engine has them (HOST.md, "Phase 2b, in a scene").
 
 ## What is here
 
@@ -50,8 +52,8 @@ an IWAD dropped on it. The spectator's 3D view of Doom is still to come
 | `src/doom.js` | Doom's host side: content, ticcmds, demos, sound events, PCM, the queries' decoders, the listener, a camera |
 | `src/doom-music.js` | Doom's music player: `music(wasm, lumps, rate)`, following the engine's music record |
 | `src/content.js` | content provisioning: recipes, `identify`, a per-hash cache in IndexedDB, `provide(hash, …)` |
-| `src/scene/` | a machine in a scene: `extension.js` (scene:extension `machine`: screens, sound, seats, Play, drops), `running.js` (one machine on one view: the host on world time, the process, the quiet stop), `seating.js` (a seat per port: what's laid, the places, following a seat), `part.js` (scene:part `machine`: an empty cabinet), `cabinet.js` and `source.js` (scene:source `machine`: the cabinet GLB, its screen's place in its extras) |
-| `src/present/` | presentation (phase 2b): `screen.js` (a picture as a three.js texture), `sound.js` (WebAudio routing of `output()`), `speaker.js` (a machine's sound on one AudioContext, for the tool and a scene), `doom-world.js` (Doom's things and sectors for a spectator), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
+| `src/scene/` | a machine in a scene: `extension.js` (scene:extension `machine`: screens, sound, seats, Play, drops, worlds), `running.js` (one machine on one view: the host on world time, the process, the quiet stop), `seating.js` (a seat per port: what's laid, the places, following a seat), `part.js` (scene:part `machine`: an empty cabinet), `cabinet.js` and `source.js` (scene:source `machine`: the cabinet GLB, its screen's place in its extras) |
+| `src/present/` | presentation (phase 2b): `screen.js` (a picture as a three.js texture), `sound.js` (WebAudio routing of `output()`), `speaker.js` (a machine's sound on one AudioContext, for the tool and a scene), `doom-world.js` (Doom's things and sectors for a spectator), `spectator.js` (them drawn in doom/'s whole map: billboards, doors moved), `asked.js` (the engine's state asked once a state), `adapters/unarmed.js` (Unarmed's players and arena from WRAM) |
 | `src/test-tier.js` | the test tiers' flag |
 | `engines/machine.h` | the ABI, in C |
 | `engines/toy` | a toy engine (C, 9 KB), for the exhaustive tests |
@@ -499,8 +501,10 @@ automerge-repo's scheduling; it is left open.
 - **The scene extension** (phase 2b): the clock, the process, queries
   across the worker and the screen are built (HOST.md, "Phase 2b, in a
   scene"); positional sound (`output()`, with Doom's events carrying
-  positions), a station per port, the spectator's world, and Doom's mouse
-  in a scene (it plays by keys there) are not.
+  positions), a station per port and the spectator's world are built too;
+  Doom's mouse in a scene (it plays by keys there), the world's sound at
+  its origins, and lifts and locked doors in the world are not (HOST.md,
+  "Not done yet").
 - **The host in a worker, in a scene.** The worker is built (below, and
   `src/worker/`) and answers queries, but in a scene the host runs on the
   page: hosting the worker from a Patchwork package needs a worker bundle
@@ -511,6 +515,50 @@ automerge-repo's scheduling; it is left open.
     missing;
   - snapshots are whole-memory (Doom 6.9 MB, SNES 3.5 MB). Dirty-page
     snapshots would be the next reduction.
+
+## Being a player from the 3D world
+
+Out of scope so far, by the lead's instruction: how someone in the
+composed 3D world sees Doom's HUD and plays as player N there, rather
+than at the screen. What building the spectator's world (HOST.md, step 7)
+showed about it:
+
+- **Everything needed to place player N in the world is already read.**
+  The players query has each player's eyes (x, y, z, angle) and body; the
+  map's frame comes from the map itself (`extras.doom`); so player N's eye
+  in the stage is the map's displayed matrix applied to those eyes. At the
+  model's scale (3 m across) that eye is a few centimetres up: the camera's
+  near plane would have to scale with the map, or the map be laid out at
+  1:1 (its `scale`, one field) to be played from inside.
+- **The body would be the machine's, not the walk body.** Doom moves its
+  player (its collision, its momentum, its doors), and every peer computes
+  that from the inputs, so the scene can't move the player; it can only
+  send ticcmds. A body the machine contributes (`bodies`, as sailing
+  contributes aboard and the station) whose `eye()` is player N's eyes and
+  whose keys are the pad's (forward, turn, use, fire: what Play's held tool
+  declares now) would make "be player N" a body change, with nothing new in
+  the stage. `camera.ride` doesn't fit: it rides an object, and the player
+  is a billboard the extension draws, not an object. Its `lock` would also
+  settle Doom's mouse (Decision 15): a body that owns the pointer.
+- **The player's own body must not be drawn for its own eye.** Doom never
+  draws the console player's mobj (it is behind the view plane); the
+  spectator draws every player, which from inside your own body is a
+  sprite in your face. The world would skip player N's thing for that view
+  alone.
+- **The HUD is two things.** The status bar and messages are the engine's
+  own picture (`frame(view)`'s bottom 32 rows, and its top lines), which an
+  overlay could show as they are, scaled. The weapon in hand (Doom's
+  psprites) isn't in any query: the players query says which weapon, not
+  its state or frame. Drawing the gun from the 3D world needs a query of
+  the psprites (an engine change, small, in `machine_doom.c`), or the
+  engine's own renderer for that layer alone.
+- **Two pictures of one game must agree.** The 3D world is drawn from the
+  head (predicted inputs included, as the screen is); a correction moves
+  billboards and doors back a few tics, the same correction the screen
+  shows. Nothing more is needed for a player than for a spectator.
+- **Sound** follows: `world(toScene)` with the map's matrix as `toScene`
+  puts each sound at its origin in the map, which is where a player inside
+  it hears it.
 
 ## Phase 2, the engine side
 

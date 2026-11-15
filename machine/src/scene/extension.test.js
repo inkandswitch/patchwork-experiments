@@ -9,7 +9,7 @@ test("its surface is the extension contract's: update, commands, dispose, and th
   const api = { THREE, world: () => new THREE.Group(), labels: () => ({ set() {} }), scene: () => ({ objects: {} }), loop: () => () => {}, listen: () => {}, root: null, collect: () => [] };
   const instance = ext.create(api);
   expect(Object.keys(instance).sort()).toEqual(["commands", "dispose", "seatPlaces", "update"]);
-  expect(instance.commands.map((c) => c.id)).toEqual(["play"]);
+  expect(instance.commands.map((c) => c.id)).toEqual(["play", "world"]);
   instance.dispose();
 });
 
