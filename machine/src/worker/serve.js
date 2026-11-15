@@ -21,7 +21,7 @@ export function serve(endpoint, local = {}) {
   let input = null;
   let clock = null; // { t, running }, as the page last read it
   const drawn = new Map(); // view -> the tick and revision last drawn
-  const asked = new Map(); // query kind -> the tick and revision last answered
+  const sent = new Map(); // query kind -> the answer last sent
   const live = () => served.host ?? fail("closed");
 
   const reply = (msg, transfer = []) => endpoint.postMessage(msg, transfer);
@@ -62,18 +62,14 @@ export function serve(endpoint, local = {}) {
         pictures[view] = p;
         transfer.push(p.rgba.buffer);
       }
-      // A query is asked of the host again only when the state changed, as a
-      // view is drawn: each answer copies the state, and a kind the engine
-      // can't answer (null, not loading) is remembered too, so it isn't
-      // asked every frame. A null while loading isn't the engine's answer.
+      // The host answers a query once a state (Host.query); an answer is
+      // sent when it is a new one. It stays the host's, so it is copied.
       const answers = {};
       for (const kind of queries) {
-        if (asked.get(kind) === at) continue;
         const a = host.query(kind);
-        if (a || !host.loading) asked.set(kind, at);
-        if (!a) continue;
+        if (!a || sent.get(kind) === a) continue;
+        sent.set(kind, a);
         answers[kind] = a;
-        transfer.push(a.buffer);
       }
       // The host keeps what it delivered (to compare re-simulations with), so
       // the page gets copies.
