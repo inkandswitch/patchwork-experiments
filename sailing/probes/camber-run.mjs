@@ -11,7 +11,7 @@
 // Mounts the BUILT scene tool with the BUILT sailing plugins and camber's
 // BUILT plugins (camber/patchwork/dist, served at /camber/: a probe may
 // borrow another package's build at dev time; no package imports another).
-// The scene starts with a sea and nothing else, and people in Edit (a scene
+// The scene starts with a sea (and the water beside it) and nothing else, and people in Edit (a scene
 // made new). Then, as someone would:
 // - adds one of camber's example hulls (camber's scene:source builds its GLB
 //   in the page, in the floating frame: bow +X, waterline y = 0, with

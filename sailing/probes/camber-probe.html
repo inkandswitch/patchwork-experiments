@@ -52,8 +52,9 @@ try {
   // a camber hull doc, as camber saves one
   const hullJson = await (await fetch(`/camber-examples/${EXAMPLE}`)).json();
   const hullDoc = repo.add({ "@patchwork": { type: "camber-hull" }, title: hullJson.name ?? EXAMPLE.replace(/\.json$/, ""), ...hullJson });
-  // a scene with a sea in it and nothing else: a calm-ish breeze from the north-east
-  const scene = repo.add(emptyScene({ title: "Camber at sea", traits: { "sailing.sea": { wind: { speed: 7, from: 45 }, seed: SEED, scale: 1 } }, view: { grid: false } }));
+  // a scene with a sea in it and nothing else (and water beside the sea, as a template or the Sloop writes it: the
+  // sea gives the waves, the water package floats her on them): a calm-ish breeze from the north-east
+  const scene = repo.add(emptyScene({ title: "Camber at sea", traits: { "sailing.sea": { wind: { speed: 7, from: 45 }, seed: SEED, scale: 1 }, water: { level: 0 } }, view: { grid: false } }));
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const host = document.getElementById("a");
