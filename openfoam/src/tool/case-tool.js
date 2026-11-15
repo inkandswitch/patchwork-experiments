@@ -34,59 +34,95 @@ export default function CaseTool(handle, element) {
   style.textContent = css;
   const root = document.createElement("div");
   root.className = "openfoam";
+  // Four parts, in the order work goes: the model (what the hull is), the
+  // setup of the next run (how it floats, the flow, the solver, where it
+  // runs, and what that will cost), the runs going now, and the finished
+  // runs to read. Each folds away.
   root.innerHTML = `
-    <div class="layout">
-      <div class="flow setup">
-        <input class="title" aria-label="Title">
-        <div class="section">
-          <h2>Hull</h2>
-          <div class="drop hull-drop">
-            <div class="hull-chip"></div>
-            <div class="cluster" style="margin-top:6px"><input type="text" class="hull-url" placeholder="Drop a 3D file or hull here, or paste its link"><button class="hull-unlink" hidden>Unlink</button></div>
+    <div class="case flow">
+      <input class="title" aria-label="Title">
+      <details class="phase" data-phase="model" open>
+        <summary><span class="n">1</span><span class="name">Model</span><span class="sum model-sum"></span></summary>
+        <div class="phase-body cols">
+          <div class="flow col-form" style="--flow-space:8px">
+            <div class="drop hull-drop">
+              <div class="hull-chip"></div>
+              <div class="cluster" style="margin-top:6px"><input type="text" class="hull-url" placeholder="Drop a 3D file or hull here, or paste its link"><button class="hull-unlink" hidden>Unlink</button></div>
+            </div>
+            <label class="field"><span>Bow points</span><select class="hull-bow" title="Which way the model's bow points; the analysis turns it to +x"><option value="+x">+x</option><option value="-x">−x</option></select></label>
+            <div class="hull-parts"></div>
+            <div class="hull-warn hint"></div>
           </div>
-          <label class="field"><span>Bow points</span><select class="hull-bow" title="Which way the model's bow points; the analysis turns it to +x"><option value="+x">+x</option><option value="-x">−x</option></select></label>
-          <div class="hull-parts"></div>
-          <div class="hull-warn hint"></div>
-          <label class="field"><span>Sinkage</span><input type="number" step="0.01" data-k="sinkage" title="Metres the hull is lowered from as drawn (negative raises it)"></label>
-          <label class="field"><span>Trim</span><input type="number" step="0.1" data-k="trim" title="Degrees, bow down positive"></label>
-          <label class="field"><span>Heel</span><span class="pair"><input type="number" step="1" data-k="heel" title="Degrees, starboard down positive. A heeled hull runs the full domain (no symmetry plane), at about twice the cells"><button class="keep-displacement" title="Heeling about the centreline changes what's under water: sink the hull until it displaces what it does upright">Keep displacement</button></span></label>
-          <label class="field"><span>Float at</span><span class="pair"><input type="number" step="1" class="float-mass" placeholder="mass"><select class="float-unit"><option value="kg">kg</option><option value="t">t</option></select><button class="float-go">Set</button></span></label>
+          <div class="flow col-main" style="--flow-space:8px">
+            <canvas class="hull-canvas"></canvas>
+            <div class="model-figures"></div>
+          </div>
         </div>
-        <div class="section">
-          <h2>Analysis</h2>
-          <label class="field"><span>Model</span><select data-k="mode">${Object.entries(MODE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
-          <label class="field"><span>Speed</span><span class="pair"><input type="number" step="0.1" min="0" data-k="speed"><select data-k="speedUnit"><option value="kn">kn</option><option value="m/s">m/s</option></select></span></label>
-          <label class="field"><span>Water</span><span class="pair"><select data-k="water"><option value="salt">Seawater</option><option value="fresh">Fresh</option></select><input type="number" step="1" min="0" max="30" data-k="temperature" title="°C"></span></label>
-          <label class="field"><span>Mesh</span><select data-k="mesh">${MESH_PRESETS.map((m) => `<option value="${m}">${m}</option>`).join("")}</select></label>
-          <label class="field"><span>Iterations</span><input type="number" step="100" min="50" data-k="iterations"></label>
-          <label class="field"><span>Start from</span><select data-k="warmStart" class="warm-select" title="A finished run's solution, mapped onto the new mesh, on the daemon that ran it. Helps a free-surface run most: its waves are already there"><option value="">rest</option></select></label>
-          <label class="field"><span>Stop</span><select data-k="stop" title="Settled: when the resistance holds within 1% over two windows of iterations; the iterations are then a ceiling"><option value="settled">when settled (±1%)</option><option value="iterations">after the iterations</option></select></label>
-          <label class="field"><span>Domain</span><select data-k="domain"><option value="auto">Half if symmetric</option><option value="half">Half (y ≤ 0)</option><option value="full">Full</option></select></label>
-          <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the daemon decides"></label>
+      </details>
+      <details class="phase" data-phase="setup" open>
+        <summary><span class="n">2</span><span class="name">Run setup</span><span class="sum setup-sum"></span></summary>
+        <div class="phase-body cols">
+          <div class="flow col-form">
+            <fieldset>
+              <legend>Floating</legend>
+              <label class="field"><span>Sinkage</span><input type="number" step="0.01" data-k="sinkage" title="Metres the hull is lowered from as drawn (negative raises it)"></label>
+              <label class="field"><span>Trim</span><input type="number" step="0.1" data-k="trim" title="Degrees, bow down positive"></label>
+              <label class="field"><span>Heel</span><span class="pair"><input type="number" step="1" data-k="heel" title="Degrees, starboard down positive. A heeled hull runs the full domain (no symmetry plane), at about twice the cells"><button class="keep-displacement" title="Heeling about the centreline changes what's under water: sink the hull until it displaces what it does upright">Keep displacement</button></span></label>
+              <label class="field"><span>Float at</span><span class="pair"><input type="number" step="1" class="float-mass" placeholder="mass"><select class="float-unit"><option value="kg">kg</option><option value="t">t</option></select><button class="float-go">Set</button></span></label>
+              <div class="float-why hint"></div>
+            </fieldset>
+            <fieldset>
+              <legend>Flow</legend>
+              <label class="field"><span>Analysis</span><select data-k="mode">${Object.entries(MODE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
+              <label class="field"><span>Speed</span><span class="pair"><input type="number" step="0.1" min="0" data-k="speed"><select data-k="speedUnit"><option value="kn">kn</option><option value="m/s">m/s</option></select></span></label>
+              <label class="field"><span>Water</span><span class="pair"><select data-k="water"><option value="salt">Seawater</option><option value="fresh">Fresh</option></select><input type="number" step="1" min="0" max="30" data-k="temperature" title="°C"></span></label>
+            </fieldset>
+            <fieldset>
+              <legend>Solver</legend>
+              <label class="field"><span>Mesh</span><select data-k="mesh">${MESH_PRESETS.map((m) => `<option value="${m}">${m}</option>`).join("")}</select></label>
+              <label class="field"><span>Iterations</span><input type="number" step="100" min="50" data-k="iterations"></label>
+              <label class="field"><span>Start from</span><select data-k="warmStart" class="warm-select" title="A finished run's solution, mapped onto the new mesh, on the daemon that ran it. Helps a free-surface run most: its waves are already there"><option value="">rest</option></select></label>
+              <label class="field"><span>Stop</span><select data-k="stop" title="Settled: when the resistance holds within 1% over two windows of iterations; the iterations are then a ceiling"><option value="settled">when settled (±1%)</option><option value="iterations">after the iterations</option></select></label>
+              <label class="field"><span>Domain</span><select data-k="domain"><option value="auto">Half if symmetric</option><option value="half">Half (y ≤ 0)</option><option value="full">Full</option></select></label>
+              <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the daemon decides"></label>
+            </fieldset>
+            <fieldset>
+              <legend>Server</legend>
+              <div class="server-box"></div>
+              <div class="cluster" style="margin-top:6px"><input type="text" class="server-url" placeholder="Paste the daemon's inbox link"><button class="server-forget" hidden>Change</button></div>
+            </fieldset>
+          </div>
+          <div class="flow col-main" style="--flow-space:10px">
+            <h3>What to expect</h3>
+            <div class="estimate-figures"></div>
+            <div class="launch flow" style="--flow-space:8px">
+              <button class="run" data-primary>Run</button>
+              <label class="field"><span>Sweep</span><span class="pair"><input type="text" class="sweep" placeholder="speeds, e.g. 4, 5, 6, 7"><button class="run-sweep">Run</button></span></label>
+              <div class="run-why hint"></div>
+            </div>
+          </div>
         </div>
-        <div class="section">
-          <h2>Server</h2>
-          <div class="server-box"></div>
-          <div class="cluster" style="margin-top:6px"><input type="text" class="server-url" placeholder="Paste the daemon's inbox link"><button class="server-forget" hidden>Change</button></div>
+      </details>
+      <details class="phase" data-phase="running" open>
+        <summary><span class="n">3</span><span class="name">Running</span><span class="sum running-sum"></span></summary>
+        <div class="phase-body flow">
+          <div class="running-list"></div>
+          <div class="live-host"></div>
         </div>
-        <div class="section flow" style="--flow-space:8px">
-          <button class="run" data-primary>Run</button>
-          <label class="field"><span>Sweep</span><span class="pair"><input type="text" class="sweep" placeholder="e.g. 4, 5, 6, 7"><button class="run-sweep">Run</button></span></label>
-          <div class="run-why hint"></div>
+      </details>
+      <details class="phase" data-phase="results" open>
+        <summary><span class="n">4</span><span class="name">Results</span><span class="sum results-sum"></span></summary>
+        <div class="phase-body flow">
+          <div class="runs-table"></div>
+          <div class="curve" hidden><h3>Resistance against speed</h3><div class="curve-chart"></div></div>
+          <div class="result-host"></div>
         </div>
-      </div>
-      <div class="flow main">
-        <div class="preflight"><h2>Before you run</h2><canvas class="hull-canvas"></canvas><div class="preflight-figures"></div></div>
-        <div class="section runs-box" hidden><h2>Runs</h2><div class="runs-table"></div><div class="curve" hidden><h2 style="margin-top:12px">Resistance against speed</h2><div class="curve-chart"></div></div></div>
-        <div class="section run-host"></div>
-      </div>
+      </details>
     </div>`;
   element.append(style, root);
   const $ = (s) => root.querySelector(s);
-  const runView = mountRunView($(".run-host"), {
-    repo,
-    // a double-body run's predicted running attitude, as the setup of a free-surface run
-    onUseAttitude: (attitude) =>
+  // a double-body run's predicted running attitude, as the setup of a free-surface run
+  const useAttitude = (attitude) =>
       handle.change((d) => {
         if (!d.setup) d.setup = setup();
         d.setup.attitude = { sinkage: +attitude.sinkage.toFixed(4), trim: +attitude.trim.toFixed(3) };
@@ -95,8 +131,10 @@ export default function CaseTool(handle, element) {
           d.setup.mode = "free-surface";
           d.setup.iterations = DEFAULT_ITERATIONS["free-surface"][s.mesh];
         }
-      }),
-  });
+      });
+  // the run going now (stages, convergence, stop), and the finished run being read
+  const liveView = mountRunView($(".live-host"), { repo, showTitle: true });
+  const resultView = mountRunView($(".result-host"), { repo, showTitle: true, onUseAttitude: useAttitude });
   const curveChart = lineChart($(".curve-chart"), { height: 180, xLabel: "speed (kn)", markers: true, format: (v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)) });
 
   // ------------------------------------------------------------ state
@@ -379,7 +417,8 @@ export default function CaseTool(handle, element) {
     // what it displaces upright at this sinkage and trim, then the sinkage that displaces that heeled
     const upright = prepareHull(tris, { ...s.attitude, heel: 0 }).info.volume;
     const sink = sinkageForVolume(tris, upright, { trim: s.attitude.trim, heel: s.attitude.heel });
-    if (sink == null) return void ($(".hull-warn").textContent = "the hull can't displace its upright volume at this heel");
+    $(".float-why").textContent = sink == null ? "the hull can't displace its upright volume at this heel" : "";
+    if (sink == null) return;
     handle.change((d) => {
       if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
       d.setup.attitude.sinkage = +sink.toFixed(4);
@@ -393,11 +432,8 @@ export default function CaseTool(handle, element) {
     const { rho } = waterProperties(s.water, s.temperature);
     const md = model();
     const sink = sinkageForVolume(hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame), m / rho, { trim: s.attitude.trim, heel: s.attitude.heel });
-    const why = $(".hull-warn");
-    if (sink == null) {
-      why.textContent = `the whole hull displaces less than ${(m / 1000).toFixed(2)} t`;
-      return;
-    }
+    $(".float-why").textContent = sink == null ? `the whole hull displaces less than ${(m / 1000).toFixed(2)} t` : "";
+    if (sink == null) return;
     handle.change((d) => {
       if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
       d.setup.attitude.sinkage = +sink.toFixed(4);
@@ -463,13 +499,18 @@ export default function CaseTool(handle, element) {
     box.querySelector(".parts-reset")?.addEventListener("click", () => handle.change((d) => d.hull && delete d.hull.parts));
   }
 
-  // ------------------------------------------------------------ pre-flight
+  // ------------------------------------------------------------ the model's figures, and what a run will cost
+  const row = (k, v, how = "") => `<tr><td>${k}</td><td>${v}</td><td class="method">${how}</td></tr>`;
   function renderPreflight() {
-    const box = $(".preflight-figures");
+    const box = $(".model-figures");
+    const est = $(".estimate-figures");
     const canvas = $(".hull-canvas");
     if (!prepared?.info) {
       canvas.hidden = true;
-      box.innerHTML = `<div class="hint">Link a hull to see its waterline, wetted area and what the run will cost.</div>`;
+      box.innerHTML = `<div class="hint">Link a hull to see its waterline, displacement and wetted area.</div>`;
+      est.innerHTML = `<div class="hint">With a hull linked: its Froude and Reynolds numbers at this speed, the friction floor, and how many cells and how long a run takes.</div>`;
+      $(".model-sum").textContent = doc()?.hull?.url ? (hull.loading ? "loading…" : "") : "no hull yet";
+      renderSetupSum(null);
       return;
     }
     canvas.hidden = false;
@@ -477,7 +518,7 @@ export default function CaseTool(handle, element) {
     const i = prepared.info;
     // drawing a big hull is tens of thousands of path segments: only when it, the width or the theme changes
     const drawKey = `${(canvas.parentElement?.clientWidth ?? 0)}|${document.documentElement.getAttribute("theme") ?? ""}`;
-    if (canvas.__drawn !== prepared || canvas.__drawKey !== drawKey) {
+    if (canvas.parentElement?.clientWidth && (canvas.__drawn !== prepared || canvas.__drawKey !== drawKey)) {
       drawHull(canvas, prepared.mesh, i);
       canvas.__drawn = prepared;
       canvas.__drawKey = drawKey;
@@ -485,13 +526,8 @@ export default function CaseTool(handle, element) {
     const { rho, nu, source } = waterProperties(s.water, s.temperature);
     const L = i.lwl > 0 ? i.lwl : i.loa;
     const V = s.speed;
-    const fr = frictionEstimate({ V, S: i.wettedArea, L, rho, nu });
-    const pv = domainForHull(s, i);
-    const cells = estimateCells(pv.dom, i.wettedArea);
-    const sv = server.handle?.doc();
-    const cores = s.cores || sv?.daemon?.cores || 8;
-    const secs = estimateSeconds(s, cells, cores);
-    const row = (k, v, how = "") => `<tr><td>${k}</td><td>${v}</td><td class="method">${how}</td></tr>`;
+    const a = s.attitude;
+    const floated = [a.sinkage && `sunk ${a.sinkage.toFixed(3)} m`, a.trim && `trimmed ${Math.abs(a.trim)}° ${a.trim > 0 ? "bow down" : "bow up"}`, a.heel && `heeled ${Math.abs(a.heel)}° to ${a.heel > 0 ? "starboard" : "port"}`].filter(Boolean);
     box.innerHTML = `
       <table class="figures">
         ${row("Length, waterline", `${L.toFixed(2)} m`, `overall ${i.loa.toFixed(2)} m`)}
@@ -499,24 +535,43 @@ export default function CaseTool(handle, element) {
         ${row("Draft", `${i.draft.toFixed(2)} m`)}
         ${row("Displacement", `${((i.volume * rho) / 1000).toFixed(2)} t`, `${i.volume.toFixed(3)} m³ of ${s.water === "fresh" ? "fresh water" : "seawater"} at ${s.temperature} °C`)}
         ${row("Wetted area", `${i.wettedArea.toFixed(2)} m²`, "at rest")}
+      </table>
+      <div class="hint">${floated.length ? `Floating as the run setup has it: ${floated.join(", ")}.` : "Floating as drawn: the run setup can sink, trim and heel it."}</div>`;
+    $(".model-sum").textContent = `${hull.result?.title ?? ""} · ${L.toFixed(2)} m on the waterline · ${((i.volume * rho) / 1000).toFixed(2)} t`;
+
+    const fr = frictionEstimate({ V, S: i.wettedArea, L, rho, nu });
+    const pv = domainForHull(s, i);
+    const cells = estimateCells(pv.dom, i.wettedArea);
+    const sv = server.handle?.doc();
+    const cores = s.cores || sv?.daemon?.cores || 8;
+    const secs = estimateSeconds(s, cells, cores);
+    const upTo = s.stop === "settled" || s.mode === "double-body";
+    est.innerHTML = `
+      <table class="figures">
         ${row("Froude number", froude(V, L).toFixed(3), `${formatSpeed(V, s.speedUnit)} on the waterline length`)}
         ${row("Reynolds number", reynolds(V, L, nu).toExponential(2), `ν = ${nu.toExponential(3)} m²/s (${source})`)}
         ${row("Friction alone", fmtN(fr.R), `ITTC-57 C<sub>F</sub> = ${(fr.Cf * 1000).toFixed(3)}×10⁻³ on the wetted area: the floor the CFD's total should sit above`)}
         ${s.mode === "free-surface" ? row("Wavelength at this speed", `${waveLength(V).toFixed(2)} m`, `${pv.dom.freeSurface ? `${pv.dom.freeSurface.cellsPerWave.toFixed(0)} cells a wave near the hull` : ""}`) : ""}
         ${row(
-          "Model",
+          "Domain",
           pv.half ? "half (y ≤ 0)" : "full",
           pv.half
             ? "the hull is symmetric, so a symmetry plane halves the cost"
-            : Math.abs(s.attitude.heel) > 1e-9
-              ? `heeled ${Math.abs(s.attitude.heel)}° to ${s.attitude.heel > 0 ? "starboard" : "port"}: no symmetry plane${s.domain === "half" ? " (a half model can't be heeled)" : ""}`
+            : Math.abs(a.heel) > 1e-9
+              ? `heeled ${Math.abs(a.heel)}° to ${a.heel > 0 ? "starboard" : "port"}: no symmetry plane${s.domain === "half" ? " (a half model can't be heeled)" : ""}`
               : i.symmetric
                 ? "full domain asked for"
                 : "the hull isn't symmetric",
         )}
         ${row("Cells", `≈ ${Math.round(cells / 1000)}k`, `${s.mesh} preset; checkMesh gives the real count (to within a factor of two or so)`)}
-        ${row("Time", `${s.stop === "settled" || s.mode === "double-body" ? "at most " : ""}≈ ${formatDuration(secs)}`, `on ${cores} cores, ${s.iterations} iterations${s.stop === "settled" || s.mode === "double-body" ? "; it stops sooner once the resistance settles" : ""}`)}
+        ${row("Time", `${upTo ? "at most " : ""}≈ ${formatDuration(secs)}`, `on ${cores} cores, ${s.iterations} iterations${upTo ? "; it stops sooner once the resistance settles" : ""}`)}
       </table>`;
+    renderSetupSum(`${upTo ? "up to " : ""}≈ ${formatDuration(secs)}`);
+  }
+  function renderSetupSum(time) {
+    const s = setup();
+    const heel = s.attitude.heel ? `, ${Math.abs(s.attitude.heel)}° heel` : "";
+    $(".setup-sum").textContent = `${MODE_LABELS[s.mode]} · ${formatSpeed(s.speed, s.speedUnit)}${heel} · ${s.mesh} mesh${time ? ` · ${time}` : ""}`;
   }
 
   // ------------------------------------------------------------ server
@@ -660,31 +715,71 @@ export default function CaseTool(handle, element) {
         .catch(() => {});
     }
   }
+  /** The case's runs, newest first, split into those going (or waiting) and those finished. */
+  function runLists() {
+    const all = (doc()?.runs ?? []).map((u) => ({ u, r: runHandles.get(u)?.doc() ?? null })).reverse();
+    return { going: all.filter(({ r }) => !r || !isTerminal(r.status)), finished: all.filter(({ r }) => r && isTerminal(r.status)) };
+  }
+  const dotOf = (st) => (st === "done" ? "done" : st === "failed" ? "failed" : isTerminal(st) || st === "queued" ? "idle" : "running");
+  const selectOn = (box) =>
+    box.querySelectorAll("tr[data-url]").forEach((tr) => tr.addEventListener("click", () => handle.change((x) => (x.selected = tr.dataset.url))));
   function renderRuns() {
     const d = doc();
-    const urls = d?.runs ?? [];
-    $(".runs-box").hidden = !urls.length;
-    if (!urls.length) return;
-    const rows = urls
-      .map((u) => ({ u, r: runHandles.get(u)?.doc() }))
-      .reverse()
-      .map(({ u, r }) => {
-        if (!r) return `<tr data-click data-url="${u}"><td colspan="5" class="hint">loading…</td></tr>`;
-        const s = r.summary;
-        const st = r.status;
-        const dot = st === "done" ? "done" : st === "failed" ? "failed" : isTerminal(st) || st === "queued" ? "idle" : "running";
-        const extra = !s ? "" : s.mode === "free-surface" ? `Cr ${(s.Cr * 1000).toFixed(2)}e-3` : `1+k ${s.formFactor?.toFixed(3)}`;
-        return `<tr data-click data-url="${u}" ${u === d.selected ? "data-selected" : ""}>
-          <td><span class="dot" data-state="${dot}" style="display:inline-block;margin-right:6px"></span>${esc(r.title)}</td>
-          <td>${st === "solving" ? `${r.progress?.iteration ?? 0}/${r.progress?.of}` : esc(st)}</td>
-          <td>${s ? fmtN(s.Rt) : ""}</td><td>${s ? fmtW(s.power) : ""}</td><td>${extra}</td></tr>`;
-      });
-    $(".runs-table").innerHTML = `<table class="figures"><tr><th>Run</th><th>Status</th><th>R<sub>T</sub></th><th>Power</th><th></th></tr>${rows.join("")}</table>`;
-    $(".runs-table")
-      .querySelectorAll("tr[data-url]")
-      .forEach((tr) => tr.addEventListener("click", () => handle.change((x) => (x.selected = tr.dataset.url))));
+    const { going, finished } = runLists();
+    const live = liveRun(going);
+    const result = resultRun(finished);
+
+    // going: one line each, with how far along it is
+    $(".running-list").innerHTML = !going.length
+      ? `<div class="hint">Nothing running. A run goes to the server's queue from the run setup, and shows here until it finishes.</div>`
+      : going.length === 1
+        ? ""
+        : `<table class="figures"><tr><th>Run</th><th>Status</th><th>Progress</th></tr>${going
+            .map(({ u, r }) => {
+              if (!r) return `<tr data-click data-url="${u}"><td colspan="3" class="hint">loading…</td></tr>`;
+              const p = r.progress ?? {};
+              return `<tr data-click data-url="${u}" ${u === live ? "data-selected" : ""}>
+                <td><span class="dot" data-state="${dotOf(r.status)}" style="display:inline-block;margin-right:6px"></span>${esc(r.title)}</td>
+                <td>${esc(r.status)}</td>
+                <td>${r.status === "solving" && p.of ? `<progress max="${p.of}" value="${p.iteration ?? 0}" style="width:8em"></progress>` : ""}</td></tr>`;
+            })
+            .join("")}</table>`;
+    selectOn($(".running-list"));
+    const solving = going.filter(({ r }) => r && r.status !== "queued").length;
+    const waiting = going.filter(({ r }) => r?.status === "queued").length;
+    $(".running-sum").textContent = going.length ? [solving && `${solving} running`, waiting && `${waiting} waiting`].filter(Boolean).join(", ") : "nothing running";
+
+    // finished: the table, the speed curve, and the one being read
+    $(".runs-table").innerHTML = !finished.length
+      ? `<div class="hint">No finished runs yet.</div>`
+      : `<table class="figures"><tr><th>Run</th><th>Status</th><th>R<sub>T</sub></th><th>Power</th><th></th></tr>${finished
+          .map(({ u, r }) => {
+            const s = r.summary;
+            const extra = !s ? "" : s.mode === "free-surface" ? `Cr ${(s.Cr * 1000).toFixed(2)}e-3` : `1+k ${s.formFactor?.toFixed(3)}`;
+            return `<tr data-click data-url="${u}" ${u === result ? "data-selected" : ""}>
+              <td><span class="dot" data-state="${dotOf(r.status)}" style="display:inline-block;margin-right:6px"></span>${esc(r.title)}</td>
+              <td>${esc(r.status)}</td>
+              <td>${s ? fmtN(s.Rt) : ""}</td><td>${s ? fmtW(s.power) : ""}</td><td>${extra}</td></tr>`;
+          })
+          .join("")}</table>`;
+    selectOn($(".runs-table"));
+    const done = finished.filter(({ r }) => r.status === "done").length;
+    $(".results-sum").textContent = finished.length ? `${done} done${finished.length > done ? `, ${finished.length - done} stopped or failed` : ""}` : "none yet";
     renderCurve();
     renderWarmOptions();
+    showSelected();
+  }
+  /** The run to watch going: the selected one if it's going, else the one furthest along. */
+  function liveRun(going = runLists().going) {
+    const sel = doc()?.selected;
+    if (going.some(({ u }) => u === sel)) return sel;
+    return (going.findLast(({ r }) => r && r.status !== "queued") ?? going.at(-1))?.u ?? null;
+  }
+  /** The finished run to read: the selected one if it's finished, else the newest. */
+  function resultRun(finished = runLists().finished) {
+    const sel = doc()?.selected;
+    if (finished.some(({ u }) => u === sel)) return sel;
+    return finished[0]?.u ?? null;
   }
   /** The finished runs of this case's mode, to start a new one from. */
   function renderWarmOptions() {
@@ -723,9 +818,10 @@ export default function CaseTool(handle, element) {
     if (series.length) curveChart.update(series);
   }
   function showSelected() {
-    const url = doc()?.selected;
-    const h = url ? runHandles.get(url) : null;
-    runView.show(h ?? null);
+    const live = liveRun();
+    const result = resultRun();
+    liveView.show(live ? (runHandles.get(live) ?? null) : null);
+    resultView.show(result ? (runHandles.get(result) ?? null) : null);
   }
 
   // ------------------------------------------------------------ everything
@@ -750,6 +846,8 @@ export default function CaseTool(handle, element) {
   // the hull drawing is a canvas too
   const themeWatch = typeof MutationObserver === "function" ? new MutationObserver(() => renderPreflight()) : null;
   themeWatch?.observe(document.documentElement, { attributes: true, attributeFilter: ["theme", "class", "style"] });
+  // and isn't drawn while its part is folded away
+  root.querySelector('[data-phase="model"]').addEventListener("toggle", () => renderPreflight());
 
   return () => {
     disposed = true;
@@ -761,7 +859,8 @@ export default function CaseTool(handle, element) {
     hull.sub?.();
     server.sub?.();
     runSubs.forEach((off) => off());
-    runView.dispose();
+    liveView.dispose();
+    resultView.dispose();
     curveChart.dispose();
     root.remove();
     style.remove();

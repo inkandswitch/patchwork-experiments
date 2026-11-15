@@ -34,18 +34,28 @@ export function residualSeries(table) {
 
 /**
  * @param {HTMLElement} host
- * @param {{ repo: object, onUseAttitude?: (attitude: { sinkage: number, trim: number }) => void }} o
- *   onUseAttitude: offered on a double-body run's predicted running attitude (the case tool sets up a free-surface run with it)
+ * @param {{ repo: object, onUseAttitude?: (attitude: { sinkage: number, trim: number }) => void, showTitle?: boolean }} o
+ *   onUseAttitude: offered on a double-body run's predicted running attitude (the case tool sets up a free-surface run with it);
+ *   showTitle: name the run (where the view sits among others; a run opened alone has its title above)
+ *
+ * While a run goes, its stages and convergence are what there is to see. Once
+ * it's done they fold into "How it ran" under the results; a run that failed
+ * or was stopped keeps them open, with what went wrong above.
  */
-export function mountRunView(host, { repo, onUseAttitude = null }) {
+export function mountRunView(host, { repo, onUseAttitude = null, showTitle = false }) {
   const root = document.createElement("div");
   root.className = "flow run-view";
   root.innerHTML = `
     <div class="head flow" style="--flow-space:6px"></div>
-    <div class="section stages-box"><h2>Stages</h2><ol class="stages"></ol></div>
-    <div class="section charts-box"><h2>Resistance while it converges</h2><div class="c-forces"></div><h2 style="margin-top:12px">Residuals</h2><div class="c-res"></div></div>
-    <div class="section results-box" hidden></div>
     <div class="error" hidden></div>
+    <div class="results-box flow" hidden></div>
+    <details class="how" open>
+      <summary class="how-sum"></summary>
+      <div class="flow">
+        <div class="stages-box"><h3>Stages</h3><ol class="stages"></ol></div>
+        <div class="charts-box"><h3>Resistance while it converges</h3><div class="c-forces"></div><h3 style="margin-top:12px">Residuals</h3><div class="c-res"></div></div>
+      </div>
+    </details>
   `;
   root.hidden = true; // until a run is shown
   host.append(root);
@@ -63,7 +73,7 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
   // the buttons are made once (a re-render between pointerdown and click would eat the click)
   $(".head").innerHTML = `
     <div class="cluster" style="justify-content:space-between">
-      <span class="chip status-chip"></span>
+      <span class="cluster">${showTitle ? `<h3 class="run-title"></h3>` : ""}<span class="chip status-chip"></span></span>
       <span class="cluster">
         <button class="finish" title="Write the solution as it is and read the results" hidden>Finish now</button>
         <button class="cancel" data-danger hidden>Cancel</button>
@@ -80,6 +90,7 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
     const ended = run.finishedAt ?? Date.now();
     const asked = run.control?.cancel ? "cancel asked…" : run.control?.finish ? "finishing…" : "";
     const pct = p.of ? Math.min(100, (100 * (p.iteration ?? 0)) / p.of) : 0;
+    if (showTitle) $(".run-title").textContent = run.title ?? "";
     $(".status-chip").innerHTML = `<span class="dot" data-state="${dotState(st)}"></span>${STATUS_LABEL[st] ?? esc(st)}${asked ? ` · ${asked}` : ""}`;
     $(".finish").hidden = st !== "solving" || !!run.control?.finish;
     $(".cancel").hidden = isTerminal(st) || !!run.control?.cancel;
@@ -143,7 +154,6 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
       ? `<tr><td>Running attitude (estimate)</td><td>${(att.sinkage * 1000).toFixed(0)} mm, ${Math.abs(att.trimDeg).toFixed(2)}° ${att.trimDeg >= 0 ? "bow down" : "bow up"}</td><td></td><td class="method">${esc(att.why)}${onUseAttitude ? ` <button class="use-attitude">Use for a free-surface run</button>` : ""}</td></tr>`
       : "";
     box.innerHTML = `
-      <h2>Results</h2>
       <div class="tiles">
         <div class="tile"><div class="v">${fmtN(s.Rt)}</div><div class="k">total resistance${Number.isFinite(s.RtStd) && s.RtStd > 0 ? ` ±${fmtN(s.RtStd)}` : ""}</div></div>
         <div class="tile"><div class="v">${fmtW(s.power)}</div><div class="k">effective power (R·V)</div></div>
@@ -249,10 +259,28 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
     else box.querySelector(".plots").hidden = true;
   }
 
+  // the stages and charts fold away once a run is done; set when it's shown or finishes, so a reader's own fold holds
+  let foldedFor = "";
+  function how(run) {
+    const st = run.status;
+    const k = `${handle.url}|${st === "done"}`;
+    if (k !== foldedFor) {
+      foldedFor = k;
+      $(".how").open = st !== "done";
+    }
+    const took = run.startedAt && run.finishedAt ? formatDuration((run.finishedAt - run.startedAt) / 1000) : "";
+    $(".how-sum").textContent = !isTerminal(st)
+      ? "Stages and convergence"
+      : st === "done"
+        ? `How it ran${run.summary?.iterations ? ` · ${run.summary.iterations} iterations` : ""}${took ? ` · ${took}` : ""}${run.summary?.stoppedBy === "settled" ? " · settled" : run.summary?.stoppedBy === "asked" ? " · finished early" : ""}`
+        : "Where it stopped";
+  }
+
   function render() {
     const run = handle?.doc();
     if (!run) return;
     header(run);
+    how(run);
     stages(run);
     charts(run);
     results(run);
@@ -268,6 +296,7 @@ export function mountRunView(host, { repo, onUseAttitude = null }) {
       handle = h;
       lastProgress = "";
       resultsFor = null;
+      foldedFor = "";
       plots.forEach((p) => p.dispose());
       plots = [];
       $(".results-box").innerHTML = "";

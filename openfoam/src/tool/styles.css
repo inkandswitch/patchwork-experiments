@@ -44,20 +44,119 @@
   box-sizing: border-box;
 }
 
-.openfoam .layout {
-  display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
-  gap: var(--studio-space-lg, 24px);
+.openfoam {
+  container-type: inline-size;
+}
+.openfoam .case {
   padding: var(--studio-space-lg, 24px);
+  max-width: 1100px;
+}
+
+/* the four parts: model, run setup, running, results */
+.openfoam .phase {
+  border-top: 1px solid var(--openfoam-border);
+  padding-top: var(--studio-space-sm, 10px);
+}
+.openfoam .phase > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0 var(--studio-space-sm, 10px);
+}
+.openfoam .phase > summary::-webkit-details-marker {
+  display: none;
+}
+.openfoam .phase > summary .n {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--openfoam-panel);
+  border: 1px solid var(--openfoam-border);
+  color: var(--openfoam-muted);
+  align-self: center;
+}
+.openfoam .phase > summary .name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.openfoam .phase > summary .sum {
+  color: var(--openfoam-muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.openfoam .phase > summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--openfoam-faint);
+}
+.openfoam .phase:not([open]) > summary::after {
+  content: "▸";
+}
+.openfoam .phase-body {
+  padding: 0 0 var(--studio-space-md, 16px) 30px;
+}
+.openfoam .cols {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--studio-space-lg, 24px);
   align-items: start;
 }
 @container (max-width: 720px) {
-  .openfoam .layout {
+  .openfoam .cols {
     grid-template-columns: minmax(0, 1fr);
   }
+  .openfoam .phase-body {
+    padding-left: 0;
+  }
 }
-.openfoam {
-  container-type: inline-size;
+.openfoam fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.openfoam fieldset > legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--openfoam-muted);
+}
+.openfoam .launch {
+  border-top: 1px solid var(--openfoam-grid);
+  padding-top: 10px;
+}
+.openfoam .launch button.run {
+  width: 100%;
+  padding: 7px 10px;
+}
+.openfoam .hull-canvas {
+  display: block;
+  width: 100%;
+}
+.openfoam details.how > summary {
+  cursor: pointer;
+  color: var(--openfoam-muted);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.openfoam details.how[open] > summary {
+  margin-bottom: 8px;
+}
+.openfoam .run-view .run-title {
+  font-size: 14px;
 }
 
 .openfoam .flow > * + * {
@@ -131,6 +230,10 @@
 }
 .openfoam .pair > * {
   flex: 1;
+}
+.openfoam .pair > button {
+  flex: none;
+  white-space: nowrap;
 }
 .openfoam button {
   border: 1px solid var(--openfoam-border);
