@@ -65,16 +65,37 @@ locked on her table), the Quiet games room (the same game doc on one of its
 tables), Fitting out (a fit-out pinned at a version, a hatch linked live
 twice) and Games night (a mashup: the room and the Liar's dice table linked
 unchanged into a new doc). Each was checked in the real Patchwork on
-2026-11-14 (FOLLOWUPS "Final fixer"). Since then, presence is drawn where
-it is (section 3): a part of every doc (`traits: ["*"]`: walk's avatars,
-`scene.others`' selection boxes) draws each doc's people wherever that doc
-is drawn, in its frame, and the clock chips are one per doc on the focus
-path. Still open:
+2026-11-14 (FOLLOWUPS "Final fixer").
+
+Since then (scene-stage, 2026-11-14 afternoon and evening), three more
+pieces, each published and checked in the real Patchwork:
+- **Presence where it is** (section 3): a part of every doc
+  (`traits: ["*"]`: walk's avatars, `scene.others`' selection boxes) draws
+  each doc's people wherever that doc is drawn, in its frame, and the clock
+  chips are one per doc on the focus path. Checked on Lost Cities aboard by
+  two identities over the sync server: inside the game, the chip row still
+  shows the boat's clock, named for it; another viewer's selection in the
+  game is drawn on the card both from inside the game and from the boat.
+- **One sea for a world** ([water/WATER.md](../water/WATER.md)): a world's
+  ambients are its outermost doc's, and a new `water` package draws and
+  evaluates the world's water. The *Harbour*
+  (automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE) links Lost Cities aboard and
+  Fitting out, both at anchor on its one sea. It rests on Decision 1's
+  amended sentence, which the lead hasn't said yes to; it was merged and
+  published anyway (Decisions, final fixer after the next phase, 1).
+- **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
+  and SNES machine docs stand in a scene as cabinets, linked, with a
+  screen, sound, a seat per port and Doom's world beside them, and no stage
+  change. The *Arcade* (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) holds both,
+  each cabinet whole in the home view with its own label beside it.
+
+Still open:
 - out of focus isn't tinted;
-- in Edit, a click on sky or sea with nothing selected isn't Edit's (TOOLS
-  Decisions 6), so it goes down the chain and comes aboard the boat
-  (sailing's click). Consistent with the rule, surprising in Edit: the
-  lead's call whether a click on nothing in Edit should stop there;
+- in Edit, as in Look, a click on sky or sea with nothing selected reaches
+  no boat: sailing's ships no longer hold the scene, so a click on nothing
+  boards nobody; her hull, Enter and the HUD's button do (WATER Decisions
+  30). Whether that is right for Ship at sea's first interaction is the
+  lead's call (WATER "Open for the lead");
 - the first click of a double-click on a link selects it, and if the
   inspector was shut that opens it and narrows the canvas under the second
   click, which can then miss a small link (seen in the real Patchwork on
@@ -87,10 +108,9 @@ path. Still open:
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
-Two linked docs that each have a sea now share one: a world's ambients are
-its outermost doc's (section 3, and [water/WATER.md](../water/WATER.md),
-built in the lane on 2026-11-14, waiting for the lead's yes to the amended
-Decision 1, then to be merged and published).
+- a mirror trails its acting placement while a part moves (about 4 cm on
+  Fitting out's hatch; equal at rest): it plays the acting stage's held pose
+  back as any peer does (Decisions, final fixer after the next phase, 2).
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -1101,12 +1121,14 @@ The five open questions were put to the project lead and answered:
 1. **A host never reads into what it contains.** Accepted. The only
    couplings across a link are space and published frames.
    *Proposed 2026-11-14, pending the lead's explicit yes
-   ([water/WATER.md](../water/WATER.md), Decisions 1 and 14):* "...space,
+   ([water/WATER.md](../water/WATER.md), Decisions 1, 14 and 39):* "...space,
    published frames, and the outermost doc's ambients and world time, as
    data." Nothing from a contained doc reaches its host under the proposal,
-   so the first sentence would hold as written. It is built only in the
-   unmerged lane `lane/scene`; until the lead says yes, the accepted
-   sentence above is the one in force.
+   so the first sentence would hold as written. The accepted sentence is
+   still the decision on record, but the amended one is what runs: it was
+   merged into `scene-stage` (f2ac0784) and the sea examples were
+   republished on it before the lead said yes. A no means reverting that
+   (WATER Decisions 39 says what it costs).
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
    [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on
@@ -1120,6 +1142,38 @@ The five open questions were put to the project lead and answered:
 5. **Seats leave `scene/`** for a `seats/` package, with the roster and
    `lay`. Accepted; the seats step goes ahead (build step 4 then, 5 now;
    built).
+
+## Decisions, final fixer after the next phase (2026-11-14, made unattended)
+
+1. **The water work was merged and published before the lead's yes to
+   Decision 1's amended sentence.** Recorded after the fact, here and as
+   WATER Decisions 39. Reason: "kick those off" asked for the shared water
+   package among the three next pieces, and a piece is checked only once
+   it runs in the real Patchwork, which means publishing. The presence
+   work, which needed no yes, came in on the same lane. Cost of a no now:
+   revert f2ac0784's water, sailing and terrain parts and the ambients
+   read path (2d738ae6, 94cfd4d0, with the atmosphere and arena moved onto
+   it), republish Ship at sea, Lost Cities aboard, Fitting out and Cadboro
+   Bay without the water trait, and take the Harbour out of the folder.
+   This is the first of the lead's open questions.
+2. **A mirror trails a moving part by the playback delay, and that is kept
+   as a known gap.** fitout-check's step 4 failed once at integration (the
+   mirrored hatch 13 to 24 cm behind the acting one mid-slide). Run three
+   times more on scene-stage it passed every time, the mirror behind by 3.6
+   to 3.7 cm in every mid-slide sample and equal at rest. The hatch moves at
+   0.5 m/s, and a mirror plays the acting stage's held pose back late by
+   smooth.js's playout delay, 1.5 send intervals of 50 ms: 75 ms, 3.75 cm.
+   Neither smooth.js (since 2026-11-05) nor the page bus in presence.js
+   (since the morning of 2026-11-14, before the night's 11/11 pass) changed
+   today, so the lag isn't new; the failed run's 270 to 500 ms is that
+   delay plus a stalled headless page, which a check with 5 cm of tolerance
+   catches when the page stalls. A mirror in the same view as its acting
+   stage could draw the held pose without the delay (it needs no smoothing:
+   no network between them), but that is a change to presence for the one
+   case of a doc placed twice in one view, and it waits for a second
+   consumer or the lead's word. fitout-check now also waits for the
+   packages to run before step 1 (a run failed step 1 when the load prompt
+   came after the stages were up).
 
 ## Decisions, presence where it is (2026-11-14, made unattended)
 

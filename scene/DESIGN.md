@@ -270,9 +270,19 @@ linked live twice: the second is a mirror, opening when the first does.
 *Games night* is a doc of two links and nothing else: the Quiet games room
 and the Liar's dice table, both published before it, linked unchanged; it
 starts people through the room's link, which starts them through its Lost
-Cities link, so they arrive watching at that game two links down. A
-*Harbour* (water/WATER.md; built, not yet published) is water, a sea and
-two boats linked live: both float on its water and sail in its wind.
+Cities link, so they arrive watching at that game two links down. The
+*Harbour* (water/WATER.md) is water, a sea and two boats linked live, Lost
+Cities aboard and Fitting out, both at anchor: both float on its water and
+lie to its wind, one surface drawn.
+
+**A machine in a scene.** The *Arcade* is two published machine docs, a
+Doom and a Super Nintendo, linked into a scene as cabinets, unchanged: each
+cabinet draws its machine's screen on its own mesh, plays its sound from
+there, and carries a seat per port (the seats package's, on the object),
+so sitting at one plays it and getting up stops it. Beside the Doom stands
+its world, doom's map of the level, with the game's things drawn in it from
+the engine's state. Nothing in the stage knows a machine (machine/HOST.md,
+phase 2b).
 
 **Doom's E1M1.** Dropping a WAD lays out its first map: the doom package's
 provider builds a GLB of the static map, one per door and one per exit
