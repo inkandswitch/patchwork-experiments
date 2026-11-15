@@ -1,17 +1,21 @@
 # One sea for a world: a design note
 
-A note to decide from, written 2026-11-14, and built the same day in the
-lane `lane/scene` (see "Where it stands", at the end). It answers the last line of COMPOSITION.md's "Where we are": *two
-linked docs that each draw a sea draw two.* The mashup it unblocks is a
-harbour holding two boats, each a doc of its own, floating on one sea.
+A note to decide from, written 2026-11-14, built the same day in the lane
+`lane/scene`, then merged into `scene-stage` (f2ac0784) and published (see
+"Where it stands", at the end). It answers the last line of
+COMPOSITION.md's "Where we are": *two linked docs that each draw a sea draw
+two.* The mashup it unblocks is a harbour holding two boats, each a doc of
+its own, floating on one sea.
 
 Three designs were drafted for it independently. This note scores them,
 picks one, grafts the best parts of the other two onto it, and says what
 to build. It proposes changing one sentence of an accepted decision
 (COMPOSITION Decision 1, see "Decisions" 1). The lead's "kick those off"
-named the shared water package, so it was built in an unmerged lane
-(Decisions 14); COMPOSITION records the amended sentence as proposed and
-pending the lead's explicit yes, and nothing is merged until then.
+named the shared water package, so it was built (Decisions 14), and then
+merged and published before the lead had said yes to the amended sentence
+(Decisions 39). COMPOSITION still records the sentence as proposed: what
+runs on `scene-stage` and in the published examples is the amended
+coupling, waiting on the lead's yes or no.
 
 ## The problem
 
@@ -180,6 +184,11 @@ A new top-level package with everything CLAUDE.md asks of one
 (`package.json` with `test` and `test:watch`, `vitest.config.ts` with
 `passWithNoTests`, `pnpm-workspace.yaml` copied verbatim, a committed
 `pnpm-lock.yaml`, `.gitignore`), checked by copying it out alone.
+
+This section is where the `water` ambient and the `water.waves`
+contribution are documented: scene/STAGE.md, "Conventions", names them
+and links here, and the wind they are roughened by is sailing's
+(sailing/DESIGN.md, "Conventions").
 
 - **Trait** `water: { level }`, on a scene. It means "this world has
   water". It is both the offer (when the doc is outermost) and what gives
@@ -452,7 +461,8 @@ Doc edits with step 1:
     suggested next pieces to start, the shared water package among them,
     and this note's design needs Decision 1's amended sentence, so the
     request was taken as the yes. Everything is in the lane, unmerged and
-    unpublished, so a no costs a branch.
+    unpublished, so a no costs a branch. *No longer so: it was merged and
+    published before the yes (Decisions 39).*
 15. **The water value carries `look`** (`{ seed, stats }`), beside `v`,
     `level` and `components`. Reason: the drawn surface's fine detail and
     foam line need the sea's statistics and seed, which only the wave maker
@@ -540,7 +550,7 @@ Each is fixed here with a test that fails without the fix, or answered.
     the surface's roughness and foam. Decision 10's condition for a shared
     wind (a second reader) was already met by water's material, so the wind
     is now one unprefixed ambient, `wind: { speed, from, seed, gustiness }`,
-    offered by sailing's sea, documented in STAGE.md "Wind", and read by
+    offered by sailing's sea, documented in STAGE.md "Wind" (in sailing/DESIGN.md since 40), and read by
     sailing's physics and water's surface. `look` shrinks to `{ seed, stats }`.
 30. **A click on the open sea no longer boards a boat alone, on purpose.**
     The cause: the stage offers a click on nothing to the extensions that
@@ -611,7 +621,64 @@ Each is fixed here with a test that fails without the fix, or answered.
     (-13, 0, 4)). Ship at sea starts 130 m upwind of her course
     (-45, 0, -125), so in the first minute of the world she sails through
     the view past the anchored boat. The publisher gained `--home`; the
-    home is (6, 28, 70) looking at (0, 0, -10).
+    home is (6, 28, 70) looking at (0, 0, -10). *Superseded by 41: most
+    visitors arrived after that first minute and saw one boat.*
+
+## Decisions, final fixer (2026-11-14, made unattended)
+
+39. **Merged and published before the lead's yes.** Decision 14 built this
+    in a lane on the grounds that a no would cost only a branch. At
+    integration the lane was merged into `scene-stage` (f2ac0784) and
+    every sea example was republished needing the `water` trait, without
+    the lead's yes to Decision 1's amended sentence and without a decision
+    recording it. This records it. The reason: the lead's "kick those off"
+    asked for the three pieces the report suggested, and a piece is only
+    checked once it runs in the real Patchwork, which means publishing; the
+    presence work on the same lane, which needs no yes, went in with it.
+    What a no now costs: revert f2ac0784's water, sailing and terrain parts
+    and the scene's ambients read path (2d738ae6, 94cfd4d0; the atmosphere
+    moved onto it, and arena with it), then republish Ship at sea, Lost
+    Cities aboard, Fitting out and Cadboro Bay without the water trait, and
+    take the Harbour out of the examples folder (it can't exist without
+    one sea per world). About a day, not a branch. It is the first of the
+    lead's open questions below.
+40. **The value schemas live with their packages.** STAGE.md's Conventions
+    named `water` and `wind` and spelled out their values (Gerstner
+    components, the reader's methods, the wind's fields and compass
+    convention): the most domain-specific text in scene/. They are a
+    package's to document, as an unprefixed name is "a convention below"
+    only so packages that don't know each other can meet on it. STAGE.md
+    now has one entry each (the name, who provides it, a link); the water
+    value and reader are documented in "The water package" above, and the
+    wind in sailing/DESIGN.md, "Conventions". Seats stay documented in
+    STAGE.md, as before; they are the stage's oldest convention and not
+    moved here.
+41. **The published Harbour holds two boats at anchor** (replacing 38's
+    layout). Decision 38 framed Lost Cities aboard and had Ship at sea sail
+    through the view in the world's first minute; the world's time
+    persists, so every visitor after that minute saw one boat, and the
+    example's point, two boats on one sea, wasn't visible on arrival. The
+    Harbour now links Lost Cities aboard and Fitting out, both lying to
+    their anchors, head to the harbour's wind, about 15 m apart (links at
+    (-25.6, 0, -9.3) and (-11.6, 0, 10.7); on the first check the hulls lay
+    at (-4.6, 0, -11.3) and (6.6, 0, -1.5)); the home is unchanged. A boat at anchor
+    swings within her rode's circle and lies downwind of her anchor in
+    both her own world and the harbour (her yaw maps one wind onto the
+    other), so the layout holds however long the world has run.
+    harbour-check gained a check that every hull's middle, bow and stern
+    project inside the pane on arrival. Ship at sea under way on the
+    harbour's water stays checked on the probe page (harbour-run, W12).
+    Fitting out brings its pinned fit-out and mirrored hatch with it, so the
+    Harbour is also links three docs deep.
+42. **A sea alone floats nothing, and nothing adds the water** (found by
+    camber-run, open). Since the split, a ship floats only where the world
+    has the `water` trait. The templates and the Sloop part write it
+    beside the sea; a Sea added from the inspector, or a hull rigged into a
+    ship (camber's path) in a scene whose only water is a sea, has none,
+    and the ship doesn't float. camber-run's probe page now writes the
+    water beside its sea, as a template does (ecdf5ef9). Whether the sea
+    trait should bring the water with it, as the Sloop does, is the lead's
+    call: it would make one trait write another's.
 
 ## Invariants
 
@@ -632,27 +699,30 @@ check" column says what is actually enumerated.
 | W9 | **The atmosphere is subsumed.** The viewport's atmosphere is the world's ambient, read through `view.ambient` | W2's 20 cases check the viewport's sky against the outermost's; stage.test's stacking and no-atmosphere cases; arena's play.test | Show the last stage's atmosphere instead of the outermost's: 8 fail |
 | W10 | **Same water, two boats.** Readers in A and B, mapped to harbour coordinates, equal H's own | One view computing H, A and B at the harbour link poses, 600 frames × a 5×5 grid of harbour points: equal to 1e-9 (`extension.test.js`); in Chrome, `harbour-run.mjs` | Each stage reading its own water: 5 fail |
 | W11 | **No water holds still, never the wrong water.** | {dry room with one boat, with two boats, the outermost's package missing} × 600 frames: every boat's reader null (`extension.test.js`) | As W10 |
-| W12 | **The harbour as built** | `sailing/probes/harbour-run.mjs` in Chrome under the lock: 22/22, run again after the review's fixes (one surface, both boats on the harbour's water and in its `wind`, no HUD or camera ride, the harbour's sky, no warnings). Not yet in the real Patchwork: nothing is published from the lane | — |
+| W12 | **The harbour as built** | `sailing/probes/harbour-run.mjs` in Chrome under the lock: 22/22, run again after the review's fixes and on the merged tree (one surface, both boats on the harbour's water and in its `wind`, no HUD or camera ride, the harbour's sky, no warnings). In the real Patchwork: the published Harbour by the session's harbour-check.mjs (both boats in view on arrival, one surface, each boat's reading of the water equal to the harbour's, hulls floating, one wind, no HUD or camera ride, no error notices; Decisions 41) | — |
 | W13 | **Time passes only where waves need it.** A process is held exactly where the doc is the world and its water has waves | W3's 9 configurations, flat water alone and a boat in a flat-water harbour × every stage; waves stilled, restored, the water removed (`extension.test.js`) | Hold the process everywhere: 10 fail |
 | W14 | **One wind.** The wind is offered once, as `wind`; the surface draws with it; nothing else carries it | The sea's offer read whole for every field that says how the wind blows; the surface's wind direction for from {0, 90, 180, 270} and with no wind ambient (calm) while the water's `look` names a wind (`sea-view.test.js`, `extension.test.js`) | The surface reading the water's `look.wind`: 1 fails |
 
 ## Open for the lead
 
 - Yes or no on Decision 1 (the amended coupling sentence, now naming the
-  world time too). It is built in the unmerged lane; COMPOSITION records it
-  as proposed.
+  world time too). It is already merged into `scene-stage` and published
+  (Decisions 39), so a no now costs reverting the merge's water, sailing,
+  terrain and ambients parts and republishing four examples, not a branch.
+  COMPOSITION records the sentence as proposed.
 - Boarding by click (Decisions 30): a click on the open sea, sky or shore
   no longer boards a boat alone; her hull, Enter and the HUD's button do.
   This changes Ship at sea's and Ship at anchor's first interaction. Keep
   it, or have the ships' part hold the scene again (which brings the ship
   machinery into every doc with a sea)?
-- N11(c): in Edit, should a click on sea or sky board a boat alone? With
-  the split, it doesn't (it didn't reach her in Look either).
+- N11(c) is settled by the same change: in Edit, as in Look, a click on
+  sea or sky no longer reaches a boat.
+- Whether the sea trait should bring the water with it (Decisions 42).
 - Whether a boat in a dry room resting at her saved pose is the right
   meaning, or an inner world should be able to keep its own water (an
   explicit scope boundary, unbuilt until two consumers ask).
 
-## Where it stands (2026-11-14, lane/scene)
+## Where it stands (2026-11-14, scene-stage)
 
 Built: S1 (scene ambients, the atmosphere on them through `view.ambient`,
 arena moved), the water package (surface, convert, material, extension),
@@ -663,6 +733,10 @@ publisher run dry, and the review's fixes (Decisions 28–37). Not built: S2
 and W8 (Decisions 25), walk's reader (26). Steps 6 and 7 were done at
 integration (2026-11-14, scene-stage): every sea example was republished
 with the water trait (Ship at sea, Lost Cities aboard, Fitting out, Cadboro
-Bay), and the Harbour, holding Ship at sea and Lost Cities aboard, was
-published and checked in the real Patchwork (Decision 38).
+Bay), and the Harbour was published and checked in the real Patchwork
+(Decision 38). The final fixer republished the Harbour with two boats at
+anchor, Lost Cities aboard and Fitting out, both framed on arrival
+(Decisions 41; automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE), moved the value
+schemas out of STAGE.md (40), and recorded that all of this was merged
+before the lead's yes (39).
 Where each invariant is checked is the table above.
