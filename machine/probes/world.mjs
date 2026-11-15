@@ -6,8 +6,11 @@
 //   [CHROME_LOCK=<dir>] node probes/world.mjs [--wad <freedoom1.wad>] [--shots <dir>] [--port 4940] [--cdp 9940]
 //
 // Mounts the BUILT scene tool with the BUILT doom and machine packages
-// (probes/scene-probe.html?doom). Ana pastes a Doom machine doc (Freedoom's
+// (probes/scene-probe.html). Ana pastes a Doom machine doc (Freedoom's
 // E1M1, one player, skill 3) into an empty scene; its session is made. Then:
+//  0. "Lay out its world" says it needs the doom package, until the doom
+//     package is installed, after the machine's extension started: then it
+//     is offered;
 //  1. "Lay out its world" (the machine's command on the cabinet) puts doom/'s
 //     whole map of E1M1 beside it, a model 3 m across, carrying the trait
 //     that has this machine drawn in it, and both views build and draw it;
@@ -20,9 +23,12 @@
 //  3. Ana plays: P, then steers the marine through the great hall to door
 //     100 by the arrow keys (her own body, read off the drawn world, says
 //     where she is) and presses E (Use): on both views the door's node rises
-//     2 units a tic, Doom's speed, to the 124 units doom/ built it to travel;
-//     her body stays on the drawn floor, and the things that moved moved on
-//     both views;
+//     2 units for each tic since it began, Doom's speed, to the 124 units
+//     doom/ built it to travel; her body stands at every tic on the floor
+//     Doom puts it on (the highest under its box, worked out here from the
+//     WAD's lines, at rest as doom/ draws it) but while falling down a step
+//     (lower each tic, until it lands), or on a lift (Doom moves it, doom/
+//     draws it at rest); and the things that moved moved on both views;
 //  4. Escape: stopped, both views draw the same things at the same places
 //     and the same doors;
 //  5. the map moved, turned and scaled: every thing keeps its place in the
@@ -69,7 +75,7 @@ if (LOCK) {
   });
 }
 
-const b = await browser({ root: ROOT, port: PORT, cdp: CDP, page: "/machine/probes/scene-probe.html?doom", width: 1460, height: 580, timeout: 900_000, mounts: { "/wad": resolve(WAD) } });
+const b = await browser({ root: ROOT, port: PORT, cdp: CDP, page: "/machine/probes/scene-probe.html", width: 1460, height: 580, timeout: 900_000, mounts: { "/wad": resolve(WAD) } });
 const { check, checks, details } = checklist();
 const report = { checks, details, shots: [], numbers: {} };
 const P = (e) => b.js(`window.__p.${e}`);
@@ -93,20 +99,29 @@ try {
 
   // ---- the machine, as scene.mjs has it
   const url = await P("machines.doom");
-  await P(`paste("a", ${JSON.stringify(url)})`);
-  const id = await b.waitFor(`__p.byUrl(${JSON.stringify(url)})`, 30_000);
+  // pasted again until the stage takes it: its add part starts once the registry has been quiet a moment (real time), which
+  // the doom package's import used to cover when it was registered at the start
+  let id = null;
+  for (let i = 0; i < 6 && !id; i++) {
+    await P(`paste("a", ${JSON.stringify(url)})`);
+    id = await b.waitFor(`__p.byUrl(${JSON.stringify(url)})`, 5_000);
+  }
   const session = await b.waitFor(`__p.trait("${id}")?.session`, 120_000);
   check("the pasted Doom machine is a cabinet with a session", !!id && !!session, { id, session });
   const ready = await b.waitFor(`(() => { const s = [__p.shows("a")?.["${id}"], __p.shows("b")?.["${id}"]]; return s.every((x) => x && x.tick !== null && x.shown) })()`, 180_000);
   check("both views opened it", !!ready);
 
+  // ---- 0. the doom package installed after the machine started
+  const before = await P(`commandState("a", "world", "${id}")`);
+  check("without the doom package, Lay out its world says it needs it", !!before?.disabled && /doom package/.test(before.title ?? ""), before);
+  await P(`install("doom")`);
   // ---- 1. its world
   const offered = await P(`commandState("a", "world", "${id}")`);
-  check("the cabinet offers Lay out its world (the doom package is here)", !!offered && !offered.disabled, offered);
+  check("once the doom package is installed, the cabinet offers Lay out its world, no reload", !!offered && !offered.disabled, offered);
   await P(`run("a", "world", "${id}")`);
   const wid = await b.waitFor(`__p.worldId()`, 120_000);
   const o = wid ? await P(`object("${wid}")`) : null;
-  check("a map object carries the world trait naming the cabinet, built by doom/'s source", o?.traits?.["machine.world"]?.machine === id && o?.providerId === "doom-map", o && { providerId: o.providerId, traits: o.traits, transform: o.transform });
+  check("a map object carries the world trait naming the cabinet and its game, built by doom/'s source", o?.traits?.["machine.world"]?.machine === id && o?.traits?.["machine.world"]?.source === url && o?.providerId === "doom-map", o && { providerId: o.providerId, traits: o.traits, transform: o.transform });
   const drawn = await b.waitFor(`(() => { const v = [__p.worldView("a", "${wid}"), __p.worldView("b", "${wid}")]; return v.every((x) => x && x.things.length > 0) })()`, 240_000);
   check("both views built the map and draw the game in it", !!drawn);
   report.numbers.transform = o?.transform;
@@ -168,15 +183,16 @@ try {
     if (on && !down.has(key)) (await b.keyDown(key), down.add(key));
     if (!on && down.has(key)) (await b.keyUp(key), down.delete(key));
   };
-  const walk = { frames: 0, onFloor: 0, sampled: 0, below: [], route: [] };
+  const walk = { frames: 0, samples: [], route: [] }; // samples: [tick, z, on the floor, below it, its sector]
   let leg = 0, best = Infinity, still = 0;
   for (let f = 0; f < 2400 && leg < ROUTE.length; f++) {
     const p = await me();
     if (!p) break;
     if (f % 10 === 0) walk.route.push(p.at.map(Math.round));
-    walk.sampled++;
-    if (p.floors.some((f) => near(p.at[2], f, 0.01))) walk.onFloor++;
-    else if (p.at[2] < Math.max(...p.floors) - 0.01) walk.below.push([...p.at.map(Math.round), await P(`sectorOf("E1M1", ${p.at[0]}, ${p.at[1]})`)]);
+    // the floor Doom stands her on, worked out from the WAD's lines here: the highest under her box, 16 units each way
+    const under = await P(`floorUnder("E1M1", ${p.at[0]}, ${p.at[1]}, 16)`);
+    const on = near(p.at[2], under.floor, 0.01);
+    walk.samples.push([await tickOf(), p.at[2], on, !on && p.at[2] < under.floor, under.sectors, p.at[0], p.at[1], under.floor]);
     const [tx, ty] = ROUTE[leg];
     const d = Math.hypot(tx - p.at[0], ty - p.at[1]);
     if (d < 14) {
@@ -199,13 +215,39 @@ try {
   for (const k of [...down]) await hold(k, false);
   const there = await me();
   walk.end = there?.at.map(Math.round);
-  report.numbers.walk = walk;
   check("Ana walked the marine to door 100 by the keys, her body drawn where she went", leg === ROUTE.length, { leg, end: walk.end, route: walk.route.slice(-8) });
   // below it only on a lift: Doom lowers a lift the marine walks onto, and doom/ draws lifts where they rest (E1M1's 98 and 103;
   // HOST.md, Decision 40), so there the drawn floor is the lift at rest and the body is on the lift where the engine has it
   const LIFTS = [98, 103];
-  walk.lift = walk.below.filter((b) => LIFTS.includes(b[3])).length;
-  check("her body stood on the floor doom/ drew (down a stair it falls for a tic or two), never below it but on a lift doom/ draws at rest", walk.below.every((b) => LIFTS.includes(b[3])) && walk.onFloor / walk.sampled > 0.7, { onFloor: walk.onFloor, sampled: walk.sampled, below: walk.below.slice(0, 5), lift: walk.lift });
+  // one sample a tic (the last frame's at each tic). Doom stands a body on the highest floor its box touches (sectors at rest,
+  // as doom/ draws them); off it only on a lift (the engine moves lifts, doom/ draws them at rest: Decision 40), and above it
+  // otherwise only in a fall: lower at each tic than the one before, ending on the floor (or still falling when the walk ends),
+  // but for the tic it steps off a floor or a lift, at the height it stood (P_ZMovement, p_mobj.c, adds momz before gravity
+  // first gives it some)
+  const tics = walk.samples.filter((s, i, all) => i === all.length - 1 || all[i + 1][0] !== s[0]);
+  const wrong = [];
+  let falls = 0;
+  for (let i = 0; i < tics.length; i++) {
+    const [tick, z, on, below, sectors] = tics[i];
+    if (on || sectors.some((s) => LIFTS.includes(s))) continue;
+    if (below) {
+      wrong.push({ tick, z, below: sectors });
+      continue;
+    }
+    const prev = tics[i - 1];
+    const stood = (t) => t[2] || t[4].some((s) => LIFTS.includes(s)); // on its floor, or on a lift
+    const stepsOff = prev && stood(prev) && near(z, prev[1], 1e-6); // stood at this height the tic before
+    if (!prev || !(z < prev[1] - 1e-6 || stepsOff)) wrong.push({ tick, z, above: true, before: prev?.[1] }); // above the floor, not falling
+    const next = tics[i + 1];
+    if (next && next[2]) falls++;
+    if (next && !next[2] && !(next[1] < z)) wrong.push({ tick, z, after: next[1] }); // stopped in the air
+  }
+  walk.tics = tics.length;
+  walk.falls = falls;
+  walk.lift = tics.filter((s) => !s[2] && s[4].some((x) => LIFTS.includes(x))).length;
+  report.numbers.walk = { ...walk, samples: undefined };
+  const around = wrong.slice(0, 3).map((w) => tics.filter((s) => Math.abs(s[0] - w.tick) <= 3));
+  check("her body stood on the floor under her box at every tic (the WAD's, which doom/ draws), but falling down a step to it, or on a lift doom/ draws at rest", tics.length > 400 && !wrong.length, { tics: tics.length, falls, lift: walk.lift, wrong: wrong.slice(0, 8), around });
   await shot("walked");
 
   // turn to face the door (south), then use it (E)
@@ -235,11 +277,14 @@ try {
   for (const w of ["a", "b"]) {
     const r = rise[w];
     const top = Math.max(...r.map(([, y]) => y));
-    // Doom moves a door 2 units a tic (T_VerticalDoor, VDOORSPEED): drawn at its tic, its node is 2 units for each tic since it began, to its travel
-    const ys = r.map(([, y]) => y);
-    const whole = ys.every((y) => near(y / 2, Math.round(y / 2), 1e-3) || near(y, TRAVEL, 1e-3));
-    const rising = ys.every((y, i) => !i || y >= ys[i - 1] - 1e-6);
-    check(`${w}: door ${DOOR} rose in the drawn map as the engine opened it, 2 units a tic, to the ${TRAVEL} units doom/ built it to travel`, near(top, TRAVEL, 1e-3) && whole && rising, report.numbers.door);
+    // Doom moves a door 2 units a tic (T_VerticalDoor, VDOORSPEED): drawn at its tic, its node is 2 units for each tic since it
+    // began, to its travel. The tic it began at is the first sample off the floor's, less its height's tics; every sample, before
+    // and after, is then the height at its own tic
+    const first = r.find(([, y]) => y > 1e-3);
+    const start = first ? first[0] - first[1] / 2 : null;
+    const off = first ? r.filter(([t, y]) => !near(y, Math.max(0, Math.min(TRAVEL, 2 * (t - start))), 1e-3)) : r;
+    report.numbers.door[`${w}start`] = start;
+    check(`${w}: door ${DOOR} rose in the drawn map as the engine opened it, 2 units for each tic since it began, to the ${TRAVEL} units doom/ built it to travel`, near(top, TRAVEL, 1e-3) && Number.isInteger(start) && !off.length, { start, off: off.slice(0, 6), steps: report.numbers.door[w] });
   }
   // close up, on both views: the marine at the open door, from behind and above her
   const eye = await P(`toWorld("a", "${wid}", [960, 40, 120])`);
