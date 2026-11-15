@@ -37,7 +37,7 @@ if (!DRY) console.log(`connected to ${SYNC}`);
 // contents come from listed (scene/STAGE.md, "Packages"): in the browser the
 // stage works these out from the registry; here they're stated (joints and
 // traversal for the sloop's companionway: its hatch's slide, its exit)
-const PACKAGES = ["scene", "sailing", "joints", "traversal"];
+const PACKAGES = ["scene", "sailing", "water", "joints", "traversal"];
 const scene = await repo.create2(emptyScene({ title: "Ship at sea", patchwork: scenePatchwork(), packages: scenePackages(PACKAGES) }));
 
 // ─── ctx.file, as the stage's sceneFile (scene/src/stage/stage.js) ──────────
@@ -101,6 +101,7 @@ const has = (trait) => objects.filter((o) => o.traits?.[trait]).length;
 const problems = [];
 if (!d.view?.start?.home || "body" in d.view.start || "activity" in (d.view ?? {})) problems.push(`view is ${JSON.stringify(d.view)}: no view.start.home, a body named (she starts people in Look), or an old view.activity`);
 if (!d.traits?.["sailing.sea"]) problems.push("no sailing.sea trait");
+if (!d.traits?.water) problems.push("no water trait (the water package's: she floats on her world's water)");
 for (const t of ["sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"]) if (has(t) !== 1) problems.push(`${has(t)} objects with ${t}`);
 const KINDS = ["hull", "rig", "mast", "jib", "winch", "windlass", "mainsheet", "wheel", "anchor", "islet", "ladder", "companionway", "hatch", "redBuoy", "greenBuoy"];
 const keys = KINDS.map(fileKey).sort();
