@@ -79,15 +79,19 @@ pieces, each published and checked in the real Patchwork:
 - **One sea for a world** ([water/WATER.md](../water/WATER.md)): a world's
   ambients are its outermost doc's, and a new `water` package draws and
   evaluates the world's water. The *Harbour*
-  (automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE) links Lost Cities aboard and
-  Fitting out, both at anchor on its one sea. It rests on Decision 1's
+  (automerge:EnEodmRQgQCY4G7A8CWwDtPpUY2, republished 2026-11-15 with water
+  bodies) links Lost Cities aboard and Fitting out, both at anchor on its
+  one sea. It rests on Decision 1's
   amended sentence, which the lead accepted on 2026-11-15.
-- **Water bodies** (WATER.md, "Water bodies", built in `lane/water`): water
+- **Water bodies** (WATER.md, "Water bodies", built in `lane/water`, merged
+  into scene-stage and published on 2026-11-15): water
   is an object whose extent says whether it is weather (open, the
   outermost's) or a thing (a box its doc keeps wherever it is placed); the
   sea and a current are behaviours put on it, and the weather is a scene
-  trait. The Model basin, a sloop in a box of water, floats in a dry room
-  beside Ship at sea. The lead's yes to "should an inner world keep its own
+  trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
+  sloop in a box of water, floats in a dry room beside Ship at sea (*Model
+  basin and Ship at sea*, automerge:2vunxCi5mgpYGr53LsYysQACbqZG, a doc of
+  two links); every sea example was republished in the new shape. The lead's yes to "should an inner world keep its own
   water?" is delivered only for water authored as a box: Ship at sea, the
   case the question was asked about, still rests in a dry room, and the
   choice that would change it is open (below). One stage correction
