@@ -524,28 +524,31 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
   const rowClick = (id) => tab().body.querySelector(`.inspector-tree .object-row[data-id="${id}"] .row-main`).click();
   const toolbarOn = () => s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
 
-  // Each source of a selection, from the state it needs (the pane open from
-  // the toolbar, or shut, or open on "a"): the pane, the row the tree marks
-  // and what the fields show, read together after the one flush.
+  // Each source of a selection, from the pane open (the toolbar's Inspector,
+  // so how a selection opens a shut pane, the open rule's own table below,
+  // doesn't enter into it) and what the row starts from: the pane, the row
+  // the tree marks and what the fields show, read together after the flush.
   const ROWS = [
-    // [source, setup, act, open, row, fields]
-    ["row click", toolbarOn, () => rowClick("a"), true, ["a"], "object a"],
-    ["api.view.select(id)", () => {}, () => s.api("scene.inspector").view.select("a"), true, ["a"], "object a"],
-    ["menu Select", () => {}, () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), true, ["b"], "object b"],
-    ["Escape → null", () => s.api("scene.inspector").view.select("a"), () => s.key("Escape", { code: "Escape" }), true, [], "scene"],
-    ["group row", toolbarOn, () => rowClick("g"), true, ["g"], "group g"],
-    ["ref dimension:x", toolbarOn, () => s.api("scene.inspector").view.select("dimension:x"), true, [], "hidden"],
+    // [source, selected before, act, open, row, fields]
+    ["row click", null, () => rowClick("a"), true, ["a"], "object a"],
+    ["api.view.select(id)", null, () => s.api("scene.inspector").view.select("a"), true, ["a"], "object a"],
+    ["menu Select", "a", () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), true, ["b"], "object b"],
+    ["Escape → null", "a", () => s.key("Escape", { code: "Escape" }), true, [], "scene"],
+    ["group row", "b", () => rowClick("g"), true, ["g"], "group g"],
+    ["ref dimension:x", "a", () => s.api("scene.inspector").view.select("dimension:x"), true, [], "hidden"],
   ];
 
-  it.each(ROWS)("%s: open, the row marked and the fields shown agree", async (_name, setup, act, open, row, fields) => {
+  it.each(ROWS)("%s: open, the row marked and the fields shown agree", async (_name, before, act, open, row, fields) => {
     const select = (await import("./select.js")).default;
     s = await mountStage({
       extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }],
       doc: { objects: { g: group("G"), a: object({ name: "A", group: "g" }), b: object({ name: "B" }) }, order: ["g", "a", "b"] },
     });
     await settle();
-    setup();
+    toolbarOn();
+    if (before) s.api("scene.inspector").view.select(before);
     await settle();
+    expect(tab().isOpen()).toBe(true);
     act();
     await settle();
     expect(tab().isOpen()).toBe(open);
@@ -564,15 +567,16 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
     await settle();
     expect(tab().isOpen()).toBe(false);
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(0);
-    await select("a");
+    toolbarOn();
+    await settle();
     expect(tab().isOpen()).toBe(true);
     const tree = tab().body.querySelector(".scene-outline");
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(1);
     s.root.querySelector(".stage-drawer-tab-close").click();
     await settle();
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(0); // shut with the pane
-    await select(null);
-    await select("a");
+    toolbarOn();
+    await settle();
     expect(tab().body.querySelector(".scene-outline")).toBe(tree);
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(1);
   });
