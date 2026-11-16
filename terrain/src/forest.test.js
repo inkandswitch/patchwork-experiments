@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS } from "./forest.js";
+import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS, skinZone, skinAt, placeSkin, skinMesh, skinInstances, SKIN_LAYOUTS, SKIN_CROWN, scrubCover, isScrub } from "./forest.js";
 import { insideRing } from "./terrain-sample.js";
 import { COVER } from "./cover.js";
 
@@ -282,5 +282,122 @@ describe("no forest on what's built (the lidar's canopy is a roof's height there
   it("leaves the canopy nothing where built, and is the lidar's elsewhere", () => {
     const e = effectiveCanopy({ n, label, cover, canopy, measured: Uint8Array.from(canopy, () => 1), built });
     for (let k = 0; k < N; k++) expect(e[k]).toBe(label[k] > 0 && !built[k] ? canopy[k] : 0);
+  });
+});
+
+describe("the forest's skin", () => {
+  // two circles: one round the middle of the forest, one off the grid's south-east corner reaching into it
+  const circles = [{ x: 0, z: 0, radius: 130 }, { x: 330, z: 330, radius: 90 }];
+  const zone = skinZone(grid, circles);
+  const so = { grid, label, cover, canopy, dist, zone, skin: { crowns: [3, 4] }, setback: 20 };
+  const all = skinAt(so);
+  it("zones exactly the nodes within a circle (every node)", () => {
+    for (let k = 0; k < N; k++) {
+      const i = k % n, j = (k - i) / n, x = x0 + i * cell, z = z0 + j * cell;
+      expect(zone[k]).toBe(circles.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius ** 2) ? 1 : 0);
+    }
+  });
+  it("puts one clump on every roof node in the zone and nowhere else (every node), of 3 or 4 crowns, its canopy's height ±8%", () => {
+    const by = new Map(all.map((c) => [c.k, c]));
+    expect(by.size).toBe(all.length);
+    let some = 0;
+    for (let k = 0; k < N; k++) {
+      const roof = isRoof(k, { n, label, cover, canopy, dist, setback: 20 });
+      expect(by.has(k)).toBe(!!(zone[k] && roof));
+      if (!by.has(k)) continue;
+      some++;
+      const c = by.get(k);
+      const i = k % n, j = (k - i) / n;
+      expect([c.x, c.z]).toEqual([x0 + i * cell, z0 + j * cell]);
+      expect([3, 4]).toContain(c.crowns);
+      expect(c.variant).toBeGreaterThanOrEqual(0);
+      expect(c.variant).toBeLessThan(SKIN_LAYOUTS[c.crowns].length);
+      expect(c.height).toBeGreaterThanOrEqual(canopy[k] * 0.92 - 1e-9);
+      expect(c.height).toBeLessThanOrEqual(canopy[k] * 1.08 + 1e-9);
+      expect(c.width).toBeGreaterThanOrEqual(0.9);
+      expect(c.width).toBeLessThanOrEqual(1.1);
+    }
+    expect(some).toBeGreaterThan(20);
+    // both sizes and more than one layout occur
+    expect(new Set(all.map((c) => c.crowns))).toEqual(new Set([3, 4]));
+    expect(new Set(all.map((c) => `${c.crowns}/${c.variant}`)).size).toBeGreaterThan(2);
+  });
+  it("is local: tile by tile is the whole (every split into rows of tiles)", () => {
+    for (const rows of [1, 4, 11, 33]) {
+      const tiles = [];
+      for (let j0 = 0; j0 < n; j0 += rows) tiles.push(...skinAt(so, j0 * n, Math.min(n, j0 + rows) * n));
+      expect(tiles).toEqual(all);
+    }
+  });
+  it("puts none where built, and none outside every circle", () => {
+    const built = new Uint8Array(N).fill(1);
+    expect(skinAt({ ...so, built })).toEqual([]);
+    expect(skinAt({ ...so, zone: skinZone(grid, []) })).toEqual([]);
+  });
+  it("thins to exactly `max` by each clump's own key, keeping the lowest", () => {
+    const max = Math.floor(all.length / 3);
+    const { clumps, before } = placeSkin({ ...so, skin: { ...so.skin, max } });
+    expect(before).toBe(all.length);
+    expect(clumps.length).toBe(max);
+    const kept = new Set(clumps.map((c) => c.k));
+    const cut = Math.max(...clumps.map((c) => c.key));
+    for (const c of all) expect(kept.has(c.k)).toBe(c.key <= cut);
+  });
+  it("draws a clump as its crowns: 12 triangles each, inside its cell's reach, from its foot to its top (every layout)", () => {
+    for (const crowns of [3, 4]) for (let v = 0; v < SKIN_LAYOUTS[crowns].length; v++) {
+      const m = skinMesh(crowns, v, cell);
+      expect(m.positions.length / 9).toBe(12 * crowns);
+      const lowest = Math.min(...SKIN_LAYOUTS[crowns][v].map((c) => c[2]));
+      for (let q = 0; q < m.positions.length; q += 3) {
+        expect(Math.abs(m.positions[q])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.15 + 1e-6);
+        expect(Math.abs(m.positions[q + 2])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.15 + 1e-6);
+        expect(m.positions[q + 1]).toBeGreaterThanOrEqual(SKIN_CROWN.foot * lowest - 1e-6);
+        expect(m.positions[q + 1]).toBeLessThanOrEqual(1 + 1e-6);
+      }
+    }
+  });
+  it("instances each clump from its size and layout's mesh, its foot on the ground, its height its scale", () => {
+    const inst = skinInstances(all, (x, z) => 0.01 * x + 2, { meshBase: 10, cell });
+    expect(inst.nodes.length).toBe(all.length);
+    expect(inst.meshes.length).toBe(inst.kinds.length);
+    all.forEach((c, q) => {
+      const nd = inst.nodes[q];
+      expect(nd.mesh).toBe(10 + inst.kinds.indexOf(`${c.crowns}/${c.variant}`));
+      expect(nd.translation[1]).toBeCloseTo(0.01 * c.x + 2, 2);
+      expect(nd.scale[1]).toBeCloseTo(c.height, 2);
+    });
+  });
+});
+
+describe("the low scrub", () => {
+  const heights = new Float32Array(N);
+  for (let k = 0; k < N; k++) heights[k] = label[k] > 0 ? 10 + (k % 7) : -5;
+  const sc = scrubCover({ grid, heights, label, cover, canopy, dist, jitter: 1.5 });
+  it("lies only where the canopy is from 0.8 to 5 m on wild land (here, the clearing), every kept triangle touching such a node", () => {
+    const want = [];
+    for (let k = 0; k < N; k++) if (isScrub(k, { label, cover, canopy, dist })) want.push(k);
+    // the clearing's 9 nodes, canopy 1 m, in the wood
+    expect(want.length).toBe(9);
+    expect(sc.roofNodes).toBe(9);
+    for (let t = 0; t < sc.indices.length; t += 3) {
+      const ks = [0, 1, 2].map((e) => {
+        const v = sc.indices[t + e];
+        return Math.round((sc.positions[v * 3 + 2] - z0) / cell) * n + Math.round((sc.positions[v * 3] - x0) / cell);
+      });
+      expect(ks.some((k) => want.includes(k))).toBe(true);
+    }
+  });
+  it("stands at the canopy's height over the ground (at least a metre), ±1.5 m by hash, and its ring just under the ground", () => {
+    for (let v = 0; v < sc.positions.length / 3; v++) {
+      const i = Math.round((sc.positions[v * 3] - x0) / cell), j = Math.round((sc.positions[v * 3 + 2] - z0) / cell), k = j * n + i;
+      const y = sc.positions[v * 3 + 1];
+      if (isScrub(k, { label, cover, canopy, dist })) {
+        expect(Math.abs(y - (heights[k] + Math.max(1, canopy[k])))).toBeLessThanOrEqual(1.5 + 1e-5);
+      } else expect(y).toBeCloseTo(heights[k] - 1, 5);
+    }
+  });
+  it("grows on no lot, lawn or yard: none on the town's lots though their canopy were scrub's", () => {
+    const low = Float32Array.from(canopy, (c, k) => (cover[k] === COVER.residential ? 2 : c));
+    for (let k = 0; k < N; k++) if (cover[k] === COVER.residential) expect(isScrub(k, { label, cover, canopy: low, dist })).toBe(false);
   });
 });

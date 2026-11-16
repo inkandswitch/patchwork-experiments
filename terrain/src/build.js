@@ -28,9 +28,9 @@ import { localFrame, PROJECTION } from "./tmerc.js";
 import { coverGrid, distanceToWater, COVER, COVERS } from "./cover.js";
 import { groundRGB, linear, naturalLegend, COLOURS, toRGB } from "./palette.js";
 import { shoreSlabs, levelsOf, cutShore } from "./shore.js";
-import { SURF, coastPieces, surfMesh } from "./surf.js";
-import { CLOUDS, sheetsAt, cloudMesh } from "./cloud.js";
-import { effectiveCanopy, placeTrees, forestRoof, treeInstances, builtMask } from "./forest.js";
+import { SURF, coastPieces, surfMesh, reefPatches, boulders } from "./surf.js";
+import { CLOUDS, sheetsAt, capsAt, cloudMesh } from "./cloud.js";
+import { effectiveCanopy, placeTrees, forestRoof, treeInstances, builtMask, scrubCover, skinZone, placeSkin, skinInstances } from "./forest.js";
 import { buildingMesh } from "./buildings.js";
 import { siteMesh, inBox } from "./site.js";
 import { unpackLayers, FILLED, FLOOR } from "./layered.js";
@@ -115,6 +115,23 @@ function subsample(n, values, stride) {
   return { n: m, values: out };
 }
 
+/** The land nodes inside a { south, west, north, east } box: 1, else 0. */
+export function apronMask(grid, frame, box, label) {
+  const { n, cell, x0, z0 } = grid;
+  const out = new Uint8Array(n * n);
+  const corners = [[box.south, box.west], [box.south, box.east], [box.north, box.east], [box.north, box.west]].map(([la, lo]) => frame.toLocal(la, lo));
+  const xs = corners.map((c) => c[0]), zs = corners.map((c) => c[1]);
+  const i0 = Math.max(0, Math.floor((Math.min(...xs) - x0) / cell) - 1), i1 = Math.min(n - 1, Math.ceil((Math.max(...xs) - x0) / cell) + 1);
+  const j0 = Math.max(0, Math.floor((Math.min(...zs) - z0) / cell) - 1), j1 = Math.min(n - 1, Math.ceil((Math.max(...zs) - z0) / cell) + 1);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k = j * n + i;
+    if (label[k] <= 0) continue;
+    const [lat, lon] = frame.toLatLon(x0 + i * cell, z0 + j * cell);
+    if (inBox(box, lat, lon)) out[k] = 1;
+  }
+  return out;
+}
+
 /** What is built on, as rings of [x, z]: OSM's building footprints, the site's clear box and each site structure's corners. */
 export function builtRings(doc, look, frame) {
   // to the millimetre, as site.js: the projection's last bits may differ between engines, the mask mustn't
@@ -187,6 +204,12 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   // each land node's distance to the water: the splash zone's bands are drawn within a cell and a half of it; the forest's fringe is measured by it
   const toWater = natural ? distanceToWater(n, cls.label, grid.cell) : null;
   const tide = doc.datum?.tide ?? {};
+  // the bare rock band under any cover but a beach, where the place says its shore is rock under the lots (look.shoreRock)
+  const shoreRock = !!doc.look?.shoreRock;
+  // the site's apron (site.apron): its land inside the clear box one even tone above the highest normal tide, its edge the shore cut's (crisp)
+  const apronAbove = tide.MHHW ?? 0.9;
+  const apron = natural && doc.site?.apron && doc.site?.clear?.box ? apronMask(grid, frame, doc.site.clear.box, cls.label) : null;
+  const apronRGB = apron ? linear(toRGB(doc.site.apron.colour)) : null;
   const V = mesh.nodes.length;
   const positions = new Float32Array(V * 3);
   const colors = new Float32Array(V * 3);
@@ -196,7 +219,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     positions[v * 3] = grid.x0 + i * grid.cell;
     positions[v * 3 + 1] = yOf(h[k]);
     positions[v * 3 + 2] = grid.z0 + j * grid.cell;
-    const c = natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell)) : colourAt(h[k]);
+    const c = apron?.[k] && h[k] > apronAbove ? apronRGB : natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell, { shoreRock })) : colourAt(h[k]);
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
@@ -222,9 +245,11 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     const paint = (q, t) => {
       // above the splash zone: the vertices' own colours
       if (q >= slabs.length) return null;
-      const s = slabs[q], cv = cover[topNode(t)];
-      // a beach is beach above the water; bare rock above the lichen only where nothing else covers the ground (as groundRGB)
-      if ((cv === COVER.beach && s.hi > 0) || (s.key === "rock" && cv !== COVER.none && cv !== COVER.rock)) return null;
+      const s = slabs[q], top = topNode(t), cv = cover[top];
+      // the apron above the highest normal tide is the apron
+      if (apron?.[top] && s.lo >= apronAbove - 1e-9) return apronRGB;
+      // a beach is beach above the water; bare rock above the lichen only where nothing else covers the ground (as groundRGB), or under anything where the place's shore is rock
+      if ((cv === COVER.beach && s.hi > 0) || (s.key === "rock" && !shoreRock && cv !== COVER.none && cv !== COVER.rock)) return null;
       return flat[q];
     };
     const r = cutShore(ground, hv, mesh.nodes, levelsOf(slabs), atShore, paint);
@@ -321,19 +346,21 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       const i = Math.round((x - grid.x0) / grid.cell), j = Math.round((z - grid.z0) / grid.cell);
       return i >= 0 && j >= 0 && i < n && j < n ? cover[j * n + i] : 0;
     };
-    const leaveOut = clear?.box
-      ? (b) => {
-          const cx = b.points.reduce((a, q) => a + q[0], 0) / b.points.length, cz = b.points.reduce((a, q) => a + q[1], 0) / b.points.length;
-          const [lat, lon] = frame.toLatLon(cx, cz);
-          return inBox(clear.box, lat, lon);
-        }
-      : () => false;
+    // and what a landmark draws itself (its `replaces`: the lighthouse, the radome) is left out too
+    const replacedBuildings = site?.replaces ?? new Set();
+    const leaveOut = (b) => {
+      if (replacedBuildings.has(b.id)) return true;
+      if (!clear?.box) return false;
+      const cx = b.points.reduce((a, q) => a + q[0], 0) / b.points.length, cz = b.points.reduce((a, q) => a + q[1], 0) / b.points.length;
+      const [lat, lon] = frame.toLatLon(cx, cz);
+      return inBox(clear.box, lat, lon);
+    };
     const bm = buildingMesh(look.buildings, { groundAt, sinkAt, coverAt, leaveOut });
     buildingsMade = bm.made;
     if (bm.primitives.length) add("Buildings", { primitives: bm.primitives.map((q) => ({ ...q, roughness: 0.8 })) }, "buildings");
   }
   // the forest: its roof, and trees in front of it (forest.js)
-  let treeCount = 0, roofTriangles = 0;
+  let treeCount = 0, roofTriangles = 0, scrubNodes = 0, skinCount = 0;
   if (p.forest && natural) {
     const dist = toWater;
     const trees = doc.look?.trees ?? { fringe: { fir: 60, cedar: 20, oak: 20 }, inland: { fir: 70, cedar: 30 }, town: { fir: 40, oak: 30, cedar: 30 }, wetland: { pine: 100 }, max: 20000 };
@@ -342,6 +369,14 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       roofTriangles = roof.indices.length / 3;
       const normalsR = computeNormals(roof.positions, roof.indices);
       add("Forest canopy", { primitives: tiles(roof.positions, normalsR, roof.colors, roof.indices, 65535).map((t) => ({ ...t, roughness: 1 })) }, "forest");
+    }
+    // salal and shore pine where the canopy is under 5 m, where the place has them (forest.js scrubCover)
+    if (trees.scrub) {
+      const sc = scrubCover({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, built, setback: trees.roofSetback ?? 20, ...trees.scrub });
+      if (sc) {
+        scrubNodes = sc.roofNodes;
+        add("Low scrub", { primitives: tiles(sc.positions, computeNormals(sc.positions, sc.indices), sc.colors, sc.indices, 65535).map((t) => ({ ...t, roughness: 1 })) }, "forest");
+      }
     }
     const placedTrees = placeTrees({ grid, label: cls.label, cover, canopy, dist, trees, built });
     treeCount = placedTrees.trees.length;
@@ -352,6 +387,23 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
       const first = nodes.length;
       for (const nd of inst.nodes) nodes.push(nd);
       nodes.push({ name: "Trees", children: inst.nodes.map((_, q) => first + q), extras: { layer: "forest", trees: { count: treeCount, before: placedTrees.before, species: inst.species } } });
+    }
+    // the forest's skin: crowns over the roof where people look from close by, where the place has one (forest.js skinAt)
+    if (trees.skin?.within?.length) {
+      const circles = trees.skin.within.map((c) => {
+        const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+        return { x, z, radius: c.radius };
+      });
+      const zone = skinZone(grid, circles);
+      const placed = placeSkin({ grid, label: cls.label, cover, canopy, dist, zone, skin: trees.skin, setback: trees.roofSetback ?? 20, built });
+      skinCount = placed.clumps.length;
+      if (skinCount) {
+        const inst = skinInstances(placed.clumps, (x, z) => groundAt(x, z) ?? 0, { meshBase: meshes.length, cell: grid.cell, ...(trees.skin.colours ? { colours: trees.skin.colours } : {}) });
+        for (const m of inst.meshes) meshes.push(m);
+        const first = nodes.length;
+        for (const nd of inst.nodes) nodes.push(nd);
+        nodes.push({ name: "Forest skin", children: inst.nodes.map((_, q) => first + q), extras: { layer: "forest", skin: { count: skinCount, before: placed.before, kinds: inst.kinds } } });
+      }
     }
   }
   // a few boats about the harbour, where the place says (dressing: its look's boats)
@@ -372,15 +424,25 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     const so = { ...SURF, ...doc.look.surf };
     const pieces = coastPieces(sh.chains, grid, cls.label, doc.swell.from, so);
     const sm = surfMesh(pieces, so);
-    surf = { pieces: pieces.length, exposed: sm.pieces, dashes: sm.dashes };
-    if (sm.positions.length) add("Surf", { positions: sm.positions, colors: sm.colors, unlit: true }, "surf", { dressing: `Foam where the coast is open to the swell from ${doc.swell.from}° (exposure by rays over the grid): not observed.` });
+    // white water over the exposed shallows, and black boulders at the most exposed waterline, where the place's surf asks for them
+    const reef = so.reef ? reefPatches(grid, h, cls.label, doc.swell.from, { ...so, ...so.reef }) : null;
+    const rocksAt = so.boulders ? boulders(pieces, so.boulders) : null;
+    surf = { pieces: pieces.length, exposed: sm.pieces, runs: sm.runs, ...(reef ? { reef: reef.patches } : {}), ...(rocksAt ? { boulders: rocksAt.boulders } : {}) };
+    const foam = reef?.patches ? { positions: concat(sm.positions, reef.positions), colors: concat(sm.colors, reef.colors) } : sm;
+    if (foam.positions.length) add("Surf", { positions: foam.positions, colors: foam.colors, unlit: true }, "surf", { dressing: `Foam where the coast is open to the swell from ${doc.swell.from}° (exposure by rays over the grid): not observed.` });
+    if (rocksAt?.boulders) add("Boulders at the exposed shore", { positions: rocksAt.positions, colors: rocksAt.colors, roughness: 0.7 }, "surf", { dressing: "Boulders by hash at the most exposed waterline: assumed, not mapped." });
   }
   // low cloud on the hills and mist in the forest's hollows (cloud.js): where the place's look has clouds
   let clouds = null;
   if (p.clouds && natural && doc.look?.clouds) {
     const co = { ...CLOUDS, ...doc.look.clouds };
     const ground = Float32Array.from(h, (v) => yOf(v));
-    const sheets = sheetsAt(grid, ground, canopy, co);
+    // banks on the slopes and in the hollows, and a cap round each summit the place names
+    const caps = (co.caps ?? []).map((c) => {
+      const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+      return { ...c, x, z };
+    });
+    const sheets = [...sheetsAt(grid, ground, canopy, co), ...capsAt(grid, ground, caps)];
     const cm = cloudMesh(grid, ground, sheets, co);
     clouds = { sheets: sheets.length };
     if (cm.positions.length) add("Low cloud and mist", { positions: cm.positions, colors: cm.colors, indices: cm.indices, unlit: true, blend: true }, "weather", { dressing: "Stratus caught on the hills and mist over the forest, by the heights: not observed." });
@@ -472,6 +534,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     boats: boatCount,
     trees: treeCount,
     roofTriangles,
+    scrubNodes,
+    skin: skinCount,
     shore: shoreCut,
     surf,
     clouds,
@@ -483,6 +547,14 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
 }
 
 const round = (v) => Math.round(v * 100) / 100;
+
+/** Two Float32Arrays end to end. */
+function concat(a, b) {
+  const out = new Float32Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+}
 
 /** A source layer for extras.terrain: { encoding, names, counts, data } (4 bits a node). */
 function sourceLayer({ values }, names) {

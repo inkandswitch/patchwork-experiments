@@ -94,12 +94,12 @@ export const plugins = [
         on: "object",
         blurb: "This place's own sky, fog and sun (overcast, misty or clear) as the world's atmosphere, over the weather's",
         fields: [
-          { key: "sky", label: "Sky (top, horizon, bottom)", kind: "json", default: { top: "#7f8b94", horizon: "#c5cbcc", bottom: "#8f9a9b" } },
-          { key: "fog", label: "Fog (colour, near, far m)", kind: "json", default: { color: "#bcc3c4", near: 400, far: 9000 } },
+          { key: "sky", label: "Sky (top, horizon, bottom)", kind: "json", default: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" } },
+          { key: "fog", label: "Fog (colour, near, far m)", kind: "json", default: { color: "#959ea1", near: 400, far: 9000 } },
           { key: "sun", label: "Sun (direction, colour, intensity, shadows)", kind: "json", default: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false } },
           { key: "exposure", label: "Exposure", kind: "number", default: 1.05 },
         ],
-        init: { sky: { top: "#7f8b94", horizon: "#c5cbcc", bottom: "#8f9a9b" }, fog: { color: "#bcc3c4", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
+        init: { sky: { top: "#c4cacc", horizon: "#959ea1", bottom: "#7a8487" }, fog: { color: "#959ea1", near: 400, far: 9000 }, sun: { direction: [-0.36, 0.84, 0.4], color: "#eef0f0", intensity: 1.1, shadows: false }, exposure: 1.05 },
       },
     },
     async load() {

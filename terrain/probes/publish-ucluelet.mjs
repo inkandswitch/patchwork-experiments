@@ -41,7 +41,9 @@
 //      fingerprint survives every url rewritten; a viewer without the
 //      terrain plugin still sees it;
 //    - screens: the home view, the boatyard close, the inlet, Amphitrite Point,
-//      the town's waterfront from the water, the surf, the cloud on Mount Ozzard.
+//      the town's waterfront from the water, the surf, the cloud on Mount
+//      Ozzard, and three low on the water (off the yard, off the town, under
+//      the lighthouse); the top of every one isn't black.
 // 3. Unless --dry-run: as publish-rvyc.mjs, every doc made anew on the
 //    server and read back from a fresh repo.
 
@@ -49,6 +51,7 @@ import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
 import { publishDocs } from "./publish-stamp.mjs";
 import { lockDir } from "./chrome-lock.mjs";
+import { pngPixel } from "./png-pixel.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -150,7 +153,7 @@ try {
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
   check("the GLB's layers: forest, buildings, boats, surf, low cloud, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "surf", "weather", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
   check("the trees are drawn as one InstancedMesh a species", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
-  check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#bcc3c4" && t.atmosphere?.sky?.top === "#7f8b94" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
+  check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
 
   // screens
@@ -158,6 +161,8 @@ try {
   check("the home view, in Look", (await P("atHome()")) === "Look");
   await sleep(4000);
   report.shots.push(await b.shot(join(SHOTS, "ucluelet-home.png")));
+  // the top of every view (the sky, or the ground from high up) is never black: the pixel at the top's middle, under the toolbar and the hint
+  const topPixels = { "ucluelet-home": pngPixel(join(SHOTS, "ucluelet-home.png"), 640, 140) };
   const views = {
     "ucluelet-boatyard": [[-20, 16, -48], [24, 7, 95]],
     "ucluelet-hangar-doors": [[-55, 9, 40], [18, 8, 100]],
@@ -169,12 +174,18 @@ try {
     "ucluelet-low-harbour": [[1450, 4, 650], [800, 10, 820]],
     "ucluelet-surf": [[930, 22, 3480], [1228, 6, 3203]],
     "ucluelet-ozzard": [[600, 40, 300], [4770, 320, -1045]],
+    // low on the water where people sail: off the boatyard, off the town (where the sky once went black), under the lighthouse
+    "ucluelet-low-yard": [[220, 3, -330], [0, 8, 0]],
+    "ucluelet-low-town": [[700, 3, 150], [1300, 12, 750]],
+    "ucluelet-lighthouse-sea": [[1150, 5, 3600], [1228, 10, 3203]],
   };
   for (const [name, [pos, tgt]] of Object.entries(views)) {
     await P(`setCamera(${J(pos)}, ${J(tgt)})`);
     await sleep(4000);
     report.shots.push(await b.shot(join(SHOTS, `${name}.png`)));
+    topPixels[name] = pngPixel(join(SHOTS, `${name}.png`), 640, 140);
   }
+  check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
   await sleep(500);

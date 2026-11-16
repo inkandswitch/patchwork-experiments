@@ -376,33 +376,91 @@ export const KINDS = {
     return { along: t, height: 1.7 };
   },
 
-  /** A squat lighthouse: a square base, a square tower, a balcony, a lantern and its roof. */
+  /**
+   * A squat lighthouse on its rock: a dark outcrop under it (an irregular
+   * eight-sided cone, its top the tower's foot, `rock.radius` across by hash
+   * a corner, its sides falling `rock.height` to under the ground, so where
+   * the ground drops away to the sea it stands as a black knuckle of rock),
+   * a square concrete tower battered from `base` at its foot to `top` at
+   * `height`, a projecting square gallery with a railing round it, a short
+   * round lantern (a solid band, its glazing, a band) and a red dome. No
+   * gable: nothing here reads as a house.
+   */
   "squat-lighthouse"(s, lm, { L, ground, sinkAt }) {
     const [x, z] = L(lm.at);
     const g = ground(x, z);
     const Z = lm.size, C = lm.colours;
-    block(s, [x, z], [1, 0], Z.base / 2, Z.base / 2, g - sinkAt(g) - 1, g + Z.baseHeight, C.walls);
-    block(s, [x, z], [1, 0], Z.tower / 2, Z.tower / 2, g + Z.baseHeight, g + Z.towerHeight, C.walls);
-    block(s, [x, z], [1, 0], Z.tower / 2 + 0.6, Z.tower / 2 + 0.6, g + Z.towerHeight, g + Z.towerHeight + 0.25, C.balcony);
-    cylinder(s, x, z, g + Z.towerHeight + 0.25, g + Z.towerHeight + 0.25 + Z.lanternHeight, Z.lantern, Z.lantern, C.lantern, 8);
-    cylinder(s, x, z, g + Z.towerHeight + 0.25 + Z.lanternHeight, g + Z.towerHeight + 1.2 + Z.lanternHeight, Z.lantern * 1.15, 0, C.roof, 8);
-    return { ground: g, top: g + Z.towerHeight + 1.2 + Z.lanternHeight };
+    const R = Z.rock;
+    if (R) {
+      const rim = Array.from({ length: 8 }, (_, q) => {
+        const a = (q * Math.PI) / 4 + 0.2, r = R.radius * (0.7 + 0.3 * ((q * 0.618 + 0.3) % 1));
+        return [x + r * dcos(a), z - r * dsin(a)];
+      });
+      const c = rgb(R.colour), lo = g - R.height - sinkAt(g);
+      for (let q = 0; q < 8; q++) {
+        const [ax, az] = rim[q], [bx, bz] = rim[(q + 1) % 8];
+        const shade = c.map((v) => v * (0.75 + 0.3 * ((q * 0.43) % 1)));
+        // the slope from the rim at the bottom up to a ledge round the tower's foot, and the ledge
+        const la = [x + (ax - x) * 0.45, g + 0.3, z + (az - z) * 0.45], lb = [x + (bx - x) * 0.45, g + 0.3, z + (bz - z) * 0.45];
+        s.quad([ax, lo, az], [bx, lo, bz], lb, la, shade);
+        s.tri([x, g + 0.3, z], la, lb, c);
+      }
+    }
+    // the tower: a square frustum (a four-sided cone turned so its faces are square to the frame), its foot in the rock
+    const half = (w) => (w / 2) * Math.SQRT2;
+    const foot = g + (R ? 0.3 : 0);
+    squareFrustum(s, x, z, g - sinkAt(g) - 1, foot, half(Z.base), half(Z.base), C.walls);
+    squareFrustum(s, x, z, foot, g + Z.height, half(Z.base), half(Z.top), C.walls);
+    // the gallery: a slab past the walls, and a railing round its edge
+    const yg = g + Z.height, gh = Z.gallery / 2;
+    block(s, [x, z], [1, 0], gh, gh, yg, yg + 0.25, C.gallery);
+    // the top rail along each side, and posts along it
+    const e = gh - 0.05, rail0 = yg + 0.25 + Z.rail - 0.06, rail1 = yg + 0.25 + Z.rail;
+    for (const [c, u] of [[[x, z - e], [1, 0]], [[x, z + e], [1, 0]], [[x - e, z], [0, 1]], [[x + e, z], [0, 1]]]) block(s, c, u, gh, 0.04, rail0, rail1, C.rail);
+    for (let q = 0; q <= 4; q++) {
+      const t = -gh + (2 * gh * q) / 4;
+      for (const [px, pz] of [[t, -gh + 0.05], [t, gh - 0.05], [-gh + 0.05, t], [gh - 0.05, t]]) block(s, [x + px, z + pz], [1, 0], 0.04, 0.04, yg + 0.25, yg + 0.25 + Z.rail, C.rail);
+    }
+    // the lantern: a red band, the glazing, a red band, and the dome
+    const y0 = yg + 0.25, band = 0.3, glass = Z.lanternHeight - 2 * band, r = Z.lantern;
+    cylinder(s, x, z, y0, y0 + band, r, r, C.lantern, 12);
+    cylinder(s, x, z, y0 + band, y0 + band + glass, r * 0.96, r * 0.96, C.glass, 12);
+    cylinder(s, x, z, y0 + band + glass, y0 + 2 * band + glass, r * 1.04, r * 1.04, C.lantern, 12);
+    const yd = y0 + Z.lanternHeight, rings = 4;
+    for (let q = 0; q < rings; q++) {
+      const a0 = (q / rings) * (Math.PI / 2), a1 = ((q + 1) / rings) * (Math.PI / 2);
+      cylinder(s, x, z, yd + Z.dome * dsin(a0), yd + Z.dome * dsin(a1), r * 1.04 * dcos(a0), q === rings - 1 ? 0 : r * 1.04 * dcos(a1), C.roof, 12);
+    }
+    return { ground: g, top: yd + Z.dome };
   },
 
-  /** A radome on a drum. */
+  /** A radome: a white ball (most of a sphere, its foot cut off where it sits) on a low building. */
   dome(s, lm, { L, ground, sinkAt }) {
     const [x, z] = L(lm.at);
     const g = ground(x, z);
-    const { radius, drum } = lm.size;
-    cylinder(s, x, z, g - sinkAt(g) - 1, g + drum, radius * 0.92, radius * 0.92, lm.colours.drum, 16);
-    const rings = 6;
+    const { radius, building } = lm.size;
+    const [bw, bd, bh] = building;
+    block(s, [x, z], [1, 0], bw / 2, bd / 2, g - sinkAt(g) - 1, g + bh, lm.colours.building);
+    // from 60° below its equator to its top, so it sits on the roof as a ball, not a bowl
+    const cy = g + bh + radius * dsin(Math.PI / 3), rings = 9;
     for (let q = 0; q < rings; q++) {
-      const a0 = (q / rings) * (Math.PI / 2), a1 = ((q + 1) / rings) * (Math.PI / 2);
-      cylinder(s, x, z, g + drum + radius * dsin(a0), g + drum + radius * dsin(a1), radius * dcos(a0), q === rings - 1 ? 0 : radius * dcos(a1), lm.colours.dome, 16);
+      const a0 = -Math.PI / 3 + (q / rings) * ((5 * Math.PI) / 6), a1 = -Math.PI / 3 + ((q + 1) / rings) * ((5 * Math.PI) / 6);
+      cylinder(s, x, z, cy + radius * dsin(a0), cy + radius * dsin(a1), radius * dcos(a0), q === rings - 1 ? 0 : radius * dcos(a1), lm.colours.dome, 18);
     }
-    return { ground: g, top: g + drum + radius };
+    return { ground: g, top: cy + radius };
   },
 };
+
+/** A square frustum about (x, z) from y0 to y1, its half-diagonal r0 at the bottom and r1 at the top, its faces square to x and z. */
+function squareFrustum(s, x, z, y0, y1, r0, r1, hex) {
+  const c = rgb(hex);
+  const at = (q, y, r) => [x + r * dcos(Math.PI / 4 + (q * Math.PI) / 2), y, z - r * dsin(Math.PI / 4 + (q * Math.PI) / 2)];
+  for (let q = 0; q < 4; q++) {
+    const shade = c.map((v) => v * (q % 2 ? 0.86 : 0.97));
+    s.quad(at(q, y0, r0), at(q + 1, y0, r0), at(q + 1, y1, r1), at(q, y1, r1), shade);
+  }
+  s.quad(at(0, y1, r1), at(1, y1, r1), at(2, y1, r1), at(3, y1, r1), c);
+}
 
 /** Whether a point (lat, lon) is inside a { south, west, north, east } box. */
 export const inBox = (box, lat, lon) => lat >= box.south && lat <= box.north && lon >= box.west && lon <= box.east;

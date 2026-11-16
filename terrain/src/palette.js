@@ -80,8 +80,9 @@ export function hash01(k, seed = 0) {
  * @param {object} [colours]  COLOURS, with a place's overrides
  * @param {number} [k]  the node's index, for a little variation
  * @param {boolean} [shore]  whether the node is at the shore (the splash zone's bands above the tide are drawn only there)
+ * @param {{ shoreRock?: boolean }} [opts]  shoreRock: the bare rock band above the lichen under any cover but a beach (a rocky bank under the town's lots), not only where nothing covers the ground
  */
-export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shore = true) {
+export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shore = true, { shoreRock = false } = {}) {
   const C = colours;
   let rgb;
   // above the highest normal tide, the splash zone's bands belong to the shore only (low land inland is what covers it)
@@ -95,7 +96,7 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shor
       band = key;
       break;
     }
-    if (band && splash && !(beachy && h > 0) && !(band === "rock" && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
+    if (band && splash && !(beachy && h > 0) && !(band === "rock" && !shoreRock && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
     else if (cover === COVER.wood || (cover === COVER.none && canopy > 5)) rgb = toRGB(C.forestFloor);
     else if (cover === COVER.scrub) rgb = toRGB(C.shrub);
     else if (cover === COVER.residential) rgb = toRGB(C.lawn);

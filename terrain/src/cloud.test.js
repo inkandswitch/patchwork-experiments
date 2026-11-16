@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sheetsAt, cloudMesh, CLOUDS } from "./cloud.js";
+import { sheetsAt, cloudMesh, capsAt, rimOf, CLOUDS, RINGS, SECTORS } from "./cloud.js";
 
 // a made-up 81 × 81 place, 20 m cells: a cone of a hill 700 m high in the middle, a bowl (a hollow) in its north-west flank, forest everywhere above 5 m
 const n = 81, cell = 20, x0 = -800, z0 = -800, N = n * n;
@@ -67,7 +67,7 @@ describe("the cloud's mesh", () => {
   const m = cloudMesh(grid, ground, sheets);
   it("is never seen where the ground is close under it, and never thicker than its sheet", () => {
     const P = m.positions, C = m.colors.array;
-    const maxAlpha = Math.max(...sheets.map((s) => Math.min(1, s.alpha * 1.6 / 3)));
+    const maxAlpha = Math.max(...sheets.map((s) => Math.min(1, s.alpha * 0.6)));
     // the ground under a point, bilinear between the nodes
     const groundAt = (x, z) => {
       const fi = Math.max(0, Math.min(n - 1.000001, (x - x0) / cell)), fj = Math.max(0, Math.min(n - 1.000001, (z - z0) / cell));
@@ -83,12 +83,54 @@ describe("the cloud's mesh", () => {
       if (a > 0) expect(P[v * 3 + 1] - groundAt(P[v * 3], P[v * 3 + 2])).toBeGreaterThan(ALL.mist.clear - 1e-3);
     }
   });
-  it("is the same bytes every time, three layers a sheet, every triangle with some alpha", () => {
+  it("is the same bytes every time, two surfaces a bank, every triangle with some alpha", () => {
     const again = cloudMesh(grid, ground, sheets);
     expect(Array.from(again.positions)).toEqual(Array.from(m.positions));
     expect(Array.from(again.indices)).toEqual(Array.from(m.indices));
-    expect(m.positions.length / 3).toBe(sheets.length * 3 * 49);
+    expect(m.positions.length / 3).toBe(sheets.length * 2 * (1 + RINGS * SECTORS));
     const C = m.colors.array, I = m.indices;
     for (let t = 0; t < I.length; t += 3) expect(C[I[t] * 4 + 3] + C[I[t + 1] * 4 + 3] + C[I[t + 2] * 4 + 3]).toBeGreaterThan(0);
+  });
+  it("is a lens with a ragged rim: each bank's top domed over its base and its underside under it, inside its rim, its rim clear (every vertex of every bank)", () => {
+    const V = 1 + RINGS * SECTORS, P = m.positions, C = m.colors.array;
+    sheets.forEach((sh, q) => {
+      const rim = rimOf(sh);
+      for (const r of rim) {
+        expect(r).toBeGreaterThanOrEqual(0.6);
+        expect(r).toBeLessThanOrEqual(1);
+      }
+      // the rim isn't a circle
+      expect(Math.max(...rim) - Math.min(...rim)).toBeGreaterThan(0.02);
+      for (let side = 0; side < 2; side++) for (let v = 0; v < V; v++) {
+        const at = (q * 2 + side) * V + v;
+        const x = P[at * 3], y = P[at * 3 + 1], z = P[at * 3 + 2];
+        const ring = v === 0 ? 0 : 1 + Math.floor((v - 1) / SECTORS), sector = v === 0 ? 0 : (v - 1) % SECTORS;
+        const rho = ring / RINGS;
+        expect(Math.hypot(x - sh.x, z - sh.z)).toBeCloseTo(rho * (sh.size / 2) * rim[sector], 3);
+        // the top over the base and the underside under it, but for the roll's 4 m
+        if (side === 0) expect(y).toBeGreaterThanOrEqual(sh.y - 4 - 1e-4);
+        else expect(y).toBeLessThanOrEqual(sh.y + 4 + 1e-4);
+        if (ring === RINGS) expect(C[at * 4 + 3]).toBe(0);
+      }
+    });
+  });
+});
+
+describe("a cap round a summit", () => {
+  it("lies `below` under the highest node within a cell of where it's named, keyed by itself, not a node", () => {
+    const caps = capsAt(grid, ground, [{ x: 0, z: 0, below: 50, size: 600 }, { x: -300, z: -300, below: 10, size: 200, alpha: 0.4, thick: 20 }]);
+    const top = (x, z) => {
+      const i = Math.round((x - x0) / cell), j = Math.round((z - z0) / cell);
+      let t = -Infinity;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) t = Math.max(t, ground[(j + dj) * n + i + di]);
+      return t;
+    };
+    expect(caps.map((c) => [c.k, c.kind, c.y, c.size, c.alpha, c.thick])).toEqual([
+      [-1, "cap", top(0, 0) - 50, 600, 0.6, 60],
+      [-2, "cap", top(-300, -300) - 10, 200, 0.4, 20],
+    ]);
+    // a summit's cap is seen round it, not inside the hill: no alpha where the ground is close under it
+    const cm = cloudMesh(grid, ground, caps);
+    expect(cm.indices.length).toBeGreaterThan(0);
   });
 });
