@@ -9,7 +9,8 @@
 // 5×5 grid of connectors, three blocks and two pawns. Then, with real CDP mouse
 // and key events: the layout (toolbar top, the drawer at the right with the
 // Objects tab each viewer opened from the toolbar, canvas the rest); click to
-// select (outline row, the inspector's tab coming in behind it, B's box);
+// select (outline row, the inspector's tab coming in behind it a beat later,
+// B's box);
 // Escape; no tools to pick (G, R and H do nothing); a halo drag (B sees the
 // pose mid-drag, then the landed transform); carrying by the trait (snaps to a
 // connector, Q turns, Esc puts back, Alt places freely); orbit on the locked
@@ -117,7 +118,11 @@ try {
     await b.rest(250);
     check("clickSelects", (await selected()) === "b0", await selected());
     check("outlineRowHighlighted", await A(`!!p.hostA.querySelector('.object-row[data-id="b0"][data-selected]')`));
-    // the inspector's tab comes in behind the Objects tab the viewer is using
+    // the inspector, shut, waits a beat (the double-click's 500 ms, TOOLS.md Decisions 6): 250 ms in, no tab yet
+    const early = await A(`[...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim())`);
+    check("inspectorWaitsABeat", JSON.stringify(early) === '["Objects"]', early);
+    await b.rest(300);
+    // then its tab comes in behind the Objects tab the viewer is using
     const insp = await A(`(() => ({ tabs: [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].map((e) => e.textContent.trim()), shown: p.hostA.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-name')?.textContent ?? null, name: p.hostA.querySelector('.inspector-body .name-input')?.value ?? null }))()`);
     check("inspectorShowsIt", JSON.stringify(insp.tabs) === '["Objects","Inspector"]' && insp.shown === "Objects" && insp.name === "Block 1", insp);
     const peerBox = await soon(`(() => { let f = null; __p.B.viewport.scene.traverse((o) => { if (String(o.userData?.selection ?? '').startsWith('peer:') && o.visible) f = o; }); return f && f.box.max.x > f.box.min.x; })()`, 3000);

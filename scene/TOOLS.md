@@ -108,7 +108,7 @@ for passing states (a die under a cup). Flip is carry's verb.
 
 **Chrome follows attention, never the doc.** Twenty edit-only parts are
 what keep the outline, grid and axes out of a game today. Instead the
-inspector is a drawer tab a selection opens and that stays open (on the
+inspector is a drawer tab a selection opens (a beat later) and that stays open (on the
 scene when nothing is selected) until its ×, the toolbar or leaving Edit,
 the outline a tab the viewer opens, and grid, axes and bounds are the Edit body's (§4). A
 doc may still suggest display prefs (grid, units, snap), as it suggests
@@ -1090,7 +1090,26 @@ The project lead decided the five open questions on 2026-11-12.
      selected thing often is, moves the view's visible centre off the
      camera's, and the drawer also holds docked editors (Camber's Shape)
      that need their own width. Tested over every sequence of up to two of
-     nine events and three of five (`parts/inspector.test.js`).
+     eleven events and three of seven (`parts/inspector.test.js`; the
+     beat and Enter joined them with the next bullet).
+   - **The inspector waits a beat** (decided unattended (2026-11-16,
+     lane/n11), for the lead). A selection made while the tab is shut
+     opens it DOUBLE_MS (500 ms, the double-click's interval,
+     `stage/router.js`) later, on the stage's time (`api.clock.after`),
+     and only if the rule above still wants it then. An open tab shows
+     each new selection at once, and the toolbar's Inspector opens it at
+     once. Before, the first click of a double-click opened the tab and
+     narrowed the canvas, so the second press and the dblclick landed on
+     the inspector, or on whatever the narrower canvas now put under the
+     pointer, and the double-click never entered (COMPOSITION.md, "Fixed
+     since"). The invariant: with the tab shut, the canvas keeps its width
+     for DOUBLE_MS after a selection changes. The model the test holds the
+     tab to: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was open ∨ (an object
+     selected ∧ a beat since it was)))); Enter carries the tab as it was.
+     It applies to every selection change, the outline's and the menu's
+     Select too, since the inspector can't tell a click from a Select: a
+     question for the lead whether only Edit's click selections should
+     wait.
    - **Leaving Edit puts the selection down** (decided unattended,
      2026-11-14, final fixer; it was kept, "yours in every body", until
      then). Attention is the selection if any (§3), so after rigging in Edit

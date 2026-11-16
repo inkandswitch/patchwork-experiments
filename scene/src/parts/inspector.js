@@ -2,7 +2,10 @@
 // (TOOLS.md §6). Chrome follows attention: in Edit the tab opens on the
 // first selection and then stays open, showing whatever is selected and the
 // scene when nothing is (TOOLS.md Decisions 6, "The inspector stays open"),
-// so the canvas doesn't change width at every select and deselect. Its ×
+// so the canvas doesn't change width at every select and deselect. A
+// selection opens a shut tab a beat later (DOUBLE_MS, on the stage's time),
+// so the second press of a double-click lands on the canvas its first did
+// (TOOLS.md Decisions 6, "The inspector waits a beat"). Its ×
 // shuts it until the selection changes; leaving Edit shuts it; the
 // toolbar's Inspector opens it with nothing selected, on the scene.
 //
@@ -59,6 +62,7 @@ import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
+import { DOUBLE_MS } from "../stage/router.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
@@ -974,6 +978,15 @@ function create(api) {
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
+  // The selection changed while the tab was shut, less than a beat (DOUBLE_MS,
+  // the double-click's interval) ago: its cancel until the beat passes, else
+  // null. A selection opens a shut tab only once it has, so the canvas keeps
+  // its width under a double-click's second press.
+  let waiting = null;
+  const stopWaiting = () => {
+    waiting?.();
+    waiting = null;
+  };
   const tab = drawerTab(api, {
     id: "inspector",
     title: "Inspector",
@@ -1007,12 +1020,19 @@ function create(api) {
     if (sel !== lastSel) {
       lastSel = sel;
       dismissed = false;
+      stopWaiting();
+      if (!tab.isOpen())
+        waiting = api.clock.after(DOUBLE_MS, () => {
+          waiting = null;
+          follow(api.scene(), now());
+        });
     }
     // the inspector is the editor's (../stage/bodies.js): only in Edit, where
-    // a selection opens it and it stays open (on the scene when nothing is
-    // selected) until its × or the toolbar shuts it, or Edit is left
+    // a selection opens it (a beat later, if it's shut) and it stays open (on
+    // the scene when nothing is selected) until its × or the toolbar shuts
+    // it, or Edit is left; asked for, it opens at once
     if (!editing(local)) asked = false;
-    const want = editing(local) && (asked || (!dismissed && (shows(scene, sel) || tab.isOpen())));
+    const want = editing(local) && (asked || (!dismissed && ((shows(scene, sel) && !waiting) || tab.isOpen())));
     // following the selection, it comes in behind a tab the viewer is using (the parts bin)
     if (want) tab.open({ show: asked });
     else tab.close();
@@ -1039,6 +1059,7 @@ function create(api) {
     /** for tests and probes: the tab's element, and whether it's docked */
     tab,
     dispose() {
+      stopWaiting();
       tab.dispose();
       teardown();
       body = null;

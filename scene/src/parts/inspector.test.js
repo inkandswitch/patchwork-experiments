@@ -2,6 +2,10 @@ import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { FRAME_MS, manualTime } from "../stage/time.js";
+import { DOUBLE_MS } from "../stage/router.js";
+import { LINK } from "../stage/links.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector, { startBodies } from "./inspector.js";
@@ -513,120 +517,181 @@ describe("scene.inspector: the pure side", () => {
 
 describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §6)", () => {
   const tab = () => s.instance("scene.inspector").tab;
+  // the stage's time, stepped: a beat is the double-click's interval (DOUBLE_MS), and a frame past it
+  let time = null;
+  const still = async () => {
+    await time.step(1, { still: true });
+    await settle(1);
+  };
+  const beat = async () => {
+    await time.advance(DOUBLE_MS + FRAME_MS);
+    await settle(1);
+  };
   async function bare(objects, extensions = []) {
-    s = await mountStage({ extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
-    await settle();
+    time = manualTime();
+    s = await mountStage({ time, extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
+    await still();
+  }
+  /** Select, and let the stage flush: no stage time passes. */
+  async function pick(id) {
+    s.local.swap((m) => ({ ...m, selected: id }));
+    await still();
   }
 
-  it("shut until something is selected; then open, on the scene when nothing is; its × shuts it until the selection changes; a ref opens nothing", async () => {
+  it("shut until something is selected; then open a beat later, on the scene when nothing is; its × shuts it until the selection changes; a ref opens nothing", async () => {
     await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
     expect(tab().isOpen()).toBe(false);
-    await select("a");
+    await pick("a");
+    // a beat first (TOOLS.md Decisions 6, "The inspector waits a beat"): to the frame before it, the canvas keeps its width
+    expect(tab().isOpen()).toBe(false);
+    await time.advance(DOUBLE_MS - FRAME_MS);
+    await settle(1);
+    expect(tab().isOpen()).toBe(false);
+    await beat();
     expect(tab().isOpen()).toBe(true);
     expect(s.debug.drawer().shown).toBe(tab().body);
-    // the viewer closes it (its ×): it stays shut while "a" is selected
+    // the viewer closes it (its ×): it stays shut while "a" is selected, beats or no
     s.root.querySelector(".stage-drawer-tab-close").click();
-    await settle();
+    await still();
     expect(tab().isOpen()).toBe(false);
     s.change((d) => (d.objects.a.name = "A2"));
-    await settle();
+    await beat();
     expect(tab().isOpen()).toBe(false);
-    await select("b");
+    await pick("b");
+    expect(tab().isOpen()).toBe(false);
+    await beat();
     expect(tab().isOpen()).toBe(true);
-    // open, it stays open whatever is selected next: the canvas keeps its width (TOOLS.md Decisions 6)
-    await select("dimension:d1");
+    // open, it stays open whatever is selected next, and shows it at once: the canvas keeps its width (TOOLS.md Decisions 6)
+    await pick("dimension:d1");
     expect(tab().isOpen()).toBe(true);
-    await select(null);
+    await pick(null);
     expect(tab().isOpen()).toBe(true);
     expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
-    await select("a");
+    await pick("a");
     expect(tab().isOpen()).toBe(true);
-    // shut from the toolbar: shut while the selection stays, shut by deselecting, opened by the next selection
+    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
+    // shut from the toolbar: shut while the selection stays, shut by deselecting, opened a beat after the next selection
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
-    await settle();
+    await still();
     expect(tab().isOpen()).toBe(false);
-    await select(null);
+    await pick(null);
+    await beat();
     expect(tab().isOpen()).toBe(false);
     // a ref selected with the tab shut opens nothing
-    await select("dimension:d1");
+    await pick("dimension:d1");
+    await beat();
     expect(tab().isOpen()).toBe(false);
-    await select(null);
-    // asked for from the toolbar: the scene's, with nothing selected
+    // a selection that goes within the beat opens nothing
+    await pick("a");
+    await pick(null);
+    await beat();
+    expect(tab().isOpen()).toBe(false);
+    // asked for from the toolbar: at once, the scene's with nothing selected
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
-    await settle();
+    await still();
     expect(tab().isOpen()).toBe(true);
     expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
     s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
-    await settle();
+    await still();
     expect(tab().isOpen()).toBe(false);
+    // asked for within a selection's beat: at once too
+    await pick("b");
+    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
+    await still();
+    expect(tab().isOpen()).toBe(true);
+    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
   });
 
-  it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, and of 3 of an object, nothing, ×, Look, Edit: open exactly as the rule says", async () => {
-    // The rule, as a model: in Edit, open once a selection (of something it
-    // shows) or the toolbar opened it, until × / toolbar off (then shut until
-    // the selection changes) or leaving Edit, which also puts the selection
-    // down (TOOLS.md Decisions 6); out of Edit, shut; back in Edit, open on
-    // an object selected (in Look, by the menu) that wasn't shut by hand.
-    const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit"];
+  it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, a beat, Enter, and of 3 of an object, nothing, ×, Look, Edit, a beat, Enter: open exactly as the rule says", async () => {
+    // The rule, as a model: in Edit, open once the toolbar opened it, or a
+    // beat (DOUBLE_MS on the stage's time) after a selection of something
+    // it shows made while it was shut, until × / toolbar off (then shut
+    // until the selection changes) or leaving Edit, which also puts the
+    // selection down (TOOLS.md Decisions 6); open, it stays open across
+    // selections; out of Edit, shut; back in Edit, open on an object
+    // selected (in Look, by the menu) a beat ago that wasn't shut by hand.
+    // Enter (a double-click's: the focus moves into the link L and the
+    // selection clears) carries the tab as it was (an open one reopens
+    // there, parts/tab.js); inside, Enter on L again changes nothing.
+    // So: open ⇔ Edit ∧ (asked ∨ (¬dismissed ∧ (was open ∨ (an object
+    // selected ∧ a beat since it was)))). The old rule, opening at once,
+    // fails "select then Enter before the beat": the inspector opened
+    // under the double-click's second press.
+    const EVENTS = ["obj", "obj2", "ref", "none", "x", "on", "off", "look", "edit", "beat", "enter"];
+    const SEL = { obj: "a", obj2: "b", ref: "dimension:d1", none: null };
+    const shows = (sel) => sel === "a" || sel === "b";
     const model = (m, e) => {
-      const sel = { obj: "a", obj2: "b", ref: "dimension:d1", none: null }[e];
+      const sel = SEL[e];
       if (sel !== undefined) {
         if (sel === m.sel) return m;
-        const open = m.edit && (m.open || sel === "a" || sel === "b");
-        return { ...m, sel, open, dismissed: false };
+        return { ...m, sel, open: m.edit && m.open, dismissed: false, waiting: !m.open };
       }
       if (e === "x") return m.open ? { ...m, open: false, dismissed: true } : m;
       if (e === "on") return m.edit ? { ...m, open: true, dismissed: false } : m;
       if (e === "off") return m.edit ? { ...m, open: false, dismissed: true } : m;
-      if (e === "look") return m.edit ? { ...m, edit: false, open: false, sel: null, dismissed: m.sel === null ? m.dismissed : false } : { ...m, open: false };
-      if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && (m.sel === "a" || m.sel === "b") };
+      if (e === "look") {
+        if (!m.edit) return m;
+        return m.sel === null ? { ...m, edit: false, open: false } : { ...m, edit: false, open: false, sel: null, dismissed: false, waiting: !m.open };
+      }
+      if (e === "edit") return m.edit ? m : { ...m, edit: true, open: !m.dismissed && shows(m.sel) && !m.waiting };
+      if (e === "beat") return m.waiting ? { ...m, waiting: false, open: m.open || (m.edit && !m.dismissed && shows(m.sel)) } : m;
+      // Enter: the general parts start again inside, the tab as it was
+      if (e === "enter") return m.inside ? m : { ...m, inside: true, sel: null, dismissed: false, waiting: false };
       return m;
     };
-    await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
-    const api = s.api("scene.inspector");
-    // (a lighter settle than the harness's: the stage's flush is a macrotask or two)
-    const step = () => settle(1);
-    const pick = async (id) => {
-      s.local.swap((m) => ({ ...m, selected: id }));
-      await step();
-    };
+    time = manualTime();
+    const repo = new FakeRepo();
+    const inner = repo.add(emptyScene({ title: "B", objects: { a: object({ name: "A in B" }), b: object({ name: "B in B" }) }, order: ["a", "b"] }));
+    const L = object({ name: "B", sourceUrl: inner.url, providerId: LINK, renderUrl: null });
+    s = await mountStage({ repo, time, extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }), L }, order: ["a", "b", "L"] } });
+    const view = s.debug.view;
+    await time.until(() => view.enterable(["L"]), { what: "L to open" });
+    // open: the inspector's pane is docked in the view's drawer, whichever stage the focus (and so the inspector) is in
+    const open = () => view.drawer.state().order.some((el) => el.dataset.panel === "inspector");
+    const inspectorApi = () => view.focusStage().debug.host.record("scene.inspector").api;
     const apply = async (e) => {
-      const sel = { obj: "a", obj2: "b", ref: "dimension:d1", none: null }[e];
-      if (sel !== undefined) return pick(sel);
-      if (e === "x") {
-        if (tab().isOpen()) s.root.querySelector(".stage-drawer-tab-close").click();
+      const sel = SEL[e];
+      if (sel !== undefined) view.select(sel == null ? null : [...view.atom.get().focus, sel]);
+      else if (e === "x") {
+        if (open()) s.root.querySelector(".stage-drawer-tab-close").click();
       } else if (e === "on" || e === "off") {
-        if (s.local.get().body.id === "edit") api.run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
-      } else api.body.enter(e);
-      await step();
+        if (view.atom.get().body.id === "edit") inspectorApi().run({ ext: "scene.inspector", command: "inspector", value: e === "on" });
+      } else if (e === "look" || e === "edit") view.enterBody(e);
+      else if (e === "enter") view.enter(["L"]);
+      if (e === "beat") await beat();
+      else await still();
     };
     const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((q) => alphabet.map((e) => [...q, e])));
-    const seqs = [0, 1, 2].flatMap((n) => words(EVENTS, n)).concat(words(["obj", "none", "x", "look", "edit"], 3));
+    const seqs = [0, 1, 2].flatMap((n) => words(EVENTS, n)).concat(words(["obj", "none", "x", "look", "edit", "beat", "enter"], 3));
     let cases = 0;
     for (const q of seqs) {
-      // from Edit, nothing selected, the tab shut
-      api.body.enter("look");
-      await pick(null);
-      api.body.enter("edit");
-      await step();
-      expect(tab().isOpen()).toBe(false);
-      let m = { edit: true, sel: null, open: false, dismissed: false };
+      // from Edit at the outermost scene, nothing selected, the tab shut, no beat pending
+      view.focusOn([]);
+      view.enterBody("look");
+      view.select(null);
+      await beat();
+      view.enterBody("edit");
+      await still();
+      expect(open()).toBe(false);
+      let m = { edit: true, sel: null, open: false, dismissed: false, waiting: false, inside: false };
       for (const e of q) {
         await apply(e);
         m = model(m, e);
-        expect(tab().isOpen(), q.join(" ")).toBe(m.open);
+        expect(view.atom.get().focus, q.join(" ")).toEqual(m.inside ? ["L"] : []);
+        expect(open(), q.join(" ")).toBe(m.open);
       }
       cases++;
     }
-    expect(cases).toBe(1 + 9 + 81 + 125);
-  }, 60_000);
+    expect(cases).toBe(1 + 11 + 121 + 343);
+  }, 240_000);
 
   it("following the selection, it comes in behind a pane already shown (the parts bin), a tab to pick; alone, it shows", async () => {
     const pane = document.createElement("div");
     const other = { meta: { id: "t.bin" }, module: { create: (api) => (api.dock(pane, { title: "Bin" }), {}) } };
     await bare({ a: object({ name: "A" }) }, [other]);
     expect(s.debug.drawer().shown).toBe(pane);
-    await select("a");
+    await pick("a");
+    await beat();
     expect(tab().isOpen()).toBe(true);
     expect(s.debug.drawer()).toEqual({ order: [pane, tab().body], shown: pane });
   });
@@ -636,12 +701,13 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
     await bare({ a: object({ name: "A" }) }, [{ meta: { id: "scene.toolbar" }, module: toolbar }]);
     const pressed = () => s.root.querySelector('.toolbar [data-command="inspector"]')?.getAttribute("aria-pressed");
     expect(pressed()).toBe("false");
-    await select("a");
+    await pick("a");
+    await beat();
     expect(pressed()).toBe("true");
-    await select(null);
+    await pick(null);
     expect(pressed()).toBe("true");
     s.root.querySelector(".stage-drawer-tab-close").click();
-    await settle();
+    await still();
     expect(tab().isOpen()).toBe(false);
     expect(pressed()).toBe("false");
   });

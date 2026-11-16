@@ -16,12 +16,16 @@ import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
 
-// The outline is a drawer tab the viewer opens: these tests have it open.
+// The outline is a drawer tab the viewer opens, and the inspector one a
+// selection opens a beat later (TOOLS.md Decisions 6): these tests have both
+// open, the inspector from the toolbar.
 const opener = {
   create(api) {
+    let asked = false;
     return {
       update() {
         api.run({ ext: "scene.outline", command: "objects", value: true });
+        if (!asked) asked = api.run({ ext: "scene.inspector", command: "inspector", value: true });
       },
     };
   },

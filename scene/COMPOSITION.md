@@ -135,20 +135,27 @@ Still open:
   own pick lands on doesn't cure it: in the real Patchwork on 2026-11-16
   (presence-check.nopause runs 3 and 4, aims checked so) first presses
   still landed on her Card table 80 ms after the aim;
-- the first click of a double-click can open the inspector under the
-  second: with the inspector shut, a first press that selects anything
-  (the link, or the Card table it missed onto) narrows the canvas, and
-  where the inspector now lies the second press and the dblclick are the
-  inspector's, so the stage never hears them (editclick-run's first try,
-  every run: a 700 px view, its press missing the card for the Card table,
-  the gaps 222 to 250 ms, well inside the gate). The second try, the
-  inspector already open, enters. The same in the real Patchwork
-  (presence-check.nopause run 3, B's first try: the first press on the
-  Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
 Fixed since (each item names its Decisions section below):
+- the first click of a double-click could open the inspector under the
+  second: with the inspector shut, a first press that selected anything
+  (the link, or the Card table it missed onto) narrowed the canvas, and
+  the second press and the dblclick landed on the inspector or on
+  whatever the narrower canvas put under the pointer (editclick-run's
+  first try, every run: a 700 px view narrowed to 480 px between the
+  presses; the real Patchwork's presence-check.nopause run 3, B's first
+  try, the second press on the inspector's behaviour picker). A selection
+  now opens a shut inspector a beat later, DOUBLE_MS on the stage's time
+  (TOOLS.md, Decisions 6, "The inspector waits a beat"; lane/n11). In
+  editclick-run (seeds 1 and 2, each before and after) every press and
+  dblclick now reaches the canvas at the width the first press found
+  (700 px), where before the second press found it 480 px. Seed 2's first
+  try enters; seed 1's first press still misses the card for the Card
+  table, which is the single-click item under "Still open", not this one.
+  Not yet checked in the real Patchwork (enter-check, presence-check.nopause
+  on scratch copies, once the integrator has synced the scene package).
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her

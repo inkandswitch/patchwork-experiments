@@ -43,7 +43,7 @@ each build step.
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
-| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (a selection opens it in Edit; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
+| **Drawer** | One panel at the stage's right where panes are docked (`api.dock`), one shown at a time under tabs: the inspector (a selection opens it in Edit, a beat later if it's shut; it stays open, on the scene when nothing is selected, until its ×, the toolbar or leaving Edit), the outline, dimensions and parts (when the viewer opens them), Camber's Shape, a die's panel, a bag's. |
 | **Start** | Where the doc starts people: `view.start = { body, place, home }`, read once on arrival (the body entered at the place; the camera at home). Not a mode: nothing about it lasts past arrival. |
 | **Edit** (a write) | A write the stage's own editing parts make through `api.edit` (the halo's handles, the inspector, transfer, add, remove, the outline): this viewer's, undoable in the focus doc. A verb, a clock act or a process's save is never one. |
 
@@ -354,7 +354,9 @@ happened to start in never counts.
 **Chrome follows attention, never the doc** (TOOLS.md §1). Every general
 part runs in every scene, a game's included; what keeps the editor's chrome
 out of a game is that it shows only where attention asks for it. The
-inspector is a drawer tab a selection opens in Edit; it stays open, on
+inspector is a drawer tab a selection opens in Edit (a beat later,
+DOUBLE_MS, if it's shut, so a double-click's second press finds the canvas
+its first did); it stays open, on
 the scene when nothing is selected, until its × (shut until the selection
 changes), the toolbar's Inspector or leaving Edit shuts it; the outline (Objects), Dimensions and Parts are
 drawer tabs the viewer opens from the toolbar; grid, axes and bounds are
