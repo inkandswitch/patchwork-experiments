@@ -261,9 +261,14 @@ its glazing and a red dome, on a black rock outcrop (proportions and rock
 assumed); and the **Mount Ozzard radar dome**, the "golf ball", a white ball
 16.8 m across (OSM's footprint) to OSM's height of 17 m.
 
-The yard's ground inside the lot's box is one gravel tone above the highest
-normal tide (`site.apron`: its edge is the shore cut's at MHHW, crisp; the
-surface assumed), and the place's shore is rock under the town's lots too
+The yard's ground inside the lot's box above the highest normal tide is
+grey wet asphalt and gravel (`site.apron`: `#6d6c68` with darker wet
+patches by node, a grass verge along the waterfront within 14 m of the
+water, cobble in the intertidal below it; its edge is the shore cut's at
+MHHW, crisp; the surface assumed, from the seaplane-base courtyard
+photographs and imagery), with yard gear on its own layer (`boatyard.gear`,
+dressing: rows of blue and white fish totes where imagery shows rows of
+bins east of building J, a log pile by the gravel west of the hangar), and the place's shore is rock under the town's lots too
 (`look.shoreRock`: the bare rock band above the lichen under any cover but
 a beach, a dark bank 3–5 m up, not lawn to the waterline).
 
@@ -294,6 +299,14 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   areas, …), kept in its own file doc: wood, scrub, residential, yard
   (industrial, commercial, quarry…), grass, wetland, beach, bare rock, lakes,
   painted on the grid largest first.
+- **No legend**: a ground coloured by what covers it isn't "ground by
+  height", so a place with a look carries no `extras.legend` (the scene's
+  colour bar was saying so falsely); a place without one keeps it.
+- **The water's own colour**: each place's Sea carries it on its `water`
+  trait (`colour: { deep, scatter }`, water/WATER.md): Cadboro Bay's the
+  Salish Sea's grey-green (`template.js BAY_WATER`), Ucluelet's inlet a
+  darker grey-green (`WATER_COLOUR`), and under an overcast a crest
+  scatters a third of the light, so the water holds the shore's darkness.
 - **The ground's colour** by height, cover and the tide: the intertidal and
   splash bands from the place's own tide levels (kelp below MLLW, mussel,
   rockweed, barnacle to MHHW, black lichen to HHWLT + 1.1 m, bare rock), a
@@ -362,6 +375,38 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   shores are serrated; the roof stays under them, the dark underlayer.
   A clump is one instance of one of six meshes (14,410 at Ucluelet, about
   3.3 MB). Every choice is the node's: local, tested tile by tile.
+  Where the skin covers **all** the forest (`trees.skin.all`, Ucluelet's):
+  every other forest node in the circles gets a clump of *low* crowns too
+  (`SKIN_PROFILES.low`: whole conifers down to a metre over the ground, 7 m
+  across, sunk 1.5 m into a slope), where the second growth among the lots
+  and behind the basins is too patchy for a roof (the lidar says over 5 m
+  on 70% of the hill south of the basins, 43% of the town's peninsula, 70%
+  of Amphitrite's headland; the roof covered a third of that); a node at
+  the water keeps its stand instead (a node is a stand's or a clump's,
+  never both, never neither: `clumpOf`, checked at every node in the tests
+  and on the real data by `probes/fetch-ucluelet.mjs`); and where the
+  canopy is 3 to 5 m on wild ground or a lot (`skin.scrub`), squat shore
+  pine and salal clumps. Under the skin the roof sits at 0.72 of the canopy
+  (`skin.roofDepth`), so the crowns stand out of it as cones, and the
+  ground in the trees' shade (canopy over 5 m) is nearly black
+  (`look.colours.forestShade`), not lawn between the crowns. Ucluelet:
+  14,103 roof, 4,815 low and 1,697 scrub clumps (20,615 in all; the roof's
+  clumps on a stand's node, 307 of them, went: the stand is its crowns).
+- **The detail falls off with distance** (`trees.bands`, metres beyond
+  the skin's circles, `beyondCircles`): stands at the water only inside
+  them (`stands: 0`), the roof's edge trees to 2 km beyond, the fringe's
+  single trees to 5 km, then the roof alone (the far hills are grey shapes
+  in the fog). Ucluelet's trees went from 55,000 (capped from 111,269, the
+  cap dropping the harbour's own edge trees first) to 27,520, none capped.
+- **Instances by tile** (`tileInstances`, `trees.tiles`): the scene draws
+  the nodes sharing a mesh as one InstancedMesh, culled by its bounds; one
+  mesh a species over 20 km was never culled (9.2 M triangles in every
+  view). Each kind's mesh is written again for every tile its nodes fall
+  in (1 km inside the circles, 4 km beyond; glb.js `sameAs`: new accessors
+  on the same bytes, so three's loader makes each a geometry of its own),
+  so a tile out of view isn't drawn. The nodes are the same nodes (tested:
+  the union of the tiles is the whole); about 600 meshes, 270–480 draw
+  calls a view.
 - **Low scrub** (`trees.scrub`, `scrubCover`): where the lidar's canopy is
   0.8 to 5 m on wild land (Amphitrite's headland, Ozzard's upper slopes),
   salal and shore pine, not turf: a bumpy sheet over the ground at its
@@ -372,11 +417,19 @@ The same machinery for every place with a `look` (Ucluelet and Cadboro Bay):
   kind and cover (houses 5.5 m to the eave, 32°; hotels 9.5 m; industrial
   8.5 m, 8°: assumptions, as OSM rarely says); colours from the West Coast
   palette by a hash of the OSM id (not checked house by house). OSM maps
-  about half of Ucluelet's buildings.
+  about half of Ucluelet's buildings. A place's `look.buildings` may give
+  its own walls (Ucluelet's muted siding: weathered cedar, grey-green, barn
+  red, slate blue, white), facade `details` (`facade`: white corner boards
+  and an eave band on every wall, a row of dark windows a storey; an
+  industrial building's walls ribbed instead) and `decks`: a building whose
+  ground reaches the water stands on a pile deck above the highest tide
+  (`pileDeck`: a slab with a dark edge, black piles every 4 m where the
+  ground is under it), an industrial one there in cream corrugated cladding
+  (a fish plant). Ucluelet: 36 buildings on decks.
 
 The small solids carry no normals (a glTF loader draws them flat-shaded,
 which they are), and the buildings are a primitive a colour: Ucluelet's GLB
-is about 37.6 MB (32.9 MB before the skin, the scrub and 55,000 trees; 23.5
+is about 38.7 MB (37.6 MB before the dense forest, its tiles, the shore's dressing and the buildings' details; 32.9 MB before the skin, the scrub and 55,000 trees; 23.5
 MB before the shore's cut, the stands, the surf and the cloud), Cadboro Bay's was 15.3 MB before the shore's cut
 (not measured since; it was 7.8 MB before its 5,910 buildings, most of the
 rest).
@@ -404,6 +457,13 @@ rest).
   the most exposed waterline (dressing, assumed). Ucluelet: 1,934 of 14,696
   pieces in 289 runs (Amphitrite, the Wild Pacific Trail shore, the outer
   islets), 608 reef patches, 203 boulders.
+- **Drift logs and the harbour's boulders** (`shore-dressing.js`, where a
+  place's look has `shore`): dressing. Along the coastline's pieces inside
+  the place's circles, a piece by its own hash gets a silver-grey log or two
+  (8 to 20 m, 0.5 to 1 m across) lying roughly along the shore where the
+  ground first reaches the highest tide (HHWLT) walking inland; and the
+  surf's boulders along the sheltered waterline too, at a lower chance.
+  Ucluelet: 483 logs, 221 boulders, on their own layer.
 - **Low cloud and mist** (`cloud.js`, where a place's look has `clouds`):
   weather dressing. Stratus banks at about 380 m wherever the ground at
   every 14th node is near that level (the cloud base meeting a slope:
@@ -415,8 +475,16 @@ rest).
   over its base, its underside sagging under it, its rim ragged (a smoothed
   hash a sector, 0.6–1 of its half-size), its alpha falling to nothing at
   the rim and wherever the ground is close under it, so it thins into a
-  hillside rather than cutting it. 76 banks at Ucluelet. The sky's "marine layer" doesn't thicken them (they are in
-  the GLB, the sky in a trait): a follow-up.
+  hillside rather than cutting it. The sky's "marine layer" doesn't thicken them (they are in
+  the GLB, the sky in a trait): a follow-up. Where a place asks
+  (`clouds.bake`, Ucluelet's), the stratus is baked into colours instead
+  (`bakeStratus`): above 250 m the ground's, the roof's and the scrub's
+  vertices lerp toward the fog's colour by (h − 250) / 300 (at most 0.85),
+  ± 30% by a hash of where each vertex is, so the hilltops dissolve into
+  the overcast in ragged patches; the lenses still read as stacked stripes
+  on Ozzard and the range from the water. Ucluelet then keeps no banks
+  (`sheets: null`, `mist: null`) but its caps: Ozzard's collar and two low
+  wisps over the hills behind the town (a cap with a negative `below`).
 - **Boats about the harbour** (`look.boats`): a few placed by hand, each
   an assumption in at least 10 m of water: a troller outbound, a
   whale-watching boat past Lyche Island, a water taxi coming in, a seiner
@@ -424,17 +492,22 @@ rest).
   in 2016 (CBC, Times Colonist).
 - **Boats on the floats** (`boats.js`): dressing, not data. Nobody maps
   which boat is in which slip, so each float's slips (one every 12 m a side,
-  about two in three taken) get a troller, a small seiner or crabber, or an
-  aluminium sportfisher by hash of the float's id and the slip, the same
-  every build. Their layer says they are dressing.
+  about five in six taken) get a troller (its two trolling poles 1.5 times
+  her length, raised in a V), a small seiner or crabber, an aluminium
+  sportfisher or a sailboat (a mast 1.3 times her length, a boom, on some
+  a blue cover) by hash of the float's id and the slip, the same every
+  build; every hull rises to its bow, a dark boot stripe at the waterline.
+  Their layer says they are dressing. Every float stands among tall black
+  guide piles (`structures.js floatPiles`: every 15 m, alternating sides,
+  5 to 7 m above mean water).
 
 ## Layers
 
 The GLB declares layers (scene README, "GLB conventions"): **Forest**,
 **Buildings**, **Docks, floats and breakwaters**, **Lights, buoys and
 beacons**, **Landmarks**, **Moored boats (dressing)**, **Surf**, **Low
-cloud and mist**, and a place's own (Ucluelet's boatyard and its five
-sub-layers, the removed buildings and today's pier arm hidden by default:
+cloud and mist**, **Drift logs and boulders**, and a place's own
+(Ucluelet's boatyard and its six sub-layers, the removed buildings and today's pier arm hidden by default:
 the scene shows the plan). The ground is on none.
 
 ## The frame
@@ -547,7 +620,7 @@ heights ──RTIN, tolerance by height──▶ the ground mesh, checked at eve
   heightfield, 0.35 MB the nodes' quality; with the look, 15.3 MB);
   Ucluelet's ground, at 20 m over hills to 770 m, ~430,000 triangles.
 - **Structures** (`src/structures.js`): floats (`man_made=pier`,
-  `floating=yes`) 2.4 m wide, +0.5 m; fixed piers as decks at +2.0…2.8 m;
+  `floating=yes`) 2.4 m wide, +0.5 m, among guide piles; fixed piers as decks at +2.0…2.8 m;
   breakwaters as rock walls to +3 m; groynes. Heights are about MWL (the
   floats don't rise and fall with the tide).
 - **Marks** (`src/marks.js`): lighthouses, light towers and beacons on

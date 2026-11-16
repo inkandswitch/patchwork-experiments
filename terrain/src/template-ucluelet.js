@@ -10,7 +10,7 @@
 // and lays sailing's sloop at anchor off the new dock, if sailing is
 // installed (found by its part's id in the registry, never imported).
 
-import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN } from "./ucluelet.js";
+import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN, WATER_COLOUR } from "./ucluelet.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 import { localFrame } from "./tmerc.js";
@@ -97,7 +97,7 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
   const sea = ctx.newId("o");
   ctx.change((d) => {
     d.traits[WEATHER] = { wind: { speed: WIND.speed, from: WIND.from }, seed };
-    const water = bayWater(seed, HINT); // the Sea keeps Ucluelet's grid, 130 m deep, where its world has no open water
+    const water = bayWater(seed, HINT, WATER_COLOUR); // the Sea keeps Ucluelet's grid, 130 m deep, where its world has no open water
     water.name = "Ucluelet Harbour and the open coast";
     water.traits["sailing.sea"].scale = WIND.scale;
     d.objects[sea] = water;

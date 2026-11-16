@@ -1,14 +1,15 @@
 // Harbour structures from OSM, extruded: floats (man_made=pier,
-// floating=yes) as low pontoons, fixed piers as decks above the
+// floating=yes) as low pontoons among their tall black guide piles, fixed piers as decks above the
 // highest tide (a slab: the piles aren't drawn), breakwaters as rock walls,
 // groynes as low walls. An area
 // is extruded as drawn; a line is widened (its width tag, else the kind's).
 // Heights are above mean water level (the floats don't ride the tide).
 
-import { soup, prism, widen } from "./shapes.js";
+import { hashString } from "./buildings.js";
+import { soup, prism, widen, cylinder } from "./shapes.js";
 
 export const KINDS = Object.freeze({
-  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#a8a398" },
+  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#a8a398", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
   pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#7a7368" },
   breakwater: { width: 8, top: 3, bottom: -6, colour: "#8d877c" },
   groyne: { width: 3, top: 1.5, bottom: -2, colour: "#807a6e" },
@@ -29,11 +30,38 @@ export function structureMesh(structures, { inside = () => true } = {}) {
     if (!st.points.some(([x, z]) => inside(x, z))) continue;
     const k = KINDS[kindOf(st)];
     if (!k) continue;
-    const ring = st.area ? st.points : widen(st.points, st.width > 0 && st.width < 50 ? st.width : k.width);
+    const width = st.width > 0 && st.width < 50 ? st.width : k.width;
+    const ring = st.area ? st.points : widen(st.points, width);
     if (ring && prism(s, ring, k.bottom, k.top, k.colour)) made++;
     else skipped.push(st.id);
+    if (k.piles && !st.area) floatPiles(s, st, width, k.piles, inside);
   }
   return { ...s.done(), made, skipped };
+}
+
+/**
+ * A float's guide piles: tall, black, creosoted, through hoops at its edges
+ * every `every` metres along each side (alternating sides, so a slip has one
+ * either end), from well under the water to `top` (a range: by hash of the
+ * float's id and the pile), as a harbour's floats stand among them.
+ */
+export function floatPiles(s, st, width, { every, top: [t0, t1], colour, r }, inside = () => true) {
+  let q = 0;
+  for (let p = 0; p + 1 < st.points.length; p++) {
+    const [ax, az] = st.points[p], [bx, bz] = st.points[p + 1];
+    const L = Math.hypot(bx - ax, bz - az);
+    if (L < 1) continue;
+    const ux = (bx - ax) / L, uz = (bz - az) / L;
+    const n = Math.max(1, Math.round(L / every));
+    for (let i = 0; i <= n; i++, q++) {
+      if (i === n && p + 2 < st.points.length) continue; // the next leg's first
+      const side = q % 2 ? 1 : -1, off = width / 2 - 0.1;
+      const x = ax + ux * L * (i / n) - uz * off * side, z = az + uz * L * (i / n) + ux * off * side;
+      if (!inside(x, z)) continue;
+      cylinder(s, x, z, -6, t0 + (t1 - t0) * hashString(`${st.id}#${q}`, 9), r, r * 0.9, colour, 6);
+    }
+  }
+  return q;
 }
 
 export const ROCK = Object.freeze({ colour: "#7a7267" });

@@ -12,6 +12,8 @@
 // - mist: the same walk over the forest's hollows (a node lower than the
 //   mean of the ring `every` nodes round it by at least `hollow`), a thin
 //   bank `lift` metres over the canopy;
+// - bake: where the place asks, stratus baked into the ground's and the
+//   forest roof's colours above a height (bakeStratus): no sheet at all;
 // - caps: where the place names one (its look's clouds.caps: a summit), a
 //   bank wrapped round it `below` metres under the top (Mount Ozzard's,
 //   under the radome).
@@ -42,6 +44,34 @@ export const CLOUDS = Object.freeze({
   caps: [],
 });
 
+/** Whether (x, z) is inside any of `circles` ([{ x, z, radius }] in the frame); anywhere without any. */
+const within = (circles, x, z) => !circles?.length || circles.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 <= c.radius * c.radius);
+
+/**
+ * Stratus baked into colours (a place's clouds.bake): from `from` metres up,
+ * every vertex lerped toward the fog's colour by (y − from) / span (at most
+ * `max`), ± `noise` of that by a hash of where it is (to the metre), so the
+ * hilltops dissolve into the overcast in ragged patches, not bands, and no
+ * sheet seen edge-on draws a stripe. In place; returns how many vertices it
+ * touched. Pure but for `colors`.
+ * @param {Float32Array} positions  xyz
+ * @param {Float32Array} colors  rgb (linear), as many
+ */
+export function bakeStratus(positions, colors, { from = 250, span = 300, max = 0.85, noise = 0.3, colour = "#959ea1" } = {}) {
+  const fog = hexToLinear(colour).slice(0, 3);
+  let touched = 0;
+  for (let v = 0; v < positions.length / 3; v++) {
+    const y = positions[v * 3 + 1];
+    if (y <= from) continue;
+    const x = Math.round(positions[v * 3]), z = Math.round(positions[v * 3 + 2]);
+    const u = hash01((Math.imul(x, 73856093) ^ Math.imul(z, 19349663)) >>> 0, 96);
+    const t = Math.max(0, Math.min(max, Math.min(1, (y - from) / span) * (1 + (u - 0.5) * 2 * noise)));
+    for (let c = 0; c < 3; c++) colors[v * 3 + c] += (fog[c] - colors[v * 3 + c]) * t;
+    touched++;
+  }
+  return touched;
+}
+
 /** A bank's polar grid: RINGS rings out from its middle, SECTORS sectors round. */
 export const RINGS = 4, SECTORS = 14;
 
@@ -65,7 +95,7 @@ export function sheetsAt(grid, ground, canopy, clouds = CLOUDS, k0 = 0, k1 = gri
         out.push({ k, kind: "stratus", x: x0 + i * cell, z: z0 + j * cell, y: L + (hash01(k, 210 + q) - 0.5) * 30, size: S.size * (0.75 + 0.5 * hash01(k, 220 + q)), alpha: S.alpha * (0.7 + 0.3 * hash01(k, 230 + q)), clear: S.clear, thick: (S.thick ?? CLOUDS.sheets.thick) * (0.7 + 0.6 * hash01(k, 235 + q)) });
       });
     }
-    if (M && canopy && canopy[k] > 5 && i % M.every === 5 % M.every && j % M.every === 5 % M.every && hash01(k, 240) < M.chance) {
+    if (M && canopy && canopy[k] > 5 && i % M.every === 5 % M.every && j % M.every === 5 % M.every && hash01(k, 240) < M.chance && within(M.within, x0 + i * cell, z0 + j * cell)) {
       // a hollow: lower than the ring round it
       let s = 0, c = 0;
       for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {

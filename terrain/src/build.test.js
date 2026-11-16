@@ -55,7 +55,11 @@ describe("buildTerrain", () => {
     expect(names).toEqual(["Ground", "Skirt", "Harbour_structures", "Moored_boats", "Marks"]);
     const { json } = parseGLB(built.glb);
     expect(json.asset.extras.units).toBe("m");
-    expect(json.meshes[0].extras.legend.stops.length).toBe(32);
+    // a place with a look is coloured by what covers it, not its height: no height legend
+    expect(json.meshes[0].extras?.legend).toBeUndefined();
+    // a place without one is coloured by height, and says so
+    const plain = parseGLB(buildTerrain({ doc: terrainDoc({ look: undefined }), dem: dem(), features: features(), params: { forest: false } }).glb).json;
+    expect(plain.meshes[0].extras.legend.stops.length).toBe(32);
   });
 
   it("carries its heightfield in extras.terrain: exactly the burned heights, decodable by the copyable sampler", async () => {

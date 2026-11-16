@@ -228,6 +228,9 @@ export const SKIES = Object.freeze({
 });
 
 /** Named places (lat, lon from OSM unless noted). */
+/** The inlet's water (the water trait's `colour`): dark grey-green that holds the forest's darkness, as photographs of the harbour and inlet under cloud show; art direction. */
+export const WATER_COLOUR = Object.freeze({ deep: "#1e3a3c", scatter: "#3d6a5f" });
+
 export const PLACES = Object.freeze([
   { name: "Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", kind: "site", lat: 48.9491, lon: -125.557758, note: "the survey's building A" },
   { name: "Ucluelet Water Aerodrome (former RCAF seaplane base)", kind: "aerodrome", lat: 48.94993, lon: -125.55797, osm: "node/1042023560" },
@@ -279,7 +282,7 @@ export const SITE = Object.freeze({
   },
   ground: YARD,
   // the yard's ground inside the lot's box, above the highest normal tide: one even gravel tone, its edge the shore's cut at MHHW (build.js apronMask)
-  apron: { colour: "#958b76", assumed: "A gravel and packed-earth yard, one tone (imagery's general look; the surface isn't surveyed)" },
+  apron: { colour: "#6d6c68", wet: "#5c5b58", wetShare: 0.35, verge: { colour: "#4b5734", width: 14 }, shore: "#55524b", assumed: "Grey wet asphalt and gravel with darker wet patches, a grass verge along the waterfront and cobble below it (the seaplane-base courtyard photographs' and imagery's general look; the surface isn't surveyed)" },
   layers: [
     { id: "boatyard", name: "Boatyard (1970 Harbour Crescent)" },
     { id: "boatyard.kept", name: "Buildings staying (March 2026 survey)", parent: "boatyard" },
@@ -287,8 +290,12 @@ export const SITE = Object.freeze({
     { id: "boatyard.wharf", name: "Existing wharf and pier", parent: "boatyard" },
     { id: "boatyard.planned", name: "Planned haul-out pier and electrified dock (Rising Tide, preliminary)", parent: "boatyard" },
     { id: "boatyard.today", name: "Today's pier arm, which the planned dock replaces", parent: "boatyard", visible: false },
+    { id: "boatyard.gear", name: "Yard gear (dressing: assumed)", parent: "boatyard" },
   ],
   structures: [
+    // yard gear: dressing, so the yard reads as a working one (imagery's rows of bins east of building J; a log pile by the gravel west of the hangar): positions read off the Esri z18 imagery, sizes, stacks and colours assumed
+    { id: "totes", kind: "totes", name: "Fish totes and bins in rows (dressing)", layer: "boatyard.gear", size: 1.2, rows: [{ from: [48.9492, -125.5567145], to: [48.9489004, -125.556248], stack: 3 }, { from: [48.949288, -125.5564463], to: [48.9489357, -125.5561405], stack: 2 }], colours: ["#2f5f8f", "#e3e4df", "#2f5f8f", "#c9cbc6", "#2a4f78"], source: "Esri World Imagery z18 (the rows of white bins east of building J)", assumed: "Bins 1.2 m, stacked one to three high by hash, blue and white: assumed (dressing)" },
+    { id: "logpile", kind: "logpile", name: "A pile of logs (dressing)", layer: "boatyard.gear", at: [48.9489004, -125.5584741], heading: 62, rows: 4, length: 12, radius: 0.4, colour: "#8a6e52", source: "the seaplane-base courtyard photographs' general look", assumed: "Position, size and colour assumed (dressing)" },
     {
       id: "hangar",
       kind: "hangar",
@@ -492,6 +499,8 @@ export const LOOK = Object.freeze({
     lichen: "#1b1b1a",
     rock: "#3b3a37",
     forestFloor: "#1e281b",
+    // the ground in the trees' shade (canopy over 5 m), between the crowns: nearly black
+    forestShade: "#121a12",
     shrub: "#2b3524",
     lawn: "#363d2e",
     yard: "#55585a",
@@ -524,15 +533,50 @@ export const LOOK = Object.freeze({
         { at: [48.928, -125.558], radius: 2000, note: "the Wild Pacific Trail's coast and Amphitrite Point" },
       ],
       crowns: [3, 4],
-      max: 40000,
+      // every forest node in the circles, not only the roof's: low crowns down to a metre over the ground where the forest is too patchy for a roof (the second growth among the town's lots and behind the basins), and shore pine and salal where the lidar's canopy is 3 to 5 m (Amphitrite's headland)
+      all: true,
+      scrub: { min: 3 },
+      // the roof under the crowns at 0.72 of the canopy, so they stand out of it as cones (forest.js forestRoof `depth`)
+      roofDepth: 0.72,
+      max: 60000,
     },
+    // the detail falls off with the distance beyond the skin's circles (forest.js treesAt): stands at the water within them, the roof's edge trees to 2 km beyond, the shore's single trees to 5 km, then the roof alone (the far hills are grey shapes in the fog)
+    bands: { stands: 0, edges: 2000, fringe: 5000 },
+    // the instances cut into 1 km tiles inside the circles, 4 km beyond, so the stage culls the forest a tile at a time
+    tiles: { near: 1024, far: 4096 },
     // salal and shore pine where the lidar's canopy is under 5 m (forest.js scrubCover): a bumpy low skin, not turf; darker than salal's own #3e4a2c, which lit flat read as lawn
     scrub: { min: 0.8, lift: 1, jitter: 1.5, colours: ["#323d25", "#2c3622", "#38432a", "#28311f", "#303a27"] },
   },
   // foam where the coast is open to the swell (doc.swell.from), fading to the water's grey as the stage draws it under Ukee grey: surf.js's ribbons, white water over the exposed shallows under 2.5 m, and black boulders at the most exposed waterline (dressing, assumed)
   surf: { fade: "#64737c", reef: { depth: 2.5, reef: 0.6, chance: 0.4 }, boulders: { exposure: 0.6, chance: 0.3 } },
+  // the town's buildings (buildings.js): West Coast siding, muted (weathered cedar, grey-green, barn red, slate blue, white), white corner boards and eave trim and a row of dark windows a storey; buildings at the water on pile decks, an industrial one there in cream corrugated cladding (a fish plant). Art direction, from photographs of the waterfront
+  buildings: {
+    palette: { walls: [["#7a5a40", 26], ["#5d6b5e", 18], ["#7d2f28", 12], ["#4f6070", 14], ["#e6e4dd", 18], ["#8d867b", 12]] },
+    details: true,
+    decks: true,
+  },
+  // the harbour's shores (shore-dressing.js): silver-grey drift logs at the top of the tide, and boulders along the sheltered waterline (dressing, assumed): the harbour and inlet, and the coves round Amphitrite
+  shore: {
+    within: [
+      { at: [48.945, -125.548], radius: 2300, note: "the harbour and the inlet to Hitacu" },
+      { at: [48.928, -125.558], radius: 2000, note: "the Wild Pacific Trail's coves and Amphitrite Point" },
+    ],
+    logs: { chance: 0.22 },
+    boulders: { chance: 0.1 },
+  },
   // stratus banks on the hills at about 380 m, mist over the forest's hollows (cloud.js's defaults), and a collar of cloud round Mount Ozzard's top just under the radome (dressing)
-  clouds: { caps: [{ at: [48.95939, -125.49298], below: 50, size: 760, alpha: 0.6, thick: 30, clear: 4, note: "Mount Ozzard: cloud caught under the summit" }] },
+  clouds: {
+    // the stratus baked into the hills' colours from 250 m (cloud.js bakeStratus): the tops dissolve into the overcast, no sheets seen edge-on as stripes
+    bake: { from: 250, span: 300, max: 0.85, noise: 0.3, colour: "#959ea1" },
+    sheets: null,
+    mist: null,
+    // the collar under Ozzard's radome, and two low wisps over the hills behind the town (a cap whose `below` is negative lies that far over the ground there)
+    caps: [
+      { at: [48.95939, -125.49298], below: 50, size: 760, alpha: 0.6, thick: 30, clear: 4, note: "Mount Ozzard: cloud caught under the summit" },
+      { at: [48.9375, -125.5525], below: -35, size: 340, alpha: 0.3, thick: 14, clear: 6, note: "a wisp over the hill behind the town" },
+      { at: [48.9355, -125.5415], below: -30, size: 280, alpha: 0.26, thick: 12, clear: 6, note: "a wisp over the hollow toward Spring Cove" },
+    ],
+  },
   // dressing about the harbour (boats.js), not data: assumed, each in at least 10 m of water (checked against the heights)
   boats: [
     { id: "troller-outbound", type: "troller", lat: 48.9485, lon: -125.551, heading: 125, length: 12, trim: "#8e2f27", note: "a troller under way, outbound down the harbour" },

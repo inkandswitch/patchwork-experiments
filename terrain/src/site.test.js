@@ -4,7 +4,7 @@ import { SITE, LANDMARKS, ORIGIN, GRID, PLACES, HEIGHTS, DATUM, ANCHORAGE, HOME,
 import { builtRings } from "./build.js";
 import { localFrame } from "./tmerc.js";
 import { latLonBox } from "./fetch-data.js";
-import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES } from "./buildings.js";
+import { orientedBox, classOf, buildingMesh, house, simplify, CLASSES, facade, pileDeck, paletteSoup } from "./buildings.js";
 import { COVER } from "./cover.js";
 
 const frame = localFrame(ORIGIN);
@@ -244,6 +244,41 @@ describe("buildings", () => {
     const b = [{ id: "way/1", kind: "house", points: [[0, 0], [12, 0], [12, 8], [0, 8]] }, { id: "way/2", kind: "house", points: [[0, 0], [12, 0], [12, 8], [0, 8]] }];
     const out = buildingMesh(b, { groundAt: (x) => (x > 100 ? null : 5), sinkAt: () => 0.5, coverAt: () => 0, leaveOut: (q) => q.id === "way/1" });
     expect(out.made).toBe(1);
+  });
+  it("trims a house's walls: two corner boards and an eave band a wall, and a row of windows a storey (one every 3 m), all proud of the walls (both windings)", () => {
+    for (const ring of [[[0, 0], [12, 0], [12, 7], [0, 7]], [[0, 0], [0, 7], [12, 7], [12, 0]]]) {
+      const s = soup();
+      // two storeys: floor 0, eave 5.6
+      const quads = facade(s, ring, { floor: 0, eave: 5.6 });
+      // per wall 3 trims, and windows: a 12 m wall 3 a storey, a 7 m wall 1, two storeys
+      expect(quads).toBe(4 * 3 + 2 * (3 + 1) * 2);
+      const m = s.done();
+      for (let v = 0; v < m.positions.length; v += 3) {
+        const x = m.positions[v], z = m.positions[v + 2];
+        // on or just outside the footprint's walls, never inside it
+        const inside = x > 0.001 && x < 11.999 && z > 0.001 && z < 6.999;
+        expect(inside).toBe(false);
+        expect(Math.min(Math.abs(x), Math.abs(x - 12), Math.abs(z), Math.abs(z - 7))).toBeLessThanOrEqual(0.051);
+      }
+      // ribs instead of trim and windows: one every 0.9 m a wall
+      expect(facade(soup(), ring, { floor: 0, eave: 5, ribs: "#d8d2bf" })).toBe(2 * 12 + 2 * 7);
+    }
+  });
+  it("stands a building at the water on a pile deck: piles every 4 m only where the ground is under the deck", () => {
+    const s = soup();
+    // the ground falls from 5 m at x = 0 to −5 at x = 20
+    const count = pileDeck(s, [[0, 0], [20, 0], [20, 8], [0, 8]], { deck: 3, groundAt: (x) => 5 - x / 2 });
+    // pile columns at x = 2, 6, 10, 14, 18 (rows at z = 2, 6): ground there 4, 2, 0, −2, −4; under 3 − 0.5 − 0.3 = 2.2: x ≥ 6
+    expect(count).toBe(4 * 2);
+    const out = buildingMesh([{ id: "way/9", kind: "warehouse", points: [[0, 0], [20, 0], [20, 8], [0, 8]] }], { groundAt: (x) => 5 - x / 2, sinkAt: () => 0.5, coverAt: () => 0, deckAbove: 3.1, details: true, palette: { ...CLASSES && {}, walls: [["#7a5a40", 1]], roofs: [["#3d3f42", 1]], cladding: [["#b8bcbc", 1]], metalRoofs: [["#9ea3a6", 1]], plant: "#d8d2bf" } });
+    expect(out.decks).toBe(1);
+    // the plant's cream cladding is among its colours; nothing goes below 6 m under (the piles)
+    const cream = [0xd8, 0xd2, 0xbf].map((c) => ((c / 255 + 0.055) / 1.055) ** 2.4);
+    expect(out.primitives.some((p) => p.color.every((c, i) => Math.abs(c - cream[i]) < 1e-4))).toBe(true);
+    let lo = Infinity;
+    for (const p of out.primitives) for (let v = 1; v < p.positions.length; v += 3) lo = Math.min(lo, p.positions[v]);
+    expect(lo).toBeCloseTo(-6, 6);
+    void paletteSoup;
   });
   it("simplifies a footprint's jogs under 0.4 m, and keeps its corners", () => {
     const ring = [[0, 0], [5, 0.1], [10, 0], [10, 10], [5, 10.2], [0, 10]];

@@ -134,3 +134,31 @@ describe("a cap round a summit", () => {
     expect(cm.indices.length).toBeGreaterThan(0);
   });
 });
+
+import { bakeStratus } from "./cloud.js";
+describe("stratus baked into colours", () => {
+  it("leaves every vertex at or under `from` as it was, and lerps every one above toward the fog by (y − from) / span ± noise, never past `max` (every height from 0 to 700 m)", () => {
+    const H = Array.from({ length: 141 }, (_, q) => q * 5);
+    const positions = new Float32Array(H.flatMap((y, q) => [q * 37.3, y, -q * 11.1]));
+    const colors = new Float32Array(H.flatMap(() => [0.02, 0.03, 0.02]));
+    const o = { from: 250, span: 300, max: 0.85, noise: 0.3, colour: "#959ea1" };
+    const touched = bakeStratus(positions, colors, o);
+    expect(touched).toBe(H.filter((y) => y > 250).length);
+    const fog = [0x95, 0x9e, 0xa1].map((c) => ((c / 255 + 0.055) / 1.055) ** 2.4);
+    H.forEach((y, q) => {
+      const t = (colors[q * 3] - 0.02) / (fog[0] - 0.02);
+      if (y <= 250) expect(colors[q * 3]).toBe(Math.fround(0.02));
+      else {
+        const base = Math.min(1, (y - 250) / 300);
+        expect(t).toBeGreaterThanOrEqual(Math.min(0.85, base * 0.7) - 1e-5);
+        expect(t).toBeLessThanOrEqual(Math.min(0.85, base * 1.3) + 1e-5);
+        // every channel by the same share
+        for (const c of [1, 2]) expect((colors[q * 3 + c] - [0.02, 0.03, 0.02][c]) / (fog[c] - [0.02, 0.03, 0.02][c])).toBeCloseTo(t, 4);
+      }
+    });
+    // the same bytes again (a function of where each vertex is)
+    const again = new Float32Array(H.flatMap(() => [0.02, 0.03, 0.02]));
+    bakeStratus(positions, again, o);
+    expect(again).toEqual(colors);
+  });
+});
