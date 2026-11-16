@@ -134,7 +134,9 @@ your body: scene/TOOLS.md §5). Where pointer lock is refused, drag to look.
 On a touchscreen nothing locks the pointer: drag to look, and the stage's
 touch pad shows the keys above by what they do (Forward, Back, Left, Right,
 Run, Jump on deck; at a station Steer to port / starboard, Haul in, Ease
-out, Halyard, Furler, Back jib / let fly, Leave).
+out, Halyard, Furler, Back jib / let fly, Leave). The use prompt's buttons
+are their keys: a finger held on "hold F Raise anchor" winds the chain in
+for as long as it's down (scene/TOOLS.md Decisions 13).
 
 **The companionway**, at the cockpit's forward end, is the way below:
 washboards in the cabin's aft end, and a hatch over them that slides forward
@@ -228,7 +230,7 @@ pnpm test:all      # both
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
-node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad (build scene/, water/ too)
+node probes/touch-run.mjs     # the crew by touch (Chrome touch emulation): aboard, the pad, the helm by the prompt and the pad, the anchor dropped and raised by the prompt's buttons (build scene/, water/ too)
 node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)
 node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
 node probes/ship-shots.mjs <dir> "quarter?trim=luff"   # her parts rendered; ?trim= dresses the sails with looks.js (beat, luff, stall, backed, reef, run)
