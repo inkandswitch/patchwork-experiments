@@ -101,6 +101,18 @@ export function follow(m, want, { pickUp, putDown }) {
 }
 
 /**
+ * The ports Play may sit you at on a machine with seats, in the order it
+ * tries them: `prefer` (the screen's player) first, then the rest in port
+ * order; of those, each that nobody holds (`holders`, runMachine's) and
+ * whose seat (`seats`, the trait's, by port) the seats say is free
+ * (`stateOf(seat id)`, the roster's for this object's seat). Pure.
+ */
+export function openPorts(holders, seats, prefer, stateOf) {
+  const order = [prefer, ...holders.keys()].filter((p, i, all) => all.indexOf(p) === i && p >= 0 && p < holders.length);
+  return order.filter((p) => holders[p] === null && typeof seats?.[p] === "string" && stateOf(seats[p]) === "free");
+}
+
+/**
  * The port Play takes on a machine with no seats: `prefer` (the screen's
  * player) if it's free, else the first free one, else null. `holders` is
  * runMachine's: by port, a holder or null.

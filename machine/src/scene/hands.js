@@ -4,8 +4,11 @@
 // - A machine whose trait lists seats (seating.js) is played by sitting at
 //   them. Sitting is holding: each frame the port follows the seat this view
 //   sits in (`follow`), taken with the pad in hand on sitting down and given
-//   back on getting up. Escape puts the pad down and keeps the port while
-//   you sit; P picks it back up.
+//   back on getting up. Play is the way in: not sitting at it, P sits you at
+//   its first free port's seat (the screen's player's first: openPorts),
+//   through the seats' roster (`sit`), and the port and pad follow; every
+//   port taken, it says so. Escape puts the pad down and keeps the port
+//   while you sit; P picks it back up.
 // - A machine that lists none is played by Play alone: P takes a free port
 //   with the pad (the screen's player's first: portToPlay), and Escape gives
 //   it back.
@@ -16,7 +19,16 @@
 // runMachine's (host.seat, holders(), play(port), leave()), `pad` input.js's.
 
 import { KEYS } from "../patchwork/input.js";
-import { portOf, follow as followSeat, portToPlay } from "./seating.js";
+import { portOf, follow as followSeat, portToPlay, openPorts } from "./seating.js";
+
+/** Why Play can't seat you at a machine with seats: nothing here owns seats (the seats package isn't loaded). */
+export const NO_SEATS = "Its seats need the seats package";
+/**
+ * Play on a machine every port of which is taken: greyed out, saying so in
+ * its label (where the prompt shows it), not only in a tooltip: a disabled
+ * verb's key does nothing, so the label is all a keyboard user gets.
+ */
+const FULL = Object.freeze({ label: "Play (every port is taken)", disabled: true, title: "Every port is taken" });
 
 /**
  * @param o.machines  Map id → machine, the extension's
@@ -25,8 +37,9 @@ import { portOf, follow as followSeat, portToPlay } from "./seating.js";
  * @param o.seatsOf   (id) → seat id per port | null: what machine `id`'s trait lists
  * @param o.prefer    (e) → the port Play offers first (the screen's player)
  * @param o.notify    (text) → void
+ * @param o.roster    () → the seats' roster ({ stateOf(ref), sit(ref) }) | null: where nothing owns seats, none
  */
-export function hands({ machines, hold, sitting, seatsOf, prefer, notify }) {
+export function hands({ machines, hold, sitting, seatsOf, prefer, notify, roster = () => null }) {
   let held = null; // { id, put }: the pad in this view's hand
 
   const seated = (e) => seatsOf(e.id) !== null;
@@ -47,6 +60,14 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify }) {
     held = mine;
     mine.put = hold({ name: `${e.title} · P${port + 1}`, keys: KEYS[e.kind] ?? [] }, input);
   }
+
+  /** The seats roster, if it can sit this view anywhere (a package's late-bound api: checked, never assumed). */
+  const sitter = () => {
+    const r = roster();
+    return typeof r?.sit === "function" && typeof r.stateOf === "function" ? r : null;
+  };
+  /** The ports Play may sit this view at on machine `e` (with seats), in order, through roster `r`. */
+  const open = (e, r) => openPorts(e.m.holders(), seatsOf(e.id), prefer(e), (seat) => r.stateOf({ of: e.id, seat }));
 
   /** What P acts on, for a look at `target`. */
   function playing(target) {
@@ -76,10 +97,13 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify }) {
       if (!e.m) return { label: "Play", disabled: true, title: e.note ?? "Starting…" };
       if (held?.id === id) return { label: "Put the pad down" };
       if (seated(e)) {
-        if (seatedAt(e) === null) return { label: "Play", disabled: true, title: "Sit at one of its seats to play (F)" };
-        return { label: "Pick up the pad" };
+        if (seatedAt(e) !== null) return { label: "Pick up the pad" };
+        const r = sitter();
+        if (!r) return { label: "Play (needs the seats package)", disabled: true, title: NO_SEATS };
+        const [port] = open(e, r);
+        return port === undefined ? FULL : { label: "Play", title: `Sit at P${port + 1} with its pad` };
       }
-      if (!e.m.holders().includes(null)) return { label: "Play", disabled: true, title: "Every port is taken" };
+      if (!e.m.holders().includes(null)) return FULL;
       return { label: "Play" };
     },
     /** The Play command's run, for a look at `target`. */
@@ -89,10 +113,18 @@ export function hands({ machines, hold, sitting, seatsOf, prefer, notify }) {
       if (!e?.m) return;
       if (held?.id === id) return void held.put();
       if (seated(e)) {
-        // sitting at it: the pad back in hand (the port is the seat's); not sitting at it, nothing (its seats are the way to play)
+        // sitting at it: the pad back in hand (the port is the seat's)
         const port = seatedAt(e);
-        if (port !== null && e.m.host.seat?.port === port) holdPad(e, port);
-        return;
+        if (port !== null) {
+          if (e.m.host.seat?.port === port) holdPad(e, port);
+          return;
+        }
+        // not sitting at it: sat at the first free port's seat that takes you (the port and its pad follow the seat, next frame)
+        const r = sitter();
+        if (!r) return void notify(NO_SEATS);
+        const seats = seatsOf(e.id);
+        for (const p of open(e, r)) if (r.sit({ of: e.id, seat: seats[p] })) return;
+        return void notify("Every port on that machine is taken");
       }
       const port = portToPlay(e.m.holders(), prefer(e));
       if (port === null || e.m.play(port) === null) return void notify("Every port on that machine is taken");
