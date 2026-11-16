@@ -567,3 +567,53 @@ describe("the cup's verbs and what the doc says", () => {
     t.w.done();
   });
 });
+
+describe("Lift all cups: on the bar of tools in every body, its state pinned (TOOLS.md Decision 10)", () => {
+  it("is a world command (the bar in every body) and a menu entry, nowhere else: in Edit the bar's world cluster shows it too", () => {
+    const t = table();
+    expect(t.cmd("A", "lift-all").show).toEqual(["menu", "world"]);
+    // the cup's own verbs stay where they were: none of them is the world's
+    for (const c of t.views.A.x.commands) if (c.id !== "lift-all") expect(c.show).not.toContain("world");
+    t.w.done();
+  });
+
+  // Every table: Alice's cup as each case says, beside it a second cup set
+  // down plain (up, nobody's), so "one" means one of two and the cup asked
+  // about need not be the one that's down. Expected: it applies exactly when
+  // some cup covers or is shaken blind with a holder (whatever is asked
+  // about, so long as it's no cup or a cup), never on a die.
+  const base = T([0, 0.75, 0]);
+  const CASES = {
+    "no cups": null,
+    "all up": { transform: lifted(base), cup: { holder: null, up: true, blind: false } },
+    "one covering": { transform: base, cup: { holder: "alice", up: false, blind: false } },
+    "one blind, held, up": { transform: lifted(base), cup: { holder: "alice", up: true, blind: true } },
+    "one blind, nobody's, up": { transform: lifted(base), cup: { holder: null, up: true, blind: true } },
+  };
+  const APPLIES = { "no cups": false, "all up": false, "one covering": true, "one blind, held, up": true, "one blind, nobody's, up": false };
+  const TARGETS = { "nothing (the bar)": null, "a cup (the plain one)": "cup2", "a die": "d0" };
+  const ROWS = Object.keys(CASES).flatMap((c) => Object.keys(TARGETS).map((g) => [c, g, APPLIES[c] && g !== "a die"]));
+
+  it("the 15-row table: cups × what it's asked about", () => {
+    expect(ROWS.length).toBe(15);
+    for (const [c, g, applies] of ROWS) {
+      const t = table({ present: ["A"] });
+      t.w.change((doc) => {
+        const it = CASES[c];
+        if (!it) {
+          delete doc.objects.cup;
+          doc.order = doc.order.filter((id) => id !== "cup");
+          return;
+        }
+        doc.objects.cup.transform = it.transform;
+        Object.assign(doc.objects.cup.traits[CUP], it.cup);
+        doc.objects.cup2 = { name: "Bob's cup", transform: lifted(T([0.4, 0.75, 0])), traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } };
+        doc.order.push("cup2");
+      });
+      t.w.flush();
+      const got = t.state("A", "lift-all", TARGETS[g]);
+      expect([c, g, got]).toEqual([c, g, applies ? { title: "Lift every cup at the table, blind ones shown to their holders too" } : null]);
+      t.w.done();
+    }
+  });
+});

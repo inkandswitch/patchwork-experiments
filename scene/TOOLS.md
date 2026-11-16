@@ -1133,8 +1133,8 @@ The project lead decided the five open questions on 2026-11-12.
      before leaving Edit stay, to take back on returning (§5).
    What it costs: editing a thing in a running game is a body change (Ben
    stops walking to move the winch, §6), and a package's toolbar command
-   (arena's Play, the cups' Lift all) was in the menu and on its key outside
-   Edit, until there was a bar of tools for games (Decisions 10).
+   (arena's Play, the cups' Lift all) was only in the menu (and on a key,
+   where it had one) outside Edit, until there was a bar of tools for games (Decisions 10).
 7. **No tie rule for verbs beyond running order** (decided unattended,
    2026-11-14, final fixer). The domino prompt shows Flip, Draw and Wash
    (the cap is three), and Stand on edge is on U and in the menu: carry's
@@ -1164,9 +1164,9 @@ The project lead decided the five open questions on 2026-11-12.
    the chip's own doc, never the focus's.
 10. **The bar of tools holds the world's commands in every body**
     (decided unattended, 2026-11-16, lane/n8, for the lead). Outside Edit,
-    a game's Play and the cups' Lift all were reachable only by menu and
-    key (or a HUD's private copy of the command), because the toolbar was
-    Edit's whole. A command that says `show: ["world"]` (only an explicit
+    a game's Play and the cups' Lift all were reachable only by menu (and
+    key, where they had one) or a HUD's private copy of the command,
+    because the toolbar was Edit's whole. A command that says `show: ["world"]` (only an explicit
     mention counts, as for the menu's scene commands; for scene commands,
     the null target, as "toolbar" is) is now on the bar of tools in every
     body, in a cluster at its right end; the editor's commands stay at the
@@ -1265,7 +1265,18 @@ The project lead decided the five open questions on 2026-11-12.
       *Question for the lead:* a big Play call to action over the level
       (what the lobby had) is gone with it; should a game keep one, and if
       so as what, given that a HUD button is the triage (f) hazard? The
-      cups' Lift all follows (lane/n8 step 4). Sailing's button reaches
+      cups' Lift all (`lift-all`, `show: ["menu", "world"]`, was
+      `["menu", "toolbar"]`) is now a button outside Edit too, where it
+      had been the menu's alone: seated watching, walking, Look. Its state
+      is unchanged (some cup covers, or is shaken blind with a holder),
+      and since it's declared the bar is up at a cups table whether or not
+      a cup is down (`dice/src/cup-extension.test.js`: its surfaces, and
+      the 15-row state table; `dice/probes/liars-dice.mjs`: seated, the
+      bars are up with nothing on them, both shake and each bar offers it
+      with neither canvas moved, and at the end A's click lifts every cup
+      down in both docs and leaves the knocked-over one alone). It's the
+      cups' only world command, so the order convention doesn't come up.
+      Sailing's button reaches
       further than her HUD did: it's on the bar wherever sailing runs on
       the focus path (an entered boat in a harbour, the Model room's boat),
       where the HUD is hidden because her doc isn't the world. It applies

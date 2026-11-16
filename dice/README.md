@@ -323,7 +323,7 @@ These are its verbs, in play:
 | Shake blind | | menu, inspector | the same, but the result is nobody's while it's down, then the seated others' to see and never yours (the forehead rule). Not offered with nobody else seated and here |
 | Peek | hold P | use prompt (held), menu (toggles) | your own cup tilts toward you, in your view alone; the others are told you peeked ("Ana is peeking" over it), never what |
 | Lift | L | use prompt, menu, inspector | anyone: lift it; whatever was under it is shown to everyone. On a blind cup that's up, "Show Ana" / "Show me": show its holder too |
-| Lift all cups | | menu, toolbar | every cup at once, blind ones shown to their holders too (a convenience: people lift; nothing waits for anyone) |
+| Lift all cups | | menu, the bar of tools in every body (seated, walking, Look, Edit) | every cup at once, blind ones shown to their holders too (a convenience: people lift; nothing waits for anyone). The bar is there at a cups table whether or not a cup is down, so it never moves the view as cups go down and up |
 | Cover | | menu | put it back down over its dice without shaking |
 | Knock over / Stand up | | menu | tip it on its side (its dice are in plain sight) / stand it back up where it was |
 
@@ -909,7 +909,9 @@ checked over every case, never sampled at random (`pnpm test`):
   refused with nobody else here, a blind round drawn alone refused, lifted
   (veiled for the holder and the spectator), Show me; the carry veto; peeks
   borne out by the doc, messages of the wrong shape dropped; knock over and
-  stand up (`cup-extension.test.js`); the cup, table and pool GLBs wound the way their normals
+  stand up; Lift all cups a world command (the bar in every body), applying
+  exactly when some cup covers or is shaken blind with a holder, asked about
+  nothing or a cup, never a die: the 15 cases (`cup-extension.test.js`); the cup, table and pool GLBs wound the way their normals
   face, at real size (`cup-glb.test.js`); the table as laid out
   (`table.test.js`).
 
@@ -939,7 +941,9 @@ node probes/dice.mjs [--shots <dir>] [--show]
 `probes/liars-dice.mjs` (with `liars-dice-probe.html`) is the cup game the
 same way, on real Automerge documents (`real-repo.js`: each peer its own
 replica, merged 25 ms later): the
-table from the start screen; Ana and Ben seated; both shake (S); each
+table from the start screen; Ana and Ben seated (each bar of tools up,
+nothing on it); both shake (S), and each bar offers Lift all cups, neither
+canvas moving; each
 view draws its own dice as its seed says and the other's not at all; Ana
 holds P (her cup tilts in her view alone; Ben is told and sees "Ana is
 peeking"); both lift (L), and the seed is checked, with WebCrypto, to be the
@@ -956,7 +960,9 @@ moment (the merge ends with one holder whose lots are its shake's); and
 Ben's replica writes a round on Ana's Black draw in Ana's name, her commit a
 nonce he holds (Ana's client refuses it and shakes again in place, a new
 draw of the same dice; Ben takes part, protesting nothing, is told why,
-and never learns her roll).
+and never learns her roll); last, Ana clicks Lift all cups on her bar, not
+in Edit, and every cup down is up in both docs, the knocked-over one left
+alone, and the button leaves both bars, which stay where they were.
 
 ```sh
 (in scene/, seats/, tabletop/ and dice/) pnpm build
