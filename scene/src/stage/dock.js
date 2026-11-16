@@ -16,8 +16,19 @@
 // were docked. With nothing docked, the drawer leaves the edge, which then
 // takes no room.
 //
+// The drawer is as wide as the kind of pane it shows (TOOLS.md §6): the
+// stage's own chrome (embed: false) a side panel's width, anything else a
+// docked editor's room. A grip on its left edge sets the shown kind's width,
+// the viewer's own (view prefs `drawer.chrome`, `drawer.editor`): drag it,
+// arrow it, or double-click it to give that kind its default back. So the
+// width is a function of the kind shown, that kind's pref and the stage's
+// size, and nothing else: docking, closing, retitling or switching between
+// panes of one kind never moves it, and a window resize never rewrites a
+// pref (the CSS clamps what it shows, so the scene keeps its share).
+//
 // The model is pure and the DOM follows it: `docked`, `shown` and `undocked`
-// below, and createDrawer, which keeps an element per docked key.
+// below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
+// createDrawer, which keeps an element per docked key.
 
 import { EMBED_ATTR } from "../embed.js";
 
@@ -56,6 +67,45 @@ export function undocked(s, key) {
   );
 }
 
+/** The two kinds of pane, each with a width of its own. */
+export const KINDS = Object.freeze(["chrome", "editor"]);
+
+/** A pane's kind: the stage's own chrome (docked with `embed: false`) or an editor. Pure. */
+export const kindOf = (embed) => (embed === false ? "chrome" : "editor");
+
+/** The narrowest and widest a viewer may set the drawer (px); the CSS narrows it further to keep the scene's share. */
+export const MIN_PX = 220;
+export const MAX_PX = 1200;
+
+/** The pref key a kind's width is kept under. */
+export const prefKey = (kind) => `drawer.${kind}`;
+
+const clampPx = (px) => Math.min(MAX_PX, Math.max(MIN_PX, Math.round(px)));
+
+/**
+ * A kind's width as the viewer set it (px) in `prefs`, or null for its
+ * default. A value that isn't a number in [MIN_PX, MAX_PX] is no setting at
+ * all, not one to clamp: only the grip writes it, and the grip never writes
+ * one. Pure.
+ */
+export function widthFor(prefs, kind) {
+  const v = prefs?.[prefKey(kind)];
+  return typeof v === "number" && Number.isFinite(v) && v >= MIN_PX && v <= MAX_PX ? v : null;
+}
+
+/** The width a drag gives: the drawer is at the right, so moving left widens it. Pure. */
+export const dragged = (startPx, startX, x) => clampPx(startPx + (startX - x));
+
+/** The width a key on the grip gives, or null for a key that isn't the grip's (it goes on). Pure. */
+export function stepped(px, key, shift = false) {
+  const step = shift ? 64 : 16;
+  if (key === "ArrowLeft") return clampPx(px + step);
+  if (key === "ArrowRight") return clampPx(px - step);
+  if (key === "Home") return MIN_PX;
+  if (key === "End") return MAX_PX;
+  return null;
+}
+
 const make = (tag, cls, attrs = {}) => {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
@@ -72,12 +122,24 @@ let paneIds = 0;
  * `onChange({ tabs, shown })` hears every change of what's docked or shown
  * (the stage publishes it as local.drawer, so a surface showing whether a
  * tab is open, the toolbar's toggles, hears of it too).
+ * The widths are the viewer's prefs: `prefs()` reads them and
+ * `setPref(key, px)` stores one (undefined: back to the default); the stage
+ * calls refreshWidth() when they change, here or in another tab.
  */
-export function createDrawer({ parent, onChange = () => {} }) {
+export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), setPref = () => {} }) {
   const drawer = make("aside", "stage-drawer", { "aria-label": "Drawer" });
+  const grip = make("div", "stage-drawer-grip", {
+    role: "separator",
+    "aria-orientation": "vertical",
+    "aria-label": "Drawer width",
+    "aria-valuemin": String(MIN_PX),
+    "aria-valuemax": String(MAX_PX),
+    tabindex: "0",
+    title: "Drag to resize; double-click for the default width",
+  });
   const tabs = make("div", "stage-drawer-tabs", { role: "tablist" });
   const panes = make("div", "stage-drawer-panes");
-  drawer.append(tabs, panes);
+  drawer.append(grip, tabs, panes);
 
   let model = EMPTY;
   /** content element → { owner, pane, tab, name, onClose, close } */
@@ -92,13 +154,94 @@ export function createDrawer({ parent, onChange = () => {} }) {
       e.name.tabIndex = sel ? 0 : -1;
       e.pane.hidden = !sel;
     }
-    // the stage's own chrome (the inspector, the outline) is as narrow as the side panel was; a docked editor gets room
-    drawer.toggleAttribute("data-narrow", !!on && entries.get(on)?.embed === false);
     if (model.order.length && drawer.parentNode !== parent) parent.append(drawer);
     else if (!model.order.length && drawer.parentNode) drawer.remove();
+    refreshWidth();
     const titles = model.order.map((k) => entries.get(k)?.name.textContent ?? "");
     onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null });
   }
+
+  /** The kind of the pane shown, or null with none. */
+  const shownKind = () => {
+    const on = shownOf(model);
+    return on ? kindOf(entries.get(on)?.embed) : null;
+  };
+
+  const measured = () => (drawer.isConnected ? drawer.getBoundingClientRect().width : 0);
+  /** The width the person sees (what a drag or a key starts from): measured, else the kind's own, else the least. */
+  const current = (kind) => measured() || widthFor(prefs(), kind) || MIN_PX;
+
+  /** Width: the shown kind's (its default by CSS, with no pref); the grip says what's shown. */
+  function refreshWidth() {
+    const kind = shownKind();
+    if (kind) drawer.dataset.kind = kind;
+    else delete drawer.dataset.kind;
+    const px = kind ? widthFor(prefs(), kind) : null;
+    if (px == null) drawer.style.removeProperty("--stage-drawer-width");
+    else drawer.style.setProperty("--stage-drawer-width", `${px}px`);
+    const now = Math.round(measured()) || px;
+    if (now) grip.setAttribute("aria-valuenow", String(now));
+    else grip.removeAttribute("aria-valuenow");
+  }
+
+  /** The grip's one write: a kind's width (undefined: its default again), then shown. */
+  function store(kind, px) {
+    setPref(prefKey(kind), px);
+    refreshWidth();
+  }
+
+  // The grip's events are the drawer's: it isn't in the port, so the router
+  // never sees its presses, and the keys it takes stop here.
+  let drag = null; // { id, kind, startPx, startX, moved }
+  grip.addEventListener("pointerdown", (e) => {
+    const kind = shownKind();
+    if (!kind || e.button !== 0) return;
+    e.preventDefault();
+    drag = { id: e.pointerId, kind, startPx: current(kind), startX: e.clientX, moved: false };
+    try {
+      grip.setPointerCapture?.(e.pointerId);
+    } catch {
+      // (a synthetic pointer has nothing to capture)
+    }
+  });
+  // where the pointer is now: the width it gives, shown live, once it has moved at all
+  const follow = (e) => {
+    if (!drag.moved && e.clientX === drag.startX) return;
+    drag.moved = true;
+    drawer.style.setProperty("--stage-drawer-width", `${dragged(drag.startPx, drag.startX, e.clientX)}px`);
+  };
+  grip.addEventListener("pointermove", (e) => {
+    if (drag && e.pointerId === drag.id) follow(e);
+  });
+  const endDrag = (e, keep) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (keep) follow(e);
+    const d = drag;
+    drag = null;
+    // a press that didn't move (a click, half a double-click) stores nothing
+    if (keep && d.moved) store(d.kind, dragged(d.startPx, d.startX, e.clientX));
+    else refreshWidth();
+  };
+  grip.addEventListener("pointerup", (e) => endDrag(e, true));
+  grip.addEventListener("pointercancel", (e) => endDrag(e, false));
+  grip.addEventListener("dblclick", (e) => {
+    const kind = shownKind();
+    if (!kind) return;
+    e.preventDefault();
+    store(kind, undefined);
+  });
+  grip.addEventListener("keydown", (e) => {
+    const kind = shownKind();
+    const px = kind ? stepped(current(kind), e.key, e.shiftKey) : null;
+    if (px == null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    store(kind, px);
+  });
+  // (and their keyups: the router never saw these keys go down)
+  grip.addEventListener("keyup", (e) => {
+    if (stepped(MIN_PX, e.key, e.shiftKey) != null) e.stopPropagation();
+  });
 
   function remove(key) {
     const e = entries.get(key);
@@ -160,8 +303,11 @@ export function createDrawer({ parent, onChange = () => {} }) {
 
   return {
     el: drawer,
+    grip,
     dock,
     closeOwner,
+    /** the stored widths changed (a pref, here or in another tab): show the shown kind's */
+    refreshWidth,
     /** for tests: the docked elements in tab order, and the one shown */
     state: () => ({ order: [...model.order], shown: shownOf(model) }),
   };

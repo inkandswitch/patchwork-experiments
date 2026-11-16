@@ -19,7 +19,9 @@
 // selected by its label and deleted; the inspector on the Scene (the
 // toolbar's Inspector: Starts in, Look or Edit) and "Add behaviour…" (an arena
 // Target on a block starts the arena in both views, beside the editor: its
-// Play in the toolbar, the editor still there in both; × stops it). The arena's checks need
+// Play in the toolbar, the editor still there in both; × stops it); the
+// drawer's grip (drag, keys, double-click, an editor's own width, a narrow
+// stage, the width remembered on opening again). The arena's checks need
 // arena/ built (its dist/ is registered alongside); without it they are
 // skipped and say so. Prints a JSON report and exits non-zero if any check
 // fails.
@@ -551,6 +553,79 @@ try {
       const stopped = await soon(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
       check("removeBehaviourStopsArena", !!x && gone && stopped && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, running: await P("running()") });
     }
+  }
+
+  // ── the drawer's grip (TOOLS.md Decisions 9): a drag widens the shown kind, the canvas gives the room, the
+  // selection stays; an editor's pane has its own width; a double-click gives the default back; a narrow stage
+  // clamps a stored width without forgetting it; opening the scene again remembers it ──
+  {
+    const R = () => A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), grip: p.rect('.stage-drawer-grip'),
+      kind: p.hostA.querySelector('.stage-drawer')?.dataset.kind ?? null, rows: p.hostA.querySelectorAll('.stage-drawer .object-row').length,
+      prefs: JSON.parse(localStorage.getItem('scene-prefs:' + window.sceneHandle.url) ?? '{}'), locked: !!document.pointerLockElement })`);
+    const tab = (name) => A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === ${JSON.stringify(name)}); e?.click(); return !!e; })()`);
+    const near1 = (a, c, eps = 2) => Math.abs(a - c) <= eps;
+    const gripAt = (g) => [g.x + g.w / 2, g.y + g.h / 2];
+    // Objects shown (the stage's chrome), Block 1 selected
+    if (!(await tab("Objects"))) await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects").click(); return true; })()`);
+    await A(`(p.A.view.atom.swap((m) => ({ ...m, selected: Object.freeze(["b0"]) })), true)`);
+    await b.rest(200);
+    await tab("Objects");
+    await b.rest(150);
+    const r0 = await R();
+    const sel0 = await selected();
+    check("gripOnTheDrawersEdge", r0.grip && r0.kind === "chrome" && r0.grip.x >= r0.drawer.x - 1.5 && r0.grip.x + r0.grip.w <= r0.drawer.x + 8 && near1(r0.drawer.w, 290), r0);
+    const [gx, gy] = gripAt(r0.grip);
+    await b.drag([gx, gy], [gx - 200, gy], { steps: 10 });
+    const r1 = await R();
+    check("gripDragWidensTheDrawer", near1(r1.drawer.w, r0.drawer.w + 200) && near1(r1.canvas.w, r0.canvas.w - 200) && near1(r1.canvas.x + r1.canvas.w, r1.drawer.x, 1) && r1.rows > 0, { before: r0, after: r1 });
+    check("gripDragStoresTheChromeWidth", near1(r1.prefs["drawer.chrome"], r0.drawer.w + 200) && !("drawer.editor" in r1.prefs), r1.prefs);
+    check("gripDragSelectsNothingLocksNothing", (await selected()) === sel0 && sel0 === "b0" && !r1.locked, { sel0, now: await selected(), locked: r1.locked });
+    // the grip's keys: ArrowLeft widens by 16
+    await A(`(p.hostA.querySelector('.stage-drawer-grip').focus(), true)`);
+    await b.key("ArrowLeft");
+    const rk = await R();
+    check("gripArrowLeftWidens16", near1(rk.drawer.w, r1.drawer.w + 16) && near1(rk.prefs["drawer.chrome"], r1.drawer.w + 16) && (await selected()) === "b0", { before: r1.drawer.w, after: rk.drawer.w, prefs: rk.prefs });
+    await shot("9-grip-wide");
+    // an editor's pane: its own width (the editor default, 46% of the stage), set apart from the chrome's
+    await A(`(() => { const el = document.createElement("div"); el.textContent = "An editor"; el.className = "probe-editor"; p.closeEditor = p.A.host.record("scene.select").api.dock(el, { title: "Editor" }); return true; })()`);
+    await b.rest(150);
+    const re = await R();
+    check("editorPaneHasItsOwnDefault", re.kind === "editor" && near1(re.drawer.w, 0.46 * re.stage.w), re);
+    const [ex, ey] = gripAt(re.grip);
+    await b.drag([ex, ey], [ex - 100, ey], { steps: 6 });
+    const re2 = await R();
+    check("editorWidthIsItsOwn", near1(re2.drawer.w, re.drawer.w + 100) && near1(re2.prefs["drawer.editor"], re.drawer.w + 100) && near1(re2.prefs["drawer.chrome"], rk.drawer.w), re2);
+    await tab("Objects");
+    await b.rest(150);
+    const rc = await R();
+    check("switchingKindsSwitchesWidths", rc.kind === "chrome" && near1(rc.drawer.w, rk.drawer.w), { chrome: rc.drawer.w, want: rk.drawer.w });
+    // a double-click: the chrome's default back, the editor's kept
+    const [dx, dy] = gripAt(rc.grip);
+    await b.dblclick(dx, dy);
+    await b.rest(150);
+    const rd = await R();
+    check("doubleClickGivesTheDefaultBack", near1(rd.drawer.w, 290) && !("drawer.chrome" in rd.prefs) && "drawer.editor" in rd.prefs && (await selected()) === "b0", rd);
+    // set it again, then a narrow stage: at most 70% of it, and the stored width back when it grows
+    await b.drag(gripAt(rd.grip), [gripAt(rd.grip)[0] - 300, gripAt(rd.grip)[1]], { steps: 8 });
+    const rw = await R();
+    await A(`(p.hostA.style.width = "600px", true)`);
+    await b.rest(250);
+    const rn = await R();
+    check("narrowStageClampsTheDrawer", rn.drawer.w <= 0.7 * rn.stage.w + 1 && rn.canvas.w >= 0.3 * rn.stage.w - 1 && rn.prefs["drawer.chrome"] === rw.prefs["drawer.chrome"], { stored: rw.prefs, narrow: rn });
+    await A(`(p.hostA.style.width = "", true)`);
+    await b.rest(250);
+    const rg = await R();
+    check("widerAgainTheStoredWidthReturns", near1(rg.drawer.w, rw.drawer.w) && near1(rw.drawer.w, rw.prefs["drawer.chrome"]), { stored: rw.prefs["drawer.chrome"], back: rg.drawer.w });
+    // opened again (as a reload would): the stored widths are read back
+    await A(`(p.closeEditor?.(), true)`);
+    await P("remountA()");
+    await b.rest(400);
+    await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Objects").click(); return true; })()`);
+    await b.rest(300);
+    const rr = await R();
+    check("openedAgainTheWidthIsRemembered", rr.kind === "chrome" && near1(rr.drawer.w, rw.drawer.w), { stored: rw.prefs["drawer.chrome"], now: rr.drawer.w });
+    report.grip = { r0: r0.drawer.w, dragged: r1.drawer.w, key: rk.drawer.w, editor: [re.drawer.w, re2.drawer.w], reset: rd.drawer.w, set: rw.drawer.w, narrow: [rn.drawer.w, rn.stage.w], back: rg.drawer.w, reopened: rr.drawer.w };
+    await shot("10-grip-reopened");
   }
 
   report.errors = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile/.test(e));
