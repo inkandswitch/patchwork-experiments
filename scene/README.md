@@ -90,9 +90,10 @@ open gesture, the held tool and the body declare, as controls a finger
 holds, while the input is touch (from the first finger on the view until a
 mouse press): the arrows' places bottom left, the rest as buttons bottom
 right under each layer's name. Which controls is `src/touch-keys.js`
-(pure, TOOLS.md §5); a control presses its key as a keyboard would, so it
-goes the one key order. Look, Edit and a seat declare no keys and show
-none.
+(pure, TOOLS.md §5); a control presses its key as a keyboard would
+(`src/hold-key.js`), so it goes the one key order. Look, Edit and a seat declare no keys and show
+none. With no keyboard the Esc hint is the Escape key: it says what it
+does ("Put it back") and a finger on it presses Escape.
 
 ## Using it
 

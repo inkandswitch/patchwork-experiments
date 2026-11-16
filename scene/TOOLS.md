@@ -239,7 +239,8 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
            enter(place) → { input, eye() → { position, direction }, ride?, leave() } }]
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
 // keys (a body's, a tool's, a gesture's): codes labelled alike do the same thing (walk's W and ↑
-// are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels
+// are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels.
+// A label names the action, not its state ("Halyard", not "Hoist" turning "Lower" once hoisted)
 ```
 
 - **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
@@ -333,25 +334,34 @@ under its reserver. A control presses its code with the key a US keyboard
 sends (keymap.js `keyOfCode`, `codeOfKey` read the other way), since
 handlers read `ev.key` as often as `ev.code`.
 
-**The pad is a keyboard** (`scene.touch`, `src/parts/touch.js`;
-Decisions 11). While the input is touch (the view's `pointer.touch`, §4)
-and there are controls, it shows them: the arrows' places bottom left,
-the other buttons bottom right over the body chip, a group per layer
-named for it (the body's label, the held tool's name, "Carrying"). A
-finger down on a control sends the keydown a keyboard sends for its code
-to the view's root, where the router hears keys, and its finger coming up
-(or cancelled, or its capture lost) the keyup. So a pad key goes the one
-key order and a shown control works as a shown key does; nothing is per
-body, and no new api. Fingers are each their own (Forward, Run and a
-look drag on the canvas at once); a control held by two is down until the
-last lifts. A control that goes while held (the body left, a carry took
-its key) or a pad that hides lets go of what it held; a pressed control
-keeps focus where it is, so the key map's held verbs stay held. A
-modifier pressed on the pad is in no DOM event's flags, so the router
-makes each event's `shift`, `alt`, `ctrl`, `meta` the DOM's flag or a
-claimed modifier held in its keys (a carry placed freely by the pad's
-Alt); a carry claims Alt from the press, before the lift, so a lift under
-it places freely too.
+**The pad presses keys as a keyboard does** (`scene.touch`,
+`src/parts/touch.js`; Decisions 11). While the input is touch (the view's
+`pointer.touch`, §4) and there are controls, it shows them: the arrows'
+places bottom left, the other buttons bottom right over the body chip, a
+group per layer named for it (the body's label, the held tool's name; a
+gesture's group is unnamed, since the stage knows no gesture's name). A finger down on a control
+sends the keydown a keyboard sends for its code to the view's root, where
+the router hears keys, and its finger coming up (or cancelled, or its
+capture lost) the keyup (`src/hold-key.js`, which the Esc hint uses too).
+So a pad key goes the one key order and a shown control works as a shown
+key does; nothing is per body, and no new api. Fingers are each their own
+(Forward, Run and a look drag on the canvas at once); a control held by
+two is down until the last lifts. A control is a layer's key: that body,
+that tool, that gesture (each its own `serial`, STAGE.md). When its layer
+goes (the body left, even for one with the same id; a carry took its key;
+another tool) or the pad hides, it lets go and is gone, so a lit control
+is a key its layer holds; on a blur or a hidden page every finger lets go,
+as the router lets go of every key. A pressed control keeps focus where it
+is, so the key map's held verbs stay held. Modifiers are the router's, as
+a keyboard has them: a modifier key down at the view's root (claimed or
+not, by a keyboard or the pad) is in every event's `shift`, `alt`, `ctrl`,
+`meta` until its keyup anywhere in the window, a blur or a hidden page, so
+the pad's Alt places a carry freely, before the lift or after.
+
+**With no keyboard, the Esc hint is the Escape key.** It says what it
+does ("Put it back", "Put down Measure") and a finger on it presses
+Escape, so each rung the hint shows (a carry put back, a tool put down,
+a selection cleared, a link left) can be popped by touch.
 
 **Escape pops exactly one layer**: the lock (the browser's), a focused
 field, popover or dock field (a search field with text clears first, then
@@ -684,7 +694,7 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them), 12 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown (`src/parts/touch.test.js`); every modifier code × {claimed, reserved but passed, not reserved}: an event's flag is set iff claimed and held, or the DOM's (`src/stage/router.test.js`) |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every label a reserver shows for its declared, reserved keys has one control (a label's later codes have none of their own: labelled alike is the same action, §4), none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo (every station's variants among them), 12 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`); the pad presses each shown control's code into the key order, to the layer shown, and a lit control is one its layer holds (`src/parts/touch.test.js`; every finger sequence, `src/hold-key.test.js`); every modifier code × {claimed, reserved but passed, not reserved} × {let go at the root, elsewhere in the window, by a blur}: an event's flag is set iff that key is down, or the DOM's (`src/stage/router.test.js`); the Esc hint, by a finger, pops the rung it names |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
 | H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
@@ -1257,27 +1267,43 @@ The project lead decided the five open questions on 2026-11-12.
    one "Weapon" row and still show seven controls. Open for the lead: a
    digital d-pad from the arrow codes, or an analog stick (a new body input
    contract, an axis), and whether WASD should make a pad too.
-11. **The touch pad is a keyboard** (decided unattended (2026-11-16,
-   lane/n9), for the lead). `scene.touch` presses a control's key by
-   dispatching the DOM `keydown`/`keyup` a keyboard would (code, and the
-   US key) on the view's root, so the router hears it as any key, in the
-   one key order; nothing new in the api, and handlers can't tell the pad
-   from a keyboard. Rejected: a router entry point (`api.input.key(code)`),
-   which would make pad keys distinguishable and skip the DOM; it adds a
-   second way in for no case that needs one. What the DOM can't carry,
-   the router adds: an event's modifier flags are the DOM's or a claimed,
-   held modifier key's (`down`), since a synthetic Alt is in no later
-   event's `altKey` and carry reads `ev.alt` on every move. A keyboard's
-   own flags are unchanged by it (they are already the DOM's). Modifiers
-   on the pad are momentary, held by a second finger, not latching. A
-   control's identity is its layer, code, label and place: kept across
-   renders, its element is never moved or rebuilt (moving an element can
-   lose its pointer capture), so a carry opening over a held Forward
-   leaves Forward held. Changing body while a control is held is the
-   keyboard's case: the router lets the old body's keys go; the finger
-   still down presses nothing new until it lifts and presses again. The
-   pad shows from the first touch to the next mouse press (`pointer.touch`,
-   Decisions 9); open for the lead: always on a coarse pointer, or a
-   toggle in the chip's menu. Open for the lead: whether a finger held
-   still on the world while a body looks by drag should still open the
-   menu after 500 ms (the router's touch hold), as it does now.
+11. **The touch pad presses keys as a keyboard does** (decided unattended
+   (2026-11-16, lane/n9), for the lead). `scene.touch` presses a
+   control's key by dispatching the DOM `keydown`/`keyup` a keyboard
+   sends for its code (with the US key) on the view's root, so the router
+   hears it as any key, in the one key order; nothing new in the api.
+   Rejected: a router entry point (`api.input.key(code)`), which would
+   make pad keys distinguishable and skip the DOM; it adds a second way
+   in for no case that needs one. Where the pad is not a keyboard, and
+   why: a control that goes lets go at once (a keyboard's key stays down
+   till it's lifted, and its autorepeat presses it again for a new body;
+   a finger presses nothing until it comes down again, so a lit control
+   is always a key its layer holds); a pad key under a pad Shift sends
+   the unshifted key (`q`, not `Q`); handlers already take both.
+   Modifier state is the router's (§5): the modifier keys down at the
+   root, claimed or not, as a keyboard's are, set every event's flags,
+   and go on a keyup anywhere in the window, a blur or a hidden page.
+   (Rejected: only claimed modifiers, which made a reserver that declines
+   Alt before a lift lose the pad's Alt, and made "claimed" mean "set my
+   flag".) Modifiers on the pad are momentary, held by a second finger,
+   not latching. A control's identity is its layer (the body, tool or
+   gesture's `serial`: the router counts each one taken, so the same body
+   left and entered again is a new one), its code, its label and its
+   place; kept across renders its element stays put (moving one can lose
+   its pointer capture; only a change of order among kept controls moves
+   one, and then its key is let go). Labels name the action, not its
+   state (§4): a label that changed while held would be a new control.
+   The gesture's group is unnamed: the stage knows no gesture's name, and
+   one part's word ("Carrying") would be wrong for every other gesture.
+   The Esc hint is the Escape key on touch (§5), since a finger can't
+   press Escape and lifting it ends a carry where it is. The pad shows
+   from the first touch to the next mouse press (`pointer.touch`,
+   Decisions 9). Open for the lead: always on a coarse pointer, or a
+   toggle in the chip's menu; whether a finger held still on the world
+   while a body looks by drag should still open the menu after 500 ms
+   (the router's touch hold), as it does now; the layout (arrows bottom
+   left, buttons bottom right in groups under their layer's name, in
+   capitals) is provisional, the lead's taste; whether a press session
+   should declare a `label` of its own (as a body has a label and a tool
+   a name) to name its group, or the group take its extension's name
+   (which `local.running` would then have to carry).

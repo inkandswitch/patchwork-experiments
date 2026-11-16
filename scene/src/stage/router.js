@@ -161,7 +161,7 @@ export function firstOfDouble(presses, dbl) {
  *   centerRay?: () => { origin: any, dir: any },
  *   hit?: object | null,                               // handed in: the event's hit is this, no pick (a double-click's first click's)
  *   widget?: object | null,                            // handed in, likewise
- *   mods?: { shift?, alt?, ctrl?, meta? },             // modifiers held as claimed keys: each flag is the DOM's or this
+ *   mods?: { shift?, alt?, ctrl?, meta? },             // the modifier keys down at the key root: each flag is the DOM's or this
  * }} ctx
  */
 export function buildEvent(type, e, ctx) {
@@ -303,10 +303,14 @@ export function createRouter(o) {
     });
 
   // The body stack, the base at the bottom; the held tool; the open popovers.
-  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], ahead: b?.ahead ?? [], suspended: false });
-  const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended }], top last
+  // Each body, tool and gesture is its own `serial` (one count for all):
+  // the same body left and entered again is a new one (the keys it held were
+  // let go), which the state says (the touch pad's controls are a layer's).
+  let made = 0;
+  const baseEntry = (b) => ({ owner: null, id: b?.id ?? "base", input: b?.input ?? {}, lock: !!b?.lock, keys: b?.keys ?? [], ahead: b?.ahead ?? [], suspended: false, serial: ++made });
+  const stack = [baseEntry(o.base)]; // [{ owner, id, input, lock, keys, suspended, serial }], top last
   const top = () => stack.at(-1);
-  let tool = null; // { owner, command, name, input, keys, pointer }
+  let tool = null; // { owner, command, name, input, keys, pointer, serial }
   const popovers = []; // [{ owner, close }], latest last
 
   // An event offered to one handler set under a name that is never an extension's.
@@ -481,6 +485,7 @@ export function createRouter(o) {
       owner: null,
       dead: false,
       holdTimer: null,
+      serial: ++made,
     };
     gesture = g;
     cancelHover();
@@ -708,24 +713,27 @@ export function createRouter(o) {
   // code → { owner, key, code, up(ev) }: who claimed each key that's down
   const down = new Map();
 
-  // The modifiers held as claimed keys: a flag of every event is the DOM's
-  // or one of these. A keyboard's own Shift is in its events' flags already;
-  // a key pressed for it (the touch pad's Alt, "Place freely") is in none,
-  // so without this every move would say it's up.
+  // The modifier keys down, as a keyboard has them: a keydown at the view's
+  // root puts one down (claimed or not, before anyone hears it, so its own
+  // keydown says it), a keyup anywhere in the window, a blur or a hidden
+  // page lets it go. Every event's flags are the DOM's or these. A
+  // keyboard's own are in its events already (these only agree); a key
+  // pressed for one (the touch pad's Alt, "Place freely") is in no event's
+  // flags, so without these every move would say it's up.
   const MOD = { Shift: "shift", Alt: "alt", Control: "ctrl", Meta: "meta" };
+  const modsDown = new Set(); // codes
   function heldMods() {
     const m = {};
-    for (const code of down.keys()) {
-      const f = MOD[keyOfCode(code)];
-      if (f) m[f] = true;
-    }
+    for (const code of modsDown) m[MOD[keyOfCode(code)]] = true;
     return m;
   }
+  const onAnyKeyUp = (e) => modsDown.delete(e.code);
 
   const keyEvent = (type, e) => make(type, e, { noHit: true });
 
   function onKeyDown(e) {
     if (fromEmbed(e, keyRoot)) return;
+    if (MOD[keyOfCode(e.code)]) modsDown.add(e.code);
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
       // the field rung: Escape leaves the field, and is nothing else (a search
@@ -808,11 +816,13 @@ export function createRouter(o) {
   const onBlur = () => {
     dropGesture();
     releaseKeys();
+    modsDown.clear();
   };
   const onVisibility = () => {
     if (doc.visibilityState !== "hidden") return;
     dropGesture();
     releaseKeys();
+    modsDown.clear();
   };
 
   // ─── the pointer (stage/pointer.js) ───────────────────────────────────────
@@ -910,10 +920,10 @@ export function createRouter(o) {
     const b = top();
     const s = openSession();
     return {
-      body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])] },
+      body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])], serial: b.serial },
       bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
-      held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer } : null,
-      gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])] } : null,
+      held: tool ? { ext: tool.owner, command: tool.command, name: tool.name ?? tool.command, keys: [...(tool.keys ?? [])], pointer: !!tool.pointer, serial: tool.serial } : null,
+      gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])], serial: gesture.serial } : null,
       pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused, touch: ptr.touch },
       escape: escapeLayer(ladderState()),
     };
@@ -950,7 +960,7 @@ export function createRouter(o) {
   function pushBody(owner, body) {
     if (disposed) return () => {};
     const prevTop = top();
-    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], ahead: body.ahead ?? [], suspended: false };
+    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], ahead: body.ahead ?? [], suspended: false, serial: ++made };
     stack.push(entry);
     settle(prevTop);
     return () => popBody(entry);
@@ -997,7 +1007,7 @@ export function createRouter(o) {
   function hold(owner, t) {
     if (disposed) return () => {};
     putDown();
-    const entry = { owner, command: t.command, name: t.name, input: t.input ?? {}, keys: t.keys ?? [], pointer: !!t.pointer };
+    const entry = { owner, command: t.command, name: t.name, input: t.input ?? {}, keys: t.keys ?? [], pointer: !!t.pointer, serial: ++made };
     tool = entry;
     refresh();
     changed();
@@ -1061,6 +1071,7 @@ export function createRouter(o) {
     [canvas, "lostpointercapture", onLostCapture, undefined],
     [keyRoot, "keydown", onKeyDown, undefined],
     [keyRoot, "keyup", onKeyUp, undefined],
+    [win, "keyup", onAnyKeyUp, { capture: true }],
     [win, "blur", onBlur, undefined],
     [doc, "visibilitychange", onVisibility, undefined],
     [doc, "pointerlockchange", onLockChange, undefined],

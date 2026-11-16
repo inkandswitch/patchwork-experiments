@@ -269,9 +269,9 @@ the calls named here, never swapped.
 |---|---|---|
 | `selected` | `api.view.select(target)` (the selection, the outline, add, a game, dimensions), Edit's click | the selection, as this stage's element of its path: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null (nothing, or not in this stage) |
 | `hovered` | the view | the object under the pointer, as this stage's element, or null |
-| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
-| `held` | the view | the held tool, `{ ext, command, name, keys, pointer }`, or null |
-| `gesture` | the view | the open press session's declared keys, `{ owner, keys }`, or null |
+| `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys, serial }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `serial` says which time it was entered: the same body left and entered again is a new serial (the keys it held were let go; the touch pad's controls are a serial's, TOOLS.md §5). `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
+| `held` | the view | the held tool, `{ ext, command, name, keys, pointer, serial }`, or null; held again, a new `serial` |
+| `gesture` | the view | the open press session's declared keys, `{ owner, keys, serial }` (each press its own `serial`), or null |
 | `pointer` | the view | `{ locked, lock, wanted, released, refused, touch }` (`src/stage/pointer.js`; `touch`: the last press on the view was a finger, or none yet on a coarse pointer) |
 | `escape` | the view | `{ layer, hint }`: the layer the next Escape pops, and what the hint says (`src/stage/ladder.js`). Leaving the focus is a layer only a general part sees |
 | `theme` | the view | the colour tokens (`{ accent: [r,g,b], … }`) |
@@ -962,7 +962,7 @@ event = {
   widget,                     // lazy: { owner, onTop, distance, ...data } | null; a dblclick's: its first press's
   holder,                     // step 3: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
-  shift, alt, ctrl, meta,     // the DOM's flag, or a modifier key held down and claimed (a touch pad's Alt: TOOLS.md §5)
+  shift, alt, ctrl, meta,     // the DOM's flag, or a modifier key down at the view's root, claimed or not (a touch pad's Alt: TOOLS.md §5)
   key, code, repeat,          // key events
   dx, dy, deltaY,             // move (locked) and wheel
   locked,                     // pointer lock: x, y and ndc are the canvas centre, ray and hit lie along the camera's forward ray

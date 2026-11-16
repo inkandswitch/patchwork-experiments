@@ -3,12 +3,14 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { plugins } from "../index.js";
 import touch, { layerName } from "./touch.js";
+import body from "./body.js";
 
 const meta = (id) => {
   const { load: _load, type: _type, ...m } = plugins.find((p) => p.id === id);
   return m;
 };
 const TOUCH = { meta: meta("scene.touch"), module: touch };
+const BODY = { meta: meta("scene.body"), module: body };
 
 /** walk/src/body.js WALK_KEYS, and an unlabelled Q: a walk-like body that also declares a key with no label */
 const WALKISH_KEYS = [
@@ -38,9 +40,9 @@ const GAME = () => ({
   },
 });
 
-async function mount() {
+async function mount(extra = []) {
   walker = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-  s = await mountStage({ extensions: [GAME(), TOUCH], doc: { objects: { a: object() } } });
+  s = await mountStage({ extensions: [GAME(), TOUCH, ...extra], doc: { objects: { a: object() } } });
   await settle();
 }
 const api = () => s.api("t.game");
@@ -219,9 +221,105 @@ describe("scene.touch", () => {
     expect(shown().buttons).toEqual([["Walkish", "Run", "Jump", "Q"]]);
   });
 
-  it("names each layer's buttons: the body's label, the held tool's name, a carry", () => {
-    const view = { body: { id: "walk", label: "Walk" }, held: { name: "Gun" } };
-    expect(["body", "tool", "gesture"].map((f) => layerName(f, view))).toEqual(["Walk", "Gun", "Carrying"]);
-    expect(["body", "tool"].map((f) => layerName(f, {}))).toEqual(["Body", "Held"]);
+  it("a lost capture alone lets go (the browser took the pointer)", async () => {
+    await mount();
+    await enter("walkish");
+    await input("touch");
+    finger("pointerdown", "Forward", 1);
+    finger("lostpointercapture", "Forward", 1);
+    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
+    expect(control("Forward").hasAttribute("data-held")).toBe(false);
+    finger("pointerup", "Forward", 1);
+    expect(walker.keyup).toHaveBeenCalledTimes(1);
+  });
+
+  for (const how of ["blur", "hidden"]) {
+    it(`the window losing focus (${how}) lets every finger go, as the router lets go of every key: unlit, and a finger down again presses again`, async () => {
+      await mount();
+      await enter("walkish");
+      await input("touch");
+      finger("pointerdown", "Forward", 1);
+      if (how === "blur") window.dispatchEvent(new Event("blur"));
+      else {
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        delete document.visibilityState;
+      }
+      expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
+      expect(control("Forward").hasAttribute("data-held")).toBe(false);
+      // the first finger is still on it; a second presses: a key held again
+      finger("pointerdown", "Forward", 2);
+      expect(keys(walker.key)).toEqual(["KeyW/w", "KeyW/w"]);
+      expect(control("Forward").hasAttribute("data-held")).toBe(true);
+      finger("pointerup", "Forward", 1);
+      finger("pointerup", "Forward", 2);
+      expect(keys(walker.keyup)).toEqual(["KeyW/w", "KeyW/w"]);
+    });
+  }
+
+  it("a control is its layer's: the body left and entered again at once (the same id) is a new body, its Forward a new control, unlit; the old finger presses nothing", async () => {
+    await mount();
+    await enter("walkish");
+    await input("touch");
+    finger("pointerdown", "Forward", 1);
+    const old = control("Forward");
+    expect(api().body.leave()).toBe(true);
+    expect(api().body.enter("walkish", null)).toBe(true);
+    await settle();
+    expect(s.local.get().body.id).toBe("walkish");
+    // the router let the old body's W go; the control went with it
+    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
+    expect(old.isConnected).toBe(false);
+    expect(control("Forward")).not.toBe(old);
+    expect(control("Forward").hasAttribute("data-held")).toBe(false);
+    old.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "touch" }));
+    expect([walker.key.mock.calls.length, walker.keyup.mock.calls.length]).toEqual([1, 1]);
+    // down again: the new body's
+    finger("pointerdown", "Forward", 1);
+    finger("pointerup", "Forward", 1);
+    expect([keys(walker.key), keys(walker.keyup)]).toEqual([["KeyW/w", "KeyW/w"], ["KeyW/w", "KeyW/w"]]);
+  });
+
+  it("the pad stopping (uninstalled) lets go of what it held", async () => {
+    await mount();
+    await enter("walkish");
+    await input("touch");
+    finger("pointerdown", "Forward", 1);
+    finger("pointerdown", "Run", 2);
+    await s.uninstall("scene.touch");
+    expect(keys(walker.keyup).sort()).toEqual(["KeyW/w", "ShiftLeft/Shift"]);
+  });
+
+  it("a long press on the pad is a held key, not the browser's menu", async () => {
+    await mount();
+    await enter("walkish");
+    await input("touch");
+    const e = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    control("Forward").dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+  });
+
+  it("the Esc hint is the Escape key with no keyboard: it says what it does, and a finger on it pops that rung", async () => {
+    await mount([BODY]);
+    const hint = () => s.root.querySelector(".body-escape");
+    const tool = { key: vi.fn(() => true) };
+    api().hold({ name: "Wrench", keys: [] }, tool);
+    await settle();
+    expect([hint().textContent, hint().hasAttribute("data-key")]).toEqual(["Esc: put down Wrench", false]);
+    await input("touch");
+    expect([hint().textContent, hint().dataset.key, hint().getAttribute("role")]).toEqual(["Put down Wrench", "Escape", "button"]);
+    const e = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch" });
+    hint().dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(s.local.get().held).toBe(null);
+    hint().dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 3, pointerType: "touch" }));
+    await settle();
+    expect([hint().hidden, hint().hasAttribute("data-key")]).toEqual([true, false]);
+  });
+
+  it("names each layer's buttons: the body's label, the held tool's name; a gesture's, none (the stage knows no gesture's name)", () => {
+    const view = { body: { id: "walk", label: "Walk" }, held: { name: "Gun" }, gesture: { owner: "scene.carry" } };
+    expect(["body", "tool", "gesture"].map((f) => layerName(f, view))).toEqual(["Walk", "Gun", null]);
+    expect(["body", "tool", "gesture"].map((f) => layerName(f, {}))).toEqual(["Body", "Held", null]);
   });
 });

@@ -10,8 +10,9 @@
 // Forward (the body hears W down and up), holds it while another finger
 // drags on the world to look (both at once), holds Run with Forward, presses
 // the wrench's Reload (the tool's, not the body's), carries the block with
-// one finger and turns it with Turn left on the pad, then a mouse click on
-// the world hides the pad and only asks for the lock. Prints a JSON report; exits
+// one finger and turns it with Turn left on the pad, carries it again and
+// puts it back with a second finger on the Esc hint ("Put it back"), then a
+// mouse click on the world hides the pad and only asks for the lock. Prints a JSON report; exits
 // non-zero on a failure.
 //
 // Simulated time: the view runs on the page's manual clock (window.__time).
@@ -74,7 +75,8 @@ try {
   await touch.fingers([]);
   await b.rest(60);
   const after = await heard();
-  check("3. holding Forward: the body hears W down, then up when the finger lifts; focus stays where it was", JSON.stringify(during) === JSON.stringify(["body key KeyW w"]) && JSON.stringify(after) === JSON.stringify(["body keyup KeyW w"]) && focusBefore === focusDuring, { during, after, focusBefore, focusDuring });
+  const focusAfter = await P("focused()");
+  check("3. holding Forward: the body hears W down, then up when the finger lifts; focus stays where it was, during and after", JSON.stringify(during) === JSON.stringify(["body key KeyW w"]) && JSON.stringify(after) === JSON.stringify(["body keyup KeyW w"]) && focusBefore === "root" && focusDuring === "root" && focusAfter === "root", { during, after, focusBefore, focusDuring, focusAfter });
 
   // 4. Forward held while another finger drags on the world to look (CDP lifts every finger at once: the
   // order fingers lift in is touch.test.js's)
@@ -126,9 +128,31 @@ try {
   const rot1 = await P("blockRot()");
   const dyaw = rot1[1] - rot0[1];
   check(
-    "7. one finger carries the block; Turn left on the pad (the carry's, shown under it) turns it a quarter of a half",
-    carrying.gesture === "scene.carry" && padCarry?.buttons?.[0]?.[0] === "Carrying" && JSON.stringify(padCarry.buttons[0]) === JSON.stringify(["Carrying", "Turn left", "Turn right", "Turn over", "Place freely"]) && Math.abs(Math.abs(dyaw) - Math.PI / 4) < 1e-3 && (await P("pad()"))?.buttons?.length === 1,
+    "7. one finger carries the block; Turn left on the pad (the carry's, shown in its own group, unnamed: the stage knows no gesture's name) turns it a quarter of a half",
+    carrying.gesture === "scene.carry" && JSON.stringify(padCarry?.buttons?.[0]) === JSON.stringify(["", "Turn left", "Turn right", "Turn over", "Place freely"]) && Math.abs(Math.abs(dyaw) - Math.PI / 4) < 1e-3 && (await P("pad()"))?.buttons?.length === 1,
     { carrying, padCarry, rot0, rot1 },
+  );
+  await heard();
+
+  // 7b. carry it again, and a second finger on the Esc hint ("Put it back": the Escape key on touch) puts it back
+  const pos0 = await P("blockPos()");
+  const block2 = await P("block()");
+  await touch.fingers([[1, ...block2]]);
+  for (let i = 1; i <= 6; i++) await touch.fingers([[1, block2[0] + i * 8, block2[1]]]);
+  const at2 = [block2[0] + 48, block2[1]];
+  await b.rest(60);
+  const hint = await P("hint()");
+  if (hint?.at) await touch.fingers([[1, ...at2], [2, ...hint.at]]);
+  await b.rest(60);
+  const afterEsc = await P("view()");
+  await touch.fingers([]);
+  await b.rest(200);
+  const pos1 = await P("blockPos()");
+  const focusEsc = await P("focused()");
+  check(
+    "7b. the Esc hint is a key on touch: it says \"Put it back\", and a second finger on it puts the carried block back where it was",
+    hint?.text === "Put it back" && hint?.key === "Escape" && afterEsc.gesture === null && JSON.stringify(pos1) === JSON.stringify(pos0) && focusEsc === "root",
+    { hint, afterEsc, pos0, pos1, focusEsc },
   );
   await heard();
 

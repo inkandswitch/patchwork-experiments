@@ -205,9 +205,12 @@ describe("scene.use", () => {
     expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
-  it("a verb's button can be reached with a mouse: the prompt follows the pointer over the world, and stays put while the pointer is over the prompt", async () => {
+  it("a verb's button can be reached with a mouse: the prompt follows the pointer over the world, and stays put while the pointer is over the prompt, or anything else put over the world", async () => {
     await mount();
     await hover("helm");
+    // another part's overlay (the touch pad, the body chip)
+    const other = s.api("t.game").overlay();
+    const pad = other.appendChild(document.createElement("button"));
     const at = () => [prompt().style.getPropertyValue("--use-x"), prompt().style.getPropertyValue("--use-y")];
     const move = (target, x, y) => target.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
     const origin = s.port.getBoundingClientRect();
@@ -220,6 +223,8 @@ describe("scene.use", () => {
       ["the prompt", () => prompt(), 120, 130, px(120, 90)],
       ["its button", () => button, 125, 132, px(120, 90)],
       ["its key", () => button.querySelector("kbd"), 110, 131, px(120, 90)],
+      ["another part's overlay", () => other, 20, 300, px(120, 90)],
+      ["a button on it", () => pad, 22, 302, px(120, 90)],
       ["the world again", () => s.canvas, 200, 50, px(200, 50)],
     ]) {
       move(target(), x, y);

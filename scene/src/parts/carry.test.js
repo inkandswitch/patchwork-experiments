@@ -3,6 +3,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import carry from "./carry.js";
 import touch from "./touch.js";
+import body from "./body.js";
 import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
 const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
@@ -440,8 +441,8 @@ describe("scene.carry by the touch pad (scene.touch: the pad is a keyboard)", ()
     el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" }));
   };
   // Place freely (Alt) held on the pad: none, from before the lift, from after it. Without the router's
-  // claimed-modifier flags every touch move says alt is up, so it snaps; before the lift, the carry has to
-  // claim Alt for its flag to stand.
+  // modifier keys down (a keyboard's, whoever claims them) every touch move says alt is up, so it snaps;
+  // before the lift the carry declines Alt, and its flag stands all the same.
   for (const [when, free] of [["never", false], ["before the lift", true], ["after the lift", true]]) {
     it(`a finger carries it; Place freely on the pad (${when}) places it freely`, async () => {
       const { api } = await mount({ before: [grabber], extensions: [TOUCH], doc: { objects: { board: piece({ name: "Board" }) } }, content });
@@ -462,6 +463,23 @@ describe("scene.carry by the touch pad (scene.touch: the pad is a keyboard)", ()
       expect(s.root.querySelector(".touch-group[data-from=gesture]")).toBe(null);
     });
   }
+
+  it("the Esc hint is a key a second finger presses: the carry is put back", async () => {
+    const BODY = { meta: { id: "scene.body" }, module: body };
+    const { api, stub } = await mount({ before: [grabber], extensions: [TOUCH, BODY] });
+    api.ray = (x, y) => down(x / 10, y / 10);
+    finger("pointerdown", 10, 10);
+    finger("pointermove", 30, 10);
+    await settle();
+    const hint = s.root.querySelector(".body-escape");
+    expect([hint.textContent, hint.dataset.key]).toEqual(["Put it back", "Escape"]);
+    hint.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" }));
+    hint.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" }));
+    finger("pointerup", 30, 10);
+    await settle();
+    expect(transformOf("a").position).toEqual([0, 0, 0]);
+    expect(stub.releases).toEqual([["a", {}]]);
+  });
 
   it("Turn left on the pad turns it, as Q does", async () => {
     const { api, stub } = await mount({ before: [grabber], extensions: [TOUCH] });

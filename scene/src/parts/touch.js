@@ -2,38 +2,51 @@
 // the open gesture, the held tool and the body declare are shown as controls
 // a finger holds: the pad's arrows bottom left, the rest as buttons bottom
 // right, each under the layer it is for. Which controls, and which key each
-// presses, is ../touch-keys.js (pure); this only draws them and presses.
+// presses, is ../touch-keys.js (pure); this only draws them, and a finger on
+// one holds its key (../hold-key.js).
 //
-// The pad is a keyboard. A finger down on a control sends the keydown a
-// keyboard sends for its code (the US layout's key with it) to the view's
-// root, where the router hears keys; the finger coming up (or cancelled, or
-// its capture lost) sends the keyup. So a pad key goes the key order every
-// key goes (the gesture, the tool, the body, the key map), and a shown
-// control works by the same construction as a shown key. Fingers are each
-// their own: Forward, Run and a look drag on the canvas at once. A control
-// held by two fingers is down until the last comes up.
+// The pad presses keys as a keyboard does: a finger down on a control sends
+// the keydown a keyboard sends for its code to the view's root, where the
+// router hears keys, and the finger coming up (or cancelled, or its capture
+// lost) the keyup. So a pad key goes the key order every key goes (the
+// gesture, the tool, the body, the key map), and a shown control works by
+// the same construction as a shown key. Fingers are each their own:
+// Forward, Run and a look drag on the canvas at once. A control held by two
+// fingers is down until the last comes up.
 //
-// It shows while the input is touch (the view's `pointer.touch`) and there
-// are controls. A control that goes while held (the body changed, a carry
-// took its key) or a pad that hides lets go of what it held; the router
-// ignores a keyup for a key it doesn't hold, so letting go twice is
-// nothing. A press on a control keeps focus where it is (preventDefault),
-// so the key map's focus watch never cancels a held verb under a finger.
+// A control is a layer's (that body, that tool, that gesture: its `serial`)
+// key. It shows while the input is touch (the view's `pointer.touch`) and
+// there are controls; when its layer goes (the body changed, the carry took
+// its key, a new tool) or the pad hides, it lets go of what it held and is
+// gone, so a lit control is always a key its layer holds. The router lets go
+// of every key on a blur or a hidden page, and so does the pad. Letting go
+// twice is nothing: the router ignores a keyup for a key it doesn't hold.
 
 import css from "./touch.css?inline";
 import { touchControls } from "../touch-keys.js";
+import { holdKey } from "../hold-key.js";
 
 /** The pad's places, as arrows. */
 const GLYPH = { up: "▲", down: "▼", left: "◀", right: "▶" };
 
-/** A control's identity: its layer, its code and what it shows (a control kept across renders keeps its finger). */
-const idOf = (c) => JSON.stringify([c.from, c.code, c.label, c.slot]);
+/** Which layer a control is for: that body, tool or gesture (each is its own serial; the router's). */
+const layerOf = (from, view) => (from === "body" ? view?.body : from === "tool" ? view?.held : view?.gesture)?.serial ?? null;
 
-/** Each layer's name over its buttons. Pure. */
+/** A control's identity: its layer, its code and what it shows (a control kept across renders keeps its finger). */
+const idOf = (c, view) => JSON.stringify([c.from, layerOf(c.from, view), c.code, c.label, c.slot]);
+
+/**
+ * Each layer's name over its buttons: the body's label, the held tool's
+ * name. A gesture has none to say (the stage knows no gesture's name, and a
+ * part's word for one, "Carrying", would be wrong for every other): its
+ * group shows unnamed. Pure.
+ * @param {"body" | "tool" | "gesture"} from  @param {object} view
+ * @returns {string | null}
+ */
 export function layerName(from, view) {
   if (from === "body") return String(view?.body?.label ?? view?.body?.id ?? "Body");
   if (from === "tool") return String(view?.held?.name ?? "Held");
-  return "Carrying";
+  return null;
 }
 
 function create(api) {
@@ -48,38 +61,25 @@ function create(api) {
   // a long press is a held key here, not the browser's menu or a selection
   api.listen(overlay, "contextmenu", (e) => e.preventDefault());
 
-  const shown = new Map(); // id → { control, el, fingers: Set<pointerId> }
-  const fingers = new Map(); // pointerId → id
+  const shown = new Map(); // id → { control, el, hold }
 
-  const send = (type, { code, key }) => api.root.dispatchEvent(new KeyboardEvent(type, { code, key, bubbles: true, cancelable: true }));
-
-  function down(id, e) {
-    const c = shown.get(id);
-    if (!c || fingers.has(e.pointerId)) return;
-    fingers.set(e.pointerId, id);
-    c.fingers.add(e.pointerId);
-    if (c.fingers.size > 1) return;
-    c.el.dataset.held = "";
-    send("keydown", c.control);
-  }
-  function up(pointerId) {
-    const id = fingers.get(pointerId);
-    if (id === undefined) return;
-    fingers.delete(pointerId);
-    const c = shown.get(id);
-    if (!c || !c.fingers.delete(pointerId) || c.fingers.size) return;
-    delete c.el.dataset.held;
-    send("keyup", c.control);
-  }
   /** A control going: its fingers let go (its key up), and it's gone. */
   function drop(id) {
     const c = shown.get(id);
-    for (const p of [...c.fingers]) up(p);
+    c.hold.letGo();
     shown.delete(id);
     c.el.remove();
   }
+  /** Every finger lets go, the controls stay (the router lets go of every key then, too). */
+  const letGoAll = () => {
+    for (const c of shown.values()) c.hold.letGo();
+  };
+  api.listen(window, "blur", letGoAll);
+  api.listen(document, "visibilitychange", () => {
+    if (document.visibilityState === "hidden") letGoAll();
+  });
 
-  function make(control, id) {
+  function make(control) {
     const el = document.createElement("button");
     el.type = "button";
     el.tabIndex = -1;
@@ -99,28 +99,18 @@ function create(api) {
       name.textContent = control.label;
       el.append(g, name);
     } else el.textContent = control.label;
-    el.addEventListener("pointerdown", (e) => {
-      // focus stays where it is (on the view's root): the key map cancels held verbs when focus leaves
-      e.preventDefault();
-      try {
-        el.setPointerCapture(e.pointerId);
-      } catch {
-        // a synthetic pointer can't be captured
-      }
-      down(id, e);
+    const hold = holdKey(el, api.root, control.code, (on) => {
+      if (on) el.dataset.held = "";
+      else delete el.dataset.held;
     });
-    const off = (e) => up(e.pointerId);
-    el.addEventListener("pointerup", off);
-    el.addEventListener("pointercancel", off);
-    el.addEventListener("lostpointercapture", off);
-    // a finger on the pad isn't where anyone looks (the use prompt follows the pointer)
-    el.addEventListener("pointermove", (e) => e.stopPropagation());
-    return el;
+    return { control, el, hold };
   }
 
-  // Elements are put in place without moving one that's already there: a
-  // control under a finger has its pointer captured, and taking it out of
-  // the document, even to put it back, can lose that.
+  // Elements are put in place moving as few as can be: a control under a
+  // finger has its pointer captured, and taking it out of the document, even
+  // to put it back, can lose that (then its key is let go). Only a change of
+  // order among kept controls moves one (another tool with the same keys
+  // declared in another order); a control added or gone moves none.
   function arrange(parent, els) {
     for (const el of [...parent.children]) if (!els.includes(el)) el.remove();
     els.forEach((el, i) => {
@@ -146,23 +136,24 @@ function create(api) {
   function render() {
     const view = api.view.get();
     const controls = view.pointer?.touch ? touchControls(view) : [];
-    const next = JSON.stringify([controls.map(idOf), controls.map((c) => layerName(c.from, view))]);
+    const id = (c) => idOf(c, view);
+    const name = (from) => layerName(from, view);
+    const next = JSON.stringify([controls.map(id), controls.map((c) => name(c.from))]);
     if (next === key) return;
     key = next;
-    const ids = new Set(controls.map(idOf));
-    for (const id of [...shown.keys()]) if (!ids.has(id)) drop(id);
-    for (const control of controls) {
-      const id = idOf(control);
-      if (!shown.has(id)) shown.set(id, { control, el: make(control, id), fingers: new Set() });
-    }
-    const elOf = (c) => shown.get(idOf(c)).el;
+    const ids = new Set(controls.map(id));
+    for (const k of [...shown.keys()]) if (!ids.has(k)) drop(k);
+    for (const control of controls) if (!shown.has(id(control))) shown.set(id(control), make(control));
+    const elOf = (c) => shown.get(id(c)).el;
     // the pad's arrows (each in its place: CSS, by data-slot); the buttons in a group per layer, in the key order
     arrange(pad, controls.filter((c) => c.slot).map(elOf));
     const layers = [...new Set(controls.filter((c) => !c.slot).map((c) => c.from))];
     for (const from of layers) {
       const g = groupOf(from);
-      g.name.textContent = layerName(from, view);
-      g.el.setAttribute("aria-label", g.name.textContent);
+      const said = name(from);
+      g.name.textContent = said ?? "";
+      g.name.hidden = said == null;
+      g.el.setAttribute("aria-label", said ?? "Keys of what you're doing");
       arrange(g.el, [g.name, ...controls.filter((c) => !c.slot && c.from === from).map(elOf)]);
     }
     arrange(buttons, layers.map((from) => groups.get(from).el));

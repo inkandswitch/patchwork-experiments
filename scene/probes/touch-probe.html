@@ -152,6 +152,8 @@ try {
     /** page coords of a pad control, by what it shows (and its layer) */
     control: (label, from = null) => centre([...host.querySelectorAll(".touch-key")].find((b) => (b.title || b.textContent) === label && (!from || b.dataset.from === from))),
     chip: () => centre(host.querySelector(".body-chip")),
+    /** the Esc hint: what it says, whether it's a key, where */
+    hint: () => { const h = host.querySelector(".body-escape"); return h && !h.hidden ? { text: h.textContent, key: h.dataset.key ?? null, at: centre(h) } : null; },
     menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
     block: () => pageOf([0.6, 0.5, 0]),
     blockRot: () => scene.doc().objects.block.transform.rotation,

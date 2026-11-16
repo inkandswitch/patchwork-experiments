@@ -663,32 +663,39 @@ describe("keys", () => {
     }
     expect(t.inputs.keys.key).not.toHaveBeenCalled();
   });
-  it("an event's modifier flags are the DOM's or a claimed, held modifier key's (the touch pad's Alt): every modifier code × claimed, reserved but passed, not reserved", () => {
+  it("an event's modifier flags are the DOM's or a modifier key down at the root, claimed or not (the touch pad's Alt): every modifier code × claimed, reserved but passed, not reserved × let go at the root, elsewhere in the window, by a blur", () => {
     const MODS = { ShiftLeft: "shift", ShiftRight: "shift", AltLeft: "alt", AltRight: "alt", ControlLeft: "ctrl", ControlRight: "ctrl", MetaLeft: "meta", MetaRight: "meta" };
     const KEY = { shift: "Shift", alt: "Alt", ctrl: "Control", meta: "Meta" };
     const flags = (ev) => ["shift", "alt", "ctrl", "meta"].filter((f) => ev[f]);
+    const outside = document.createElement("div");
+    document.body.append(outside);
     for (const [code, flag] of Object.entries(MODS)) {
       for (const how of ["claimed", "passed", "unreserved"]) {
-        const t = setup();
-        const seen = [];
-        const body = { key: () => how === "claimed", keyup: () => true, move: (ev) => seen.push(`move ${flags(ev)}`) };
-        t.router.pushBody("b", { id: "b", input: body, keys: how === "unreserved" ? [] : [{ code }] });
-        t.inputs.chain = { key: (ev) => (seen.push(`${ev.code} ${flags(ev)}`), false) };
-        // the pad's events: no DOM flags on any of them
-        key(t.root, "keydown", KEY[flag], code);
-        move(t);
-        key(t.root, "keydown", "q");
-        key(t.root, "keyup", KEY[flag], code);
-        move(t);
-        const held = how === "claimed" ? flag : "";
-        const chainSaw = how === "unreserved" ? [`${code} `] : [];
-        expect([code, how, seen]).toEqual([code, how, [...chainSaw, `move ${held}`, `KeyQ ${held}`, "move "]]);
-        // the DOM's own flag stands with nothing held
-        seen.length = 0;
-        move(t, { [`${flag}Key`]: true });
-        expect([code, how, seen]).toEqual([code, how, [`move ${flag}`]]);
+        for (const gone of ["root", "outside", "blur"]) {
+          const t = setup();
+          const seen = [];
+          const body = { key: (ev) => (seen.push(`body ${ev.code} ${flags(ev)}`), how === "claimed"), keyup: () => true, move: (ev) => seen.push(`move ${flags(ev)}`) };
+          t.router.pushBody("b", { id: "b", input: body, keys: how === "unreserved" ? [] : [{ code }] });
+          t.inputs.chain = { key: (ev) => (seen.push(`${ev.code} ${flags(ev)}`), false) };
+          // the pad's events: no DOM flags on any of them; the modifier's own keydown says it, as a keyboard's does
+          key(t.root, "keydown", KEY[flag], code);
+          move(t);
+          key(t.root, "keydown", "q");
+          if (gone === "root") key(t.root, "keyup", KEY[flag], code);
+          else if (gone === "outside") key(outside, "keyup", KEY[flag], code);
+          else window.dispatchEvent(new Event("blur"));
+          move(t);
+          const own = how === "unreserved" ? `${code} ${flag}` : `body ${code} ${flag}`;
+          expect([code, how, gone, seen]).toEqual([code, how, gone, [own, `move ${flag}`, `KeyQ ${flag}`, "move "]]);
+          // the DOM's own flag stands with nothing held
+          seen.length = 0;
+          move(t, { [`${flag}Key`]: true });
+          expect([code, how, gone, seen]).toEqual([code, how, gone, [`move ${flag}`]]);
+          t.router.dispose();
+        }
       }
     }
+    outside.remove();
   });
   it("on blur and a hidden page, every held key gets its keyup", () => {
     const t = setup();
@@ -802,13 +809,35 @@ describe("the body stack", () => {
     const t = setup();
     t.router.pushBody("w", { id: "walk", input: {}, keys: [{ code: "KeyW", label: "Forward" }], lock: true });
     let st = t.onState.mock.calls.at(-1)[0];
-    expect(st.body).toEqual({ id: "walk", owner: "w", depth: 1, lock: true, keys: [{ code: "KeyW", label: "Forward" }] });
+    expect(st.body).toEqual({ id: "walk", owner: "w", depth: 1, lock: true, keys: [{ code: "KeyW", label: "Forward" }], serial: 2 });
     expect(st.held).toBe(null);
     t.router.hold("m", { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }], pointer: true });
     st = t.onState.mock.calls.at(-1)[0];
-    expect(st.held).toEqual({ ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true });
+    expect(st.held).toEqual({ ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 });
     expect(st.escape).toBe("tool");
     expect(st.pointer.wanted).toBe(true);
+  });
+  it("each body, tool and gesture is its own serial: the same one left and taken again is a new one (the keys it held were let go)", () => {
+    const t = setup();
+    const serials = () => {
+      const st = t.onState.mock.calls.at(-1)[0];
+      return [st.body.serial, st.held?.serial ?? null, st.gesture?.serial ?? null];
+    };
+    const walk = { id: "walk", input: { press: () => ({ keys: [{ code: "KeyQ" }], end() {}, cancel() {} }) }, keys: [{ code: "KeyW" }] };
+    const measure = { command: "measure", name: "Measure", input: {}, keys: [{ code: "KeyR" }] };
+    const steps = [
+      ["walk", () => t.router.pushBody("w", walk), [2, null, null]],
+      ["measure", () => t.router.hold("m", measure), [2, 3, null]],
+      ["measure again", () => t.router.hold("m", measure), [2, 4, null]],
+      ["walk left and taken again", () => (t.router.leave(), t.router.pushBody("w", walk)), [5, 4, null]],
+      ["a press opens a session", () => down(t), [5, 4, 6]],
+      ["its release", () => up(t), [5, 4, null]],
+      ["another press", () => down(t), [5, 4, 7]],
+    ];
+    for (const [what, step, want] of steps) {
+      step();
+      expect([what, serials()]).toEqual([what, want]);
+    }
   });
 });
 

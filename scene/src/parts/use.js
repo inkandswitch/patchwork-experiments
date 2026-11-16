@@ -196,8 +196,10 @@ function create(api) {
   }
 
   api.listen(api.port, "pointermove", (e) => {
-    // over the prompt itself (going for one of its buttons): it stays where it is, or it would move off from under the pointer
-    if (e.target instanceof Node && prompt.contains(e.target)) return;
+    // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
+    // its buttons) it stays where it is, or it would move off from under the pointer; a finger on the touch pad, the
+    // body chip, any part's overlay isn't where anyone looks
+    if (e.target instanceof Element && e.target.closest(".stage-overlay")) return;
     const r = api.port.getBoundingClientRect();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
     place();

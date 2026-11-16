@@ -1267,7 +1267,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const s = topSitting();
     const body =
       s && s.def.id === st.body.id
-        ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]) })
+        ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
         : BASE_LOCAL[base.id];
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const held = st.held ? Object.freeze({ ...st.held }) : null;

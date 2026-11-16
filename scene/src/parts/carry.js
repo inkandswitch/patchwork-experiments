@@ -333,18 +333,12 @@ export default {
         // the gesture's keys, declared, so the key order knows them before they're pressed (keymap.js)
         keys: CARRY_KEYS,
         key(ev) {
-          if (done) return false;
+          if (done || !c) return false;
           const k = String(ev.key ?? "");
-          // Alt is taken before the lift too: held, it says how the lift places (every
-          // event's alt is the DOM's or a claimed Alt's, the router's: the touch pad's)
-          if (k === "Alt") {
-            if (c) shown(c.alt(true));
-            return true;
-          }
-          if (!c) return false;
           const lower = k.toLowerCase();
           if (lower === "q" || lower === "e") shown(c.turn(lower === "q" ? TURN : -TURN));
           else if (lower === "f") shown(c.flip());
+          else if (k === "Alt") shown(c.alt(true));
           // Escape is left to the router, which cancels the gesture (put back)
           else return false;
           return true;
