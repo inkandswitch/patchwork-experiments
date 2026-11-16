@@ -85,10 +85,14 @@ describe("a workflow, end to end", () => {
       initSession(d, { subject: "automerge:subject", config: { workflows: { enabled: true, parallel: 2 } } })
       d.turns.push(makeTurn("user", [textBlock("review A and B")]))
     })
+    // After starting, it answers every wake; it may be woken more than once as
+    // steps finish at different times, and only the last carries the end.
     const provider = makeMock([
       [{ type: "call", id: "c1", name: "workflow_start", input: { title: "Review", goal: "Find what matters", steps: STEPS } }, { type: "stop", reason: "tool_use" }],
       [{ type: "text", delta: "Started; I will report back." }],
-      [{ type: "text", delta: "Both problems matter." }],
+      ...Array.from({ length: 6 }, () => (request) => [
+        { type: "text", delta: JSON.stringify(request.messages).includes("The workflow is over") ? "Both problems matter." : "Noted." },
+      ]),
     ])
     const store = handleStore(orchestrator, A.splice)
     const events = createEvents(store, { policy: { settleMs: 10, maxDelayMs: 50, minGapMs: 0 } })
@@ -113,10 +117,11 @@ describe("a workflow, end to end", () => {
     expect(models).toEqual({ "read-a": DEFAULT_TIER_MODELS.fast, "read-b": DEFAULT_TIER_MODELS.fast, judge: DEFAULT_TIER_MODELS.deep })
 
     // ...and the orchestrator is woken with the results and answers.
-    expect(await until(() => provider.requests.length === 3 && orchestrator.doc().status === STATUS.idle)).toBe(true)
-    const woke = JSON.stringify(provider.requests[2].messages)
+    const sawTheEnd = () => provider.requests.some((r) => JSON.stringify(r.messages).includes("The workflow is over"))
+    expect(await until(() => sawTheEnd() && orchestrator.doc().status === STATUS.idle)).toBe(true)
+    const woke = provider.requests.slice(2).map((r) => JSON.stringify(r.messages)).join("\n")
     expect(woke).toContain("Judged: both matter")
-    expect(woke).toContain("The workflow is over")
+    expect(await until(() => orchestrator.doc().turns.at(-1)?.blocks?.map((b) => b.text).join("") === "Both problems matter.")).toBe(true)
     const last = orchestrator.doc().turns.at(-1)
     expect(last.blocks.map((b) => b.text).join("")).toBe("Both problems matter.")
 

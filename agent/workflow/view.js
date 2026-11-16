@@ -84,6 +84,21 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
 
   const sessions = new Map() // sessionUrl -> { handle, off }
   let disposed = false
+  let frame = null
+
+  /**
+   * One render per frame, however many changes arrive: a step streaming its
+   * answer changes its session many times a second, and rebuilding the board
+   * for each one is wasted work on a page that is already busy.
+   */
+  function renderSoon() {
+    if (disposed || frame !== null) return
+    const schedule = globalThis.requestAnimationFrame ?? ((fn) => setTimeout(fn, 16))
+    frame = schedule(() => {
+      frame = null
+      render()
+    })
+  }
 
   const openDoc = (url) =>
     root.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url }, bubbles: true, composed: true }))
@@ -96,7 +111,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     repo.find(url).then((h) => {
       if (disposed) return
       entry.handle = h
-      const onChange = () => render()
+      const onChange = () => renderSoon()
       h.on("change", onChange)
       entry.off = () => h.off("change", onChange)
       render()
@@ -227,6 +242,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     root.append(board)
   }
 
+  // The plan itself changes rarely, and a test or a person acting on it wants
+  // to see the result at once; it renders straight away.
   const onChange = () => render()
   handle.on("change", onChange)
   render()

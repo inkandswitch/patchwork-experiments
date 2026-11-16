@@ -21,6 +21,9 @@ import { waitingIn } from "./waiting.js"
 
 export { WORKFLOW_TOOL_IDS } from "./plan.js"
 
+/** How long a burst of changes is gathered before the tick it asks for. */
+export const SETTLE_MS = 150
+
 /** How much of a step's result the plan keeps. The whole thing is its session's last message. */
 export const RESULT_KEPT = 8000
 
@@ -86,7 +89,7 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, toolIds = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS }) {
+  constructor({ repo, handle, startSession, notify = null, toolIds = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
@@ -94,6 +97,8 @@ export class WorkflowDriver {
     this.toolIds = toolIds
     this.now = now
     this.heartbeatMs = heartbeatMs
+    this.settleMs = settleMs
+    this.soon = null
     this.runnerUrl = `workflow-${Math.random().toString(36).slice(2, 10)}`
     this.generation = null
     this.watched = new Map() // sessionUrl -> unsubscribe
@@ -107,22 +112,41 @@ export class WorkflowDriver {
     this.busy = false
     this.again = false
     this.stopped = false
-    this.onPlanChange = () => this.kick()
+    this.onPlanChange = () => this.kickSoon()
   }
 
   start() {
     this.handle.on("change", this.onPlanChange)
-    this.timer = setInterval(() => this.kick(), this.heartbeatMs)
+    this.timer = setInterval(() => {
+      this.beat()
+      this.kick()
+    }, this.heartbeatMs)
     this.kick()
   }
 
   stop() {
     this.stopped = true
     clearInterval(this.timer)
+    clearTimeout(this.soon)
     this.handle.off("change", this.onPlanChange)
     for (const off of this.watched.values()) off()
     this.watched.clear()
     drivers.delete(this.handle.url)
+  }
+
+  /**
+   * Tick shortly, once, however many changes ask for it meanwhile.
+   *
+   * Changes arrive in bursts — a step streaming its answer changes its session
+   * many times a second, and the driver's own writes change the plan — and a
+   * tick for each is wasted work at best.
+   */
+  kickSoon() {
+    if (this.stopped || this.soon) return
+    this.soon = setTimeout(() => {
+      this.soon = null
+      this.kick()
+    }, this.settleMs)
   }
 
   /** Run a tick, or ask the one in progress to go round once more. */
@@ -151,17 +175,29 @@ export class WorkflowDriver {
     return this.ticking
   }
 
-  /** Is this driver the one entitled to act on the plan right now? */
+  /**
+   * Is this driver the one entitled to act on the plan right now? Claims the
+   * lease if it is free, and otherwise writes nothing.
+   *
+   * It used to renew the lease here, on every tick — and every write to the
+   * plan schedules a tick, so a driver with nothing to do rewrote the plan as
+   * fast as the clock moved and locked up the tab. Renewal is beat()'s job,
+   * on the heartbeat timer, as it is for a session's runner.
+   */
   hold() {
     const plan = this.handle.doc()
     if (!plan) return false
     if (heldElsewhere(plan, this.runnerUrl, this.now())) return false
-    if (this.generation !== null && holdsLease(plan, this.runnerUrl, this.generation)) {
-      this.handle.change((d) => { d.lease.at = this.now() })
-      return true
-    }
+    if (this.generation !== null && holdsLease(plan, this.runnerUrl, this.generation)) return true
     this.handle.change((d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
     return true
+  }
+
+  /** Renew the lease. Called by the heartbeat timer, never by a tick. */
+  beat() {
+    if (this.stopped || this.generation === null) return
+    if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
+    this.handle.change((d) => { d.lease.at = this.now() })
   }
 
   async tick() {
@@ -241,7 +277,7 @@ export class WorkflowDriver {
     try {
       const handle = await this.repo.find(url)
       if (!this.watched.has(url)) {
-        const onChange = () => this.kick()
+        const onChange = () => this.kickSoon()
         handle.on("change", onChange)
         this.watched.set(url, () => handle.off("change", onChange))
       }
