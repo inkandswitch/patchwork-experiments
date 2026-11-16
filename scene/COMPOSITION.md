@@ -79,8 +79,8 @@ pieces, each published and checked in the real Patchwork:
 - **One sea for a world** ([water/WATER.md](../water/WATER.md)): a world's
   ambients are its outermost doc's, and a new `water` package draws and
   evaluates the world's water. The *Harbour*
-  (automerge:EnEodmRQgQCY4G7A8CWwDtPpUY2, republished 2026-11-15 with water
-  bodies) links Lost Cities aboard and Fitting out, both at anchor on its
+  (automerge:wWT7oXqy2avFoaA12RELnJag6Yi, republished 2026-11-16 with
+  clipped open water) links Lost Cities aboard and Fitting out, both at anchor on its
   one sea. It rests on Decision 1's
   amended sentence, which the lead accepted on 2026-11-15.
 - **Water bodies** (WATER.md, "Water bodies", built in `lane/water`, merged
@@ -90,8 +90,9 @@ pieces, each published and checked in the real Patchwork:
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
   sloop in a box of water, floats in a dry room beside Ship at sea (*Model
-  basin and Ship at sea*, automerge:2vunxCi5mgpYGr53LsYysQACbqZG, a doc of
-  two links); every sea example was republished in the new shape. One stage correction
+  basin and Ship at sea*, automerge:3dbt3t2QxqcGwfAU7dFM6Nb2KqCt, a doc of
+  two links, laid out again on 2026-11-16 so her block clears the basin,
+  WATER.md Decision 121); every sea example was republished in the new shape. One stage correction
   (arriving doesn't wait for objects with nothing to load, WATER.md
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
@@ -105,8 +106,11 @@ pieces, each published and checked in the real Patchwork:
   in the Harbour her block is silent and she floats on the harbour's. The
   box is the guest's (the lead's Q1), liveness is global (Q2), and the
   stage is unchanged: the path rule a fixer committed unaware of the
-  lead's choice is reverted (Decision 90). The *Model room* publisher lays
-  boats out as 1:25 dioramas on its floor.
+  lead's choice is reverted (Decision 90). The *Model room*
+  (automerge:2n6eFnz8tvrEMzo3NEjXqnPubM8R) lays boats out as 1:25
+  dioramas on its floor, among them *Ship at anchor*
+  (automerge:3NkHf9D3oWisX4E4BCRk3FM1xQNA, now published on her own,
+  Decision 120).
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
