@@ -13,9 +13,13 @@ to build. It proposes changing one sentence of an accepted decision
 (COMPOSITION Decision 1, see "Decisions" 1). The lead's "kick those off"
 named the shared water package, so it was built (Decisions 14), and then
 merged and published before the lead had said yes to the amended sentence
-(Decisions 39). COMPOSITION still records the sentence as proposed: what
-runs on `scene-stage` and in the published examples is the amended
-coupling, waiting on the lead's yes or no.
+(Decisions 39). The lead said yes on 2026-11-15 (Decisions 43).
+
+On 2026-11-15 the note gained a second design, "Water bodies": water as a
+shape that sea behaviour is put on, with bounded water that an inner world
+keeps wherever it is placed. It follows the lead's answers of that day
+(Decisions 43 to 56) and replaces the parts of "The design" it names. It is
+designed, not built.
 
 ## The problem
 
@@ -193,7 +197,9 @@ and links here, and the wind they are roughened by is sailing's
 - **Trait** `water: { level }`, on a scene. It means "this world has
   water". It is both the offer (when the doc is outermost) and what gives
   the doc's own parts a reader (always). One trait; a want-only trait
-  would have no consumer.
+  would have no consumer. *Superseded by "Water bodies" (Decision 45):
+  `water` is an object's, `{ size? }`, its transform giving the level; open
+  water is the offer, bounded water its doc's own.*
 - **Convention `water.waves`**, collected in the water extension's own
   stage: `{ components: [{ dir: [dx, dz], k, omega, amp, steep, phase }] }`.
   Sailing's `sailing.sea` part contributes it. No contributor means flat
@@ -275,9 +281,14 @@ one frame of wave motion.
   camera ride to her ship and show its own HUD; in a harbour of two that
   means the camera follows one boat and two HUDs show.
 - Templates and the Sloop part write `water` beside `sailing.sea` and list
-  the water package; `sailing.ship` needs `["water"]`.
+  the water package; `sailing.ship` needs `["water"]`. *Superseded by
+  "Water bodies": they write a Water object carrying `sailing.sea`, and
+  `sailing.weather` on the scene; `sailing.ship` needs nothing.*
 
 ### Which doc holds what
+
+*As built on 2026-11-14. "Water bodies", "Doc shapes", replaces it: the
+water and the sea move onto a Sea object, the wind onto `sailing.weather`.*
 
 - **Harbour H**: traits `water: { level: 0 }` and
   `sailing.sea: { wind: { speed: 5, from: 250 }, seed: 7, scale: 0.5 }`;
@@ -333,7 +344,9 @@ one frame of wave motion.
   is drawn at both.
 - **One water per view.** No snow globe with its own sea, no aquarium
   aboard, no lock with two levels. An inner scope boundary waits for two
-  consumers.
+  consumers. *Replaced by "Water bodies": one open water per world, and
+  any number of bounded bodies, each its doc's own. A snow globe still
+  can't keep its weather.*
 - **A dry room holds a boat still** at her saved pose, possibly half into
   the floor.
 - **A view missing the outermost's water package** gives readers `null`;
@@ -345,14 +358,16 @@ one frame of wave motion.
   water's evaluator, water's tests a copy of sailing's spectrum), and one
   golden file, kept verbatim in both, pins the copies (Decisions 36).
 - **Two traits per sea** (`water`, `sailing.sea`): one says the world has
-  water, the other what drives it (its waves and its wind).
+  water, the other what drives it (its waves and its wind). *Replaced by
+  "Water bodies": a Water object (the shape), `sailing.sea` on it (the
+  behaviour), `sailing.weather` on the scene (the air).*
 - **A click on the open sea no longer boards a boat alone** (Decisions 24
   and 30): the sea, sky and shore are the world's, and the ships' part
   holds no scene trait. Her hull, Enter and the HUD's button board.
 - **Not addressed**: wakes, splashes, boats colliding or pushing each other
   across docs, crew swimming from one boat's water to another's ladder
   (bodies don't hand over between docs), bounded water (ponds, rivers),
-  tide.
+  tide. *Bounded water and currents are designed in "Water bodies".*
 
 ## Build order
 
@@ -394,6 +409,601 @@ Doc edits with step 1:
   `sailing.sea`.
 - SCOPE.md §9: drop "water height as a contribution other extensions
   read".
+
+## Water bodies: a shape, with the sea on it (2026-11-15)
+
+Designed 2026-11-15 in the lane `lane/water`. Not built. It follows two of
+the lead's answers of that day (Decisions 43 to 56):
+
+- To Decision 42 (should the sea bring water with it?): "should the water
+  be a shape that gets sea behaviour on it?" This section builds exactly
+  that.
+- To the last open question (should an inner world be able to keep its own
+  water?): yes.
+
+It supersedes these parts of "The design" above:
+- the scene trait `water`;
+- the sea's wind and atmosphere;
+- "Which doc holds what";
+- the costs "One water per view" and "Two traits per sea";
+- "bounded water (ponds, rivers)" in "Not addressed".
+
+The rest of "The design" stands: ambients, the outermost rule, frames,
+time, the reader's shape, the process with no state, and the split of
+sailing's sea part from its ship part.
+
+### Three designs, scored
+
+Three designs were drafted for it independently, each scored 1 (poor) to
+5 (strong):
+
+- **A. Open and bounded, by holder.** Open water stays the scene's `water`
+  trait. Bounded water is an object's `water` with a size. The sea goes on
+  either holder.
+- **B. Worlds with walls.** Water is an object. An inner doc keeps its own
+  ambients by declaring a boundary, a new scene trait `scene.enclosure`.
+- **C. Open water is weather, bounded water is a thing.** Water is an
+  object, and its extent decides which it is.
+
+| Criterion | A. Open and bounded, by holder | B. Worlds with walls | C. Weather or thing, by extent |
+|---|---|---|---|
+| Fidelity to COMPOSITION's rules | 5 | 3 | 4 |
+| Generality (named second consumers) | 3 | 4 | 4 |
+| Smallness of the stage change | 5 | 1 | 5 |
+| Nothing water-specific in `scene/` | 5 | 5 | 5 |
+| Determinism across viewers | 5 | 4 | 5 |
+| How naturally it answers both questions | 3 | 3 | 5 |
+| Buildable now | 4 | 2 | 4 |
+| **Total** | **30** | **22** | **32** |
+
+**A. Open and bounded, by holder.**
+- For:
+  - No stage change, and Decision 1's accepted sentence needs no further
+    amendment.
+  - A doc has one open water by construction, because a scene has one
+    traits map.
+  - It has the most careful reader: `at(p, { not })` leaves out the bodies
+    attached under the asker, so a tank never buoys its own hull. It
+    chooses by the rest band, not the displaced surface, so the choice
+    doesn't flicker on a crest, and it has a fallback for a thing above
+    the water.
+  - Bounded water is drawn wherever its doc is drawn, and the water in a
+    tank moves with the tank.
+  - It found the trap in offering a world's bounded bodies across links
+    (below, Decision 47).
+- Against:
+  - The holder decides what the water is. The same trait name means a
+    half-space on the scene and a box on an object.
+  - The lead asked whether the water should be a shape. A keeps the
+    world's water off the canvas and out of the outline, so it answers no
+    to half the question.
+
+**B. Worlds with walls.**
+- For:
+  - It is the only design where a world keeps its weather as well as its
+    water: a snow globe keeps its sky, its wind and its sea.
+  - The atmosphere is a genuine second consumer.
+  - A current that shifts each component's frequency, so the drawn surface
+    drifts with the water.
+  - `keeps` is a list of opaque names, so nothing water-specific enters
+    `scene/`.
+- Against:
+  - Three stage changes: per-name world resolution, the camera's-world
+    atmosphere, and the stage reading a scene-namespaced trait for the
+    first time.
+  - It re-amends a sentence of Decision 1 on the day the lead accepted it.
+  - The lead's literal case still isn't met: a boat that declared an
+    enclosure would keep her sea inside the harbour too, so boats never
+    declare one, and a boat keeps water only inside a wrapper doc.
+  - The camera's-world rule is positional in a design otherwise based on
+    paths.
+  - An enclosure has its own down, so a flooded hold is out of reach.
+
+**C. Weather or thing, by extent.**
+- For:
+  - The lead's shape exactly: every water body is an object, a box or
+    unbounded, and the sea is a behaviour put on it.
+  - COMPOSITION's own phrase "a linked world brings its things, not its
+    weather" decides Q4 by the extent. Bounded water is a thing and
+    travels; open water is weather and gives way. No flag is needed.
+  - Two packages put behaviours on one shape without knowing each other
+    (sailing's sea, water's current).
+  - It clips a bounded body's spectrum to its footprint.
+  - It gives a level free surface through the origin of a tilted body.
+- Against:
+  - The `water` ambient carries the outermost doc's bounded bodies. So a
+    toy yacht linked into a park floats on the park's pond while the park
+    is the world, and falls through it once the park is linked into a
+    city. That is a thing behaving like weather, a placement trap worse
+    than the gap it fills (A's argument).
+  - Its phase B lets contained docs' regions flow outward, which
+    Decision 1's first sentence forbids.
+
+**The winner is C, carried by A's rule for what crosses.** Water is an
+object whose extent says whether it is weather or a thing, and the sea is
+a behaviour on it (C). Bounded water never crosses a link at all, not even
+the outermost's: only its own doc's parts read it, wherever that doc is
+placed (A). The `water` ambient goes on meaning exactly what it means today,
+the world's open water.
+
+Grafted from A:
+- the choice function `at(p, { not })`;
+- carrier velocity;
+- drawing bounded water in every placement;
+- the one-flush settle of waves on the world's wind, pinned by a test;
+- the Model basin exhibit;
+- the deferred stage changes, each with the consumers it waits on.
+
+Grafted from B:
+- the current as a frequency shift, so drawn and floating agree;
+- refusing a tilted open body;
+- a Water part and a Pond part in the water package.
+
+### The model
+
+**Water is a shape.**
+- The trait `water` moves from the scene to an object:
+  `water: { size?: [w, depth, l] }`. It has no other field.
+- The object's origin is the water's surface at rest. Its height in its
+  doc is the level, and its uniform scale multiplies `size`.
+- **With `size`, the body is bounded.** It is a box in the object's own
+  frame: w across x and l along z, centred on the origin, hanging from the
+  origin down to its floor at y = -depth.
+- **Without `size`, the body is open.** It is everything below the
+  origin's height, with no edge. Moving an open body sideways or turning it
+  about +Y changes nothing, as turning a sphere changes nothing.
+- **Tilt.**
+  - An open body that is tilted gives no water and a notice, "Tilted: no
+    water here", the rule already used for tilted frames.
+  - A bounded body may tilt (a tank on a heeling hull). Its region is
+    tested in its own frame, and its free surface stays horizontal in its
+    doc's root frame through its origin: gravity is its doc's -Y, as it is
+    for sailing. Rotating a box about the centre of its free surface keeps
+    the water's volume, as long as the surface meets only the sides.
+- **The extent is data in the trait.** It is never read from loaded
+  geometry, because a region that depended on a GLB having arrived would
+  give viewers different answers. The object has no source and no
+  content. The water package draws it in a world layer at
+  `api.worldOf(id)`, and it is selected from the outline.
+- **One open body per doc.** A second one is flagged in the inspector and
+  draws and offers nothing; the lowest id keeps it. This is the keepers'
+  rule for two objects naming one slot (STAGE.md, "Keepers"). It is a
+  validity rule for an authoring error, not a precedence field.
+
+**The sea is a behaviour on the shape.**
+- `sailing.sea: { seed, scale }` becomes an object trait, put on a water
+  object.
+- It contributes the body's waves through the water package's convention
+  `water.waves`, which is now keyed by body:
+  `{ bodies: { [objectId]: { components, look } } }`. Per body, the last
+  contributor wins whole (Decision 20, now per body).
+- Waves are the water's answer to the world's wind. The spectrum is built
+  from `api.ambient("wind")` in its stage's frame (sea-view's `windFor`
+  rule), so a pond and the bay under one wind agree.
+  - No wind ambient means flat water.
+  - Components are in the doc's root frame for every body, open or
+    bounded, so the spectrum depends only on the wind and the link's
+    placement, never on where a body is moving. A tank carried on a hull
+    moves through its doc's wave field instead of carrying one; tanks are
+    flat by default.
+- On an object without `water`, the sea contributes nothing and its
+  inspector entry says so: "A sea needs water: add Water to this object".
+
+**A current is the second behaviour.**
+- `water.current: { speed, toward }` is the water package's own object
+  trait. It is a uniform drift: a tidal stream, or a river when put on a
+  box.
+- The water package adds U to `velocityAt`. It also shifts each
+  component's frequency by k (dir · U) in the value it builds, so the
+  shader and the reader drift together, and what floats is still what is
+  drawn.
+- Sailing's sea and water's current don't know each other. That is what
+  shows the behaviour slot isn't sailing's.
+
+**The weather leaves the sea.**
+- Wind and sky belong to a world, not to a body of water. A doc holding a
+  bay and a pond would otherwise offer two winds.
+- They move to a sailing scene trait,
+  `sailing.weather: { wind: { speed, from }, seed? }`. It offers the
+  `wind` ambient (`{ speed, from, seed, gustiness }`, unchanged) and
+  `atmosphere`, exactly as `sea.js` does today.
+
+### The rule: things come with their doc, weather doesn't
+
+The extent decides which a body is.
+
+**Open water is weather.**
+- Only the outermost doc's open body counts. It is the `water` ambient,
+  whose shape is today's plus the current:
+  `{ v: 2, level, components, look?, current? }`. It is plain JSON in the
+  outermost doc's root frame, on its world time.
+- A contained doc's open body is silent, as a boat's sea is in a harbour
+  today.
+
+**Bounded water is a thing.**
+- It counts for its own doc wherever that doc is drawn: alone, in a
+  harbour, in a dry room, mirrored or pinned. It is in its doc's frame and
+  on its doc's clock.
+- It is never offered and never read by another doc, not even when its doc
+  is the outermost (Decision 47).
+
+So what crosses a link is unchanged: the `water` and `wind` ambients, as
+frozen JSON, from the outermost inward. Nothing from a contained doc
+reaches its host or a sibling, Decision 1's accepted sentence covers all of
+it, and no word of this enters `scene/`.
+
+Rays don't hit water surfaces, open or bounded. The drawn surfaces are
+unpicked world-layer meshes, as the sea is today (Decision 30). So a host
+learns nothing of a contained doc's tank, not even by a ray.
+
+### Which water a thing is in
+
+**The contribution.** The water package's in-stage contribution `water`
+changes from one reader to `{ at(p, { not? }) → reader | null }`, with p
+in the calling stage's frame. Sailing's sea-view gains `oceanAt(p, id)`
+over it.
+
+**The choice.** `at` is a pure function of:
+- the world's open water (the ambient);
+- the stage's own doc's bounded bodies and their drawn poses;
+- p.
+
+The steps:
+1. **Leave out what you carry.** Drop the bodies attached under `not`, at
+   any depth of the doc's parent chain. A tank or flooded hold never buoys
+   its own hull.
+2. **Find the regions holding p.** The rest region of a body runs up to
+   its level plus A. A is the waves' amplitude bound, Σ|amp| + 0.5 m, as
+   `waterExtent` computes it.
+   - For a bounded body the region is inside its footprint, above its
+     floor and up to level + A.
+   - For the world's open water it is everything up to level + A.
+
+   Using the rest band and not the displaced surface means the choice
+   never flickers on a crest.
+3. **Rank the candidates.** Things come before weather: own bounded bodies
+   before the world's open water. Among bounded bodies, the smallest
+   volume comes first (an aquarium inside a flooded hold), then the lowest
+   id.
+4. **If no region holds p,** take the highest rest surface below p among
+   the bodies whose footprint holds p's column (a thing above a pond).
+5. **If there is none at all, return null.** There is no water, and
+   whatever floats holds still: "never the wrong water", W11.
+
+**The reader** has sailing's ocean shape exactly: `heightAt`, `sampleAt`,
+`normalAt`, `velocityAt`, `displaced`, `components`, `stats`.
+- **Open water** uses today's `convert.js`. Its frame and time rules are
+  unchanged: level similarities only, and τ latched after all ticks.
+- **A bounded body** maps p through the body's drawn placement in the
+  calling stage's frame (`api.worldOf`). Its time is the stage's own
+  `t`, with no τ.
+  - `heightAt` inside the footprint is the displaced surface clipped to
+    the box. Outside the footprint it is the floor, a dry column.
+  - `velocityAt` is the orbital velocity, plus the current, plus the
+    body's rigid velocity in its doc: v + ω×r, from successive drawn poses
+    of what it is attached to. The water in a tank on a moving hull moves
+    with the tank.
+- **The spectrum is clipped for a bounded body.** Components longer than
+  the footprint's shorter side are dropped, so a basin doesn't carry an
+  ocean swell. Any wave maker gets this from the water package, so sailing
+  never learns about extents.
+
+### Who draws what
+
+- **The open surface** is drawn by the outermost stage's water extension
+  only (`ambient("water").mine`), around the camera, as today. It sets the
+  open slab of the extent.
+- **Each bounded body** is drawn by its own doc's water extension in every
+  stage that draws that doc: acting, mirror and pin. A mirrored pond is two
+  ponds, as its banks are.
+  - The drawing is a finite patch over the footprint, from the same
+    material and the same components, so what floats is what is drawn, for
+    each body.
+  - Only the top surface is drawn. Walls are whatever object the author
+    puts there, a glass tank model for example.
+- **The extent** (`api.extent`) is the union of the slabs a stage draws.
+
+### How a hull samples
+
+- `sim.js` sets `env.water = ctx.sea.oceanAt(origin, id)` for each ship
+  once per step. The origin is her body origin, which is on her waterline
+  (`physics.js`: "waterline at y = 0"), mapped by her current pose.
+  `physics.js` doesn't change: it still gets one reader per step, or null
+  and holds still.
+- `looks.js` asks per float, leaving out the float's descendants.
+- `crew.js` asks per swimmer.
+- `hud.js` asks at her origin.
+- `sailing.ship` drops `needs: ["water"]` and its paste notice. A ship
+  floats on whatever water `at` finds around her, or rests.
+
+### Clocks
+
+- **The world's open water with waves:** a process with no state is held
+  where the doc is the world (W13, as now).
+- **A bounded body with waves:** a stage acting for its doc holds the
+  process, at every placement, on the doc's own clock.
+- **A mirror** holds none and draws its doc's water at the doc's clock,
+  which it hears.
+- **A pin** has no clock, so its bodies are frozen at the pinned time.
+
+### Determinism
+
+- Every input to `at` is either data of the reader's own doc (its bodies
+  and their poses) or an existing ambient. At a settled state every viewer
+  gets one answer, whatever loaded first, and only the computing view
+  steps.
+- **The one-flush settle.** The sea's waves read the wind during the
+  ambient flush, so the world's water settles one flush after its wind.
+  - The sea compares the wind's speed and from with the last it built
+    from. When they differ it asks for a reflush with `api.schedule`.
+  - The comparison is by value, not identity, so the settle ends.
+  - W20 pins that it takes at most two flushes, in every arrival order.
+
+### The cases
+
+**A boat alone (Ship at sea).** Her open body is the world's, drawn once,
+and she floats on it. W1 holds: level 0, the identity frame and `mine`,
+so the reader is the evaluator unwrapped. Her weather gives the wind and
+the sky.
+
+**A harbour with two boats.**
+- One open surface is drawn, the harbour's.
+- Each boat's `at` returns the harbour's open water. Her own open body is
+  silent, and her weather is not the world's. This is today's behaviour.
+- A tank one of them carries is drawn wherever she is drawn, and only her
+  parts read it. A swimmer from the other boat never wades in it, because
+  siblings never read each other.
+
+**A boat in a dry room.**
+- Ship at sea's water is open, so it is weather and doesn't come along.
+  She rests at her saved pose, as today.
+- A doc whose water is bounded keeps it in the room: a basin around a
+  boat, a ship in a bottle, a lock. Her boat floats in it, flat and calm,
+  and her sails have no wind, because the room has no weather.
+
+**A pond on Cadboro Bay.**
+- It is an object in the bay's doc, `water: { size: [w, depth, l] }`,
+  placed with its origin at the pond's surface. It is flat or carries a
+  small-scale `sailing.sea`.
+- Things in the bay's own doc that are put in it float on it: a sloop
+  added by the part, buoys, and a walker once walk reads water.
+- The terrain above its level hides the box's corners on land, as it hides
+  the open sea at y = 0 on land today.
+- A boat *linked* onto the pond doesn't see it. She takes the open water
+  beneath, and since sailing doesn't collide with ground, she falls through
+  the terrain to y = 0 (Costs, 1).
+
+**A tank or flooded hold inside a boat.**
+- It is a bounded object attached under the hull. It rides and heels with
+  her, and its surface stays level in her doc's frame.
+- It never buoys her (step 1). Her floats and swimmers in it read it.
+- It is drawn in the harbour and in mirrors too.
+- Its weight on her (the free-surface effect) is sailing's to model later,
+  and is not modelled here.
+
+**The Model basin in a dry room (new, the exhibit for Q4).**
+- The Model basin is a doc with no open water and no weather. It holds a
+  basin `water: { size: [30, 3, 30] }`, a glass-walled tank model around
+  it, and a sloop in it.
+- A mashup with no water links it beside Ship at sea.
+- One page then shows both halves of the rule: the basin's sloop floats,
+  flat and still, and Ship at sea rests at her saved pose.
+
+### Doc shapes
+
+Every doc is republished from its template or publisher, with no
+migration. Links are swapped in the shared examples folder, never re-added.
+In every doc, today's sea values move:
+- the sea's wind goes to `sailing.weather`;
+- seed and scale stay on the sea, which is now on a Water object named
+  "Sea" with no source;
+- the Sea object is first in `order`.
+
+- **Ship at sea** (and Ship at anchor, and the Catalina 30 scene):
+  - traits: `{ "sailing.weather": { wind: { speed: 7, from: 45 }, seed } }`;
+  - objects: `sea: { name: "Sea", transform at the origin, traits: { water: {}, "sailing.sea": { seed, scale: 1 } } }`,
+    then the sloop and her fittings as now;
+  - `view.start` as now;
+  - packages: scene, water, sailing, joints, traversal.
+- **Lost Cities aboard:**
+  - the boat: Ship at sea's shape, plus the locked link to the game G on
+    the cockpit table;
+  - G holds no water and is relinked unchanged, if publish-aboard can
+    relink an existing G (check first), so the Quiet games room and Games
+    night need no republish;
+  - E1M1's exit is set to the new boat.
+- **Fitting out:** S is Ship at sea's shape, plus F linked pinned at its
+  current heads and the hatch W linked live twice. F and W hold no water
+  and keep their URLs.
+- **Harbour:**
+  - traits: `{ "sailing.weather": { wind: { speed: 5, from: 250 }, seed: 7 } }`;
+  - objects: a Sea object with `sailing.sea: { seed: 7, scale: 0.5 }`, and
+    the two live links at (-25.6, 0, -9.3) and (-11.6, 0, 10.7);
+  - each boat is yawed by her weather's `from` less the harbour's
+    (Decision 22, now read from `sailing.weather`);
+  - home (6, 28, 70), looking at (0, 0, -10);
+  - publish-harbour refuses a boat that has no open water object.
+- **Cadboro Bay:**
+  - the terrain object as now;
+  - `sailing.weather` with today's wind;
+  - a Sea object at y = 0, the chart's mean water level;
+  - the sloop.
+
+  No pond is published, since none is known to lie in the terrain's
+  extent. The pond case is checked on a probe page.
+- **Model basin and its mashup:** new, as above. The mashup is published
+  by `scene/probes/publish-links.mjs`.
+
+### Scene: no change
+
+The stage gives all of it already:
+- an object-held trait runs its extension (`seats` is held by the scene
+  or an object);
+- `describes` with `on: "object"`;
+- world layers at `api.worldOf(id)`;
+- `api.schedule` for a reflush;
+- objects with no source.
+
+Edits to the words in `scene/`, made at build step 5:
+- STAGE.md, Conventions, "Water": the object trait `water`, open or
+  bounded; the ambient is the world's open water; bounded water is its
+  doc's own and is never offered.
+- DESIGN.md, "The sailboat": a sea is a Water object with sea behaviour,
+  and the weather is a scene trait.
+- COMPOSITION §3: "in a dry room she has none" becomes "in a dry room she
+  has none of the world's; water she holds as a thing, she keeps".
+- COMPOSITION, "Where we are".
+- COMPOSITION Decision 1, §4 and "What the stage doesn't do": drop
+  "proposed" (Decision 43).
+
+**Deferred stage changes**, each recorded with the consumers it would
+need. None is built.
+- **D1. Enclosing offers.** Inward data from every enclosing doc on the
+  path, not only the outermost.
+  - First consumer: bounded water reaching linked things, such as a toy
+    yacht linked into a park's pond, still floating when the park is
+    linked into a city.
+  - Candidate second consumers: atmosphere interiors (an indoor doc's
+    room keeping its own light inside an outdoor world), acoustic zones
+    for a machine's sound.
+  - This is C's phase B with the outward half removed.
+- **D2. A box for contentless objects,** supplied by the extension whose
+  trait they carry, so halo, framing and outline work on them.
+  - First consumer: water bodies.
+  - Candidate second consumer: trigger volumes (traversal exits, arena
+    kill zones).
+- **D3. A per-object `needs`,** so the inspector offers a sea only on a
+  water object. It has one consumer, so it is not built.
+
+### Costs
+
+1. **A thing linked into a host's bounded water doesn't float on it.** A
+   toy yacht linked into a park's pond takes the open water beneath, or
+   rests if there is none. On Cadboro Bay she falls through the terrain to
+   y = 0. Things in the pond's own doc work. The consistent fix is D1.
+2. **Ship at sea in a dry room still rests.** Q4's yes holds for water
+   authored as bounded. One doc that both gives way to a harbour's sea and
+   keeps its own water in a dry room would need a precedence flag in the
+   data, the `standIn` of Decision 5. This may not be what the lead
+   pictured; it is put to the lead below.
+3. **Boxes only.**
+   - An irregular pond relies on terrain above its level to hide the box's
+     corners. Dry ground below the level inside the box reads as flooded.
+   - A box-shaped flooded hold pokes through a curved hull.
+   - Volumes shaped by meshes would depend on loaded content, so they are
+     deferred.
+4. **Overlapping surfaces z-fight.** An inner doc's basin at the level of
+   the world's sea draws two surfaces. The host can't cut it out without
+   reading into what it contains. Reading precedence is defined; drawing
+   is the author's to avoid.
+5. **Edges.**
+   - A hull straddling a box's edge reads the floor for her outside
+     columns, so her plane fit pushes her off the edge.
+   - Moving from one body into another at a different level is a jump.
+   - Gerstner waves in a box don't reflect at the walls; they are clipped
+     there.
+6. **Bounded waves depend on placement through the world's wind,** so a
+   basin is calm in a dry room. That is allowed: `ambient` is already
+   among I4's placement-dependent reads. A snow globe can't keep its
+   storm; that would be B's enclosures.
+7. **Water objects have no halo** (D2). A pond is authored with inspector
+   fields, numbers, or parts, and selected from the outline. A sea on an
+   object without water is inert, with a notice (D3).
+8. **One more trait,** `sailing.weather`, and a sea is now three things
+   where it was two traits:
+   - a Water object (the shape);
+   - `sailing.sea` (the behaviour);
+   - `sailing.weather` (the air).
+
+   Each is named for its role.
+9. **Bodies don't hand over between docs.** A walker from the harbour
+   doesn't wade in a boat's tank unless the focus is inside her, and a
+   swimmer can't move from a tank to the harbour's water.
+10. **Attachment is the exclusion.** An unattached flooded hold below the
+    waterline would buoy its own hull, so parts and publishers must attach
+    it.
+11. **A uniform current doesn't bend waves** (no refraction), and a pin's
+    bodies are frozen at the pin.
+12. **The scope is wide outside `scene/`:**
+    - water;
+    - sailing (sea, sea-view, sim, crew, looks, hud, parts, templates);
+    - terrain;
+    - camber-run's probe page;
+    - the publishers;
+    - six republished examples and two new docs.
+
+    Chrome checks run under the lock, one at a time.
+
+### Invariants
+
+Every check enumerates a finite space; none is randomized. Each new rule
+has a mutation that must fail it.
+
+| | Invariant | Finite check | Mutation that must fail it |
+|---|---|---|---|
+| W15 | **The choice.** `at(p, { not })` returns the body a written-out table says | World open water {none, level 0, level 0 with waves} × own bodies, every subset of {A a box holding p, N a smaller box inside A holding p, C a box not holding p, D a box attached under the asker holding p} (16) × p ∈ {inside below level, inside within the band, above the band in the footprint, outside the footprint, below the floor} × not ∈ {the asker, none} (`water/src/choose.test.js`) | Drop the attached-under exclusion; prefer open over bounded; largest volume first; the displaced surface instead of the rest band (fails on crests); no highest-below fallback |
+| W16 | **Things travel, weather doesn't.** Every reader `at` returns is the world's open water or a bounded body of the caller's own doc; a contained doc's open body never answers; its bounded bodies answer for it at every placement | {boat alone; harbour with A and B each holding a tank; dry room with A and B; A mirrored; A pinned; A two links deep} × every stage × a 5×5 grid over each tank (`water/src/extension.test.js`) | Offer bounded bodies in the ambient; each stage using its own open body |
+| W17 | **Draw count** (replaces W3). Open surfaces drawn: 1 if the outermost has an open body, else 0, and only that stage sets the open slab. Bounded patches drawn: the sum, over every placement that draws a doc (acting, mirror, pin), of its bodies | W3's 9 configurations, W16's, and the Model basin beside Ship at sea in a dry room | Draw bounded only where `mine`; draw open everywhere; skip mirrors |
+| W18 | **Bounded water ignores placement but for the wind.** With a fixed world wind, or none, a doc's tank reads the same in its own frame wherever the doc sits | A doc G with a tank, flat and with a sea under a fixed wind: alone, in X yawed 30°, in X′ with a 20° heeled frame, mirrored, two deep: bit for bit, the surface level to G's own +Y | Level the free surface to the world's up |
+| W19 | **Bounded frames, tilt and carrier velocity.** | Yaw {0, 30°, 137°} × heel {0, 10°, 30°} × attachment {root, under the hull, under a fitting under the hull} × a 7×7 grid × t ∈ {0, 3.7, 1000}: the inside test, `heightAt` (clipped; the floor outside), normals, `velocityAt` = orbital + current + v + ω×r, against hand-composed transforms. Volume of a box tilted about its surface's centre equals the upright volume to 1e-9 while the surface meets only the sides; cube, 2:1 and 1:4 boxes, the lid or floor cases flagged | No carrier velocity; the box not rotated with heel; the surface tilted with the frame |
+| W20 | **Weather.** A body's waves are the spectrum of the world's wind in its stage's frame; `sailing.weather` is the only offer of `wind` and `atmosphere`; the settle ends | Holder {open, bounded} × world wind {none = flat, a, b} × placement {alone, linked yawed 30°}; every arrival order of {harbour, boat A, the doc A links}: after at most two flushes the world's components equal spectrum(world wind) and every view reads the same body and values | The sea reading its own doc's weather (fails the harbour); the sea offering wind; comparing the wind by identity (never settles) |
+| W21 | **Extent is data.** A body's region is a function of its trait and pose alone | Every region and extent function, called with a stage whose content api throws: no call | Read `api.box` or content |
+| W22 | **The spectrum clip.** A bounded body's components are the behaviour's with wavelength ≤ its footprint's shorter side; an open body keeps all | 5 seas × size {1, 10, 37.5, 200 m, open} | No clip |
+| W23 | **The current.** `velocityAt` gains exactly U; each frequency is shifted by k (dir · U), in the shader's value and the reader alike | Current {0, 0.5 m/s at 4 bearings} × 5 points × 3 times × yaw {0, 90°} | No frequency shift (the drawn and the floating part); U not rotated into the caller's frame |
+| W24 | **One open body per doc.** With several, the lowest id is the doc's open water; the others are flagged and draw and offer nothing | 1, 2 and 3 open bodies in every id order, with and without bounded ones | Highest id; draw every open body |
+| W25 | **One body per hull per step.** `env.water` is `at(origin, { not: her id })` | Ship in open water; in a pond; astride the pond's edge with her origin inside and outside; in a dry room with and without a basin of her own; a tank aboard and a flooded hold attached under her | The stage's first body; no exclusion (her tank buoys her) |
+
+Amended: W1 still holds by code identity (an open body at level 0 in a
+doc alone gives the evaluator unwrapped; the golden file passes once the
+spectrum's wind comes from the ambient, whose values are identical for a
+boat alone). W10 and W11 are re-run with `at`. W13 widens: a process is
+held where the doc is the world and its open water has waves, or where a
+stage acts for a doc whose bounded body has waves; never in a mirror or a
+pin. W2, W4 to W7, W9 and W14 are untouched.
+
+### Build order
+
+1. **water:**
+   - the object trait and its extents;
+   - the one-open-body rule;
+   - `at` and the choice (`choose.js`, pure);
+   - bounded readers (frames, clip, carrier velocity);
+   - finite patches in `material.js`;
+   - `water.waves` per body;
+   - processes for bounded waves;
+   - the extent union;
+   - the Water and Pond parts.
+
+   Checks: W15 to W19, W21, W22 and W24.
+2. **sailing:**
+   - `sailing.weather` (the wind and atmosphere off `sea.js`);
+   - the sea as an object behaviour, built from the wind ambient, with
+     the reflush;
+   - sea-view's `oceanAt`;
+   - `env.water` per step;
+   - crew, looks and hud asking per point;
+   - drop `needs`;
+   - the Sea and Sloop parts, and the templates (a Water object and the
+     weather; the Sloop adds them where the doc has no open water);
+   - camber-run's probe page.
+
+   Checks: W1, W10, W11, W20 and W25.
+3. **water:** `water.current`. Check: W23.
+4. **terrain:** its template writes the weather and a Sea object.
+5. **Words in `scene/`**, as listed under "Scene: no change".
+6. **Republish** in this order:
+   1. Ship at sea, Ship at anchor, the Catalina 30 scene, Lost Cities
+      aboard (and E1M1's exit), Fitting out's S and Cadboro Bay;
+   2. then the Harbour;
+   3. then the Model basin and its mashup.
+
+   Swap the links in the shared examples folder.
+7. **Checks in Chrome** under the lock, one at a time: harbour-check, and
+   a basin-check (the basin's sloop afloat at her waterline, Ship at sea
+   at her saved pose, one surface drawn, the basin's patch, and no open
+   surface).
+8. **walk's reader**, as before: `at(feet)`, so a walker wades in a pond
+   or the sea.
 
 ## Decisions (2026-11-14, made unattended)
 
@@ -449,11 +1059,12 @@ Doc edits with step 1:
 12. **Splitting sailing's sea part from its ship part** removes "a click on
     sea or sky comes aboard" for a boat alone (N11c); boarding is by her
     hull or the HUD's Enter. That bears on the lead's open call in N11(c),
-    so it is flagged, not settled.
+    so it is flagged, not settled. *Settled by 44.*
 13. **Rejected: solid layers and surfaces in ray hits** (A). Reason: wide
     change to every ray consumer for a need ambients meet with less.
     Kept as a candidate for bounded water (a pond as an object), where a
-    value per place is needed.
+    value per place is needed. *Answered by 45 to 47: bounded water is an
+    object read by its own doc, and rays still hit no water.*
 
 ## Decisions, building it (2026-11-14, made unattended)
 
@@ -489,7 +1100,8 @@ Doc edits with step 1:
     floats and no ship shows none.
 20. **The last `water.waves` contributor wins whole**, no superposition.
     One wave maker exists; adding waves from two would need a rule for
-    their looks too. Revisit with a second wave maker.
+    their looks too. Revisit with a second wave maker. *Per body since 45;
+    the current (55) is a second behaviour, not a second wave maker.*
 21. **Sailing reads its scale from the water ambient's frame** and refuses
     to sail at another scale (no ocean, a notice once). The wind is read
     through the same frame and its own latched time (sea-view.js), a few
@@ -583,7 +1195,8 @@ Each is fixed here with a test that fails without the fix, or answered.
 33. **COMPOSITION Decision 1's amended sentence is marked as proposed,** pending
     the lead's explicit yes, with the accepted sentence left in force. It
     now names everything that crosses: "space, published frames, and the
-    outermost doc's ambients and world time, as data".
+    outermost doc's ambients and world time, as data". *Accepted by the lead
+    on 2026-11-15 (43).*
 34. **The wrapped wind's `from` is turned into the stage's frame**, as its
     speed is scaled and its at() turned, so all of its fields are in one
     frame. Leaving the fields out instead would have made the shape differ
@@ -641,7 +1254,7 @@ Each is fixed here with a test that fails without the fix, or answered.
     Cities aboard, Fitting out and Cadboro Bay without the water trait, and
     take the Harbour out of the examples folder (it can't exist without
     one sea per world). About a day, not a branch. It is the first of the
-    lead's open questions below.
+    lead's open questions below. *The lead said yes on 2026-11-15 (43).*
 40. **The value schemas live with their packages.** STAGE.md's Conventions
     named `water` and `wind` and spelled out their values (Gerstner
     components, the reader's methods, the wind's fields and compass
@@ -678,13 +1291,142 @@ Each is fixed here with a test that fails without the fix, or answered.
     and the ship doesn't float. camber-run's probe page now writes the
     water beside its sea, as a template does (ecdf5ef9). Whether the sea
     trait should bring the water with it, as the Sloop does, is the lead's
-    call: it would make one trait write another's.
+    call: it would make one trait write another's. *Dissolved by 45: the
+    lead asked for water as a shape with sea behaviour on it, so a sea is a
+    behaviour of a Water object and every way of adding one writes both.*
+
+## Decisions, water bodies (2026-11-15, following the lead's answers of 2026-11-15)
+
+The lead answered the open questions on 2026-11-15. The first two are
+recorded as given. The design in "Water bodies" follows from the other two,
+and its choices were made unattended, each with its reason.
+
+43. **COMPOSITION Decision 1's amended sentence is accepted** ("that's
+    fine"). The couplings across a link are space, published frames, and
+    the outermost doc's ambients and world time, as data. This closes 33
+    and 39: what was merged and published before the yes now stands on it.
+    At build step 5 COMPOSITION drops "proposed" from Decision 1, §4 and
+    "What the stage doesn't do".
+44. **Boarding by click is accepted as built** ("fine"). This closes 12
+    and the open part of 30. A click on open sea, sky or shore boards
+    nobody; her hull, Enter and the HUD's button do. N11(c) is settled the
+    same way, in Edit as in Look.
+45. **Water is a shape, and the sea is a behaviour on it.** This follows
+    the lead's answer to 42.
+    - The `water` trait moves from the scene to an object. Its extent is
+      in the trait (`size`, or none for open water), and its transform
+      gives its level and its place.
+    - `sailing.sea` goes on that object and contributes that body's waves.
+    - This dissolves 42 rather than deciding it. "A sea without water" is
+      now a sea on an object that isn't water, which is inert and says so.
+      Every way of adding a sea (the Sea part, the Sloop part, the
+      templates) writes one object carrying both traits, as an author
+      would, so no trait writes another.
+    - Reason: the lead's question names the shape. A holder that decided
+      what the water is (design A: the scene's water open, an object's
+      bounded) would make one trait mean two shapes.
+46. **The extent says whether water is weather or a thing.** This is the
+    lead's yes to Q4, made with no flag.
+    - Open water is weather: only the outermost's counts, through the
+      unchanged ambient rule.
+    - Bounded water is a thing: it counts for its own doc wherever that
+      doc is placed.
+    - So an inner world keeps exactly the water it gave bounds to.
+    - Reason: COMPOSITION already says a linked world brings its things,
+      not its weather. Water with an edge can sit inside a host without
+      flooding it; water without one can't. The extent is what the water
+      *is*, not a precedence setting, so it is not Decision 5's `standIn`.
+47. **Bounded water crosses no link, not even the outermost's.** Design C
+    offered the outermost doc's bounded bodies in the `water` ambient.
+    That is rejected.
+    - A toy yacht linked into a park would float on the park's pond while
+      the park is the world, and fall through it once the park is linked
+      into a city. That is a thing behaving like weather, a trap of
+      placement worse than the gap.
+    - The consistent rule is inward offers from every enclosing doc
+      (deferred, D1). Until a second consumer asks for it, a linked thing
+      doesn't float on its host's pond (Costs, 1).
+48. **The weather moves to a scene trait, `sailing.weather`.** The `wind`
+    and `atmosphere` ambients leave `sailing.sea`.
+    - Reason: once the sea is a behaviour of a body, a doc with a bay and
+      a pond would offer two winds, and a pond's sea offering wind would be
+      weather coming from a thing.
+    - A dry island can now have wind.
+49. **Waves come from the world's wind, not from their doc's weather.**
+    Design B built each body's waves from its own doc's weather trait, so
+    that no flush depends on an ambient computed in the same flush. That
+    is rejected.
+    - B's way, a basin's waves would follow one wind while the sloop in it
+      sails in another.
+    - Waves are what the world's wind does to water, so a thing brought
+      into a world gets that world's waves. A basin in a dry room is calm.
+    - The cost is a one-flush settle at load, ended by comparing the wind
+      by value and pinned by W20.
+50. **One open body per doc.** A second open body is flagged and draws
+    and offers nothing, and the lowest id keeps it. Design A kept open
+    water on the scene for uniqueness by construction. That is rejected:
+    the lead asked for a shape, and the ocean belongs in the outline with
+    its behaviours.
+    - The rule copies keepers' rule for two objects naming one slot, a
+      validity rule for an authoring error.
+    - Two open half-spaces would mean one water at the higher level
+      anyway, so nothing real is lost.
+51. **The choice of water is design A's.**
+    - Leave out what you carry: bodies attached under the asker, at any
+      depth.
+    - Choose by the rest band, not the displaced surface.
+    - Things before weather; among bounded bodies the smallest volume,
+      then the lowest id.
+    - With no region holding p, the highest surface below p in its column;
+      else null.
+    - Reasons:
+      - attachment is structure, so a tank can't buoy its own hull however
+        it's shaped;
+      - the rest band can't flicker on a crest;
+      - smallest-first is what nesting means (an aquarium in a hold);
+      - a hull above the water still needs her column's water.
+    - Design B's per-column rule (the highest bounded body, -Infinity out
+      of water) was not taken. It has no exclusion for carried water, so a
+      tank under her hull would buoy her, and -Infinity would reach every
+      reader.
+52. **A hull samples once per step at her body origin,** her waterline,
+    with herself as `not`. `physics.js` keeps one reader per step.
+    Straddling an edge is a recorded cost, not a reason to give physics a
+    reader per sample.
+53. **Boxes only, and the extent is data.** A volume taken from a loaded
+    mesh would depend on what had loaded and would put a mesh test in
+    physics' hot loop. Polygons and meshes wait for a consumer: terrain's
+    lake outlines.
+54. **A bounded body's spectrum is clipped to its footprint** (from design
+    C). The water package does it for any wave maker, so sailing never
+    learns about extents.
+55. **The current is built, as the second behaviour, by a frequency
+    shift** (from design B). `water.current` is water's own trait. U is
+    added to `velocityAt`, and each component's frequency is shifted by
+    k (dir · U) in the value, so the shader and the reader drift together.
+    - Reason: with sailing's sea as its only behaviour, the slot would be
+      shaped for one consumer.
+    - It is the last build step and can slip without holding up the rest.
+56. **No stage change; worlds with walls are rejected for now.** Design
+    B's `scene.enclosure` is rejected:
+    - it needed three stage changes;
+    - it re-amended the sentence the lead had just accepted;
+    - it still couldn't let a boat keep her own sea in a dry room;
+    - it made the sky positional.
+
+    Its real gift, a world keeping its weather (a snow globe's storm, a
+    room's light inside an outdoor world), is recorded as a candidate
+    second consumer for enclosing offers (D1). Also deferred: a box for
+    contentless objects (D2) and a per-object `needs` (D3). Each is
+    recorded with the consumers it waits on.
 
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
 has a mutation check: revert it and the named test fails. The "Finite
-check" column says what is actually enumerated.
+check" column says what is actually enumerated. This table is what is
+built; "Water bodies" adds W15 to W25 and amends W1, W3 (by W17), W10, W11
+and W13 for when it is built.
 
 | | Invariant | Finite check | Mutation that must fail it |
 |---|---|---|---|
@@ -705,24 +1447,23 @@ check" column says what is actually enumerated.
 
 ## Open for the lead
 
-- Yes or no on Decision 1 (the amended coupling sentence, now naming the
-  world time too). It is already merged into `scene-stage` and published
-  (Decisions 39), so a no now costs reverting the merge's water, sailing,
-  terrain and ambients parts and republishing four examples, not a branch.
-  COMPOSITION records the sentence as proposed.
-- Boarding by click (Decisions 30): a click on the open sea, sky or shore
-  no longer boards a boat alone; her hull, Enter and the HUD's button do.
-  This changes Ship at sea's and Ship at anchor's first interaction. Keep
-  it, or have the ships' part hold the scene again (which brings the ship
-  machinery into every doc with a sea)?
-- N11(c) is settled by the same change: in Edit, as in Look, a click on
-  sea or sky no longer reaches a boat.
-- Whether the sea trait should bring the water with it (Decisions 42).
-- Whether a boat in a dry room resting at her saved pose is the right
-  meaning, or an inner world should be able to keep its own water (an
-  explicit scope boundary, unbuilt until two consumers ask).
+Answered on 2026-11-15: Decision 1's amended sentence (43), boarding by
+click (44), whether the sea should bring water (45, dissolved), and whether
+an inner world may keep its own water (46). Open from "Water bodies":
 
-## Where it stands (2026-11-14, scene-stage)
+- **Ship at sea in a dry room still rests.** The yes to Q4 holds for water
+  authored as bounded: a basin, a lock, a bottle or a tank comes along
+  wherever its doc goes. Ship at sea's water is open (it has to be, to give
+  way to the Harbour's), and open water is weather. One doc that both
+  gives way to a host's sea and keeps its own in a dry room needs a
+  precedence flag (Decision 5's `standIn`), so it isn't designed. If that
+  case is what was meant, say so.
+- **A thing linked into a host's pond doesn't float on it** (Costs, 1)
+  until enclosing offers (D1) find a second consumer. Atmosphere interiors
+  are the likeliest, for example the Arcade linked into the Harbour, lit by
+  its own room and not by the sea's sun.
+
+## Where it stands (2026-11-14, scene-stage; 2026-11-15, lane/water)
 
 Built: S1 (scene ambients, the atmosphere on them through `view.ambient`,
 arena moved), the water package (surface, convert, material, extension),
@@ -740,3 +1481,9 @@ anchor, Lost Cities aboard and Fitting out, both framed on arrival
 schemas out of STAGE.md (40), and recorded that all of this was merged
 before the lead's yes (39).
 Where each invariant is checked is the table above.
+
+On 2026-11-15 the lead accepted Decision 1's sentence and boarding by click
+(43, 44), and "Water bodies" was designed in the lane `lane/water` (45 to
+56): water as an object whose extent says whether it is weather or a thing,
+the sea and a current as behaviours on it, and the weather on the scene.
+None of it is built yet; its build order is in that section.
