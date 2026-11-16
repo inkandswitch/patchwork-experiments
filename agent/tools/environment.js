@@ -8,8 +8,48 @@
  */
 
 import { hostImport } from "./host.js"
-import { previewJson, truncate, bytes } from "./format.js"
+import { truncate, bytes } from "./format.js"
 import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+
+/**
+ * The registry, one line per plugin, grouped by type.
+ *
+ * It used to be pretty-printed JSON with every plugin's import URL: 66 plugins
+ * came to 16,000 characters, re-sent on every later turn of the session, and a
+ * search for 'pcb|kicad' matched nothing because it was a substring test. One
+ * real session spent a dozen calls and much of its budget finding out what was
+ * installed.
+ */
+export function listRegistries(registries, { type = null, search = null, urls = false } = {}) {
+  let pattern = null
+  if (search) {
+    try {
+      pattern = new RegExp(search, "i")
+    } catch {
+      pattern = new RegExp(String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    }
+  }
+  const sections = []
+  let count = 0
+  for (const [registryType, registry] of registries) {
+    if (type && registryType !== type) continue
+    const lines = []
+    for (const p of registry.all()) {
+      const datatypes = Array.isArray(p.supportedDatatypes) ? p.supportedDatatypes : []
+      if (pattern && !pattern.test([p.id, p.name ?? "", registryType, ...datatypes].join(" "))) continue
+      const name = p.name && p.name !== p.id ? ` — ${p.name}` : ""
+      const views = datatypes.length ? ` (for ${datatypes.join(", ")})` : ""
+      const hidden = p.unlisted ? " [unlisted]" : ""
+      lines.push(`  ${p.id}${name}${views}${hidden}${urls && p.importUrl ? `  ${p.importUrl}` : ""}`)
+    }
+    if (lines.length) {
+      count += lines.length
+      sections.push(`${registryType} (${lines.length})\n${lines.join("\n")}`)
+    }
+  }
+  if (!count) return `0 plugins matched${search ? ` /${search}/` : ""}${type ? ` in ${type}` : ""}.`
+  return `${count} plugin${count === 1 ? "" : "s"}${search ? ` matching /${search}/` : ""}:\n\n${sections.join("\n\n")}`
+}
 
 export const registryList = {
   id: "registry_list",
@@ -27,35 +67,20 @@ export const registryList = {
         type: "string",
         description: "Restrict to one registry, e.g. 'patchwork:tool' or 'patchwork:datatype'. Omit for all.",
       },
-      search: { type: "string", description: "Case-insensitive filter on id or name." },
+      search: {
+        type: "string",
+        description: "Case-insensitive regex over id, name, registry type and supported datatypes — 'pcb|kicad|circuit' finds any of them in one call.",
+      },
+      urls: { type: "boolean", description: "Also give each plugin's import URL. Rarely needed: plugin_source takes the id." },
     },
   },
   async execute(input) {
     const { getAllRegistries } = await hostImport("plugins")
-    const search = input.search ? input.search.toLowerCase() : null
-    const out = {}
-
-    for (const [type, registry] of getAllRegistries()) {
-      if (input.type && type !== input.type) continue
-      const plugins = registry
-        .all()
-        .map((p) => ({
-          id: p.id,
-          name: p.name ?? null,
-          supportedDatatypes: p.supportedDatatypes ?? null,
-          unlisted: p.unlisted ?? false,
-          importUrl: p.importUrl ?? null,
-        }))
-        .filter((p) => !search || `${p.id} ${p.name ?? ""}`.toLowerCase().includes(search))
-      if (plugins.length) out[type] = plugins
-    }
-
-    if (!Object.keys(out).length) return "No plugins matched."
-    return previewJson(out, { maxTotal: 16000 })
+    return listRegistries(getAllRegistries(), input)
   },
   summarize(input, output) {
-    const count = (String(output ?? "").match(/"id":/g) ?? []).length
-    return `registry · ${count} plugins`
+    const match = String(output ?? "").match(/^(\d+) plugins?/)
+    return `registry · ${match ? match[1] : "0"} plugins`
   },
 }
 

@@ -96,7 +96,11 @@ export const DEFAULT_CONFIG = {
   providerId: "openrouter",
   // The alias follows the newest Opus, so the default does not age.
   model: "~anthropic/claude-opus-latest",
-  params: { maxTokens: 8192 },
+  // Room for a long tool call — a whole file, a workflow's steps. At 8192 a
+  // real session's workflow_start was cut off mid-arguments and the turn was
+  // lost. Only what is generated is paid for; it is capped at each model's own
+  // limit (providers/openrouter.js).
+  params: { maxTokens: 16000 },
 }
 
 export const SESSION_TYPE = "agent-session"
@@ -137,6 +141,8 @@ export function addUsage(doc, usage) {
   doc.usage.in += usage?.in ?? 0
   doc.usage.out += usage?.out ?? 0
   doc.usage.turns += 1
+  // Input tokens served from the prompt cache, at a fraction of the price.
+  if (usage?.cached) doc.usage.cached = (doc.usage.cached ?? 0) + usage.cached
   if (typeof usage?.cost === "number" && Number.isFinite(usage.cost)) {
     doc.usage.cost = (doc.usage.cost ?? 0) + usage.cost
     if (usage.estimated) doc.usage.costEstimated = true

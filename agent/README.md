@@ -66,6 +66,14 @@ cost, which the loop adds to `usage.cost` and the header shows. A provider that
 reports none is estimated from the catalogue's list prices, and the total says
 it is partly estimated. A workflow adds up its steps.
 
+**Most of that cost is input**, because every request re-sends the conversation:
+one measured session sent 1.2M tokens and got back 19k. So requests to Claude
+ask for prompt caching (`cache_control`, which Claude needs and other providers
+do without), and every request carries a `session_id` — a hash of the session's
+URL, never the URL — that keeps a session on one provider so its cache is there
+to hit. Cached input is billed at a tenth of the price; the header's tooltip
+says how much came from the cache.
+
 **Runners outlive the views that started them.** A runner is registered per
 session in a module-level registry; views attach to it and detach from it.
 Navigating to another document unmounts the tool, which detaches a view — it

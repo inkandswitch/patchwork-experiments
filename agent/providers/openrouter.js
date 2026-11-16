@@ -30,6 +30,27 @@ export const SUGGESTED_MODELS = [
   { id: "~google/gemini-pro-latest", label: "Gemini Pro (latest)" },
 ]
 
+/** Claude caches only when asked (see buildBody). */
+export function isClaude(model) {
+  return /(^|[~/])anthropic\/|claude/i.test(String(model ?? ""))
+}
+
+/**
+ * A stable, opaque key for a session: FNV-1a over its URL, as hex. Enough to
+ * keep one session's requests together, and nothing that opens the document.
+ */
+export function sessionKey(url) {
+  if (!url) return null
+  let h1 = 0x811c9dc5
+  let h2 = 0x01000193
+  for (const ch of String(url)) {
+    const c = ch.codePointAt(0)
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
+    h2 = Math.imul(h2 ^ c, 0x811c9dc5) >>> 0
+  }
+  return `pw-${h1.toString(16).padStart(8, "0")}${h2.toString(16).padStart(8, "0")}`
+}
+
 /**
  * Every effort level OpenRouter's gateway knows, highest first. A model whose
  * catalogue entry says `supported_efforts: null` accepts all of them.
@@ -152,12 +173,23 @@ const KNOBS = [
  * anything: { supports: [param names] | null, maxOutput: number | null,
  * efforts: [levels] }.
  */
-export function buildBody({ system, messages, tools, model, params = {}, dropImages = false, capabilities = null }) {
+export function buildBody({ system, messages, tools, model, params = {}, dropImages = false, capabilities = null, cacheKey = null }) {
   const body = {
     model,
     messages: toOpenAIMessages(system, messages, { dropImages }),
     stream: true,
   }
+
+  // Prompt caching. Every request re-sends the whole conversation, and in a
+  // long session that is nearly all of the bill: one measured session spent
+  // 1.2M input tokens against 19k output. Claude caches only when asked; the
+  // top-level field lets the cache point advance with the conversation, so
+  // each turn pays a tenth of the price for everything the last turn sent.
+  // Other providers cache on their own. `session_id` keeps a session on one
+  // provider so its cache is there to hit — and is a hash, not the session's
+  // URL, which would hand OpenRouter a key to the document.
+  if (params.cache !== false && isClaude(model)) body.cache_control = { type: "ephemeral" }
+  if (cacheKey) body.session_id = cacheKey
   const t = toOpenAITools(tools)
   if (t) body.tools = t
 
@@ -369,6 +401,7 @@ export async function* stream({
   model,
   params,
   capabilities = null,
+  cacheKey = null,
   key,
   signal,
   fetchImpl = fetch,
@@ -381,7 +414,7 @@ export async function* stream({
   // is turned off for good the moment the provider says otherwise.
   let withImages = params?.images !== false
   const render = () =>
-    JSON.stringify(buildBody({ system, messages, tools, model, params, capabilities, dropImages: !withImages }))
+    JSON.stringify(buildBody({ system, messages, tools, model, params, capabilities, cacheKey, dropImages: !withImages }))
 
   let body = render()
   let lastError = null

@@ -46,6 +46,7 @@ import {
 import { batchedAppender } from "./store.js"
 import { runTool } from "./tools/index.js"
 import { notesSection } from "./tools/notes.js"
+import { sessionKey } from "./providers/openrouter.js"
 
 export const DEFAULT_SYSTEM = `You are an agent living inside Patchwork, a local-first workspace where everything is an automerge document.
 
@@ -59,6 +60,8 @@ Guidance specific to this environment:
 - Name the session with session_title once you know what the work is.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
 - A message may begin with a "[Workspace when this message was sent]" note: what the person had focused and open at that moment. "This", "here" and "it" mean the focused document. The note can differ from one message to the next — go by the latest one, and pass its urls to tools explicitly.
+
+If you need an answer from the person before you can do the right thing, ask with ask_user — never as a question at the end of a message. A question written into your reply is easy to miss, nothing shows it as waiting, and nothing waits for it.
 
 Be concise. The transcript is read in a narrow sidebar, and a short answer with the work already done beats a long one describing what could be done.`
 
@@ -453,6 +456,7 @@ async function streamTurn(opts) {
     model: store.doc().config?.model,
     params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
     capabilities: opts.capabilities ?? null,
+    cacheKey: sessionKey(opts.ctx?.sessionUrl),
     key: opts.key ?? null,
     signal,
     onRetry: (info) => emit({ type: "retry", ...info }),

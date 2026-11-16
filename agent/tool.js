@@ -878,7 +878,7 @@ export function AgentTool(handle, element, options = {}) {
     costLabel.textContent = spent ?? ""
     costLabel.hidden = !spent
     costLabel.title = spent
-      ? `${(doc.usage.in ?? 0).toLocaleString("en")} tokens in, ${(doc.usage.out ?? 0).toLocaleString("en")} out over ${doc.usage.turns ?? 0} requests · ${doc.usage.costEstimated ? "partly estimated from list prices" : "as charged by OpenRouter"}`
+      ? `${(doc.usage.in ?? 0).toLocaleString("en")} tokens in${doc.usage.cached ? ` (${doc.usage.cached.toLocaleString("en")} from cache)` : ""}, ${(doc.usage.out ?? 0).toLocaleString("en")} out over ${doc.usage.turns ?? 0} requests · ${doc.usage.costEstimated ? "partly estimated from list prices" : "as charged by OpenRouter"}`
       : ""
     const effort = doc.config?.params?.reasoning?.effort
     modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
