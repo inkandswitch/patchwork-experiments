@@ -280,7 +280,7 @@ describe("getting an elided result back", () => {
     const { ctx } = sessionWith("the original contents")
     const out = await sessionRecall.execute({ callId: "c1" }, ctx)
     expect(out).toContain("the original contents")
-    expect(out).toContain("fs_read returned this earlier (call c1)")
+    expect(out).toContain("fs_read (call c1) returned this earlier")
   })
 
   it("marks it as history rather than letting it pass for fresh", async () => {

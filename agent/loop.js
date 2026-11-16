@@ -23,6 +23,8 @@ import {
   callTarget,
   grantKey,
   addUsage,
+  resultsToKeepWhole,
+  pinResult,
   rejectSentImages,
   costOf,
   makeTurn,
@@ -669,7 +671,22 @@ async function executeCalls(opts) {
 
 /** This conversation's turns, as they are when asked: what session_recall reads. */
 export function storeRecall(store) {
-  return () => store.doc()?.turns ?? []
+  const recall = () => store.doc()?.turns ?? []
+  /** Does this result travel in full in the next request? */
+  recall.isWhole = (resultId) => {
+    const doc = store.doc()
+    const results = (doc?.turns ?? []).flatMap((t) => (t.blocks ?? []).filter((b) => b.type === "result"))
+    return resultsToKeepWhole(results, doc?.config ?? {}).has(resultId)
+  }
+  /** Have this result travel in full from now on (see pinResult). */
+  recall.pin = (resultId) => {
+    let outcome = null
+    store.change((d) => {
+      outcome = pinResult(d, resultId)
+    })
+    return outcome
+  }
+  return recall
 }
 
 function commitResults(store, results) {

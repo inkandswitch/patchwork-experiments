@@ -994,6 +994,33 @@ export const TAPER_ABOVE = 2000
 export const RESULTS_HIGH = 160_000
 export const RESULTS_LOW = 80_000
 
+/** How much pinned text travels in full at most; past it, the oldest pins are let go. */
+export const PIN_BUDGET = 60_000
+
+/**
+ * Pin a result so it travels in full, inside a change. Pins are numbered in
+ * order, and when what is pinned passes PIN_BUDGET the oldest are released —
+ * so asking for things back never grows a conversation without bound.
+ * Returns { pinned, released: [result ids] }.
+ */
+export function pinResult(doc, resultId, { budget = PIN_BUDGET } = {}) {
+  const results = (doc.turns ?? []).flatMap((t) => (t.blocks ?? []).filter((b) => b.type === "result"))
+  const target = results.find((b) => b.id === resultId)
+  if (!target) return { pinned: false, released: [] }
+  doc.pinSeq = (doc.pinSeq ?? 0) + 1
+  target.pinned = doc.pinSeq
+  const pins = results.filter((b) => b.pinned).sort((a, b) => a.pinned - b.pinned)
+  let total = pins.reduce((sum, b) => sum + String(b.output ?? "").length, 0)
+  const released = []
+  for (const pin of pins) {
+    if (total <= budget || pin === target) break
+    delete pin.pinned
+    total -= String(pin.output ?? "").length
+    released.push(pin.id)
+  }
+  return { pinned: true, released }
+}
+
 export function resultsToKeepWhole(results, config = {}) {
   const taperAbove = config.taperAbove ?? TAPER_ABOVE
   const high = config.resultsHigh ?? RESULTS_HIGH
