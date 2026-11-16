@@ -22,7 +22,9 @@
 // Target on a block starts the arena in both views, beside the editor: its
 // Play in the toolbar, the editor still there in both; × stops it); the
 // drawer's grip (drag, keys, double-click, an editor's own width, a narrow
-// stage, the width remembered on opening again). The arena's checks need
+// stage, the width remembered on opening again); a tall tree (capped at ~40%
+// of the pane, its bar on top, a selection deep in it revealed, and again
+// after × and the toolbar's Inspector). The arena's checks need
 // arena/ built (its dist/ is registered alongside); without it they are
 // skipped and say so. Prints a JSON report and exits non-zero if any check
 // fails.
@@ -631,6 +633,45 @@ try {
     check("openedAgainTheWidthIsRemembered", rr.kind === "chrome" && near1(rr.drawer.w, rw.drawer.w), { stored: rw.prefs["drawer.chrome"], now: rr.drawer.w });
     report.grip = { r0: r0.drawer.w, dragged: r1.drawer.w, key: rk.drawer.w, editor: [re.drawer.w, re2.drawer.w], reset: rd.drawer.w, set: rw.drawer.w, narrow: [rn.drawer.w, rn.stage.w], back: rg.drawer.w, reopened: rr.drawer.w };
     await shot("10-grip-reopened");
+  }
+
+  // ── a tall tree: at most ~40% of the pane, scrolling under its bar; a selection deep in it is revealed, and again on opening
+  {
+    await b.js(`(window.sceneHandle.change((d) => { for (let i = 0; i < 70; i++) { const id = "tall" + i; d.objects[id] = { kind: "group", name: "Tall " + i, group: null, visible: true, opacity: 1 }; d.order.push(id); } }), true)`);
+    await b.rest(300);
+    const T = (id = "tall69") => A(`(() => {
+      const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect(); return { y: b.y, h: b.height, b: b.bottom }; };
+      const h = p.hostA, tree = h.querySelector('.stage-drawer .inspector-tree'), list = tree?.querySelector('.object-list');
+      return { open: !!h.querySelector('.stage-drawer [data-panel="inspector"]'), pane: r(h.querySelector('.stage-drawer [data-panel="inspector"]')), tree: r(tree), fields: r(h.querySelector('.stage-drawer .inspector-body')),
+        bar: r(h.querySelector('.inspector-tree .outline-bar')), row: r(h.querySelector('.inspector-tree .object-row[data-id="${id}"]')), scrollTop: list?.scrollTop ?? null, scrollH: list?.scrollHeight ?? null };
+    })()`);
+    // in view: inside the tree and below its bar (the rows scroll under nothing)
+    const inView = (t) => !!t.row && !!t.bar && t.row.y >= t.bar.b - 1 && t.row.b <= t.tree.b + 1;
+    const t0 = await T();
+    check("tallTreeCappedAt40", t0.open && t0.tree.h <= 0.4 * t0.pane.h + 2 && t0.tree.h >= 0.38 * t0.pane.h && t0.fields.h >= 0.55 * t0.pane.h && t0.scrollH > t0.tree.h + 100, t0);
+    // the last group, below the tree's fold, selected elsewhere (as a click in the view would): its rows scrolled to it, the bar still on top
+    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await b.rest(300);
+    const t1 = await T();
+    check("tallTreeRevealsTheSelection", inView(t1) && t1.scrollTop > 0, t1);
+    check("tallTreeBarStaysOnTop", !!t1.bar && Math.abs(t1.bar.y - t1.tree.y) <= 1, t1);
+    // back up to the first row: scrolled into view below the bar, not under it
+    await A(`(p.A.host.record("scene.inspector").api.view.select("board"), true)`);
+    await b.rest(300);
+    const tUp = await T("board");
+    check("tallTreeRowUpTopIsBelowTheBar", inView(tUp) && tUp.scrollTop < t1.scrollTop, tUp);
+    await A(`(p.A.host.record("scene.inspector").api.view.select("tall69"), true)`);
+    await b.rest(300);
+    // × and the toolbar's Inspector: the same selection, revealed again in the reopened pane
+    await A(`(() => { [...p.hostA.querySelectorAll('.stage-drawer-tab')].find((t) => t.textContent.includes("Inspector"))?.querySelector('.stage-drawer-tab-close')?.click(); return true; })()`);
+    await b.rest(200);
+    const shut = await T();
+    await A(`(() => { [...p.hostA.querySelectorAll('.toolbar button')].find((x) => x.textContent.trim() === "Inspector").click(); return true; })()`);
+    await b.rest(300);
+    const t2 = await T();
+    check("tallTreeRevealedAgainOnOpening", !shut.open && t2.open && inView(t2), { shut: shut.open, t2 });
+    report.tallTree = { capped: t0, revealed: t1, up: tUp, reopened: t2 };
+    await shot("11-tall-tree");
   }
 
   report.errors = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile/.test(e));

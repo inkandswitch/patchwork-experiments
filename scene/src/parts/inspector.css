@@ -2,8 +2,8 @@
    section, 754-774). Every descendant rule keeps out of the documents the
    inspector embeds (.about-embed), except a scene embedded in one. */
 
-/* the one pane: the object tree on top (at most ~40% of the height, then it
-   scrolls), the selection's fields filling the rest (scrolling on their own) */
+/* the one pane: the object tree on top (at most ~40% of the height, then its
+   rows scroll), the selection's fields filling the rest (scrolling on their own) */
 .scene-stage .inspector-pane:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-direction: column;
@@ -15,18 +15,24 @@
   flex: 0 1 auto;
   max-height: 40%;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--scene-border);
 }
 
-/* the tree's filter and New group stay at its top while its rows scroll */
-.scene-stage .inspector-tree .outline-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding-bottom: 4px;
-  background: var(--scene-bg);
+/* its bar (filter, New group) stays put and only the rows scroll, so a row
+   scrolled into view is never under the bar */
+.scene-stage .inspector-tree > .scene-outline:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.scene-stage .inspector-tree .object-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* a ref selected (a dimension: no fields here), the tree has the pane */
