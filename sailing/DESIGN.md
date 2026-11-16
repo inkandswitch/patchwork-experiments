@@ -66,9 +66,20 @@ modules share.
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
 doc, crewing her together (see its header). Its page seeds `Math.random`
-(`--seed N`, default 1), so the template's sea and wind repeat; real time
-and frame rates still don't, so a pass count is reported per seed, over
-more than one. `probes/camber-run.mjs` takes a
+(`--seed N`, default 1), and the probe writes the sea's own seed into the
+doc before the world first runs (`--sea N`, default the `--seed`), so
+a run's sea and wind are the same however many ids were drawn before the
+template drew its seed. They weren't: the water split's extra draws handed
+`--seed 1` another sea, on which the head-to-wind checks failed on any
+tree (`aboard-run.mjs` pins its sea the same way). Not every sea exercises
+the leave step: its gate is the HUD's own (luffing or in irons, the two
+states where it says to back the jib), and on `--sea 2` and `5` the
+anchor breaks out with her 42° off the wind going astern, and stern to it
+making 0.95 m/s, so the step reports itself not exercised; `--sea 1`, `3`,
+`4` and the sea `--seed 1` drew before the split pass every check. The
+tree before the split fails the same gate, identically, on the sea the
+split handed `--seed 1`, and on its own `--seed 3`
+(`recovered/loose/probes.md`, 2026-11-15). `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
