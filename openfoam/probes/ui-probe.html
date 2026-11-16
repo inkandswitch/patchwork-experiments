@@ -171,7 +171,7 @@
         runs: c.runs,
         selected: c.selected,
         requests: Object.values(s.requests).map((r) => r.run),
-        run0: runs[0] ? { status: runs[0].status, title: runs[0].title, stl: runs[0].hull?.stl?.byteLength, info: runs[0].hull?.info?.lwl, stages: runs[0].stages.length, setup: runs[0].setup, geometry: runs[0].hull?.geometry?.digest, triangles: runs[0].hull?.geometry?.triangles, heads: runs[0].hull?.source?.heads, made: runs[0].made?.version } : null,
+        run0: runs[0] ? { status: runs[0].status, title: runs[0].title, stl: runs[0].hull?.stl?.byteLength, info: runs[0].hull?.info?.lwl, stages: runs[0].stages.length, stageIds: runs[0].stages.map((x) => x.id), setup: runs[0].setup, geometry: runs[0].hull?.geometry?.digest, triangles: runs[0].hull?.geometry?.triangles, heads: runs[0].hull?.source?.heads, made: runs[0].made?.version } : null,
       };
     },
     /** a dumped finished run (probes/local-run.mjs --dump), under its own urls, made the case's selected run */

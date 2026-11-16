@@ -41,7 +41,7 @@ export const isTerminal = (status) => TERMINAL.includes(status);
  * nothing is split. (A run doc starts with the serial order; the daemon, which
  * knows its cores, rewrites the list when it starts.)
  */
-export function stagesFor(mode, { parallel = false } = {}) {
+export function stagesFor(mode, { parallel = false, volume = false } = {}) {
   const split = { id: "decomposePar", label: "Split for cores" };
   return [
     { id: "prepare", label: "Write the case" },
@@ -55,6 +55,7 @@ export function stagesFor(mode, { parallel = false } = {}) {
     { id: "initialise", label: "Start from a past run" },
     { id: "solve", label: mode === "free-surface" ? "Solve (interFoam, LTS)" : "Solve (simpleFoam)" },
     { id: "results", label: "Read the results" },
+    ...(volume ? [{ id: "volume", label: "Keep the flow volume" }] : []),
   ];
 }
 
@@ -108,11 +109,12 @@ export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title,
     status: "queued",
     control: { cancel: false, finish: false },
     daemon: null,
-    stages: stagesFor(setup.mode).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null })),
+    stages: stagesFor(setup.mode, { volume: setup.keepVolume }).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null })),
     progress: { iteration: 0, of: setup.iterations, forces: [], residuals: [] },
     mesh: null,
     summary: null,
     layers: {},
+    volume: null,
     error: null,
     startedAt: null,
     finishedAt: null,

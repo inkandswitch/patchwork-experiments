@@ -15,6 +15,7 @@ import { CASE_TYPE, RUN_TYPE, decodeLayer } from "./protocol.js";
 import { decodeSTL } from "./hull/prepare.js";
 import { buildResultsGLB } from "./scene-build.js";
 import { findWhenThere } from "./find.js";
+import { getBytes, internalize } from "./segments.js";
 
 const typeOf = (doc) => doc?.["@patchwork"]?.type;
 const runKey = (run) => `${run?.status ?? "?"}|${JSON.stringify(run?.layers ?? {})}`;
@@ -57,7 +58,7 @@ export default {
     if (run.status === "done") {
       for (const [name, u] of Object.entries(run.layers ?? {})) {
         // a layer that isn't here yet is this peer's problem: throw, keep the last good render
-        const L = decodeLayer((await findWhenThere(repo, u, { tries: 4 })).doc());
+        const L = decodeLayer(await internalize(repo, (await findWhenThere(repo, u, { tries: 4 })).doc()));
         if (!L) throw new Error(`the ${name} layer hasn't arrived`);
         layers[name] = L;
       }
@@ -66,7 +67,7 @@ export default {
     let hullTriangles = null;
     if (run.status !== "done" && run.hull?.stl) {
       try {
-        hullTriangles = decodeSTL(run.hull.stl);
+        hullTriangles = decodeSTL(await getBytes(repo, run.hull.stl));
       } catch {
         hullTriangles = null;
       }

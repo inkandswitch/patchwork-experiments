@@ -13,6 +13,7 @@ import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
 import { lineChart, seriesColors } from "./charts.js";
 import { runningAttitude } from "../attitude.js";
 import { findWhenThere } from "../find.js";
+import { internalize } from "../segments.js";
 import { waveProfile } from "../waveprofile.js";
 import { inputRows, diffInputs, resultRows } from "../inputs.js";
 import { fieldPlot } from "./fields.js";
@@ -311,7 +312,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     if (!done) return;
     for (const [name, u] of Object.entries(run.layers ?? {})) {
       try {
-        layers[name] = decodeLayer((await findWhenThere(repo, u)).doc());
+        layers[name] = decodeLayer(await internalize(repo, (await findWhenThere(repo, u)).doc()));
       } catch {
         /* not here yet */
       }

@@ -99,6 +99,7 @@ export function inputRows(run) {
   add("Solver", "setup.stop", "Stop", s.stop ?? null, s.stop === "settled" ? "when settled (±1%)" : s.stop === "iterations" ? "after the iterations" : "–");
   add("Solver", "setup.domain", "Domain asked", s.domain ?? null);
   add("Solver", "setup.cores", "Cores asked", s.cores ?? null, s.cores ? String(s.cores) : "the daemon's choice");
+  add("Solver", "setup.keepVolume", "Flow volume", s.keepVolume === true, s.keepVolume ? volumeText(run?.volume) : "not kept");
   add("Solver", "setup.warmStart", "Started from", s.warmStart ?? null, s.warmStart ? `a past run (${s.warmStart.replace(/^automerge:/, "").slice(0, 8)}…)` : "rest");
 
   add("Ran on", "daemon.host", "Host", dmn.host ?? null);
@@ -109,6 +110,9 @@ export function inputRows(run) {
   add("Ran on", "recipe", "Case recipe", run?.recipe?.digest ?? null, run?.recipe?.digest ? `${short(run.recipe.digest)} · ${run.recipe.count ?? "?"} files` : "–");
   return rows;
 }
+
+const volumeText = (v) =>
+  ({ posting: "being kept", kept: `kept, ${Math.round((v?.bytes ?? 0) / 1048576)} MB`, incomplete: "kept, but not all of it reached the server", failed: "asked for; keeping it failed" })[v?.status] ?? "asked for";
 
 /** The input keys whose values differ between two runs. */
 export function diffInputs(a, b) {

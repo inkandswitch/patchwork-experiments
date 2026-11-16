@@ -80,6 +80,47 @@ change. **Set up the case from this run** puts its setup and hull link back
 into the case (to change one thing and run again); **Run again exactly**
 makes a new run with its setup and its frozen STL.
 
+## The flow volume, and big bytes in segments
+
+**Keep volume** (Solver) asks the daemon to keep every cell's flow after the
+run: the mesh and the last time's fields, as OpenFOAM wrote them (binary,
+with their headers). It is big, about 200 bytes a cell: 31 MB for a coarse
+double body (154k cells), 228 MB for a medium one (1.08M), so it's off unless
+asked for, and the estimate says how big it would be. The daemon keeps it
+after the run is done (the results don't wait for it), as the run's last
+stage, and links it as `run.volume` (`{ status, url, bytes, docs, missing }`).
+
+It is split **by meaning**, so a reader fetches only what it shows: one
+`openfoam-volume` doc indexes `mesh.points[piece]`, `mesh.faces[piece]`, … and
+`fields.p[piece]`, `fields.U[piece]`, …, where a piece is a processor's part of
+a parallel run. `src/volume.js` reads some of it (`readVolume(repo, doc, {
+mesh, fields, pieces })`, `volumeBytes` for what that costs) and parses
+OpenFOAM's binary files into typed arrays (`parseFoam`: points, compact faces,
+owner/neighbour, scalar and vector fields; checked against checkMesh's counts
+on real runs). The mesh and pressure of one piece of the coarse run is 2.3 MB.
+
+Anything big is then cut into **segment docs** of at most 4 MB
+(`src/segments.js`): a ref (`{ "@segments": [url…], size, sha256 }`) stands
+where the bytes would be. The same goes for a big kept hull, a big run STL
+(once for a whole sweep; a rerun reuses the segments) and a big result layer.
+Readers take inline bytes or a ref alike and check the digest. This is a
+**workaround**, dated 2026-11-15, for what `probes/bulk-bench.mjs` measured on
+the sync server: a 34 MB doc never arrived; fetching runs at 0.8–2 MB/s; a doc
+that takes over 60 s to arrive is called unavailable; acknowledgements
+sometimes never come for docs that did arrive. The note at the top of
+`src/segments.js` says how to check whether it's still needed. **If it is
+December 2026 or later, check.**
+
+The daemon waits for the server to acknowledge each doc it makes; where an
+acknowledgement doesn't come within a minute, a second peer in the daemon
+(nothing stored) fetches the doc the way a reader would. Only what that can't
+get either is reported missing, in the stage's note and `run.volume.missing`.
+
+Measured through the sync server (2026-11-15): keeping the coarse volume
+took 23.5 s (128 files, 81 docs, all acknowledged); a fresh peer read its
+mesh and pressure (18.8 MB) in 28 s, every file identical to the case on
+disk.
+
 ## The analyses
 
 Both hold the hull fixed at its attitude (sinkage and trim are inputs; it is
@@ -252,7 +293,7 @@ never overlaps:
 | doc | people write | the daemon writes |
 |---|---|---|
 | case | everything | nothing |
-| run | `control.cancel`, `control.finish` | status, stages, progress, mesh, summary, layers, error |
+| run | `control.cancel`, `control.finish` | status, stages, progress, mesh, summary, layers, volume, error |
 | server | `requests[id]` | `daemon` (heartbeat every 20 s), `handled[id]`, `active` |
 
 A run doc is made when you press Run, with the setup and the hull (as a
@@ -336,6 +377,14 @@ Probes (need OpenFOAM, or Chrome):
   runs from rest, at a double body's predicted attitude, and warm-started from
   a nearby speed, each to the settled rule; reports when each settled. Hours
   on a laptop: run it plugged in, or on a server.
+- `node probes/bulk-bench.mjs post --case <run dir> [--chunk-mb 8]`, then
+  `get --url automerge:…`: how long a run's whole volume takes to post through
+  the sync server and to fetch into a fresh peer, in chunks of a given size
+  (`--chunk-mb 0`: one doc). What `src/segments.js`'s workaround rests on.
+- `node probes/volume-run.mjs keep --case <run dir>`, then `read --url
+  automerge:… --case <run dir> [--fields p] [--pieces 0]`: keep a finished
+  case's flow volume as the daemon does, then read part of it into a fresh
+  peer and compare it byte for byte with the case on disk.
 - `pnpm build && node probes/ui-run.mjs --done run.json --done2 run2.json`:
   the built tool in headless Chrome on a fake repo, with real dumped runs:
   pre-flight, Run, a run mid-solve, results and every plot, the resistance
@@ -353,17 +402,9 @@ Probes (need OpenFOAM, or Chrome):
   compute it.
 - Results are kept at coarse precision as Float32 layers of up to a few MB; a
   fine mesh's hull surface wants decimating before it's stored.
-- **Results as VTK, and the volume solution in documents** (deferred,
-  2026-11-14). Store surfaces as VTK XML (`.vtp`) with every array,
-  dimensional, point and cell data, plus a sidecar (frame, units, reference
-  V/ρ/L, which array is pressure, velocity or wall shear), and derive Cp and
-  the rest when viewing: nothing lost, ParaView opens it, other solvers can
-  feed the same importer. The volume solution could live in documents too,
-  one per field so a viewer pays only for what it opens: the coarse
-  free-surface run is 49 MB of fields and 52 MB of mesh in OpenFOAM's binary
-  format (maybe 25–40 MB as compressed `.vtu`, unmeasured). It grows with the
-  cell count, so it's 10–100× that for server-sized runs. To settle it with
-  numbers: push the coarse run's `.vtu` through the sync server and time a
-  fresh browser opening it. It only pays off once the browser can slice
-  OpenFOAM's polyhedral cells (our own cutter, or vtk.js). Warm starts from
-  past runs (below) want the same data.
+- **Exploring the flow volume.** It's kept (above) and parsed, but nothing
+  draws it yet: slicing OpenFOAM's polyhedral cells in the browser (our own
+  cutter, or vtk.js), and a compact resampled copy near the hull for a quick
+  look (5–20 MB), are next. Surfaces as VTK XML (`.vtp`) with every array and
+  a sidecar (frame, units, reference V/ρ/L) are still deferred. Warm starts
+  from another daemon's runs want the same data.

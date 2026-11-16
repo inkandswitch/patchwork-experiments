@@ -32,6 +32,7 @@ import { dirname as dirOf } from "node:path";
 import { fileURLToPath } from "node:url";
 import { foamEnvironment, foamVersion, defaultCores } from "./foam.mjs";
 import { runJob } from "./runner.mjs";
+import { freshPeer } from "../src/segments.js";
 import { newServer, pendingRequests, activeRuns, isTerminal, HEARTBEAT_MS, PROTOCOL_VERSION, SERVER_TYPE } from "../src/protocol.js";
 
 const VERSION = "0.1.0";
@@ -109,6 +110,8 @@ export async function main(argv = process.argv.slice(2)) {
   await initSubduction();
   const repo = new Repo({ storage: new NodeFSStorageAdapter(join(stateDir, "automerge")), network: [], subductionWebsocketEndpoints: [SYNC] });
   say(`syncing with ${SYNC}`);
+  // a second peer, nothing stored: checks docs the server didn't acknowledge are there (src/segments.js)
+  const checker = freshPeer(() => new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] }));
 
   const daemonInfo = () => ({
     id: config.daemonId,
@@ -231,7 +234,7 @@ export async function main(argv = process.argv.slice(2)) {
       d.active[next.id] = { run: next.run, since: Date.now() };
     });
     say(`running ${next.id} (${h.doc().title})${next.by ? ` for ${next.by}` : ""}; ${running.size} of ${jobs} slots busy`);
-    runJob({ repo, handle: h, env, workDir: join(stateDir, "runs"), cores, daemon: { id: config.daemonId, host: hostname(), platform: `${platform()} ${arch()}`, openfoam: foam, version: VERSION, commit: CODE?.commit ?? null, dirty: CODE?.dirty ?? null }, say, signal: abort.signal })
+    runJob({ repo, handle: h, env, workDir: join(stateDir, "runs"), cores, daemon: { id: config.daemonId, host: hostname(), platform: `${platform()} ${arch()}`, openfoam: foam, version: VERSION, commit: CODE?.commit ?? null, dirty: CODE?.dirty ?? null }, say, signal: abort.signal, verify: checker.verify })
       .then((status) => markHandled(next.id, status))
       .catch((err) => {
         say(`run ${next.id}: ${err?.stack ?? err}`);
@@ -295,6 +298,7 @@ export async function main(argv = process.argv.slice(2)) {
       });
       await repo.flush?.();
       await new Promise((r) => setTimeout(r, 1500));
+      await checker.close();
       say("stopped");
     } catch (err) {
       say(`stopping: ${err?.stack ?? err}`);

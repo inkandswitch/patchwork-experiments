@@ -14,6 +14,8 @@ import { readLayers, summarize } from "./results.mjs";
 import { normalizeSetup } from "../src/setup.js";
 import { packChunk, requestIdOf, isTerminal, stagesFor } from "../src/protocol.js";
 import { settled } from "../src/convergence.js";
+import { getBytes, externalize, serverWatch } from "../src/segments.js";
+import { keepVolume } from "./volume.mjs";
 
 const TAIL_LINES = 14;
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -52,12 +54,23 @@ function readFrom(file, pos) {
  * @param {(msg: string) => void} [o.say]
  * @returns {Promise<"done"|"failed"|"cancelled">}
  */
-export async function runJob({ repo, handle, env, workDir, cores, daemon, say = () => {}, signal = null }) {
+export async function runJob({ repo, handle, env, workDir, cores, daemon, say = () => {}, signal = null, verify = null }) {
   const run0 = handle.doc();
-  if (isTerminal(run0.status)) return run0.status;
+  if (isTerminal(run0.status)) {
+    // stopped while keeping its volume: say so, rather than "posting" for ever
+    if (run0.volume?.status === "posting")
+      handle.change((d) => {
+        d.volume.status = "failed";
+        d.volume.error = "the daemon stopped while keeping it";
+        for (const s of d.stages) if (s.id === "volume" && s.status === "running") s.status = "failed";
+      });
+    return run0.status;
+  }
   const setup = normalizeSetup(run0.setup);
   const info = run0.hull?.info;
-  const stl = run0.hull?.stl;
+  let stl = null;
+  // which of the docs this job makes the sync server has (start it before making any)
+  const onServer = serverWatch(repo);
   const id = requestIdOf(handle.url);
   const dir = join(workDir, id);
   const np = Math.max(1, setup.cores || cores);
@@ -162,6 +175,10 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
   const done = (sid, note) => setStage(sid, { status: "done", endedAt: now(), note: note ?? null });
 
   try {
+    // inline, or in segment docs when it's big (src/segments.js)
+    stl = await getBytes(repo, run0.hull?.stl).catch((err) => {
+      throw new Error(`the run's hull STL didn't arrive: ${err.message}`);
+    });
     if (!info || !(stl instanceof Uint8Array) || !stl.byteLength) throw new Error("the run has no hull (its STL is missing)");
     const par = np > 1;
     change((d) => {
@@ -170,7 +187,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
       d.startedAt = now();
       d.error = null;
       // the stage order this daemon will follow (meshing splits first when it's parallel)
-      d.stages = stagesFor(setup.mode, { parallel: par }).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null }));
+      d.stages = stagesFor(setup.mode, { parallel: par, volume: setup.keepVolume }).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null }));
     });
 
     // ---- prepare
@@ -304,13 +321,20 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     const summary = { ...summarize(dir, g, info, { cells: cm.cells, converged }), stoppedBy, settledNote };
     const { layers: layerDocs, notes } = readLayers(dir, g);
     const urls = {};
+    const made = [];
     for (const layer of layerDocs) {
-      const h = await repo.create2({ ...layer, title: `${handle.doc().title} · ${layer.name}`, run: handle.url });
+      const title = `${handle.doc().title} · ${layer.name}`;
+      // a big layer's arrays go in segment docs (src/segments.js)
+      const { value, handles } = await externalize(repo, { ...layer, title, run: handle.url }, { title });
+      const h = await repo.create2(value);
+      made.push(...handles, h);
       urls[layer.name] = h.url;
     }
     // the layer docs are new: let them reach the sync server before their links do
     // (readers retry too, src/find.js; this keeps the first look from missing them)
-    await new Promise((r) => setTimeout(r, 2500));
+    const there = await onServer.wait(made, { timeoutMs: 120_000, ackMs: 30_000, verify });
+    if (there.ok === null) await new Promise((r) => setTimeout(r, 2500));
+    else if (!there.ok) say(`run ${id}: the server hasn't acknowledged ${there.missing.length} layer doc(s); readers will retry`);
     change((d) => {
       d.summary = summary;
       d.layers = urls;
@@ -320,6 +344,48 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     });
     done("results", `${Object.keys(urls).length} layers${notes.length ? `; ${notes.join("; ")}` : ""}`);
     say(`run ${id}: done, Rt ${summary.Rt.toFixed(1)} N`);
+
+    // ---- the flow volume, when asked for: after "done", so the results don't wait for it
+    if (setup.keepVolume) {
+      setStage("volume", { status: "running", startedAt: now() });
+      change((d) => {
+        d.volume = { status: "posting", url: null, bytes: 0, done: 0, docs: 0, missing: [] };
+      });
+      let lastTick = 0;
+      try {
+        const v = await keepVolume({
+          repo,
+          dir,
+          runUrl: handle.url,
+          title: handle.doc().title,
+          watch: onServer,
+          verify,
+          cells: summary.cells ?? null,
+          progress: ({ done: n, of }) => {
+            if (Date.now() - lastTick < 2000 && n < of) return;
+            lastTick = Date.now();
+            change((d) => {
+              d.volume.done = n;
+              d.volume.bytes = of;
+            });
+          },
+        });
+        const MB = (n) => `${(n / 1048576).toFixed(0)} MB`;
+        change((d) => {
+          d.volume = { status: v.missing.length ? "incomplete" : "kept", url: v.url, bytes: v.bytes, done: v.bytes, docs: v.docs, files: v.files, missing: v.missing, verified: v.verified, confirmed: v.confirmed };
+        });
+        if (v.missing.length) setStage("volume", { status: "failed", endedAt: now(), note: `${MB(v.bytes)} in ${v.docs} docs; the server never acknowledged ${v.missing.join(", ")}` });
+        else done("volume", `${MB(v.bytes)}, ${v.files} files in ${v.docs} docs${v.confirmed ? `, all on the server${v.verified ? ` (${v.verified} unacknowledged, found by fetching)` : ""}` : ""}`);
+        say(`run ${id}: volume ${v.missing.length ? "INCOMPLETE" : "kept"}, ${MB(v.bytes)} in ${v.docs} docs`);
+      } catch (err) {
+        change((d) => {
+          d.volume.status = "failed";
+          d.volume.error = String(err?.message ?? err);
+        });
+        setStage("volume", { status: "failed", endedAt: now(), note: String(err?.message ?? err) });
+        say(`run ${id}: keeping the volume failed: ${err?.message ?? err}`);
+      }
+    }
     return "done";
   } catch (err) {
     clearInterval(flushTimer);
@@ -349,6 +415,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     });
     return "failed";
   } finally {
+    onServer.dispose();
     handle.off("change", watch);
     signal?.removeEventListener("abort", onAbort);
     current?.kill();

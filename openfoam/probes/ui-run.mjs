@@ -85,6 +85,12 @@ try {
   await P(`change("d.setup.attitude.sinkage = 0")`);
   await until("Number((window.__p.figures().find(r => r[0] === 'Draft')||[])[1]?.replace(/[^\\d.]/g,'')) < 1.6", 10_000);
 
+  // keeping the flow volume: asked for in the solver settings, sized in the estimate
+  await P(`click('[data-k="keepVolume"]')`);
+  await until("(window.__p.figures().find(r => r[0] === 'Flow volume')||[])[1]", 10_000);
+  const vol = (await P("figures()")).find((r) => r[0] === "Flow volume");
+  check("Keep volume asks for the flow volume, and the estimate says how big (MB)", /≈ \d+ MB/.test(vol?.[1] ?? ""), vol);
+
   // Run
   await P("clickRun()");
   await until("window.__p.state().runs.length === 1", 10_000);
@@ -92,6 +98,7 @@ try {
   report.afterRun = st;
   check("Run makes a run doc (queued, STL frozen, setup copied) and files it in the inbox", st.run0?.status === "queued" && st.run0.stl > 84 && st.requests[0] === st.runs[0] && st.selected === st.runs[0] && Math.abs(st.run0.info - 9.91) < 0.01, st);
   check("and keeps what it was made from: the hull's geometry digest and heads, the tool's version", /^[0-9a-f]{64}$/.test(st.run0.geometry ?? "") && st.run0.triangles > 100 && Array.isArray(st.run0.heads) && st.run0.made === "0.1.0", st.run0);
+  check("a run that keeps its volume says so, and has a stage for it", st.run0.setup.keepVolume === true && st.run0.stageIds.at(-1) === "volume", st.run0.stageIds);
   check("Run switches to the Runs tab", (await P("tabs()")).selected === "runs", await P("tabs()"));
   await sleep(300);
   check("the queued run shows under Running, waiting for the daemon", /Queued/.test((await P(`runView("live")`)).status ?? "") && /1 waiting/.test((await P("phases()"))[2].sum), await P(`runView("live")`));

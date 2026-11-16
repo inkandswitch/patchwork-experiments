@@ -203,6 +203,10 @@
 .openfoam label.field > span:first-child {
   color: var(--openfoam-muted);
 }
+.openfoam label.field > input[type="checkbox"] {
+  justify-self: start;
+  margin: 0;
+}
 .openfoam input,
 .openfoam select,
 .openfoam button,
