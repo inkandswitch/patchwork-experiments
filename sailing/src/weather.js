@@ -11,7 +11,9 @@
 //     fact.
 //   - `atmosphere`: a bright maritime day.
 //
-// Where this doc is the outermost, they are the world's. Pure but for create().
+// They are what a doc reads wherever no doc around it on its path offers
+// them (alone, or in a dry room); a host that offers them wins. Pure but for
+// create().
 
 import { WEATHER } from "./traits.js";
 import { GUSTINESS } from "./wind.js";

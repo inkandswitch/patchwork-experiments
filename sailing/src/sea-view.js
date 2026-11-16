@@ -5,21 +5,24 @@
 //   - oceanAt(p, not): the water a point in this stage's frame is in, as the
 //     water package's contribution `water` answers it (its at(p, { not })),
 //     leaving out the water attached under `not` (a ship's own tank never
-//     buoys her): the world's open water in this stage's frame and on its
-//     clock (a boat alone is her own world, and it is her own sea exactly;
-//     linked into a harbour, it is the harbour's), or a bounded body of her
-//     own doc, which she keeps wherever she is placed; or null (a dry room,
-//     a tilted link), and nothing floats there. p[1] null asks from above.
-//   - wind: the world's `wind` ambient (weather.js offers it), made into a wind
-//     here (wind.js) and read the same way: mapped by this stage's frame, at
-//     the world's time for this stage's t, the offset latched once a frame
+//     buoys her): the open water of the outermost doc on her path that has
+//     some, in this stage's frame and on its clock (a boat alone, or linked
+//     into a dry room, floats on her own sea exactly; linked into a harbour,
+//     on the harbour's), or a bounded body of her own doc, which she keeps
+//     wherever she is placed; or null (no water on her path, a tilted link),
+//     and nothing floats there. p[1] null asks from above.
+//   - wind: the `wind` ambient (weather.js offers it), the outermost offer on
+//     her path, made into a wind here (wind.js) and read the same way: mapped
+//     by this stage's frame, at the offering doc's time for this stage's t, the offset latched once a frame
 //     after every clock has ticked (the water package's rule, copied: tick()).
 //     Its speed and from are in this stage's frame too.
-//   - world(): is her doc the world (the outermost: a boat alone)? Read from
-//     the wind ambient's `mine`, which her own sea offers wherever she is the
-//     world, so it holds whatever packages are installed; elsewhere the wind
-//     is another doc's, or nobody's (a dry room). Her camera ride and HUD
-//     show only then, or while you're aboard (WATER.md Decisions 19 and 28).
+//   - world(): does she sail in her own weather (a boat alone, or linked
+//     where no doc around her offers wind, as in a dry room)? Read from the
+//     wind ambient's `mine`, which her own weather offers wherever nothing
+//     around her does, so it holds whatever packages are installed; elsewhere
+//     the wind is another doc's (a harbour's), or nobody's. Her camera ride
+//     and HUD show only then, or while you're aboard (WATER.md Decisions 19,
+//     28 and 90).
 //   - clock: the doc's world time, api.clock.t() (scene TOOLS.md §7): the
 //     computing view's own, every other view's following it.
 //
@@ -168,7 +171,7 @@ export function createSeaView(api) {
     },
     /** the sea's time: the doc's world time (s) */
     clock: () => api.clock.t(),
-    /** is this boat's doc the world (the outermost: a boat alone)? Her camera ride and her HUD show only then, or while you're aboard */
+    /** does this boat sail in her own weather (alone, or where nothing around her offers wind)? Her camera ride and her HUD show only then, or while you're aboard */
     world: () => !!api.ambient(WIND_AMBIENT)?.mine,
     /** One frame, after every clock has ticked: the wind's offset for the next frame's reads. */
     tick() {
