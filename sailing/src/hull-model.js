@@ -3,6 +3,8 @@
 //
 // Body frame: bow toward −Z, starboard +X, up +Y, the waterline at y = 0.
 
+import { contractElement, hullElement, mastSection, rigElements } from "./windage.js";
+
 const RHO = 1025;
 
 /**
@@ -97,6 +99,33 @@ export function specFromBox(box, overrides) {
     },
     overrides,
   );
+}
+
+/**
+ * The plain path's windage (a ship without a contract): §3.13's elements by
+ * windage.js's rules from what her spec knows, stated as a contract states
+ * them (its frame: x forward, y to port, z up), for the physics to take into
+ * her body as it takes a contract's (rig-contract.js windageInBody). The
+ * hull from her box (LOA her length, B her beam, the sheer level at her
+ * freeboard, so FBAV is it), on the fore-and-aft plane her box is centred
+ * on; the mast from her deck (the freeboard) to the head of her lumped sail
+ * (tack + luff), as wide as mastSection of that length, on the plane her
+ * tack is on, beside the sail from its tack up its luff (the lumped sail
+ * taken as a main: its luff is P, BAS its tack's height over the deck),
+ * bare below. No rigging: she states no I and no righting moment (RM30) to
+ * size it by.
+ * @param {ShipSpec} spec
+ */
+export function plainWindage(spec) {
+  const fb = spec.freeboard;
+  const [cx, cz] = spec.center ?? [0, 0];
+  // body x starboard, z aft: the contract's y is −x, its x is −z
+  const hull = hullElement({ loa: spec.length, beam: spec.beam, stemX: spec.length / 2 - cz, sternX: -spec.length / 2 - cz, sheerAt: () => fb });
+  const s = spec.sail;
+  const heightM = s.tack[1] + s.luff - fb;
+  const plan = { mast: { partners: [-s.tack[2], fb], heightM }, BAS: Math.max(0, s.tack[1] - fb), P: s.luff, sails: s.area > 0 && s.luff > 0 ? [{ id: "main" }] : [] };
+  const rig = heightM > 0 ? rigElements({ plan, mastWidthM: mastSection(heightM), rm30Nm: null, chainplateBaseM: null }) : [];
+  return [...(hull ? [contractElement(hull, { y: -cx })] : []), ...rig.map((e) => contractElement(e, { y: -s.tack[0] }))];
 }
 
 const N_LONG = 14;

@@ -60,39 +60,33 @@ const FIXTURES = { "sloop-12m": sloop, "cuvature-first-guess": cuvature, "catali
  * more heel, more weather helm than predicted). `settle`: what she averaged,
  * and which checks fail.
  *
- * What's left, and why:
+ * What's left, and why. Sailing's windage is compose's at every point to
+ * rounding (windage.test.js), so nothing here is windage:
  * - cuvature's righting moment: her stand-in hull (the contract describes
  *   her drawn hull only by its coefficients) is 14–18% short past 10°
  *   (hull-resistance.test.js), so roll fails at 17 points from 14 kn
- *   (worst 2.40 tolerances, 5.1° more heel at 20 kn 45°). With sailing's
- *   old windage, which heeled her less than §6.1's, it looked smaller (16
- *   points, worst 2.28); now the windage agrees, 20 kn 90° shows it too. In
- *   the sim she floats on her drawn mesh. Her settle passes (3.276 against
- *   3.268 m/s). (Her Munk moment goes as u·v, sin λ·cos λ, not §6.4's
- *   sin λ: its cos λ, which stock-rig.test.js checks at λ 5° and 15°.)
+ *   (worst 2.40 tolerances, 5.1° more heel at 20 kn 45°). In the sim she
+ *   floats on her drawn mesh. Her settle passes (3.276 against 3.268 m/s).
+ *   (Her Munk moment goes as u·v, sin λ·cos λ, not §6.4's sin λ: its
+ *   cos λ, which stock-rig.test.js checks at λ 5° and 15°.)
  * - the J/24's heel: every wrench passes (roll −0.17 to −0.80 tolerances,
  *   sway under 0.18), but at 20 points from 12 kn (17 of them predicted at
  *   22–25°, by her 25° limit, where her righting curve is flattest) that
- *   roll residual reads as 2.2–4.5° less heel than predicted. Not windage
- *   (it agrees exactly): the sails' heeling moment or her curve there, open. Two of the old 22 closed (12 and 14 kn 60°)
- *   and the worst went from −7.9° to −4.5°: the rest of the old gap was
- *   windage's heeling force. Her settle's leeway is 7.39° against 9.02°,
- *   exactly what it was with sailing's old windage, so it never was
- *   windage. Part of it is how settle reads leeway: in her heeled body
- *   frame (physics.js read(): the sway across her heeled centreplane), so
- *   tan λ·cos φ, 8.2° at her 24° for the aid's 9.0°; the rest is open.
+ *   roll residual reads as 2.2–4.5° less heel than predicted: the sails'
+ *   heeling moment or her curve there, open. Her settle's leeway is 7.39°
+ *   against 9.02°. Part of it is how settle reads leeway: in her heeled
+ *   body frame (physics.js read(): the sway across her heeled
+ *   centreplane), so tan λ·cos φ, 8.2° at her 24° for the aid's 9.0°; the
+ *   rest is open.
  * - the Laser dead downwind (180°, 6–20 kn): both swing the main's CE
  *   (§6.6), and sailing's swing turns her bow to windward less than §6.6's:
  *   2.4–4.2° less weather helm than predicted (worst yaw −2.93 tolerances
- *   at 20 kn, sway −1.06 there). Windage there is a few newtons, and now
- *   §6.1's, so it was never that: open, to diagnose (where each puts the
- *   swung CE at 85°). The rest of the Laser passes: her old close-hauled and
- *   reaching failures were sailing's windage drag, about twice §6.1's. Her
- *   planing-range points: 23 of 24 pass.
- * The sloop and the Catalina now balance at every point and settle within
+ *   at 20 kn, sway −1.06 there): open, to diagnose (where each puts the
+ *   swung CE at 85°). The rest of the Laser passes, and 23 of her 24
+ *   planing-range points.
+ * The sloop and the Catalina balance at every point and settle within
  * every tolerance (the sloop at 3.402 against 3.430 m/s, 0.8% slow), so
- * they list nothing: their old heel failures on a heeled reach were
- * sailing's windage, whose side area didn't grow with heel.
+ * they list nothing.
  */
 const KNOWN_GAPS = {
   "cuvature-first-guess": {
@@ -113,7 +107,7 @@ const KNOWN_GAPS = {
       of: 91,
       worst: { surge: 0.059, sway: 0.177, roll: -0.803, yaw: 0.145, heelDeg: -4.512, rudderDeg: -0.585 },
     },
-    // leeway 7.4° against 9.0° at 12 kn 45°: not windage (above)
+    // leeway 7.4° against 9.0° at 12 kn 45°: partly settle reading it in her heeled frame (above)
     settle: { speedMs: 2.995, heelDeg: 24.19, leewayDeg: 7.39, rudderDeg: -4.7, fails: ["leeway"] },
   },
   "laser-ilca7": {

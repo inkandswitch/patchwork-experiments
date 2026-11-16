@@ -18,12 +18,13 @@
 // more: her crew (`state.crew`) and, with a headsail, its clew (`state.jib`),
 // and flies each of its sails as its own foil (riggedSails).
 
-import { buildHull, mergeSpec, SLOOP, specFromBox } from "./hull-model.js";
+import { buildHull, mergeSpec, plainWindage, SLOOP, specFromBox } from "./hull-model.js";
 import { liftSlope, foilCL, foilCD, sailCL, sailCD, planformAspect, planformSlope, planformCL, planformCD, ittc57, rigSailCoeffs } from "./physics-foils.js";
 import { contractResistance } from "./resistance.js";
 import { rigSails, swungCE } from "./rig-sails.js";
+import { windageInBody } from "./rig-contract.js";
 import { heldEitherSide } from "./trim.js";
-import { plainWindage } from "./windage.js";
+import { elementForce } from "./windage.js";
 
 export { SLOOP, specFromBox };
 
@@ -169,22 +170,18 @@ export function createShip(input) {
   const rudderAspect = 3; // with the hull above it as an end plate
   const rudderSlope = liftSlope(rudderAspect);
   const sailAspect = (1.3 * spec.sail.luff * spec.sail.luff) / spec.sail.area;
-  // Windage (§3.13's elements, §6.1's forces; windage.js): a contract's, or
-  // on the plain path the same rules' from her box and lumped mast. Each is
-  // ½ρ·Cd·A per (m/s)², at its centre from the centre of gravity, lifted
-  // `up`·|sin φ| up the mast as she heels (either way: the exposed side
-  // grows whichever side is down), where the body adds `heeled`·|sin φ|
-  // of side area.
-  const rhoAir = rig?.sailModel?.rhoAirKgM3 ?? RHO_AIR;
-  const windage = (rig ? rig.windage : plainWindage(spec)).map((e) => ({
-    body: e.shape === "body",
-    at: rel(e.atM),
-    up: e.zPerSinHeelM,
-    front: 0.5 * rhoAir * e.cdFront * e.areaFrontM2,
-    // a spar's drag is its one area's (§6.1: D = q·A·(Cd_f·cos²β + Cd_s·sin²β))
-    side: 0.5 * rhoAir * e.cdSide * (e.shape === "body" ? e.areaSideM2 : e.areaFrontM2),
-    heeled: e.shape === "body" ? 0.5 * rhoAir * e.cdSide * e.sidePerSinHeelM2 : 0,
-  }));
+  // Windage (§3.13's elements, §6.1's force law: windage.js elementForce):
+  // a contract's, or on the plain path the same rules' from her box and
+  // lumped mast (hull-model.js plainWindage), both in her body frame. Each
+  // acts at its centre from the centre of gravity, lifted zPerSinHeelM·|sin φ|
+  // up the mast as she heels, where a body's side area grows by
+  // sidePerSinHeelM2·|sin φ|: heel either way, since the exposed side grows
+  // whichever side is down. One air density for her sails and her windage:
+  // her contract's, or the standard atmosphere's.
+  const rhoAir = rig ? rig.sailModel.rhoAirKgM3 : RHO_AIR;
+  const windage = rig ? rig.windage : windageInBody(plainWindage(spec));
+  const windageAt = windage.map((e) => rel(e.atM));
+  const windageF = [0, 0];
   const anchorK = 2.5 * m; // a chain's catenary, as a spring
   // damped twice critically: a chain lying on the bottom soaks up a snatch, it doesn't hand it back
   const anchorC = 4 * Math.sqrt(anchorK * m * (1 + ADDED_MASS[2]));
@@ -1000,7 +997,7 @@ export function createShip(input) {
       const raised = clamp(controls.sail ?? 0, 0, 1);
       if (raised > 0) {
         const sb = Math.sin(boom), cbm = Math.cos(boom);
-        const qa = 0.5 * RHO_AIR * (ux * ux + uz * uz) * spec.sail.area * raised;
+        const qa = 0.5 * rhoAir * (ux * ux + uz * uz) * spec.sail.area * raised;
         foilForce(ux, uz, sb, cbm, qa, true, 0, sailAspect);
         const fx = foil[0], fz = foil[1];
         diag.sailForce = Math.hypot(fx, fz);
@@ -1029,13 +1026,11 @@ export function createShip(input) {
 
     // Windage (§6.1): each element in the air at its centre (the true wind
     // less her motion there), in her heeled sail plane: ux square to her
-    // centreplane and uz along it are AWS_e·sin β_e and AWS_e·cos β_e. A
-    // body (the hull) meets it in cross flow, each axis its own area; a spar
-    // drags along it.
+    // centreplane and uz along it are AWS_e·sin β_e and AWS_e·cos β_e.
     const sinHeel = Math.abs(r3);
     for (let k = 0; k < windage.length; k++) {
-      const e = windage[k];
-      const ex = e.at[0], ey = e.at[1] + e.up * sinHeel, ez = e.at[2];
+      const e = windage[k], at = windageAt[k];
+      const ex = at[0], ey = at[1] + e.zPerSinHeelM * sinHeel, ez = at[2];
       const ax = r0 * ex + r1 * ey + r2 * ez;
       const ay = r3 * ex + r4 * ey + r5 * ez;
       const az = r6 * ex + r7 * ey + r8 * ez;
@@ -1044,17 +1039,8 @@ export function createShip(input) {
       const rz = twz - (vz + w0 * ay - w1 * ax);
       const ux = r0 * rx + r3 * ry + r6 * rz;
       const uz = r2 * rx + r5 * ry + r8 * rz;
-      let fx, fz;
-      if (e.body) {
-        fx = (e.side + e.heeled * sinHeel) * Math.abs(ux) * ux;
-        fz = e.front * Math.abs(uz) * uz;
-      } else {
-        const u = Math.hypot(ux, uz);
-        if (!(u > 0)) continue;
-        const d = (e.front * uz * uz + e.side * ux * ux) / u;
-        fx = d * ux;
-        fz = d * uz;
-      }
+      elementForce(e, ux, uz, sinHeel, rhoAir, windageF);
+      const fx = windageF[0], fz = windageF[1];
       apply(r0 * fx + r2 * fz, r3 * fx + r5 * fz, r6 * fx + r8 * fz, ax, ay, az);
     }
 

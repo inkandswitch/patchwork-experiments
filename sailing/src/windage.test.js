@@ -14,9 +14,11 @@
 //    mean freeboard (its frontal area over its beam: the fixture carries no
 //    sheer), so that row holds the area and centre rules, and meanFreeboard
 //    is held on its own to the trapezoid rule's finite cases.
-// 3. elementForce is compose.js's §6.1 windage force: at a finite table of
-//    states, each fixture's elements one at a time add exactly elementForce's
-//    fx and fh, at its (x, z), to compose's surge, sway and yaw.
+// 3. elementForce, the one force law the physics flies, is compose.js's
+//    §6.1 windage force: at a finite table of states, each fixture's
+//    elements one at a time add exactly elementForce's Fh and −Fx, at the
+//    element's centre (x, z + zPerSinHeel·sin φ), to compose's surge, sway
+//    and yaw.
 // 4. sailing's physics carries §6.1's windage by construction: at every
 //    unflagged predicted point of the five fixtures, the windage in her
 //    wrench (agreement-harness sailingWindage: the wrench in the point's
@@ -124,7 +126,9 @@ describe("elementForce is compose's §6.1 windage, element by element", () => {
             const b = (Math.atan2(ay, ax) / RAD - state.leewayDeg) * RAD, p = heelDeg * RAD;
             const betaEDeg = Math.atan2(Math.sin(b) * Math.cos(p), Math.cos(b)) / RAD;
             const awsE = aws * Math.hypot(Math.cos(b), Math.sin(b) * Math.cos(p));
-            const f = elementForce(e, { awsE, betaEDeg, heelDeg, rho: c.sailModel.rhoAirKgM3 });
+            const be = betaEDeg * RAD;
+            const [fh, aft] = elementForce(e, awsE * Math.sin(be), awsE * Math.cos(be), Math.sin(p), c.sailModel.rhoAirKgM3);
+            const f = { fx: -aft, fh, x: e.atM[0], z: e.atM[2] + e.zPerSinHeelM * Math.sin(p) };
             const at = { set, flat: 1, twsMs, twaDeg };
             const s = { ...state, heelDeg };
             const A = one.forcesAt(at, s), B = bare.forcesAt(at, s);
