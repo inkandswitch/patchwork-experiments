@@ -1,7 +1,15 @@
 // Water's parts (scene:part, STAGE.md "Parts"): open water, and a pond. Each
 // is one object with no source: its shape is the `water` trait's data, and
 // the extension draws it. The object's origin is the surface at rest, where
-// the part was put; the pond is level whatever it was put on.
+// the part was put; the pond is level whatever it was put on. A doc has one
+// open body (W24), so open water put on a doc that has some already adds
+// nothing and says so (as sailing's Sea part does, W26): a second one would
+// be flagged and do nothing.
+
+import { bodiesOf } from "./bodies.js";
+
+/** What the Water part says when the doc has open water already. */
+export const HAS_OPEN = "This scene has open water already.";
 
 /** A water object: no source, its shape in its trait. Pure. */
 export function waterObject({ name, position, yaw = 0, size, parent = null }) {
@@ -31,11 +39,15 @@ function place(name, size) {
       const w = at?.world ?? {};
       const position = [0, 1, 2].map((i) => Number(w.position?.[i]) || 0);
       const id = ctx.newId("o");
+      let had = null; // the doc's open body, when open water is put on a doc that has one
       ctx.change((d) => {
+        if (!size) had = bodiesOf(d.objects).open;
+        if (had) return;
         d.objects[id] = waterObject({ name, position, yaw: size ? Number(w.rotation?.[1]) || 0 : 0, size });
         d.order.push(id);
       });
-      return id;
+      if (had) ctx.notify?.(HAS_OPEN);
+      return had ?? id;
     },
   };
 }
