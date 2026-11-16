@@ -147,14 +147,15 @@ Still open:
   Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
   they go;
-- a start placed on a link doesn't arrive when the linked doc starts people
-  in a general body (found by N7's gate, 2026-11-16; Decisions, N7, 1).
-  E1M1 starts people walking at its spawn; linked into a mashup with the
-  start on its link, nobody arrives, because walk is a general part and
-  runs only at the focus (the outermost), while an arrival through a link
-  is offered only the linked doc's stage's bodies. Walk picked by hand
-  from the chip then walks E1M1's floors from the home, which is the
-  spawn's eye. A stage change, and the lead's call (Waiting on the lead).
+- a place handed across docs to a body: a body offered by one stage,
+  entered with a place that names another doc's object, reads the id in
+  its own doc, so a start through a link into a general body doesn't
+  arrive and Walk from here on a linked spawn starts at the camera (found
+  by N7's gate, 2026-11-16; Decisions, N7, 1; Questions for the lead);
+- the real Patchwork ran package versions days apart in one page, and a
+  viewer with an older terrain provider rebuilt Cadboro Bay's published
+  render without its buildings and trees (Decisions, N7, 6; Questions for
+  the lead).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -231,12 +232,25 @@ the lead confirms or reverses it):
   serves tests; and a test that drives the stage's manual clock no longer
   drives the gate unless it sets `timeStamp` (Decisions, double-click
   stamps, 4). Not chosen: refusing a double-click with a missing stamp.
-- **Arriving through a link in a general body** (Decisions, N7, 1, a
-  question, not decided): should a start through a link offer the focus's
-  general bodies too, entered at the linked doc's place and read in that
-  doc's stage, or should arriving through a link move the focus there, or
-  is a linked doc that starts people walking simply not started so? Until
-  then, E1M1 on the Cadboro Bay shore isn't published (Decisions, N7, 2).
+
+Questions for the lead (not decided; each names what stands meanwhile):
+- **A place handed across docs to a body** (Decisions, N7, 1): when a body
+  offered by one stage is entered with a place that names an object of
+  another stage's doc, should that stage resolve the place to a pose in
+  the world (frames cross, references don't, as §9 has it), should the
+  enter be refused, or should arriving through a link move the focus
+  there? Arrival through a link into a general body and Walk from here on
+  a linked spawn are the two cases today. Stands meanwhile: the enter
+  silently starts the walker at the camera, and E1M1 on the Cadboro Bay
+  shore isn't published (Decisions, N7, 2).
+- **Package versions in one page, and a render an old provider can
+  overwrite** (Decisions, N7, 6): Cadboro Bay's terrain render has drawn
+  without its buildings and trees since 18:35 UTC on 2026-11-16, its
+  previous GLB still in its history. Write that build back (a script is
+  kept with the lane's report, not run), or re-render with the current
+  terrain? And is a viewer whose provider is older than a render's
+  allowed to rebuild it? Stands meanwhile: Cadboro Bay as it is now, and
+  no more real-Patchwork checks from N7 until the lead says.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left
@@ -2251,101 +2265,133 @@ near-misses at cards on her moving table: all boarded before, none after).
    Decisions 6 (nothing stands on Edit), not something the stage would
    cut, since a carry out there is meant to work.
 
-## Decisions, N7 (2026-11-16, decided unattended in `lane/n7`, for the lead)
+## Decisions, N7 (decided unattended (2026-11-16, lane/n7), for the lead)
 
 N7 is mashups: published docs linked unchanged into a new doc, with no
-stage code. The first candidate was E1M1 on the Cadboro Bay shore. It was
-gated on an unlisted scratch doc, *E1M1 at Cadboro Bay (scratch)*
+stage code. The first candidate was E1M1 on the Cadboro Bay shore, gated on
+an unlisted scratch doc, *E1M1 at Cadboro Bay (scratch)*
 (automerge:25Zpxs48qfj7ZaNAaapmwWFvLZCv): Cadboro Bay's link at the origin,
-E1M1's at (−145, 10.29, −680), yaw 0, with the start on E1M1's link. It was
-checked in the real Patchwork by `recovered/publish/shore-check.mjs`, which
-scored 7/8 on its third run. Its first run never loaded the scene package
-(the shell's fetch of its package.json failed with HTTP 557 for 10 minutes),
-and its second run scored 4/8 because of two bugs in the check's own reads.
+E1M1's on the Gyro Park lawn, the start on E1M1's link. It was checked in
+the real Patchwork by the lane's `shore-check` (kept with its publish
+scripts, outside git; each run's results are kept). The figures below are
+its run of 18:37 UTC, 2026-11-16 (8/11: rows 3 and 10 fail by design, they are
+the finding; row 6 failed to a stale package, 6 below).
 
-1. **Finding: a start through a link can't arrive in a general body.**
-   *This is a question for the lead, not a decision.* E1M1's own start is
-   `{ body: "walk", place: <its Spawn> }`. A start placed on a link hands
-   arrival to the linked doc (Decisions, step 16, 2), in that doc's stage and
-   only there (Decisions, step 15 review, 1: `bodyDefs(caller, only)`,
-   `src/stage/view.js` `tryArrive`, `const only = at.through`). walk is
-   general, though: its plugin has no traits (`walk/src/index.js`), and a
-   general part runs only in the focus stage (§3; `src/stage/host.js`
-   `general`). On arrival the focus is the outermost.
+1. **Finding: a place handed across docs to a body.** *A question for the
+   lead, not a decision.* A body's `enter(place)` takes an object id and
+   reads it in the body's own doc (TOOLS.md, "A place is not a type";
+   seats' `enter`, sailing's station, `walk/src/body.js` `enter`). TOOLS.md
+   says `enter` runs in the stage that called `api.body.enter(id, place)`,
+   but `view.enterBody` finds the body wherever it is offered, and a
+   general body (walk: its plugin has no traits, `walk/src/index.js`) is
+   offered only by the focus stage (§3; `src/stage/host.js` `offering`).
+   So when stage S hands a place to a body offered by stage T ≠ S, T reads
+   S's id in its own doc. Two consumers hit it today:
+   - **Arrival through a link.** E1M1 starts people with `{ body: "walk",
+     place: <its spawn> }`. A start on a link hands arrival to the linked
+     doc, in its stage and only there (Decisions, step 16, 2; step 15
+     review, 1: `tryArrive`, `const only = at.through`), and walk isn't
+     offered there, so nobody arrives. shore-check 9 reads the cause rather
+     than narrating it: the mashup starts on link 2 with no body, E1M1's
+     start is walk at its spawn, walk runs in the focus stage and not in
+     E1M1's, E1M1's host has settled, arrival gave up and the body is
+     Look (it passes). Row 11 is the control: E1M1 alone arrives walking at
+     its spawn (its feet 0.05 m over it, 77 s after the page opened). So a doc that starts people in a general body
+     starts them differently alone and linked, against the reason
+     Decisions, step 16, 2 gives.
+   - **Walk from here on a linked spawn.** walk.spawn runs in E1M1's stage
+     (a trait part) and its verb calls `api.body.enter("walk", <spawn>)`.
+     The view finds the focus's walk, which looks the spawn up in the
+     mashup's scene, doesn't find it, and starts at the camera's eye (or
+     over the middle of the whole scene's box), with no notice, since the
+     enter succeeded (shore-check 10: the walker started 40.2 m from the spawn, under the camera, no notice). Were the ids to collide (a
+     bundle's extracted copy holds its source's ids), it would start at an
+     unrelated object. walk's `spawns()` reads the focus doc only too, so
+     its "else any spawn" never sees a linked level's.
 
-   In the real Patchwork the running sets showed walk in the mashup's stage
-   and not in E1M1's. E1M1's stage settled without offering walk, so nobody
-   arrived (`if (only)` … `arrival = null`), 97 s after the page opened. The
-   viewer was left in Look at the home, which is E1M1's spawn eye carried
-   through the link (the feet 0.1 m over the spawn).
-
-   Games night arrives because its body is a seat, which is a trait part of
-   the game's doc. So the two decisions disagree for any doc that starts
-   people in a general body. Alone, E1M1 arrives walking (its stage is the
-   focus). Linked, it doesn't, and a doc should start people the same way
-   alone and linked (the reason Decisions, step 16, 2 gives).
-
-   Everything else composed, with no change (shore-check 2 and 4–8). With
-   Walk picked by hand, as from the body chip, the walker stands 0.05 m over
-   the spawn, and W held for 1.5 s walks 1.79 m. The ray down from the feet
-   hits E1M1's level (stage 2), so a general body in the outermost stage
-   walks a linked doc's floors. E1M1's exit offers Exit and its 11 doors
-   offer Open, all from E1M1's own traversal and joints. Cadboro's hatch
-   offers Open from Cadboro's own stage. There were no error notices.
-
-   The options, for the lead:
-   - (a) A start through a link also offers the focus's general bodies,
-     entered at the linked doc's place, resolved by that doc's stage. The
-     body is the viewer's and not a doc's, so the place still names an
-     object of the doc that holds it.
-   - (b) Arriving through a link moves the focus there (an Enter), so the
-     general parts run in that stage.
-   - (c) Leave it as it is: a doc that starts people walking doesn't start
-     them so when it's linked.
+   The options, for the lead, as one rule for both consumers:
+   - (a) **The calling stage resolves the place to a pose in the world**
+     (frames cross, references don't: §9 has the view answer a link's
+     connectors in the host's frame). Then a start through a link also
+     offers the focus's general bodies. The price: the body contract
+     changes for every body. A seat or a station needs its id (the place
+     *is* the seat), so `enter` would take the id for its own doc and a
+     world pose for another's, and the view would have to know which is
+     which. That is a TOOLS change touching seats, sailing and walk, not
+     a line in `tryArrive`.
+   - (b) **Arriving through a link moves the focus there** (an Enter), so
+     the general parts run in that stage and the place is local. It covers
+     arrival only; Walk from here on a linked spawn still crosses.
+   - (c) **Refuse**: an enter whose place isn't of the body's own doc
+     fails, so the verb says "Couldn't walk from there" instead of
+     starting somewhere else, and a linked doc that starts people walking
+     isn't started so. The gap stays, but visibly.
 
    Not taken: the publisher writing `{ body: "walk", home: <the spawn's
-   eye> }` on the mashup itself. walk would then start at the eye, which a
-   returning viewer's saved camera replaces, and that hides the gap rather
-   than closing it.
+   eye> }` on the mashup itself. walk would start at the eye, which a
+   returning viewer's saved camera replaces; that hides the gap. (The
+   check's own Walk, entered directly with `view.enterBody("walk")` so rows
+   5–7 can read the rest, starts on E1M1's floor only because the camera
+   is at the home, which is the spawn's eye carried through the link: the
+   home's coincidence, not the spawn.)
+
+   Everything else composed with no change (shore-check 2, 4, 5, 7 and 8): walk,
+   a general body in the outermost stage, walks a linked doc's floors (W
+   held 1.5 s moved 2.24 m, and the ray down hits E1M1's level in its
+   stage); E1M1's 11 doors offer Open from E1M1's own joints, Cadboro's
+   hatch from Cadboro's; no error notices. E1M1's exit offered Exit from
+   its own traversal in the two earlier runs (row 6).
 2. **E1M1 at Cadboro Bay is not published.** The gate's rule was "NO-GO if
    arrival needs a stage change", and it does (1). The scratch doc stays
-   unlisted and isn't in the folder. N7's fallback for its second mashup
-   is the Arcade nested in Games night (a mashup of a mashup). Everything
-   needed to publish once (1) is answered is kept outside git, in
-   `recovered/publish/`:
-   - the place and its proof, `shore-place.mjs --check` (18/18);
-   - the check, `shore-check.mjs`;
-   - the publish command: `publish-links.mjs --title "E1M1 at Cadboro Bay"
-     --link "Cadboro Bay=automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4@0,0,0"
-     --link "E1M1=automerge:8E9xshmtfuMbyW9rXC44ojajTHj@-145,10.29,-680@0"
-     --start 2 --view-like 1`.
-3. **The place is Gyro Park.** It is the flat lawn at the head of Cadboro
-   Bay, at centre (−145, −680), yaw 0. It was found by a search over a 5 m
-   grid within 1500 m of the moorings, with the footprint within 150 m of
-   the sea. Under every node of the footprint the rule holds:
-   - it is land (heights 5.18 to 5.76 m) and on the grid;
-   - nothing the terrain draws stands there (no buildings or trees);
-   - no other object of the place swings over it;
-   - the level's drawn geometry, with its doors at their lowest stops,
-     clears the drawn Ground by 0.05 m at all 20,907 overlay points.
-
-   Controls over the water, over the clubhouse, over the sloop and off the
-   grid each fail their clause. The level's y is the rule's pose rounded UP
-   to the centimetre: 10.28 for 10.2840 left 4 overlay points 4 mm short,
-   so the spec printer rounds up, and shore-place's row 18 fails if it
-   doesn't. Because a Doom level isn't flat, it floats over the lawn by a
-   median 4.8 m per 5 m cell (p90 9.3, max 17 m), and its spawn floor is
-   4.9 m up. Whether that is acceptable, or the level should have a stand,
-   is the lead's call.
+   unlisted, out of the folder. N7's second mashup falls back to the
+   Arcade nested in Games night. The place's proof, the check and the
+   publish command are kept with the lane's publish scripts, for when (1)
+   is answered.
+3. **The place is Gyro Park**, the flat lawn at the head of Cadboro Bay
+   (centre −145, −680, yaw 0): land, nothing standing, nothing swinging
+   over it, the level's drawn floors clearing the drawn ground. A Doom
+   level isn't flat, so it floats over the lawn by a median 4.8 m per 5 m
+   cell (p90 9.3, max 17 m), its spawn floor 4.9 m up. Whether that is
+   acceptable, or the level wants a stand, is the lead's call.
 4. **A linked place brings its things, not its weather** (STAGE.md
-   Ambients, checked as the rule and not as a bug, by shore-check 4).
-   Cadboro's stage offers `atmosphere`, `water` and `wind`, and none of them
-   is the world's. The world has no ambients at all, so the default sky
-   shows. Cadboro's own `terrain.sky` is `{}`, so the sky looks the same,
-   but its weather (wind from 235° at 4 m/s) isn't the mashup's. Its Sea
-   is drawn as a clipped block, one `water-patch` with no open ocean, which
-   is why the water reads as Cadboro's: water runs in Cadboro's stage
-   alone, and its clip is the Sea. Whether a doc should be able to say "my
-   world's ambients are link N's" is the lead's question (N7's questions).
+   Ambients; shore-check 4 asserts the rule, it is not a bug). Row 4 first
+   requires that Cadboro's stage runs `sailing.weather` and offers
+   `atmosphere` and `wind`, so the rule can't hold vacuously: in an earlier
+   run its stage ran no weather at all, and the row passed with nothing to
+   refuse (6 below says why). With the weather running, the world has
+   neither: the default sky and still air. Alone, Cadboro has sailing's
+   bright maritime day and a 4 m/s wind from 235° (its `terrain.sky` is
+   `{}`, which offers nothing, so its sky is the weather's); linked, the
+   place loses its sky as well as its wind. Its Sea is drawn as a clipped
+   block (one `water-patch`, no open ocean, water running in Cadboro's
+   stage alone). Whether a doc should be able to say "my world's ambients
+   are link N's" is the lead's question.
 5. **Name and icon, if (1) lets it publish:** *E1M1 at Cadboro Bay*,
    Castle.
+6. **Finding, not the stage's: the real Patchwork ran package versions
+   days apart in one page, and an old provider rewrote a published
+   render.** A *question for the lead*, and outside N7's reach (no
+   Patchwork core changes). shore-check keeps each run's results, and
+   they disagree in ways no doc change explains:
+   - one run's Cadboro stage ran no `sailing.weather` (a doc trait, so it
+     should always run);
+   - row 6 failed in the last two runs, and the last shows why: E1M1's
+     traversal offered commands `use` and `exit`, not `go`, the
+     traversal from before 2026-11-12;
+   - one run loaded scene at old heads (`automerge:2zt6…#ZKap91…`, the
+     stage without `view.ambient`, older than 2026-11-14), so water's
+     current part failed to start (`e.ambient is not a function`) and no
+     view could be read (that run scored 4/11);
+   - and during the 18:37 run, Cadboro Bay's terrain render
+     (automerge:38pgCBi4…) was rebuilt by a viewer at 18:35:16 UTC with a
+     terrain provider from before 2026-11-15 (its build reads no `look`
+     file): the new GLB has no Buildings, Trees, Forest canopy or Moored
+     boats, and the published Cadboro Bay now draws without them. The
+     lane's Chrome held the lock then, so it was very likely that run's
+     page. The previous GLB is still on the server (the render doc's
+     history); the lane didn't write it back.
+
+   So a real-Patchwork check reads whatever versions the shell resolved
+   that load, and any viewer whose provider is older than a render's can
+   overwrite it. The lane ran no more real-Patchwork checks once this was
+   seen.
