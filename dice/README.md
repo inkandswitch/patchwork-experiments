@@ -910,8 +910,11 @@ checked over every case, never sampled at random (`pnpm test`):
   (veiled for the holder and the spectator), Show me; the carry veto; peeks
   borne out by the doc, messages of the wrong shape dropped; knock over and
   stand up; Lift all cups a world command (the bar in every body), applying
-  exactly when some cup covers or is shaken blind with a holder, asked about
-  nothing or a cup, never a die: the 15 cases (`cup-extension.test.js`); the cup, table and pool GLBs wound the way their normals
+  exactly when some cup covers (down and upright: a knocked-over cup covers
+  nothing) or is shaken blind with a holder, asked about nothing or a cup,
+  never a die: the 21 cases; run, it lifts exactly those and leaves every
+  other cup as it was, a blind one nobody holds still veiled
+  (`cup-extension.test.js`); the cup, table and pool GLBs wound the way their normals
   face, at real size (`cup-glb.test.js`); the table as laid out
   (`table.test.js`).
 

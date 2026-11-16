@@ -1271,7 +1271,8 @@ The project lead decided the five open questions on 2026-11-12.
       is unchanged (some cup covers, or is shaken blind with a holder),
       and since it's declared the bar is up at a cups table whether or not
       a cup is down (`dice/src/cup-extension.test.js`: its surfaces, and
-      the 15-row state table; `dice/probes/liars-dice.mjs`: seated, the
+      the 21-row state table, knocked-over cups among its cases, and a run that
+      lifts exactly the cups the state counts; `dice/probes/liars-dice.mjs`: seated, the
       bars are up with nothing on them, both shake and each bar offers it
       with neither canvas moved, and at the end A's click lifts every cup
       down in both docs and leaves the knocked-over one alone). It's the
