@@ -355,6 +355,26 @@ describe("Enter and Leave", () => {
     expect(view.atom.get().focus).toEqual(["L"]);
   });
 
+  it("a double-click the page meets late (busy 1 s after the first press) is still one: the gate times the events' own stamps", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let now = 5000;
+    const m = await mountNested({ time: wallAt(() => now) });
+    s = m.s;
+    const { view } = m;
+    const under = (n, id) => (view.viewport.pick = () => ({ id: keyOf(n, id), point: [0, 0, 0], normal: [0, 1, 0], distance: 3 }));
+    // B's card (from outside, the link L) under the first press; the page then busy a second on the stage's clock
+    // (the inspector opening), the table under the second press; the events themselves stamped as made, ms apart
+    under(stageOf(view, "L").n, "card");
+    s.click(20, 20);
+    now += 1000;
+    under(0, "table");
+    s.click(20, 20);
+    now += 1000;
+    const rect = s.canvas.getBoundingClientRect();
+    s.canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: rect.left + 20, clientY: rect.top + 20 }));
+    expect(view.atom.get().focus).toEqual(["L"]);
+  });
+
   it("outside an entered link stays live: a press out there reaches its own parts, then the general ones (the focus's); in Edit a click there isn't Edit's", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();

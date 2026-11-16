@@ -1015,7 +1015,15 @@ press within 6 px of it (16 px for a touch), none of them under pointer
 lock, and the first hit's stage still open (a key whose stage closed
 between the clicks names nothing). Outside them, or for a slower double,
 the dblclick casts a new ray like any other event. A first hit whose object
-the first click removed is kept: what it comes to is its consumer's.
+the first click removed is kept: what it comes to is its consumer's. The
+500 ms gates time the clicks as they were made, by each event's own
+`timeStamp` (one clock for `pointerdown` and `dblclick`), not as the page
+handled them: a page busy between the clicks (the inspector opening on the
+first click's selection) still has the double-click the browser fired, and
+one catching up on queued events doesn't pass clicks made too far apart.
+When any of the three events has no stamp (a synthetic one with
+`timeStamp` 0), all three are timed on the stage's clock as each was
+handled instead, never one clock against the other.
 
 **A release that never comes.** A mouse that moves with no button down was
 released where the stage didn't hear it, and a lost pointer capture or

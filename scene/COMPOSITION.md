@@ -121,14 +121,6 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- the double-click gate measures time as the page meets the presses
-  (`time.now()`), not as the person made them: when the page is busy
-  after the first press (in headless Chrome the first selection of an Edit
-  visit, opening the inspector, held it about 1 s), the second press
-  arrives over 500 ms later and the router refuses a double-click Chrome
-  itself fired. Seen in enter-check on 2026-11-16 (a stalled try, retried).
-  The likely fix is the events' own `timeStamp` for both presses and the
-  dblclick; not built;
 - the use prompt stays put while the pointer is on it (since lane/arcade),
   so when the camera moves and the pointer doesn't (a ride, Frame, a body
   change) it can be left over a halo handle or anything else, and a press
@@ -153,8 +145,16 @@ Fixed since (Decisions, double-click, below):
   15 px between presses 250 ms apart, and every double-click the router
   met as one, with its first press on the game, entered it; on one run the
   second press's own ray hit the Card table and the double-click still
-  entered G. (A try the page met more than 500 ms apart is the gate item
-  under Still open.)
+  entered G. (A try the page met more than 500 ms apart was refused then;
+  the next item fixes that.)
+- the double-click gate measured time as the page met the presses
+  (`time.now()`), not as the person made them: when the page was busy
+  after the first press (in headless Chrome the first selection of an Edit
+  visit, opening the inspector, held it about 1 s), the second press
+  arrived over 500 ms later and the router refused a double-click Chrome
+  itself fired (enter-check, 2026-11-16, a stalled try, retried). The gate
+  now times the events' own `timeStamp`s (Decisions, double-click stamps,
+  below; lane/dblstamp).
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
@@ -2048,4 +2048,35 @@ The fix for triage N11 (WATER Decision 112), after its review.
    card's element is the link, still there, so the double-click enters it
    (focus.test.js). A new ray there could land on whatever is behind it.
    A null first hit (empty sea) stays null: nothing was double-clicked.
+
+## Decisions, double-click stamps (2026-11-16, made unattended in `lane/dblstamp`)
+
+The gate's page time (the Still open item, now under Fixed since).
+
+1. **The time gates read the events' own `timeStamp`.** Each press keeps
+   its `pointerdown`'s stamp, and the dblclick brings its own; the two
+   gaps (second press after the first, dblclick after the second) are
+   taken between those. Why: a stamp is when the input happened, on one
+   clock for every event of the page, so what the gate measures is what
+   the browser measured when it decided the dblclick was a double. The
+   stage's clock (`time.now()`) is when the router got round to the
+   event: a page busy after the first click (the inspector opening, about
+   1 s in headless Chrome) pushed a 200 ms double past 500 ms and the
+   router refused it, and a page catching up on queued events would pass
+   clicks made 600 ms apart. Both directions are in router.test.js, each
+   time gate on and one past its bound with the page's clock saying the
+   opposite; focus.test.js has the stage's clock a second on between the
+   presses and the double-click still entering the link. The bounds (500
+   ms, 6 px, 16 px for a touch), the lock gate and `live` are unchanged.
+2. **No stamp on any of the three puts all three on the stage's clock.**
+   A stamp is `timeStamp` when it is a finite number above 0 (`stampOf`);
+   an event without one (a synthetic event, an old engine's 0) can't be
+   placed on the stamps' clock, and the stage's `time.now()` is the epoch
+   (or a manual source's), so comparing one against the other would be
+   meaningless. Then every press and the dblclick are timed as handled, as
+   before this change: never one clock against the other. Each press
+   records both, so the choice is made at the dblclick, with all three in
+   hand. Not chosen: refusing outright when a stamp is missing (a host
+   test or tool dispatching plain events would lose double-clicks it has
+   today), or the browser's `detail` click count (Decision 3 above).
 

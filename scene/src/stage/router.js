@@ -91,24 +91,42 @@ export const retype = (ev, type) => copyWith(ev, "type", type);
  * the dblclick casts a new ray, as an ordinary event does: the fallback is
  * the old behaviour, never a hit from some other press. A slower double
  * (an OS interval set longer than DOUBLE_MS) falls back the same way.
+ *
+ * The time gates measure the clicks as the person made them: each event's
+ * own `timeStamp` (one clock for pointerdown and dblclick, stamped when the
+ * input happened), not when the page got round to handling it. So a page
+ * busy between the clicks (the inspector opening on the first click's
+ * selection) neither refuses a double the browser fired nor, handling the
+ * queued events back to back, passes clicks made too far apart. When any of
+ * the three lacks a stamp (a synthetic event without one), all three are
+ * measured on the stage's clock as each was handled instead: never one
+ * clock against the other (`time.now()` is the epoch, or a manual source's;
+ * a stamp is ms since the page began).
  */
 export const DOUBLE_MS = 500;
 export const DOUBLE_PX = 6;
 export const DOUBLE_PX_TOUCH = 16;
 
+/** An event's own time (its `timeStamp`, ms), or null when it has none to give. */
+export const stampOf = (e) => (Number.isFinite(e?.timeStamp) && e.timeStamp > 0 ? e.timeStamp : null);
+
 /**
- * The first press of a double-click whose dblclick lands at (x, y) at `now`
- * (unlocked): the earlier of the last two presses when both pass the gates
- * above, else null (cast a new ray). Pure.
- * @param {{ t: number, x: number, y: number, pointerType?: string, locked?: boolean }[]} presses  the last two, oldest first
+ * The first press of a double-click (unlocked): the earlier of the last two
+ * presses when both pass the gates above, else null (cast a new ray). The
+ * three are timed by `stamp` when all three have one, else all by `t` (the
+ * stage's clock as each was handled). Pure.
+ * @param {{ stamp: number | null, t: number, x: number, y: number, pointerType?: string, locked?: boolean }[]} presses  the last two, oldest first
+ * @param {{ stamp: number | null, t: number, x: number, y: number }} dbl  the dblclick
  */
-export function firstOfDouble(presses, now, x, y) {
+export function firstOfDouble(presses, dbl) {
   if (!presses || presses.length !== 2) return null;
   const [a, b] = presses;
-  if (!(b.t - a.t <= DOUBLE_MS) || !(now - b.t <= DOUBLE_MS)) return null;
+  const stamped = a.stamp != null && b.stamp != null && dbl.stamp != null;
+  const when = (p) => (stamped ? p.stamp : p.t);
+  if (!(when(b) - when(a) <= DOUBLE_MS) || !(when(dbl) - when(b) <= DOUBLE_MS)) return null;
   for (const p of presses) {
     const slop = p.pointerType === "touch" ? DOUBLE_PX_TOUCH : DOUBLE_PX;
-    if (p.locked || Math.abs(x - p.x) > slop || Math.abs(y - p.y) > slop) return null;
+    if (p.locked || Math.abs(dbl.x - p.x) > slop || Math.abs(dbl.y - p.y) > slop) return null;
   }
   return a;
 }
@@ -255,7 +273,7 @@ export function createRouter(o) {
 
   const isLocked = () => doc.pointerLockElement === canvas;
   let lastAt = null; // { clientX, clientY }: where the pointer last was over the canvas
-  let presses = []; // the last two presses on the canvas, oldest first: { t, x, y, pointerType, locked, hit, widget } (firstOfDouble)
+  let presses = []; // the last two presses on the canvas, oldest first: { stamp, t, x, y, pointerType, locked, hit, widget } (firstOfDouble)
 
   const make = (type, e, extra) =>
     buildEvent(type, e, {
@@ -451,7 +469,7 @@ export function createRouter(o) {
     o.onHover?.(ev);
     // this press, kept for a double-click it may begin: its hit and widget resolved now, as it is pressed (the
     // event's own memo, so no second pick), so a double-click later reuses them rather than casting a new ray
-    presses = [...presses.slice(-1), { t: time.now(), x: e.clientX, y: e.clientY, pointerType: g.pointerType, locked: ev.locked, hit: ev.hit, widget: ev.widget }];
+    presses = [...presses.slice(-1), { stamp: stampOf(e), t: time.now(), x: e.clientX, y: e.clientY, pointerType: g.pointerType, locked: ev.locked, hit: ev.hit, widget: ev.widget }];
     const r = dispatch("press", ev);
     if (gesture !== g) return; // something in press tore it down
     if (r) {
@@ -591,7 +609,7 @@ export function createRouter(o) {
     if (e.target !== canvas) return;
     // the second click resolves to the first click's hit and widget (firstOfDouble's gates), unless the host
     // says that hit is gone (its stage closed between the clicks): then, as outside the gates, a new ray
-    const found = isLocked() ? null : firstOfDouble(presses, time.now(), e.clientX, e.clientY);
+    const found = isLocked() ? null : firstOfDouble(presses, { stamp: stampOf(e), t: time.now(), x: e.clientX, y: e.clientY });
     const first = found && (found.hit == null || o.live?.(found.hit) !== false) ? found : null;
     presses = [];
     if (dispatch("dblclick", make("dblclick", e, first ? { hit: first.hit, widget: first.widget } : undefined))) e.preventDefault();
