@@ -470,6 +470,17 @@ export async function* stream({
       continue
     }
 
+    // An image too large for the provider — a side over 8000 pixels, or too many
+    // bytes — fails the whole request in the same way, and kept failing on
+    // every retry because the image was resent each time. Retry without images,
+    // and say which ones were refused, so the session stops sending them.
+    if (withImages && /image[\w.\s]*(dimension|exceed|too large|too big|max(imum)? allowed)/i.test(detail)) {
+      withImages = false
+      body = render()
+      onRetry?.({ attempt, delay: 0, reason: "an image was too large for the model; retrying without images", imagesRejected: true })
+      continue
+    }
+
     if (!isRetryable(response.status) || attempt === maxAttempts) throw lastError
 
     // Honour Retry-After when the server sends one; it knows better than we do.

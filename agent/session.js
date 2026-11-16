@@ -997,6 +997,21 @@ export function taperedResult(block) {
 export const DENIED_RESULT =
   "Declined by the user. Do not retry it. Carry on with everything that does not depend on it, and say in one line what you could not do."
 
+/**
+ * Mark the images a request would carry as refused by the provider, so no later
+ * request carries them. The picture stays in the document — only the sending
+ * stops; the agent can always take another.
+ */
+export function rejectSentImages(doc, { maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
+  const sent = []
+  for (const turn of doc.turns ?? []) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type === "result" && block.image && !block.imageRejected) sent.push(block)
+    }
+  }
+  for (const block of sent.slice(-maxImages)) block.imageRejected = true
+}
+
 export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []
   const turns = doc.turns ?? []
@@ -1011,7 +1026,7 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
       if (block.type !== "result") continue
       answered.add(block.callId)
       results.push(block)
-      if (block.image) withImages.push(block.id)
+      if (block.image && !block.imageRejected) withImages.push(block.id)
     }
   }
   const keepImages = new Set(withImages.slice(-maxImages))

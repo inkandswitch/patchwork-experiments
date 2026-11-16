@@ -25,6 +25,21 @@
 import { bytes } from "./format.js"
 
 const DEFAULT_MAX_WIDTH = 800
+
+/**
+ * The longest a side may be, after shrinking. Providers refuse an image with a
+ * side over 8000 pixels and refuse the WHOLE request with it — and since the
+ * newest images ride along on every later turn, one tall capture (a long page,
+ * a notebook) stopped a session dead, every retry resending it. Width was
+ * capped; height never was.
+ */
+export const MAX_IMAGE_SIDE = 4000
+
+/** The size an image is drawn at: no wider than `maxWidth`, no side over `maxSide`, never enlarged. */
+export function fitWithin(width, height, { maxWidth = DEFAULT_MAX_WIDTH, maxSide = MAX_IMAGE_SIDE } = {}) {
+  const scale = Math.min(1, maxWidth / width, maxSide / width, maxSide / height)
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }
+}
 const DEFAULT_QUALITY = 0.7
 
 const XHTML = "http://www.w3.org/1999/xhtml"
@@ -140,10 +155,10 @@ export async function shrink(dataUrl, { maxWidth = DEFAULT_MAX_WIDTH, quality = 
   const height = image.naturalHeight || image.height
   if (!width || !height) return dataUrl
 
-  const scale = Math.min(1, maxWidth / width)
+  const size = fitWithin(width, height, { maxWidth })
   const canvas = ownerDocument.createElement("canvas")
-  canvas.width = Math.max(1, Math.round(width * scale))
-  canvas.height = Math.max(1, Math.round(height * scale))
+  canvas.width = size.width
+  canvas.height = size.height
 
   const context = canvas.getContext("2d")
   // A white ground: JPEG has no alpha, and transparent pixels would otherwise

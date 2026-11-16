@@ -23,6 +23,7 @@ import {
   callTarget,
   grantKey,
   addUsage,
+  rejectSentImages,
   costOf,
   makeTurn,
   textBlock,
@@ -459,7 +460,12 @@ async function streamTurn(opts) {
     cacheKey: sessionKey(opts.ctx?.sessionUrl),
     key: opts.key ?? null,
     signal,
-    onRetry: (info) => emit({ type: "retry", ...info }),
+    onRetry: (info) => {
+      // The provider refused the images this request carried. Mark them, so the
+      // next request leaves them out instead of failing first, every turn.
+      if (info?.imagesRejected) store.change((d) => rejectSentImages(d))
+      emit({ type: "retry", ...info })
+    },
   }
 
   const turn = makeTurn("assistant", [])
