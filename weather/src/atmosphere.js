@@ -147,7 +147,7 @@ export function deckOf(c) {
 // ─── rain and haze ───────────────────────────────────────────────────────────
 
 /** Koschmieder's constant: visibility = 3.912 / extinction (2% contrast). */
-const KOSCHMIEDER = 3.912;
+export const KOSCHMIEDER = 3.912;
 
 /**
  * Rain's extinction, per metre, at `rain` mm/h: 0.25 · R^0.73 per km, the

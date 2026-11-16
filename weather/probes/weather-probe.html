@@ -30,6 +30,15 @@ import { localOf } from "../src/time.js";
 import { weatherParams, windOf } from "../src/weather.js";
 
 const errors = [];
+// every fetch the page makes, recorded: [url, init]; `fetchMode` "real" passes it on, "error" answers as Open-Meteo refusing
+const fetches = [];
+let fetchMode = "real";
+const realFetch = window.fetch.bind(window);
+window.fetch = (url, init) => {
+  fetches.push([String(url), init ? { ...init, signal: init.signal ? "AbortSignal" : init.signal } : init]);
+  if (fetchMode === "error") return Promise.resolve(new Response(JSON.stringify({ error: true, reason: "the probe refused it" }), { status: 400, headers: { "content-type": "application/json" } }));
+  return realFetch(url, init);
+};
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
 window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
 const origWarn = console.warn, origError = console.error;
@@ -68,6 +77,9 @@ try {
       return { params: p, atmosphere: atmosphereOf(p), wind: windOf(p), sun, direction: sunDirection(sun.azimuth, sun.apparent) };
     },
     localOf: (t, offset) => localOf(t, offset),
+    fetches: () => fetches,
+    setFetch: (mode) => void (fetchMode = mode),
+    notices: () => (dbg.view.atom.get().notices ?? []).map((n) => [n.kind, n.text]),
     engine: () => navigator.userAgent.match(/Chrome\/[0-9.]+/)?.[0] ?? navigator.userAgent,
     /**
      * Link a second scene with a weather of its own (12 m/s from 90) into

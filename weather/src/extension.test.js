@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { plugins } from "./index.js";
 import { atmosphereOf } from "./atmosphere.js";
 import { instantOf } from "./time.js";
-import { DEFAULTS, PLACES, fetchedFields, weatherParams, windOf } from "./weather.js";
-import ext, { HERE, SHOW, TRAIT, clockName, coordinates, isWorlds, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
+import { DEFAULTS, PLACES, fetchedFields, provenance, weatherParams, windOf } from "./weather.js";
+import { NAME, NO_DATA, UNITS, VARIABLES, isoMinute, requestFor, snapshotFrom } from "./open-meteo.js";
+import ext, { HERE, PLACE_TITLE, SHOW, TRAIT, clockName, clockText, coordinates, fetchLabel, fetchNowRequest, fetchRequest, fetchWrites, forText, isWorlds, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
 
 const INIT = plugins[0].describes.weather.init;
 const [CADBORO, UCLUELET] = PLACES;
@@ -24,7 +25,9 @@ function fakeApi(traits) {
     d: { traits: structuredClone(traits) },
     changes: 0,
     world: "mine",
+    notices: [],
     doc: () => api.d,
+    notify: (text, kind = "info") => void api.notices.push([kind, text]),
     ambient: (name) => (api.world === "none" ? null : { value: { name }, mine: api.world === "mine" }),
     change(fn) {
       const draft = structuredClone(api.d);
@@ -157,10 +160,12 @@ describe("the offer is === while the trait in force is unchanged", () => {
 describe("the commands", () => {
   const commands = ext.create(withTrait({})).commands;
 
-  it("are Place and Now, each the editor's, on the toolbar and the menu", () => {
+  it("are Place, Now, Fetch now and Fetch for this time, each the editor's, on the toolbar and the menu", () => {
     expect(commands.map((c) => [c.id, c.name, c.edit, c.show])).toEqual([
       ["place", "Place", true, SHOW],
       ["now", "Now", true, SHOW],
+      ["fetch-now", "Fetch now", true, SHOW],
+      ["fetch", "Fetch for this time", true, SHOW],
     ]);
     expect(SHOW).toEqual(["toolbar", "menu"]);
   });
@@ -186,13 +191,24 @@ describe("the commands", () => {
   // writes nothing (Decision 31).
   for (const c of commands)
     for (const [world, applies] of [["mine", true], ["linked", false], ["none", false]])
-      it(`${c.id}, this stage's world ${world}: ${applies ? "applies" : "null, and run writes nothing"}`, () => {
-        const api = withTrait({ date: "2001-01-01", hour: 3, lat: 1, lon: 1 });
-        api.world = world;
-        const x = ext.create(api).commands.find((y) => y.id === c.id);
-        expect(x.state(null, {}) != null).toBe(applies);
-        x.run(null, "Ucluelet");
-        expect(api.changes).toBe(applies ? 1 : 0);
+      it(`${c.id}, this stage's world ${world}: ${applies ? "applies" : "null, and run writes nothing"}`, async () => {
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(Date.parse("2026-11-16T21:47:00Z"));
+        const fetch = vi.fn(fakeFetch());
+        vi.stubGlobal("fetch", fetch);
+        try {
+          const api = withTrait({ date: "2026-11-10", hour: 3, lat: 1, lon: 1 });
+          api.world = world;
+          const x = ext.create(api).commands.find((y) => y.id === c.id);
+          expect(x.state(null, {}) != null).toBe(applies);
+          x.run(null, "Ucluelet");
+          await settle();
+          expect(api.changes).toBe(applies ? 1 : 0);
+          expect(fetch).toHaveBeenCalledTimes(applies && c.id.startsWith("fetch") ? 1 : 0);
+        } finally {
+          vi.unstubAllGlobals();
+          vi.useRealTimers();
+        }
       });
 
   it.each([
@@ -369,22 +385,283 @@ describe("Now", () => {
   });
 });
 
-describe("the Place tooltip says the provenance", () => {
+describe("the provenance, said", () => {
   const fetched = (t, source) => ({ ...t, source: { ...source, fields: fetchedFields(weatherParams(t)) } });
-  const src = { name: "Open-Meteo", api: "forecast", for: "2026-07-15T22:00Z", fetched: "2026-07-15T22:03:00Z" };
+  const src = { name: "Open-Meteo", api: "forecast", for: "2026-07-15T22:00:00.000Z", fetched: "2026-07-15T22:03:00.000Z" };
+  // [name, trait, provenanceTitle, fetchLabel]
   const rows = [
-    ["no source", INIT, "Weather: dialled by hand"],
-    ["a source with no fields", { ...INIT, source: { name: "Open-Meteo" } }, "Weather: dialled by hand"],
-    ["fetched", fetched(INIT, src), "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
-    ["fetched, the seed dialled since (not weather)", { ...fetched(INIT, src), seed: 9 }, "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
-    ["the wind dialled since", { ...fetched(INIT, src), wind: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z (wind)"],
-    ["the hour and the cover dialled since", { ...fetched(INIT, src), cover: 1, hour: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z (hour, cover)"],
-    ["fetched, a source of no name, api or time", fetched(INIT, {}), "Weather: as fetched from an unnamed source"],
-    ["fetched, a source whose strings aren't", fetched(INIT, { name: 7, api: {}, for: null }), "Weather: as fetched from an unnamed source"],
+    ["no source", INIT, "Weather: dialled by hand", "Fetch for this time"],
+    ["a source with no fields", { ...INIT, source: { name: "Open-Meteo" } }, "Weather: dialled by hand", "Fetch for this time"],
+    ["fetched", fetched(INIT, src), "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15 15:00 UTC\u22127", "Fetched for this time"],
+    ["fetched, read on another clock", fetched({ ...INIT, offset: 5.5 }, src), "Weather: as fetched from Open-Meteo (forecast) for 2026-07-16 03:30 UTC+5:30", "Fetched for this time"],
+    ["fetched, the seed dialled since (not weather)", { ...fetched(INIT, src), seed: 9 }, "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15 15:00 UTC\u22127", "Fetched for this time"],
+    ["the wind dialled since", { ...fetched(INIT, src), wind: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15 15:00 UTC\u22127 (wind)", "Fetch again (wind)"],
+    ["the hour and the cover dialled since", { ...fetched(INIT, src), cover: 1, hour: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15 15:00 UTC\u22127 (hour, cover)", "Fetch again (hour, cover)"],
+    ["three dialled since", { ...fetched(INIT, src), cover: 1, hour: 9, rain: 2 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15 15:00 UTC\u22127 (hour, cover, rain)", "Fetch again (3 dialled)"],
+    ["fetched, a source of no name, api or time", fetched(INIT, {}), "Weather: as fetched from an unnamed source", "Fetched for this time"],
+    ["fetched, a source whose strings aren't", fetched(INIT, { name: 7, api: {}, for: null }), "Weather: as fetched from an unnamed source", "Fetched for this time"],
+    ["fetched, a time that isn't one", fetched(INIT, { ...src, for: "teatime" }), "Weather: as fetched from Open-Meteo (forecast)", "Fetched for this time"],
   ];
-  for (const [name, trait, title] of rows)
-    it(`${name}`, () => {
+  for (const [name, trait, title, label] of rows)
+    it(`${name}: "${label}"`, () => {
       expect(provenanceTitle(trait)).toBe(title);
-      expect(placeState(trait).title).toBe(title);
+      expect(fetchLabel(trait)).toBe(label);
+      const fetch = ext.create(withTrait(trait)).commands.find((c) => c.id === "fetch").state(null, {});
+      expect(fetch.label).toBe(label);
+      expect(fetch.title.startsWith(`${title}. Fetch ${NAME}'s conditions at `)).toBe(true);
+      expect(placeState(trait).title).toBe(PLACE_TITLE);
     });
+
+  it.each([
+    [{ date: "2026-07-15", hour: 15 }, -7, "2026-07-15 15:00 UTC\u22127"],
+    [{ date: "2026-07-15", hour: 0 }, 0, "2026-07-15 00:00 UTC"],
+    [{ date: "2026-07-15", hour: 23.75 }, 5.75, "2026-07-15 23:45 UTC+5:45"],
+    [{ date: "0050-01-01", hour: 9.25 }, -8, "0050-01-01 09:15 UTC\u22128"],
+  ])("clockText(%j, %s) → %s", (when, offset, want) => expect(clockText(when, offset)).toBe(want));
+
+  it.each([
+    ["2026-07-15T22:00:00.000Z", -7, "2026-07-15 15:00 UTC\u22127"],
+    ["2026-07-15T22:00Z", -7, "2026-07-15 15:00 UTC\u22127"],
+    ["2026-07-16T06:45:00.000Z", -7, "2026-07-15 23:45 UTC\u22127"],
+    ["teatime", -7, null],
+    [7, -7, null],
+    [undefined, -7, null],
+  ])("forText(%s, %s) → %s", (value, offset, want) => expect(forText(value, offset)).toBe(want));
+});
+
+// ─── fetching ────────────────────────────────────────────────────────────────
+
+const Q = 15 * 60_000;
+/** Let a run's fetch, its reply and its write all happen. */
+const settle = () => new Promise((r) => setTimeout(r, 0));
+/** One hour of weather, as Open-Meteo sends it: a low overcast at 250 m, 6.2 m/s from 250 gusting 8.06. */
+const HOUR_VALUES = { temperature_2m: 12, dew_point_2m: 10, relative_humidity_2m: 88, precipitation: 0, weather_code: 3, cloud_cover: 100, cloud_cover_low: 100, cloud_cover_mid: 0, cloud_cover_high: 0, visibility: 9000, wind_speed_10m: 6.2, wind_direction_10m: 250, wind_gusts_10m: 8.06 };
+const SNAPPED = { wind: 6.2, from: 250, gustiness: 0.3, cover: 1, clouds: "stratus", base: 250, visibility: 9000, rain: 0 };
+/**
+ * A fake fetch answering any request as Open-Meteo would with HOUR_VALUES:
+ * the present conditions for the present quarter hour, or every hour of the
+ * day asked; `answer` overrides it with a reply ([status, body]) or throws.
+ */
+function fakeFetch(answer) {
+  return async (url) => {
+    if (answer instanceof Error) throw answer;
+    const u = new URL(url);
+    const units = { time: "iso8601", ...UNITS };
+    let body;
+    if (answer) body = answer[1];
+    else if (u.searchParams.has("current")) body = { utc_offset_seconds: 0, current_units: { ...units, interval: "seconds" }, current: { time: isoMinute(Math.floor(Date.now() / Q) * Q), interval: 900, ...HOUR_VALUES } };
+    else {
+      const day = Date.parse(`${u.searchParams.get("start_date")}T00:00Z`);
+      const time = Array.from({ length: 24 }, (_, h) => isoMinute(day + h * 3_600_000));
+      body = { utc_offset_seconds: 0, hourly_units: units, hourly: { time, ...Object.fromEntries(VARIABLES.map((k) => [k, time.map(() => HOUR_VALUES[k])])) } };
+    }
+    const status = answer ? answer[0] : 200;
+    return { status, ok: status < 300, json: async () => structuredClone(body) };
+  };
+}
+
+describe("Fetch: the requests", () => {
+  const NOW = Date.parse("2026-11-16T21:47:00Z");
+  it("Fetch now: the present conditions, for the present quarter hour on the weather's clock", () => {
+    const r = fetchNowRequest(INIT, NOW);
+    expect(r).toEqual(requestFor({ ...weatherParams(INIT), date: "2026-11-16", hour: 14.75 }, NOW));
+    expect(r.route).toBe("current");
+  });
+  it("Fetch for this time: the place, date and hour in force", () => {
+    expect(fetchRequest(INIT, NOW)).toEqual(requestFor(weatherParams(INIT), NOW));
+    expect(fetchRequest(INIT, NOW).route).toBe("hourly");
+    expect(fetchRequest({ ...INIT, date: "2026-12-25" }, NOW)).toBe(null);
+  });
+  for (const t of [undefined, null, true, []])
+    it(`no trait to write into (${JSON.stringify(t)}): no request`, () => {
+      expect(fetchNowRequest(t, NOW)).toBe(null);
+      expect(fetchRequest(t, NOW)).toBe(null);
+    });
+});
+
+describe("Fetch: what a snapshot writes", () => {
+  const NOW = Date.parse("2026-11-16T21:47:00Z");
+  const snapshot = (trait) => {
+    const request = fetchRequest(trait, NOW);
+    return snapshotFrom(fakeReply(request), request);
+  };
+  const fakeReply = (request) => {
+    const day = Date.parse(`${new URL(request.url).searchParams.get("start_date")}T00:00Z`);
+    const time = Array.from({ length: 24 }, (_, h) => isoMinute(day + h * 3_600_000));
+    return { utc_offset_seconds: 0, hourly_units: { time: "iso8601", ...UNITS }, hourly: { time, ...Object.fromEntries(VARIABLES.map((k) => [k, time.map(() => HOUR_VALUES[k])])) } };
+  };
+  // [trait] → the fields written besides source
+  const rows = [
+    ["init (its gustiness and rain already the snapshot's)", INIT, { wind: 6.2, from: 250, cover: 1, clouds: "stratus", base: 250, visibility: 9000 }],
+    ["init, the snapshot's wind and cover already", { ...INIT, wind: 6.2, cover: 1 }, { from: 250, clouds: "stratus", base: 250, visibility: 9000 }],
+    ["{} (every field its default)", {}, { lat: DEFAULTS.lat, lon: DEFAULTS.lon, date: DEFAULTS.date, hour: DEFAULTS.hour, offset: DEFAULTS.offset, ...SNAPPED }],
+    ["the snapshot itself", null, {}],
+  ];
+  for (const [name, t, want] of rows)
+    it(`${name} → ${JSON.stringify(want)} and source`, () => {
+      const s = snapshot(t ?? INIT);
+      const trait = t ?? { ...INIT, ...s };
+      const { source, ...fields } = fetchWrites(trait, s);
+      expect(fields).toEqual(want);
+      expect(source).toEqual(s.source);
+      // written over the trait, it reads "fetched", its seed its own
+      const after = { ...trait, ...fields, source };
+      expect(provenance(after)).toBe("fetched");
+      expect(after.seed).toBe(trait.seed);
+    });
+  for (const t of [undefined, null, true, []]) it(`no trait (${JSON.stringify(t)}) → null`, () => expect(fetchWrites(t, snapshot(INIT))).toBe(null));
+});
+
+describe("Fetch: run", () => {
+  const NOW = Date.parse("2026-11-16T21:47:00Z");
+  let fetch;
+  const setup = (trait = INIT, answer) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    fetch = vi.fn(fakeFetch(answer));
+    vi.stubGlobal("fetch", fetch);
+    const api = withTrait(trait);
+    const x = ext.create(api);
+    const cmd = (id) => x.commands.find((c) => c.id === id);
+    return { api, x, cmd };
+  };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("Fetch for this time (15 July 2026, from the archive): one fetch, one change: the snapshot's fields and source; a notice says it", async () => {
+    const { api, cmd } = setup();
+    cmd("fetch").run(null);
+    expect(api.changes).toBe(0);
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe(fetchRequest(INIT, NOW).url);
+    expect(api.changes).toBe(1);
+    const w = api.d.traits[TRAIT];
+    expect(w).toEqual({ ...INIT, ...SNAPPED, source: { name: NAME, api: "archive", for: "2026-07-15T22:00:00.000Z", fetched: new Date(NOW).toISOString(), fields: fetchedFields(weatherParams({ ...INIT, ...SNAPPED })) } });
+    expect(new URL(fetch.mock.calls[0][0]).origin).toBe("https://archive-api.open-meteo.com");
+    expect(provenance(w)).toBe("fetched");
+    expect(api.notices).toEqual([["info", `Weather fetched from ${NAME} (archive) for 2026-07-15 15:00 UTC\u22127`]]);
+    expect(cmd("fetch").state(null, {}).label).toBe("Fetched for this time");
+  });
+
+  it("Fetch now: the present conditions and the present quarter hour, in one change", async () => {
+    const { api, cmd } = setup();
+    cmd("fetch-now").run(null);
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(new URL(fetch.mock.calls[0][0]).searchParams.has("current")).toBe(true);
+    expect(api.changes).toBe(1);
+    const w = api.d.traits[TRAIT];
+    expect(w).toMatchObject({ date: "2026-11-16", hour: 14.75, ...SNAPPED });
+    expect(w.source.for).toBe("2026-11-16T21:45:00.000Z");
+    expect(provenance(w)).toBe("fetched");
+  });
+
+  // [name, answer] → the notice; nothing written
+  const failures = [
+    ["an error reply", [400, { error: true, reason: "Parameter 'start_date' is out of allowed range" }], "Couldn't fetch the weather: Parameter 'start_date' is out of allowed range"],
+    ["a server error", [503, { message: "busy" }], `Couldn't fetch the weather: ${NAME} answered 503`],
+    ["a reply with no wind", [200, { utc_offset_seconds: 0, hourly_units: {}, hourly: { time: ["2026-07-15T22:00"] } }], `Couldn't fetch the weather: ${NAME} has no wind for 2026-07-15T22:00 GMT`],
+    ["a failed fetch", new TypeError("Failed to fetch"), "Couldn't fetch the weather: Failed to fetch"],
+  ];
+  for (const [name, answer, notice] of failures)
+    it(`${name}: a notice, and nothing written`, async () => {
+      const { api, cmd } = setup(INIT, answer);
+      cmd("fetch").run(null);
+      await settle();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(api.changes).toBe(0);
+      expect(api.d.traits[TRAIT]).toEqual(INIT);
+      expect(api.notices).toEqual([["error", notice]]);
+    });
+
+  it("a time with no weather: the command is disabled, says why, and run fetches nothing", async () => {
+    const { api, cmd } = setup({ ...INIT, date: "2026-12-25" });
+    expect(cmd("fetch").state(null, {})).toEqual({ label: "Fetch for this time", disabled: true, title: NO_DATA });
+    cmd("fetch").run(null);
+    await settle();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(api.changes).toBe(0);
+    expect(api.notices).toEqual([["error", NO_DATA]]);
+  });
+
+  it("the stage stopping while the fetch is out: nothing written, nothing said", async () => {
+    const { api, cmd } = setup();
+    const stop = new AbortController();
+    api.signal = stop.signal;
+    cmd("fetch").run(null);
+    stop.abort();
+    await settle();
+    expect(api.changes).toBe(0);
+    expect(api.notices).toEqual([]);
+  });
+
+  it("an aborted fetch (AbortError): nothing said", async () => {
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const { api, cmd } = setup(INIT, abort);
+    cmd("fetch").run(null);
+    await settle();
+    expect(api.changes).toBe(0);
+    expect(api.notices).toEqual([]);
+  });
+
+  it("no longer the world's when the reply lands: nothing written", async () => {
+    const { api, cmd } = setup();
+    cmd("fetch").run(null);
+    api.world = "linked";
+    await settle();
+    expect(api.changes).toBe(0);
+  });
+
+  it("the trait gone when the reply lands: not made again", async () => {
+    const { api, cmd } = setup();
+    cmd("fetch").run(null);
+    delete api.d.traits[TRAIT];
+    await settle();
+    expect(api.d.traits).toEqual({});
+  });
+
+  it("a field dialled while the fetch is out, to the snapshot's value: left as it is; to another: the snapshot's", async () => {
+    const { api, cmd } = setup();
+    cmd("fetch").run(null);
+    api.d.traits[TRAIT].wind = 6.2;
+    api.d.traits[TRAIT].cover = 0.5;
+    await settle();
+    expect(api.d.traits[TRAIT]).toMatchObject(SNAPPED);
+    expect(provenance(api.d.traits[TRAIT])).toBe("fetched");
+  });
+
+  it("an object target: nothing fetched", async () => {
+    const { cmd } = setup();
+    cmd("fetch").run("obj1");
+    cmd("fetch-now").run("obj1");
+    await settle();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+// The fetch is never automatic: making the extension, its offer and every
+// command's state, over every trait and world the tables above use, call
+// no fetch. Only a Fetch command's run does.
+describe("nothing fetches on its own", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("create, ambient() and every state(), over every trait and world: no fetch", () => {
+    const fetch = vi.fn(() => {
+      throw new Error("fetched");
+    });
+    vi.stubGlobal("fetch", fetch);
+    const traits = [undefined, null, {}, INIT, GREY, { ...INIT, date: "2026-12-25" }, { ...INIT, date: "1900-01-01" }, { ...INIT, source: { name: "Open-Meteo", fields: fetchedFields(weatherParams(INIT)) } }];
+    for (const t of traits)
+      for (const world of ["mine", "linked", "none"]) {
+        const api = withTrait(t);
+        api.world = world;
+        const x = ext.create(api);
+        x.ambient();
+        x.ambient();
+        for (const c of x.commands) for (const target of [null, "obj1"]) c.state(target, {});
+      }
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

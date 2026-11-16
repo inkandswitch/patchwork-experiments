@@ -20,10 +20,19 @@
 //     tooltip is the weather's provenance.
 //   - Now: date and hour set to the present quarter hour on the weather's
 //     clock.
-// Both are package writes (api.change), so neither is on the undo stack
+//   - Fetch now: Open-Meteo's present conditions at the weather's place,
+//     and date and hour set to now, in one change.
+//   - Fetch for this time: Open-Meteo's conditions for the place, date and
+//     hour in force. Its label says the provenance, its tooltip says it in
+//     full.
+// A fetch runs in the pressing viewer's page and writes when the reply comes
+// (open-meteo.js); a failure is a notice and writes nothing. Nothing else
+// here fetches: ambient() and every state() only read the doc (Decision 33).
+// All four are package writes (api.change), so none is on the undo stack
 // (STAGE.md: only the stage's own parts have api.edit; Question 6).
 
 import { atmosphereOf } from "./atmosphere.js";
+import { NAME, NO_DATA, fetchWeather, requestFor, snapshotFrom } from "./open-meteo.js";
 import { localOf } from "./time.js";
 import { FIELDS, PLACES, dialledSince, placeOf, provenance, weatherParams, windOf } from "./weather.js";
 
@@ -53,10 +62,23 @@ export const coordinates = (lat, lon) => `${Math.abs(lat).toFixed(4)}° ${lat < 
 /** A string the trait's source gives, or null (a peer wrote it: it is only ever shown as text). */
 const text = (v) => (typeof v === "string" && v ? v : null);
 
-/** The Place command's tooltip: where the weather in force came from (provenance, said). */
+/** A date and hour on a clock as people read it: "2026-07-15 15:00 UTC−7". */
+export function clockText({ date, hour }, offset) {
+  const m = Math.round(hour * 60);
+  return `${date} ${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")} ${clockName(offset)}`;
+}
+
+/** A source's `for` (ISO) as read on the weather's clock, or null when it isn't a time. */
+export function forText(value, offset) {
+  const t = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(t) ? clockText(localOf(t, offset), offset) : null;
+}
+
+/** Where the weather in force came from (provenance, said): the Fetch for this time tooltip's first sentence. */
 export function provenanceTitle(trait) {
   const s = isMap(trait?.source) ? trait.source : {};
-  const from = `${text(s.name) ?? "an unnamed source"}${text(s.api) ? ` (${s.api})` : ""}${text(s.for) ? ` for ${s.for}` : ""}`;
+  const at = forText(s.for, weatherParams(trait).offset);
+  const from = `${text(s.name) ?? "an unnamed source"}${text(s.api) ? ` (${s.api})` : ""}${at ? ` for ${at}` : ""}`;
   switch (provenance(trait)) {
     case "fetched":
       return `Weather: as fetched from ${from}`;
@@ -67,6 +89,22 @@ export function provenanceTitle(trait) {
   }
 }
 
+/**
+ * What Fetch for this time's button says: the provenance, short, so it shows
+ * without hovering. "Fetch for this time" (dialled), "Fetched for this time"
+ * (as fetched: pressing it fetches again), "Fetch again (hour, cover)" once
+ * fields are dialled since (naming up to two, else counting them).
+ */
+export function fetchLabel(trait) {
+  const d = dialledSince(trait);
+  if (d == null) return "Fetch for this time";
+  if (!d.length) return "Fetched for this time";
+  return `Fetch again (${d.length <= 2 ? d.join(", ") : `${d.length} dialled`})`;
+}
+
+/** The Place picker's tooltip. */
+export const PLACE_TITLE = "Where the weather is: picking a place moves it there, at the same hour on its clock";
+
 /** The Place command's state for a trait: the picker (PLACES, and "here" when at none), or null without a trait to write into. */
 export function placeState(trait) {
   if (!isMap(trait)) return null;
@@ -74,7 +112,7 @@ export function placeState(trait) {
   const at = placeOf(p);
   const choices = PLACES.map((q) => ({ value: q.name, label: q.name }));
   if (!at) choices.push({ value: HERE, label: coordinates(p.lat, p.lon) });
-  return { value: at ? at.name : HERE, choices, title: provenanceTitle(trait) };
+  return { value: at ? at.name : HERE, choices, title: PLACE_TITLE };
 }
 
 /** The fields of `want` the trait doesn't already hold as they are. */
@@ -92,16 +130,42 @@ export function placeWrites(trait, value) {
 }
 
 /**
- * What Now writes at instant `t`: date and hour of the present quarter hour
- * on the weather's clock (localOf, floored to the hour slider's step, so
- * Now writes only values the slider can show, and the hour never reaches
- * 24), those that differ; null without a trait.
+ * The present quarter hour at instant `t` on the weather's clock: { date,
+ * hour }, localOf floored to the hour slider's step, so it is only ever a
+ * value the slider can show, and the hour never reaches 24.
  */
+export function presentOf(trait, t) {
+  return localOf(Math.floor(t / STEP) * STEP, weatherParams(trait).offset);
+}
+
+/** What Now writes at instant `t`: the present quarter hour's date and hour, those that differ; null without a trait. */
 export function nowWrites(trait, t) {
   if (!isMap(trait)) return null;
-  const { offset } = weatherParams(trait);
-  const { date, hour } = localOf(Math.floor(t / STEP) * STEP, offset);
-  return differing(trait, { date, hour });
+  return differing(trait, presentOf(trait, t));
+}
+
+/**
+ * What Fetch now asks for at instant `t`: the present conditions at the
+ * weather's place, for the present quarter hour on its clock (within
+ * 15 minutes of t, so always the present conditions); null without a trait.
+ */
+export const fetchNowRequest = (trait, t) => (isMap(trait) ? requestFor({ ...weatherParams(trait), ...presentOf(trait, t) }, t) : null);
+
+/** What Fetch for this time asks for at instant `t`: the conditions for the place, date and hour in force; null without a trait, or for a time Open-Meteo has none for. */
+export const fetchRequest = (trait, t) => (isMap(trait) ? requestFor(weatherParams(trait), t) : null);
+
+/**
+ * What a fetched snapshot (open-meteo.js snapshotFrom) writes over a trait:
+ * those of its fields that differ, and its `source`, whole (a snapshot's
+ * record is one value: two fetches at once leave one record, never a blend);
+ * null without a trait. A field someone dials while the fetch is out is
+ * written over only if the snapshot's value differs; one they dial after it
+ * lands is theirs, and the provenance names it.
+ */
+export function fetchWrites(trait, snapshot) {
+  if (!isMap(trait)) return null;
+  const { source, ...fields } = snapshot;
+  return { ...differing(trait, fields), source };
 }
 
 /** A clock as people read it: "UTC−7", "UTC+5:45", "UTC". */
@@ -121,6 +185,26 @@ export const isWorlds = (api) => api.ambient?.("wind")?.mine === true;
 export default {
   create(api) {
     const trait = () => api.doc()?.traits?.[TRAIT];
+
+    /**
+     * Fetch a request and write its snapshot, in one change, when the reply
+     * comes: only while this stage's weather is still the world's. A time
+     * with no weather, an error reply, a reply that isn't weather or a failed
+     * fetch is a notice and writes nothing; the stage stopping (its signal)
+     * drops the fetch silently.
+     */
+    async function fetchInto(request) {
+      if (!request) return void api.notify?.(NO_DATA, "error");
+      try {
+        const snapshot = snapshotFrom(await fetchWeather(request, { signal: api.signal }), request);
+        if (api.signal?.aborted || !isWorlds(api)) return;
+        write(fetchWrites(trait(), snapshot));
+        api.notify?.(`Weather fetched from ${NAME} (${snapshot.source.api}) for ${forText(snapshot.source.for, snapshot.offset)}`);
+      } catch (err) {
+        if (err?.name === "AbortError" || api.signal?.aborted) return;
+        api.notify?.(`Couldn't fetch the weather: ${err?.message ?? err}`, "error");
+      }
+    }
 
     /** Write fields into the trait, one change, field by field; nothing to write, or no trait by then, writes nothing. */
     function write(fields) {
@@ -166,6 +250,38 @@ export default {
           },
           run(target) {
             if (target == null && isWorlds(api)) write(nowWrites(trait(), Date.now()));
+          },
+        },
+        {
+          id: "fetch-now",
+          name: "Fetch now",
+          edit: true,
+          show: SHOW,
+          state: (target) => {
+            const t = trait();
+            if (target != null || !isWorlds(api) || !isMap(t)) return null;
+            const p = weatherParams(t);
+            return { title: `Fetch the present conditions at ${coordinates(p.lat, p.lon)} from ${NAME}, and set the weather's date and hour to now on its clock (${clockName(p.offset)})` };
+          },
+          run(target) {
+            if (target == null && isWorlds(api)) void fetchInto(fetchNowRequest(trait(), Date.now()));
+          },
+        },
+        {
+          id: "fetch",
+          name: "Fetch for this time",
+          edit: true,
+          show: SHOW,
+          state: (target) => {
+            const t = trait();
+            if (target != null || !isWorlds(api) || !isMap(t)) return null;
+            const label = fetchLabel(t);
+            if (!fetchRequest(t, Date.now())) return { label, disabled: true, title: NO_DATA };
+            const p = weatherParams(t);
+            return { label, title: `${provenanceTitle(t)}. Fetch ${NAME}'s conditions at ${coordinates(p.lat, p.lon)} for ${clockText(p, p.offset)}` };
+          },
+          run(target) {
+            if (target == null && isWorlds(api)) void fetchInto(fetchRequest(trait(), Date.now()));
           },
         },
       ],
