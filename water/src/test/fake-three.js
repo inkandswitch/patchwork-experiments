@@ -83,6 +83,20 @@ export function fakeThree() {
       this.userData = {};
     }
   }
+  class LineSegments extends Mesh {
+    computeLineDistances() {
+      this.distances = true;
+      return this;
+    }
+  }
+  class LineDashedMaterial {
+    constructor(o) {
+      Object.assign(this, o);
+    }
+    dispose() {
+      this.disposed = true;
+    }
+  }
   const clone = (u) => Object.fromEntries(Object.entries(u).map(([k, v]) => [k, { value: v.value }]));
   return {
     Vector2,
@@ -93,6 +107,9 @@ export function fakeThree() {
     BufferGeometry,
     ShaderMaterial,
     Mesh,
+    LineSegments,
+    LineDashedMaterial,
+    DoubleSide: 2,
     UniformsLib: { fog: { fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 2000 }, fogColor: { value: new Color("#fff") } } },
     UniformsUtils: { clone },
   };

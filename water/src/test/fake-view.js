@@ -3,9 +3,16 @@
 // clock and the extensions it runs; the api each gets is the slice of
 // scene's api water uses, with scene's ambient rule (STAGE.md, "Ambients"):
 // a stage stacks its extensions' offers per name in running order, the later
-// whole, null clearing; every stage reads the outermost's, as plain JSON
-// (copied and frozen). The rule itself is scene's to prove
-// (scene/src/stage/ambients-stage.test.js); this only lets water run on it.
+// whole, null clearing, when it flushes (asking every running extension's
+// `ambient()`, as the stage's flush does); every stage reads the outermost's
+// last flushed offers, as plain JSON (copied and frozen). The rule itself is
+// scene's to prove (scene/src/stage/ambients-stage.test.js); this only lets
+// water run on it.
+//
+// By default every stage's extensions start, then every stage flushes,
+// outermost first (a view's arrive); each frame flushes every stage, then
+// ticks the clocks, then runs the loops. `{ start: false }` leaves both to
+// the test (view.start(n), view.flush(n)), for arrival orders (W31).
 
 import { fakeThree } from "./fake-three.js";
 
@@ -39,34 +46,47 @@ export function mulM(A, B) {
  * @param {{ doc: object, matrix?: number[] | null, extensions?: object[], drawn?: boolean, poses?: object }[]} specs  the outermost first;
  *   `poses` overrides an object's drawn matrix (api.worldOf), as a held pose does
  */
-export function fakeView(specs) {
+export function fakeView(specs, { start = true } = {}) {
   const THREE = fakeThree();
   const stages = [];
+  /** Stage s flushes: its running extensions' offers, stacked per name, frozen (the same object until it changes). */
+  function flushStage(s) {
+    const out = {};
+    for (const inst of s.instances) {
+      const offer = inst.ambient?.() ?? null;
+      if (!offer) continue;
+      for (const [k, v] of Object.entries(offer)) if (v !== undefined) out[k] = v;
+    }
+    for (const k of Object.keys(out)) {
+      if (out[k] == null) delete out[k];
+      else {
+        const key = JSON.stringify(out[k]);
+        if (s.cache.get(k)?.key !== key) s.cache.set(k, { key, value: frozen(JSON.parse(key)) });
+        out[k] = s.cache.get(k).value;
+      }
+    }
+    s.offered = out;
+    s.flushes++;
+  }
   const view = {
     stages,
     THREE,
-    /** the outermost's stacked offers, by name */
+    /** the outermost's stacked offers as of its last flush, by name */
     ambients() {
-      const world = stages[0];
-      const out = {};
-      if (!world) return out;
-      for (const inst of world.instances) {
-        const offer = inst.ambient?.() ?? null;
-        if (!offer) continue;
-        for (const [k, v] of Object.entries(offer)) if (v !== undefined) out[k] = v;
-      }
-      for (const k of Object.keys(out)) {
-        if (out[k] == null) delete out[k];
-        else {
-          const key = JSON.stringify(out[k]);
-          if (world.cache.get(k)?.key !== key) world.cache.set(k, { key, value: frozen(JSON.parse(key)) });
-          out[k] = world.cache.get(k).value;
-        }
-      }
-      return out;
+      return stages[0]?.offered ?? {};
     },
-    /** one frame: every clock ticks by dt (those that run), then every loop runs */
+    /** stage n's extensions start (a stage opening) */
+    start(n) {
+      for (const ext of specs[n].extensions ?? []) stages[n].instances.push(ext.create(stages[n].api));
+    },
+    /** stage n flushes (every stage, outermost first, without n) */
+    flush(n) {
+      if (n === undefined) stages.forEach(flushStage);
+      else flushStage(stages[n]);
+    },
+    /** one frame: every stage flushes, every clock ticks by dt (those that run), then every loop runs */
     frame(dt = 1 / 60) {
+      stages.forEach(flushStage);
       for (const s of stages) if (s.clock.running && s.clock.computed) s.clock.t += Math.min(0.25, dt);
       for (const s of stages) for (const fn of [...s.loops]) fn(dt);
     },
@@ -90,6 +110,9 @@ export function fakeView(specs) {
       poses: spec.poses ?? null,
       camera: { position: [3, 10, 20] },
       cache: new Map(),
+      offered: {},
+      flushes: 0,
+      selected: null,
     };
     stages.push(s);
     s.api = {
@@ -108,6 +131,7 @@ export function fakeView(specs) {
         return { d: s.doc, traits: s.doc.traits ?? {}, objects, parents, ids: Object.keys(objects), world };
       },
       worldOf: (id) => s.poses?.[id] ?? s.api.scene().world(id),
+      view: Object.freeze({ get: () => ({ selected: s.selected }) }),
       clock: Object.freeze({ t: () => s.clock.t, running: () => s.clock.running, process: () => (spec.drawn ? () => {} : (s.processes++, () => s.processes--)) }),
       loop: (fn) => (s.loops.add(fn), () => s.loops.delete(fn)),
       world: () => {
@@ -138,10 +162,11 @@ export function fakeView(specs) {
       },
     };
   });
-  // start each stage's extensions (after every stage exists, as a view's arrive)
-  specs.forEach((spec, n) => {
-    for (const ext of spec.extensions ?? []) stages[n].instances.push(ext.create(stages[n].api));
-  });
+  // start each stage's extensions (after every stage exists), then flush each, outermost first: a view's arrive
+  if (start) {
+    specs.forEach((_, n) => view.start(n));
+    view.flush();
+  }
   return view;
 }
 
@@ -155,6 +180,8 @@ export const windOf = (wind) => ({ create: () => ({ ambient: () => ({ wind }) })
 export const surfaces = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "ocean").length, 0), 0);
 /** Count the bounded patches drawn across the view. */
 export const patches = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "water-patch").length, 0), 0);
+/** Count the selection outlines drawn across the view. */
+export const outlines = (view) => view.stages.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.children.filter((c) => c.name === "water-outline").length, 0), 0);
 
 /** A level placement's world matrix: yaw (radians), then translation; column-major. */
 export function placement(yaw = 0, t = [0, 0, 0], s = 1) {
