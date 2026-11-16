@@ -34,7 +34,7 @@ import KEPT from "./stock-rig-12m.js";
 import { toContract } from "./rig-contract.js";
 import { areaCentroid, furledClew, reefed, sailSlope } from "./rig-sails.js";
 import { rigSailCoeffs } from "./physics-foils.js";
-import { WINDAGE_SOURCE, contractElement, rigElements } from "./windage.js";
+import { WINDAGE_SOURCE, contractElement, planOf, rigElements } from "./windage.js";
 
 /** The family of hull GLBs this contract describes: the stock hull, any `@n` (parts.js fileKey). */
 export const STOCK_GLB_KEY = "sailing/hull";
@@ -189,28 +189,31 @@ export function rollUp(items) {
 
 /**
  * §3.10's RM30: the righting curve's (§3.4: the boat's and the crew's
- * moments, N·m) at 30° of heel, linear between its heels.
+ * moments, N·m) at 30° of heel, linear between the heels either side of
+ * it. A curve that doesn't reach 30°, or starts past it, has no RM30.
  */
 export function rm30Of(righting) {
   const h = righting.heelsDeg;
   const at = (i) => righting.boatNm[i] + righting.crewNm[i];
-  for (let i = 1; i < h.length; i++) {
+  for (let i = 0; i < h.length; i++) {
+    if (h[i] === 30) return at(i);
     if (h[i] < 30) continue;
+    if (i === 0) break;
     const t = (30 - h[i - 1]) / (h[i] - h[i - 1]);
     return at(i - 1) + (at(i) - at(i - 1)) * t;
   }
-  throw new Error("stock-rig: the righting curve stops short of 30°");
+  throw new Error("stock-rig: the righting curve doesn't span 30°");
 }
 
 /**
  * §3.13's windage: the kept hull element, then windage.js's mast and
  * rigging elements on the rig as stated (its partners, height, rake, BAS,
- * P, I and mast section), the rigging sized for `rm30Nm` over the
+ * P, I and mast section) and its sails (the mast beside a main's luff is
+ * its mast-sail element), the rigging sized for `rm30Nm` over the
  * chainplates' half-breadth.
  */
-export function windageOf(rig, chainplates, rm30Nm) {
-  const ps = rig.mast.partnersM;
-  const plan = { mast: { partners: [ps[0], ps[2]], heightM: rig.mast.heightM }, rakeDeg: rig.rakeDeg, BAS: rig.BAS, P: rig.P, I: rig.I, type: rig.type, sails: [{ id: "main" }] };
+export function windageOf(rig, sails, chainplates, rm30Nm) {
+  const plan = planOf(rig, sails);
   const chainplateBaseM = Math.abs(chainplates[0].atM[1]);
   return { source: WINDAGE_SOURCE, elements: [clone(KEPT.windageHull), ...rigElements({ plan, mastWidthM: rig.mast.sectionM, rm30Nm, chainplateBaseM }).map(contractElement)] };
 }
@@ -430,7 +433,7 @@ export function stockContract(d) {
       run: [],
     },
     lumpedSail: { tackM: C(lumped.tack), luffM: lumped.luff, footM: lumped.foot, areaM2: lumped.area, ceM: C(lumped.ce), ceHeightFrac: lumped.ceHeightFrac },
-    windage: windageOf(rig, hardpoints.chainplates, rm30Of(loading.righting)),
+    windage: windageOf(rig, sails, hardpoints.chainplates, rm30Of(loading.righting)),
     warnings: [...KEPT.warnings],
     rules: KEPT.rules,
   };

@@ -4,16 +4,26 @@
 // 1. test/rig-contract/ holds naval's schema, validator, reference consumer
 //    (compose.js) and five valid fixtures, copied byte for byte, never
 //    linked (CLAUDE.md: every package stands alone). Each copy is held to
-//    the sha256 it had when copied (naval at 7d473f91), so a drift either
-//    way shows here: re-copy them all from naval and rewrite this table.
-// 2. windage.js is naval's rules: from each fixture's own rig and loads it
-//    states the fixture's own elements (§3.13), to the fixture's 9 digits.
+//    the sha256 it had when copied (naval at 7d473f91), so an edit to a copy
+//    shows here. A change in naval doesn't (sailing stands alone): when
+//    naval's contract moves, re-copy all of them and rewrite this table.
+// 2. windage.js is naval's rules, held to what naval states with them: from
+//    each fixture's own rig, sails and loads it states the fixture's rig
+//    elements (§3.13) to the fixture's 9 digits, and its mast section from
+//    the mast's length. The hull's element is stated from the fixture's
+//    mean freeboard (its frontal area over its beam: the fixture carries no
+//    sheer), so that row holds the area and centre rules, and meanFreeboard
+//    is held on its own to the trapezoid rule's finite cases.
+// 3. elementForce is compose.js's §6.1 windage force: at a finite table of
+//    states, each fixture's elements one at a time add exactly elementForce's
+//    fx and fh, at its (x, z), to compose's surge, sway and yaw.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { WINDAGE_SOURCE, contractElement, hullElement, rigElements } from "./windage.js";
+import { WINDAGE_SOURCE, contractElement, elementForce, hullElement, mastSection, meanFreeboard, planOf, rigElements } from "./windage.js";
+import { composer } from "./test/rig-contract/compose.js";
 import sloop from "./test/rig-contract/sloop-12m.json";
 import cuvature from "./test/rig-contract/cuvature-first-guess.json";
 import catalina from "./test/rig-contract/catalina-30.json";
@@ -58,8 +68,8 @@ describe("windage.js states each fixture's elements from its own rig and loads (
     it(name, () => {
       expect(c.windage.source).toBe(WINDAGE_SOURCE);
       const r = c.rig;
-      const plan = { mast: { partners: [r.mast.partnersM[0], r.mast.partnersM[2]], heightM: r.mast.heightM }, rakeDeg: r.rakeDeg, BAS: r.BAS, P: r.P, I: r.I, type: r.type, sails: c.sails };
-      const rig = rigElements({ plan, mastWidthM: r.mast.sectionM, rm30Nm: c.loads?.rm30Nm ?? null, chainplateBaseM: c.loads?.chainplateBaseM ?? null }).map(contractElement);
+      expect(mastSection(r.mast.lengthM)).toBeCloseTo(r.mast.sectionM, 9);
+      const rig = rigElements({ plan: planOf(r, c.sails), mastWidthM: r.mast.sectionM, rm30Nm: c.loads?.rm30Nm ?? null, chainplateBaseM: c.loads?.chainplateBaseM ?? null }).map(contractElement);
       // the hull's, on a sheer at the fixture's mean freeboard (the area it states over its beam)
       const want = c.windage.elements.find((e) => e.id === "hull");
       const fb = want.areaFrontM2 / c.hull.beamM;
@@ -68,5 +78,58 @@ describe("windage.js states each fixture's elements from its own rig and loads (
       expect(got.map((e) => e.id)).toEqual(c.windage.elements.map((e) => e.id));
       got.forEach((e, i) => sameElement(e, c.windage.elements[i]));
     });
+  }
+});
+
+describe("meanFreeboard: the trapezoid rule over the LOA, below the water counting nothing, a station without a sheer left out", () => {
+  const n = 40;
+  for (const [name, sheerAt, sternX, stemX, want] of [
+    ["a level sheer", () => 1.2, -6, 6, 1.2],
+    ["a straight sheer (exact)", (x) => 1 + 0.1 * x, -5, 5, 1],
+    ["a parabola (the rule's own error, 1/(6n²))", (x) => x * x, 0, 1, 1 / 3 + 1 / (6 * n * n)],
+    ["half below the water, the kink on a station", (x) => x, -1, 1, 0.25],
+    ["no sheer at the ends", (x) => (Math.abs(x) >= 6 ? NaN : 2), -6, 6, 2],
+    ["no sheer anywhere", () => NaN, -6, 6, 0],
+  ]) {
+    it(`${name}: ${want}`, () => {
+      expect(meanFreeboard(sheerAt, sternX, stemX, n)).toBeCloseTo(want, 12);
+    });
+  }
+});
+
+describe("elementForce is compose's §6.1 windage, element by element", () => {
+  const RAD = Math.PI / 180;
+  const state = { V: 2, leewayDeg: 3, rudderDeg: 0 };
+  const twsMs = 8;
+  for (const [name, c] of Object.entries(FIXTURES)) {
+    const set = c.sets.find((x) => x.trimmed);
+    const bare = composer({ ...c, windage: { ...c.windage, elements: [] } });
+    for (const e of c.windage.elements) {
+      const one = composer({ ...c, windage: { ...c.windage, elements: [e] } });
+      for (const twaDeg of [0, 45, 90, 135, 180]) {
+        for (const heelDeg of [0, 20]) {
+          it(`${name} ${e.id}, TWA ${twaDeg}°, heel ${heelDeg}°`, () => {
+            // §6.1's apparent wind, in the heeled sail plane
+            const g = twaDeg * RAD;
+            const ax = twsMs * Math.cos(g) + state.V, ay = twsMs * Math.sin(g);
+            const aws = Math.hypot(ax, ay);
+            const b = (Math.atan2(ay, ax) / RAD - state.leewayDeg) * RAD, p = heelDeg * RAD;
+            const betaEDeg = Math.atan2(Math.sin(b) * Math.cos(p), Math.cos(b)) / RAD;
+            const awsE = aws * Math.hypot(Math.cos(b), Math.sin(b) * Math.cos(p));
+            const f = elementForce(e, { awsE, betaEDeg, heelDeg, rho: c.sailModel.rhoAirKgM3 });
+            const at = { set, flat: 1, twsMs, twaDeg };
+            const s = { ...state, heelDeg };
+            const A = one.forcesAt(at, s), B = bare.forcesAt(at, s);
+            const cp = Math.cos(p), sp = Math.sin(p);
+            const tol = (v) => 1e-9 * Math.max(1, Math.abs(v));
+            for (const [got, want] of [
+              [A.surge - B.surge, f.fx],
+              [A.sway - B.sway, -f.fh * cp],
+              [A.yaw - B.yaw, -f.fh * cp * f.x + f.fx * f.z * sp],
+            ]) expect(Math.abs(got - want)).toBeLessThanOrEqual(tol(want));
+          });
+        }
+      }
+    }
   }
 });

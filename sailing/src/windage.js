@@ -9,15 +9,20 @@
 // - the builder is split in two, hullElement (the hull from her LOA, beam
 //   and sheer) and rigElements (the mast and rigging from her rig), so a
 //   contract that keeps a hull element (the stock sloop keeps the 12 m
-//   fixture's) states only its rig's; windageElements is the two together,
-//   as naval's is;
+//   fixture's) states only its rig's;
 // - rigElements takes the mast's width (`mastWidthM`: a contract's
 //   `rig.mast.sectionM`, or mastSection of a length where nothing is
-//   drawn) where naval works it out from the mast's length;
+//   drawn) where naval works it out from the mast's length, and planOf
+//   reads its `plan` off a contract's rig and sails;
 // - contractElement states one element in the contract's frame, as naval's
-//   contract.js windageOf does (atM is the profile point on the centreplane).
-// When naval's rules change, re-copy them; windage.test.js holds this copy
-// to every fixture's elements, so a drift shows.
+//   contract.js windageOf does (atM is the profile point on the centreplane);
+// - elementForce reads a contract element (its centre is atM's x and z),
+//   since a contract's elements are what sailing holds.
+// windage.test.js holds this copy to what naval states: every fixture's
+// elements and mast sections, and compose.js's windage force at a finite
+// table of states. Those are naval's outputs as copied, so an edit here
+// shows; a change in naval does not (sailing stands alone, CLAUDE.md), so
+// when naval's rules change, re-copy them with the contract's files.
 //
 // The elements, their areas, drag coefficients and heights are ORC's
 // (ORC VPP Documentation 2023, §5.3 "Windage Forces", Table 5.10, eqs.
@@ -160,10 +165,13 @@ export function rigElements({ plan, mastWidthM, rm30Nm, chainplateBaseM }) {
   return out;
 }
 
-/** naval's windageElements: the hull's element, then the rig's. */
-export function windageElements({ plan, loa, beam, stemX, sternX, sheerAt, mastWidthM, rm30Nm, chainplateBaseM }) {
-  const hull = hullElement({ loa, beam, stemX, sternX, sheerAt });
-  return [...(hull ? [hull] : []), ...rigElements({ plan, mastWidthM, rm30Nm, chainplateBaseM })];
+/**
+ * rigElements's `plan`, read off a contract's rig (§3.7: its mast's partners
+ * on the centreplane, height, rake, BAS, P, I and type) and its sails (§3.8).
+ */
+export function planOf(rig, sails) {
+  const ps = rig.mast.partnersM;
+  return { mast: { partners: [ps[0], ps[2]], heightM: rig.mast.heightM }, rakeDeg: rig.rakeDeg, BAS: rig.BAS, P: rig.P, I: rig.I, type: rig.type, sails: (sails ?? []).map((s) => ({ id: s.id })) };
 }
 
 /** An element as §3.13 states it, in the contract's frame (its profile point on the centreplane). */
@@ -182,7 +190,8 @@ export function contractElement(e) {
 }
 
 /**
- * One element's force at an apparent wind in the heeled sail plane.
+ * One contract element's force at an apparent wind in the heeled sail plane
+ * (§6.1: compose.js's windageAt).
  * @returns {{ fx: number, fh: number, x: number, z: number }} fx along the boat (+ ahead), fh square to the mast (+ to leeward), at (x, z)
  */
 export function elementForce(e, { awsE, betaEDeg, heelDeg, rho }) {
@@ -200,5 +209,5 @@ export function elementForce(e, { awsE, betaEDeg, heelDeg, rho }) {
     fx = -D * cb;
     fh = D * sb;
   }
-  return { fx, fh, x: e.at[0], z: e.at[1] + e.zPerSinHeelM * s };
+  return { fx, fh, x: e.atM[0], z: e.atM[2] + e.zPerSinHeelM * s };
 }

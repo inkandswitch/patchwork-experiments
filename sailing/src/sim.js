@@ -26,7 +26,7 @@
 import { createShip, specFromBox, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 import { mergeSpec } from "./hull-model.js";
 import { apply, eulerFromQuat, invert, matrixOf, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
-import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
+import { IDENTITY, bodyBox, frameMatrix, hullKeyOf, isIdentity, placeIn, rigContractOf, shipFrame, toBody, toObject, yawOf } from "./body.js";
 import { trimModelOf } from "./trim.js";
 import { ANCHOR, DEFAULTS as STATION_DEFAULTS, SHIP, STATION, heldSign, jibTransform, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
 import { contractOn, rigKey, rigSpecParts } from "./rig-contract.js";
@@ -361,7 +361,7 @@ export function createSim(api, ctx) {
   let publishedAt = -Infinity;
 
   let memo = { scene: null, map: new Map() };
-  const modelMemo = new WeakMap(); // a rig GLB's extras → its sails' trim thresholds
+  const modelMemo = new WeakMap(); // a contract taken → its sails' trim thresholds
   /** A ship's parts, from a snapshot (traits.js partsOf), once per snapshot. */
   function parts(sc, ship) {
     if (memo.scene !== sc) memo = { scene: sc, map: new Map() };
@@ -629,15 +629,15 @@ export function createSim(api, ctx) {
     /**
      * Each of a ship's contract sails' trim thresholds by id (trim.js
      * trimModelOf), from her rig's GLB as this view has it loaded (so a
-     * follower has them too); {} with no contract.
+     * follower has them too); {} when she takes no contract (body.js
+     * rigContractOf: the gate her physics reads it through, so a rig her
+     * physics sails plain has no contract sails' advice either).
      */
     sailModels(id) {
-      const rig = parts(api.scene(), id).sail;
-      const extras = rig ? api.content(rig)?.extras : null;
-      const sails = extras?.rig?.sails;
-      if (!Array.isArray(sails)) return {};
-      let m = modelMemo.get(extras);
-      if (!m) modelMemo.set(extras, (m = Object.fromEntries(sails.map((x) => [x.id, trimModelOf(x)]))));
+      const contract = rigContractOf(api, id);
+      if (!Array.isArray(contract?.sails)) return {};
+      let m = modelMemo.get(contract);
+      if (!m) modelMemo.set(contract, (m = Object.fromEntries(contract.sails.map((x) => [x.id, trimModelOf(x)]))));
       return m;
     },
     stationsOf(id) {
