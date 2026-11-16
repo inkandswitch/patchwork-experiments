@@ -156,11 +156,11 @@ Still open:
 - the real Patchwork ran package versions days apart in one page, and a
   viewer with an older terrain provider rebuilt Cadboro Bay's published
   render without its buildings and trees (Decisions, N7, 6; Questions for
-  the lead).
+  the lead);
 - machine's "Lay out its world" never refuses a second world for a
   cabinet, and the published Arcade had come to hold two (republished;
   machine/HOST.md, phase 2b, Not done yet; Decisions, N7, 7; Questions for
-  the lead);
+  the lead).
 
 Fixed since (each item names its Decisions section below):
 - in Edit inside an entered link, a click that landed on the host went
@@ -2410,8 +2410,13 @@ the finding; row 6 failed to a stale package, 6 below).
    Narrowed by 7 below: a check may open docs the lane itself made (fresh
    render docs, nothing older to overwrite) when it reads, node-side,
    before and after, the heads of every published doc it reaches but must
-   not write. Checks that open published docs with renders built before
-   (Games night, Cadboro Bay, the Quiet games room) still wait for the lead.
+   not write. A scratch clone counts as the lane's own only when its
+   render docs are its own too: `repo.clone` keeps every object's
+   `renderUrl`, so a clone shares its source's render docs, and a
+   viewer's builds write the render doc (`scene/src/build.js`; a GLB is a
+   new doc each build). Checks that open published docs with renders
+   built before (Games night, Cadboro Bay, the Quiet games room) still
+   wait for the lead.
 7. **The Arcade republished with one Doom world.** The published Arcade
    (automerge:gfLLzkhgvPaDTaWUPR4QVh7duNr) had come to hold two objects
    carrying `machine.world` for the Doom cabinet, `world` and `okg5pjo09`,
@@ -2427,18 +2432,33 @@ the finding; row 6 failed to a stale package, 6 below).
    again after every check: for each cabinet id, the number of objects
    whose `machine.world.machine` names it is 1 for `doom` and 0 for
    `snes`, and no world names an object that isn't a cabinet (the old doc
-   reads 2 and 0). Checked in the real Patchwork by `arcade-check` (kept
-   with the lane's publish scripts): 27/27 with play on its own scratch
-   clone, then 13/13 with `--no-play` as a later visit. The machine docs
-   it links, their content docs and the old Arcade kept their heads
-   through every run. The first two runs scored 16/27: in a fresh profile
-   the shell's first page came up with the stage but none of the doc's
+   reads 2 and 0; it also requires every object whose render is Doom's
+   map to carry the trait, and every world's `source` to be its
+   cabinet's machine doc). Checked in the real Patchwork by
+   `arcade-check` (kept with the lane's publish scripts), which also
+   sees the defect in the page: the scene draws exactly one node named
+   `machine.world:*`, and it is `machine.world:world`. The new Arcade
+   scores 30/30 with play on its own scratch clone, then 14/14 with
+   `--no-play` as a later visit; the old doc, `--no-play`, scores 13/14,
+   failing that row (it draws `machine.world:world` and
+   `machine.world:okg5pjo09`). The scratch clone now clones each
+   object's render doc and drops the shell's `@patchwork.mainDraftUrl`, a
+   row checks it shares no doc a viewer writes with the published one,
+   and a row reads, before part 2 and after, the heads of the published
+   docs it still reaches (the Arcade, its sessions, the machine docs and
+   their content, the WAD): unchanged. The earlier runs' clones shared
+   the published renders: the world's render was first built by the
+   first run's scratch page, not by a visit to the published doc (a
+   fresh render doc, the old docs' GLB hash, so the same provider
+   version). The first two runs scored 16/27: in a fresh profile the
+   shell's first page came up with the stage but none of the doc's
    packages and no prompt to load them for 7 minutes, while the next
-   navigation, to the scratch clone, prompted, loaded and played (part 2,
-   14/14 both times). The check now reloads once, and says so, after 150 s
-   with nothing loaded and nothing to click; the third run didn't need
-   it. The world's render, built in the real Patchwork, has the old docs'
-   GLB hash, so the same provider version built it.
+   navigation, to the scratch clone, prompted, loaded and played. The
+   check now reloads once after 150 s with nothing loaded and nothing to
+   click, and its summary says so ("after a reload", naming the page);
+   no scored run since needed it. The machine docs, their content, the
+   WAD, both Arcades, their render docs and sessions kept their heads
+   through the last three runs.
    *For the lead:* should "Lay out its world" be disabled on a cabinet
    that has its world ("It has its world"), or replace it? Either is a
    small change in machine, outside N7.
