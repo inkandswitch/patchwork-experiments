@@ -8,9 +8,11 @@ those (the viewport's sky, sun and fog, water's tint, reflection and roughness,
 sailing's sea and every boat's physics) follows the weather without knowing
 this package exists.
 
-Status: W0 (the scaffold) and W1 (the sun from time and place: `time.js`,
-`solar.js`) are in. The trait is described and the extension runs, but it
-offers nothing until W2. The plan's steps are listed under "Plan" below.
+Status: W0 (the scaffold), W1 (the sun from time and place: `time.js`,
+`solar.js`) and W2 (the ambients as pure functions: `weather.js`'s
+`weatherParams` and `windOf`, `atmosphere.js`'s `atmosphereOf`) are in. The
+trait is described and the extension runs, but it offers nothing until W3
+wires the ambients into it. The plan's steps are listed under "Plan" below.
 
 ## The data
 
@@ -70,13 +72,16 @@ existing conventions and adds no new ambient:
     inverted; Decision 14). It is mapped to the stage's frame, north -Z
     and east +X (terrain tmerc.js, sailing wind.js), by
     `sunDirection(azimuth, apparent)` =
-    `[sin A cos E, sin E, -cos A cos E]`. The sun is present only while its
-    *geometric* elevation (`sunAt`'s `geometric`) is above -0.833°: the
-    almanac's sunrise, where refraction lifts the upper limb onto the
-    horizon. The bands below (civil twilight to -6°, night by -12°) are
-    geometric too, as the almanac's are, and so is every other elevation
-    gate below (the 20° hold, the 2° shadow gate); only the direction uses
-    the `apparent` elevation (Decision 18). Under the default weather
+    `[sin A cos E, sin E, -cos A cos E]`. The sun gives light, and shows a
+    disc, only while its *geometric* elevation (`sunAt`'s `geometric`) is
+    above -0.833°: the almanac's sunrise, where refraction lifts the upper
+    limb onto the horizon. Below that the atmosphere keeps a dark sun
+    (colour `#000000`, intensity 0) pointing where the sun is, so the
+    stage's own key light never stands in for it (Decision 19). The bands
+    below (civil twilight to -6°, night by -12°) are geometric too, as the
+    almanac's are, and so is every other elevation gate below (the 20° hold,
+    the 2° shadow gate); only the direction uses the `apparent` elevation
+    (Decision 18). Under the default weather
     (Cadboro Bay, 2026-07-15 15:00 PDT) the sun is at azimuth 225.57° and
     apparent elevation 56.30°, a solar.test.js row checked against an
     independent ephemeris.
@@ -94,23 +99,49 @@ existing conventions and adds no new ambient:
        toward the fogbound look (the marine layer), whatever the cover: in
        thick fog the sky is the fog.
     3. *Sun elevation.* That look holds while the sun's geometric
-       elevation is 20° or more.
-       Below, it blends through bands (low, horizon, civil twilight to -6°,
-       night by -12°) toward new art direction, with exposure
-       non-increasing as the sun sinks.
+       elevation is 20° or more. Below, it is filtered through the bands
+       (the table below; linear between nodes, night held below -12°):
+       each sky colour by a gain and a tint, the sun's colour by a tint and
+       `disc`, its intensity by `light`, and exposure by its factor. A tint
+       is greyed toward white by `s = max(effective cover, h)`, so an
+       overcast or fogbound sunset dims but stays grey (Decision 20).
+       Exposure never rises as the sun sinks.
 
-    Rain is a darkening of the sky and a cut in visibility, and is the
-    identity at 0 mm/h.
+    Rain does two things, and at 0 mm/h neither: its extinction,
+    `0.25 · R^0.73` per km, adds to the air's (`3.912 / visibility`,
+    Koschmieder), which draws the visibility in force and so the haze in;
+    and at that haze it darkens the sky's colours and the sun's intensity
+    by `wet = 1 - 0.3 · R / (R + 4)` (Decision 21). Moderate rain alone
+    (2.5 mm/h) sees about 8 km, heavy rain (25 mm/h) about 1.5 km.
+
+    | Band | Geometric | Top | Horizon | Bottom | Sun tint | `disc` | `light` | Exposure |
+    |---|---|---|---|---|---|---|---|---|
+    | day | 20° and up | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+    | low | 6° | 0.85 × (0.97, 1, 1.04) | 0.95 × (1.08, 0.98, 0.85) | 0.85 × (1.03, 0.99, 0.94) | (1, 0.83, 0.62) | 0.7 | 0.95 | 0.92 |
+    | horizon | 0° | 0.5 × (0.92, 0.96, 1.1) | 0.75 × (1.3, 0.78, 0.45) | 0.5 × (1.12, 0.88, 0.75) | (1, 0.55, 0.25) | 0.2 | 0.8 | 0.72 |
+    | set | -0.833° | 0.42 × (0.9, 0.95, 1.12) | 0.62 × (1.3, 0.72, 0.45) | 0.42 × (1.1, 0.86, 0.78) | (1, 0.5, 0.22) | 0 | 0 | 0.64 |
+    | civil | -6° | 0.06 × (0.75, 0.88, 1.25) | 0.1 × (1.1, 0.8, 0.85) | 0.05 × (0.85, 0.9, 1.1) | | 0 | 0 | 0.3 |
+    | night | -12° and down | 0.008 × (0.7, 0.85, 1.35) | 0.01 × (0.85, 0.9, 1.15) | 0.006 × (0.85, 0.9, 1.1) | | 0 | 0 | 0.15 |
+
+    The sun's colour (and so its disc in the sky, which the stage draws in
+    `sun.color` whatever the intensity) is the look's, tinted, times
+    `disc`; its intensity is the look's times `light` and `wet`. Every
+    colour is continuous in the elevation: a hundredth of a degree either
+    side of every node, in linear RGB before the hex rounds it, no channel
+    moves more than 1/255 (measured worst 0.83/255, the sun's colour at 0°;
+    Decision 22).
   - **fog**: the colour is the sky's horizon (true of all four anchors), far
-    is `0.9 · visibility` (Koschmieder style), and near is the look's near
-    ratio times far.
+    is `0.9 ·` the visibility in force (Koschmieder style), and near is the
+    look's near ratio times far, both in whole metres.
   - **shadows**: only while effective cover < 0.75, `h` < 0.5 and the
     sun's geometric elevation is above 2°.
   - **clouds**: `{ cover, contrast, scale, base }`, with cover and base
     taken from the trait and contrast and scale from a per-kind table
     (cumulus 0.25 and 700, stratocumulus 0.12 and 500, from the anchors;
-    stratus and cirrus are new). There is no deck at cover 0 or at `h` = 1:
-    a clear sky has none, and fog hides it.
+    stratus 0.05 and 1500, a flat grey barely textured, and cirrus 0.08 and
+    3000, faint and wide, are new). The contrast fades with the haze,
+    `× (1 - h)`. There is no deck at cover 0 or at `h` = 1: a clear sky has
+    none, and fog hides it.
 
 ### The anchors (fixed points)
 
@@ -196,6 +227,8 @@ nothing is selected. There is no menu diving.
 - **Gusts**: `gustiness = clamp(gust / wind - 1, 0, 1)`, from the hour's
   peak gust (`wind_gusts_10m`) and mean. In a calm (wind under 0.5 m/s) a
   gust factor means nothing, and the default 0.3 is written (Decision 10).
+  `weather.js`'s `gustinessOf(mean, peak)` is this rule, rounded to the
+  slider's step (Decision 24).
 - **Ranges**: every fetched number is clamped to its described range (for
   example, wind 45 m/s becomes 40), so a snapshot is always a state the
   sliders can show.
@@ -211,7 +244,7 @@ nothing is selected. There is no menu diving.
 |---|---|---|
 | W0 | package scaffold, this doc, the fetch-from-Patchwork spike; review fixes (gustiness, the doc's table as spec, the entry evaluated alone, the sky model settled) | done |
 | W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values, and the default's sun end to end; every quarter hour of three Vancouver days round-tripped, and of the days around every transition of a year in eight zones, where `instantOf` never goes backwards (Decision 13). `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16) | done |
-| W2 | `weatherParams` (defaults, and the fallback rows: an invalid zone or a malformed date is the default, from W1's predicates), `windOf` (a pass-through), `atmosphereOf` (pure) as specified under "The look", with the four anchors as fixed points; presence and bands on the geometric elevation | |
+| W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through), `gustinessOf` (Decision 10's rule, for W4's fetch); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation | done |
 | W3 | the extension's ambient, inspector fields, the Place and Now commands; local probe | |
 | W4 | `open-meteo.js`, Fetch commands, recorded fixtures; table rows for gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3} and for clamping (wind 45, rain 80) | |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
@@ -395,6 +428,98 @@ nothing is selected. There is no menu diving.
     coordinates it would cross-check. A test pins the field set. *Decided
     unattended (2026-11-16, lane/weather), for the lead.*
 
+19. **After sunset the atmosphere keeps a dark sun.** The plan said the
+    sun is present only while it is up. Taken literally (no `sun` key
+    below -0.833°), the stage's own rig would stand in: its white key light
+    at 1.5 from a fixed direction high to one side, and its headlight back
+    at full strength. That is an editor's lamp lighting the night sea, and
+    it pops on at the instant of sunset. So the `sun` entry is always
+    there, pointing where the sun really is (below the horizon at night).
+    Its colour and intensity fade to `#000000` and 0 as it sets, so it
+    gives no light and draws no disc. "Present" is therefore tested as
+    "gives light and shows a disc", and holds iff the geometric elevation
+    is above -0.833°. The night is lit only by the sky's hemisphere light
+    (the dark sky colours), a third of the headlight and the environment,
+    all scaled by the night's exposure. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+20. **The twilight is a finite table of bands, with every node but the day
+    new art direction.** Each sky colour has a gain and a tint (linear RGB
+    multipliers). The sun has a tint, a `disc` and a `light` factor, and
+    exposure has its own factor, at 20°, 6°, 0°, -0.833°, -6° and -12°
+    geometric, linear between. Tints are greyed toward white by
+    `s = max(effective cover, h)`, so an overcast or fogbound sunset dims
+    but takes no orange. A test checks every channel scales alike at
+    s = 1. The disc fades from 0.7 at 6° to 0.2 at 0° to 0 at set: the
+    sinking sun dims through thicker air, and that slope is what keeps its
+    colour continuous (Decision 22). Limits: the stage's sky has one
+    horizon colour, so a sunset glow warms the whole horizon, not just the
+    sun's side, and the sky has no stars and no moon. The values were set by
+    reasoning, not seen; W7's screenshots (dawn, noon, dusk, night) are the
+    first look, and the lead's eye should judge them. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+21. **Rain is extinction plus darkening, calibrated rather than cited.**
+    Rain's extinction coefficient, `0.25 · R^0.73` per km, is the usual
+    power-law form. Its constants were set so that rain alone gives about
+    8 km of visibility at 2.5 mm/h (moderate rain) and about 1.5 km at
+    25 mm/h (heavy rain), the visibilities usually described for those
+    rates. It adds to the air's own extinction, `3.912 / visibility`, as
+    extinctions do. The sky and the sun's light are darkened by
+    `wet = 1 - 0.3 · R / (R + 4)`: 0.85 at 4 mm/h, tending to 0.7. Both are
+    exactly the identity at 0 mm/h, so a dry world is untouched. There are
+    no particles and no wet decks. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+22. **Continuity is measured in linear RGB, before the hex rounds it.**
+    The plan asked for no more than 1/255 of change a hundredth of a degree
+    either side of each band's edge. In sRGB that cannot hold for anything
+    that fades to black: sRGB is steep near black (12.92 per unit of linear
+    below 0.0031), so any fade over a few degrees moves several sRGB levels
+    per 0.02°. The hex rounding also adds up to a level of its own. So
+    `skyAt` returns the look unrounded in linear RGB, the space it is
+    interpolated, filtered and drawn in (the sky shader works in linear),
+    and the check is applied there. It holds over every kind, cover
+    {0, 0.5, 1}, visibility {20, 3, 1} km and rain {0, 10} mm/h, at every
+    node and at the 2° gate. The worst case is 0.83/255, the sun's colour at
+    0°. The colour transfer itself is checked separately: every byte in
+    every channel round-trips exactly. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+23. **`weatherParams` is strict, and its spec is the describes.** The
+    fields, defaults and ranges are read from `index.js`'s describes, the
+    one source that WEATHER.md's table is checked against. A number must be
+    a JSON number: a numeric string such as `"7"` is malformed and gives the
+    default, because the inspector writes numbers and a lenient parse would
+    make `"7"` and `7` two spellings of one state. Numbers are clamped into
+    their range. An integer must be a safe integer. A zone must pass
+    `validZone` and a date `validDate`, and an enum must be one of its
+    options. `source` is dropped, because no ambient reads it. Any trait,
+    including none, gives a whole set of params, and the ambients never
+    throw. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+24. **`gustinessOf` is here, in W2, and rounds to the slider.** The
+    plan's W2 table read "gustiness = clamp(gust/wind - 1, 0, 1); wind 0
+    gives 0". Since W0's review, gustiness is the trait's own field and
+    `windOf` passes it through, so the gust-to-gustiness rule only matters
+    to the fetch. It lives in `weather.js` as `gustinessOf(mean, peak)`, so
+    W4 calls it and W2 tests it over the plan's rows. Two departures, both
+    for the lead:
+    - in a calm (a mean under 0.5 m/s) and with no peak, the result is the
+      default 0.3, not 0, per Decision 10: a gust factor over a calm means
+      nothing, and 0 would claim a perfectly steady air;
+    - the result is rounded to the slider's 0.05 step, so a fetched value
+      is one the slider can show (5 m/s gusting 6.5 is 0.3, not
+      0.30000000000000004).
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+25. **What "every peer agrees" means, exactly.** `atmosphereOf` uses
+    `Math.sin`, `Math.pow` and friends, which ECMAScript does not require
+    to be bit-identical across engines. V8, JavaScriptCore and SpiderMonkey
+    may therefore differ in the last bit of the sun's direction or an
+    intensity, and a hex colour sitting exactly on a rounding boundary
+    could round differently. The atmosphere is only drawn, so that is
+    invisible. The `wind`, which the deterministic sim reads, is the doc's
+    own numbers passed through, with no arithmetic, and is bit-identical
+    everywhere. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+26. **The two new cloud kinds.** Cirrus has opacity 0.3, so at full cover
+    the sky's look is nearer the bright day than Ukee grey (a test row),
+    and its deck is faint and wide (contrast 0.08, cells 3000 m). Stratus
+    has opacity 1 and is barely textured (0.05, 1500 m): under it at
+    cover 1, the sky is Ukee grey's and only the deck differs. A deck's
+    contrast fades with the haze, `× (1 - h)`, so it thins continuously
+    into a fog instead of vanishing at h = 1. *Decided unattended (2026-11-16, lane/weather), for the lead.*
+
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
 - `curl -I https://patchwork.inkandswitch.com/`: no
@@ -424,6 +549,10 @@ nothing is selected. There is no menu diving.
   formatter cached per zone (a few microseconds each), plus about 25 more
   for an hour inside a spring-forward gap. Both run only when the trait
   changes.
+- **W2**: none at run time until W3 calls it. `atmosphereOf` is one
+  `instantOf` and one `sunAt`, plus about 60 multiplies and 12 `pow`
+  calls for the colours: tens of microseconds. The test grid (6720
+  weathers, each computed four times and checked) runs in about a second.
 - **Planned**: `ambient()` runs on every flush but is a cache hit unless the
   trait changed. `atmosphereOf` (a solar position, about a hundred flops, and
   a table lookup) runs only on a change. Dragging the hour slider writes a
@@ -455,5 +584,10 @@ nothing is selected. There is no menu diving.
    not on the undo stack (a package's writes can't be without a scene
    change). Is that acceptable, or do you want undo, or a live mode that
    refetches hourly?
-7. Night has no moon, and rain shows only as lower visibility and a darker
-   sky, with no particles. Is that OK for now?
+7. Night has no moon and no stars. After sunset the sun stays in the
+   atmosphere as a dark light pointing where it is (Decision 19), so the
+   night is lit only by the dim sky. Rain shows only as lower visibility
+   and a darker sky, with no particles. Is that OK for now?
+8. The twilight and night colours (Decision 20's bands) are new art
+   direction, set by reasoning. Do you want to tune them from W7's
+   screenshots, or hand them to someone with an eye for skies?
