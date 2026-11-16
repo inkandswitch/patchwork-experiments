@@ -21,6 +21,8 @@ import { trimOf } from "./trim.js";
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 const WALK_KEYS = "WASD walk · Shift run · Space jump · F use";
+/** How near the eye (m) she must be for a click on her to be offered as the way in. */
+export const NEAR = 60;
 
 /** m/s in knots, to a tenth. */
 export const knots = (ms) => Math.round((Number(ms) || 0) * KNOTS * 10) / 10;
@@ -165,16 +167,19 @@ export function sailRow(s, k, v = {}) {
  *   lowered sail (`advice`, under way); seated: the view rides something
  *   (a seat at a table aboard her: crew.js seatedView), where the keys mean
   *   that thing's verbs, so the walking keys aren't offered and a click on
- *   her doesn't come aboard (Enter or the button does)
+ *   her doesn't come aboard (Enter or the button does); near: she is within
+ *   NEAR metres of the eye, so a click on her is the way in. Before coming
+ *   aboard nobody is walking yet: no walking keys, and the way in is a small
+ *   button by the dial, not a call in the middle of the first view
  */
-export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null, seated = false }) {
+export function hudModel({ me, read = null, speed = null, wind = null, sail = null, jib = null, models = null, anchor = null, stations = null, seated = false, near = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
   const pct = (v, d) => `${Math.round((Number.isFinite(Number(v)) ? Number(v) : d) * 100)}%`;
   const c = read ? compass(read.heading) : null;
   let hint;
   let keys = "";
   if (state === "lobby" && seated) hint = "Come aboard (Enter)";
-  else if (state === "lobby") (hint = "Click to come aboard"), (keys = WALK_KEYS);
+  else if (state === "lobby") hint = near ? "Click her to come aboard" : "Come aboard";
   else if (state === "paused") hint = "Click to carry on";
   else if (me.hint) hint = me.hint;
   else if (me.swimming) hint = "WASD swim · F at the ladder to climb aboard";
@@ -215,6 +220,13 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
     trueAngle: read && from != null ? deg(from - read.heading) : null,
     north: read ? deg(-read.heading) : 0,
   };
+}
+
+/** Whether a body's matrix (its origin) is within NEAR metres of the eye ([x, y, z] or { x, y, z }). Pure. */
+export function nearEye(eye, m) {
+  if (!eye || !m) return false;
+  const [x, y, z] = Array.isArray(eye) ? eye : [eye.x, eye.y, eye.z];
+  return Math.hypot(m[12] - x, m[13] - y, m[14] - z) <= NEAR;
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -317,6 +329,7 @@ export function createHud(api, ctx) {
       anchor: st?.anchor ? ctx.sim.value(st.anchor) : null,
       stations: st,
       seated: seatedView(api),
+      near: nearEye(api.camera?.get?.()?.position, m),
     });
     put("state", model.state, (v) => root.setAttribute("data-state", v));
     // shown while you're aboard, or where her doc is the world (a boat alone) and she's there: in a

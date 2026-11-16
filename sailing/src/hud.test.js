@@ -1,6 +1,6 @@
 // The HUD: its model (pure) and the DOM it keeps, against a stand-in api.
 import { describe, it, expect, vi } from "vitest";
-import { compass, createHud, hudModel, inIrons, knots, luffing, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
+import { compass, createHud, hudModel, inIrons, knots, luffing, nearEye, NEAR, sailDownNudge, sailRow, speedOver, stationGuide, windFrom } from "./hud.js";
 
 describe("the HUD's model", () => {
   it("knots and the compass", () => {
@@ -12,13 +12,27 @@ describe("the HUD's model", () => {
     expect(compass(2 * Math.PI - 0.001)).toEqual({ deg: 0, point: "N" });
   });
 
-  it("before coming aboard: the way in and the keys", () => {
-    const m = hudModel({ me: { playing: false } });
-    expect(m.state).toBe("lobby");
-    expect(m.hint).toBe("Click to come aboard");
-    expect(m.keys).toMatch(/WASD/);
-    expect(m.panel).toBe(false);
-    expect(m.seated).toBe(false);
+  it("before coming aboard: the way in, small, and no walking keys (nobody's walking yet); a click on her offered only when she's near (every lobby case)", () => {
+    for (const seated of [false, true]) for (const near of [false, true]) {
+      const m = hudModel({ me: { playing: false }, seated, near });
+      expect(m.state).toBe("lobby");
+      expect(m.keys).toBe("");
+      expect(m.panel).toBe(false);
+      expect(m.seated).toBe(seated);
+      expect(m.hint).toBe(seated ? "Come aboard (Enter)" : near ? "Click her to come aboard" : "Come aboard");
+    }
+    // aboard, near means nothing
+    expect(hudModel({ me: { playing: true }, near: true }).hint).toMatch(/^WASD walk/);
+  });
+
+  it("is near within NEAR metres of the eye, from an array or a vector, and not without either", () => {
+    const m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 30, 0, 40, 1];
+    expect(NEAR).toBe(60);
+    expect(nearEye([0, 0, 0], m)).toBe(true); // 50 m
+    expect(nearEye({ x: -30, y: 0, z: 0 }, m)).toBe(false); // 72 m
+    expect(nearEye([30, 60, 40], m)).toBe(true); // 60 m: on the edge
+    expect(nearEye(null, m)).toBe(false);
+    expect(nearEye([0, 0, 0], null)).toBe(false);
   });
 
   it("seated at a table aboard (the view rides it): Enter to come aboard, and no walking keys beside the game's", () => {
@@ -225,7 +239,7 @@ describe("the HUD", () => {
     expect(s.root.dataset.state).toBe("lobby");
     const button = s.root.querySelector("button");
     expect(button.hidden).toBe(false);
-    expect(button.textContent).toBe("Click to come aboard");
+    expect(button.textContent).toBe("Come aboard");
     button.click();
     expect(s.ctx.crew.start).toHaveBeenCalled();
     // the panel is up already: the ship is there to read

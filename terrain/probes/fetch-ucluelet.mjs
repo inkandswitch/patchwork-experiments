@@ -187,6 +187,36 @@ check("the anchorage is deep enough for a 2 m keel at the lowest normal tide, al
 }
 const clamped = regionsOf(grid, sh.quality, QUALITY.CLAMPED);
 console.log(JSON.stringify({ summary: got.summary, stats: sh.cls.stats, agreement: sh.agreement, islets: { rings: sh.islets.rings, raised: sh.islets.raised.length, rocks: sh.islets.rocks.length }, clamped: clamped.slice(0, 6), sources: got.sources.map(({ id, url, fetched, sha256 }) => ({ id, url: url?.slice(0, 100), fetched, sha256 })), sums, cache: CACHE, names }, null, 2));
+// the forest on the real data (forest.js, as build.js lays it): inside the skin's circles every node the lidar says is forest (canopy over 5 m, nothing built) carries crowns, a stand or a clump, never both
+{
+  const { coverGrid, distanceToWater } = await import("../src/cover.js");
+  const F = await import("../src/forest.js");
+  const { builtRings } = await import("../src/build.js");
+  const lb = sh.cls.label;
+  const cover = coverGrid(grid, look);
+  const measured = Uint8Array.from(source, (v) => (v === lidar ? 1 : 0));
+  const built = F.builtMask(grid, builtRings(spec, look, frame));
+  const eff = F.effectiveCanopy({ n, label: lb, cover, canopy, measured, assumed: spec.look.trees.assumed, built });
+  const dist = distanceToWater(n, lb, grid.cell);
+  const trees = spec.look.trees;
+  const circles = trees.skin.within.map((c) => {
+    const [x, z] = frame.toLocal(c.at[0], c.at[1]).map((v) => Math.round(v * 1000) / 1000);
+    return { x, z, radius: c.radius };
+  });
+  const zone = F.skinZone(grid, circles), beyond = F.beyondCircles(grid, circles);
+  const placed = F.placeTrees({ grid, label: lb, cover, canopy: eff, dist, trees, built, zone, beyond });
+  const skin = F.placeSkin({ grid, label: lb, cover, canopy: eff, dist, zone, skin: trees.skin, setback: trees.roofSetback ?? 20, built, trees, beyond });
+  const standAt = new Set(placed.trees.filter((t) => t.crowns).map((t) => t.k)), clumpAt = new Set(skin.clumps.map((c) => c.k));
+  let forest = 0, bare = 0, both = 0;
+  for (let k = 0; k < N; k++) {
+    if (!zone[k] || !F.isForest(k, lb, cover, eff)) continue;
+    forest++;
+    if (!standAt.has(k) && !clumpAt.has(k)) bare++;
+    if (standAt.has(k) && clumpAt.has(k)) both++;
+  }
+  check("inside the skin's circles every forest node carries crowns (a stand at the water or a clump), never both, and nothing is thinned away", bare === 0 && both === 0 && placed.trees.length === placed.before && skin.clumps.length === skin.before, { forest, bare, both, trees: { before: placed.before, kept: placed.trees.length, threshold: placed.threshold }, clumps: { before: skin.before, kept: skin.clumps.length } });
+}
+
 if (OUT) {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, "dem.bin"), got.dem.bytes);

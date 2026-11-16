@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { layOut, differences, anchorage, placeDoc, SKY, ATTRIBUTION, SHORT_CREDIT, PROVENANCE } from "./template-ucluelet.js";
 import { headTo, AT_ANCHOR, CREDIT } from "./template.js";
-import { WIND, HOME, SKIES, EXPECTED, ANCHORAGE, ORIGIN, GRID } from "./ucluelet.js";
+import { WIND, HOME, SKIES, EXPECTED, ANCHORAGE, ORIGIN, GRID, WATER_COLOUR } from "./ucluelet.js";
 import { skyOffer, skyTrait } from "./sky.js";
 import { localFrame } from "./tmerc.js";
 import { sceneCtx } from "./test/scene-ctx.js";
@@ -20,7 +20,8 @@ describe("the Ucluelet template's layout", () => {
     // the Sea keeps Ucluelet's footprint (its grid, 20.48 km a side), 130 m deep, where its world has no open water (water/WATER.md, "Clipped open water")
     const span = (GRID.n - 1) * GRID.cell;
     expect(span).toBe(20480);
-    expect(sea.traits.water).toEqual({ clip: [span, 130, span] });
+    // the inlet's own water colour (water's colourOf reads it)
+    expect(sea.traits.water).toEqual({ clip: [span, 130, span], colour: { ...WATER_COLOUR } });
     expect(sea.traits["sailing.sea"]).toEqual({ seed: 7, scale: 0.6 });
     expect(sea.transform.position).toEqual([GRID.x0 + span / 2, 0, GRID.z0 + span / 2]);
     // every corner of the grid, and the frame's origin (the boatyard), inside the clip
@@ -66,7 +67,7 @@ describe("the Ucluelet template's layout", () => {
 
 describe("terrain.sky", () => {
   it("offers its sky, fog, sun and exposure as the atmosphere, and nothing else", () => {
-    expect(skyOffer({ ...SKIES["ukee-grey"], extra: 1 })).toEqual({ sky: SKIES["ukee-grey"].sky, fog: SKIES["ukee-grey"].fog, sun: SKIES["ukee-grey"].sun, exposure: 1.05 });
+    expect(skyOffer({ ...SKIES["ukee-grey"], extra: 1 })).toEqual({ sky: SKIES["ukee-grey"].sky, fog: SKIES["ukee-grey"].fog, sun: SKIES["ukee-grey"].sun, exposure: 1.05, clouds: { cover: 1, contrast: 0.12, scale: 500, base: 600 } });
     expect(skyOffer({})).toBe(null);
     expect(skyOffer(null)).toBe(null);
   });

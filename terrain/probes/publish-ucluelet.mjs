@@ -5,7 +5,7 @@
 // boatyard. A copy of publish-rvyc.mjs for this place.
 //
 //   (in scene/, sailing/, water/ and terrain/) pnpm build
-//   node probes/publish-ucluelet.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--seed <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show]
+//   node probes/publish-ucluelet.mjs [--dry-run] [--sync wss://…] [--settle 8000] [--cache <dir>] [--seed <dir>] [--shots <dir>] (--lock <dir> | $CHROME_LOCK) [--show] [--gpu]
 //
 // Makes NEW docs on every run (no dedupe).
 //
@@ -34,7 +34,7 @@
 //    - the GLB's layers (forest, buildings, boatyard and its sub-layers, the
 //      planned pier and dock), the removed buildings and today's pier arm
 //      hidden by default; the
-//      trees drawn as one InstancedMesh a species;
+//      trees drawn as instanced meshes (a species a tile);
 //    - the Terrain doc's fingerprint is the render's when it's built, and
 //      nothing writes to the doc after (each write logged, with its stack);
 //    - node builds the same GLB from the same docs, byte for byte; the
@@ -42,8 +42,17 @@
 //      terrain plugin still sees it;
 //    - screens: the home view, the boatyard close, the inlet, Amphitrite Point,
 //      the town's waterfront from the water, the surf, the cloud on Mount
-//      Ozzard, and three low on the water (off the yard, off the town, under
-//      the lighthouse); the top of every one isn't black.
+//      Ozzard, three low on the water (off the yard, off the town, under
+//      the lighthouse), the basins' floats, Whiskey Dock and mid-harbour, and
+//      the third look critic's four (among the basin's trees, low over the
+//      pile decks, the waterfront as a postcard, the yard's shore); the
+//      top of every one isn't black; the water off the yard glassy (under 8%
+//      of its pixels darker than half their median); no height legend (the
+//      ground is coloured by what covers it);
+//    - every view's frame time (40 frames of the stage's render and a
+//      1-pixel readPixels: median, p90, draw calls, triangles); with --gpu
+//      (the machine's GPU, Metal on a Mac, not SwiftShader) the home view's
+//      median within FRAME_BUDGET.
 // 3. Unless --dry-run: as publish-rvyc.mjs, every doc made anew on the
 //    server and read back from a fresh repo.
 
@@ -51,7 +60,7 @@ import { join, resolve, dirname } from "node:path";
 import { packageProblems, withPackages } from "./scene-packages.mjs";
 import { publishDocs } from "./publish-stamp.mjs";
 import { lockDir } from "./chrome-lock.mjs";
-import { pngPixel } from "./png-pixel.mjs";
+import { pngPixel, pngRegion } from "./png-pixel.mjs";
 
 // The published scene names the scene package as its suggested import and
 // lists the packages its contents come from (scene/STAGE.md, "Packages"):
@@ -69,7 +78,7 @@ import { createHash } from "node:crypto";
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []),
 );
-const KNOWN_ARGS = new Set(["sync", "settle", "dry-run", "show", "shots", "cache", "seed", "lock"]);
+const KNOWN_ARGS = new Set(["sync", "settle", "dry-run", "show", "shots", "cache", "seed", "lock", "gpu"]);
 const unknown = Object.keys(args).filter((k) => !KNOWN_ARGS.has(k));
 if (unknown.length) {
   const lines = readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
@@ -106,7 +115,7 @@ const { browser, checklist, sleep } = await import("./cdp.mjs");
 // one Chrome at a time across every probe and session: --lock or $CHROME_LOCK, never without (chrome-lock.mjs)
 await (await import("./chrome-lock.mjs")).chromeLock(LOCK);
 const PORT = 4853;
-const b = await browser({ root: ROOT, port: PORT, cdp: 9853, page: "/terrain/probes/ucluelet-probe.html", width: 1280, height: 760, show: !!args.show, timeout: 1_500_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
+const b = await browser({ root: ROOT, port: PORT, cdp: 9853, page: "/terrain/probes/ucluelet-probe.html", width: 1280, height: 760, show: !!args.show, gpu: !!args.gpu, timeout: 1_500_000, mounts: { "/terrain-cache/": CACHE, "/snap/": SNAP } });
 const js = (expr, ms = 120_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e, ms) => js(`window.__p.${e}`, ms);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 100);
@@ -116,8 +125,9 @@ const report = { checks: list.checks, details: list.details, shots: [], numbers:
 const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels|pointer ?lock/i;
 const J = JSON.stringify;
 const DRAFT = 2.0; // the sloop's keel, near enough
+const FRAME_BUDGET = 22.7; // ms, the home view's median before the denser forest (Apple M4, Metal, 1280 × 760)
 const LLWLT = -2.11; // the lowest normal tide, below mean water (CHS 08595 Ucluelet)
-const { HOME, WIND, GRID } = await import("../src/ucluelet.js");
+const { HOME, WIND, GRID, WATER_COLOUR, SKIES } = await import("../src/ucluelet.js");
 let snapshot = null;
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
@@ -137,13 +147,14 @@ try {
   check("every source can be traced: a url each", s.terrainDoc.sourceUrls.every((u) => /^https:\/\//.test(u ?? "")), s.terrainDoc.sourceUrls.map((u) => u?.slice(0, 90)));
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-16T05:30:00Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
-  check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === 9000, s.terrain);
+  check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === SKIES["ukee-grey"].fog.far, s.terrain);
   const atBuild = await P("terrainNow()");
   check("the Terrain doc's fingerprint when its render is built is the render's", atBuild.fingerprint === s.render?.builtFrom?.fingerprint, { now: atBuild.fingerprint, heads: atBuild.heads, built: s.render?.builtFrom?.fingerprint });
   check("its render is built, fingerprinted, its four data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 4 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
   check(`a summer afternoon: ${WIND.speed} m/s from ${WIND.from}°, the sea at scale ${WIND.scale} on one open water at the chart's y = 0`, J(s.sea?.wind) === J({ speed: WIND.speed, from: WIND.from }) && s.sea.scale === WIND.scale && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   // the terrain's grid (ucluelet.js GRID: 1025 nodes 20 m apart from (-3440, -6900)), down to the hint's deepest seabed (130 m)
   check("the harbour's Sea keeps the terrain's footprint where its world has no open water (its clip: the grid, 130 m deep, centred on it)", J(s.sea?.clip) === J([20480, 130, 20480]) && J(s.sea?.at) === J([6800, 0, 3340]), { clip: s.sea?.clip, at: s.sea?.at });
+  check("the harbour's water is the inlet's own grey-green (its water trait's colour)", J(s.sea?.colour) === J(WATER_COLOUR), s.sea?.colour);
   check("it starts people in Look (no body named) at the home view over the boatyard", !s.start?.body && (await P("bodyLabel()")) === "Look" && J(s.home) === J({ position: [...HOME.position], target: [...HOME.target] }), { start: s.start, here: await P("bodyLabel()"), home: s.home });
   check("the sloop lies at anchor off the dock, head to wind, main down, jib rolled away, anchor down", s.hull && Math.abs(Math.cos(s.hull.rotation[1] + (WIND.from * Math.PI) / 180) - 1) < 1e-9 && s.sail?.raised === 0 && s.jib?.furl === 1 && s.anchor?.down === true, { hull: s.hull, sail: s.sail, jib: s.jib, anchor: s.anchor });
   const t = await P("terrain()");
@@ -153,16 +164,30 @@ try {
   check("the heightfield is the whole grid at 20 m", J(t.grid) === J({ nx: GRID.n, nz: GRID.n, x0: GRID.x0, z0: GRID.z0, cell: GRID.cell }), t.grid);
   check("the boatyard and the lighthouse are among its places", ["Rising Tide Boat Works (the hangar), 1970 Harbour Crescent", "Amphitrite Point Lighthouse"].every((n) => t.places.some((p) => p.name === n)), t.places.map((p) => p.name));
   check("the depth under her is a survey's (NONNA), and the heightfield says which source each depth is from and where depths are made up", t.qualityUnderHull === "dem" && t.source?.counts?.["chs-nonna-10"] > 0 && t.quality?.clamped > 0, { under: t.qualityUnderHull, source: t.source, quality: t.quality });
-  check("the GLB's layers: forest, buildings, boats, surf, low cloud, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden)", ["forest", "buildings", "boats", "surf", "weather", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
-  check("the trees are drawn as one InstancedMesh a species", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
-  check("the place's sky is the world's atmosphere (Ukee grey, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false, t.atmosphere);
+  check("the GLB's layers: forest, buildings, boats, surf, the shore's dressing, the boatyard's kept / removed (hidden) / wharf / planned / today's pier arm (hidden) (no cloud mesh: the stratus is baked into the hills)", ["forest", "buildings", "boats", "surf", "shore", "boatyard", "boatyard.kept", "boatyard.removed", "boatyard.wharf", "boatyard.planned", "boatyard.today", "landmarks"].every((id) => t.layers.some((l) => l.id === id)) && t.layers.find((l) => l.id === "boatyard.removed")?.visible === false && t.layers.find((l) => l.id === "boatyard.today")?.visible === false, t.layers);
+  check("the trees are drawn instanced (a species a tile, so the stage culls the forest a tile at a time)", t.instanced.instancedMeshes >= 3 && t.instanced.instances > 10000, t.instanced);
+  check("the place's sky is the world's atmosphere (Ukee grey, its stratocumulus deck, over the weather's bright day)", t.atmosphere?.fog?.color === "#959ea1" && t.atmosphere?.sky?.top === "#c4cacc" && t.atmosphere?.sun?.shadows === false && t.atmosphere?.clouds?.cover === 1, t.atmosphere);
   check("the view credits the data (OpenStreetMap, linked to its copyright page)", /OpenStreetMap contributors/.test(t.credit.text) && t.credit.link === "https://www.openstreetmap.org/copyright" && t.credit.shown, t.credit);
+
+  check("no height legend over a ground coloured by what covers it", !t.legend, { legend: t.legend });
+
+  // a view's frame time: 40 frames, each the stage's render and a 1-pixel readPixels (so the GPU's work is in it), the median and p90; draw calls and triangles
+  const frames = {};
+  const timeFrames = async (name) => {
+    frames[name] = await js(`(async () => {
+      const v = __p.dbg.viewport, gl = v.renderer.getContext(), px = new Uint8Array(4), ms = [];
+      for (let i = 0; i < 40; i++) { v.invalidate(); const t = performance.now(); v.render(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ms.push(performance.now() - t); await new Promise((r) => setTimeout(r, 5)); }
+      ms.sort((a, b) => a - b);
+      return { median: +ms[20].toFixed(2), p90: +ms[36].toFixed(2), calls: v.stats.calls, triangles: v.stats.triangles };
+    })()`);
+  };
 
   // screens
   await sleep(2500);
   check("the home view, in Look", (await P("atHome()")) === "Look");
   await sleep(4000);
   report.shots.push(await b.shot(join(SHOTS, "ucluelet-home.png")));
+  await timeFrames("ucluelet-home");
   // the top of every view (the sky, or the ground from high up) is never black: the pixel at the top's middle, under the toolbar and the hint
   const topPixels = { "ucluelet-home": pngPixel(join(SHOTS, "ucluelet-home.png"), 640, 140) };
   const views = {
@@ -171,7 +196,7 @@ try {
     "ucluelet-boatyard-dock": [[120, 30, -140], [60, 4, 40]],
     "ucluelet-inlet": [[1100, 260, 900], [-1600, 0, -1900]],
     "ucluelet-amphitrite": [[1080, 32, 3340], [1228, 9, 3203]],
-    "ucluelet-overview": [[3000, 4200, 9000], [5500, 0, 2500]],
+    "ucluelet-overview": [[2600, 1800, 6500], [3800, 0, 1200]],
     // from the water: the town's waterfront, the surf under the lighthouse, the cloud on Mount Ozzard
     "ucluelet-low-harbour": [[1450, 4, 650], [800, 10, 820]],
     "ucluelet-surf": [[930, 22, 3480], [1228, 6, 3203]],
@@ -180,14 +205,61 @@ try {
     "ucluelet-low-yard": [[220, 3, -330], [0, 8, 0]],
     "ucluelet-low-town": [[700, 3, 150], [1300, 12, 750]],
     "ucluelet-lighthouse-sea": [[1150, 5, 3600], [1228, 10, 3203]],
+    // the Inner and Outer Basins' floats from above, the waterfront at Whiskey Dock, mid-harbour toward the town
+    "ucluelet-basin-high": [[220, 45, 330], [390, 0, 520]],
+    "ucluelet-whiskey": [[1000, 5, 520], [910, 6, 710]],
+    "ucluelet-midharbour": [[560, 6, 60], [1000, 10, 800]],
+    // the yard close: the red Quonset, the galvanised one, the courtyard's slab and the frontage's stones, from a standing eye (1.75 m over the yard's +3.06; at 4 m the eye was at a knee, and the ground strip under it a few metres of one shading)
+    "ucluelet-courtyard": [[-50, 4.8, 150], [0, 4.8, 95]],
+    // the third look critic's: among the basin's trees, low over the waterfront's pile decks, the town's waterfront as a postcard from the harbour, the yard's shore
+    "ucluelet-x-basin-mid": [[300, 14, 300], [370, 1, 470]],
+    "ucluelet-x-basin-low": [[420, 3, 240], [360, 3, 450]],
+    "ucluelet-x-harbour-postcard": [[900, 40, 250], [400, 5, 650]],
+    "ucluelet-x-yard-shore": [[60, 6, -60], [-30, 3, 90]],
   };
   for (const [name, [pos, tgt]] of Object.entries(views)) {
     await P(`setCamera(${J(pos)}, ${J(tgt)})`);
     await sleep(4000);
     report.shots.push(await b.shot(join(SHOTS, `${name}.png`)));
     topPixels[name] = pngPixel(join(SHOTS, `${name}.png`), 640, 140);
+    await timeFrames(name);
   }
+  report.numbers.frames = frames;
+  console.error(`frame times (${args.gpu ? "GPU" : "software: not a budget"}), median ms: ${Object.entries(frames).map(([k, v]) => `${k.replace("ucluelet-", "")} ${v.median}`).join(", ")}`);
+  // on the machine's GPU (--gpu): the home view within the budget it had before the forest was made denser (22.7 ms on an M4, 2026-11-16)
+  if (args.gpu) check(`the home view renders in ${FRAME_BUDGET} ms or less (median of 40, GPU)`, frames["ucluelet-home"].median <= FRAME_BUDGET, frames["ucluelet-home"]);
+  const grain = await P("grain()");
+  check("the ground carries its grain and the place dresses it (every ground mesh's material, a program compiled with it)", grain.meshes > 0 && grain.dressed === grain.meshes && grain.grainPrograms > 0, grain);
   check("no view's top is black (the sky drawn at every eye)", Object.values(topPixels).every((c) => Math.max(...c) > 24), topPixels);
+  // calm overcast water is a glassy mirror, not a camouflage of dark blobs: off the yard, the water's pixels (the frame's lower third) darker than half their median luminance are under 8% of them
+  const waterLum = pngRegion(join(SHOTS, "ucluelet-low-yard.png"), 0, 470, 1280, 720).map(([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl).sort((a, z) => a - z);
+  const waterMedian = waterLum[waterLum.length >> 1];
+  const darkShare = (f) => waterLum.filter((l) => l < f * waterMedian).length / waterLum.length;
+  report.numbers.lowYardWater = { median: +waterMedian.toFixed(1), darkerThanHalf: +darkShare(0.5).toFixed(4), darkerThan08: +darkShare(0.8).toFixed(4) };
+  check("the water off the yard is glassy: under 8% of its pixels darker than half its median", darkShare(0.5) < 0.08, report.numbers.lowYardWater);
+  // the sheltered harbour mirrors its shore in vertical streaks, not horizontal stripes: in the strip 10–60 px under the shoreline (where these two views put it), the mean absolute vertical luminance gradient at most 1.3 times the horizontal one
+  const L = ([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  const gradients = (file, y0, y1, x0 = 100, x1 = 1180) => {
+    const px = pngRegion(join(SHOTS, file), x0, y0, x1, y1).map(L), w = x1 - x0, h = y1 - y0;
+    let gx = 0, gy = 0, c = 0;
+    for (let y = 0; y + 1 < h; y++) for (let x = 0; x + 1 < w; x++) {
+      gx += Math.abs(px[y * w + x + 1] - px[y * w + x]);
+      gy += Math.abs(px[(y + 1) * w + x] - px[y * w + x]);
+      c++;
+    }
+    return { horizontal: +(gx / c).toFixed(3), vertical: +(gy / c).toFixed(3), ratio: +(gy / Math.max(gx, 1e-6)).toFixed(3) };
+  };
+  report.numbers.stripes = { "low-town": gradients("ucluelet-low-town.png", 418, 468), ozzard: gradients("ucluelet-ozzard.png", 525, 575) };
+  check("no horizontal stripes in the harbour's mirror: vertical gradient at most 1.3 times the horizontal under the shore (low-town, ozzard)", Object.values(report.numbers.stripes).every((g) => g.ratio <= 1.3), report.numbers.stripes);
+  // the yard's ground worked and wet, not a featureless plane: the ground strip's luminance standard deviation over its mean at least 8% (courtyard, hangar-doors);
+  // the courtyard's strip the yard within about 30 m of its standing eye (rows 460–740, under the yard's horizon at about 430: rows 620–740 alone are only 4.6–7 m of ground there, a puddle or two)
+  const spread = (file, y0, y1, x0 = 200, x1 = 1080) => {
+    const l = pngRegion(join(SHOTS, file), x0, y0, x1, y1).map(L);
+    const m = l.reduce((a, b) => a + b, 0) / l.length;
+    return +(Math.sqrt(l.reduce((a, b) => a + (b - m) ** 2, 0) / l.length) / m).toFixed(4);
+  };
+  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", 460, 740), "hangar-doors": spread("ucluelet-hangar-doors.png", 620, 740) };
+  check("the yard's ground varies by at least 8% (courtyard, hangar-doors: the ground strip's standard deviation over its mean)", Object.values(report.numbers.yardGround).every((v) => v >= 0.08), report.numbers.yardGround);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
   await sleep(500);

@@ -109,8 +109,7 @@
 }
 
 /* what the keys do here, top middle (the bottom is the panel's, and the
-   notices' toasts); before coming aboard, the way in, there too: the ship
-   is in the middle */
+   notices' toasts); before coming aboard, the way in is top left (below) */
 .scene-stage .sail-hud .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   left: 50%;
@@ -182,19 +181,20 @@
   width: 52px;
   height: 52px;
 }
-/* seated at something aboard (the view rides it): the way aboard is a small
-   button top left, the dial under it, and the top middle is the table's (the
-   far seat's name tag) */
-.scene-stage .sail-hud[data-seated] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+/* not aboard yet (looking about, or seated at something aboard: the view
+   rides it): the way aboard is a small button top left, the dial under it,
+   and the middle of the view is the place's (or the table's: the far seat's
+   name tag) */
+.scene-stage .sail-hud[data-state="lobby"] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   left: var(--sail-gap);
   transform: none;
   justify-items: start;
 }
-.scene-stage .sail-hud[data-seated] .sail-hint button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .sail-hud[data-state="lobby"] .sail-hint button:where(:not(.about-embed *), .about-embed .scene-tool *) {
   font-size: 13px;
   padding: 5px 12px;
 }
-.scene-stage .sail-hud[data-seated] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .sail-hud[data-state="lobby"] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
   top: calc(var(--sail-gap) + 38px);
 }
 

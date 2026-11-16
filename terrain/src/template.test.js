@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT } from "./template.js";
+import { layOut, headTo, differences, AT_ANCHOR, MOORING, RODE, CREDIT, BAY_WATER } from "./template.js";
 import { WIND, HOME, EXPECTED, OSM_DATE, GRID, cadboroDoc } from "./cadboro.js";
 import { overpassQuery } from "./fetch-data.js";
 import { credits } from "./credit.js";
@@ -12,14 +12,14 @@ describe("the Cadboro Bay template's layout", () => {
     const d = scene.doc();
     expect(d.objects[terrain]).toMatchObject({ sourceUrl: "automerge:terrain", providerId: "terrain-mesh", locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     // its About is the Terrain doc (sources, licences), and its data's credit shows in the view
-    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {} } });
+    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {}, "terrain.sky": {} } });
     expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
     expect(d.traits["sailing.sea"]).toBeUndefined();
     expect(d.traits.water).toBeUndefined();
     // the Sea keeps the terrain's footprint, from its known grid, down to the hint's deepest seabed, where its world has no open water
     const span = (GRID.n - 1) * GRID.cell;
     expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [GRID.x0 + span / 2, 0, GRID.z0 + span / 2], rotation: [0, 0, 0], scale: 1 } });
-    expect(d.objects[sea].traits).toEqual({ water: { clip: [span, 150, span] }, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    expect(d.objects[sea].traits).toEqual({ water: { clip: [span, 150, span], colour: { ...BAY_WATER } }, "sailing.sea": { seed: 7, scale: WIND.scale } });
     // every corner of the grid is inside the clip (its centre the Sea's place)
     for (const x of [GRID.x0, GRID.x0 + span]) for (const z of [GRID.z0, GRID.z0 + span]) {
       expect(Math.abs(x - d.objects[sea].transform.position[0])).toBeLessThanOrEqual(span / 2);

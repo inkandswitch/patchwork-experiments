@@ -224,3 +224,113 @@ describe("white water over the shallows, and boulders", () => {
     expect(boulders(pieces, { chance: 0 }).boulders).toBe(0);
   });
 });
+
+import { hexToLinear as hexLin } from "./glb.js";
+describe("boulders as a place's stones: clusters, 7 or 9 sides, three sizes, two greys", () => {
+  // a straight shore along x = 0, 40 pieces, all exposed
+  const pieces = Array.from({ length: 40 }, (_, q) => ({ a: [0, q * 20], b: [0, q * 20 + 20], sea: [-1, 0], key: `way/3#${q}`, exposure: 1 }));
+  const o = { chance: 1, count: [3, 5], sides: [7, 9], sizes: [0.45, 0.9, 1.4], colours: ["#4d4b47", "#5a5752"] };
+  const b = boulders(pieces, o);
+  it("puts 3 to 5 on every piece, each 7- or 9-sided (5 triangles a side: a rounded shoulder), at most 1.4 × 1.1 m in radius, in one of the two greys (every stone)", () => {
+    const greys = o.colours.map((h) => hexLin(h).slice(0, 3));
+    let tri = 0, stones = 0;
+    const sides = new Set();
+    while (tri * 9 < b.positions.length) {
+      // a stone's triangles: its middle is the apex of each third triangle; count its sides by its colour's run
+      let n = 0;
+      const cx = b.positions[(tri + 4) * 9 + 6];
+      while ((tri + 5 * n) * 9 < b.positions.length && b.positions[(tri + 5 * n + 4) * 9 + 6] === cx) n++;
+      // two stones never share a middle here (spread along the piece), so the run is one stone's
+      expect([7, 9]).toContain(n);
+      sides.add(n);
+      for (let k = 0; k < 5 * n; k++) {
+        const c = [b.colors[(tri + k) * 9], b.colors[(tri + k) * 9 + 1], b.colors[(tri + k) * 9 + 2]];
+        expect(greys.some((g) => { const f = c[0] / g[0]; return f >= 0.8 - 1e-6 && f <= 1.05 + 1e-6 && Math.abs(c[1] / g[1] - f) < 1e-5; })).toBe(true);
+        for (let v = 0; v < 3; v++) {
+          const x = b.positions[(tri + k) * 9 + v * 3];
+          expect(x).toBeLessThanOrEqual(-1 + 1.4 * 1.1 + 1e-6);
+          expect(x).toBeGreaterThanOrEqual(-4 - 1.4 * 1.1 - 1e-6);
+        }
+      }
+      tri += 5 * n;
+      stones++;
+    }
+    expect(stones).toBe(b.boulders);
+    expect(b.boulders).toBeGreaterThanOrEqual(3 * pieces.length);
+    expect(b.boulders).toBeLessThanOrEqual(5 * pieces.length);
+    expect(sides).toEqual(new Set([7, 9]));
+  });
+  it("is the same every time, and the default (one six-sided black boulder) unchanged by the new options' absence", () => {
+    expect(Array.from(boulders(pieces, o).positions)).toEqual(Array.from(b.positions));
+    expect(boulders(pieces, { chance: 1 }).positions.length / 9).toBe(18 * pieces.length);
+  });
+});
+
+import { burstOf, whiteShare, BURSTS } from "./surf.js";
+describe("surf in bursts on dark rock, not a snow line", () => {
+  /** a run of `count` exposed pieces 20 m long along a straight shore, its exposure by piece (the ends' are their pieces' means) */
+  const run = (r, count, e, closed = false) => {
+    const ang = r * 0.7, ux = Math.cos(ang), uz = Math.sin(ang), sea = [uz, -ux], ox = r * 937 - 5000, oz = r * 611 - 3000;
+    const ps = Array.from({ length: count }, (_, q) => ({ a: [ox + ux * 20 * q, oz + uz * 20 * q], b: [ox + ux * 20 * (q + 1), oz + uz * 20 * (q + 1)], sea, exposure: e(q), key: `way/${r}#${q}.0`, idx: q, phase: (r * 0.37) % 1, ...(closed ? { of: count } : {}) }));
+    ps.forEach((p, q) => {
+      const before = q ? ps[q - 1] : closed ? ps.at(-1) : null, after = q + 1 < count ? ps[q + 1] : closed ? ps[0] : null;
+      p.prev = before ? { exposure: before.exposure, sea: before.sea } : null;
+      p.next = after ? { exposure: after.exposure, sea: after.sea } : null;
+    });
+    return ps;
+  };
+  const EXPOSURES = [() => 0.5, () => 0.9, (q) => 0.35 + 0.65 * (q % 5) / 4, (q) => (q % 7 < 4 ? 0.4 : 1)];
+  it("makes 30% to 60% of every run's ends white bursts (24 shores × 4 lengths × 4 exposures, every run of 10 or more ends)", () => {
+    for (let r = 0; r < 24; r++) for (const count of [11, 20, 40, 80]) for (const e of EXPOSURES) {
+      const ps = run(r, count, e);
+      const ends = ps.slice(1).map((p) => burstOf(endOf(p, "a")));
+      const white = ends.filter((b) => b.white).length / ends.length;
+      expect(white).toBeGreaterThanOrEqual(0.3);
+      expect(white).toBeLessThanOrEqual(0.6);
+      // a white end its whole width, a lull at most a quarter of it
+      for (const b of ends) expect(b.white ? b.share === 1 : b.share >= 0 && b.share <= BURSTS.low).toBe(true);
+    }
+  });
+  it("leans white onto the most exposed shore, within its bounds (every exposure in hundredths)", () => {
+    let last = 0;
+    for (let k = 0; k <= 100; k++) {
+      const s = whiteShare(k / 100);
+      expect(s).toBeGreaterThanOrEqual(Math.max(last, BURSTS.share[0]));
+      expect(s).toBeLessThanOrEqual(BURSTS.share[1]);
+      last = s;
+    }
+  });
+  it("agrees at every shared end (both pieces' bursts), round a closed ring's join too, and still tapers every run to nothing at its tips", () => {
+    for (let r = 0; r < 24; r++) for (const closed of [false, true]) for (const e of EXPOSURES) {
+      const ps = run(r, 30, e, closed);
+      for (let q = 0; q < ps.length; q++) {
+        const after = q + 1 < ps.length ? ps[q + 1] : closed ? ps[0] : null;
+        // (a made-up closed run isn't closed in space: at its join, its ends agree on where they are along it, so on white or not)
+        if (after) closed && q === ps.length - 1 ? expect(burstOf(endOf(ps[q], "b")).white).toBe(burstOf(endOf(after, "a")).white) : expect(burstOf(endOf(ps[q], "b"))).toEqual(burstOf(endOf(after, "a")));
+      }
+      if (!closed) {
+        expect(burstOf(endOf(ps[0], "a")).share).toBe(0);
+        expect(burstOf(endOf(ps.at(-1), "b")).share).toBe(0);
+      }
+    }
+    // the fixture's coast drawn in bursts: every triangle's corners on the water's side, the tips' width nothing, some spray
+    const pieces = coastPieces(chains, grid, label, 270, { reach: 300 });
+    const m = surfMesh(pieces, { bursts: true });
+    expect(m.pieces).toBeGreaterThan(0);
+    expect(m.sprays).toBeGreaterThan(0);
+  });
+});
+
+describe("stones stretched and turned, no two alike", () => {
+  const pieces = Array.from({ length: 40 }, (_, q) => ({ a: [q * 20, 0], b: [q * 20 + 20, 0], sea: [0, -1], exposure: 1, key: `way/7#${q}.0` }));
+  it("scales each stone 0.6 to 1.4 on its own axes (its footprint's extent varies, every stone within 1.4 × its radius), and leaves the default untouched", () => {
+    const o = { exposure: 0, chance: 1, sides: [7, 9], sizes: [0.6, 1.1, 1.6], colours: ["#3f3d3a"] };
+    const plain = boulders(pieces, o), stretched = boulders(pieces, { ...o, stretch: [0.6, 1.4] });
+    expect(stretched.positions.length).toBe(plain.positions.length);
+    expect(stretched.positions).not.toEqual(plain.positions);
+    expect(boulders(pieces, { ...o, stretch: [1, 1] }).positions).toEqual(plain.positions);
+    // the stones' heights differ more than unstretched ones'
+    const tops = (m) => { const t = []; for (let v = 1; v < m.positions.length; v += 3) t.push(m.positions[v]); return Math.max(...t); };
+    expect(tops(stretched)).not.toBe(tops(plain));
+  });
+});

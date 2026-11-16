@@ -11,7 +11,7 @@
 //
 // Pure.
 
-import { soup, rgb, widen, cylinder, prism } from "./shapes.js";
+import { soup, rgb, widen, cylinder, prism, log } from "./shapes.js";
 import { house, quadOut, quadUp, triOut, orientedBox } from "./buildings.js";
 import { hash01 } from "./palette.js";
 import { len, dsin, dcos } from "./detmath.js";
@@ -152,7 +152,174 @@ export function cladding(s, P, y0, y1, { walls, trim, every = 0.9 }) {
   return ribs;
 }
 
+/** A Quonset's arch: segments round its half, its ribs' spacing along it (m) and how proud of the shell they stand (m). */
+export const QUONSET = Object.freeze({ segments: 14, ribEvery: 0.6, rib: 0.06, ribWidth: 0.1, inset: 0.05 });
+
+/**
+ * A Quonset hut on a rectangle P (four [x, z] corners in order; P0→P1 its
+ * length, P1→P2 its span) from `base`, its arch a half-ellipse `rise` high:
+ * a shell of QUONSET.segments strips along its length, ribs every 0.6 m
+ * standing proud of it (their outside the outline's edge), flat end walls
+ * just inside its ends, and on end `door` (0 the P0 end, 1 the P1 end; null
+ * none) a door and, where `arch` is given, a band of that colour round the
+ * end's rim. Everything inside the outline. → { ribs }.
+ */
+export function quonset(s, P, base, rise, { shell, end = shell, arch = null, door = null, doorColour = "#ecebe6" }) {
+  const [p0, p1, p2] = P;
+  const [ux, uz, length] = unit(p0, p1);
+  const span = len(p2[0] - p1[0], p2[1] - p1[1]);
+  const vx = (p2[0] - p1[0]) / span, vz = (p2[1] - p1[1]) / span;
+  const cx = (p0[0] + p2[0]) / 2, cz = (p0[1] + p2[1]) / 2;
+  const hu = length / 2 - QUONSET.inset, R = span / 2, H = rise;
+  const { segments: N, rib, ribWidth } = QUONSET;
+  // a point on the arch: `a` along (from the middle), segment k's angle, scaled in by `d` metres
+  const at = (a, k, d = 0) => {
+    const t = (Math.PI * k) / N, c = dcos(t), sn = dsin(t);
+    return [cx + ux * a + vx * (R - d) * c, base + (H - d) * sn, cz + uz * a + vz * (R - d) * c];
+  };
+  const out = (a, k) => {
+    const t = (Math.PI * (k + 0.5)) / N;
+    return [cx + ux * a + vx * (R + 5) * dcos(t), base + (H + 5) * dsin(t), cz + uz * a + vz * (R + 5) * dcos(t)];
+  };
+  const sh = rgb(shell), en = rgb(end);
+  // the shell, its strips shaded by how they face the sky
+  for (let k = 0; k < N; k++) {
+    const up = dsin((Math.PI * (k + 0.5)) / N);
+    quadOut(s, at(-hu, k, rib), at(hu, k, rib), at(hu, k + 1, rib), at(-hu, k + 1, rib), sh.map((c) => c * (0.8 + 0.25 * up)), out(0, k));
+  }
+  // ribs: a band proud of the shell every `ribEvery` along it
+  const n = Math.floor((2 * hu - ribWidth) / QUONSET.ribEvery);
+  const lit = sh.map((c) => c * 1.12);
+  for (let q = 0; q <= n; q++) {
+    const a = -hu + ribWidth / 2 + (q * (2 * hu - ribWidth)) / Math.max(1, n);
+    for (let k = 0; k < N; k++) quadOut(s, at(a - ribWidth / 2, k), at(a + ribWidth / 2, k), at(a + ribWidth / 2, k + 1), at(a - ribWidth / 2, k + 1), lit, out(a, k));
+  }
+  // the end walls: a fan from the middle of the floor, facing out along the length; on the door's end a rim band and a door
+  for (const e of [0, 1]) {
+    const a = e ? hu : -hu, toward = [cx + ux * a * 3, base + 1, cz + uz * a * 3];
+    const mid = [cx + ux * a, base, cz + uz * a];
+    for (let k = 0; k < N; k++) triOut(s, mid, at(a, k, rib), at(a, k + 1, rib), en, toward);
+    if (door !== e) continue;
+    const proud = a + (e ? 1 : -1) * 0.02;
+    if (arch) {
+      const ar = rgb(arch);
+      for (let k = 0; k < N; k++) quadOut(s, at(proud, k, rib), at(proud, k + 1, rib), at(proud, k + 1, rib + 0.35), at(proud, k, rib + 0.35), ar, toward);
+    }
+    const dw = Math.min(1.6, R * 0.35), dh = Math.min(2.4, H * 0.6);
+    const corner = (w, y) => [cx + ux * proud + vx * w, base + y, cz + uz * proud + vz * w];
+    quadOut(s, corner(-dw / 2, 0), corner(dw / 2, 0), corner(dw / 2, dh), corner(-dw / 2, dh), rgb(doorColour), toward);
+  }
+  return { ribs: n + 1 };
+}
+
+/**
+ * A concrete slab on a rectangle P from its lowest ground to `top` (else a
+ * hand over its highest corner), its seams dark lines every `every` metres
+ * both ways, a centimetre over it; where `wet` ({ share, colour, seed }),
+ * about `share` of its panels (by each panel's hash) with a dark wet patch
+ * over 40 to 90% of it each way, half a centimetre over it; where `curb`
+ * ({ colour, width, height }), a low curb along every edge. → { seams,
+ * wet, curbs }.
+ */
+export function slab(s, P, foot, top, { colour, seams = null, wet = null, curb = null }) {
+  prism(s, P, foot, top, colour);
+  const curbs = curb ? slabCurb(s, P, top, curb) : 0;
+  const wetCount = wet && seams ? wetPanels(s, P, top, seams.every, wet) : 0;
+  if (!seams) return { seams: 0, wet: wetCount, curbs };
+  const [p0, p1, , p3] = P;
+  const [ux, uz, lu] = unit(p0, p1), [vx, vz, lv] = unit(p0, p3);
+  const col = rgb(seams.colour), w = (seams.width ?? 0.12) / 2, y = top + 0.01;
+  let count = 0;
+  const strip = (a, b, nx, nz) => {
+    quadUp(s, [a[0] - nx * w, y, a[1] - nz * w], [b[0] - nx * w, y, b[1] - nz * w], [b[0] + nx * w, y, b[1] + nz * w], [a[0] + nx * w, y, a[1] + nz * w], col);
+    count++;
+  };
+  for (let d = seams.every; d < lu - w; d += seams.every) strip([p0[0] + ux * d + vx * w, p0[1] + uz * d + vz * w], [p0[0] + ux * d + vx * (lv - w), p0[1] + uz * d + vz * (lv - w)], ux, uz);
+  for (let d = seams.every; d < lv - w; d += seams.every) strip([p0[0] + vx * d + ux * w, p0[1] + vz * d + uz * w], [p0[0] + vx * d + ux * (lu - w), p0[1] + vz * d + uz * (lu - w)], vx, vz);
+  return { seams: count, wet: wetCount, curbs };
+}
+
+/** A slab's wet patches (slab's `wet`): in each `every`-metre panel whose hash is under `share`, a dark quad over 40 to 90% of it each way, placed in it by hash. Returns how many. */
+export function wetPanels(s, P, top, every, { share = 0.18, colour, seed = 0 }) {
+  const [p0, p1, , p3] = P;
+  const [ux, uz, lu] = unit(p0, p1), [vx, vz, lv] = unit(p0, p3);
+  const col = rgb(colour), y = top + 0.005;
+  let count = 0;
+  for (let a = 0; a * every < lu; a++) for (let b = 0; b * every < lv; b++) {
+    const k = seed * 4096 + a * 64 + b;
+    if (hash01(k, 401) >= share) continue;
+    const pw = Math.min(every, lu - a * every), pd = Math.min(every, lv - b * every);
+    const w = pw * (0.4 + 0.5 * hash01(k, 402)), d = pd * (0.4 + 0.5 * hash01(k, 403));
+    const ou = a * every + (pw - w) * hash01(k, 404), ov = b * every + (pd - d) * hash01(k, 405);
+    const at = (su, sv) => [p0[0] + ux * su + vx * sv, y, p0[1] + uz * su + vz * sv];
+    quadUp(s, at(ou, ov), at(ou + w, ov), at(ou + w, ov + d), at(ou, ov + d), col);
+    count++;
+  }
+  return count;
+}
+
+/** A low curb along every edge of a slab's rectangle P (slab's `curb`): `width` wide, `height` over its top. Returns how many edges. */
+export function slabCurb(s, P, top, { colour, width = 0.3, height = 0.2 }) {
+  let n = 0;
+  for (let a = 0; a < P.length; a++) {
+    const A = P[a], B = P[(a + 1) % P.length];
+    const ring = widen([A, B], width);
+    if (ring && prism(s, ring, top - 0.05, top + height, colour, { bottom: false })) n++;
+  }
+  return n;
+}
+
 export const KINDS = {
+  /** A Quonset hut on its corners (P0→P1 its length), its arch to `top`. */
+  quonset(s, st, { L, footOf }) {
+    const P = st.corners.map(L);
+    const foot = footOf(P);
+    const m = quonset(s, P, foot, st.top - foot, { shell: st.colours.shell, end: st.colours.end ?? st.colours.shell, arch: st.colours.arch ?? null, door: st.door ?? null, doorColour: st.colours.door ?? "#ecebe6" });
+    return { top: st.top, ...m };
+  },
+  /** A concrete slab with its seams. */
+  slab(s, st, { L, ground, footOf }) {
+    const P = st.corners.map(L);
+    const top = st.top ?? Math.max(...P.map(([x, z]) => ground(x, z))) + 0.08;
+    return { top, ...slab(s, P, footOf(P), top, { colour: st.colour, seams: st.seams ?? null, wet: st.wet ?? null, curb: st.curb ?? null }) };
+  },
+
+  // yard gear (dressing): rows of totes (bins `size` across, each spot stacked 1 to `stack` high by hash, colours by hash)
+  totes(s, st, { L, ground }) {
+    const size = st.size ?? 1.2;
+    let q = 0;
+    for (const row of st.rows ?? []) {
+      const a = L(row.from), b = L(row.to);
+      const [ux, uz, span] = unit(a, b);
+      const count = Math.max(1, Math.floor(span / (size + 0.15)));
+      for (let i = 0; i < count; i++, q++) {
+        const c = lerp2(a, b, (i + 0.5) / count);
+        const g = ground(c[0], c[1]);
+        const high = 1 + Math.floor(hash01(q, 31) * (row.stack ?? 3));
+        const colour = st.colours[Math.floor(hash01(q, 32) * st.colours.length)];
+        block(s, c, [ux, uz], size / 2, size / 2, g - 0.1, g + high * size, colour);
+      }
+    }
+    return { totes: q };
+  },
+  // a pile of logs (dressing): `rows` rows, each a log fewer, `length` long, `radius` round, along `heading` (degrees true) at `at`
+  logpile(s, st, { L, ground }) {
+    const [cx, cz] = L(st.at);
+    const g = ground(cx, cz);
+    const th = ((st.heading ?? 0) * Math.PI) / 180, u = [dsin(th), -dcos(th)], v = [-u[1], u[0]];
+    const r = st.radius ?? 0.35, half = (st.length ?? 12) / 2, rows = st.rows ?? 4;
+    let count = 0;
+    for (let row = 0; row < rows; row++) {
+      const n = rows - row;
+      for (let q = 0; q < n; q++, count++) {
+        const off = (q - (n - 1) / 2) * 2 * r, y = g + r * (1 + row * 1.7);
+        const k = 0.85 + 0.25 * hash01(count, 33);
+        const ox = cx + v[0] * off, oz = cz + v[1] * off;
+        log(s, [ox - u[0] * half, y, oz - u[1] * half], [ox + u[0] * half, y, oz + u[1] * half], r, rgb(st.colour ?? "#8a6e52").map((c) => c * k));
+      }
+    }
+    return { logs: count };
+  },
   /** A hangar: a low gable over four corners (N, E, S, W), the gables on the faces doors.face and the one opposite; board-sheathed walls; sliding doors and a header band on the door face. */
   hangar(s, st, { L, footOf }) {
     const P = st.corners.map(L);

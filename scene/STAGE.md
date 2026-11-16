@@ -1817,6 +1817,9 @@ ambient() → { atmosphere: null | {
           color?, intensity?,              // default white, the key light's 1.5
           shadows?: boolean },             // default false
   exposure?: number,                       // scales every light; default 1
+  clouds?: { cover, contrast?,             // a cloud deck over the sky: cover 0..1 (1 an overcast),
+             scale?, base? },              // its luminance ±contrast (≤ 0.5, default 0.1), cells `scale` m
+                                           // across (600) on a deck `base` m up (800)
 } }
 ```
 
@@ -1831,6 +1834,15 @@ ambient() → { atmosphere: null | {
   horizon to bottom below, with a soft disc where the sun is. It writes no
   depth and is never picked, boxed or framed. Without a sky, fog's colour
   is the background.
+- **Clouds** (over a sky only) texture it: the view direction carried up to
+  a deck `base` metres overhead, two octaves of value noise over it in
+  cells `scale` across. An overcast (cover 1) moves the whole sky's
+  luminance by the noise, ±`contrast`; scattered cloud (cover under 1) only
+  where the noise is in its top `cover`, whiter, brighter overhead and
+  darker toward the horizon. Faded to nothing at the horizon (the fog meets
+  the bare gradient there) and nothing below it. Static: a sky that moved
+  would redraw every frame. Anything else that draws the sky (the water's
+  reflection) samples the same function (`cloudAt` is it in JS).
 - **Fog** fades the objects and world groups toward its colour, from `near`
   to `far`. The on-top pass has none.
 - The **sun** replaces the key light, and dims the headlight to a third

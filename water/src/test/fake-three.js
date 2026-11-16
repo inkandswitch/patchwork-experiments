@@ -97,6 +97,26 @@ export function fakeThree() {
       this.disposed = true;
     }
   }
+  class DataTexture {
+    constructor(data, width, height, format, type) {
+      this.image = { data, width, height };
+      Object.assign(this, { format, type, version: 0 });
+    }
+    set needsUpdate(v) {
+      if (v) this.version++;
+    }
+    dispose() {
+      this.disposed = true;
+    }
+  }
+  // a half float's bits, enough for a test: sign, exponent and the top 10 bits of the mantissa (no rounding, no subnormals)
+  const toHalfFloat = (v) => {
+    const f = new Float32Array([v]), u = new Uint32Array(f.buffer)[0];
+    const sign = (u >>> 16) & 0x8000, e = ((u >>> 23) & 0xff) - 127 + 15, m = (u >>> 13) & 0x3ff;
+    if (e <= 0) return sign;
+    if (e >= 31) return sign | 0x7c00;
+    return sign | (e << 10) | m;
+  };
   const clone = (u) => Object.fromEntries(Object.entries(u).map(([k, v]) => [k, { value: v.value }]));
   return {
     Vector2,
@@ -109,6 +129,14 @@ export function fakeThree() {
     Mesh,
     LineSegments,
     LineDashedMaterial,
+    DataTexture,
+    DataUtils: { toHalfFloat },
+    RGFormat: 1030,
+    RGBAFormat: 1023,
+    HalfFloatType: 1016,
+    RepeatWrapping: 1000,
+    ClampToEdgeWrapping: 1001,
+    LinearFilter: 1006,
     DoubleSide: 2,
     UniformsLib: { fog: { fogDensity: { value: 0 }, fogNear: { value: 1 }, fogFar: { value: 2000 }, fogColor: { value: new Color("#fff") } } },
     UniformsUtils: { clone },
