@@ -21,13 +21,14 @@
 // the basin by 11.1 m (WATER.md Decision 121; at the old -18/+18 it covered
 // it), its home worked out by publish-links --frame to hold the basin, her
 // block and both boats in Patchwork's narrow pane (WATER.md Decision 122).
-// A boat at anchor swings inside her block and one under way sails on in it
-// (WATER Costs 2), so the layout and the frame hold for either. The basin
-// stays where Decision 121 put it; the boat goes on the x axis, at the first
-// whole metre from x = 20 at which her block, in plan, is CLEAR metres or
-// more from the basin's (a block that covered the basin would draw two
-// water surfaces over each other: Costs 4). Ship at sea's block is 11.1 m
-// clear at 20; Ship at anchor's, smaller but nearer the boat, isn't.
+// Link a boat at anchor: she swings inside her block for good, while one
+// under way coasts off it in world time (WATER "Clipped open water", Costs
+// 2; Decision 123). The basin stays where Decision 121 put it; the boat goes
+// on the x axis, at the first whole metre from x = 20 at which her block, in
+// plan, is CLEAR metres or more from the basin's (a block that covered the
+// basin would draw two water surfaces over each other: WATER "Water
+// bodies", Costs 4). Ship at sea's block is 11.1 m clear at 20; Ship at
+// anchor's, smaller but nearer the boat, isn't: she goes to 43 (10.45 m).
 // The scene package can't see a body of water, so the basin's box and her
 // block go to publish-links as --box arguments; --mashup prints the whole
 // command with them, read from the two published docs (or from --offline
