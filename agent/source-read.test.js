@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { ImmutableString } from "@automerge/automerge"
-import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
+import { Repo, initSubduction, generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { slice, findAll, sourceRead, sourceList, MAX_READ } from "./tools/read-source.js"
 import { sourceFile } from "./tools/file-source.js"
 import { headingAt } from "./tools/sources.js"
-import { recordArtifact, MAX_ARTIFACTS } from "./session.js"
+import { initPlan } from "./workflow/plan.js"
+import { scopedRepo, NOT_A_SOURCE } from "./scope.js"
+
+await initSubduction()
 
 // ------------------------------------------------------------------ the pure parts
 
@@ -102,7 +105,7 @@ describe("which heading an offset is under", () => {
 // ------------------------------------------------------------------ the tools
 
 /** A repo holding a session and some kept sources, under real document URLs. */
-function world({ access = null } = {}) {
+function world() {
   const docs = new Map()
   const add = (doc) => {
     const url = generateAutomergeUrl()
@@ -122,7 +125,6 @@ function world({ access = null } = {}) {
   const other = add({ name: "Elsewhere.md", content: "not kept by this session" })
   const folder = add({ title: "Research", docs: [] })
   const session = add({
-    workflow: access ? { access } : undefined,
     made: [
       { url: pdf, name: "Scan.pdf", kind: "source", source: "https://x.test/scan.pdf", engine: "raw" },
       { url: "automerge:2j9knZ5d4NNxLrYGsbBHuYXu3Twz", name: "a.js", kind: "file" },
@@ -140,7 +142,7 @@ function world({ access = null } = {}) {
       return handle(bare)
     },
   }
-  return { docs, repo, found, ctx: { repo, sessionUrl: session }, page, pdf, other, folder, body, session }
+  return { docs, repo, found, ctx: { repo, session: { url: session, doc: () => docs.get(session) } }, page, pdf, other, folder, body, session }
 }
 
 /** Ways to name one document that the repo accepts, other than its URL. */
@@ -226,54 +228,56 @@ describe("source_read", () => {
     await expect(sourceRead.execute({ source: "automerge:" }, ctx)).rejects.toThrow(/does not name a document/)
   })
 
-  it("refuses when it cannot tell whose sources these are", async () => {
-    const { repo, page } = world()
-    await expect(sourceRead.execute({ source: page }, { repo })).rejects.toThrow(/cannot reach the conversation/)
-  })
+  describe("in a research step, only what the workflow's research steps kept", () => {
+    /**
+     * A real repo: a plan whose ledger holds a page and a finding a step kept
+     * through the scoped repo, and a document it did not keep. Every find the
+     * scoped repo makes is recorded by id.
+     */
+    async function research() {
+      const repo = new Repo({ network: [] })
+      const plan = repo.create({})
+      plan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [] }))
+      const asked = []
+      const recording = { find: (url) => (asked.push(String(url)), repo.find(url)), create2: () => repo.create2() }
+      const scoped = scopedRepo(recording, plan, { stepId: "r" })
+      const page = await scoped.create2()
+      page.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Paper.md", role: "extract", source: "https://x.test/paper", content: new ImmutableString("# Paper\nwords") }))
+      // A moment apart, so "newest first" has one answer.
+      await new Promise((resolve) => setTimeout(resolve, 2))
+      const finding = await scoped.create2()
+      finding.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Note.md", role: "finding", content: "a finding" }))
+      const other = repo.create({ name: "Private.md", content: "not kept by any step" })
+      const folder = repo.create({ title: "Research", docs: [] })
+      asked.length = 0
+      return { ctx: { repo: scoped, scope: { stepId: "r" } }, asked, page: page.url, finding: finding.url, other: other.url, folder: folder.url, plan: plan.url }
+    }
 
-  describe("in a web-only step, only what that step kept", () => {
-    it.each([
-      // [which document, access, readable?]
-      ["page", "web", true],
-      ["pdf", "web", true],
-      ["other", "web", false],
-      ["folder", "web", false],
-      ["page", null, true],
-      ["other", null, true],
-    ])("%s with access %s → %s", async (which, access, readable) => {
-      const w = world({ access })
-      const attempt = sourceRead.execute({ source: w[which], limit: 5 }, w.ctx)
-      if (readable) await expect(attempt).resolves.toBeTypeOf("string")
-      else await expect(attempt).rejects.toThrow("Not one of the sources this step has kept.")
-    })
-
-    // Membership is by document, so every spelling of a kept source is
-    // readable and every spelling of anything else is refused.
-    for (const [which, readable] of [["page", true], ["other", false]]) {
-      for (const form of ["heads", "bare id", "legacy UUID"]) {
+    // [which document, readable?] × every spelling of it.
+    for (const [which, readable] of [["page", true], ["finding", true], ["other", false], ["folder", false], ["plan", false]]) {
+      for (const form of ["url", "heads", "bare id", "legacy UUID"]) {
         it(`${which} spelled as its ${form} → ${readable}`, async () => {
-          const w = world({ access: "web" })
-          const attempt = sourceRead.execute({ source: spellings(w[which])[form], limit: 5 }, w.ctx)
+          const w = await research()
+          const spelling = form === "url" ? w[which] : spellings(w[which])[form]
+          const attempt = sourceRead.execute({ source: spelling, limit: 5 }, w.ctx)
           if (readable) await expect(attempt).resolves.toBeTypeOf("string")
-          else await expect(attempt).rejects.toThrow("Not one of the sources this step has kept.")
-          if (!readable) expect(w.found).toEqual([])
+          else {
+            await expect(attempt).rejects.toThrow(NOT_A_SOURCE)
+            // Refused before the repo was asked: no sync request goes out for it.
+            expect(w.asked).toEqual([])
+          }
         })
       }
     }
 
-    it("keeps every source it kept readable, however much else the session makes", async () => {
-      const w = world({ access: "web" })
-      const session = w.docs.get(w.session)
-      // Many more sources and other documents than the list of what a session
-      // made keeps of the others, recorded in the order a long step would.
-      for (let i = 0; i < MAX_ARTIFACTS * 2; i++) {
-        recordArtifact(session, { url: generateAutomergeUrl(), name: `p${i}.md`, kind: "source", source: `https://x.test/${i}`, engine: "reader-markdown", chars: 1 })
-        recordArtifact(session, { url: generateAutomergeUrl(), name: `f${i}.js`, kind: "file" })
-      }
-      expect(session.made.filter((a) => !a.source)).toHaveLength(MAX_ARTIFACTS)
-      for (const which of ["page", "pdf"]) {
-        await expect(sourceRead.execute({ source: w[which], limit: 5 }, w.ctx)).resolves.toBeTypeOf("string")
-      }
+    it("lists the ledger, findings and all, newest first, with the step that kept each", async () => {
+      const w = await research()
+      const out = await sourceList.execute({}, w.ctx)
+      expect(out.split("\n")).toEqual([
+        "2 kept sources, newest first:",
+        `Note.md · finding · 9 chars · ${w.finding} · by r`,
+        `Paper.md · extract · 13 chars · ${w.page} · https://x.test/paper · by r`,
+      ])
     })
   })
 })
@@ -299,10 +303,13 @@ describe("source_list", () => {
   })
 
   it("says when nothing has been kept", async () => {
-    const { repo, docs } = world()
-    const empty = generateAutomergeUrl()
-    docs.set(empty, { made: [] })
-    expect(await sourceList.execute({}, { repo, sessionUrl: empty })).toMatch(/^Nothing has been kept yet/)
+    const { repo } = world()
+    expect(await sourceList.execute({}, { repo, session: { doc: () => ({ made: [] }) } })).toMatch(/^Nothing has been kept yet/)
+  })
+
+  it("refuses when it cannot tell whose sources these are", async () => {
+    const { repo } = world()
+    await expect(sourceList.execute({}, { repo })).rejects.toThrow(/cannot reach the conversation/)
   })
 })
 

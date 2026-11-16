@@ -14,9 +14,15 @@
  *     tiers:  { deep, standard, fast },       model per tier
  *     limits: { parallel, hostParallel, steps, tokens },
  *     usage:  { in, out },                    summed over steps
+ *     sources: { [documentId]: { url, kind: "source" | "finding", what,
+ *                source, name, engine, chars, by, at, heads } },
+ *                                             the research steps' ledger (scope.js)
+ *     sourcesFolderUrl,                       where the driver files the ledger for people
+ *     sourcesFiled: { [documentId]: true },   what it has filed
  *     steps: [{
  *       id, title, prompt, after: [ids],
  *       where: "host" | "worker",             needs the page, or only a repo
+ *       access?: "web",                       a research step (scope.js)
  *       tier, why,                            which model, and the reason
  *       status: "pending" | "running" | "done" | "failed" | "cancelled",
  *       sessionUrl, result, error, startedAt, finishedAt,
@@ -52,14 +58,12 @@ export const WHERE = ["host", "worker"]
 
 /**
  * What a step may reach. "full" is everything its placement allows. "web" is a
- * research step: web search and fetch and nothing else — none of the person's
- * documents — so fetching cannot leak anything of theirs, and it fetches
- * without asking. Its result is all it can hand back.
+ * research step: the web, and what the workflow's research steps have kept
+ * from it, and nothing else — none of the person's documents — so fetching
+ * cannot leak anything of theirs, and it fetches without asking. What it may
+ * do is decided by its session's scope (scope.js), not listed here.
  */
 export const ACCESS = ["full", "web"]
-
-/** The tools a web-only step gets: fetch, and read back what fetching kept. */
-export const WEB_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "session_recall"]
 
 /** Stored. */
 export const STEP = {
@@ -88,7 +92,7 @@ const TERMINAL = new Set([STEP.done, STEP.failed, STEP.cancelled])
 const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/i
 
 /** Seed a plan document. Runs inside a change. Steps must already be valid. */
-export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, tiers = {}, limits = {}, steps = [] }) {
+export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, tiers = {}, limits = {}, steps = [], sourcesFolderUrl = null }) {
   doc["@patchwork"] = { type: "agent-workflow" }
   doc.title = title
   doc.goal = goal
@@ -100,6 +104,9 @@ export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, 
   doc.usage = { in: 0, out: 0 }
   doc.createdAt = Date.now()
   doc.steps = steps.map(newStep)
+  doc.sources = {}
+  doc.sourcesFolderUrl = sourcesFolderUrl
+  doc.sourcesFiled = {}
 }
 
 /** A step as stored, from a step as given. */
@@ -287,13 +294,24 @@ export function overBudget(plan) {
 /** How much of a dependency's result a step is handed. The rest is in its session. */
 export const RESULT_IN_PROMPT = 6000
 
+/** What stands in a research step's prompt for the result of a step that had the person's documents. */
+export const WITHHELD = "(ran with the person's documents; its result is not passed to a web-only step)"
+
 /**
  * The first message a step's session receives.
  *
  * A step does not see the orchestrator's conversation, so everything it needs
  * is here: the goal, its own task, and the results of what it depends on.
+ *
+ * A research step is handed the results of research steps only. A full step's
+ * result may hold anything of the person's it read, and a research step may
+ * send anything it holds to any site; what a research step needs from such
+ * work, the orchestrator writes into its prompt, where it chose to put it. Nor
+ * is it told where any session is: a session's URL leads to its plan, and the
+ * plan to everything.
  */
 export function stepPrompt(plan, step) {
+  const web = step.access === "web"
   const byId = new Map((plan.steps ?? []).map((s) => [s.id, s]))
   const lines = [
     `You are one step of a workflow, working for an orchestrating agent rather than a person.`,
@@ -309,20 +327,36 @@ export function stepPrompt(plan, step) {
   if (deps.length) {
     lines.push(``, `## What the steps before you found`)
     for (const dep of deps) {
+      lines.push(``, `### ${dep.title} (${dep.id})`)
+      if (web && dep.access !== "web") {
+        lines.push(WITHHELD)
+        continue
+      }
       const result = String(dep.result ?? "(no result recorded)")
-      const cut = result.length > RESULT_IN_PROMPT
-      lines.push(
-        ``,
-        `### ${dep.title} (${dep.id})`,
-        cut ? `${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; the full result ends that step's session: ${dep.sessionUrl})` : result
-      )
+      if (result.length <= RESULT_IN_PROMPT) lines.push(result)
+      else if (web) lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; what it kept is in source_list)`)
+      else lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; the full result ends that step's session: ${dep.sessionUrl})`)
     }
+  }
+  if (web) {
+    lines.push(
+      ``,
+      `## Keeping things`,
+      ``,
+      `You can reach the web and nothing else. Everything you fetch is kept, for you and for this workflow's other research steps:`,
+      `- Check source_list before fetching: what is already kept is free to read, and source_list {find:"…"} searches all of it.`,
+      `- Read kept pages and PDFs with source_read, by offset or with find, rather than fetching them again.`,
+      `- Write down what you learn with finding_write as you go, citing the kept sources it rests on. A finding is kept: it survives when older results here are shortened, and the person can read it.`,
+      `- In your result, cite the web URLs that what you found rests on.`
+    )
   }
   lines.push(
     ``,
     `## When you finish`,
     ``,
-    `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found or did, with the URLs of anything you changed. If you could not do the step, say so and why.`,
+    web
+      ? `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found, with the web URLs it rests on and the findings you wrote. If you could not do the step, say so and why.`
+      : `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found or did, with the URLs of anything you changed. If you could not do the step, say so and why.`,
     `There is usually no one watching this session. Ask the user something only if you truly cannot continue without it.`
   )
   return lines.join("\n")

@@ -64,8 +64,9 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
     const ctx = {
       repo,
       subject,
-      // So the agent can name its own conversation. Nothing else may be
-      // reached through this — it is the session's own document.
+      // The session's own URL, which keeps its prompt cache on one provider.
+      // Tools reach the session through the runner (ctx.session, ctx.recall),
+      // never by this.
       sessionUrl: handle.url,
       splice,
       events,
@@ -84,11 +85,8 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       store: liveStore,
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
       ctx,
-      buildToolset: async (doc) => {
-        const toolset = await buildToolset(doc)
-        onToolset?.(toolset)
-        return toolset
-      },
+      buildToolset: (doc) => buildToolset(doc),
+      onToolset,
       getProvider: async () => getProvider(providerId()),
       getKey: () => readKey(providerId()),
       getModelInfo: (model, id) => modelInfo(id, model, { key: readKey(id) }),

@@ -45,14 +45,16 @@ export const sessionRecall = {
   },
 
   async execute(input, ctx) {
-    if (!ctx.sessionUrl || !ctx.repo) {
+    // Through `ctx.recall`, which the loop gives every call: the transcript and
+    // nothing else of the session, the same in every runner — a research step
+    // has no session URL to look it up by, and needs none.
+    if (typeof ctx.recall !== "function") {
       throw new Error("This runner cannot reach the conversation, so nothing can be recalled here.")
     }
     const callId = String(input.callId ?? "").trim()
     if (!callId) throw new Error("Pass the id of the call whose result you want.")
 
-    const doc = (await ctx.repo.find(ctx.sessionUrl)).doc()
-    const turns = doc?.turns ?? []
+    const turns = ctx.recall() ?? []
 
     let found = null
     let call = null

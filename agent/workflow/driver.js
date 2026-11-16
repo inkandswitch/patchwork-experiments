@@ -16,7 +16,10 @@
 
 import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS } from "../runner.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS, WEB_TOOL_IDS } from "./plan.js"
+import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
+import { scopeOf, webScope, sameScope } from "../scope.js"
+import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
 import { handleStore } from "../store.js"
 import { waitingIn } from "./waiting.js"
@@ -219,6 +222,11 @@ export class WorkflowDriver {
       return
     }
 
+    // 0. A research step runs confined or not at all. Its runner refuses an
+    // unconfined session too (scope.js); this ends the step in the plan.
+    await this.checkScopes()
+    plan = this.handle.doc()
+
     // 1. What have the running steps done?
     const sessions = {}
     const usages = []
@@ -259,6 +267,9 @@ export class WorkflowDriver {
     // 2. One job, one set of permissions.
     await this.shareGrants()
 
+    // 2b. What the research steps kept, where the person can find it.
+    await this.fileSources()
+
     // 3. Keep running steps running — after a reload their runners are gone.
     plan = this.handle.doc()
     for (const step of plan.steps) {
@@ -288,33 +299,34 @@ export class WorkflowDriver {
    * A workflow is one job: granting "any site" to one step and leaving its
    * siblings blocked on the same question was the opposite of what the person
    * meant. Grants are merged from the orchestrator and every full-access step,
-   * written to each session that lacks one, and each session's waiting calls
-   * that are now allowed are released. Web-only steps receive grants but do not
-   * give them: their standing "any site" is safe only because they cannot read
-   * anything, and must not spread to sessions that can.
+   * written to each of them that lacks one, and each one's waiting calls that
+   * are now allowed are released.
+   *
+   * Research steps take no part, either way. Their standing "any site" is safe
+   * only because they can read nothing of the person's, and must not spread
+   * to sessions that can; and they need nothing from the others, since they
+   * fetch without asking and can do nothing else.
    *
    * Grants only accumulate and a session is written only when it lacks one, so
    * this settles: run twice, the second time writes nothing.
    */
   async shareGrants() {
     const plan = this.handle.doc()
-    const members = [{ url: plan.sessionUrl, gives: true }]
-    for (const step of plan.steps) if (step.sessionUrl) members.push({ url: step.sessionUrl, gives: step.access !== "web" })
+    const members = [plan.sessionUrl, ...plan.steps.filter((s) => s.access !== "web").map((s) => s.sessionUrl)].filter(Boolean)
     const sessions = []
-    for (const member of members) {
-      const handle = member.url ? await this.session(member.url) : null
-      if (handle?.doc()) sessions.push({ ...member, handle })
+    for (const url of members) {
+      const handle = await this.session(url)
+      if (handle?.doc()) sessions.push(handle)
     }
 
     const merged = {}
-    for (const { handle, gives } of sessions) {
-      if (!gives) continue
+    for (const handle of sessions) {
       for (const [key, held] of Object.entries(handle.doc().grants ?? {})) {
         if (held === "always" || (held === "session" && merged[key] !== "always")) merged[key] = held
       }
     }
 
-    for (const { handle } of sessions) {
+    for (const handle of sessions) {
       const doc = handle.doc()
       const missing = Object.keys(merged).filter((key) => !["session", "always"].includes(doc.grants?.[key]))
       if (missing.length) {
@@ -332,6 +344,76 @@ export class WorkflowDriver {
         })
       }
     }
+  }
+
+  /**
+   * End every running research step whose session is not confined exactly as
+   * its plan says. A scope is written when the step starts and nothing in the
+   * agent may change it (scope.js kernelRepo), so a scope that is gone or
+   * different was changed by hand, and the step stops rather than run on with
+   * more than research should have.
+   */
+  async checkScopes() {
+    const plan = this.handle.doc()
+    const broken = []
+    for (const step of plan.steps) {
+      if (step.access !== "web" || step.status !== STEP.running || !step.sessionUrl) continue
+      const doc = (await this.session(step.sessionUrl))?.doc()
+      if (!doc) continue
+      let scope = null
+      try {
+        scope = scopeOf(doc)
+      } catch {
+        /* malformed is as good as gone */
+      }
+      if (!sameScope(scope, webScope(this.handle.url, step.id))) broken.push(step.id)
+    }
+    if (broken.length) await this.stopSteps(broken, "its research scope was removed")
+  }
+
+  /**
+   * File what the research steps kept into the plan's Sources folder.
+   *
+   * The folder is for people. The ledger, `plan.sources`, is what research
+   * steps may read; the folder grants them nothing, so linking a document into
+   * it by hand changes nothing about what they can reach. A kept source is
+   * linked at the version that was fetched, a finding live, since a person may
+   * go on editing it. An entry is filed once it says what it is, and marked
+   * in `sourcesFiled`; one already in the folder is only marked, so a driver
+   * that lost the plan between the two writes leaves nothing to duplicate.
+   * Run twice, the second time writes nothing.
+   */
+  async fileSources() {
+    const plan = this.handle.doc()
+    if (!plan.sourcesFolderUrl) return
+    const filed = plan.sourcesFiled ?? {}
+    const due = Object.entries(plan.sources ?? {}).filter(([id, e]) => !filed[id] && e?.what != null)
+    if (!due.length || !holdsLease(plan, this.runnerUrl, this.generation)) return
+
+    let folder
+    try {
+      folder = await this.repo.find(plan.sourcesFolderUrl)
+    } catch {
+      return
+    }
+    const present = new Set((folder.doc()?.docs ?? []).map((entry) => documentIdOf(entry?.url)))
+    const fresh = due
+      .filter(([id]) => !present.has(id))
+      .map(([id, e]) => ({
+        name: e.name ?? (e.kind === "finding" ? "finding" : "source"),
+        type: e.what === "snapshot" ? "web-snapshot" : "file",
+        url: e.kind === "finding" ? stringifyAutomergeUrl({ documentId: id }) : stringifyAutomergeUrl({ documentId: id, heads: [...e.heads] }),
+      }))
+    if (fresh.length) {
+      folder.change((d) => {
+        if (!d.docs) d.docs = []
+        for (const entry of fresh) d.docs.push(entry)
+      })
+    }
+    this.write((d) => {
+      if (!d.sourcesFiled) d.sourcesFiled = {}
+      for (const [id] of due) d.sourcesFiled[id] = true
+    })
   }
 
   /** Does this session have calls waiting on a permission? (Release is cheap; this keeps idle ticks write-free.) */
@@ -389,11 +471,13 @@ export class WorkflowDriver {
 
     const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
     const toolIds = this.toolIds ?? (await defaultToolIds())
+    const web = step.access === "web"
     const child = await this.repo.create2()
     child.change((d) => {
       initSession(d, {
         title: `${plan.title} · ${step.title}`,
-        subject: plan.subject ?? null,
+        // A research step is about no document of the person's.
+        subject: web ? null : plan.subject ?? null,
         config: {
           providerId: orchestrator?.config?.providerId ?? "openrouter",
           model: plan.tiers?.[step.tier],
@@ -403,20 +487,23 @@ export class WorkflowDriver {
         },
       })
       d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
-      // A worker step gets only what runs without the page, so it can run
-      // anywhere a repo is. Neither kind can start a workflow of its own.
-      d.tools =
-        step.access === "web"
-          ? { enabled: WEB_TOOL_IDS }
-          : step.where === "worker"
-            ? { enabled: toolIds.worker }
-            : { disabled: WORKFLOW_TOOL_IDS }
-      // What the person already allowed the orchestrator carries into its steps;
-      // asking again for each one would put the same question in front of them
-      // once per step. A web-only step may also fetch anything: it can reach
-      // none of the person's documents, so there is nothing of theirs to leak.
-      d.grants = { ...(orchestrator?.grants ?? {}), ...(step.access === "web" ? { [WEB_GRANT]: "session" } : {}) }
-      if (step.access === "web") d.workflow.access = "web"
+      if (web) {
+        // In the same change as the session itself, so it never exists
+        // unconfined. The scope decides its tools and everything it can reach
+        // (scope.js); it has no list of tools to edit. It may fetch any site:
+        // it can reach none of the person's documents, so there is nothing of
+        // theirs to leak, and it gets nothing the orchestrator was granted.
+        d.scope = webScope(this.handle.url, step.id)
+        d.grants = { [WEB_GRANT]: "session" }
+      } else {
+        // A worker step gets only what runs without the page, so it can run
+        // anywhere a repo is. Neither kind can start a workflow of its own.
+        d.tools = step.where === "worker" ? { enabled: toolIds.worker } : { disabled: WORKFLOW_TOOL_IDS }
+        // What the person already allowed the orchestrator carries into its
+        // steps; asking again for each one would put the same question in front
+        // of them once per step.
+        d.grants = { ...(orchestrator?.grants ?? {}) }
+      }
       d.turns.push(makeTurn("user", [textBlock(stepPrompt(plan, step))]))
     })
 
@@ -435,6 +522,16 @@ export class WorkflowDriver {
 
   /** Cancel steps (all unfinished ones when none are named), interrupting their sessions. */
   async cancel(stepIds = null) {
+    await this.stopSteps(stepIds)
+    await this.kick()
+  }
+
+  /**
+   * Cancel steps without ticking: what cancel does, and what a tick does
+   * itself when it finds a step that must stop. `reason`, when given, is kept
+   * on each step for the views to show.
+   */
+  async stopSteps(stepIds = null, reason = null) {
     const plan = this.handle.doc()
     const targets = plan.steps.filter(
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
@@ -462,13 +559,13 @@ export class WorkflowDriver {
         if (!targets.some((t) => t.id === s.id)) continue
         s.status = STEP.cancelled
         s.finishedAt = this.now()
+        if (reason) s.error = reason
       }
       if (!stepIds) {
         d.status = PLAN.stopped
         d.finishedAt = this.now()
       }
     })
-    await this.kick()
   }
 
   /**
@@ -525,6 +622,7 @@ export function describeProgress(plan, news, waiting = []) {
       step.status === STEP.done ? step.result ?? "" : step.error ?? "",
       `Session: ${step.sessionUrl}`
     )
+    if (step.access === "web") lines.push(`It ${keptLine(plan, step.id)}`)
   }
   const title = (id) => plan.steps.find((s) => s.id === id)?.title ?? id
   for (const q of waiting.filter((w) => w.kind === "question")) {
@@ -543,6 +641,7 @@ export function describeProgress(plan, news, waiting = []) {
       `Waiting on the person's permission: ${approvals.map((a) => `${title(a.stepId)} wants to run ${a.tool}`).join("; ")}. Only they can grant it; they see it in your view and the workflow's.`
     )
   }
+  if (Object.keys(plan.sources ?? {}).length) lines.push("", `The research steps have ${keptLine(plan)}`)
   lines.push(
     "",
     `Steps: ${count(STATE.done)} done, ${count(STATE.running) + count(STATE.needsInput)} running, ${count(STATE.ready) + count(STATE.waiting)} to come, ${count(STATE.failed)} failed, ${count(STATE.blocked)} blocked, ${count(STATE.cancelled)} cancelled.`
@@ -555,6 +654,26 @@ export function describeProgress(plan, news, waiting = []) {
   return lines.join("\n")
 }
 
+/** What the research steps have kept: every one of them, or one. */
+export function keptCounts(plan, stepId = null) {
+  const counts = { sources: 0, findings: 0 }
+  for (const entry of Object.values(plan?.sources ?? {})) {
+    if (entry?.what == null || (stepId && entry.by !== stepId)) continue
+    if (entry.kind === "finding") counts.findings++
+    else counts.sources++
+  }
+  return counts
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+/** "kept 3 sources and 1 finding — Sources: automerge:…", for the news. */
+function keptLine(plan, stepId = null) {
+  const { sources, findings } = keptCounts(plan, stepId)
+  const where = plan.sourcesFolderUrl ? ` — Sources: ${plan.sourcesFolderUrl}` : ""
+  return `kept ${plural(sources, "source", "sources")} and ${plural(findings, "finding", "findings")}${where}`
+}
+
 /** The grant that lets a web-only step fetch anything. */
 export const WEB_GRANT = "web@*"
 
@@ -565,9 +684,9 @@ async function builtinToolset() {
 
 /** Which built-in tools a worker step may have. Loaded late: the toolset imports this module. */
 async function defaultToolIds() {
-  const { BUILTIN_TOOLS } = await import("../tools/index.js")
+  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS } = await import("../tools/index.js")
   return {
-    worker: BUILTIN_TOOLS.filter((t) => t.where === "worker" && !WORKFLOW_TOOL_IDS.includes(t.id)).map((t) => t.id),
+    worker: BUILTIN_TOOLS.filter((t) => t.where === "worker" && !WORKFLOW_TOOL_IDS.includes(t.id) && !SCOPED_ONLY_IDS.includes(t.id)).map((t) => t.id),
   }
 }
 

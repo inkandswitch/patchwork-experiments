@@ -49,15 +49,19 @@ export const sessionTitleTool = {
     const title = cleanTitle(input.title)
     if (!title) throw new Error("Pass a title with something in it.")
 
-    if (!ctx.sessionUrl || !ctx.repo) {
+    // `ctx.session` is this conversation's own document, and the runner
+    // makes it writable for this tool's calls alone (runner.js privileges).
+    // The repo the tools get cannot change a session at all (scope.js
+    // kernelRepo), so this is the one way a tool writes one, and this is the
+    // one tool that does.
+    if (!ctx.session?.change) {
       throw new Error("This runner cannot reach the session document, so the title cannot be set here.")
     }
 
-    const handle = await ctx.repo.find(ctx.sessionUrl)
-    const before = handle.doc()?.title ?? null
+    const before = ctx.session.doc()?.title ?? null
     if (before === title) return `Already called '${title}'.`
 
-    handle.change((doc) => {
+    ctx.session.change((doc) => {
       doc.title = title
     })
     return before ? `Renamed from '${before}' to '${title}'.` : `Named this session '${title}'.`

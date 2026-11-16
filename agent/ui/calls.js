@@ -141,6 +141,10 @@ export const PRESENTATION = {
   },
   source_list: { verb: "kept sources", detail: (i) => (i.find ? `“${i.find}”` : null) },
   source_file: { verb: "file", detail: (i) => i.name ?? "kept source" },
+  finding_write: {
+    verb: (i) => (!i.finding ? "finding" : i.mode === "replace" ? "rewrite finding" : "add to finding"),
+    detail: (i) => i.title ?? null,
+  },
 
   // ---- knowing things
   skill_list: { verb: "skills", detail: () => null },

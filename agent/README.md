@@ -17,7 +17,8 @@ claimed by a node process with no tab open.
 | `session.js` | the session model — pure functions over plain objects, no automerge |
 | `store.js` | applies that model to a DocHandle (and to a plain object, for tests) |
 | `loop.js` | the agentic loop: stream, dispatch tools, stop for approval, resume |
-| `runner.js` | claims the lease, notices work, drives the loop |
+| `runner.js` | claims the lease, notices work, drives the loop; decides from the session what its tools may reach |
+| `scope.js` | research steps: the confined context and repo, the scoped toolset, and the repo that keeps tools off sessions and plans |
 | `datatype.js` | the `agent-session` datatype |
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
 | `tab-runner.js` | runs a session in this tab, with or without a view of it |
@@ -118,6 +119,7 @@ any participant can approve and every approval is auditable.
 | Web | `web_search` `web_fetch` | worker |
 | APIs | `http_request` | worker |
 | Kept sources | `source_read` `source_list` `source_file` | worker |
+| Findings (research steps only) | `finding_write` | worker |
 | Ask | `ask_user` | never runs — see below |
 | Remember | `session_recall` | worker |
 | Name | `session_title` | worker |
@@ -242,6 +244,85 @@ that fetch with `nodeFetch` (`node-fetch.mjs`). A reader URL hides its target
 in its path, so the web tools check the target before building one.
 `plugin_source` reads a package the page serves from its document, and
 fetches any other through the guard.
+
+## Research steps keep things
+
+A workflow's research step (`access: "web"`) may fetch any site without
+asking. That is safe only if nothing of the person's can reach what it sends,
+and it used to be safe by having nothing at all: no documents, so nothing it
+fetched could be kept or read back, and everything it learned had to survive
+in one closing message. Now it keeps everything — every page and PDF it
+fetches, and *findings*, short markdown notes it writes as it goes with
+`finding_write` — and it still cannot read or write anything else of the
+person's. That is not a request in its prompt. A page it reads can ask it for
+anything; what it is able to do is decided by what its tools are handed.
+
+**One field decides it.** The driver writes `session.scope = { kind: "web",
+ledgerUrl: <the plan>, stepId }` in the same change that creates the step's
+session. Every runner — tab, worker, node — reads it in one place
+(`runner.js` `prepare`) and nowhere else:
+
+- **The toolset** is exactly `web_search`, `web_fetch`, `http_request` (GET and
+  HEAD, no body), `source_read`, `source_list`, `finding_write` and
+  `session_recall`: built-ins, frozen, plugins never consulted, and whatever
+  the session says about its tools ignored. `finding_write` exists nowhere
+  else; `source_file`, which writes into a folder, is never here.
+- **The context** is built field by field from an allowlist (`confine`): the
+  signal, events, the guarded fetch, the reader, and a repo. There is no
+  subject, no root, notes or skills folder, no account, no session URL, no
+  page, no way to start a workflow — so the person's notes and skills are not
+  in its prompt either, with no special case. The workspace note a view
+  attaches to a message is not sent to it.
+- **The repo opens only the ledger.** `plan.sources` lists every document the
+  workflow's research steps have made, with the heads each was last written
+  at. `find` canonicalises whatever it is given, looks it up there, and
+  refuses before the repo is even asked — so a document URL lifted from a
+  page, in any spelling, does not so much as cause a sync request. A source is
+  read at its recorded heads and cannot be changed; a finding can be added to,
+  but only while nobody else has edited it since (a person's edit is theirs:
+  the step writes a new finding rather than build on text it cannot see).
+  `create2` enters the new document in the ledger before anything is written
+  into it. There is no delete and no list of handles.
+
+So a research step can keep and re-read everything it found, and so can its
+sibling steps — a page one step fetched answers another's `web_fetch` without
+a request — while holding only what came from the web and what the
+orchestrator chose to write into research prompts. It is never handed the
+result of a step that had the person's documents: its prompt says such a step
+ran, not what it found, and names no session.
+
+**Nothing in the agent can undo it.** Every other session's tools get a repo
+(`kernelRepo`) whose handles refuse to change a session or a plan, however the
+document is named and whichever handle — a view, a sub-path — is used, so no
+`doc_edit`, `fs_write` or plugin can drop a step's scope, give it tools, or add
+a document to the ledger. The two modules that do write them are handed
+explicit capabilities, for their own calls only: `tools/workflow.js` gets
+`ctx.workflows` (the runner's repo and its step starter), and `session_title`
+writes its own session through `ctx.session`; no other tool, and no plugin, is
+handed either, and a test holds each to its one module. Nor can a tool make a
+session or a plan: a write that would turn a document into one is refused, so
+no tool can forge a plan whose ledger lists the person's documents. The runner refuses a step
+its plan calls web-only whose session is not scoped exactly so, and the
+driver cancels it ("its research scope was removed").
+
+**For the person**, the driver files the ledger into the plan's Sources folder
+as it grows — sources pinned to the version fetched, findings live — and the
+news and the workflow view say what each research step kept. The folder is a
+view, not an authority: linking a document into it grants research steps
+nothing. Research steps take no part in sharing grants, either way.
+
+What this does not cover: a person editing a session or plan by hand; a DNS
+answer that changes between the check and the fetch in node; and the reader
+service seeing every URL fetched through it, which was already true.
+
+`scope.test.js` holds the claim from the outside: a repo full of documents
+marked with a sentinel, and every research tool called with every way of
+naming something — every spelling of every document of the person's, the
+plan, the step's own and a sibling's session, a page full of document ids, an
+address on this machine, a site that redirects to Patchwork's origin — and
+after each call it checks that only ledger documents were opened, only what
+the call made or a finding changed, every request passed the guard, and no
+sentinel got out.
 
 ## A package can hand the agent a capability
 
@@ -530,8 +611,8 @@ That fallback existed before and never ran: `init` set the title to `"Agent"`, s
 session in the list was called the same thing. A fresh session now has no title
 at all, which is the honest state and the one every fallback is written for.
 
-`session_title` is the only tool with `risk: "self"` — it writes, but only ever
-to the session document, so it is never asked about. Marking it `read` would
+`session_title` has `risk: "self"` — it writes, but only ever to the session
+document, so it is never asked about. Marking it `read` would
 have produced the same behaviour by lying in the tool list to whoever audits it.
 
 ## Asking the user
@@ -756,7 +837,7 @@ is usable before the catalogue catches up.
 Three tiers, cheapest first.
 
 ```sh
-pnpm test                                  # 1950 unit + mount tests, no network
+pnpm test                                  # 2500 unit + mount tests, no network
 OPENROUTER_KEY_FILE=… node probes/live-openrouter.mjs      # the adapter vs the live API
 OPENROUTER_KEY_FILE=… node probes/patchwork-e2e.mjs        # the whole thing, in real Patchwork
 ```
@@ -971,9 +1052,10 @@ result calls for it.
   open, steer and approve in. It is started on its tier's model — deep,
   standard and fast default to the latest Opus, Sonnet and Haiku, and the
   mapping is a setting — with the goal, its prompt and the results of the
-  steps it waits for. It inherits the orchestrator's grants, never gets the
-  workflow tools (no nesting), and a `worker` step gets only the tools that
-  run without the page.
+  steps it waits for. A full step inherits the orchestrator's grants, never
+  gets the workflow tools (no nesting), and a `worker` step gets only the
+  tools that run without the page. A research step is confined instead (see
+  *Research steps keep things*).
 - **The plan decides; the driver acts.** `workflow/plan.js` is pure: five
   stored step states, the rest (ready, waiting, blocked, needs-you) derived, and
   `toStart` choosing what may run. Its rules — only ready steps start, never more
@@ -997,12 +1079,11 @@ result calls for it.
   waiting on you.
 
 - **One job, one set of permissions.** A grant given in any of a workflow's
-  sessions reaches all of them, and releases every waiting call it now covers;
-  so does a grant given from the peek or the strip ("Allow dnv.com", "Allow any
-  site"). A **web-only step** (`access: "web"`) gets web search and fetch, and
-  `source_read`/`source_list` over what it has itself kept, and nothing else —
-  none of your documents — so it fetches without asking; its standing "any
-  site" is not shared with sessions that can read your documents.
+  full-access sessions reaches all of them, and releases every waiting call it
+  now covers; so does a grant given from the peek or the strip ("Allow
+  dnv.com", "Allow any site"). A **research step** (`access: "web"`) fetches
+  without asking and keeps what it finds, and can reach none of your
+  documents; it neither gives grants nor receives them.
 - **News is told once**, recorded in the plan: a reload or another tab's driver
   does not repeat a step's result, and the end of a plan is one wake, not one
   per tick. Cancelling takes the step session's lease, so a runner in another

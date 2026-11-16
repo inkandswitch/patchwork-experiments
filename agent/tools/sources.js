@@ -275,26 +275,33 @@ export function outline(marks, max = 20) {
   return `Outline: ${shown.map((m) => `${m.at} ${m.label}`).join(" · ")}${more}`
 }
 
-/** The session document, when this runner can reach it. */
-export async function sessionDoc(ctx) {
-  if (!ctx?.sessionUrl || !ctx?.repo?.find) return null
+/** The session document, when this runner gives its tools one (a research step's does not). */
+export function sessionDoc(ctx) {
   try {
-    return (await ctx.repo.find(ctx.sessionUrl)).doc() ?? null
+    return ctx?.session?.doc?.() ?? null
   } catch {
     return null
   }
 }
 
 /**
- * The newest source this session has kept from `source` by one of `engines`
- * that has text to read, or null. What a session has kept is what it recorded
- * in `made`, which is why recordArtifact keeps `source`, `engine` and `chars`.
- * A copy with no text (a PDF's bytes kept without the reader's text) cannot
- * answer a request to read the page, so it never does.
+ * What this session can see it has kept, newest first: in a research step the
+ * workflow's ledger (every step's sources, scope.js), and otherwise what the
+ * session recorded in `made`, which is why recordArtifact keeps `source`,
+ * `engine` and `chars`.
+ */
+export function keptSources(ctx) {
+  if (ctx?.scope) return ctx.repo.sources().filter((entry) => entry.kind === "source")
+  return (sessionDoc(ctx)?.made ?? []).filter((entry) => entry.source)
+}
+
+/**
+ * The newest kept source of `source` by one of `engines` that has text to
+ * read, or null. A copy with no text (a PDF's bytes kept without the reader's
+ * text) cannot answer a request to read the page, so it never does.
  */
 export async function findKept(ctx, { source, engines }) {
-  const made = (await sessionDoc(ctx))?.made ?? []
-  return made.find((entry) => entry.source === source && engines.includes(entry.engine) && entry.chars != null) ?? null
+  return keptSources(ctx).find((entry) => entry.source === source && engines.includes(entry.engine) && entry.chars != null) ?? null
 }
 
 /** A plain Uint8Array over the same bytes, whatever view arrived. */

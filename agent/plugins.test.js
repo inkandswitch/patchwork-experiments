@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
 import { loadPluginTools, runTool, buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
-import { WEB_TOOL_IDS } from "./workflow/plan.js"
 
 /** A registry that hands out whatever module is current, as Patchwork's does after a re-register. */
 function fakeRegistry(id) {
@@ -60,7 +59,9 @@ describe("a plugin cannot take a built-in's name", () => {
 
 describe("what a session's tool list means", () => {
   const ids = async (tools) => (await buildToolset({ config: {}, tools }, { skipPlugins: true })).tools.map((t) => t.id)
-  const everyBuiltin = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !id.startsWith("workflow_"))
+  // Everything but the workflow tools (off unless switched on) and what only a
+  // research step may have.
+  const everyBuiltin = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !id.startsWith("workflow_") && id !== "finding_write")
 
   it.each([
     ["no list", undefined, everyBuiltin],
@@ -73,9 +74,7 @@ describe("what a session's tool list means", () => {
     expect((await ids(tools)).sort()).toEqual([...expected].sort())
   })
 
-  it("gives a web-only step its fetching and reading tools, and no way to file anything", async () => {
-    const got = await ids({ enabled: WEB_TOOL_IDS })
-    expect(got.sort()).toEqual(["http_request", "session_recall", "source_list", "source_read", "web_fetch", "web_search"])
-    expect(got).not.toContain("source_file")
+  it("never gives a session what only a research step may have, even when its list names it", async () => {
+    expect(await ids({ enabled: ["finding_write"] })).toEqual([])
   })
 })

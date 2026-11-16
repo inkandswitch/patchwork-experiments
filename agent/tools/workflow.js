@@ -4,15 +4,22 @@
  * Only offered when the session's Workflows switch is on (tools/index.js):
  * a workflow is many sessions and real cost, so it is something a person
  * turns on, not something the agent reaches for unasked.
+ *
+ * Plans and step sessions are documents no other tool may change (scope.js
+ * kernelRepo), so these work through `ctx.workflows` — the runner's own repo
+ * and its way of starting a step's session — which the runner adds to a
+ * full-access session's calls of these tools and of no other (runner.js
+ * `privileges`). This is the only module that uses it.
  */
 
 import { initPlan, newStep, validateSteps, states, STATE, PLAN, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
-import { drivePlanHere, getDriver } from "../workflow/driver.js"
+import { drivePlanHere, getDriver, keptCounts } from "../workflow/driver.js"
 import { truncate } from "./format.js"
 import { formatCost } from "../session.js"
 import { answerQuestion } from "../loop.js"
 import { handleStore } from "../store.js"
 import { waitingIn } from "../workflow/waiting.js"
+import { sessionDoc } from "./sources.js"
 
 const STEP_SCHEMA = {
   type: "object",
@@ -39,19 +46,23 @@ const STEP_SCHEMA = {
     access: {
       type: "string",
       enum: ["full", "web"],
-      description: "'web' for a research step that only needs to search and read the web: it gets web_search, web_fetch, http_request, source_read and source_list and nothing else — none of the person's documents — so it fetches without asking. What it fetches is kept, but its result is all it can hand back, so ask for what it found, with sources. Default 'full'.",
+      description: "'web' for a research step that only needs the web: it gets web_search, web_fetch, http_request (GET and HEAD), source_read, source_list, finding_write and session_recall, and none of the person's documents, so it fetches without asking. Everything it fetches and every finding it writes is kept, shared with the workflow's other research steps and filed in its Sources folder. It is never handed the result of a step that had the person's documents: write what it needs into its prompt, and no document URLs. Default 'full'.",
     },
   },
 }
 
-async function sessionDoc(ctx) {
-  return ctx.sessionUrl ? (await ctx.repo.find(ctx.sessionUrl)).doc() : null
+/** What these tools work through, or why they cannot work here. */
+function workflows(ctx) {
+  if (!ctx.workflows?.repo) throw new Error("This runner cannot run workflows.")
+  return ctx.workflows
 }
+
+const drive = (url, ctx) => drivePlanHere(url, { repo: workflows(ctx).repo, events: ctx.events, startSession: workflows(ctx).startSession ?? null })
 
 /** The plan to act on: the one named, else the last this session started. */
 async function planUrlFor(input, ctx) {
   if (input.plan) return input.plan
-  const made = (await sessionDoc(ctx))?.made ?? []
+  const made = sessionDoc(ctx)?.made ?? []
   const last = [...made].reverse().find((m) => m.kind === "agent-workflow")
   if (!last) throw new Error("Name the workflow with `plan`: this session has not started one.")
   return last.url
@@ -64,8 +75,10 @@ export function describePlan(plan, url) {
     `${plan.title} — ${plan.status} (${url})`,
     `Goal: ${plan.goal}`,
     `Tokens: ${((plan.usage?.in ?? 0) + (plan.usage?.out ?? 0)).toLocaleString("en")} of ${(plan.limits?.tokens ?? DEFAULT_LIMITS.tokens).toLocaleString("en")}${formatCost(plan.usage) ? ` · cost so far ${formatCost(plan.usage)}` : ""}`,
-    "",
   ]
+  const kept = keptCounts(plan)
+  if (kept.sources + kept.findings) lines.push(`Research kept: ${kept.sources} sources, ${kept.findings} findings — Sources: ${plan.sourcesFolderUrl}`)
+  lines.push("")
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
     lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier}${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
@@ -99,7 +112,7 @@ export const workflowStart = {
     },
   },
   async execute(input, ctx) {
-    const session = await sessionDoc(ctx)
+    const session = sessionDoc(ctx)
     const settings = session?.config?.workflows ?? {}
     if (!settings.enabled) throw new Error("Workflows are switched off for this session. The person can turn them on in the agent's settings.")
     const limits = {
@@ -109,22 +122,36 @@ export const workflowStart = {
     const errors = validateSteps({ steps: [], limits }, input.steps)
     if (errors.length) throw new Error(`The plan cannot run:\n- ${errors.join("\n- ")}`)
 
-    const handle = await ctx.repo.create2()
+    const { repo } = workflows(ctx)
+    // Where the research steps' kept sources and findings are filed for the
+    // person, as the driver finds them in the plan's ledger. Made here, once,
+    // rather than by the driver on first need: two tabs driving one plan could
+    // each make one.
+    const folderTitle = `Sources · ${input.title}`
+    const folder = await repo.create2()
+    folder.change((d) => {
+      d["@patchwork"] = { type: "folder" }
+      d.title = folderTitle
+      d.docs = []
+    })
+    const handle = await repo.create2()
     handle.change((d) =>
       initPlan(d, {
         title: input.title,
         goal: input.goal,
         subject: ctx.subject ?? null,
-        sessionUrl: ctx.sessionUrl ?? null,
+        sessionUrl: ctx.session?.url ?? null,
         tiers: { ...DEFAULT_TIER_MODELS, ...(settings.tiers ?? {}) },
         limits,
         steps: input.steps,
+        sourcesFolderUrl: folder.url,
       })
     )
-    await drivePlanHere(handle.url, { repo: ctx.repo, events: ctx.events, startSession: ctx.startStepSession })
+    await drive(handle.url, ctx)
     return {
       text: `${describePlan(handle.doc(), handle.url)}\n\nRunning. You will be woken as steps finish; there is nothing to wait for in this turn.`,
       doc: { url: handle.url, name: input.title, kind: "agent-workflow" },
+      made: [{ url: folder.url, name: folderTitle, kind: "folder" }],
     }
   },
   summarize(input) {
@@ -149,7 +176,7 @@ export const workflowAddSteps = {
   },
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
-    const handle = await ctx.repo.find(url)
+    const handle = await workflows(ctx).repo.find(url)
     const plan = handle.doc()
     if (plan.status === PLAN.stopped) throw new Error("That workflow was stopped. Start a new one.")
     const errors = validateSteps(plan, input.steps)
@@ -160,7 +187,7 @@ export const workflowAddSteps = {
       // Running again: its next end is news again.
       d.reportedEnd = false
     })
-    await drivePlanHere(url, { repo: ctx.repo, events: ctx.events, startSession: ctx.startStepSession })
+    await drive(url, ctx)
     return describePlan(handle.doc(), url)
   },
   summarize(input) {
@@ -180,7 +207,7 @@ export const workflowStatus = {
   },
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
-    return describePlan((await ctx.repo.find(url)).doc(), url)
+    return describePlan((await workflows(ctx).repo.find(url)).doc(), url)
   },
   summarize(input, output) {
     return `workflow ${String(output ?? "").split("\n")[0].split(" — ")[1]?.split(" ")[0] ?? ""}`
@@ -202,9 +229,9 @@ export const workflowStop = {
   },
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
-    const driver = getDriver(url) ?? (await drivePlanHere(url, { repo: ctx.repo, events: ctx.events, startSession: ctx.startStepSession }))
+    const driver = getDriver(url) ?? (await drive(url, ctx))
     await driver.cancel(input.steps?.length ? input.steps : null)
-    return describePlan((await ctx.repo.find(url)).doc(), url)
+    return describePlan((await workflows(ctx).repo.find(url)).doc(), url)
   },
   summarize(input) {
     return input?.steps?.length ? `cancelled ${input.steps.join(", ")}` : "stopped workflow"
@@ -232,11 +259,12 @@ export const workflowAnswer = {
   },
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
-    const plan = (await ctx.repo.find(url)).doc()
+    const { repo } = workflows(ctx)
+    const plan = (await repo.find(url)).doc()
     const step = plan.steps.find((s) => s.id === input.step)
     if (!step) throw new Error(`No step '${input.step}' in this workflow.`)
     if (!step.sessionUrl) throw new Error(`Step '${input.step}' has not started.`)
-    const handle = await ctx.repo.find(step.sessionUrl)
+    const handle = await repo.find(step.sessionUrl)
     const items = waitingIn(handle.doc())
     const question = items.find((item) => item.kind === "question")
     if (!question) {

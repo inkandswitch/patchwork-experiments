@@ -88,6 +88,7 @@ export const OUTCOME = {
  * @param {object} opts.provider   provider adapter (providers/)
  * @param {object} opts.toolset    from tools/buildToolset
  * @param {object} opts.ctx        tool execution context { repo, subject, ... }
+ * @param {(tool:object)=>object|null} [opts.privileged] fields one tool gets beyond `ctx`
  * @param {string} opts.runnerUrl  identity of this runner, for the lease
  * @param {number} opts.generation lease generation this runner believes it holds
  * @param {AbortSignal} [opts.signal]
@@ -129,6 +130,7 @@ export async function run(opts) {
     provider,
     toolset,
     ctx,
+    privileged: opts.privileged ?? (() => null),
     runnerUrl,
     generation,
     signal,
@@ -151,6 +153,7 @@ export async function run(opts) {
     // report one.
     prices: modelInfo ? { promptPerM: modelInfo.promptPerM ?? null, completionPerM: modelInfo.completionPerM ?? null } : null,
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
+    sessionUrl: opts.sessionUrl ?? null,
   }
 
   // What earlier sessions learned. Read once per run, so a note written in one
@@ -457,7 +460,7 @@ async function streamTurn(opts) {
     model: store.doc().config?.model,
     params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
     capabilities: opts.capabilities ?? null,
-    cacheKey: sessionKey(opts.ctx?.sessionUrl),
+    cacheKey: sessionKey(opts.sessionUrl ?? opts.ctx?.sessionUrl),
     key: opts.key ?? null,
     signal,
     onRetry: (info) => {
@@ -588,7 +591,7 @@ async function streamTurn(opts) {
  * lease lost); returns null when it should continue to the next model turn.
  */
 async function executeCalls(opts) {
-  const { store, toolset, ctx, signal, runnerUrl, generation, canRun, emit, stillOurs } = opts
+  const { store, toolset, ctx, privileged, signal, runnerUrl, generation, canRun, emit, stillOurs } = opts
 
   const runnable = runnableCalls(store.doc())
   if (!runnable.length) return null
@@ -628,7 +631,12 @@ async function executeCalls(opts) {
     // `events` is the session's, under this tool's name, so news it delivers
     // later says where it came from (events.js).
     const events = ctx.events?.forTool(call.tool)
-    const outcome = await runTool(tool, call.input, { ...ctx, signal, events })
+    // `recall` reads this conversation's own transcript through the store, the
+    // same way in every runner and whatever else the context lacks: it is the
+    // one thing of the session's a research step may read. What only this
+    // tool may have — the capability to write a plan or this session — is
+    // added for this call alone, so no other tool ever holds it.
+    const outcome = await runTool(tool, call.input, { ...ctx, ...privileged(tool), signal, events, recall: storeRecall(store) })
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
     store.change((d) => {
@@ -657,6 +665,11 @@ async function executeCalls(opts) {
 
   commitResults(store, results)
   return null
+}
+
+/** This conversation's turns, as they are when asked: what session_recall reads. */
+export function storeRecall(store) {
+  return () => store.doc()?.turns ?? []
 }
 
 function commitResults(store, results) {

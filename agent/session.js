@@ -532,10 +532,9 @@ export function recordArtifact(doc, ref) {
     entry.chars = ref.chars ?? null
   }
   doc.made.unshift(entry)
-  // Only what is not a kept source is capped. For a web-only step this list
-  // is also what it may read with source_read, so dropping an old source
-  // would leave its fetch result pointing at something the step is then
-  // refused, and it would fetch the page again.
+  // Only what is not a kept source is capped: this list is what a later fetch
+  // checks before going to the network, so dropping an old source would send
+  // the session out for a page it already has.
   let others = doc.made.filter((a) => !a.source).length
   for (let i = doc.made.length - 1; i >= 0 && others > MAX_ARTIFACTS; i--) {
     if (doc.made[i].source) continue
@@ -1079,6 +1078,7 @@ export function rejectSentImages(doc, { maxImages = MAX_IMAGES_IN_REQUEST } = {}
 export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []
   const turns = doc.turns ?? []
+  const confined = doc.scope != null
 
   // Find which result blocks still get to carry their image, and which calls
   // have an answer at all.
@@ -1125,7 +1125,10 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
       if (block.type === "text") {
         if (block.text) content.push({ type: "text", text: block.text })
       } else if (block.type === "context") {
-        content.push({ type: "text", text: describeContext(block) })
+        // What a person had open is the names and URLs of their documents. A
+        // research step must never hold those (scope.js), and the view adds
+        // this note on its own, unasked, so it is not sent to one.
+        if (!confined) content.push({ type: "text", text: describeContext(block) })
       } else if (block.type === "event") {
         content.push({ type: "text", text: describeEvent(block) })
       } else if (block.type === "call") {

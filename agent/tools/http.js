@@ -112,7 +112,9 @@ export const httpRequest = {
     }
 
     const { ref, marks } = await keepResponse(ctx, { source: url, response, body, at })
-    const filing = `To put it in a folder — a package that needs it — use source_file {source:"${ref.url}", folder:"…"}.`
+    // A research step has no source_file, and a result that names a tool the
+    // step lacks is a dead end it walks into; what it keeps is filed for it.
+    const filing = ctx.scope ? null : `To put it in a folder — a package that needs it — use source_file {source:"${ref.url}", folder:"…"}.`
 
     if (!textual) {
       return {
@@ -121,7 +123,7 @@ export const httpRequest = {
           `Kept as bytes — NOT decoded, so the file is intact.`,
           `First bytes: ${describeBytes(body)}`,
           `Kept as '${ref.name}' at ${ref.url}.`,
-          filing,
+          ...(filing ? [filing] : []),
         ].join("\n"),
         doc: ref,
       }
@@ -148,6 +150,41 @@ export const httpRequest = {
       /* keep the raw string */
     }
     return `${(input?.method ?? "GET").toUpperCase()} ${host} · ${status ? status[1] : "?"}`
+  },
+}
+
+/**
+ * http_request as a research step has it (scope.js): GET and HEAD, never a
+ * body. A research step may fetch any site without asking, which is fine for
+ * reading; a request that changes something at the other end is not a read,
+ * and with no one asked there is no one to have agreed to it. What it gets
+ * back is kept like any other fetch.
+ */
+export const scopedHttpRequest = {
+  ...httpRequest,
+  description: [
+    "Fetch a URL with GET (or HEAD, for headers only) and keep the response: for JSON APIs, files, and a page's own source. web_fetch is for reading pages.",
+    "",
+    "Every successful GET is kept as a document, exactly as it came: text decoded, binary as bytes. The result says where; read more of a long text response with source_read.",
+    "",
+    "A research step sends no request bodies and makes no other kind of request. In a browser the target must serve permissive CORS.",
+  ].join("\n"),
+  alwaysAsk: false,
+  input_schema: {
+    type: "object",
+    required: ["url"],
+    properties: {
+      url: httpRequest.input_schema.properties.url,
+      method: { type: "string", enum: ["GET", "HEAD"], description: "GET (the default) or HEAD." },
+      headers: httpRequest.input_schema.properties.headers,
+      maxChars: httpRequest.input_schema.properties.maxChars,
+    },
+  },
+  async execute(input, ctx) {
+    const method = String(input?.method ?? "GET").toUpperCase()
+    if (method !== "GET" && method !== "HEAD") throw new Error("A research step makes only GET and HEAD requests.")
+    if (input?.body != null) throw new Error("A research step sends no request body.")
+    return httpRequest.execute({ ...input, method }, ctx)
   },
 }
 

@@ -756,18 +756,27 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
   steps run side by side; host steps take turns on the page.
 - **access: web** for research — finding sources, reading datasheets and
-  standards. The step gets \`web_search\`, \`web_fetch\`, \`http_request\`,
-  \`source_read\`, \`source_list\` and \`session_recall\` and nothing else, so
-  it can fetch without asking anyone (it can reach none of the person's
-  documents to leak). What it fetches is kept, but it cannot write anything
-  else: ask for its findings, with sources, in its result, and have a later
-  step put them where they belong.
+  standards. The step gets \`web_search\`, \`web_fetch\`, \`http_request\`
+  (GET and HEAD), \`source_read\`, \`source_list\`, \`finding_write\` and
+  \`session_recall\` and nothing else, so it can fetch without asking anyone
+  (it can reach none of the person's documents to leak). Everything it
+  fetches and every finding it writes is kept, shared with the other research
+  steps of the workflow, and filed in the workflow's Sources folder, which the
+  news gives you; later steps can read it there. Ask for what it found, with
+  sources, in its result.
+
+**A research step is never handed what a full step found.** A step with the
+person's documents may have read anything of theirs, and a research step may
+send anything it holds to any site, so its prompt gets only the results of
+other research steps. What it needs from other work, write into its prompt
+yourself — and put no document URLs there: a URL is enough to open a
+document, and the step could hand it to a site.
 
 **Before you write a step, check that its tools can do it.** A step cannot do
 what its toolset does not allow, and it will spend its whole budget finding
-that out. A web step cannot edit a document, mount a view or file what it
-fetched; a worker step cannot touch the page. If the work needs both, split it
-into steps that each have what they need.
+that out. A web step cannot edit or file a document or mount a view; a worker
+step cannot touch the page. If the work needs both, split it into steps that
+each have what they need.
 
 ## Fanning out, and finishing
 
@@ -899,6 +908,21 @@ out; pass \`fresh: true\` when you need what the page says now.
 **Filing.** A kept source is not in any folder. When the person wants it kept
 somewhere they will find it, or a package needs the file,
 \`source_file { source, folder, name }\` puts it there.
+
+**In a research step** (a workflow step that can reach only the web), what is
+kept is shared with the workflow's other research steps: \`source_list\` lists
+what all of them have kept, and a page another step fetched answers your
+\`web_fetch\` without going out. You cannot file anything; the workflow files
+what you keep in its Sources folder for the person. What you can do is write
+down what you learn as you go, with \`finding_write\`:
+
+    finding_write { title: "Pack cell options", text: "…", cites: ["automerge:..."] }
+    finding_write { finding: "automerge:...", text: "one more thing" }   add to it
+
+A finding is kept like a source: you and the other steps read it back with
+\`source_read\`, it survives when older results are shortened, and the person
+can read it. Cite the kept sources it rests on. A finding someone has edited
+since cannot be written over; write a new one.
 
 ## Being asked for permission
 

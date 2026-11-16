@@ -120,7 +120,7 @@ describe("workflow_answer", () => {
   it("answers the step's question, and the step can carry on", async () => {
     const repo = new Repo({ network: [] })
     const { plan, child } = planWaiting(repo, "question")
-    const out = await workflowAnswer.execute({ plan: plan.url, step: "research", answer: "metric" }, { repo })
+    const out = await workflowAnswer.execute({ plan: plan.url, step: "research", answer: "metric" }, { workflows: { repo } })
     expect(out).toMatch(/Metric or imperial\?" → metric/)
     expect(waitingIn(child.doc())).toEqual([])
     expect(JSON.stringify(child.doc().turns.at(-1))).toContain("metric")
@@ -129,7 +129,7 @@ describe("workflow_answer", () => {
   it("cannot grant a permission, and says so", async () => {
     const repo = new Repo({ network: [] })
     const { plan } = planWaiting(repo, "approval")
-    await expect(workflowAnswer.execute({ plan: plan.url, step: "research", answer: "yes" }, { repo })).rejects.toThrow(/permission to run web_fetch, which only the person can give/)
+    await expect(workflowAnswer.execute({ plan: plan.url, step: "research", answer: "yes" }, { workflows: { repo } })).rejects.toThrow(/permission to run web_fetch, which only the person can give/)
   })
 })
 
@@ -217,7 +217,8 @@ describe("end to end: a step asks, the orchestrator answers", () => {
           return [{ type: "text", delta: `Specs in ${told} units.` }]
         },
       ])
-      const runner = run(handle, provider, (doc) => buildToolset(doc, { skipPlugins: true }))
+      // With the repo: a runner checks a step's session against its plan.
+      const runner = run(handle, provider, (doc) => buildToolset(doc, { skipPlugins: true }), { repo })
       return { runner, listen: () => {} }
     }
 

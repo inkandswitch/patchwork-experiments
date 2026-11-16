@@ -13,7 +13,7 @@
 
 import { states, STATE, PLAN, DEFAULT_LIMITS } from "./plan.js"
 import { formatCost } from "../session.js"
-import { drivePlanHere, getDriver } from "./driver.js"
+import { drivePlanHere, getDriver, keptCounts } from "./driver.js"
 import { waitingIn } from "./waiting.js"
 import { renderWaitingItem } from "../ui/waiting.js"
 
@@ -138,6 +138,10 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     )
     if (step.after?.length) meta.append(el("span", "agent-wf-after", `after ${step.after.join(", ")}`))
     card.append(meta)
+    if (step.access === "web") {
+      const { sources, findings } = keptCounts(handle.doc(), step.id)
+      if (sources || findings) card.append(el("p", "agent-wf-kept", `kept ${sources} source${sources === 1 ? "" : "s"} · ${findings} finding${findings === 1 ? "" : "s"}`))
+    }
     if (step.why) card.append(el("p", "agent-wf-why", step.why))
 
     const session = step.sessionUrl ? sessionDoc(step.sessionUrl) : null
@@ -162,7 +166,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       details.append(el("pre", null, step.result))
       card.append(details)
     }
-    if (step.error && state === STATE.failed) card.append(el("p", "agent-wf-error", step.error))
+    if (step.error && (state === STATE.failed || state === STATE.cancelled)) card.append(el("p", "agent-wf-error", step.error))
 
     if (step.sessionUrl) {
       const open = el("button", "agent-wf-open", state === STATE.needsInput ? "Answer in its session" : "Open session")
@@ -221,6 +225,19 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
         openDoc(plan.sessionUrl)
       })
       actions.append(orchestrator)
+    }
+    if (plan.sourcesFolderUrl) {
+      // What the research steps kept, filed for people. Shown once there is
+      // something in it; the count is the ledger's, which the folder follows.
+      const { sources, findings } = keptCounts(plan)
+      if (sources + findings) {
+        const kept = el("button", "agent-wf-sources", `Sources (${sources + findings})`)
+        kept.addEventListener("click", (event) => {
+          event.preventDefault()
+          openDoc(plan.sourcesFolderUrl)
+        })
+        actions.append(kept)
+      }
     }
     if (plan.status === PLAN.running) {
       const stop = el("button", null, "Stop workflow")

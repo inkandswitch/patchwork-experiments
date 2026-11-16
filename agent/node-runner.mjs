@@ -96,8 +96,9 @@ async function claim(sessionUrl) {
   const runner = new SessionRunner({
     store,
     runnerUrl,
-    // The session's own URL, so it can recall earlier results and tell which
-    // sources it kept.
+    // The runner decides from the session document what of this the tools
+    // get (runner.js, scope.js): a research step gets none of the subject and
+    // a repo that opens only its workflow's ledger.
     ctx: { ...baseCtx, sessionUrl, subject: doc.subject ?? null, events: createEvents(store) },
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),

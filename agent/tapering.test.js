@@ -272,8 +272,8 @@ describe("getting an elided result back", () => {
       makeTurn("assistant", [callBlock("fs_read", { path: "big.js" }, { id: "c1" })]),
       makeTurn("tool", [resultBlock("c1", output, { summary })]),
     ]
-    const repo = { async find() { return { doc: () => doc } } }
-    return { doc, ctx: { repo, sessionUrl: "automerge:session" } }
+    // As the loop hands it to every call: the transcript, through the store.
+    return { doc, ctx: { recall: () => doc.turns } }
   }
 
   it("returns exactly what the call said, without running anything", async () => {
@@ -310,7 +310,7 @@ describe("getting an elided result back", () => {
   })
 
   it("says plainly when the runner cannot see the conversation", async () => {
-    await expect(sessionRecall.execute({ callId: "c1" }, { repo: {} })).rejects.toThrow(/cannot reach the conversation/)
+    await expect(sessionRecall.execute({ callId: "c1" }, {})).rejects.toThrow(/cannot reach the conversation/)
   })
 
   it("closes the loop: what the stand-in points at is what comes back", async () => {

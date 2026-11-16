@@ -14,6 +14,10 @@ export const AgentWorkflowDatatype = {
     doc.limits = { ...DEFAULT_LIMITS }
     doc.usage = { in: 0, out: 0 }
     doc.steps = []
+    // The research steps' ledger, and where it is filed for people (plan.js).
+    doc.sources = {}
+    doc.sourcesFolderUrl = null
+    doc.sourcesFiled = {}
   },
   getTitle(doc) {
     return doc.title || "Workflow"

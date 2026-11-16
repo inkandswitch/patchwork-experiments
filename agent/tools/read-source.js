@@ -11,14 +11,15 @@
  * jump to a heading, search for a phrase, and see what it already holds before
  * reaching for the network.
  *
- * Which documents a session may read through these is decided in one place,
- * `readSet`. For now a web-only step (its session says `workflow.access:
- * "web"`) may read only what it kept itself, recorded in its `made`; every
- * other session may read any document it can name, as doc_read already can.
+ * Which documents these may open is the repo's to decide, not theirs. In a
+ * research step the repo is scoped (scope.js): it opens only the workflow's
+ * ledger of kept things, at the versions recorded there, and refuses anything
+ * else before asking for it. Anywhere else these read any document they are
+ * given, as doc_read already can.
  */
 
 import { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { readable, sessionDoc, headingAt, outline, formatOf, readOn } from "./sources.js"
+import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
 import { bytes } from "./format.js"
 
 export const READ_LIMIT = 8000
@@ -33,18 +34,6 @@ function canonical(source) {
   } catch {
     return null
   }
-}
-
-/**
- * Which documents this session may read here: null for any, else a set of
- * canonical ids. A session that cannot be reached gets nothing, because there
- * is then no way to tell whether it is confined.
- */
-async function readSet(ctx) {
-  const session = await sessionDoc(ctx)
-  if (!session) throw new Error("This runner cannot reach the conversation, so it cannot tell which sources it may read.")
-  if (session.workflow?.access !== "web") return null
-  return new Set((session.made ?? []).map((entry) => canonical(entry.url)).filter(Boolean))
 }
 
 /**
@@ -92,24 +81,16 @@ function around(text, at, length) {
 /**
  * The handle for a whole document, however it was named, at the heads the
  * name pins if it pins any. A path in the name would open a part of the
- * document instead, which is not a source; `allowed`, when given, is the set
- * of canonical ids the session may open.
+ * document instead, which is not a source.
  */
-export async function openDocument(source, repo, allowed = null) {
+export async function openDocument(source, repo) {
   const name = String(source ?? "").trim()
   const id = canonical(name)
   if (!id) throw new Error(`'${name}' does not name a document. Pass the automerge: URL a fetch gave you.`)
-  if (allowed && !allowed.has(id)) throw new Error("Not one of the sources this step has kept.")
   const heads = isValidAutomergeUrl(name) ? parseAutomergeUrl(name).heads : undefined
   const handle = await repo.find(stringifyAutomergeUrl({ documentId: id, heads }))
   if (!handle.doc()) throw new Error(`${name} could not be loaded.`)
   return handle
-}
-
-/** Open a source this session may read, or say why not. */
-async function openSource(source, ctx, allowed) {
-  const handle = await openDocument(source, ctx.repo, allowed)
-  return { doc: handle.doc(), url: handle.url }
 }
 
 const titleOf = (doc) => doc.name ?? doc.title ?? "untitled"
@@ -119,7 +100,7 @@ export const sourceRead = {
   name: "Read a kept source",
   target: { fields: ["source"] },
   description: [
-    "Read a fetched page, PDF or response that was kept as a document — every web_fetch and http_request result names one. Free, instant, and the offsets never shift, so prefer it to fetching again.",
+    "Read a fetched page, PDF or response that was kept as a document — every web_fetch and http_request result names one — or a finding a research step wrote. Free, instant, and the offsets never shift, so prefer it to fetching again.",
     "",
     "Page through with `offset` and `limit`: the result says which heading you are under and where to read on. Or pass `find` to search: it lists each match with its offset and the heading it is under, and then you read from one of those offsets.",
   ].join("\n"),
@@ -140,8 +121,9 @@ export const sourceRead = {
   },
 
   async execute(input, ctx) {
-    const allowed = await readSet(ctx)
-    const { doc, url } = await openSource(input.source, ctx, allowed)
+    const handle = await openDocument(input.source, ctx.repo)
+    const doc = handle.doc()
+    const url = handle.url
     const name = titleOf(doc)
     const text = readable(doc)
     if (text == null) {
@@ -188,7 +170,7 @@ export const sourceList = {
   name: "List kept sources",
   target: "none",
   description: [
-    "List the sources this conversation has kept — every page, PDF and response fetched — newest first, with each one's size and URL. Check it before fetching: what is here is free to read with source_read.",
+    "List the sources kept so far — every page, PDF and response fetched, and in a research step every finding written — newest first, with each one's size and URL. Check it before fetching: what is here is free to read with source_read.",
     "",
     "Pass `find` to search all of them at once: it says how many times each one mentions it and where the first mention is.",
   ].join("\n"),
@@ -202,9 +184,10 @@ export const sourceList = {
   },
 
   async execute(input, ctx) {
-    const allowed = await readSet(ctx)
-    const session = await sessionDoc(ctx)
-    const kept = (session?.made ?? []).filter((entry) => entry.source && (!allowed || allowed.has(canonical(entry.url))))
+    if (!ctx.scope && !sessionDoc(ctx)) throw new Error("This runner cannot reach the conversation, so it cannot tell what was kept.")
+    // A research step lists the workflow's ledger, findings included: they are
+    // what it and its sibling steps have learned, and as readable as a page.
+    const kept = ctx.scope ? ctx.repo.sources() : keptSources(ctx)
     if (!kept.length) return "Nothing has been kept yet. Every web_fetch and http_request keeps what it fetched."
 
     const find = String(input.find ?? "")
@@ -218,7 +201,7 @@ export const sourceList = {
         /* listed below as unreadable */
       }
       const text = readable(doc)
-      const what = doc?.role === "extract" ? "extract" : doc?.mimeType === "application/pdf" ? "pdf" : "file"
+      const what = entry.what ?? (doc?.role === "extract" ? "extract" : doc?.mimeType === "application/pdf" ? "pdf" : "file")
       const size = text != null ? `${text.length} chars` : doc ? "binary" : "not loaded"
       if (find.trim()) {
         if (text == null) continue
@@ -227,7 +210,7 @@ export const sourceList = {
         hits++
         lines.push(`${entry.name} · ${count} match${count === 1 ? "" : "es"}, first at ${matches[0].at} · ${entry.url}`)
       } else {
-        lines.push(`${entry.name} · ${what} · ${size} · ${entry.url} · ${entry.source}`)
+        lines.push([entry.name, what, size, entry.url, entry.source, entry.by ? `by ${entry.by}` : null].filter(Boolean).join(" · "))
       }
     }
     if (find.trim()) {

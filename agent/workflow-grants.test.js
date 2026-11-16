@@ -4,7 +4,7 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initPlan, PLAN, STEP, validateSteps, WEB_TOOL_IDS } from "./workflow/plan.js"
+import { initPlan, PLAN, STEP, validateSteps } from "./workflow/plan.js"
 import { WorkflowDriver, WEB_GRANT, _resetDrivers } from "./workflow/driver.js"
 import { initSession, makeTurn, textBlock, callBlock, claimLease, CALL, STATUS, _resetIds } from "./session.js"
 import { renderWaitingItem } from "./ui/waiting.js"
@@ -74,15 +74,30 @@ describe("web-only research steps", () => {
     expect(validateSteps(plan, [step("r", { access: "everything" })]).join()).toMatch(/'access' must be/)
   })
 
-  it("get web tools only, and may fetch any site", async () => {
+  it("are confined by their session's scope, about no document, and may fetch any site", async () => {
     const { repo, plan, make } = setup([step("research", { access: "web" })])
     const driver = make()
     driver.start()
     await settle(driver)
     const session = (await sessionOf(repo, plan, "research")).doc()
-    expect(session.tools).toEqual({ enabled: WEB_TOOL_IDS })
-    expect(session.grants[WEB_GRANT]).toBe("session")
-    expect(session.workflow.access).toBe("web")
+    // The scope is the whole of what decides its tools and its reach
+    // (scope.js); there is no tool list to edit and no access flag beside it.
+    expect(session.scope).toEqual({ kind: "web", ledgerUrl: plan.url, stepId: "research" })
+    expect(session.tools).toBeUndefined()
+    expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl })
+    expect(session.subject).toBeNull()
+    expect({ ...session.grants }).toEqual({ [WEB_GRANT]: "session" })
+  })
+
+  it("and a full step gets none of that", async () => {
+    const { repo, plan, make } = setup([step("build")])
+    const driver = make()
+    driver.start()
+    await settle(driver)
+    const session = (await sessionOf(repo, plan, "build")).doc()
+    expect(session.scope).toBeUndefined()
+    expect(session.tools).toEqual({ enabled: ["doc_read"] })
+    expect(session.grants[WEB_GRANT]).toBeUndefined()
   })
 })
 
@@ -113,6 +128,25 @@ describe("one job, one set of permissions", () => {
     expect((await sessionOf(repo, plan, "research")).doc().grants[WEB_GRANT]).toBe("session")
     expect((await sessionOf(repo, plan, "build")).doc().grants[WEB_GRANT]).toBeUndefined()
     expect(orchestrator.doc().grants[WEB_GRANT]).toBeUndefined()
+  })
+
+  it("a research step neither gives nor receives: not the orchestrator's grants, not its siblings', not its own", async () => {
+    const { repo, plan, orchestrator, make } = setup([step("research", { access: "web" }), step("build")])
+    orchestrator.change((d) => { d.grants["files@*"] = "session" })
+    const driver = make()
+    driver.start()
+    await settle(driver)
+    const research = await sessionOf(repo, plan, "research")
+    const build = await sessionOf(repo, plan, "build")
+    expect(build.doc().grants["files@*"]).toBe("session") // a full step receives
+
+    build.change((d) => { d.grants["web@dnv.com"] = "session" })
+    research.change((d) => { d.grants["doc_edit@*"] = "always" })
+    await settle(driver)
+
+    expect({ ...research.doc().grants }).toEqual({ [WEB_GRANT]: "session", "doc_edit@*": "always" })
+    expect(orchestrator.doc().grants["web@dnv.com"]).toBe("session") // full steps still share
+    for (const full of [orchestrator, build]) expect(full.doc().grants["doc_edit@*"]).toBeUndefined()
   })
 
   it("never covers the account's own documents", async () => {

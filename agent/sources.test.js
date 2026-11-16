@@ -32,6 +32,9 @@ function fakeRepo(session = { made: [] }) {
   }
 }
 
+/** The session as the runner hands it to tools: its own document, through the store. */
+const sessionOf = (repo) => ({ url: SESSION, doc: () => repo.session, change: (fn) => fn(repo.session) })
+
 const respond = (body, { status = 200, type = "text/plain", url = "" } = {}) => ({
   ok: status >= 200 && status < 300,
   status,
@@ -246,7 +249,8 @@ describe("what the session remembers it kept", () => {
         { url: "automerge:old", source: "https://x.test/", engine: "reader-markdown", at: 1, chars: 10 },
       ],
     }
-    const ctx = { repo: fakeRepo(session), sessionUrl: SESSION }
+    const repo = fakeRepo(session)
+    const ctx = { repo, session: sessionOf(repo) }
     expect((await findKept(ctx, { source: "https://x.test/", engines: ["reader-markdown"] }))?.url).toBe("automerge:old")
     expect((await findKept(ctx, { source: "https://x.test/", engines: ["reader-markdown", "reader-text"] }))?.url).toBe("automerge:new")
     expect(await findKept(ctx, { source: "https://x.test/other", engines: ["reader-markdown"] })).toBeNull()
@@ -275,7 +279,7 @@ describe("web_fetch answers from what was already kept", () => {
     const repo = fakeRepo(session)
     let requests = 0
     const fetchImpl = async () => (requests++, respond("Title: Page\n\nfresh words"))
-    const out = await webFetch.execute({ url: URL_, format, fresh }, { repo, sessionUrl: SESSION, fetchImpl })
+    const out = await webFetch.execute({ url: URL_, format, fresh }, { repo, session: sessionOf(repo), fetchImpl })
     if (hit) {
       expect(requests).toBe(0)
       expect(out.text).toBe('Already kept at automerge:kept (fetched 14:02 UTC). source_read {source:"automerge:kept", offset:0}. Pass fresh:true to fetch again.')
@@ -291,32 +295,32 @@ describe("web_fetch answers from what was already kept", () => {
     const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37])
     const MARKDOWN = "Title: Paper\n\nNumber of Pages: 1\n\nwords"
     const repo = fakeRepo()
-    const kept = await runTool(httpRequest, { url: PDF_URL }, { repo, sessionUrl: SESSION, fetchImpl: async () => respond(PDF, { type: "application/pdf" }) })
+    const kept = await runTool(httpRequest, { url: PDF_URL }, { repo, session: sessionOf(repo), fetchImpl: async () => respond(PDF, { type: "application/pdf" }) })
     recordArtifact(repo.session, kept.doc)
     expect(repo.session.made[0]).toMatchObject({ source: PDF_URL, engine: "raw", chars: null })
 
     const seen = []
     const fetchImpl = async (url) => (seen.push(url), url.startsWith("https://r.test/") ? respond(MARKDOWN) : respond(PDF, { type: "application/pdf" }))
-    const read = await webFetch.execute({ url: PDF_URL }, { repo, sessionUrl: SESSION, reader: "https://r.test/", fetchImpl })
+    const read = await webFetch.execute({ url: PDF_URL }, { repo, session: sessionOf(repo), reader: "https://r.test/", fetchImpl })
     expect(seen).toEqual([`https://r.test/${PDF_URL}`, PDF_URL])
     expect(read.doc.url).not.toBe(kept.doc.url)
     recordArtifact(repo.session, read.doc)
 
-    const again = await webFetch.execute({ url: PDF_URL }, { repo, sessionUrl: SESSION, fetchImpl: async () => { throw new Error("no request") } })
+    const again = await webFetch.execute({ url: PDF_URL }, { repo, session: sessionOf(repo), fetchImpl: async () => { throw new Error("no request") } })
     expect(again.text.startsWith(`Already kept at ${read.doc.url} `)).toBe(true)
   })
 
   it("does not answer for a different URL", async () => {
     const session = { made: [{ url: "automerge:kept", source: `${URL_}/other`, engine: "reader-markdown", at: 1, chars: 10 }] }
     let requests = 0
-    await webFetch.execute({ url: URL_ }, { repo: fakeRepo(session), sessionUrl: SESSION, fetchImpl: async () => (requests++, respond("x")) })
+    await webFetch.execute({ url: URL_ }, { repo: fakeRepo(session), session: { doc: () => session }, fetchImpl: async () => (requests++, respond("x")) })
     expect(requests).toBe(1)
   })
 })
 
 describe("web_fetch keeps every page it reads", () => {
   const page = `Title: A Long Page\n\n# A Long Page\n\n${"y".repeat(20000)}\n\n## Later\n\nend`
-  const ctx = (repo) => ({ repo, sessionUrl: SESSION, fetchImpl: async () => respond(page) })
+  const ctx = (repo) => ({ repo, session: sessionOf(repo), fetchImpl: async () => respond(page) })
 
   it("keeps the reader's extract, labelled as one, and shows the start of it", async () => {
     const repo = fakeRepo()
@@ -345,7 +349,7 @@ describe("web_fetch keeps every page it reads", () => {
     const repo = fakeRepo()
     const out = await webFetch.execute(
       { url: "https://example.test/small" },
-      { repo, sessionUrl: SESSION, fetchImpl: async () => respond("Title: Small\n\njust a paragraph") }
+      { repo, session: sessionOf(repo), fetchImpl: async () => respond("Title: Small\n\njust a paragraph") }
     )
     expect(repo.docs.size).toBe(2) // the session and the kept page
     expect(out.text).toContain("— all 30 characters shown")

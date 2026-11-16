@@ -101,6 +101,41 @@ describe("the workflow view", () => {
     cleanup()
   })
 
+  it("links what the research steps kept, and says on each research step how much it kept", async () => {
+    const { repo, plan } = await planWith([step("r", { access: "web" }), step("b")], { status: PLAN.stopped })
+    const { element, cleanup } = mount(plan, repo)
+    // Nothing kept yet: no link to an empty folder, no count.
+    expect(element.querySelector(".agent-wf-sources")).toBeNull()
+    expect(element.querySelector(".agent-wf-kept")).toBeNull()
+
+    plan.change((d) => {
+      d.sourcesFolderUrl = "automerge:sources-folder"
+      d.sources = {
+        a: { kind: "source", what: "extract", by: "r" },
+        b: { kind: "finding", what: "finding", by: "r" },
+        c: { kind: "source", what: null, by: "r" }, // made, not yet written
+      }
+    })
+    const opened = []
+    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url))
+    const link = element.querySelector(".agent-wf-sources")
+    expect(link.textContent).toBe("Sources (2)")
+    link.click()
+    expect(opened).toEqual(["automerge:sources-folder"])
+    const [research, full] = element.querySelectorAll(".agent-wf-step")
+    expect(research.querySelector(".agent-wf-kept").textContent).toBe("kept 1 source · 1 finding")
+    expect(full.querySelector(".agent-wf-kept")).toBeNull()
+    cleanup()
+  })
+
+  it("says why a step was cancelled when there is a reason", async () => {
+    const { repo, plan } = await planWith([step("r", { access: "web" })], { status: PLAN.stopped })
+    plan.change((d) => Object.assign(d.steps[0], { status: STEP.cancelled, error: "its research scope was removed" }))
+    const { element, cleanup } = mount(plan, repo)
+    expect(element.querySelector(".agent-wf-error").textContent).toBe("its research scope was removed")
+    cleanup()
+  })
+
   it("cleans up after itself", async () => {
     const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
     const { element, cleanup } = mount(plan, repo)

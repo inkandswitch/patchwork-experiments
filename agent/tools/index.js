@@ -19,7 +19,8 @@
  * `where` is "worker" | "host" | "task" and decides who may run it.
  * `risk` is "read" | "self" | "edit" | "write" | "external"; see
  * session.needsApproval. "self" touches only this conversation (its document,
- * or a view it opened and is closing) and "edit"
+ * a view it opened and is closing, or — for a research step — what it made
+ * itself and its workflow's findings) and "edit"
  * only to automerge documents, so neither is asked about — except that an
  * `edit` tool's `askWhen(input)` can name calls that write source code, which
  * then need a grant like any `write`.
@@ -32,9 +33,10 @@ import environmentTools from "./environment.js"
 import webTools from "./web.js"
 import checkingTools from "./checking.js"
 import discoveryTools from "./discovery.js"
-import httpTools from "./http.js"
+import httpTools, { scopedHttpRequest } from "./http.js"
 import readSourceTools from "./read-source.js"
 import fileSourceTools from "./file-source.js"
+import findingTools from "./findings.js"
 import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
@@ -46,7 +48,20 @@ import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+
+/**
+ * Tools for one kind of session only. finding_write writes into a research
+ * step's ledger, which only a research step has; source_file writes into a
+ * folder, which a research step may not. Neither toolset ever contains the
+ * other's: buildToolset leaves out SCOPED_ONLY_IDS, and scope.js's
+ * scopedToolset leaves out UNSCOPED_ONLY_IDS.
+ */
+export const SCOPED_ONLY_IDS = ["finding_write"]
+export const UNSCOPED_ONLY_IDS = ["source_file"]
+
+/** The narrower versions of built-ins a research step gets in their place (scope.js). */
+export const SCOPED_VARIANTS = Object.freeze({ http_request: scopedHttpRequest })
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {
@@ -138,10 +153,11 @@ export function builtinToolset() {
 }
 
 /**
- * The toolset for a session: built-ins plus plugins, filtered by what the
- * session has enabled. A session that says nothing gets everything; one whose
- * `enabled` is a list gets exactly that list — so an empty list is no tools,
- * not all of them.
+ * The toolset for a full-access session: built-ins plus plugins, filtered by
+ * what the session has enabled. A session that says nothing gets everything;
+ * one whose `enabled` is a list gets exactly that list — so an empty list is
+ * no tools, not all of them. A research step's toolset is not built here and
+ * does not depend on anything the session says (scope.js).
  */
 export async function buildToolset(sessionDoc, opts = {}) {
   const plugins = opts.skipPlugins ? [] : await loadPluginTools(opts)
@@ -152,7 +168,7 @@ export async function buildToolset(sessionDoc, opts = {}) {
   // Orchestrating is opt-in per session: many sessions, real cost.
   const workflows = !!sessionDoc?.config?.workflows?.enabled
   const chosen = (Array.isArray(enabled) ? all.filter((t) => enabled.includes(t.id)) : all).filter(
-    (t) => !disabled.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id))
+    (t) => !disabled.includes(t.id) && !SCOPED_ONLY_IDS.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id))
   )
 
   const byId = new Map(chosen.map((t) => [t.id, t]))

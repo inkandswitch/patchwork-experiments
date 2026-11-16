@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
-import { WorkflowDriver, sessionOutcome, describeProgress, _resetDrivers } from "./workflow/driver.js"
+import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
+import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "./workflow/driver.js"
+import { scopedRepo } from "./scope.js"
 import { initSession, makeTurn, textBlock, STATUS, CALL } from "./session.js"
 import { buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
 
@@ -218,5 +219,150 @@ describe("which tools a session gets", () => {
     expect(got.every((id) => BUILTIN_TOOLS.find((t) => t.id === id).where === "worker")).toBe(true)
     expect(got).toContain("doc_edit")
     expect(got).not.toContain("view_mount")
+  })
+})
+
+// ------------------------------------------------------------ research steps
+
+describe("filing what research steps kept", () => {
+  /**
+   * A plan whose ledger has `states.length` entries, entry i a finding when i
+   * is odd and a source otherwise, each in one of four states: not filed;
+   * filed (in the folder and marked); half filed (in the folder, not yet
+   * marked, as a driver that lost the plan between its two writes leaves it);
+   * or unwritten (made, and so in the ledger, but nothing written into it yet:
+   * a fetch still under way, or one that crashed).
+   */
+  async function ledgerOf(states) {
+    const repo = new Repo({ network: [] })
+    const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Sources · W", docs: [] })
+    const plan = repo.create({})
+    plan.change((d) => initPlan(d, { title: "W", goal: "G", steps: [], sourcesFolderUrl: folder.url }))
+    const scoped = scopedRepo(repo, plan, { stepId: "r" })
+    const links = []
+    const unwritten = []
+    const write = (made, i) => {
+      made.change((d) => Object.assign(d, { name: `e${i}.md`, role: i % 2 ? "finding" : "extract", content: `entry ${i}` }))
+      return { name: `e${i}.md`, type: "file", url: i % 2 ? made.url : stringifyAutomergeUrl({ documentId: made.documentId, heads: made.heads() }) }
+    }
+    for (const [i, state] of states.entries()) {
+      const made = await scoped.create2()
+      if (state === "unwritten") {
+        unwritten.push(() => write(made, i))
+        continue
+      }
+      const link = write(made, i)
+      links.push(link)
+      if (state !== "unfiled") folder.change((d) => { d.docs.push(link) })
+      if (state === "filed") plan.change((d) => { d.sourcesFiled[made.documentId] = true })
+    }
+    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null, heartbeatMs: 1e9 })
+    drivers.push(driver)
+    driver.hold()
+    return { plan, folder, driver, links, unwritten }
+  }
+
+  const cases = []
+  const grow = (prefix) => {
+    cases.push([prefix.join(",") || "empty", prefix])
+    if (prefix.length < 3) for (const state of ["unfiled", "filed", "half", "unwritten"]) grow([...prefix, state])
+  }
+  grow([])
+
+  it.each(cases)("ledger %s: filing leaves the folder equal to what the ledger describes, and a second pass writes nothing", async (_name, states) => {
+    const { plan, folder, driver, links, unwritten } = await ledgerOf(states)
+    const asSet = (docs) => docs.map((d) => `${d.name} ${d.type} ${d.url}`).sort()
+    const described = () => Object.entries(plan.doc().sources).filter(([, e]) => e.what != null).map(([id]) => id).sort()
+    await driver.fileSources()
+    expect(asSet(folder.doc().docs)).toEqual(asSet(links))
+    expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(described())
+
+    const before = [plan.heads(), folder.heads()]
+    await driver.fileSources()
+    expect([plan.heads(), folder.heads()]).toEqual(before)
+
+    // Once something is written into what was unwritten, the next pass files it.
+    if (!unwritten.length) return
+    const late = unwritten.map((describe) => describe())
+    await driver.fileSources()
+    expect(asSet(folder.doc().docs)).toEqual(asSet([...links, ...late]))
+    expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(Object.keys(plan.doc().sources).sort())
+  })
+})
+
+describe("a research step's scope", () => {
+  // Each way its scope can be wrong once it is running → the step is
+  // cancelled, saying why. Left alone, it runs on.
+  const MUTATIONS = {
+    untouched: () => {},
+    removed: (d) => { delete d.scope },
+    nulled: (d) => { d.scope = null },
+    "kind changed": (d) => { d.scope.kind = "full" },
+    "ledger changed": (d) => { d.scope.ledgerUrl = "automerge:2j9knZ5d4NNxLrYGsbBHuYXu3Twz" },
+    "step changed": (d) => { d.scope.stepId = "other" },
+    "a field added": (d) => { d.scope.extra = true },
+  }
+
+  it.each(Object.keys(MUTATIONS))("%s", async (name) => {
+    const { repo, plan, make } = await setup([step("r", { access: "web" })], { behaviour: { r: "hang" } })
+    const driver = started(make())
+    await settle(driver)
+    const session = await repo.find(plan.doc().steps[0].sessionUrl)
+    session.change(MUTATIONS[name])
+    await settle(driver)
+    const after = plan.doc().steps[0]
+    if (name === "untouched") {
+      expect(after.status).toBe(STEP.running)
+    } else {
+      expect(after.status).toBe(STEP.cancelled)
+      expect(after.error).toBe("its research scope was removed")
+    }
+  })
+})
+
+describe("what a step's first message hands it", () => {
+  // [this step web?, the step it waits for web?] → is that step's result in
+  // the prompt? The rule: a research step gets research results only.
+  const cases = []
+  for (const web of [false, true]) for (const depWeb of [false, true]) cases.push([web, depWeb, !(web && !depWeb)])
+
+  it.each(cases)("step web %s, dependency web %s → result handed on %s", (web, depWeb, handed) => {
+    const dep = { ...step("d", { ...(depWeb ? { access: "web" } : {}) }), status: STEP.done, result: "RESULT-of-d", sessionUrl: "automerge:dep-session" }
+    const self = step("s", { after: ["d"], ...(web ? { access: "web" } : {}) })
+    const text = stepPrompt({ title: "W", goal: "G", steps: [dep, self] }, self)
+    expect(text.includes("RESULT-of-d")).toBe(handed)
+    expect(text.includes(WITHHELD)).toBe(!handed)
+    expect(text.includes("## Keeping things")).toBe(web)
+  })
+
+  it("never tells a research step where another session is, even when a result is cut", () => {
+    const dep = { ...step("d", { access: "web" }), status: STEP.done, result: "x".repeat(RESULT_IN_PROMPT + 10), sessionUrl: "automerge:dep-session" }
+    const self = step("s", { after: ["d"], access: "web" })
+    expect(stepPrompt({ title: "W", goal: "G", steps: [dep, self] }, self)).not.toContain("automerge:")
+    const full = step("f", { after: ["d"] })
+    expect(stepPrompt({ title: "W", goal: "G", steps: [dep, full] }, full)).toContain("automerge:dep-session")
+  })
+})
+
+describe("the news about research steps", () => {
+  it("says what each kept and where to find it", () => {
+    const plan = {
+      title: "W",
+      status: PLAN.running,
+      sourcesFolderUrl: "automerge:folder",
+      sources: {
+        a: { kind: "source", what: "extract", by: "r" },
+        b: { kind: "source", what: "pdf", by: "r" },
+        c: { kind: "finding", what: "finding", by: "r" },
+        d: { kind: "source", what: "file", by: "other" },
+        e: { kind: "source", what: null, by: "r" }, // made, not yet written: not counted
+      },
+      steps: [{ ...step("r", { access: "web" }), status: STEP.done, result: "found", sessionUrl: "automerge:s" }],
+    }
+    const text = describeProgress(plan, plan.steps)
+    expect(text).toContain("It kept 2 sources and 1 finding — Sources: automerge:folder")
+    expect(text).toContain("The research steps have kept 3 sources and 1 finding — Sources: automerge:folder")
+    expect(keptCounts(plan)).toEqual({ sources: 3, findings: 1 })
+    expect(keptCounts(plan, "r")).toEqual({ sources: 2, findings: 1 })
   })
 })

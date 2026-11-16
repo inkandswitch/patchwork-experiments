@@ -23,18 +23,6 @@ function fresh(turns = []) {
 
 const asked = (text) => [makeTurn("user", [textBlock(text)])]
 
-/** A repo double holding one session document. */
-function repoWith(doc, url = "automerge:session") {
-  return {
-    docs: new Map([[url, doc]]),
-    async find(u) {
-      const found = this.docs.get(u)
-      if (!found) throw new Error(`no such document ${u}`)
-      return { url: u, doc: () => found, change: (fn) => fn(found) }
-    },
-  }
-}
-
 describe("what a session is called", () => {
   it("starts with no title at all, rather than a placeholder", () => {
     // The bug this replaces: init set the title to "Agent", so `doc.title` was
@@ -100,7 +88,8 @@ describe("tidying a title", () => {
 })
 
 describe("the agent naming its own work", () => {
-  const ctx = (doc) => ({ repo: repoWith(doc), sessionUrl: "automerge:session" })
+  /** The session as the runner hands it to tools: its own document, through the store. */
+  const ctx = (doc) => ({ session: { url: "automerge:session", doc: () => doc, change: (fn) => fn(doc) } })
 
   it("writes the title onto the session document", async () => {
     const doc = fresh(asked("do a thing"))
@@ -122,13 +111,8 @@ describe("the agent naming its own work", () => {
     const doc = fresh()
     doc.title = "Same"
     let changes = 0
-    const repo = repoWith(doc)
-    const original = repo.find.bind(repo)
-    repo.find = async (u) => {
-      const handle = await original(u)
-      return { ...handle, change: (fn) => { changes++; fn(doc) } }
-    }
-    const out = await sessionTitleTool.execute({ title: "Same" }, { repo, sessionUrl: "automerge:session" })
+    const session = { doc: () => doc, change: (fn) => { changes++; fn(doc) } }
+    const out = await sessionTitleTool.execute({ title: "Same" }, { session })
     expect(out).toBe("Already called 'Same'.")
     expect(changes).toBe(0)
   })
@@ -147,7 +131,7 @@ describe("the agent naming its own work", () => {
   })
 
   it("says so plainly when the runner cannot reach the session", async () => {
-    await expect(sessionTitleTool.execute({ title: "x" }, { repo: repoWith(fresh()) })).rejects.toThrow(
+    await expect(sessionTitleTool.execute({ title: "x" }, {})).rejects.toThrow(
       /cannot reach the session document/
     )
   })
@@ -165,8 +149,11 @@ describe("the agent naming its own work", () => {
     // the session document — so make adding one a deliberate act.
     const selfWriters = BUILTIN_TOOLS.filter((t) => t.risk === "self").map((t) => t.id)
     // view_unmount touches only this conversation too: it closes a view the
-    // conversation opened, which needed a yes when it was mounted.
-    expect(selfWriters).toEqual(["view_unmount", "session_title"])
+    // conversation opened, which needed a yes when it was mounted. And
+    // finding_write writes only what a research step itself makes, or a
+    // finding in its workflow's ledger, through a repo that can reach nothing
+    // else (scope.js).
+    expect(selfWriters).toEqual(["view_unmount", "finding_write", "session_title"])
   })
 
   it("reads as naming something in the log", () => {
