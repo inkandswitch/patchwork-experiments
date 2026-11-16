@@ -116,6 +116,21 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
  * The toolset for a session: built-ins plus plugins, filtered by what the
  * session has enabled (all of them, when it says nothing).
  */
+/**
+ * The built-in tools as a toolset, for deciding about calls outside a runner
+ * — a permission granted from the pop-over, or spread across a workflow —
+ * where no runner has built one. Plugin tools are not in it: a call to one is
+ * left for its own session's view to release.
+ */
+let builtins = null
+export function builtinToolset() {
+  if (!builtins) {
+    const byId = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
+    builtins = { tools: BUILTIN_TOOLS, schemas: [], get: (id) => byId.get(id) ?? null }
+  }
+  return builtins
+}
+
 export async function buildToolset(sessionDoc, opts = {}) {
   const plugins = opts.skipPlugins ? [] : await loadPluginTools(opts)
   const all = [...BUILTIN_TOOLS, ...plugins]

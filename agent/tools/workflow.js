@@ -36,6 +36,11 @@ const STEP_SCHEMA = {
       description: "'deep' for planning, judgement, hard reasoning and checking others' work; 'standard' for most writing and editing; 'fast' for searching, reading and simple mechanical work.",
     },
     why: { type: "string", description: "One line on why this tier and placement. Shown beside the step." },
+    access: {
+      type: "string",
+      enum: ["full", "web"],
+      description: "'web' for a research step that only needs to search and read the web: it gets web_search, web_fetch and http_request and nothing else — none of the person's documents — so it fetches without asking. Its result is all it can hand back, so ask for what it found, with sources. Default 'full'.",
+    },
   },
 }
 
@@ -63,7 +68,7 @@ export function describePlan(plan, url) {
   ]
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
-    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where} · ${step.tier}${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier}${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
     if (state === STATE.done && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
     if (state === STATE.failed && step.error) lines.push(`  error: ${step.error}`)
@@ -152,6 +157,8 @@ export const workflowAddSteps = {
     handle.change((d) => {
       for (const step of input.steps) d.steps.push(newStep(step))
       d.status = PLAN.running
+      // Running again: its next end is news again.
+      d.reportedEnd = false
     })
     await drivePlanHere(url, { repo: ctx.repo, events: ctx.events, startSession: ctx.startStepSession })
     return describePlan(handle.doc(), url)

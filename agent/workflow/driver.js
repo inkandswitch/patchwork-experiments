@@ -16,7 +16,9 @@
 
 import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS } from "../runner.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS } from "./plan.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS, WEB_TOOL_IDS } from "./plan.js"
+import { releaseNowPermitted } from "../loop.js"
+import { handleStore } from "../store.js"
 import { waitingIn } from "./waiting.js"
 
 export { WORKFLOW_TOOL_IDS } from "./plan.js"
@@ -97,12 +99,15 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, toolIds = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS }) {
+  constructor({ repo, handle, startSession, notify = null, toolIds = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
     this.notify = notify
     this.toolIds = toolIds
+    this.toolset = toolset
+    // Documents a grant never covers: the account and its module settings.
+    this.sensitive = sensitive ?? (() => [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean))
     this.now = now
     this.heartbeatMs = heartbeatMs
     this.settleMs = settleMs
@@ -112,9 +117,7 @@ export class WorkflowDriver {
     this.watched = new Map() // sessionUrl -> unsubscribe
     this.reasons = new Map() // sessionUrl -> why its runner stopped, from its events
     this.listening = new Set() // sessionUrls whose runner events we hear
-    this.reported = new Set() // step ids the orchestrator has been told about
     this.waiting = [] // what running steps wait on a person for, as of the last tick
-    this.asked = new Set() // question call ids the orchestrator has been told about
     this.channel = null
     this.ticking = null
     this.busy = false
@@ -253,19 +256,22 @@ export class WorkflowDriver {
       this.write((d) => { d.usage = usage })
     }
 
-    // 2. Keep running steps running — after a reload their runners are gone.
+    // 2. One job, one set of permissions.
+    await this.shareGrants()
+
+    // 3. Keep running steps running — after a reload their runners are gone.
     plan = this.handle.doc()
     for (const step of plan.steps) {
       if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
 
-    // 3. Start what is ready.
+    // 4. Start what is ready.
     for (const id of toStart(this.handle.doc(), sessions)) {
       if (this.stopped || !holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
       await this.begin(id)
     }
 
-    // 4. Finished?
+    // 5. Finished?
     plan = this.handle.doc()
     if (plan.status === PLAN.running && isSettled(plan, sessions)) {
       this.write((d) => {
@@ -274,6 +280,63 @@ export class WorkflowDriver {
       })
     }
     this.report()
+  }
+
+  /**
+   * A permission given anywhere in the workflow holds everywhere in it.
+   *
+   * A workflow is one job: granting "any site" to one step and leaving its
+   * siblings blocked on the same question was the opposite of what the person
+   * meant. Grants are merged from the orchestrator and every full-access step,
+   * written to each session that lacks one, and each session's waiting calls
+   * that are now allowed are released. Web-only steps receive grants but do not
+   * give them: their standing "any site" is safe only because they cannot read
+   * anything, and must not spread to sessions that can.
+   *
+   * Grants only accumulate and a session is written only when it lacks one, so
+   * this settles: run twice, the second time writes nothing.
+   */
+  async shareGrants() {
+    const plan = this.handle.doc()
+    const members = [{ url: plan.sessionUrl, gives: true }]
+    for (const step of plan.steps) if (step.sessionUrl) members.push({ url: step.sessionUrl, gives: step.access !== "web" })
+    const sessions = []
+    for (const member of members) {
+      const handle = member.url ? await this.session(member.url) : null
+      if (handle?.doc()) sessions.push({ ...member, handle })
+    }
+
+    const merged = {}
+    for (const { handle, gives } of sessions) {
+      if (!gives) continue
+      for (const [key, held] of Object.entries(handle.doc().grants ?? {})) {
+        if (held === "always" || (held === "session" && merged[key] !== "always")) merged[key] = held
+      }
+    }
+
+    for (const { handle } of sessions) {
+      const doc = handle.doc()
+      const missing = Object.keys(merged).filter((key) => !["session", "always"].includes(doc.grants?.[key]))
+      if (missing.length) {
+        handle.change((d) => {
+          if (!d.grants) d.grants = {}
+          for (const key of missing) d.grants[key] = merged[key]
+        })
+      }
+      if (missing.length || this.unreleased(handle)) {
+        releaseNowPermitted({
+          store: handleStore(handle, null),
+          toolset: this.toolset ?? (await builtinToolset()),
+          subject: doc.subject ?? null,
+          sensitive: this.sensitive(),
+        })
+      }
+    }
+  }
+
+  /** Does this session have calls waiting on a permission? (Release is cheap; this keeps idle ticks write-free.) */
+  unreleased(handle) {
+    return (handle.doc()?.turns ?? []).some((t) => (t.blocks ?? []).some((b) => b.type === "call" && b.status === "pending"))
   }
 
   /** Write to the plan, if this driver still holds it. */
@@ -334,17 +397,26 @@ export class WorkflowDriver {
         config: {
           providerId: orchestrator?.config?.providerId ?? "openrouter",
           model: plan.tiers?.[step.tier],
-          params: { maxTokens: orchestrator?.config?.params?.maxTokens ?? 8192 },
+          params: { maxTokens: orchestrator?.config?.params?.maxTokens ?? 16000 },
+          // Workflows do not nest: a step never orchestrates.
+          workflows: { enabled: false },
         },
       })
       d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
       // A worker step gets only what runs without the page, so it can run
       // anywhere a repo is. Neither kind can start a workflow of its own.
-      d.tools = step.where === "worker" ? { enabled: toolIds.worker } : { disabled: WORKFLOW_TOOL_IDS }
+      d.tools =
+        step.access === "web"
+          ? { enabled: WEB_TOOL_IDS }
+          : step.where === "worker"
+            ? { enabled: toolIds.worker }
+            : { disabled: WORKFLOW_TOOL_IDS }
       // What the person already allowed the orchestrator carries into its steps;
       // asking again for each one would put the same question in front of them
-      // once per step.
-      d.grants = { ...(orchestrator?.grants ?? {}) }
+      // once per step. A web-only step may also fetch anything: it can reach
+      // none of the person's documents, so there is nothing of theirs to leak.
+      d.grants = { ...(orchestrator?.grants ?? {}), ...(step.access === "web" ? { [WEB_GRANT]: "session" } : {}) }
+      if (step.access === "web") d.workflow.access = "web"
       d.turns.push(makeTurn("user", [textBlock(stepPrompt(plan, step))]))
     })
 
@@ -368,12 +440,21 @@ export class WorkflowDriver {
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
     )
     for (const step of targets) {
-      if (step.status === STEP.running && step.sessionUrl) {
-        try {
-          ;(await this.startSession(await this.repo.find(step.sessionUrl)))?.runner?.interrupt?.()
-        } catch {
-          /* already gone */
-        }
+      if (step.status !== STEP.running || !step.sessionUrl) continue
+      try {
+        const session = await this.repo.find(step.sessionUrl)
+        // Through the document, not only the runner in this tab: the one doing
+        // the work may be in another tab, or gone with a reload — then an
+        // interrupt here reached nothing and the session said "running" for
+        // good. Taking its lease makes any runner stand down at its next
+        // check; marking it idle says it stopped.
+        session.change((d) => {
+          claimLease(d, `${this.runnerUrl}-cancel`, this.now())
+          if (d.status === STATUS.running || d.status === STATUS.parked) d.status = STATUS.idle
+        })
+        ;(await this.startSession(session))?.runner?.interrupt?.()
+      } catch {
+        /* already gone */
       }
     }
     this.handle.change((d) => {
@@ -398,22 +479,35 @@ export class WorkflowDriver {
    */
   report() {
     if (!this.notify) return
+    // What has been told is recorded in the plan, not in this driver: a reload,
+    // or another tab's driver taking over, used to tell the orchestrator every
+    // finished step again — one real orchestrator got the same result three
+    // times, a paid turn each — and the end of a plan was "news" on every tick
+    // after it, for as long as anything was ticking.
+    const unreported = (plan) => plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !s.reported)
+    const unasked = (plan) => this.waiting.filter((w) => w.kind === "question" && !(plan.asked ?? []).includes(w.callId))
+    const endUnreported = (plan) => plan.status !== PLAN.running && !plan.reportedEnd
     const plan = this.handle.doc()
-    const fresh = plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !this.reported.has(s.id))
-    const asking = this.waiting.filter((w) => w.kind === "question" && !this.asked.has(w.callId))
-    const over = plan.status !== PLAN.running
-    if (!fresh.length && !asking.length && !over) return
+    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan)) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
-      const now = this.handle.doc()
-      const news = now.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !this.reported.has(s.id))
-      for (const s of news) this.reported.add(s.id)
       // Read at delivery: a question answered meanwhile is no longer news.
-      const questions = this.waiting.filter((w) => w.kind === "question" && !this.asked.has(w.callId))
-      for (const q of questions) this.asked.add(q.callId)
-      const done = now.status !== PLAN.running
-      if (!news.length && !questions.length && !done) return ""
-      if (done) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
+      const now = this.handle.doc()
+      const news = unreported(now)
+      const questions = unasked(now)
+      const end = endUnreported(now)
+      if (!news.length && !questions.length && !end) return ""
+      const recorded = this.write((d) => {
+        for (const s of d.steps) if (news.some((n) => n.id === s.id)) s.reported = true
+        if (questions.length) {
+          if (!d.asked) d.asked = []
+          for (const q of questions) d.asked.push(q.callId)
+        }
+        if (end) d.reportedEnd = true
+      })
+      // A driver that has lost the plan leaves the telling to the one holding it.
+      if (!recorded) return ""
+      if (end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
       return describeProgress(now, news, this.waiting)
     })
   }
@@ -459,6 +553,14 @@ export function describeProgress(plan, news, waiting = []) {
     lines.push("The workflow is over. Bring the results together for the person.")
   }
   return lines.join("\n")
+}
+
+/** The grant that lets a web-only step fetch anything. */
+export const WEB_GRANT = "web@*"
+
+/** The built-in toolset, loaded late: the toolset imports this module. */
+async function builtinToolset() {
+  return (await import("../tools/index.js")).builtinToolset()
 }
 
 /** Which built-in tools a worker step may have. Loaded late: the toolset imports this module. */

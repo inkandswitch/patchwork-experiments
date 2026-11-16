@@ -10,10 +10,16 @@
  */
 
 import { decide, answerQuestion } from "../loop.js"
+import { grantOffers, callScope, asksEveryTime } from "../session.js"
+import { builtinToolset } from "../tools/index.js"
 import { handleStore } from "../store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { STEP } from "../workflow/plan.js"
+
+/** Documents a grant never covers: the account and its module settings. */
+const sensitiveDocs = () =>
+  [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean)
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -115,7 +121,27 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
       event.preventDefault()
       decide(store(), item.callId, "deny")
     })
-    actions.append(allow, deny)
+    actions.append(allow)
+    // The broader answers, as the call's own card offers them: this site, any
+    // site. Deciding with the toolset is what lets the grant release every
+    // other call in the session it now covers — and a workflow spreads it to
+    // its other sessions (workflow/driver.js).
+    const toolset = builtinToolset()
+    const tool = toolset.get(item.tool)
+    if (tool && !asksEveryTime(tool, item.input)) {
+      const block = { tool: item.tool, input: item.input }
+      const { target, kind } = callScope(block, subject, tool)
+      for (const offer of grantOffers(item.tool, target, kind ?? "document").slice(-2)) {
+        const grant = el("button", null, `Allow ${offer.label}`)
+        grant.title = offer.detail
+        grant.addEventListener("click", (event) => {
+          event.preventDefault()
+          decide(store(), item.callId, { grant: offer.key }, subject, { toolset, sensitive: sensitiveDocs() })
+        })
+        actions.append(grant)
+      }
+    }
+    actions.append(deny)
   } else {
     node.append(el("p", "agent-waiting-question", item.question))
     for (const option of item.options ?? []) {

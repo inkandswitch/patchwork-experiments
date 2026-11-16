@@ -123,7 +123,7 @@ describe("the settings switch", () => {
     }
   }
 
-  it("turns workflows on, and records limits and tier models for the session", () => {
+  it("is on by default, switches off, and records limits and tier models for the session", () => {
     const handle = sessionHandle()
     const element = document.createElement("div")
     document.body.append(element)
@@ -131,7 +131,10 @@ describe("the settings switch", () => {
 
     const box = element.querySelector(".agent-wf-settings")
     const toggle = box.querySelector("input[type=checkbox]")
-    expect(toggle.checked).toBe(false)
+    expect(toggle.checked).toBe(true) // on by default
+    toggle.checked = false
+    toggle.dispatchEvent(new Event("change"))
+    expect(handle.doc().config.workflows.enabled).toBe(false)
     toggle.checked = true
     toggle.dispatchEvent(new Event("change"))
     expect(handle.doc().config.workflows.enabled).toBe(true)

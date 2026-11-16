@@ -50,6 +50,17 @@ export const DEFAULT_LIMITS = { parallel: 3, hostParallel: 1, steps: 24, tokens:
 
 export const WHERE = ["host", "worker"]
 
+/**
+ * What a step may reach. "full" is everything its placement allows. "web" is a
+ * research step: web search and fetch and nothing else — none of the person's
+ * documents — so fetching cannot leak anything of theirs, and it fetches
+ * without asking. Its result is all it can hand back.
+ */
+export const ACCESS = ["full", "web"]
+
+/** The tools a web-only step gets. */
+export const WEB_TOOL_IDS = ["web_search", "web_fetch", "http_request", "session_recall"]
+
 /** Stored. */
 export const STEP = {
   pending: "pending",
@@ -103,6 +114,7 @@ export function newStep(step) {
     why: step.why,
     status: STEP.pending,
   }
+  if (step.access === "web") out.access = "web"
   return out
 }
 
@@ -135,6 +147,8 @@ export function validateSteps(plan, incoming) {
     }
     if (!WHERE.includes(step.where)) errors.push(`${at}: 'where' must be one of ${WHERE.join(", ")}.`)
     if (!TIERS.includes(step.tier)) errors.push(`${at}: 'tier' must be one of ${TIERS.join(", ")}.`)
+    if (step.access != null && !ACCESS.includes(step.access)) errors.push(`${at}: 'access' must be one of ${ACCESS.join(", ")}.`)
+    if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
     if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
   }
   if (errors.length) return errors

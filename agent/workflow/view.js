@@ -133,7 +133,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
 
     const meta = el("div", "agent-wf-meta")
     meta.append(
-      el("span", "agent-wf-badge", WHERE_LABEL[step.where] ?? step.where),
+      el("span", "agent-wf-badge", `${WHERE_LABEL[step.where] ?? step.where}${step.access === "web" ? " · web only" : ""}`),
       el("span", "agent-wf-badge", `${step.tier} · ${shortModel(step.model ?? handle.doc()?.tiers?.[step.tier])}`)
     )
     if (step.after?.length) meta.append(el("span", "agent-wf-after", `after ${step.after.join(", ")}`))

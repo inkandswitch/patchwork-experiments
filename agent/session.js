@@ -101,6 +101,9 @@ export const DEFAULT_CONFIG = {
   // lost. Only what is generated is paid for; it is capped at each model's own
   // limit (providers/openrouter.js).
   params: { maxTokens: 16000 },
+  // On: a session can split a large job across several. The limits and the
+  // tier models are the plan's defaults (workflow/plan.js) until set here.
+  workflows: { enabled: true },
 }
 
 export const SESSION_TYPE = "agent-session"

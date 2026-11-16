@@ -932,8 +932,19 @@ result calls for it.
   error, and a link to its session — "Answer in its session" when a step is
   waiting on you.
 
-Limits are per session: steps at once (3), steps in all (24), tokens in all
-(3M). Every step runs in the tab today, because the SharedWorker runner is
+- **One job, one set of permissions.** A grant given in any of a workflow's
+  sessions reaches all of them, and releases every waiting call it now covers;
+  so does a grant given from the peek or the strip ("Allow dnv.com", "Allow any
+  site"). A **web-only step** (`access: "web"`) gets web search and fetch and
+  nothing else — none of your documents — so it fetches without asking; its
+  standing "any site" is not shared with sessions that can read your documents.
+- **News is told once**, recorded in the plan: a reload or another tab's driver
+  does not repeat a step's result, and the end of a plan is one wake, not one
+  per tick. Cancelling takes the step session's lease, so a runner in another
+  tab stands down too.
+
+Workflows are on by default. Limits are per session: steps at once (3), steps
+in all (24), tokens in all (3M). Every step runs in the tab today, because the SharedWorker runner is
 still opt-in (below); `where` already decides which tools a step gets, so a
 `worker` step will move to the worker or the node runner without changing.
 

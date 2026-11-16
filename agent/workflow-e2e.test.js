@@ -138,7 +138,7 @@ describe("a workflow, end to end", () => {
   it("refuses to start when the session's switch is off", async () => {
     const repo = new Repo({ network: [] })
     const session = repo.create({})
-    session.change((d) => initSession(d, {}))
+    session.change((d) => initSession(d, { config: { workflows: { enabled: false } } }))
     const { workflowStart } = await import("./tools/workflow.js")
     await expect(workflowStart.execute({ title: "T", goal: "G", steps: STEPS }, { repo, sessionUrl: session.url })).rejects.toThrow(/switched off/)
   })

@@ -753,6 +753,11 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
 - **where: worker** unless the step needs the page: mounting or driving a view,
   screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
   steps run side by side; host steps take turns on the page.
+- **access: web** for research — finding sources, reading datasheets and
+  standards. The step gets web search and fetch and nothing else, so it can
+  fetch without asking anyone (it can reach none of the person's documents to
+  leak). It cannot write anything either: ask for its findings, with sources,
+  in its result, and have a later step put them where they belong.
 
 ## Fanning out, and finishing
 
