@@ -458,12 +458,13 @@ const floorPlane = (floor) => (Array.isArray(floor) ? floor : [-(Number(floor) |
  * `disp` says which vertices the waves move; `face` is 0 on the top and 1
  * on the skirt and floor (drawn as the water's body, tinted by depth).
  * Without a floor (null) there is no skirt and no floor: the top alone.
+ * `spacing` is the top's real vertex spacing (patchCounts), which is what the
+ * shader's short-wave fade must be told.
  * @param {number | number[] | null} [floor]  a depth below the level, or the floor plane (floorPlane)
- * @returns {{ positions: Float32Array, disp: Float32Array, face: Float32Array, indices: Uint32Array, nx: number, nz: number, top: number, topTriangles: number, rim: number[] }}
+ * @returns {{ positions: Float32Array, disp: Float32Array, face: Float32Array, indices: Uint32Array, nx: number, nz: number, spacing: number, solid: boolean, top: number, topTriangles: number, rim: number[] }}
  */
 export function patchGrid(w, l, yaw = 0, cell = 0.5, floor = null) {
-  const nx = Math.max(1, Math.min(256, Math.ceil(w / cell)));
-  const nz = Math.max(1, Math.min(256, Math.ceil(l / cell)));
+  const { nx, nz, spacing } = patchCounts(w, l, cell);
   const top = (nx + 1) * (nz + 1);
   // the rim, in order round the top: along j = 0, up i = nx, back along j = nz, down i = 0
   const rim = [];
@@ -504,7 +505,29 @@ export function patchGrid(w, l, yaw = 0, cell = 0.5, floor = null) {
     indices.set([f, f + 1, f + 2, f, f + 2, f + 3], k);
     k += 6;
   }
-  return { positions, disp, face, indices, nx, nz, top, topTriangles: nx * nz * 2, rim };
+  return { positions, disp, face, indices, nx, nz, spacing, solid, top, topTriangles: nx * nz * 2, rim };
+}
+
+/** Most cells a patch's top has along a side: past 256 × `cell` metres its cells widen. */
+export const PATCH_MAX_CELLS = 256;
+
+/**
+ * A patch's cell counts for a w×l top asked for at about `cell` metres, and
+ * its real vertex spacing: the wider of its two cell sides, w/nx and l/nz.
+ * Over PATCH_MAX_CELLS × cell on a side the count is capped and the real
+ * spacing is wider than `cell` (a 100×207 m clip at 0.5 m: 207/256 ≈ 0.81 m;
+ * Cadboro Bay's 8192 m: 32 m). Pure.
+ */
+export function patchCounts(w, l, cell = 0.5) {
+  const nx = Math.max(1, Math.min(PATCH_MAX_CELLS, Math.ceil(w / cell)));
+  const nz = Math.max(1, Math.min(PATCH_MAX_CELLS, Math.ceil(l / cell)));
+  return { nx, nz, spacing: Math.max(w / nx, l / nz) };
+}
+
+/** The vertex shader's short-wave fade for a wave of wavenumber k at vertex spacing `cell` (GLSL smoothstep): 1 carried in full, 0 not drawn. */
+export function waveFade(k, cell) {
+  const x = Math.min(1, Math.max(0, k * cell - 1));
+  return 1 - x * x * (3 - 2 * x);
 }
 
 /** Fill a patch's positions for a size, a yaw and a floor plane (the counts unchanged). */
@@ -540,20 +563,23 @@ function placePatch(positions, w, l, yaw, nx, nz, floor = null, rim = null) {
 }
 
 /**
- * Where the shader puts vertex `i` of a mesh (its positions and `disp`), its
- * origin at `origin` in the stage's frame, at time t, for waves the mesh's
- * spacing carries in full: the vertex shader's displacement in double
- * precision, so a test can hold the drawn block to the read water. Pure.
+ * Where the shader puts vertex `i` of a patch mesh (its positions, `disp` and
+ * `spacing`), its origin at `origin` in the stage's frame, at time t: the
+ * vertex shader's displacement in double precision, its short-wave fade at
+ * the mesh's real spacing included, so a test can hold the drawn block to the
+ * read water (and, wave by wave, see which ones the drawing fades). Pure.
  */
 export function drawnVertex(mesh, i, components, origin, t) {
   const x = mesh.positions[i * 3], y = mesh.positions[i * 3 + 1], z = mesh.positions[i * 3 + 2];
   let dx = 0, dy = 0, dz = 0;
   if (mesh.disp[i] > 0)
     for (const c of components) {
+      const f = waveFade(c.k, mesh.spacing);
+      if (f <= 0) continue;
       const th = c.k * (c.dir[0] * (x + origin[0]) + c.dir[1] * (z + origin[2])) + c.phase - c.omega * t;
-      dx -= c.steep * c.amp * c.dir[0] * Math.sin(th);
-      dz -= c.steep * c.amp * c.dir[1] * Math.sin(th);
-      dy += c.amp * Math.cos(th);
+      dx -= f * c.steep * c.amp * c.dir[0] * Math.sin(th);
+      dz -= f * c.steep * c.amp * c.dir[1] * Math.sin(th);
+      dy += f * c.amp * Math.cos(th);
     }
   const m = mesh.disp[i];
   return [origin[0] + x + m * dx, origin[1] + y + m * dy, origin[2] + z + m * dz];
@@ -599,7 +625,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uPhase: { value: [] },
     uDetail: { value: [] },
     uDetailPhase: { value: [] },
-    uCell: { value: cell },
+    // a patch's real spacing, which is wider than `cell` once its sides are capped (patchCounts)
+    uCell: { value: patch ? grid.spacing : cell },
     // a patch's spacing is the same everywhere: no rings
     uInner: { value: patch ? 1e9 : grid.inner },
     uSunDir: { value: new THREE.Vector3(...DEFAULTS.sun.direction).normalize() },
@@ -723,20 +750,29 @@ export function createOceanSurface(THREE, sea, opts = {}) {
   if (opts.sun !== undefined || opts.sky) update(0, [0, 0, 0], opts.sun, opts.sky);
   else update(0, [0, 0, 0]);
 
-  /** A patch turned, resized or deepened: its positions moved in place, or made again when its counts change. */
+  /**
+   * A patch turned, resized or deepened: its positions filled in place when
+   * its counts are unchanged (a tank on a heeling hull turns every frame, and
+   * allocates nothing), made again only when they change. The fade's spacing
+   * follows the real one.
+   */
   function setPatch(w, l, yaw = 0, floor = patch?.floor ?? null) {
     if (!patch) return;
     const same = patch.w === w && patch.l === l && patch.yaw === yaw && JSON.stringify(patch.floor) === JSON.stringify(floor);
     if (same) return;
-    const g = patchGrid(w, l, yaw, cell, floor);
+    const { nx, nz, spacing } = patchCounts(w, l, cell);
+    const solid = floor !== null && floor !== undefined;
     const pos = geometry.attributes.position;
-    if (g.nx === grid.nx && g.nz === grid.nz && g.positions.length === pos.array.length) {
-      pos.array.set(g.positions);
+    if (nx === grid.nx && nz === grid.nz && solid === grid.solid) {
+      placePatch(pos.array, w, l, yaw, nx, nz, solid ? floorPlane(floor) : null, grid.rim);
       pos.needsUpdate = true;
     } else {
+      const g = patchGrid(w, l, yaw, cell, floor);
       Object.assign(grid, g);
       setGeometry(g);
     }
+    grid.spacing = spacing;
+    uniforms.uCell.value = spacing;
     Object.assign(patch, { w, l, yaw, floor });
   }
 

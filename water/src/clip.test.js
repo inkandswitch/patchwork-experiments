@@ -7,8 +7,9 @@ import golden from "./test/golden.json";
 import water, { TRAIT, WAVES, WIND, outlineSegments, patchExtent, patchGeometry } from "./extension.js";
 import { amplitudeBound, bodiesOf, boxOf, clipBody, clipToSpan, floorAt, rigidVelocity, shapeOf } from "./bodies.js";
 import { boundedReader } from "./bounded.js";
-import { drawnVertex, patchGrid } from "./material.js";
+import { createOceanSurface, drawnVertex, patchGrid } from "./material.js";
 import { createSurface } from "./surface.js";
+import { fakeThree } from "./test/fake-three.js";
 import { compose, fakeView, mulM, outlines, patches, placement, surfaces, waves, windOf } from "./test/fake-view.js";
 
 const sea = (name) => golden.seas.find((s) => s.name === name);
@@ -472,6 +473,89 @@ describe("the drawn block is the read water (W33)", () => {
                 }
               }
           });
+});
+
+describe("the drawn block is the shader's, at its real spacing (W33, the GLSL side and capped sizes)", () => {
+  // the vertex shader's displacement, line by line: the test reads these out of
+  // the material's own source, and transcribes them below from its own uniforms
+  const GLSL = [
+    "float cell = uCell * max(1.0, 2.0 * max(abs(p.x), abs(p.y)) / uInner);",
+    "float k = length(w.xy);",
+    "float f = 1.0 - smoothstep(1.0, 2.0, k * cell);",
+    "if (f <= 0.0 || k <= 0.0) continue;",
+    "vec2 dir = w.xy / k;",
+    "float th = dot(w.xy, p) + uPhase[i];",
+    "d.xz -= f * w.w * dir * sin(th);",
+    "d.y += f * w.z * cos(th);",
+    "d *= aDisp;",
+    "vec4 world = modelMatrix * vec4(p.x + d.x, position.y + d.y, p.y + d.z, 1.0);",
+  ];
+  const smoothstep = (a, b, x) => {
+    const s = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return s * s * (3 - 2 * s);
+  };
+  /** GLSL above, in JavaScript, on the uniforms and attributes the surface really holds. */
+  function shaderVertex(s, i) {
+    const { uniforms, defines } = s.object.material;
+    const g = s.object.geometry.attributes;
+    const px = g.position.array[i * 3], py = g.position.array[i * 3 + 1], pz = g.position.array[i * 3 + 2];
+    const cell = uniforms.uCell.value * Math.max(1, (2 * Math.max(Math.abs(px), Math.abs(pz))) / uniforms.uInner.value);
+    let dx = 0, dy = 0, dz = 0;
+    for (let n = 0; n < defines.WAVES; n++) {
+      const w = uniforms.uWaves.value[n];
+      const k = Math.hypot(w.x, w.y);
+      const f = 1 - smoothstep(1, 2, k * cell);
+      if (f <= 0 || k <= 0) continue;
+      const th = w.x * px + w.y * pz + uniforms.uPhase.value[n];
+      dx -= f * w.w * (w.x / k) * Math.sin(th);
+      dz -= f * w.w * (w.y / k) * Math.sin(th);
+      dy += f * w.z * Math.cos(th);
+    }
+    const a = g.aDisp.array[i];
+    const P = s.object.position;
+    return [P.x + px + a * dx, P.y + py + a * dy, P.z + pz + a * dz];
+  }
+  // the real vertex spacing of each top, worked out by hand: the requested cell is
+  // max(0.05, min(0.5, longer side / 64)), and a side has at most 256 cells
+  const SIZES = [
+    [8, 8, 0.125], // 64 × 64 cells of 0.125
+    [16, 8, 0.25], // 64 × 32 of 0.25
+    [8, 32, 0.5], // 16 × 64 of 0.5
+    [100, 207, 207 / 256], // 200 × 256 (capped): 0.5 across, 0.80859375 along
+    [8192, 8192, 32], // Cadboro Bay's clip: 256 × 256 (capped) of 32
+  ];
+  const SEAS = [["Ship at sea", A_SEA], ["Ship at anchor", B_SEA], ["Cadboro Bay", sea("Cadboro Bay")]];
+  const THREE = fakeThree();
+  for (const [w, l, spacing] of SIZES)
+    for (const yawD of [0, 30])
+      for (const [sl, S] of SEAS)
+        it(`${w}×${l}, yaw ${yawD}°, ${sl}'s waves: faded at the real spacing ${spacing}, and drawnVertex is the shader`, () => {
+          const s = createOceanSurface(THREE, { seed: 1, stats: {}, ...S }, { patch: { w, l, yaw: deg(yawD), floor: 6 } });
+          expect(s.object.material.uniforms.uInner.value).toBe(1e9);
+          const src = s.object.material.vertexShader;
+          for (const line of GLSL) expect(src).toContain(line);
+          expect(s.object.material.uniforms.uCell.value).toBe(spacing);
+          // wave by wave: under three vertices a wavelength (it would alias) none of it is
+          // drawn; with 2π or more, all of it
+          const U = s.object.material.uniforms;
+          for (let n = 0; n < S.components.length; n++) {
+            const k = Math.hypot(U.uWaves.value[n].x, U.uWaves.value[n].y);
+            const perWave = (2 * Math.PI) / k / spacing;
+            // a patch has no rings (uInner 1e9): the shader's cell is uCell everywhere on it
+            const f = 1 - smoothstep(1, 2, k * U.uCell.value);
+            if (perWave < 3) expect(f).toBe(0);
+            if (perWave >= 2 * Math.PI + 1e-9) expect(f).toBe(1);
+          }
+          const g = s.object.geometry.attributes;
+          const twin = { positions: g.position.array, disp: g.aDisp.array, spacing };
+          for (const [origin, t] of [[[5, 1.5, -3], 0], [[1234.5, 0, -987.25], 1000]]) {
+            s.update(t, origin);
+            for (let i = 0; i < g.position.array.length / 3; i++) {
+              const a = shaderVertex(s, i), b = drawnVertex(twin, i, S.components, origin, t);
+              for (let k = 0; k < 3; k++) if (!(Math.abs(a[k] - b[k]) < 1e-3)) expect([i, k, a[k], b[k]]).toEqual("drawn as the twin says");
+            }
+          }
+        });
 });
 
 // ─── W35 ───────────────────────────────────────────────────────────────────
