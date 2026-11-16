@@ -795,11 +795,13 @@ the sky.
 
 **The Model basin in a dry room (new, the exhibit for Q4).**
 - The Model basin is a doc with no open water and no weather. It holds a
-  basin `water: { size: [30, 3, 30] }`, a glass-walled tank model around
-  it, and a sloop in it.
+  basin `water: { size: [30, 3, 30] }` and a sloop in it, and no tank
+  model round it (Decision 59).
 - A mashup with no water links it beside Ship at sea.
 - One page then shows both halves of the rule: the basin's sloop floats,
-  flat and still, and Ship at sea rests at her saved pose.
+  flat and still, and Ship at sea rests at her saved pose. Since clipped
+  open water (Decisions 91 to 107), Ship at sea floats too, on a calm block
+  of her own sea: two boats, each on a block of her own.
 
 ### Doc shapes
 
@@ -907,15 +909,9 @@ need. None is built.
    toy yacht linked into a park's pond takes the open water beneath, or
    rests if there is none. On Cadboro Bay she falls through the terrain to
    y = 0. Things in the pond's own doc work. The consistent fix is D1.
-2. **Ship at sea in a dry room still rests.** Q4's yes is delivered only
-   for water authored as bounded. The case the question was asked about,
-   a boat linked into a dry room, is unchanged. An earlier draft said that
-   changing it would need a precedence flag in the data (Decision 5's
-   `standIn`). That was wrong (Decision 76): a rule needs no flag. The path
-   rule, under which each ambient name takes the outermost offer on the
-   stage's own path, gives a harbour's boats the harbour's sea and a boat
-   in a dry room her own. It has costs of its own, and the choice is put to
-   the lead below.
+2. **Closed by clipped open water** (Decision 91). A boat linked into a dry
+   room floats on a block of her own sea: her open water's clip, a box of
+   her doc where the world offers no open water ("Clipped open water").
 3. **Boxes only.**
    - An irregular pond relies on terrain above its level to hide the box's
      corners. Dry ground below the level inside the box reads as flooded.
@@ -927,12 +923,13 @@ need. None is built.
    reading into what it contains. Reading precedence is defined; drawing
    is the author's to avoid.
 5. **Edges.**
-   - A hull straddling a box's edge reads the floor for her outside
-     columns, so her plane fit pushes her off the edge. Once her origin is
+   - A hull straddling a box's edge reads the body's surface continued past
+     it in her outside columns (the reader is total, Decision 98, which
+     replaced Decision 63's floor), so she stays level. Once her origin is
      out of the footprint she is in whatever water holds it there (the
-     open water around a pond); with none (a basin in a dry room) she
-     holds still where she left the water, until she is moved or water
-     comes back under her (Decision 75).
+     open water around a pond); with none (a basin or a block in a dry
+     room) she holds still where she left the water, until she is moved or
+     water comes back under her (Decision 75).
    - Moving from one body into another at a different level is a jump.
    - Gerstner waves in a box don't reflect at the walls; they are clipped
      there.
@@ -941,8 +938,10 @@ need. None is built.
    among I4's placement-dependent reads. A snow globe can't keep its
    storm; that would be B's enclosures.
 7. **Water objects have no halo** (D2). A pond is authored with inspector
-   fields, numbers, or parts, and selected from the outline. A sea on an
-   object without water is inert, with a notice (D3).
+   fields, numbers, or parts, and selected from the outline; while a Water
+   object is selected its box (its size, or its clip) is outlined, dashed
+   (Decision 101). A sea on an object without water is inert, with a notice
+   (D3).
 8. **One more trait,** `sailing.weather`, and a sea is now three things
    where it was two traits:
    - a Water object (the shape);
@@ -1038,6 +1037,183 @@ pin. W2, W4 to W7, W9 and W14 are untouched.
    surface).
 8. **walk's reader**, as before: `at(feet)`, so a walker wades in a pond
    or the sea.
+
+## Clipped open water (2026-11-15)
+
+The lead's answer to Q4 (2026-11-15): the path rule is rejected. *"bounded
+water makes more sense to me as a user experience, though... maybe we could
+clip?"* The lead then accepted the design ("that all sounds fine"),
+including both recommendations: the box is the guest's, and a dry room on a
+hill in a wet world gives its guests no blocks. The design note it was
+condensed from was judged against two others (the host's room with a
+view-wide cut, 22; the link's automatic room, 25; the guest box, 31).
+
+### The rule
+
+1. **Water is a shape.** Open water is weather and bounded water is a
+   thing (Decisions 45 to 47), unchanged.
+2. **Open water may say how much of itself is a thing:**
+   `water: { clip: [w, depth, l] }`, a box in the Water object's own frame
+   with `size`'s grammar: w across x, l along z, centred on the origin,
+   hanging from the surface at rest down to y = -depth, multiplied by the
+   object's uniform scale.
+3. **Weather where there is weather; a thing where there is none.**
+   - Where the world offers open water (`api.ambient("water")` is
+     non-null), a contained open body is silent, as before, clip or none.
+   - Where the world offers none, an open body with a clip is the bounded
+     body `{ id: its own id, size: clip }` of its doc.
+
+```
+water: {}                         open: the world's sea where its doc is the world; silent in a wet world; nothing in a dry one
+water: { clip: [w, depth, l] }    open; where the world offers no open water, this box at this object's pose, its doc's own
+water: { size: [w, depth, l] }    bounded, always (a basin, a tank, a lock, a ship in a bottle)
+```
+
+An author learns three phrases: **open**, my sea unless the world has one;
+**open with a clip**, my sea or this much of it; **a box**, this water,
+always. A bottle's water inside a harbour is a `size`, not a clip.
+
+**Where the box comes from: the guest's own data, and nowhere else.** The
+size is the clip; the centre, heading and level are the Water object's pose
+in its doc (an open body's x, z and yaw meant nothing until now, and now
+place its clip and nothing else). Not the host's: a box on the host's link
+that decides whether the guest has water is the override layer COMPOSITION
+§7 rules out, and would need a new stage read and a second amendment to
+Decision 1. Not `hint.bounds`: a hint is a placeholder for content that
+hasn't arrived. Not derived from content: the floater is part of the
+content that would size it (a feedback loop), and loaded geometry depends
+on arrival (W21). The host keeps the levers placement gives it: where (the
+link's transform), how big (its scale), whether its guests yield (open
+water of its own), whether there are waves (weather).
+
+### The conversion
+
+Pure, in `bodies.js` (`shapeOf` learns `clip`, `bodiesOf` returns the
+keeper's `openClip`, `clipBody(id, clip)`), appended by the extension's
+`refreshBodies`:
+
+```
+live      = ambient("water") === null
+            && this stage has flushed at least once (the first-flush guard)
+            && the doc has a keeper open body O, level in its doc
+            && O's clip is three positive numbers
+bounded'  = bodiesOf(doc).bounded ∪ (live ? [{ id: O, size: O.clip }] : [])
+```
+
+From there it is any bounded body, by the same code: `boxOf(size,
+worldOf(O))`, the rigid velocity (zero for an unattached Sea), waves from
+`water.waves[O]` (sailing's sea, built from the world's wind) clipped to
+the span, `choose` (in a dry world `open` is null, so only bounded bodies
+compete: a tank inside the block is smaller and wins, a tank carried by the
+hull is left out by `not`), `boundedReader` on the stage's own clock, the
+block drawn, the extent set, a process held only where the stage acts and
+the block has waves. So everything bounded water does holds for a live
+clip by construction; W27 checks it as a bit-for-bit reduction to `{ size:
+clip }`. `reader.body` is the Sea's id, so sailing allows any link scale
+(her water is her doc's: the model room at 1:25 sails at full scale in her
+own frame).
+
+The refresh runs once a frame and again whenever the world's water value
+changes or the stage first flushes, so no step reads a clip after the
+outermost's offer arrives (Decision 108).
+
+### Drawing the block
+
+One rule for every bounded body, authored or clipped (Decision 99): the
+top, a finite patch as before; the skirt, the top's rim vertices again in
+the same mesh and shader, displaced exactly as the rim (so the drawn edge
+is the water's edge, with no gap on a crest) and dropped to the body's
+floor; and the floor, a quad on the body's y = -depth. Skirt and floor are
+the water's body, tinted darker with depth, seen from either side, unpicked
+and out of `box()`. `patchExtent` reaches from the floor to the band above
+the level, widened by the band (a crest's sideways throw), so a camera
+inside a block isn't cut by the near plane.
+
+### A hull near the edge
+
+**The reader is total** (Decision 98, replacing 63): it answers the body's
+surface field everywhere, continued past the footprint; which body a point
+is in is `choose`'s alone. Her origin inside and part of her over the
+edge: her outside columns read the continued surface, and she stays level
+and pitches as in open water, never tipping over a waterfall. Her origin
+crossing the footprint: `at(origin, { not: her })` is null in a dry world
+(she is held where she left the water, Decision 75) or the other water
+that holds her there (a basin beside her). Moved back, or the clip enlarged
+under her, she goes on from where she was held. No walls, no reflection.
+
+### Wind and sky: not clipped
+
+The sky is one per view, the world's (W9). Waves on a clipped body are the
+world's wind on it (Decision 49): in a still room the block is flat and her
+sails slack; a room that offers `sailing.weather` and no water gives every
+block waves (the Breezy pavilion). The host brings the air, the guest the
+water. Clipping the wind too would be the path rule for wind, or need water
+to read sailing's weather, or the stage to name an ambient: all ruled out
+(Decision 97).
+
+### Nesting, pins and mirrors
+
+The rule reads one thing, the outermost's offer, so depth doesn't matter.
+A boat in a dry room in a dry city keeps her block through both links; in a
+city with an ocean she yields and floats on it (on a hill, she drops to the
+sea: Costs 1, the lead's Q2). A wet Harbour placed in a dry museum shows
+each boat on her own block, overlapping, so the Harbour's own Sea has no
+clip (Decision 103; the consistent fix is D1). A doc meant to sit on a deck
+is published without a clip. Liveness is one view-wide read, so every
+occurrence of a doc in one view agrees: a mirror draws its own block at its
+placement and holds no process; a pin's block is frozen at the pinned time.
+
+### Editing
+
+In the boat's own doc (alone, or entered from any host) select the Sea in
+the outline: the inspector's Water section has a Clip row (json, like
+Size), and while it is selected a dashed outline of its box is drawn at its
+pose, whether or not the clip is live there (Decision 101). The Sea's
+position and heading move and turn the box. Entered in a dry room, a
+smaller clip shrinks her block live, and undo puts it back. From the host,
+the link's halo places and scales her diorama; there is no crop.
+
+### Exhibits and doc shapes
+
+Templates write a clip computed from their own layout (Decision 102):
+`layout.js seaClip` covers her swing circle (the anchor under her bow at
+the start, ± the rode's reach to the bottom and her length) or her start,
+and every landmark, with 10 m to spare, the Sea centred on it and turned
+with the layout's yaw; 6 m deep under way, and 11 m at anchor (Decision
+109). The Sloop part's `bringSea` writes `[60, 6, 60]` centred on her; the
+Sea part writes none. Cadboro Bay's Sea keeps the terrain's footprint from
+its known grid, 150 m deep. The Harbour's Sea has none. The Model room
+(`sailing/probes/publish-model-room.mjs`) links boats at 1:25 square to the
+room, side by side, each block's floor on the room's floor.
+
+### Costs
+
+1. **The host can't frame the block.** It places and scales it, but can't
+   crop or move it: D5 (a host's section box, with three named consumers:
+   a diorama's landmarks, Cadboro Bay on a chart table at a crop, a CAD
+   section box) would add that on top without changing the clip.
+2. **A boat under way and a fixed box.** Ship at sea opened alone sails on
+   and checkpoints far from her box; in a dry room she is then outside it,
+   resting beside an empty block. Exhibits use boats at anchor.
+3. **Wet-in-dry nesting** shows overlapping blocks (Decision 103; D1).
+4. **Calm still lives** in dry rooms; a room that offers weather is the
+   answer.
+5. **Landmarks outside the clip stand dry.** Templates cover theirs.
+6. **Hills in wet worlds:** the boat drops to sea level (Costs 1, Q2).
+7. **Decisions 63, and 59 and 60's top-only rule, are reversed.** A box
+   tank poking through a curved hull now shows skirts; a pond shows skirts
+   where terrain dips below its level inside the box; an author's glass
+   tank model must sit outside the water's own faces.
+8. **The Sea's place now matters,** which may surprise an author who
+   thinks of the sea as infinite; the outline shows it.
+9. **Overlapping sibling blocks** are more likely: every boat with a clip
+   in a dry room draws one.
+10. **The arrival transient** (W31): before the outermost's first flush
+    with water running, a contained stage may see a dry world for at most
+    a frame.
+11. **Scaled models sail at full-size speed in their own frame,** and a
+    model room placed in a wet world gives its 1:25 boats water at another
+    scale than theirs, which sailing refuses: they rest (Decision 111).
 
 ## Decisions (2026-11-14, made unattended)
 
@@ -1579,7 +1755,8 @@ minor faults. Each fix has a test that fails without it.
     are" and "Open for the lead" now say so, and the choice is put to the
     lead with each side's costs. The path rule is not built: it changes
     W2, the ambient rule every package reads, and Decision 1's accepted
-    sentence, and that is the lead's to choose.
+    sentence, and that is the lead's to choose. (Superseded: the lead chose
+    clipping, Decision 91; the path rule was rejected.)
 77. **Scene's trait-level `needs` is removed.** It had no consumer after
     `sailing.ship` dropped `needs: ["water"]` (Decision 74), and a
     mechanism with none is the kind of appendage the stage keeps out. No
@@ -1667,7 +1844,8 @@ minor faults. Each fix has a test that fails without it.
     which every package's ambients read, and the wind and the sky would
     follow it into a dry room (Decision 76 and "Open for the lead" list
     the costs). Building it is one decision for the lead to confirm, not
-    one to take while merging.
+    one to take while merging. (Superseded: the lead rejected the path rule
+    and chose clipped open water, Decision 91.)
 86. **Ship at anchor is not republished on its own.** No example in the
     folder is the bare Ship at anchor; Lost Cities aboard and Fitting out
     run that template themselves when they are published. `publish-ship
@@ -1698,13 +1876,152 @@ minor faults. Each fix has a test that fails without it.
     and one more published by a run whose output was cut off, are left
     unlisted.
 
+## Decisions, clipped open water (2026-11-15, the lead's answer to Q4)
+
+90. **The path rule was built by a fixer unaware of the lead's choice, and
+    is reverted.** The lead rejected it ("bounded water makes more sense
+    to me as a user experience, though... maybe we could clip?") and
+    accepted the clipped-open-water design. A stopped fixer nevertheless
+    committed the path rule in scene, water and sailing (70ceac84,
+    d5b1114d, 3122c08c); `lane/clip` reverts all three in one commit, and
+    `scene/src` is again as it was before them. Its uncommitted doc edits
+    were never applied. 298996e0 (the Water part makes no second open
+    body) is kept.
+91. **The lead's answer to Q4 is recorded.** The path rule is rejected; an
+    inner world's open water is clipped to a box where the world it is
+    placed in has none. This closes Costs 2 and the first item of "Open
+    for the lead", and supersedes Decisions 76 and 85's open halves.
+92. **The clip is the guest's: an optional `clip` on open water.** Named
+    with the lead's word ("guest" reads as for visitors, "keep" collides
+    with the stage's keepers; a boolean `open: true` beside `size` is a
+    flag). The box says what the water is when it isn't weather, a fact
+    about the water; a host's box would be an override layer, a second
+    amendment to Decision 1 and a stage read with one consumer. The lead
+    accepted the guest's box (Q1).
+93. **The box is never derived**: not from live content bounds (a feedback
+    loop with the floater, an islet dragged in her doc resizing every
+    diorama, and W21), not a once-computed default on the host's link (the
+    host's again, and a hint that behaves).
+94. **The Water object's pose places the clip**: the origin is the surface
+    at rest, x, z and yaw centre and turn the box, the uniform scale
+    multiplies it, exactly as for `size`. An open body's place meant
+    nothing; this gives it a meaning and adds no field.
+95. **Liveness is global: the world offers no open water.** The local test
+    (the world's band doesn't reach her level) flickers on moving parents
+    and ties a doc's water to its height in the world. The lead accepted
+    this (Q2): a dry room on a hill in a wet world gives its guests no
+    blocks, and they drop to the sea.
+96. **A live clip is a bounded body of its doc with the Sea's id.** One
+    path, not a copy: `water.waves`, `water.current`, `not`, `choose`,
+    processes and drawing apply unchanged, and `reader.body` is the Sea's
+    id, so sailing allows any link scale.
+97. **Wind and sky are not clipped.** Weather is the world's (Decisions 48
+    and 49); clipping it needs a package coupling or a named ambient in
+    `scene/`, and an unbounded wind on a bounded block only drives her into
+    the wall.
+98. **The reader is total; membership is `choose`'s.** This replaces
+    Decision 63. A hull astride an edge stays level and is held once her
+    origin leaves; the floor rule made dioramas look broken and mixed
+    membership into the field. W19's floor cases move to W32.
+99. **Every bounded body draws its volume**: the top, a skirt from the rim
+    in the same mesh and shader, and a floor; unpicked, out of `box()`,
+    seen from either side; the extent down to the floor. This replaces
+    Decisions 59 and 60's top-only rule; 59's "no glass tank" stands
+    (these are the water's own faces, not walls). An author can't place
+    walls that appear only when a clip is live, and one rule for every box
+    keeps a clipped sea and a basin one kind of thing.
+100. **Validity.** A clip that isn't three positive numbers is flagged once
+     and the body stays open; a clip beside a size does nothing and is
+     flagged once; a tilted open body is no water in either role. A typo
+     never takes a harbour's sea away (as Decision 58 for `size`).
+101. **Editing is by the inspector, the outline and Enter.** The inspector
+     has a Clip row on Water (json, like Size); while any Water object is
+     selected its box (size or clip, live or not) is drawn as a dashed
+     outline at its pose, in the water package's own world layer
+     (`api.view.get().selected`). No face knobs: D2 stays deferred, and the
+     clip joins its water consumer.
+102. **Templates write a clip computed from their own layout; parts write a
+     plain default.** `layout.js seaClip` (her swing circle or her start,
+     every landmark, 10 m to spare, centred and turned with the layout);
+     the Sloop part's `bringSea` writes `[60, 6, 60]` centred on her and
+     turned with her; the Sea part writes none (an ocean alone has no
+     natural size). Sailing's `isOpenWater` still means "no size", so a Sea
+     with a clip is open water to it. The publishers check the clip from
+     the doc's own objects (`sailing/probes/clip-check.mjs`).
+103. **The Harbour's Sea has no clip**, and `publish-harbour` says so
+     before and after publishing. Placed in a dry world, its boats each
+     keep their own blocks, which overlap: a recorded cost, and one more
+     case for D1's first class.
+104. **The host's cut is deferred as D5**, with its three named consumers
+     (a diorama's landmarks, Cadboro Bay on a chart table at a crop, a CAD
+     section box on the naval workbench). It is orthogonal to the clip.
+105. **D4 is not needed.** Liveness is the ambient's presence, and a doc
+     alone always offers its own open water when it is valid and level.
+106. **Exhibits.** The Model room (two boats at anchor at 1:25, their
+     blocks resting on its floor), and the republished Model basin and
+     Ship at sea (now two boats, each on a block of her own). Optional and
+     not made: the Breezy pavilion (`publish-model-room --weather 5,270`),
+     and Cadboro Bay on a chart table. Boats under way are not chosen: a
+     live boat sails in whichever world computes her and can leave her box
+     between visits.
+107. **The first-flush guard.** A water instance treats its clip as not
+     live until its own `ambient()` has been asked once: its stage's first
+     flush, after which, alone, its own offer is the world's. Contained
+     stages rely on the outermost having flushed first, which W31 checks
+     in every order.
+
+## Decisions, building clipped open water (2026-11-15, made unattended in `lane/clip`)
+
+108. **The refresh is keyed on the world's water value too.** It ran once a
+     frame; a step taken after the outermost's first flush but before the
+     contained stage's next loop would have read a stale clip. It now runs
+     again whenever the value `api.ambient("water")` gives changes (an
+     identity compare: the stage keeps the same frozen object until it
+     changes) or the stage first flushes. W31's "no step on a clip after
+     the outermost's first flush" fails without it.
+109. **At anchor the template's block is 11 m deep, not 6.** Her anchor lies
+     on the bottom at sim.js's `DEPTH` (10 m) under her bow; a 6 m block
+     would leave her chain and anchor below its floor. Under way, and the
+     Sloop part's default, stay 6 m, more than any hull's draft.
+110. **A block's extent is widened by its band.** The top's rim moves
+     sideways with the crests (Gerstner), up to Σ Q·A, which the band
+     bounds; W33 asks every drawn vertex to be inside the extent, and the
+     footprint's corners alone don't hold a crest at the rim.
+111. **The model room in a wet world: its boats rest.** Under a wet
+     outermost the blocks vanish (W29) and the boats' water is the world's
+     open water, at 1:25 against their own frame, which sailing refuses
+     (gravity doesn't scale): they rest, with the notice. The design's "both
+     boats float on the harbour's sea" holds only at scale 1.
+112. **A double-click resolves to its first click's hit** (scene's router,
+     a general fix for COMPOSITION "Still open" N11's pitching boat). The
+     second click of a double-click reuses the hit of the press that began
+     it (its object and stage) when both presses are within 500 ms and
+     6 px of the dblclick, instead of casting a new ray at a boat that has
+     pitched since. It changes `scene/src/stage/router.js` only, names no
+     package, and has its own finite test.
+113. **Nothing is republished from the lane.** The lane's rules: dry runs
+     of every publisher (ship and ship --anchor with the clip check,
+     harbour --offline, basin, the Model room and publish-links offline
+     from dry-run docs, aboard, fitout and rvyc in Chrome), no sync, no
+     merge. "The Catalina 30 scene" in the design's list has no publisher:
+     the Catalina 30 is a rig doc, not a scene; `publish-rvyc` checks
+     Cadboro Bay's clip instead.
+114. **model-room-run's second boat is Ship at anchor's shape, not Lost
+     Cities aboard.** The aboard boat is the same template with a card
+     table and a link to a game doc that holds no water; building it in the
+     probe page needs the tabletop, card-table and keep packages and the
+     secure deck, for nothing the water reads. The publisher takes any two
+     boats; the real Lost Cities aboard goes in at publishing.
+
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
 has a mutation check: revert it and the named test fails. The "Finite
 check" column says what is actually enumerated. W1 to W14 are the first
 design's; W15 to W26 are "Water bodies"', built in `lane/water` (W3 is
-replaced by W17, and W10, W11 and W13 are re-run with `at`).
+replaced by W17, and W10, W11 and W13 are re-run with `at`); W27 to W35 are
+"Clipped open water"'s, built in `lane/clip` (`water/src/clip.test.js`
+unless named; W13, W16, W17, W19 and W24 amended).
 
 | | Invariant | Finite check | Mutation that must fail it |
 |---|---|---|---|
@@ -1720,56 +2037,49 @@ replaced by W17, and W10, W11 and W13 are re-run with `at`).
 | W10 | **Same water, two boats.** Readers in A and B, mapped to harbour coordinates, equal H's own | One view computing H, A and B at the harbour link poses, 600 frames × a 5×5 grid of harbour points: equal to 1e-9 (`extension.test.js`); in Chrome, `harbour-run.mjs` | Each stage reading its own water: 5 fail |
 | W11 | **No water holds still, never the wrong water.** | {dry room with one boat, with two boats, the outermost's package missing} × 600 frames: every boat's reader null (`extension.test.js`) | As W10 |
 | W12 | **The harbour as built** | `sailing/probes/harbour-run.mjs` in Chrome under the lock: 22/22, run again after the review's fixes and on the merged tree (one surface, both boats on the harbour's water and in its `wind`, no HUD or camera ride, the harbour's sky, no warnings). In the real Patchwork: the published Harbour by the session's harbour-check.mjs (both boats in view on arrival, one surface, each boat's reading of the water equal to the harbour's, hulls floating, one wind, no HUD or camera ride, no error notices; Decisions 41) | — |
-| W13 | **Time passes only where waves need it.** A process is held exactly where the doc is the world and its water has waves | W3's 9 configurations, flat water alone and a boat in a flat-water harbour × every stage; waves stilled, restored, the water removed (`extension.test.js`) | Hold the process everywhere: 10 fail |
+| W13 | **Time passes only where waves need it.** A process is held exactly where the doc is the world and its water has waves, or where a stage acts for a doc whose bounded body or live clip has waves; never in a mirror or a pin | W3's 9 configurations, flat water alone and a boat in a flat-water harbour × every stage; waves stilled, restored, the water removed (`extension.test.js`); the Model room dry and under a wet outermost, the Model basin beside Ship at sea, a clipped boat acting, mirrored and pinned, a still boat's calm block (`clip.test.js`) | Hold the process everywhere: 10 fail. A process for any live clip: 1 |
 | W14 | **One wind.** The wind is offered once, as `wind`; the surface draws with it; nothing else carries it | The sea's offer read whole for every field that says how the wind blows; the surface's wind direction for from {0, 90, 180, 270} and with no wind ambient (calm) while the water's `look` names a wind (`sea-view.test.js`, `extension.test.js`) | The surface reading the water's `look.wind`: 1 fails |
 | W15 | **The choice.** `at(p, { not })` returns the body the rule says | World open water {none, flat, waved} × every subset of {A, N inside A, C elsewhere, D attached under the asker} × 5 points × `not` {asker, none}, the expectation written out per kind of point (`water/src/choose.test.js`, 48 cases, and 4 more: the band, from above, a turned footprint, equal volumes); and a levels axis, A and N each at {-1, 0, 1} × open water {at 0, none} × 3 columns × 12 heights (9 cases, Decision 83) | Drop the exclusion: 18 fail. Prefer open over bounded: 28. Largest first: 24. No fallback: 48. A displaced surface for the band: 36. Open water winning an equal level: 32. The lowest surface below: 6. The highest id on a tie: 27 |
-| W16 | **Things travel, weather doesn't.** | {a boat with a tank alone; a harbour with A and B each holding a tank; a dry room with A and B; A mirrored; A pinned; A two deep} × every stage × a 5×5 grid in each tank: its own tank answers; with the hull as `not`, the world's open water or none; every reader is the world's or the stage's own doc's (`water/src/extension.test.js`) | No exclusion: 6 fail. Bounded only where the doc is the world: 7 |
-| W17 | **The draw count** (replaces W3) | W3's 9 configurations, W16's 6 and the Model basin beside Ship at sea in a dry room: open surfaces 1 or 0 by the outermost, patches the sum over every placement of its doc's bounded bodies, the open slab only at the outermost (`extension.test.js`); in Chrome, `basin-run.mjs` | Bounded only where `mine`: 6 fail. Open everywhere: 10 |
+| W16 | **Things travel, weather doesn't.** A contained doc's open body never answers as open water; when its clip is live it answers as its doc's bounded body, at every placement (W28, W30) | {a boat with a tank alone; a harbour with A and B each holding a tank; a dry room with A and B; A mirrored; A pinned; A two deep} × every stage × a 5×5 grid in each tank: its own tank answers; with the hull as `not`, the world's open water or none; every reader is the world's or the stage's own doc's (`water/src/extension.test.js`) | No exclusion: 6 fail. Bounded only where the doc is the world: 7 |
+| W17 | **The draw count** (replaces W3) | W3's 9 configurations, W16's 6 and the Model basin beside Ship at sea in a dry room: open surfaces 1 or 0 by the outermost, patches the sum over every placement of its doc's bounded bodies (+1 where its clip is live), the open slab only at the outermost (`extension.test.js`); the Model room dry and under a wet outermost, the basin mashup with Ship at sea clipped, a clipped boat acting, mirrored and pinned (`clip.test.js`); in Chrome, `basin-run.mjs` and `model-room-run.mjs` | Bounded only where `mine`: 6 fail. Open everywhere: 10 |
 | W18 | **Bounded water ignores placement.** | A doc G with a tank, flat and waved (fixed components): alone, yawed 30°, under a 20° heeled frame, mirrored, two deep: height and normal on a 3×3 grid × 3 times bit for bit, flat water exactly at its level with the normal up (`extension.test.js`) | (by construction: a bounded reader takes no frame; none to mutate) |
-| W19 | **Bounded frames, tilt and carrier velocity.** | Yaw {0, 30°, 137°} × heel {0, 10°, 30°} × attachment {root, hull, fitting under the hull} × a 7×7 grid × t {0, 3.7, 1000}: inside, height (the floor outside, solved the long way), normals; carrier velocity from two poses 1e-4 s apart against the body's points moved the long way; held volume for cube, 2:1 and 1:4 boxes × 5 heels × 3 yaws (`water/src/bounded.test.js`) | No carrier velocity: 3 fail. The floor not turned: 18. The surface tilted with the frame: 19 |
+| W19 | **Bounded frames, tilt and carrier velocity.** The reader is total (Decision 98): membership is W15's, the edge W32's | Yaw {0, 30°, 137°} × heel {0, 10°, 30°} × attachment {root, hull, fitting under the hull} × a 7×7 grid reaching past the footprint × t {0, 3.7, 1000}: height, normal and velocity the surface's in every column, inside or out; carrier velocity from two poses 1e-4 s apart against the body's points moved the long way; held volume for cube, 2:1 and 1:4 boxes × 5 heels × 3 yaws (`water/src/bounded.test.js`) | No carrier velocity: 3 fail. The surface tilted with the frame: 19. Decision 63's floor outside: 310 (with W32) |
 | W20 | **Weather.** | Waves from the world's wind in the stage's frame, not the doc's weather, for holder {open, bounded} × placement {alone, yawed 30°}; the sea offers no wind; every arrival order of the weather, the Sea and its water × two winds settles in at most two flushes and asks for no more; on the same wind by value it never reflushes (`sailing/src/sea-view.test.js`) | Reading the doc's weather: 2 fail. Offering wind: 1. Comparing by identity: 1. No reflush: 1 |
 | W21 | **Extent is data.** | Every W3 and W16 configuration with `content` and `box` throwing, three frames and every `at` (`extension.test.js`) | Read content: 6 fail |
 | W22 | **The spectrum clip.** | 5 seas × span {1, 10, 37.5, 200 m, open}; the span scaled (`bounded.test.js`) | No clip: 4 fail |
 | W23 | **The current.** | Current {none, 0.5 m/s toward 0°, 90°, 180°, 270°} × frame yaw {0, 90°} × 5 points × 3 times, for the world's open water through a link and for a bounded body; the value's frequency shift and nothing else (`bounded.test.js`) | No shift: 8 fail. U not added to the open reader: 8 |
-| W24 | **One open body per doc.** | 1, 2 and 3 open bodies in every id order × with and without a tank: the lowest id's level offered, one surface, the others flagged; a tilted open body offers nothing, once; yaw and place change nothing; an invalid size is no water (`extension.test.js`) | Highest id: 16 fail |
+| W24 | **One open body per doc.** | 1, 2 and 3 open bodies in every id order × with and without a tank: the lowest id's level offered, one surface, the others flagged; a tilted open body offers nothing, once; yaw and place change nothing; an invalid size is no water (`extension.test.js`); extended by W35; water's own parts: the doc's water {none, a pond only, one open, two open} × part {Water, Pond}, a pond always added and open water only where there is none (`patch.test.js`, 298996e0) | Highest id: 16 fail. The Water part's guard removed: 2 |
 | W25 | **One body per hull per step.** | The sim with a scripted `at`: open water, a pond, astride its edge (origin in, out), a dry room with and without a basin of her own, a tank aboard in open water, a flooded hold in a dry room: asked once a step about her with herself as `not`; no water, she rests unstepped; else her draft off the water she was given is her open-water draft. Water gone partway: she leaves it and stays out (held where she left it, never back at a checkpoint), leaves it and comes back (goes on from where she was held), is put down out of it (let go, resting where the doc has her) (`sailing/src/sim.test.js`, Decision 75) | No exclusion: 8 fail. Deleting her state when the water goes: 2. Holding her at the rest pose when put down out of it: 1 |
-| W26 | **The parts make no second open body.** | `bringSea` and the Sea part × the doc's water {none, a pond only, open water without a sea, open water with a sea, two open bodies with the keeper without and with a sea} × weather {none, some}: `bringSea` leaves any doc with open water exactly as it was and otherwise adds a Sea first in order and the weather where there's none; the Sea part leaves as many open bodies as there were (one where there were none), puts its sea on the keeper or says the water has one already, and changes nothing else (`sailing/src/parts.test.js`, 24 cases, Decision 80) | Weather before the open-water check: 5 fail. Always a new Sea: 8. The highest id as the keeper: 4 |
+| W26 | **The parts make no second open body.** | `bringSea` and the Sea part × the doc's water {none, a pond only, open water without a sea, open water with a sea, two open bodies with the keeper without and with a sea} × weather {none, some}: `bringSea` leaves any doc with open water exactly as it was and otherwise adds a Sea first in order and the weather where there's none; the Sea part leaves as many open bodies as there were (one where there were none), puts its sea on the keeper or says the water has one already, and changes nothing else (`sailing/src/parts.test.js`, 24 cases, Decision 80). Extended for clips (Decision 102): the Sloop part's Sea keeps 60 × 6 × 60 m centred on her and turned with her, the Sea part's none; every template doc's Sea keeps a box covering her swing circle (at anchor) or her start, and the two buoys and the islet, with 10 m to spare and touching that on every side, worked out from the doc's own objects, for {under way, at anchor} × winds from {45°, 0°, 137°, 250°} (`template.test.js`, 8 cases); the publishers check the same (`probes/clip-check.mjs`) | Weather before the open-water check: 5 fail. Always a new Sea: 8. The highest id as the keeper: 4. No margin: 8. The islet left out: 8. The clip not turned with the layout: 7. The swing circle left out: 4. The Sloop's Sea without a clip: 1. The Sea part writing one: 1 |
+| W27 | **A live clip is a box.** For a doc G whose open body O has `{ clip: c }`, placed where the world offers no open water, everything the water extension produces equals, bit for bit, the same G with O's trait `{ size: c }`, so W15 to W25 carry over by proof | Placement {in a dry room, mirrored in it, pinned in it, two deep R → R′ → G} × c {[10,3,10], [60,6,60], [37.5,2,200]} × O's yaw {0, 30°} × scale {1, 2} × place {origin, (12, 0, −7)} × {with, without a tank aboard} (192 cases) × a 7×7 grid reaching past the box × point {below the level, in the band, above, below the floor, from above} × t {0, 3.7, 1000} × `not` {none, the hull}: every reader value, the faces' geometry, processes and extent, compared as one flat list | The box at the doc's origin: 168 fail. The clip ignoring O's scale: 96. A carrier velocity for an unattached Sea: 192. The spectrum unclipped: 268. `reader.body` null: 241 |
+| W28 | **Liveness is exactly "the world offers no open water".** Live iff `ambient("water")` is null, O is the keeper, level, its clip valid; alone, never | World {nothing; open flat; open waved; a value of another version; a tilted open body; only a pond} × G {alone, linked, mirrored, pinned, two deep} × G's water {no open body; open, no clip; open with a clip; an invalid clip; a size with a clip; two open, the clip on the non-keeper; tilted open with a clip}, alone only with no world (175 cases): live or not, `at` on a 5×5 grid, the block count, the expectations written by hand | Live when the world's reader is null though its value exists: 4 fail. Live when the doc is the world: 5. A clip from a non-keeper: 12. A tilted body's clip live: 14. An invalid clip killing the open offer: 12 |
+| W29 | **Wet worlds draw no blocks.** Under an outermost that offers open water no clip is live, no block is drawn for one, no `at` answers with one | W3's and W16's wet configurations and the harbour-run shape, every boat given a clip (12); in Chrome, `harbour-run.mjs` and `model-room-run.mjs`'s wet harbour | Live wherever a clip is declared: 83 fail |
+| W30 | **Every occurrence agrees; siblings stay apart.** A doc's clip is live at all its occurrences in a view or none, exactly when the outermost offers no open water; no `at` in one doc returns another doc's clip | Outermost {dry, dry with weather, wet} × every combination of one to three of {G acting, G mirrored, G pinned, H acting, G two deep, H three deep} on ≤ 4 docs × each doc's own weather {none, some} (162 cases) | Liveness from each stage's own offer: 356 fail. The clip offered in the ambient (a clipped body offering no open water): 6 |
+| W31 | **Arrival order.** The settled state is the same in every order; under a wet outermost no step reads a clip after its first flush with water running; alone, a clip is never live | Every order of {the outermost's water starts, its first flush, G's water starts, G's first flush} (24, or 2 alone) × outermost {G itself, a dry room, a wet harbour}, a step of G's after each event; the transient bounded at one frame | No first-flush guard: 1 fails. Liveness latched at start: 2. A refresh only once a frame: 2 |
+| W32 | **The edge, with a total reader.** While her origin is inside, a hull's bow, stern and beam columns read the continued surface, as open water of the same waves; outside, what holds her origin answers (none, a basin beside, open water below) | Body {clip, size} × {flat, waved} × origin {centre, 0.5 LOA inside the edge, on it, just outside} × heading {along, 45°, straight at it} × outside {nothing, a basin beside, open water below (size only)} (120 cases); and the sim astride an edge on a total reader against a floored one (`sailing/src/sim.test.js`) | Decision 63's floor outside: 310 fail (with W19). In the sim, the floored reader: 1 |
+| W33 | **The drawn block is the read water.** Each skirt top vertex is the rim vertex, bit for bit, displaced as it is; skirt bottoms and the floor on the body's floor; every drawn vertex, displaced, inside the extent; the top and rim the reader's `displaced` to 1e-9 | Box ratio {1:1, 2:1, 1:4} × yaw {0, 30°, 137°} × heel {0, 10°} × waves {none, sea a, sea b} (54 cases) × t {0, 3.7, 1000} × every vertex | The skirt from the rest level: 54 fail. The skirt not turned with yaw: 36. The extent without the faces: 55 |
+| W34 | **Weather is not clipped.** A live clip's components are its wave maker's, clipped to its span; every stage's wind and atmosphere are the outermost's; a guest's own weather reaches nothing | Every W30 placement × own weather; and the sea's waves for holder {open, size, clip} × yaw {0, 30°} × world wind {some, none}, the doc's own weather beside (`sailing/src/sea-view.test.js`) | The sea's waves from the doc's own weather: 2 fail |
+| W35 | **Validity, and the outline.** A bad clip keeps the open offer and is flagged once; a size with a clip is a box and the clip flagged once; a tilted open body with a clip is no water; a selected Water object draws one outline of its box at its pose, none when deselected; the inspector has a Clip row | Clip {valid, zero, negative, two numbers, NaN, a string, null} × {open, beside a size} × {level, tilted} (28); select, select something else, deselect × {open with a clip, open without, a box} × {alone, in a dry room, in a harbour} (9); the descriptor | An invalid clip removing the open offer: 12 fail. The outline only while live: 2. No Clip row: 1 |
 
 ## Open for the lead
 
 Answered on 2026-11-15: Decision 1's amended sentence (43), boarding by
 click (44), whether the sea should bring water (45, superseded by water as
-a shape), and whether an inner world may keep its own water (46, built for
-water authored as a box, 85). Open from "Water bodies":
+a shape), whether an inner world may keep its own water (46 and 85, then
+91: clipped open water, the path rule rejected), and the clip design's two
+questions (92, 95): the box is the guest's, and a dry room on a hill in a
+wet world gives its guests no blocks. Open:
 
-- **Should a boat linked into a dry room keep her own open sea?** This is
-  the case the yes to Q4 was about, and it isn't delivered (Decision 76).
-  As built, water authored as a box comes along wherever its doc goes (a
-  basin, a lock, a bottle, a tank), but Ship at sea's water is open, and
-  open water is weather, so in a dry room she rests. There are two ways to
-  go:
-  - **The path rule.** Each ambient name takes the outermost offer on the
-    stage's own path, not only the outermost doc's. In the Harbour the
-    harbour's water still wins and its boats are silent. In a dry room
-    each boat has her own sea, on her own clock, and floats. It needs no
-    flag in the data. What it costs:
-    - one scene change, to W2, the rule every package reads, and to
-      Decision 1's accepted sentence;
-    - siblings in one dry room each draw an open sea, overlapping in space
-      at their own levels, and a swimmer can't cross from one to the
-      other (the same kind of cost as Costs 4's z-fighting);
-    - wind and sky follow the same rule, so her sails fill in the room
-      unless the room offers still air, and the view must choose whose sky
-      to show when two boats each offer one;
-    - a host that wants its guests dry has to say so, by offering an
-      empty value rather than nothing.
-  - **Bounded only, as built.** A boat that should float in a room is
-    authored with water of her own as a box, as the Model basin is. Open
-    water stays one world's weather, and W2 is unchanged.
 - **A thing linked into a host's pond doesn't float on it** (Costs, 1)
   until enclosing offers (D1) find a second consumer. Atmosphere interiors
   are the likeliest, for example the Arcade linked into the Harbour, lit by
-  its own room and not by the sea's sun.
+  its own room and not by the sea's sun. A wet Harbour in a dry museum,
+  whose boats' blocks overlap (Decision 103), is one more case of D1's
+  first class.
+- **A host's cut (D5)**, if the host should frame a diorama: a section box
+  on a link that cuts what the view draws of its subtree, rays and picks
+  with it. Three named consumers (a diorama's landmarks, Cadboro Bay on a
+  chart table at a crop, a CAD section box); orthogonal to the clip.
 
 ## Where it stands (2026-11-14, scene-stage; 2026-11-15, lane/water)
 
@@ -1844,3 +2154,35 @@ with the session's checks: basin-check 12/12 (new), harbour-check 10/10,
 enter-check 9/9, fitout-check 11/11, mashup-check 5/5, presence-check
 11/11, realcheck-shared 7/7, arcade-check 10/10 (a later visit), and each
 republished doc opens without errors in the body its doc starts people in.
+
+Clipped open water, 2026-11-15 and 16 in `lane/clip` (Decisions 90 to
+114): the path rule a fixer had committed reverted (one commit;
+`scene/src` back as it was); the clip in the water package (the
+conversion, the first-flush guard, the refresh on the world's value, the
+total reader, every block drawn with its skirt and floor, the outline, the
+inspector's Clip row, the notices); sailing's templates and Sloop writing
+it, its publishers checking it, the Model room publisher and probe;
+Cadboro Bay's clip; publish-links' per-link scale; and the double-click
+fix in scene's router. Suites: water 1074, sailing 787, terrain 108, scene
+1496. W27 to W35 built as finite enumerations, every rule
+mutation-checked (the table above). Chrome under the lock, on
+the lane's builds: harbour-run 23/23 (no block in the harbour, W29),
+basin-run 15/15 (Ship at sea afloat on her block beside the basin),
+model-room-run 18/18 (new), pins-run 27/27, links-run 37/37, sailing-run
+85/85, extract-run 25/25 and ocean-run's eight views and three new block
+views (the critic's two missing runs), and aboard-run 70/71: step 13's
+"the card's X arrow is on A's screen" fails, the same with the template's
+Sea put back unclipped at the origin and with the old router, so not this
+lane's; the integration's 72/72 ran on a scene build that held another
+session's uncommitted inspector work. With the old router, step 13 also
+missed the double-click on the pitching boat (4 fails), which the router
+fix (Decision 112) now passes.
+Publisher dry runs: ship and ship --anchor (with the clip check), basin,
+harbour --offline (its Sea without a clip), the Model room and the Breezy
+pavilion and publish-links offline from dry-run boats (a boat with no clip
+refused), and in Chrome publish-aboard 21/21, publish-fitout 14/14 and
+publish-rvyc 44/44 (from the recorded fetches), each with the clip check. Nothing republished, synced or merged from the
+lane; the republishing order is the design's (Ship at sea, Ship at anchor,
+Lost Cities aboard with the games room and Games night, Fitting out,
+Cadboro Bay, the Harbour, the Model basin and Ship at sea, then the Model
+room).
