@@ -309,7 +309,7 @@
   color: var(--scene-fg);
 }
 
-/* the stage's own chrome shown (the inspector, the outline): a side panel's width */
+/* the stage's own chrome shown (the inspector, the parts bin): a side panel's width */
 .scene-stage .stage-drawer[data-kind="chrome"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   --stage-drawer-default: clamp(220px, 30cqi, 290px);
 }

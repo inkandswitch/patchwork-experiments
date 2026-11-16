@@ -153,7 +153,7 @@ try {
     /** an outline row's name button (the grab handle), scrolled into view */
     row: (w, id) => { const li = hosts[w].querySelector(`li.object-row[data-id="${id}"]`); if (!li) return null; li.scrollIntoView({ block: "nearest" }); return { main: rect(li.querySelector(".row-main")), li: rect(li) }; },
     rows: (w) => [...hosts[w].querySelectorAll("li.object-row")].map((li) => li.dataset.id),
-    /** open a drawer tab from the toolbar (Edit's): "objects", "parts"; true once it's docked */
+    /** open a drawer tab from the toolbar (Edit's): "inspector" (the tree and the fields), "parts"; true once it's docked */
     openTab: (w, id) => { if (hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)) return true; const e = hosts[w].querySelector(`.toolbar [data-command="${id}"]`); e?.click(); return !!e; },
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     ring: (w) => dbg[w].host.instanceOf("scene.transfer")?.debug?.ring() ?? null,

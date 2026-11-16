@@ -132,9 +132,9 @@ async function menuPick(x, y, label) {
 async function main() {
   check("allLoadedA", await b.waitFor(`__p.allLoaded("a")`, 30_000));
   check("allLoadedB", await b.waitFor(`__p.allLoaded("b")`, 30_000));
-  // the outline is a drawer tab each viewer opens from Edit's toolbar
-  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
-  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
+  // the tree is the top of the inspector's pane, which each viewer opens from Edit's toolbar
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
+  check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
   const files = await P("files");
   const urlA = await P(`url("a")`);
   // the bracket's render built in A (so a copy can take its build)
@@ -448,7 +448,7 @@ async function main() {
 
 async function sail() {
   const before = await ids("a");
-  // the bin and the outline are drawer tabs A opens from Edit's toolbar
+  // the bin and the inspector (the tree on top) are drawer tabs A opens from Edit's toolbar
   await b.waitFor(`__p.openTab("a", "parts") && __p.tab("a", "parts")`, 20_000);
   await b.waitFor(`__p.part("a", "sailing.sloop")`, 20_000);
   const it = await P(`part("a", "sailing.sloop")`);
@@ -462,8 +462,8 @@ async function sail() {
   const aSea = Object.keys(A.objects).find((id) => A.objects[id].traits?.water && A.objects[id].traits?.["sailing.sea"]);
   check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.["sailing.weather"], { ship, aSea, traits: Object.keys(A.traits ?? {}) });
   if (!ship) return;
-  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
-  check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
+  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
+  check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
   // runtime state on her, as play would leave it
   await b.js(`__p.change("a", (d) => { d.objects[${J(ship)}].traits["sailing.ship"].motion = { position: [1, 0, 2], velocity: [0.5, 0, 0], t: 12 }; d.objects[${J(ship)}].claims = { sim: { viewer: "viewer:zz", session: "s-9" } }; })`);
   await b.waitFor(`__p.allLoaded("a")`, 30_000);

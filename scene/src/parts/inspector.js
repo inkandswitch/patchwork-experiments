@@ -1,10 +1,14 @@
-// scene.inspector: the "inspector" for local.selected, a drawer tab
-// (TOOLS.md §6). Chrome follows attention: in Edit the tab opens on the
-// first selection and then stays open, showing whatever is selected and the
-// scene when nothing is (TOOLS.md Decisions 6, "The inspector stays open"),
-// so the canvas doesn't change width at every select and deselect. Its ×
-// shuts it until the selection changes; leaving Edit shuts it; the
-// toolbar's Inspector opens it with nothing selected, on the scene.
+// scene.inspector: the editor's one pane for what's in the scene, a drawer
+// tab (TOOLS.md §6). It holds the object tree on top (./outline.js) and the
+// selection's fields below; the selection is one value (view.selected), so a
+// row click selects and the fields follow in the same flush, and a canvas,
+// menu or Escape selection marks and reveals its row. Chrome follows
+// attention: in Edit the pane opens on the first selection and then stays
+// open, showing whatever is selected and the scene when nothing is
+// (TOOLS.md Decisions 6, "The inspector stays open"), so the canvas doesn't
+// change width at every select and deselect. Its × shuts it until the
+// selection changes; leaving Edit shuts it; the toolbar's Inspector opens it
+// with nothing selected, on the scene.
 //
 // For an object: name (read-only when a lens names it), Visible, Wireframe,
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
@@ -45,7 +49,8 @@
 // again. Fields being typed in are never overwritten.
 //
 // A selection that isn't a scene object (a ref such as a dimension: its owner
-// shows it, in its own tab), or one that's gone: the tab isn't open.
+// shows it, in its own tab), or one that's gone: no fields (the tree stays,
+// with no row marked), and a selection of one opens nothing.
 
 import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
@@ -59,6 +64,7 @@ import { EDIT, LOOK, editing } from "../stage/bodies.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, contentKind, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { own } from "../stage/own.js";
+import { createOutline } from "./outline.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
@@ -394,7 +400,7 @@ function create(api) {
 
   // ─── the panel ────────────────────────────────────────────────────────────
 
-  let body = null; // the panel body, while mounted
+  let body = null; // the fields' element (below the tree), while mounted
   let view = null; // the DOM for the current selection: { id, group, renderUrl, …fields }
   let last = null; // { scene, local, name, content } at the last full update
   let namesQueued = false;
@@ -974,12 +980,18 @@ function create(api) {
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
+  // the object tree, at the top of the pane (./outline.js): mounted with the pane, updated on every flush
+  const tree = createOutline(api);
   const tab = drawerTab(api, {
     id: "inspector",
     title: "Inspector",
     mount(host) {
-      body = host;
-      body.classList.add("inspector-body");
+      host.classList.add("inspector-pane");
+      const treeHost = el("div", { class: "inspector-tree" });
+      const fields = el("div", { class: "inspector-body" });
+      host.replaceChildren(treeHost, fields);
+      const treeView = tree.mount(treeHost);
+      body = fields;
       view = null;
       last = null;
       showEmpty();
@@ -987,10 +999,9 @@ function create(api) {
         update: (scene, local) => refresh(scene, local), // (the value follow() passed: seen())
         dispose() {
           teardown();
-          if (body === host) {
-            body.replaceChildren();
-            body = null;
-          }
+          treeView.dispose();
+          if (body === fields) body = null;
+          host.replaceChildren();
           last = null;
         },
       };
@@ -1024,7 +1035,7 @@ function create(api) {
     name: "Inspector",
     edit: true,
     show: ["toolbar"],
-    state: (target) => (target == null ? { checked: tab.isOpen(), title: "The selection's fields and behaviours; with nothing selected, the scene's" } : null),
+    state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),
     run(_target, value) {
       const open = value === undefined ? !tab.isOpen() : !!value;
       asked = open;
@@ -1035,11 +1046,15 @@ function create(api) {
 
   return {
     commands,
-    update: (scene, local, prev, view) => follow(scene, seen(local, view)),
+    update(scene, local, prev, view) {
+      follow(scene, seen(local, view));
+      tree.update(scene, local, prev, view);
+    },
     /** for tests and probes: the tab's element, and whether it's docked */
     tab,
     dispose() {
       tab.dispose();
+      tree.dispose();
       teardown();
       body = null;
     },

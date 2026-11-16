@@ -199,7 +199,7 @@ try {
   // (scene/TOOLS.md Decisions 6): A chooses Edit, as on the body chip
   check("the doc starts A in Look; A chooses Edit", (await T('bodyOf("a")')) === "look" && (await T('enter("a", "edit")')) && (await T('bodyOf("a")')) === "edit", await T('bodyOf("a")'));
   // the outline is a drawer tab the viewer opens (Objects): open it, to click rows
-  await T('openTab("a", "scene.outline", "objects")');
+  await T('openTab("a", "scene.inspector", "inspector")');
   await b.rest(500);
 
   // 9. the halo, with a real drag on its Y arrow (the block is near the view's

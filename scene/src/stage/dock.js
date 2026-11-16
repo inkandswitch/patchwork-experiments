@@ -6,7 +6,7 @@
 // person closing it, so only the × calls onClose: the caller hears of the
 // closes it didn't make itself. A pane is an embedded document (src/embed.js),
 // so the keys typed in it are its own, never the scene's; unless it's docked
-// with `embed: false` (the stage's own chrome: the inspector, the outline),
+// with `embed: false` (the stage's own chrome: the inspector, the parts bin),
 // whose keys are the stage's like any of its parts'.
 //
 // One pane shows at a time. Docking one shows it (unless it's docked with

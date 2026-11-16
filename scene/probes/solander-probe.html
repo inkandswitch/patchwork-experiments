@@ -118,8 +118,8 @@ try {
   const tMount = performance.now();
   P.tMount = tMount;
   // per-frame sampler: UI flushes (each one updates every extension, the
-  // outline among them) per animation frame. The stage keeps no outline-only
-  // timing since the outline became a part (scene.outline).
+  // inspector's tree among them) per animation frame. The stage keeps no
+  // tree-only timing since the tree became a part (now the inspector's).
   const flushPerFrame = [];
   let lastFlush = 0;
   let sampling = true;

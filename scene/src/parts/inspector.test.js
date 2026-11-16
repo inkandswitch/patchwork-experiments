@@ -42,8 +42,8 @@ async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
   return s;
 }
 
-/** The Inspector tab's pane (open: the viewer asked for it) */
-const body = () => s.instance("scene.inspector").tab.body;
+/** The Inspector pane's fields, below its tree (open: the viewer asked for it) */
+const body = () => s.instance("scene.inspector").tab.body.querySelector(".inspector-body");
 const $ = (sel) => body().querySelector(sel);
 const buttons = () => [...body().querySelectorAll(".commands button")];
 const button = (text) => buttons().find((b) => b.textContent === text);
@@ -511,6 +511,101 @@ describe("scene.inspector: the pure side", () => {
   });
 });
 
+describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md §6)", () => {
+  const tab = () => s.instance("scene.inspector").tab;
+  const marked = () => [...tab().body.querySelectorAll('.inspector-tree .object-row[aria-selected="true"]')].map((r) => r.dataset.id);
+  /** what the fields show: an object's or group's id and kind, the scene's, or hidden (a ref) */
+  const shown = () => {
+    const f = tab().body.querySelector(".inspector-body");
+    if (!f || f.hidden) return "hidden";
+    const i = f.querySelector(".inspector");
+    return i.dataset.kind === "scene" ? "scene" : `${i.dataset.kind} ${i.dataset.id}`;
+  };
+  const rowClick = (id) => tab().body.querySelector(`.inspector-tree .object-row[data-id="${id}"] .row-main`).click();
+  const toolbarOn = () => s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
+
+  // Each source of a selection, from the state it needs (the pane open from
+  // the toolbar, or shut, or open on "a"): the pane, the row the tree marks
+  // and what the fields show, read together after the one flush.
+  const ROWS = [
+    // [source, setup, act, open, row, fields]
+    ["row click", toolbarOn, () => rowClick("a"), true, ["a"], "object a"],
+    ["api.view.select(id)", () => {}, () => s.api("scene.inspector").view.select("a"), true, ["a"], "object a"],
+    ["menu Select", () => {}, () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), true, ["b"], "object b"],
+    ["Escape → null", () => s.api("scene.inspector").view.select("a"), () => s.key("Escape", { code: "Escape" }), true, [], "scene"],
+    ["group row", toolbarOn, () => rowClick("g"), true, ["g"], "group g"],
+    ["ref dimension:x", toolbarOn, () => s.api("scene.inspector").view.select("dimension:x"), true, [], "hidden"],
+  ];
+
+  it.each(ROWS)("%s: open, the row marked and the fields shown agree", async (_name, setup, act, open, row, fields) => {
+    const select = (await import("./select.js")).default;
+    s = await mountStage({
+      extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }],
+      doc: { objects: { g: group("G"), a: object({ name: "A", group: "g" }), b: object({ name: "B" }) }, order: ["g", "a", "b"] },
+    });
+    await settle();
+    setup();
+    await settle();
+    act();
+    await settle();
+    expect(tab().isOpen()).toBe(open);
+    expect(marked()).toEqual(row);
+    expect(shown()).toBe(fields);
+    // one value: the row marked is the fields' object (none for the scene or a ref)
+    expect(marked()).toEqual(fields.startsWith("object ") || fields.startsWith("group ") ? [fields.split(" ")[1]] : []);
+    // one pane: one tab, one tree, one set of fields
+    expect(s.debug.drawer().order).toEqual([tab().body]);
+    expect(tab().body.querySelectorAll(".scene-outline").length).toBe(1);
+    expect(tab().body.querySelectorAll(".inspector-body").length).toBe(1);
+  });
+
+  it("the tree comes with the pane: mounted on its first open, the same tree after a × and a reopen, none before", async () => {
+    s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    await settle();
+    expect(tab().isOpen()).toBe(false);
+    expect(s.root.querySelectorAll(".scene-outline").length).toBe(0);
+    await select("a");
+    expect(tab().isOpen()).toBe(true);
+    const tree = tab().body.querySelector(".scene-outline");
+    expect(s.root.querySelectorAll(".scene-outline").length).toBe(1);
+    s.root.querySelector(".stage-drawer-tab-close").click();
+    await settle();
+    expect(s.root.querySelectorAll(".scene-outline").length).toBe(0); // shut with the pane
+    await select(null);
+    await select("a");
+    expect(tab().body.querySelector(".scene-outline")).toBe(tree);
+    expect(s.root.querySelectorAll(".scene-outline").length).toBe(1);
+  });
+
+  it("arrow keys in the tree are the tree's: no scene shortcut hears them", async () => {
+    const keys = [];
+    const keymap = { create: () => ({ input: { key: (ev) => (keys.push(ev.key), true) } }) };
+    s = await mountStage({ extensions: [INSPECTOR, OPENED, { meta: { id: "t.keys" }, module: keymap }], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
+    await settle();
+    const main = tab().body.querySelector('.object-row[data-id="a"] .row-main');
+    main.focus();
+    for (const key of ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft"]) document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    expect(keys).toEqual([]);
+  });
+
+  it("the package registers one pane: scene.inspector and no scene.outline; in Edit the toolbar has Inspector and no Objects", async () => {
+    const { plugins } = await import("../index.js");
+    const ids = plugins.filter((p) => p.type === "scene:extension").map((p) => p.id);
+    expect(ids).toContain("scene.inspector");
+    expect(ids).not.toContain("scene.outline");
+    const { flatCommands, shownOn } = await import("./toolbar-commands.js");
+    // every part of the package that offers a toolbar toggle for a drawer tab
+    const owners = await Promise.all(["scene.inspector", "scene.parts", "scene.dimensions"].map(async (id) => ({ meta: { id }, module: await plugins.find((p) => p.id === id).load() })));
+    s = await mountStage({ extensions: owners, doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    await settle();
+    const toolbar = flatCommands(s.api("scene.inspector").collect("commands"))
+      .filter(({ command }) => shownOn(command, "toolbar", { strict: true }))
+      .map(({ ext, command }) => `${ext}:${command.id}`);
+    expect(toolbar).toContain("scene.inspector:inspector");
+    expect(toolbar.some((k) => k.endsWith(":objects"))).toBe(false);
+  });
+});
+
 describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §6)", () => {
   const tab = () => s.instance("scene.inspector").tab;
   async function bare(objects, extensions = []) {
@@ -615,6 +710,8 @@ describe("scene.inspector: a drawer tab that follows attention (TOOLS.md §1, §
         await apply(e);
         m = model(m, e);
         expect(tab().isOpen(), q.join(" ")).toBe(m.open);
+        // the tree comes with it: shown iff the pane is
+        expect(s.root.querySelectorAll(".scene-outline").length, q.join(" ")).toBe(m.open ? 1 : 0);
       }
       cases++;
     }

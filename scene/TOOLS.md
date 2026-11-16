@@ -151,8 +151,8 @@ at a card table it draws. A holder's `cursor(ev)` may name its click
 
 **Select** is also the first entry of every target's menu (right-click,
 long-press, the context-menu key; under lock, at the crosshair): the
-deliberate select in a game, in every body. The outline is the keyboard's,
-in Edit. Alt keeps its one meaning: place freely during a carry.
+deliberate select in a game, in every body. The inspector's tree is the
+keyboard's, in Edit. Alt keeps its one meaning: place freely during a carry.
 
 **The halo.** A selection shows its verbs and, in Edit where its doc is
 writable, handles: move arrows, rotate rings and scale corners around its box,
@@ -173,8 +173,8 @@ table or walking a level sees no editor.
 |---|---|
 | a plain click selecting (Edit's click, ahead of the chain) | Select in every target's menu, Esc to deselect; the selection's box |
 | the halo's handles and build-param knobs | carrying (press-drag, Q / E, F to flip), and every package's verbs |
-| the inspector (opening on the selection; Starts in) and the outline, Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
-| the toolbar, all of it (Snap, Frame all, Objects, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
+| the inspector, the object tree and the fields in one tab (opening on the selection; Starts in), and the Dimensions and Parts tabs | menus, the use prompt and the key map (less Edit's commands) |
+| the toolbar, all of it (Snap, Frame all, Inspector, Measure, Dimensions, Grid, Axes, Bounds, units, Parts, Undo, Redo) | the body chip, who's here, Leave, the Esc hint |
 | grid, axes and bounds | the seat picker, the clock chip (Pause is anyone's: Decisions 5) |
 | Measure; selecting and deleting a dimension (saved ones are drawn everywhere: the doc's annotation) | notices and HUD pills, legends, the packages prompt |
 | Remove (Delete), Group, Ungroup, Fix at this version, Follow latest, Set home view, Copy, Paste | Frame (`.`) and a double-click to frame |
@@ -205,8 +205,8 @@ selection is; it goes where the link's doc acts (a mirror's: where it's
 live), and a pin or a closed link says why it can't be entered. The
 breadcrumb is the view's trail along the top while the focus is inside a
 link, with Leave; Escape's last rung leaves. The general parts (the
-editor's chrome among them) move into the focus stage, so the halo, the
-inspector and the outline act on the entered doc's objects in its frame;
+editor's chrome among them) move into the focus stage, so the halo and the
+inspector (its tree too) act on the entered doc's objects in its frame;
 one holding something (a walk's body, a held Measure) finishes it where it
 was, so Enter and Leave never change the body or drop the tool (the tool
 goes down only when its stage leaves the focus path);
@@ -215,7 +215,7 @@ menu, keys and prompt still reach outside. In Edit, a click outside the
 focus is still Edit's: it selects nothing and goes no further, so no
 package's click verb acts for it (COMPOSITION.md, Decisions, Edit's click
 is Edit's, reversing step 14's "isn't Edit's"). The
-outline's link rows say what each link is here and enter; drawer tabs
+tree's link rows say what each link is here and enter; drawer tabs
 open as the focus moved open again inside. Select's menu entry is the
 focus stage's alone, so it's offered only on what can be selected.
 
@@ -403,11 +403,21 @@ right-click Select still selects it (no handles, no inspector).*
   with its reason ("too far", "view only").
 - **Try a copy**, on the world bar: the scene copied at its heads, opened,
   then discarded: play-testing without spending the real doors.
-- **One drawer** with tabs: inspector, outline, and an object's own editor
+- **One drawer** with tabs: the inspector, and an object's own editor
   (Camber, a dice table, a bag), docked by its verb with `api.dock` and
   closed by its × or its caller; the pane with the keys shows a focus ring.
   A grip on its left edge sets its width, the viewer's for the kind of pane
   shown (Decisions 9).
+- **The inspector is one pane**: the object tree on top and the
+  selection's fields below, one tab, one selection (Decisions 10). A row
+  click selects and the fields follow in the same flush; a click in the
+  view, the menu's Select or Escape marks and reveals the row. The tree
+  takes at most about 40% of the pane's height and scrolls; the fields
+  scroll under it. It opens by the inspector's rule (a selection in Edit,
+  or the toolbar's Inspector), so the tree comes with it; there is no
+  Objects tab or toggle. *Built (lane/sidebar, 2026-11-16):*
+  `parts/outline.js` is a module the inspector mounts
+  (`createOutline(api)`), no longer an extension.
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -1001,6 +1011,20 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   on the stage itself (3,110), the bottom always Look or Edit, nothing
   standing on Edit, Leave never landing in it, and the fall-back after
   Leave from every body (`stage/bodies.test.js`).
+- **Sidebar 1 (lane/sidebar, 2026-11-16): one pane for the tree and the
+  inspector** (Decisions 10). `scene.outline` and its Objects toggle went;
+  `parts/outline.js` is `createOutline(api)`, mounted by `scene.inspector`
+  at the top of its one tab, over the fields. *Proves* (finite): six
+  sources of a selection (a row click, `api.view.select`, the menu's
+  Select, Escape, a group's row, a dimension's ref) × the pane, the row
+  marked and what the fields show, read together after the flush (they
+  agree in every row); the inspector's open-rule table (216 sequences)
+  unchanged, with the tree shown exactly while the pane is; the tree mounted
+  with the pane and the same tree after × and a reopen; arrow keys in the
+  tree reach no scene key; the package registers no `scene.outline` and
+  Edit's toolbar has Inspector and no Objects (`parts/inspector.test.js`,
+  "one pane"); a focus move with the pane open reopens it inside, its tree
+  on the link's objects (`stage/focus.test.js`).
 
 ## What it costs
 
@@ -1216,3 +1240,32 @@ The project lead decided the five open questions on 2026-11-12.
    owner have its own width? Should the widths be one per viewer across
    all scenes, as screen layout usually is, rather than per scene? Should
    a pane still be able to declare a preferred width on top of the grip?
+10. **The object tree and the inspector are one pane** (the lead,
+    2026-11-16: "the sidebar's objects / inspector should be integrated
+    together"; the shape of it decided unattended, 2026-11-16,
+    lane/sidebar, for the lead). `scene.inspector` owns a single drawer tab
+    (chrome, `data-panel="inspector"`, titled Inspector) holding the tree
+    over the selection's fields. There is no `scene.outline` extension and
+    no `objects` command: the tree is a module the inspector mounts
+    (`createOutline(api)`), so it is mounted exactly while the pane is and
+    two tabs can't disagree about what's selected. The selection stays one
+    value (`view.selected`), so the tree's marked row (`aria-selected`) and
+    the fields' object are the same in every flush, and a ref (a
+    dimension) marks no row and hides the fields, leaving the tree.
+    - The pane opens by the inspector's rule, untouched: a selection in
+      Edit, or the toolbar's Inspector; its × shuts it until the selection
+      changes; leaving Edit shuts it; a focus move reopens it inside. So
+      the tree now arrives with a selection, where Objects opened only
+      when asked.
+    - The tree keeps everything it did as its own tab: expand state in
+      localStorage, the filter, the arrow keys (stopped before the scene's
+      keys), row drags and document drops, New group, presence marks and
+      revealing a selection made elsewhere.
+    - Layout: a fixed split, the tree capped at about 40% of the pane's
+      height and scrolling, the fields filling the rest. Nothing of it is
+      written to the doc.
+    Questions for the lead: is "Inspector" the right name for the pane
+    (or "Objects", or "Scene")? Should the split be draggable (a view
+    pref, like the drawer's grip) or the tree foldable, rather than a fixed
+    40%? Should the tree arrive with a selection (as now), or stay folded
+    until asked?

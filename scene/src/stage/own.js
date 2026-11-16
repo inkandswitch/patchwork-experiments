@@ -1,6 +1,6 @@
 // The stage's own parts (STAGE.md, "Edit"): the extension modules this
-// package ships that edit the scene as the stage (the halo, the inspector,
-// the outline, add, the parts bin, transfer, dimensions, Frame's Set home
+// package ships that edit the scene as the stage (the halo, the inspector
+// and its tree, add, the parts bin, transfer, dimensions, Frame's Set home
 // view, Delete, Undo). Only these get `api.edit`, `api.edits`, `api.undo`
 // and `api.redo`; every other extension's api has none, so a package's verb
 // can't put itself on anyone's undo stack (TOOLS.md, Decisions 2).

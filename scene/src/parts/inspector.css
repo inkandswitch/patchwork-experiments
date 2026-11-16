@@ -2,6 +2,31 @@
    section, 754-774). Every descendant rule keeps out of the documents the
    inspector embeds (.about-embed), except a scene embedded in one. */
 
+/* the one pane: the object tree on top (at most ~40% of the height, then it
+   scrolls), the selection's fields filling the rest (scrolling on their own) */
+.scene-stage .inspector-pane:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scene-stage .inspector-tree:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 1 auto;
+  max-height: 40%;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--scene-border);
+}
+
+.scene-stage .inspector-body:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 6px;
+}
+
 .scene-stage .inspector:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   flex-direction: column;

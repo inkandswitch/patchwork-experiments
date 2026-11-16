@@ -304,7 +304,7 @@ try {
   if (leaveItem) await clickAt(leaveItem);
   await b.rest(300);
   check("Escape puts the gun down and leaves A walking; the body chip's Leave stops walking (Look again)", putDown && /Walk/.test(chipA?.text ?? "") && !!leaveItem && (await P(`body("a")`)).id === "look", { chip: chipA, body: await P(`body("a")`) });
-  // the outline is a drawer tab A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
+  // the tree is the top of the inspector's pane, which A opens from the toolbar, which is Edit's: A chooses Edit on the body chip first
   const chipLook = await P(`chip("a")`);
   if (chipLook) await clickAt(chipLook);
   await b.soon(`!!window.__p.chipItem("a", "Edit")`, { frames: 180 });
@@ -312,8 +312,8 @@ try {
   if (editItem) await clickAt(editItem);
   await b.rest(300);
   check("A chooses Edit on the body chip (the toolbar, the outline and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
-  const objectsButton = await P(`buttonRect("a", "Objects")`);
-  if (objectsButton) await clickAt(objectsButton);
+  const inspectorButton = await P(`buttonRect("a", "Inspector")`);
+  if (inspectorButton) await clickAt(inspectorButton);
   await b.rest(500);
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
   await b.rest(400);

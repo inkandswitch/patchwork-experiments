@@ -1,5 +1,5 @@
-// The stage's content loop, mounted with the model's add, outline and
-// inspector (no WebGL, and no <patchwork-view>, so the inspector mounts the
+// The stage's content loop, mounted with the model's add and inspector (its
+// tree too) (no WebGL, and no <patchwork-view>, so the inspector mounts the
 // build controls itself): render docs built through the stage, the sync
 // settle window, the embedded controls' rebuild and context events, objects
 // fixed at a version of their source (`at`), and what a dragged row carries.
@@ -9,19 +9,18 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import add from "../parts/add.js";
-import outline from "../parts/outline.js";
 import inspector from "../parts/inspector.js";
 import { Viewport } from "./viewport.js";
 import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
 
-// The outline is a drawer tab the viewer opens: these tests have it open.
+// The inspector's pane (the tree and the fields): these tests have it open, as the toolbar's Inspector does.
 const opener = {
   create(api) {
     return {
       update() {
-        api.run({ ext: "scene.outline", command: "objects", value: true });
+        api.run({ ext: "scene.inspector", command: "inspector", value: true });
       },
     };
   },
@@ -29,7 +28,6 @@ const opener = {
 
 const EXTS = [
   { meta: { id: "scene.add" }, module: add },
-  { meta: { id: "scene.outline" }, module: outline },
   { meta: { id: "scene.inspector" }, module: inspector },
   { meta: { id: "t.opener" }, module: opener },
 ];
