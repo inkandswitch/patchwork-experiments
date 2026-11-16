@@ -914,7 +914,11 @@ describe("the keys each station declares", () => {
   // every station a verb can take, in every variant stations.js can make: a post is the sail's keys
   // (Q E with the sheet, R with the halyard) + F; a winch the jib's (Q E R B, with a jib) + F; the
   // helm A D ← → + the sail's (sheet and halyard) + the jib's (B) + F. takePost always works the
-  // halyard, so there is no post with the sheet alone.
+  // halyard, so there is no post with the sheet alone. A winch declares the sheet's Q E on either
+  // side, since which is the working one changes while you stand there (a tack, backing the jib):
+  // at the lazy one they are declared and do nothing, a labelled action unavailable in this state
+  // (a label names the action, not its state: scene/TOOLS.md §4). The last column is the codes
+  // that do nothing from the station just taken.
   const Q = ["KeyQ", "Haul in"], E = ["KeyE", "Ease out"], R = ["KeyR", "Halyard"], F = ["KeyF", "Leave"];
   const FURL = ["KeyR", "Furler"], B = ["KeyB", "Back jib / let fly"];
   const STEER = [["KeyA", "Steer to port"], ["KeyD", "Steer to starboard"], ["ArrowLeft", "Steer to port"], ["ArrowRight", "Steer to starboard"]];
@@ -924,6 +928,7 @@ describe("the keys each station declares", () => {
     "the mast": [{}, "halyard", "mast", [R, F]],
     "the mast, the sheet led there (no helm, no mainsheet)": [{ helm: false, mainsheet: false }, "halyard", "mast", [Q, E, R, F]],
     "the working winch": [{}, "winch", "winchP", [Q, E, FURL, B, F]],
+    "the lazy winch": [{}, "winch", "winchS", [Q, E, FURL, B, F], ["KeyQ", "KeyE"]],
     "a winch, no jib": [{ jib: false }, "winch", "winchP", [F]],
     "the helm, a sail and a jib": [{}, "helm", "wheel", [...STEER, Q, E, R, B, F]],
     "the helm, a sail only": [{ jib: false }, "helm", "wheel", [...STEER, Q, E, R, F]],
@@ -962,14 +967,16 @@ describe("the keys each station declares", () => {
   };
 
   // codes labelled alike do the same thing, and codes labelled apart don't (scene/TOOLS.md §4): a
-  // touch pad shows one control per label, which presses the first of its codes
+  // touch pad shows one control per label, which presses the first of its codes. Checked from one
+  // state, the station just taken in the stage's starting trim: exactly the variant's idle codes do
+  // nothing there, and among the rest two codes do the same thing iff they share a label.
   it.each(Object.keys(VARIANTS))("%s: two codes do the same thing iff they share a label", (name) => {
     const v = VARIANTS[name];
     const keys = take(v).taken.handlers.keys;
     const did = Object.fromEntries(keys.map((k) => [k.code, effect(v, k.code)]));
-    for (const a of keys) {
-      expect(did[a.code], a.code).not.toBe(JSON.stringify({ inputs: [], commits: [], at: take(v).taken.id }));
-      for (const b of keys) expect(did[a.code] === did[b.code], `${a.code} ${b.code}`).toBe(a.label === b.label);
-    }
+    const nothing = JSON.stringify({ inputs: [], commits: [], at: take(v).taken.id });
+    expect(keys.filter((k) => did[k.code] === nothing).map((k) => k.code)).toEqual(v[4] ?? []);
+    const acting = keys.filter((k) => did[k.code] !== nothing);
+    for (const a of acting) for (const b of acting) expect(did[a.code] === did[b.code], `${a.code} ${b.code}`).toBe(a.label === b.label);
   });
 });
