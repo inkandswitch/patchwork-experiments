@@ -1,26 +1,31 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// Sailing is not a datatype or a tool. It is a scene extension, parts and
-// two templates (see the scene package's STAGE.md):
-// - "sailing.sea" runs in a scene with the sea trait: it makes the sea's
-//   waves, wind and sky and gives them away as data (the water package
-//   draws and evaluates the world's water; every boat in that world reads
-//   its wind), and runs nothing else, so a harbour's sea holds no ships;
+// Sailing is not a datatype or a tool. It is scene extensions, parts and two
+// templates (see the scene package's STAGE.md):
+// - "sailing.weather" runs in a scene with the weather trait: it offers the
+//   world's wind and sky as ambients (water/WATER.md, "Water bodies");
+// - "sailing.sea" runs in a scene with an object carrying the sea trait: a
+//   behaviour put on a water body (the water package's `water` object
+//   trait), it makes that body's waves from the world's wind and gives them
+//   away as data (the water package draws and evaluates them), and runs
+//   nothing else, so a harbour's sea holds no ships;
 // - "sailing" runs in a scene with a ship (the ship and its stations on
-//   objects), whoever is looking and whatever they hold: it steps the ships
-//   on the world's water as a process of the doc's clock (editing never
-//   stops her; a pause does), walks her deck (the "aboard" body) and works
-//   her stations (the "station" body);
-// - the "ship-at-sea" template lays out a sloop under way in an empty scene,
-//   seen from her quarter (view.start's home), so a click on her comes aboard;
-//   "ship-at-anchor" lays her out lying at anchor off an islet, sail down,
-//   in a moderate breeze;
-// - parts for the editor's parts bin (scene:part): the sloop whole (she
-//   brings her sea), and her mast and sail, wheel, windlass and anchor,
-//   ladder, mainsheet, jib winches and companionway on their own, to drag
-//   onto any hull (one modelled elsewhere, with Ship on it); and buoys and an
-//   islet to sail past.
+//   objects), whoever is looking and whatever they hold: it steps each ship
+//   on whatever water she is in, as a process of the doc's clock (editing
+//   never stops her; a pause does), walks her deck (the "aboard" body) and
+//   works her stations (the "station" body);
+// - the "ship-at-sea" template lays out a sloop under way on a Sea (a water
+//   object with a sea on it) under the weather, seen from her quarter
+//   (view.start's home), so a click on her comes aboard; "ship-at-anchor"
+//   lays her out lying at anchor off an islet, sail down, in a moderate
+//   breeze;
+// - parts for the editor's parts bin (scene:part): a Sea, the sloop whole
+//   (she brings a Sea and the weather where the scene has no open water),
+//   and her mast and sail, wheel, windlass and anchor, ladder, mainsheet,
+//   jib winches and companionway on their own, to drag onto any hull (one
+//   modelled elsewhere, with Ship on it); and buoys and an islet to sail
+//   past.
 // A sea, a ship or a station by hand comes from the inspector's "Add
 // behaviour…", which reads `describes`.
 
@@ -42,8 +47,7 @@ const DESCRIBES = {
     ],
     // her way as last saved is about now, not about her: a copy starts at rest (STAGE.md, "Copying objects")
     runtime: ["motion"],
-    // and she sails only on water (the world's: the water package's)
-    needs: ["water"],
+    // (she floats on whatever water she is in, or rests: she needs nothing of the scene)
   },
   "sailing.helm": {
     name: "Helm",
@@ -109,18 +113,40 @@ const DESCRIBES = {
 const SEA_DESCRIBES = {
   "sailing.sea": {
     name: "Sea",
-    on: "scene",
-    blurb: "Open water with wind and waves; ships float and sail on it",
+    on: "object",
+    blurb: "Waves on this water (an object with Water), raised by the world's wind; ships float and sail on them",
     fields: [
-      { key: "wind", label: "Wind (speed m/s, from degrees)", kind: "json", default: { speed: 7, from: 45 } },
       { key: "seed", label: "Seed", kind: "integer", default: 1 },
       { key: "scale", label: "Wave height", kind: "number", default: 1, min: 0, max: 3, step: 0.05 },
     ],
-    init: { wind: { speed: 7, from: 45 }, seed: 1, scale: 1 },
+    init: { seed: 1, scale: 1 },
+  },
+};
+
+const WEATHER_DESCRIBES = {
+  "sailing.weather": {
+    name: "Weather",
+    on: "scene",
+    blurb: "This world's wind and sky: ships sail in the wind, and seas raise their waves from it",
+    fields: [
+      { key: "wind", label: "Wind (speed m/s, from degrees)", kind: "json", default: { speed: 7, from: 45 } },
+      { key: "seed", label: "Gust seed", kind: "integer", default: 1 },
+    ],
+    init: { wind: { speed: 7, from: 45 }, seed: 1 },
   },
 };
 
 export const plugins = [
+  {
+    type: "scene:extension",
+    id: "sailing.weather",
+    name: "Weather",
+    traits: ["sailing.weather"],
+    describes: WEATHER_DESCRIBES,
+    async load() {
+      return (await import("./weather.js")).default;
+    },
+  },
   {
     type: "scene:extension",
     id: "sailing.sea",
@@ -143,7 +169,8 @@ export const plugins = [
   },
   // the parts bin's (scene:part): what each is made of is parts.js
   ...[
-    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder, companionway. Brings a sea, and water, if the scene has none", traits: ["sailing.ship", "sailing.sea", "water"] },
+    { id: "sea", name: "Sea", icon: "Waves", description: "Open water with waves on it, raised by the world's wind; brings the weather (a working breeze) if the scene has none", traits: ["water", "sailing.sea", "sailing.weather"] },
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast with main and jib, wheel, mainsheet, jib winches, windlass and anchor, ladder, companionway. Brings a Sea and the weather if the scene has no open water", traits: ["sailing.ship", "water", "sailing.sea", "sailing.weather"] },
     { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail, and a jib on its forestay. On a ship it drives her: where you put it is where the sails pull", tags: ["sailing.mast"], traits: ["sailing.sail", "sailing.jib"] },
     { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
     { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },
@@ -168,7 +195,7 @@ export const plugins = [
     id: "ship-at-sea",
     name: "Ship at sea",
     icon: "Sailboat",
-    description: "A sloop under way on open water, with wind and waves, ready to sail",
+    description: "A sloop under way on a sea, with wind and waves, ready to sail",
     async load() {
       return (await import("./template.js")).default;
     },

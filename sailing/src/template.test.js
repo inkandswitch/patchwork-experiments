@@ -10,14 +10,18 @@ const fakeScene = (doc, o) => fakeDrop(doc, o);
 
 
 describe("the Ship at sea template", () => {
-  it("writes the sea, starts the scene in play, and says how to go aboard", async () => {
+  it("writes the weather and a Sea (open water with a sea on it, first in the order, one seed for both), starts the scene in play, and says how to go aboard", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await template.create(ctx);
-    const sea = doc.traits["sailing.sea"];
-    expect(sea.wind).toEqual({ speed: 7, from: 45 });
-    expect(sea.scale).toBe(1);
-    expect(Number.isInteger(sea.seed)).toBe(true);
+    const weather = doc.traits["sailing.weather"];
+    expect(weather.wind).toEqual({ speed: 7, from: 45 });
+    expect(Number.isInteger(weather.seed)).toBe(true);
+    expect(doc.traits["sailing.sea"]).toBeUndefined();
+    const first = doc.objects[doc.order[0]];
+    expect(first).toMatchObject({ name: "Sea", parent: null, sourceUrl: null, providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    expect(first.traits).toEqual({ water: {}, "sailing.sea": { seed: weather.seed, scale: 1 } });
+    expect(Object.values(doc.objects).filter((o) => o.traits?.water)).toHaveLength(1);
     // people start in Look off her quarter (no body named: a click comes aboard), and nothing else of the old view
     expect(Object.keys(doc.view.start)).toEqual(["home"]);
     expect("activity" in doc.view || "home" in doc.view).toBe(false);
@@ -40,7 +44,8 @@ describe("the Ship at sea template", () => {
       ["anchor", "companionway", "greenBuoy", "hatch", "hull", "islet", "jib", "ladder", "mainsheet", "mast", "redBuoy", "rig", "wheel", "winch", "windlass"].map((k) => `sailing/${k}@${{ hull: 5, rig: 3, mast: 3, jib: 2, winch: 2, windlass: 2, mainsheet: 2, wheel: 2, anchor: 2, islet: 2 }[k] ?? 1}`),
     );
     expect(calls.created).toHaveLength(15);
-    const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
+    // every object but the Sea (its shape is its trait's data: no source)
+    const objects = Object.values(doc.objects).filter((o) => o.kind !== "group" && !o.traits?.water);
     const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) {
       expect(urls.has(o.sourceUrl)).toBe(true);
@@ -60,10 +65,12 @@ describe("the Ship at sea template", () => {
     // no spec (read from its box), only the way she has on
     expect(Object.keys(hull.traits["sailing.ship"])).toEqual(["motion"]);
     expect(hull.parent).toBeNull();
-    expect(doc.traits["sailing.sea"].seed).toBe(7);
+    expect(doc.traits["sailing.weather"].seed).toBe(7);
+    expect(Object.values(doc.objects).find((o) => o.name === "Sea").traits["sailing.sea"].seed).toBe(7);
 
     const ids = Object.fromEntries(Object.entries(doc.objects).map(([id, o]) => [o.name, id]));
     const byName = Object.fromEntries(Object.values(doc.objects).map((o) => [o.name, o]));
+    expect(byName.Sea.traits.water).toEqual({});
     const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder", "Mainsheet"];
     for (const name of ["Mast", "Wheel", "Windlass", "Ladder", "Mainsheet"]) expect(byName[name].parent).toBe(hullId);
     // the sail goes where the mast goes, the anchor where the windlass does
@@ -143,7 +150,7 @@ describe("the Ship at anchor template", () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await atAnchor.create(ctx);
-    expect(doc.traits["sailing.sea"].wind).toEqual({ speed: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
+    expect(doc.traits["sailing.weather"].wind).toEqual({ speed: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
     expect(ANCHORAGE_AIR.speed).toBeGreaterThanOrEqual(6); // enough to get her out of irons and away
     expect(ANCHORAGE_AIR.speed).toBeLessThanOrEqual(7);
     expect(doc.view.start.home).toBeTruthy();

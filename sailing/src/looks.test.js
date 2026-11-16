@@ -129,9 +129,9 @@ describe("createLooks", () => {
   it("bobs what floats on the clock the sea is drawn at, and puts it back on dispose", () => {
     const doc = {
       ...emptyScene(),
-      objects: { buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
-      order: ["buoy", "rock"],
-      traits: { [SEA]: { wind: { speed: 8, from: 90 }, seed: 2, scale: 1 }, water: { level: 0 } },
+      objects: { sea: object({ name: "Sea", traits: { water: {}, [SEA]: { seed: 2, scale: 1 } } }), buoy: object({ name: "Buoy", transform: { position: [8, 0, -20], rotation: [0, 0.3, 0], scale: 1 }, traits: { [FLOAT]: {} } }), rock: object({ name: "Rock" }) },
+      order: ["sea", "buoy", "rock"],
+      traits: { "sailing.weather": { wind: { speed: 8, from: 90 }, seed: 2 } },
     };
     const root = fakeNode();
     const rock = fakeNode();
@@ -145,7 +145,8 @@ describe("createLooks", () => {
       looks.tick(dt);
     });
     w.tick(1 / 60, 45);
-    const expected = floatPose(sea.ocean, api.worldOf("buoy"), sea.clock());
+    const m = api.worldOf("buoy");
+    const expected = floatPose(sea.oceanAt([m[12], m[13], m[14]], "buoy"), m, sea.clock());
     expect(root.position.y).toBeCloseTo(expected.offset[1], 9);
     expect(root.rotation.x).toBeCloseTo(expected.tilt[0], 9);
     expect(root.position.y).not.toBe(0);

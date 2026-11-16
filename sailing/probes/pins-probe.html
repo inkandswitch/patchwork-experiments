@@ -283,7 +283,8 @@ try {
       const out = { total: 0, loaded: 0 };
       for (const st of dbg.s.view.stages()) {
         for (const [id, o] of Object.entries(st.doc().objects ?? {})) {
-          if (o.kind === "group" || o.providerId === "scene.link") continue;
+          // (what has content: not a group, a link, or an object with no source, as the Sea)
+          if (o.kind === "group" || o.providerId === "scene.link" || o.sourceUrl == null) continue;
           out.total++;
           if (vp.contentOf(keyOf(st.n, id))?.loaded) out.loaded++;
         }

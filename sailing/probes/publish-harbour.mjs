@@ -1,7 +1,9 @@
-// Publish a harbour (water/WATER.md, "Which doc holds what"): a scene with
-// water and a sea of its own, and boats already published linked into it
-// live, each a doc of her own, unchanged and uncopied. In it they float on
-// the harbour's water, sail in its wind, and the one surface drawn is its.
+// Publish a harbour (water/WATER.md, "Water bodies", "Doc shapes"): a scene
+// with the weather and a Sea of its own (open water with a sea on it), and
+// boats already published linked into it live, each a doc of her own,
+// unchanged and uncopied. In it they float on the harbour's open water, sail
+// in its wind, and the one open surface drawn is its; water a boat holds as
+// a thing (a tank, a basin) stays hers.
 // Nothing in the harbour names a boat but its links; nothing in a boat names
 // the harbour. Prints its Patchwork URL.
 //
@@ -11,16 +13,16 @@
 //     [--title Harbour] [--wind 5,250] [--seed 7] [--scale 0.5] [--home px,py,pz:tx,ty,tz] [--dry-run] [--offline] [--sync wss://…] [--settle 8000]
 //
 // --boat NAME=URL@x,y,z places a live, locked link there. Each boat is turned
-// so the harbour's wind meets her as her own sea's wind did (her yaw is her
-// wind's `from` less the harbour's), so a boat laid out on a reach is on a
+// so the harbour's wind meets her as her own weather's did (her yaw is her
+// wind's `from` less the harbour's, Decision 22), so a boat laid out on a reach is on a
 // reach here and one at anchor lies head to wind. People start in Look over
 // the boats, from --home if given, else from far enough out to see every
 // link's origin.
 //
-// It checks each boat on the server first (a scene, with the water trait
-// beside her sea: a boat published before water existed can't float on
-// another world's water, so republish her first), and after, from a fresh
-// repo, that the harbour came back whole. --dry-run prints the doc and
+// It checks each boat on the server first (a scene, with an open water
+// object and her weather: a boat published before water bodies has neither
+// and is refused, so republish her first), and after, from a fresh repo,
+// that the harbour came back whole. --dry-run prints the doc and
 // publishes nothing (a package with no pushwork URL yet is shown as
 // "<unsynced: name>"); --offline also skips reading the boats from the
 // server. Makes a NEW doc on every run.
@@ -56,8 +58,11 @@ const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
 const PACKAGES = ["scene", "water", "sailing"];
 
 const [windSpeed, windFrom] = (args.wind ?? "5,250").split(",").map(Number);
-const sea = { wind: { speed: windSpeed, from: windFrom }, seed: Number(args.seed ?? 7), scale: Number(args.scale ?? 0.5) };
-if (![windSpeed, windFrom, sea.seed, sea.scale].every(Number.isFinite)) throw new Error(`--wind, --seed, --scale: numbers, please (${J(sea)})`);
+const weather = { wind: { speed: windSpeed, from: windFrom }, seed: Number(args.seed ?? 7) };
+const sea = { seed: weather.seed, scale: Number(args.scale ?? 0.5) };
+if (![windSpeed, windFrom, sea.seed, sea.scale].every(Number.isFinite)) throw new Error(`--wind, --seed, --scale: numbers, please (${J({ weather, sea })})`);
+/** Is this object open water (the water package's trait with no size)? */
+const isOpen = (o) => !!o?.traits?.water && o.traits.water.size == null;
 
 const boats = args.boat.map((spec, i) => {
   const m = /^(.+?)=(automerge:[^@]+)@([-\d.]+),([-\d.]+),([-\d.]+)$/.exec(spec);
@@ -82,19 +87,28 @@ if (!OFFLINE) {
   const { Repo, initSubduction } = await import("@automerge/automerge-repo");
   await initSubduction();
   repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-  // each boat: a scene on the server, with a sea and the water trait beside it
+  // each boat: a scene on the server, with open water of her own (which gives way to the harbour's) and her weather
   for (const b of boats) {
     const d = (await within(60000, repo.find(b.url))).doc();
     if (d?.["@patchwork"]?.type !== "scene" || !d.objects) throw new Error(`${b.name} (${b.url}) isn't a scene doc on the server`);
-    b.from = Number(d.traits?.["sailing.sea"]?.wind?.from);
-    if (!d.traits?.water) problems.push(`${b.name} (${b.url}) has no water trait: she was published before water, so she can't float on the harbour's water; republish her first`);
-    if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}) has no sea of her own to turn her by`);
-    console.error(`boat: ${b.name} = ${d.title} (${Object.keys(d.objects).length} objects, wind from ${b.from}, water ${J(d.traits?.water ?? null)})`);
+    b.from = Number(d.traits?.["sailing.weather"]?.wind?.from);
+    const open = Object.values(d.objects).filter(isOpen);
+    if (!open.length) problems.push(`${b.name} (${b.url}) has no open water object: she was published before water bodies; republish her first`);
+    if (!Number.isFinite(b.from)) problems.push(`${b.name} (${b.url}) has no weather of her own to turn her by`);
+    console.error(`boat: ${b.name} = ${d.title} (${Object.keys(d.objects).length} objects, wind from ${b.from}, open water ${open.map((o) => o.name).join(", ") || "none"})`);
   }
 }
 
 // each boat turned so the harbour's wind meets her as her own did: a wind from f in her frame is from f − yaw in the world
-const objects = {};
+// the harbour's own Sea first: open water with a sea on it, at y = 0
+const objects = {
+  sea: {
+    name: "Sea", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null,
+    visible: true, color: null, opacity: 1, wireframe: false, locked: false,
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+    traits: { water: {}, "sailing.sea": sea },
+  },
+};
 for (const b of boats) {
   const yaw = Number.isFinite(b.from) ? (((b.from - windFrom) % 360) * Math.PI) / 180 : 0;
   objects[b.id] = {
@@ -112,16 +126,16 @@ const doc = {
   "@patchwork": { type: "scene", suggestedImportUrl: urlOf("scene") },
   title: args.title ?? "Harbour",
   objects,
-  order: boats.map((b) => b.id),
+  order: ["sea", ...boats.map((b) => b.id)],
   dimensions: {},
-  // the world's water and the sea that makes its waves and wind (WATER.md: a sea is `water` plus `sailing.sea`)
-  traits: { water: { level: 0 }, "sailing.sea": sea },
+  // the world's wind and sky (its Sea is an object, above)
+  traits: { "sailing.weather": weather },
   assets: {},
   packages: PACKAGES.map((p) => ({ url: urlOf(p) })),
   clock: { running: true, t: 0 },
   view: { units: "m", grid: false, axes: false, bounds: false, snap: true, start: { home } },
 };
-console.error(J({ title: doc.title, sea, boats: boats.map((b) => ({ id: b.id, name: b.name, at: b.position, yawDeg: Number.isFinite(b.from) ? (b.from - windFrom) % 360 : null })), start: doc.view.start }, null, 1));
+console.error(J({ title: doc.title, weather, sea, boats: boats.map((b) => ({ id: b.id, name: b.name, at: b.position, yawDeg: Number.isFinite(b.from) ? (b.from - windFrom) % 360 : null })), start: doc.view.start }, null, 1));
 if (problems.length) console.error(`${DRY ? "would NOT publish" : "NOT publishing"}:\n  ${problems.join("\n  ")}`);
 if (DRY) {
   console.log(J(doc, null, 2));
@@ -136,9 +150,9 @@ const { Repo } = await import("@automerge/automerge-repo");
 const checker = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
 const got = (await within(30000, checker.find(h.url))).doc();
 const after = packageProblems(got, PACKAGES);
-if (J(Object.keys(got?.objects ?? {}).sort()) !== J(boats.map((b) => b.id).sort())) after.push("came back without its boats");
+if (J(Object.keys(got?.objects ?? {}).sort()) !== J(["sea", ...boats.map((b) => b.id)].sort())) after.push("came back without its Sea and its boats");
 for (const b of boats) if (got?.objects?.[b.id]?.sourceUrl !== b.url) after.push(`${b.id} doesn't link ${b.url}`);
-if (!got?.traits?.water || !got?.traits?.["sailing.sea"]) after.push("came back without its water or its sea");
+if (!isOpen(got?.objects?.sea) || !got.objects.sea.traits?.["sailing.sea"] || !got?.traits?.["sailing.weather"]) after.push("came back without its Sea or its weather");
 if (after.length) {
   console.error(`NOT verified from a fresh repo:\n  ${after.join("\n  ")}`);
   process.exit(1);

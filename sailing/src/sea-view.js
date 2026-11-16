@@ -1,14 +1,16 @@
 // ctx.sea (DESIGN.md, "Play"): what the other parts read of the sea, the
-// ocean and wind they float and sail on and the time to ask them at. It
-// makes and draws no sea of its own. A boat sails on her world's water,
-// which is the outermost doc's (water/WATER.md):
+// water and wind they float and sail on and the time to ask them at. It
+// makes and draws no sea of its own (water/WATER.md, "Water bodies"):
 //
-//   - ocean: the water package's reader, collected in this stage (its
-//     contribution `water`): the world's water in this stage's frame, on
-//     this stage's clock. A boat alone is her own world, and it is her own
-//     sea exactly; linked into a harbour, it is the harbour's; in a dry room,
-//     or tilted, there is none, and nothing sails.
-//   - wind: the world's `wind` ambient (sea.js offers it), made into a wind
+//   - oceanAt(p, not): the water a point in this stage's frame is in, as the
+//     water package's contribution `water` answers it (its at(p, { not })),
+//     leaving out the water attached under `not` (a ship's own tank never
+//     buoys her): the world's open water in this stage's frame and on its
+//     clock (a boat alone is her own world, and it is her own sea exactly;
+//     linked into a harbour, it is the harbour's), or a bounded body of her
+//     own doc, which she keeps wherever she is placed; or null (a dry room,
+//     a tilted link), and nothing floats there. p[1] null asks from above.
+//   - wind: the world's `wind` ambient (weather.js offers it), made into a wind
 //     here (wind.js) and read the same way: mapped by this stage's frame, at
 //     the world's time for this stage's t, the offset latched once a frame
 //     after every clock has ticked (the water package's rule, copied: tick()).
@@ -25,9 +27,9 @@
 // scale): no ocean, and a notice once.
 
 import { createWind } from "./wind.js";
-import { WIND_AMBIENT } from "./sea.js";
+import { WIND_AMBIENT } from "./weather.js";
 
-/** The water package's contribution that is the world's water as this stage reads it. */
+/** The water package's contribution that answers which water a point is in, as this stage reads it. */
 export const WATER = "water";
 const EPS = 1e-9;
 
@@ -81,6 +83,25 @@ export function windFor(value, frame, timing) {
   };
 }
 
+/**
+ * The world's mean wind in a stage's frame, as plain numbers: its speed
+ * scaled and its `from` turned by the frame (windFor's rule), what a sea
+ * builds its waves from. null for no value or a tilted frame. Pure.
+ * @returns {{ speed: number, from: number } | null}
+ */
+export function meanWindHere(value, frame) {
+  if (!value) return null;
+  const f = levelOf(frame);
+  if (!f) return null;
+  const speed = Math.max(0, Number(value.speed) || 0);
+  const from0 = Number(value.from) || 0;
+  if (f.identity) return { speed, from: from0 };
+  const rad = (from0 * Math.PI) / 180;
+  const dx = -Math.sin(rad), dz = Math.cos(rad);
+  const from = ((Math.atan2(-(f.a * dx + f.b * dz), f.c * dx + f.d * dz) * 180) / Math.PI + 360) % 360;
+  return { speed: speed / f.s, from };
+}
+
 const frameKey = (frame) => (frame?.matrix ? frame.matrix.join(",") : "I");
 
 /**
@@ -129,10 +150,17 @@ export function createSeaView(api) {
   }
 
   return {
-    /** the world's water here (the water package's reader), or null: no water, tilted, or at another scale */
-    get ocean() {
-      const w = api.collect(WATER).find((c) => c.value)?.value ?? null;
-      return w && sameScale() ? w : null;
+    /**
+     * The water p ([x, y, z] in this stage's frame; y null: from above) is in,
+     * leaving out what `not` (an object id) carries: the water package's
+     * reader, or null (no water there, a tilted link, or the world's open
+     * water at another scale than this boat's).
+     */
+    oceanAt(p, not = null) {
+      const w = api.collect(WATER).find((c) => c.value?.at)?.value ?? null;
+      const r = w ? w.at(p, { not }) : null;
+      if (!r) return null;
+      return r.body == null && !sameScale() ? null : r;
     },
     get wind() {
       if (!windFrom) refreshWind();

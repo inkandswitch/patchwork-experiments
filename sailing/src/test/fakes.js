@@ -20,8 +20,9 @@
 //   w.hide("A");  // its tab hidden: its visibilitychange listeners hear it
 
 import { vi } from "vitest";
-import { createOcean } from "./ocean.js";
-import { seaOffer, seaParams } from "../sea.js";
+import { createSurface } from "./surface.js";
+import { seaWavesFor } from "../sea.js";
+import { weatherOffer, weatherParams } from "../weather.js";
 
 /**
  * An empty scene doc, as the scene datatype's init writes one: every map a
@@ -345,24 +346,35 @@ export function fakeWorld(doc, { content = {} } = {}) {
   }
 
   // The world's water and ambients, as the water package and the stage give
-  // them to a doc that is its own world (one doc here: always the outermost).
-  // The reader is water's evaluator itself (a copy, ./surface.js), as water's
-  // reader is for the outermost at level 0; the golden file pins the copy.
+  // them to a doc that is its own world (one doc here: always the outermost):
+  // its open water (the lowest id of its objects with the water trait and no
+  // size) with the waves its sea makes under its weather's wind, evaluated by
+  // water's evaluator itself (a copy, ./surface.js), as water's reader is for
+  // the outermost at level 0; the golden file pins the copy. No bounded
+  // water here: what reads it is the water package's to prove.
   const memo = new Map();
   const memoOf = (key, make) => {
     if (!memo.has(key)) memo.set(key, make());
     return memo.get(key);
   };
-  function waterReader() {
-    const w = doc.traits?.water;
-    if (!w) return null;
-    const sea = doc.traits?.["sailing.sea"];
-    const p = sea ? seaParams(sea) : { wind: { speed: 0, from: 0 }, seed: 1, scale: 1 };
-    return memoOf(`water:${JSON.stringify(p)}`, () => ({ ...createOcean(p), level: 0 }));
+  function openWater() {
+    const ids = Object.keys(doc.objects ?? {}).sort();
+    const id = ids.find((k) => doc.objects[k]?.traits?.water && doc.objects[k].traits.water.size == null);
+    return id ? { id, o: doc.objects[id] } : null;
   }
+  function waterReader() {
+    const w = openWater();
+    if (!w) return null;
+    const weather = doc.traits?.["sailing.weather"];
+    const wind = weather ? weatherParams(weather).wind : null;
+    const sea = w.o.traits["sailing.sea"];
+    const waves = sea ? seaWavesFor(sea, wind) : { components: [], look: { seed: 1, stats: {} } };
+    return memoOf(`water:${JSON.stringify(waves)}`, () => Object.freeze({ ...createSurface(waves.components), body: null, level: 0, seed: waves.look.seed, stats: waves.look.stats }));
+  }
+  const contribution = Object.freeze({ at: () => waterReader() });
   function ambients() {
-    const out = { ...(seaOffer(doc.traits?.["sailing.sea"])?.ambient ?? {}) };
-    if (doc.traits?.water) out.water = { v: 1, level: Number(doc.traits.water.level) || 0, components: waterReader().components };
+    const out = { ...(weatherOffer(doc.traits?.["sailing.weather"]) ?? {}) };
+    if (openWater()) out.water = { v: 2, level: 0, components: waterReader().components };
     for (const k of Object.keys(out)) out[k] = memoOf(`ambient:${k}:${JSON.stringify(out[k])}`, () => structuredClone(out[k]));
     return out;
   }
@@ -486,8 +498,8 @@ export function fakeWorld(doc, { content = {} } = {}) {
         view.listeners.push({ target, type, fn });
       },
       worldOf,
-      // conventions in this stage: the water package's reader of the world's water
-      collect: (name) => (name === "water" && doc.traits?.water ? [{ id: "water", value: waterReader() }] : []),
+      // conventions in this stage: the water package's answer to which water a point is in
+      collect: (name) => (name === "water" && openWater() ? [{ id: "water", value: contribution }] : []),
       // the world's ambients: this doc's own, it being the outermost
       ambient: (name) => {
         const value = ambients()[name];

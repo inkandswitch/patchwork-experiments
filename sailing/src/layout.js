@@ -10,10 +10,10 @@
 // Everything here takes what it needs ({ file or repo, change, newId }),
 // which a template's context has.
 
-import { PIECES, WIND, newSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
-import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WATER_TRAIT, newWater } from "./traits.js";
+import { PIECES, WIND, bringSea, objectsFor, sloopFiles, sloopObjects, writeObjects, fileFor, partObject } from "./parts.js";
+import { ANCHOR, JIB, QUARTER, RODE, SAIL, SEA, SHIP, WEATHER } from "./traits.js";
 
-export { SEA, SHIP, WIND, partObject };
+export { SEA, SHIP, WEATHER, WIND, partObject };
 
 /**
  * The yaw (about +Y) that points the bow (body −Z) at compass bearing
@@ -71,8 +71,9 @@ export const ANCHORAGE_AIR = Object.freeze({ speed: 6.5, from: 45 });
 export const AT_ANCHOR = Object.freeze({ [SAIL]: Object.freeze({ raised: 0 }), [JIB]: Object.freeze({ furl: 1 }), [ANCHOR]: Object.freeze({ down: true, rode: RODE }) });
 
 /**
- * Lay out a sloop under way on open water in one change: the sea trait,
- * the Sloop part with way on, landmarks in a group, the editor's home view
+ * Lay out a sloop under way on open water in one change: the weather and a
+ * Sea (a water object with a sea on it, first in the order), the Sloop part
+ * with way on, landmarks in a group, the editor's home view
  * from the stern quarter (view.start's home: TOOLS.md §2), where whoever
  * opens it (its maker too) sees her and a click on her comes aboard (crew.js).
  *
@@ -100,8 +101,7 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
     objectsFor(l.part, { parent: null, transform: { position: turn(l.at, yaw, at), rotation: [0, yaw + (l.yaw ?? 0), 0] } }, files, ctx.newId, { group, locked: true }),
   );
   ctx.change((d) => {
-    d.traits[SEA] = newSea({ wind, seed });
-    d.traits[WATER_TRAIT] = newWater();
+    bringSea(d, ctx.newId, { wind, seed });
     // people start off her quarter, in Look (no body named: the stage's orbit
     // camera, not the editor), where a click on her comes aboard (crew.js: an
     // untouched camera follows her quarter wherever she has sailed to)

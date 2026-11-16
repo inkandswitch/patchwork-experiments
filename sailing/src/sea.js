@@ -1,83 +1,89 @@
-// The sea part (DESIGN.md, "Play"; water/WATER.md): a scene:extension apart
-// from the ships, running wherever a scene has the `sailing.sea` trait. It
-// makes the sea's waves and wind from the trait and gives them away, as
-// data, to whoever reads them; it draws nothing and runs no crew, sim or HUD,
-// so a harbour with a sea and no ships holds no sailing machinery.
+// The sea (DESIGN.md, "Play"; water/WATER.md, "Water bodies"): a behaviour
+// put on a water body. `sailing.sea: { seed, scale }` is an object trait; on
+// an object with the water package's `water` trait it makes that body's
+// waves, as the water's answer to the world's wind, and gives them away as
+// data (`water.waves`, the water package's convention, keyed by body). It
+// draws nothing and runs no crew, sim or HUD, so a harbour with a sea and
+// no ships holds no sailing machinery. On an object without water it makes
+// nothing, and says so once.
 //
-//   - `water.waves` (the water package's convention, collected in this
-//     stage): the Gerstner components ocean.js's spectrum makes for the
-//     trait, and what only the wave maker knows of them (seed, stats). The
-//     water package evaluates and draws them.
-//   - ambients (scene STAGE.md, "Ambients"): `wind`, the world's wind as
-//     plain numbers ({ speed, from, seed, gustiness }: wind.js makes it a
-//     wind), which every boat's physics reads (sea-view.js) and the water
-//     package's surface reads for its roughness and foam: one copy of one
-//     fact; and the atmosphere, a bright maritime day. Where this doc is the
-//     outermost, they are the world's.
+// The waves come from the world's `wind` ambient in this stage's frame
+// (sea-view.js meanWindHere), so a pond and the bay under one wind agree and
+// a basin in a dry room is calm (no wind, flat water). The components are
+// in the doc's root frame for every body, open or bounded. The wind is read
+// during the ambient flush, so the world's water settles one flush after its
+// wind: when the wind it built from differs (by value) from the wind now, it
+// asks the stage for a reflush (api.schedule), and the settle ends.
 //
 // Pure but for create().
 
 import { seaWaves } from "./ocean.js";
-import { SEA } from "./traits.js";
-import { GUSTINESS } from "./wind.js";
-
-/** A bright maritime day: blue overhead, a pale horizon the far sea hazes into, the sun high to one side. */
-export const ATMOSPHERE = Object.freeze({
-  sky: Object.freeze({ top: "#2f6db5", horizon: "#cfe2ee", bottom: "#a9c6d8" }),
-  fog: Object.freeze({ color: "#cfe2ee", near: 300, far: 9000 }),
-  sun: Object.freeze({ direction: Object.freeze([0.55, 0.7, -0.45]), color: "#fff3df", intensity: 2.2, shadows: true }),
-  exposure: 1,
-});
-
-/** The ambient name of a world's wind (sailing/DESIGN.md, "Conventions"; STAGE.md names it): { speed (m/s), from (degrees), seed, gustiness (0..1) }. */
-export const WIND_AMBIENT = "wind";
+import { SEA, WATER_TRAIT } from "./traits.js";
+import { meanWindHere } from "./sea-view.js";
+import { WIND_AMBIENT } from "./weather.js";
 
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Number(v) : d);
+const STILL = Object.freeze({ hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 });
 
-/** The sea trait with its defaults filled in (index.js describes them): { wind: { speed, from }, seed, scale }. */
+/** The sea trait with its defaults filled in (index.js describes them): { seed, scale }. */
 export function seaParams(trait) {
   const t = trait ?? {};
-  return {
-    wind: { speed: Math.max(0, num(t.wind?.speed, 7)), from: num(t.wind?.from, 45) },
-    seed: num(t.seed, 1),
-    scale: Math.max(0, num(t.scale, 1)),
-  };
+  return { seed: num(t.seed, 1), scale: Math.max(0, num(t.scale, 1)) };
 }
 
 /**
- * What a sea trait gives away: the waves for the water package and the
- * ambients, all plain JSON. null for no trait.
- * @returns {{ waves: { components: object[], look: { seed, stats } }, ambient: object } | null}
+ * A sea's waves under a wind (plain numbers in the doc's frame, or null:
+ * none, flat water): the components ocean.js's spectrum makes, and what
+ * only the wave maker knows of them (seed, stats). Plain JSON. Pure.
+ * @returns {{ components: object[], look: { seed: number, stats: object } }}
  */
-export function seaOffer(trait) {
-  if (!trait) return null;
+export function seaWavesFor(trait, wind) {
   const p = seaParams(trait);
-  const o = seaWaves(p);
-  return {
-    waves: { components: o.components, look: { seed: o.seed, stats: { ...o.stats } } },
-    ambient: { [WIND_AMBIENT]: { speed: p.wind.speed, from: p.wind.from, seed: p.seed, gustiness: GUSTINESS }, atmosphere: ATMOSPHERE },
-  };
+  if (!wind || !(wind.speed > 0)) return { components: [], look: { seed: p.seed, stats: { ...STILL } } };
+  const o = seaWaves({ wind: { speed: wind.speed, from: wind.from }, seed: p.seed, scale: p.scale });
+  return { components: o.components, look: { seed: o.seed, stats: { ...o.stats } } };
+}
+
+/** The bodies a doc's seas make waves for: { [objectId]: waves } over its objects with both a sea and water. Pure. */
+export function seaBodies(objects, wind) {
+  const out = {};
+  for (const id of Object.keys(objects ?? {}).sort()) {
+    const t = objects[id]?.traits;
+    if (t?.[SEA] && t[WATER_TRAIT]) out[id] = seaWavesFor(t[SEA], wind);
+  }
+  return out;
 }
 
 export default {
   create(api) {
-    let key = null;
-    let offer = null;
-    /** The offer for the doc's trait now, made again only when the trait changed. */
-    function current() {
-      const trait = api.doc()?.traits?.[SEA] ?? null;
-      const k = trait ? JSON.stringify(seaParams(trait)) : null;
-      if (k !== key) {
-        key = k;
-        offer = seaOffer(trait);
-      }
-      return offer;
-    }
+    let key;
+    let windKey; // the wind (by value) the last waves were built from
+    let offer;
+    const said = new Set();
     return {
       get "water.waves"() {
-        return current()?.waves ?? undefined;
+        const objects = api.scene?.()?.objects ?? api.doc()?.objects ?? {};
+        const a = api.ambient(WIND_AMBIENT);
+        const wind = a ? meanWindHere(a.value, a.frame) : null;
+        const wk = wind ? `${wind.speed},${wind.from}` : "none";
+        const seas = Object.keys(objects).filter((id) => objects[id]?.traits?.[SEA]);
+        for (const id of seas) {
+          if (objects[id].traits[WATER_TRAIT] || said.has(id)) continue;
+          said.add(id);
+          api.notify?.(`A sea needs water: add Water to “${objects[id].name ?? id}”`, "info");
+        }
+        const k = JSON.stringify([wk, seas.map((id) => [id, seaParams(objects[id].traits[SEA]), !!objects[id].traits[WATER_TRAIT]])]);
+        if (k !== key) {
+          key = k;
+          offer = { bodies: seaBodies(objects, wind) };
+          // built on a wind the flush hadn't settled on yet: once more, so the world's water follows its wind
+          if (wk !== windKey) {
+            windKey = wk;
+            api.schedule?.(() => {});
+          }
+        }
+        return Object.keys(offer.bodies).length ? offer : undefined;
       },
-      ambient: () => current()?.ambient ?? null,
     };
   },
 };
