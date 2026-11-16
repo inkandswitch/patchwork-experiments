@@ -7,23 +7,25 @@
 //   (in scene/) node probes/publish-links.mjs --title "Games night" \
 //     --link "Quiet games room=automerge:…@0,0,0" \
 //     --link "Liar's dice=automerge:…@-4.2,0.035,1.95@90" \
-//     [--start 1] [--home px,py,pz:tx,ty,tz] [--view-like 1] [--dry-run] [--sync wss://…] [--settle 8000]
+//     [--start 1] [--home px,py,pz:tx,ty,tz] [--view-like 1] [--dry-run] [--offline <docs.json>] [--sync wss://…] [--settle 8000]
 //
-// --link NAME=URL@x,y,z[@yawDegrees] places a locked link (as a game part's
-// link is) at that position on the doc's root. --start N makes people arrive
+// --link NAME=URL@x,y,z[@yawDegrees[@scale]] places a locked link (as a game
+// part's link is) at that position on the doc's root, turned and at that
+// uniform scale (1 when not given: 0.04 is a diorama at 1:25). --start N makes people arrive
 // through the Nth link (1-based), as that doc starts people (TOOLS.md §2: a
 // start placed on a link). --view-like N copies the Nth linked doc's display
 // prefs (grid, axes, bounds, units, snap), so a room stays a room. --home sets
 // the home view; without it the started link's doc's home, moved by its link.
 //
 // It checks, before publishing, that each linked doc is a scene on the server,
-// and after, from a fresh repo, that the doc came back whole. Makes a NEW doc
-// on every run.
+// and after, from a fresh repo, that the doc came back whole. --offline reads
+// the linked docs from a JSON file ({ [url]: doc }) instead, and needs
+// --dry-run: nothing is asked of any server. Makes a NEW doc on every run.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { packageProblems, scenePackages, scenePatchwork } from "./scene-packages.mjs";
 
-const ARITY = { title: 1, link: 1, start: 1, home: 1, "view-like": 1, "dry-run": 0, sync: 1, settle: 1 };
+const ARITY = { title: 1, link: 1, start: 1, home: 1, "view-like": 1, "dry-run": 0, offline: 1, sync: 1, settle: 1 };
 const args = { link: [] };
 const bad = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -47,29 +49,36 @@ const LINK = "scene.link";
 const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
 
 const links = args.link.map((spec, i) => {
-  const m = /^(.+?)=(automerge:[^@]+)@([-\d.]+),([-\d.]+),([-\d.]+)(?:@([-\d.]+))?$/.exec(spec);
-  if (!m || !BARE.test(m[2])) throw new Error(`--link ${J(spec)}: want NAME=automerge:…@x,y,z[@yaw]`);
-  return { id: `link-${i + 1}`, name: m[1], url: m[2], position: [+m[3], +m[4], +m[5]], yaw: ((+(m[6] ?? 0)) * Math.PI) / 180 };
+  const m = /^(.+?)=(automerge:[^@]+)@([-\d.]+),([-\d.]+),([-\d.]+)(?:@([-\d.]+)(?:@([\d.]+))?)?$/.exec(spec);
+  if (!m || !BARE.test(m[2])) throw new Error(`--link ${J(spec)}: want NAME=automerge:…@x,y,z[@yaw[@scale]]`);
+  const scale = m[7] == null ? 1 : +m[7];
+  if (!(scale > 0)) throw new Error(`--link ${J(spec)}: a scale is a positive number`);
+  return { id: `link-${i + 1}`, name: m[1], url: m[2], position: [+m[3], +m[4], +m[5]], yaw: ((+(m[6] ?? 0)) * Math.PI) / 180, scale };
 });
 const start = args.start != null ? links[Number(args.start) - 1] : null;
 if (args.start != null && !start) throw new Error(`--start ${args.start}: there are ${links.length} links`);
 
-const { Repo, initSubduction } = await import("@automerge/automerge-repo");
-await initSubduction();
-const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+if (args.offline && !args["dry-run"]) throw new Error("--offline is for a dry run: publishing reads the links from the server");
+const offline = args.offline ? JSON.parse(readFileSync(args.offline, "utf8")) : null;
+let repo = null;
+if (!offline) {
+  const { Repo, initSubduction } = await import("@automerge/automerge-repo");
+  await initSubduction();
+  repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+}
 const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out after ${ms} ms`)), ms))]);
 
 // each linked doc: a scene on the server
 const linked = [];
 for (const l of links) {
-  const d = (await within(60000, repo.find(l.url))).doc();
-  if (d?.["@patchwork"]?.type !== "scene" || !d.objects) throw new Error(`${l.name} (${l.url}) isn't a scene doc on the server`);
+  const d = offline ? offline[l.url] : (await within(60000, repo.find(l.url))).doc();
+  if (d?.["@patchwork"]?.type !== "scene" || !d.objects) throw new Error(`${l.name} (${l.url}) isn't a scene doc ${offline ? "in " + args.offline : "on the server"}`);
   linked.push(d);
   console.error(`linked: ${l.name} = ${d.title} (${Object.keys(d.objects).length} objects, starts ${J(d.view?.start ?? null)})`);
 }
 
-// the home view: as asked, else the started doc's home carried through its link (a yaw and a move)
-const turn = (p, l) => [l.position[0] + p[0] * Math.cos(l.yaw) + p[2] * Math.sin(l.yaw), l.position[1] + p[1], l.position[2] - p[0] * Math.sin(l.yaw) + p[2] * Math.cos(l.yaw)];
+// the home view: as asked, else the started doc's home carried through its link (a scale, a yaw and a move)
+const turn = (p, l) => [l.position[0] + l.scale * (p[0] * Math.cos(l.yaw) + p[2] * Math.sin(l.yaw)), l.position[1] + l.scale * p[1], l.position[2] + l.scale * (-p[0] * Math.sin(l.yaw) + p[2] * Math.cos(l.yaw))];
 let home = null;
 if (args.home) {
   const [p, t] = args.home.split(":").map((s) => s.split(",").map(Number));
@@ -86,7 +95,7 @@ for (const l of links)
   objects[l.id] = {
     name: l.name, sourceUrl: l.url, providerId: LINK, renderUrl: null, parent: null, group: null,
     visible: true, color: null, opacity: 1, wireframe: false, locked: true,
-    transform: { position: l.position, rotation: [0, l.yaw, 0], scale: 1 },
+    transform: { position: l.position, rotation: [0, l.yaw, 0], scale: l.scale },
   };
 const doc = {
   "@patchwork": scenePatchwork(),
@@ -106,6 +115,7 @@ if (args["dry-run"]) {
   process.exit(0);
 }
 
+const { Repo } = await import("@automerge/automerge-repo");
 const h = repo.create(doc);
 await repo.flush?.();
 await new Promise((r) => setTimeout(r, Number(args.settle ?? 8000)));
@@ -113,7 +123,7 @@ const checker = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
 const got = (await within(30000, checker.find(h.url))).doc();
 const problems = packageProblems(got, ["scene"]);
 if (J(Object.keys(got?.objects ?? {}).sort()) !== J(links.map((l) => l.id).sort())) problems.push("came back without its links");
-for (const l of links) if (got?.objects?.[l.id]?.sourceUrl !== l.url) problems.push(`${l.id} doesn't link ${l.url}`);
+for (const l of links) if (got?.objects?.[l.id]?.sourceUrl !== l.url || got.objects[l.id].transform?.scale !== l.scale) problems.push(`${l.id} doesn't link ${l.url} at scale ${l.scale}`);
 if (start && got?.view?.start?.place !== start.id) problems.push("came back without its start");
 if (problems.length) {
   console.error(`NOT verified from a fresh repo:\n  ${problems.join("\n  ")}`);
