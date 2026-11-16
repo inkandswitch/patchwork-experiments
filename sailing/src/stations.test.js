@@ -909,7 +909,8 @@ describe("the commands", () => {
       s.me.playing = playing;
       const st = c.state(target, s.look(null));
       expect(st != null, `target ${target}, playing ${playing}`).toBe(applies);
-      if (applies) expect(st).toEqual({ title: "Walk the deck in first person (Enter)" });
+      // no key in the title: the bar adds the key hint, so a title naming it would read "(Enter) (Enter)"
+      if (applies) expect(st).toEqual({ title: "Walk the deck in first person" });
     }
     s.me.playing = false;
     c.run(null);
