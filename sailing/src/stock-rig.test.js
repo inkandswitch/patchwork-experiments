@@ -659,8 +659,11 @@ describe("head to wind (DESIGN.md, \"Leaving the anchor\"): no stable irons; bac
   const TIMES = {
     // re-pinned 2026-11-09 for the stock jib's sheet easing to 60° (JIB_EASED_DEG; 45.2, 42.4, 34.7, 64.0 with the
     // free main at its zero lift alone): the luffing jib's free swing in sternway is no longer stopped at 30°
-    12: { backed: { 0: 7.2, 1: 7.03, 2: 6.87, 5: 6.6 }, reversed: { 1: 48.4, 2: 45.77, 5: 38.5 }, alone: { 2: 70.8 } },
-    6: { backed: { 1: 14.73, 2: 14.5, 5: 14.03 } },
+    // re-pinned 2026-11-16 (lane/n6) for her windage read from her contract (§3.13's elements, §6.1's force: the hull's side
+    // area growing with heel, the mast and rigging as spars) in place of sailing's own rule: alone 70.8 → 75.7 s, reversed
+    // 48.4/45.77/38.5 → 46.6/44.63/38.67 s; backed moved under 0.05 s (5° off at 12 kn 6.6 → 6.57 s, 1° at 6 kn 14.73 → 14.7 s)
+    12: { backed: { 0: 7.2, 1: 7.03, 2: 6.87, 5: 6.57 }, reversed: { 1: 46.6, 2: 44.63, 5: 38.67 }, alone: { 2: 75.7 } },
+    6: { backed: { 1: 14.7, 2: 14.5, 5: 14.03 } },
   };
   for (const kn of [12, 6]) {
     for (const [off, t] of Object.entries(TIMES[kn].backed)) {

@@ -49,7 +49,7 @@ modules share.
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`; its `clip` the box of her layout, `seaClip`: her swing circle or start and the landmarks, 10 m to spare, centred and turned with the layout, so in a world with no open water she floats on a block of her own sea: water/WATER.md, "Clipped open water"), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
 | `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
 | `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@4` GLB): the 12 m fixture's hull, its windage element, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig and its windage computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`, `windageOf`, `rm30Of`). See "Trim feedback" |
-| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `planOf`, `contractElement`, `elementForce`): naval's `naval/windage.js` rules, copied (its header says what differs) |
+| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `planOf`, `contractElement`, `elementForce`): naval's `naval/windage.js` rules, copied (its header says what differs); and `plainWindage`, the same rules' elements for a ship without a contract (her box and lumped mast), which physics.js flies as it flies a contract's |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
@@ -270,8 +270,8 @@ rewrite that table.
   box): the box her columns are built over is her waterline's length
   (between its ends), her overall beam, from the deepest foil to the sheer;
   her mass is the contract's roll-up, her CG's height its `cgM`, her sail
-  its lumped sail (§6.8: what places the mast's windage and the wind she
-  reads; her sails are flown separately, below), her keel and rudder the contract's areas at their
+  its lumped sail (§6.8: what places the wind she reads; her sails are
+  flown separately, below, and her windage is the contract's elements), her keel and rudder the contract's areas at their
   MAC quarter chords, the rudder's travel its `maxDeg`. `spec.rig` is the whole contract in her body frame
   (`bodyRig`: points converted, lengths ×k, areas ×k², masses and volumes
   ×k³ at her hull object's scale k; coefficient and force tables by
@@ -466,6 +466,26 @@ rewrite that table.
   - A contract without sails flies its lumped sail on the stock boom.
   - The sim's input has the jib's controls: `controlsOf` reads the Jib
     piece's value (`v.jib`: sheet, held, furl) as jibSheet, jibHeld and furl.
+- **Windage** (§3.13, §6.1; one loop in physics.js over `spec.rig.windage`,
+  `bodyRig`'s elements: areas ×k², centres ×k). Each element is in the air
+  at its own centre: the true wind (sampled once, at the mast, as the sail
+  reads it) less her motion there, her rotation included. Her heel lifts
+  the centre `zPerSinHeelM`·|sin φ| up the mast. In her heeled sail plane
+  the air's components square to her centreplane (ux) and along it (uz)
+  are §6.1's AWS_e·sin β_e and AWS_e·cos β_e, so §6.1's two resolutions
+  are, with q in ½ρ·u² (ρ the contract's `rhoAirKgM3`):
+  - a body (the hull), in cross flow: along her ½ρ·Cd_f·A_f·uz|uz|, across
+    her ½ρ·Cd_s·(A_s + `sidePerSinHeelM2`·|sin φ|)·ux|ux|;
+  - a spar (the mast beside the main, the bare mast, the rigging), drag
+    along the air: D = ½ρ·A·(Cd_f·uz² + Cd_s·ux²), along (ux, uz)/|u|.
+  That is compose's `windageAt` at every predicted point to rounding
+  (windage.test.js: surge, sway, roll and yaw about her CG, to 1e-6 of her
+  weight), and physics.test.js holds each kind of element to the formulas
+  at β_e 0–180° and −90°, upright and at 15°, at k 1 and ½, and turning
+  in still air. A ship with no contract (the plain path) flies the same
+  loop over `plainWindage(spec)`: the same rules on what she knows (her box
+  and her lumped sail's mast), no rigging element. There is no other
+  windage rule.
 - **Wrench.** `ship.wrench(pose, motion, controls, env)` is the sum of
   forces and moments `step` integrates (gravity, buoyancy, resistance,
   foils, sails, windage, anchor), at a state, about her CG, with the boom
@@ -495,23 +515,23 @@ rewrite that table.
   at a heeled point; at an upright one roll passes if somewhere between in
   and out they hold her there. Since naval's 01b9b8cb and 7d473f91 the
   fixtures' predictions include §3.13's windage and each sail's CE swung
-  to its sheet (§6.6); sailing's windage is still its own rule (her
-  topsides and the lumped mast), so measured on 2026-11-16 every fixture
-  settles within every tolerance but the J/24's leeway (7.4° against
-  9.0°), cuvature's settle now included (3.27 against 3.27 m/s; its old
-  16% was the windage §6 left out). What still fails is listed in
+  to its sheet (§6.6), and sailing's physics reads the same windage (see
+  "Windage" below), so at every predicted point her windage is compose's
+  to rounding (`windage.test.js`). Measured on 2026-11-16, the sloop and
+  the Catalina balance at every point, and every fixture settles within
+  every tolerance but the J/24's leeway (7.4° against 9.0°, unchanged by
+  the windage, so not it; part is settle reading leeway in her heeled body
+  frame); the sloop settles 0.8% slow (3.402 against 3.430 m/s),
+  cuvature at 3.276 against 3.268. What still fails is listed in
   `KNOWN_GAPS` point by point with its measured values, each held to them,
-  so the list moves when the physics does: windage's heeling force, which
-  §6.1's hull element grows with heel and sailing's rule doesn't (one
-  sloop point, four of the Catalina's and 22 of the J/24's heel 2–8° less
-  than predicted on heeled reaches; no keelboat's surge or sway residual
-  past 0.35 of its tolerance), the Laser's windage drag (about twice
-  §6.1's: her close-hauled and reaching surge and roll failures), the
-  Laser dead downwind (both swing the main's CE now, and sailing's turns
-  her bow up 2.4–4.2° of helm less than §6.6's: open), and cuvature's
-  stand-in hull's righting moment. The report beside it gives each
-  fixture's residual at the reference point and how much of it is
-  sailing's windage. Each
+  so the list moves when the physics does: cuvature's stand-in hull's
+  righting moment (17 points from 14 kn), the J/24's heel by her 25°
+  limit (every wrench passes, but where her curve is flat a small roll
+  residual reads as 2–4.5° less heel: 20 points), and the Laser dead
+  downwind (both swing the main's CE, and sailing's turns her bow up
+  2.4–4.2° of helm less than §6.6's: open). The report beside it gives
+  each fixture's residual at the reference point and its windage, sailing's
+  beside compose's. Each
   mechanism also has its own finite cases: `foils-mass-crew.test.js` (item
   9), `hull-resistance.test.js` (her hull, resistance, planing, side force
   and induced drag, and one seeded sea run as a guard), `sails-jib.test.js`
@@ -560,9 +580,41 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   the elements', which `breakdown`'s §6.3 reading of the sails alone
   doesn't hold. Without it the water check failed by 2–4% at every
   reference point though no water force had changed.
-- *KNOWN_GAPS lists the sloop and the Catalina now*: their predictions
-  moved (naval's windage and swung CE), sailing's physics didn't, and the
-  gaps are re-measured, not re-tuned (agreement.slow.test.js's header).
+- *KNOWN_GAPS were re-measured, not re-tuned*, twice: once when the
+  predictions moved (naval's windage and swung CE) and sailing's physics
+  didn't (the sloop and the Catalina were listed), and again when the
+  physics read §3.13's windage (they balance again and list nothing;
+  agreement.slow.test.js's header has the numbers).
+- *One windage rule: the plain path's elements are §3.13's too.* A ship
+  without a contract (a rig file with no `extras.rig`, the stock rig on a
+  camber hull) used sailing's own rule (topsides 0.7·L·f and 0.7·B·f at
+  Cd 1, the mast 0.15·luff at the lumped sail's mast point). It is deleted;
+  `plainWindage` builds the elements from her box (LOA her length, beam,
+  FBAV her freeboard: the sheer is level) and her lumped mast, from the
+  deck to the head of the lumped sail, beside the sail from its tack
+  (taken as a main's luff: BAS the tack's height over the deck) and bare
+  below, its width `mastSection` of the mast's length above the deck (naval's
+  rule takes the mast's length; the plan said the luff, a few mm less for
+  the stock sloop). No rigging element: she states no I and no RM30.
+  camber-run's speed and heel move with it.
+- *|sin φ|.* §3.13 states the heeled terms (`sidePerSinHeelM2`,
+  `zPerSinHeelM`) for heel to leeward (compose's φ ≥ 0). The sim heels
+  either way, so it applies them by |sin φ|: whichever side is down, more
+  of her side is in the wind and its centre is higher (heeled to windward,
+  that is the moment bringing her back up). A question if you'd rather
+  apply them only to leeward.
+- *The wind on the elements is sampled once, at the mast,* as the sails'
+  is, and each element's air is that wind less her motion at its centre;
+  a wind field that changes across her length isn't resolved per element.
+  The elements use the contract's `sailModel.rhoAirKgM3` (1.225 in every
+  fixture; the plain path physics.js's RHO_AIR, the same).
+- *The agreement harness measures §6.1's windage from compose alone*
+  (`composeWindage`): compose with the elements less without them gives
+  Σfx, Σfh·cos φ, Σfh·(z − zY) and the yaw about x = 0; compose with every
+  element lowered to the waterplane (the same forces) gives −zY·Σfh, so
+  Σfh·z needs no reading of compose's internals; both moments are then
+  taken to her CG. Sailing's (`sailingWindage`) is her wrench in the
+  point's wind less in air moving with her, sails stowed.
 
 ## Trim feedback
 
@@ -1543,11 +1595,11 @@ from rest, the jib where the wind and its sheet put it:
 
 | 12 kn unless noted | from 0° / 1° / 2° / 5° off | target |
 |---|---|---|
-| jib backed (wheel to port) | 7.20 / 7.03 / 6.87 / 6.60 s to 45° (±0.05 s) | under 10 s |
-| jib backed, 6 kn | – / 14.73 / 14.50 / 14.03 s | under 18 s |
-| B at the helm: 0–10° off either bow, the wheel to port, amidships or to starboard, the jib's sheet 0, ½ and 1 (99 cases) | the side B holds it on is backed from the first read; past 45° the way the hint names in 6.1–10.1 s | within 11 s, the hint's way |
-| jib luffing, wheel reversed in sternway | – / 48.40 / 45.77 / 38.50 s (±5%) | under a minute, slower than backing the jib and sooner than left alone |
-| left alone | 70.80 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
+| jib backed (wheel to port) | 7.20 / 7.03 / 6.87 / 6.57 s to 45° (±0.05 s) | under 10 s |
+| jib backed, 6 kn | – / 14.70 / 14.50 / 14.03 s | under 18 s |
+| B at the helm: 0–10° off either bow, the wheel to port, amidships or to starboard, the jib's sheet 0, ½ and 1 (99 cases) | the side B holds it on is backed from the first read; past 45° the way the hint names in 6.1–9.9 s | within 11 s, the hint's way |
+| jib luffing, wheel reversed in sternway | – / 46.60 / 44.63 / 38.67 s (±5%) | under a minute, slower than backing the jib and sooner than left alone |
+| left alone | 75.70 s from 2° (±5%) | none sourced: falls off by herself, slower than the rudder |
 
 Without the jib she starts on an unstable equilibrium and creeps off it,
 so those times move with the smallest change in where she starts: they're
@@ -1555,13 +1607,14 @@ pinned to a band, not to 0.05 s.
 
 The reversed rudder's time is what her sternway allows, and the diagnosis'
 first estimate for it (15–30 s, unsourced) was wrong for this breeze. In
-12 kn, luffing, about 150 N of windage pushes 8 t astern: she makes
-0.07 m/s after 5 s, 0.26 m/s after 30 s and 0.37 m/s after 45 s (from 2°
-off). A rudder of 0.6 m² at 0.26 m/s has 35 Pa to work with, so nothing
-turns her until she has that sternway: from 2° off she passes 5° at 20 s,
-10° at 30 s, 20° at 38 s and 45° at 45.8 s, having drifted back less than
-her own length. The time goes with the wind: in 20 kn the same move takes
-20.0–24.0 s (5°–1° off). So the target is the ordering and a bound, both
+12 kn, luffing, about 180 N of air drag pushes 8 t astern (129 N of it
+her windage, §3.13's elements, the rest the luffing sails): she makes
+0.08 m/s after 5 s, 0.30 m/s after 30 s and 0.34 m/s after 45 s (from 2°
+off; measured 2026-11-16). A rudder of 0.6 m² at 0.30 m/s has 46 Pa to
+work with, so nothing turns her until she has that sternway: from 2° off
+she passes 5° at 20.2 s, 10° at 29.1 s, 20° at 37.5 s and 45° at 44.6 s,
+having drifted back less than her own length. The time goes with the
+wind: in 20 kn the same move takes 20.1–23.4 s (5°–1° off). So the target is the ordering and a bound, both
 asserted: backed (7 s) before reversed (under 60 s) before left alone.
 That is why the HUD's advice is to back the jib.
 
