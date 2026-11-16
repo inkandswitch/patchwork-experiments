@@ -47,9 +47,9 @@ modules share.
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
 | `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`; its `clip` the box of her layout, `seaClip`: her swing circle or start and the landmarks, 10 m to spare, centred and turned with the layout, so in a world with no open water she floats on a block of her own sea: water/WATER.md, "Clipped open water"), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
-| `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
+| `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), §3.13's elements in her body frame (`windageInBody`: a contract's, and the plain path's), the hull it was designed on checked (`checkSource`) |
 | `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@4` GLB): the 12 m fixture's hull, its windage element, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig and its windage computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`, `windageOf`, `rm30Of`). See "Trim feedback" |
-| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `planOf`, `contractElement`, `elementForce`): naval's `naval/windage.js` rules, copied (its header says what differs); and `plainWindage`, the same rules' elements for a ship without a contract (her box and lumped mast), which physics.js flies as it flies a contract's |
+| `windage.js` | yes | §3.13's windage elements and §6.1's force on one (`hullElement`, `rigElements`, `planOf`, `contractElement`, `elementForce`, the one force law physics.js flies): naval's `naval/windage.js` rules, copied (its header says what differs) |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
@@ -467,25 +467,29 @@ rewrite that table.
   - The sim's input has the jib's controls: `controlsOf` reads the Jib
     piece's value (`v.jib`: sheet, held, furl) as jibSheet, jibHeld and furl.
 - **Windage** (§3.13, §6.1; one loop in physics.js over `spec.rig.windage`,
-  `bodyRig`'s elements: areas ×k², centres ×k). Each element is in the air
+  `bodyRig`'s elements by `windageInBody`: areas ×k², centres ×k, each
+  through windage.js `elementForce`, the one force law). Each element is in the air
   at its own centre: the true wind (sampled once, at the mast, as the sail
   reads it) less her motion there, her rotation included. Her heel lifts
   the centre `zPerSinHeelM`·|sin φ| up the mast. In her heeled sail plane
   the air's components square to her centreplane (ux) and along it (uz)
   are §6.1's AWS_e·sin β_e and AWS_e·cos β_e, so §6.1's two resolutions
-  are, with q in ½ρ·u² (ρ the contract's `rhoAirKgM3`):
+  are, with q in ½ρ·u² (ρ the contract's `rhoAirKgM3`, which her sails
+  use too):
   - a body (the hull), in cross flow: along her ½ρ·Cd_f·A_f·uz|uz|, across
     her ½ρ·Cd_s·(A_s + `sidePerSinHeelM2`·|sin φ|)·ux|ux|;
   - a spar (the mast beside the main, the bare mast, the rigging), drag
     along the air: D = ½ρ·A·(Cd_f·uz² + Cd_s·ux²), along (ux, uz)/|u|.
   That is compose's `windageAt` at every predicted point to rounding
   (windage.test.js: surge, sway, roll and yaw about her CG, to 1e-6 of her
-  weight), and physics.test.js holds each kind of element to the formulas
-  at β_e 0–180° and −90°, upright and at 15°, at k 1 and ½, and turning
-  in still air. A ship with no contract (the plain path) flies the same
-  loop over `plainWindage(spec)`: the same rules on what she knows (her box
-  and her lumped sail's mast), no rigging element. There is no other
-  windage rule.
+  weight), and physics.test.js holds each kind of element (and a body with
+  two Cds in thinner air) to the formulas at β_e 0–180° and −90°, upright
+  and heeled 15° either way, at k 1 and ½, and turning in still air. A
+  ship with no contract (the plain path) flies the same loop over
+  `windageInBody(plainWindage(spec))` (hull-model.js): the same rules on
+  what she knows (her box and her lumped sail's mast, each on its own
+  fore-and-aft plane), stated as a contract states them, no rigging
+  element. There is no other windage rule.
 - **Wrench.** `ship.wrench(pose, motion, controls, env)` is the sum of
   forces and moments `step` integrates (gravity, buoyancy, resistance,
   foils, sails, windage, anchor), at a state, about her CG, with the boom
@@ -516,12 +520,11 @@ rewrite that table.
   and out they hold her there. Since naval's 01b9b8cb and 7d473f91 the
   fixtures' predictions include §3.13's windage and each sail's CE swung
   to its sheet (§6.6), and sailing's physics reads the same windage (see
-  "Windage" below), so at every predicted point her windage is compose's
+  "Windage" above), so at every predicted point her windage is compose's
   to rounding (`windage.test.js`). Measured on 2026-11-16, the sloop and
   the Catalina balance at every point, and every fixture settles within
-  every tolerance but the J/24's leeway (7.4° against 9.0°, unchanged by
-  the windage, so not it; part is settle reading leeway in her heeled body
-  frame); the sloop settles 0.8% slow (3.402 against 3.430 m/s),
+  every tolerance but the J/24's leeway (7.4° against 9.0°: not windage,
+  which agrees; part is settle reading leeway in her heeled body frame); the sloop settles 0.8% slow (3.402 against 3.430 m/s),
   cuvature at 3.276 against 3.268. What still fails is listed in
   `KNOWN_GAPS` point by point with its measured values, each held to them,
   so the list moves when the physics does: cuvature's stand-in hull's
@@ -550,8 +553,10 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   section (`rig.mast.sectionM`), not `mastSection(14)` (0.087 m). For
   naval's contracts the result is the same, since each states
   `sectionM = mastSection(lengthM)` (windage.test.js checks it). And
-  `elementForce` reads a contract element (its centre is `atM`), the form
-  sailing holds; it is held to compose's `windageAt` element by element.
+  `elementForce` reads a contract element and takes the air as its two
+  components in her heeled sail plane and the heel's sine as given, the
+  form physics.js has them in; it is the one force law (physics.js calls
+  it, no copy inline), held to compose's `windageAt` element by element.
 - *The stock hull's windage element is the fixture's*, as her canoe body
   is, not §3.13's rule on her drawn sheer (her drawn hull isn't the one she
   floats on: "Which hull").
@@ -589,25 +594,41 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   without a contract (a rig file with no `extras.rig`, the stock rig on a
   camber hull) used sailing's own rule (topsides 0.7·L·f and 0.7·B·f at
   Cd 1, the mast 0.15·luff at the lumped sail's mast point). It is deleted;
-  `plainWindage` builds the elements from her box (LOA her length, beam,
+  `plainWindage` (hull-model.js, beside the box it reads; not in the
+  copied windage.js) states the elements, in the contract's frame, from
+  her box (LOA her length, beam,
   FBAV her freeboard: the sheer is level) and her lumped mast, from the
   deck to the head of the lumped sail, beside the sail from its tack
   (taken as a main's luff: BAS the tack's height over the deck) and bare
   below, its width `mastSection` of the mast's length above the deck (naval's
   rule takes the mast's length; the plan said the luff, a few mm less for
   the stock sloop). No rigging element: she states no I and no RM30.
-  camber-run's speed and heel move with it.
+  physics.js takes them into her body by `windageInBody`, as `bodyRig`
+  takes a contract's, so there is one converter. camber-run (the stock
+  rig on a camber hull, the plain path) moved with it, measured on
+  2026-11-16: over the ground 0.96 → 0.98 m/s, read speed 1.01 → 1.05
+  m/s, heel −2.08° → −1.97°, leeway 12.47° → 11.9°.
 - *|sin φ|.* §3.13 states the heeled terms (`sidePerSinHeelM2`,
   `zPerSinHeelM`) for heel to leeward (compose's φ ≥ 0). The sim heels
   either way, so it applies them by |sin φ|: whichever side is down, more
   of her side is in the wind and its centre is higher (heeled to windward,
-  that is the moment bringing her back up). A question if you'd rather
-  apply them only to leeward.
+  that is the moment bringing her back up). physics.js takes |sin φ| in
+  one place and hands it to `elementForce` and the centre's lift alike;
+  physics.test.js's φ = −15° rows pin it. A question if you'd rather apply
+  them only to leeward (those rows are what would change).
 - *The wind on the elements is sampled once, at the mast,* as the sails'
   is, and each element's air is that wind less her motion at its centre;
   a wind field that changes across her length isn't resolved per element.
-  The elements use the contract's `sailModel.rhoAirKgM3` (1.225 in every
-  fixture; the plain path physics.js's RHO_AIR, the same).
+  The elements and the lumped sail use the contract's
+  `sailModel.rhoAirKgM3` (1.225 in every fixture), the plain path
+  physics.js's RHO_AIR (the same): one air density per ship.
+- *The windage elements are fixed per rig,* as §3.13 states them and
+  compose flies them: the mast beside the main is the 0.4/0.6 element
+  even with the main lowered at anchor, and the plain path always takes
+  her lumped sail as set. That agrees with compose by construction, and it
+  shapes how she lies at anchor and breaks out ("Leaving the anchor"). A question
+  if you'd rather the mast go bare (Cd 0.8) with the main down; §3.13
+  states no such rule.
 - *The agreement harness measures §6.1's windage from compose alone*
   (`composeWindage`): compose with the elements less without them gives
   Σfx, Σfh·cos φ, Σfh·(z − zY) and the yaw about x = 0; compose with every

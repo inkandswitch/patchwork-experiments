@@ -15,12 +15,14 @@
 //   drawn) where naval works it out from the mast's length, and planOf
 //   reads its `plan` off a contract's rig and sails;
 // - contractElement states one element in the contract's frame, as naval's
-//   contract.js windageOf does (atM is the profile point on the centreplane);
-// - elementForce reads a contract element (its centre is atM's x and z),
-//   since a contract's elements are what sailing holds.
-// And one of sailing's own, not naval's: plainWindage, the same rules'
-// elements for a ship with no contract (her box and lumped mast), in the
-// body frame, so physics.js has one windage loop and no rule of its own.
+//   contract.js windageOf does (atM is the profile point on the centreplane,
+//   or on the plane y a ship's box stands on);
+// - elementForce takes the air at the element in her heeled sail plane as
+//   its two components (AWS_e·sin β_e square to her centreplane, AWS_e·cos
+//   β_e along it), not as AWS_e and β_e, and the sine of the heel its heeled
+//   side area grows by, so the physics can call it with the air it has; its
+//   centre (atM, lifted zPerSinHeelM·sin φ) is the caller's to place.
+// physics.js flies every element through elementForce, the one force law.
 // windage.test.js holds this copy to what naval states: every fixture's
 // elements and mast sections, and compose.js's windage force at a finite
 // table of states. Those are naval's outputs as copied, so an edit here
@@ -61,8 +63,6 @@
 //                    Cd(β) = Cd_f·cos²β + Cd_s·sin²β.
 //
 // Each element's Fx and Fh act at its own centre (x, z).
-
-import { toBody } from "./rig-contract.js";
 
 const RAD = Math.PI / 180;
 const fin = (v) => Number.isFinite(v);
@@ -179,8 +179,13 @@ export function planOf(rig, sails) {
   return { mast: { partners: [ps[0], ps[2]], heightM: rig.mast.heightM }, rakeDeg: rig.rakeDeg, BAS: rig.BAS, P: rig.P, I: rig.I, type: rig.type, sails: (sails ?? []).map((s) => ({ id: s.id })) };
 }
 
-/** An element as §3.13 states it, in the contract's frame (its profile point on the centreplane). */
-export function contractElement(e) {
+/**
+ * An element as §3.13 states it, in the contract's frame: its profile point
+ * on the centreplane, or on the fore-and-aft plane `y` (a ship's box off
+ * her body's centre: hull-model.js plainWindage). An option, so that
+ * `.map(contractElement)` stays on the centreplane.
+ */
+export function contractElement(e, { y = 0 } = {}) {
   return {
     id: e.id,
     shape: e.shape,
@@ -189,57 +194,30 @@ export function contractElement(e) {
     sidePerSinHeelM2: e.sidePerSinHeelM2,
     cdFront: e.cdFront,
     cdSide: e.cdSide,
-    atM: [e.at[0], 0, e.at[1]],
+    atM: [e.at[0], y, e.at[1]],
     zPerSinHeelM: e.zPerSinHeelM,
   };
 }
 
 /**
- * One contract element's force at an apparent wind in the heeled sail plane
- * (§6.1: compose.js's windageAt).
- * @returns {{ fx: number, fh: number, x: number, z: number }} fx along the boat (+ ahead), fh square to the mast (+ to leeward), at (x, z)
+ * One contract element's force (§6.1: compose.js's windageAt) from the air
+ * at its centre in her heeled sail plane: `side` square to her centreplane
+ * (AWS_e·sin β_e, + toward where it blows), `along` along it (AWS_e·cos
+ * β_e, + from ahead), at air density `rho`, its body's side area grown by
+ * sidePerSinHeelM2·`sinHeel`. The body meets it in cross flow, each axis
+ * its own area; a spar drags along it.
+ * @returns {number[]} `out`: [the force square to her centreplane (§6.1's Fh), along it aft (§6.1's −Fx)]
  */
-export function elementForce(e, { awsE, betaEDeg, heelDeg, rho }) {
-  const q = 0.5 * rho * awsE * awsE;
-  const b = betaEDeg * RAD;
-  const cb = Math.cos(b), sb = Math.sin(b);
-  const s = Math.sin(heelDeg * RAD);
-  let fx, fh;
+export function elementForce(e, side, along, sinHeel, rho, out = [0, 0]) {
+  const h = 0.5 * rho;
   if (e.shape === "body") {
-    const side = e.areaSideM2 + e.sidePerSinHeelM2 * s;
-    fx = -q * e.cdFront * e.areaFrontM2 * cb * Math.abs(cb);
-    fh = q * e.cdSide * side * sb * Math.abs(sb);
+    out[0] = h * e.cdSide * (e.areaSideM2 + e.sidePerSinHeelM2 * sinHeel) * side * Math.abs(side);
+    out[1] = h * e.cdFront * e.areaFrontM2 * along * Math.abs(along);
   } else {
-    const D = q * e.areaFrontM2 * (e.cdFront * cb * cb + e.cdSide * sb * sb);
-    fx = -D * cb;
-    fh = D * sb;
+    const u = Math.hypot(side, along);
+    const d = u > 0 ? (h * e.areaFrontM2 * (e.cdFront * along * along + e.cdSide * side * side)) / u : 0;
+    out[0] = d * side;
+    out[1] = d * along;
   }
-  return { fx, fh, x: e.atM[0], z: e.atM[2] + e.zPerSinHeelM * s };
-}
-
-/**
- * The plain path's elements (a ship without a contract: sim.js specFor's
- * box and lumped sail), by the same rules from what her spec knows, in the
- * body frame (x starboard, y up, z aft; areas m², points m), as bodyRig
- * states a contract's: the hull from her box (LOA her length, B her beam,
- * the sheer level at her freeboard, so FBAV is it), and the mast from her
- * deck (the freeboard) to the head of her lumped sail (tack + luff), as
- * wide as mastSection of that length, beside the sail from its tack up its
- * luff (as a main's luff, BAS at the tack), bare below. No rigging: she
- * states no I and no righting moment (RM30) to size it by.
- * @param {import("./hull-model.js").ShipSpec} spec
- */
-export function plainWindage(spec) {
-  const fb = spec.freeboard;
-  const [cx, cz] = spec.center ?? [0, 0];
-  // the profile plane's x is forward (body −z), its z up (body y)
-  const hull = hullElement({ loa: spec.length, beam: spec.beam, stemX: spec.length / 2 - cz, sternX: -spec.length / 2 - cz, sheerAt: () => fb });
-  const s = spec.sail;
-  const top = s.tack[1] + s.luff;
-  const heightM = top - fb;
-  const plan = { mast: { partners: [-s.tack[2], fb], heightM }, rakeDeg: 0, BAS: Math.max(0, s.tack[1] - fb), P: s.luff, I: 0, type: "plain", sails: s.area > 0 && s.luff > 0 ? [{ id: "main" }] : [] };
-  const rig = heightM > 0 ? rigElements({ plan, mastWidthM: mastSection(heightM), rm30Nm: null, chainplateBaseM: null }) : [];
-  // each on the centreplane her box or her mast stands on (body x)
-  const inBody = (e, x) => ({ ...contractElement(e), atM: toBody([e.at[0], -x, e.at[1]]) });
-  return [...(hull ? [inBody(hull, cx)] : []), ...rig.map((e) => inBody(e, s.tack[0]))];
+  return out;
 }
