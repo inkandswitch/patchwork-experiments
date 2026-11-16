@@ -406,6 +406,8 @@ right-click Select still selects it (no handles, no inspector).*
 - **One drawer** with tabs: inspector, outline, and an object's own editor
   (Camber, a dice table, a bag), docked by its verb with `api.dock` and
   closed by its × or its caller; the pane with the keys shows a focus ring.
+  A grip on its left edge sets its width, the viewer's for the kind of pane
+  shown (Decisions 9).
 - **Narrow**: the world bar collapses to the breadcrumb and one menu.
   "Paused by" and notices are `aria-live`.
 
@@ -705,6 +707,24 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   drawer holds docked panes only; the inspector and outline stay in the
   sidebar for now (step 3 left them: see its note). One width for every
   pane (Camber had its own, wider); a pane gets no resize handle yet.
+  *Built since* (N13, lane/n13): a grip on the drawer's left edge. The
+  drawer has two widths, the stage's chrome's (`embed: false`) and a
+  docked editor's, each the viewer's own: dragging the grip (or its arrow
+  keys, Home, End) sets the shown kind's, double-clicking gives that kind
+  its default back, and the widths are view prefs (`drawer.chrome`,
+  `drawer.editor`). A docked editor's default is Camber's old
+  `clamp(360px, 46cqw, 760px)`, so Camber has its room back without
+  docking with a width of its own. The width is a function of the kind
+  shown, its pref and the stage's size only (`src/stage/dock.js`,
+  tested over every sequence of up to three of ten acts); a window resize
+  clamps what shows (the drawer takes at most all but 160px of the stage,
+  70% on a narrow stage, so the stage keeps at least 160px, or 30%, for the
+  scene and any left edge) and never rewrites a pref; the grip's presses
+  and keys reach no part of the scene, and a key held at the stage is let
+  go there even if focus comes to the grip (`drawer-grip-stage.test.js`);
+  a drag ends on its release, a cancel, lost capture, a move with the
+  button up, or its pane's kind no longer being shown, and only its
+  release stores.
 - **3. Selection and carrying.** The halo; Select in the menu and as
   orbit's default; `scene.carry`; `local.tool` and the forced-hand
   workarounds go; activities remain. *Proves:* dice's R rolls; a drag
@@ -851,7 +871,8 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   their keys are the stage's; the inspector following the selection docks
   with `show: false`, behind a pane in use such as the parts bin); while one
   of them is shown the drawer is a side panel's width, not a docked
-  editor's; `local.drawer` says what's docked, so the toolbar's toggles hear
+  editor's (each kind's width the viewer's own, set with the drawer's grip:
+  Decisions 9); `local.drawer` says what's docked, so the toolbar's toggles hear
   a tab close. Grid, axes and bounds were already the orbit body's. The use
   prompt hides while a gesture is open (a carry: its keys come first). Every general part runs in a game too (the toolbar, the use
   prompt), showing what attention asks for. **`view.start = { body, place,
@@ -1148,3 +1169,44 @@ The project lead decided the five open questions on 2026-11-12.
    the view already says each viewer's body on every channel it acts on, so
    it lists everyone with that doc open anywhere. Pause and Resume act on
    the chip's own doc, never the focus's.
+9. **The drawer's width is the viewer's, by the kind of pane shown**
+   (decided unattended, 2026-11-16, lane/n13, for the lead). The drawer
+   has a resize grip, and a pane declares no width (`api.dock` has no
+   `width` option). There are two widths, the stage's own chrome's
+   (inspector, outline, dimensions, parts: docked with `embed: false`) and
+   a docked editor's (Camber's Shape, a die's panel, a bag's); dragging the
+   grip sets the width of the kind shown.
+   - Not one width per owner extension: the four chrome tabs are four
+     extensions, so the drawer would jump width going from Inspector to
+     Objects, and every new package would add a width to keep.
+   - Not a width a pane declares: Camber's lost room comes back by making
+     its old `clamp(360px, 46cqw, 760px)` the editor default, so the stage
+     learns nothing of one extension's layout, and the person, not the
+     package, decides how much of the screen the scene gives up.
+   - The widths are view prefs (`drawer.chrome`, `drawer.editor`), per
+     viewer and per scene like the grid, units and snap, so another tab of
+     the same scene follows. A stored width outside [220, 1200] px is no
+     setting (the default shows), not one to clamp; the CSS clamps what
+     shows: the drawer takes at most all but 160px of the stage (70% of a
+     stage 640px wide or less), so a narrow window never rewrites a stored
+     width. The 160px (or 30%) is the scene's and any left edge's
+     together: the CSS can't see the left edge's width, so with one the
+     port itself may get less.
+   - A click on the grip that doesn't move stores nothing, so a pane's
+     default (which follows the stage's width) stays until the person
+     actually drags.
+   - The grip owns a key from its keydown on the grip until that key's
+     keyup, the grip's blur or its drawer going, and owns no other key. A
+     key held at the stage when focus comes to the grip (a helm's or a
+     walk's ArrowLeft) stays its holder's: its auto-repeats resize nothing
+     and its keyup reaches the holder, so no held key is left stuck. A drag
+     ends on its release, a cancel, lost capture, a move with the button
+     up, or its kind no longer being shown, and only its release stores.
+   - Still open (a nit): the grip's `aria-valuemin`/`aria-valuemax` are
+     the fixed 220/1200 a pref may hold, while the CSS may show less on a
+     narrow stage, so `aria-valuenow` (what shows) can fall below the
+     minimum; nor is it refreshed on a window resize.
+   Questions for the lead: are two kinds right, or should each pane's
+   owner have its own width? Should the widths be one per viewer across
+   all scenes, as screen layout usually is, rather than per scene? Should
+   a pane still be able to declare a preferred width on top of the grip?

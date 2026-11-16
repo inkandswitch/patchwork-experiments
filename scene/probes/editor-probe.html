@@ -102,12 +102,20 @@ try {
   hostA.repo = repo; hostB.repo = repo;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   hostA.time = time; hostB.time = time;
-  Tool(A, hostA);
+  let cleanA = Tool(A, hostA);
   Tool(B, hostB);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
   const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
   window.__p = {
     A: dbgA, B: dbgB, hostA, hostB, errors,
+    /** A opened again, as a reload would (its prefs read back from storage): the runner's last act, since screen() and the rest keep the first A */
+    remountA() {
+      cleanA?.();
+      hostA.replaceChildren();
+      cleanA = Tool(A, hostA);
+      this.A = hostA.querySelector(".scene-stage").__sceneDebug;
+      return true;
+    },
     doc: () => scene.doc(),
     /** where an object's origin (plus an offset) is on the page, from A's camera */
     screen(id, off = [0, 0, 0], dbg = dbgA) {
