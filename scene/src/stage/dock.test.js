@@ -255,8 +255,8 @@ describe("the drawer's width", () => {
   // no drawer and no grip with nothing docked; else the shown kind's pref or
   // nothing (I1: docking, closing and switching within a kind never move it;
   // I4: no drawer, no grip)
-  it("over every sequence of ≤3 acts on two chrome panes and an editor, with prefs set and reset (819 cases): the width is the shown kind's pref", () => {
-    const ACTS = ["dock A", "dock B", "dock E", "show A", "show E", "close shown", "chrome 500", "editor 900", "reset editor"];
+  it("over every sequence of ≤3 acts on two chrome panes and an editor, retitled, with prefs set and reset (1110 cases): the width is the shown kind's pref", () => {
+    const ACTS = ["dock A", "dock B", "dock E", "show A", "show E", "retitle A", "close shown", "chrome 500", "editor 900", "reset editor"];
     const failures = [];
     let n = 0;
     function run(seq) {
@@ -281,6 +281,8 @@ describe("the drawer's width", () => {
           const k = act.at(-1);
           if (m.order.includes(k)) drawer.el.querySelectorAll(".stage-drawer-tab-name")[m.order.indexOf(k)].click();
           m = shown(m, k);
+        } else if (act === "retitle A") {
+          if (m.order.includes("A")) drawer.dock("o", els.A, { title: "A, renamed", show: false });
         } else if (act === "close shown") {
           const on = shownOf(m);
           if (on) drawer.el.querySelector('.stage-drawer-tab[aria-selected="true"] .stage-drawer-tab-close').click();
@@ -314,7 +316,7 @@ describe("the drawer's width", () => {
       for (const a of ACTS) walk([...seq, a]);
     })([]);
     expect(failures).toEqual([]);
-    expect(n).toBe(9 + 81 + 729);
+    expect(n).toBe(10 + 100 + 1000);
   });
 });
 
@@ -336,19 +338,22 @@ describe("the drawer's grip", () => {
       },
     });
     drawer.el.getBoundingClientRect = () => ({ width: seen, height: 400, x: 0, y: 0, top: 0, left: 0, right: seen, bottom: 400 });
-    drawer.dock("o", document.createElement("div"), { title: "P", embed: kind === "editor" });
+    const content = document.createElement("div");
+    const close = drawer.dock("o", content, { title: "P", embed: kind === "editor" });
+    // (the button is down from the press until its release)
     const ptr = (type, x, extra = {}) => {
-      const e = new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 10, button: 0, pointerId: 7, ...extra });
+      const buttons = type === "pointerdown" || type === "pointermove" ? 1 : 0;
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 10, button: 0, buttons, pointerId: 7, ...extra });
       drawer.grip.dispatchEvent(e);
       return e;
     };
-    const key = (k, extra = {}) => {
-      const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: k, ...extra });
+    const key = (k, extra = {}, type = "keydown") => {
+      const e = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: k, code: k, ...extra });
       drawer.grip.dispatchEvent(e);
       return e;
     };
     const width = () => drawer.el.style.getPropertyValue("--stage-drawer-width");
-    return { parent, drawer, calls, ptr, key, width, prefs: () => prefs, done: () => parent.remove() };
+    return { parent, drawer, content, close, calls, ptr, key, width, prefs: () => prefs, done: () => parent.remove() };
   }
 
   it("is the drawer's first child: a focusable vertical separator", () => {
@@ -420,6 +425,87 @@ describe("the drawer's grip", () => {
     expect(g.calls).toHaveLength(2);
     expect(outside).toEqual(["Enter", "a"]);
     g.done();
+  });
+
+  it("a key held elsewhere is let go elsewhere: its auto-repeats and its keyup on the grip are not the grip's; a key the grip took is the grip's until its keyup", () => {
+    const g = mount({ seen: 300 });
+    const outside = [];
+    for (const t of ["keydown", "keyup"]) g.parent.addEventListener(t, (e) => outside.push(`${t} ${e.key}${e.repeat ? " repeat" : ""}`));
+    // ArrowLeft went down at the stage; focus came to the grip while it is held
+    const rep = g.key("ArrowLeft", { repeat: true });
+    const up = g.key("ArrowLeft", {}, "keyup");
+    expect([rep.defaultPrevented, g.calls]).toEqual([false, []]);
+    expect(outside).toEqual(["keydown ArrowLeft repeat", "keyup ArrowLeft"]);
+    // pressed on the grip: its repeats step too, and its keyup stops here
+    g.key("ArrowRight");
+    g.key("ArrowRight", { repeat: true });
+    g.key("ArrowRight", {}, "keyup");
+    expect(g.calls).toEqual([
+      [prefKey("chrome"), 284],
+      [prefKey("chrome"), 284],
+    ]);
+    expect(outside).toHaveLength(2);
+    // and once let go, it isn't the grip's any more
+    g.key("ArrowRight", { repeat: true });
+    g.key("ArrowRight", {}, "keyup");
+    expect(outside).toEqual(["keydown ArrowLeft repeat", "keyup ArrowLeft", "keydown ArrowRight repeat", "keyup ArrowRight"]);
+    expect(g.calls).toHaveLength(2);
+    g.done();
+  });
+
+  // Every way a key the grip took stops being the grip's: then its
+  // auto-repeats and its keyup on the grip go on (it may be held at the stage
+  // by then), and resize nothing.
+  it("a key the grip took stops being its own on its keyup, the grip's blur, or its drawer going (3 rows)", () => {
+    const ENDS = [
+      ["its keyup", (g) => g.key("ArrowRight", {}, "keyup")],
+      ["the grip's blur", (g) => g.drawer.grip.dispatchEvent(new FocusEvent("blur"))],
+      ["its drawer going", (g) => (g.close(), g.drawer.dock("o", g.content, { title: "P", embed: false }))],
+    ];
+    const rows = ENDS.map(([name, end]) => {
+      const g = mount({ seen: 300 });
+      g.key("ArrowRight");
+      end(g);
+      const stored = g.calls.length;
+      const outside = [];
+      for (const t of ["keydown", "keyup"]) g.parent.addEventListener(t, () => outside.push(t));
+      const rep = g.key("ArrowRight", { repeat: true });
+      g.key("ArrowRight", {}, "keyup");
+      const row = [name, stored, rep.defaultPrevented, g.calls.length, outside];
+      g.done();
+      return row;
+    });
+    expect(rows).toEqual(ENDS.map(([name]) => [name, 1, false, 1, ["keydown", "keyup"]]));
+  });
+
+  // Every way a drag ends. Only its own release stores; after any of them a
+  // move without the button (a hover) and a later release are nobody's.
+  it("a drag ends on its release, a cancel, lost capture, a move with the button up, its drawer going, or its kind no longer shown; then a hover does nothing (6 rows)", () => {
+    const ENDS = [
+      ["pointerup", (g) => g.ptr("pointerup", 400), 400],
+      ["pointercancel", (g) => g.ptr("pointercancel", 400), null],
+      ["lostpointercapture", (g) => g.ptr("lostpointercapture", 400), null],
+      ["a move with the button up", (g) => g.ptr("pointermove", 400, { buttons: 0 }), null],
+      ["its drawer going", (g) => (g.close(), g.drawer.dock("o", g.content, { title: "P", embed: false })), null],
+      ["its kind no longer shown", (g) => g.drawer.dock("q", document.createElement("div"), { title: "E" }), null],
+    ];
+    const rows = ENDS.map(([name, end]) => {
+      const g = mount({ seen: 300 });
+      g.ptr("pointerdown", 500);
+      g.ptr("pointermove", 450);
+      // a retitle mid-drag keeps the drag's width showing
+      g.drawer.dock("o", g.content, { title: "P2", embed: false });
+      const live = g.width();
+      end(g);
+      const stored = g.calls.map(([, px]) => px);
+      const after = g.width();
+      g.ptr("pointermove", 100, { buttons: 0 });
+      g.ptr("pointerup", 100);
+      const row = [name, live, stored, g.width() === after, g.calls.length === stored.length];
+      g.done();
+      return row;
+    });
+    expect(rows).toEqual(ENDS.map(([name, , px]) => [name, "350px", px == null ? [] : [px], true, true]));
   });
 
   it("a double-click gives the shown kind its default back", () => {

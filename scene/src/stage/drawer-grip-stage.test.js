@@ -21,16 +21,25 @@ afterEach(() => {
   s = null;
   localStorage.clear();
   vi.restoreAllMocks();
+  claimLeft.on = false;
 });
 
 /** Whatever reaches the scene's chain: every key and press a general part is offered. It docks a panel of its own (an editor) when asked. */
+const claimLeft = { on: false };
 function recorder(seen) {
   const note = (type) => (ev) => (seen.push([type, ev.key ?? null]), false);
   return {
     meta: { id: "t.seen" },
     module: {
       create: (api) => ({
-        input: { key: note("key"), press: note("press"), click: note("click"), dblclick: note("dblclick") },
+        // (it takes ArrowLeft, as a helm or a walk does, so it is held until its keyup)
+        input: {
+          key: (ev) => (seen.push(["key", ev.key ?? null]), ev.key === "ArrowLeft" && !!claimLeft.on),
+          keyup: (ev) => (seen.push(["keyup", ev.key ?? null]), true),
+          press: note("press"),
+          click: note("click"),
+          dblclick: note("dblclick"),
+        },
         dockPanel: () => api.dock(document.createElement("div"), { title: "Panel" }),
       }),
     },
@@ -77,6 +86,23 @@ describe("the drawer's grip, mounted", () => {
     await settle();
     expect(drawerWidth()).toBe("");
     expect(s.local.get().prefs).toEqual({});
+  });
+
+  it("a key held at the stage and let go with focus on the grip still reaches its holder, and its auto-repeats don't resize", async () => {
+    const seen = [];
+    await mount(seen);
+    claimLeft.on = true;
+    s.instance("t.seen").dockPanel();
+    await settle();
+    const before = { ...s.local.get().prefs };
+    s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowLeft", code: "ArrowLeft" }));
+    // focus comes to the grip (a click, or Tab) while ArrowLeft is held
+    grip().focus();
+    grip().dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, composed: true, key: "ArrowLeft", code: "ArrowLeft", repeat: true }));
+    grip().dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, composed: true, key: "ArrowLeft", code: "ArrowLeft" }));
+    await settle();
+    expect(seen.filter(([t]) => t === "keyup")).toEqual([["keyup", "ArrowLeft"]]);
+    expect(s.local.get().prefs).toEqual(before);
   });
 
   for (const body of ["look", "edit"]) {

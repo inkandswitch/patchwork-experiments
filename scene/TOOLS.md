@@ -716,10 +716,15 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   `clamp(360px, 46cqw, 760px)`, so Camber has its room back without
   docking with a width of its own. The width is a function of the kind
   shown, its pref and the stage's size only (`src/stage/dock.js`,
-  tested over every sequence of up to three of nine acts); a window resize
-  clamps what shows (the scene keeps all but 160px, 70% on a narrow
-  stage) and never rewrites a pref; the grip's presses and keys reach no
-  part of the scene (`drawer-grip-stage.test.js`).
+  tested over every sequence of up to three of ten acts); a window resize
+  clamps what shows (the drawer takes at most all but 160px of the stage,
+  70% on a narrow stage, so the stage keeps at least 160px, or 30%, for the
+  scene and any left edge) and never rewrites a pref; the grip's presses
+  and keys reach no part of the scene, and a key held at the stage is let
+  go there even if focus comes to the grip (`drawer-grip-stage.test.js`);
+  a drag ends on its release, a cancel, lost capture, a move with the
+  button up, or its pane's kind no longer being shown, and only its
+  release stores.
 - **3. Selection and carrying.** The halo; Select in the menu and as
   orbit's default; `scene.carry`; `local.tool` and the forced-hand
   workarounds go; activities remain. *Proves:* dice's R rolls; a drag
@@ -1182,11 +1187,25 @@ The project lead decided the five open questions on 2026-11-12.
      viewer and per scene like the grid, units and snap, so another tab of
      the same scene follows. A stored width outside [220, 1200] px is no
      setting (the default shows), not one to clamp; the CSS clamps what
-     shows, leaving the scene all but 160px (70% of a stage 640px wide or
-     less), so a narrow window never rewrites a stored width.
+     shows: the drawer takes at most all but 160px of the stage (70% of a
+     stage 640px wide or less), so a narrow window never rewrites a stored
+     width. The 160px (or 30%) is the scene's and any left edge's
+     together: the CSS can't see the left edge's width, so with one the
+     port itself may get less.
    - A click on the grip that doesn't move stores nothing, so a pane's
      default (which follows the stage's width) stays until the person
      actually drags.
+   - The grip owns a key from its keydown on the grip until that key's
+     keyup, the grip's blur or its drawer going, and owns no other key. A
+     key held at the stage when focus comes to the grip (a helm's or a
+     walk's ArrowLeft) stays its holder's: its auto-repeats resize nothing
+     and its keyup reaches the holder, so no held key is left stuck. A drag
+     ends on its release, a cancel, lost capture, a move with the button
+     up, or its kind no longer being shown, and only its release stores.
+   - Still open (a nit): the grip's `aria-valuemin`/`aria-valuemax` are
+     the fixed 220/1200 a pref may hold, while the CSS may show less on a
+     narrow stage, so `aria-valuenow` (what shows) can fall below the
+     minimum; nor is it refreshed on a window resize.
    Questions for the lead: are two kinds right, or should each pane's
    owner have its own width? Should the widths be one per viewer across
    all scenes, as screen layout usually is, rather than per scene? Should

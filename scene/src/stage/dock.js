@@ -142,6 +142,10 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   drawer.append(grip, tabs, panes);
 
   let model = EMPTY;
+  /** The grip's drag under way: { id, kind, startPx, startX, moved, px } */
+  let drag = null;
+  /** The keys the grip took that are still down (their codes) */
+  const mine = new Set();
   /** content element → { owner, pane, tab, name, onClose, close } */
   const entries = new Map();
 
@@ -156,6 +160,10 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     }
     if (model.order.length && drawer.parentNode !== parent) parent.append(drawer);
     else if (!model.order.length && drawer.parentNode) drawer.remove();
+    // a drag outlives neither its drawer nor its kind being shown (its pointerup lands elsewhere),
+    // and a key the grip took doesn't outlive its drawer (a removed grip may lose focus without a blur)
+    if (drag && shownKind() !== drag.kind) drag = null;
+    if (!drawer.isConnected) mine.clear();
     refreshWidth();
     const titles = model.order.map((k) => entries.get(k)?.name.textContent ?? "");
     onChange({ tabs: titles, shown: on ? (entries.get(on)?.name.textContent ?? null) : null });
@@ -176,7 +184,8 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
     const kind = shownKind();
     if (kind) drawer.dataset.kind = kind;
     else delete drawer.dataset.kind;
-    const px = kind ? widthFor(prefs(), kind) : null;
+    // a drag under way shows where it is; else the kind's pref
+    const px = !kind ? null : drag?.moved ? drag.px : widthFor(prefs(), kind);
     if (px == null) drawer.style.removeProperty("--stage-drawer-width");
     else drawer.style.setProperty("--stage-drawer-width", `${px}px`);
     const now = Math.round(measured()) || px;
@@ -192,12 +201,11 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 
   // The grip's events are the drawer's: it isn't in the port, so the router
   // never sees its presses, and the keys it takes stop here.
-  let drag = null; // { id, kind, startPx, startX, moved }
   grip.addEventListener("pointerdown", (e) => {
     const kind = shownKind();
     if (!kind || e.button !== 0) return;
     e.preventDefault();
-    drag = { id: e.pointerId, kind, startPx: current(kind), startX: e.clientX, moved: false };
+    drag = { id: e.pointerId, kind, startPx: current(kind), startX: e.clientX, moved: false, px: null };
     try {
       grip.setPointerCapture?.(e.pointerId);
     } catch {
@@ -208,40 +216,51 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
   const follow = (e) => {
     if (!drag.moved && e.clientX === drag.startX) return;
     drag.moved = true;
-    drawer.style.setProperty("--stage-drawer-width", `${dragged(drag.startPx, drag.startX, e.clientX)}px`);
+    drag.px = dragged(drag.startPx, drag.startX, e.clientX);
+    refreshWidth();
   };
-  grip.addEventListener("pointermove", (e) => {
-    if (drag && e.pointerId === drag.id) follow(e);
-  });
   const endDrag = (e, keep) => {
     if (!drag || e.pointerId !== drag.id) return;
     if (keep) follow(e);
     const d = drag;
     drag = null;
     // a press that didn't move (a click, half a double-click) stores nothing
-    if (keep && d.moved) store(d.kind, dragged(d.startPx, d.startX, e.clientX));
+    if (keep && d.moved) store(d.kind, d.px);
     else refreshWidth();
   };
+  // a move with the button up is no drag's (its pointerup went elsewhere): that drag is over
+  grip.addEventListener("pointermove", (e) => {
+    if (drag && e.pointerId === drag.id) (e.buttons & 1 ? follow(e) : endDrag(e, false));
+  });
   grip.addEventListener("pointerup", (e) => endDrag(e, true));
   grip.addEventListener("pointercancel", (e) => endDrag(e, false));
+  grip.addEventListener("lostpointercapture", (e) => endDrag(e, false));
   grip.addEventListener("dblclick", (e) => {
     const kind = shownKind();
     if (!kind) return;
     e.preventDefault();
     store(kind, undefined);
   });
+  // A key the grip takes is the grip's from its keydown to its keyup (or the
+  // grip's losing focus, or its drawer going); an auto-repeat of a key that
+  // went down elsewhere (held at the stage, then focus came here) is not, and
+  // neither is its keyup: both go on to whoever holds it, so a held key is
+  // always let go.
   grip.addEventListener("keydown", (e) => {
+    const code = e.code || e.key;
+    if (e.repeat && !mine.has(code)) return;
     const kind = shownKind();
     const px = kind ? stepped(current(kind), e.key, e.shiftKey) : null;
     if (px == null) return;
     e.preventDefault();
     e.stopPropagation();
+    mine.add(code);
     store(kind, px);
   });
-  // (and their keyups: the router never saw these keys go down)
   grip.addEventListener("keyup", (e) => {
-    if (stepped(MIN_PX, e.key, e.shiftKey) != null) e.stopPropagation();
+    if (mine.delete(e.code || e.key)) e.stopPropagation();
   });
+  grip.addEventListener("blur", () => mine.clear());
 
   function remove(key) {
     const e = entries.get(key);
