@@ -74,7 +74,7 @@ import { newObjectRecord, orderedIds } from "./ops.js";
 import { listedPackages, packageUrl, packagesToList } from "./packages.js";
 import { pinnedRepo } from "./build.js";
 import { LINK, atOf, isLink } from "./stage/links.js";
-import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, missingNeeds, needsText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
+import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -359,7 +359,7 @@ export function extractHost(doc, plan, { link, url, refs = new Map() }) {
  * one. `renders`: old render doc url → its copy's. `deps`: a pinned link's
  * (what in it follows a doc the pin holds, a link or a built object, is
  * copied fixed at the heads the pin held that doc at). Pure.
- * @returns {{ ok: false, reason: string } | { ok: true, change(d): void, map: Map, tops: string[], lost, entries, needsTraits: string[] }}
+ * @returns {{ ok: false, reason: string } | { ok: true, change(d): void, map: Map, tops: string[], lost, entries }}
  */
 export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map(), refs = new Map(), describes = new Map(), newId, renders = new Map(), deps = null } = {}) {
   const objects = isMap(doc?.objects) ? doc.objects : {};
@@ -476,14 +476,12 @@ export function bundlePlan(doc, linkId, linked, { traits = [], runtime = new Map
         ...(start.home ? { home: start.home } : {}),
       }
     : null;
-  const needsTraits = Object.values(made).flatMap((o) => Object.keys(o.traits ?? {}));
   return {
     ok: true,
     map,
     tops,
     lost,
     entries,
-    needsTraits,
     change(d) {
       for (const [id, o] of Object.entries(made)) d.objects[id] = plain(o);
       for (const c of children) {
@@ -657,7 +655,6 @@ export async function bundleLink(api, linkId, traits = []) {
     edit.end();
   }
   tell(api, describes, plan);
-  for (const n of missingNeeds(describes, plan.needsTraits, api.doc()?.traits)) api.notify(needsText(n), "warn");
   if (plan.tops.length) api.view.select(plan.tops[0]);
   return plan.tops.length ? plan.tops : null;
 }

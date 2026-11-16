@@ -156,8 +156,9 @@ that object came too (a lever and its door), and is cleared, with a notice,
 when it didn't; a link to a scene's entry (a private zone's seat) is kept
 only where the new scene has that entry. Runtime state (claims, and
 whatever an extension marks as runtime: a ship's motion) stays behind. If
-what you copied needs something the scene lacks (a ship needs a sea), a
-notice says what to add. See STAGE.md, "Copying objects".
+what you copied names an entry of a scene trait the scene lacks (a private
+zone's seat, and no seats), a notice says what to add. See STAGE.md,
+"Copying objects".
 
 **Extract** (in Edit, on an object or group: the menu or the inspector)
 makes it a scene of its own, linked where it was, everything on it coming

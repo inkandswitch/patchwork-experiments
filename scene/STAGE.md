@@ -573,9 +573,9 @@ view's side is `scene.transfer`, editing only).
     extract and bundle (COMPOSITION.md §8) go through the same
     `copyRefs`, and the objects left in a doc when something leaves it
     through the same rewriter (`refEdits`).
-  - **What a trait needs.** When a copied trait's description `needs` a scene
-    trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
-    to the scene."). Nothing adds a scene trait for you.
+  - **A missing scene trait.** When a copied trait's `entry` field names a
+    scene trait this scene lacks, a notice says so ("This private zone needs
+    seats: add Seats to the scene."). Nothing adds a scene trait for you.
   - The first copied root is selected.
 
 **Extract and bundle** (COMPOSITION.md §8; `src/extract.js`; the view's side
@@ -662,8 +662,6 @@ describes: {
   or keep the state so its own reset can.)
 - A field spec's `copy: "drop"`: a copy leaves that field behind (see
   "Copying objects", "References in traits").
-- `needs`: scene trait keys an object with this trait doesn't work without
-  (a ship's `["sailing.sea"]`). Copying it into a scene without one says so.
 - `init`: what a new trait starts as, before its fields' defaults are
   filled in. Keys nothing describes (a target's `down`, play state) are never
   shown and never touched.

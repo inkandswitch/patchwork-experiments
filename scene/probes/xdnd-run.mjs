@@ -21,11 +21,13 @@
 // (duplicates one and two widths along), and the right-click menu's Copy
 // (what ⌘C writes, read back by a ⌘V in B) and Paste.
 //
-// sail: A gets sailing's sloop from its parts bin (she brings a sea); her
-// row is dragged into an empty B. Everything under her comes, without her
-// `motion` (sailing.ship's describes says runtime ["motion"] and needs
-// ["sailing.sea"]; --patch forces that declaration on a sailing build
-// without it) and B says it needs a sea, without adding one.
+// sail: A gets sailing's sloop from its parts bin (she brings a Sea, a water
+// object with the sea on it, and the weather, a scene trait); her row is
+// dragged into an empty B. Everything under her comes, without her `motion`
+// (sailing.ship's describes says runtime ["motion"]; --patch forces that
+// declaration on a sailing build without it). The Sea is no part of her, so
+// it stays in A, B gains no weather, and nothing is said: in B she floats on
+// whatever water B gives her, or rests (water/WATER.md, "Water bodies").
 //
 // Simulated time: the page's stages run on its manual clock (window.__time):
 // a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
@@ -457,7 +459,8 @@ async function sail() {
   await settle("a", before.length + 2, 10_000);
   const A = await P(`doc("a")`);
   const ship = Object.keys(A.objects).find((id) => A.objects[id].traits?.["sailing.ship"]);
-  check("sloopPlacedInA", !!ship && !!A.traits?.["sailing.sea"], { ship, traits: Object.keys(A.traits ?? {}) });
+  const aSea = Object.keys(A.objects).find((id) => A.objects[id].traits?.water && A.objects[id].traits?.["sailing.sea"]);
+  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.["sailing.weather"], { ship, aSea, traits: Object.keys(A.traits ?? {}) });
   if (!ship) return;
   for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "objects")`);
   check("outlinesOpen", await b.waitFor(`__p.tab("a", "objects") && __p.tab("b", "objects")`, 5000));
@@ -492,14 +495,13 @@ async function sail() {
   check("shipRelationsKept", sameJSON(aChains, bChains), { aChains, bChains });
   check("shipTraitsCome", bIds.every((id) => sameJSON(Object.keys(B.objects[id].traits ?? {}).sort(), Object.keys(A0.objects[[...under].find((x) => names(A0, x) === names(B, id))]?.traits ?? {}).sort())));
   check("shipClaimsStayBehind", !("claims" in (B.objects[bShip] ?? {})));
-  check("seaNotAddedSilently", !B.traits?.["sailing.sea"], Object.keys(B.traits ?? {}));
+  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.["sailing.weather"], { bTraits: Object.keys(B.traits ?? {}) });
   const assetKeys = Object.keys(A0.assets ?? {});
   check("shipAssetsCopied", assetKeys.length > 0 && assetKeys.filter((k) => bIds.some((id) => B.objects[id].sourceUrl === A0.assets[k].url)).every((k) => sameJSON(B.assets?.[k], A0.assets[k])), { a: assetKeys, b: Object.keys(B.assets ?? {}) });
-  const notice = toasts.find((t) => /needs a sea/i.test(t));
-  // sailing.ship's describes says runtime ["motion"] and needs ["sailing.sea"] (sailing/src/index.js), so the
-  // copy leaves her motion behind and B is told she needs a sea (--patch only forces the same declaration)
+  // sailing.ship's describes says runtime ["motion"] (sailing/src/index.js), so the copy leaves her motion
+  // behind (--patch only forces the same declaration); and no notice asks for a sea
   check("motionLeftBehind", B.objects[bShip]?.traits?.["sailing.ship"] && !("motion" in B.objects[bShip].traits["sailing.ship"]), B.objects[bShip]?.traits);
-  check("needsSeaNotice", notice === "This ship needs a sea: add Sea to the scene.", toasts);
+  check("noNeedsNotice", !toasts.some((t) => /needs/i.test(t)), toasts);
   check("sourceUnchanged", sameJSON(await P(`doc("a")`), A0));
   await b.rest(300);
   await shot("1-ship-in-b");

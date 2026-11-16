@@ -12,9 +12,9 @@
                    has a connector tagged "mast".
        ?mode=sail  sailing's BUILT plugins (../../sailing/dist, loaded at
                    runtime) registered too; A and B start empty. `&patch=1`
-                   registers them with `runtime: ["motion"]` and
-                   `needs: ["sailing.sea"]` on sailing.ship's describes (what
-                   sailing doesn't say yet). -->
+                   registers them with `runtime: ["motion"]` on
+                   sailing.ship's describes (for a sailing build that
+                   doesn't say it). -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -71,7 +71,7 @@ try {
     for (const p of plugins) {
       let reg = p;
       if (PATCH && p.type === "scene:extension" && p.describes?.["sailing.ship"]) {
-        reg = { ...p, describes: { ...p.describes, "sailing.ship": { ...p.describes["sailing.ship"], runtime: ["motion"], needs: ["sailing.sea"] } } };
+        reg = { ...p, describes: { ...p.describes, "sailing.ship": { ...p.describes["sailing.ship"], runtime: ["motion"] } } };
       }
       getRegistry(p.type).register(reg);
     }
