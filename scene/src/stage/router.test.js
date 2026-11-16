@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { buildEvent, createRouter, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
+import { DOUBLE_MS, DOUBLE_PX, buildEvent, createRouter, firstOfDouble, isMac, isTyping, releaseKind, retype, withHolder } from "./router.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
-function setup({ held = false, holders = {}, mac = false, base = {} } = {}) {
+function setup({ held = false, holders = {}, mac = false, base = {}, time } = {}) {
   const root = document.createElement("div");
   root.tabIndex = 0;
   const port = document.createElement("div");
@@ -59,6 +59,7 @@ function setup({ held = false, holders = {}, mac = false, base = {} } = {}) {
     requestLock: t.requestLock,
     exitLock: t.exitLock,
     mac,
+    ...(time ? { time } : {}),
   });
   cleanups.push(() => {
     t.router.dispose();
@@ -324,6 +325,57 @@ describe("clicks on unclaimed presses", () => {
     t.canvas.dispatchEvent(e);
     expect(t.inputs.a.dblclick).toHaveBeenCalledTimes(1);
     expect(e.defaultPrevented).toBe(true);
+  });
+});
+
+describe("a double-click resolves to its first click's hit (a thing that moves between the clicks is still what was double-clicked)", () => {
+  // the pointer's two presses, and the dblclick: each [dt ms since the last, dx px, dy px]; what is under the pointer at each pick
+  const CASES = [
+    ["two quick presses in one place", [[0, 0, 0], [200, 0, 0], [10, 0, 0]], "first"],
+    ["the second press DOUBLE_PX away", [[0, 0, 0], [200, DOUBLE_PX, 0], [10, 0, 0]], "first"],
+    ["the second press past DOUBLE_PX", [[0, 0, 0], [200, DOUBLE_PX + 1, 0], [10, 0, 0]], "again"],
+    ["the dblclick past DOUBLE_PX of the first", [[0, 0, 0], [200, 0, 0], [10, 0, DOUBLE_PX + 1]], "again"],
+    ["the dblclick DOUBLE_MS after the first press", [[0, 0, 0], [DOUBLE_MS - 10, 0, 0], [10, 0, 0]], "first"],
+    ["the dblclick past DOUBLE_MS after the first press", [[0, 0, 0], [DOUBLE_MS - 10, 0, 0], [11, 0, 0]], "again"],
+    ["a dblclick with one press before it", [[0, 0, 0], null, [10, 0, 0]], "again"],
+  ];
+  for (const [label, [p1, p2, dbl], want] of CASES)
+    it(`${label}: ${want === "first" ? "the first click's hit" : "a new ray"}`, () => {
+      let now = 1000;
+      const time = { now: () => now, frame: (fn) => (setTimeout(() => fn(now), 0), () => {}), after: () => () => {} };
+      const t = setup({ time });
+      // the view's hover reads each press's hit as it is pressed (view.js onHover), as the stage does
+      t.onHover.mockImplementation((ev) => ev?.hit);
+      // a boat pitching: each pick lands on something else
+      let n = 0;
+      t.pick.mockImplementation((x, y) => ({ id: `thing${++n}`, point: [x, y, 0], normal: [0, 1, 0], distance: 1 }));
+      const got = [];
+      t.inputs.a = { press: () => null, dblclick: vi.fn((ev) => (got.push(ev.hit?.id ?? null), true)) };
+      let x = 10, y = 10;
+      for (const step of [p1, p2]) {
+        if (!step) continue;
+        now += step[0];
+        x += step[1];
+        y += step[2];
+        down(t, { x, y });
+        up(t, { x, y });
+      }
+      now += dbl[0];
+      const e = new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: x + dbl[1], clientY: y + dbl[2] });
+      t.canvas.dispatchEvent(e);
+      expect(got).toHaveLength(1);
+      // the first press's pick was thing1; anything else is a later ray
+      if (want === "first") expect(got[0]).toBe("thing1");
+      else expect(got[0]).not.toBe("thing1");
+      expect(e.defaultPrevented).toBe(true);
+    });
+
+  it("firstOfDouble: the earlier of the last two presses, when both are within reach of the dblclick", () => {
+    const a = { t: 0, x: 0, y: 0 }, b = { t: 100, x: 1, y: 1 };
+    expect(firstOfDouble([a, b], 100, 0, 0)).toBe(a);
+    expect(firstOfDouble([b], 100, 0, 0)).toBeNull();
+    expect(firstOfDouble([], 0, 0, 0)).toBeNull();
+    expect(firstOfDouble([a, b], DOUBLE_MS + 1, 0, 0)).toBeNull();
   });
 });
 
