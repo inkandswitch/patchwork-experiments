@@ -2355,3 +2355,46 @@ Questions for the lead:
   it: 20 writes in 10 rounds, none once the versions agree). Acceptable,
   or should something (a version on the entry, a hold on removals while
   another viewer is here) settle it?
+
+## Decisions, connector frames (2026-11-16): decided unattended (2026-11-16, lane/n11), for the lead
+
+The scene keeps a connector's whole frame (README "connectors", STAGE.md
+`content(id)`; `sanitizeConnectors` and `placeConnector` in
+`src/carry-rules.js`, used by `findSnapPoints` and `snapCandidates`). It
+used to keep only the yaw, so Tabletop wrote its rack places' frames a
+second time under the GLB's `extras["tabletop.slots"]`; that copy is gone.
+
+1. **One source per connector.** A clean connector is `{ position, rotation,
+   yaw, tags }`. With a `rotation`, `yaw` is derived from it
+   (`yawOfEuler`), never taken from beside it, so the two can't disagree.
+   Without one, the connector gives only a yaw (the older `snapPoints`), or
+   nothing.
+2. **The frame on a node is the node's rotation · the connector's.** Scale
+   is left out by making each column of the node's matrix unit, so an
+   uneven scale (a CAD export's stretch) never shears the frame. The result
+   goes back to Euler XYZ (`decomposeMatrix`), which is exact as a matrix,
+   though near gimbal lock the three angles may be another triple for the
+   same frame (the rack's [π/2, π/2, 0] comes back as itself).
+3. **A yaw-only connector on a node** gets the yaw at which the node turns
+   its facing (+Z turned by its yaw). On an upright node that is its yaw
+   plus the node's, as before. On a node whose +Z is vertical the old rule
+   added a yaw taken from a vector with no plan length, which is noise; the
+   new one is defined and is null only when the facing itself goes vertical.
+4. **"Straight up" is within 1e-6** (`VERTICAL`), not 1e-9: a GLB stores
+   32-bit floats, so a connector pointing up on a turned node comes out a
+   few 1e-8 off vertical and would otherwise get a yaw from float noise.
+5. **The hand's candidates carry the frame** (`snapCandidates` gives
+   `rotation` in the carry's frame beside `world` and `yaw`). Nothing turns
+   a piece by it yet (step 4 of this lane). The candidate's yaw is the
+   placed frame's: the same as before for every upright object, and
+   correct, where the old sum wasn't, for a tilted one.
+6. **No LOOK_VERSION bump in Tabletop.** A table GLB already drawn still
+   carries `tabletop.slots` beside its connectors, and its connectors
+   already carry the rotation (`connectorsOf` wrote it), so it reads the
+   same; the leftover key is ignored. A golden test reads every built-in
+   game's places both ways and finds them equal.
+7. **Tabletop trusts the stage's yaw** and keeps no Euler maths of its own
+   (`slots.js` lost its `yawOfEuler` copy); its tests read GLB extras
+   through a stand-in for the stage (`test/stand-ins.js` `stageExtras`).
+   So Tabletop now needs a scene that keeps the frame: syncing one without
+   the other leaves rack places yaw-only (a drawn tile would lie flat).

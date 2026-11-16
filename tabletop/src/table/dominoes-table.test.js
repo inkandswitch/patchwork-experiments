@@ -7,13 +7,12 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { CARD, ZONE, audienceOf } from "./visibility.js";
 import Extension from "./extension.js";
 import * as fakes from "../test/fakes.js";
-import { SEATS, keeperOf, keptTrait, roster } from "../test/stand-ins.js";
+import { SEATS, keeperOf, keptTrait, roster, stageExtras } from "../test/stand-ins.js";
 import { emptyScene } from "../empty-scene.js";
-import { connectorsOf } from "../look/look.js";
+import { extrasOf } from "../look/look.js";
 import { boxUnder } from "./stand.js";
 import { composeMatrix } from "./frame.js";
 import { game as builtIn } from "../test/games.js";
-import { yawOfEuler } from "./slots.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
 // the game, as data (games/draw-dominoes-2.json), and what these tests need of it
@@ -39,11 +38,8 @@ const tile = (position, rotation = FACE_DOWN()) => ({
 });
 const OUT = 0.42;
 const rack = (seat, z, yaw) => ({ name: "Rack", locked: true, transform: T([0, 0, z], [0, yaw, 0]), traits: { [ZONE]: { ...structuredClone(game.pieces.rack.zone), seat } } });
-/** What the scene says a rack's GLB holds: its connectors as the stage reads them (yaw only), and its places whole (this package's extras). */
-const rackContent = () => {
-  const whole = connectorsOf(game.pieces.rack.snapPoints);
-  return { loaded: true, extras: { connectors: whole.map((c) => ({ position: c.position, yaw: yawOfEuler(c.rotation), tags: c.tags })), snapRadius: game.pieces.rack.snapRadius, "tabletop.slots": whole } };
-};
+/** What the scene says a rack's GLB holds: its connectors as the stage reads them, whole frames and all. */
+const rackContent = () => ({ loaded: true, extras: stageExtras(extrasOf(game.pieces.rack)) });
 const seats = (p1 = "alice", p2 = "bob") => ({ p1: { name: "Player 1", player: p1 }, p2: { name: "Player 2", player: p2 } });
 const col = (m, k) => [m[4 * k], m[4 * k + 1], m[4 * k + 2]].map((v) => +v.toFixed(7) + 0);
 

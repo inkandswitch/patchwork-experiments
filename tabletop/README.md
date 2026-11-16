@@ -296,10 +296,9 @@ whole frame (`snapPoints: [{ position, rotation: [x, y, z], tags }]`, Euler
 XYZ) holds what's drawn into it in that frame: a domino rack's places are
 a quarter turn about Y and then about X (face toward the rack's +Z, length
 along it). Draw puts the piece's footprint middle on the place and its
-underside on it, whatever its frame. The scene keeps only a connector's yaw
-when it reads a GLB (its hand needs no more to snap), so pieces.js writes the
-whole frames again under the GLB's extras `"tabletop.slots"`, and
-`src/table/slots.js` reads those where they are. A slot takes a piece by its
+underside on it, whatever its frame. The scene keeps a connector's whole
+frame when it reads a GLB (`content(id).extras.connectors[].rotation`), and
+`src/table/slots.js` reads it from there. A slot takes a piece by its
 tags: a domino's are `["domino"]`, a card's `["card"]`, so each fits only its
 own places, and Draw looks for a free one for the piece being drawn.
 

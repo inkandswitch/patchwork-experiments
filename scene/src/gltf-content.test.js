@@ -6,6 +6,9 @@ import { applyMaterialRules, authoredMaterials, collapseInstances, dequantizePos
 import { Box3, Euler, Matrix4, Group } from "three";
 import { sanitizeRules } from "./material-rules.js";
 import { nearestScreenVertex } from "./stage/viewport.js";
+import { composeMatrix } from "./transform.js";
+import { yawOfEuler } from "./carry-rules.js";
+import { AT, FORMS, NODES, axesOf, connectorCases, sameYaw } from "./test/connector-cases.js";
 
 // Two unmodified files from solander38.com (CC BY 4.0, Rising Tide Research
 // Foundation; see test/fixtures/README.md): EXT_meshopt_compression +
@@ -287,9 +290,29 @@ describe("snap points (extras.snapPoints)", () => {
     const q = [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)]; // a quarter turn about +Y
     const glb = encodeGLB({ meshes: [], nodes: [{ rotation: q, extras: { snapPoints: [{ position: [0, 0, 1], yaw: Math.PI / 2 }, [1, 0, 0]] } }] });
     const { points } = (await prepareGLB(glb)).snap;
-    expect(points[0].yaw).toBeCloseTo(Math.PI);
+    expect(sameYaw(points[0].yaw, Math.PI)).toBe(true);
+    expect(points[0].rotation).toBeNull();
     expect(points[0].position.map((x) => +x.toFixed(6))).toEqual([1, 0, 0]);
     expect(points[1].yaw).toBeNull();
+  });
+
+  // every connector form on every kind of node (test/connector-cases.js), read from a real GLB: a connector on a tilted node stays tilted
+  it("keeps every connector's whole frame, turned with its node, tilt and all (6 forms × 5 nodes)", async () => {
+    const forms = Object.values(FORMS).map((f) => f.raw);
+    const nodes = Object.values(NODES).map((n) => ({ translation: AT, ...(n.quaternion ? { rotation: n.quaternion } : {}), ...(n.scale.some((v) => v !== 1) ? { scale: n.scale } : {}), extras: { connectors: forms } }));
+    const { points } = (await prepareGLB(encodeGLB({ meshes: [], nodes }))).snap;
+    const cases = connectorCases();
+    expect(points).toHaveLength(cases.length);
+    const close = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 1e-6); // the GLB stores floats
+    for (const { form, node, expected } of cases) {
+      const p = points[Object.keys(NODES).indexOf(node) * forms.length + Object.keys(FORMS).indexOf(form)];
+      const what = `${form} on ${node}`;
+      expect(close(p.position, expected.position), what).toBe(true);
+      if (expected.frame == null) expect(p.rotation, what).toBeNull();
+      else axesOf(composeMatrix({ rotation: p.rotation })).forEach((axis, k) => expect(close(axis, expected.frame[k]), `${what}: axis ${k}`).toBe(true));
+      if (p.rotation) expect(p.yaw, what).toBe(yawOfEuler(p.rotation));
+      expect(sameYaw(p.yaw, expected.yaw, 1e-6), what).toBe(true);
+    }
   });
 
   it("is empty for a GLB without any", async () => {

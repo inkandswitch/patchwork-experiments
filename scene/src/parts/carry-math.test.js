@@ -73,6 +73,25 @@ describe("carry maths", () => {
     expect(snapCandidates([{ id: "board", matrix: m, snapRadius: 0.5, connectors: [{ position: [0, 0, 1], tags: ["card"] }] }], ["card"])).toHaveLength(1);
   });
 
+  it("carries a connector's whole frame into world, turned (not scaled) with its object; a yaw-only one stays yaw-only", () => {
+    const axes = (r) => { const m = composeMatrix({ rotation: r }); return [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]]; };
+    // a rack's place (its X up, Y toward +Z, length along +X) on a rack turned a quarter about Y and twice the size
+    const rack = composeMatrix({ position: [1, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
+    const [standing, yawOnly] = snapCandidates([{ id: "rack", matrix: rack, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], yaw: Math.PI / 2, tags: [] }, { position: [0, 0, 0], yaw: 0.3, tags: [] }] }], []);
+    const [x, y, z] = axes(standing.rotation);
+    expect(close(x, [0, 1, 0])).toBe(true); // still up
+    expect(close(y, [1, 0, 0])).toBe(true); // +Z turned a quarter: +X
+    expect(close(z, [0, 0, -1])).toBe(true); // +X turned a quarter: −Z
+    expect(standing.yaw).toBeCloseTo(Math.PI, 9); // derived from the frame, the short way round
+    expect(yawOnly.rotation).toBeNull();
+    expect(yawOnly.yaw).toBeCloseTo(0.3 + Math.PI / 2, 9); // today's rule on an upright object
+    // tilted on its side: the frame tilts with it, and its yaw is the tilted frame's
+    const onSide = composeMatrix({ rotation: [Math.PI / 2, 0, 0] });
+    const [tilted] = snapCandidates([{ id: "b", matrix: onSide, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], tags: [] }] }], []);
+    expect(close(axes(tilted.rotation).flat(), [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(true);
+    expect(tilted.yaw).toBeCloseTo(0, 9);
+  });
+
   it("finds the table: the first object hit, else the ground, else nothing", () => {
     expect(tablePoint(down(1, 2), ground)).toEqual({ point: [1, 0, 2], id: null });
     expect(tablePoint(down(1, 2), () => ({ id: "t", point: [1, 0.5, 2] }))).toEqual({ point: [1, 0.5, 2], id: "t" });

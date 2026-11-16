@@ -520,14 +520,20 @@ to it. A render that hasn't been built yet gives `glb: null`: say so in your
 - Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
   rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
   scene), in that node's frame: places where something goes. `rotation`
-  (Euler XYZ, radians) is the connector's frame; a carry turns whatever it
-  puts there to face where that frame turns +Z, seen from above (so a card in
-  the far player's column reads right for them), and keeps the rest for
-  whatever comes to use a whole frame (a CAD mate, say). A connector with
+  (Euler XYZ, radians) is the connector's frame, and the scene keeps it
+  whole: `content(id).extras.connectors` gives each one in the object's body
+  frame, its node's rotation composed in (a connector on a tilted node stays
+  tilted; a node's scale, even an uneven one, never shears it), with its yaw
+  (where the frame turns +Z, seen from above; none pointing straight up)
+  derived from it. A carry turns whatever it puts there to face that yaw (so
+  a card in the far player's column reads right for them); a package that
+  needs the whole frame reads `rotation` (Tabletop's rack places stand a
+  tile on edge that way). A connector with
   `tags` takes only objects whose `tags` share one (none: anything), as
   Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
   [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as
-  untagged connectors. Optionally `extras.snapRadius` (metres, in the GLB's
+  untagged connectors that give only a yaw (`rotation` null; on a node, the
+  yaw that node turns their facing to). Optionally `extras.snapRadius` (metres, in the GLB's
   frame). When a carry puts something down near one — the centre of its
   footprint within the radius, in plan — it goes there; height is still
   decided by what is underneath, so pieces stack on a board's spaces. Without

@@ -1,29 +1,47 @@
 import { describe, it, expect } from "vitest";
-import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./carry-rules.js";
+import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, placeConnector, restHeight, sanitizeConnectors, yawDelta, yawOfEuler } from "./carry-rules.js";
+import { composeMatrix } from "./transform.js";
+import { axesOf, connectorCases, nodeMatrix, sameYaw } from "./test/connector-cases.js";
 
 describe("connectors", () => {
   it("keeps finite [x, y, z] and { position, yaw } snap points (the older shape), drops the rest", () => {
     expect(sanitizeConnectors([[1, 2, 3], { position: [4, 5, 6], yaw: Math.PI }, { position: [7, 8, 9], yaw: "x" }, [1, 2], ["a", 0, 0], null, [0, 0, Infinity]])).toEqual([
-      { position: [1, 2, 3], yaw: null, tags: [] },
-      { position: [4, 5, 6], yaw: Math.PI, tags: [] },
-      { position: [7, 8, 9], yaw: null, tags: [] },
+      { position: [1, 2, 3], rotation: null, yaw: null, tags: [] },
+      { position: [4, 5, 6], rotation: null, yaw: Math.PI, tags: [] },
+      { position: [7, 8, 9], rotation: null, yaw: null, tags: [] },
     ]);
     expect(sanitizeConnectors("nope")).toEqual([]);
   });
 
-  it("a connector's rotation gives the yaw a piece set down there faces; its tags say what it takes", () => {
+  it("a connector's rotation is kept whole and gives the yaw a piece set down there faces; its tags say what it takes", () => {
     const [a, b, c, d] = sanitizeConnectors([
       { position: [0, 0, 0], rotation: [0, Math.PI / 2, 0], tags: ["Meeple", "", 3] },
       { position: [0, 0, 0], rotation: [Math.PI, 0, 0] }, // +Z turned to -Z, upside down
       { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0] }, // +Z pointing straight up: no yaw
       { position: [0, 0, 0], rotation: ["x", 0, 0], yaw: 1 }, // a bad rotation falls back to the yaw
     ]);
+    expect(a.rotation).toEqual([0, Math.PI / 2, 0]);
     expect(a.yaw).toBeCloseTo(Math.PI / 2);
     expect(a.tags).toEqual(["Meeple"]);
     expect(Math.abs(b.yaw)).toBeCloseTo(Math.PI);
     expect(c.yaw).toBeNull();
+    expect(c.rotation).toEqual([-Math.PI / 2, 0, 0]);
+    expect(d.rotation).toBeNull();
     expect(d.yaw).toBe(1);
+    expect(sanitizeConnectors([{ position: [0, 0, 0], rotation: ["1", 2, 3, 4], yaw: 9 }])[0]).toEqual({ position: [0, 0, 0], rotation: [1, 2, 3], yaw: yawOfEuler([1, 2, 3]), tags: [] }); // one source: a rotation's yaw, never the one beside it
     expect(yawOfEuler([0.3, 0, 0])).toBeCloseTo(0); // a tilt doesn't turn it
+  });
+
+  // every connector form × every kind of node it sits on (test/connector-cases.js, answers by hand)
+  const close = (a, b) => a.length === b.length && a.every((v, k) => Math.abs(v - b[k]) < 1e-9);
+  it.each(connectorCases().map((c) => [c.form, c.node, c]))("%s on a node %s keeps its frame, turned with the node", (_, __, { raw, n, expected }) => {
+    const [clean] = sanitizeConnectors([raw]);
+    const placed = placeConnector(clean, nodeMatrix(n));
+    expect(close(placed.position, expected.position)).toBe(true);
+    if (expected.frame == null) expect(placed.rotation).toBeNull();
+    else axesOf(composeMatrix({ rotation: placed.rotation })).forEach((axis, k) => expect(close(axis, expected.frame[k])).toBe(true));
+    expect(sameYaw(placed.yaw, expected.yaw)).toBe(true);
+    if (placed.rotation) expect(placed.yaw).toBe(yawOfEuler(placed.rotation)); // one source
   });
 
   it("an untagged connector takes anything; a tagged one only objects sharing a tag", () => {

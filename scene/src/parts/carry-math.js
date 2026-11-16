@@ -7,7 +7,7 @@
 // (arrays); `raycast(origin, dir)` → { id, point } | null is the stage's,
 // already told to skip the carried object and what's attached to it.
 
-import { accepts, footprintSamples, liftFor, nearestSnap, yawDelta } from "../carry-rules.js";
+import { accepts, footprintSamples, liftFor, nearestSnap, placeConnector, yawDelta } from "../carry-rules.js";
 import { decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 
 const Y = [0, 1, 0];
@@ -140,12 +140,14 @@ export function localTransform(parentWorld, world) {
 
 /**
  * Where a carried object with these tags may snap: each other object's
- * connectors (body space) in world, with their yaw turned by the object's,
- * and the radius scaled by its plan scale. A tagged connector takes only
- * objects with one of its tags.
- * @param {{ id: string, matrix: number[], connectors: { position: number[], yaw?: number | null, tags?: string[] }[], snapRadius?: number | null }[]} others
+ * connectors (body space) in world (placeConnector: a whole frame turned by
+ * the object's rotation, yaw derived from it; a yaw-only one turned by the
+ * object's yaw), and the radius scaled by its plan scale. A tagged connector
+ * takes only objects with one of its tags. `rotation` is the connector's
+ * whole frame in world (Euler XYZ), or null where it gives only a yaw.
+ * @param {{ id: string, matrix: number[], connectors: { position: number[], rotation?: number[] | null, yaw?: number | null, tags?: string[] }[], snapRadius?: number | null }[]} others
  * @param {string[]} tags
- * @returns {{ world: number[], yaw: number | null, radius: number, objectId: string }[]}
+ * @returns {{ world: number[], rotation: number[] | null, yaw: number | null, radius: number, objectId: string }[]}
  */
 export function snapCandidates(others, tags) {
   const out = [];
@@ -155,16 +157,10 @@ export function snapCandidates(others, tags) {
     const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[8], m[9], m[10]));
     const radius = (Number(o.snapRadius) || 0) * scale;
     if (!(radius > 0)) continue;
-    const turn = yawOfMatrix(m);
     for (const p of o.connectors) {
       if (!Array.isArray(p?.position) || !accepts(p.tags, tags)) continue;
-      const [x, y, z] = p.position;
-      out.push({
-        world: [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]],
-        yaw: p.yaw == null ? null : p.yaw + turn,
-        radius,
-        objectId: o.id,
-      });
+      const c = placeConnector(p, m);
+      out.push({ world: c.position, rotation: c.rotation, yaw: c.yaw, radius, objectId: o.id });
     }
   }
   return out;

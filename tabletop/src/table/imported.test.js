@@ -16,7 +16,7 @@ import { testScene } from "./test-scene.js";
 import * as fakes from "../test/fakes.js";
 import { fakeRepo } from "../test/games.js";
 import tiny from "../../contract/v1/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
-import { BAG, SEATS, bagPlugin, keeperOf, keeperPlugin, keptIn, registries, roster, seatsPlugin } from "../test/stand-ins.js";
+import { BAG, SEATS, bagPlugin, keeperOf, keeperPlugin, keptIn, registries, roster, seatsPlugin, stageExtras } from "../test/stand-ins.js";
 
 const game = () => structuredClone(tiny);
 const urlOf = (kind) => `automerge:${kind}`;
@@ -33,8 +33,8 @@ async function setUp(g = game(), keepers = ["joint", "plain"]) {
   const scene = emptyScene({ title: g.title });
   writeTable(scene, layout, made);
   scene.traits[SEATS].white.player = "alice";
-  // what each object's GLB carries, as the game page draws it (look.js): the hand's card slots
-  const content = Object.fromEntries(Object.entries(scene.objects).flatMap(([id, o]) => (o.sourceUrl ? [[id, { extras: extrasOf(g.pieces[kindOf(o.sourceUrl)]) }]] : [])));
+  // what each object's GLB carries, as the game page draws it (look.js) and the stage reads it: the hand's card slots
+  const content = Object.fromEntries(Object.entries(scene.objects).flatMap(([id, o]) => (o.sourceUrl ? [[id, { extras: stageExtras(extrasOf(g.pieces[kindOf(o.sourceUrl)])) }]] : [])));
   return { g, layout, made, repo, scene, content };
 }
 
