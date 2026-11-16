@@ -2352,3 +2352,25 @@ Patchwork: the Model room 12/12 (two blocks, nothing drawn outside them,
 both hulls afloat on their own), the dry room 14/14, the Harbour 11/11 (no
 blocks), and the earlier checks unchanged (80/80 in all). `lane/dblclick`
 is not merged; it waits for its own review (Decision 112).
+
+Integrated 2026-11-16 (later): `lane/dblclick` (b4a15c63, after its
+review), `lane/xarrow` (9cd0bb9c, aboard-run's step 13 fixed in the probe)
+and `lane/framing` (096b450e, Decision 122) merged into scene-stage; scene
+and sailing built from the committed tree, scene, sailing and water synced
+(status clean). Suites: scene 1533, sailing 796, water 1106. Chrome on the
+merged tree: aboard-run 72/72 (step 13's double-click and X arrow both
+pass), links-run 37/37, pins-run 27/27, model-room-run 18/18, basin-run
+15/15, harbour-run 23/23. Republished with fitted homes (no back-compat):
+the Model room (automerge:4RbKJ9A83XkEX6u1GBNoPYDE3xto; home
+0,7.7008,16.0787 over 0,−0.2688,0.4376) and Model basin and Ship at sea
+(automerge:2zRpAT67Uuzp71YCaw3jeAhUtDdH; Decision 121's layout, home
+−142.72,94.29,122.98 over 43.42,−39.84,−63.16); frame-check from the
+server 196/196 and 62/62. In the real Patchwork the canvas beside the
+comments panel is 639 × 826, and every box corner of each was inside it
+from the arrival camera (5/5 each); the Model room's check 12/12. The dry
+room's check was 12/14: Ship at sea is no longer on her block (Costs 2).
+Her saved pose is unchanged, but she coasts on from it in world time,
+which every writable visit advances (she was 18 m further on than at the
+clip integration's check, past her block's edge). The fitted home frames
+her block, not her; the choice (link Ship at anchor, as the Model room
+does, or republish her) is the lead's.

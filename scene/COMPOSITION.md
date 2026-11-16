@@ -90,9 +90,10 @@ pieces, each published and checked in the real Patchwork:
   sea and a current are behaviours put on it, and the weather is a scene
   trait. The *Model basin* (automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2), a
   sloop in a box of water, floats in a dry room beside Ship at sea (*Model
-  basin and Ship at sea*, automerge:3dbt3t2QxqcGwfAU7dFM6Nb2KqCt, a doc of
+  basin and Ship at sea*, automerge:2zRpAT67Uuzp71YCaw3jeAhUtDdH, a doc of
   two links, laid out again on 2026-11-16 so her block clears the basin,
-  WATER.md Decision 121); every sea example was republished in the new shape. One stage correction
+  WATER.md Decision 121, its home fitted to frame both in a 640 px pane,
+  Decision 122); every sea example was republished in the new shape. One stage correction
   (arriving doesn't wait for objects with nothing to load, WATER.md
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
@@ -107,7 +108,8 @@ pieces, each published and checked in the real Patchwork:
   box is the guest's (the lead's Q1), liveness is global (Q2), and the
   stage is unchanged: the path rule a fixer committed unaware of the
   lead's choice is reverted (Decision 90). The *Model room*
-  (automerge:2n6eFnz8tvrEMzo3NEjXqnPubM8R) lays boats out as 1:25
+  (automerge:4RbKJ9A83XkEX6u1GBNoPYDE3xto, its home fitted, WATER.md
+  Decision 122) lays boats out as 1:25
   dioramas on its floor, among them *Ship at anchor*
   (automerge:3NkHf9D3oWisX4E4BCRk3FM1xQNA, now published on her own,
   Decision 120).
@@ -119,6 +121,21 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
+- the double-click gate measures time as the page meets the presses
+  (`time.now()`), not as the person made them: when the page is busy
+  after the first press (in headless Chrome the first selection of an Edit
+  visit, opening the inspector, held it about 1 s), the second press
+  arrives over 500 ms later and the router refuses a double-click Chrome
+  itself fired. Seen in enter-check on 2026-11-16 (a stalled try, retried).
+  The likely fix is the events' own `timeStamp` for both presses and the
+  dblclick; not built;
+- the use prompt stays put while the pointer is on it (since lane/arcade),
+  so when the camera moves and the pointer doesn't (a ride, Frame, a body
+  change) it can be left over a halo handle or anything else, and a press
+  there goes to the prompt's button (found by lane/xarrow, 2026-11-16);
+- a single click on a moving thing can still miss it: aboard-run's step-13
+  click selecting the card inside G missed on about one run in ten
+  (lane/xarrow); the double-click fix covers only the second press;
 - a doc's packages list grows as parts are added and isn't pruned when
   they go.
 
@@ -130,7 +147,14 @@ Fixed since (Decisions, double-click, below):
   with her world running, the boat pitched between the clicks and the
   second ray hit the Card table). The second click of a double-click now
   resolves to its first press's hit, while the canvas is still under the
-  second click. Not yet checked by hand in the real Patchwork.
+  second click. Checked in the real Patchwork on 2026-11-16, on a scratch
+  copy of Lost Cities aboard with her world running, never paused
+  (enter-check, 13/13 on the last of three runs): the cards moved 7 to
+  15 px between presses 250 ms apart, and every double-click the router
+  met as one, with its first press on the game, entered it; on one run the
+  second press's own ray hit the Card table and the double-click still
+  entered G. (A try the page met more than 500 ms apart is the gate item
+  under Still open.)
 
 Known and accepted as is:
 - a mirror trails its acting placement while a part moves (about 4 cm on
