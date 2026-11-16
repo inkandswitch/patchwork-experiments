@@ -55,7 +55,7 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame), its clock `api.clock.t`. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
+| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame). It has no clock: its time is the doc's world time, `api.clock.t()`, which each reader asks itself. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -641,12 +641,20 @@ Each decided unattended (2026-11-16, lane/n6), for the lead:
   divergence. Every reader (the crew's swimmer, the HUD's wind, the looks'
   bobbing and flutter) asks `api.clock.t()` itself, with no fallback for a
   missing clock (the HUD's and the crew's `?? 0` are gone: a stage always
-  has one). `ctx.sea` is exactly `{ oceanAt, wind, world, tick }`, and a
-  test reads the package's source, tests and probes for any clock read off
-  the sea or a defaulted `api.clock` (sea-view.test.js, "the sea's time is
-  api.clock.t()"). The probe pages' `clock(w)` reads the sailing
+  has one). `ctx.sea` is exactly `{ oceanAt, wind, world, tick }`. That
+  no reader has a fallback is shown by behaviour, whatever its spelling:
+  each reader's table runs it on a stage clock broken three ways (none, no
+  `t`, a `t` that throws; test/fakes.js `brokenClocks`), and each time the
+  read throws and the sea or wind is asked at no time. A test also reads
+  every .js/.mjs/.html file of the package (source, tests, probes, itself
+  but for its two pattern lines) for a clock read off the sea (`.clock`,
+  `["clock"]`, destructured) and the spelled defaults `api.clock?.`,
+  `clock.t?.(`, `clock.t() ??` and `clock.t() ||` (sea-view.test.js, "the
+  sea's time is api.clock.t()"): a net for spellings, so a fake can't
+  bring the seam back. The probe pages' `clock(w)` reads the sailing
   extension's own `api.clock.t()`. water/WATER.md's "`ctx.sea.clock` is
-  `api.clock.t`" is now stale; it is water's, left for the integrator.
+  `api.clock.t`" (line 351) and its list of ctx.sea's members with `clock`
+  (line 106) are now stale; they are water's, left for the integrator.
 
 ## Trim feedback
 
@@ -1102,7 +1110,7 @@ the neutral colour.
 | **Mainsheet**: boom → traveller | `controls.sheet` (through `limit`), the boom as drawn (θ_shown: the rig object's held pose, which is `read().boom` played back) | B(θ) = `hardpoints.mainsheet.boomM` swung by θ about the main's luff (`swungCE`'s rotation, on a point). C = the traveller's car, fixed at the track's middle as drawn (the physics has no traveller control). Rope length L = \|B(±limit) − C\| on θ's side; d = \|B(θ_shown) − C\|; slack s = max(0, L − d). Drawn as `sheetCurve` (below) from B to C. d is strictly increasing in \|θ\| on [0, 85°], so s > 0 exactly when \|θ\| < limit (eased past where the sail is), and s = 0 when it's pinned |
 | **Jib sheets**: clew → lead → winch | `jibSheet` / backed / wing (through `limit`), `furl`, the jib as drawn (its held pose: `read().jib`) | The clew is `furledClew(sail, furl)` swung by θ. The lead is `hardpoints.jibLeads[side]` interpolated at `furl` (clamped to the track's ends). The **working sheet** is the one on the clew's side (sign θ). L = \|clew(side·limit) − lead\|, s = max(0, L − \|clew(θ) − lead\|). The **lazy sheet** is the other. Its length is the largest distance from its lead to the clew over the jib's whole travel (\|θ\| ≤ max(maxDeg, wing.hi), at that furl), so its s ≥ 0 by construction. Lead → winch is always taut (it's on the drum). The clew end is the cloth's clew vertex as displaced (below), so the sheet never leaves the sail |
 | `sheetCurve(out, a, b, s, down, n)` | s, the ends, gravity in her body frame (−Y turned by her drawn quaternion) | A parabola in the vertical plane through a–b, sagging toward `down`: p(u) = a + u(b − a) + 4h·u(1 − u)·down⊥. The sag is h = √(3·d·s/8), the parabola's arc length ≈ d + 8h²/(3d) = d + s, capped at (d + s)/2. 16 points. s = 0 is a straight line |
-| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the sea clock t, `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
+| **Cloth** (main and jib) | `angle`, belly, flog, σ, `area` (reef or furl), `controls.flat`, the world time t (`api.clock.t()`), `q` | `clothVertices(out, sail, cloth, trim, t)`. Rows run parallel to the foot from the luff to the leech (the stock main's rows already are: `lerp(clew, head, h) + roach`, `lerp(tack, head, h)`). The camber depth is cloth.depth·chord·flat·belly·max(FLAT, 1 − flog), deepest at cloth.draft. The twist is cloth.twist·(1 − ½σ): a stalled sail's leech closes. The luff's bubble pushes the front BUBBLE.width (0.3) of each row back to windward by 0.8·luff of the camber, breathing ±25%. A flutter is added (cosmetic constants below) |
 | **Reef** (main) | `controls.sail` (raised r; reef f = 1 − r) | Row h maps to the cloth's h′ = f + (1 − f)·h, moved down by f·(head − tack): §6.3's rule, the same as `rig-sails.reefed`. A bunt along the boom has radius 0.02 + 0.08·√f. At f = 1 the cloth is hidden |
 | **Furl** (jib) | `furl` | The cloth's clew column moves to `furledClew(sail, furl)`, each row's leech point along with it (the rows keep their luff point). The roll on the luff has radius 0.02 + 0.06·√furl. At furl = 1 only the roll shows |
 | **Flutter** | flog, `q`, s, t | The displacement along the cloth's normal is flog·A·u^1.5·sin(2π(f·t − 1.5u) + 3h), u along the chord. A = min(0.08·foot, ½·s + 0.02) m: the clew can't move further than the slack sheet lets it. f = clamp(√(2q/ρ) / (2·foot), 0.5, 4) Hz. flog = 0 means no displacement at any t |

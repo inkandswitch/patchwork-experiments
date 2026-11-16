@@ -10,7 +10,7 @@ import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as un
 import { shipOf } from "./traits.js";
 import { boxTriangles } from "./navmesh.js";
 import { BODY, DECK, SWIM } from "./walk.js";
-import { meshNode } from "./test/fakes.js";
+import { brokenClocks, meshNode } from "./test/fakes.js";
 import { MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
 
 beforeAll(() => (globalThis.__SAILING_ASSERT__ = true));
@@ -504,6 +504,15 @@ describe("the crew", { timeout: 60_000 }, () => {
       expect(s.seaAsked.length).toBeGreaterThan(0);
       expect(new Set(s.seaAsked)).toEqual(new Set([t]));
     }
+    // and no fallback: with the clock broken each way, the read throws and the sea is asked at no time
+    const clock = s.api.clock;
+    for (const row of brokenClocks(clock)) {
+      s.api.clock = row.clock;
+      s.seaAsked.length = 0;
+      expect(() => crew.me(), row.name).toThrow(row.throws);
+      expect(s.seaAsked, row.name).toEqual([]);
+    }
+    s.api.clock = clock;
   });
 
   it("at a station: its body over walking, with the keys the station declares; you stand aft of it, and every way out calls left()", () => {

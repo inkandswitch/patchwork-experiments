@@ -334,43 +334,51 @@ describe("the world's wind through a link (windFor): mapped by the frame, at the
 
 // The sea's time is the doc's world time and nothing else: ctx.sea has no
 // clock, and nothing in the package (source, tests, probes) reads one off
-// it or defaults a missing clock. Every .js, .mjs and .html file is read,
-// as standalone.test.js reads them: the whole package, nothing sampled,
-// but for this file, whose table below names the forms on purpose.
+// it or spells a default for a missing one. Every .js, .mjs and .html file
+// is read, as standalone.test.js reads them: the whole package, this file
+// too, nothing sampled. The only lines passed over are the pattern table's
+// two, which name the forms on purpose and carry NAMED; a test holds that
+// to exactly those two. The patterns are a net for spellings; the readers'
+// own tables (crew, HUD, looks, on test/fakes.js brokenClocks) are what
+// show each has no fallback, whatever its spelling.
 describe("the sea's time is api.clock.t(), read the one way", () => {
   const SELF = fileURLToPath(import.meta.url);
   const ROOT = resolve(dirname(SELF), "..");
   const SKIP = new Set(["node_modules", "dist", ".pushwork", ".git"]);
+  const NAMED = "// the forms, named on purpose";
   const files = (dir, out = []) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (SKIP.has(e.name)) continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) files(p, out);
-      else if (/\.(m?js|html)$/.test(e.name) && p !== SELF) out.push(p);
+      else if (/\.(m?js|html)$/.test(e.name)) out.push(p);
     }
     return out;
   };
-  /** a clock read off the sea */
-  const SEA_CLOCK = /\bsea\??\.clock\b/;
-  /** the stage's clock (api.clock, its t()) read as if it might be missing; a doc's stored clock field (doc.clock?.t) may be */
-  const DEFAULTED = /\bapi\??\.clock\?\.|\bclock\.t\?\.\(|\bclock\.t\(\)\s*\?\?/;
+  /** a clock read off the sea: a member (.clock, ?.clock, ["clock"]) or destructured ({ clock } = ….sea) */
+  const SEA_CLOCK = /\bsea\??\.clock\b|\bsea(?:\?\.)?\[\s*["'`]clock["'`]\s*\]|\{[^}]*\bclock\b[^}]*\}\s*=\s*[\w$.?]*\bsea\s*(?:[;,)]|$)/;
+  /** the stage's clock (api.clock, its t()) spelled as if it might be missing or its t() not a time; a doc's stored clock field (doc.clock?.t) may be */
+  const DEFAULTED = /\bapi\??\.clock\?\.|\bclock\.t\?\.\(|\bclock\.t\(\)\s*(?:\?\?|\|\|)/;
 
   it("the patterns find every form they name, and nothing else", () => {
     const hits = (re) => (line) => re.test(line);
-    expect(["ctx.sea.clock()", "s.sea?.clock?.()", "ctx.sea.clock", "x.sea.clockwise", "x.overseas.clock"].map(hits(SEA_CLOCK))).toEqual([true, true, true, false, false]);
-    expect(["api.clock?.t()", "api.clock.t?.()", "api.clock.t() ?? 0", "a.api?.clock?.t()", "api.clock.t()", "doc.clock?.running", "doc.clock?.t", "api ? api.clock.t() : null"].map(hits(DEFAULTED))).toEqual([true, true, true, true, false, false, false, false]);
+    expect(["ctx.sea.clock()", "s.sea?.clock?.()", "ctx.sea.clock", 'ctx.sea["clock"]()', "sea?.['clock']", "const { clock } = ctx.sea;", "const { wind, clock: c } = sea", "x.sea.clockwise", "x.overseas.clock", "const { clock } = api;", "const { clock } = seaView;", "{ clock, sea } = s"].map(hits(SEA_CLOCK))).toEqual([true, true, true, true, true, true, true, false, false, false, false, false]); // the forms, named on purpose
+    expect(["api.clock?.t()", "api.clock.t?.()", "api.clock.t() ?? 0", "api.clock.t() || 0", "a.api?.clock?.t()", "api.clock.t()", "doc.clock?.running", "doc.clock?.t", "api ? api.clock.t() : null"].map(hits(DEFAULTED))).toEqual([true, true, true, true, true, false, false, false, false]); // the forms, named on purpose
   });
 
   const all = files(ROOT);
-  it(`reads every file (${all.length})`, () => expect(all.length).toBeGreaterThan(10));
-  it("no file reads a clock off the sea, or defaults a missing clock", () => {
-    const found = [];
-    for (const f of all)
-      readFileSync(f, "utf8")
-        .split("\n")
-        .forEach((line, i) => {
-          if (SEA_CLOCK.test(line) || DEFAULTED.test(line)) found.push(`${relative(ROOT, f)}:${i + 1}: ${line.trim()}`);
-        });
+  const lines = all.flatMap((f) => readFileSync(f, "utf8").split("\n").map((line, i) => ({ at: `${relative(ROOT, f)}:${i + 1}`, f, line })));
+  it(`reads every file (${all.length}), this one too`, () => {
+    expect(all.length).toBeGreaterThan(10);
+    expect(all).toContain(SELF);
+  });
+  it("passes over only the pattern table's two lines", () => {
+    const named = lines.filter((l) => l.line.trimEnd().endsWith(NAMED));
+    expect(named.map((l) => l.f)).toEqual([SELF, SELF]);
+    expect(named.map((l) => l.line.trim().slice(0, 7))).toEqual(["expect(", "expect("]);
+  });
+  it("no file reads a clock off the sea, or spells a default for a missing clock", () => {
+    const found = lines.filter(({ line }) => !line.trimEnd().endsWith(NAMED) && (SEA_CLOCK.test(line) || DEFAULTED.test(line))).map((l) => `${l.at}: ${l.line.trim()}`);
     expect(found).toEqual([]);
   });
 });

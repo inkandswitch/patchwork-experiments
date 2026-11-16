@@ -252,7 +252,7 @@ try {
   const c1 = { s: await P(`clock('${SIM}')`), f: await P(`clock('${FOL}')`), t: await clockMs() };
   const rate = (c1.s - c0.s) / ((c1.t - c0.t) / 1000);
   report.measured.clock = { rate: n2(rate), lag: n2(c1.s - c1.f) };
-  check("the follower's sea clock runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
+  check("the follower's world time (api.clock.t()) runs with the simulator's, a little behind", Math.abs((c1.f - c0.f) - (c1.s - c0.s)) < 0.3 && c1.s - c1.f > 0 && c1.s - c1.f < 0.5, { c0, c1 });
   const frames = { a: await P(`sampleFrames('${hull}', 'a', 1000)`), b: await P(`sampleFrames('${hull}', 'b', 1000)`) };
   report.measured.fps = { a: frames.a.length, b: frames.b.length };
 
