@@ -315,6 +315,17 @@ to click it doesn't take the look, and the prompt, away (machine/HOST.md,
 Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
 
+**Touch controls are the declared keys** (`touch-keys.js`, pure;
+Decisions 10). With no keyboard, the keys the gesture, the held tool and
+the body declare become controls a finger holds, in the key order: a code
+shows only under the reserver `reservedBy` names for it, so a shown control
+works by the same construction as a shown key. Within one reserver, codes
+shown alike are one control (the label, else the code's name: walk's W and
+↑ are one "Forward"), pressing the first of its codes the earlier layers
+leave it. A control with an arrow among its codes takes that arrow's place
+on the pad, the rest are buttons: keyboard geometry, so the stage knows
+nothing of "Forward". Look, Edit and a seat declare no keys and show none.
+
 **Escape pops exactly one layer**: the lock (the browser's), a focused
 field, popover or dock field (a search field with text clears first, then
 leaves: its query is a layer), the gesture, the held tool, the selection,
@@ -646,7 +657,7 @@ and Dee still walks. To try his changes, he plays a copy.
 |---|---|---|
 | H1 | **What runs is the doc's.** The host resyncs only on a registry or doc change | Over each fixture doc, every change to body, held tool, selection, focus, prefs or clock triggers no sync |
 | H2 | **One stop rule**: stop only when the doc stops calling, after LINGER or while busy | Host transitions over (wanted, busy) × every order of ≤3 events |
-| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch |
+| H3 | **A shown key works**: hints come from the dispatching resolver; each key reaches ≤1 invocation. A touch control too: it reaches the reserver it's shown for, every declared, reserved key has one, none look alike in one reserver, no pad place twice | Every command × body × held tool × gesture {none, carry} × attention {selection, look, null} × reach: hint ⇔ dispatch. Touch: every keys declaration in the repo, 7 bodies × 5 held tools × 2 gestures, each control list written out (`src/touch-keys.test.js`) |
 | H4 | **Escape** pops exactly the top of lock, field, gesture, tool, selection, focus; never body or clock; the hint names it | All 2⁶ states × focus depth ≤3 |
 | H5 | **Pointer**: locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch; after a release, or a finger, the next mouse press on the world only relocks; a finger never locks; nothing but a relock, a body or the pointer unwanted takes the lock | All 2⁵ cases × every event (pure); all 2⁵ cases × each body × {mouse press, touch press, key} (router); finger then mouse on a button, on an edge, on the world with the grant after the handler (router) |
 | H6 | **One holder** per object, by (person before yielding, `since`); a yielding hold is refused while a person's stands; a process saves only what it holds | Every sequence of ≤4 of {A, B, process driven or not} × {take, land, leave, pause}, in one view and across |
@@ -1183,3 +1194,22 @@ The project lead decided the five open questions on 2026-11-12.
    should be touch. Open for the lead: whether the touch controls show from
    the first touch, always on a coarse pointer, or by a toggle in the chip's
    menu (lane/n9's plan asks).
+10. **Touch controls are derived from declared keys, grouped by what they
+   show** (decided unattended (2026-11-16, lane/n9), for the lead).
+   `touchControls({ gesture, held, body })` (`touch-keys.js`) is pure and
+   per view, never per body. Codes group by the label a person sees: the
+   declared one, else the code's name from one table (`nameOf`: KeyQ "Q",
+   ShiftLeft "Shift", ArrowUp "↑", via keymap.js `labelOf`), so two
+   unlabelled Shifts are one "Shift" and no reserver ever shows two
+   controls that look the same; a control presses its first unshadowed
+   code. The pad's places come from the arrow codes alone (a code is in at
+   most one control, so no place is held twice); `keyOf(code)` is the US
+   layout's `KeyboardEvent.key` (KeyQ "q", Space " ", AltLeft "Alt"),
+   checked against `codeOfKey` as its inverse and against what Chrome
+   sends, since handlers read `ev.key` as often as `ev.code`. The cost of
+   grouping by label: codes a declaration labels alike but that act
+   differently collapse to the first. machine's doom pad labels Digit1–7
+   all "Weapon", so its touch control picks weapon 1 only; the fix is the
+   declaration's ("Weapon 1"…), left to machine. Open for the lead: a
+   digital d-pad from the arrow codes, or an analog stick (a new body input
+   contract, an axis).
