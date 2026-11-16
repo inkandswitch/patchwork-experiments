@@ -24,17 +24,18 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   tabletop's *Card table* and *Lost Cities* parts) and to get under way
   from (raise the sail, weigh the anchor).
 - **Coming aboard.** Click her, her hull or a fitting of hers (or press
-  Enter, or the HUD's button). The sea, the sky and the shore are the
+  Enter, or *Come aboard* on the bar of tools above the view, there in
+  every body, Edit included). The sea, the sky and the shore are the
   world's, not hers, so a click on them doesn't come aboard (since 2026-11-14:
   the sea became its own part, water/WATER.md Decisions 24). A click on
   something else aboard her, a card on a table in her cockpit say, isn't a
   way aboard: it's that thing's (the scene's carry picks the card up).
-  Seated at a table aboard her (the seat body), only Enter or the button
-  comes aboard, so a stray click on the benches round the table doesn't throw you
-  into first person; the HUD then offers *Come aboard (Enter)* top left,
-  without the walking keys (S and D are the table's Shuffle and Draw), and
-  before you're aboard its panel is just the dial, top left, clear of your
-  hand of cards. Nothing of hers can be picked up: what can be carries the
+  Seated at a table aboard her (the seat body), only Enter or the bar's
+  *Come aboard* comes aboard, so a stray click on the benches round the table
+  doesn't throw you into first person; the HUD then shows no walking keys
+  (S and D are the table's Shuffle and Draw), and before you're aboard its
+  panel is just the dial, top left, clear of your hand of cards. The HUD
+  only reads: it has no buttons. Nothing of hers can be picked up: what can be carries the
   scene's `scene.carry` trait (a game's cards and pieces), and the ship and
   her fittings don't, so a game aboard her can't dismast her.
 - **From the parts bin, in any scene.** The toolbar's Parts opens the bin,

@@ -439,6 +439,8 @@ water and the sea move onto a Sea object, the wind onto `sailing.weather`.*
 - **A click on the open sea no longer boards a boat alone** (Decisions 24
   and 30): the sea, sky and shore are the world's, and the ships' part
   holds no scene trait. Her hull, Enter and the HUD's button board.
+  *(The HUD's button is now the `aboard` command's Come aboard on the
+  stage's bar of tools: scene TOOLS.md Decision 10, 2026-11-16.)*
 - **Not addressed**: wakes, splashes, boats colliding or pushing each other
   across docs, crew swimming from one boat's water to another's ladder
   (bodies don't hand over between docs), bounded water (ponds, rivers),
