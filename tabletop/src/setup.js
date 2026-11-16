@@ -3,8 +3,8 @@
 // uses (GAME-FORMAT.md §8):
 //
 //   const layout = tableLayout(game, { fileOf, newId, rng, gameUrl });   // pure
-//   const made = await makeHolders(host, layout);                       // table/made-with.js: keepers, bags
-//   writeTable(d, layout, made, { seats: lay });                         // in one change
+//   const made = await prepareTable(host, layout);   // table/made-with.js: keepers, bags, seats' owner, warnings
+//   writeTable(d, layout, made);                     // in one change
 //
 // - The game page's "Set up a table" (tool.js) writes it onto a fresh scene
 //   doc; each kind shows the game's own GLB doc, which redraws when the game
@@ -360,17 +360,16 @@ export function bound(oid, o, { binds = {}, bags = {} } = {}) {
  * writing nothing, if a card's container has no binding.
  * @param {object} d  the scene doc (a draft)
  * @param {ReturnType<typeof tableLayout>} layout
- * @param {{ binds?: { [key]: (slot: number) => object }, bags?: { [oid]: object } }} made  what makeHolders made
- * @param {{ seats?: ((d: object, seats: object) => unknown) | null }} [o]
- *   seats: the seats owner's lay (table/made-with.js findSeats); without one no seats are written
+ * @param {{ binds?: { [key]: (slot: number) => object }, bags?: { [oid]: object }, seats?: ((d: object, seats: object) => unknown) | null }} made
+ *   what prepareTable made and found (table/made-with.js); seats: the seats owner's lay, without which no seats are written
  */
-export function writeTable(d, layout, made = {}, { seats = null } = {}) {
+export function writeTable(d, layout, made = {}) {
   const written = layout.order.map((oid) => [oid, bound(oid, layout.objects[oid], made)]);
   for (const [oid, o] of written) {
     d.objects[oid] = o;
     d.order.push(oid);
   }
-  if (typeof seats === "function") seats(d, copy(layout.seats ?? {}));
+  if (typeof made.seats === "function") made.seats(d, copy(layout.seats ?? {}));
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? copy(v) : v;
   if (layout.origin) d.origin = copy(layout.origin);
 }

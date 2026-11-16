@@ -9,9 +9,10 @@ import { lookFileKey } from "./files.js";
 import { kindsUsed } from "../setup.js";
 import { lookKey, shortHash } from "../look/look.js";
 import { fakeDrop } from "../test/fakes.js";
-import { SEATS, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
+import { SEATS, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin } from "../test/stand-ins.js";
 import { game as builtIn, gamePlugins } from "../test/games.js";
 import { emptyScene } from "../empty-scene.js";
+import { CASES, cardsGame } from "../test/table-notes.js";
 
 /** What's installed where a table is usually made: whoever owns seats, a keeper of each kind (stand-ins), and the games. */
 const installed = (...more) => registries(seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), ...gamePlugins(), ...more);
@@ -237,4 +238,34 @@ describe("the Draw Dominoes templates", () => {
       expect(new Set(tiles.map((o) => o.sourceUrl)).size).toBe(1);
     });
   }
+});
+
+describe("what the maker is told (test/table-notes.js: the game page's status line says the same)", () => {
+  for (const c of CASES)
+    it(c.name, async () => {
+      const doc = emptyScene();
+      const plugins = [...c.keepers.map((k) => keeperPlugin(k)), ...(c.owner ? [seatsPlugin()] : []), ...(c.bagMaker ? [bagPlugin()] : [])];
+      const { ctx, calls } = fakeDrop(doc, { registries: registries(...plugins) });
+      const laid = await setUp(ctx, cardsGame(c));
+      if (c.error) {
+        expect(laid).toBe(null);
+        expect(calls.changes).toBe(0);
+        expect(calls.notices).toEqual([{ kind: "error", text: c.error }]);
+        return;
+      }
+      expect(laid).not.toBe(null);
+      expect(calls.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual(c.expected);
+      // and the table is as warned: seats only where something owns them
+      expect(Object.keys(doc.traits[SEATS] ?? {})).toEqual(c.seats && c.owner ? ["p1"] : []);
+    });
+
+  it("names every secure deck kept in the open, in one warning", async () => {
+    const g = cardsGame({ secure: true, seats: false });
+    g.setup.push({ deck: { name: "Other", cards: ["card"], secure: true } });
+    const { ctx, calls } = fakeDrop(emptyScene(), { registries: registries(keeperPlugin("plain")) });
+    await setUp(ctx, g);
+    expect(calls.notices.filter((n) => n.kind === "warn").map((n) => n.text)).toEqual([
+      "No keeper whose players shuffle is installed here, so “Three cards: Deck” and “Three cards: Other” are kept in the open: anyone who opens them can read every hand.",
+    ]);
+  });
 });

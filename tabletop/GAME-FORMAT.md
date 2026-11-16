@@ -48,7 +48,9 @@ might reasonably want it otherwise.
 4. **`secure` stays, as a deck's word**, meaning "nobody, not even whoever
    sets the table up, may know the order or a card they aren't shown". It
    names no keeper; the table asks for one whose players shuffle between them
-   and falls back to a plain one, saying so.
+   and falls back to a plain one, saying so (the template and the game page
+   alike: the warning comes with what the table is made with, `made-with.js`
+   `prepareTable`).
 5. **Containers are titled by the game and the deck** ("Lost Cities: Deck"),
    never by the scene a table is set down in (host-titled decks are gone,
    COMPOSITION.md §11).
@@ -199,6 +201,9 @@ Deck = {
 - `contents` is what a bag holds (its piece must have `bag`): pieces and
   decks, laid out into the bag, never the scene; a bag may hold a bag.
 - `id` names a thing for a deal.
+- A `secure` deck's listed order is nobody's to know, so a joint keeper
+  shuffles every card of it, whatever `shuffle` says (§7). Kept by a plain
+  keeper instead (choice 4's fallback), it is laid out as `shuffle` says.
 
 ## 6. Seats and camera
 
@@ -209,11 +214,14 @@ plugin's `roster: true`); nothing here reads who sits where. A seat's
 ## 7. What a table does with it
 
 `src/setup.js` lays any game out (`tableLayout`, pure), then
-`table/made-with.js` makes what holds things (`makeHolders`): a container
-per deck and one for loose cards, from a keeper found by `keeper: "joint"`
-(a `secure` deck, where one is installed) or `"plain"`; then each bag, from
-whatever says `container: "bag"`; and `writeTable` writes the scene in one
-change, each card bound by its keeper's trait beside a bare
+`table/made-with.js` makes what holds things and finds who seats people
+(`prepareTable`): a container per deck and one for loose cards, from a
+keeper found by `keeper: "joint"` (a `secure` deck, where one is installed;
+its players shuffle every card of it once every seat is taken, as
+card-table's first shuffle does, `card-table/src/deck.js`) or `"plain"`;
+then each bag, from whatever says `container: "bag"`; then whoever owns
+seats (`roster: true`), with what the maker is to be warned of; and
+`writeTable` writes the scene in one change, each card bound by its keeper's trait beside a bare
 `tabletop.card`, each bag given its document. Shuffle, Draw, Wash, Stand on
 edge, private hands and who may see what all act on those traits, never on
 any game.

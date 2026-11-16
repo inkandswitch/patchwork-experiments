@@ -8,7 +8,7 @@ import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
 import { isCard, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
-import { findSeats, findSource, hostRegistry, makeHolders } from "./table/made-with.js";
+import { findSource, hostRegistry, prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
 import { gameOf, writeGame } from "./game.js";
 import { defaultImages } from "./look/images.js";
@@ -158,16 +158,15 @@ export default function TabletopGameTool(handle, element) {
         return f?.url ? { url: f.url, hint: f.bounds ? { bounds: f.bounds } : null } : null;
       };
       const layout = tableLayout(gameOf(d), { fileOf, gameUrl: handle.url });
-      // the decks' containers and the bags first (from a keeper and a bag maker, found in the
-      // registry by what they are: table/made-with.js), so the scene never names one that isn't there
-      const made = await makeHolders({ repo, registry: hostRegistry }, layout);
-      // the seats are their owner's to write (none where nothing installed owns seats)
-      const lay = Object.keys(layout.seats).length ? await findSeats(hostRegistry) : null;
+      // the decks' containers, the bags and the seats' owner first (a keeper, a bag maker, whoever owns
+      // seats, found in the registry by what they are: table/made-with.js), so the scene never names one
+      // that isn't there; with them, what the maker is warned of
+      const made = await prepareTable({ repo, registry: hostRegistry }, layout);
       // an empty scene as the scene makes one (every map and list it has;
       // the stage fills `packages` in), and where the scene package comes
       // from, for a viewer who doesn't have it
       const table = emptyScene({ "@patchwork": scenePatchwork(await sceneImportUrl()), title });
-      writeTable(table, layout, made, { seats: lay });
+      writeTable(table, layout, made);
       const scene = await repo.create2(table);
       handle.change((g) => {
         if (!g.tables) g.tables = [];
@@ -233,10 +232,13 @@ export default function TabletopGameTool(handle, element) {
       const inDeck = [...new Set(deck.cards ?? [])];
       const deals = (deck.deal ?? []).map((x) => `${x.count} to ${thingName(d, x.to)}`).join(", ");
       const path = deckPath(d.setup, t);
+      // the summary says what the game asks for, not what this install will do: a secure deck is "to be
+      // shuffled by the players" (a joint keeper's first shuffle is of every card, whatever `shuffle` says;
+      // the plain fallback lays it out as `shuffle` says, and the tick's title says so)
       return el(
         "details",
         { class: "deck" },
-        el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${deck.shuffle ? ", shuffled" : ""}${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
+        el("summary", {}, `${deck.name || `Deck ${i + 1}`}: ${deck.cards?.length ?? 0} cards of ${inDeck.length} kinds${!deck.secure && deck.shuffle ? ", shuffled" : ""}${deck.faceDown ? " face down" : ""}${deck.secure ? ", to be shuffled by the players" : ""}${deals ? `; deals ${deals}` : ""}`),
         el(
           "label",
           { class: "toggle", title: "With a keeper whose players shuffle installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without one, the cards are hidden from the table but listed in an ordinary document." },

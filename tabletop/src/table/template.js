@@ -25,8 +25,10 @@
 //   it between them), else to a plain one, which plays the same but whose
 //   container anyone can read by opening it, and the maker is told so. A
 //   bag's things go to a bag maker. The seats are laid by whoever owns
-//   seats. With no keeper installed at all for a game with cards, nothing
-//   is laid out and the maker is told why.
+//   seats. What the maker is warned of comes with what the table is made
+//   with (made-with.js prepareTable), so the game page's status line says
+//   the same. With no keeper installed at all
+//   for a game with cards, nothing is laid out and the maker is told why.
 //
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
@@ -36,7 +38,7 @@
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, tableLayout, writeTable } from "../setup.js";
-import { findSeats, findSource, makeHolders } from "./made-with.js";
+import { findSource, prepareTable } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
 import { errorText, validate } from "../../contract/v1/validate.js";
@@ -89,26 +91,22 @@ export async function setUp(ctx, game, { rng = Math.random, images = defaultImag
   const current = ctx.doc?.()?.title;
   const named = !current || current === UNTITLED;
 
-  // the containers and bags first, so the scene never names one that isn't there
+  // the containers, bags and seats' owner first, so the scene never names one that isn't there
   let made;
   try {
-    made = await makeHolders({ repo: ctx.repo, registry: ctx.registry }, layout);
+    made = await prepareTable({ repo: ctx.repo, registry: ctx.registry }, layout);
   } catch (err) {
     ctx.notify?.(String(err?.message ?? err), "error");
     return null;
   }
-  const lay = Object.keys(layout.seats).length ? await findSeats(ctx.registry) : null;
 
   ctx.change((d) => {
-    writeTable(d, layout, made, { seats: lay });
+    writeTable(d, layout, made);
     if (named) d.title = `${g.title || "Game"} table`;
   });
 
   for (const note of made.notes) ctx.notify?.(note, "warn");
-  const fellBack = Object.entries(layout.containers).some(([key, c]) => c.secure && made.kinds[key] !== "joint");
-  if (fellBack) ctx.notify?.("No keeper whose players shuffle is installed here, so this table's deck is kept in the open: anyone who opens it can read every hand.", "warn");
-  if (Object.keys(layout.seats).length && !lay) ctx.notify?.("Nothing installed here owns seats, so this table has none.", "warn");
-  if (Object.keys(layout.seats).length && lay) ctx.notify?.("Pick a seat (top right) to play.", "info");
+  if (made.seats) ctx.notify?.("Pick a seat (top right) to play.", "info");
   else ctx.notify?.(`${g.title || "The game"} is laid out. Press a piece and drag it to carry it.`, "info");
   return layout;
 }

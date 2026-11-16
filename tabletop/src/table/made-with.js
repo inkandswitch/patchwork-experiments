@@ -136,14 +136,23 @@ export async function containDecks({ repo, registry }, containers) {
 }
 
 /**
- * Everything a layout holds, made before the table is written, so the scene
- * never names a document that isn't there: its containers (by keepers), then
- * its bags (by the bag maker, the innermost first, each holding its things
- * already bound: a card in a bag is still kept). Without a bag maker the
- * bags are written empty and a note says so.
- * @returns {Promise<{ binds, kinds, bags: { [oid]: object }, notes: string[] }>}
+ * Everything a table is made with, made or found before it's written, so the
+ * scene never names a document that isn't there: its containers (by
+ * keepers), then its bags (by the bag maker, the innermost first, each
+ * holding its things already bound: a card in a bag is still kept), and
+ * whoever owns seats where the game has any. With them, the warnings every
+ * table writer owes the maker (the template's notices, the game page's
+ * status line), in this order: bag contents not laid out (no bag maker); a
+ * `secure` deck kept by a keeper that isn't joint; seats in the game that
+ * nothing owns. One step, so a writer can't make the table and leave the
+ * warnings out: they are a function of the layout and of what's installed.
+ * @param {{ repo: object, registry: (type: string) => Promise<object | null> }} host
+ * @param {ReturnType<import("../setup.js").tableLayout>} layout
+ * @returns {Promise<{ binds, kinds, bags: { [oid]: object }, seats: Function | null, notes: string[] }>}
+ *   seats: the seats owner's lay (writeTable lays the seats through it), null where there is none
+ *   or the game has no seats. Throws when a container has no keeper to go to.
  */
-export async function makeHolders({ repo, registry }, layout) {
+export async function prepareTable({ repo, registry }, layout) {
   const { binds, kinds } = await containDecks({ repo, registry }, layout.containers);
   const bags = {};
   const notes = [];
@@ -151,7 +160,7 @@ export async function makeHolders({ repo, registry }, layout) {
   const fill = ids.length ? await findBagMaker(registry) : null;
   if (ids.length && !fill) {
     const n = ids.reduce((s, id) => s + layout.bags[id].items.length, 0);
-    if (n) notes.push(`${n} thing${n === 1 ? "" : "s"} in bags weren't laid out: nothing installed here holds a bag's contents`);
+    if (n) notes.push(notLaidOut(n));
   } else
     for (const id of ids.reverse()) {
       const bag = layout.bags[id];
@@ -159,5 +168,20 @@ export async function makeHolders({ repo, registry }, layout) {
       const made = await fill({ repo }, { title: bag.title, rule: bag.rule, items });
       if (made?.traits) bags[id] = made.traits;
     }
-  return { binds, kinds, bags, notes };
+  const open = Object.entries(layout.containers ?? {}).filter(([key, c]) => c.secure && kinds[key] !== "joint");
+  if (open.length) notes.push(keptInTheOpen(open.map(([, c]) => c.title)));
+  const seated = Object.keys(layout.seats ?? {}).length > 0;
+  const seats = seated ? await findSeats(registry) : null;
+  if (seated && !seats) notes.push(NO_SEATS);
+  return { binds, kinds, bags, seats, notes };
 }
+
+/** What a table writer says when a bag maker is missing and bags had things in them. */
+export const notLaidOut = (n) => `${n} thing${n === 1 ? "" : "s"} in bags weren't laid out: nothing installed here holds a bag's contents.`;
+/** What a table writer says when `secure` decks (by their containers' titles) went to a keeper whose players don't shuffle. */
+export const keptInTheOpen = (titles) =>
+  `No keeper whose players shuffle is installed here, so ${andList(titles.map((t) => `“${t}”`))} ${titles.length === 1 ? "is" : "are"} kept in the open: anyone who opens ${titles.length === 1 ? "it" : "them"} can read every hand.`;
+/** What a table writer says when the game has seats and nothing installed owns seats. */
+export const NO_SEATS = "Nothing installed here owns seats, so this table has none.";
+
+const andList = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);

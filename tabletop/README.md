@@ -337,7 +337,7 @@ container of its own that its cards name, kept by a *keeper*: an ordinary
 `scene:extension` of another package (scene/STAGE.md, "Keepers"). This
 package never opens a container. It meets keepers in two places:
 
-- **setting a table up** (`src/table/made-with.js` `makeHolders`): it looks
+- **setting a table up** (`src/table/made-with.js` `prepareTable`): it looks
   in the `scene:extension` registry for a plugin whose metadata says
   `keeper: "joint"` (for a `secure` deck) or `keeper: "plain"`, and calls
   that module's `contain({ repo }, { title, items })`, which makes the
@@ -385,9 +385,11 @@ GAME-FORMAT.md and `contract/v1/`.
 
 One writer makes every table (`src/setup.js`): `tableLayout(game, { fileOf,
 newId, rng, gameUrl })` lays the game out without writing anything;
-`makeHolders({ repo, registry }, layout)` (`src/table/made-with.js`) makes
-its containers and bags; and `writeTable(d, layout, made, { seats, view })`
-writes it into a scene doc in one go: every thing at its `at` (several copies
+`prepareTable({ repo, registry }, layout)` (`src/table/made-with.js`) makes
+its containers and bags, finds whoever owns seats, and says what the maker
+is to be warned of (`notes`: bag contents not laid out, a secure deck kept in
+the open, seats nobody owns; every writer shows them); and `writeTable(d,
+layout, made)` writes it into a scene doc in one go: every thing at its `at` (several copies
 a group), each deck shuffled if it says so, dealt, and the rest stacked or
 spread, every card a `tabletop.card` bound by its keeper's trait, every bag
 given its document; the seats through their owner's `lay` (which adds them to
@@ -505,7 +507,7 @@ are none.
 | `src/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the game page, the tests and the probe pages start a scene doc from |
 | `src/scene-package.js` | where the scene package comes from, for a new table's `@patchwork.suggestedImportUrl` (read from the registry at run time; the same file as bag's) |
 | `src/setup.js` | the one table writer: a game → a layout and what its containers and bags hold (shuffle, deal, stack, spread; pure), and writing it into a scene doc (always the whole doc's: a game part writes a game doc of its own) |
-| `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `makeHolders` |
+| `src/table/made-with.js` | finding what a table is made with in the registry, by metadata: a keeper of a kind (its `contain`), the bag maker (its `fill`), whoever owns seats (its `lay`), what draws a document (a `scene:source`); `prepareTable`, which makes or finds them all for a layout, with the warnings every writer shows |
 | `src/table/template.js` | laying a registered game out in a drop context's scene by its id (`setUp`, the `tables` convention), and the templates |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file` |
 | `src/table/extension.js` | the table's scene extension: Shuffle (through a card's keeper), Draw, a card turning face up over your own hand, where each seat's hands are, the table's policy (`audience`), telling the others |
