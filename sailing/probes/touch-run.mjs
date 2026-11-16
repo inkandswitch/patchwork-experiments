@@ -21,6 +21,10 @@
 //  5. Steer to starboard held a second turns the wheel to starboard (its
 //     angle up), Steer to port back the other way;
 //  6. Leave leaves the helm: walking again, the claim gone.
+//  7. at the windlass, the prompt's buttons are its keys (scene/TOOLS.md
+//     Decisions 13): a tap on Drop anchor (F) lets it go; then Raise anchor
+//     (hold F) brings the chain in only while a finger holds its button, and
+//     stops when it lifts.
 // Prints a JSON checklist; exits non-zero if any check fails.
 //
 // Simulated time: the page's manual clock (window.__time), so the world moves
@@ -93,7 +97,7 @@ try {
   await loads("!!window.__p.ctx('a')", 10_000);
   await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEED}; d.traits["sailing.weather"].seed = ${SEED}; })`);
   await P("resume()");
-  const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), mainsheet: by("Mainsheet") }; })()`);
+  const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), mainsheet: by("Mainsheet"), windlass: by("Windlass") }; })()`);
   // where a part is on her (the hull's frame): up its chain of parents
   const local = (id) => js(`(() => { const d = window.__p.doc(), hull = ${JSON.stringify(ids.hull)}; let p = [0, 0, 0]; for (let at = ${JSON.stringify(id)}; at && at !== hull; at = d.objects[at].parent) p = p.map((x, i) => x + d.objects[at].transform.position[i]); return p; })()`);
   await b.rest(1000);
@@ -152,6 +156,44 @@ try {
   v = await js(VIEW);
   const claim = (await P("doc()")).objects[ids.wheel].claims?.station ?? null;
   check("6. Leave leaves the helm: walking again, the helm's claim gone, the pad aboard's again", (await P("me('a')")).station == null && v.body === "aboard" && !claim && JSON.stringify(await js(PAD)) === JSON.stringify(padAboard), { v, claim, pad: await js(PAD) });
+
+  // ─── 7. the windlass, by the prompt's buttons ────────────────────────────
+  // (standing aft of it, facing forward: the eye's look tipped down until it rests on the windlass)
+  const wl = await local(ids.windlass);
+  const verbAt = (command) => js(centre(`window.__p.hostA.querySelector('.use-prompt:not([hidden]) .use-verb[data-command="${command}"]')`));
+  let faced = null;
+  for (const pitch of [-0.75, -0.9, -0.6, -1.05, -0.5]) {
+    await P(`place('a', '${ids.hull}', [${wl[0]}, ${wl[1]}, ${wl[2] + 0.9}], 0, ${pitch})`);
+    if (await until(`window.__p.verbs('a').some((v) => (v.command === "drop" || v.command === "weigh") && !v.disabled)`, 1500)) {
+      faced = pitch;
+      break;
+    }
+  }
+  const anchor = () => P(`value('${ids.windlass}', 'a')`);
+  const dropAt = faced != null ? await verbAt("drop") : null;
+  if (dropAt) await touch.tap(dropAt);
+  await b.rest(300);
+  const dropped = await anchor();
+  const weighAt = await until(`window.__p.verbs('a').some((v) => v.command === "weigh" && !v.disabled)`, 2000) ? await verbAt("weigh") : null;
+  const r0 = Number((await anchor()).rode);
+  let r1 = null, r2 = null, heldMark = null;
+  if (weighAt) {
+    await touch.fingers([[1, ...weighAt]]);
+    await b.rest(1000);
+    r1 = Number((await anchor()).rode);
+    heldMark = (await P("verbs('a')")).find((x) => x.command === "weigh")?.held ?? null;
+    await touch.fingers([]);
+    await b.rest(100);
+    r2 = Number((await anchor()).rode);
+    await b.rest(1000);
+  }
+  const r3 = Number((await anchor()).rode);
+  await shot("3-windlass");
+  check(
+    "7. at the windlass: a tap on Drop anchor lets it go; a finger held on Raise anchor brings the chain in, and lifting it stops",
+    faced != null && dropped.down === true && r0 > 0 && r1 < r0 - 0.3 && heldMark === true && Math.abs(r3 - r2) < 1e-6 && (await js("window.__asks")) === 0,
+    { faced, dropped, r0: n3(r0), r1: r1 == null ? null : n3(r1), r2: r2 == null ? null : n3(r2), r3: n3(r3), heldMark, verbs: await P("verbs('a')") },
+  );
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
   check("no errors", errors.length === 0, errors);
