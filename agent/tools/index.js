@@ -33,7 +33,8 @@ import webTools from "./web.js"
 import checkingTools from "./checking.js"
 import discoveryTools from "./discovery.js"
 import httpTools from "./http.js"
-import ingestTools from "./ingest.js"
+import readSourceTools from "./read-source.js"
+import fileSourceTools from "./file-source.js"
 import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
@@ -45,7 +46,7 @@ import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {
@@ -71,8 +72,17 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
   }
 
   const found = []
+  const builtinIds = new Set(BUILTIN_TOOLS.map((t) => t.id))
 
   for (const description of registry.all()) {
+    // A plugin may not take a built-in's name. Whichever came second in the
+    // toolset would win, so a package could replace web_fetch or doc_edit —
+    // and inherit its grants and its place in the prompt — without anyone
+    // seeing a difference in the tool list.
+    if (builtinIds.has(description.id)) {
+      onError?.(description.id, new Error(`'${description.id}' is a built-in tool; a plugin cannot replace it.`))
+      continue
+    }
     try {
       const loaded = await registry.load(description.id)
       const impl = loaded?.module
@@ -113,10 +123,6 @@ export async function loadPluginTools({ onError, registry: given } = {}) {
 }
 
 /**
- * The toolset for a session: built-ins plus plugins, filtered by what the
- * session has enabled (all of them, when it says nothing).
- */
-/**
  * The built-in tools as a toolset, for deciding about calls outside a runner
  * — a permission granted from the pop-over, or spread across a workflow —
  * where no runner has built one. Plugin tools are not in it: a call to one is
@@ -131,6 +137,12 @@ export function builtinToolset() {
   return builtins
 }
 
+/**
+ * The toolset for a session: built-ins plus plugins, filtered by what the
+ * session has enabled. A session that says nothing gets everything; one whose
+ * `enabled` is a list gets exactly that list — so an empty list is no tools,
+ * not all of them.
+ */
 export async function buildToolset(sessionDoc, opts = {}) {
   const plugins = opts.skipPlugins ? [] : await loadPluginTools(opts)
   const all = [...BUILTIN_TOOLS, ...plugins]
@@ -139,7 +151,7 @@ export async function buildToolset(sessionDoc, opts = {}) {
   const disabled = sessionDoc?.tools?.disabled ?? []
   // Orchestrating is opt-in per session: many sessions, real cost.
   const workflows = !!sessionDoc?.config?.workflows?.enabled
-  const chosen = (enabled?.length ? all.filter((t) => enabled.includes(t.id)) : all).filter(
+  const chosen = (Array.isArray(enabled) ? all.filter((t) => enabled.includes(t.id)) : all).filter(
     (t) => !disabled.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id))
   )
 

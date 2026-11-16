@@ -1,31 +1,63 @@
 import { describe, it, expect } from "vitest"
-import { saveSource, sourceName, sourceFooter, titleFrom, isTextResponse, describeBytes, SPILL_AT } from "./tools/sources.js"
+import { ImmutableString, isImmutableString } from "@automerge/automerge"
+import { generateAutomergeUrl } from "@automerge/automerge-repo"
+import {
+  keepSource, readable, sha256Hex, marksFromMarkdown, findKept, sourceName, sourceFooter, titleFrom,
+  isTextResponse, describeBytes, decodeText, outline, fewest,
+} from "./tools/sources.js"
 import { httpRequest } from "./tools/http.js"
 import { webFetch } from "./tools/web.js"
 import { runTool } from "./tools/index.js"
+import { recordArtifact } from "./session.js"
 
-/** A repo double that records every document it is asked to make. */
-function fakeRepo() {
-  const docs = new Map()
-  let next = 0
+const SESSION = generateAutomergeUrl()
+
+/** A repo double that makes real-looking URLs and records every document. */
+function fakeRepo(session = { made: [] }) {
+  const docs = new Map([[SESSION, session]])
+  const handle = (url) => ({ url, doc: () => docs.get(url), change: (fn) => fn(docs.get(url)) })
   return {
     docs,
+    session,
     async create2() {
-      const url = `automerge:source${++next}`
-      const doc = {}
-      docs.set(url, doc)
-      return { url, doc: () => doc, change: (fn) => fn(doc) }
+      const url = generateAutomergeUrl()
+      docs.set(url, {})
+      return handle(url)
+    },
+    async find(url) {
+      const bare = String(url).split("#")[0]
+      if (!docs.has(bare)) throw new Error(`no document ${url}`)
+      return handle(bare)
     },
   }
 }
 
-const long = (marker = "x") => `Title: A Long Page\n\n${marker.repeat(SPILL_AT + 500)}`
-/** Longer than web_fetch's default excerpt, so the truncation path is exercised. */
-const huge = () => `Title: A Long Page\n\n${"y".repeat(40000)}`
+const respond = (body, { status = 200, type = "text/plain", url = "" } = {}) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  statusText: status < 400 ? "OK" : "Error",
+  url,
+  headers: { get: (n) => (n.toLowerCase() === "content-type" ? type : null) },
+  async arrayBuffer() {
+    const b = typeof body === "string" ? new TextEncoder().encode(body) : body
+    return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
+  },
+  async text() {
+    return typeof body === "string" ? body : new TextDecoder().decode(body)
+  },
+})
 
-function fetching(body) {
-  return { ok: true, text: async () => body }
+/** Every value in a document, so a test can say none of them is undefined (automerge refuses those). */
+function* leaves(value, path = []) {
+  if (value === undefined || value === null || typeof value !== "object" || value instanceof Uint8Array || isImmutableString(value)) {
+    yield [path.join("."), value]
+    return
+  }
+  for (const [key, inner] of Object.entries(value)) yield* leaves(inner, [...path, key])
 }
+
+// sha256 of the ASCII bytes "abc", from FIPS 180-2.
+const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 describe("naming a fetched document", () => {
   it("uses the page title", () => {
@@ -51,136 +83,295 @@ describe("naming a fetched document", () => {
   })
 })
 
-describe("saving a source document", () => {
-  it("writes a patchwork file document with its provenance", async () => {
-    const repo = fakeRepo()
-    const ref = await saveSource({ repo }, { url: "https://example.test/a", content: "Title: Hi\n\nbody" })
+describe("the source contract", () => {
+  it("hashes with SHA-256", async () => {
+    expect(await sha256Hex(new TextEncoder().encode("abc"))).toBe(ABC)
+  })
 
-    expect(ref).toMatchObject({ url: "automerge:source1", name: "Hi.md", bytes: 15, mimeType: "text/markdown" })
+  it("keeps text as an ImmutableString, with its hash, size and capture", async () => {
+    const repo = fakeRepo()
+    const { ref } = await keepSource({ repo }, {
+      source: "https://example.test/a",
+      role: "extract",
+      content: "abc",
+      mimeType: "text/markdown",
+      capture: { at: 1000, via: "reader", engine: "reader-markdown", readerCache: "allowed" },
+    })
     const doc = repo.docs.get(ref.url)
     expect(doc["@patchwork"]).toEqual({ type: "file" })
-    expect(doc.content).toBe("Title: Hi\n\nbody")
-    expect(doc.source).toBe("https://example.test/a")
-    expect(doc.extension).toBe("md")
-    expect(typeof doc.fetchedAt).toBe("number")
+    expect(isImmutableString(doc.content)).toBe(true)
+    expect(String(doc.content)).toBe("abc")
+    expect(doc.capture).toEqual({
+      at: 1000, finalUrl: null, via: "reader", engine: "reader-markdown", status: null,
+      contentType: null, sha256: ABC, bytes: 3, readerCache: "allowed",
+    })
+    expect(doc).toMatchObject({ source: "https://example.test/a", role: "extract", text: null, textVia: null, pages: null, missing: null })
+    expect(ref).toMatchObject({ kind: "source", bytes: 3, chars: 3, binary: false, source: "https://example.test/a", engine: "reader-markdown", at: 1000 })
   })
 
-  it("picks the extension from the mime type", async () => {
+  it("keeps bytes byte for byte, with text beside them", async () => {
+    // 0xff 0xfe is not valid UTF-8; anything that decoded this would have
+    // written U+FFFD by now.
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00])
     const repo = fakeRepo()
-    const ref = await saveSource({ repo }, { url: "https://x.test/data", content: "{}", mimeType: "application/json" })
-    expect(ref.name).toBe("x.test data.json")
-    expect(repo.docs.get(ref.url).extension).toBe("json")
+    const { ref } = await keepSource({ repo }, {
+      source: "https://example.test/p.pdf",
+      content: pdf,
+      mimeType: "application/pdf",
+      text: "# Paper\n\nbody",
+      textVia: "reader",
+    })
+    const doc = repo.docs.get(ref.url)
+    expect(doc.content).toBeInstanceOf(Uint8Array)
+    expect([...doc.content]).toEqual([...pdf])
+    expect(String(doc.text)).toBe("# Paper\n\nbody")
+    expect(doc.extension).toBe("pdf")
+    expect(doc.capture.sha256).toBe(await sha256Hex(pdf))
+    expect(doc.capture.bytes).toBe(8)
+    expect(doc.marks).toEqual([{ at: 0, label: "# Paper" }])
+    expect(ref).toMatchObject({ binary: true, chars: 13, role: "primary", engine: "raw" })
   })
 
-  it("returns null rather than throwing when there is nowhere to write", async () => {
-    expect(await saveSource({}, { url: "https://x.test/", content: "body" })).toBeNull()
-    expect(await saveSource({ repo: fakeRepo() }, { url: "https://x.test/", content: "" })).toBeNull()
+  it("writes no undefined anywhere, which automerge would refuse", async () => {
+    const repo = fakeRepo()
+    for (const content of ["text", new Uint8Array([1, 2, 3])]) {
+      const { ref } = await keepSource({ repo }, { source: "https://x.test/", content })
+      const missing = [...leaves(repo.docs.get(ref.url))].filter(([, v]) => v === undefined).map(([p]) => p)
+      expect(missing).toEqual([])
+      expect([...leaves(ref)].filter(([, v]) => v === undefined)).toEqual([])
+    }
   })
 
-  it("returns null when the repo refuses the write", async () => {
-    const repo = { create2: async () => { throw new Error("read only") } }
-    expect(await saveSource({ repo }, { url: "https://x.test/", content: "body" })).toBeNull()
+  it("lets errors through: a fetch that cannot be kept is not reported kept", async () => {
+    await expect(keepSource({}, { source: "https://x.test/", content: "a" })).rejects.toThrow(/no repo/)
+    const refusing = { create2: async () => { throw new Error("read only") } }
+    await expect(keepSource({ repo: refusing }, { source: "https://x.test/", content: "a" })).rejects.toThrow(/read only/)
   })
 })
 
-describe("the footer that points at the document", () => {
-  it("says how much of the page is shown here", () => {
-    const ref = { url: "automerge:a", name: "Page.md", bytes: 40000 }
-    const footer = sourceFooter(ref, 12000)
-    expect(footer).toContain("saved as 'Page.md' at automerge:a")
-    expect(footer).toContain("12000 of 40000 characters shown here")
-    expect(footer).toContain('doc_read { url: "automerge:a", path: ["content"], offset: 12000 }')
-  })
-
-  it("does not suggest re-reading when nothing was cut", () => {
-    const footer = sourceFooter({ url: "automerge:a", name: "Page.md", bytes: 900 }, 900)
-    expect(footer).toContain("(complete)")
-    expect(footer).not.toContain("doc_read")
+describe("readable()", () => {
+  const bytes = new Uint8Array([1, 2, 3])
+  it.each([
+    ["bytes with text beside them", { content: bytes, text: new ImmutableString("the text") }, "the text"],
+    ["an ImmutableString content", { content: new ImmutableString("frozen") }, "frozen"],
+    ["a plain string content", { content: "collaborative" }, "collaborative"],
+    ["bytes alone", { content: bytes, text: null }, null],
+    ["nothing", null, null],
+  ])("%s", (_, doc, expected) => {
+    expect(readable(doc)).toBe(expected)
   })
 })
 
-describe("web_fetch and its document", () => {
-  const ctx = (repo, fetchImpl) => ({ repo, fetchImpl })
-
-  it("saves a long page and links it from the result", async () => {
-    const repo = fakeRepo()
-    const body = huge()
-    const out = await webFetch.execute(
-      { url: "https://example.test/big" },
-      ctx(repo, async () => fetching(body))
-    )
-
-    expect(out.doc).toMatchObject({ name: "A Long Page.md", bytes: body.length })
-    // The whole page is in the document; the transcript keeps only the excerpt.
-    expect(repo.docs.get(out.doc.url).content).toBe(body)
-    expect(out.text).toContain("saved as 'A Long Page.md'")
-    expect(out.text).toContain("of 40020 characters shown here")
-    expect(out.text.length).toBeLessThan(body.length / 3)
+describe("headings as marks", () => {
+  it.each([
+    ["ATX headings at their offsets", "# A\ntext\n## B\n", [{ at: 0, label: "# A" }, { at: 9, label: "## B" }]],
+    ["closing hashes dropped", "### C ###", [{ at: 0, label: "### C" }]],
+    ["closing hashes after a tab dropped", "## Title\t##  ", [{ at: 0, label: "## Title" }]],
+    ["a # with no space before it is the heading's", "## Learn C#", [{ at: 0, label: "## Learn C#" }]],
+    ["one at the end of each of two headings", "# Learn C#\n## F# and C# ##\n", [{ at: 0, label: "# Learn C#" }, { at: 11, label: "## F# and C#" }]],
+    ["a heading of only closing hashes is empty", "## ##\n# A", [{ at: 6, label: "# A" }]],
+    ["hashes that start the text stay", "# #5 bolt", [{ at: 0, label: "# #5 bolt" }]],
+    ["setext, both levels", "Top\n===\nbody\nSub\n---\n", [{ at: 0, label: "# Top" }, { at: 13, label: "## Sub" }]],
+    ["not inside a fence", "```\n# no\n```\n# yes", [{ at: 13, label: "# yes" }]],
+    ["no space, no heading", "#hashtag\n####### seven", []],
+    ["a list item over a rule is not a heading", "- item\n---\n", []],
+    ["an empty heading is skipped", "#\n# A", [{ at: 2, label: "# A" }]],
+    ["nothing", "", []],
+  ])("%s", (_, text, marks) => {
+    expect(marksFromMarkdown(text)).toEqual(marks)
   })
 
-  it("saves a page that fits inline too, and says nothing was cut", async () => {
-    // Over the spill threshold but under the excerpt limit: worth a document
-    // because it is long enough to want to reopen, and the model has all of it.
-    const repo = fakeRepo()
-    const out = await webFetch.execute(
-      { url: "https://example.test/medium" },
-      ctx(repo, async () => fetching(long()))
-    )
-    expect(out.doc).toBeTruthy()
-    expect(out.text).toContain("(complete)")
-    expect(out.text).not.toContain("doc_read")
+  it("keeps at most 200, dropping the deepest level first", () => {
+    const many = Array.from({ length: 150 }, (_, i) => `# H${i}\n### d${i}`).join("\n")
+    const marks = marksFromMarkdown(many)
+    expect(marks).toHaveLength(150)
+    expect(marks.every((m) => m.label.startsWith("# "))).toBe(true)
   })
 
-  it("still gives the model the excerpt it asked for", async () => {
-    const repo = fakeRepo()
-    const out = await webFetch.execute(
-      { url: "https://example.test/big", maxChars: 500 },
-      ctx(repo, async () => fetching(long()))
-    )
-    expect(out.text.length).toBeLessThan(900) // 500 of content, plus the footer
-    expect(out.text).toContain("doc_read")
-    expect(out.doc.bytes).toBeGreaterThan(SPILL_AT)
+  it.each([
+    // [levels present, max, levels kept]
+    [[1, 2, 2, 3], 4, [1, 2, 2, 3]],
+    [[1, 2, 2, 3], 3, [1, 2, 2]],
+    [[1, 2, 2, 3], 1, [1]],
+    [[1, 1, 1], 2, [1, 1]],
+  ])("fewest of levels %j under %i keeps %j", (levels, max, kept) => {
+    const marks = levels.map((n, i) => ({ at: i, label: `${"#".repeat(n)} x` }))
+    expect(fewest(marks, max).map((m) => m.label.indexOf(" "))).toEqual(kept)
   })
 
-  it("leaves a short page inline, with no document at all", async () => {
+  it("draws an outline of offsets and headings, marking what it left out", () => {
+    expect(outline([])).toBeNull()
+    expect(outline([{ at: 0, label: "# A" }, { at: 9, label: "## B" }])).toBe("Outline: 0 # A · 9 ## B")
+    expect(outline([{ at: 0, label: "# A" }, { at: 9, label: "## B" }], 1)).toBe("Outline: 0 # A · …")
+  })
+})
+
+describe("the footer that points at the kept source", () => {
+  const ref = { url: "automerge:abc", chars: 41893 }
+
+  it("names source_read, with the offset to read on from", () => {
+    const footer = sourceFooter(ref, 6000, [{ at: 0, label: "# Title" }])
+    expect(footer).toBe(
+      [
+        '— 6000 of 41893 shown. Read on: source_read {source:"automerge:abc", offset:6000}; search: source_read {source:"automerge:abc", find:"…"}.',
+        "Outline: 0 # Title",
+      ].join("\n")
+    )
+  })
+
+  it("says when everything was shown", () => {
+    expect(sourceFooter({ url: "automerge:abc", chars: 900 }, 900)).toBe(
+      '— all 900 characters shown. Search it later: source_read {source:"automerge:abc", find:"…"}.'
+    )
+  })
+})
+
+describe("what the session remembers it kept", () => {
+  it("records the source and engine of a kept source, and nothing extra for anything else", () => {
+    const doc = {}
+    recordArtifact(doc, { url: "automerge:k", name: "Page.md", kind: "source", bytes: 3, at: 5, source: "https://x.test/", engine: "reader-markdown", chars: 3 })
+    recordArtifact(doc, { url: "automerge:p", name: "a.pdf", kind: "source", bytes: 9, at: 6, source: "https://x.test/a.pdf", engine: "raw", chars: null })
+    recordArtifact(doc, { url: "automerge:f", name: "a.js", kind: "file", bytes: 1, at: 7 })
+    expect(doc.made).toEqual([
+      { url: "automerge:f", name: "a.js", kind: "file", bytes: 1, at: 7 },
+      { url: "automerge:p", name: "a.pdf", kind: "source", bytes: 9, at: 6, source: "https://x.test/a.pdf", engine: "raw", chars: null },
+      { url: "automerge:k", name: "Page.md", kind: "source", bytes: 3, at: 5, source: "https://x.test/", engine: "reader-markdown", chars: 3 },
+    ])
+  })
+
+  it("finds the newest kept source of a URL by one of the engines asked for", async () => {
+    const session = {
+      made: [
+        { url: "automerge:new", source: "https://x.test/", engine: "reader-text", at: 2, chars: 10 },
+        { url: "automerge:old", source: "https://x.test/", engine: "reader-markdown", at: 1, chars: 10 },
+      ],
+    }
+    const ctx = { repo: fakeRepo(session), sessionUrl: SESSION }
+    expect((await findKept(ctx, { source: "https://x.test/", engines: ["reader-markdown"] }))?.url).toBe("automerge:old")
+    expect((await findKept(ctx, { source: "https://x.test/", engines: ["reader-markdown", "reader-text"] }))?.url).toBe("automerge:new")
+    expect(await findKept(ctx, { source: "https://x.test/other", engines: ["reader-markdown"] })).toBeNull()
+    expect(await findKept({ repo: ctx.repo }, { source: "https://x.test/", engines: ["reader-text"] })).toBeNull()
+  })
+})
+
+describe("web_fetch answers from what was already kept", () => {
+  const URL_ = "https://example.test/page"
+  // [engine already kept, has text, format asked for, fresh] → answered without
+  // a request? The rule: not fresh, the kept copy has text to read, and it is
+  // the reader's extract in that format or the response itself.
+  const cases = []
+  for (const engine of ["reader-markdown", "reader-text", "raw"]) {
+    for (const chars of [10, null]) {
+      for (const format of ["markdown", "text"]) {
+        for (const fresh of [false, true]) {
+          cases.push([engine, chars, format, fresh, !fresh && chars != null && (engine === `reader-${format}` || engine === "raw")])
+        }
+      }
+    }
+  }
+
+  it.each(cases)("kept by %s with %s chars, asked for %s, fresh %s → hit %s", async (engine, chars, format, fresh, hit) => {
+    const session = { made: [{ url: "automerge:kept", name: "Page.md", kind: "source", bytes: 10, at: Date.UTC(2026, 10, 16, 14, 2), source: URL_, engine, chars }] }
+    const repo = fakeRepo(session)
+    let requests = 0
+    const fetchImpl = async () => (requests++, respond("Title: Page\n\nfresh words"))
+    const out = await webFetch.execute({ url: URL_, format, fresh }, { repo, sessionUrl: SESSION, fetchImpl })
+    if (hit) {
+      expect(requests).toBe(0)
+      expect(out.text).toBe('Already kept at automerge:kept (fetched 14:02 UTC). source_read {source:"automerge:kept", offset:0}. Pass fresh:true to fetch again.')
+      expect(out.doc.url).toBe("automerge:kept")
+    } else {
+      expect(requests).toBe(1)
+      expect(out.doc.url).not.toBe("automerge:kept")
+    }
+  })
+
+  it("does not answer with a PDF that http_request kept as bytes alone, and then answers with the copy that has text", async () => {
+    const PDF_URL = "https://example.test/paper.pdf"
+    const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37])
+    const MARKDOWN = "Title: Paper\n\nNumber of Pages: 1\n\nwords"
+    const repo = fakeRepo()
+    const kept = await runTool(httpRequest, { url: PDF_URL }, { repo, sessionUrl: SESSION, fetchImpl: async () => respond(PDF, { type: "application/pdf" }) })
+    recordArtifact(repo.session, kept.doc)
+    expect(repo.session.made[0]).toMatchObject({ source: PDF_URL, engine: "raw", chars: null })
+
+    const seen = []
+    const fetchImpl = async (url) => (seen.push(url), url.startsWith("https://r.test/") ? respond(MARKDOWN) : respond(PDF, { type: "application/pdf" }))
+    const read = await webFetch.execute({ url: PDF_URL }, { repo, sessionUrl: SESSION, reader: "https://r.test/", fetchImpl })
+    expect(seen).toEqual([`https://r.test/${PDF_URL}`, PDF_URL])
+    expect(read.doc.url).not.toBe(kept.doc.url)
+    recordArtifact(repo.session, read.doc)
+
+    const again = await webFetch.execute({ url: PDF_URL }, { repo, sessionUrl: SESSION, fetchImpl: async () => { throw new Error("no request") } })
+    expect(again.text.startsWith(`Already kept at ${read.doc.url} `)).toBe(true)
+  })
+
+  it("does not answer for a different URL", async () => {
+    const session = { made: [{ url: "automerge:kept", source: `${URL_}/other`, engine: "reader-markdown", at: 1, chars: 10 }] }
+    let requests = 0
+    await webFetch.execute({ url: URL_ }, { repo: fakeRepo(session), sessionUrl: SESSION, fetchImpl: async () => (requests++, respond("x")) })
+    expect(requests).toBe(1)
+  })
+})
+
+describe("web_fetch keeps every page it reads", () => {
+  const page = `Title: A Long Page\n\n# A Long Page\n\n${"y".repeat(20000)}\n\n## Later\n\nend`
+  const ctx = (repo) => ({ repo, sessionUrl: SESSION, fetchImpl: async () => respond(page) })
+
+  it("keeps the reader's extract, labelled as one, and shows the start of it", async () => {
+    const repo = fakeRepo()
+    const out = await webFetch.execute({ url: "https://example.test/big" }, ctx(repo))
+    const doc = repo.docs.get(out.doc.url)
+    expect(String(doc.content)).toBe(page)
+    expect(doc).toMatchObject({ role: "extract", source: "https://example.test/big", text: null, missing: null, extension: "md" })
+    expect(doc.capture).toMatchObject({ via: "reader", engine: "reader-markdown", finalUrl: null, status: null, readerCache: "allowed" })
+    expect(doc.marks).toEqual([{ at: 20, label: "# A Long Page" }, { at: page.indexOf("## Later"), label: "## Later" }])
+
+    const lines = out.text.split("\n")
+    expect(lines[0]).toBe(`Kept 'A Long Page' — reader extract, ${page.length.toLocaleString("en-US")} chars — ${out.doc.url} (the reader may have answered from its cache)`)
+    expect(out.text).toContain(page.slice(0, 6000))
+    expect(out.text).not.toContain(page.slice(0, 6001))
+    expect(out.text).toContain(`— 6000 of ${page.length} shown. Read on: source_read {source:"${out.doc.url}", offset:6000}`)
+    expect(out.text).toContain(`Outline: 20 # A Long Page · ${page.indexOf("## Later")} ## Later`)
+  })
+
+  it("shows as much as maxChars asks for", async () => {
+    const out = await webFetch.execute({ url: "https://example.test/big", maxChars: 500 }, ctx(fakeRepo()))
+    expect(out.text).toContain(`— 500 of ${page.length} shown`)
+    expect(out.text).toContain("offset:500}")
+  })
+
+  it("keeps a short page too: every fetch leaves one kept source", async () => {
     const repo = fakeRepo()
     const out = await webFetch.execute(
       { url: "https://example.test/small" },
-      ctx(repo, async () => fetching("Title: Small\n\njust a paragraph"))
+      { repo, sessionUrl: SESSION, fetchImpl: async () => respond("Title: Small\n\njust a paragraph") }
     )
-    expect(typeof out).toBe("string")
-    expect(repo.docs.size).toBe(0)
+    expect(repo.docs.size).toBe(2) // the session and the kept page
+    expect(out.text).toContain("— all 30 characters shown")
   })
 
-  it("falls back to inline text when the document cannot be written", async () => {
-    const body = long()
-    const out = await webFetch.execute(
-      { url: "https://example.test/big" },
-      ctx(undefined, async () => fetching(body))
-    )
-    expect(typeof out).toBe("string")
-    expect(out).not.toContain("saved as")
-  })
-
-  it("carries the reference through runTool onto the result", async () => {
+  it("keeps a text extract as text", async () => {
     const repo = fakeRepo()
-    const outcome = await runTool(webFetch, { url: "https://example.test/big" }, {
-      repo,
-      fetchImpl: async () => fetching(long()),
-    })
-    expect(outcome.isError).toBe(false)
-    expect(outcome.doc).toMatchObject({ name: "A Long Page.md" })
-    expect(outcome.summary).toMatch(/fetched example\.test/)
+    const out = await webFetch.execute({ url: "https://example.test/t", format: "text" }, ctx(repo))
+    expect(repo.docs.get(out.doc.url)).toMatchObject({ extension: "txt", mimeType: "text/plain" })
+    expect(repo.docs.get(out.doc.url).capture.engine).toBe("reader-text")
   })
 
-  it("leaves doc null for a tool that returns a plain string", async () => {
-    const outcome = await runTool({ id: "t", execute: async () => "just text" }, {}, {})
-    expect(outcome.doc).toBeNull()
-    expect(outcome.output).toBe("just text")
+  it("fails rather than pretend, when there is nowhere to keep it", async () => {
+    await expect(webFetch.execute({ url: "https://example.test/big" }, { fetchImpl: async () => respond(page) })).rejects.toThrow(/no repo/)
+  })
+
+  it("records what it kept on the session, through runTool", async () => {
+    const repo = fakeRepo()
+    const outcome = await runTool(webFetch, { url: "https://example.test/big" }, ctx(repo))
+    expect(outcome.isError).toBe(false)
+    expect(outcome.doc).toMatchObject({ name: "A Long Page.md", kind: "source", source: "https://example.test/big", engine: "reader-markdown" })
+    expect(outcome.summary).toBe(`fetched example.test · ${(page.length / 1024).toFixed(1)} kB`)
   })
 })
 
-// ------------------------------------------------------ binary responses
+// ------------------------------------------------------ responses
 
 describe("telling text from bytes", () => {
   it("believes a text content-type", () => {
@@ -215,125 +406,77 @@ describe("telling text from bytes", () => {
     expect(describeBytes(new Uint8Array([0x00, 0x61, 0x73, 0x6d]))).toContain("00 61 73 6d")
     expect(describeBytes(new Uint8Array([0xde, 0xad]))).toBe("de ad")
   })
-})
 
-describe("saving bytes", () => {
-  const wasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xff, 0xfe])
-
-  it("stores a Uint8Array as a binary file document, unchanged", async () => {
-    const repo = fakeRepo()
-    const ref = await saveSource({ repo }, {
-      url: "https://example.test/m.wasm",
-      content: wasm,
-      mimeType: "application/wasm",
-    })
-
-    const stored = repo.docs.get(ref.url).content
-    expect(stored).toBeInstanceOf(Uint8Array)
-    // The bytes that came in are the bytes that went to disk. 0xff 0xfe is not
-    // valid UTF-8; if anything decoded this it would be U+FFFD by now.
-    expect([...stored]).toEqual([...wasm])
-    expect(ref).toMatchObject({ binary: true, bytes: 10, mimeType: "application/wasm", name: "example.test m.wasm" })
-    expect(repo.docs.get(ref.url).extension).toBe("wasm")
-  })
-
-  it("keeps text as text", async () => {
-    const repo = fakeRepo()
-    const ref = await saveSource({ repo }, { url: "https://x.test/a", content: "plain words" })
-    expect(typeof repo.docs.get(ref.url).content).toBe("string")
-    expect(ref.binary).toBe(false)
-  })
-
-  it("files the document into a folder when asked", async () => {
-    const repo = fakeRepo()
-    const folder = { docs: [] }
-    repo.docs.set("automerge:pkg", folder)
-    repo.find = async (url) => ({ url, doc: () => repo.docs.get(url), change: (fn) => fn(repo.docs.get(url)) })
-
-    const ref = await saveSource({ repo }, {
-      url: "https://example.test/m.wasm",
-      content: wasm,
-      name: "esbuild.wasm",
-      mimeType: "application/wasm",
-      folder: "automerge:pkg",
-    })
-
-    expect(folder.docs).toEqual([{ name: "esbuild.wasm", type: "file", url: ref.url }])
-    expect(ref.folder).toBe("automerge:pkg")
+  it.each([
+    // [bytes, content-type, decoded]
+    [[0x63, 0x61, 0x66, 0xe9], "text/html; charset=iso-8859-1", "café"],
+    [[0x63, 0x61, 0x66, 0xc3, 0xa9], "text/html", "café"],
+    [[0xef, 0xbb, 0xbf, 0x63, 0x61, 0x66, 0xc3, 0xa9], "text/html; charset=iso-8859-1", "café"], // the BOM outranks the header
+    [[0xff, 0xfe, 0x63, 0x00, 0xe9, 0x00], null, "cé"],
+    [[0xfe, 0xff, 0x00, 0x63, 0x00, 0xe9], null, "cé"],
+    [[0x63, 0x61, 0x66, 0xc3, 0xa9], "text/plain; charset=no-such-thing", "café"], // unknown label: UTF-8
+  ])("decodes %j labelled %s", (bytes, type, text) => {
+    expect(decodeText(new Uint8Array(bytes), type)).toBe(text)
   })
 })
 
-describe("http_request and binary bodies", () => {
+describe("http_request keeps what it fetched", () => {
   const wasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x0a, 0xff, 0xfe, 0x00])
+  const ctx = (repo, response) => ({ repo, fetchImpl: async () => response })
 
-  const respond = (body, { status = 200, type = "application/octet-stream" } = {}) => ({
-    ok: status < 400,
-    status,
-    statusText: status < 400 ? "OK" : "Error",
-    headers: { get: (n) => (n.toLowerCase() === "content-type" ? type : null) },
-    async arrayBuffer() {
-      const b = typeof body === "string" ? new TextEncoder().encode(body) : body
-      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
-    },
-    async text() {
-      return typeof body === "string" ? body : new TextDecoder().decode(body)
-    },
-  })
-
-  it("saves a wasm module byte for byte instead of decoding it", async () => {
+  it("keeps a wasm module byte for byte instead of decoding it", async () => {
     const repo = fakeRepo()
-    const out = await httpRequest.execute(
-      { url: "https://example.test/m.wasm" },
-      { repo, fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
-    )
+    const out = await httpRequest.execute({ url: "https://example.test/m.wasm" }, ctx(repo, respond(wasm, { type: "application/wasm" })))
 
-    expect(out.doc.binary).toBe(true)
-    expect([...repo.docs.get(out.doc.url).content]).toEqual([...wasm])
+    const doc = repo.docs.get(out.doc.url)
+    expect([...doc.content]).toEqual([...wasm])
+    expect(doc).toMatchObject({ role: "primary", extension: "wasm", text: null, source: "https://example.test/m.wasm" })
+    expect(doc.capture).toMatchObject({ via: "direct", engine: "raw", status: 200, contentType: "application/wasm" })
     expect(out.text).toContain("WebAssembly module")
     expect(out.text).toContain("NOT decoded")
+    expect(out.text).toContain(`source_file {source:"${out.doc.url}"`)
     // The bytes must not appear in the conversation in any form.
     expect(out.text).not.toContain("�")
   })
 
-  it("puts it in a package folder when told to", async () => {
+  it("keeps a JSON body as text and shows it", async () => {
     const repo = fakeRepo()
-    const folder = { docs: [] }
-    repo.docs.set("automerge:pkg", folder)
-    repo.find = async (url) => ({ url, doc: () => repo.docs.get(url), change: (fn) => fn(repo.docs.get(url)) })
-
-    const out = await httpRequest.execute(
-      { url: "https://example.test/m.wasm", folder: "automerge:pkg", saveAs: "engine.wasm" },
-      { repo, fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
-    )
-
-    expect(folder.docs[0].name).toBe("engine.wasm")
-    expect(out.text).toContain("in automerge:pkg")
+    const out = await httpRequest.execute({ url: "https://example.test/api" }, ctx(repo, respond('{"ok":true}', { type: "application/json" })))
+    expect(String(repo.docs.get(out.doc.url).content)).toBe('{"ok":true}')
+    expect(repo.docs.get(out.doc.url).extension).toBe("json")
+    expect(out.text).toContain('{"ok":true}')
+    expect(out.text).toContain("application/json")
+    expect(out.text).toContain("— all 11 characters shown")
   })
 
-  it("still returns JSON inline, as before", async () => {
-    const out = await httpRequest.execute(
-      { url: "https://example.test/api" },
-      { fetchImpl: async () => respond('{"ok":true}', { type: "application/json" }) }
-    )
-    expect(typeof out).toBe("string")
-    expect(out).toContain('{"ok":true}')
-    expect(out).toContain("application/json")
+  it("keeps an HTML page as it came, with its text beside it, decoded by its charset", async () => {
+    const repo = fakeRepo()
+    const html = new Uint8Array([...new TextEncoder().encode("<head><title>Caf"), 0xe9, ...new TextEncoder().encode("</title></head><p>Menu</p><script>x()</script>")])
+    const out = await httpRequest.execute({ url: "https://example.test/" }, ctx(repo, respond(html, { type: "text/html; charset=iso-8859-1" })))
+    const doc = repo.docs.get(out.doc.url)
+    expect(String(doc.content)).toBe("<head><title>Café</title></head><p>Menu</p><script>x()</script>")
+    expect(String(doc.text)).toBe("Menu")
+    expect(doc).toMatchObject({ textVia: "html-to-text", name: "Café.html", mimeType: "text/html" })
+    expect(out.text).toContain("Menu")
+    expect(out.text).not.toContain("x()")
   })
 
-  it("refuses to dump a binary body when there is nowhere to put it", async () => {
-    await expect(
-      httpRequest.execute(
-        { url: "https://example.test/m.wasm" },
-        { fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
-      )
-    ).rejects.toThrow(/nowhere to write it/)
+  it("keeps nothing but a successful GET with a body", async () => {
+    for (const [input, response] of [
+      [{ url: "https://example.test/m", method: "POST", body: "{}" }, respond('{"id":1}', { type: "application/json" })],
+      [{ url: "https://example.test/m" }, respond("missing", { status: 404 })],
+      [{ url: "https://example.test/m" }, respond(wasm, { status: 500, type: "application/wasm" })],
+      [{ url: "https://example.test/m", method: "HEAD" }, respond("")],
+    ]) {
+      const repo = fakeRepo()
+      const out = await httpRequest.execute(input, ctx(repo, response))
+      expect(typeof out).toBe("string")
+      expect(repo.docs.size).toBe(1)
+    }
   })
 
   it("describes a binary error body rather than decoding it", async () => {
-    const out = await httpRequest.execute(
-      { url: "https://example.test/m.wasm" },
-      { fetchImpl: async () => respond(wasm, { status: 500, type: "application/wasm" }) }
-    )
+    const out = await httpRequest.execute({ url: "https://example.test/m.wasm" }, ctx(fakeRepo(), respond(wasm, { status: 500, type: "application/wasm" })))
     expect(out).toContain("→ 500")
     expect(out).toContain("is not shown")
   })
@@ -346,8 +489,10 @@ describe("http_request and binary bodies", () => {
       headers: { get: () => "application/wasm" },
       text: async () => new TextDecoder().decode(wasm), // lossy, as the platform would be
     }
-    await expect(
-      httpRequest.execute({ url: "https://example.test/m.wasm" }, { fetchImpl: async () => textOnly })
-    ).rejects.toThrow(/cannot return bytes/)
+    await expect(httpRequest.execute({ url: "https://example.test/m.wasm" }, ctx(fakeRepo(), textOnly))).rejects.toThrow(/cannot return bytes/)
+  })
+
+  it("fetches nothing without the runner's guarded fetch", async () => {
+    await expect(httpRequest.execute({ url: "https://example.test/" }, { repo: fakeRepo() })).rejects.toThrow(/no guarded fetch/)
   })
 })

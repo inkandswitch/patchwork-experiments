@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import { ImmutableString } from "@automerge/automerge"
 import { docRead } from "./tools/docs.js"
 
 describe("reading a long string in ranges", () => {
@@ -60,5 +61,17 @@ describe("reading a long string in ranges", () => {
       offset = Number(next[1])
     }
     expect(assembled).toBe(body)
+  })
+})
+
+describe("reading text written once", () => {
+  // A kept source's content and a tool result are ImmutableStrings: not a
+  // string to `typeof`, but read in ranges exactly like one.
+  const body = "0123456789".repeat(100)
+  const repo = { async find() { return { url: "automerge:kept", doc: () => ({ content: new ImmutableString(body) }) } } }
+
+  it("pages an ImmutableString like a string", async () => {
+    const out = await docRead.execute({ url: "automerge:kept", path: ["content"], offset: 10, limit: 5 }, { repo })
+    expect(out).toBe("automerge:kept /content — characters 10–15 of 1000, 985 remaining (read on with offset: 15)\n\n01234")
   })
 })

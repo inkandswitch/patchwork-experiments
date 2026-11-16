@@ -10,6 +10,7 @@
  * what it is looking at.
  */
 
+import { isImmutableString } from "@automerge/automerge"
 import { hostImport } from "./host.js"
 import { applyOps, OpError } from "./ops.js"
 import { previewJson, preview, shape, bytes } from "./format.js"
@@ -72,7 +73,7 @@ export const docRead = {
   description: [
     "Read an automerge document, or one path inside it. Defaults to the document this session is attached to.",
     "",
-    "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a page web_fetch saved, a file's content — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left.",
+    "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a file's content, say — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
   ].join("\n"),
   where: "worker",
   risk: "read",
@@ -117,10 +118,12 @@ export const docRead = {
     if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
 
     // A range over a string, so a long one can be read in full rather than
-    // only ever as its first 2000 characters. Without this the advice to
-    // re-read a saved page with doc_read would not be true.
-    if (typeof value === "string" && (input.offset != null || input.limit != null)) {
-      return readRange(value, input, url, path)
+    // only ever as its first 2000 characters. Text written once (a kept
+    // source's content, a tool result) is an ImmutableString, which pages the
+    // same way once it is a string.
+    const text = typeof value === "string" ? value : isImmutableString(value) ? String(value) : null
+    if (text != null && (input.offset != null || input.limit != null)) {
+      return readRange(text, input, url, path)
     }
 
     return previewJson(value)

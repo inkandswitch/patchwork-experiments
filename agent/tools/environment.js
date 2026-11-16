@@ -10,6 +10,7 @@
 import { hostImport } from "./host.js"
 import { truncate, bytes } from "./format.js"
 import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+import { fetcher } from "./guard.js"
 
 /**
  * The registry, one line per plugin, grouped by type.
@@ -84,6 +85,35 @@ export const registryList = {
   },
 }
 
+/**
+ * The package document an import URL names, or null for one hosted anywhere
+ * else. A package served by the page is named either `automerge:<id>` or by
+ * the service worker's spelling of it, `<origin>/automerge%3A<id>/<file>`;
+ * both are read from the document, never fetched, because a fetch of the page's
+ * origin is how a document would be read past every check.
+ */
+/** The origin of a URL as the guard compares it: no trailing dot on the host. */
+function originOfUrl(url) {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.protocol}//${parsed.hostname.replace(/\.+$/, "")}${parsed.port ? `:${parsed.port}` : ""}`.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+export function packageDocOf(importUrl) {
+  const bare = (url) => url.split("#")[0].split("?")[0]
+  const raw = String(importUrl ?? "")
+  if (raw.startsWith("automerge:")) return bare(raw)
+  try {
+    const first = decodeURIComponent(new URL(raw).pathname.split("/")[1] ?? "")
+    return first.startsWith("automerge:") ? bare(first) : null
+  } catch {
+    return null
+  }
+}
+
 export const pluginSource = {
   id: "plugin_source",
   name: "Read plugin source",
@@ -111,8 +141,8 @@ export const pluginSource = {
     const importUrl = plugin.importUrl
     if (!importUrl) throw new Error(`Plugin '${input.id}' has no importUrl; its source is not reachable.`)
 
-    if (importUrl.startsWith("automerge:")) {
-      const bare = importUrl.split("#")[0].split("?")[0]
+    const bare = packageDocOf(importUrl)
+    if (bare) {
       const root = await ctx.repo.find(bare)
       const tree = treeNode(root)
       if (!tree) throw new Error(`${bare} is not a package folder.`)
@@ -160,8 +190,15 @@ export const pluginSource = {
       return `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`
     }
 
+    // An http-hosted package is fetched like anything else, through the guard,
+    // and only from where the package lives: an absolute `file` would
+    // otherwise replace the package's address with any the model chose.
     const url = input.file ? new URL(input.file, importUrl).href : importUrl
-    const response = await fetch(url)
+    if (new URL(url).origin !== new URL(importUrl).origin) throw new Error(`'${input.file}' is not in the package at ${importUrl}.`)
+    // A plugin the page serves itself is read with the page's own fetch: every
+    // other fetch denies this origin (and localhost, where development runs).
+    const own = ctx.pageFetch?.origin
+    const response = own && originOfUrl(url) === own ? await ctx.pageFetch(url) : await fetcher(ctx)(url)
     if (!response.ok) throw new Error(`Fetching ${url} returned ${response.status}.`)
     const text = await response.text()
     return `${url} · ${bytes(text.length)}\n${truncate(text, 20000)}`

@@ -131,11 +131,16 @@ export const PRESENTATION = {
   // ---- the world outside
   web_search: { verb: "search", detail: (i) => (i.query ? `“${i.query}”` : null) },
   web_fetch: { verb: "fetch", detail: (i) => hostOf(i.url) },
-  web_import: { verb: "import", detail: (i) => i.name || hostOf(i.url) },
   http_request: {
     verb: (i) => (i.method ?? "GET").toUpperCase(),
     detail: (i) => hostOf(i.url),
   },
+  source_read: {
+    verb: (i) => (i.find ? "search" : "read"),
+    detail: (i) => (i.find ? `“${i.find}”` : i.offset ? `from ${i.offset}` : "kept source"),
+  },
+  source_list: { verb: "kept sources", detail: (i) => (i.find ? `“${i.find}”` : null) },
+  source_file: { verb: "file", detail: (i) => i.name ?? "kept source" },
 
   // ---- knowing things
   skill_list: { verb: "skills", detail: () => null },

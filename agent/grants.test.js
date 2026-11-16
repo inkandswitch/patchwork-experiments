@@ -118,7 +118,7 @@ describe("the web search that granted the web", () => {
 
   it("says what 'any site' actually covers", () => {
     const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
-    expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, search, import and plain GET in this session" })
+    expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, search and plain GET in this session" })
   })
 })
 
@@ -140,7 +140,7 @@ describe("file tools share one grant", () => {
     const offers = grantOffers("fs_write", "automerge:pkg", "folder")
     expect(offers.map((o) => o.label)).toEqual(["this folder", "any folder"])
     expect(offers[0].detail).toBe("anything inside automerge:pkg")
-    expect(offers[1]).toEqual({ key: "files@*", label: "any folder", detail: "every file write, edit and delete in this session" })
+    expect(offers[1]).toEqual({ key: "files@*", label: "any folder", detail: "every file write, edit, delete and filing in this session" })
   })
 
   it("offers a plain always for a write by path, which goes wherever the path says", () => {

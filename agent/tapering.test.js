@@ -101,13 +101,26 @@ describe("what replaces an elided result", () => {
     expect(text).toContain("make the call again for the current state")
   })
 
-  it("points at the document when the content was saved to one", () => {
+  it("names source_read on the kept source, which reads any part of it", () => {
     const text = taperedResult({
+      callId: "c3",
       output: big(9000),
       summary: "fetched adjointlabs.com · 8.8 kB",
-      doc: { url: "automerge:saved1" },
+      doc: { url: "automerge:saved1", kind: "source" },
     })
-    expect(text).toContain("automerge:saved1")
+    expect(text).toContain('The content is kept at automerge:saved1: read it with source_read {source:"automerge:saved1", offset:0}, or search it with find.')
+    // The other two routes are still offered, in the same words.
+    expect(text).toContain("session_recall with callId c3 ")
+  })
+
+  it("only points at a document a call made that is not a kept source", () => {
+    const text = taperedResult({
+      output: big(9000),
+      summary: "wrote 3 files",
+      doc: { url: "automerge:pkg", kind: "file" },
+    })
+    expect(text).toContain("It made automerge:pkg.")
+    expect(text).not.toContain("source_read")
   })
 
   it("still says something useful for a result with no summary", () => {

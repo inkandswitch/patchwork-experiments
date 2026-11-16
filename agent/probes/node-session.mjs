@@ -19,6 +19,7 @@ import { getProvider } from "../providers/index.js"
 import { initSession, STATUS } from "../session.js"
 import { say, decide } from "../loop.js"
 import { callsAwaitingApproval } from "../session.js"
+import { nodeFetch } from "../node-fetch.mjs"
 
 const SYNC = process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com"
 const KEY = process.env.OPENROUTER_API_KEY
@@ -73,7 +74,10 @@ const trail = []
 const runner = new SessionRunner({
   store,
   runnerUrl: `node-probe-${process.pid}`,
-  ctx: { repo, splice, subject: subject.url, sessionUrl: session.url, direct: true },
+  ctx: {
+    repo, splice, subject: subject.url, sessionUrl: session.url, direct: true,
+    fetchImpl: nodeFetch({ sync: SYNC }),
+  },
   buildToolset: (doc) => buildToolset(doc),
   getProvider: async () => getProvider("openrouter"),
   getKey: () => KEY,

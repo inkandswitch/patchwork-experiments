@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { initSession, needsApproval, documentIdOf, isSensitive } from "./session.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { isCodePath } from "./tools/folders.js"
@@ -12,8 +13,11 @@ const fresh = () => { const d = {}; initSession(d, {}); return d }
 const asks = (id, input, { subject = "automerge:subject", sensitive = [], doc = fresh() } = {}) =>
   needsApproval(doc, tool(id), { input }, subject, sensitive)
 
-const SETTINGS = "automerge:settingsDoc"
-const ACCOUNT = "automerge:accountDoc"
+// Real document URLs: the sensitive-document check uses the repo's own parser,
+// and treats an automerge: reference it rejects as sensitive.
+const SETTINGS = generateAutomergeUrl()
+const ACCOUNT = generateAutomergeUrl()
+const HEAD = encodeHeads(["ab".repeat(32)])[0]
 
 describe("edits to documents run without asking", () => {
   it.each([
@@ -56,7 +60,7 @@ describe("sensitive documents always ask", () => {
     expect(asks("doc_edit", { url: SETTINGS, ops: [] }, { sensitive })).toBe(true)
     expect(asks("doc_edit", { ops: [] }, { subject: ACCOUNT, sensitive })).toBe(true)
     // Heads or a path in the url name the same document. A string comparison let these through.
-    expect(asks("doc_edit", { url: `${SETTINGS}#abc|def`, ops: [] }, { sensitive })).toBe(true)
+    expect(asks("doc_edit", { url: `${SETTINGS}#${HEAD}`, ops: [] }, { sensitive })).toBe(true)
     expect(asks("doc_edit", { url: `${SETTINGS}/modules/0`, ops: [] }, { sensitive })).toBe(true)
   })
 
@@ -66,8 +70,38 @@ describe("sensitive documents always ask", () => {
     expect(asks("doc_edit", { url: SETTINGS, ops: [] }, { sensitive, doc })).toBe(true)
   })
 
-  it("but not a document whose id merely starts the same way", () => {
-    expect(isSensitive("automerge:settingsDocX", sensitive)).toBe(false)
+  it("but not a different document", () => {
+    expect(isSensitive(generateAutomergeUrl(), sensitive)).toBe(false)
+  })
+})
+
+/**
+ * What the check makes of a reference, against one sensitive document. The
+ * rule: a reference the repo's parser accepts is sensitive iff it names that
+ * document, after trimming as the tools do; an automerge: reference it
+ * rejects is sensitive, because what it opens depends on each tool; anything
+ * else names no document; and with no sensitive documents nothing is.
+ */
+describe("sensitive or not, by rule", () => {
+  const settings = generateAutomergeUrl()
+  const other = generateAutomergeUrl()
+  it.each([
+    ["the document", settings, true],
+    ["the document, padded with spaces", `  ${settings} `, true],
+    ["the document, after a newline", `\n${settings}`, true],
+    ["another document", other, false],
+    ["another document, padded", ` ${other}`, false],
+    ["an id that merely starts the same way", `${settings}X`, true],
+    ["a made-up id", "automerge:settingsDoc", true],
+    ["a made-up id, padded", " automerge:settingsDoc", true],
+    ["an empty reference", "automerge:", true],
+    ["upper case", "AUTOMERGE:settingsDoc", true],
+    ["a web address", "https://example.com/", false],
+    ["a path", "notes/today.md", false],
+    ["nothing", null, false],
+  ])("%s → %s", (_, target, expected) => {
+    expect(isSensitive(target, [settings])).toBe(expected)
+    expect(isSensitive(target, [])).toBe(false)
   })
 })
 
@@ -86,13 +120,60 @@ describe("what still asks is unchanged", () => {
 })
 
 describe("documentIdOf", () => {
+  const url = generateAutomergeUrl()
+  const id = parseAutomergeUrl(url).documentId
   it.each([
-    ["automerge:abc", "abc"],
-    ["automerge:abc#h1|h2", "abc"],
-    ["automerge:abc/a/b", "abc"],
+    [` ${url}\n`, id],
+    [`automerge:abc`, null], // the repo's parser rejects it, so it names no document
+    [`automerge:`, null],
     ["https://example.com/", null],
+    ["notes/today.md", null],
+    ["  ", null],
+    ["", null],
     [null, null],
-  ])("%s -> %s", (url, id) => expect(documentIdOf(url)).toBe(id))
+  ])("%j -> %s", (url, id) => expect(documentIdOf(url)).toBe(id))
+})
+
+/**
+ * Every way the repo will accept a name for one document. The repo opens any
+ * of these, so the sensitive-document check has to see through all of them.
+ */
+function spellingsOf(url) {
+  const { documentId, binaryDocumentId } = parseAutomergeUrl(url)
+  const hex = [...binaryDocumentId].map((b) => b.toString(16).padStart(2, "0")).join("")
+  const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  const head = encodeHeads(["ab".repeat(32)])[0]
+  return {
+    url,
+    heads: `${url}#${head}`,
+    path: `${url}/modules/0`,
+    "path and heads": `${url}/modules/0#${head}`,
+    "bare id": documentId,
+    "legacy UUID": uuid,
+  }
+}
+
+describe("a real document, however it is named", () => {
+  const settings = generateAutomergeUrl()
+  const account = generateAutomergeUrl()
+  const unrelated = generateAutomergeUrl()
+
+  for (const [form, spelling] of Object.entries(spellingsOf(settings))) {
+    it(`canonicalises the ${form} to one id`, () => {
+      expect(documentIdOf(spelling)).toBe(parseAutomergeUrl(settings).documentId)
+    })
+
+    it(`always asks about the ${form} of a sensitive document`, () => {
+      expect(isSensitive(spelling, [settings, account])).toBe(true)
+      expect(asks("doc_edit", { url: spelling, ops: [] }, { sensitive: [settings, account] })).toBe(true)
+    })
+  }
+
+  it("does not ask about a different document in any spelling", () => {
+    for (const spelling of Object.values(spellingsOf(unrelated))) {
+      expect(isSensitive(spelling, [settings, account])).toBe(false)
+    }
+  })
 })
 
 describe("isCodePath", () => {

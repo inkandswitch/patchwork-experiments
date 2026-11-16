@@ -29,6 +29,18 @@ describe("recording what a session made", () => {
     expect(artifacts(doc)[0].name).toBe(`x${MAX_ARTIFACTS + 9}`)
   })
 
+  it("caps the other documents but never drops a kept source, which a web-only step reads through this list", () => {
+    const doc = fresh()
+    for (let i = 0; i < MAX_ARTIFACTS + 10; i++) {
+      recordArtifact(doc, { url: `automerge:s${i}`, name: `s${i}`, kind: "source", source: `https://x.test/${i}`, engine: "raw", chars: 1 })
+      recordArtifact(doc, { url: `automerge:f${i}`, name: `f${i}` })
+    }
+    const sources = artifacts(doc).filter((a) => a.source)
+    const others = artifacts(doc).filter((a) => !a.source)
+    expect(sources.map((a) => a.name)).toEqual(Array.from({ length: MAX_ARTIFACTS + 10 }, (_, i) => `s${MAX_ARTIFACTS + 9 - i}`))
+    expect(others.map((a) => a.name)).toEqual(Array.from({ length: MAX_ARTIFACTS }, (_, i) => `f${MAX_ARTIFACTS + 9 - i}`))
+  })
+
   it("ignores a reference with no document", () => {
     const doc = fresh()
     expect(recordArtifact(doc, null)).toBe(false)

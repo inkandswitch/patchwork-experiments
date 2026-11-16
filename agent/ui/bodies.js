@@ -177,7 +177,7 @@ const BODIES = {
   ask_user: { input: askBody },
   fs_read: { input: (i) => renderInput(i), language: (i) => languageOf(i.path) },
   web_fetch: { markdown: true },
-  web_import: { markdown: true },
+  source_read: { markdown: true },
   skill_read: { markdown: true },
   plugin_source: { language: (i) => languageOf(i.file) },
 }

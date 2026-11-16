@@ -340,11 +340,13 @@ build again — that loop is the point of having the compiler here.
 
 ## Files that are not source
 
-A package can hold a wasm module, an image, a font. Fetch one straight into the
-package with \`http_request\`, which keeps bytes as bytes:
+A package can hold a wasm module, an image, a font. Fetch one with
+\`http_request\`, which keeps bytes as bytes, then file what it kept into the
+package under the name your code imports:
 
-    http_request { url: "https://.../engine.wasm",
-                   folder: "<the package folder url>", saveAs: "engine.wasm" }
+    http_request { url: "https://.../engine.wasm" }
+    source_file  { source: "<the url it was kept at>",
+                   folder: "<the package folder url>", name: "engine.wasm" }
 
 Importing it from your source gets you the right thing: \`.wasm\` arrives as a
 \`Uint8Array\`, images and fonts as data URLs, so a built bundle is still one
@@ -754,10 +756,18 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
   steps run side by side; host steps take turns on the page.
 - **access: web** for research — finding sources, reading datasheets and
-  standards. The step gets web search and fetch and nothing else, so it can
-  fetch without asking anyone (it can reach none of the person's documents to
-  leak). It cannot write anything either: ask for its findings, with sources,
-  in its result, and have a later step put them where they belong.
+  standards. The step gets \`web_search\`, \`web_fetch\`, \`http_request\`,
+  \`source_read\`, \`source_list\` and \`session_recall\` and nothing else, so
+  it can fetch without asking anyone (it can reach none of the person's
+  documents to leak). What it fetches is kept, but it cannot write anything
+  else: ask for its findings, with sources, in its result, and have a later
+  step put them where they belong.
+
+**Before you write a step, check that its tools can do it.** A step cannot do
+what its toolset does not allow, and it will spend its whole budget finding
+that out. A web step cannot edit a document, mount a view or file what it
+fetched; a worker step cannot touch the page. If the work needs both, split it
+into steps that each have what they need.
 
 ## Fanning out, and finishing
 
@@ -853,18 +863,42 @@ it merges with other people's concurrent edits.
   {
     name: "working-with-the-web",
     description:
-      "When to search, fetch, import or call an API; how approval works and why you should not pre-negotiate it; what happens to long pages and to binary files.",
+      "When to search, fetch or call an API; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
     body: `# Working with the web
 
-Four tools, and picking the wrong one wastes a turn.
+Three tools reach out, and picking the wrong one wastes a turn.
 
 - **\`web_search\`** — titles and URLs. It returns links, not answers.
-- **\`web_fetch\`** — read a public page as markdown. The default choice.
-- **\`web_import\`** — read it AND file it in the user's folders. Use this only
-  when they want to keep the material, because it puts a document somewhere they
-  will see it.
-- **\`http_request\`** — methods, headers, bodies, credentials. For APIs and for
-  files, not for reading pages.
+- **\`web_fetch\`** — read a page or a paper. The default choice.
+- **\`http_request\`** — methods, headers, bodies. For APIs and for files, and
+  for a page's own source (its script tags, the shell before scripts ran).
+
+## Everything fetched is kept
+
+Every successful \`web_fetch\` and \`http_request\` keeps what it fetched as a
+document, and the result says where. Nothing is overwritten: fetching again
+makes a new one. A PDF is kept as the PDF itself, with its text beside it,
+whenever it can be fetched from here; when it cannot, the result says so and
+the reader's text is kept instead.
+
+The result shows only the start. Read the rest from the kept copy, never by
+fetching again — it is free, instant, and the offsets never shift:
+
+    source_read { source: "automerge:...", offset: 6000 }     read on
+    source_read { source: "automerge:...", find: "battery" }  search it
+
+A search lists each match with its offset and the heading it is under, and the
+fetch result ends with an outline of headings and their offsets, so jump
+straight to the part you need instead of paging from the top.
+
+**Check before fetching.** \`source_list\` lists what this conversation has
+already kept; \`source_list { find: "…" }\` searches all of it at once. A
+\`web_fetch\` of a URL already kept answers from the kept copy without going
+out; pass \`fresh: true\` when you need what the page says now.
+
+**Filing.** A kept source is not in any folder. When the person wants it kept
+somewhere they will find it, or a package needs the file,
+\`source_file { source, folder, name }\` puts it there.
 
 ## Being asked for permission
 
@@ -879,22 +913,18 @@ fetch the first one and say so — the choice they are offered includes that sit
 A denial is about that call. Do not immediately try the same URL a different
 way; say what you wanted it for, or find another source.
 
+Some places are never fetched, whatever is granted: this machine, private and
+local network addresses, and Patchwork's own origin. A refusal that says so is
+final.
+
 ## When markdown comes back wrong
 
 Prose extraction throws away whatever a script built, so a dynamic page often
 returns its chrome and none of its content: a single-page app gives you its
 navigation, a code editor gives you its line numbers. That is not a page worth
-reading twice — it is the signal to ask for something else.
-
-    web_fetch { url, format: "html" }    the DOM after the page's scripts ran
-
-That is what you want for inspecting: what a widget rendered, which classes and
-data attributes are on an element, what is actually there.
-
-It is the rendered DOM, not the bytes the server sent. When you need the literal
-source — the script tags, the pre-hydration shell, what the bundle is called —
-that is \`http_request\`, which fetches directly and renders nothing. The two
-disagree about exactly the pages you are asking about, and the disagreement is
+reading twice — it is the signal to look elsewhere. \`http_request\` gets the
+literal source the server sent, which for such a page is mostly its script
+tags; the two disagree about exactly these pages, and the disagreement is
 usually the answer.
 
 Pass \`fresh\` when the page changes and a cached snapshot would mislead you.
@@ -902,38 +932,23 @@ Pass \`fresh\` when the page changes and a cached snapshot would mislead you.
 ## Older results get shortened
 
 A long result stops travelling in full once newer ones have arrived — it becomes
-its summary and a note. The text is not gone, it is just not being re-sent, and
-there are two ways back to it that mean different things:
+its summary and a note. The text is not gone, and there are three ways back to
+it that mean different things:
 
+- \`source_read\` on the kept source the note names. Right for anything
+  fetched: free, and you can read any part of it, not just what was shown.
 - \`session_recall\` with the call's id gives you exactly what that call
   returned, for free. Right when the question is what it *said*.
 - Making the call again does the work and gives the current state. Right when
   what you need is what is *true now* — a document you have since edited, a page
   that changes.
 
-Reach for recall by default; it costs nothing. Re-run when freshness is the
-point.
-
-## Long pages become documents
-
-Anything longer than a couple of paragraphs is saved to its own document, and
-the result tells you where and how much of it you were shown. To see more, read
-that document — do not fetch the page again:
-
-    doc_read { url: "automerge:...", path: ["content"], offset: 12000 }
-
-It is cheaper, and the text cannot have shifted underneath your offsets.
-
 ## Binary stays binary
 
-A wasm module, an image, a font, an archive: \`http_request\` keeps the bytes and
-writes them to a document rather than putting them in this conversation. You
-never see the contents, which is correct — you could not use them from here
-anyway. What you get is the size, the format read from its magic number, and the
-document URL.
-
-Pass \`folder\` when you are fetching a file in order to keep it, so it lands in
-the package that needs it instead of nowhere in particular.
+A wasm module, an image, a font, an archive: \`http_request\` keeps the bytes
+and never puts them in this conversation. You never see the contents, which is
+correct — you could not use them from here anyway. What you get is the size,
+the format read from its magic number, and the document URL.
 
 ## Credentials
 
@@ -944,10 +959,12 @@ cannot be reached from here.
 
 ## What will not work
 
-This runs in a browser. The origin policy still applies, so an API that does not
-serve permissive CORS cannot be called from here — an error mentioning CORS
-means unreachable, not misconfigured. Pages go through a reader service, and
-some sites block it; that is a reason to find another source, not to retry.`,
+In a browser the origin policy still applies, so an API that does not serve
+permissive CORS cannot be called — an error mentioning CORS means unreachable,
+not misconfigured. The same goes for a PDF's own bytes: when they cannot be had
+the reader's text is kept, and the result says the PDF is missing. Pages go
+through a reader service, and some sites block it; that is a reason to find
+another source, not to retry.`,
   },
 
   {
@@ -968,8 +985,9 @@ it is a document in the same list, and an unnamed one is as lost as anything
 else here.
 
 - **\`doc_tree\`** once, to see the shape of what the user has.
-- **\`doc_search\`** by name; add \`content: true\` to search inside file documents
-  when the name search finds nothing.
+- **\`doc_search\`** by name — cheap: it reads folder listings only. To search
+  inside files, name their folder with \`root\` and add \`content: true\`; it reads
+  up to 50 files there, never your whole account.
 - **\`fs_grep\`** for code — it is far cheaper than reading files one by one.
   \`include: "\\\\.js$"\` narrows it. Then **\`fs_list\`** to see what is around a
   match, and **\`fs_read\`** for the file itself — with \`offset\` and \`limit\` if
@@ -980,10 +998,10 @@ else here.
   like it. This is the best available documentation, because it is the code that
   is actually running.
 
-Pages you fetched earlier are documents too. \`web_fetch\` saves anything longer
-than a couple of paragraphs and the result gives you the URL, so re-reading part
-of one is \`doc_read\`, not another fetch — cheaper, and the content cannot have
-changed underneath you.
+Pages you fetched earlier are documents too. Every fetch is kept, and
+\`source_list\` lists what this conversation has kept, so re-reading part of
+one is \`source_read\`, not another fetch — cheaper, and the content cannot
+have changed underneath you.
 
 ## When the user says "use the X tool"
 

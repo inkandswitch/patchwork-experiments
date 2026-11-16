@@ -31,6 +31,7 @@ import { createEvents } from "./events.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider, modelInfo } from "./providers/index.js"
 import { STATUS } from "./session.js"
+import { nodeFetch } from "./node-fetch.mjs"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
 
@@ -70,8 +71,12 @@ const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
 log(`connected to ${SYNC}`)
 
 // Web tools fetch directly here: no browser, no origin policy, no third party
-// in the path. This is the main capability difference from a tab.
-const baseCtx = { repo, splice, direct: true }
+// in the path. This is the main capability difference from a tab, and why the
+// guard matters more here: nothing else stops a request to this machine, its
+// network, or the cloud metadata address. Redirects are followed one checked
+// hop at a time, and every address a name resolves to must be public.
+const fetchImpl = nodeFetch({ sync: SYNC })
+const baseCtx = { repo, splice, direct: true, fetchImpl }
 
 const runners = new Map()
 
@@ -91,7 +96,9 @@ async function claim(sessionUrl) {
   const runner = new SessionRunner({
     store,
     runnerUrl,
-    ctx: { ...baseCtx, subject: doc.subject ?? null, events: createEvents(store) },
+    // The session's own URL, so it can recall earlier results and tell which
+    // sources it kept.
+    ctx: { ...baseCtx, sessionUrl, subject: doc.subject ?? null, events: createEvents(store) },
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,

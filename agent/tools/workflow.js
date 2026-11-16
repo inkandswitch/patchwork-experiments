@@ -39,7 +39,7 @@ const STEP_SCHEMA = {
     access: {
       type: "string",
       enum: ["full", "web"],
-      description: "'web' for a research step that only needs to search and read the web: it gets web_search, web_fetch and http_request and nothing else — none of the person's documents — so it fetches without asking. Its result is all it can hand back, so ask for what it found, with sources. Default 'full'.",
+      description: "'web' for a research step that only needs to search and read the web: it gets web_search, web_fetch, http_request, source_read and source_list and nothing else — none of the person's documents — so it fetches without asking. What it fetches is kept, but its result is all it can hand back, so ask for what it found, with sources. Default 'full'.",
     },
   },
 }

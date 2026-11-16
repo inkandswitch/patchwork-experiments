@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import { fsWrite, fsList, fsRead, fsDelete, fsEdit } from "./tools/folders.js"
 import { needsApproval, initSession, grantKey } from "./session.js"
 
@@ -122,7 +123,10 @@ describe("fs_write creates what does not exist", () => {
 describe("risk on the document, not the verb", () => {
   const doc = () => { const d = {}; initSession(d, {}); return d }
   const editTool = { id: "doc_edit", risk: "write" }
-  const SETTINGS = "automerge:module-settings"
+  // Real document URLs: the sensitive-document check uses the repo's own
+  // parser, and treats an automerge: reference it rejects as sensitive.
+  const SETTINGS = generateAutomergeUrl()
+  const NOTES = generateAutomergeUrl()
 
   it("always asks for a write to a sensitive document, even with a grant", () => {
     const d = doc()
@@ -132,8 +136,8 @@ describe("risk on the document, not the verb", () => {
 
   it("does not bother the user about ordinary documents", () => {
     const d = doc()
-    d.grants[grantKey("doc_edit", "automerge:notes")] = "session"
-    expect(needsApproval(d, editTool, { input: { url: "automerge:notes" } }, null, [SETTINGS])).toBe(false)
+    d.grants[grantKey("doc_edit", NOTES)] = "session"
+    expect(needsApproval(d, editTool, { input: { url: NOTES } }, null, [SETTINGS])).toBe(false)
   })
 
   it("covers any tool, not just the one that used to be special", () => {

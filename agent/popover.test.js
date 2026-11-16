@@ -3,6 +3,7 @@
  * needs you (answered in place), and notifications while the tab is away.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { generateAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { AmbientAgent, STORAGE_TOOL_ID } from "./ambient.js"
 import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, _resetIds } from "./session.js"
 import { activityOf, askedInText, watchAttention, LONG_RUN_MS } from "./ui/attention.js"
@@ -335,18 +336,22 @@ describe("the pop-over at rest", () => {
   })
 
   it("stands aside while the workflow it belongs to is open, which shows it already", async () => {
+    // Real document URLs: which views are open is decided by the repo's own
+    // parser, which rejects a made-up id.
+    const plan = generateAutomergeUrl()
+    const step = generateAutomergeUrl()
     const orchestrator = session("done")
-    orchestrator.made.push({ url: "automerge:plan", name: "Pack", kind: "agent-workflow" })
+    orchestrator.made.push({ url: plan, name: "Pack", kind: "agent-workflow" })
     const { $, setOpen } = mount(orchestrator, {
-      "automerge:plan": { title: "Pack", steps: [{ id: "nb", title: "Notebook", status: "running", sessionUrl: "automerge:step" }] },
-      "automerge:step": session("approval"),
+      [plan]: { title: "Pack", steps: [{ id: "nb", title: "Notebook", status: "running", sessionUrl: step }] },
+      [step]: session("approval"),
     })
     await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
-    setOpen(["automerge:plan#someheads"]) // the workflow's view, however its URL is spelled
+    setOpen([`${plan}#${encodeHeads(["ab".repeat(32)])[0]}`]) // the workflow's view, however its URL is spelled
     await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(true))
     setOpen([])
     await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
-    setOpen(["automerge:step"]) // or the step's own session
+    setOpen([step]) // or the step's own session
     await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(true))
   })
 

@@ -38,6 +38,7 @@
  */
 
 import { ImmutableString } from "@automerge/automerge"
+import { interpretAsDocumentId } from "@automerge/automerge-repo"
 
 export const SCHEMA_VERSION = 1
 
@@ -504,8 +505,9 @@ export function recordArtifact(doc, ref) {
   if (!doc || !ref?.url) return false
   if (!doc.made) doc.made = []
 
-  // Re-writing a file, or re-importing a page, updates the entry in place
-  // rather than stacking duplicates — it is the same artifact.
+  // Re-writing a file, or answering a fetch from what was already kept,
+  // updates the entry in place rather than stacking duplicates — it is the
+  // same artifact.
   const existing = doc.made.findIndex((a) => a.url === ref.url)
   if (existing >= 0) {
     doc.made[existing].at = ref.at ?? Date.now()
@@ -514,14 +516,32 @@ export function recordArtifact(doc, ref) {
     return false
   }
 
-  doc.made.unshift({
+  const entry = {
     url: ref.url,
     name: ref.name ?? "document",
     kind: ref.kind ?? "document",
     bytes: ref.bytes ?? null,
     at: ref.at ?? Date.now(),
-  })
-  if (doc.made.length > MAX_ARTIFACTS) doc.made.length = MAX_ARTIFACTS
+  }
+  // A kept source says what it was fetched from, how, and whether it has text
+  // to read, which is what a later fetch of the same URL checks before going
+  // to the network.
+  if (ref.source) {
+    entry.source = ref.source
+    entry.engine = ref.engine ?? null
+    entry.chars = ref.chars ?? null
+  }
+  doc.made.unshift(entry)
+  // Only what is not a kept source is capped. For a web-only step this list
+  // is also what it may read with source_read, so dropping an old source
+  // would leave its fetch result pointing at something the step is then
+  // refused, and it would fetch the page again.
+  let others = doc.made.filter((a) => !a.source).length
+  for (let i = doc.made.length - 1; i >= 0 && others > MAX_ARTIFACTS; i--) {
+    if (doc.made[i].source) continue
+    doc.made.splice(i, 1)
+    others--
+  }
   return true
 }
 
@@ -648,7 +668,7 @@ export function urlPrefixes(target) {
  * "May you read adjointlabs.com" is one decision. It was three: a real session
  * ended up holding web_fetch@adjointlabs.com, web_import@adjointlabs.com AND
  * http_request@adjointlabs.com, because every tool carried its own grant and
- * the user was asked once per tool per site.
+ * the user was asked once per tool per site. (web_import has since gone.)
  *
  * http_request is in the group only for the calls that are equivalent in power
  * to a fetch — a plain GET. Another method, or a body, still asks every time;
@@ -656,7 +676,6 @@ export function urlPrefixes(target) {
  */
 export const GRANT_GROUPS = {
   web_fetch: "web",
-  web_import: "web",
   web_search: "web",
   http_request: "web",
   // "May you write files" is likewise one decision; before fs_edit existed it
@@ -664,15 +683,17 @@ export const GRANT_GROUPS = {
   fs_write: "files",
   fs_edit: "files",
   fs_delete: "files",
+  // Filing a kept source into a folder is writing into that folder.
+  source_file: "files",
 }
 
 /** What a broad grant on this tool's group actually allows, for the button's tooltip. */
 export function describeGrantScope(toolId) {
   switch (grantGroup(toolId)) {
     case "web":
-      return "every web fetch, search, import and plain GET in this session"
+      return "every web fetch, search and plain GET in this session"
     case "files":
-      return "every file write, edit and delete in this session"
+      return "every file write, edit, delete and filing in this session"
     default:
       return `every ${toolId} call in this session`
   }
@@ -873,22 +894,42 @@ export function writesCode(toolDef, input = {}) {
 }
 
 /**
- * The document an automerge URL names, without heads or a path into it.
+ * The document a reference names, in canonical form, or null when it names
+ * none.
  *
- * `automerge:X`, `automerge:X#heads` and `automerge:X/a/b` are one document,
- * and a check that compared strings would let the second and third past it.
+ * `automerge:X`, `automerge:X#heads`, `automerge:X/a/b`, the bare id `X` and
+ * the legacy UUID spelling of the same bytes are all one document, and the
+ * repo will open any of them. So this asks the repo's own parser
+ * (`interpretAsDocumentId`, which `repo.find` uses) rather than comparing
+ * strings, which let every spelling but the first past a check.
+ *
+ * Surrounding whitespace is dropped first, because the tools that open a
+ * reference trim it before they do; a check that did not would judge a
+ * different string from the one that gets opened.
  */
 export function documentIdOf(url) {
-  const raw = String(url ?? "")
-  if (!raw.startsWith("automerge:")) return null
-  return raw.slice("automerge:".length).split(/[#/?]/)[0] || null
+  const raw = String(url ?? "").trim()
+  if (!raw) return null
+  try {
+    return interpretAsDocumentId(raw)
+  } catch {
+    return null
+  }
 }
 
-/** Is `target` one of the sensitive documents, however its URL is spelled? */
+/**
+ * Is `target` one of the sensitive documents, however it is spelled?
+ *
+ * An `automerge:` reference the parser rejects counts as sensitive. Whether
+ * it reaches a document then depends on what each tool does to it before
+ * opening it, and the answer to "can this touch your account" must not.
+ * When nothing is sensitive, nothing is.
+ */
 export function isSensitive(target, sensitive = []) {
+  if (!sensitive.length) return false
   const id = documentIdOf(target)
-  if (!id) return sensitive.includes(target)
-  return sensitive.some((url) => documentIdOf(url) === id)
+  if (id) return sensitive.some((url) => documentIdOf(url) === id)
+  return /^automerge:/i.test(String(target ?? "").trim())
 }
 
 /** Which grant is answering for this call, if any. For explaining a decision. */
@@ -976,7 +1017,15 @@ export function resultsToKeepWhole(results, config = {}) {
 export function taperedResult(block) {
   const size = String(block.output ?? "").length
   const what = block.summary || "an earlier tool result"
-  const saved = block.doc?.url ? ` The content is also saved at ${block.doc.url}.` : ""
+  // When the content is a kept source, reading it there is cheaper than
+  // either route below, and its offsets are stable, so that comes first. Any
+  // other document a call made is only pointed at.
+  const url = block.doc?.url
+  const saved = !url
+    ? ""
+    : block.doc.kind === "source"
+      ? ` The content is kept at ${url}: read it with source_read {source:"${url}", offset:0}, or search it with find.`
+      : ` It made ${url}.`
   // Two routes, and the difference between them matters: one is free and gives
   // exactly what this call said, the other does the work again and gives what
   // is true now.

@@ -136,6 +136,8 @@ try {
 
       try {
         const http = await import(base + "tools/http.js")
+        const filing = await import(base + "tools/file-source.js")
+        const guard = await import(base + "tools/guard.js")
         const build = await import(base + "tools/build.js")
 
         // A package folder to fetch into, so the "put it somewhere useful" path
@@ -143,13 +145,14 @@ try {
         const folder = await window.repo.create2()
         folder.change((d) => { d.title = "wasm-probe"; d.docs = []; d["@patchwork"] = { type: "folder" } })
 
-        const result = await http.httpRequest.execute(
-          { url: ${JSON.stringify(TARGET)}, folder: folder.url, saveAs: "engine.wasm" },
-          { repo: window.repo }
-        )
+        // Fetched and kept, then filed into the package: two steps, as an
+        // agent takes them.
+        const ctx = { repo: window.repo, fetchImpl: guard.guardedFetch({ fetch: (u, i) => fetch(u, i), deny: [location.origin, ...guard.SYNC_SERVERS] }) }
+        const result = await http.httpRequest.execute({ url: ${JSON.stringify(TARGET)} }, ctx)
         out.resultText = result.text ?? String(result)
         out.ref = result.doc ?? null
         if (!out.ref) throw new Error("no document reference came back")
+        out.filed = await filing.sourceFile.execute({ source: out.ref.url, folder: folder.url, name: "engine.wasm" }, ctx)
 
         const saved = (await window.repo.find(out.ref.url)).doc()
         const stored = saved.content

@@ -28,6 +28,7 @@ import { createEvents } from "./events.js"
 import { buildToolset } from "./tools/index.js"
 import { setHostUrls } from "./tools/host.js"
 import { getProvider, modelInfo } from "./providers/index.js"
+import { guardedFetch, SYNC_SERVERS } from "./tools/guard.js"
 
 /** The wasm loader wants a DOM. Give it the smallest one that works. */
 function shimDocument() {
@@ -109,6 +110,8 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       contactUrl: account?.contactUrl ?? null,
       moduleSettingsUrl: account?.moduleSettingsUrl ?? null,
       sensitiveDocs: (account?.sensitiveDocs ?? []).filter(Boolean),
+      // The worker shares the page's origin, so it refuses the same places.
+      fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
     buildToolset: (doc) => buildToolset(doc),
     getProvider: async () => getProvider(providerId ?? "openrouter"),

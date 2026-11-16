@@ -16,6 +16,16 @@ import { buildToolset } from "./tools/index.js"
 import { getProvider, readKey, modelInfo } from "./providers/index.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
+import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "./tools/guard.js"
+
+/**
+ * The fetch every tool in this tab uses. It refuses this page's own origin —
+ * which serves the person's documents to anyone asking by URL — the sync
+ * servers, and every local or private address; see tools/guard.js.
+ */
+export function tabFetch() {
+  return guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [location.origin, ...SYNC_SERVERS] })
+}
 
 /** The account's documents, as every runner's context carries them. */
 export function accountContext(account = globalThis.accountDocHandle) {
@@ -64,6 +74,9 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
       // So view_screenshot can photograph a view that view_mount opened.
       getMount,
+      fetchImpl: tabFetch(),
+      // The page's own origin, for plugin_source alone (see pageOriginFetch).
+      pageFetch: pageOriginFetch({ fetch: (url, init) => fetch(url, init), origin: location.origin }),
     }
 
     const providerId = () => handle.doc()?.config?.providerId ?? "openrouter"

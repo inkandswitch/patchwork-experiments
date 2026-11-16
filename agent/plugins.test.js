@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { loadPluginTools, runTool } from "./tools/index.js"
+import { loadPluginTools, runTool, buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
+import { WEB_TOOL_IDS } from "./workflow/plan.js"
 
 /** A registry that hands out whatever module is current, as Patchwork's does after a re-register. */
 function fakeRegistry(id) {
@@ -36,5 +37,45 @@ describe("agent:tool plugins", () => {
       throw new Error("SyntaxError in agent.js")
     }
     expect((await runTool(tool, {}, {})).output).toMatch(/SyntaxError in agent\.js/)
+  })
+})
+
+describe("a plugin cannot take a built-in's name", () => {
+  const registryOf = (ids) => ({
+    all: () => ids.map((id) => ({ id, name: id, description: "", where: "worker", risk: "read" })),
+    load: async (id) => ({ id, module: { execute: () => `plugin ${id}` } }),
+  })
+
+  it("drops a colliding plugin, says so, and keeps the built-in", async () => {
+    const errors = []
+    const tools = await loadPluginTools({ registry: registryOf(["web_fetch", "lm_eval"]), onError: (id, err) => errors.push([id, err.message]) })
+    expect(tools.map((t) => t.id)).toEqual(["lm_eval"])
+    expect(errors).toEqual([["web_fetch", "'web_fetch' is a built-in tool; a plugin cannot replace it."]])
+
+    const toolset = await buildToolset({}, { registry: registryOf(["web_fetch", "lm_eval"]) })
+    expect(toolset.get("web_fetch")).toBe(BUILTIN_TOOLS.find((t) => t.id === "web_fetch"))
+    expect(toolset.tools.filter((t) => t.id === "web_fetch")).toHaveLength(1)
+  })
+})
+
+describe("what a session's tool list means", () => {
+  const ids = async (tools) => (await buildToolset({ config: {}, tools }, { skipPlugins: true })).tools.map((t) => t.id)
+  const everyBuiltin = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !id.startsWith("workflow_"))
+
+  it.each([
+    ["no list", undefined, everyBuiltin],
+    ["no enabled list", {}, everyBuiltin],
+    ["an empty list", { enabled: [] }, []],
+    ["a list", { enabled: ["doc_read", "web_fetch"] }, ["doc_read", "web_fetch"]],
+    ["a list with a name that is not a tool", { enabled: ["doc_read", "no_such_tool"] }, ["doc_read"]],
+    ["a list, less what is disabled", { enabled: ["doc_read", "web_fetch"], disabled: ["web_fetch"] }, ["doc_read"]],
+  ])("%s", async (_, tools, expected) => {
+    expect((await ids(tools)).sort()).toEqual([...expected].sort())
+  })
+
+  it("gives a web-only step its fetching and reading tools, and no way to file anything", async () => {
+    const got = await ids({ enabled: WEB_TOOL_IDS })
+    expect(got.sort()).toEqual(["http_request", "session_recall", "source_list", "source_read", "web_fetch", "web_search"])
+    expect(got).not.toContain("source_file")
   })
 })

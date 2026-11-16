@@ -58,8 +58,8 @@ export const WHERE = ["host", "worker"]
  */
 export const ACCESS = ["full", "web"]
 
-/** The tools a web-only step gets. */
-export const WEB_TOOL_IDS = ["web_search", "web_fetch", "http_request", "session_recall"]
+/** The tools a web-only step gets: fetch, and read back what fetching kept. */
+export const WEB_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "session_recall"]
 
 /** Stored. */
 export const STEP = {

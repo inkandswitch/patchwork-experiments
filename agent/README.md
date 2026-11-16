@@ -6,7 +6,7 @@ documents — including the documents that are Patchwork's own tools.
 
 It works end-to-end on the real patchwork.inkandswitch.com: it finds documents,
 reads them, asks permission, edits them, drives real tools in a real browser,
-searches and imports from the web, calls authenticated APIs, and writes, checks
+searches the web and keeps what it reads, calls APIs, and writes, checks
 and installs new Patchwork tools. It also runs headless — the same session,
 claimed by a node process with no tab open.
 
@@ -28,7 +28,8 @@ claimed by a node process with no tab open.
 | `ui/notify.js` | opt-in browser notifications for those, while the tab is in the background |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
-| `tools/` | the tool surface — documents, discovery, folders, environment, web, http, ingest, authoring, checking |
+| `tools/` | the tool surface — documents, discovery, folders, environment, web, http, kept sources, authoring, checking |
+| `tools/guard.js` | where any tool may send a request: the guarded fetch every runner hands its tools |
 | `ui/` | transcript rendering and the provider-subscription protocol |
 | `probes/` | browser and node probes that drive the real thing (see Testing) |
 
@@ -48,7 +49,7 @@ its next write and stands down. The same class runs in a tab, a worker, or node
 **Tool calls are tiered.** Each tool declares `where`:
 
 - `worker` — needs only a repo: `doc_read` `doc_edit` `doc_history`, the `fs_*`
-  tools, the `web_*` tools, `http_request`, `package_build`
+  tools, the `web_*` tools, `http_request`, the `source_*` tools, `package_build`
 - `host` — needs the page: `dom_snapshot` (a DOM), the `view_*` tools,
   `package_test`, `registry_list` `plugin_source` `doc_create` (the plugin
   registry, which is page state, not repo state)
@@ -114,19 +115,15 @@ any participant can approve and every approval is auditable.
 | See | `view_screenshot` | host |
 | Build | `package_build` | worker |
 | Test | `package_test` | host |
-| Web | `web_search` `web_fetch` `web_import` | worker |
+| Web | `web_search` `web_fetch` | worker |
 | APIs | `http_request` | worker |
+| Kept sources | `source_read` `source_list` `source_file` | worker |
 | Ask | `ask_user` | never runs — see below |
 | Remember | `session_recall` | worker |
 | Name | `session_title` | worker |
 
-Outside content does not stay in the conversation. A fetched page longer than a
-couple of paragraphs is written to its own document and linked from the
-transcript, so it persists, syncs, can be reopened, and can be re-read in ranges
-with `doc_read` instead of fetched again — while the model still gets exactly
-the excerpt it asked for. Binary responses are kept as bytes and never decoded;
-`http_request` takes a `folder`, so a wasm module can be fetched straight into
-the package that needs it.
+Outside content does not stay in the conversation; see *Everything fetched is
+kept*, below.
 
 `fs_delete` unlinks a file or folder from its parent. It does not destroy the
 document — automerge keeps it, and its history — so a package that has been
@@ -184,6 +181,67 @@ is not a readable document shape (a canvas, a text editor), and the only way to
 tell whether a change *looks* right rather than merely being structurally
 present. `tool_check` is the one-shot version aimed at code the agent just
 wrote, and it exists because the failure mode is not knowing what to look for.
+
+## Everything fetched is kept
+
+A fetched page used to exist only as a paragraph in a tool result. It cost
+context on every later turn, a person could not open it, and a PDF arrived as a
+third party's markdown of it. One measured workflow re-read pages it had
+already fetched 147 times: the saved page's footer said to page through it with
+`doc_read`, which a web-only step did not have, so it fetched again.
+
+Now every successful `web_fetch` and `http_request` leaves exactly one new
+document, an ordinary `file` the File tool shows, and nothing overwrites one:
+
+| what was fetched | `content` | `role` | readable text |
+|---|---|---|---|
+| a PDF whose bytes could be had | the PDF, byte for byte | primary | the reader's text, in `text` |
+| a PDF whose bytes could not (CORS, not a PDF, over 30 MB) | the reader's markdown | extract | `content`; `missing` says why |
+| a page read through the reader | the reader's markdown or text | extract | `content` |
+| a page read directly (node) or with `http_request` | the HTML as sent, decoded by its charset | primary | its text, in `text` |
+| JSON, CSV, plain text | the body, decoded | primary | `content` |
+| an image, wasm, a font | the bytes | primary | none |
+
+Every one carries the same provenance: `source` (the URL asked for) and
+`capture` — when, the final URL, `via` the reader or directly, the `engine`,
+status, content type, and the SHA-256 and size of what is kept. The readable
+text is an `ImmutableString` written once, so a character offset names the
+same characters forever, and headings are recorded as `marks`.
+
+That makes reading back a pure function of text and offset. `source_read`
+pages through a kept source and says which heading each slice starts under, or
+searches it (`find`) and lists every match with its offset and heading.
+`source_list` shows what this conversation has kept and searches all of it at
+once. A fetch result shows only the first 6000 characters, then an outline of
+headings with their offsets and the `source_read` call to read on; a result
+shortened later in the conversation names the same call. Fetching a URL this
+conversation already kept answers from the kept copy without a request, unless
+`fresh` is passed.
+
+A kept source is not in any folder. `source_file` puts one there, pinned to the
+version that was fetched — which is also how a wasm module gets into the
+package that needs it: fetch it with `http_request`, then file it under the
+name the code imports. `web_import` and `http_request`'s `folder`/`saveAs` did
+these jobs before, each its own way, and are gone.
+
+## Where a tool may fetch
+
+Every runner gives its tools `ctx.fetchImpl`, a guarded fetch
+(`tools/guard.js`), and the tools have no other: there is no fallback to the
+global `fetch`, so a runner that forgot to wire one fails loudly. It refuses
+anything but http and https; `localhost` and every private, loopback and
+link-local address in any spelling (`2130706433`, `127.1`, `0x7f.1`,
+`[::ffff:127.0.0.1]`, NAT64 and 6to4 forms of a private IPv4 address);
+Patchwork's own origin and its sync servers (with or without a trailing dot on
+the host), because the page's origin hands the person's documents to anyone
+asking by URL; and any path that names an automerge document, however many
+times it is percent-encoded. A redirect's destination is checked before its
+body is read. In node every address a name resolves to must be public, and a
+name that resolves to nothing is refused; the node runner and probe both build
+that fetch with `nodeFetch` (`node-fetch.mjs`). A reader URL hides its target
+in its path, so the web tools check the target before building one.
+`plugin_source` reads a package the page serves from its document, and
+fetches any other through the guard.
 
 ## A package can hand the agent a capability
 
@@ -346,7 +404,7 @@ Grants are keyed by a **group**, not by a tool. "May you read adjointlabs.com"
 is one decision, and it used to be three: a real session ended up holding
 `web_fetch@adjointlabs.com`, `web_import@adjointlabs.com` and
 `http_request@adjointlabs.com` because every tool carried its own grant and the
-user was asked once per tool per site. The four web tools share one `web` group.
+user was asked once per tool per site. The web tools share one `web` group.
 Grants written before the grouping are still honoured, so nothing has to be
 re-approved.
 
@@ -421,7 +479,9 @@ what a call returned, for free, and says plainly that it is history. Re-running
 the call is the other option and means something different: what is true now. A
 document the agent has since edited must not answer with what it said an hour
 ago, so the two are never conflated. The call's own arguments sit in the message
-right before the stand-in, so repeating it needs no extra information.
+right before the stand-in, so repeating it needs no extra information. When the
+call kept a source, the stand-in names it and the `source_read` call first:
+that reads any part of it, not only what the call showed.
 
 ## Being refused
 
@@ -504,7 +564,7 @@ described in the system prompt, read in full on demand.
 | `writing-patchwork-tools` | the plugin shape, the render contract, and the four mistakes actually made |
 | `driving-a-view` | mount → interact → inspect → unmount, and what it does not simulate |
 | `editing-documents` | `doc_edit`'s op vocabulary, and why text edits anchor on text (`find`, `fs_edit`) rather than offsets |
-| `working-with-the-web` | which of the four outside-world tools to reach for |
+| `working-with-the-web` | which outside-world tool to reach for, and reading back what was kept |
 | `finding-things` | how to orient in a Patchwork you have not seen |
 
 A test holds the parts that rot: every skill must name only tools that exist,
@@ -634,9 +694,12 @@ OPENROUTER_API_KEY=… pnpm runner --watch automerge:<folderUrl>
 Because the session is a document and the lease is in it, this needs no new
 protocol: it claims sessions exactly the way a tab does, and a browser can take
 one back mid-flight. Two things change outside the browser — there is no origin
-policy, so the web tools fetch directly instead of through a third-party reader;
-and there is no DOM or plugin registry, so host-tier calls park until a tab
-picks them up.
+policy, so the web tools fetch pages directly instead of through a third-party
+reader, and a PDF's bytes always arrive; and there is no DOM or plugin
+registry, so host-tier calls park until a tab picks them up. With no origin
+policy the guard is the only thing between a tool and this machine's network,
+so here it also follows redirects by hand, one checked hop at a time, and
+checks every address a name resolves to.
 
 ## Keys
 
@@ -693,7 +756,7 @@ is usable before the catalogue catches up.
 Three tiers, cheapest first.
 
 ```sh
-pnpm test                                  # 228 unit + mount tests, no network
+pnpm test                                  # 1950 unit + mount tests, no network
 OPENROUTER_KEY_FILE=… node probes/live-openrouter.mjs      # the adapter vs the live API
 OPENROUTER_KEY_FILE=… node probes/patchwork-e2e.mjs        # the whole thing, in real Patchwork
 ```
@@ -746,7 +809,8 @@ Other probes:
 - `probes/esbuild-twice.mjs` — loads esbuild from two copies of `build.js`,
   which is the shape that broke `package_test`.
 - `probes/binary-fetch.mjs` — pulls a real 11 MB wasm module through
-  `http_request` and compares every byte against an independent fetch.
+  `http_request`, files it into a package with `source_file`, and compares
+  every byte against an independent fetch.
 - `probes/agent-tool-plugin.mjs` — a package that contributes an `agent:tool`,
   installed and called for real.
 - `probes/revise-loop.mjs` — writes a tool, checks it, edits it, checks again.
@@ -935,9 +999,10 @@ result calls for it.
 - **One job, one set of permissions.** A grant given in any of a workflow's
   sessions reaches all of them, and releases every waiting call it now covers;
   so does a grant given from the peek or the strip ("Allow dnv.com", "Allow any
-  site"). A **web-only step** (`access: "web"`) gets web search and fetch and
-  nothing else — none of your documents — so it fetches without asking; its
-  standing "any site" is not shared with sessions that can read your documents.
+  site"). A **web-only step** (`access: "web"`) gets web search and fetch, and
+  `source_read`/`source_list` over what it has itself kept, and nothing else —
+  none of your documents — so it fetches without asking; its standing "any
+  site" is not shared with sessions that can read your documents.
 - **News is told once**, recorded in the plan: a reload or another tab's driver
   does not repeat a step's result, and the end of a plan is one wake, not one
   per tick. Cancelling takes the step session's lease, so a runner in another
@@ -994,7 +1059,7 @@ still opt-in (below); `where` already decides which tools a step gets, so a
   actually show up — unresolved, and worth checking whether presence needs a peer
   connection the agent's context does not have.
 - **Large collections.** A long *string* can be paged with `doc_read`'s
-  `offset`/`limit`, which is what makes a fetched page re-readable. A large
+  `offset`/`limit`, and a kept source with `source_read`. A large
   *collection* cannot: reads still truncate at 24k characters with a `shapeOnly`
   mode to orient, and there is no paging or query-within, so a chat with
   thousands of messages or a big canvas still reads as noise.
