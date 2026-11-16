@@ -6,6 +6,7 @@
 // stage-frame direction over the compass. Finite tables only.
 import { describe, expect, it } from "vitest";
 import { centuries, julianDay, refraction, siderealTime, sunAt, sunCoordinates, sunDirection } from "./solar.js";
+import { instantOf } from "./time.js";
 
 const near = (got, want, tol) => expect(Math.abs(got - want), `${got} vs ${want}`).toBeLessThanOrEqual(tol);
 /** Angular difference in degrees, wrapped to [0, 180]. */
@@ -37,9 +38,20 @@ describe("sidereal time, Meeus Examples 12.a and 12.b (mean, Δψ = 0)", () => {
   ])("%s", (_, jd, want) => near(siderealTime(jd, { nutation: 0, obliquity: 23.44 }), want, 1e-5));
 });
 
-describe("the equation of time, Meeus Example 28.a (1992 Oct 13.0: 13m42.6s)", () => {
-  // 0.01° of hour angle is 0.04 min.
-  it("agrees to 0.04 min", () => near(sunAt(Date.UTC(1992, 9, 13), 0, 0).eqTime, 13 + 42.6 / 60, 0.04));
+describe("sunAt's fields", () => {
+  // Two elevations, each named for what it is, so a caller picks one on
+  // purpose: the direction is apparent; presence, bands and gates are
+  // geometric (WEATHER.md, "sun").
+  it("are exactly azimuth, apparent, geometric and declination", () => {
+    expect(Object.keys(sunAt(Date.UTC(2026, 6, 15, 22), 48.454, -123.2915)).sort()).toEqual(["apparent", "azimuth", "declination", "geometric"]);
+  });
+});
+
+describe("the default weather's sun, end to end through instantOf (an independent ephemeris, astronomy-engine 2.1.19: 225.576°, 56.302°)", () => {
+  // Cadboro Bay, 2026-07-15 15:00 America/Vancouver (index.js's init).
+  const r = sunAt(instantOf({ date: "2026-07-15", hour: 15, zone: "America/Vancouver" }), 48.454, -123.2915);
+  it("azimuth 225.57°", () => near(r.azimuth, 225.57, 0.02));
+  it("apparent elevation 56.30°", () => near(r.apparent, 56.30, 0.02));
 });
 
 describe("the NREL SPA paper's worked example (2003-10-17 12:30:30 at UTC-7, 39.742476 N, 105.1786 W)", () => {
@@ -47,7 +59,7 @@ describe("the NREL SPA paper's worked example (2003-10-17 12:30:30 at UTC-7, 39.
   // geocentric (parallax 0.002°) with standard air (0.004° more refraction
   // at 40°). 0.02° holds both and the algorithm's 0.01°.
   const r = sunAt(Date.UTC(2003, 9, 17, 19, 30, 30), 39.742476, -105.1786);
-  it("zenith 50.11162°", () => near(90 - r.elevation, 50.11162, 0.02));
+  it("zenith 50.11162°", () => near(90 - r.apparent, 50.11162, 0.02));
   it("azimuth 194.34024°", () => near(r.azimuth, 194.34024, 0.02));
 });
 
@@ -67,13 +79,13 @@ describe("USNO's 2026 equinoxes and solstices: the apparent longitude is 0, 90, 
 
 describe("structural rows", () => {
   it("the equator at the March equinox at local solar noon (Greenwich, 12:00 UT plus the equation of time's 7.4 min): the sun is overhead", () => {
-    expect(sunAt(Date.UTC(2026, 2, 20, 12, 7, 25), 0, 0).elevation).toBeGreaterThan(89);
+    expect(sunAt(Date.UTC(2026, 2, 20, 12, 7, 25), 0, 0).apparent).toBeGreaterThan(89);
   });
   it("80°N at the June solstice at midnight: polar day, the sun is up", () => {
-    expect(sunAt(Date.UTC(2026, 5, 21, 0), 80, 0).elevation).toBeGreaterThan(0);
+    expect(sunAt(Date.UTC(2026, 5, 21, 0), 80, 0).apparent).toBeGreaterThan(0);
   });
   it("80°N at the December solstice at noon: polar night, the sun is down", () => {
-    expect(sunAt(Date.UTC(2026, 11, 21, 12), 80, 0).elevation).toBeLessThan(0);
+    expect(sunAt(Date.UTC(2026, 11, 21, 12), 80, 0).apparent).toBeLessThan(0);
   });
   // The March equinox at Greenwich: the sun rises in the east and sets in
   // the west, and crosses the meridian to the south in the north and to the
@@ -85,14 +97,14 @@ describe("structural rows", () => {
     ["45°S afternoon: north-west", -45, 15, 270, 360],
   ])("%s", (_, lat, hour, lo, hi) => {
     const r = sunAt(Date.UTC(2026, 2, 20, hour), lat, 0);
-    expect(r.elevation).toBeGreaterThan(0);
+    expect(r.apparent).toBeGreaterThan(0);
     expect(r.azimuth).toBeGreaterThan(lo);
     expect(r.azimuth).toBeLessThan(hi);
   });
   it("Ucluelet at local solar noon on the June solstice (12:00 UT, plus 125.558°/15 h, minus the equation of time's -1.6 min): due south at 90° - lat + ε", () => {
     const r = sunAt(Date.UTC(2026, 5, 21, 12) + ((125.558 / 15) * 60 + 1.6) * 60_000, 48.95, -125.558);
     near(r.azimuth, 180, 0.5);
-    near(r.elevation, 90 - 48.95 + 23.44, 0.05);
+    near(r.apparent, 90 - 48.95 + 23.44, 0.05);
   });
 });
 
@@ -116,9 +128,9 @@ describe("refraction (Sæmundsson, Meeus 16.4)", () => {
       expect(h + 0.5 + refraction(h + 0.5)).toBeGreaterThan(h + refraction(h));
     }
   });
-  it("sunAt's elevation is its geometric elevation refracted", () => {
+  it("sunAt's apparent elevation is its geometric elevation refracted", () => {
     const r = sunAt(Date.UTC(2026, 6, 15, 22), 48.454, -123.2915);
-    expect(r.elevation).toBe(r.geometric + refraction(r.geometric));
+    expect(r.apparent).toBe(r.geometric + refraction(r.geometric));
   });
 });
 

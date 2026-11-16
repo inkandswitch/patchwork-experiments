@@ -4,11 +4,12 @@
 // time-zone data, the same on every up-to-date browser and node.
 //
 // A local time names zero, one or two instants. At a fall-back overlap
-// (01:30 on 2026-11-01 in Vancouver happens twice) it is the earlier one; in a
-// spring-forward gap (02:30 on 2026-03-08 never happens) it is the later one,
-// the clock pushed forward by the gap, 03:30 PDT. That is Temporal's and
-// JavaScript Date's "compatible" rule, so a time read off any clock lands
-// where that clock would put it (Decision 13).
+// (01:30 on 2026-11-01 in Vancouver happens twice) it is the earlier one. In a
+// spring-forward gap (02:00-03:00 on 2026-03-08 never happens) every hour of
+// the gap is the transition instant itself, 10:00Z: the sun pauses while the
+// slider crosses hours no clock shows. So instantOf is non-decreasing in the
+// hour for every date and zone, and the hour slider never moves the sun
+// backwards (Decision 13).
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -52,9 +53,15 @@ function formatter(zone) {
   return f;
 }
 
-/** True for a time zone this runtime's Intl knows (IANA names, and UTC). */
+// An IANA name (America/Vancouver, UTC, Etc/GMT+8, EST5EDT): ASCII, each
+// part starting with a letter. That rules out ES2024's offset zones
+// ("+05:30", "-08:00"), which newer runtimes accept and older ones throw on;
+// a peer that fell back where another didn't would put the sun elsewhere.
+const IANA = /^[A-Za-z][A-Za-z0-9._+-]*(\/[A-Za-z][A-Za-z0-9._+-]*)*$/;
+
+/** True for an IANA time-zone name this runtime's Intl knows (never a UTC-offset string; Decision 15). */
 export function validZone(zone) {
-  if (typeof zone !== "string" || zone === "") return false;
+  if (typeof zone !== "string" || !IANA.test(zone)) return false;
   try {
     formatter(zone);
     return true;
@@ -79,9 +86,11 @@ export function offsetAt(zone, t) {
 
 /**
  * The instant (UTC ms) at which the clock in `zone` reads `hour` on `date`.
- * hour is any finite number of hours after local midnight: 24 is the next
- * day's 00:00, 15.25 is 15:15. Throws RangeError on an invalid date or zone;
- * the weather's params fall back to defaults before they get here.
+ * hour is hours after local midnight (24 is the next day's 00:00, 15.25 is
+ * 15:15), finite and within Date's range. In an overlap it is the earlier
+ * instant; in a gap it is the transition instant. Throws RangeError on an
+ * invalid date, zone or hour; the weather's params fall back to defaults
+ * before they get here.
  */
 export function instantOf({ date, hour, zone }) {
   if (!validDate(date)) throw new RangeError(`not a date: ${date}`);
@@ -94,10 +103,27 @@ export function instantOf({ date, hour, zone }) {
   const offsets = [...new Set([offsetAt(zone, wall - DAY), offsetAt(zone, wall + DAY)])];
   const fits = offsets.map((o) => wall - o).filter((t) => offsetAt(zone, t) === wall - t);
   if (fits.length) return Math.min(...fits); // one instant, or the overlap's earlier
-  return Math.max(...offsets.map((o) => wall - o)); // the gap: the later instant
+  // The gap: no instant reads `wall`. Reading it with the offset after the
+  // jump lands before the transition, with the offset before it lands after;
+  // the transition is the first whole second between them where the offset
+  // changes.
+  const times = offsets.map((o) => wall - o);
+  let a = Math.floor(Math.min(...times) / 1000); // seconds: before the transition
+  let b = Math.floor(Math.max(...times) / 1000); // seconds: at or after it
+  const before = offsetAt(zone, a * 1000);
+  while (b - a > 1) {
+    const m = Math.floor((a + b) / 2);
+    if (offsetAt(zone, m * 1000) === before) a = m;
+    else b = m;
+  }
+  return b * 1000;
 }
 
-/** The clock in `zone` at instant t: { date: "YYYY-MM-DD", hour } with hour fractional (inverse of instantOf outside a gap). */
+/**
+ * The clock in `zone` at instant t: { date: "YYYY-MM-DD", hour } with hour
+ * fractional. The inverse of instantOf for every local time that names an
+ * instant; a gap's transition instant reads as the gap's end (03:00).
+ */
 export function localOf(t, zone) {
   const wall = t + offsetAt(zone, t);
   const day = Math.floor(wall / DAY) * DAY;
