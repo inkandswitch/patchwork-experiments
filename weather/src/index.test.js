@@ -90,7 +90,7 @@ describe("the weather trait's fields", () => {
   }
 
   it("the cloud kinds are the four the sky model knows", () => expect(d.fields.find((f) => f.key === "clouds").options.map((o) => o.value)).toEqual(["cumulus", "stratocumulus", "stratus", "cirrus"]));
-  it("the default zone is a zone Intl knows", () => expect(new Intl.DateTimeFormat("en", { timeZone: d.init.zone }).resolvedOptions().timeZone).toBe(d.init.zone));
+  it("the default clock is Pacific daylight time, the default date's at Cadboro Bay", () => expect(d.init.offset).toBe(-7));
   it("the default date is a real calendar date, YYYY-MM-DD", () => {
     expect(d.init.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(new Date(`${d.init.date}T00:00:00Z`).toISOString().slice(0, 10)).toBe(d.init.date);

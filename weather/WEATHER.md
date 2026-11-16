@@ -12,7 +12,9 @@ Status: W0 (the scaffold), W1 (the sun from time and place: `time.js`,
 `solar.js`) and W2 (the ambients as pure functions: `weather.js`'s
 `weatherParams` and `windOf`, `atmosphere.js`'s `atmosphereOf`) and W3 (the
 extension offers them, and the Place and Now commands: `extension.js`) are
-in. A doc with the trait now has its weather's wind, sun and sky. The plan's
+in, with W3's review fixes (the clock is a UTC offset, Decision 15; no
+place field, Decision 32; the commands the world's only, Decision 31). A doc
+with the trait now has its weather's wind, sun and sky. The plan's
 steps are listed under "Plan" below.
 
 ## The data
@@ -27,12 +29,11 @@ reads this table and checks every field against it, so the doc is the spec.
 
 | Field | Kind | Default | Min | Max | Step | Slider | Meaning |
 |---|---|---|---|---|---|---|---|
-| `place` | string | `"Cadboro Bay"` | | | | | a name, for people |
 | `lat` | number | 48.454 | -90 | 90 | 0.0001 | | degrees north (WGS84) |
 | `lon` | number | -123.2915 | -180 | 180 | 0.0001 | | degrees east (WGS84) |
-| `zone` | string | `"America/Vancouver"` | | | | | the IANA time zone the clock reads in |
-| `date` | string | `"2026-07-15"` | | | | | local calendar date, `YYYY-MM-DD` |
-| `hour` | number | 15 | 0 | 24 | 0.25 | | local clock hour: the sun slider |
+| `date` | string | `"2026-07-15"` | | | | | calendar date on the clock, `YYYY-MM-DD` |
+| `hour` | number | 15 | 0 | 24 | 0.25 | | clock hour: the sun slider |
+| `offset` | number | -7 | -12 | 14 | 0.25 | | the clock's hours from UTC (-7 is PDT, and British Columbia's all year from November 2026) |
 | `wind` | number | 4 | 0 | 40 | 0.1 | | mean wind speed at 10 m, m/s |
 | `from` | number | 235 | 0 | 360 | 1 | | where the wind blows from, degrees true |
 | `gustiness` | number | 0.3 | 0 | 1 | 0.05 | | the hour's peak gust over the mean, less 1: 0.3 is gusts to 130% and lulls to 70% (sailing's model) |
@@ -45,22 +46,31 @@ reads this table and checks every field against it, so the doc is the spec.
 
 Every field has a default, so every slider shows the value in force and can
 be dialled back to it. One more key, `source`, is written only by a fetch
-(`{ name, api, for, fetched, sum }`) and is not described.
+(`{ name, api, for, fetched, fields }`) and is not described.
 
 `source` says where a snapshot came from: the provider (`"Open-Meteo"`), which
 API (`forecast` or `archive`), the hour the data is for and when it was fetched
-(ISO), and `sum`, a key of the fields as fetched. Nothing describes it, so the
-inspector neither shows nor touches it. The pure `provenance(trait)` compares
-`sum` with the fields as they are now and answers "fetched", "dialled since
-fetch" or "dialled". Nothing has to intercept an edit to know.
+(ISO), and `fields`, the summed fields in force as the fetch wrote them, a map
+by name (`fetchedFields(params)`). Nothing describes it, so the inspector
+neither shows nor touches it. The pure `dialledSince(trait)` compares
+`fields` with the fields in force key by key and names the ones that differ
+(a field `fields` doesn't name counts as dialled), and `provenance(trait)`
+answers "fetched", "dialled since fetch" or "dialled" from it. Nothing has to
+intercept an edit to know.
 
-The sum is exact, not a hash: `sumOf(params)` is the JSON of the summed fields
-in force, in order, so no dialled weather can pass for a fetched one. The
-summed fields (`SUMMED`) are every field but `place`, a label, and `seed`,
-which picks the gust pattern and is not weather: a snapshot speaks for its
-conditions and for the place and moment they are of, so moving the hour or
-the coordinates after a fetch makes it "dialled since fetch" too
-(Decision 29).
+The record is exact values, not a hash, so no dialled weather can pass for a
+fetched one; it is a map, so no field order is implied and the doc can be
+read. The summed fields (`SUMMED`) are every field but `seed`, which picks
+the gust pattern and is not weather: a snapshot speaks for its conditions and
+for the place and moment they are of, so moving the hour, the clock or the
+coordinates after a fetch makes it "dialled since fetch" too (Decision 29).
+
+**The clock.** `date` and `hour` are read on a clock `offset` hours from UTC,
+and the instant is `date`'s midnight UTC + `hour` − `offset`: arithmetic, with
+no time-zone data, so every peer computes the same instant from the doc
+whatever its runtime's zone rules say (Decision 15). There is no place name in
+the doc: the coordinates are the place, and the Place picker names them when
+they are a preset's (Decision 32).
 
 ## What it offers
 
@@ -74,7 +84,7 @@ existing conventions and adds no new ambient:
   documentation moves here from sailing/DESIGN.md in W5.
 - **`atmosphere`** = `atmosphereOf(trait)` (STAGE.md's shape):
   - **sun**: the direction comes from `solar.js`'s `sunAt` at
-    `instantOf({ date, hour, zone })` (`time.js`) and `lat`/`lon`: Meeus's
+    `instantOf({ date, hour, offset })` (`time.js`) and `lat`/`lon`: Meeus's
     low-accuracy algorithm, whose solar coordinates NOAA's calculator also
     uses, with the hour angle from apparent sidereal time and the
     `apparent` elevation through Sæmundsson's refraction (Bennett's,
@@ -237,21 +247,26 @@ Both ways are in Edit, in view, with no menu diving.
 - **Commands** (null target, `edit: true`, `show: ["toolbar", "menu"]`): on
   the toolbar, which is Edit's and always in view there, and in the scene's
   right-click menu. Not on the inspector: the scene inspector shows no scene
-  commands (Decision 28).
-  - **Place** is a picker of Cadboro Bay (48.454, -123.2915, America/
-    Vancouver) and Ucluelet (48.95, -125.558, America/Vancouver), terrain's
-    origin there (`PLACES`). It shows the place the weather is at, by
-    lat, lon and zone exactly (`placeOf`; the name is a label). When the
+  commands (Decision 28). They are the world's weather's only: in a linked
+  world, whose weather the outermost rule leaves out of force, they don't
+  apply, so entering a linked boat shows one Place and one Now, the
+  world's (`isWorlds`: `api.ambient("wind").mine`; Decision 31).
+  - **Place** is a picker of Cadboro Bay (48.454, -123.2915) and Ucluelet
+    (48.95, -125.558), terrain's origin there, both on British Columbia's
+    clock, UTC−7 (`PLACES`). It shows the place the weather is at, by lat
+    and lon exactly (`placeOf`; the clock is when, not where). When the
     weather is at neither, it shows a third entry, "here", labelled with
-    the coordinates in force (`48.4540° N, 123.2915° W`), and picking it
-    writes nothing. Picking a place writes those of place, lat, lon and
-    zone the trait doesn't already hold, in one change. Its tooltip is the
+    the coordinates in force (`48.4540° N, 123.2915° W`): a read-out, and
+    picking it writes nothing. Picking a place writes those of its lat, lon
+    and clock the trait doesn't already hold, in one change; the date and
+    hour stay, so it is the same time of day there. Its tooltip is the
     provenance: "Weather: dialled by hand", "Weather: as fetched from
     Open-Meteo (forecast) for …" or "Weather: dialled since it was fetched
-    from …".
-  - **Now** sets date and hour to the present minute in the weather's zone
-    (the minute floored, so the hour is a whole number of minutes and never
-    24), those that differ, in one change (Decision 30).
+    from … (hour, cover)", naming the fields dialled.
+  - **Now** sets date and hour to the present quarter hour on the
+    weather's clock (floored to the hour slider's step, so it writes only
+    what the slider can show, and the hour never reaches 24), those that
+    differ, in one change (Decision 30).
   - **Fetch now** and **Fetch for this time** (W4) fetch from Open-Meteo in
     the pressing viewer's browser, then write the fields plus `source` in
     one change.
@@ -297,10 +312,10 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
 | Step | What | State |
 |---|---|---|
 | W0 | package scaffold, this doc, the fetch-from-Patchwork spike; review fixes (gustiness, the doc's table as spec, the entry evaluated alone, the sky model settled) | done |
-| W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values, and the default's sun end to end; every quarter hour of three Vancouver days round-tripped, and of the days around every transition of a year in eight zones, where `instantOf` never goes backwards (Decision 13). `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16) | done |
+| W1 | `time.js` (`instantOf`, `localOf`, `offsetAt`, `validDate`, `validZone`) and `solar.js` (`sunAt`, `sunDirection`, `refraction`), against Meeus's, NREL's and USNO's published values, and the default's sun end to end; every quarter hour of three Vancouver days round-tripped, and of the days around every transition of a year in eight zones, where `instantOf` never goes backwards (Decision 13). `validDate` and `validZone` are the predicates W2's params use to fall back to the default (Decision 16). W3's review replaced the zone with a fixed clock (Decision 15): `instantOf` is now arithmetic, and `offsetAt`, `validZone` and the gap and overlap rules are gone | done |
 | W2 | `weather.js`: `weatherParams` (every field in force: a missing or malformed field is its default, an invalid zone or date too, a number clamped into its range), `windOf` (a pass-through); `atmosphere.js`: `atmosphereOf` (pure) as specified under "The look", the four anchors exact fixed points, every output over a grid of 6720 weathers passing the stage's own check unchanged; presence, the bands and the gates on the geometric elevation. Review fixes: rows between the anchors computed independently (cover and haze quarters and midpoints, cirrus as thin cumulus, the sun untinted at s = 1), the bands table parsed as the spec, sky continuity in sRGB, the deck drawn without a jump (Decision 27), `gustinessOf` moved to W4 (Decision 24) | done |
-| W3 | `extension.js`: `ambient()` offers `{ wind, atmosphere }` of the trait, the same object while the params in force are unchanged, null without the trait; Place and Now on the toolbar and the menu, Edit's only (Decision 28); `provenance` and the exact `sumOf` (Decision 29); `placeOf`; Now to the minute (Decision 30). Local probe `probes/weather-run.mjs` in the built scene tool: 43 checks pass in Chrome 157 (the ambients exactly the page's own `atmosphereOf`/`windOf`, the sun and the key light to 1e-9 at 9, 15, 21, Ucluelet and Now; the toolbar's picker and button; the inspector's 15 fields), and it found the zone-data disagreement (Decision 15, Question 12) | done |
-| W4 | `open-meteo.js`, Fetch commands, recorded fixtures; `gustinessOf` with its rows from 07a3a291 (Decision 24), including gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3}; rows for clamping (wind 45, rain 80) | |
+| W3 | `extension.js`: `ambient()` offers `{ wind, atmosphere }` of the trait, the same object while the params in force are unchanged, null without the trait; Place and Now on the toolbar and the menu, Edit's only (Decision 28); `provenance` (Decision 29); `placeOf`. Local probe `probes/weather-run.mjs` in the built scene tool: the ambients exactly the page's own `atmosphereOf`/`windOf`, the sun and the key light to 1e-9 at 9, 15, 21, Ucluelet and Now; the toolbar's picker and button; the inspector's fields. Its first run found the zone-data disagreement. Review fixes: the clock is an `offset`, not a zone, so `instantOf` is arithmetic and no peer's zone data enters the ambient (Decision 15; time.js loses `offsetAt`, `validZone` and Decision 13's gap and overlap rules); `place` dropped, the coordinates are the place (Decision 32); `source.fields`, a map, for the order-dependent `sum` (Decision 29); Now to the slider's quarter hour (Decision 30); the commands only in the world's stage, not a linked one's (Decision 31). The probe now also checks node's sun against the page's (a winter date among them) and a linked world entered: 61 of 61 checks pass in Chrome 157 | done |
+| W4 | `open-meteo.js`, Fetch commands (gated by `isWorlds` like Place and Now; the provenance shown on Fetch's own label or state, where it is visible without hovering, rather than Place's tooltip), recorded fixtures; the fetch writes `source.fields = fetchedFields(weatherParams({ ...trait, ...fields }))`; whether Fetch also sets `offset` (Open-Meteo's `utc_offset_seconds` with `timezone=auto`: a parameter value, nothing about the viewer) is W4's to decide and record; `gustinessOf` with its rows from 07a3a291 (Decision 24), including gust factor {1.3, 2, 2.5, calm} → gustiness {0.3, 1, 1, 0.3}; rows for clamping (wind 45, rain 80) | |
 | W5 | sailing reads the weather's wind; `sailing.weather` goes | |
 | W6 | `terrain.sky` → `terrain.place`; the place templates write weather | |
 | W7 | end-to-end local probe: weather reaches sky, water and boat | |
@@ -317,8 +332,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    `wind: { speed, from }`). Each field is one slider, and concurrent edits
    merge field by field. *Decided unattended (2026-11-16, lane/weather), for
    the lead.*
-3. **The default is a fair summer afternoon at Cadboro Bay**: 15:00 PDT on
-   15 July 2026, wind 4 m/s from 235° (the Cadboro template's), cover 0.35
+3. **The default is a fair summer afternoon at Cadboro Bay**: 15:00 PDT
+   (UTC−7) on 15 July 2026, wind 4 m/s from 235° (the Cadboro template's), cover 0.35
    cumulus at 1200 m, visibility 10 km (so the fog's far is the bright day's
    9 km). Sailing's old default, 7 m/s from 45°, was a working breeze with
    no place; examples that want it say so. *Decided unattended (2026-11-16,
@@ -333,7 +348,7 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    hour's peak (Decision 10). *Decided unattended (2026-11-16,
    lane/weather), for the lead.*
 5. **`source` is not described.** The inspector neither shows nor touches
-   it, and provenance comes from its `sum`. So dialling a fetched field needs
+   it, and provenance comes from its `fields`. So dialling a fetched field needs
    no hook to mark the snapshot stale. *Decided unattended (2026-11-16,
    lane/weather), for the lead.*
 6. **Ranges**: cloud base 50..12 000 m on a log slider (cirrus sits at
@@ -404,27 +419,13 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     and so on: no clash). The other proof is the folder copied out alone
     (`git archive`): `pnpm install --frozen-lockfile`, build and test all
     pass. *Decided unattended (2026-11-16, lane/weather), for the lead.*
-13. **A local time that names no instant, or two: the overlap takes the
-    earlier instant, and the gap pauses at the transition.** In a fall-back
-    overlap (01:30 on 2026-11-01 in Vancouver happens twice) it is the
-    earlier instant, 01:30 PDT. In a spring-forward gap (02:00–03:00 on
-    2026-03-08 never happens) every hour is the transition instant itself,
-    10:00Z, so the sun waits while the slider crosses hours no clock shows.
-    This departs from the plan's wording ("the later offset", which would
-    put 02:30 at 01:30 PST) and from Temporal's and Date's "compatible"
-    rule (02:30 → 03:30 PDT), which W1 first shipped: under it the slider's
-    02:45 is 10:45Z and 03:00 is 10:00Z, so the sun stepped backwards. A gap
-    hour is only reachable by dragging the slider (`localOf` never writes
-    one, so Now and Fetch can't), and for a slider the invariant matters
-    more than matching a clock: `instantOf` is non-decreasing in the hour
-    for every date and zone. time.test.js proves it over every quarter hour
-    of the days around every transition of a year in eight zones (both
-    hemispheres, a 30-minute DST, midnight transitions, no DST, +12:45,
-    and Apia's skipped day in 2011), where each hour either round-trips
-    through `localOf` or lies in a gap and maps to its transition. The cost
-    is a bisection on `offsetAt` to the whole second, about 25 formatter
-    calls, only in a gap. *Decided unattended (2026-11-16, lane/weather),
-    for the lead.*
+13. **Superseded by Decision 15 (W3 review).** W1 read a local time in an
+    IANA zone, and needed rules for a time that names no instant (a
+    spring-forward gap: the sun paused at the transition) or two (a
+    fall-back overlap: the earlier). On a fixed clock every reading names
+    exactly one instant, so neither rule exists, and `instantOf` is
+    increasing in the hour by construction (time.test.js: every quarter
+    hour of four dates on every quarter-hour clock from UTC−12 to UTC+14).
 14. **The sun is Meeus's low-accuracy algorithm, in UT, with three
     choices.** (a) The hour angle comes from apparent sidereal time (Meeus
     ch. 12, plus the nutation's principal term) and the sun's apparent
@@ -440,50 +441,45 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     ascension and declination; the NREL SPA example to 0.005° in zenith and
     azimuth; USNO's 2026 equinoxes and solstices to 0.006°. *Decided
     unattended (2026-11-16, lane/weather), for the lead.*
-15. **The zone's rules are the runtime's.** `instantOf` reads offsets
-    through `Intl.DateTimeFormat`, so a doc's sun is the same on every peer
-    whose time-zone data agrees for that date and zone, which is every
-    up-to-date browser and node for any real zone today. A zone whose rules
-    change (a country dropping DST) moves the sun by an hour on peers that
-    haven't updated, until they do. Storing a UTC offset instead would
-    pin it, but no one dials an offset, and it would be wrong half the year
-    for a date dialled across a DST change. For the same reason the zone
-    must be an IANA name (ASCII parts, each starting with a letter:
-    `America/Vancouver`, `UTC`, `Etc/GMT+8`, `EST5EDT`, and the aliases and
-    lowercase spellings ICU accepts), never a UTC-offset string: ES2024's
-    offset zones (`+05:30`, `-08:00`) are accepted by newer runtimes and
-    throw on older ones, so peers would disagree on whether to fall back.
-    `validZone` rejects them on every runtime. *Decided unattended
-    (2026-11-16, lane/weather), for the lead.*
-
-    **Measured in W3: the cost is real now, for the presets' own zone.**
-    The local probe (`probes/weather-run.mjs`) asked both engines for
-    America/Vancouver's offset. Chrome 157's zone data keeps it at UTC−7
-    through the winter from 2026-11-01 (British Columbia's permanent
-    daylight time); node 24.8 (ICU 77.1, tz 2025b) still falls back to
-    UTC−8. So for any Cadboro Bay or Ucluelet date from 2026-11-01 on, a
-    peer on older zone data puts the sun an hour away from one on newer
-    data (the probe's Now row: 0.22 apart as unit vectors), and Now
-    written by one reads an hour off on the other. Summer dates agree, so
-    the examples' 15 July doesn't show it. The tests run in node, so
-    time.test.js's Vancouver fall-back rows (2026-11-01) are node's
-    data's truth, not Chrome 157's. Question 12 proposes the fix.
-16. **`instantOf` throws on an invalid date, zone or hour; the params fall
-    back.** W0 carried "an invalid zone or a malformed date falls back to
+15. **The clock is a UTC offset in the doc, not a time zone.** W1 read
+    `date` and `hour` in an IANA zone through the runtime's
+    `Intl.DateTimeFormat`, so a doc's sun was the same only on peers whose
+    time-zone data agreed. W3's probe found that they don't, for the
+    presets' own zone: tz 2026f (macOS's zoneinfo, `zdump`, and Chrome
+    157) has British Columbia on UTC−7 all year from 2026-11-01, while
+    node 24.8 (ICU 77.1, tz 2025b, the stale side) still falls back to
+    UTC−8. So every winter date at Cadboro Bay or Ucluelet put the sun an
+    hour apart on the two, and W1's and W3's 2026-11-01 test rows asserted
+    a fall-back that current data no longer has. The trait now carries
+    `offset` (hours from UTC, −12..14 in quarter hours) in place of
+    `zone`, and `instantOf` is the date's midnight UTC + hour − offset:
+    arithmetic, so no peer's zone data enters the ambient, and the
+    invariant "every peer computes the same world from the doc" holds by
+    construction. Tests: `instantOf`, `localOf` and `offerOf` give the
+    same answers with `Intl` removed, and the probe checks node's sun
+    against the page's to 1e-9, a winter date among them. Nothing reads
+    time-zone data anywhere in the package now: the presets carry their
+    clock (−7) as data, and Now reads the trait's own offset. The cost: a
+    clock doesn't follow daylight saving. Dialling a January date at a
+    place that keeps DST shows its hour on the summer clock until someone
+    dials `offset` (or, if W4 decides so, fetches); the sun is right for
+    the instant either way, only the label is an hour off that day's civil
+    time. That cost is Question 12. *Decided unattended (2026-11-16,
+    lane/weather), for the lead.*
+16. **`instantOf` throws on an invalid date, or an hour or offset that
+    isn't finite; the params fall back.** W0 carried "an invalid zone or a
+    malformed date falls back to
     the default" to W1. A pure time function shouldn't know the weather's
     defaults, so W1 provides the predicates, `validDate` (a real proleptic
-    Gregorian `YYYY-MM-DD`, years 1–9999) and `validZone` (a zone this
-    runtime's Intl knows), each with a table, and W2's `weatherParams`
+    Gregorian `YYYY-MM-DD`, years 1–9999; `validZone` went with the zone,
+    Decision 15), with a table, and W2's `weatherParams`
     uses them to fall back field by field. The ambient never throws.
     *Decided unattended (2026-11-16, lane/weather), for the lead.*
-17. **`localOf(t, zone)`, the inverse, is in W1.** The Now and Fetch now
-    commands (W3, W4) need the zone's clock at an instant, and the inverse
-    makes `instantOf`'s exhaustive table possible: every quarter hour of a
-    summer day, the spring-forward day and the fall-back day round-trips
-    (a gap hour reads as the gap's end, 03:00, since its instant is the
-    transition; Decision 13). It returns the hour to the second, unrounded;
-    W3 and W4 decide whether Now and Fetch round it to the slider's
-    quarter hour. *Decided unattended (2026-11-16, lane/weather), for the
+17. **`localOf(t, offset)`, the inverse, is in W1.** The Now and Fetch now
+    commands (W3, W4) need the clock's reading at an instant, and the
+    inverse makes `instantOf`'s exhaustive round-trip table possible. It
+    returns the hour unrounded; Now floors it to the slider's step
+    (Decision 30). *Decided unattended (2026-11-16, lane/weather), for the
     lead.*
 18. **`sunAt` names its two elevations for what they are, and reports
     nothing unused.** It returns `{ azimuth, apparent, geometric,
@@ -556,9 +552,9 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     a JSON number: a numeric string such as `"7"` is malformed and gives the
     default, because the inspector writes numbers and a lenient parse would
     make `"7"` and `7` two spellings of one state. Numbers are clamped into
-    their range. An integer must be a safe integer. A zone must pass
-    `validZone` and a date `validDate`, and an enum must be one of its
-    options. `source` is dropped, because no ambient reads it. Any trait,
+    their range. An integer must be a safe integer. A date must pass
+    `validDate` (an offset is a number like any other), and an enum must
+    be one of its options. `source` is dropped, because no ambient reads it. Any trait,
     including none, gives a whole set of params, and the ambients never
     throw. *Decided unattended (2026-11-16, lane/weather), for the lead.*
 24. **The fetch's gust rule waits for the fetch.** W2's first cut put
@@ -634,34 +630,73 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     shows the null target's commands that name "inspector" in `show`
     (Question 11). *Decided unattended (2026-11-16, lane/weather), for the
     lead.*
-29. **The provenance sum is exact and covers the place and moment.**
-    `source.sum` is the JSON of the summed fields in force, not a hash, so
-    a dialled weather never collides with a fetched one (a few hundred
-    bytes in the doc, once per fetch). It sums every field but `place` (a
-    label) and `seed` (which gust pattern plays). Moving the hour, the
-    date or the coordinates after a fetch makes it "dialled since fetch",
+29. **The provenance record is the fetched fields, as a map, and covers the
+    place and moment.** W3 first wrote `source.sum`, the JSON of the summed
+    fields in a positional array: exact, but its meaning hung on the
+    describes' order (reordering or inserting a field would silently turn
+    every fetched doc into "dialled since fetch"), it couldn't be read in
+    the doc, and it couldn't say which field was dialled. Now a fetch
+    writes `source.fields`, the summed fields in force by name
+    (`fetchedFields`), and `dialledSince` compares key by key: the same
+    exactness, no hidden order, and the tooltip names what was dialled
+    ("… (hour, cover)"). A field the record doesn't name counts as
+    dialled, so a partial record can't vouch for what it didn't fetch; a
+    key it names that isn't summed is ignored. It records every field but
+    `seed` (which gust pattern plays). Moving the hour, the date, the
+    clock or the coordinates after a fetch makes it "dialled since fetch",
     because the snapshot was the conditions of that place at that hour;
-    the sun still follows the slider. The sum is compared over the params
-    in force, so a field left out and the same field written as its
-    default are one weather. A source read as anything but the trait's
-    own map with a string `sum` is "dialled". *Decided unattended
-    (2026-11-16, lane/weather), for the lead.*
-30. **Now writes the present minute, floored, and Place offers "here"
-    only when it is true.** Decision 17 left the rounding to W3. The slider
-    steps in quarter hours, but a quarter hour is 3.75° of sun, so Now
-    writes the minute (0.25°): floored, so the hour never reaches 24 and
-    stays on the date it reads. It is exact: over every minute of five
-    days (a summer day, the spring-forward and fall-back days in
-    Vancouver, Kolkata, Chatham) the hour Now writes reads back through
-    `instantOf` as that minute (in node's zone data), but for the 60
-    minutes of the fall-back's second pass, which read an hour early, as Decision 13's overlap rule
-    says (the trait has a clock time and a zone, not an offset, so the
-    second 01:30 can't be named). Place's "here" entry, the plan's third
-    choice, is the coordinates in force: it appears only when the weather
-    is at neither preset, as the picker's honest value, and picking it is
-    a no-op. Nothing asks the browser for the viewer's own location: that
-    would put a person's whereabouts into a shared doc. *Decided
+    the sun still follows the slider. The comparison is over the params in
+    force, so a field left out and the same field written as its default
+    are one weather. A source, or a `fields`, that isn't the trait's own
+    map is no fetch on record: "dialled". The cost is a few hundred bytes
+    in the doc per fetch. *Decided unattended (2026-11-16, lane/weather),
+    for the lead.*
+30. **Now writes the present quarter hour, floored, and Place offers "here"
+    only when it is true.** W3 first wrote the minute, because a quarter
+    hour is 3.75° of sun. But the hour field steps in quarter hours, and
+    the inspector's number box then held a value its step calls invalid
+    (`15.116666666666667`): the field and its only programmatic writer
+    disagreed. A step of 1/60 has no exact decimal, so the browser's step
+    check on it is a float comparison. So Now floors to the field's own
+    step, read from the describes: it writes only what the slider can
+    show. Open-Meteo's `current` is itself 15-minutely (W0's spike:
+    `interval: 900`), so the present quarter hour is what a fetch of now
+    describes. Floored, so the hour never reaches 24 and stays on the date
+    it reads. It is exact, with no exceptions now that the clock is fixed:
+    over every minute of two days on eight clocks (UTC−12 to UTC+14, half
+    and quarter hours among them), the hour Now writes is on the step and
+    reads back through `instantOf` as the quarter hour that minute is in.
+    Place's "here" entry, the plan's third choice, is the coordinates in
+    force: it appears only when the weather is at neither preset, as the
+    picker's honest value, and picking it is a no-op (a picker can only
+    show a value it offers). Nothing asks the browser for the viewer's own
+    location: that would put a person's whereabouts into a shared doc.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
+31. **The commands are the world's weather's only.** The toolbar shows
+    one segment per stage on the focus path, so with focus inside a linked
+    boat that carries a `weather` of her own, Place and Now showed twice,
+    and the inner pair wrote a weather the outermost rule keeps out of
+    force, with nothing to say so. Each command's state is now null, and
+    its run writes nothing, unless this stage is the outermost:
+    `api.ambient("wind").mine` (STAGE.md "Ambients": `mine` is "this is
+    the outermost stage"; a stage with the trait offers a wind, so it is
+    non-null exactly there). A boat linked into a dry room gets none
+    either (the outermost offers no wind: null). No scene change. The
+    linked world's Weather sliders in the inspector are still shown and
+    still inert: the inspector draws every behaviour a doc has, and hiding
+    one is the inspector's business (a scene question, folded into
+    Question 11). The probe enters a linked boat with her own weather and
+    checks one Place and one Now, showing the world's place. *Decided
     unattended (2026-11-16, lane/weather), for the lead.*
+32. **No `place` field: the coordinates are the place.** W3 had `place`, a
+    free string the Place command wrote and nothing read (the picker
+    matched coordinates), shown in the inspector as a second control also
+    called "Place". Nudging the latitude left it saying "Ucluelet" while
+    the picker showed coordinates, and typing "Ucluelet" into it moved
+    nothing: a field that could lie. It is gone. A preset's name lives in
+    `PLACES` and is shown when the coordinates are a preset's; otherwise
+    the coordinates themselves are shown. The plan's shape had the field.
+    *Decided unattended (2026-11-16, lane/weather), for the lead.*
 
 ## Spike: can a tool in Patchwork fetch Open-Meteo? (W0)
 
@@ -688,10 +723,9 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
   offers nothing. In the tests, `index.test.js` spawns one node (about
   50 ms) to evaluate the entry alone.
 - **W1**: none at run time until W2 calls it. `sunAt` is about 40
-  transcendental calls; `instantOf` is three or four `formatToParts` calls on a
-  formatter cached per zone (a few microseconds each), plus about 25 more
-  for an hour inside a spring-forward gap. Both run only when the trait
-  changes.
+  transcendental calls; `instantOf` is a date check and an addition (W1's
+  first `instantOf` read a zone's offsets through `Intl`; Decision 15).
+  Both run only when the trait changes.
 - **W2**: none at run time until W3 calls it. `atmosphereOf` is one
   `instantOf` and one `sunAt`, plus about 60 multiplies and 12 `pow`
   calls for the colours: tens of microseconds. The test grid (6720
@@ -699,13 +733,14 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
   the drawn-deck sweeps (a copy of the stage's `cloudAt` over 864
   directions, every 0.01 of cover and haze for every kind) add under a second.
 - **W3**: `ambient()` runs on every flush. Each time it fills the params
-  (`weatherParams`: fifteen field checks, one `validZone` and one
-  `validDate`) and stringifies them, a few microseconds; only a change in
+  (`weatherParams`: fourteen field checks and one `validDate`) and stringifies them, a few microseconds; only a change in
   the params in force recomputes the atmosphere, and otherwise it returns
   the same object, so the stage's merge does nothing. The commands' state
   is the same params, asked once per toolbar render. The tests: about
-  110 rows, of which the five-day minute table (9360 `localOf` and
-  `instantOf` round trips) takes about 0.4 s.
+  140 rows, of which the two-day minute table on eight clocks (23 040
+  `nowWrites` and `instantOf` round trips) takes about 0.2 s, and time.js's
+  table of every quarter hour on every quarter-hour clock (40 740 round
+  trips) about 0.4 s.
   Dragging the hour slider writes a change per input event, as every
   slider does, and each one is one `atmosphereOf` (tens of microseconds)
   and one viewport relight.
@@ -723,7 +758,8 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
    generic sky model, and terrain gives no sky of its own. Is that enough, or
    should a place keep an art-direction override?
 3. The UI is the scene inspector's Weather behaviour (the sliders) and the
-   toolbar's Place picker and Now button, in Edit. Do you want a dedicated
+   toolbar's Place picker and Now button (and W4's Fetch), in Edit, the
+   world's weather's only (Decision 31). Do you want a dedicated
    weather pane (a compass dial, a day scrubber with the sun's path), or a
    weather chip on N8's world bar that shows outside Edit?
 4. Dry rooms (the Model room, the Model basin, the basin mashup, the Quiet
@@ -759,23 +795,24 @@ undo stack; only the stage's own parts have `api.edit` (STAGE.md; Question
     run from heaps to a sheet.
 11. The scene inspector shows no scene commands, so Place and Now (and W4's
     Fetch) are on the toolbar and the menu, not beside the weather's
-    sliders (Decision 28). Should the scene inspector show the scene's
-    commands that name "inspector" in `show`? That is a one-rule scene
-    change, and the weather's commands would then sit in its Weather
-    section.
-12. **Peers' zone data disagree for Vancouver from 2026-11-01** (measured
-    in W3; Decision 15): Chrome 157 has British Columbia on permanent
-    UTC−7, node 24.8 still falls back to UTC−8, so the same doc's sun is
-    an hour apart on the two for every winter date at both presets. The
-    fix that makes it correct by construction is a data-shape change: the
-    trait carries the UTC offset in force (`offset`, minutes), written
-    with date and hour by Now, Place and Fetch from the writer's zone data
-    and then frozen in the doc, so `instantOf` becomes arithmetic (the
-    date's midnight UTC + hour − offset) and no peer's zone data enters
-    the ambient. `zone` stays, for Now and Fetch to know which offset to
-    write. It also removes Decision 13's gap and overlap rules (the slider
-    can't fall into a gap). Its cost: dialling the date across a DST
-    change keeps the old offset until someone presses Now. Make that
-    change (before W8 republishes), or keep the zone's rules as the
-    runtime's and live with the disagreement until browsers and node
-    agree?
+    sliders (Decision 28), and the weather's controls sit on two surfaces:
+    in Edit, every boating scene carries its weather commands on the
+    toolbar next to the view toggles even when nobody is touching the
+    weather. Should the scene inspector show the scene's commands that name
+    "inspector" in `show`? That is a one-rule scene change, and the
+    weather's commands would then sit in its Weather section, all of the
+    weather in one place. This should be settled together with your new
+    request to integrate the sidebar's objects list and the inspector,
+    which rewrites this surface: the merged panel is where scene commands
+    would land. The same work could hide a linked world's Weather
+    behaviour, whose sliders are shown but not in force (Decision 31).
+12. The clock is a fixed UTC offset in the doc, not a time zone, so every
+    peer computes the same sun (Decision 15: peers' zone data disagreed for
+    British Columbia from 2026-11-01). It doesn't follow daylight saving:
+    dial a January date at a place that keeps DST and its hour reads on the
+    summer clock (the sun is right for that instant; the label is an hour
+    off that day's civil time) until someone dials `offset`. British
+    Columbia itself is UTC−7 all year from November 2026, so the presets
+    are unaffected from then on. Is a fixed clock acceptable, or should the
+    date slider carry the clock with it (which needs zone data at the
+    moment of writing, by whoever dials, frozen in the doc)?

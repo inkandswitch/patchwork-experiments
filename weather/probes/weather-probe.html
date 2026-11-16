@@ -23,10 +23,10 @@
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
-// the package's own pure functions, evaluated here: the same engine and the same time-zone data as the stage's
+// the package's own pure functions, evaluated here: the same engine as the stage's
 import { atmosphereOf, sunOf } from "../src/atmosphere.js";
 import { sunDirection } from "../src/solar.js";
-import { localOf, offsetAt } from "../src/time.js";
+import { localOf } from "../src/time.js";
 import { weatherParams, windOf } from "../src/weather.js";
 
 const errors = [];
@@ -67,9 +67,34 @@ try {
       const sun = sunOf(p);
       return { params: p, atmosphere: atmosphereOf(p), wind: windOf(p), sun, direction: sunDirection(sun.azimuth, sun.apparent) };
     },
-    localOf: (t, zone) => localOf(t, zone),
-    offsetAt: (zone, t) => offsetAt(zone, t),
-    icu: () => Intl.DateTimeFormat().resolvedOptions().timeZone + " / " + navigator.userAgent.match(/Chrome\/[0-9.]+/)?.[0],
+    localOf: (t, offset) => localOf(t, offset),
+    engine: () => navigator.userAgent.match(/Chrome\/[0-9.]+/)?.[0] ?? navigator.userAgent,
+    /**
+     * Link a second scene with a weather of its own (12 m/s from 90) into
+     * this one, as a person adds a doc: the outermost rule says its weather
+     * is not the world's. Resolves with the link's id once its stage runs
+     * the weather extension.
+     */
+    async linkBoat() {
+      const inner = repo.add(emptyScene({ title: "Linked boat", traits: { weather: { ...init, wind: 12, from: 90 } } }));
+      const api = ["scene.add", "scene.use", "scene.keys"].map((id) => dbg.host.record(id)?.api).find(Boolean);
+      const id = await api.addObject(inner.url, { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+      for (let i = 0; i < 200; i++) {
+        const st = dbg.view.stages().find((x) => x.path.length === 1 && x.path[0] === id);
+        if (st && st.debug.host.running().some((r) => r.id === "weather")) return id;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return null;
+    },
+    /** Enter a link of the outermost's, as the menu's Enter runs it (scene.focus): false where it can't */
+    enter(id) {
+      const c = dbg.view.focusStage()?.debug.host.instanceOf("scene.focus")?.commands.find((k) => k.id === "enter");
+      const st = c?.state(id);
+      if (!st || st.disabled) return false;
+      c.run(id);
+      return true;
+    },
+    focus: () => [...dbg.view.atom.get().focus],
     running: () => dbg.local.get().running.map((r) => r.id),
     body: () => dbg.local.get().body?.id ?? null,
     /** the viewport's key light: its position and target (the direction it shines from is position - target) */

@@ -5,19 +5,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { plugins } from "./index.js";
 import { atmosphereOf } from "./atmosphere.js";
 import { instantOf } from "./time.js";
-import { DEFAULTS, PLACES, sumOf, weatherParams, windOf } from "./weather.js";
-import ext, { HERE, SHOW, TRAIT, coordinates, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
+import { DEFAULTS, PLACES, fetchedFields, weatherParams, windOf } from "./weather.js";
+import ext, { HERE, SHOW, TRAIT, clockName, coordinates, isWorlds, nowWrites, offerOf, placeState, placeWrites, provenanceTitle } from "./extension.js";
 
 const INIT = plugins[0].describes.weather.init;
 const [CADBORO, UCLUELET] = PLACES;
-const GREY = { ...INIT, place: "Ucluelet", lat: 48.95, lon: -125.558, cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000, wind: 5, from: 300 };
+const GREY = { ...INIT, lat: 48.95, lon: -125.558, cover: 1, clouds: "stratocumulus", base: 600, visibility: 19000, wind: 5, from: 300 };
 
-/** A fake api over a doc held here: doc() and change(fn), each change counted, the doc replaced (as a handle's snapshot is). */
+/**
+ * A fake api over a doc held here: doc() and change(fn), each change
+ * counted, the doc replaced (as a handle's snapshot is); and ambient(name)
+ * as the stage answers it, `mine` while this stage is the outermost
+ * (api.world: "mine", "linked" — another stage is the outermost and offers
+ * a wind — or "none" — the outermost offers none).
+ */
 function fakeApi(traits) {
   const api = {
     d: { traits: structuredClone(traits) },
     changes: 0,
+    world: "mine",
     doc: () => api.d,
+    ambient: (name) => (api.world === "none" ? null : { value: { name }, mine: api.world === "mine" }),
     change(fn) {
       const draft = structuredClone(api.d);
       fn(draft);
@@ -49,8 +57,8 @@ describe("the offer: a function of the trait alone", () => {
     ["{}", {}, true],
     ["init", INIT, true],
     ["Ukee grey", GREY, true],
-    ["malformed (wind a string, an offset zone, a bad date)", { wind: "7", zone: "+05:30", date: "2026-02-30" }, true],
-    ["with a source", { ...INIT, source: { name: "Open-Meteo", sum: "x" } }, true],
+    ["malformed (wind a string, an offset written as text, a bad date)", { wind: "7", offset: "-08:00", date: "2026-02-30" }, true],
+    ["with a source", { ...INIT, source: { name: "Open-Meteo", fields: { wind: 3 } } }, true],
   ];
   for (const [name, trait, offers] of rows)
     it(`trait ${name} → ${offers ? "{ wind, atmosphere } of its params" : "null"}`, () => {
@@ -89,7 +97,7 @@ describe("the offer is === while the trait in force is unchanged", () => {
     expect(x.ambient()).toBe(first);
     api.d = structuredClone(api.d);
     expect(x.ambient()).toBe(first);
-    api.change((d) => (d.traits[TRAIT].source = { name: "Open-Meteo", sum: "s" }));
+    api.change((d) => (d.traits[TRAIT].source = { name: "Open-Meteo", fields: { wind: 3 } }));
     expect(x.ambient()).toBe(first);
     api.change((d) => (d.traits[TRAIT].colour = "red"));
     expect(x.ambient()).toBe(first);
@@ -111,6 +119,38 @@ describe("the offer is === while the trait in force is unchanged", () => {
     expect(x.ambient()).toEqual(first);
     api.change((d) => delete d.traits[TRAIT]);
     expect(x.ambient()).toBe(null);
+  });
+
+  // The cache's key and the offer share one condition: a trait that is
+  // falsy offers nothing, and the moment it becomes a trait the offer
+  // appears, though the params in force are the defaults either way.
+  it.each([
+    ["absent", undefined],
+    ["false", false],
+    ["null", null],
+    ["0", 0],
+  ])("%s, then {}: null, then the defaults' offer", (_, falsy) => {
+    const api = withTrait(falsy);
+    const x = ext.create(api);
+    expect(x.ambient()).toBe(null);
+    api.change((d) => (d.traits[TRAIT] = {}));
+    expect(x.ambient()).toEqual(offerOf({}));
+    api.change((d) => (d.traits[TRAIT] = falsy));
+    expect(x.ambient()).toBe(null);
+  });
+
+  // The ambient reads no time-zone data, so no two peers' runtimes can put
+  // the sun in different places for one doc (Decision 15): with Intl gone,
+  // every offer is the same.
+  it("is the same with the runtime's Intl gone", () => {
+    const traits = [INIT, GREY, { date: "2026-12-15", hour: 8.5 }, { date: "2026-11-01", hour: 1.5, offset: -8 }, { lat: -33.86, lon: 151.21, offset: 11, date: "2026-12-21", hour: 6 }];
+    const want = traits.map(offerOf);
+    try {
+      vi.stubGlobal("Intl", undefined);
+      expect(traits.map(offerOf)).toEqual(want);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -140,20 +180,57 @@ describe("the commands", () => {
           expect(x.state(target, {}) != null).toBe(applies && target == null);
         });
 
-  it("Now's title names the zone in force", () => {
-    expect(ext.create(withTrait({ zone: "Asia/Kolkata" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present in Asia/Kolkata");
-    expect(ext.create(withTrait({ zone: "+05:30" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present in America/Vancouver");
+  // Each command × where this stage is: the commands are the world's
+  // weather's only. A linked world's weather is not in force (the outermost
+  // rule), so in a stage that isn't the outermost they don't apply, and run
+  // writes nothing (Decision 31).
+  for (const c of commands)
+    for (const [world, applies] of [["mine", true], ["linked", false], ["none", false]])
+      it(`${c.id}, this stage's world ${world}: ${applies ? "applies" : "null, and run writes nothing"}`, () => {
+        const api = withTrait({ date: "2001-01-01", hour: 3, lat: 1, lon: 1 });
+        api.world = world;
+        const x = ext.create(api).commands.find((y) => y.id === c.id);
+        expect(x.state(null, {}) != null).toBe(applies);
+        x.run(null, "Ucluelet");
+        expect(api.changes).toBe(applies ? 1 : 0);
+      });
+
+  it.each([
+    ["mine", { mine: true }, true],
+    ["linked", { mine: false }, false],
+    ["none (the outermost offers no wind)", null, false],
+    ["an api with no ambient", undefined, false],
+    ["mine only when strictly true", { mine: 1 }, false],
+  ])("isWorlds: %s → %s", (_, answer, want) => {
+    const api = answer === undefined ? {} : { ambient: (name) => (expect(name).toBe("wind"), answer) };
+    expect(isWorlds(api)).toBe(want);
   });
+
+  it("Now's title names the clock in force", () => {
+    expect(ext.create(withTrait({ offset: 5.75 })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC+5:45)");
+    expect(ext.create(withTrait({ offset: "+05:30" })).commands[1].state(null, {}).title).toBe("Set the weather's date and hour to the present quarter hour on its clock (UTC\u22127)");
+  });
+
+  it.each([
+    [0, "UTC"],
+    [-7, "UTC\u22127"],
+    [-12, "UTC\u221212"],
+    [14, "UTC+14"],
+    [5.5, "UTC+5:30"],
+    [12.75, "UTC+12:45"],
+    [-3.5, "UTC\u22123:30"],
+    [-0.25, "UTC\u22120:15"],
+  ])("clockName(%s) → %s", (offset, want) => expect(clockName(offset)).toBe(want));
 
 });
 
 describe("Place", () => {
-  it("the places: Cadboro Bay is the defaults', Ucluelet terrain's origin", () => {
+  it("the places: Cadboro Bay is the defaults', Ucluelet terrain's origin, both on British Columbia's clock", () => {
     expect(PLACES).toEqual([
-      { place: "Cadboro Bay", lat: 48.454, lon: -123.2915, zone: "America/Vancouver" },
-      { place: "Ucluelet", lat: 48.95, lon: -125.558, zone: "America/Vancouver" },
+      { name: "Cadboro Bay", lat: 48.454, lon: -123.2915, offset: -7 },
+      { name: "Ucluelet", lat: 48.95, lon: -125.558, offset: -7 },
     ]);
-    expect({ place: DEFAULTS.place, lat: DEFAULTS.lat, lon: DEFAULTS.lon, zone: DEFAULTS.zone }).toEqual(CADBORO);
+    expect({ lat: DEFAULTS.lat, lon: DEFAULTS.lon, offset: DEFAULTS.offset }).toEqual({ lat: CADBORO.lat, lon: CADBORO.lon, offset: CADBORO.offset });
   });
 
   const two = [
@@ -163,11 +240,11 @@ describe("Place", () => {
   // [name, trait, value shown, choices]
   const states = [
     ["{} (the defaults: Cadboro)", {}, "Cadboro Bay", two],
-    ["Ucluelet", { ...UCLUELET }, "Ucluelet", two],
-    ["Cadboro's coordinates under another name (the name is a label)", { ...CADBORO, place: "RVYC" }, "Cadboro Bay", two],
-    ["Cadboro's coordinates in another zone", { ...CADBORO, zone: "UTC" }, HERE, [...two, { value: HERE, label: "48.4540° N, 123.2915° W" }]],
-    ["Port Hardy", { place: "Port Hardy", lat: 50.7, lon: -127.42 }, HERE, [...two, { value: HERE, label: "50.7000° N, 127.4200° W" }]],
-    ["Sydney", { place: "Sydney", lat: -33.86, lon: 151.21, zone: "Australia/Sydney" }, HERE, [...two, { value: HERE, label: "33.8600° S, 151.2100° E" }]],
+    ["Ucluelet", { lat: UCLUELET.lat, lon: UCLUELET.lon }, "Ucluelet", two],
+    ["Cadboro's coordinates on another clock (the clock is when, not where)", { offset: 0 }, "Cadboro Bay", two],
+    ["a key named place (not a field: nothing reads it)", { place: "Ucluelet" }, "Cadboro Bay", two],
+    ["Port Hardy", { lat: 50.7, lon: -127.42 }, HERE, [...two, { value: HERE, label: "50.7000° N, 127.4200° W" }]],
+    ["Sydney", { lat: -33.86, lon: 151.21, offset: 11 }, HERE, [...two, { value: HERE, label: "33.8600° S, 151.2100° E" }]],
     ["lat out of range (clamped: the picker shows what's in force)", { lat: 120 }, HERE, [...two, { value: HERE, label: "90.0000° N, 123.2915° W" }]],
   ];
   for (const [name, trait, value, choices] of states)
@@ -180,21 +257,21 @@ describe("Place", () => {
 
   it("coordinates: the equator and the prime meridian read N and E", () => expect(coordinates(0, 0)).toBe("0.0000° N, 0.0000° E"));
 
-  const writesFor = (q) => ({ place: q.place, lat: q.lat, lon: q.lon, zone: q.zone });
+  const writesFor = (q) => ({ lat: q.lat, lon: q.lon, offset: q.offset });
   // [trait, choice] → the fields written
   const rows = [
     ["{}", {}, "Cadboro Bay", writesFor(CADBORO)],
     ["{}", {}, "Ucluelet", writesFor(UCLUELET)],
     ["{}", {}, HERE, {}],
     ["init (Cadboro)", INIT, "Cadboro Bay", {}],
-    ["init (Cadboro)", INIT, "Ucluelet", { place: "Ucluelet", lat: 48.95, lon: -125.558 }],
+    ["init (Cadboro)", INIT, "Ucluelet", { lat: 48.95, lon: -125.558 }],
     ["init (Cadboro)", INIT, HERE, {}],
-    ["Ucluelet", { ...UCLUELET }, "Cadboro Bay", { place: "Cadboro Bay", lat: 48.454, lon: -123.2915 }],
-    ["Ucluelet", { ...UCLUELET }, "Ucluelet", {}],
-    ["Port Hardy in UTC", { place: "Port Hardy", lat: 50.7, lon: -127.42, zone: "UTC" }, "Ucluelet", writesFor(UCLUELET)],
-    ["Port Hardy in UTC", { place: "Port Hardy", lat: 50.7, lon: -127.42, zone: "UTC" }, HERE, {}],
-    ["RVYC at Cadboro's coordinates", { ...CADBORO, place: "RVYC" }, "Cadboro Bay", { place: "Cadboro Bay" }],
-    ["lat as a string", { ...CADBORO, lat: "48.454" }, "Cadboro Bay", { lat: 48.454 }],
+    ["Ucluelet", { ...INIT, ...writesFor(UCLUELET) }, "Cadboro Bay", { lat: 48.454, lon: -123.2915 }],
+    ["Ucluelet", { ...INIT, ...writesFor(UCLUELET) }, "Ucluelet", {}],
+    ["Cadboro on UTC", { ...INIT, offset: 0 }, "Cadboro Bay", { offset: -7 }],
+    ["Port Hardy on UTC", { lat: 50.7, lon: -127.42, offset: 0 }, "Ucluelet", writesFor(UCLUELET)],
+    ["Port Hardy on UTC", { lat: 50.7, lon: -127.42, offset: 0 }, HERE, {}],
+    ["lat as a string", { ...INIT, lat: "48.454" }, "Cadboro Bay", { lat: 48.454 }],
     ["{}", {}, "Nowhere", {}],
     ["{}", {}, undefined, {}],
   ];
@@ -206,7 +283,7 @@ describe("Place", () => {
     const place = ext.create(api).commands[0];
     place.run(null, "Ucluelet");
     expect(api.changes).toBe(1);
-    expect(api.d.traits[TRAIT]).toEqual({ ...INIT, place: "Ucluelet", lat: 48.95, lon: -125.558 });
+    expect(api.d.traits[TRAIT]).toEqual({ ...INIT, lat: 48.95, lon: -125.558 });
     place.run(null, "Ucluelet");
     place.run(null, HERE);
     place.run("obj1", "Cadboro Bay");
@@ -230,56 +307,48 @@ describe("Place", () => {
 describe("Now", () => {
   afterEach(() => vi.useRealTimers());
   const at = (iso) => Date.parse(iso);
-  // [zone in the trait, the instant] → the date and hour written (the minute floored)
+  // [the trait's clock, the instant] → the date and hour written (the quarter hour floored)
   const rows = [
     [{}, "2026-07-15T22:00:30Z", { date: "2026-07-15", hour: 15 }],
-    [{}, "2026-07-15T22:07:59.999Z", { date: "2026-07-15", hour: 15 + 7 / 60 }],
-    [{}, "2026-07-16T06:59:59Z", { date: "2026-07-15", hour: 23 + 59 / 60 }],
+    [{}, "2026-07-15T22:14:59.999Z", { date: "2026-07-15", hour: 15 }],
+    [{}, "2026-07-15T22:15:00Z", { date: "2026-07-15", hour: 15.25 }],
+    [{}, "2026-07-15T22:44:00Z", { date: "2026-07-15", hour: 15.5 }],
+    [{}, "2026-07-16T06:59:59Z", { date: "2026-07-15", hour: 23.75 }],
     [{}, "2026-07-16T07:00:00Z", { date: "2026-07-16", hour: 0 }],
-    [{}, "2026-01-15T23:00:00Z", { date: "2026-01-15", hour: 15 }],
-    [{ zone: "Asia/Kolkata" }, "2026-07-15T09:30:00Z", { date: "2026-07-15", hour: 15 }],
-    [{ zone: "Pacific/Chatham" }, "2026-07-15T02:15:00Z", { date: "2026-07-15", hour: 15 }],
-    [{ zone: "UTC" }, "2026-12-31T23:59:30Z", { date: "2026-12-31", hour: 23 + 59 / 60 }],
-    [{ zone: "+05:30" }, "2026-07-15T22:00:00Z", { date: "2026-07-15", hour: 15 }],
-    [{ date: "2026-07-15", hour: 15 }, "2026-07-15T22:00:59Z", {}],
+    [{}, "2026-12-15T22:00:00Z", { date: "2026-12-15", hour: 15 }],
+    [{ offset: -8 }, "2026-01-15T23:00:00Z", { date: "2026-01-15", hour: 15 }],
+    [{ offset: 5.5 }, "2026-07-15T09:30:00Z", { date: "2026-07-15", hour: 15 }],
+    [{ offset: 5.75 }, "2026-07-15T09:15:00Z", { date: "2026-07-15", hour: 15 }],
+    [{ offset: 12.75 }, "2026-07-15T02:15:00Z", { date: "2026-07-15", hour: 15 }],
+    [{ offset: 0 }, "2026-12-31T23:59:30Z", { date: "2026-12-31", hour: 23.75 }],
+    [{ offset: "+05:30" }, "2026-07-15T22:00:00Z", { date: "2026-07-15", hour: 15 }],
+    [{ date: "2026-07-15", hour: 15 }, "2026-07-15T22:10:00Z", {}],
     [{ date: "2026-07-15", hour: 9 }, "2026-07-15T22:00:00Z", { hour: 15 }],
   ];
   for (const [trait, iso, writes] of rows) it(`${JSON.stringify(trait)} at ${iso} → ${JSON.stringify(writes)}`, () => expect(nowWrites(trait, at(iso))).toEqual(writes));
   for (const t of [undefined, null, true, []]) it(`no trait to write into (${JSON.stringify(t)}) → null`, () => expect(nowWrites(t, 0)).toBe(null));
 
-  // The sun Now sets is the present minute's: every minute of five days (a
-  // summer day, the spring-forward day and the fall-back day in Vancouver,
-  // Kolkata, Chatham) written by Now reads back through instantOf as that
-  // minute, but for exactly the 60 minutes of the fall-back's second pass,
-  // which read an hour early (Decision 13's overlap rule: the earlier
-  // instant).
-  it("puts the sun at the present minute, but for the fall-back's repeated hour", () => {
-    const days = [
-      ["2026-07-15T07:00:00Z", "America/Vancouver"],
-      ["2026-03-08T08:00:00Z", "America/Vancouver"],
-      ["2026-11-01T07:00:00Z", "America/Vancouver"],
-      ["2026-07-14T18:30:00Z", "Asia/Kolkata"],
-      ["2026-07-14T11:15:00Z", "Pacific/Chatham"],
-    ];
-    const early = [];
+  // The sun Now sets is the present quarter hour's, exactly: over every
+  // minute of two days on eight clocks, the hour Now writes is on the hour
+  // slider's step and below 24, and reads back through instantOf as the
+  // quarter hour that minute is in. No exceptions: a clock has no gaps and
+  // no repeated hours.
+  it("puts the sun at the present quarter hour, every minute of two days on eight clocks", () => {
+    const Q = 15 * 60_000;
     let n = 0;
-    for (const [start, zone] of days)
-      for (let m = 0; m < 26 * 60; m++) {
-        const t = at(start) + m * 60_000 + 59_999;
-        const w = { ...nowWrites({ zone }, t), zone };
-        const back = instantOf(w);
-        n++;
-        if (back !== t - 59_999) {
-          expect(back).toBe(t - 59_999 - 3_600_000);
-          early.push(new Date(t - 59_999).toISOString());
+    for (const offset of [-12, -8, -7, 0, 5.5, 5.75, 12.75, 14])
+      for (const start of ["2026-07-15T00:00:00Z", "2026-12-31T12:00:00Z"])
+        for (let m = 0; m < 24 * 60; m++) {
+          const t = at(start) + m * 60_000 + 59_999;
+          const w = nowWrites({ offset }, t);
+          expect(Number.isInteger(w.hour * 4) && w.hour >= 0 && w.hour < 24).toBe(true);
+          expect(instantOf({ ...w, offset })).toBe(Math.floor(t / Q) * Q);
+          n++;
         }
-        expect(w.hour).toBeLessThan(24);
-      }
-    expect(n).toBe(5 * 26 * 60);
-    expect(early).toEqual(Array.from({ length: 60 }, (_, i) => new Date(at("2026-11-01T09:00:00Z") + i * 60_000).toISOString()));
+    expect(n).toBe(8 * 2 * 24 * 60);
   });
 
-  it("run: writes the present, read from the clock, in one change; again in the same minute, nothing", () => {
+  it("run: writes the present, read from the clock, in one change; again in the same quarter hour, nothing; an object target, nothing", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(at("2026-07-15T19:45:10Z"));
     const api = withTrait(INIT);
@@ -287,22 +356,29 @@ describe("Now", () => {
     now.run(null);
     expect(api.changes).toBe(1);
     expect(api.d.traits[TRAIT]).toEqual({ ...INIT, hour: 12.75 });
-    vi.setSystemTime(at("2026-07-15T19:45:50Z"));
+    vi.setSystemTime(at("2026-07-15T19:59:50Z"));
     now.run(null);
+    expect(api.changes).toBe(1);
+    // a later quarter hour, so a write would be due: on an object, none
+    vi.setSystemTime(at("2026-07-15T20:30:00Z"));
     now.run("obj1");
     expect(api.changes).toBe(1);
+    now.run(null);
+    expect(api.changes).toBe(2);
+    expect(api.d.traits[TRAIT].hour).toBe(13.5);
   });
 });
 
 describe("the Place tooltip says the provenance", () => {
-  const fetched = (t, source) => ({ ...t, source: { ...source, sum: sumOf(weatherParams(t)) } });
+  const fetched = (t, source) => ({ ...t, source: { ...source, fields: fetchedFields(weatherParams(t)) } });
   const src = { name: "Open-Meteo", api: "forecast", for: "2026-07-15T22:00Z", fetched: "2026-07-15T22:03:00Z" };
   const rows = [
     ["no source", INIT, "Weather: dialled by hand"],
-    ["a source with no sum", { ...INIT, source: { name: "Open-Meteo" } }, "Weather: dialled by hand"],
+    ["a source with no fields", { ...INIT, source: { name: "Open-Meteo" } }, "Weather: dialled by hand"],
     ["fetched", fetched(INIT, src), "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
-    ["fetched, the seed dialled since (not summed)", { ...fetched(INIT, src), seed: 9 }, "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
-    ["the wind dialled since", { ...fetched(INIT, src), wind: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
+    ["fetched, the seed dialled since (not weather)", { ...fetched(INIT, src), seed: 9 }, "Weather: as fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z"],
+    ["the wind dialled since", { ...fetched(INIT, src), wind: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z (wind)"],
+    ["the hour and the cover dialled since", { ...fetched(INIT, src), cover: 1, hour: 9 }, "Weather: dialled since it was fetched from Open-Meteo (forecast) for 2026-07-15T22:00Z (hour, cover)"],
     ["fetched, a source of no name, api or time", fetched(INIT, {}), "Weather: as fetched from an unnamed source"],
     ["fetched, a source whose strings aren't", fetched(INIT, { name: 7, api: {}, for: null }), "Weather: as fetched from an unnamed source"],
   ];

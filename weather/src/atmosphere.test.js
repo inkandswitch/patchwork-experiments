@@ -106,7 +106,7 @@ describe("the anchors: the art direction they were, exactly, at their conditions
     ["Ukee grey's sky under stratus (its own deck)", { cover: 1, clouds: "stratus", base: 600, visibility: 19000 }, { ...GREY, clouds: { cover: 1, contrast: 0.05, scale: 1500, base: 600 } }],
     ["marine layer", { visibility: 1000 }, MARINE],
     ...KIND_NAMES.flatMap((k) => [0, 0.35, 1].map((cover) => [`marine layer, ${k} at cover ${cover}`, { cover, clouds: k, visibility: 1000 }, MARINE])),
-    ["the marine layer, at Ucluelet", { place: "Ucluelet", lat: 48.95, lon: -125.558, visibility: 1000, wind: 5, from: 300 }, MARINE],
+    ["the marine layer, at Ucluelet", { lat: 48.95, lon: -125.558, visibility: 1000, wind: 5, from: 300 }, MARINE],
   ];
   for (const [name, t, want] of rows)
     it(name, () => {
@@ -271,7 +271,7 @@ describe(`every output, over a grid of ${GRID.length} weathers`, () => {
   });
 
   it("never throws, whatever the trait", () => {
-    for (const t of [undefined, null, {}, { zone: "+05:30", date: "2026-02-30", hour: 99, cover: "lots", clouds: "nimbus", visibility: 0, rain: -1, lat: 1e9 }])
+    for (const t of [undefined, null, {}, { offset: "+05:30", date: "2026-02-30", hour: 99, cover: "lots", clouds: "nimbus", visibility: 0, rain: -1, lat: 1e9 }])
       expect(() => atmosphereOf(params(t))).not.toThrow();
   });
 });
