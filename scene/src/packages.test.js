@@ -1,11 +1,12 @@
 // The packages rules (src/packages.js), case by case: every branch of the
 // URL rule, every kind of mark a doc can carry, every way a plugin can be
-// registered, and the list's invariants under concurrent adds (real
-// automerge merges, every pair of adds).
+// registered, the prune rule's every case and its fixed point, and the
+// list's invariants under concurrent adds and prunes (real automerge
+// merges).
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { SceneDatatype } from "./datatype.js";
-import { answeringPlugins, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, promptText, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
+import { answeringPlugins, changeList, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, promptText, reconcileList, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
@@ -285,6 +286,209 @@ describe("concurrent adds (real automerge merges)", () => {
         expect(packagesToList({ doc: { ...merged, objects }, registries })).toEqual([]);
       }
     }
+  });
+});
+
+describe("the prune rule (packagesToPrune)", () => {
+  const P = A;
+  const DEV = "http://localhost:5173/";
+  // each kind of need P's plugin can answer: the doc with it or without it, the providers render docs asked for, P's plugin
+  const NEEDS = {
+    source: { doc: (on) => newScene(on ? { objects: { a: { providerId: "p" } } } : {}), providerIds: () => [], plugin: ["scene:source", { id: "p" }] },
+    renderDoc: { doc: () => newScene({ objects: { a: { providerId: "other" } } }), providerIds: (on) => (on ? ["p"] : []), plugin: ["scene:source", { id: "p" }] },
+    sceneTrait: { doc: (on) => newScene(on ? { traits: { t: {} } } : {}), providerIds: () => [], plugin: ["scene:extension", { id: "x", traits: ["t"] }] },
+    objectTrait: { doc: (on) => newScene({ objects: { a: on ? { traits: { t: {} } } : {} } }), providerIds: () => [], plugin: ["scene:extension", { id: "x", traits: ["t"] }] },
+  };
+  /**
+   * The registries for a case: P's plugin when P is registered here; the
+   * scene datatype from P when P is the scene package and here, from a dev
+   * server when P is the scene package and isn't here (a viewer on a dev
+   * copy), else from B. B is always here and listed, and never answers.
+   */
+  const registriesFor = ([type, meta], registered, isScene) => ({
+    "scene:source": [],
+    "scene:extension": [],
+    ...(registered ? { [type]: [{ ...meta, importUrl: `${P}#${HEAD}` }] } : {}),
+    "patchwork:datatype": [{ id: "scene", importUrl: isScene ? (registered ? P : DEV) : B }],
+  });
+
+  it("takes a listed package off exactly when it is here, answers no need, wasn't used here and isn't the scene package: all 16 cases, for each kind of need", () => {
+    let cases = 0;
+    for (const [kind, need] of Object.entries(NEEDS)) {
+      for (const registered of [false, true])
+        for (const answers of [false, true])
+          for (const used of [false, true])
+            for (const isScene of [false, true]) {
+              const doc = { ...need.doc(answers), packages: [{ url: P }, { url: B }] };
+              const registries = registriesFor(need.plugin, registered, isScene);
+              const got = packagesToPrune({ doc, registries, used: used ? [`${P}#${HEAD2}`] : [], providerIds: need.providerIds(answers) });
+              const want = registered && !answers && !used && !isScene ? [P] : [];
+              expect([kind, { registered, answers, used, isScene }, got]).toEqual([kind, { registered, answers, used, isScene }, want]);
+              // the invariants, said directly: never one missing here, never one that answers a need
+              for (const url of got) expect(registeredPackages(registries).has(url) && !packagesOf(answeringPlugins(doc, registries, { providerIds: need.providerIds(answers) })).includes(url)).toBe(true);
+              cases++;
+            }
+    }
+    expect(cases).toBe(4 * 16);
+  });
+
+  it("every entry naming it goes, however it names it; the rest stay as they are, and a doc without the list is never touched", () => {
+    const registries = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }] };
+    const packages = [{ url: P }, { url: B }, { url: `${P}#${HEAD}` }, { url: DEV }, { url: P }, { other: 1 }, null];
+    const doc = newScene({ packages });
+    const prune = packagesToPrune({ doc, registries });
+    expect(prune).toEqual([P]);
+    const want = [{ url: B }, { url: DEV }, { other: 1 }, null];
+    const plain = structuredClone(doc);
+    changeList(plain, { prune });
+    expect(plain.packages).toEqual(want);
+    // in a real automerge change too
+    const am = Automerge.change(Automerge.from(newScene()), (d) => {
+      d.packages = packages;
+    });
+    expect(Automerge.change(am, (d) => changeList(d, { prune })).packages).toEqual(want);
+    for (const p of [undefined, null, {}, "x"]) {
+      expect(packagesToPrune({ doc: { packages: p }, registries })).toEqual([]);
+      const d = { packages: p };
+      changeList(d, { add: [B], prune: [P] });
+      expect(d).toEqual({ packages: p });
+    }
+  });
+
+  it("a package this view took off and a peer listed again stays (relisted); one it lists itself again may go again", () => {
+    const registries = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }] };
+    const doc = newScene({ packages: [{ url: P }] });
+    expect(packagesToPrune({ doc, registries, relisted: [P] })).toEqual([]);
+    expect(packagesToPrune({ doc, registries, relisted: [`${P}#${HEAD}`] })).toEqual([]);
+    expect(packagesToPrune({ doc, registries, relisted: [B] })).toEqual([P]);
+    // the bookkeeping: taking off remembers it, listing it again forgets it
+    const off = reconcileList({ doc, registries });
+    expect(off).toEqual({ add: [], prune: [P], pruned: new Set([P]) });
+    const needed = newScene({ traits: { t: {} }, packages: [] });
+    expect(reconcileList({ doc: needed, registries, pruned: off.pruned })).toEqual({ add: [P], prune: [], pruned: new Set() });
+    // before the registry has gone quiet, only adds
+    expect(reconcileList({ doc, registries, prune: false })).toEqual({ add: [], prune: [], pruned: new Set() });
+  });
+});
+
+describe("reconcile's fixed point (packagesToList and packagesToPrune together)", () => {
+  // two packages, each in every state: listed {not, once, twice} × registered × the doc calls for its plugin × used here
+  const PKGS = [
+    [A, "a", "ta"],
+    [B, "b", "tb"],
+  ];
+  const STATES = [];
+  for (const listed of [0, 1, 2]) for (const registered of [false, true]) for (const needed of [false, true]) for (const used of [false, true]) STATES.push({ listed, registered, needed, used });
+
+  it("one pass reaches listed = (answering ∪ used) ∪ (listed ∩ unregistered), and the next writes nothing: all 576 pairs", () => {
+    let cases = 0;
+    for (const sa of STATES)
+      for (const sb of STATES) {
+        const states = [sa, sb];
+        const traits = {};
+        const packages = [];
+        const extensions = [];
+        const used = [];
+        PKGS.forEach(([url, id, trait], i) => {
+          const s = states[i];
+          if (s.needed) traits[trait] = {};
+          for (let k = 0; k < s.listed; k++) packages.push({ url: k ? `${url}#${HEAD}` : url });
+          if (s.registered) extensions.push({ id, traits: [trait], importUrl: url });
+          if (s.used) used.push(`${url}#${HEAD2}`);
+        });
+        const registries = { "scene:extension": extensions, "patchwork:datatype": [{ id: "scene", importUrl: "http://localhost:5173/" }] };
+        const doc = newScene({ traits, packages });
+        const { add, prune } = reconcileList({ doc, registries, used });
+        const after = structuredClone(doc);
+        changeList(after, { add, prune });
+        const want = PKGS.filter(([, , ], i) => {
+          const s = states[i];
+          return (s.registered && s.needed) || s.used || (s.listed > 0 && !s.registered);
+        }).map(([url]) => url);
+        expect([states, [...listedPackages(after)].sort()]).toEqual([states, want.sort()]);
+        const again = reconcileList({ doc: after, registries, used });
+        expect([states, again.add, again.prune]).toEqual([states, [], []]);
+        cases++;
+      }
+    expect(cases).toBe(576);
+  });
+
+  it("two viewers who disagree on what a package answers (two versions of it) settle with it listed, one write each; without `relisted` they would take turns", () => {
+    const P = A;
+    const doc0 = newScene({ traits: { t2: {} }, packages: [{ url: P }] });
+    // one has P without the plugin for t2 (an older version), the other with it
+    const older = { "scene:extension": [{ id: "x", traits: ["t1"], importUrl: P }] };
+    const newer = { "scene:extension": [{ id: "x", traits: ["t1", "t2"], importUrl: P }] };
+    const run = (guarded) => {
+      const doc = structuredClone(doc0);
+      const views = [
+        { registries: older, pruned: new Set() },
+        { registries: newer, pruned: new Set() },
+      ];
+      const writes = [];
+      for (let round = 0; round < 10; round++) {
+        let wrote = false;
+        for (const [i, v] of views.entries()) {
+          const plan = reconcileList({ doc, registries: v.registries, pruned: guarded ? v.pruned : [] });
+          if (!plan.add.length && !plan.prune.length) continue;
+          changeList(doc, plan);
+          v.pruned = plan.pruned;
+          writes.push([i, plan.add, plan.prune]);
+          wrote = true;
+        }
+        if (!wrote) return { settled: true, writes, listed: listedPackages(doc) };
+      }
+      return { settled: false, writes: writes.length, listed: listedPackages(doc) };
+    };
+    expect(run(true)).toEqual({ settled: true, writes: [[0, [], [P]], [1, [P], []]], listed: [P] });
+    expect(run(false)).toEqual({ settled: false, writes: 20, listed: [P] });
+  });
+});
+
+describe("concurrent prunes and adds (real automerge merges)", () => {
+  const P = A;
+  const registries = { "scene:source": [{ id: "p", importUrl: P }] };
+  const object = () => ({ providerId: "p" });
+  /** a view's pass, written: what it changed */
+  const pass = (doc, view) => {
+    const plan = reconcileList({ doc, registries, pruned: view.pruned });
+    if (!plan.add.length && !plan.prune.length) return doc;
+    view.pruned = plan.pruned;
+    return Automerge.change(doc, (d) => changeList(d, plan));
+  };
+
+  it("A removes the last thing needing P (and takes P off) while B adds one needing it: after the merge and both passes P is listed, once, for both (all 4 orders)", () => {
+    const start = Automerge.change(Automerge.from(newScene()), (d) => {
+      d.objects.o = object();
+      d.packages.push({ url: P });
+    });
+    for (const aFirst of [false, true])
+      for (const bFirst of [false, true]) {
+        const va = { pruned: new Set() };
+        const vb = { pruned: new Set() };
+        let a = Automerge.change(Automerge.clone(start), (d) => delete d.objects.o);
+        let b = Automerge.change(Automerge.clone(start), (d) => (d.objects.o2 = object()));
+        // each may pass before it hears of the other's change
+        if (aFirst) a = pass(a, va);
+        if (bFirst) b = pass(b, vb);
+        if (aFirst) expect(listedPackages(a)).toEqual([]); // A took P off: nothing there needs it
+        // they meet, and each passes until neither writes (bounded)
+        for (let i = 0; i < 4; i++) {
+          a = Automerge.merge(a, Automerge.clone(b));
+          b = Automerge.merge(b, Automerge.clone(a));
+          a = pass(a, va);
+          b = pass(b, vb);
+        }
+        a = Automerge.merge(a, Automerge.clone(b));
+        b = Automerge.merge(b, Automerge.clone(a));
+        expect([aFirst, bFirst, listedPackages(a), listedPackages(b)]).toEqual([aFirst, bFirst, [P], [P]]);
+        expect(Object.keys(a.objects)).toEqual(["o2"]);
+        // a fixed point for both
+        for (const [doc, view] of [[a, va], [b, vb]]) {
+          const plan = reconcileList({ doc, registries, pruned: view.pruned });
+          expect([plan.add, plan.prune]).toEqual([[], []]);
+        }
+      }
   });
 });
 

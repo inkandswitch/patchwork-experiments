@@ -790,15 +790,51 @@ scene package itself (its `file-glb` shows most objects): it can't help load
 itself, but no rule is needed to leave it out, and the list is then the whole
 of what the scene is made of.
 
-- **Appends only.** Nothing is removed (a trait taken away leaves its
-  package listed), the list is never rewritten, and it is never made: a
-  scene without one is from before `packages` and is republished, not
-  patched (see "Shared maps").
-- **Concurrent adds.** Two peers who both have a package may both add it
+**Prune: the list reconciles both ways.** In the same pass, once the registry has gone
+quiet (`PACKAGE_SETTLE_MS`: the viewer's own packages may still be on their
+way), the stage takes off every entry naming a listed package that
+(`packagesToPrune`)
+1. is registered here: one missing on this machine, still loading, failed
+   or declined answers nothing here, which says nothing about the doc, so it
+   stays;
+2. answers none of the doc's needs (none of its registered plugins does);
+3. wasn't used here (a part or template run in this view keeps its
+   package, though what it made may call for nothing of it);
+4. isn't the scene package (the stage itself, and the doc's suggested
+   import); and
+5. this view hasn't taken off before and seen listed again by someone else
+   (`relisted`, below).
+
+So a trait taken away, or the last object a package's provider built,
+takes its package off, and the list holds what the doc calls for. Each
+doc lists only its own packages (a linked doc lists its own; the view's
+one prompt covers every open doc's), so the doc's own needs are the whole
+question. At the fixed point of the pass, the list is (the packages of
+the plugins answering the doc's needs ∪ those used here) ∪ (what was
+listed ∩ what isn't registered here). The additions and removals are one
+change (`changeList`), and a removal takes every entry naming the package
+(twice, at heads).
+
+- **Two viewers who disagree.** Two viewers can answer differently with
+  the same package (one has an older version without the plugin the doc
+  calls for). The one without the answer takes it off, the other lists it
+  again, and without rule 5 they would take turns forever. A view keeps the
+  packages it took off (`reconcileList`'s `pruned`), and leaves one listed
+  again by anyone but itself; it forgets one when it lists that package
+  itself. With what the doc needs held still, a view writes each package
+  at most once, so any number of viewers settle; the one that has a use
+  for it wins.
+- **Never made, never rewritten.** An entry is added or removed whole, and
+  the list is never made: a scene without one is from before `packages`
+  and is republished, not patched (see "Shared maps").
+- **Concurrent writes.** Two peers who both have a package may both add it
   before either hears the other; the merge keeps both entries. Readers read
   each package once, each peer then finds it listed and writes nothing
-  more, so there is at most one entry per peer per package, once.
-- A read-only view (a scene at a version) is never written.
+  more, so there is at most one entry per peer per package, once. One peer
+  taking a package off while another adds what calls for it ends with it
+  listed: after the merge the need is there and the list doesn't name it,
+  so whoever has it adds it again.
+- A read-only view (a scene at a version, a pin, a mirror) is never written.
 
 **The scene package as the suggested import.** `@patchwork.suggestedImportUrl`
 is what Patchwork offers a viewer who has no tool for a doc; for a scene it

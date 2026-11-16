@@ -1044,13 +1044,16 @@ lists two packages nothing on the page has registered: one served
 provider one object is built by, a part) through a stand-in for the host's
 `importPackage` (`filesystem-stub.js`), and one that isn't. A third package
 is registered on the page, at heads, for a trait the scene has, and isn't
-listed. `packages-run.mjs` checks, with real clicks: one prompt naming both,
-nothing imported before a yes, and the registered package listed (bare);
+listed; a fourth is registered and listed, and nothing calls for it.
+`packages-run.mjs` checks, with real clicks: one prompt naming both,
+nothing imported before a yes, the registered package listed (bare) and the
+fourth taken off once the registry has gone quiet;
 Not now loads and remembers nothing, and the next open asks again; Load
 imports the served package at its heads, registers it under its bare URL,
 its extension starts and its provider builds the object, while the other's
 failure is on the card; opened again, the remembered one loads unasked and
-only the other is asked about.
+only the other is asked about; the third's trait taken off the scene takes
+its entry off, and the failed one (not here) stays listed.
 
 ### Drag probe
 

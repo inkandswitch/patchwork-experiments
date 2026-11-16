@@ -5,10 +5,12 @@
 //
 //   - reconcile: after every doc change and every registry change, add
 //     `{ url }` for each package that a registered plugin the doc calls for
-//     comes from and the list doesn't name (packagesToList). Appends only:
-//     never removes, never rewrites, never makes the list. The same pass
-//     writes the scene package's own URL as `@patchwork.suggestedImportUrl`
-//     on a doc that names nothing loadable there.
+//     comes from and the list doesn't name (packagesToList), and, once the
+//     registry has gone quiet, take off each listed package this viewer has
+//     and nothing in the doc calls for (packagesToPrune), in one change.
+//     Never rewrites an entry, never makes the list. The same pass writes
+//     the scene package's own URL as `@patchwork.suggestedImportUrl` on a
+//     doc that names nothing loadable there.
 //   - loading: once the registry has been quiet for a moment (the shell is
 //     still registering this viewer's own packages as the scene opens), the
 //     listed packages that aren't registered are published as
@@ -23,7 +25,7 @@
 // Nothing is written to the viewer's module settings: what a scene brings
 // lasts until the page is reloaded.
 
-import { answeringPlugins, listedPackages, missingPackages, packageTitle, packageUrl, packagesToList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
+import { answeringPlugins, changeList, listedPackages, missingPackages, packageTitle, packageUrl, reconcileList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
 
 /** How long the registry must be quiet, after the scene opens, before anything is offered or loaded. */
 export const PACKAGE_SETTLE_MS = 1_000;
@@ -195,6 +197,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
   let completeFor = null; // { doc, stamp, value }: complete()'s last answer
   let stamp = 0; // bumped whenever what's registered or loaded here may have changed
   const used = new Set(); // importUrls of the parts and templates run in this view
+  let pruned = new Set(); // packages this view took off the list and hasn't listed since (reconcileList)
   const failed = new Map(); // url → what went wrong
   const accepted = readAccepted();
   const offs = [];
@@ -233,19 +236,24 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     const doc = handle.doc() ?? {};
     const regs = registries();
 
-    // reconcile: name what the doc calls for and this viewer has, and the
+    // reconcile: name what the doc calls for and this viewer has, take off
+    // what this viewer has and the doc doesn't call for (not before the
+    // registry has gone quiet: the viewer's own packages may still be on
+    // their way, and one half-registered could look unneeded), and name the
     // scene package itself as the doc's suggested import, if it names none
     const readOnly = !!handle.isReadOnly?.();
-    const add = readOnly ? [] : packagesToList({ doc, registries: regs, used, providerIds: providerIds() });
+    const plan = readOnly ? { add: [], prune: [], pruned } : reconcileList({ doc, registries: regs, used, providerIds: providerIds(), pruned, prune: settled });
+    const { add, prune } = plan;
     const suggest = readOnly ? null : suggestedImportToSet(doc, regs);
-    if (add.length || suggest) {
+    if (add.length || prune.length || suggest) {
       try {
         handle.change((d) => {
           // (only the list init made: STAGE.md, "Shared maps")
-          if (Array.isArray(d.packages)) for (const url of add) if (!d.packages.some((e) => e?.url === url)) d.packages.push({ url });
+          changeList(d, { add, prune });
           // a scalar in the map the doc was made with: nothing two peers could each create
           if (suggest && d["@patchwork"] && typeof d["@patchwork"] === "object" && !packageUrl(d["@patchwork"].suggestedImportUrl)) d["@patchwork"].suggestedImportUrl = suggest;
         });
+        pruned = plan.pruned;
       } catch (err) {
         console.warn("[scene] couldn't list the scene's packages", err);
       }

@@ -85,10 +85,71 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     s.change((d) => (d.traits["tiny.weather"] = {}));
     await settle();
     expect(urls(s)).toEqual([SAILING]);
-    // and never removes: the trait going leaves the entry
+    // and the trait going takes the entry off: nothing here calls for it now
     s.change((d) => delete d.traits["tiny.weather"]);
     await settle();
+    expect(urls(s)).toEqual([]);
+  });
+
+  it("takes off only what this viewer has and nothing calls for, every entry naming it, in one change; a package missing here and the scene package stay, and a part's package used here", async () => {
+    const JOINTS = fakeUrl();
+    const TRAVERSAL = fakeUrl();
+    const MISSING = fakeUrl();
+    const SCENE = fakeUrl();
+    const PARTS = fakeUrl();
+    const ext = (id, url) => ({ meta: { id, traits: [id], importUrl: `${url}#${HEAD}` }, module: { create: () => ({}) } });
+    const part = { meta: { id: "buoy", importUrl: PARTS }, module: { create: async (ctx) => (ctx.change((d) => ((d.objects.b = { name: "Buoy", providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } }), d.order.push("b"))), "b") } };
+    const user = { meta: { id: "t.user" }, module: { create: (api) => ({ api }) } };
+    const repo = new FakeRepo();
+    await mount({ extensions: [weather, ext("joints.slide", JOINTS), ext("traversal.exit", TRAVERSAL), user], parts: [part], repo });
+    getRegistry("patchwork:datatype").register({ type: "patchwork:datatype", id: "scene", load: async () => ({}) }, SCENE);
+    // a boat as the tools made her: her companionway's joints and traversal listed, nothing of theirs left in her
+    const h = repo.add(emptyScene({ title: "Boat", traits: { "tiny.weather": {} }, packages: [{ url: SAILING }, { url: JOINTS }, { url: MISSING }, { url: `${TRAVERSAL}#${HEAD}` }, { url: JOINTS }, { url: SCENE }] }));
+    let changes = 0;
+    h.on("change", () => changes++);
+    const s = await mount({ handle: h, repo });
+    await settle();
+    expect(urls(s)).toEqual([SAILING, MISSING, SCENE]);
+    expect(changes).toBe(1); // the entries off and the suggested import on, together
+    expect(s.doc()["@patchwork"].suggestedImportUrl).toBe(SCENE);
+    // taking off is never a way to stop asking: the one missing here is still asked about
+    expect(state(s).ask).toEqual([MISSING]);
+    // a part run here: listed, and kept though nothing it made calls for it
+    await s.api("t.user").part("buoy", { parent: null });
+    await settle();
+    s.change((d) => (d.title = "Fitted"));
+    await settle();
+    expect(urls(s)).toEqual([SAILING, MISSING, SCENE, PARTS]);
+  });
+
+  it("not before the registry has gone quiet: the viewer's own packages may still be on their way", async () => {
+    const JOINTS = fakeUrl();
+    const s = await mount({ extensions: [weather], packageSettleMs: 200, doc: { traits: { "tiny.weather": {} }, packages: [{ url: JOINTS }] } });
+    getRegistry("scene:extension").register({ type: "scene:extension", id: "joints", traits: ["joints.slide"], load: async () => ({ create: () => ({}) }) }, JOINTS);
+    await settle();
+    expect(urls(s)).toEqual([JOINTS, SAILING]); // added at once, nothing taken off
+    await until(() => urls(s).length === 1, 2000);
     expect(urls(s)).toEqual([SAILING]);
+  });
+
+  it("a package it took off that a peer lists again stays, until it lists that package itself", async () => {
+    const JOINTS = fakeUrl();
+    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { packages: [{ url: JOINTS }] } });
+    await settle();
+    expect(urls(s)).toEqual([]);
+    // a peer whose joints answers something here this one's doesn't puts it back
+    s.change((d) => d.packages.push({ url: JOINTS }));
+    await settle();
+    expect(urls(s)).toEqual([JOINTS]);
+    s.change((d) => (d.title = "Again"));
+    await settle();
+    expect(urls(s)).toEqual([JOINTS]);
+    // a slide here: still listed; the slide gone: this view listed nothing itself, so it stays
+    s.change((d) => (d.traits["joints.slide"] = {}));
+    await settle();
+    s.change((d) => delete d.traits["joints.slide"]);
+    await settle();
+    expect(urls(s)).toEqual([JOINTS]);
   });
 
   it("the scene's own plugins, registered here without an importUrl, and a dev server's, name nothing", async () => {
@@ -124,6 +185,13 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(running(v)).toContain("tiny.weather");
     expect(view.doc().packages).toEqual([]);
     expect(h.doc().packages).toEqual([]);
+    // nor taken off from: a version listing what nothing in it calls for
+    const listing = repo.add(emptyScene({ title: "L", packages: [{ url: SAILING }] }));
+    const lv = listing.view(listing.heads());
+    await mount({ handle: lv, repo });
+    await settle();
+    expect(lv.doc().packages).toEqual([{ url: SAILING }]);
+    expect(listing.doc().packages).toEqual([{ url: SAILING }]);
   });
 
   it("a part or a template run here names its package, though it leaves no mark of its own", async () => {

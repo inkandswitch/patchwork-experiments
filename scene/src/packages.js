@@ -157,7 +157,8 @@ export function packagesOf(plugins) {
 }
 
 /**
- * The reconcile rule: the package URLs to add to the doc's list now. Every
+ * The reconcile rule's first half: the package URLs to add to the doc's
+ * list now (packagesToPrune, below, is the other). Every
  * package a registered plugin answering the doc's needs comes from (and
  * every one in `used`: the parts and templates run in this view), that can
  * be shared and isn't listed. Empty when the doc has no list: the list is
@@ -172,6 +173,78 @@ export function packagesToList({ doc, registries, used = [], providerIds = [] })
   const want = [...packagesOf(answeringPlugins(doc, registries, { providerIds })), ...packagesOf([...used].map((importUrl) => ({ importUrl })))];
   for (const url of want) if (!listed.has(url) && !out.includes(url)) out.push(url);
   return out;
+}
+
+/**
+ * The prune rule, reconcile's other half: the listed packages to take off
+ * the doc's list now, in list order. A listed package goes only when this
+ * viewer can tell that nothing in the doc needs it:
+ *   1. it is registered here (registeredPackages). A package missing on this
+ *      machine, still loading, failed or declined answers nothing here, and
+ *      that says nothing about the doc: it stays;
+ *   2. none of its registered plugins answers a need of the doc's
+ *      (answeringPlugins, with the providers render docs asked for);
+ *   3. it isn't `used`: a part or template run in this view;
+ *   4. it isn't the scene package (scenePackage): the stage itself, and the
+ *      doc's suggested import;
+ *   5. it isn't `relisted`: one this view took off that is listed again
+ *      though this view didn't list it, so a peer whose registry answers
+ *      with it (another version of it, say) put it back. Two viewers who
+ *      disagree would otherwise take turns forever; the one that has a use
+ *      for it wins.
+ * So it never drops a package missing here, never one that answers a need,
+ * and, with what the doc needs held still, a view takes a package off at
+ * most once. Each doc lists only its own packages, so its own needs are the
+ * whole question. Empty when the doc has no list.
+ * @param {{ doc: object, registries: object, used?: Iterable<string>, providerIds?: Iterable<string>, relisted?: Iterable<string> }} o
+ * @returns {string[]}
+ */
+export function packagesToPrune({ doc, registries, used = [], providerIds = [], relisted = [] }) {
+  if (!Array.isArray(doc?.packages)) return [];
+  const registered = registeredPackages(registries);
+  const keep = new Set([
+    ...packagesOf(answeringPlugins(doc, registries, { providerIds })),
+    ...packagesOf([...used].map((importUrl) => ({ importUrl }))),
+    ...[scenePackage(registries)].filter(Boolean),
+    ...[...relisted].map(packageUrl).filter(Boolean),
+  ]);
+  return listedPackages(doc).filter((url) => registered.has(url) && !keep.has(url));
+}
+
+/**
+ * One reconcile pass of a view: what to write to the doc's list now (`add`,
+ * `prune`), and the packages this view has taken off and not listed since
+ * once that is written (`pruned`: its `relisted` next time). `prune: false`
+ * (before the registry has gone quiet) only adds. With what the doc needs
+ * held still, the passes of any number of views end: a view adds a package
+ * only when its plugins answer and it isn't listed, and takes it off only
+ * once until it has listed it again itself, which its own answer, unchanged,
+ * never asks for after taking it off.
+ * @param {{ doc: object, registries: object, used?: Iterable<string>, providerIds?: Iterable<string>, pruned?: Iterable<string>, prune?: boolean }} o
+ * @returns {{ add: string[], prune: string[], pruned: Set<string> }}
+ */
+export function reconcileList({ doc, registries, used = [], providerIds = [], pruned = [], prune = true }) {
+  const add = packagesToList({ doc, registries, used, providerIds });
+  const drop = prune ? packagesToPrune({ doc, registries, used, providerIds, relisted: pruned }) : [];
+  const next = new Set([...pruned].filter((url) => !add.includes(url)));
+  for (const url of drop) next.add(url);
+  return { add, prune: drop, pruned: next };
+}
+
+/**
+ * Reconcile's write, inside a change of the doc (`d`, the draft): every
+ * entry naming a package in `prune` removed, however it names it (twice, at
+ * heads), then `{ url }` appended for each in `add` that no entry names as
+ * it is. Only a list the doc was made with is touched (STAGE.md, "Shared
+ * maps"). The two never meet: `add` is what isn't listed, `prune` what is.
+ * @param {object} d
+ * @param {{ add?: string[], prune?: string[] }} o
+ */
+export function changeList(d, { add = [], prune = [] }) {
+  if (!Array.isArray(d?.packages)) return;
+  const gone = new Set(prune);
+  for (let i = d.packages.length - 1; i >= 0; i--) if (gone.has(packageUrl(d.packages[i]?.url))) d.packages.splice(i, 1);
+  for (const url of add) if (!d.packages.some((e) => e?.url === url)) d.packages.push({ url });
 }
 
 // ─── the scene package itself ───────────────────────────────────────────────

@@ -134,11 +134,19 @@ Still open:
   landed on the boat 3 to 8 times in 12. Aiming only at a card the view's
   own pick lands on doesn't cure it: in the real Patchwork on 2026-11-16
   (presence-check.nopause runs 3 and 4, aims checked so) first presses
-  still landed on her Card table 80 ms after the aim;
-- a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  still landed on her Card table 80 ms after the aim.
 
 Fixed since (each item names its Decisions section below):
+- a doc's packages list grew as parts were added and wasn't pruned when
+  they went (Fitting out's boat, as the tools made her, still listed her
+  companionway's joints and traversal). Reconcile now goes both ways: a
+  listed package this viewer has, that nothing in the doc calls for, wasn't
+  used in this view and isn't the scene package is taken off once the
+  registry has gone quiet (STAGE.md, "Packages"; Decisions, packages
+  pruned, below; lane/n11). publish-fitout's page now lists exactly the
+  boat's own (scene, sailing, water: its new check, 15/15 dry run), and
+  packages-run takes off a listed package nothing calls for and, later,
+  one whose trait goes (21/21). Not yet checked in the real Patchwork.
 - the first click of a double-click could open the inspector under the
   second: with the inspector shut, a first press that selected anything
   (the link, or the Card table it missed onto) narrowed the canvas, and
@@ -1402,7 +1410,8 @@ The five open questions were put to the project lead and answered:
    tools made it, still lists the companionway's joints and traversal):
    recorded as a stage gap, not fixed tonight (a prune would have to know
    which package each remaining object needs, the registry's question, and
-   a doc edited while a package is missing must not lose it).
+   a doc edited while a package is missing must not lose it). Since fixed
+   on both counts (Decisions, packages pruned).
 
 ## Decisions, step 9 (2026-11-14, made unattended)
 
@@ -2249,3 +2258,63 @@ near-misses at cards on her moving table: all boarded before, none after).
    symptom by those today; a package that did would be wrong by TOOLS
    Decisions 6 (nothing stands on Edit), not something the stage would
    cut, since a carry out there is meant to work.
+
+## Decisions, packages pruned (2026-11-16, decided unattended in `lane/n11`, for the lead)
+
+The doc's packages list reconciles both ways (STAGE.md, "Packages";
+`packagesToPrune`, `reconcileList` and `changeList` in `src/packages.js`).
+
+1. **What may be taken off.** A listed package goes only when this viewer
+   has it registered, none of its registered plugins answers a need of the
+   doc's (the registry's question, `answeringPlugins`, with the providers
+   render docs asked for), no part or template of it was run in this view,
+   and it isn't the scene package. So a package missing here (never
+   installed, loading, failed, declined) is never dropped, and nor is one
+   that answers a need: a doc edited while a package is missing keeps it.
+   Tested over every case of (registered × answers × used × scene package),
+   for each kind of need (a source, a render doc's provider, a scene trait,
+   an object trait): pruned iff (yes, no, no, no), 64 cases; and the fixed
+   point over two packages in every state (listed not/once/twice ×
+   registered × called for × used: 576 pairs), where one pass reaches
+   listed = (answering ∪ used) ∪ (listed ∩ unregistered) and the next
+   writes nothing.
+2. **Not before the registry has gone quiet.** Additions are made at once,
+   as before; removals wait for `PACKAGE_SETTLE_MS`, as the prompt does,
+   since the viewer's own packages may still be registering as the scene
+   opens.
+3. **A view doesn't take off again what another put back** (rule 5 in
+   STAGE.md). Found while building it: two viewers whose copies of a
+   package answer differently (an older version without the plugin the doc
+   calls for, two installs registering the same plugin id) would otherwise
+   remove and re-add it on every change, forever. Each view remembers what
+   it took off and leaves it if it is listed again by anyone else,
+   forgetting it when it lists that package itself; with the needs held
+   still each view writes each package at most once, so any number settle
+   with it listed (the one that has a use for it wins). The test plays two
+   such viewers to a fixed point (two writes) and shows the rule without
+   it never settles. The cost: a package taken off, put back by a peer
+   and then truly unneeded stays listed until a view that hasn't taken it
+   off before visits.
+4. **Concurrent prune and add.** One peer taking P off while another adds
+   an object needing P ends with P listed for both, in every order of
+   their passes around the merge (real Automerge merges, 4 orders): after
+   the merge the need is there and P isn't listed, so whoever has P lists
+   it again.
+5. **Published examples.** No doc shape changes, so nothing is
+   republished by this step (the no-back-compat rule is about a doc's shape). A
+   writable visit by a viewer who has the packages now takes stale entries
+   off, a viewer's ordinary write like the clock. Worked out in node from
+   each published doc and every package's built plugin metadata (main
+   checkout, 2026-11-16), these would shrink: Santorini table, both copies
+   (tabletop and card-table: its pieces carry only `scene.carry` and
+   `seats`, so neither package's extension runs there); Lost Cities aboard
+   (tabletop: her game is a link that lists its own); Quiet games room
+   (tabletop: its tables are links); Fitting out's boat (joints,
+   traversal) and its hatch W (traversal, sailing). Every other example
+   in the folder keeps its list. The publishers that state more than a doc
+   calls for (publish-office's room and games, publish-aboard's boat)
+   still pass their own checks (what a doc calls for is within what it
+   states), and `withPackages` appends to what the page listed; whether a
+   publisher should state exactly what its doc calls for is a question for
+   the lead, as is republishing those six so a fresh viewer isn't first
+   asked about a package nothing in the doc uses.
