@@ -628,8 +628,9 @@ try {
     if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
     else {
       const bBody = await P("bodyLabel('b')");
-      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens, narrowing
-      // the canvas: let it settle and aim again, so the double-click lands on the card
+      // in Edit a click selects first (the link: the focus is the boat's), and the inspector's tab opens a beat
+      // later (500 ms of the stage's time: TOOLS.md Decisions 6), narrowing the canvas: let it open and settle
+      // and aim again, so the double-click lands on the card
       await b.click(at.x, at.y);
       await until(`selectionPath('a')?.length === 1`, 3000);
       await b.rest(800);
@@ -647,7 +648,7 @@ try {
       const at2 = await until(`aimAt(${J(target)}, 'a')`, 5000);
       if (at2) await b.click(at2.x, at2.y);
       await until(`halo('a')?.id === ${J(target)}`, 5000);
-      await b.rest(800); // (the inspector's tab opens with it, so the canvas narrows: let it settle before aiming)
+      await b.rest(800); // (the inspector's tab, open or opening a beat after it, narrows the canvas: let it settle before aiming)
       const seen = await P("seen('a')");
       check("13: a click selects the card itself: the boat sees the link, G the card", J(await P("selectionPath('a')")) === J([ids.link, target]) && seen.some(([p, x]) => p.length === 0 && x === ids.link) && seen.some(([p, x]) => J(p) === J([ids.link]) && x === target), { path: await P("selectionPath('a')"), seen });
       const halo = await P("halo('a')");
