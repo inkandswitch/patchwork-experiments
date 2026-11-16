@@ -96,7 +96,8 @@ pieces, each published and checked in the real Patchwork:
   Decision 73) and one removal (the trait-level `needs`, which this left
   with no consumer, Decision 77).
 - **Clipped open water** (WATER.md, "Clipped open water", Decisions 90 to
-  119, built in `lane/clip`, not yet merged or published): the lead's
+  121, built in `lane/clip`, merged 2026-11-16 (5ae3b34c) and published
+  with the Model room): the lead's
   answer to "should an inner world keep its own water?" (2026-11-15). The
   path rule was rejected; open water may carry a `clip`, the box of its
   own sea a doc keeps where the world it is placed in offers no open
