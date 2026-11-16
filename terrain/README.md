@@ -969,7 +969,7 @@ node probes/fetch-ucluelet.mjs [--cache <dir>] [--seed <dir>] [--offline] [--out
 #   the heights, layers, features and look); the anchorage deep enough all round a swing;
 #   the yard's ten lidar points (YARD) the fetched lidar's, the hangar's slab within 0.3 m
 #   of the drawn ground; the haul-out's head depths the fetched heights'
-node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>]   # build scene/, sailing/, water/, terrain/
+node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>] [--gpu]   # build scene/, sailing/, water/, terrain/
 #   the template in headless Chrome (one Chrome at a time while it holds the lock: --lock
 #   or $CHROME_LOCK, refused with neither; released however it ends), 50-odd
 #   checks (see the file), node's GLB byte for byte, the Terrain doc's fingerprint the
@@ -979,7 +979,16 @@ node probes/publish-ucluelet.mjs --dry-run --lock <dir> [--shots <dir>]   # buil
 #   and screens: home, the boatyard close, the dock, the inlet, Amphitrite Point, the
 #   town's waterfront from the water, the surf under the lighthouse, the cloud on Mount
 #   Ozzard, low on the water off the yard, off the town and under the lighthouse; the top
-#   of every screen not black (the sky drawn at every eye)
+#   of every screen not black (the sky drawn at every eye). With --gpu (the machine's GPU,
+#   Metal on a Mac) every view's frame time (40 frames, the stage's render and a 1-pixel
+#   readPixels; median and p90, draw calls, triangles), and the home view within 22.7 ms;
+#   and the look's own checks: no height legend, the ground's grain dressed, the water
+#   off the yard glassy, no horizontal stripes in the harbour's mirror (low-town's ratio
+#   sits at 1.23–1.32 against 1.3 from run to run, as the water moves: rerun before
+#   reading a failure there as a regression), the yard's ground varied by 8%
+#   Published 2026-11-16 (merge 07053407, lane/ukee): Ucluelet automerge:3uqC18J1FtGJPAAvucN2HP7thFm6
+#   (home 16.9 ms, the worst views lighthouse-sea 22.7 and overview 27.0, GLB 45.7 MB),
+#   Cadboro Bay automerge:JjZVTNDWJnvw9Gp5nZ936e7KRZ4 (its terrain carries terrain.sky now)
 node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   fetches (or replays its recording of) NCEI and Overpass, and checks: the grid; every node
 #   classified with no conflicts; no open coastline end near the grid; the data is what was checked
