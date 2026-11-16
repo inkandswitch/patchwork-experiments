@@ -12,42 +12,60 @@
 // surface passes (from, reach, hit), so a verb beyond the body's reach shows
 // disabled, "too far". Each verb's key is the resolver's (hintFor): shown
 // only when pressing it does that, so a verb whose key the body reserves
-// (walking, D) shows without one. Verbs are buttons, for touch; a held verb
-// ("hold F") is the keyboard's.
+// (walking, D) shows without one.
+//
+// Verbs are buttons, for touch and a mouse. A button whose verb has a key
+// is that key: a press on it presses the key (../hold-key.js, as the touch
+// pad's controls do) and lifting it lets the key up, so the verb goes the
+// key order and the key map, and a held verb ("hold E": winding a capstan)
+// lasts as long as the finger or the mouse button. Which key is asked as
+// it is pressed (keymap.js keyFor, the resolver hintFor asks), so a press
+// presses only a key that does that verb on that target then. A verb with
+// no key that does it (its key reserved: walking, D) is a click, run on its
+// target; a held one can't be held without its key, so it shows disabled.
 //
 // While a gesture is open (a carry: its Q/E/F come first) it shows nothing.
 //
 // While a verb is held (scene.keys' `keymap`), attention is pinned to its
 // target: the prompt shows the held verb (marked held, as it was when
 // pressed, even once it no longer applies from here) and that target's
-// other verbs, until its key comes up.
+// other verbs, in their places (a held button doesn't move from under its
+// finger), until its key comes up.
 
 import css from "./use.css?inline";
 import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
-import { attentionPath, hintFor, segmentsOf } from "../keymap.js";
+import { attentionPath, codeOfKey, hintFor, keyFor, segmentsOf } from "../keymap.js";
 import { resolverState } from "./resolver.js";
 import { samePath } from "../stage/paths.js";
 import { looksFromEye } from "../stage/pointer.js";
+import { arrange, holdKey } from "../hold-key.js";
 
 /** How many verbs the prompt shows. */
 export const MAX_VERBS = 3;
 
 /**
  * The verbs while something is held: on the held verbs' target, whatever the
- * look is on. The held ones first, as they were when pressed (each kept
- * where it no longer applies from here: you've stepped back), then the
- * target's other verbs as they apply now. Pure (given the collected commands).
+ * look is on. The target's verbs as they apply now, in their order, each
+ * held one as it was when pressed (and kept where it no longer applies from
+ * here, you've stepped back: after the rest), and as many others as fit
+ * beside every held one. In their order, not the held first: a held verb's
+ * button stays where it was under the finger holding it (moving it in the
+ * document would lose its pointer capture, and moving it on the screen puts
+ * another button under that finger). Pure (given the collected commands).
  * @param {{ id, value }[]} collected
  * @param {string} target  the held verbs' target
- * @param {{ ext, command, state }[]} heldEntries  as they were when pressed
+ * @param {{ ext, command, state }[]} held  as they were when pressed
  * @param {object} ctx  the command context now
  * @returns {{ target: string, entries: { ext, command, state }[] }}
  */
-export function heldEntries(collected, target, heldEntries, ctx, max = MAX_VERBS) {
+export function heldEntries(collected, target, held, ctx, max = MAX_VERBS) {
   const live = ctx.scene?.objects?.[target] ? verbsOf(collected, target, ctx, Infinity) : [];
   const same = (a, b) => a.ext === b.ext && a.command.id === b.command.id;
-  const rest = live.filter((e) => !heldEntries.some((h) => same(h, e)));
-  return { target, entries: [...heldEntries, ...rest].slice(0, max) };
+  const heldAs = (e) => held.find((h) => same(h, e));
+  let room = max - held.length;
+  const shown = live.map((e) => heldAs(e) ?? e).filter((e) => held.includes(e) || room-- > 0);
+  const away = held.filter((h) => !live.some((e) => same(h, e)));
+  return { target, entries: [...shown, ...away] };
 }
 
 /**
@@ -85,6 +103,8 @@ function create(api) {
   prompt.setAttribute("role", "status");
   prompt.hidden = true;
   overlay.append(prompt);
+  // a long press on a verb is its key held, not the browser's menu
+  api.listen(prompt, "contextmenu", (e) => e.preventDefault());
 
   let current = null; // { target, entries: [{ ext, command, state, key }], hit }
   let shownKey = "";
@@ -123,58 +143,113 @@ function create(api) {
     render();
   }
 
+  // A verb's button, by identity (its extension's command): kept across
+  // renders, in place, so a finger on it keeps its pointer captured and its
+  // key held while the prompt changes round it (the key going down marks it
+  // held; a pinned target's other verbs come and go).
+  const idOf = (e) => JSON.stringify([e.ext, e.command.id]);
+  const shown = new Map(); // id → { el, hold, entry, keyed }
+
+  /** A button going: its fingers let go (its key up), and it's gone. */
+  function drop(id) {
+    const b = shown.get(id);
+    b.hold.letGo();
+    shown.delete(id);
+    b.el.remove();
+  }
+
   function render() {
     const km = keymap();
     const entries = current?.entries ?? [];
     const key = JSON.stringify(entries.map((e) => [e.ext, e.command.id, verbName(e), e.key, !!e.command.hold, !!e.state.disabled, e.state.title ?? null, !!km?.holding(e.ext, e.command.id)]));
     if (key !== shownKey) {
       shownKey = key;
-      prompt.replaceChildren(...entries.map((e) => row(e, km)));
+      const ids = new Set(entries.map(idOf));
+      for (const id of [...shown.keys()]) if (!ids.has(id)) drop(id);
+      for (const e of entries) {
+        if (!shown.has(idOf(e))) shown.set(idOf(e), make());
+        fill(shown.get(idOf(e)), e, km);
+      }
+      arrange(prompt, entries.map((e) => shown.get(idOf(e)).el));
       prompt.hidden = !entries.length;
     }
     place();
   }
 
-  // One verb: the key in a keycap (after "hold" for a held one), then its
-  // name; a button, so a touch can run it (a held verb is the keyboard's).
-  function row(entry, km) {
-    const { ext, command, state, key } = entry;
+  /** The code of the key that does this verb on the prompt's target now, or null. */
+  function codeNow(entry) {
+    if (!current) return null;
+    const k = keyFor({ ext: entry.ext, command: entry.command, target: current.target, stage: current.stage }, resolverState(api));
+    return k == null ? null : codeOfKey(k);
+  }
+
+  // One verb's button: a press on it is its key while it has one (holdKey
+  // asks codeNow as each press comes), else its click runs the verb.
+  function make() {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "use-verb";
-    el.dataset.ext = ext;
-    el.dataset.command = command.id;
     el.tabIndex = -1;
-    if (state.disabled) el.dataset.disabled = "";
-    el.disabled = !!state.disabled || !!command.hold;
-    if (km?.holding(ext, command.id)) el.dataset.held = "";
-    if (state.title) el.title = String(state.title);
-    if (command.hold) {
-      const h = document.createElement("span");
-      h.className = "use-hold";
-      h.textContent = "hold";
-      el.append(h);
-    }
-    if (key) {
-      const k = document.createElement("kbd");
-      k.className = "use-key";
-      k.textContent = key;
-      el.append(k);
-    }
-    const name = document.createElement("span");
-    name.className = "use-name";
-    name.textContent = verbName(entry);
-    el.append(name);
+    const b = { el, entry: null, keyed: false, hold: null };
+    // each press decides afresh whether it's the key's
+    el.addEventListener("pointerdown", () => (b.keyed = false));
+    b.hold = holdKey(el, api.root, () => codeNow(b.entry), (down) => {
+      if (!down) return;
+      b.keyed = true;
+      // keys come to this view after (a press elsewhere on the page had them); focus moving in cancels nothing
+      api.root.focus?.({ preventScroll: true });
+    });
     el.addEventListener("click", (e) => {
       e.stopPropagation();
+      // the click ending a press that was the key: the key did it
+      if (b.keyed && e.detail > 0) return;
+      const { ext, command } = b.entry;
+      // a held verb lasts as long as its key: with none that does it, there's nothing to hold
+      if (command.hold) return;
       const target = current?.target ?? null;
       // (applies still: the stage's run asks again)
       const reader = current?.reader ?? api;
       if (commandState(command, target, reader.context(current?.hit ?? null))) api.run({ ...(current?.stage !== undefined ? { stage: current.stage } : {}), ext, command: command.id, target, hit: current?.hit ?? null });
       api.root.focus?.({ preventScroll: true });
     });
-    return el;
+    return b;
   }
+
+  // What a verb's button shows: the key in a keycap (after "hold" for a
+  // held one), then its name.
+  function fill(b, entry, km) {
+    b.entry = entry;
+    const { el } = b;
+    const { ext, command, state, key } = entry;
+    const holding = !!km?.holding(ext, command.id);
+    el.dataset.ext = ext;
+    el.dataset.command = command.id;
+    toggle(el, "disabled", !!state.disabled);
+    toggle(el, "held", holding);
+    // (a held button is never disabled: its finger's lift has to reach it)
+    el.disabled = !holding && (!!state.disabled || (!!command.hold && !key));
+    if (state.title) el.title = String(state.title);
+    else el.removeAttribute("title");
+    const parts = [];
+    if (command.hold) {
+      const h = document.createElement("span");
+      h.className = "use-hold";
+      h.textContent = "hold";
+      parts.push(h);
+    }
+    if (key) {
+      const k = document.createElement("kbd");
+      k.className = "use-key";
+      k.textContent = key;
+      parts.push(k);
+    }
+    const name = document.createElement("span");
+    name.className = "use-name";
+    name.textContent = verbName(entry);
+    parts.push(name);
+    el.replaceChildren(...parts);
+  }
+  const toggle = (el, flag, on) => (on ? (el.dataset[flag] = "") : delete el.dataset[flag]);
 
   // Under the crosshair when the look is the eye's; under the pointer otherwise.
   function place() {
@@ -197,17 +272,21 @@ function create(api) {
     }
   }
 
-  api.listen(api.port, "pointermove", (e) => {
-    // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
-    // its buttons) it stays where it is, or it would move off from under the pointer; a finger on the touch pad, the
-    // body chip, any part's overlay isn't where anyone looks
+  // it follows a pointer over the world, not over anything put over it: over the prompt itself (going for one of
+  // its buttons) it stays where it is, or it would move off from under the pointer; a finger on the touch pad, the
+  // body chip, any part's overlay isn't where anyone looks. A press is where the pointer is too: a finger has no
+  // moves before it, and what it taps is where the prompt shows.
+  const follow = (e) => {
     if (e.target instanceof Element && e.target.closest(".stage-overlay")) return;
     const r = api.port.getBoundingClientRect();
     pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
     place();
-  });
-  api.listen(api.port, "pointerleave", () => {
-    pointer = null;
+  };
+  api.listen(api.port, "pointermove", follow);
+  api.listen(api.port, "pointerdown", follow, { capture: true }); // (before a press claimed on the world stops it)
+  // (a finger leaves as it lifts: where it tapped stays, as its look does: router.js)
+  api.listen(api.port, "pointerleave", (e) => {
+    if (e.pointerType !== "touch") pointer = null;
   });
   // an orbit or zoom moves the eye, and so what's in reach; a lock taken or
   // lost moves the look between the pointer and the crosshair
@@ -220,6 +299,7 @@ function create(api) {
       refresh();
     },
     dispose() {
+      for (const id of [...shown.keys()]) drop(id);
       offLoop?.();
       offLoop = null;
       offWatch?.();

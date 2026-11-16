@@ -1406,6 +1406,72 @@ describe("hover and cursor", () => {
     t.canvas.dispatchEvent(new PointerEvent("pointerleave", { relatedTarget: other }));
     expect(t.onHover).toHaveBeenLastCalledWith(null);
   });
+  // A finger hovers nowhere: it leaves as it lifts. Every way a press can
+  // end, by mouse and by finger, then the leave that follows it: a finger's
+  // tap keeps the look it pressed (its prompt's buttons can be tapped); a
+  // drag or a cancel keeps none; a mouse's leave is a mouse's.
+  it("a finger's tap keeps the look it pressed when it lifts; a drag, a cancel or a mouse's leave doesn't", async () => {
+    for (const pointerType of ["mouse", "touch"])
+      for (const [how, end, want] of [
+        ["tapped", (t) => up(t, { pointerType, x: 20 }), { mouse: "cleared", touch: "kept" }],
+        ["dragged", (t) => (move(t, { pointerType, x: 60, buttons: 1 }), up(t, { pointerType, x: 60 })), { mouse: "cleared", touch: "cleared" }],
+        ["cancelled", (t) => ptr("pointercancel", t.canvas, { pointerType, x: 20 }), { mouse: "cleared", touch: "cleared" }],
+      ]) {
+        const t = setup();
+        down(t, { pointerType, x: 20 });
+        end(t);
+        t.onHover.mockClear();
+        // the leave after a lift (a finger's always; a mouse's as it goes)
+        t.canvas.dispatchEvent(new PointerEvent("pointerleave", { pointerType }));
+        t.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType }));
+        await frame();
+        const got = t.onHover.mock.calls.length === 0 ? "kept" : t.onHover.mock.calls.at(-1)[0] === null ? "cleared" : "hovered";
+        expect([pointerType, how, got]).toEqual([pointerType, how, want[pointerType]]);
+      }
+  });
+  it("a tapped look stays while other fingers go elsewhere (the touch pad, the prompt), and goes with the next press on the world", async () => {
+    const t = setup();
+    const pad = document.createElement("button");
+    t.port.append(pad);
+    down(t, { pointerType: "touch", x: 20 });
+    up(t, { pointerType: "touch", x: 20 });
+    t.canvas.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    t.onHover.mockClear();
+    // another finger on the pad: down, moving, up, leaving
+    ptr("pointerdown", pad, { pointerType: "touch", id: 2 });
+    ptr("pointermove", pad, { pointerType: "touch", id: 2, x: 30 });
+    ptr("pointerup", pad, { pointerType: "touch", id: 2 });
+    t.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    await frame();
+    expect(t.onHover).not.toHaveBeenCalled();
+    // the next press on the world is the look now: what it pressed, then (dragged) none once it lifts
+    down(t, { pointerType: "touch", x: 70, id: 3 });
+    expect(t.onHover).toHaveBeenCalledTimes(1);
+    expect(t.onHover.mock.calls[0][0].x).toBe(70);
+    move(t, { pointerType: "touch", x: 120, id: 3, buttons: 1 });
+    up(t, { pointerType: "touch", x: 120, id: 3 });
+    t.canvas.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    expect(t.onHover).toHaveBeenLastCalledWith(null);
+  });
+  it("a mouse's look kept on the prompt stays while a finger moves on another overlay (that's not the mouse going)", async () => {
+    const t = setup();
+    const prompt = document.createElement("div");
+    prompt.dataset.keepsLook = "";
+    const button = prompt.appendChild(document.createElement("button"));
+    const other = document.createElement("div");
+    t.port.append(prompt, other);
+    move(t, { x: 20, buttons: 0 });
+    await frame();
+    t.canvas.dispatchEvent(new PointerEvent("pointerleave", { relatedTarget: button }));
+    t.onHover.mockClear();
+    ptr("pointermove", other, { pointerType: "touch", id: 2, x: 50, buttons: 1 });
+    t.port.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    await frame();
+    expect(t.onHover).not.toHaveBeenCalled();
+    // the mouse going there does
+    ptr("pointermove", other, { x: 50, buttons: 0 });
+    expect(t.onHover).toHaveBeenLastCalledWith(null);
+  });
   it("prefers the held tool's cursor", async () => {
     const t = setup();
     t.inputs.a = { cursor: () => "pointer" };

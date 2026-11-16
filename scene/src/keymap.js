@@ -173,12 +173,23 @@ export function resolveKey({ key, code = null }, state) {
  * @param {{ ext: string, command: object, target: string | null }} entry
  * @param {{ gesture?, tool?, body?, collected, ctx, attention }} state
  */
-export function hintFor({ ext, command, target = null, stage = undefined }, state) {
+export function hintFor(verb, state) {
+  const k = keyFor(verb, state);
+  return k == null ? "" : labelOf(k);
+}
+
+/**
+ * The key (a command's `key`, as declared) that does this verb on this
+ * target in this state, as the router dispatches it, or null: hintFor's
+ * key before it is named. Whatever presses a verb's key (the use prompt's
+ * button) asks this as it presses, so it presses only a key that does it.
+ */
+export function keyFor({ ext, command, target = null, stage = undefined }, state) {
   for (const k of keysOf(command)) {
     const r = resolveKey({ key: k, code: codeOfKey(k) }, state);
-    if (r?.layer === "map" && r.invocation.ext === ext && r.invocation.command === command.id && r.invocation.target === (target ?? null) && (stage === undefined || r.invocation.stage === stage)) return labelOf(k);
+    if (r?.layer === "map" && r.invocation.ext === ext && r.invocation.command === command.id && r.invocation.target === (target ?? null) && (stage === undefined || r.invocation.stage === stage)) return k;
   }
-  return "";
+  return null;
 }
 
 const KEY_NAMES = { Escape: "Esc", Delete: "Del", Backspace: "⌫", ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→", " ": "Space" };

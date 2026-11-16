@@ -272,7 +272,7 @@ the calls named here, never swapped.
 | Key | Changed by | Means |
 |---|---|---|
 | `selected` | `api.view.select(target)` (the selection, the outline, add, a game, dimensions), Edit's click | the selection, as this stage's element of its path: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null (nothing, or not in this stage) |
-| `hovered` | the view | the object under the pointer, as this stage's element, or null |
+| `hovered` | the view | the object under the pointer, as this stage's element, or null (a finger's: what it pressed, kept after a tap until the next press on the world, TOOLS.md Decisions 13) |
 | `body` | the view | the body on top of the stack (TOOLS.md §4): `{ id, label, ext, depth, lock, reach, keys, serial }`; at the bottom (depth 0) the stage's `{ id: "look" \| "edit", label: "Look" \| "Edit", reach: Infinity }`, Look until arriving says otherwise. `serial` says which time it was entered: the same body left and entered again is a new serial (the keys it held were let go; the touch pad's controls are a serial's, TOOLS.md §5). `ext` is the extension's id where it is this stage's own. The editor's chrome shows only in Edit (`editing(view)`, `src/stage/bodies.js`) |
 | `held` | the view | the held tool, `{ ext, command, name, keys, pointer, serial }`, or null; held again, a new `serial` |
 | `gesture` | the view | the open press session's declared keys, `{ owner, keys, serial }` (each press its own `serial`), or null |
@@ -1611,12 +1611,17 @@ A **command**:
   attention's verbs where attention is (the crosshair when the look is the
   eye's, else the pointer): on the selection, or the first object along the look's chain
   with a keyed command shown on `"use"`, at most three, each a button, its
-  key the resolver's. It shows; the key map does.
+  key the resolver's. It shows; the key map does. A button whose verb has
+  a key is that key: a press presses it (the key `keyFor` says does that
+  verb then) and the lift lets it up, so a held verb lasts as long as a
+  finger or a mouse button holds its button (TOOLS.md §5, Decisions 13);
+  a verb with no key that does it is a click.
 - **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.
   The key map keeps it open while the key is down: `update(dt)` each frame,
   `end()` when the key is let go, `cancel()` when the window or the view
   loses focus, the target leaves the doc, or the command's extension stops.
-  `api.run` discards what `run` returns, so elsewhere a held verb is a press.
+  `api.run` discards what `run` returns, so elsewhere a held verb is a press
+  (the use prompt's button presses the verb's key, so it holds).
   A held verb keeps its target until its key is up: while anything is held,
   attention is pinned to that target wherever the look goes, and the prompt
   shows the held verb (marked held, as it was when pressed, even once it no

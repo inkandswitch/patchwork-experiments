@@ -10,6 +10,11 @@
 // that slides off still holds until it lifts. letGo() lets every finger go at
 // once (its key up) and leaves the element: a finger still on it presses
 // nothing until it comes down again, as after a keyboard's blur.
+//
+// The code can be asked for as each press comes (a function): the use
+// prompt's button presses the key that does its verb now, if any. A press
+// that finds none isn't the key's: it isn't default-prevented, captured or
+// counted, so the element's click is what it does.
 
 import { keyOfCode } from "./keymap.js";
 
@@ -31,7 +36,8 @@ export function pressKey(root, code) {
 
 /**
  * Fingers on `el` hold `code` at `root`.
- * @param {HTMLElement} el  @param {EventTarget} root  @param {string} code
+ * @param {HTMLElement} el  @param {EventTarget} root
+ * @param {string | (() => string | null)} code  the code, or asked as the first finger comes down (null: not a key now)
  * @param {(held: boolean) => void} [onHeld]  told when the key goes down and comes up
  * @returns {{ letGo(): void }}
  */
@@ -46,6 +52,8 @@ export function holdKey(el, root, code, onHeld = () => {}) {
     onHeld(false);
   };
   el.addEventListener("pointerdown", (e) => {
+    const now = fingers.size ? null : typeof code === "function" ? code() : code;
+    if (!fingers.size && !now) return;
     e.preventDefault();
     try {
       el.setPointerCapture(e.pointerId);
@@ -55,7 +63,7 @@ export function holdKey(el, root, code, onHeld = () => {}) {
     if (fingers.has(e.pointerId)) return;
     fingers.add(e.pointerId);
     if (fingers.size > 1) return;
-    release = pressKey(root, code);
+    release = pressKey(root, now);
     onHeld(true);
   });
   const off = (e) => {
@@ -71,4 +79,19 @@ export function holdKey(el, root, code, onHeld = () => {}) {
       up();
     },
   };
+}
+
+/**
+ * Put `els` in `parent`, in order, moving as few as can be: an element a
+ * finger holds has its pointer captured, and taking it out of the document,
+ * even to put it back, can lose that (and its key is let go). So a kept
+ * element moves only when the order among kept ones changes; one added or
+ * gone moves none. (Those gone are removed: let go of them first.)
+ * @param {Element} parent  @param {Element[]} els
+ */
+export function arrange(parent, els) {
+  for (const el of [...parent.children]) if (!els.includes(el)) el.remove();
+  els.forEach((el, i) => {
+    if (parent.children[i] !== el) parent.insertBefore(el, parent.children[i] ?? null);
+  });
 }

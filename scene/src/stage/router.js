@@ -466,6 +466,7 @@ export function createRouter(o) {
     // focus, so bring keys to this view by hand
     if (keyRoot && doc.activeElement !== keyRoot) keyRoot.focus?.({ preventScroll: true });
     lastAt = { clientX: e.clientX, clientY: e.clientY };
+    tapped = false;
     // after the browser released the lock, a press on the world only takes it back
     if (pointerEvent({ type: "press" })) {
       claim(e);
@@ -532,7 +533,8 @@ export function createRouter(o) {
     if (g && !g.dead && g.pointerType === "mouse" && e.buttons === 0) return onPointerCancel(e);
     if (e.target !== canvas && !g) {
       // off the canvas: a look kept for something over it (the use prompt) lasts only while the pointer is on that thing
-      if (kept && !keepsLook(e.target)) onPointerLeave();
+      // (a mouse's: a finger moving elsewhere, on the touch pad, is another finger, not the mouse going)
+      if (kept && e.pointerType !== "touch" && !keepsLook(e.target)) onPointerLeave();
       return;
     }
     const locked = isLocked();
@@ -572,6 +574,7 @@ export function createRouter(o) {
     }
     gesture = null;
     release(g);
+    if (g.pointerType === "touch") tapped = !g.moved && travelled(g, e) <= SLOP;
     if (g.dead) {
       if (g.session) claim(e);
       return;
@@ -616,16 +619,27 @@ export function createRouter(o) {
   // prompt, whose buttons are the verbs of what's looked at), it is kept
   // while the pointer stays on that thing, so a button there can be reached
   // and clicked; anywhere else (other overlays, out of the port) it goes.
+  //
+  // A finger hovers nowhere: it leaves as it lifts. Its look is what it
+  // pressed (the press sets the hover), and a tap's is kept when it lifts,
+  // until the next press, so the prompt's buttons for what was tapped can
+  // be reached with another tap. A finger that dragged (orbit, a carry, a
+  // look) keeps none.
   let kept = false;
+  let tapped = false; // the last finger on the world tapped (and lifted)
   function onCanvasLeave(e) {
+    if (e?.pointerType === "touch") {
+      if (!tapped) onPointerLeave();
+      return;
+    }
     if (keepsLook(e?.relatedTarget)) {
       kept = true;
       return;
     }
     onPointerLeave();
   }
-  function onPortLeave() {
-    if (kept) onPointerLeave();
+  function onPortLeave(e) {
+    if (kept && e?.pointerType !== "touch") onPointerLeave();
   }
   function onPointerLeave() {
     kept = false;

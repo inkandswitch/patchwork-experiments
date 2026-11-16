@@ -24,7 +24,7 @@
 
 import css from "./touch.css?inline";
 import { touchControls } from "../touch-keys.js";
-import { holdKey } from "../hold-key.js";
+import { arrange, holdKey } from "../hold-key.js";
 
 /** The pad's places, as arrows. */
 const GLYPH = { up: "▲", down: "▼", left: "◀", right: "▶" };
@@ -106,17 +106,6 @@ function create(api) {
     return { control, el, hold };
   }
 
-  // Elements are put in place moving as few as can be: a control under a
-  // finger has its pointer captured, and taking it out of the document, even
-  // to put it back, can lose that (then its key is let go). Only a change of
-  // order among kept controls moves one (another tool with the same keys
-  // declared in another order); a control added or gone moves none.
-  function arrange(parent, els) {
-    for (const el of [...parent.children]) if (!els.includes(el)) el.remove();
-    els.forEach((el, i) => {
-      if (parent.children[i] !== el) parent.insertBefore(el, parent.children[i] ?? null);
-    });
-  }
   const groups = new Map(); // from → { el, name }
   function groupOf(from) {
     let g = groups.get(from);
@@ -145,6 +134,7 @@ function create(api) {
     for (const k of [...shown.keys()]) if (!ids.has(k)) drop(k);
     for (const control of controls) if (!shown.has(id(control))) shown.set(id(control), make(control));
     const elOf = (c) => shown.get(id(c)).el;
+    // (moving as few as can be: a control under a finger keeps its capture, ../hold-key.js arrange)
     // the pad's arrows (each in its place: CSS, by data-slot); the buttons in a group per layer, in the key order
     arrange(pad, controls.filter((c) => c.slot).map(elOf));
     const layers = [...new Set(controls.filter((c) => !c.slot).map((c) => c.from))];

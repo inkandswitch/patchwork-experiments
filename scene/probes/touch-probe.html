@@ -6,7 +6,9 @@
      can be carried, and a probe extension (registered here, to STAGE.md's
      extension contract) that offers a keyboard body that locks the pointer
      ("Walkish": walk's labelled keys plus an unlabelled Q; a drag on the
-     world looks) and a tool with a key (a wrench: R, Reload). Everything
+     world looks), a tool with a key (a wrench: R, Reload), and verbs on a
+     post: Ring (T) and Wind (hold G: every frame it's held winds a turn).
+     Everything
      each of them hears goes in window.__log, so the runner can tell what a
      finger on the touch pad pressed. -->
 <script type="importmap">
@@ -66,18 +68,22 @@ try {
   const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
   const floorGLB = file("floor.glb", { meshes: [box(6, 0.05, 6, "#7d9a6a")] });
   const blockGLB = file("block.glb", { meshes: [box(0.5, 0.5, 0.5, "#d8643a")] });
+  const postGLB = file("post.glb", { meshes: [box(0.3, 1, 0.3, "#5a6f9a")] });
   const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
   const objects = {
     floor: obj("Floor", floorGLB, [0, -0.05, 0], { locked: true }),
     block: obj("Block", blockGLB, [0.6, 0, 0], { traits: { "scene.carry": {} } }),
+    post: obj("Post", postGLB, [-0.8, 0, 0], { locked: true }),
   };
+  // the post's verbs: Ring once, Wind for as long as it's held (a turn a frame)
+  window.__turns = 0;
 
   getRegistry("scene:extension").register({
     type: "scene:extension", id: "probe", name: "Probe",
     load: async () => ({
       create(api) {
         window.__probeApi = api;
-        const eye = { position: [0, 1.6, 3.2], yaw: 0, pitch: -0.35 };
+        const eye = (window.__eye = { position: [0, 1.6, 3.2], yaw: 0, pitch: -0.35 });
         const dir = () => [-Math.sin(eye.yaw) * Math.cos(eye.pitch), Math.sin(eye.pitch), -Math.cos(eye.yaw) * Math.cos(eye.pitch)];
         const walker = {
           key: (ev) => (log.push(`body key ${ev.code} ${ev.key}`), true),
@@ -105,13 +111,20 @@ try {
             id: "walkish", label: "Walkish", lock: true, keys: WALKISH_KEYS,
             enter: () => ({ input: walker, eye: () => ({ position: eye.position, direction: dir() }), leave() {} }),
           }],
-          commands: [{
-            id: "wrench", name: "Wrench", tool: { keys: [{ code: "KeyR", label: "Reload" }] },
-            run: () => ({
-              key: (ev) => (log.push(`tool key ${ev.code} ${ev.key}`), true),
-              keyup: (ev) => (log.push(`tool keyup ${ev.code} ${ev.key}`), true),
-            }),
-          }],
+          commands: [
+            { id: "ring", name: "Ring", key: "t", state: (t) => (t === "post" ? {} : null), run: () => log.push("ring") },
+            {
+              id: "wind", name: "Wind", key: "g", hold: true, state: (t) => (t === "post" ? {} : null),
+              run: () => (log.push("wind"), { update: () => window.__turns++, end: () => log.push("wind end"), cancel: () => log.push("wind cancel") }),
+            },
+            {
+              id: "wrench", name: "Wrench", tool: { keys: [{ code: "KeyR", label: "Reload" }] },
+              run: () => ({
+                key: (ev) => (log.push(`tool key ${ev.code} ${ev.key}`), true),
+                keyup: (ev) => (log.push(`tool keyup ${ev.code} ${ev.key}`), true),
+              }),
+            },
+          ],
         };
       },
     }),
@@ -165,6 +178,18 @@ try {
     blockPos: () => scene.doc().objects.block.transform.position,
     world: () => pageOf([-1.2, 0, -1.5]),
     wrench: () => api.run({ ext: "probe", command: "wrench" }),
+    post: () => pageOf([-0.8, 0.5, 0]),
+    /** the walker's eye turned to a world point, and the camera with it (held, as walk holds it) */
+    aim: (to) => {
+      const e = window.__eye, d = to.map((v, i) => v - e.position[i]);
+      e.yaw = Math.atan2(-d[0], -d[2]);
+      e.pitch = Math.atan2(d[1], Math.hypot(d[0], d[2]));
+      window.__camHeld ??= api.camera.hold();
+      api.camera.set({ position: e.position, target: to });
+    },
+    /** the use prompt's verbs (name, key, held), and where its first button is */
+    prompt: () => { const p = host.querySelector(".use-prompt"); return p && !p.hidden ? [...p.querySelectorAll(".use-verb")].map((b) => ({ name: b.querySelector(".use-name").textContent, key: b.querySelector("kbd")?.textContent ?? null, held: b.hasAttribute("data-held"), disabled: b.disabled, at: centre(b) })) : null; },
+    turns: () => window.__turns,
   };
   const api = window.__probeApi;
   window.__ready = true;

@@ -13,8 +13,15 @@
 // one finger and turns it with Turn left on the pad, carries it again and
 // puts it back with a second finger on the Esc hint ("Put it back"), holds a
 // finger still on the block (its menu, not the eye's look's), then a
-// mouse click on the world hides the pad and only asks for the lock. Prints a JSON report; exits
-// non-zero on a failure.
+// mouse click on the world hides the pad and only asks for the lock.
+//
+// The use prompt's buttons are keys (TOOLS.md §5): first in Look, a tap on
+// the post shows its verbs where it tapped and keeps them when the finger
+// lifts; Ring by a tap rings once; Wind (hold G) winds only while a finger
+// holds its button. Then walking, the eye on the post: Wind held from the
+// prompt in the middle, no lock asked. Last, with a mouse: the button held
+// down winds, let up stops. Prints a JSON report; exits non-zero on a
+// failure.
 //
 // Simulated time: the view runs on the page's manual clock (window.__time).
 import { join, resolve } from "node:path";
@@ -50,6 +57,38 @@ try {
   check("loaded", await b.waitFor("window.__probe.loaded()", 20_000));
   await b.rest(200);
   await touch.emulate(true);
+
+  /** Hold a prompt button (by name) with a finger for `ms` of page time: the turns wound before, during and after. */
+  const windBy = async (press, lift, ms = 300) => {
+    const t0 = await P("turns()");
+    await press();
+    await b.rest(ms);
+    const t1 = await P("turns()");
+    const held = (await P("prompt()"))?.find((v) => v.name === "Wind")?.held ?? null;
+    await lift();
+    await b.rest(ms);
+    const t2 = await P("turns()");
+    return { wound: t1 - t0, after: t2 - t1, held, heard: await heard() };
+  };
+  const verb = async (name) => (await P("prompt()"))?.find((v) => v.name === name) ?? null;
+
+  // 0. in Look, a finger on the post: its verbs where it tapped, kept when it lifts; Ring is a tap; Wind lasts as long as the finger
+  await heard();
+  const post = await P("post()");
+  await touch.tap(post);
+  await b.rest(200);
+  const tapped = { look: await P("look()"), prompt: await P("prompt()") };
+  await touch.tap((await verb("Ring")).at);
+  await b.rest(60);
+  const rung = await heard();
+  const wind0 = await verb("Wind");
+  const w0 = await windBy(() => touch.fingers([[1, ...wind0.at]]), () => touch.fingers([]));
+  check(
+    "0. in Look, a tap on the post shows Ring (T) and Wind (hold G) below where it tapped, still there after the lift; a tap on Ring rings once; Wind winds only while a finger holds it",
+    tapped.look === "post" && JSON.stringify(tapped.prompt?.map((v) => [v.name, v.key])) === JSON.stringify([["Ring", "T"], ["Wind", "G"]]) && Math.abs(tapped.prompt[0].at[0] - post[0]) < 80 && tapped.prompt[0].at[1] > post[1] &&
+      JSON.stringify(rung) === JSON.stringify(["ring"]) && w0.wound >= 10 && w0.after === 0 && w0.held === true && JSON.stringify(w0.heard) === JSON.stringify(["wind", "wind end"]) && (await P("focused()")) === "root",
+    { post, tapped, rung, w0 },
+  );
 
   // 1. into the body by fingers: the chip, then its menu
   await touch.tap(await P("chip()"));
@@ -174,6 +213,20 @@ try {
   );
   await heard();
 
+  // 9. walking, the eye on the post: the prompt in the middle, Wind held by a finger winds while it's down; no lock asked
+  await P("aim([-0.8, 0.5, 0])");
+  await b.rest(100);
+  const asks9 = await b.js("window.__asks");
+  const walkPrompt = await P("prompt()");
+  const wind9 = await verb("Wind");
+  const w9 = wind9 ? await windBy(() => touch.fingers([[1, ...wind9.at]]), () => touch.fingers([])) : null;
+  check(
+    "9. walking under touch with the eye on the post: the prompt in the middle offers Wind; a finger on it winds only while it's down, and the lock is never asked",
+    (await P("look()")) === "post" && Math.abs(wind9?.at?.[0] - 450) < 80 && w9?.wound >= 10 && w9?.after === 0 && JSON.stringify(w9?.heard) === JSON.stringify(["wind", "wind end"]) && (await b.js("window.__asks")) === asks9 && !(await P("locked()")),
+    { look: await P("look()"), walkPrompt, w9 },
+  );
+  await shot("4-wind");
+
   // 8. back to a mouse: the pad hides; a press on the world after a finger only takes the lock back (TOOLS.md Decisions 9)
   await b.click(world[0], world[1]);
   await b.rest(100);
@@ -183,6 +236,23 @@ try {
   const clicked = await heard();
   check("8. a mouse click on the world hides the pad and only asks for the lock (headless Chrome refuses it): the body hears no press", padAfter === null && v.pointer.touch === false && asks === 1 && !clicked.includes("body press"), { v, padAfter, asks, clicked });
   await shot("3-mouse");
+
+  // 10. a mouse holds a held verb too: over the post (the look follows it: the lock refused), down on Wind's button winds, up stops
+  const post10 = await P("post()");
+  await b.mouse("mouseMoved", post10[0], post10[1]);
+  await b.rest(100);
+  const wind10 = await verb("Wind");
+  let w10 = null;
+  if (wind10) {
+    await b.mouse("mouseMoved", wind10.at[0], wind10.at[1]);
+    await b.rest(60);
+    w10 = await windBy(() => b.mouse("mousePressed", wind10.at[0], wind10.at[1]), () => b.mouse("mouseReleased", wind10.at[0], wind10.at[1]));
+  }
+  check(
+    "10. with a mouse: Wind's button held down winds, and let up stops",
+    w10?.wound >= 10 && w10?.after === 0 && JSON.stringify(w10?.heard) === JSON.stringify(["wind", "wind end"]),
+    { view: await P("view()"), wind10, w10 },
+  );
 
   const errs = await P("errors");
   check("no errors", !errs.length, errs);

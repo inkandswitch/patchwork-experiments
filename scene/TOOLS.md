@@ -141,7 +141,9 @@ stage's doc).
 **Attention** is one target per view: the selection if any, else the look
 (the pointer's hit, or the eye ray under lock and for a lock body under
 touch, where a finger hovers nowhere: `pointer.js` `looksFromEye`,
-Decisions 12). The prompt and the halo are
+Decisions 12). A finger's hit is what it pressed, and a tap's stays the
+look when it lifts, until the next press on the world (a drag's doesn't;
+Decisions 13). The prompt and the halo are
 one surface over it, and keys go to it (§5): what is shown is what keys do.
 
 **A press** runs COMPOSITION §5's chain: the held tool, the widget owner
@@ -321,6 +323,20 @@ router's) and stays put while the pointer is on it, so moving onto a button
 to click it doesn't take the look, and the prompt, away (machine/HOST.md,
 Decision 48). Held-key sessions (`use.js:20-33`) move into the one key map, the
 only `input.key` implementer (STAGE.md:659-662 becomes true).
+
+**A prompt button with a key is that key** (Decisions 13). A press on a
+verb's button presses the key that does that verb on that target, as the
+pad's controls press theirs (`src/hold-key.js`), and lifting it lets the
+key up: so the verb goes the one key order and the key map, and a held
+verb (winding a windlass, `hold: true`) lasts exactly as long as the finger
+or the mouse button, its session the key map's (`end` on the lift, `cancel`
+if the window goes or the target goes first). Which key is asked as it is
+pressed (keymap.js `keyFor`, what `hintFor` names), so a press presses only
+a key that does its verb then, by the same construction as a shown key. A
+verb with no key that does it (reserved: walking, D) is a click, run on its
+target; a held one has nothing to hold it by, so it shows disabled. A
+button stays the one element under its finger while the prompt changes
+round it (its key going down marks it held), as a pad control does.
 
 **Touch controls are the declared keys** (`touch-keys.js`, pure;
 Decisions 10). With no keyboard, the keys the gesture, the held tool and
@@ -1341,3 +1357,44 @@ The project lead decided the five open questions on 2026-11-12.
    the use prompt to what a drag to look started on.
    Open for the lead: whether a lock body under touch should draw the
    stage's own crosshair (sailing draws its own; walk draws none).
+13. **A prompt button with a key is that key; a finger's tap is its look**
+   (decided unattended (2026-11-16, lane/n9), for the lead). Before, a
+   held verb's button was disabled ("a held verb is the keyboard's"), so
+   nobody on touch could wind sailing's windlass, its only way to raise
+   the anchor. Now a press on a verb's button presses the key that does
+   it (§5): keydown on the press, keyup on the lift, the cancel or a lost
+   capture, through `src/hold-key.js` as the pad does, default-prevented
+   so focus stays and the key map's held verb stays held. The key is
+   asked as the press comes (`keyFor`, against the resolver's state then),
+   not taken from what the prompt drew, so a stale button presses nothing
+   wrong. The same for a mouse, not only a finger: a mouse held on a held
+   verb's button holds it, which a mouse user could not do before, and a
+   plain verb runs on the press, as its key does, not on the release (the
+   click that follows a press that was the key is that press's). Rejected:
+   keeping the click path for a mouse, which would be two rules for one
+   button and leave held verbs to the keyboard there too. A pointercancel
+   lets the key up, as a lift does: a key has no cancel; when the window
+   went first the key map cancels (its keyup with the page away), and a
+   target gone cancels by its sweep before the lift. (The plan said a
+   pointercancel cancels the session; that would need a cancel channel
+   beside the keyboard's, for the case the window rule already covers.)
+   The buttons take no browser gesture (`touch-action: none`, no callout,
+   no context menu), so a held finger isn't taken for a scroll.
+   While a verb is held the prompt keeps the target's verbs in their
+   order (the held one as pressed, in its place; one that no longer
+   applies from here after the rest), not the held first as before:
+   moving the held button first took it out of the document, losing its
+   capture, and slid the next button under the finger, so a finger's lift
+   clicked that one and the held verb never ended (found in Chrome,
+   `probes/touch-run.mjs`; jsdom keeps no capture to lose).
+   And so a finger can reach the prompt at all where the look is the
+   pointer's (Look, Edit): a finger hovers nowhere and leaves as it lifts,
+   which cleared the look, so the prompt went with every tap. The router
+   now keeps the hover a finger's tap set when it lifts, until the next
+   press on the world; a finger that dragged (an orbit, a carry, a look)
+   or was cancelled keeps none, and a finger moving elsewhere (the pad)
+   is never the mouse leaving a kept look (the deferred "kept-look
+   jitter"). The prompt sits where the finger pressed (a press is where
+   the pointer is; a finger has no moves before it). Open for the lead:
+   whether the tapped look should also go after a while, or on a tap on
+   the prompt's own margin.

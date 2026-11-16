@@ -31,7 +31,8 @@ Built only from the scene's extension contract (scene/STAGE.md).
   Left, Right on the pad; Run and Jump as buttons), and a finger dragging on
   the world looks round, at the same time. The look is the eye's, as under
   lock (scene/TOOLS.md Decisions 12): the use prompt sits in the middle of
-  the view, and a tap on its button uses what you look at.
+  the view, and a tap on its button uses what you look at; a held verb
+  ("hold F") lasts as long as the finger is on its button (Decisions 13).
 - **Under another body** (a seat): it waits, its keys up and the camera let
   go; when that body goes, it walks on from the eye.
 - **Presence**: `avatar` `{ feet, yaw, pitch }` at 20 Hz while walking; the
