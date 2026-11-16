@@ -40,7 +40,10 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **From the parts bin, in any scene.** The toolbar's Parts opens the bin,
   with a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
-  gets a sea if it had none). The rest are her parts on their own: **Mast
+  gets a Sea and a breeze if it had no open water). **Sea** puts open water
+  with waves on it into any scene; the water package's **Pond** puts a box
+  of water there, which the scene keeps wherever it is linked. The rest are
+  her parts on their own: **Mast
   and sail**, **Wheel**, **Mainsheet**, **Jib winches**, **Windlass and
   anchor**, **Ladder**, **Companionway**, to drag onto a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
   a hull that's a ship, a part lines up with her bow and attaches under her

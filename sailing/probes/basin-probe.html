@@ -1,0 +1,199 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>basin probe</title>
+<!-- Driven by probes/basin-run.mjs (water/WATER.md, "Water bodies", the
+     Model basin; the lead's yes to an inner world keeping its own water):
+     two docs, each of its own: A, Ship at sea (open water, which is weather),
+     and M, the Model basin (a 30 × 3 × 30 m box of water, a thing, with a
+     sloop in it, and no open water and no weather). Each is opened ALONE,
+     then both are linked live into a dry room R (no water, no weather): the
+     basin's sloop still floats, flat and still, on the water M keeps; Ship
+     at sea rests at her saved pose; no open surface is drawn anywhere, and
+     the basin's patch is drawn once. On the BUILT scene, sailing, water,
+     joints and traversal plugins in a stub registry, on ONE in-memory repo,
+     and one manual clock (window.__time). -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 6px; }
+  #h, #a { width: 820px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="h"></div><div id="a"></div>
+<script type="module">
+{
+  let a = (Number(new URLSearchParams(location.search).get("seed")) || 1) >>> 0;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { emptyScene } from "./empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const mul = (A, B) => {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) o[c * 4 + r] += A[k * 4 + r] * B[c * 4 + k];
+  return o;
+};
+const deg = (d) => (d * Math.PI) / 180;
+let time = null;
+async function loaded(pred, ms = 30_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+async function pumping(fn) {
+  let done = false;
+  const out = fn().finally(() => (done = true));
+  while (!done) {
+    await time.step(1);
+    await sleep(16);
+  }
+  return out;
+}
+
+// the room's links: the basin to the west, Ship at sea to the east, both level
+const AT_M = { position: [-30, 0, 0], rotation: [0, deg(20), 0], scale: 1 };
+const AT_A = { position: [40, 0, 0], rotation: [0, 0, 0], scale: 1 };
+const BASIN = [30, 3, 30];
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../water/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const me = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const hosts = { h: document.getElementById("h"), a: document.getElementById("a") };
+  for (const w of Object.keys(hosts)) Object.assign(hosts[w], { repo, viewerId: me.url, time });
+  const dbg = { h: null, a: null };
+  const unmounts = { h: null, a: null };
+  const docs = { A: null, M: null, R: null };
+  const ids = {};
+  const mount = (w, handle) => {
+    unmounts[w]?.();
+    hosts[w].replaceChildren();
+    unmounts[w] = Tool(handle, hosts[w]);
+    dbg[w] = hosts[w].querySelector(".scene-stage").__sceneDebug;
+  };
+  const unmount = (w) => {
+    unmounts[w]?.();
+    unmounts[w] = null;
+    dbg[w] = null;
+    hosts[w].replaceChildren();
+  };
+  const withTrait = (h, t) => Object.entries(h.doc().objects ?? {}).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  const stageOf = (w, id = null) => dbg[w]?.view.stages().find((s) => (id == null ? s.path.length === 0 : s.path.length === 1 && s.path[0] === id)) ?? null;
+  const inst = (st, ext) => st?.debug.host.instanceOf(ext) ?? null;
+  const frameOf = (st) => st.frame()?.matrix ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  /** the visible meshes named `name` in view w */
+  const meshes = (w, name) => {
+    let n = 0;
+    dbg[w].viewport.scene.traverse((o) => {
+      if (o.name !== name) return;
+      for (let p = o; p; p = p.parent) if (p.visible === false) return;
+      n++;
+    });
+    return n;
+  };
+
+  async function fromTemplate(title, template) {
+    const doc = repo.add(emptyScene({ title }));
+    mount("a", doc);
+    const sel = `[data-template="${template}"]`;
+    await loaded(() => hosts.a.querySelector(sel));
+    hosts.a.querySelector(sel).click();
+    await loaded(() => withTrait(doc, "sailing.ship") && inst(stageOf("a"), "sailing") && inst(stageOf("a"), "water"));
+    doc.change((d) => { d.title = title; });
+    return doc;
+  }
+
+  const P = (window.__p = {
+    errors,
+    /** A: Ship at sea, by her template. M: the Model basin, made from Ship at anchor's sloop with the sea, the weather and the landmarks taken away and a 30 × 3 × 30 m basin put round her */
+    build: () => pumping(async () => {
+      docs.A = await fromTemplate("Ship at sea", "ship-at-sea");
+      ids.hullA = withTrait(docs.A, "sailing.ship");
+      docs.M = await fromTemplate("Model basin", "ship-at-anchor");
+      ids.hullM = withTrait(docs.M, "sailing.ship");
+      unmount("a");
+      docs.M.change((d) => {
+        delete d.traits["sailing.weather"];
+        const gone = Object.keys(d.objects).filter((id) => d.objects[id].traits?.water || d.objects[id].kind === "group" || (d.objects[id].group && d.objects[d.objects[id].group]?.kind === "group"));
+        for (const id of gone) delete d.objects[id];
+        d.order = d.order.filter((id) => !gone.includes(id));
+        d.objects.basin = { name: "Basin", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: { size: [...BASIN] } } };
+        d.order.unshift("basin");
+      });
+      const m = docs.M.doc();
+      return { ...ids, a: docs.A.url, m: docs.M.url, mObjects: Object.values(m.objects).map((o) => o.name), mTraits: Object.keys(m.traits ?? {}) };
+    }),
+    /** open doc "A" or "M" alone in view a */
+    alone: (which) => pumping(async () => {
+      mount("a", docs[which]);
+      await loaded(() => inst(stageOf("a"), "sailing") && inst(stageOf("a"), "water"));
+      return true;
+    }),
+    closeAlone: () => unmount("a"),
+    /** R: a dry room (no water, no weather) with M and A linked live in it */
+    room: () => pumping(async () => {
+      const link = (name, url, transform) => ({ name, sourceUrl: url, providerId: "scene.link", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: true, transform, hint: { bounds: { min: [-16, -3, -16], max: [16, 16, 16] } } });
+      const R = emptyScene({ title: "Room", view: { grid: true, axes: false, start: { home: { position: [5, 40, 80], target: [5, 0, 0] } } } });
+      R.objects = { LM: link("Model basin", docs.M.url, AT_M), LA: link("Ship at sea", docs.A.url, AT_A) };
+      R.order = ["LM", "LA"];
+      docs.R = repo.add(R);
+      mount("h", docs.R);
+      const up = () => ["LM", "LA"].every((id) => inst(stageOf("h", id), "sailing") && inst(stageOf("h", id), "water"));
+      const ok = await loaded(up, 60_000);
+      return ok ? { stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.role, running: s.debug.host.running().map((r) => r.id) })) } : { error: "the room's stages never all ran sailing and water", stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })) };
+    }),
+    oceans: (w) => meshes(w, "ocean"),
+    patches: (w) => meshes(w, "water-patch"),
+    /** which stages of view w draw the open surface, and which draw patches (and of which bodies) */
+    drawers: (w) => dbg[w].view.stages().map((s) => ({ path: [...s.path], open: !!inst(s, "water")?.debug.surface, patches: inst(s, "water")?.debug.patches ?? [] })),
+    /**
+     * A hull and the water under her, in her own stage's frame, now: her drawn height, the height of the water
+     * her own stage gives her there (the water package's at, through sailing's oceanAt, herself left out), which
+     * body that is (null: the world's open water), her doc pose, and whether she is being stepped.
+     */
+    under: (w, link, hull) => {
+      const st = link == null ? stageOf(w) : stageOf(w, link);
+      const m = st.displayedWorld(hull);
+      const sea = inst(st, "sailing").debug.sea;
+      const r = sea.oceanAt([m[12], m[13], m[14]], hull);
+      const doc = st.doc().objects[hull].transform;
+      return { y: m[13], x: m[12], z: m[14], h: r ? r.heightAt(m[12], m[14], st.worldTime().t) : null, body: r ? r.body : "none", doc: doc.position, rot: doc.rotation, drawnYaw: Math.atan2(m[8], m[10]), simulating: !!inst(st, "sailing").debug.sim.simulating?.(), read: inst(st, "sailing").debug.sim.read?.(hull) ?? null };
+    },
+    huds: (w) => [...hosts[w].querySelectorAll(".sail-hud")].map((e) => e.style.display !== "none"),
+    notices: (w) => (dbg[w]?.view.atom.get().notices ?? []).map((n) => n.text ?? String(n)),
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>
