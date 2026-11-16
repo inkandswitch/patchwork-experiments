@@ -541,4 +541,70 @@ describe("one body per hull per step (W25): env.water is the water package's at(
         expect(r.held.position[1] - got.level).toBeCloseTo(base.held.position[1], 1);
       }
     });
+
+  // water that goes from under her partway (she leaves a pond's footprint, a link tilts): which steps answer none
+  const GOES = {
+    "leaves the water and stays out": (n) => n > 360,
+    "leaves the water and comes back to it": (n) => n > 360 && n <= 480,
+    "never leaves it (and is put down out of it, below)": () => false,
+  };
+  const partway = async (gone, { putDown = false } = {}) => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const api = w.join("A");
+    let n = 0;
+    let dry = false;
+    const collect = api.collect;
+    api.collect = (name) =>
+      name === "water" ? [{ id: "water", value: { at: (p, o) => (o?.not === ids.hull && n++, dry || (o?.not === ids.hull && gone(n)) ? null : OPEN) } }] : collect(name);
+    const a = play(api);
+    const start = structuredClone(doc.objects[ids.hull].transform.position);
+    w.tick(1 / 60, 6 * 60); // under way: 360 steps
+    const left = heldAt(w, ids.hull).position;
+    const speed = a.sim.read(ids.hull).speed;
+    let put = null;
+    if (putDown) {
+      dry = true;
+      put = { position: [40, 2, -30], rotation: [0, 0, 0], scale: 1 };
+      w.change((d) => Object.assign(d.objects[ids.hull].transform, put));
+    }
+    const out = { left, speed, start, put, samples: [] };
+    for (let i = 0; i < 4; i++) {
+      w.tick(1 / 60, 60);
+      out.samples.push(heldAt(w, ids.hull)?.position ?? null);
+    }
+    out.doc = structuredClone(doc.objects[ids.hull].transform.position);
+    w.done();
+    w = null;
+    return out;
+  };
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+  it("she leaves the water and stays out: held still where she left it, never put back at a checkpoint", async () => {
+    const r = await partway(GOES["leaves the water and stays out"]);
+    expect(r.speed).toBeGreaterThan(0.5);
+    expect(dist(r.left, r.start)).toBeGreaterThan(1); // she had gone somewhere: her last checkpoint is behind her
+    for (const at of r.samples) {
+      expect(at).not.toBeNull();
+      // where she left the water, give or take the one step after the frame drawn before
+      expect(dist(at, r.left)).toBeLessThan(2 * r.speed / 60 + 0.01);
+      expect(dist(at, r.samples[0])).toBeLessThan(1e-9);
+    }
+  });
+
+  it("she leaves the water and comes back to it: she goes on from where she was held", async () => {
+    const r = await partway(GOES["leaves the water and comes back to it"]);
+    const [out, back1, back2] = r.samples; // 1 s out (steps 361..420), then back from step 481
+    expect(dist(out, r.left)).toBeLessThan(2 * r.speed / 60 + 0.01);
+    // back on the water at step 481 she starts still from where she stopped, not from the doc's pose
+    expect(dist(back1, r.left)).toBeLessThan(dist(back1, r.start));
+    expect(dist(back2, back1)).toBeGreaterThan(0);
+    expect(dist(back2, r.left)).toBeLessThan(dist(r.left, r.start));
+  });
+
+  it("she is put down out of the water: nothing of ours holds her, and she rests where the doc has her", async () => {
+    const r = await partway(GOES["never leaves it (and is put down out of it, below)"], { putDown: true });
+    for (const at of r.samples.slice(1)) expect(at).toBeNull();
+    expect(r.doc).toEqual(r.put.position);
+  });
 });
