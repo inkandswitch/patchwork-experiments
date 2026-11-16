@@ -9,6 +9,7 @@ import { prepareHull, sinkageForVolume } from "../hull/prepare.js";
 import { partsOf, waterPlanes, defaultParts, hullTriangles } from "../hull/parts.js";
 import { makeStash, fromStash, stashCovers } from "../hull/stash.js";
 import { findWhenThere } from "../find.js";
+import { putBytes, externalize, internalize, isRef, SEGMENT_BYTES } from "../segments.js";
 import { renderKey } from "../render-read.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
 import { drawHull } from "./fields.js";
@@ -92,6 +93,7 @@ export default function CaseTool(handle, element) {
               <label class="field"><span>Stop</span><select data-k="stop" title="Settled: when the resistance holds within 1% over two windows of iterations; the iterations are then a ceiling"><option value="settled">when settled (±1%)</option><option value="iterations">after the iterations</option></select></label>
               <label class="field"><span>Domain</span><select data-k="domain"><option value="auto">Half if symmetric</option><option value="half">Half (y ≤ 0)</option><option value="full">Full</option></select></label>
               <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the daemon decides"></label>
+              <label class="field"><span>Keep volume</span><input type="checkbox" data-k="keepVolume" title="Every cell's flow (the mesh and the last fields), kept in docs after the run so it can be explored: about 200 bytes a cell, so hundreds of MB for a medium mesh"></label>
             </fieldset>
             <fieldset>
               <legend>Server</legend>
@@ -199,7 +201,7 @@ export default function CaseTool(handle, element) {
   root.querySelectorAll("[data-k]").forEach((input) => {
     input.addEventListener("change", () => {
       const k = input.dataset.k;
-      const raw = input.type === "number" ? Number(input.value) : input.value;
+      const raw = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
       if (input.type === "number" && !Number.isFinite(raw)) return;
       handle.change((d) => {
         const s = normalizeSetup(d.setup);
@@ -227,7 +229,8 @@ export default function CaseTool(handle, element) {
     root.querySelectorAll("[data-k]").forEach((input) => {
       if (document.activeElement === input) return;
       const v = fieldValue(input.dataset.k, s);
-      if (String(input.value) !== String(v)) input.value = v;
+      if (input.type === "checkbox") input.checked = !!v;
+      else if (String(input.value) !== String(v)) input.value = v;
     });
   }
 
@@ -291,7 +294,7 @@ export default function CaseTool(handle, element) {
         const stashUrl = doc()?.hull?.stash;
         if (stashUrl && !acq.fromSource) {
           try {
-            r = fromStash((await findWhenThere(repo, stashUrl, { tries: 4 })).doc());
+            r = fromStash(await internalize(repo, (await findWhenThere(repo, stashUrl, { tries: 4 })).doc()));
           } catch {
             r = null;
           }
@@ -346,7 +349,8 @@ export default function CaseTool(handle, element) {
       renderHull();
       return;
     }
-    const h = await repo.create2(stash);
+    // a big hull's triangles go in segment docs (src/segments.js)
+    const h = await repo.create2((await externalize(repo, stash, { title: stash.title })).value);
     if (disposed) return;
     handle.change((d) => {
       if (d.hull?.url === url) d.hull.stash = h.url;
@@ -539,6 +543,8 @@ export default function CaseTool(handle, element) {
   }
 
   // ------------------------------------------------------------ the model's figures, and what a run will cost
+  // measured: the mesh and last fields of double-body runs, 200 B/cell (154k cells) to 210 (1.08M)
+  const VOLUME_BYTES_PER_CELL = 205;
   const row = (k, v, how = "") => `<tr><td>${k}</td><td>${v}</td><td class="method">${how}</td></tr>`;
   function renderPreflight() {
     const box = $(".model-figures");
@@ -604,6 +610,7 @@ export default function CaseTool(handle, element) {
         )}
         ${row("Cells", `≈ ${Math.round(cells / 1000)}k`, `${s.mesh} preset; checkMesh gives the real count (to within a factor of two or so)`)}
         ${row("Time", `${upTo ? "at most " : ""}≈ ${formatDuration(secs)}`, `on ${cores} cores, ${s.iterations} iterations${upTo ? "; it stops sooner once the resistance settles" : ""}`)}
+        ${s.keepVolume ? row("Flow volume", `≈ ${Math.max(1, Math.round((cells * VOLUME_BYTES_PER_CELL) / 1048576))} MB`, "kept after the run, about 200 bytes a cell; fetching it ran at about 1 MB/s (2026-11)") : ""}
       </table>`;
     renderSetupSum(`${upTo ? "up to " : ""}≈ ${formatDuration(secs)}`);
   }
@@ -696,6 +703,8 @@ export default function CaseTool(handle, element) {
     const geometry = { digest: await geometryDigest(tris), triangles: tris.length / 9 };
     const heads = r.heads ?? r.stash?.source?.heads ?? null;
     showTab("runs");
+    // a big STL goes in segment docs, once for the whole sweep (src/segments.js)
+    const stl = p.stl.byteLength > SEGMENT_BYTES / 2 ? (await putBytes(repo, p.stl, { title: `${r.title} · hull.stl` })).ref : p.stl;
     for (const speed of speeds) {
       const s = normalizeSetup({ ...setup(), speed });
       const run = newRun({
@@ -703,7 +712,7 @@ export default function CaseTool(handle, element) {
         serverUrl: server.url,
         setup: s,
         hull: {
-          stl: p.stl,
+          stl,
           info: JSON.parse(JSON.stringify(p.info)),
           warnings: [...p.warnings],
           source: {
@@ -757,7 +766,8 @@ export default function CaseTool(handle, element) {
     if (!server.handle || server.error) return;
     const by = await whoAmI(repo);
     const copy = JSON.parse(JSON.stringify({ setup: run.setup, hull: { ...run.hull, stl: null } }));
-    copy.hull.stl = new Uint8Array(run.hull.stl);
+    // segments never change, so a ref is copied as it is
+    copy.hull.stl = isRef(run.hull.stl) ? JSON.parse(JSON.stringify(run.hull.stl)) : new Uint8Array(run.hull.stl);
     const rh = await repo.create2(
       newRun({ caseUrl: handle.url, serverUrl: server.url, setup: copy.setup, hull: copy.hull, by, now: Date.now(), title: `${run.title} (again)`, made: { tool: "openfoam", version: TOOL_VERSION } }),
     );

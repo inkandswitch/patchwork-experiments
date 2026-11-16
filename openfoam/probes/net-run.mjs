@@ -16,6 +16,7 @@ import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
 import { defaultSetup, normalizeSetup, KNOT, DEFAULT_ITERATIONS } from "../src/setup.js";
 import { newRun, enqueue, requestStop, unpackChunks, decodeLayer, isTerminal, daemonOnline } from "../src/protocol.js";
+import { internalize } from "../src/segments.js";
 import { findWhenThere } from "../src/find.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -77,7 +78,7 @@ console.log(`\n${at()} ${status}${d.error ? `: ${d.error}` : ""}`);
 if (d.summary) console.log(`Rt ${d.summary.Rt.toFixed(1)} N, Rp ${d.summary.Rp.toFixed(1)}, Rv ${d.summary.Rv.toFixed(1)}, Fz ${d.summary.Fz.toFixed(0)}, My ${d.summary.My?.toFixed(0)}, ${d.summary.iterations} iterations (stopped by ${d.summary.stoppedBy}${d.summary.settledNote ? `: ${d.summary.settledNote}` : ""}), ${unpackChunks(d.progress.forces).rows.length} force rows synced`);
 console.log(`run ${run.url}`);
 for (const [name, url] of Object.entries(d.layers ?? {})) {
-  const L = decodeLayer((await findWhenThere(repo, url)).doc());
+  const L = decodeLayer(await internalize(repo, (await findWhenThere(repo, url)).doc()));
   console.log(`  layer ${name.padEnd(12)} ${L.positions.length / 3} points, fields ${Object.keys(L.fields).join(",")}`);
 }
 if (args.dump) {

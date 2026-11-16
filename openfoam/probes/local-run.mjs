@@ -5,7 +5,7 @@
 //
 //   node probes/local-run.mjs [--glb path] [--mode double-body|free-surface] [--mesh coarse|medium|fine]
 //                             [--iterations N] [--knots 6] [--cores N] [--finish-after N] [--cancel-after N]
-//                             [--sinkage m] [--trim deg] [--work dir] [--json out.json] [--dump run.json]
+//                             [--sinkage m] [--trim deg] [--work dir] [--json out.json] [--dump run.json] [--keep-volume]
 //                             [--stop settled|iterations] [--warm automerge:<a run whose case is in --work>]
 //
 // --dump writes the finished run doc and its layer docs (bytes as base64), for
@@ -24,6 +24,7 @@ import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
 import { defaultSetup, normalizeSetup, KNOT, DEFAULT_ITERATIONS } from "../src/setup.js";
 import { newRun, requestStop, unpackChunks, decodeLayer } from "../src/protocol.js";
+import { internalize } from "../src/segments.js";
 import { foamEnvironment, defaultCores } from "../daemon/foam.mjs";
 import { runJob } from "../daemon/runner.mjs";
 
@@ -42,6 +43,7 @@ const setup = normalizeSetup({
   cores: Number(args.cores ?? 0),
   stop: args.stop ?? "settled",
   ...(args.warm ? { warmStart: args.warm } : {}),
+  keepVolume: !!args["keep-volume"],
 });
 const { triangles } = glbTriangles(readFileSync(glb));
 const prep = prepareHull(triangles, setup.attitude);
@@ -95,10 +97,24 @@ if (d.summary) {
     Re: s.Re.toExponential(3), Fn: s.Fn.toFixed(3), yPlus: s.yPlus, iterations: s.iterations, power: (s.power / 1000).toFixed(2) + " kW",
   });
   for (const [name, url] of Object.entries(d.layers)) {
-    const L = decodeLayer((await repo.find(url)).doc());
+    const L = decodeLayer(await internalize(repo, (await repo.find(url)).doc()));
     const sizes = Object.entries(L.fields).map(([k, v]) => `${k}[${L.ranges[k]?.map((x) => x.toPrecision(3)).join("…")}]`);
     console.log(`  layer ${name.padEnd(12)} ${L.kind} ${L.positions.length / 3} pts ${L.indices ? L.indices.length / 3 + " tris" : L.counts.length + " lines"} ${sizes.join(" ")}`);
   }
+}
+if (d.volume) {
+  // the kept volume, read back: the mesh and pressure, parsed, against checkMesh's cell count
+  const { readVolume, parseFoam } = await import("../src/volume.js");
+  const vd = (await repo.find(d.volume.url)).doc();
+  const r = await readVolume(repo, vd, { mesh: ["owner", "neighbour"], fields: ["p"], find: (rp, u) => rp.find(u) });
+  let cells = 0, ps = 0;
+  r.mesh.owner.forEach((b, i) => {
+    let n = 0;
+    for (const f of [b, r.mesh.neighbour[i]]) if (f) for (const c of parseFoam(f).values) if (c >= n) n = c + 1;
+    cells += n;
+    ps += parseFoam(r.fields.p[i]).values.length;
+  });
+  console.log(`volume ${d.volume.status}: ${(d.volume.bytes / 1048576).toFixed(1)} MB, ${d.volume.files} files in ${d.volume.docs} docs, ${vd.pieces.length} pieces at ${vd.time}; read back ${cells} cells, ${ps} p values (checkMesh: ${d.mesh?.cells})`);
 }
 if (args.dump) {
   const plain = (v) => {

@@ -61,6 +61,7 @@ export function defaultSetup() {
     cores: 0,
     stop: "settled",
     warmStart: null,
+    keepVolume: false,
   };
 }
 
@@ -94,6 +95,8 @@ export function normalizeSetup(s) {
     cores: Math.round(clamp(num(s.cores, 0), 0, 256)),
     stop: s.stop === "iterations" ? "iterations" : "settled",
     warmStart: typeof s.warmStart === "string" && /^automerge:[1-9A-HJ-NP-Za-km-z]+$/.test(s.warmStart) ? s.warmStart : null,
+    // keep every cell's flow (the mesh and the last fields) in docs: big, so asked for
+    keepVolume: s.keepVolume === true,
   };
 }
 
