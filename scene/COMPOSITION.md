@@ -146,9 +146,26 @@ Still open:
   (presence-check.nopause run 3, B's first try: the first press on the
   Card table, the second on the inspector's behaviour picker);
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  they go;
+- entering a link moves the canvas: entered in Edit (a double-click on G's
+  card aboard Lost Cities), the canvas moves down about 31 px as the
+  entered path's chrome appears, so a click straight after lands that far
+  off. The bar of tools holds still (TOOLS Decisions 10, B3), the other
+  strips don't (lane/n8, editclick-run step 5).
 
 Fixed since (each item names its Decisions section below):
+- in Edit on a boat that is the world, sailing's HUD drew its own "Come
+  aboard" button over the canvas's top edge, so the first press of a
+  double-click on a card there came aboard, left Edit and moved the canvas,
+  and nothing was entered (triage (f)). The HUD now holds no button: Come
+  aboard is a world command on the bar of tools in every body, and the bar
+  keeps its height whether or not a world command applies (TOOLS
+  Decisions 10, lane/n8, merge 7aba1de4). Checked in the real Patchwork on
+  2026-11-16 (worldbar-check, 18/18 on scratch copies of Ship at anchor and
+  Lost Cities aboard): the double-click 16 px below the canvas's top edge
+  enters the game, and the canvas sits at the same place in Look, Edit and
+  aboard; against the packages published before, the same check fails 11
+  of 17, the first press coming aboard.
 - in Edit inside an entered link, a click that landed on the host went
   down the chain to the host's click verbs: inside Lost Cities aboard, a
   single click at a card that the pitching boat moved away landed on her
@@ -223,6 +240,11 @@ the lead confirms or reverses it):
   serves tests; and a test that drives the stage's manual clock no longer
   drives the gate unless it sets `timeStamp` (Decisions, double-click
   stamps, 4). Not chosen: refusing a double-click with a missing stamp.
+- **The bar of tools for games** (TOOLS Decisions 10; lane/n8): the empty
+  row outside Edit, where the world cluster sits and what the surface is
+  called, a new `show` surface or `edit: true` alone, a game's world
+  commands without entering it, one stage-drawn key legend, and whether a
+  game keeps a big Play call to action. The questions are there.
 
 *What follows is the record as written before build step 1; line
 references are to the code then. Where it still holds, the step that left

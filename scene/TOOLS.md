@@ -1387,4 +1387,13 @@ The project lead decided the five open questions on 2026-11-12.
     of its 17 checks, triage (f) among them: the first press lands on the
     HUD's Come aboard, comes aboard, leaves Edit and lifts the canvas
     38.5 px (Look's canvas sat at 101 px and Edit's at 140, the bar being
-    Edit's alone), and nothing is entered.
+    Edit's alone), and nothing is entered. After the merge (7aba1de4) and
+    the sync of scene, sailing, arena and dice, it passes 18 of 18 (its 17
+    and the page log's), the canvas at 140 px in Look, Edit and aboard; the
+    first run showed Come aboard's tooltip as "… (Enter) (Enter)" (the
+    command's title named its key and the bar adds the key's hint), fixed
+    in sailing (c0f79738) and pinned in the check. realcheck-editbody over
+    eight published examples (8/8): outside Edit no editor command on the
+    bar, and the world cluster exactly as declared (none on the Geometry
+    showcase and Santorini, Come aboard on the three boats and Lost Cities
+    aboard, Play on the Arena level, up and empty at Liar's dice).
