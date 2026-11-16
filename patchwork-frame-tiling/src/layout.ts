@@ -1,4 +1,3 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type {
   DropSide,
   LayoutNode,
@@ -29,7 +28,6 @@ export const makeLeaf = (view: PanelView): LeafNode => ({
   kind: "leaf",
   id: nextId("leaf"),
   view: cleanView(view),
-  history: [],
 });
 
 /** An empty *content* frame: a placeholder panel awaiting its first document. */
@@ -60,7 +58,23 @@ const makeSplit = (
  * full width and there's always a slot ready for the first document.
  */
 export const makeInitialLayout = (): SplitNode =>
-  makeSplit("horizontal", [makeRootFolderLeaf(), makeEmptyLeaf()], [28, 72]);
+  makeSplit("horizontal", [makeRootFolderLeaf(), makeEmptyLeaf()], navigatorSizes());
+
+/**
+ * The folder navigator starts about 260px wide: room for a ~30-character name
+ * a few levels deep, the width most sidebars settle on (Finder, VS Code,
+ * Notion). Split sizes are percentages of the frame, so convert at the moment
+ * the column is made; clamped so it stays usable on very wide or narrow
+ * windows (and above the panels' 10% minimum).
+ */
+export const NAVIGATOR_WIDTH_PX = 260;
+export const navigatorSizes = (
+  frameWidth: number = typeof window === "undefined" ? 0 : window.innerWidth,
+): [number, number] => {
+  const percent = frameWidth > 0 ? (NAVIGATOR_WIDTH_PX / frameWidth) * 100 : 20;
+  const clamped = Math.round(Math.min(28, Math.max(10, percent)) * 10) / 10;
+  return [clamped, Math.round((100 - clamped) * 10) / 10];
+};
 
 /**
  * Deep-clone a (possibly Automerge-proxied) subtree into plain objects, reading
@@ -69,12 +83,16 @@ export const makeInitialLayout = (): SplitNode =>
  */
 export const cloneLayout = (node: LayoutNode): LayoutNode => {
   if (node.kind === "leaf") {
-    return {
-      kind: "leaf",
-      id: node.id,
-      view: cleanView(node.view),
-      history: [...node.history].map(cleanView),
-    };
+    const leaf: LeafNode = { kind: "leaf", id: node.id, view: cleanView(node.view) };
+    if (node.stack && node.stack.length > 0) {
+      leaf.stack = [...node.stack].map(cleanView);
+      leaf.stackAt = clampStackAt(node);
+    }
+    if (node.drawer) {
+      leaf.drawer = { open: node.drawer.open, width: node.drawer.width };
+      if (node.drawer.tool) leaf.drawer.tool = node.drawer.tool;
+    }
+    return leaf;
   }
   return {
     kind: "split",
@@ -91,49 +109,92 @@ export const collectLeafIds = (node: LayoutNode): string[] =>
     ? [node.id]
     : [...collectLeafIds(node.children[0]), ...collectLeafIds(node.children[1])];
 
-/** Find the id of the first leaf whose view points at the given url. */
-export const findLeafIdByUrl = (
+// --- Stacks ---
+
+const clampStackAt = (leaf: LeafNode): number =>
+  Math.max(0, Math.min(leaf.stackAt ?? 0, leaf.stack?.length ?? 0));
+
+/**
+ * A leaf's documents in tab order, and the index of the one showing. A leaf
+ * without a stack is one tab. (The views may be live document proxies; copy
+ * before writing them back.)
+ */
+export const leafTabs = (
+  leaf: LeafNode,
+): { tabs: PanelView[]; active: number } => {
+  const stack = leaf.stack ?? [];
+  const at = clampStackAt(leaf);
+  return {
+    tabs: [...stack.slice(0, at), leaf.view, ...stack.slice(at)],
+    active: at,
+  };
+};
+
+/**
+ * Store `tabs` on `leaf` with `tabs[active]` showing. This is the one place a
+ * stack is written, so it keeps the invariants: every stacked tab is a
+ * document (no empty entries), an empty view never shows while there's a
+ * document to show instead, no document appears twice (the showing one wins),
+ * and a single remaining tab is stored as a plain leaf, with no stack.
+ */
+const writeTabs = (leaf: LeafNode, tabs: PanelView[], requested: number): void => {
+  const firstDoc = tabs.findIndex((tab) => !!tab.url);
+  const active = tabs[requested]?.url || firstDoc < 0 ? requested : firstDoc;
+  const shownUrl = tabs[active]?.url;
+  const seen = new Set<string>(shownUrl ? [shownUrl] : []);
+  const kept: PanelView[] = [];
+  let shown = 0;
+  tabs.forEach((tab, i) => {
+    if (i === active) {
+      shown = kept.length;
+      kept.push(cleanView(tab));
+      return;
+    }
+    if (!tab.url || seen.has(tab.url)) return;
+    seen.add(tab.url);
+    kept.push(cleanView(tab));
+  });
+  if (kept.length === 0) return;
+  leaf.view = kept[shown];
+  const rest = kept.filter((_, i) => i !== shown);
+  if (rest.length > 0) {
+    leaf.stack = rest;
+    leaf.stackAt = shown;
+  } else {
+    if (leaf.stack !== undefined) delete leaf.stack;
+    if (leaf.stackAt !== undefined) delete leaf.stackAt;
+  }
+};
+
+/** Find the panel and tab showing or holding `url`, if any. */
+export const findTabByUrl = (
   node: LayoutNode,
   url: string,
-): string | null => {
-  if (node.kind === "leaf") return node.view.url === url ? node.id : null;
+): { leafId: string; index: number; active: boolean } | null => {
+  if (node.kind === "leaf") {
+    const { tabs, active } = leafTabs(node);
+    const index = tabs.findIndex((tab) => tab.url === url);
+    return index < 0 ? null : { leafId: node.id, index, active: index === active };
+  }
   return (
-    findLeafIdByUrl(node.children[0], url) ??
-    findLeafIdByUrl(node.children[1], url)
+    findTabByUrl(node.children[0], url) ?? findTabByUrl(node.children[1], url)
   );
 };
 
 /**
- * A "content" leaf is a normal document panel (an empty content frame counts) —
- * i.e. *not* the root-folder navigator and *not* a context (comments/history/…)
- * panel. Used so document opens never land in (or carve up) those special
- * panels. The optional `rootFolderUrl` also excludes legacy url-based folder
- * leaves that predate the symbolic `"root-folder"` role.
+ * A "content" leaf is a normal document panel (an empty content frame counts):
+ * anything but the root-folder navigator. Used so document opens never land
+ * in (or carve up) the navigator.
  */
-export const isContentLeaf = (
-  leaf: LeafNode | null,
-  rootFolderUrl?: string,
-): boolean =>
-  !!leaf &&
-  leaf.view.role !== "context" &&
-  leaf.view.role !== "root-folder" &&
-  !(rootFolderUrl !== undefined && leaf.view.url === rootFolderUrl);
+export const isContentLeaf = (leaf: LeafNode | null): boolean =>
+  !!leaf && leaf.view.role !== "root-folder";
 
 /** Find the id of the root-folder navigator panel, if one is open. */
-export const findRootFolderLeafId = (
-  node: LayoutNode | null,
-  rootFolderUrl?: string,
-): string | null => {
+export const findRootFolderLeafId = (node: LayoutNode | null): string | null => {
   if (!node) return null;
-  if (node.kind === "leaf") {
-    const isFolder =
-      node.view.role === "root-folder" ||
-      (rootFolderUrl !== undefined && node.view.url === rootFolderUrl);
-    return isFolder ? node.id : null;
-  }
+  if (node.kind === "leaf") return node.view.role === "root-folder" ? node.id : null;
   return (
-    findRootFolderLeafId(node.children[0], rootFolderUrl) ??
-    findRootFolderLeafId(node.children[1], rootFolderUrl)
+    findRootFolderLeafId(node.children[0]) ?? findRootFolderLeafId(node.children[1])
   );
 };
 
@@ -205,7 +266,10 @@ const writeView = (target: PanelView, view: PanelView): void => {
 
 // --- In-place mutators (operate on the Automerge document draft) ---
 
-/** Navigate a leaf to a new view, pushing the current view onto its history. */
+/**
+ * Replace the document a leaf is showing. There's no back-history: to keep a
+ * document around, stack it ({@link stackViewIn}) rather than replacing it.
+ */
 export const navigateLeafIn = (
   doc: TilingLayoutDoc,
   leafId: string,
@@ -215,23 +279,239 @@ export const navigateLeafIn = (
   if (!leaf) return;
   if (leaf.view.url === view.url && (leaf.view.toolId ?? null) === (view.toolId ?? null))
     return;
-  // Filling an *empty* content frame isn't a navigation, so it leaves no
-  // back-history entry to return to.
-  if (leaf.view.url) leaf.history.push(cleanView(leaf.view));
   writeView(leaf.view, view);
+  // If that document was also stacked behind, it's now the one showing.
+  if (leaf.stack?.length) {
+    const { tabs, active } = leafTabs(leaf);
+    writeTabs(leaf, tabs, active);
+  }
 };
 
-/** Pop a leaf's history, returning it to the previous view. */
-export const goBackIn = (doc: TilingLayoutDoc, leafId: string): void => {
+/** Show tab `index` of a leaf's stack. */
+export const activateTabIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  index: number,
+): void => {
   const leaf = findLeaf(doc.layout, leafId);
-  if (!leaf || leaf.history.length === 0) return;
-  const last = leaf.history[leaf.history.length - 1];
-  const prev = cleanView(last);
-  leaf.history.splice(leaf.history.length - 1, 1);
-  writeView(leaf.view, prev);
+  if (!leaf) return;
+  const { tabs, active } = leafTabs(leaf);
+  if (index === active || !tabs[index]) return;
+  writeTabs(leaf, tabs, index);
 };
 
-/** Switch the tool used to render a leaf's current document (no history). */
+/**
+ * Add a document to a leaf's stack, just after the tab showing, and show it.
+ * A document already in the stack is shown instead; an empty frame is simply
+ * filled.
+ */
+export const stackViewIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  view: PanelView,
+): void => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (!leaf || !view.url) return;
+  if (!leaf.view.url) {
+    writeTabs(leaf, [view], 0);
+    return;
+  }
+  const { tabs, active } = leafTabs(leaf);
+  const existing = tabs.findIndex((tab) => tab.url === view.url);
+  if (existing >= 0) {
+    writeTabs(leaf, tabs, existing);
+    return;
+  }
+  const next = [...tabs];
+  next.splice(active + 1, 0, view);
+  writeTabs(leaf, next, active + 1);
+};
+
+/**
+ * Remove tab `index` from a leaf's stack, returning it (copied). A leaf keeps
+ * at least one tab, so a lone document isn't removable this way (close the
+ * panel instead). Closing the showing tab shows its right-hand neighbour, or
+ * the left one at the end.
+ */
+export const closeTabIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  index: number,
+): PanelView | null => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (!leaf) return null;
+  const { tabs, active } = leafTabs(leaf);
+  if (tabs.length < 2 || !tabs[index]) return null;
+  const removed = cleanView(tabs[index]);
+  const next = tabs.filter((_, i) => i !== index);
+  const shown =
+    index < active
+      ? active - 1
+      : index === active
+        ? Math.min(index, next.length - 1)
+        : active;
+  writeTabs(leaf, next, shown);
+  return removed;
+};
+
+/**
+ * Put documents into `target`'s stack at tab position `at`, and show the one
+ * that arrived showing. The documents are either one tab of `source` (`tab`)
+ * or, with `tab` null, all of `source`'s, which is then removed (merging the
+ * two panels). Taking a source's only tab removes the source too.
+ *
+ * `at` counts positions in `target`'s tabs, 0 … n. Left out, a single tab goes
+ * just after the one showing (as {@link stackViewIn} does) and a whole panel's
+ * documents go at the end. Within one panel, it moves (reorders) that tab.
+ * Documents `target` already holds aren't duplicated. Returns the id of the
+ * panel now showing them, or null if nothing changed.
+ */
+export const stackIntoIn = (
+  doc: TilingLayoutDoc,
+  sourceLeafId: string,
+  tab: number | null,
+  targetLeafId: string,
+  at?: number,
+): string | null => {
+  const source = findLeaf(doc.layout, sourceLeafId);
+  const target = findLeaf(doc.layout, targetLeafId);
+  if (!source || !target) return null;
+  const from = leafTabs(source);
+  if (tab !== null && !from.tabs[tab]) return null;
+
+  if (sourceLeafId === targetLeafId) {
+    if (tab === null || at === undefined) return null;
+    const tabs = from.tabs.map(cleanView);
+    const [moving] = tabs.splice(tab, 1);
+    const pos = Math.max(0, Math.min(at > tab ? at - 1 : at, tabs.length));
+    tabs.splice(pos, 0, moving);
+    writeTabs(source, tabs, pos);
+    return targetLeafId;
+  }
+
+  const moving = (tab === null ? from.tabs : [from.tabs[tab]])
+    .filter((view) => view.url)
+    .map(cleanView);
+  // An empty source brings nothing, and leaves the target showing what it was.
+  const shownUrl =
+    (tab === null ? from.tabs[from.active]?.url : moving[0]?.url) ?? target.view.url;
+  const into = leafTabs(target);
+  const intoDocs = into.tabs.filter((view) => view.url).map(cleanView);
+  const incoming = moving.filter((m) => !intoDocs.some((t) => t.url === m.url));
+  if (intoDocs.length + incoming.length === 0) return null;
+  const defaultAt = tab === null || !target.view.url ? intoDocs.length : into.active + 1;
+  const pos = Math.max(0, Math.min(at ?? defaultAt, intoDocs.length));
+
+  // Take the documents out of the source. Removing a whole leaf re-clones its
+  // sibling's slot, so look the target up again afterwards.
+  if (tab === null || from.tabs.length < 2) removeLeafIn(doc, sourceLeafId);
+  else closeTabIn(doc, sourceLeafId, tab);
+  const after = findLeaf(doc.layout, targetLeafId);
+  if (!after) return null;
+  const merged = [...intoDocs.slice(0, pos), ...incoming, ...intoDocs.slice(pos)];
+  writeTabs(after, merged, Math.max(0, merged.findIndex((t) => t.url === shownUrl)));
+  return targetLeafId;
+};
+
+/**
+ * Stack every document of `source` into `target` (after its own), showing the
+ * one `source` was showing, and remove `source`. An empty target just takes
+ * them. No-op onto itself.
+ */
+export const mergeLeafIn = (
+  doc: TilingLayoutDoc,
+  sourceLeafId: string,
+  targetLeafId: string,
+): void => {
+  if (sourceLeafId === targetLeafId) return;
+  stackIntoIn(doc, sourceLeafId, null, targetLeafId);
+};
+
+/**
+ * Move one tab out of a leaf: onto another panel's middle (stacking it there)
+ * or against an edge (a new panel, which may be beside its old one). A leaf's
+ * only tab moves the whole leaf. Returns the id of the panel now showing it.
+ */
+export const moveTabIn = (
+  doc: TilingLayoutDoc,
+  sourceLeafId: string,
+  index: number,
+  targetLeafId: string,
+  side: DropSide,
+): string | null => {
+  const source = findLeaf(doc.layout, sourceLeafId);
+  if (!source || !findLeaf(doc.layout, targetLeafId)) return null;
+  if (leafTabs(source).tabs.length < 2) {
+    if (sourceLeafId === targetLeafId) return null;
+    moveLeafIn(doc, sourceLeafId, targetLeafId, side);
+    // Stacked into the target, the source is gone; at an edge it moved.
+    return side === "center" ? targetLeafId : sourceLeafId;
+  }
+  if (side === "center") {
+    if (sourceLeafId === targetLeafId) return null;
+    return stackIntoIn(doc, sourceLeafId, index, targetLeafId);
+  }
+  const view = closeTabIn(doc, sourceLeafId, index);
+  if (!view) return null;
+  const leaf = makeLeaf(view);
+  splitLeafIn(doc, targetLeafId, directionOf(side), leaf, insertsAfter(side));
+  return leaf.id;
+};
+
+const directionOf = (side: DropSide): SplitDirection =>
+  side === "left" || side === "right" ? "horizontal" : "vertical";
+const insertsAfter = (side: DropSide): boolean =>
+  side === "right" || side === "bottom";
+
+// --- Drawers ---
+
+export const DRAWER_WIDTH_PX = 320;
+const DRAWER_MIN_PX = 200;
+const DRAWER_MAX_PX = 900;
+
+/** Open or close a leaf's drawer (opening one it's never had). */
+export const toggleDrawerIn = (doc: TilingLayoutDoc, leafId: string): void => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (!leaf) return;
+  if (!leaf.drawer) {
+    leaf.drawer = { open: true, width: DRAWER_WIDTH_PX };
+    return;
+  }
+  leaf.drawer.open = !leaf.drawer.open;
+};
+
+/** Show a context tool in a leaf's drawer, opening the drawer if need be. */
+export const showDrawerToolIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  toolId: string,
+): void => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (!leaf) return;
+  if (!leaf.drawer) {
+    leaf.drawer = { open: true, tool: toolId, width: DRAWER_WIDTH_PX };
+    return;
+  }
+  if (!leaf.drawer.open) leaf.drawer.open = true;
+  if (leaf.drawer.tool !== toolId) leaf.drawer.tool = toolId;
+};
+
+/** Set the drawer's width, within sensible bounds. */
+export const setDrawerWidthIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  width: number,
+): void => {
+  const drawer = findLeaf(doc.layout, leafId)?.drawer;
+  if (!drawer) return;
+  const clamped = clampDrawerWidth(width);
+  if (drawer.width !== clamped) drawer.width = clamped;
+};
+
+export const clampDrawerWidth = (width: number): number =>
+  Math.round(Math.min(DRAWER_MAX_PX, Math.max(DRAWER_MIN_PX, width)));
+
+/** Switch the tool used to render a leaf's showing document. */
 export const setLeafToolIn = (
   doc: TilingLayoutDoc,
   leafId: string,
@@ -292,7 +572,7 @@ export const splitLeafIn = (
  * Move a leaf so it tiles against another leaf on the given side. The leaf is
  * first removed from its current slot (its sibling collapses up), then the
  * target leaf is split with the moved leaf placed on the chosen side. The moved
- * leaf keeps its id and history (so focus/selection and its mounted view
+ * leaf keeps its id and stack (so focus/selection and its mounted view
  * survive the move). No-op if source and target are the same leaf.
  */
 export const moveLeafIn = (
@@ -302,6 +582,10 @@ export const moveLeafIn = (
   side: DropSide,
 ): void => {
   if (sourceLeafId === targetLeafId) return;
+  if (side === "center") {
+    mergeLeafIn(doc, sourceLeafId, targetLeafId);
+    return;
+  }
   const root = doc.layout;
   if (!root) return;
   const source = findLeaf(root, sourceLeafId);
@@ -317,10 +601,7 @@ export const moveLeafIn = (
     return;
   }
 
-  const direction: SplitDirection =
-    side === "left" || side === "right" ? "horizontal" : "vertical";
-  const insertAfter = side === "right" || side === "bottom";
-  splitLeafIn(doc, targetLeafId, direction, moved, insertAfter);
+  splitLeafIn(doc, targetLeafId, directionOf(side), moved, insertsAfter(side));
 };
 
 /**
@@ -347,35 +628,28 @@ export const removeLeafIn = (doc: TilingLayoutDoc, leafId: string): void => {
 };
 
 /** Does the tree contain at least one content leaf (empty frames count)? */
-const hasContentLeaf = (
-  node: LayoutNode,
-  rootFolderUrl?: string,
-): boolean =>
+const hasContentLeaf = (node: LayoutNode): boolean =>
   node.kind === "leaf"
-    ? isContentLeaf(node, rootFolderUrl)
-    : hasContentLeaf(node.children[0], rootFolderUrl) ||
-      hasContentLeaf(node.children[1], rootFolderUrl);
+    ? isContentLeaf(node)
+    : hasContentLeaf(node.children[0]) || hasContentLeaf(node.children[1]);
 
 /**
  * Keep the invariant that there's always a content frame for documents to open
- * into, so the folder/context panes never end up alone and full-width. If the
+ * into, so the folder pane never ends up alone and full-width. If the
  * layout is missing or has no content leaf, (re)introduce an empty content
  * frame beside the folder.
  */
-export const ensureContentFrameIn = (
-  doc: TilingLayoutDoc,
-  rootFolderUrl?: AutomergeUrl,
-): void => {
+export const ensureContentFrameIn = (doc: TilingLayoutDoc): void => {
   const root = doc.layout;
   if (!root) {
     doc.layout = makeInitialLayout();
     return;
   }
-  if (hasContentLeaf(root, rootFolderUrl)) return;
+  if (hasContentLeaf(root)) return;
   // Add the empty frame beside a *non-folder* pane so we never carve the new
   // frame out of the narrow folder strip (which would make both halves tiny).
   // Only split the folder when it's the sole pane (then it's full-width anyway).
-  const folderId = findRootFolderLeafId(root, rootFolderUrl);
+  const folderId = findRootFolderLeafId(root);
   const ids = collectLeafIds(root);
   const target = ids.find((id) => id !== folderId) ?? ids[0];
   if (!target) {
@@ -394,38 +668,9 @@ export const addRootFolderColumnIn = (doc: TilingLayoutDoc): string => {
   const folder = makeRootFolderLeaf();
   const root = doc.layout;
   if (!root) {
-    doc.layout = makeSplit("horizontal", [folder, makeEmptyLeaf()], [28, 72]);
+    doc.layout = makeSplit("horizontal", [folder, makeEmptyLeaf()], navigatorSizes());
   } else {
-    doc.layout = makeSplit("horizontal", [folder, cloneLayout(root)], [28, 72]);
+    doc.layout = makeSplit("horizontal", [folder, cloneLayout(root)], navigatorSizes());
   }
   return folder.id;
-};
-
-/**
- * Convert any legacy url-based root-folder leaves (which embed the author's
- * folder document) into the symbolic `"root-folder"` role, so this session — and
- * anything shared from it — resolves the folder to the *viewer's* own. Only the
- * current viewer's `rootFolderUrl` is recognizable here; a foreign folder url in
- * a received layout can't be detected. Returns whether anything changed.
- */
-export const normalizeRootFolderIn = (
-  doc: TilingLayoutDoc,
-  rootFolderUrl: AutomergeUrl,
-): boolean => {
-  let changed = false;
-  const visit = (node: LayoutNode): void => {
-    if (node.kind === "leaf") {
-      if (node.view.role !== "root-folder" && node.view.url === rootFolderUrl) {
-        node.view.role = "root-folder";
-        delete (node.view as { url?: string }).url;
-        node.history.splice(0, node.history.length);
-        changed = true;
-      }
-      return;
-    }
-    visit(node.children[0]);
-    visit(node.children[1]);
-  };
-  if (doc.layout) visit(doc.layout);
-  return changed;
 };

@@ -25,6 +25,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -40,28 +42,47 @@ import {
   cloneLayout,
   collectLeafIds,
   ensureContentFrameIn,
+  activateTabIn,
+  clampDrawerWidth,
+  closeTabIn,
   findLeaf,
-  findLeafIdByUrl,
   findRootFolderLeafId,
-  goBackIn,
+  findTabByUrl,
   isContentLeaf,
+  leafTabs,
   makeInitialLayout,
   makeLeaf,
   moveLeafIn,
+  moveTabIn,
   navigateLeafIn,
-  normalizeRootFolderIn,
   removeLeafIn,
+  setDrawerWidthIn,
+  showDrawerToolIn,
+  toggleDrawerIn,
   setLeafToolIn,
   setSizesIn,
   splitLeafIn,
+  stackIntoIn,
+  stackViewIn,
 } from "./layout";
 import { TopBar } from "./TopBar";
-import { FrameProviders, type OpenView } from "./FrameProviders";
-import { DraftScope, useDraftsAvailable } from "./drafts";
+import {
+  BASE_PROVIDER_IDS,
+  FrameProviders,
+  SelectionProvider,
+  type OpenView,
+} from "./FrameProviders";
+import {
+  DRAFT_OVERLAY_PROVIDER,
+  DRAFT_STATE_PROVIDER,
+  useDraftsAvailable,
+} from "./drafts";
+import { CommentsOpener, DocScope, type ScopedProvider } from "./docScope";
 import { DocIcon } from "./DocIcon";
 import { setPatchworkDragData } from "./dnd";
 import "./styles.css";
 import type {
+  Drawer,
   DropSide,
   LayoutNode,
   LeafNode,
@@ -74,6 +95,8 @@ import type {
 import {
   useDatatypeIcon,
   useDocTitle,
+  useDocType,
+  useTitleSetter,
   useEffectiveTool,
   useTaggedComponents,
   type SlotTool,
@@ -180,11 +203,19 @@ const readDocParam = (): string | null => {
   }
 };
 
-// The URL's `doc`/`tool` as a panel view, normalized the way the host's router
-// does it (`docParamToUrl`) so it compares equal to what the host dispatches.
-const readDeepLink = (): PanelView | null => {
+// A link to a doc in this app (`#doc=…`, as the folder and markdown tools write
+// them) as a panel view, normalized the way the host's router does it
+// (`docParamToUrl`) so it compares equal to what the host dispatches; null for
+// any other link.
+const docLinkView = (href: string): PanelView | null => {
   try {
-    const params = new URLSearchParams(window.location.hash.slice(1));
+    const link = new URL(href, window.location.href);
+    if (
+      link.origin !== window.location.origin ||
+      link.pathname !== window.location.pathname
+    )
+      return null;
+    const params = new URLSearchParams(link.hash.slice(1));
     const raw = params.get(DOC_PARAM);
     if (!raw) return null;
     const url = raw.startsWith("automerge:") ? raw : `automerge:${raw}`;
@@ -195,6 +226,10 @@ const readDeepLink = (): PanelView | null => {
     return null;
   }
 };
+
+// The URL's own `doc`/`tool`.
+const readDeepLink = (): PanelView | null =>
+  docLinkView(window.location.href);
 
 const syncDocParam = (
   url: AutomergeUrl | undefined,
@@ -263,7 +298,7 @@ function useTabLayoutSession(
     if (layoutUrl || mintedRef.current || !accountHandle) return;
     mintedRef.current = true;
     const account = accountHandle.doc();
-    const source = account?.currentLayoutUrl ?? account?.tilingLayoutUrl;
+    const source = account?.currentLayoutUrl;
     const handle = repo.create<TilingLayoutDoc>();
     handle.change((doc) => {
       doc.layout = null;
@@ -292,31 +327,51 @@ function useTabLayoutSession(
   return { layoutUrl, cloneSourceUrl };
 }
 
+/**
+ * How an open lands when it would otherwise replace a panel's document:
+ * stacked into that panel, or split off beside (a direction) it.
+ */
+type OpenPlacement = "stack" | SplitDirection;
+
 type LayoutOps = {
   activeLeafId: string | null;
   focusLeaf: (id: string) => void;
   navigate: (leafId: string, view: PanelView) => void;
-  goBack: (leafId: string) => void;
-  split: (leafId: string, direction: SplitDirection) => void;
   close: (leafId: string) => void;
-  /** Re-tile `sourceLeafId` against `targetLeafId` on the given side (drag/drop). */
-  moveLeaf: (sourceLeafId: string, targetLeafId: string, side: DropSide) => void;
-  /** The panel currently being dragged (drives drop-zone overlays), or null. */
+  /** Show tab `index` of a panel's stack. */
+  activateTab: (leafId: string, index: number) => void;
+  /** Remove tab `index` from a panel's stack. */
+  closeTab: (leafId: string, index: number) => void;
+  /** The panel being dragged, or whose tab is (drives drop zones), or null. */
   draggingId: string | null;
-  /** Begin/end a panel drag. */
-  beginDrag: (leafId: string) => void;
+  /** The tab being dragged out of `draggingId`, or null for the whole panel. */
+  draggingTab: number | null;
+  /** Whether what's being dragged is documents (so it can be stacked). */
+  dragCanStack: boolean;
+  /** Begin a drag of a whole panel, or (with `tab`) of one of its tabs. */
+  beginDrag: (leafId: string, tab?: number) => void;
   endDrag: () => void;
+  /** Drop the current drag on `targetLeafId`: split at an edge, or stack. */
+  drop: (targetLeafId: string, side: DropSide) => void;
+  /** Drop the current drag into `targetLeafId`'s tab strip, at position `at`. */
+  dropIntoStrip: (targetLeafId: string, at: number) => void;
   setSizes: (splitId: string, sizes: [number, number]) => void;
   setTool: (leafId: string, toolId: string | undefined) => void;
-  /** Open a context tool (comments, history, …) as a panel beside `sourceLeafId`. */
-  openContext: (sourceLeafId: string, toolId: string) => void;
-  /** Context tools available to launch from a content panel. */
+  /** Open or close a panel's drawer of context tools. */
+  toggleDrawer: (leafId: string) => void;
+  /** Show a context tool in a panel's drawer. */
+  showDrawerTool: (leafId: string, toolId: string) => void;
+  /** Persist a drawer's width after a resize. */
+  setDrawerWidth: (leafId: string, width: number) => void;
+  /** `document-provider` components, wrapped around every document. */
+  documentProviders: string[];
+  /** The context tools a document panel's drawer lists. */
   contextTools: SlotTool[];
   /** The viewer's own root-folder url, used to resolve `"root-folder"` panels. */
   rootFolderUrl: AutomergeUrl | undefined;
   /** Id of the content panel that is the current "selected document". */
   selectedLeafId: string | null;
-  /** URL of the current selected document (what context panels describe). */
+  /** URL of the current selected document (what overlays describe). */
   selectedDocUrl: AutomergeUrl | undefined;
   /**
    * The long-lived element a panel's content renders into (see
@@ -339,48 +394,6 @@ type LayoutOps = {
   ) => void;
 };
 
-const SplitRightIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <rect
-      x="1.5"
-      y="2.5"
-      width="13"
-      height="11"
-      rx="1.5"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    />
-    <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-);
-
-const SplitDownIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <rect
-      x="1.5"
-      y="2.5"
-      width="13"
-      height="11"
-      rx="1.5"
-      stroke="currentColor"
-      strokeWidth="1.3"
-    />
-    <line x1="1.5" y1="8" x2="14.5" y2="8" stroke="currentColor" strokeWidth="1.3" />
-  </svg>
-);
-
-const BackIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <path
-      d="M10 3.5L5.5 8L10 12.5"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
 const CloseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
     <path
@@ -392,7 +405,23 @@ const CloseIcon = () => (
   </svg>
 );
 
-const ToolPicker = ({
+/** A tool that renders any document (`supportedDatatypes: "*"`): Raw, say. */
+const isGenericTool = (tool: ToolDescription): boolean => {
+  const supported = (tool as { supportedDatatypes?: unknown }).supportedDatatypes;
+  return supported === "*" || (Array.isArray(supported) && supported.includes("*"));
+};
+
+/**
+ * The menu of ways to view a panel's document, opened from its datatype icon
+ * (or from the tool label, when one shows). The datatype's own tools come
+ * first; tools that render any document follow under their own rule.
+ *
+ * Choosing one of the datatype's tools is remembered for the document and the
+ * datatype, so it's what they open in next time. A generic tool is a peek:
+ * it applies to this panel only, so a look at the raw data doesn't make every
+ * document of the type open raw.
+ */
+const ToolMenu = ({
   leaf,
   ops,
   tools,
@@ -400,6 +429,9 @@ const ToolPicker = ({
   type,
   selected,
   url,
+  headerRef,
+  left,
+  onClose,
 }: {
   leaf: LeafNode;
   ops: LayoutOps;
@@ -413,150 +445,91 @@ const ToolPicker = ({
    * which is absent), so a choice made here is still remembered for the folder.
    */
   url: AutomergeUrl | undefined;
+  headerRef: RefObject<HTMLDivElement>;
+  /** Offset from the header's left edge, to sit under its opener. */
+  left: number;
+  onClose: () => void;
 }) => {
-  if (tools.length <= 1) {
-    return null;
-  }
-
-  return (
-    <select
-      className="tile-panel__tool-picker"
-      title="Choose a tool"
-      value={selected ?? ""}
-      onChange={(event) => {
-        const toolId = event.target.value;
-        // Persist the choice on the panel and remember it (on the account) as
-        // the preferred tool for this doc and datatype so future opens default
-        // to it.
-        ops.setTool(leaf.id, toolId);
-        if (url) ops.rememberTool(url, type, toolId);
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      {tools.map((tool) => (
-        <option key={tool.id} value={tool.id}>
-          {tool.name ?? tool.id}
-          {tool.id === fallbackId ? " (default)" : ""}
-        </option>
-      ))}
-    </select>
-  );
-};
-
-const ContextIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <path
-      d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const SubjectIcon = () => (
-  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <path
-      d="M5.5 3.5L10 8l-4.5 4.5"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-/** A dropdown that launches a context tool bound to this panel's document. */
-const ContextLauncher = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    if (!open) return;
     const onDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Element | null;
+      // The icon and label toggle the menu themselves.
+      const toggle = target?.closest?.("[data-tool-menu-toggle]");
+      if (toggle && headerRef.current?.contains(toggle)) return;
+      if (!target?.closest?.(".tile-tool-menu")) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [headerRef, onClose]);
 
-  if (ops.contextTools.length === 0) return null;
+  const choose = (tool: ToolDescription) => {
+    ops.setTool(leaf.id, tool.id);
+    if (url && !isGenericTool(tool)) ops.rememberTool(url, type, tool.id);
+    onClose();
+  };
 
+  const item = (tool: ToolDescription) => (
+    <button
+      key={tool.id}
+      className="tile-tool-menu__item"
+      role="menuitemradio"
+      aria-checked={tool.id === selected}
+      onClick={() => choose(tool)}
+    >
+      <span className="tile-tool-menu__name">{tool.name ?? tool.id}</span>
+      {tool.id === fallbackId && (
+        <span className="tile-tool-menu__note">default</span>
+      )}
+    </button>
+  );
+
+  const specific = tools.filter((tool) => !isGenericTool(tool));
+  const generic = tools.filter(isGenericTool);
   return (
-    <div className="tile-context-launcher" ref={containerRef}>
-      <button
-        className="tile-panel__icon-btn"
-        title="Open context tool"
-        onClick={() => setOpen((value) => !value)}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <ContextIcon />
-      </button>
-      {open && (
-        <div
-          className="tile-context-launcher__menu"
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          {ops.contextTools.map((tool) => (
-            <button
-              key={tool.id}
-              className="tile-context-launcher__item"
-              onClick={() => {
-                ops.openContext(leaf.id, tool.id);
-                setOpen(false);
-              }}
-            >
-              {tool.name}
-            </button>
-          ))}
-        </div>
+    <div
+      className="tile-tool-menu"
+      role="menu"
+      style={{ left }}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      {specific.map(item)}
+      {generic.length > 0 && (
+        <>
+          {specific.length > 0 && <div className="tile-tool-menu__rule" />}
+          <div className="tile-tool-menu__heading">Any document</div>
+          {generic.map(item)}
+        </>
       )}
     </div>
   );
 };
 
-/** Chip shown on a context panel naming the document it currently describes. */
-const SubjectChip = ({ ops }: { ops: LayoutOps }) => {
-  const title = useDocTitle(ops.selectedDocUrl);
-  if (!ops.selectedDocUrl) return null;
-  return (
-    <button
-      className="tile-panel__subject"
-      title={`Context for: ${title}`}
-      onClick={() => {
-        if (ops.selectedLeafId) ops.focusLeaf(ops.selectedLeafId);
-      }}
-      onMouseDown={(event) => event.stopPropagation()}
-    >
-      <SubjectIcon />
-      <span className="tile-panel__subject-label">{title}</span>
-    </button>
-  );
-};
-
-const GripIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-    <circle cx="6" cy="4" r="1.1" />
-    <circle cx="10" cy="4" r="1.1" />
-    <circle cx="6" cy="8" r="1.1" />
-    <circle cx="10" cy="8" r="1.1" />
-    <circle cx="6" cy="12" r="1.1" />
-    <circle cx="10" cy="12" r="1.1" />
-  </svg>
-);
-
-/** Which edge of `el` the cursor is nearest — the 4 triangular drop zones. */
+/**
+ * Where over `el` the cursor is: the middle (stacking, when `canStack`), or
+ * else the nearest edge (the 4 triangular drop zones). The middle is the
+ * central 40% each way, so the edges stay easy targets.
+ */
 const computeDropSide = (
   event: { clientX: number; clientY: number },
   el: HTMLElement,
+  canStack: boolean,
 ): DropSide => {
   const r = el.getBoundingClientRect();
   const x = r.width ? (event.clientX - r.left) / r.width : 0.5;
   const y = r.height ? (event.clientY - r.top) / r.height : 0.5;
+  if (canStack && Math.abs(x - 0.5) < 0.2 && Math.abs(y - 0.5) < 0.2)
+    return "center";
   const dist = { left: x, right: 1 - x, top: y, bottom: 1 - y };
   let side: DropSide = "right";
   let min = Infinity;
-  (Object.keys(dist) as DropSide[]).forEach((k) => {
+  (Object.keys(dist) as (keyof typeof dist)[]).forEach((k) => {
     if (dist[k] < min) {
       min = dist[k];
       side = k;
@@ -566,11 +539,21 @@ const computeDropSide = (
 };
 
 /**
- * Drop surface laid over a (non-source) panel's body while a drag is active.
- * It sits above the embedded view so drag events land here rather than inside
- * an iframe/tool, previews the target edge, and commits the move on drop.
+ * Drop surface laid over a panel's body while a drag is active (every panel
+ * but a dragged one; a panel whose *tab* is dragged is a target too). It sits
+ * above the embedded view so drag events land here rather than inside an
+ * iframe/tool, previews the target edge (or the middle, to stack), and
+ * commits the move on drop.
  */
-const DropZones = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
+const DropZones = ({
+  leaf,
+  ops,
+  canStack,
+}: {
+  leaf: LeafNode;
+  ops: LayoutOps;
+  canStack: boolean;
+}) => {
   const [side, setSide] = useState<DropSide | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   return (
@@ -580,7 +563,7 @@ const DropZones = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
       onDragOver={(event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        if (ref.current) setSide(computeDropSide(event, ref.current));
+        if (ref.current) setSide(computeDropSide(event, ref.current, canStack));
       }}
       onDragLeave={(event) => {
         // Ignore leaves into child nodes of the overlay.
@@ -590,13 +573,11 @@ const DropZones = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
       }}
       onDrop={(event) => {
         event.preventDefault();
-        const sourceId =
-          event.dataTransfer.getData("text/plain") || ops.draggingId;
         const dropSide = ref.current
-          ? computeDropSide(event, ref.current)
+          ? computeDropSide(event, ref.current, canStack)
           : (side ?? "right");
         setSide(null);
-        if (sourceId) ops.moveLeaf(sourceId, leaf.id, dropSide);
+        ops.drop(leaf.id, dropSide);
       }}
     >
       {side && (
@@ -604,6 +585,191 @@ const DropZones = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
           className={`tile-dropzone__preview tile-dropzone__preview--${side}`}
         />
       )}
+    </div>
+  );
+};
+
+/**
+ * A document's name, renamable in place: double-click it (a lone document's
+ * title, or any tab) to edit; Enter or leaving the field saves, Escape
+ * cancels. The field keeps the name's own type, marked only by an accent
+ * underline. Offered only when the document's datatype can set a title.
+ */
+const EditableTitle = ({
+  url,
+  title,
+  className,
+  onEditing,
+}: {
+  url: AutomergeUrl | undefined;
+  title: string;
+  className: string;
+  /** Told when editing starts and stops (a tab stops dragging meanwhile). */
+  onEditing?: (editing: boolean) => void;
+}) => {
+  const setTitle = useTitleSetter(url);
+  const [draft, setDraft] = useState<string | null>(null);
+  const editing = draft !== null && !!setTitle;
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    onEditing?.(editing);
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing, onEditing]);
+
+  if (editing) {
+    const commit = () => {
+      const next = (draft ?? "").trim();
+      setDraft(null);
+      if (next && next !== title) setTitle(next);
+    };
+    return (
+      <input
+        ref={inputRef}
+        className={`${className} tile-title-input`}
+        aria-label="Rename document"
+        value={draft ?? ""}
+        draggable={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            setDraft(null);
+          }
+        }}
+        onBlur={commit}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <span
+      className={className}
+      title={title}
+      onDoubleClick={
+        setTitle
+          ? (event) => {
+              event.stopPropagation();
+              setDraft(title);
+            }
+          : undefined
+      }
+    >
+      {title}
+    </span>
+  );
+};
+
+/**
+ * One document in a panel's stack. Click to show it, middle-click or × to
+ * remove it, drag it onto another panel's middle (to stack it there) or edge
+ * (to split it off), or out of the frame as a document link.
+ */
+const StackTab = ({
+  leafId,
+  url,
+  index,
+  active,
+  ops,
+  icon,
+  onEditing,
+  children,
+}: {
+  leafId: string;
+  url: AutomergeUrl;
+  index: number;
+  active: boolean;
+  ops: LayoutOps;
+  /**
+   * The showing tab's icon: the panel's own datatype icon button (drag the
+   * document, click for "View as…"). Other tabs draw their datatype's icon.
+   */
+  icon?: ReactNode;
+  /** Told when this tab's name starts and stops being edited. */
+  onEditing?: (editing: boolean) => void;
+  /** Shown after the title: the showing tab's tool label, if any. */
+  children?: ReactNode;
+}) => {
+  const title = useDocTitle(url);
+  const datatypeIcon = useDatatypeIcon(useDocType(url));
+  const [editing, setEditingState] = useState(false);
+  const setEditing = useCallback(
+    (value: boolean) => {
+      setEditingState(value);
+      onEditing?.(value);
+    },
+    [onEditing],
+  );
+  return (
+    <div
+      className={`tile-panel__tab${active ? " tile-panel__tab--active" : ""}`}
+      role="tab"
+      aria-selected={active}
+      tabIndex={0}
+      title={title}
+      draggable={!editing}
+      onClick={() => ops.activateTab(leafId, index)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          ops.activateTab(leafId, index);
+        }
+      }}
+      // Middle-click closes; stop its mousedown starting an autoscroll.
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        ops.closeTab(leafId, index);
+      }}
+      onDragStart={(event) => {
+        // One tab, not the panel: keep the header's own drag out of it.
+        event.stopPropagation();
+        setPatchworkDragData(
+          event.dataTransfer,
+          { url, name: title },
+          "patchwork-frame-tiling",
+        );
+        ops.beginDrag(leafId, index);
+      }}
+      onDragEnd={() => ops.endDrag()}
+    >
+      {icon ?? (
+        <span className="tile-panel__tab-icon">
+          <DocIcon name={datatypeIcon} />
+        </span>
+      )}
+      <EditableTitle
+        className="tile-panel__tab-label"
+        url={url}
+        title={title}
+        onEditing={setEditing}
+      />
+      {children}
+      <button
+        type="button"
+        className="tile-panel__tab-close"
+        title="Close tab"
+        aria-label={`Close ${title}`}
+        draggable={false}
+        onClick={(event) => {
+          event.stopPropagation();
+          ops.closeTab(leafId, index);
+        }}
+      >
+        <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden>
+          <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
     </div>
   );
 };
@@ -618,25 +784,15 @@ const TilePanel = ({
   canClose: boolean;
 }) => {
   const isActive = ops.activeLeafId === leaf.id;
-  const isContext = leaf.view.role === "context";
   const isRootFolder = leaf.view.role === "root-folder";
   // A `"root-folder"` panel stores no url; resolve it to the *viewer's* own
   // root folder so a shared layout shows the recipient's folders, not the
-  // author's. A `"context"` panel never carries a url — it's always a bare
-  // registry-tagged `patchwork:component`, rendered with no document.
+  // author's.
   const resolvedUrl = isRootFolder ? ops.rootFolderUrl : leaf.view.url;
-  const isEmpty = !isContext && !isRootFolder && !resolvedUrl;
+  const isEmpty = !isRootFolder && !resolvedUrl;
   const docTitle = useDocTitle(resolvedUrl);
-  const isSelected =
-    !isContext && !isRootFolder && !isEmpty && ops.selectedLeafId === leaf.id;
-  const contextToolName = isContext
-    ? ops.contextTools.find((tool) => tool.id === leaf.view.toolId)?.name
-    : undefined;
-  const title = isContext
-    ? (contextToolName ?? "Context")
-    : isEmpty
-      ? "Empty"
-      : docTitle;
+  const isSelected = !isRootFolder && !isEmpty && ops.selectedLeafId === leaf.id;
+  const title = isEmpty ? "Empty" : docTitle;
   const { focusLeaf } = ops;
 
   // Resolve the tool to render: explicit panel choice, else the remembered
@@ -663,14 +819,138 @@ const TilePanel = ({
   }, [leaf.id, getContainer, parkContainer]);
 
   // The datatype's icon doubles as a drag handle for the *document* (as
-  // opposed to the grip, which drags the panel): drop it into a folder, a
+  // opposed to the header, which drags the panel): drop it into a folder, a
   // canvas, another doc, or out of the app as a link.
   const datatypeIcon = useDatatypeIcon(type);
-  const dragDocUrl = !isContext && !isEmpty ? resolvedUrl : undefined;
+  const dragDocUrl = !isEmpty ? resolvedUrl : undefined;
+
+  // How the document is being viewed. Only a non-default tool is named in the
+  // header; the choice itself lives in a menu on the datatype icon.
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  // While any name in the header is being edited, the header doesn't drag.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const closeToolMenu = useCallback(() => setToolMenuOpen(false), []);
+  // The menu hangs under whichever control opened it (in a stack, that's
+  // partway along the header), measured from the header's left edge.
+  const [toolMenuLeft, setToolMenuLeft] = useState(0);
+  const toggleToolMenu = (event: { currentTarget: Element }) => {
+    const header = headerRef.current?.getBoundingClientRect();
+    const opener = event.currentTarget.getBoundingClientRect();
+    setToolMenuLeft(header ? Math.max(0, opener.left - header.left) : 0);
+    setToolMenuOpen((open) => !open);
+  };
+  const hasToolChoice = !!dragDocUrl && tools.length > 1;
+  const offDefaultTool =
+    dragDocUrl && fallbackId && effectiveToolId && effectiveToolId !== fallbackId
+      ? tools.find((tool) => tool.id === effectiveToolId)
+      : undefined;
 
   const panelRef = useRef<HTMLDivElement>(null);
-  const isDragging = ops.draggingId === leaf.id;
+  // Dragging the whole panel ghosts it; dragging one of its tabs leaves it a
+  // target, so the tab can be split off beside it.
+  const isDragging = ops.draggingId === leaf.id && ops.draggingTab === null;
   const isDropTarget = ops.draggingId !== null && !isDragging;
+  // Only documents stack, and only into a document panel (or an empty one).
+  const canStack =
+    ops.dragCanStack &&
+    ops.draggingId !== leaf.id &&
+    !isRootFolder;
+
+  const { tabs: stackTabs, active: activeTab } = leafTabs(leaf);
+  const stacked = !isRootFolder && stackTabs.length > 1;
+
+  // The header is a drop target too: documents dragged over it go into this
+  // panel's stack at the position between tabs nearest the pointer (onto a
+  // lone document's title, before or after it), marked by a thin rule. A
+  // tab dragged within its own strip is reordered.
+  const canDropInStrip =
+    ops.draggingId !== null &&
+    ops.dragCanStack &&
+    !isRootFolder &&
+    !(ops.draggingId === leaf.id && ops.draggingTab === null);
+  const [stripDrop, setStripDrop] = useState<{ at: number; x: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (ops.draggingId === null) setStripDrop(null);
+  }, [ops.draggingId]);
+  const stripPosition = (clientX: number): { at: number; x: number } | null => {
+    const header = headerRef.current;
+    if (!header) return null;
+    // A stack's tabs each carry their icon; a lone document's icon, title and
+    // tool label read as one name, so they make one slot.
+    const rects = (selector: string) =>
+      Array.from(header.querySelectorAll<HTMLElement>(selector)).map((el) =>
+        el.getBoundingClientRect(),
+      );
+    const tabRects = rects(".tile-panel__tab");
+    const nameRects = rects(
+      ".tile-panel__doc-icon, .tile-panel__title, .tile-panel__tool-label",
+    );
+    const slots: { left: number; right: number; width: number }[] = stacked
+      ? tabRects
+      : nameRects.length
+        ? [
+            {
+              left: Math.min(...nameRects.map((r) => r.left)),
+              right: Math.max(...nameRects.map((r) => r.right)),
+              width:
+                Math.max(...nameRects.map((r) => r.right)) -
+                Math.min(...nameRects.map((r) => r.left)),
+            },
+          ]
+        : [];
+    const left = header.getBoundingClientRect().left;
+    if (slots.length === 0) return { at: 0, x: 4 };
+    const at = slots.filter((r) => r.left + r.width / 2 < clientX).length;
+    const x = at < slots.length ? slots[at].left - left - 1 : slots[at - 1].right - left + 1;
+    // An empty frame has nothing to go beside: its "title" is a placeholder.
+    return isEmpty ? { at: 0, x: slots[0].left - left - 1 } : { at, x };
+  };
+
+  const toolLabel = offDefaultTool && (
+    <button
+      type="button"
+      className="tile-panel__tool-label"
+      title="View as…"
+      data-tool-menu-toggle
+      onClick={toggleToolMenu}
+    >
+      {offDefaultTool.name ?? offDefaultTool.id}
+    </button>
+  );
+
+  // The datatype icon, beside the title of the document it stands for: before
+  // the title of a lone document, or inside the showing tab of a stack.
+  const docIconButton = dragDocUrl ? (
+    <button
+      type="button"
+      className="tile-panel__doc-icon"
+      title={hasToolChoice ? "View as… (drag to move the document)" : "Drag document"}
+      aria-haspopup={hasToolChoice ? "menu" : undefined}
+      aria-expanded={hasToolChoice ? toolMenuOpen : undefined}
+      data-tool-menu-toggle={hasToolChoice || undefined}
+      onClick={(event) => hasToolChoice && toggleToolMenu(event)}
+      draggable
+      onDragStart={(event) => {
+        // Not a panel move: keep the frame's own drag handling out of it.
+        event.stopPropagation();
+        setPatchworkDragData(
+          event.dataTransfer,
+          {
+            url: dragDocUrl,
+            name: title,
+            type,
+            toolId: effectiveToolId,
+          },
+          "patchwork-frame-tiling",
+        );
+      }}
+    >
+      <DocIcon name={datatypeIcon} />
+    </button>
+  ) : null;
 
   return (
     <div
@@ -678,93 +958,99 @@ const TilePanel = ({
       data-leaf-id={leaf.id}
       className={`tile-panel${isActive ? " tile-panel--active" : ""}${
         isSelected ? " tile-panel--selected" : ""
-      }${isContext ? " tile-panel--context" : ""}${
+      }${
         isDragging ? " tile-panel--dragging" : ""
       }`}
       onMouseDownCapture={() => focusLeaf(leaf.id)}
     >
-    <div className="tile-panel__header">
-      <button
-        className="tile-panel__grip"
-        title="Drag to rearrange"
-        aria-label="Drag to rearrange panel"
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", leaf.id);
-          if (panelRef.current) {
-            event.dataTransfer.setDragImage(panelRef.current, 24, 16);
-          }
-          ops.beginDrag(leaf.id);
-        }}
-        onDragEnd={() => ops.endDrag()}
-      >
-        <GripIcon />
-      </button>
-      <button
-        className="tile-panel__icon-btn"
-        title="Back"
-        disabled={leaf.history.length === 0}
-        onClick={() => ops.goBack(leaf.id)}
-      >
-        <BackIcon />
-      </button>
-      {dragDocUrl && (
-        <span
-          className="tile-panel__doc-icon"
-          title="Drag document"
-          draggable
-          onDragStart={(event) => {
-            // Not a panel move: keep the frame's own drag handling out of it.
-            event.stopPropagation();
-            setPatchworkDragData(
-              event.dataTransfer,
-              {
-                url: dragDocUrl,
-                name: title,
-                type,
-                toolId: effectiveToolId,
-              },
-              "patchwork-frame-tiling",
-            );
-          }}
-        >
-          <DocIcon name={datatypeIcon} />
-        </span>
+    <div
+      className="tile-panel__header"
+      ref={headerRef}
+      // The header is the panel's handle: drag it (its title, or any bare part
+      // of it) to move the whole panel. Tabs and the datatype icon start their
+      // own drags instead, and nothing drags while a name is being edited.
+      draggable={!editingTitle}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", leaf.id);
+        if (panelRef.current) {
+          event.dataTransfer.setDragImage(panelRef.current, 24, 16);
+        }
+        ops.beginDrag(leaf.id);
+      }}
+      onDragEnd={() => ops.endDrag()}
+      onDragOver={(event) => {
+        if (!canDropInStrip) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const position = stripPosition(event.clientX);
+        setStripDrop((prev) =>
+          prev && position && prev.at === position.at && prev.x === position.x
+            ? prev
+            : position,
+        );
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setStripDrop(null);
+      }}
+      onDrop={(event) => {
+        if (!canDropInStrip) return;
+        event.preventDefault();
+        const position = stripPosition(event.clientX);
+        setStripDrop(null);
+        if (position) ops.dropIntoStrip(leaf.id, position.at);
+      }}
+    >
+      {stripDrop && (
+        <div className="tile-panel__strip-marker" style={{ left: stripDrop.x }} />
       )}
-      <span className="tile-panel__title" title={title}>
-        {title}
-      </span>
-      {isContext && <SubjectChip ops={ops} />}
-      <div className="tile-panel__actions">
-        {!isContext && !isRootFolder && !isEmpty && (
-          <ContextLauncher leaf={leaf} ops={ops} />
-        )}
-        {!isContext && !isEmpty && (
-          <ToolPicker
-            leaf={leaf}
-            ops={ops}
-            tools={tools}
-            fallbackId={fallbackId}
-            type={type}
-            selected={effectiveToolId}
-            url={resolvedUrl}
+      {!stacked && docIconButton}
+      {stacked ? (
+        <div className="tile-panel__tabs" role="tablist">
+          {stackTabs.map((tab, index) =>
+            tab.url ? (
+              <StackTab
+                key={tab.url}
+                leafId={leaf.id}
+                url={tab.url}
+                index={index}
+                active={index === activeTab}
+                ops={ops}
+                icon={index === activeTab ? docIconButton : undefined}
+                onEditing={setEditingTitle}
+              >
+                {index === activeTab && toolLabel}
+              </StackTab>
+            ) : null,
+          )}
+        </div>
+      ) : (
+        <>
+          <EditableTitle
+            className="tile-panel__title"
+            url={isEmpty ? undefined : resolvedUrl}
+            title={title}
+            onEditing={setEditingTitle}
           />
-        )}
-        <button
-          className="tile-panel__icon-btn"
-          title="Split right"
-          onClick={() => ops.split(leaf.id, "horizontal")}
-        >
-          <SplitRightIcon />
-        </button>
-        <button
-          className="tile-panel__icon-btn"
-          title="Split down"
-          onClick={() => ops.split(leaf.id, "vertical")}
-        >
-          <SplitDownIcon />
-        </button>
+          {toolLabel}
+        </>
+      )}
+      {toolMenuOpen && hasToolChoice && (
+        <ToolMenu
+          leaf={leaf}
+          ops={ops}
+          tools={tools}
+          fallbackId={fallbackId}
+          type={type}
+          selected={effectiveToolId}
+          url={resolvedUrl}
+          headerRef={headerRef}
+          left={toolMenuLeft}
+          onClose={closeToolMenu}
+        />
+      )}
+      <div className="tile-panel__actions">
         {canClose && (
           <button
             className="tile-panel__icon-btn tile-panel__icon-btn--close"
@@ -777,7 +1063,7 @@ const TilePanel = ({
       </div>
     </div>
     <div className="tile-panel__body" ref={slotRef}>
-      {isDropTarget && <DropZones leaf={leaf} ops={ops} />}
+      {isDropTarget && <DropZones leaf={leaf} ops={ops} canStack={canStack} />}
     </div>
   </div>
 );
@@ -806,65 +1092,400 @@ if (moveBefore && node.isConnected && parent.isConnected) {
 parent.appendChild(node);
 };
 
-/**
- * A panel's content (its document or context tool). Rendered from a flat list
- * keyed by leaf id, so it stays mounted however the layout tree is rearranged;
- * it portals into the panel's long-lived container, which `TilePanel` moves
- * into whichever slot currently shows that panel.
- */
-const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
-const isContext = leaf.view.role === "context";
-const isRootFolder = leaf.view.role === "root-folder";
-const resolvedUrl = isRootFolder ? ops.rootFolderUrl : leaf.view.url;
-const isEmpty = !isContext && !isRootFolder && !resolvedUrl;
-const { toolId: effectiveToolId } = useEffectiveTool(
-  resolvedUrl,
-  leaf.view.toolId,
-  ops.toolPreferences,
-);
-const { focusLeaf } = ops;
+/** Background tabs' draft scopes report to no one (see `TabContent`). */
+const noDraftScope = () => {};
 
-// React events follow the component tree, not the DOM, so the panel's own
-// focus-on-mousedown never hears clicks in here: repeat it.
-return createPortal(
-  <div
-    className="tile-panel__content-inner"
-    onMouseDownCapture={() => focusLeaf(leaf.id)}
-  >
-      {isEmpty ? (
-        <div className="tile-panel__empty">
-          <p>No document open</p>
-          <span>Open one from the folder, or use + in the top bar.</span>
-        </div>
-      ) : isContext ? (
-        <patchwork-view
-          key={leaf.id}
-          className="tile-panel__view"
-          component={leaf.view.toolId}
-        />
-      ) : ops.draftsAvailable && !isRootFolder && resolvedUrl ? (
-        // Each content panel is its own draft scope; keyed on the url
-        // because the draft-state provider binds its doc once at mount.
-        <DraftScope
-          key={`${leaf.id}:${resolvedUrl}`}
-          leafId={leaf.id}
-          url={resolvedUrl}
-          onScope={ops.setDraftScope}
-        >
+/** The comments context tool (comments-view's `patchwork:component`). */
+const COMMENTS_TOOL_ID = "comments-view";
+
+/**
+ * One document of a content panel's stack, inside its own providers (see
+ * `DocScope`): draft state and overlay, document providers, comments, focus.
+ * Every tab stays mounted, so a tool keeps its state (scroll, selection,
+ * undo) while it's behind another; only the showing one is visible.
+ *
+ * The showing tab also holds the panel's drawer, beside the document and
+ * inside its providers, so the drawer's tools describe — and act on — this
+ * document: History and Drafts see its checked-out draft and checkpoint and
+ * move them; Comments shares its focus doc, so a comment clicked in the
+ * document can open the drawer on Comments (see `CommentsOpener`). Like
+ * threepane's sidebar, the drawer's tools remount when the panel shows
+ * another tab: their subscriptions belong to this document's providers.
+ *
+ * It alone reports its draft scope as the panel's (for overlays): when the
+ * showing tab changes, React runs the old tab's effect cleanup (clearing the
+ * panel's scope) before the new one's effect (setting it). Opens a hidden tab
+ * announces are swallowed (see `handleOpenDocument`), so a tool behind
+ * another can't pull focus.
+ */
+const TabContent = ({
+  leaf,
+  view,
+  shown,
+  ops,
+}: {
+  leaf: LeafNode;
+  view: PanelView & { url: AutomergeUrl };
+  shown: boolean;
+  ops: LayoutOps;
+}) => {
+  const { toolId } = useEffectiveTool(view.url, view.toolId, ops.toolPreferences);
+  // The draft-state provider binds its doc once at mount, which is fine: a
+  // tab is keyed on its url, so a new document is a new tab.
+  const documentProviders = ops.documentProviders.join("|");
+  const providers = useMemo<ScopedProvider[]>(
+    () => [
+      ...(ops.draftsAvailable
+        ? [{ id: DRAFT_STATE_PROVIDER, docUrl: view.url }, { id: DRAFT_OVERLAY_PROVIDER }]
+        : []),
+      ...(documentProviders ? documentProviders.split("|") : []).map((id) => ({ id })),
+      { id: BASE_PROVIDER_IDS.comments },
+      { id: BASE_PROVIDER_IDS.focus },
+    ],
+    [ops.draftsAvailable, documentProviders, view.url],
+  );
+  const drawer = leaf.drawer;
+  const hasComments = ops.contextTools.some((tool) => tool.id === COMMENTS_TOOL_ID);
+  const { showDrawerTool } = ops;
+  const openComments = useCallback(
+    () => showDrawerTool(leaf.id, COMMENTS_TOOL_ID),
+    [showDrawerTool, leaf.id],
+  );
+
+  return (
+    <div
+      className="tile-panel__tab-content"
+      hidden={!shown}
+      data-tab-hidden={shown ? undefined : ""}
+    >
+      <DocScope
+        leafId={leaf.id}
+        providers={providers}
+        onScope={shown ? ops.setDraftScope : noDraftScope}
+      >
+        <div className="tile-panel__tab-doc">
           <patchwork-view
             className="tile-panel__view"
-            doc-url={resolvedUrl}
-            tool-id={effectiveToolId}
+            doc-url={view.url}
+            tool-id={toolId}
           />
-        </DraftScope>
-      ) : (
-        <patchwork-view
-          key={leaf.id}
-          className="tile-panel__view"
-          doc-url={resolvedUrl}
-          tool-id={effectiveToolId}
+        </div>
+        {shown && drawer?.open && ops.contextTools.length > 0 && (
+          <PanelDrawer leaf={leaf} drawer={drawer} toolId={toolId} ops={ops} />
+        )}
+        <CommentsOpener
+          id={`patchwork-frame-tiling:${leaf.id}`}
+          enabled={shown && hasComments}
+          onOpen={openComments}
         />
+      </DocScope>
+    </div>
+  );
+};
+
+const byUrl = (a: PanelView, b: PanelView): number =>
+  (a.url ?? "") < (b.url ?? "") ? -1 : (a.url ?? "") > (b.url ?? "") ? 1 : 0;
+
+/** How near the right edge (px) the pointer must come to call up the rail. */
+const PEEK_EDGE_PX = 16;
+/** How far from the edge (px) it must go to dismiss it: past the rail. */
+const PEEK_AWAY_PX = 48;
+/** How long (ms) the pointer must stay at the edge, so sweeping past doesn't. */
+const PEEK_DWELL_MS = 120;
+
+/**
+ * Whether a closed drawer's rail should peek in: once the pointer has stayed
+ * within {@link PEEK_EDGE_PX} of the panel's right edge for
+ * {@link PEEK_DWELL_MS}, until it goes {@link PEEK_AWAY_PX} away or leaves the
+ * panel. Never while a button is held, so dragging a scrollbar or a selection
+ * to the edge doesn't call it up. Pointer moves inside iframe-isolated tools
+ * don't reach the frame, so there the rail answers only at the panel's own
+ * edge pixels.
+ */
+const usePeekAtEdge = () => {
+  const [visible, setVisible] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clear = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => clear, []);
+  const onPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const fromEdge = event.currentTarget.getBoundingClientRect().right - event.clientX;
+    if (fromEdge > PEEK_AWAY_PX || event.buttons !== 0) {
+      clear();
+      if (visible && fromEdge > PEEK_AWAY_PX) setVisible(false);
+      return;
+    }
+    if (fromEdge <= PEEK_EDGE_PX && !visible && !timer.current) {
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        setVisible(true);
+      }, PEEK_DWELL_MS);
+    }
+  };
+  const onPointerLeave = () => {
+    clear();
+    setVisible(false);
+  };
+  return { visible, onPointerMove, onPointerLeave };
+};
+
+/**
+ * The rail of context tools: one icon per tool, down a document panel's right
+ * edge, naming the tool on hover (or focus) at once. It's the drawer's spine:
+ * inside the open drawer, with the shown tool lit; and, while the drawer is
+ * closed, peeking in over the panel's right edge when the pointer comes to
+ * that edge (see `usePeekAtEdge`; always, on touch screens). Picking a tool opens the drawer on it; picking
+ * the lit one closes the drawer, as in VS Code's activity bar. The label is
+ * drawn beside the icon list rather than in it, so its scrolling can't clip it.
+ */
+const ToolRail = ({
+  tools,
+  shownId,
+  onPick,
+  peek = false,
+  visible = false,
+}: {
+  tools: SlotTool[];
+  /** The lit tool, or undefined while the drawer is closed. */
+  shownId: string | undefined;
+  onPick: (toolId: string) => void;
+  /** Peeking in over a closed drawer's panel, shown while `visible`. */
+  peek?: boolean;
+  visible?: boolean;
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [label, setLabel] = useState<{ name: string; top: number } | null>(null);
+  const showLabel = (name: string, button: HTMLElement) => {
+    const railTop = ref.current?.getBoundingClientRect().top ?? 0;
+    const r = button.getBoundingClientRect();
+    setLabel({ name, top: r.top + r.height / 2 - railTop });
+  };
+  return (
+    <div
+      ref={ref}
+      className={`tile-rail${peek ? " tile-rail--peek" : ""}`}
+      data-visible={(peek && visible) || undefined}
+    >
+      <div
+        className="tile-rail__icons"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="Context tools"
+      >
+        {tools.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            className="tile-rail__btn"
+            role="tab"
+            aria-selected={tool.id === shownId}
+            aria-label={tool.name}
+            onClick={() => onPick(tool.id)}
+            onMouseEnter={(event) => showLabel(tool.name, event.currentTarget)}
+            onMouseLeave={() => setLabel(null)}
+            onFocus={(event) => showLabel(tool.name, event.currentTarget)}
+            onBlur={() => setLabel(null)}
+          >
+            <DocIcon name={tool.icon} fallback="PanelRight" size={15} />
+          </button>
+        ))}
+      </div>
+      {label && (
+        <div className="tile-rail__label" style={{ top: label.top }}>
+          {label.name}
+        </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * A document panel's drawer: every registered context tool, as a rail of
+ * icons down its outer edge (names on hover), one shown at a time under its
+ * name, describing the document the panel shows (the showing tab, if
+ * stacked). A rail rather than a strip of names, since there are already more
+ * tools than names fit across a drawer.
+ *
+ * Each tool is a bare `patchwork:component` that asks for "the selected
+ * document"; a selection provider scoped to this drawer answers with this
+ * panel's, so every drawer describes its own panel whatever is focused. The
+ * drawer renders inside the showing document's providers (see `TabContent`),
+ * so everything else its tools ask for is that document's too. A tool
+ * mounts the first time it's shown and stays mounted (hidden) while the
+ * drawer is open, so switching back is instant. The left edge is a hairline
+ * that drags to resize.
+ */
+const PanelDrawer = ({
+  leaf,
+  drawer,
+  toolId,
+  ops,
+}: {
+  leaf: LeafNode;
+  drawer: Drawer;
+  toolId: string | undefined;
+  ops: LayoutOps;
+}) => {
+  const ref = useRef<HTMLElement>(null);
+  // While resizing, the width lives here; it's written to the layout on release.
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const width = dragWidth ?? drawer.width;
+  const tools = ops.contextTools;
+  const shown = tools.find((tool) => tool.id === drawer.tool) ?? tools[0];
+  const shownId = shown?.id;
+  // Tools shown so far while the drawer has been open, in first-shown order.
+  const [mounted, setMounted] = useState<string[]>([]);
+  useEffect(() => {
+    if (shownId && !mounted.includes(shownId)) setMounted((m) => [...m, shownId]);
+  }, [shownId, mounted]);
+  const live = tools.filter(
+    (tool) => tool.id === shownId || mounted.includes(tool.id),
+  );
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const right = ref.current?.getBoundingClientRect().right ?? event.clientX;
+    let latest = drawer.width;
+    const move = (e: PointerEvent) => {
+      latest = clampDrawerWidth(right - e.clientX);
+      setDragWidth(latest);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      setDragWidth(null);
+      ops.setDrawerWidth(leaf.id, latest);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  };
+
+  return (
+    <aside
+      ref={ref}
+      className="tile-drawer"
+      style={{ width: `min(${width}px, 60%)` }}
+      data-resizing={dragWidth !== null || undefined}
+    >
+      <div
+        className="tile-drawer__resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize drawer"
+        onPointerDown={startResize}
+      />
+      <div className="tile-drawer__main">
+        <div className="tile-drawer__header">{shown?.name}</div>
+        <SelectionProvider
+          selectedDocUrl={leaf.view.url}
+          selectedToolId={toolId ?? null}
+        >
+          <div className="tile-drawer__body">
+            {live.map((tool) => (
+              <div
+                key={tool.id}
+                className="tile-drawer__tool"
+                hidden={tool.id !== shownId}
+              >
+                <patchwork-view className="tile-panel__view" component={tool.id} />
+              </div>
+            ))}
+          </div>
+        </SelectionProvider>
+      </div>
+      <ToolRail
+        tools={tools}
+        shownId={shownId}
+        onPick={(id) =>
+          id === shownId ? ops.toggleDrawer(leaf.id) : ops.showDrawerTool(leaf.id, id)
+        }
+      />
+    </aside>
+  );
+};
+
+/**
+ * A panel's content: its documents, and its drawer if it has one. Rendered
+ * from a flat list keyed by leaf id, so it stays mounted however the layout
+ * tree is rearranged; it portals into the panel's long-lived container, which
+ * `TilePanel` moves into whichever slot currently shows that panel.
+ */
+const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
+  const isRootFolder = leaf.view.role === "root-folder";
+  const isEmpty = !isRootFolder && !leaf.view.url;
+  const { toolId: folderToolId } = useEffectiveTool(
+    isRootFolder ? ops.rootFolderUrl : undefined,
+    leaf.view.toolId,
+    ops.toolPreferences,
+  );
+  const { focusLeaf } = ops;
+  const peekRail = usePeekAtEdge();
+
+  // A stack's documents, in a fixed order (by url) rather than tab order:
+  // showing a different tab then never moves them in the DOM, which would
+  // remount their tools.
+  const { tabs, active } = leafTabs(leaf);
+  const shownUrl = tabs[active]?.url;
+  const docs = tabs
+    .filter((tab): tab is PanelView & { url: AutomergeUrl } => !!tab.url)
+    .sort(byUrl);
+  const drawer = !isRootFolder && !isEmpty ? leaf.drawer : undefined;
+
+  // React events follow the component tree, not the DOM, so the panel's own
+  // focus-on-mousedown never hears clicks in here: repeat it. The documents'
+  // wrapper is always the first child, so opening or closing the drawer
+  // beside it never remounts them.
+  return createPortal(
+    <div
+      className="tile-panel__content-inner"
+      onMouseDownCapture={() => focusLeaf(leaf.id)}
+      onPointerMove={peekRail.onPointerMove}
+      onPointerLeave={peekRail.onPointerLeave}
+    >
+      <div className="tile-panel__docs">
+        {isEmpty ? (
+          <div className="tile-panel__empty">
+            <p>No document open</p>
+            <span>Open one from the folder, or use + in the top bar.</span>
+          </div>
+        ) : isRootFolder ? (
+          <patchwork-view
+            key={leaf.id}
+            className="tile-panel__view"
+            doc-url={ops.rootFolderUrl}
+            tool-id={folderToolId}
+          />
+        ) : (
+          docs.map((view) => (
+            <TabContent
+              key={view.url}
+              leaf={leaf}
+              view={view}
+              shown={view.url === shownUrl}
+              ops={ops}
+            />
+          ))
+        )}
+      </div>
+      {!isRootFolder &&
+        !isEmpty &&
+        ops.contextTools.length > 0 &&
+        !drawer?.open && (
+          // The open drawer lives in the showing tab (see `TabContent`).
+          <ToolRail
+            tools={ops.contextTools}
+            shownId={undefined}
+            onPick={(id) => ops.showDrawerTool(leaf.id, id)}
+            peek
+            visible={peekRail.visible}
+          />
+        )}
     </div>,
     ops.getContainer(leaf.id),
   );
@@ -935,6 +1556,14 @@ export const PatchworkFrame = ({
   // `patchwork:component` tagged `"context-tool"` / `"system-tray"` shows up
   // automatically, with no shared config doc to read or migrate.
   const contextTools = useTaggedComponents("context-tool");
+  // Components tagged `document-provider` (patch layers, say) sit inside each
+  // document's draft overlay, so they can remap what its views resolve.
+  const documentProviderTools = useTaggedComponents("document-provider");
+  const documentProviderKey = documentProviderTools.map((c) => c.id).join("|");
+  const documentProviderIds = useMemo(
+    () => (documentProviderKey ? documentProviderKey.split("|") : []),
+    [documentProviderKey],
+  );
   const trayItems = useTaggedComponents("system-tray");
   // Overlays float above the panels (the ambient agent, say): mounted once,
   // in a layer that lets pointer events through to the tiles beneath.
@@ -1052,8 +1681,8 @@ export const PatchworkFrame = ({
     writeTabFocus(focusKeyRef.current, next);
   }, []);
 
-  // `tilingLayoutUrl` may only resolve after the first render (it's created
-  // lazily on a fresh account), so re-hydrate focus from storage once the key
+  // This tab's layout url may only resolve after the first render (a fresh
+  // session is minted lazily), so re-hydrate focus from storage once the key
   // appears or changes. Done before the prune effect so the reconcile below
   // sees the restored focus.
   const loadedKeyRef = useRef(focusStorageKey);
@@ -1083,22 +1712,21 @@ export const PatchworkFrame = ({
     });
   }, [layout, commitFocus]);
 
-  // The "selected document" is the most-recently-focused *content* panel
-  // (context panels are excluded so opening Comments doesn't make Comments the
-  // subject). Context panels describe whatever this resolves to.
+  // The "selected document" is the most-recently-focused *content* panel with
+  // a document. Overlays (the agent) and the URL follow it.
   const selectedLeafId = useMemo(() => {
     if (!layout) return null;
     const order = focusOrder ?? [];
     for (let i = order.length - 1; i >= 0; i--) {
       const leaf = findLeaf(layout, order[i]);
-      if (leaf && isContentLeaf(leaf, rootFolderUrl) && leaf.view.url) return leaf.id;
+      if (leaf && isContentLeaf(leaf) && leaf.view.url) return leaf.id;
     }
     for (const id of collectLeafIds(layout)) {
       const leaf = findLeaf(layout, id);
-      if (leaf && isContentLeaf(leaf, rootFolderUrl) && leaf.view.url) return leaf.id;
+      if (leaf && isContentLeaf(leaf) && leaf.view.url) return leaf.id;
     }
     return null;
-  }, [layout, focusOrder, rootFolderUrl]);
+  }, [layout, focusOrder]);
 
   const selectedLeafView = useMemo(() => {
     if (!layout || !selectedLeafId) return undefined;
@@ -1107,8 +1735,8 @@ export const PatchworkFrame = ({
   const selectedDocUrl = selectedLeafView?.url;
   const selectedToolId = selectedLeafView?.toolId ?? null;
 
-  // Each content panel's draft-state provider, once mounted. The selected
-  // one is what context panels (the Drafts sidebar) are relayed to.
+  // Each content panel's draft-state provider, once mounted. A panel's drawer
+  // relays to its own; the selected one is what overlays are relayed to.
   const draftsAvailable = useDraftsAvailable();
   const [draftScopes, setDraftScopes] = useState<
     ReadonlyMap<string, HTMLElement>
@@ -1135,7 +1763,7 @@ export const PatchworkFrame = ({
     const views: OpenView[] = [];
     for (const id of collectLeafIds(layout)) {
       const leaf = findLeaf(layout, id);
-      if (!leaf || !isContentLeaf(leaf, rootFolderUrl) || !leaf.view.url) continue;
+      if (!leaf || !isContentLeaf(leaf) || !leaf.view.url) continue;
       views.push({
         url: leaf.view.url,
         toolId: leaf.view.toolId ?? null,
@@ -1143,7 +1771,7 @@ export const PatchworkFrame = ({
       });
     }
     return views;
-  }, [layout, rootFolderUrl, selectedLeafId]);
+  }, [layout, selectedLeafId]);
 
   // Refs hold the latest doc/handle so the once-mounted open-document listener
   // and pointer handlers can read current state synchronously.
@@ -1185,12 +1813,12 @@ export const PatchworkFrame = ({
     let leaf: LeafNode | null = null;
     for (let i = order.length - 1; i >= 0 && !leaf; i--) {
       const l = findLeaf(layout, order[i]);
-      if (l && l.view.role !== "context" && l.view.url) leaf = l;
+      if (l && l.view.url) leaf = l;
     }
     if (!leaf) {
       for (const id of collectLeafIds(layout)) {
         const l = findLeaf(layout, id);
-        if (l && l.view.role !== "context" && l.view.url) {
+        if (l && l.view.url) {
           leaf = l;
           break;
         }
@@ -1242,12 +1870,6 @@ export const PatchworkFrame = ({
         seededRef.current = true;
         layoutHandle.change((doc) => {
           doc.layout = cloneLayout(sourceLayout);
-          // Drop the author's embedded folder url in favor of the symbolic
-          // role so the clone resolves to *this* viewer's folder.
-          if (rootFolderUrl) normalizeRootFolderIn(doc, rootFolderUrl);
-          // Older sessions were seeded as a lone folder pane; give them a
-          // content frame so the clone doesn't start full-width-folder.
-          ensureContentFrameIn(doc, rootFolderUrl);
         });
         return;
       }
@@ -1257,21 +1879,7 @@ export const PatchworkFrame = ({
     layoutHandle.change((doc) => {
       doc.layout = makeInitialLayout();
     });
-  }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc, rootFolderUrl]);
-
-  // One-time migration for already-seeded sessions: rewrite a legacy url-based
-  // root-folder pane to the symbolic role so this session (and shares of it)
-  // shows the viewer's own folder rather than embedding a specific one. The
-  // edit removes the url, so it's idempotent and won't re-fire.
-  const normalizedRef = useRef(false);
-  useEffect(() => {
-    if (normalizedRef.current || !layoutHandle || !rootFolderUrl) return;
-    if (!layoutDoc?.layout) return;
-    normalizedRef.current = true;
-    layoutHandle.change((doc) => {
-      normalizeRootFolderIn(doc, rootFolderUrl);
-    });
-  }, [layoutDoc, layoutHandle, rootFolderUrl]);
+  }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc]);
 
   const focusLeaf = useCallback(
     (id: string) => {
@@ -1300,13 +1908,6 @@ export const PatchworkFrame = ({
     [change],
   );
 
-  const goBack = useCallback(
-    (leafId: string) => {
-      change((d) => goBackIn(d, leafId));
-    },
-    [change],
-  );
-
   const setTool = useCallback(
     (leafId: string, toolId: string | undefined) => {
       change((d) => setLeafToolIn(d, leafId, toolId));
@@ -1323,36 +1924,23 @@ export const PatchworkFrame = ({
     [accountHandle],
   );
 
-  const split = useCallback(
-    (leafId: string, direction: SplitDirection) => {
-      // The new panel mirrors the source panel's current view so you can
-      // diverge each side independently afterwards.
-      const current = docRef.current?.layout ?? null;
-      const source = current ? findLeaf(current, leafId) : null;
-      const newView: PanelView = source
-        ? source.view.role === "root-folder"
-          ? { role: "root-folder" }
-          : { url: source.view.url, toolId: source.view.toolId }
-        : { role: "root-folder" };
-      const newLeaf = makeLeaf(newView);
-      change((d) => splitLeafIn(d, leafId, direction, newLeaf));
-      focusLeaf(newLeaf.id);
+  // A document panel's drawer of context tools (see `PanelDrawer`).
+  const toggleDrawer = useCallback(
+    (leafId: string) => {
+      change((d) => toggleDrawerIn(d, leafId));
+      focusLeaf(leafId);
     },
     [change, focusLeaf],
   );
-
-  // Spawn a context tool as a new panel beside the source. The source becomes
-  // the selected subject; the context panel is marked so it never becomes the
-  // subject itself. Context tools are always bare `patchwork:component`s now,
-  // so the panel carries no document of its own.
-  const openContext = useCallback(
-    (sourceLeafId: string, toolId: string) => {
-      focusLeaf(sourceLeafId);
-      const newLeaf = makeLeaf({ toolId, role: "context" });
-      change((d) => splitLeafIn(d, sourceLeafId, "horizontal", newLeaf));
-      focusLeaf(newLeaf.id);
-    },
-    [change, focusLeaf],
+  const showDrawerTool = useCallback(
+    (leafId: string, toolId: string) =>
+      change((d) => showDrawerToolIn(d, leafId, toolId)),
+    [change],
+  );
+  const setDrawerWidth = useCallback(
+    (leafId: string, width: number) =>
+      change((d) => setDrawerWidthIn(d, leafId, width)),
+    [change],
   );
 
   const close = useCallback(
@@ -1361,27 +1949,81 @@ export const PatchworkFrame = ({
       // reconciled reactively by the prune effect once `layout` updates.
       change((d) => {
         removeLeafIn(d, leafId);
-        // Never leave the folder/context panes alone and full-width: keep an
+        // Never leave the folder pane alone and full-width: keep an
         // (empty) content frame around for documents to open into.
-        ensureContentFrameIn(d, rootFolderUrl);
+        ensureContentFrameIn(d);
       });
     },
-    [change, rootFolderUrl],
+    [change],
   );
 
-  // Which panel is mid-drag (frame-level so every panel can show drop zones).
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const beginDrag = useCallback((leafId: string) => setDraggingId(leafId), []);
-  const endDrag = useCallback(() => setDraggingId(null), []);
+  // What's mid-drag (frame-level so every panel can show drop zones): a whole
+  // panel, or one tab of a panel's stack.
+  const [drag, setDrag] = useState<{ leafId: string; tab: number | null } | null>(
+    null,
+  );
+  const beginDrag = useCallback(
+    (leafId: string, tab?: number) => setDrag({ leafId, tab: tab ?? null }),
+    [],
+  );
+  const endDrag = useCallback(() => setDrag(null), []);
+  // A tab is always a document; a whole panel is documents unless it's the
+  // folder navigator or empty.
+  const dragCanStack = useMemo(() => {
+    if (!drag || !layout) return false;
+    if (drag.tab !== null) return true;
+    const leaf = findLeaf(layout, drag.leafId);
+    return isContentLeaf(leaf) && !!leaf?.view.url;
+  }, [drag, layout]);
 
-  const moveLeaf = useCallback(
-    (sourceLeafId: string, targetLeafId: string, side: DropSide) => {
-      setDraggingId(null);
-      if (sourceLeafId === targetLeafId) return;
-      change((d) => moveLeafIn(d, sourceLeafId, targetLeafId, side));
-      focusLeaf(sourceLeafId);
+  const drop = useCallback(
+    (targetLeafId: string, side: DropSide) => {
+      setDrag(null);
+      if (!drag) return;
+      if (drag.tab === null) {
+        if (drag.leafId === targetLeafId) return;
+        change((d) => moveLeafIn(d, drag.leafId, targetLeafId, side));
+        // Stacked into the target: focus that; otherwise the moved panel.
+        focusLeaf(side === "center" ? targetLeafId : drag.leafId);
+        return;
+      }
+      let shownIn: string | null = null;
+      change((d) => {
+        shownIn = moveTabIn(d, drag.leafId, drag.tab!, targetLeafId, side);
+      });
+      if (shownIn) focusLeaf(shownIn);
+    },
+    [drag, change, focusLeaf],
+  );
+
+  const dropIntoStrip = useCallback(
+    (targetLeafId: string, at: number) => {
+      setDrag(null);
+      if (!drag) return;
+      let shownIn: string | null = null;
+      change((d) => {
+        shownIn = stackIntoIn(d, drag.leafId, drag.tab, targetLeafId, at);
+      });
+      if (shownIn) focusLeaf(shownIn);
+    },
+    [drag, change, focusLeaf],
+  );
+
+  const activateTab = useCallback(
+    (leafId: string, index: number) => {
+      change((d) => activateTabIn(d, leafId, index));
+      focusLeaf(leafId);
     },
     [change, focusLeaf],
+  );
+
+  const closeTab = useCallback(
+    (leafId: string, index: number) => {
+      change((d) => {
+        closeTabIn(d, leafId, index);
+      });
+    },
+    [change],
   );
 
   // Resize fires continuously while dragging; debounce per-split so only the
@@ -1403,14 +2045,34 @@ export const PatchworkFrame = ({
     [change],
   );
 
+  // If `url` is already open in some panel, showing or stacked, show it (its
+  // tab first, if stacked) and focus that panel. Returns whether it was.
+  const revealExisting = useCallback(
+    (current: LayoutNode, url: AutomergeUrl): boolean => {
+      const found = findTabByUrl(current, url);
+      if (!found) return false;
+      if (!found.active) change((d) => activateTabIn(d, found.leafId, found.index));
+      focusLeaf(found.leafId);
+      return true;
+    },
+    [change, focusLeaf],
+  );
+
   // Route a document-open request. `sourceId` is the panel the request came
   // from (null for app chrome and for URL/deep-link opens, which arrive on the
   // mount element).
   //
   // An open that arrives before the layout has loaded is held in
   // `pendingOpenRef` and replayed once it has (see below), rather than dropped.
+  //
+  // `placement` (from a modified click; see `openIntentRef`) means "don't
+  // replace anything": where the open would replace the document an existing
+  // panel shows, it stacks the new one there (`"stack"`, Shift-click) or
+  // splits that panel (a direction, Alt-click) instead. Showing an
+  // already-open doc and filling an empty frame are unchanged — neither
+  // replaces anything.
   const openView = useCallback(
-    (view: PanelView, sourceId: string | null) => {
+    (view: PanelView, sourceId: string | null, placement?: OpenPlacement) => {
       if (!view.url) return;
       const doc = docRef.current;
       const current = doc?.layout ?? null;
@@ -1422,26 +2084,21 @@ export const PatchworkFrame = ({
       const leafIds = collectLeafIds(current);
       const liveIds = new Set(leafIds);
 
-      // A normal document must never land in (rule 1) the root-folder navigator
-      // or a context pane: those panels stay put so the folder tree and
-      // comments/history keep describing the content beside them.
+      // A normal document must never land in (rule 1) the root-folder
+      // navigator: it stays put so the folder tree stays beside the content.
       const isContentId = (id: string | null | undefined): id is string =>
-        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id), rootFolderUrl);
+        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id));
 
-      // 1. Already open? Just focus it. Opening a doc that's already on screen
-      //    (a folder click on it, or the host re-dispatching the URL's `doc`
-      //    param on load/hashchange) should never duplicate it or, worse,
-      //    clobber the panel you're currently in.
-      const existing = findLeafIdByUrl(current, view.url);
-      if (existing) {
-        focusLeaf(existing);
-        return;
-      }
+      // 1. Already open? Just show it. Opening a doc that's already in a
+      //    panel, showing or stacked (a folder click on it, or the host
+      //    re-dispatching the URL's `doc` param on load/hashchange), should
+      //    never duplicate it or, worse, clobber the panel you're in.
+      if (revealExisting(current, view.url)) return;
 
       // 1b. Opening the viewer's own root folder targets the (symbolic) folder
       //     navigator rather than dropping the folder into a content pane.
       if (rootFolderUrl && view.url === rootFolderUrl) {
-        const folderId = findRootFolderLeafId(current, rootFolderUrl);
+        const folderId = findRootFolderLeafId(current);
         if (folderId) focusLeaf(folderId);
         return;
       }
@@ -1450,7 +2107,7 @@ export const PatchworkFrame = ({
       //    the folder). Preferring it means a doc never splits the folder or
       //    clobbers an open document while a ready slot sits empty.
       const isEmptyId = (id: string): boolean =>
-        isContentLeaf(findLeaf(current, id), rootFolderUrl) &&
+        isContentLeaf(findLeaf(current, id)) &&
         !findLeaf(current, id)?.view.url;
       const order = focusRef.current.focusOrder;
       let emptyId: string | null = null;
@@ -1466,7 +2123,7 @@ export const PatchworkFrame = ({
 
       // 3. A request *from* a panel (e.g. the folder tree) navigates the
       //    last-focused *other content* panel, so the source pane isn't
-      //    replaced and the doc never lands in the folder/context panes.
+      //    replaced and the doc never lands in the folder pane.
       //    Sourceless opens (URL deep-links, top bar) deliberately skip this:
       //    they must not navigate — i.e. clobber — whatever panel is active.
       if (sourceId !== null) {
@@ -1474,21 +2131,30 @@ export const PatchworkFrame = ({
         for (let i = order.length - 1; i >= 0; i--) {
           const id = order[i];
           if (id !== sourceId && isContentId(id)) {
-            navigate(id, view);
-            focusLeaf(id);
+            if (placement === "stack") {
+              change((d) => stackViewIn(d, id, view));
+              focusLeaf(id);
+            } else if (placement) {
+              const newLeaf = makeLeaf(view);
+              change((d) => splitLeafIn(d, id, placement, newLeaf));
+              focusLeaf(newLeaf.id);
+            } else {
+              navigate(id, view);
+              focusLeaf(id);
+            }
             return;
           }
         }
       }
 
       // 4. Otherwise open a new panel by splitting a *content* panel, so we
-      //    never carve up the root-folder navigator (rule 2) or a context pane.
-      //    We never split the folder strip (that yields a super-narrow doc):
-      //    when there's no content panel, split any other (e.g. context) pane,
+      //    never carve up the root-folder navigator (rule 2). We never split
+      //    the folder strip (that yields a super-narrow doc): when there's no
+      //    content panel, split any other pane,
       //    falling back to the folder only when it's the sole pane.
       const active = focusRef.current.activeLeafId;
       const firstContentId = leafIds.find((id) => isContentId(id)) ?? null;
-      const folderId = findRootFolderLeafId(current, rootFolderUrl);
+      const folderId = findRootFolderLeafId(current);
       const splitSource =
         (isContentId(sourceId) && sourceId) ||
         (isContentId(active) && active) ||
@@ -1497,11 +2163,35 @@ export const PatchworkFrame = ({
         leafIds[0];
       if (!splitSource) return;
       const newLeaf = makeLeaf(view);
-      change((d) => splitLeafIn(d, splitSource, "horizontal", newLeaf));
+      const direction =
+        placement && placement !== "stack" ? placement : "horizontal";
+      change((d) => splitLeafIn(d, splitSource, direction, newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [change, navigate, focusLeaf, rootFolderUrl],
+    [change, navigate, focusLeaf, rootFolderUrl, revealExisting],
   );
+  const openViewRef = useRef(openView);
+  openViewRef.current = openView;
+
+  // A modified click opens without replacing anything: Shift stacks the
+  // document in the panel it would have replaced; Alt opens it beside that
+  // panel (Alt+Shift: below), as in VS Code's explorer. ⌘/Ctrl-click is taken
+  // (the sidebar multi-selects with it), and `patchwork:open-document` carries
+  // no modifier state, so the frame notes the modifiers of every click itself,
+  // in the capture phase, before the tool's own click handler dispatches the
+  // open. The next genuine open within a second takes it; any later click
+  // resets it. Tools isolated in an iframe don't share our clicks, so for them
+  // a modified click is an ordinary one.
+  const openIntentRef = useRef<{ at: number; placement: OpenPlacement } | null>(
+    null,
+  );
+  const takeOpenIntent = useCallback((): OpenPlacement | undefined => {
+    const intent = openIntentRef.current;
+    openIntentRef.current = null;
+    return intent && performance.now() - intent.at < 1000
+      ? intent.placement
+      : undefined;
+  }, []);
 
   // Replay an open that arrived before the layout existed. The host routes a
   // deep link (`#doc=…`) once, as the frame mounts — before a fresh session's
@@ -1552,6 +2242,13 @@ export const PatchworkFrame = ({
       // chrome with no source pane — falls through to `openView` and is allowed
       // to bubble on to the host, so the URL updates exactly once per actual
       // navigation.
+      // A tab behind another isn't something you clicked in: whatever it
+      // announces (it re-emits its own doc on mount and on title changes) is
+      // never a navigation, and mustn't reach the URL either.
+      if (target?.closest?.("[data-tab-hidden]")) {
+        event.stopImmediatePropagation();
+        return;
+      }
       if (sourceId) {
         const layout = docRef.current?.layout;
         const leaf = layout ? findLeaf(layout, sourceId) : null;
@@ -1565,9 +2262,9 @@ export const PatchworkFrame = ({
         }
       }
 
-      openView({ url, toolId: event.detail.toolId }, sourceId);
+      openView({ url, toolId: event.detail.toolId }, sourceId, takeOpenIntent());
     },
-    [openView, rootFolderUrl],
+    [openView, rootFolderUrl, takeOpenIntent],
   );
 
   // Keep the latest handler in a ref so the once-attached listener always
@@ -1596,30 +2293,70 @@ export const PatchworkFrame = ({
       el.removeEventListener("patchwork:open-document", listener, true);
   }, [element]);
 
+  useEffect(() => {
+    const el = element;
+    const onClick = (event: Event) => {
+      const click = event as MouseEvent;
+      const placement: OpenPlacement | null =
+        click.metaKey || click.ctrlKey || click.button !== 0
+          ? null
+          : click.altKey
+            ? click.shiftKey
+              ? "vertical"
+              : "horizontal"
+            : click.shiftKey
+              ? "stack"
+              : null;
+      openIntentRef.current = placement
+        ? { at: performance.now(), placement }
+        : null;
+      if (!placement) return;
+      const path = click.composedPath();
+      // A plain `#doc=…` link would route through the URL (and a modified
+      // click on a link downloads it or opens a window), so open it here.
+      const anchor = path.find(
+        (node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement,
+      );
+      const view = anchor ? docLinkView(anchor.href) : null;
+      if (view) {
+        click.preventDefault();
+        click.stopPropagation();
+        openIntentRef.current = null;
+        const leafEl = path.find(
+          (node): node is Element =>
+            node instanceof Element && node.hasAttribute("data-leaf-id"),
+        );
+        openViewRef.current(
+          view,
+          leafEl?.getAttribute("data-leaf-id") ?? null,
+          placement,
+        );
+      }
+    };
+    el.addEventListener("click", onClick, true);
+    return () => el.removeEventListener("click", onClick, true);
+  }, [element]);
+
   // Top-bar "open" actions originate outside any panel, so they target the
   // active panel (or open a new one if the frame is somehow empty).
   // App-chrome opens (home, create-new, settings, account) act on the panel
-  // you're in: focus an existing panel already showing the doc, else navigate
-  // the active panel to it (its current view goes onto that panel's
-  // back-history). This is deliberately different from passive URL/deep-link
+  // you're in: show the doc where it's already open (focusing its panel, and
+  // its tab if it's stacked), else navigate the active panel to it. This is
+  // deliberately different from passive URL/deep-link
   // opens, which must never clobber the active panel (see `openView`).
   const openFromChrome = useCallback(
     (view: PanelView) => {
       if (!view.url) return;
       const current = docRef.current?.layout ?? null;
       if (!current) return;
-      const existing = findLeafIdByUrl(current, view.url);
-      if (existing) {
-        focusLeaf(existing);
-        return;
-      }
+      if (revealExisting(current, view.url)) return;
       const ids = collectLeafIds(current);
       const liveIds = new Set(ids);
       const isContentId = (id: string | null | undefined): id is string =>
-        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id), rootFolderUrl);
+        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id));
 
       // Act on the *content* panel you're in (the active one if it qualifies),
-      // never the root-folder navigator or a context pane (rule 1).
+      // never the root-folder navigator (rule 1).
       const active = focusRef.current.activeLeafId;
       const target =
         (isContentId(active) && active) || ids.find((id) => isContentId(id)) || null;
@@ -1637,7 +2374,7 @@ export const PatchworkFrame = ({
       change((d) => splitLeafIn(d, splitSource, "horizontal", newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [navigate, focusLeaf, change, rootFolderUrl],
+    [navigate, focusLeaf, change, revealExisting],
   );
 
   // Home: focus the (symbolic) root-folder navigator if it's open, else open it
@@ -1645,7 +2382,7 @@ export const PatchworkFrame = ({
   const goHome = useCallback(() => {
     const current = docRef.current?.layout ?? null;
     const folderId = current
-      ? findRootFolderLeafId(current, rootFolderUrl)
+      ? findRootFolderLeafId(current)
       : null;
     if (folderId) {
       focusLeaf(folderId);
@@ -1656,7 +2393,7 @@ export const PatchworkFrame = ({
       newId = addRootFolderColumnIn(d);
     });
     if (newId) focusLeaf(newId);
-  }, [rootFolderUrl, focusLeaf, change]);
+  }, [focusLeaf, change]);
 
   // Each panel's content container, by leaf id (see `PanelContent`), and an
   // off-screen park to hold one while its panel is rebuilt mid-commit.
@@ -1700,16 +2437,22 @@ export const PatchworkFrame = ({
     activeLeafId,
     focusLeaf,
     navigate,
-    goBack,
-    split,
     close,
-    moveLeaf,
-    draggingId,
+    activateTab,
+    closeTab,
+    drop,
+    dropIntoStrip,
+    draggingId: drag?.leafId ?? null,
+    draggingTab: drag?.tab ?? null,
+    dragCanStack,
     beginDrag,
     endDrag,
     setSizes,
     setTool,
-    openContext,
+    toggleDrawer,
+    showDrawerTool,
+    setDrawerWidth,
+    documentProviders: documentProviderIds,
     contextTools,
     rootFolderUrl,
     selectedLeafId,

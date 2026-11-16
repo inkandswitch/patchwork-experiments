@@ -18,12 +18,6 @@ export type TinyPatchworkConfigDoc = {
    * unreferenced cold storage (still openable by a tab that has it in its URL).
    */
   currentLayoutUrl?: AutomergeUrl;
-  /**
-   * Legacy single shared layout (pre per-tab sessions). Read only as a fallback
-   * clone source for the first new-model session so existing users' arrangement
-   * carries over; no longer written.
-   */
-  tilingLayoutUrl?: AutomergeUrl;
 
   /** Remembered per-doc / per-datatype tool choices (see {@link ToolPreferences}). */
   toolPreferences?: ToolPreferences;
@@ -53,38 +47,61 @@ export type ToolPreferences = {
 export type PanelView = {
   /**
    * The document shown in this panel. **Absent** for an *empty content frame* —
-   * a placeholder content panel kept beside the folder/context panes so they
-   * never span the full width. The next document opened fills the empty frame
-   * instead of splitting the folder. Always absent for a `"context"` panel: a
-   * context tool is a registry-tagged `patchwork:component`, mounted against
-   * no document.
+   * a placeholder content panel kept beside the folder pane so it never spans
+   * the full width. The next document opened fills the empty frame instead of
+   * splitting the folder.
    */
   url?: AutomergeUrl;
   toolId?: string;
   /**
-   * Marks a panel's special role:
-   * - `"context"` — a context panel (comments, history, …) that describes the
-   *   selected content panel and is itself excluded from being the "selected
-   *   document".
-   * - `"root-folder"` — the account's root folder navigator. The url is
-   *   deliberately **not** stored; it's resolved to the *viewer's*
-   *   `rootFolderUrl` at render time, so a shared layout doesn't carry (and
-   *   leak) the author's folder — the recipient sees their own folders instead.
+   * `"root-folder"` marks the account's root folder navigator. Its url is
+   * deliberately **not** stored; it's resolved to the *viewer's*
+   * `rootFolderUrl` at render time, so a shared layout doesn't carry (and leak)
+   * the author's folder — the recipient sees their own folders instead.
    */
-  role?: "context" | "root-folder";
+  role?: "root-folder";
 };
 
 export type SplitDirection = "horizontal" | "vertical";
 
-/** The edge of a target panel a dragged panel is dropped against. */
-export type DropSide = "left" | "right" | "top" | "bottom";
+/**
+ * Where a drag lands on a target panel: against an edge (splitting it), or in
+ * the middle (`"center"`: stacking into it).
+ */
+export type DropSide = "left" | "right" | "top" | "bottom" | "center";
 
-/** A leaf panel shows a single document with a back-history stack. */
+/**
+ * A leaf panel shows one document, `view`. A content panel can also hold a
+ * **stack** of further documents, shown as tabs, one at a time. The one
+ * showing always stays in `view`, so everything that asks "what does this
+ * panel show?" reads the same field either way; `stack` holds the others, and
+ * `stackAt` places the showing one among them: the tab order is
+ * `stack[0 … stackAt)`, then `view`, then `stack[stackAt …]`. Absent `stack`
+ * means a single document. Read it with `leafTabs`.
+ */
 export type LeafNode = {
   kind: "leaf";
   id: string;
   view: PanelView;
-  history: PanelView[];
+  stack?: PanelView[];
+  stackAt?: number;
+  /** Context tools docked beside this panel's document; see {@link Drawer}. */
+  drawer?: Drawer;
+};
+
+/**
+ * A document panel's **drawer**: the context tools (comments, history, …)
+ * along its right edge, describing the document the panel is showing. Every
+ * registered context tool is listed in it, so all the panel remembers is
+ * whether the drawer is open, which tool it last showed, and how wide it was;
+ * they're kept while it's closed, so it reopens as it was.
+ */
+export type Drawer = {
+  open: boolean;
+  /** The context tool last shown; absent (or uninstalled), the first one. */
+  tool?: string;
+  /** Width in px (the view caps it at a share of the panel). */
+  width: number;
 };
 
 /** A split node tiles two children along an axis. */

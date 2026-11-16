@@ -26,41 +26,76 @@ and resize freely.
 - The folder navigator is stored **symbolically** (a `"root-folder"` panel with
   no document url): it resolves to the **viewer's own** `rootFolderUrl` at render
   time. So sharing a layout (by copying its URL) never carries your folder
-  document — the recipient sees **their own** folders in that pane. Legacy
-  url-based folder panes are migrated to the symbolic form on load.
+  document — the recipient sees **their own** folders in that pane.
 - Documents only ever open into **content** panels — never the root-folder
-  navigator or a **context** pane (comments, history, …). Opening one:
+  navigator. Opening one:
   - **fills an empty content frame** if one is waiting (the seeded slot beside
     the folder), otherwise
   - navigates the **last-focused other content panel** (so clicking an entry in
     the folder view opens it next to the folder, not in it), otherwise
   - splits an existing **content** panel — never the folder — to open a new one.
 
-  Use a panel's **back** button to return to its previous document.
-- **Split right** / **split down** tile the panel into two; the new panel
-  mirrors the source so you can take each side somewhere different.
+  A plain open *replaces* the panel's document; there's no back-history. To
+  keep a document around, open the next one without replacing it:
+  **Shift-click** stacks it into that panel, and **Alt-click** opens it beside
+  (Alt+Shift-click: below). Both work for anything a tool opens from a click,
+  and for `#doc=…` links. Tools isolated in an iframe don't share the frame's
+  clicks, so there they're ordinary clicks.
+- A content panel can hold a **stack** of documents, one showing. The header
+  lists them as plain text, the showing one in full ink; click one to show it,
+  middle-click or its × to remove it. Every stacked document stays mounted, so
+  its tool keeps its state behind the others. Drag a tab onto another panel's
+  **middle** to stack it there, or an **edge** to split it off. A panel's
+  **header is its handle**: drag it (its title, or any bare part of it) to move
+  the whole panel to another's edge, or onto its middle to stack all of its
+  documents there, so a single document moves in and out of stacks the way a
+  tab does. Dropping onto a panel's **header** puts them in its strip at the
+  position marked between tabs (before or after a lone document's title), and
+  dragging a tab along its own strip reorders it. Opening a document that's
+  stacked somewhere shows its tab.
 - Drag the handles between panels to **resize**.
-- The whole arrangement (panels, splits, sizes, per-panel history, active
+- The whole arrangement (panels, splits, sizes, stacks, active
   panel) is **persisted to its own document**, so a reload restores your
   layout exactly where you left it.
 - **Close** removes a panel and collapses its sibling into the freed space.
   The frame never goes empty, and there's always at least one content frame:
   closing the last content panel leaves an **empty content frame** beside the
-  folder rather than letting the folder/context panes go full-width.
-- Each panel's titlebar has a **tool picker** (shown when a document supports
-  more than one tool). Choosing a tool re-renders just that panel's document
-  with the selected tool; the default tool is marked accordingly.
+  folder rather than letting the folder pane go full-width.
+- **Double-click a document's name** — a lone document's title, or any tab —
+  to rename it in place (Enter or leaving the field saves, Escape cancels),
+  through its datatype's `setTitle`; datatypes that can't set a title aren't
+  offered it.
+- A document panel's **datatype icon** opens a **View as…** menu when the
+  document supports more than one tool: the datatype's own tools first, then,
+  under their own rule, tools that render *any* document (Raw, say). The header
+  names the tool only when it isn't the default. Choosing one of the
+  datatype's tools is remembered for the document and the datatype; a generic
+  tool is a peek, for that panel only.
+- The folder navigator starts about **260px** wide (converted to a percentage
+  of the window when the column is made).
 - **Context tools** (comments, history, …) are registry-driven too: every
   registered `patchwork:component` tagged `"context-tool"` is available, with
-  nothing configured — the same set threepane's context sidebar shows. They're
-  opened **on demand as panels**, not pinned to a fixed sidebar. A content
-  panel's titlebar has a **context launcher** that spawns the chosen component
-  in a new panel beside it, rendered against no document. Context tools
-  describe the **selected document**: the most-recently-focused *content*
-  panel (context panels are excluded, so opening Comments never makes Comments
-  the subject). The selected panel shows an accent rail along its header, and
-  each context panel shows a **subject chip** naming the document it
-  describes — click it to reveal/focus that panel.
+  nothing configured — the same set threepane's context sidebar shows. They
+  live in a document panel's **drawer**, along its right edge: a sheet a
+  shade off the documents' white, so it reads as a layer over the panel
+  without a shadow. Its spine is a **rail** of every context tool's icon,
+  naming each on hover. While the drawer is closed, the rail peeks in over the
+  panel's right edge when the pointer rests at that edge (within 16px, for a
+  moment, with no button held — so a scrollbar drag doesn't call it up), and
+  goes once the pointer moves away; on touch screens it's always there. Pick a
+  tool to open the drawer on it. Open, the rail runs down the
+  drawer's outer edge with the shown tool lit; pick another to switch, or the
+  lit one to close the drawer. There's no separate toggle. The drawer shows
+  one tool at a time, under
+  its name; a tool mounts the first time it's shown and stays mounted while
+  the drawer is open. A drawer describes **its own panel's**
+  document — the showing one, if the panel is stacked — whichever panel has
+  focus: the frame answers its tools' `patchwork:selected-doc` /
+  `selected-view` with that panel's document, and the drawer sits inside that
+  document's own providers (see below), so everything else its tools ask for
+  is that document's too. Closed, a drawer remembers its tool and width,
+  so it reopens as it was. Drag its left hairline to resize it (capped at 60%
+  of the panel). It stays with its panel when the panel moves.
 - **Overlays** are registry-driven as well: every `patchwork:component` tagged
   `"overlay"` is mounted once, in a full-frame layer above the panels that lets
   pointer events through (the component's own surface opts back in), and each
@@ -73,31 +108,51 @@ and resize freely.
   whose context is everything on screen.
 - The frame mounts patchwork-base's **context providers** so tools get their
   shared context via bubbling `patchwork:subscribe` events (see Architecture):
-  comments authoring/listing, focus, and the current contact all work, and the
-  selected document driving context tools is the active content panel.
+  comments authoring/listing, focus, and the current contact all work. The
+  frame-wide selection (for overlays such as the agent, and the URL) is the
+  active content panel, marked by a rule under its header; a drawer answers
+  with its own panel's document instead.
+- **Every document has its own providers**, as threepane's one document does
+  (`DocScope`, in `docScope.tsx`): the draft state (bound to the document) and
+  draft overlay, any components tagged `"document-provider"`, then comments
+  and focus. Its view and — for the showing tab — the panel's drawer render
+  inside them, once they've all mounted. The providers are mounted in order,
+  each once the one outside it has, and the view only after the last, with no
+  time-out: a view that asked for its document before the overlay was
+  listening would get the root's pass-through and keep it, so no draft or
+  history scrub would ever reach it. A different provider list (drafts
+  registering after the panel opened) rebuilds the scope rather than turning
+  its elements into other providers in place. So the drawer's tools talk to *their*
+  document: **History** and **Drafts** see its checked-out draft and
+  checkpoint through the overlay and move them through the draft state;
+  **Comments** shares the document's focus doc with its editor, and the panel
+  registers there as a comments-view opener (`CommentsOpener`), so a comment
+  clicked in the document opens the drawer on Comments. Like threepane's
+  sidebar, the drawer's tools remount when the panel shows another tab.
+  Overlays, outside every document, reach the selected document's draft state
+  through the frame's `DraftRelay`.
 
 ## Architecture
 
 - `layout.ts` — a binary split-tree (`LeafNode` | `SplitNode`) plus **in-place
   Automerge mutators** that edit the document draft directly:
   - `navigateLeafIn`, `goBackIn`, `setLeafToolIn`, `setSizesIn` make
-    **field-level** edits (set a url, push/pop a history entry, set a size),
+    **field-level** edits (set a url, show a tab, set a size),
   - `splitLeafIn` / `removeLeafIn` only rewrite the **one subtree slot** they
     touch (the rest of the tree is untouched),
   - `makeInitialLayout` seeds a new session as `[folder | empty content frame]`,
     and `ensureContentFrameIn` upholds the invariant that a content frame always
     exists (a leaf whose `view.url` is absent is an empty content frame),
   - `makeRootFolderLeaf` builds the **symbolic** folder pane (`role:
-    "root-folder"`, no url) and `normalizeRootFolderIn` migrates legacy url-based
-    folder leaves to it, so a shared layout resolves the folder to the viewer's
-    own `rootFolderUrl` instead of embedding the author's.
+    "root-folder"`, no url), so a shared layout resolves the folder to the
+    viewer's own `rootFolderUrl` instead of embedding the author's.
 - `datatype.ts` — the **`patchwork-frame-tiling:layout`** datatype. Its
   document (`TilingLayoutDoc`) is the **single source of truth**: it stores the
   layout tree, the active panel id, and the focus order. The frame derives all
   rendering from `useDocument`, and every op is a granular `handle.change(...)`
-  — no React copy of the layout, and no whole-tree rewrites. The account doc
-  references it via a `tilingLayoutUrl` field, kept separate from the rest of
-  the config so the frame owns its own state. Panel ids carry a per-session
+  — no React copy of the layout, and no whole-tree rewrites. Each tab has its
+  own layout document, named in the URL (`layout=`); the account's
+  `currentLayoutUrl` points at the latest, which a new tab clones. Panel ids carry a per-session
   random tag so ids minted after a reload never collide with restored ones.
   Resize writes are debounced per-split so a drag persists only its settled
   size; focus writes are skipped when nothing changed.
@@ -114,8 +169,8 @@ and resize freely.
   `data-patchwork-frame` (the convention this frame sets on its root) **or** is a
   `<patchwork-view>` hosting a `frame-tool`. When nested, it renders a static
   placeholder instead of the live frame.
-- `ensureSubdocs.ts` — lazily creates the `rootFolderUrl`, `moduleSettingsUrl`,
-  `contactUrl`, and `tilingLayoutUrl` subdocs so the frame works against a
+- `ensureSubdocs.ts` — lazily creates the `rootFolderUrl`, `moduleSettingsUrl`
+  and `contactUrl` subdocs so the frame works against a
   fresh account document. Nothing to create for context tools or the tray —
   `useTaggedComponents` (in `useDocTitle.ts`) resolves both directly from the
   `patchwork:component` registry, with no shared config doc involved.
@@ -134,8 +189,12 @@ and resize freely.
   grace-period fallback) so their listeners exist before tools subscribe.
   Selection (`patchwork:selected-doc` / `patchwork:selected-view`) is answered by
   the frame's **own** `SelectionProvider` rather than the base
-  `SelectedDocProvider`, so the document context tools describe is the active
-  *content* panel (matching the wayfinding) instead of the last-opened doc.
+  `SelectedDocProvider`, so the selection is the active *content* panel
+  (matching the wayfinding) instead of the last-opened doc. Each drawer nests
+  another `SelectionProvider`, answering with its own panel's document, and
+  each document its own comments and focus providers (and drafts); since
+  `accept` stops a subscription's propagation, the nearest provider wins. The
+  frame-wide comments and focus providers serve what's outside any document.
 
 ## Develop
 

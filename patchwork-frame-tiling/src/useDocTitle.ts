@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { useDocument } from "@automerge/automerge-repo-react-hooks";
+import { useDocHandle, useDocument } from "@automerge/automerge-repo-react-hooks";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 import {
   DatatypeDescription,
@@ -13,6 +13,55 @@ import { PluginRegistry } from "@inkandswitch/patchwork-plugins/dist/registry/re
 import { useEffect, useMemo, useState } from "react";
 import { resolvePreferredTool } from "./toolMemory";
 import type { ToolPreferences } from "./types";
+
+/** A document's datatype id (`@patchwork.type`), once it has loaded. */
+export function useDocType(url?: AutomergeUrl): string | undefined {
+  const [doc] = useDocument<HasPatchworkMetadata>(url);
+  return doc?.["@patchwork"]?.type;
+}
+
+/**
+ * A function that renames a document, via its datatype's `setTitle`; null
+ * while the datatype is loading, or if it can't set a title. (The folder's
+ * link to the document follows on its own: the sidebar copies a document's
+ * title into its folder entry.)
+ */
+export function useTitleSetter(
+  url?: AutomergeUrl,
+): ((title: string) => void) | null {
+  const handle = useDocHandle<HasPatchworkMetadata>(url, { suspense: false });
+  const type = useDocType(url);
+  const [setTitle, setSetTitle] = useState<
+    ((doc: unknown, title: string) => void) | null
+  >(null);
+
+  useEffect(() => {
+    setSetTitle(null);
+    if (!type) return;
+    let cancelled = false;
+    const registry = getRegistry("patchwork:datatype") as PluginRegistry<
+      DatatypeDescription,
+      DatatypeImplementation
+    >;
+    registry.load(type).then((datatype) => {
+      const set = (
+        datatype?.module as { setTitle?: (doc: unknown, title: string) => void }
+      )?.setTitle;
+      if (!cancelled && set) setSetTitle(() => set);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [type]);
+
+  return useMemo(
+    () =>
+      handle && setTitle
+        ? (title: string) => handle.change((doc) => setTitle(doc, title))
+        : null,
+    [handle, setTitle],
+  );
+}
 
 /**
  * Resolve a human-readable title for a document by loading its datatype and
