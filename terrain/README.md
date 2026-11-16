@@ -468,6 +468,8 @@ land in the mesh is stretched; the heightfield stays true.
   and Chrome, which made the two GLBs differ);
 - the Ucluelet template on a fake scene (terrain, sky, weather, water, home
   view, the sloop at anchor; without sailing), the sky extension;
+- the boats: only along floats, beside them at the middle of their slips,
+  each slip by its own hash (the same with or without other floats);
 
 - the projection against a fixed proj4 table (12 places, under a millimetre);
 - the TIFF reader and the DEM's grid check (a wrong size, cell or tie point
