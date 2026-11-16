@@ -242,7 +242,9 @@ bodies: [{ id, label, keys: [{ code, label }], lock, reach,          // metres |
 // a tool: a command whose run fills the slot, declaring { keys: [{ code, label }], pointer? }
 // keys (a body's, a tool's, a gesture's): codes labelled alike do the same thing (walk's W and ↑
 // are both "Forward"); touch shows them as one control (§5), so distinct actions need distinct labels.
-// A label names the action, not its state ("Halyard", not "Hoist" turning "Lower" once hoisted)
+// A label names the action, not its state ("Halyard", not "Hoist" turning "Lower" once hoisted),
+// and an action may be unavailable in some states, its key declared and doing nothing then (the
+// jib's sheet at the lazy winch): the keys are declared on entering, and the state changes under them.
 ```
 
 - **Look** and **Edit**, the stage's (`src/stage/bodies.js`; they replace
@@ -1048,7 +1050,11 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   until someone ticks Carryable. Selecting in a game takes the menu, and
   editing takes the Edit body (Decisions 6).
 - Touch controls are digital keys, a d-pad and buttons: no stick, no
-  analog walk (Decisions 10, 11).
+  analog walk (Decisions 10, 11). They cover what keys do, not what a
+  locked press does: arena's gun shoots only on a locked press
+  (`arena/src/play.js`, `ev.locked`), so under touch its pad shows Reload
+  and nothing fires. Whether a tap fires from the eye is arena's call,
+  open for the lead.
 - One computer per doc: a weak machine slows everyone; a crash freezes the
   world up to 15 s; a running world adds a checkpoint every 30 s while
   anyone is present (~120 changes an hour) to its history.
@@ -1322,7 +1328,16 @@ The project lead decided the five open questions on 2026-11-12.
    view as under lock and doesn't follow a finger dragging to look. So a
    verb is a tap on the prompt's button, at what the eye looks at (sailing
    takes the helm that way, `sailing/probes/touch-run.mjs`). A mouse that
-   isn't locked (released, refused) still looks where it hovers. Not
-   changed: a press's hit (a finger's press is still where it lands).
+   isn't locked (released, refused) still looks where it hovers. A
+   press's hit is unchanged (a finger's press is still where it lands, and
+   the router still sets the hover to it), and a menu is of that, not of
+   the look: `api.path({ pointer: true })` and each reader's `pointed()`
+   read the pointer's hit (the hover the press set), which the look is in
+   every other pointer state, so only here do they differ. Before that, a
+   finger's long press in walk opened the menu of whatever the eye looked
+   at (menu.test.js "a menu is of what was pressed, in every pointer
+   state", four rows). The rejected alternative: the look gives way to
+   the press's hover while a finger is down on the world, which would pin
+   the use prompt to what a drag to look started on.
    Open for the lead: whether a lock body under touch should draw the
    stage's own crosshair (sailing draws its own; walk draws none).

@@ -1104,16 +1104,23 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // looksFromEye), the eye ray's hit; else the pointer's (the last hover).
   let hoverHit = null; // { id: key, point, distance }
   function look() {
-    if (looksFromEye(atom.get().pointer)) {
-      let h = null;
-      try {
-        const r = viewport.centerRay();
-        h = r ? viewport.raycast(r.origin, r.dir) : null;
-      } catch {
-        h = null;
-      }
-      return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+    return looksFromEye(atom.get().pointer) ? eyeHit() : pointed();
+  }
+  // The eye ray's hit (where the middle of the view is), or null.
+  function eyeHit() {
+    let h = null;
+    try {
+      const r = viewport.centerRay();
+      h = r ? viewport.raycast(r.origin, r.dir) : null;
+    } catch {
+      h = null;
     }
+    return h?.id ? { id: h.id, point: h.point ?? null, distance: h.distance ?? null } : null;
+  }
+  // The pointer's hit: the last hover, which every press sets to what it pressed first (the router), so under
+  // lock the crosshair's and under touch the finger's. A menu is of this, not the look: a finger's long press
+  // in a lock body names what it pressed, not what the eye looks at.
+  function pointed() {
     const hovered = atom.get().hovered;
     if (hovered == null) return null;
     if (hoverHit && samePath(pathOfKey(hoverHit.id), hovered)) return hoverHit;
@@ -1177,8 +1184,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   /**
    * The input path (COMPOSITION.md §3): the stages from attention's innermost
-   * out to the outermost (the selection's path, else the look's; `look: true`
-   * the look's), then the focus stage if it isn't among them, each as its
+   * out to the outermost (the selection's path, else the look's; `pointer: true`
+   * the pointer's, what a menu is of), then the focus stage if it isn't among them, each as its
    * reader (stage.js). Nothing under attention: the outermost, and the focus.
    * The focus is always on it, since the scene a surface speaks of (its
    * commands on nothing: Frame all, Measure, Undo) is the focus's.
@@ -1186,7 +1193,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    * outermost, whatever attention is (the toolbar's: it doesn't follow the
    * pointer).
    */
-  function inputPath({ look: lookOnly = false, focus: focusOnly = false, at = null } = {}) {
+  function inputPath({ pointer = false, focus: focusOnly = false, at = null } = {}) {
     if (focusOnly) {
       const f = atom.get().focus;
       const out = [];
@@ -1198,8 +1205,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     // (`at`: a full path attention is held to, a held verb's target, whatever the selection and the look)
     const sel = Array.isArray(at) && at.length ? at : atom.get().selected;
-    const l = !lookOnly && sel ? null : look();
-    const path = !lookOnly && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
+    const l = pointer ? pointed() : sel ? null : look();
+    const path = !pointer && sel ? sel : l?.id != null ? pathOfKey(l.id) : null;
     const on = path ? onPath(path) : [];
     const out = on.length ? on : [outermost()].filter(Boolean);
     const f = focusStage();
@@ -1451,6 +1458,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     enterable,
     stageAt,
     look,
+    pointed,
     bodyDefs,
     bodyEye,
     bodyReach,

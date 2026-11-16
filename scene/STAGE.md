@@ -39,7 +39,7 @@ each build step.
 | **Held tool** | One slot per view: empty, or one tool that is offered every event first and holds its declared keys (measure, arena's gun, a piece just drawn from a bag). A tool is held only if it takes input outside its own widgets. Escape puts it down. |
 | **Selection** | One target per view, a path (each stage sees its element: `api.view.get().selected`). Select is the first entry of every target's menu, in every body; in Edit a plain click selects too. Leaving Edit puts it down (TOOLS.md Decisions 6). |
 | **Halo** | The selection's handles (`scene.halo`): move arrows, rotate rings, scale corners, round its box in its parent's frame, in Edit, where the doc is writable and no tool is held. |
-| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock and for a lock body under touch, `looksFromEye`; a press moves the look to what it pressed, before anything handles it). Keys, the use prompt and a menu go to it. |
+| **Attention** | One target per view: the selection if any, else the look (the pointer's hit, or the eye ray under pointer lock and for a lock body under touch, `looksFromEye`; a press moves the pointer's hit, and so the look where the look is the pointer's, to what it pressed, before anything handles it). Keys and the use prompt go to it; a menu is of the pointer's hit (what was pressed: under lock the crosshair's), which differs from the look only for a lock body under touch (TOOLS.md Decisions 12). |
 | **Carry** | Picking a thing up and putting it down. What can be carried is data: the `scene.carry` trait on the object, run by the `scene.carry` part. |
 | **Clock** | The doc's world time, `doc.clock`: computed by one view (the one holding the doc's `"clock"` claim), followed by the rest, paused and resumed by anyone who may write. Nobody present, no time passes. |
 | **Process** | Something an extension registers with the clock to be stepped in world time: sailing's ships, a door that closes itself, an emulator. |
@@ -190,13 +190,17 @@ or identity closes, with what was opened under it, and opens again.
   each item tagged with its `stage`, and runs a command with
   `api.run({ stage, ext, command, target })`; `api.path()` is the input
   path's stages (each `{ stage, scene, collect, context, attention, look,
-  run, nameOf }`), attention's from the innermost out, then the focus stage
+  pointed, run, nameOf }`), attention's from the innermost out, then the focus stage
   if it isn't among them, which the key map, the use prompt and the menu
   walk a stage at a time, each in its own context (a held verb pins
   attention in the stage it was held in). So the focus's scene commands
   (Frame all, Measure, Undo) are on every surface wherever the pointer is.
   `api.path({ focus: true })` is the focus path instead (the focus stage
   out to the outermost): the toolbar's, which doesn't follow the pointer.
+  `api.path({ pointer: true })` is the pointer's hit's path (the hover a
+  press sets to what it pressed), whatever the selection and the eye, and a
+  reader's `pointed()` its element of that hit: the menu's, which is of
+  what was pressed.
   A reader also has `writable()` and its doc's `clock` (`status()`, as
   `local.clock`; `pause()`, `resume()`), so the clock chip shows and
   pauses each doc on the focus path (`view.clocks` says when any of them

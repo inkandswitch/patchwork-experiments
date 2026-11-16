@@ -155,6 +155,11 @@ try {
     /** the Esc hint: what it says, whether it's a key, where */
     hint: () => { const h = host.querySelector(".body-escape"); return h && !h.hidden ? { text: h.textContent, key: h.dataset.key ?? null, at: centre(h) } : null; },
     menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
+    /** the open context menu's section titles, or null */
+    contextMenu: () => { const m = host.querySelector(".context-menu"); return m ? [...m.querySelectorAll(".menu-title")].map((t) => t.textContent) : null; },
+    closeMenu: () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true })),
+    /** what the look is on (the probe stage's element), or null */
+    look: () => window.__probeApi.look()?.id ?? null,
     block: () => pageOf([0.6, 0.5, 0]),
     blockRot: () => scene.doc().objects.block.transform.rotation,
     blockPos: () => scene.doc().objects.block.transform.position,

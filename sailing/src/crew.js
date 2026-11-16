@@ -47,6 +47,15 @@ const WALK_KEYS = Object.freeze(
     ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
   ].map(([code, label]) => Object.freeze({ code, label })),
 );
+/** What the walker is asked for with these codes held (a Set): forward and strafe (-1, 0, 1), run, jump. */
+export function walkWanted(keys) {
+  return {
+    forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
+    strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
+    run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+    jump: keys.has("Space"),
+  };
+}
 
 const NAME_CSS = `.scene-stage .label.sail-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: #f6f3ea;
@@ -404,13 +413,7 @@ export function createCrew(api, ctx) {
   // ─── each frame ─────────────────────────────────────────────────────────
 
   function wanted() {
-    if (station || suspended) return STILL;
-    return {
-      forward: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
-      strafe: (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0),
-      run: keys.has("ShiftLeft") || keys.has("ShiftRight"),
-      jump: keys.has("Space"),
-    };
+    return station || suspended ? STILL : walkWanted(keys);
   }
 
   /** Invariant I after a step: thrown while walker.asserting() (tests, the probe pages); else logged once and put right by projection. */

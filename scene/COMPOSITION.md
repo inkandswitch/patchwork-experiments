@@ -1364,7 +1364,13 @@ The five open questions were put to the project lead and answered:
    hover's menu or the scene's. Rejected: passing the press's hit to the
    menu through `api.path({ hit })`, which would give the path a second
    notion of where the pointer is; one look, updated by the press, keeps
-   the use prompt, the keys and the menu on the same thing.
+   the use prompt, the keys and the menu on the same thing. Amended
+   (2026-11-16, lane/n9, decided unattended, for the lead): a lock body
+   under touch looks from its eye while a finger presses where it lands
+   (TOOLS.md Decisions 12), so the menu reads the pointer's hit
+   (`api.path({ pointer: true })`, a reader's `pointed()`): still not a
+   second notion, the same hover the press sets, which the look is in
+   every other pointer state.
 3. **Leaving Edit puts the selection down; the toolbar is one row with no
    scrollbar; no tie rule for verbs beyond running order**: TOOLS.md
    Decisions 6 and 7.

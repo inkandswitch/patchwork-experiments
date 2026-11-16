@@ -11,7 +11,8 @@
 // drags on the world to look (both at once), holds Run with Forward, presses
 // the wrench's Reload (the tool's, not the body's), carries the block with
 // one finger and turns it with Turn left on the pad, carries it again and
-// puts it back with a second finger on the Esc hint ("Put it back"), then a
+// puts it back with a second finger on the Esc hint ("Put it back"), holds a
+// finger still on the block (its menu, not the eye's look's), then a
 // mouse click on the world hides the pad and only asks for the lock. Prints a JSON report; exits
 // non-zero on a failure.
 //
@@ -153,6 +154,23 @@ try {
     "7b. the Esc hint is a key on touch: it says \"Put it back\", and a second finger on it puts the carried block back where it was",
     hint?.text === "Put it back" && hint?.key === "Escape" && afterEsc.gesture === null && JSON.stringify(pos1) === JSON.stringify(pos0) && focusEsc === "root",
     { hint, afterEsc, pos0, pos1, focusEsc },
+  );
+  await heard();
+
+  // 7c. a finger's long press on the block opens the block's menu: what it pressed, not what the eye looks at
+  // (the look of a lock body under touch is the eye's, TOOLS.md Decisions 12)
+  const lookBefore = await P("look()");
+  const block3 = await P("block()");
+  await touch.fingers([[1, ...block3]]);
+  await b.rest(700);
+  const longMenu = await P("contextMenu()");
+  await touch.fingers([]);
+  await P("closeMenu()");
+  await b.rest(100);
+  check(
+    "7c. a finger held still on the block opens the Block's menu, while the eye looks elsewhere",
+    lookBefore !== "block" && JSON.stringify(longMenu?.slice(0, 1)) === JSON.stringify(["Block"]) && (await P("contextMenu()")) === null && (await P("view()")).gesture === null,
+    { lookBefore, longMenu },
   );
   await heard();
 

@@ -1733,11 +1733,18 @@ port (A, ←) and Steer to starboard (D, →) in the pad's left and right
 places, Haul in (Q), Ease out (E), Halyard (R at a post or the helm),
 Furler (R at a winch), Back jib / let fly (B), Leave (F). The labels live
 beside the handlers in stations.js (`HAUL`, `STEER`, …); "aboard" declares
-walk's labelled keys (a copy, until N10 folds it into walk). The HUD's
-hint line is unchanged. `stations.test.js` asserts every variant's
-declaration as a literal, and that two of a station's codes do the same
-thing (held half a second from the station just taken: the same inputs,
-writes and place) exactly when they share a label. Open for the lead: the
+walk's labelled keys (a copy, until N10 folds it into walk). An action can
+be unavailable in some states: a winch declares the jib sheet's Q and E on
+either side, because which winch is the working one changes while you
+stand there (a tack, backing the jib), and at the lazy one they do
+nothing. The HUD's hint line is unchanged. `stations.test.js` asserts
+every variant's declaration as a literal (the lazy winch among them),
+and checks from one state, the station just taken in the stage's starting
+trim, holding each code half a second: exactly the variant's listed idle
+codes do nothing (only the lazy winch's Q and E), and among the rest two
+codes do the same thing (the same inputs, writes and place) exactly when
+they share a label. `crew.test.js` checks aboard's the same way, every
+code alone against what it asks of the walker (`walkWanted`). Open for the lead: the
 words, B's above all (it backs the jib, makes it fast at a winch, or lets
 it fly, by state), and whether the HUD's hint should drop key names on
 touch.

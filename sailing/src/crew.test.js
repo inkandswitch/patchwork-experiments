@@ -4,7 +4,7 @@
 // walker.test.js's; here, that the crew drives it: invariant I is asserted
 // after every step (__SAILING_ASSERT__).
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { bakedObjects, behind, createCrew, ease, ladderTop, navInput, navKey, placeOf, seatedView, trianglesOf } from "./crew.js";
+import { bakedObjects, behind, createCrew, ease, ladderTop, navInput, navKey, placeOf, seatedView, trianglesOf, walkWanted } from "./crew.js";
 import { standOff } from "./walker.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
 import { shipOf } from "./traits.js";
@@ -373,6 +373,14 @@ describe("the crew", { timeout: 60_000 }, () => {
     ].map(([code, label]) => ({ code, label }));
     expect(s.body().keys).toEqual(WALK);
     expect(s.bodies.at(-1).def.keys).toEqual(WALK);
+    // and labelled alike is the same action: each code held alone asks the walker for something, and two
+    // ask for the same exactly when they share a label (all 11 × 11 pairs)
+    const still = JSON.stringify(walkWanted(new Set()));
+    const did = Object.fromEntries(WALK.map(({ code }) => [code, JSON.stringify(walkWanted(new Set([code])))]));
+    for (const a of WALK) {
+      expect(did[a.code], a.code).not.toBe(still);
+      for (const b of WALK) expect(did[a.code] === did[b.code], `${a.code} ${b.code}`).toBe(a.label === b.label);
+    }
     expect(s.declared()).toEqual(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
     expect(s.key("KeyF", "f")).toBe(false);
     expect(s.key("KeyQ", "q")).toBe(false);

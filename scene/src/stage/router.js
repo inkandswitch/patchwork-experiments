@@ -490,9 +490,10 @@ export function createRouter(o) {
     gesture = g;
     cancelHover();
     const ev = make("press", e);
-    // what is pressed is where the look is: the hover a frame would have
-    // brought (a touch has none before it), so the look, the use prompt and
-    // a menu from this press all name the thing under it
+    // what is pressed is where the pointer is: the hover a frame would have
+    // brought (a touch has none before it), so a menu from this press, and
+    // the look and the use prompt where the look is the pointer's (not the
+    // eye's: under lock the press is the eye's anyway), name the thing under it
     o.onHover?.(ev);
     // this press, kept for a double-click it may begin: its hit and widget resolved now, as it is pressed (the
     // event's own memo, so no second pick), so a double-click later reuses them rather than casting a new ray

@@ -200,4 +200,68 @@ describe("scene.menu", () => {
     expect(s.instance("scene.menu").input.menu({ type: "menu", x: 1, y: 1, hit: { id: "a" } })).toBe(false);
     expect(s.root.querySelector(".context-menu")).toBeNull();
   }, 30_000);
+
+  // A menu is of what was pressed (the pointer's hit, which the press sets), not the look: they differ for a
+  // lock body under touch, whose look is the eye's (TOOLS.md Decisions 12) while a finger presses where it
+  // lands. Every pointer state a menu can open in: the finger at (20, 20) is over the Hull; the middle of the
+  // view (the eye ray, and a locked press) is on the Mast.
+  describe("a menu is of what was pressed, in every pointer state", () => {
+    const walker = {
+      create: () => ({
+        bodies: [{ id: "walk", label: "Walk", lock: true, keys: [{ code: "KeyW", label: "Forward" }], enter: () => ({ input: { press: (ev) => (ev.button === 0 ? {} : null) }, leave() {} }) }],
+        commands: [{ id: "poke", name: "Poke", state: (t) => (t != null ? {} : null), run() {} }],
+      }),
+    };
+    afterEach(() => {
+      delete document.pointerLockElement;
+    });
+    // [case, body, how the menu opens, the look's title, the menu's title]
+    const CASES = [
+      ["Look, a mouse's right-click", "look", "mouse", "Hull", "Hull"],
+      ["a lock body, a finger's long press", "walk", "touch", "Mast", "Hull"],
+      ["a lock body, a refused mouse's right-click", "walk", "refused", "Hull", "Hull"],
+      ["a lock body, a locked mouse's right-click", "walk", "locked", "Mast", "Mast"],
+    ];
+    for (const [name, body, how, lookAt, menuOf] of CASES)
+      it(name, async () => {
+        log = [];
+        s = await mountStage({
+          extensions: [{ meta: { id: "scene.menu" }, module: menu }, { meta: { id: "t.walk" }, module: walker }],
+          doc: { objects: { a: object({ name: "Hull" }), b: object({ name: "Mast" }) }, order: ["a", "b"] },
+        });
+        // (a primary press is the body's, as walk's drag to look is)
+        const vp = s.debug.viewport;
+        vp.pick = (x) => (x === 20 ? { id: "a", point: [0, 1, 0], normal: [0, 1, 0], distance: 1 } : { id: "b", point: [0, 2, 0], normal: [0, 1, 0], distance: 2 });
+        vp.centerRay = () => ({ origin: [0, 1.6, 4], dir: [0, 0, -1] });
+        vp.raycast = () => ({ id: "b", point: [0, 2, 0], normal: null, distance: 2 });
+        const type = how === "touch" ? "touch" : "mouse";
+        // the input is said by a press first (a finger never locks)
+        s.pointer("pointerdown", 300, 300, { pointerType: type, pointerId: 9 });
+        s.pointer("pointerup", 300, 300, { pointerType: type, pointerId: 9 });
+        if (body !== "look") expect(s.api("t.walk").body.enter("walk")).toBe(true);
+        if (how === "refused") document.dispatchEvent(new Event("pointerlockerror"));
+        if (how === "locked") {
+          Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });
+          document.dispatchEvent(new Event("pointerlockchange"));
+        }
+        await s.settle();
+        expect(s.local.get().pointer).toMatchObject({ touch: how === "touch", locked: how === "locked" });
+        if (how === "touch") {
+          s.pointer("pointerdown", 20, 20, { pointerType: "touch" });
+          await new Promise((done) => setTimeout(done, 650));
+        } else {
+          s.pointer("pointerdown", 20, 20, { button: 2, buttons: 2 });
+          s.pointer("pointerup", 20, 20, { button: 2 });
+        }
+        const menuTitle = s.root.querySelector(".context-menu .menu-title")?.textContent ?? null;
+        if (how === "touch") s.pointer("pointerup", 20, 20, { pointerType: "touch" });
+        // the menu closed by a press outside the view (while open it wants the pointer), the look is where it was: the eye's only
+        // for the finger and the lock, so the finger's menu is the one that isn't the look's
+        document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        await s.settle();
+        expect(s.root.querySelector(".context-menu")).toBeNull();
+        const look = s.api("scene.menu").look();
+        expect([s.api("scene.menu").nameOf(look?.id), menuTitle]).toEqual([lookAt, menuOf]);
+      }, 30_000);
+  });
 });
