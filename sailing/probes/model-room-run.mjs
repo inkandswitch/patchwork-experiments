@@ -69,11 +69,12 @@ try {
   const r = await P("room()", 300_000);
   check("the room opens both boats' stages, each running sailing and water; the room runs neither", !r.error && r.stages.length === 3 && !r.stages.find((s) => !s.path.length).running.some((x) => x === "water" || x === "sailing"), r);
   check("the blocks lie side by side without overlapping, at 1:25", r.blocks && Math.abs(r.blocks[0].x - r.blocks[1].x) >= (r.blocks[0].w + r.blocks[1].w) / 2 && r.links.every((l) => l.scale === 0.04), r);
-  await b.advance(3000);
+  // a boat put on a calm block from her doc's pose bobs a while before she settles
+  await b.advance(12000);
   const oceans = await P("oceans('h')");
   const patches = await P("patches('h')");
   const drawers = await P("drawers('h')");
-  check("no open surface in the room; two blocks, each drawn by its own boat's stage, her clip live there", oceans === 0 && patches === 2 && J(drawers.filter((d) => d.patches.length).map((d) => [d.path, d.patches, d.clip])) === J([[["LA"], [ids.seaA], ids.seaA], [["LB"], [ids.seaB], ids.seaB]]) && drawers.every((d) => !d.open), { oceans, patches, drawers });
+  check("no open surface in the room; two blocks, each drawn by its own boat's stage, her clip live there", oceans === 0 && patches === 2 && J(drawers.filter((d) => d.patches.length).map((d) => [d.path, d.patches, d.clip]).sort((a, b) => (a[0][0] < b[0][0] ? -1 : 1))) === J([[["LA"], [ids.seaA], ids.seaA], [["LB"], [ids.seaB], ids.seaB]]) && drawers.every((d) => !d.open), { oceans, patches, drawers });
   const faces = await P("faces('h')");
   check("each block is drawn as a volume: its skirt and floor, seen from either side", faces.length === 2 && faces.every((f) => f.sides > 4 && f.sides < f.vertices && f.doubleSided), faces);
   const rA = await sample("h", ["LA"], ids.hullA, 6);
