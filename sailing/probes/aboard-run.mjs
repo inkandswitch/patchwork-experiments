@@ -2,7 +2,7 @@
 // Chrome, at anchor and under way.
 //
 //   (in scene/, seats/, sailing/, tabletop/, card-table/ and keep/) pnpm build
-//   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick] [--seed 1] [--port 4781] [--cdp 9781]
+//   node probes/aboard-run.mjs [--shots <dir>] [--show] [--gpu] [--quick] [--seed 1] [--sea N] [--port 4781] [--cdp 9781]
 //
 // Mounts the BUILT scene tool with the BUILT seats, sailing, tabletop and
 // card-table plugins twice on one empty scene (aboard-probe.html): A is Ana,
@@ -77,6 +77,12 @@ for (const p of ["scene/dist/index.js", "seats/dist/index.js", "sailing/dist/ind
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || "/tmp", "sailing-aboard"));
 const QUICK = process.argv.includes("--quick");
+// The sea (its waves and gusts) is pinned apart from the page's seeded Math.random: the template draws
+// the sea's seed from that stream, which every new id draws from too, so a package more or an object
+// more before it handed the same --seed another sea (the water split did: loose/probes.md, 2026-11-15),
+// and with it another heel under step 13's arrow. The probe writes the sea's own seed into the doc
+// before the world first runs: --sea N, by default the run's --seed.
+const SEA = Number(arg("--sea") ?? arg("--seed") ?? 1);
 /** How far (px) the table's top may wander on a seated view's screen over the sample. */
 const STEADY_PX = 40;
 
@@ -321,6 +327,8 @@ try {
   const dealt = await holds("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 180_000);
   mark("dealt");
   check("2: the secure deck reaches playing, each hand's faces delivered", dealt, { phase: await P("phase()"), a: (await P("faces('a')")).length, b: (await P("faces('b')")).length });
+  await P(`setSea(${SEA})`);
+  report.numbers.seaSeed = SEA;
   report.numbers.resumedAt = await P("resume()");
   check("2: A simulates the ship", await until("simulating('a') && !__p.simulating('b')", 20_000), { a: await P("simulating('a')"), b: await P("simulating('b')") });
   check("2: the doc's clock claim (A computes the world) and both seats' claims are live", await until("claims('a').includes('clock') && __p.claims('a').includes('seat:p1') && __p.claims('b').includes('seat:p2')", 5000), { a: await P("claims('a')"), b: await P("claims('b')") });
@@ -608,6 +616,15 @@ try {
     const played = w0.table.filter((x) => !pile0.includes(x));
     let at = await until(`aimBest(${J(played)}, 'a')`, 3000);
     let target = at?.id ?? null;
+    // and she orbits on to look down on that card, from the same side, so it lies mid-screen: the canvas
+    // narrows (the inspector) and drops (the trail) as she goes on, and a card on an edge of it, which
+    // the cards in play can all be (which ones are in play is the deal's), goes off it
+    if (at) {
+      await P(`setCam('a', __p.overObject(${J(target)}, 'a'))`);
+      await b.rest(600);
+      at = (await until(`aimAt(${J(target)}, 'a')`, 3000)) || (await until(`aimBest(${J(played)}, 'a')`, 3000));
+      target = at?.id ?? target;
+    }
     if (!at) check("13: a card of G's is in plain sight on A's screen", false, { where: w0, cam: await P("cam('a')") });
     else {
       const bBody = await P("bodyLabel('b')");
@@ -617,7 +634,7 @@ try {
       await until(`selectionPath('a')?.length === 1`, 3000);
       await b.rest(800);
       // (the canvas is narrower now: a card in plain sight on it again, maybe another)
-      let atD = await until(`aimBest(${J(played)}, 'a')`, 3000);
+      let atD = (await until(`aimAt(${J(target)}, 'a')`, 3000)) || (await until(`aimBest(${J(played)}, 'a')`, 3000));
       if (atD) target = atD.id;
       else check("13: with the inspector open, a card of G's is still in plain sight on A's screen", false, { played });
       atD ??= at;

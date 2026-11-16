@@ -379,6 +379,14 @@ try {
     },
     /** a camera over G's table, looking down on it from just A's side of above: { position, target } in the world */
     overTable(w) { const m = dbg[w].viewport.worldOf(ids.link); return m ? { position: apply(m, [0, 0.95, 0.3]), target: apply(m, [0, 0, 0]) } : null; },
+    /** the same look, moved over one of G's objects, so it lies in the middle of the screen: { position, target } in the world */
+    overObject(id, w) {
+      const mL = dbg[w].viewport.worldOf(ids.link), m = dbg[w].viewport.worldOf(keyIn(w, id));
+      if (!mL || !m) return null;
+      const o = apply(mL, [0, 0, 0]), up = apply(mL, [0, 0.95, 0.3]);
+      const at = [m[12], m[13], m[14]];
+      return { position: at.map((v, i) => v + up[i] - o[i]), target: at };
+    },
     /** put view w's camera at `c` ({ position, target }, in the world): where a person would orbit it to */
     setCam(w, c) { dbg[w].viewport.setCamera(c); return true; },
     /** the double-clicks view w heard: [{ on, x, y, hit, focus, top, left, w, cam, frame }] (after the stage's own handling) */
@@ -457,6 +465,8 @@ try {
     wind: () => scene.doc().traits?.["sailing.sea"]?.wind ?? null,
     /** the sea's wind freshened (as the inspector's Sea field writes it) */
     setWind(speed) { scene.change((d) => { d.traits["sailing.sea"].wind.speed = speed; }); return true; },
+    /** the sea's own seed (its waves and gusts), as the inspector's Sea field writes it */
+    setSea(seed) { scene.change((d) => { d.traits["sailing.sea"].seed = seed; }); return true; },
     /**
      * Sample, every frame for `ms` of the page's clock, where a point on the
      * table is on each view's page, and where the table is in the world.
@@ -471,10 +481,15 @@ try {
       }
       return out;
     },
-    /** a page point over object `id` in view `w` (around its origin, until a pick hits it) */
+    /**
+     * a page point over object `id` in view `w` (around its origin, until a pick hits it), where the view's
+     * canvas is what a click there reaches: not under the view's own chrome (a HUD's button, a chip), which a
+     * person would click instead, as sailing-probe.html's aimAt has it
+     */
     aimAt(id, w, local = null) {
       const v = dbg[w].viewport;
       const r = v.canvas.getBoundingClientRect();
+      const onCanvas = (x, y) => document.elementFromPoint(r.left + x, r.top + y) === v.canvas;
       const key = keyIn(w, id);
       const m = v.worldOf(key);
       const p0 = m && v.project(local ? apply(m, local) : [m[12], m[13], m[14]]);
@@ -484,10 +499,10 @@ try {
         const x = p0.x + rad * Math.cos(a), y = p0.y + rad * Math.sin(a);
         if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
         const hit = v.pick(x, y);
-        if (hit?.id !== key) continue;
+        if (hit?.id !== key || !onCanvas(x, y)) continue;
         // the middle of its run of pixels across the screen, not the first one the spiral meets (its edge): she rolls,
         // and the eye stays level, so a pointer on the edge of a mast or a card is off it a moment later
-        const on = (px) => px > 2 && px < r.width - 2 && v.pick(px, y)?.id === key;
+        const on = (px) => px > 2 && px < r.width - 2 && v.pick(px, y)?.id === key && onCanvas(px, y);
         let lo = x, hi = x;
         while (x - lo < 60 && on(lo - 1)) lo--;
         while (hi - x < 60 && on(hi + 1)) hi++;
