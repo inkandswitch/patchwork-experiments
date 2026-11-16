@@ -542,6 +542,25 @@ describe("one body per hull per step (W25): env.water is the water package's at(
       }
     });
 
+  it("astride a box's edge, her origin inside (W32): on the box's total reader she floats exactly as on open water; on a reader with Decision 63's floor outside the box she would heel", async () => {
+    // the box's edge runs along her course, a metre to starboard of her centreline: her starboard bilge is over it
+    const yaw = headTo(45 - 90);
+    const across = (x, z) => x * Math.cos(yaw) - z * Math.sin(yaw);
+    const base = await run(CASES["in open water"]);
+    const BOX = flatAt(0, "box");
+    const floorOutside = (x, z) => (across(x, z) <= 1 ? 0 : -3);
+    const FLOORED = { ...BOX, heightAt: (x, z) => floorOutside(x, z), sampleAt: (x, z, t, out = [0, 0, 1, 0]) => ((out[0] = floorOutside(x, z)), (out[1] = 0), (out[2] = 1), (out[3] = 0), out) };
+    const inBox = (answer) => (p) => (across(p[0], p[2]) <= 1 ? answer : null);
+    const total = await run(inBox(BOX));
+    const floored = await run(inBox(FLOORED));
+    // her origin stayed inside the box all the while (it's the box's reader she was handed at every step)
+    const hers = total.asked.filter((a) => a.not === total.hull);
+    expect(hers.length).toBeGreaterThan(470);
+    for (const a of hers) expect(across(a.p[0], a.p[2])).toBeLessThanOrEqual(1);
+    expect(total.held).toEqual(base.held);
+    expect(floored.held.rotation).not.toEqual(base.held.rotation);
+  });
+
   // water that goes from under her partway (she leaves a pond's footprint, a link tilts): which steps answer none
   const GOES = {
     "leaves the water and stays out": (n) => n > 360,
