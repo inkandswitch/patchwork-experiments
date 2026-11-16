@@ -311,10 +311,14 @@ try {
   const editItem = await P(`chipItem("a", "Edit")`);
   if (editItem) await clickAt(editItem);
   await b.rest(300);
-  check("A chooses Edit on the body chip (the toolbar, the outline and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
-  const inspectorButton = await P(`buttonRect("a", "Inspector")`);
-  if (inspectorButton) await clickAt(inspectorButton);
-  await b.rest(500);
+  check("A chooses Edit on the body chip (the toolbar, the inspector and Copy are Edit's)", !!editItem && (await P(`body("a")`)).id === "edit", { body: await P(`body("a")`) });
+  // the toolbar's Inspector is a toggle: pressed only if a selection hasn't opened the pane already
+  if (!(await P(`panelOpen("a", "inspector")`))) {
+    const inspectorButton = await P(`buttonRect("a", "Inspector")`);
+    if (inspectorButton) await clickAt(inspectorButton);
+    await b.rest(500);
+  }
+  check("A's inspector pane is open (the tree in it, for the door's row below)", await P(`panelOpen("a", "inspector")`), { tabs: await P(`text(".stage-drawer-tab-name", "a")`) });
   await P(`setCamera("a", { position: [0, 95, 30], target: [0, 0, 0], fov: 60 })`);
   await b.rest(400);
   report.numbers.wholeMap = await P(`timeFrames("a")`);
@@ -326,10 +330,10 @@ try {
   const row = await P(`rowRect("a", ${JSON.stringify(doorId)})`);
   if (row) await clickAt(row);
   await b.rest(300);
-  // (inside a folded row it isn't shown: then select it as the outline would)
+  // (inside a folded row it isn't shown: then select it as the tree would)
   if ((await P(`selected("a")`)) !== doorId) await P(`select("a", ${JSON.stringify(doorId)})`), (details.selectedBy = "local.selected");
   await P(`focus("a")`);
-  check("the door selected in A's outline", (await P(`selected("a")`)) === doorId, { row, selected: await P(`selected("a")`) });
+  check("the door selected in A's tree", (await P(`selected("a")`)) === doorId, { row, selected: await P(`selected("a")`) });
   await cmdKey("c", "copy");
   const d = await P(`canvasRect("d")`);
   await b.click(Math.round(d.x + d.w / 2), Math.round(d.y + d.h * 0.8));
