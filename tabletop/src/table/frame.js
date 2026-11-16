@@ -38,20 +38,27 @@ export function invert(m) {
 /** A point through a matrix. */
 export const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
 
-/** The transform whose matrix is `m` (scene/src/transform.js decomposeMatrix). */
+/**
+ * The transform whose matrix is `m` (scene/src/transform.js decomposeMatrix):
+ * the rotation is exact as a matrix even a hair from gimbal lock (a tile
+ * standing in a rack turned a hair), its z making up for whatever x comes out
+ * there; standing exactly on edge, z is 0 and x takes the whole turn.
+ */
 export function decompose(m) {
   const sx = Math.hypot(m[0], m[1], m[2]);
   const sy = Math.hypot(m[4], m[5], m[6]);
   const sz = Math.hypot(m[8], m[9], m[10]);
   const s = (sx + sy + sz) / 3 || 1;
   const m11 = m[0] / sx, m12 = m[4] / sy, m13 = m[8] / sz;
-  const m22 = m[5] / sy, m23 = m[9] / sz;
-  const m32 = m[6] / sy, m33 = m[10] / sz;
-  const y = Math.asin(Math.max(-1, Math.min(1, m13)));
+  const m21 = m[1] / sx, m22 = m[5] / sy, m23 = m[9] / sz;
+  const m31 = m[2] / sx, m32 = m[6] / sy, m33 = m[10] / sz;
+  const cosY = Math.hypot(m11, m12);
+  const y = Math.atan2(m13, cosY);
   let x, z;
-  if (Math.abs(m13) < 0.9999999) {
+  if (cosY > 1e-12) {
     x = Math.atan2(-m23, m33);
-    z = Math.atan2(-m12, m11);
+    const cx = Math.cos(x), sxn = Math.sin(x);
+    z = Math.atan2(cx * m21 + sxn * m31, cx * m22 + sxn * m32);
   } else {
     x = Math.atan2(m32, m22);
     z = 0;

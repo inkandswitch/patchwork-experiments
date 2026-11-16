@@ -6,6 +6,7 @@
 // table depends on the conventions and not on who provides them.
 
 import { fakeRegistry } from "./fakes.js";
+import { composeMatrix, decompose } from "../table/frame.js";
 
 /** The stand-in seats owner's trait: the table never reads it; only this file does. */
 export const SEATS = "t.seats";
@@ -156,9 +157,12 @@ export function keeperOf(objects, { name = () => "Deck" } = {}) {
 /**
  * What the stage's content(id).extras holds for a GLB with these extras on
  * its root (scene/STAGE.md `content(id)`, scene/src/carry-rules.js
- * sanitizeConnectors and placeConnector, copied): each connector cleaned,
- * its whole frame (`rotation`) kept with its yaw derived from it, else the
- * yaw it gives, or none. The rest as the GLB has it.
+ * sanitizeConnectors and placeConnector, copied): each connector cleaned and
+ * placed in its root's frame, so a whole frame (`rotation`) comes back as the
+ * stage's decompose writes it (the same frame, maybe another triple: [0, π, 0]
+ * as [−π, 0, −π]; this table's decompose, kept to 1e-9 where the stage keeps
+ * 1e-12) with its yaw derived from it; else the yaw it gives, or none. The
+ * rest as the GLB has it.
  */
 export function stageExtras(extras) {
   const finite = (v) => Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => Number.isFinite(Number(x)));
@@ -166,7 +170,7 @@ export function stageExtras(extras) {
   const connectors = (extras?.connectors ?? []).flatMap((c) => {
     const position = Array.isArray(c) ? c : c?.position;
     if (!finite(position)) return [];
-    const rotation = !Array.isArray(c) && finite(c.rotation) ? c.rotation.slice(0, 3).map(Number) : null;
+    const rotation = !Array.isArray(c) && finite(c.rotation) ? decompose(composeMatrix({ rotation: c.rotation.slice(0, 3).map(Number) })).rotation : null;
     const yaw = rotation ? yawOfEuler(rotation) : Array.isArray(c) || c.yaw == null ? null : Number(c.yaw);
     const tags = !Array.isArray(c) && Array.isArray(c.tags) ? c.tags.filter((t) => typeof t === "string" && t) : [];
     return [{ position: position.slice(0, 3).map(Number), rotation, yaw, tags }];

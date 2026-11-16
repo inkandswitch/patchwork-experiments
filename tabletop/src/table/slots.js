@@ -1,11 +1,13 @@
 // Card slots: the connectors on a table's pieces that take a card (or a
 // tile: a slot takes whatever has one of its tags; a rack's places hold a
-// domino standing on edge, in the whole frame the scene keeps on each
-// connector, `rotation`). The rule is
-// the scene carry's (scene/src/carry-rules.js `accepts`, scene/src/parts/carry-math.js
-// `snapCandidates`), copied rather than imported, since packages stand alone:
-// a connector that lists tags takes only objects with one of them, it reaches
-// as far as its object's `snapRadius` (scaled with the object), in plan.
+// domino standing on edge). Each place is the scene's connector as the stage
+// gives it (content(id).extras.connectors): its position and its frame on its
+// object, the whole frame where the GLB gave one (`rotation`) and else a turn
+// to its yaw, read in that object's frame and never composed here. What it
+// takes and how far it reaches are the scene carry's rule (scene/src/carry-rules.js
+// `accepts`), copied rather than imported, since packages stand alone: a
+// connector that lists tags takes only objects with one of them, and it
+// reaches as far as its object's `snapRadius` (scaled with the object), in plan.
 
 /** The one tag every card has, and every card slot takes. Never a card's own name: an object's tags are public. */
 export const CARD_TAGS = Object.freeze(["card"]);
@@ -16,20 +18,20 @@ export function accepts(connectorTags, objectTags) {
   return Array.isArray(objectTags) && objectTags.some((t) => connectorTags.includes(t));
 }
 
-/** Where a column-major matrix turns +Z, seen from above (radians about +Y). */
-export const yawOfMatrix = (m) => Math.atan2(m[8], m[10]);
-
 /**
- * An object's places, body space: { position, yaw, rotation | null, tags }:
- * the scene's connectors (content(id).extras.connectors), each with its whole
- * frame where its GLB gave one (`rotation`, Euler XYZ, its yaw derived from
- * it) and else only a yaw, or none.
+ * An object's places, body space: { position, rotation, tags }: the scene's
+ * connectors (content(id).extras.connectors), each in its frame on its object
+ * (Euler XYZ): its whole frame where its GLB gave one, else a turn to its yaw
+ * ([0, yaw, 0]; none: [0, 0, 0]).
  */
 function placesOf(extras) {
   const finite = (v, n) => Array.isArray(v) && v.length >= n && v.slice(0, n).every((x) => Number.isFinite(Number(x)));
   return (Array.isArray(extras?.connectors) ? extras.connectors : [])
     .filter((c) => finite(c?.position, 3))
-    .map((c) => ({ position: c.position.slice(0, 3).map(Number), yaw: c.yaw, rotation: finite(c.rotation, 3) ? c.rotation.slice(0, 3).map(Number) : null, tags: c.tags }));
+    .map((c) => {
+      const yaw = c.yaw == null ? 0 : Number(c.yaw) || 0;
+      return { position: c.position.slice(0, 3).map(Number), rotation: finite(c.rotation, 3) ? c.rotation.slice(0, 3).map(Number) : [0, yaw, 0], tags: c.tags };
+    });
 }
 
 /**
@@ -37,8 +39,9 @@ function placesOf(extras) {
  * @param {number[]} matrix  the object's world matrix (scene().world(id))
  * @param {{ connectors?: { position: number[], rotation?: number[] | null, yaw?: number | null, tags?: string[] }[], snapRadius?: number | null } | null | undefined} extras  content(id).extras
  * @param {string[]} tags
- * @returns {{ world: number[], yaw: number | null, radius: number, local: { position: number[], yaw: number, rotation: number[] } }[]}
- *   local.rotation: the place's whole frame on its object (Euler XYZ): [0, yaw, 0] for a place that only says which way
+ * @returns {{ world: number[], radius: number, local: { position: number[], rotation: number[] } }[]}
+ *   world: where it is (for reaching it, in plan); local: where it is on its object and its frame there
+ *   (Euler XYZ), which is what a card lying in it is in that object's frame
  */
 export function worldSlots(matrix, extras, tags) {
   const m = matrix;
@@ -46,19 +49,15 @@ export function worldSlots(matrix, extras, tags) {
   const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[8], m[9], m[10]));
   const radius = (Number(extras.snapRadius) || 0) * scale;
   if (!(radius > 0)) return [];
-  const turn = yawOfMatrix(m);
   const out = [];
   for (const c of placesOf(extras)) {
     // a slot for cards only, never one that takes anything: an untagged connector is a board's space
-    if (!Array.isArray(c?.position) || !c.tags?.length || !accepts(c.tags, tags)) continue;
-    const [x, y, z] = c.position.map(Number);
-    const yaw = c.yaw == null || !Number.isFinite(Number(c.yaw)) ? null : Number(c.yaw);
+    if (!c.tags?.length || !accepts(c.tags, tags)) continue;
+    const [x, y, z] = c.position;
     out.push({
       world: [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]],
-      yaw: yaw == null ? null : yaw + turn,
       radius,
-      // where it is on its object (what a card lying in it is in that object's frame)
-      local: { position: [x, y, z], yaw: yaw ?? 0, rotation: c.rotation ?? [0, yaw ?? 0, 0] },
+      local: { position: [x, y, z], rotation: c.rotation },
     });
   }
   return out;

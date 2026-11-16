@@ -3,7 +3,10 @@
 // on a few poses and for each tag its places take, worldSlots now gives what
 // it gave when this package wrote the frames again under
 // extras["tabletop.slots"] and read them from there (that reading is frozen
-// below, as it was).
+// below, as it was). It reads the stage's extras through the stand-in
+// (test/stand-ins.js stageExtras), which writes each frame back as the stage
+// does; the seam with the real stage is checked by the probes (dominoes.mjs,
+// table.mjs), since packages stand alone.
 import { describe, it, expect } from "vitest";
 import { worldSlots } from "./slots.js";
 import { extrasOf, connectorsOf } from "../look/look.js";
@@ -72,6 +75,10 @@ describe("a piece's places, from the scene's connectors alone", () => {
     expect(pieces.map(([name]) => name).sort()).toEqual(["draw-dominoes-2: rack", "draw-dominoes-3: rack", "draw-dominoes-4: rack", "lost-cities: board", "lost-cities: hand", "santorini: board"]);
   });
 
+  // the same places, reached the same way, each in the same frame on its object (as a matrix: the stage may write
+  // another triple for it); the old world yaw is gone, as nothing read it
+  const frameOf = (r) => composeMatrix({ position: [0, 0, 0], rotation: r, scale: 1 });
+  const sameFrame = (a, b) => frameOf(a).every((v, k) => Math.abs(v - frameOf(b)[k]) < 1e-9);
   it.each(pieces)("%s: the same slots as when the frames were written twice", (_, piece) => {
     const radius = piece.snapRadius ?? RADIUS;
     const before = { ...oldStageExtras(oldGlbExtras(piece)), snapRadius: radius };
@@ -83,7 +90,8 @@ describe("a piece's places, from the scene's connectors alone", () => {
         const a = oldWorldSlots(m, before, tags);
         const b = worldSlots(m, now, tags);
         if (tags[0] !== "nothing of these") expect(a.length, "the golden has places to compare").toBeGreaterThan(0);
-        expect(b, `${pose}, ${tags}`).toEqual(a);
+        expect(b.map(({ world, radius, local }) => ({ world, radius, position: local.position })), `${pose}, ${tags}`).toEqual(a.map(({ world, radius, local }) => ({ world, radius, position: local.position })));
+        b.forEach((s, k) => expect(sameFrame(s.local.rotation, a[k].local.rotation), `${pose}, ${tags}: place ${k}'s frame`).toBe(true));
       }
     }
   });
@@ -99,7 +107,8 @@ describe("a piece's places, from the scene's connectors alone", () => {
   it("a rack's places stand a tile on edge: the frame comes through the scene's connectors whole", () => {
     const rack = GAMES["draw-dominoes-2"].pieces.rack;
     const [first] = worldSlots(POSES["at the origin"], stageExtras(extrasOf(rack)), ["domino"]);
-    expect(first.local.rotation).toEqual(rack.snapPoints[0].rotation);
-    expect(first.yaw).toBeCloseTo(Math.PI / 2, 12);
+    expect(sameFrame(first.local.rotation, rack.snapPoints[0].rotation)).toBe(true);
+    const f = frameOf(first.local.rotation);
+    expect([f[0], f[1], f[2]].map((v) => +v.toFixed(6) + 0)).toEqual([0, 1, 0]); // its X up: on edge
   });
 });
