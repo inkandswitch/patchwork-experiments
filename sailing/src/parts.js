@@ -34,10 +34,14 @@ export const newWeather = ({ wind = WIND, seed = Math.floor(Math.random() * 1e9)
 
 /**
  * A Sea: open water (the water package's object trait, no size) with a sea
- * on it, an object with no source at the origin, its origin the surface at
- * rest. What a template, the Sea part and the Sloop write.
+ * on it, an object with no source, its origin the surface at rest. What a
+ * template, the Sea part and the Sloop write. With a `clip` ([w, depth, l],
+ * the water package's), its open water keeps that box, centred at
+ * `position` and turned by `yaw`, where the world it is placed in offers no
+ * open water (water/WATER.md, "Clipped open water"); without one, its x, z
+ * and yaw mean nothing.
  */
-export function seaObject({ seed, scale = 1, level = 0, name = "Sea" } = {}) {
+export function seaObject({ seed, scale = 1, level = 0, name = "Sea", clip = null, position = [0, 0, 0], yaw = 0 } = {}) {
   return {
     name,
     sourceUrl: null,
@@ -50,10 +54,13 @@ export function seaObject({ seed, scale = 1, level = 0, name = "Sea" } = {}) {
     opacity: 1,
     wireframe: false,
     locked: false,
-    transform: { position: [0, level, 0], rotation: [0, 0, 0], scale: 1 },
-    traits: { [WATER_TRAIT]: {}, [SEA]: newSea({ seed, scale }) },
+    transform: { position: [position[0], level, position[2]], rotation: [0, yaw, 0], scale: 1 },
+    traits: { [WATER_TRAIT]: clip ? { clip: [clip[0], clip[1], clip[2]] } : {}, [SEA]: newSea({ seed, scale }) },
   };
 }
+
+/** The box a Sloop part's Sea keeps, centred on her, where the world offers no open water: 60 m square, 6 m deep. */
+export const SLOOP_CLIP = Object.freeze([60, 6, 60]);
 
 /** Does a doc have open water (an object with the water trait and no size)? */
 export const hasOpenWater = (d) => Object.values(d?.objects ?? {}).some(isOpenWater);
@@ -66,15 +73,16 @@ export function openBody(d) {
 
 /**
  * Give a doc a Sea and the weather where it has no open water (one seed for
- * both, so its waves and gusts come from one number), first in its order.
- * A doc with open water is left as it is, weather and all (Decision 68).
- * Writes into `d`; returns the Sea's id, or null when it had open water.
+ * both, so its waves and gusts come from one number), first in its order,
+ * with the clip given (centred at `position`, turned by `yaw`). A doc with
+ * open water is left as it is, weather and all (Decision 68). Writes into
+ * `d`; returns the Sea's id, or null when it had open water.
  */
-export function bringSea(d, newId, { wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) {
+export function bringSea(d, newId, { wind = WIND, seed = Math.floor(Math.random() * 1e9), clip = null, position = [0, 0, 0], yaw = 0 } = {}) {
   if (hasOpenWater(d)) return null;
   if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather({ wind, seed });
   const id = newId("o");
-  d.objects[id] = seaObject({ seed });
+  d.objects[id] = seaObject({ seed, clip, position, yaw });
   d.order.unshift(id);
   return id;
 }
@@ -354,7 +362,10 @@ export async function sloopFiles(ctx) {
 /**
  * The sloop as a part: on the water where she's put (at the scene's root,
  * where a ship sails), her bow the way the bin faced her, at rest with her
- * sail up. A scene with no open water gets a Sea and the weather with her.
+ * sail up. A scene with no open water gets a Sea and the weather with her,
+ * the Sea keeping a 60 m box centred on her where its world offers no open
+ * water (SLOOP_CLIP). The Sea part writes no clip: an ocean alone has no
+ * natural size.
  */
 export const sloop = {
   async create(ctx, at) {
@@ -363,7 +374,7 @@ export const sloop = {
     const world = matrixOf(at.world);
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {
-      bringSea(d, ctx.newId);
+      bringSea(d, ctx.newId, { clip: SLOOP_CLIP, position: [world[12], 0, world[14]], yaw: headingOf(world) });
       writeObjects(d, objects);
     });
     return objects[0][0];

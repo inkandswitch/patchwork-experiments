@@ -84,16 +84,19 @@ describe("the sea on a water body", () => {
     return st;
   }
 
-  it("as an extension: the world's wind in its own frame, not its doc's weather (the mutation: read the doc's weather, which fails in a harbour); it offers no wind of its own", () => {
+  it("as an extension: the world's wind in its own frame, not its doc's weather (the mutation: read the doc's weather, which fails in a harbour); it offers no wind of its own. W34: a clipped Sea's waves are the world's wind's too, and none in a still world", () => {
     for (const yawD of [0, 30])
-      for (const holder of [{}, { size: [30, 3, 30] }]) {
-        const frame = yawD ? place((yawD * Math.PI) / 180, [5, 0, 5]) : null;
-        const st = stage({ s: object({ traits: { water: holder, [SEA]: { seed: 2 } } }) }, { speed: 8, from: 250, seed: 7 }, frame);
-        const x = sea.create(st.api);
-        const here = meanWindHere({ speed: 8, from: 250 }, { matrix: frame });
-        expect(x["water.waves"]).toEqual({ bodies: { s: seaWavesFor({ seed: 2 }, here) } });
-        expect(x.ambient).toBeUndefined();
-      }
+      for (const holder of [{}, { size: [30, 3, 30] }, { clip: [60, 6, 60] }])
+        for (const wind of [{ speed: 8, from: 250, seed: 7 }, null]) {
+          const frame = yawD ? place((yawD * Math.PI) / 180, [5, 0, 5]) : null;
+          const st = stage({ s: object({ traits: { water: holder, [SEA]: { seed: 2 } } }) }, wind, frame);
+          const x = sea.create(st.api);
+          const here = wind ? meanWindHere({ speed: 8, from: 250 }, { matrix: frame }) : null;
+          expect(x["water.waves"]).toEqual({ bodies: { s: seaWavesFor({ seed: 2 }, here) } });
+          // the doc's own weather (a 1 m/s breeze from the north, in the stage stub) reaches nothing
+          if (!wind) expect(x["water.waves"].bodies.s.components).toEqual([]);
+          expect(x.ambient).toBeUndefined();
+        }
   });
 
   it("the settle (W20): built on a new wind, it asks for one more flush; on the same wind (by value), never", () => {
