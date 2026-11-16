@@ -707,7 +707,7 @@ The combined order is COMPOSITION's; this note's steps are its 2, 3, 6, 7,
   drawer holds docked panes only; the inspector and outline stay in the
   sidebar for now (step 3 left them: see its note). One width for every
   pane (Camber had its own, wider); a pane gets no resize handle yet.
-  *Built since* (N13, lane/n13): a grip on the drawer's left edge. The
+  *Built since* (N13, lane/n13, merged cc3a6d78): a grip on the drawer's left edge. The
   drawer has two widths, the stage's chrome's (`embed: false`) and a
   docked editor's, each the viewer's own: dragging the grip (or its arrow
   keys, Home, End) sets the shown kind's, double-clicking gives that kind
@@ -1202,6 +1202,12 @@ The project lead decided the five open questions on 2026-11-12.
      and its keyup reaches the holder, so no held key is left stuck. A drag
      ends on its release, a cancel, lost capture, a move with the button
      up, or its kind no longer being shown, and only its release stores.
+   - Checked in the real Patchwork after the merge (2026-11-16, the
+     Geometry showcase in a 640px pane beside comments): the inspector
+     docks at 220px with the grip on its edge; a 200px drag gives the
+     drawer +200 and the canvas -200 and stores `drawer.chrome` only;
+     ArrowLeft +16; a reload keeps the width; a double-click gives the
+     default back and forgets the pref (8/8).
    - Still open (a nit): the grip's `aria-valuemin`/`aria-valuemax` are
      the fixed 220/1200 a pref may hold, while the CSS may show less on a
      narrow stage, so `aria-valuenow` (what shows) can fall below the
