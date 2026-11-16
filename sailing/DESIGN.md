@@ -69,9 +69,15 @@ modules share.
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
 doc, crewing her together (see its header). Its page seeds `Math.random`
-(`--seed N`, default 1), so the template's sea and wind repeat; real time
-and frame rates still don't, so a pass count is reported per seed, over
-more than one. `probes/camber-run.mjs` takes a
+(`--seed N`, default 1), and the probe writes the sea's own seed into the
+doc before the world first runs (`--sea N`, default the `--seed`), so a
+run's sea and wind don't depend on how many ids were drawn before the
+template drew its seed (`aboard-run.mjs` pins its sea the same way). Not
+every sea exercises the leave step: it is gated on the HUD saying to back
+the jib, and on some seas the anchor breaks out with her well off the
+wind, so the step reports itself not exercised. Which seas, and why that
+is an open defect in her physics rather than a property of the probe, is
+under "Leaving the anchor". `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
@@ -1498,13 +1504,48 @@ anchor, weigh, take the helm; the HUD says "back the jib (B at the helm;
 dead ahead, the wheel picks the way)"; wheel over, B (the jib unrolls
 backed, on the side opposite the bow the hint names), and once she's off,
 B again to let it fly. The probes run it as one bounded step: she must lie
-head to wind when it starts, in the HUD's own sense (the apparent wind
-within 40°, under 0.5 m/s: no sail drives her; else the step fails, not
-exercised; measured 14° and 23° off after weighing in waves), and her heading must swing past 45° the way the hint names
-within 15 s of sea time, with the jib unrolled, recorded either way, never
-retried. The station's verbs (the wheel, sheets, furler, halyard,
+head to wind when it starts, in the HUD's own sense, which is its advice
+to back the jib (it gives it when she is luffing, the apparent wind within
+40° and under 0.5 m/s, not going astern faster than 0.15 m/s, or in irons,
+within 35° and going astern faster than that; else the step fails, not
+exercised), and her heading must swing past 45° the way the hint names
+within 30 s of sea time, with the jib unrolled, recorded either way, never
+retried. The bound is 30 s, not the stock rig's 10 s, for a sea where she
+breaks out luffing with a little headway: going ahead, the wheel to port
+turns her bow to port first, for some seconds, until the backed jib wins.
+On the probe's default sea (`--sea 1`) she breaks out in irons, going
+astern, and passes 45° in 5.55 s; on sea 383967344 she breaks out luffing
+and takes 16.35 s. The station's verbs (the wheel, sheets, furler, halyard,
 windlass) run in sea time, as far as the ships step a frame (0.25 s), so
 at a few frames a second the jib still unrolls in its 4 s.
+
+**Open: in waves she doesn't reliably lie head to wind as the anchor
+breaks out.** This section says she does, and in flat water she does
+(within 6°, pinned above). After weighing in waves, with the main up, she
+doesn't on about half the seas the template hands out. A sweep of the
+probe's pinned seas, each the sea trait's own seed:
+
+| sea | as the anchor breaks out (apparent wind, speed) | the HUD says | leave step |
+|---|---|---|---|
+| 1 | 9° off, 0.37 m/s astern | in irons: back the jib | exercised; past 45° in 5.55 s |
+| 2 | 42° off, 0.57 m/s astern | nothing | not exercised |
+| 3 | 1° off, 0.57 m/s astern | in irons: back the jib | exercised; past 45° in 9.15 s |
+| 4 | 22° off, 0.40 m/s astern | in irons: back the jib | exercised; past 45° in 6.00 s |
+| 5 | 179° off (stern to it), 0.95 m/s ahead | nothing | not exercised |
+| 383967344 | 14° off, 0.08 m/s ahead | head to wind: back the jib | exercised; past 45° in 16.35 s |
+| 696349617 | 23° off, 0.67 m/s ahead | nothing | not exercised |
+
+(sailing-run on the tree of 2026-11-15, one run per sea; the last two are
+the seas `--seed 1` drew before and after the water package's split, when
+the probe didn't yet pin its sea.)
+
+So four of seven. This contradicts the claim the section opens with, and
+it is a question for her physics (does a rode made fast at the bow hold
+her head to wind with the main up, in a seaway?), not a property of the
+probe: the probe pins its default sea so that a run repeats, and that
+default happens to be one where the step is exercised. Until the physics
+is settled, sailing-run's verdict on the leave step holds only for the
+sea it ran on; it is queued with "sailing catches up with naval".
 
 ## Parts
 
