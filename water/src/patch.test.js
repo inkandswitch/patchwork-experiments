@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createOceanSurface, patchGrid } from "./material.js";
 import { fakeThree } from "./test/fake-three.js";
-import { open, pond, POND, waterObject } from "./parts.js";
+import { HAS_OPEN, open, pond, POND, waterObject } from "./parts.js";
 
 describe("the patch", () => {
   for (const [w, l] of [[1, 1], [10, 4], [30, 30]])
@@ -55,6 +55,38 @@ describe("water's parts", () => {
     expect(d.objects[id].traits).toEqual({ water: {} });
     expect(d.objects[id].sourceUrl).toBeNull();
   });
+  // the doc's water before the part (W24's open bodies, by id), and what each part leaves (W26's rule, for water's own parts)
+  const DOCS = {
+    none: {},
+    "a pond only": { p: waterObject({ name: "Pond", position: [0, 0, 0], size: POND }) },
+    "one open": { s: waterObject({ name: "Sea", position: [0, 0, 0] }) },
+    "two open": { s: waterObject({ name: "Sea", position: [0, 0, 0] }), r: waterObject({ name: "Water", position: [0, 2, 0] }) },
+  };
+  for (const [doc, objects] of Object.entries(DOCS))
+    for (const [label, part] of [["Water", open], ["Pond", pond]])
+      it(`${label} on a doc with ${doc}: a pond is always added; open water only where there is none, else a notice and nothing changed`, async () => {
+        const d = { objects: structuredClone(objects), order: Object.keys(objects) };
+        const before = structuredClone(d);
+        const notices = [];
+        const id = await part.create({ newId: (p) => `${p}1`, change: (fn) => fn(d), notify: (t) => notices.push(t) }, { world: { position: [1, 0, 1] } });
+        const openBefore = Object.keys(objects).filter((k) => !objects[k].traits.water.size).sort();
+        const adds = part === pond || openBefore.length === 0;
+        if (adds) {
+          expect(id).toBe("o1");
+          expect(d.order).toEqual([...before.order, "o1"]);
+          expect(Object.keys(d.objects).sort()).toEqual([...Object.keys(objects), "o1"].sort());
+          expect(notices).toEqual([]);
+        } else {
+          // the doc's open body (the lowest id) is the answer, and the doc is as it was
+          expect(id).toBe(openBefore[0]);
+          expect(d).toEqual(before);
+          expect(notices).toEqual([HAS_OPEN]);
+        }
+        // never a second open body made by a part
+        const openAfter = Object.values(d.objects).filter((o) => !o.traits.water.size).length;
+        expect(openAfter).toBe(Math.max(openBefore.length, part === open ? 1 : 0));
+      });
+
   it("a pond: a box 10 m across and 1.5 m deep, turned as it was put, level", async () => {
     const { id, d } = await run(pond, { position: [3, 1.5, -2], rotation: [0.2, 0.7, 0], scale: 1 });
     expect(d.objects[id].traits).toEqual({ water: { size: [...POND] } });
