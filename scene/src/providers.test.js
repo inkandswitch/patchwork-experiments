@@ -97,13 +97,13 @@ describe("content kinds (COMPOSITION.md §1)", () => {
 });
 
 describe("showsContent: what arriving waits to load", () => {
-  it("a source or a render shows content; an object with neither (its shape its traits' data, as a water body) and a group show none", () => {
+  it("a source or a render shows content; an object with neither (its shape its traits' data) and a group show none", () => {
     const cases = [
       [{ sourceUrl: "automerge:a", providerId: "file-glb" }, true],
       [{ sourceUrl: "automerge:a", providerId: "scene.link" }, true],
       [{ sourceUrl: "automerge:a", providerId: "nobody-installed" }, true],
       [{ sourceUrl: null, renderUrl: "automerge:r" }, true],
-      [{ sourceUrl: null, providerId: null, renderUrl: null, traits: { water: {} } }, false],
+      [{ sourceUrl: null, providerId: null, renderUrl: null, traits: { "t.box": { size: [1, 1, 1] } } }, false],
       [{ name: "bare" }, false],
       [{ sourceUrl: "", renderUrl: "" }, false],
       [{ kind: "group", sourceUrl: "automerge:a" }, false],

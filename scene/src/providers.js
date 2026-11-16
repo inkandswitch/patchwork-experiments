@@ -41,8 +41,9 @@ export function routeOf(o, kindOf) {
 
 /**
  * Does an object show content that loads: a source, or a render of one? An
- * object with neither (its shape is its traits' data, as a water body's) has
- * nothing to load, so nothing waits for it. A group never does.
+ * object with neither (its shape is its traits' data, drawn by the extension
+ * that holds the trait) has nothing to load, so nothing waits for it. A group
+ * never does.
  */
 export function showsContent(o) {
   if (!o || typeof o !== "object" || isGroup(o)) return false;
