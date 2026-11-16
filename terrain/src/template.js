@@ -18,7 +18,32 @@ import { storeTerrainData } from "./store.js";
 /** Where the sloop lies: the mooring field, the frame's origin. */
 export const MOORING = Object.freeze([0, 0, 0]);
 /** sailing's trait keys this writes (its DESIGN.md, "Traits"). */
-export const SEA = "sailing.sea", SAIL = "sailing.sail", JIB = "sailing.jib", ANCHOR = "sailing.anchor";
+export const SEA = "sailing.sea", WEATHER = "sailing.weather", SAIL = "sailing.sail", JIB = "sailing.jib", ANCHOR = "sailing.anchor";
+/** The water package's object trait (its WATER.md, "Water bodies"): this object is water, its origin the surface at rest; no size, open water. */
+export const WATER = "water";
+
+/**
+ * The bay's Sea: open water at the chart's y = 0 (mean water level), with
+ * sailing's sea on it for its waves. An object with no source: its shape is
+ * the water trait's data. Pure.
+ */
+export function bayWater(seed) {
+  return {
+    name: "Sea",
+    sourceUrl: null,
+    providerId: null,
+    renderUrl: null,
+    parent: null,
+    group: null,
+    visible: true,
+    color: null,
+    opacity: 1,
+    wireframe: false,
+    locked: true,
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
+    traits: { [WATER]: {}, [SEA]: { seed, scale: WIND.scale } },
+  };
+}
 /** This package's: the data's credit at the foot of the view (credit.js). */
 export const CREDIT = "terrain.credit";
 /** Chain out on the mooring (sailing's RODE: 25 m; the water is ~8 m deep). */
@@ -62,20 +87,23 @@ const HINT = { bounds: { min: [GRID.x0, -150, GRID.z0], max: [GRID.x0 + (GRID.n 
  * Lay the scene out (after the data is in a Terrain doc).
  * @param {object} ctx  the drop context (STAGE.md, "Drops")
  * @param {string} terrainUrl
- * @returns {Promise<{ terrain: string, hull: string | null }>} the object ids
+ * @returns {Promise<{ terrain: string, sea: string, hull: string | null }>} the object ids
  */
 export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() * 1e9) } = {}) {
   // locked (it is the ground); its About is the Terrain doc (sources, licences); its credit shows in the view
   const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
+  const sea = ctx.newId("o");
   ctx.change((d) => {
-    d.traits[SEA] = { wind: { speed: WIND.speed, from: WIND.from }, seed, scale: WIND.scale };
-    // the water package's: this world has water, its level the chart's y = 0 (mean water level); the sea above makes its waves
-    d.traits.water = { level: 0 };
+    // the world's wind and sky (sailing's weather), and the bay's water: open, at the chart's y = 0, with a sea on it
+    d.traits[WEATHER] = { wind: { speed: WIND.speed, from: WIND.from }, seed };
+    d.objects[sea] = bayWater(seed);
+    d.order.push(sea);
     // people start in Look over the bay (no body named: view.start, TOOLS.md §2); a click on the sloop comes aboard
     d.view.start = { home: { position: [...HOME.position], target: [...HOME.target] } };
     if (!d.title || /^untitled/i.test(d.title)) d.title = "Cadboro Bay";
   });
   let hull = null;
+  // (the sloop finds the bay's open water there, and brings none of her own)
   const parts = await ctx.registry?.("scene:part");
   let loaded = null;
   try {
@@ -98,7 +126,7 @@ export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() 
       });
     }
   }
-  return { terrain, hull };
+  return { terrain, sea, hull };
 }
 
 /** Whether fetched data is the data checked on 2026-11-09 (cadboro.js EXPECTED): [] or what differs. */

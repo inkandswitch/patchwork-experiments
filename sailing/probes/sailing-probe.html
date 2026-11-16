@@ -120,7 +120,8 @@ try {
     objects: () => Object.entries(scene.doc().objects ?? {}).filter(([, o]) => o.kind !== "group").map(([id]) => id),
     byName: (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0] ?? null,
     loaded(w) {
-      const ids = this.objects();
+      // (what has content: an object with no source, the Sea, is its trait's data)
+      const ids = this.objects().filter((id) => scene.doc().objects[id].sourceUrl != null);
       const vp = dbg[w].viewport;
       return { total: ids.length, loaded: ids.filter((id) => vp.contentOf(id)?.loaded).length };
     },
@@ -199,7 +200,7 @@ try {
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         const sea = P.ctx(w)?.sea;
-        if (m && sea) out.push(m[13] - sea.ocean.heightAt(m[12], m[14], sea.clock()));
+        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], sea.clock()));
       }
       return out;
     },

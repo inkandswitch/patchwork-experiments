@@ -271,7 +271,7 @@ try {
   const way = { s: await P(`read('${hull}', '${SIM}')`), f: await P(`read('${hull}', '${FOL}')`) };
   const start = (await P("doc()")).objects;
   // the template's sea is seeded at random (--seed): kept with the report
-  report.measured.sea = (await P("doc()")).traits["sailing.sea"];
+  report.measured.sea = (await P("doc()")).traits["sailing.weather"];
   check("the template starts her under way: sail up, anchor up, making way on both views", start[rig].traits["sailing.sail"].raised === 1 && start[windlass].traits["sailing.anchor"].down === false && way.s?.speed > 1 && way.f?.speed > 1, { speed: { sim: n2(way.s?.speed), follower: n2(way.f?.speed) } });
   await shot("under-way", FOL);
 
@@ -282,7 +282,7 @@ try {
   // the centreline with each gust and sheer, a target that moves while the
   // look at it from the cockpit (below) is made; sheeted in it lies over the
   // well. It's eased again (0.5) once that look is done.
-  const windFrom = (await P("doc()")).traits["sailing.sea"].wind.from;
+  const windFrom = (await P("doc()")).traits["sailing.weather"].wind.from;
   await js(`window.__p.change((d) => {
     const o = d.objects;
     o['${hull}'].transform.rotation[1] = ${(-windFrom * Math.PI) / 180};
@@ -512,7 +512,7 @@ try {
   // ─── under sail: bear away onto a beam reach ─────────────────────────────
   if (section("helm")) throw new Done();
   // a beam reach on the tack she fell off on: the wind from 45°, the wind on her port beam she heads 135°
-  const wind = (await P("doc()")).traits["sailing.sea"].wind;
+  const wind = (await P("doc()")).traits["sailing.weather"].wind;
   const want = ((wind.from + side * 90) * Math.PI) / 180;
   await focus("b", aimH); // B's keys again
   const reach = await steer(ids, SIM, want);
@@ -807,7 +807,7 @@ try {
   await until("window.__p.me('b')?.swimming === true", 5000);
   await b.rest(800);
   const sw = await P("me('b')");
-  const water = await js(`window.__p.ctx('b').sea.ocean.heightAt(${sw.eye[0]}, ${sw.eye[2]}, window.__p.clock('b'))`);
+  const water = await js(`window.__p.ctx('b').sea.oceanAt([${sw.eye[0]}, null, ${sw.eye[2]}]).heightAt(${sw.eye[0]}, ${sw.eye[2]}, window.__p.clock('b'))`);
   check("past the rail B falls in and swims, the eye just over the water", sw.swimming && sw.on == null && Math.abs(sw.eye[1] - water - 0.3) < 0.15, { eye: r3(sw.eye), water: n2(water) });
   // swim to the ladder: put the swimmer beside it, facing the hull
   const mL = await P(`worldOf('${hull}', 'b')`);

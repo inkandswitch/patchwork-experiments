@@ -329,7 +329,8 @@ try {
     simulating: (w) => !!ctx(w)?.sim.simulating(),
     loaded(w) {
       const vp = dbg[w].viewport;
-      const all = [...Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].providerId !== "scene.link"), ...Object.keys(gameObjects()).filter((id) => gameObjects()[id].kind !== "group")];
+      // (what has content: not a group, a link, or an object with no source, as the Sea)
+      const all = [...Object.keys(objects()).filter((id) => objects()[id].kind !== "group" && objects()[id].providerId !== "scene.link" && objects()[id].sourceUrl != null), ...Object.keys(gameObjects()).filter((id) => gameObjects()[id].kind !== "group")];
       return { total: all.length, loaded: all.filter((id) => vp.contentOf(keyIn(w, id))?.loaded).length };
     },
     loading: (w) => { const st = [...Object.values(dbg[w].local.get().status ?? {}), ...Object.values(gStage(w)?.debug.local.get().status ?? {})]; return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
@@ -454,9 +455,9 @@ try {
     commit: (w, id, fields) => ctx(w).sim.commit(id, fields),
     /** an editor's move of the hull: her doc transform turned to `yaw` (the sim starts again from there, at rest) */
     turnHull(yaw) { scene.change((d) => { d.objects[ids.hull].transform.rotation = [0, yaw, 0]; }); return true; },
-    wind: () => scene.doc().traits?.["sailing.sea"]?.wind ?? null,
+    wind: () => scene.doc().traits?.["sailing.weather"]?.wind ?? null,
     /** the sea's wind freshened (as the inspector's Sea field writes it) */
-    setWind(speed) { scene.change((d) => { d.traits["sailing.sea"].wind.speed = speed; }); return true; },
+    setWind(speed) { scene.change((d) => { d.traits["sailing.weather"].wind.speed = speed; }); return true; },
     /**
      * Sample, every frame for `ms` of the page's clock, where a point on the
      * table is on each view's page, and where the table is in the world.

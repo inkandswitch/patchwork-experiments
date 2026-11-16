@@ -7,7 +7,7 @@ import { createTiming, latch, levelOf, readerFor, tauOf } from "./convert.js";
 import golden from "./test/golden.json";
 const harbour = golden.seas.find((s) => s.name === "Harbour");
 const sloop = golden.seas.find((s) => s.name === "Ship at sea");
-const value = (sea, level = 0) => ({ v: 1, level, components: sea.components, look: { seed: sea.seed } });
+const value = (sea, level = 0) => ({ v: 2, level, components: sea.components, look: { seed: sea.seed } });
 
 // ─── 4×4 column-major matrices, the long way (the check doesn't share convert.js's algebra) ───
 const mul = (A, B) => {
@@ -117,8 +117,8 @@ describe("frames (W5): through a level similarity the reader is the world's wate
   it("no value, another version, or no components: no reader", () => {
     const timing = createTiming(true);
     expect(readerFor(null, null, timing)).toBeNull();
-    expect(readerFor({ ...value(harbour), v: 2 }, null, timing)).toBeNull();
-    expect(readerFor({ v: 1, level: 0 }, null, timing)).toBeNull();
+    expect(readerFor({ ...value(harbour), v: 1 }, null, timing)).toBeNull();
+    expect(readerFor({ v: 2, level: 0 }, null, timing)).toBeNull();
   });
 
   it("the outermost's own reader at level 0 is the evaluator, unwrapped (W1: alone is today)", () => {

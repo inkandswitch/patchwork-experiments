@@ -6,7 +6,10 @@
 
 import { eulerFromQuat, mulQ, quatFromEuler } from "./frames.js";
 
+/** A sea: waves on the water body it's put on (an object trait, `{ seed, scale }`). */
 export const SEA = "sailing.sea";
+/** The weather: a world's wind and sky (a scene trait, `{ wind: { speed, from }, seed? }`). */
+export const WEATHER = "sailing.weather";
 export const SHIP = "sailing.ship";
 export const HELM = "sailing.helm";
 export const SAIL = "sailing.sail";
@@ -29,10 +32,10 @@ export const WINCH = "sailing.winch";
 
 // Other packages' traits that sailing's parts carry, written in the shapes
 // those packages document (sailing imports none of them):
-/** the water package's: this world has water, at `level` (m). Its waves are the sea's (sea.js contributes them). */
+/** the water package's: this object is water, its origin the surface at rest; `{ size? }`, none being open water. A sea goes on it. */
 export const WATER_TRAIT = "water";
-/** Water at the level a sea's waves are about: what a template or the Sloop writes beside a sea. */
-export const newWater = () => ({ level: 0 });
+/** Is this object open water (the water package's trait with no size)? */
+export const isOpenWater = (o) => !!o?.traits?.[WATER_TRAIT] && o.traits[WATER_TRAIT].size == null;
 /** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
 export const SLIDE = "joints.slide";
 /** traversal's exit: an object that leads to another document; the companionway is one, leading nowhere until a scene says where. */

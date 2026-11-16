@@ -18,7 +18,9 @@ function sceneCtx({ sailing }) {
       placed.push(at);
       const hull = ctx.newId("o");
       ctx.change((d) => {
-        if (!d.traits["sailing.sea"]) d.traits["sailing.sea"] = { wind: { speed: 7, from: 45 }, seed: 1, scale: 1 };
+        // (sailing's Sloop brings a Sea and weather only where the scene has no open water)
+        if (!Object.values(d.objects).some((o) => o.traits?.water && !o.traits.water.size)) d.objects[ctx.newId("o")] = { name: "Sea", traits: { water: {}, "sailing.sea": { seed: 1, scale: 1 } } };
+        if (!d.traits["sailing.weather"]) d.traits["sailing.weather"] = { wind: { speed: 7, from: 45 }, seed: 1 };
         d.objects[hull] = { name: "Sloop", parent: null, transform: { position: [...at.world.position], rotation: [...at.world.rotation], scale: 1 }, traits: { "sailing.ship": {} } };
         const mast = ctx.newId("o");
         d.objects[mast] = { name: "Mast", parent: hull };
@@ -60,15 +62,20 @@ function sceneCtx({ sailing }) {
 }
 
 describe("the Cadboro Bay template's layout", () => {
-  it("puts the terrain at the origin, locked; a sea with the summer breeze; a home view from the club; play", async () => {
+  it("puts the terrain at the origin, locked; the summer breeze; the bay's Sea at the chart's y = 0; a home view from the club; play", async () => {
     const { ctx, scene } = sceneCtx({ sailing: true });
-    const { terrain } = await layOut(ctx, "automerge:terrain", { seed: 7 });
+    const { terrain, sea } = await layOut(ctx, "automerge:terrain", { seed: 7 });
     const d = scene.doc();
     expect(d.objects[terrain]).toMatchObject({ sourceUrl: "automerge:terrain", providerId: "terrain-mesh", locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     // its About is the Terrain doc (sources, licences), and its data's credit shows in the view
     expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {} } });
-    expect(d.traits["sailing.sea"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7, scale: WIND.scale });
-    expect(d.traits.water).toEqual({ level: 0 });
+    expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
+    expect(d.traits["sailing.sea"]).toBeUndefined();
+    expect(d.traits.water).toBeUndefined();
+    expect(d.objects[sea]).toMatchObject({ name: "Sea", sourceUrl: null, providerId: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
+    expect(d.objects[sea].traits).toEqual({ water: {}, "sailing.sea": { seed: 7, scale: WIND.scale } });
+    // one open water: the sloop brought none of her own
+    expect(Object.values(d.objects).filter((o) => o.traits?.water)).toHaveLength(1);
     expect(d.view.start).toEqual({ home: { position: [...HOME.position], target: [...HOME.target] } });
     for (const k of ["activity", "home", "tool"]) expect(k in d.view).toBe(false);
     expect(d.title).toBe("Cadboro Bay");
@@ -87,15 +94,16 @@ describe("the Cadboro Bay template's layout", () => {
     expect(station("sailing.anchor")).toEqual({ down: true, rode: RODE });
     // every station the layout sets, and nothing else of the sloop's
     expect(Object.keys(AT_ANCHOR).sort()).toEqual(["sailing.anchor", "sailing.jib", "sailing.sail"]);
-    // its own sea, not the part's default
-    expect(d.traits["sailing.sea"].wind.from).toBe(WIND.from);
+    // its own weather, not the part's default
+    expect(d.traits["sailing.weather"].wind.from).toBe(WIND.from);
   });
 
   it("without sailing, is the place alone", async () => {
     const { ctx, scene } = sceneCtx({ sailing: false });
-    const { terrain, hull } = await layOut(ctx, "automerge:terrain");
+    const { terrain, sea, hull } = await layOut(ctx, "automerge:terrain");
     expect(hull).toBeNull();
-    expect(Object.keys(scene.doc().objects)).toEqual([terrain]);
+    // the place and its water
+    expect(Object.keys(scene.doc().objects).sort()).toEqual([terrain, sea].sort());
   });
 
   it("head to wind: a bow (−Z) turned by headTo(from) points at the bearing the wind comes from", () => {

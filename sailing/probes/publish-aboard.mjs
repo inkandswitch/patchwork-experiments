@@ -149,9 +149,13 @@ try {
   const snap = await P("snapshot()");
   const strays = [snap.scene, snap.game].flatMap((u) => {
     const assets = new Set(Object.values(snap.docs[u].assets ?? {}).map((a) => a.url));
-    return Object.entries(snap.docs[u].objects).filter(([, o]) => o.kind !== "group" && o.providerId !== "scene.link" && !assets.has(o.sourceUrl)).map(([id]) => `${u === snap.game ? "game" : "boat"}:${id}`);
+    // (an object with no source, the Sea, is its trait's data: water draws it)
+    return Object.entries(snap.docs[u].objects).filter(([, o]) => o.kind !== "group" && o.providerId !== "scene.link" && o.sourceUrl != null && !assets.has(o.sourceUrl)).map(([id]) => `${u === snap.game ? "game" : "boat"}:${id}`);
   });
-  check("every object shows one of its own doc's files (the link shows the game)", strays.length === 0, strays);
+  check("every object shows one of its own doc's files (the link shows the game; the Sea has no source)", strays.length === 0, strays);
+  const boatDoc = snap.docs[snap.scene];
+  const seas = Object.values(boatDoc.objects).filter((o) => o.traits?.water);
+  check("the boat has one Sea (open water with a sea on it) and the weather, as the template writes them (WATER.md, \"Water bodies\")", seas.length === 1 && !seas[0].traits.water.size && !!seas[0].traits["sailing.sea"] && !!boatDoc.traits?.["sailing.weather"] && !boatDoc.traits?.["sailing.sea"] && !boatDoc.traits?.water, { seas, traits: Object.keys(boatDoc.traits ?? {}) });
   snapshot = snap;
   await P("openB()");
   check("B arrives watching from a seat (view.start)", await until("bodyLabel('b') === 'Watching' && __p.picker('a') === 3 && __p.picker('b') === 3", 30_000));

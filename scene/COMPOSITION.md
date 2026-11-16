@@ -81,8 +81,19 @@ pieces, each published and checked in the real Patchwork:
   evaluates the world's water. The *Harbour*
   (automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE) links Lost Cities aboard and
   Fitting out, both at anchor on its one sea. It rests on Decision 1's
-  amended sentence, which the lead hasn't said yes to; it was merged and
-  published anyway (Decisions, final fixer after the next phase, 1).
+  amended sentence, which the lead accepted on 2026-11-15.
+- **Water bodies** (WATER.md, "Water bodies", built in `lane/water`): water
+  is an object whose extent says whether it is weather (open, the
+  outermost's) or a thing (a box its doc keeps wherever it is placed); the
+  sea and a current are behaviours put on it, and the weather is a scene
+  trait. The Model basin, a sloop in a box of water, floats in a dry room
+  beside Ship at sea. The lead's yes to "should an inner world keep its own
+  water?" is delivered only for water authored as a box: Ship at sea, the
+  case the question was asked about, still rests in a dry room, and the
+  choice that would change it is open (below). One stage correction
+  (arriving doesn't wait for objects with nothing to load, WATER.md
+  Decision 73) and one removal (the trait-level `needs`, which this left
+  with no consumer, Decision 77).
 - **A machine in a scene** (machine/HOST.md, phase 2b): the published Doom
   and SNES machine docs stand in a scene as cabinets, linked, with a
   screen, sound, a seat per port and Doom's world beside them, and no stage
@@ -91,11 +102,6 @@ pieces, each published and checked in the real Patchwork:
 
 Still open:
 - out of focus isn't tinted;
-- in Edit, as in Look, a click on sky or sea with nothing selected reaches
-  no boat: sailing's ships no longer hold the scene, so a click on nothing
-  boards nobody; her hull, Enter and the HUD's button do (WATER Decisions
-  30). Whether that is right for Ship at sea's first interaction is the
-  lead's call (WATER "Open for the lead");
 - the first click of a double-click on a link selects it, and if the
   inspector was shut that opens it and narrows the canvas under the second
   click, which can then miss a small link (seen in the real Patchwork on
@@ -106,7 +112,11 @@ Still open:
   remaining fix is opening the inspector a beat after a click that may
   become a double-click;
 - a doc's packages list grows as parts are added and isn't pruned when
-  they go.
+  they go;
+- whether a boat linked into a dry room keeps her own open sea: the path
+  rule (each ambient name the outermost offer on the stage's own path)
+  against water kept only as a box, as built (WATER.md, "Open for the
+  lead").
 
 - a mirror trails its acting placement while a part moves (about 4 cm on
   Fitting out's hatch; equal at rest): it plays the acting stage's held pose
@@ -277,7 +287,9 @@ many things it holds: its atmosphere, its water. Each stage offers some
 frozen plain JSON, and every stage in the view reads the outermost's with
 `api.ambient(name)` and its own code. A linked world brings its things, not
 its weather: a boat alone has her sea; linked into a harbour, she floats on
-the harbour's; in a dry room she has none. Inner docs' spawns serve arrivals (section 9).
+the harbour's; in a dry room she has none of the world's; water she holds as
+a thing (a basin, a tank, a box with bounds), she keeps
+([water/WATER.md](../water/WATER.md), "Water bodies"). Inner docs' spawns serve arrivals (section 9).
 
 **Presence where it is.** What a doc's people are doing (someone walking,
 someone's selection) is that doc's, so it is drawn where the doc is, in
@@ -350,8 +362,8 @@ walker in a linked level stands on the host's floor.
 
 **The view answers space; no doc's code runs for another.** Rays, hits, the
 ground and published frames (section 9) cross a doc boundary because the
-view computes them. A world's ambients and its world time do too (proposed,
-Decision 1), as plain data its outermost doc offers; each stage reads them
+view computes them. A world's ambients and its world time do too (Decision
+1), as plain data its outermost doc offers; each stage reads them
 with its own code (the water package evaluates the outermost's water in
 each stage's frame and time).
 
@@ -634,7 +646,7 @@ which is why section 9 keeps traversal a `url`.
 ## Worked examples
 
 **1. Lost Cities aboard a moving ship.** Boat doc B: the hull, stations, the
-card table, `sailing.sea`, and a link to game doc G on the table top,
+card table, a Sea (a water object with `sailing.sea` on it), and a link to game doc G on the table top,
 locked. G: 60 cards bound to the deck container, piles, two trays, seats p1
 and p2 in G's root frame, its own title, `scene.carry` on its cards, its
 art and packages.
@@ -1092,8 +1104,8 @@ ships alone and proves something.
 - **Act on a mirror or play a pin**, or give one live doc state per
   placement. Live is shared; copy to differ.
 - **Run another doc's code for you.** Space crosses, and the world's
-  ambients and world time cross as data (proposed, Decision 1); no doc's
-  code runs for another.
+  ambients and world time cross as data (Decision 1); no doc's code runs
+  for another.
 - **Read a doc's own statement of where it is** (IFC's georeference). The
   host places it.
 
@@ -1120,15 +1132,12 @@ The five open questions were put to the project lead and answered:
 
 1. **A host never reads into what it contains.** Accepted. The only
    couplings across a link are space and published frames.
-   *Proposed 2026-11-14, pending the lead's explicit yes
-   ([water/WATER.md](../water/WATER.md), Decisions 1, 14 and 39):* "...space,
+   *Amended 2026-11-14, accepted by the lead on 2026-11-15 ("that's fine";
+   [water/WATER.md](../water/WATER.md), Decisions 1, 39 and 43):* "...space,
    published frames, and the outermost doc's ambients and world time, as
-   data." Nothing from a contained doc reaches its host under the proposal,
-   so the first sentence would hold as written. The accepted sentence is
-   still the decision on record, but the amended one is what runs: it was
-   merged into `scene-stage` (f2ac0784) and the sea examples were
-   republished on it before the lead said yes. A no means reverting that
-   (WATER Decisions 39 says what it costs).
+   data." Nothing from a contained doc reaches its host, so the first
+   sentence holds as written. Water a doc keeps as a thing (bounded water)
+   crosses no link at all (WATER Decision 47).
 2. **One activity per view, and edit stops at the focus.** Accepted for now;
    an activity per stage stays possible later. **Superseded by
    [TOOLS.md](TOOLS.md)**, whose decisions the project lead made on

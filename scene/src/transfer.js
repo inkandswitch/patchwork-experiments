@@ -28,9 +28,10 @@
 //     scene has that entry; a `copy: "drop"` field is left behind;
 //   - where it lands, it rests on its base unless it snaps to a connector
 //     (the payload's `lift`).
-// A copied object whose trait `describes` says it `needs` a scene trait this
-// scene lacks (a ship needs a sea) is copied all the same, with a notice
-// naming what to add. Nothing adds scene traits behind anyone's back.
+// A copied object whose trait has an `entry` field naming a scene trait this
+// scene lacks (a private zone's seat, and no seats) is copied all the same,
+// with a notice naming what to add. Nothing adds scene traits behind anyone's
+// back.
 
 import { ROW_MIME, parseAutomergeUrl } from "./dnd.js";
 import { isGroup, resolveGroups } from "./groups.js";
@@ -353,26 +354,7 @@ const article = (s) => (/^[aeiou]/i.test(String(s)) ? "an" : "a");
 /** "a sea", "an anchor", "seats" (a plural takes none). */
 const some = (s) => (/[^s]s$/i.test(String(s)) ? lower(s) : `${article(s)} ${lower(s)}`);
 
-/**
- * The scene traits copied objects need that this scene lacks, from
- * `describes[key].needs` (scene trait keys): [{ trait, name, need, needName }],
- * one per missing need. Pure.
- */
-export function missingNeeds(describes, traitKeys, sceneTraits) {
-  const out = [];
-  const seen = new Set();
-  for (const k of traitKeys ?? []) {
-    const d = describes?.get?.(k);
-    for (const need of strings(d?.needs)) {
-      if (seen.has(need) || (sceneTraits && sceneTraits[need] !== undefined && sceneTraits[need] !== null)) continue;
-      seen.add(need);
-      out.push({ trait: k, name: String(d?.name ?? k), need, needName: String(describes.get(need)?.name ?? need) });
-    }
-  }
-  return out;
-}
-
-/** "This ship needs a sea: add Sea to the scene." */
+/** "This private zone needs seats: add Seats to the scene." */
 export const needsText = ({ name, needName }) => `This ${lower(name)} needs ${some(needName)}: add ${needName} to the scene.`;
 /** "This private zone's seat isn't one of this scene's seats: choose one in the inspector." */
 export const entryText = ({ name, label, ofName }) => `This ${lower(name)}'s ${lower(label)} isn't one of this scene's ${lower(ofName)}: choose one in the inspector.`;
@@ -754,12 +736,9 @@ async function copyInto(api, payload, target, edit) {
   }
 
   for (const f of failed) api.notify(`Couldn't copy ${f}`, "error");
-  const traitKeys = plan.items.filter((it) => made.has(it.from)).flatMap((it) => Object.keys(it.data.traits ?? {}));
-  const needs = missingNeeds(describes, traitKeys, api.doc()?.traits);
-  for (const n of needs) api.notify(needsText(n), "warn");
-  // a field naming an entry of a scene trait: the trait is missing (a need,
-  // as above), or it's here without that entry
-  const told = new Set(needs.map((n) => n.need));
+  // a field naming an entry of a scene trait: the trait is missing, or it's
+  // here without that entry
+  const told = new Set();
   const nameOf = (k) => String(describes.get(k)?.name ?? k);
   for (const [from, f] of fixes) {
     if (!made.has(from)) continue;

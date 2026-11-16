@@ -1,6 +1,6 @@
 // scene.transfer: a row from another scene dropped in the view is copied in
 // where it lands (with what's under it, its files shared, its render docs its
-// own, its runtime state left behind, a notice for a scene trait it needs);
+// own, its runtime state left behind, no scene trait added for it);
 // this scene's own rows dropped in the view do nothing; Copy and Paste.
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
@@ -11,7 +11,8 @@ import menuPart from "./menu.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
 import { composeMatrix, multiplyMatrices } from "../transform.js";
 
-// what a ship's extension says about its traits: a ship's motion is runtime; a ship needs a sea
+// what a ship's extension says about its traits: a ship's motion is runtime. (`needs` is
+// no key of the stage's any more, so a copy says nothing of it: STAGE.md "Copying objects")
 const SHIP = {
   meta: {
     id: "t.ship",
@@ -147,18 +148,17 @@ describe("a row from another scene, dropped in the view", () => {
     // the source is untouched
     expect(other.doc().objects.mast.claims).toBeTruthy();
     expect(Object.keys(other.doc().objects)).toHaveLength(4);
-    // what it made is selected; a ship here without a sea is told so
+    // what it made is selected; the source scene's traits stay there, and nothing asks for them
     expect(s.local.get().selected).toBe(mast.id);
-    expect(notices()).toContain("warn: This ship needs a sea: add Sea to the scene.");
+    expect(notices().filter((n) => n.includes("needs"))).toEqual([]);
     expect(s.doc().traits["t.sea"]).toBeUndefined();
   });
 
-  it("no notice when the scene has what it needs; an asset key this scene has is left alone", async () => {
+  it("an asset key this scene has is left alone", async () => {
     const { other } = await setup({ sea: true });
     s.change((d) => (d.assets["t/mast@1"] = { url: "automerge:4k9knn3DsFnFYDFvXkyMu4UHyp7u" }));
     await drop(rowPayload(other.url, ["mast"]), { x: 50 });
     expect(byName("Mast")).toBeTruthy();
-    expect(notices().filter((n) => n.includes("needs"))).toEqual([]);
     expect(s.doc().assets["t/mast@1"].url).toBe("automerge:4k9knn3DsFnFYDFvXkyMu4UHyp7u");
   });
 

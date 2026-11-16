@@ -478,3 +478,133 @@ describe("createSim on a stage", () => {
     expect(w.holds.get(ids.wheel)?.session).not.toBe("A");
   });
 });
+
+describe("one body per hull per step (W25): env.water is the water package's at(her origin, { not: her })", () => {
+  let w;
+  afterEach(() => w?.done());
+  // flat water at a level, as a reader (the water package's shape)
+  const flatAt = (level, body = null) => ({
+    body,
+    level,
+    components: [],
+    heightAt: () => level,
+    sampleAt: (x, z, t, out = [0, 0, 1, 0]) => ((out[0] = level), (out[1] = 0), (out[2] = 1), (out[3] = 0), out),
+    normalAt: (x, z, t, out = [0, 1, 0]) => ((out[0] = 0), (out[1] = 1), (out[2] = 0), out),
+    velocityAt: (x, y, z, t, out = [0, 0, 0]) => ((out[0] = out[1] = out[2] = 0), out),
+    displaced: (x, z, t, out = [0, 0, 0, 1]) => ((out[0] = x), (out[1] = level), (out[2] = z), (out[3] = 1), out),
+    stats: { hs: 0, peakPeriod: 0, peakWavelength: 0, whitecaps: 0 },
+  });
+  const OPEN = flatAt(0);
+  const POND = flatAt(1.5, "pond");
+  const BASIN = flatAt(0.5, "basin");
+  const TANK = flatAt(-0.4, "tank");
+  // each case: what at(p, { not }) answers; `hull` is her id. The pond's edge runs along x = 0 in her frame of the world
+  const CASES = {
+    "in open water": () => OPEN,
+    "in a pond": () => POND,
+    "astride the pond's edge, her origin inside": (p) => (p[0] >= -1e3 ? POND : OPEN),
+    "astride the pond's edge, her origin outside": (p) => (p[0] >= 1e3 ? POND : OPEN),
+    "in a dry room": () => null,
+    "in a dry room, in a basin of her own": () => BASIN,
+    "with a tank aboard, in open water": (p, not, hull) => (not === hull ? OPEN : TANK),
+    "with a flooded hold attached under her, in a dry room": (p, not, hull) => (not === hull ? null : TANK),
+  };
+  const run = async (answer) => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const api = w.join("A");
+    const asked = [];
+    const collect = api.collect;
+    api.collect = (name) => (name === "water" ? [{ id: "water", value: { at: (p, o) => (asked.push({ p: [...p], not: o?.not ?? null }), answer(p, o?.not ?? null, ids.hull)) } }] : collect(name));
+    play(api);
+    w.tick(1 / 60, 8 * 60);
+    const out = { asked, held: heldAt(w, ids.hull) ?? null, hull: ids.hull, doc: structuredClone(doc.objects[ids.hull].transform) };
+    w.done();
+    w = null;
+    return out;
+  };
+  for (const [label, answer] of Object.entries(CASES))
+    it(label, async () => {
+      const base = await run(CASES["in open water"]);
+      const r = await run(answer);
+      // asked once a step about her, with her left out, at a finite point (the floats and swimmers ask for themselves)
+      const hers = r.asked.filter((a) => a.not === r.hull);
+      expect(hers.length).toBeGreaterThanOrEqual(470);
+      expect(hers.length).toBeLessThanOrEqual(490);
+      for (const a of hers) expect(a.p.every(Number.isFinite)).toBe(true);
+      const got = answer([0, 0, 0], r.hull, r.hull);
+      if (!got) {
+        // no water: she isn't stepped, and rests where the doc has her
+        expect(r.held).toBeNull();
+      } else {
+        // she floats on the water she was given: her draft off its level is her draft in open water
+        expect(r.held.position[1] - got.level).toBeCloseTo(base.held.position[1], 1);
+      }
+    });
+
+  // water that goes from under her partway (she leaves a pond's footprint, a link tilts): which steps answer none
+  const GOES = {
+    "leaves the water and stays out": (n) => n > 360,
+    "leaves the water and comes back to it": (n) => n > 360 && n <= 480,
+    "never leaves it (and is put down out of it, below)": () => false,
+  };
+  const partway = async (gone, { putDown = false } = {}) => {
+    const { doc, ids, content } = await sloop();
+    w = fakeWorld(doc, { content });
+    const api = w.join("A");
+    let n = 0;
+    let dry = false;
+    const collect = api.collect;
+    api.collect = (name) =>
+      name === "water" ? [{ id: "water", value: { at: (p, o) => (o?.not === ids.hull && n++, dry || (o?.not === ids.hull && gone(n)) ? null : OPEN) } }] : collect(name);
+    const a = play(api);
+    const start = structuredClone(doc.objects[ids.hull].transform.position);
+    w.tick(1 / 60, 6 * 60); // under way: 360 steps
+    const left = heldAt(w, ids.hull).position;
+    const speed = a.sim.read(ids.hull).speed;
+    let put = null;
+    if (putDown) {
+      dry = true;
+      put = { position: [40, 2, -30], rotation: [0, 0, 0], scale: 1 };
+      w.change((d) => Object.assign(d.objects[ids.hull].transform, put));
+    }
+    const out = { left, speed, start, put, samples: [] };
+    for (let i = 0; i < 4; i++) {
+      w.tick(1 / 60, 60);
+      out.samples.push(heldAt(w, ids.hull)?.position ?? null);
+    }
+    out.doc = structuredClone(doc.objects[ids.hull].transform.position);
+    w.done();
+    w = null;
+    return out;
+  };
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+  it("she leaves the water and stays out: held still where she left it, never put back at a checkpoint", async () => {
+    const r = await partway(GOES["leaves the water and stays out"]);
+    expect(r.speed).toBeGreaterThan(0.5);
+    expect(dist(r.left, r.start)).toBeGreaterThan(1); // she had gone somewhere: her last checkpoint is behind her
+    for (const at of r.samples) {
+      expect(at).not.toBeNull();
+      // where she left the water, give or take the one step after the frame drawn before
+      expect(dist(at, r.left)).toBeLessThan(2 * r.speed / 60 + 0.01);
+      expect(dist(at, r.samples[0])).toBeLessThan(1e-9);
+    }
+  });
+
+  it("she leaves the water and comes back to it: she goes on from where she was held", async () => {
+    const r = await partway(GOES["leaves the water and comes back to it"]);
+    const [out, back1, back2] = r.samples; // 1 s out (steps 361..420), then back from step 481
+    expect(dist(out, r.left)).toBeLessThan(2 * r.speed / 60 + 0.01);
+    // back on the water at step 481 she starts still from where she stopped, not from the doc's pose
+    expect(dist(back1, r.left)).toBeLessThan(dist(back1, r.start));
+    expect(dist(back2, back1)).toBeGreaterThan(0);
+    expect(dist(back2, r.left)).toBeLessThan(dist(r.left, r.start));
+  });
+
+  it("she is put down out of the water: nothing of ours holds her, and she rests where the doc has her", async () => {
+    const r = await partway(GOES["never leaves it (and is put down out of it, below)"], { putDown: true });
+    for (const at of r.samples.slice(1)) expect(at).toBeNull();
+    expect(r.doc).toEqual(r.put.position);
+  });
+});

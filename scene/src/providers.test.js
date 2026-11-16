@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CONTENT_KINDS, contentOf, describeSource, extensionOf, matchProviders, normalizeExtension, providerMatches, routeOf } from "./providers.js";
+import { CONTENT_KINDS, contentOf, describeSource, extensionOf, matchProviders, normalizeExtension, providerMatches, routeOf, showsContent } from "./providers.js";
 
 const stl = { id: "file-stl", supportedDatatypes: ["file"], extensions: ["stl"], content: "built" };
 const glb = { id: "file-glb", supportedDatatypes: ["file"], extensions: ["glb"], content: "file" };
@@ -93,5 +93,22 @@ describe("content kinds (COMPOSITION.md §1)", () => {
       // and a built one still routes when its provider isn't here: the manager shows what was built
       if (kind === "built") expect(routeOf(made, () => null)).toBe("built");
     }
+  });
+});
+
+describe("showsContent: what arriving waits to load", () => {
+  it("a source or a render shows content; an object with neither (its shape its traits' data) and a group show none", () => {
+    const cases = [
+      [{ sourceUrl: "automerge:a", providerId: "file-glb" }, true],
+      [{ sourceUrl: "automerge:a", providerId: "scene.link" }, true],
+      [{ sourceUrl: "automerge:a", providerId: "nobody-installed" }, true],
+      [{ sourceUrl: null, renderUrl: "automerge:r" }, true],
+      [{ sourceUrl: null, providerId: null, renderUrl: null, traits: { "t.box": { size: [1, 1, 1] } } }, false],
+      [{ name: "bare" }, false],
+      [{ sourceUrl: "", renderUrl: "" }, false],
+      [{ kind: "group", sourceUrl: "automerge:a" }, false],
+      [null, false],
+    ];
+    for (const [o, want] of cases) expect([o, showsContent(o)]).toEqual([o, want]);
   });
 });

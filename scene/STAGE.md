@@ -573,9 +573,9 @@ view's side is `scene.transfer`, editing only).
     extract and bundle (COMPOSITION.md §8) go through the same
     `copyRefs`, and the objects left in a doc when something leaves it
     through the same rewriter (`refEdits`).
-  - **What a trait needs.** When a copied trait's description `needs` a scene
-    trait this scene lacks, a notice says so ("This ship needs a sea: add Sea
-    to the scene."). Nothing adds a scene trait for you.
+  - **A missing scene trait.** When a copied trait's `entry` field names a
+    scene trait this scene lacks, a notice says so ("This private zone needs
+    seats: add Seats to the scene."). Nothing adds a scene trait for you.
   - The first copied root is selected.
 
 **Extract and bundle** (COMPOSITION.md §8; `src/extract.js`; the view's side
@@ -662,8 +662,6 @@ describes: {
   or keep the state so its own reset can.)
 - A field spec's `copy: "drop"`: a copy leaves that field behind (see
   "Copying objects", "References in traits").
-- `needs`: scene trait keys an object with this trait doesn't work without
-  (a ship's `["sailing.sea"]`). Copying it into a scene without one says so.
 - `init`: what a new trait starts as, before its fields' defaults are
   filled in. Keys nothing describes (a target's `down`, play state) are never
   shown and never touched.
@@ -1832,13 +1830,15 @@ ambient() → { atmosphere: null | {
   biases are a texel or so in metres. The map is redrawn only when something
   moves or the frame does.
 
-**Water** (the ambient `water` and the contribution `water.waves`;
-provided by the `water` package). Whether a world has water, and its waves,
-as data whatever floats reads in its own frame and time. Its value, its
-reader and who draws it are the package's to document:
-[water/WATER.md](../water/WATER.md), "The water package".
+**Water** (the object trait `water`, the ambient `water`, the contributions
+`water` and `water.waves`; provided by the `water` package). Water is an
+object: open (no size) or a box (a size). The ambient is the world's open
+water, the outermost doc's; bounded water is its own doc's, read only by
+that doc's parts wherever it is placed, and never offered. Its values, its
+reader and who draws what are the package's to document:
+[water/WATER.md](../water/WATER.md), "Water bodies".
 
-**Wind** (the ambient `wind`; offered by sailing's sea). How the world's
+**Wind** (the ambient `wind`; offered by sailing's weather). How the world's
 air moves, read by sailing's physics and the water package's surface. Its
 value and compass convention are sailing's to document:
 [sailing/DESIGN.md](../sailing/DESIGN.md), "Conventions".

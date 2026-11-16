@@ -13,7 +13,6 @@ import {
   fromScene,
   hintBoxOf,
   liftOf,
-  missingNeeds,
   moveBy,
   needsText,
   planCopy,
@@ -108,15 +107,6 @@ describe("what's copied", () => {
     // a fresh copy: the source is untouched
     expect(o.traits["t.ship"].motion).toBeTruthy();
     expect(o.claims).toBeTruthy();
-  });
-
-  it("missingNeeds: a scene trait a copied trait needs and the scene lacks, said once, by name", () => {
-    const describes = describesOf([{ describes: { "t.ship": { name: "Ship", needs: ["t.sea"] }, "t.float": { name: "Float", needs: ["t.sea"] }, "t.sea": { name: "Sea", on: "scene" }, "t.helm": { name: "Helm", needs: ["t.arena"] } } }]);
-    const missing = missingNeeds(describes, ["t.ship", "t.float", "t.helm"], {});
-    expect(missing.map((n) => n.need)).toEqual(["t.sea", "t.arena"]);
-    expect(needsText(missing[0])).toBe("This ship needs a sea: add Sea to the scene.");
-    expect(needsText(missing[1])).toBe("This helm needs a t.arena: add t.arena to the scene.");
-    expect(missingNeeds(describes, ["t.ship"], { "t.sea": {} })).toEqual([]);
   });
 
   it("assetsFor: the source scene's entries naming copied files, unless this scene has the key", () => {
@@ -299,7 +289,7 @@ describe("references in traits", () => {
 
   it("the notices: a missing scene trait by its name (no article for a plural), a missing entry", () => {
     expect(needsText({ name: "Private zone", needName: "Seats" })).toBe("This private zone needs seats: add Seats to the scene.");
-    expect(needsText({ name: "Ship", needName: "Sea" })).toBe("This ship needs a sea: add Sea to the scene.");
+    expect(needsText({ name: "Lever", needName: "Arena" })).toBe("This lever needs an arena: add Arena to the scene.");
     expect(entryText({ name: "Private zone", label: "Seat", ofName: "Seats" })).toBe("This private zone's seat isn't one of this scene's seats: choose one in the inspector.");
   });
 });

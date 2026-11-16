@@ -20,15 +20,87 @@
 // metadata does, so the carry snaps it to the same stand the bin does.
 
 import { FIT, HATCH_SPEED, HATCH_TRAVEL, LIFT, STAND, TAGS, jibFit, partGLB, winchTrait } from "./ship.js";
-import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WATER_TRAIT, WINCH, newWater } from "./traits.js";
+import { ANCHOR, EXIT, FLOAT, HELM, HOOK, JIB, LADDER, MAINSHEET, SAIL, SEA, SHIP, SLIDE, WATER_TRAIT, WEATHER, WINCH, isOpenWater } from "./traits.js";
 import { frameMatrix, frameOf, placeIn } from "./body.js";
 import { apply, eulerFromQuat, invert, matrixOf, mulQ, poseOfMatrix, quatFromEuler, rotateQ, headingOf } from "./frames.js";
 
-/** The wind a new sea starts with: a working breeze from the north-east (speed m/s, from degrees). */
+/** The wind new weather starts with: a working breeze from the north-east (speed m/s, from degrees). */
 export const WIND = Object.freeze({ speed: 7, from: 45 });
 
-/** A new sea: the trait a ship brings when the scene has none. */
-export const newSea = ({ wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) => ({ wind: { speed: wind.speed, from: wind.from }, seed, scale: 1 });
+/** A new sea: the behaviour on a water body, `{ seed, scale }`. */
+export const newSea = ({ seed = Math.floor(Math.random() * 1e9), scale = 1 } = {}) => ({ seed, scale });
+/** New weather: the world's wind and the seed of its gusts. */
+export const newWeather = ({ wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) => ({ wind: { speed: wind.speed, from: wind.from }, seed });
+
+/**
+ * A Sea: open water (the water package's object trait, no size) with a sea
+ * on it, an object with no source at the origin, its origin the surface at
+ * rest. What a template, the Sea part and the Sloop write.
+ */
+export function seaObject({ seed, scale = 1, level = 0, name = "Sea" } = {}) {
+  return {
+    name,
+    sourceUrl: null,
+    providerId: null,
+    renderUrl: null,
+    parent: null,
+    group: null,
+    visible: true,
+    color: null,
+    opacity: 1,
+    wireframe: false,
+    locked: false,
+    transform: { position: [0, level, 0], rotation: [0, 0, 0], scale: 1 },
+    traits: { [WATER_TRAIT]: {}, [SEA]: newSea({ seed, scale }) },
+  };
+}
+
+/** Does a doc have open water (an object with the water trait and no size)? */
+export const hasOpenWater = (d) => Object.values(d?.objects ?? {}).some(isOpenWater);
+
+/** A doc's open body: the one that counts, the lowest id of its open water objects (the water package's one-open rule), or null. */
+export function openBody(d) {
+  const ids = Object.keys(d?.objects ?? {}).filter((id) => isOpenWater(d.objects[id]));
+  return ids.length ? ids.sort()[0] : null;
+}
+
+/**
+ * Give a doc a Sea and the weather where it has no open water (one seed for
+ * both, so its waves and gusts come from one number), first in its order.
+ * A doc with open water is left as it is, weather and all (Decision 68).
+ * Writes into `d`; returns the Sea's id, or null when it had open water.
+ */
+export function bringSea(d, newId, { wind = WIND, seed = Math.floor(Math.random() * 1e9) } = {}) {
+  if (hasOpenWater(d)) return null;
+  if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather({ wind, seed });
+  const id = newId("o");
+  d.objects[id] = seaObject({ seed });
+  d.order.unshift(id);
+  return id;
+}
+
+/**
+ * Put a sea on a doc (the Sea part): on its open body when it has one with
+ * no sea yet, else on a new Sea first in its order; with the weather where
+ * the doc has none. A doc whose open body has a sea already is left as it
+ * is: a second open body would be flagged and do nothing. Writes into `d`;
+ * `{ id }` the water the sea is on, or `{ id: null, had }` the open body
+ * that has one.
+ */
+export function addSea(d, newId) {
+  const open = openBody(d);
+  if (open && d.objects[open].traits[SEA]) return { id: null, had: open };
+  if (!d.traits[WEATHER]) d.traits[WEATHER] = newWeather();
+  const seed = d.traits[WEATHER].seed ?? Math.floor(Math.random() * 1e9);
+  if (open) {
+    d.objects[open].traits[SEA] = newSea({ seed });
+    return { id: open };
+  }
+  const id = newId("o");
+  d.objects[id] = seaObject({ seed });
+  d.order.unshift(id);
+  return { id };
+}
 
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const tidy = (v) => v.map((x) => Math.round(x * 1e9) / 1e9 + 0);
@@ -282,7 +354,7 @@ export async function sloopFiles(ctx) {
 /**
  * The sloop as a part: on the water where she's put (at the scene's root,
  * where a ship sails), her bow the way the bin faced her, at rest with her
- * sail up. A ship brings her sea: a scene without one gets one, and water for it.
+ * sail up. A scene with no open water gets a Sea and the weather with her.
  */
 export const sloop = {
   async create(ctx, at) {
@@ -291,11 +363,25 @@ export const sloop = {
     const world = matrixOf(at.world);
     const objects = sloopObjects({ position: [world[12], 0, world[14]], yaw: headingOf(world) }, files, ctx.newId);
     ctx.change((d) => {
-      if (!d.traits[SEA]) d.traits[SEA] = newSea();
-      if (!d.traits[WATER_TRAIT]) d.traits[WATER_TRAIT] = newWater();
+      bringSea(d, ctx.newId);
       writeObjects(d, objects);
     });
     return objects[0][0];
+  },
+};
+
+/**
+ * A Sea as a part: waves on the scene's open water, or open water with waves
+ * on it at the origin's height whatever it was dropped on; and the weather
+ * if the scene has none. Where the open water has a sea already, it says so
+ * and adds nothing.
+ */
+export const sea = {
+  async create(ctx) {
+    let out = null;
+    ctx.change((d) => (out = addSea(d, ctx.newId)));
+    if (out?.had) ctx.notify?.("This scene's water has a sea already.");
+    return out?.id ?? out?.had ?? null;
   },
 };
 

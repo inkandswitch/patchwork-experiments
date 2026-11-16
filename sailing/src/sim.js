@@ -342,12 +342,12 @@ export function published(diag, state) {
 // ─── the stage side ─────────────────────────────────────────────────────────
 
 /**
- * ctx.sim. Reads ctx.sea (ocean, wind) at every step; the doc's clock steps
+ * ctx.sim. Reads ctx.sea (oceanAt per ship, wind) at every step; the doc's clock steps
  * it (api.clock.process); play.js ticks it each frame for what every view
  * does (inputs, following) and, computing, to hold the poses the steps
  * reached.
  * @param {any} api
- * @param {{ sea: { ocean, wind } }} ctx
+ * @param {{ sea: { oceanAt, wind } }} ctx
  */
 export function createSim(api, ctx) {
   let computing = false; // between the process's start and stop
@@ -451,8 +451,8 @@ export function createSim(api, ctx) {
   function step(_dt, t) {
     savedSinceStep = false;
     const sc = api.scene();
-    const env = { water: ctx.sea.ocean, wind: ctx.sea.wind };
-    const ids = env.water ? shipsOf(sc) : []; // no sea, nothing sails
+    const wind = ctx.sea.wind;
+    const ids = shipsOf(sc);
     for (const id of ids) {
       const o = sc.objects[id];
       const doc = plainTransform(o.transform);
@@ -481,7 +481,8 @@ export function createSim(api, ctx) {
         // what her rig's contract can't vouch for, said once per spec
         for (const w of spec.rig?.warnings ?? []) console.warn(`sailing: ${w}`);
       }
-      if (movedByEditor(doc, o.saved, s.seen)) {
+      const moved = movedByEditor(doc, o.saved, s.seen);
+      if (moved) {
         // someone moved it (the halo, the inspector, a carry put down): start again from there, at rest, and drop the anchor again
         const body = toBody({ position: doc.position, quaternion: quatFromEuler(doc.rotation) }, frame, doc.scale);
         s.state = s.model.rest({ position: body.position, yaw: yawOf(body.quaternion), t });
@@ -495,6 +496,19 @@ export function createSim(api, ctx) {
         // move above starts her again at rest where she landed.
         s.state = { ...s.state, t, acc: 0 };
         s.good = s.state;
+        continue;
+      }
+      // the water she is in, asked once a step at her body's origin (her waterline), leaving out what she carries.
+      // None (a dry room, a tilted link, or she has left a pond's footprint): she isn't stepped, and stays where
+      // she is, still. Never stepped, she rests where the doc has her; out of the water partway, she stays where she
+      // left it (not back at her last checkpoint, which may be in the water again: she would loop) and goes on from
+      // there if water comes back under her.
+      const env = { water: ctx.sea.oceanAt(s.state.position, id), wind };
+      if (!env.water) {
+        s.state = { ...s.state, velocity: [0, 0, 0], spin: [0, 0, 0], t, acc: 0 };
+        s.good = s.state;
+        // put down out of the water, she is where the doc has her: nothing of ours to hold
+        if (moved) s.drawn = null;
         continue;
       }
 

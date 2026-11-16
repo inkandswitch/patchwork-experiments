@@ -58,10 +58,10 @@ afterEach(() => {
 describe("reconcile: the list names what the doc calls for and this viewer has", () => {
   const SAILING = fakeUrl();
   const TERRAIN = fakeUrl();
-  const sea = { meta: { id: "sailing.sea", traits: ["sailing.sea"], importUrl: `${SAILING}#${HEAD}` }, module: { create: () => ({}) } };
+  const weather = { meta: { id: "tiny.weather", traits: ["tiny.weather"], importUrl: `${SAILING}#${HEAD}` }, module: { create: () => ({}) } };
 
   it("adds each package once, bare, and then writes nothing more", async () => {
-    const s = await mount({ extensions: [sea], doc: { traits: { "sailing.sea": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"] } });
+    const s = await mount({ extensions: [weather], doc: { traits: { "tiny.weather": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"] } });
     getRegistry("scene:source").register({ type: "scene:source", id: "terrain-mesh", content: "built", load: async () => ({}) }, TERRAIN);
     await settle();
     expect(urls(s).sort()).toEqual([SAILING, TERRAIN].sort());
@@ -79,14 +79,14 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
   });
 
   it("follows the doc: a trait added later names its package then", async () => {
-    const s = await mount({ extensions: [sea] });
+    const s = await mount({ extensions: [weather] });
     await settle();
     expect(urls(s)).toEqual([]);
-    s.change((d) => (d.traits["sailing.sea"] = {}));
+    s.change((d) => (d.traits["tiny.weather"] = {}));
     await settle();
     expect(urls(s)).toEqual([SAILING]);
     // and never removes: the trait going leaves the entry
-    s.change((d) => delete d.traits["sailing.sea"]);
+    s.change((d) => delete d.traits["tiny.weather"]);
     await settle();
     expect(urls(s)).toEqual([SAILING]);
   });
@@ -102,13 +102,13 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
   it("a scene made without the list gets none: nothing is written, nothing made", async () => {
     const repo = new FakeRepo();
     getRegistry("scene:extension"); // (registries are reset by the first mount below)
-    const first = await mount({ extensions: [sea], repo });
-    const bare = repo.add({ "@patchwork": { type: "scene" }, title: "Old", objects: {}, order: [], dimensions: {}, traits: { "sailing.sea": {} }, assets: {}, view: {} });
+    const first = await mount({ extensions: [weather], repo });
+    const bare = repo.add({ "@patchwork": { type: "scene" }, title: "Old", objects: {}, order: [], dimensions: {}, traits: { "tiny.weather": {} }, assets: {}, view: {} });
     let changes = 0;
     bare.on("change", () => changes++);
     const s = await mount({ handle: bare, repo });
     await settle();
-    expect(running(s)).toContain("sailing.sea");
+    expect(running(s)).toContain("tiny.weather");
     expect("packages" in s.doc()).toBe(false);
     expect(changes).toBe(0);
     expect(first.doc().packages).toEqual([]);
@@ -116,12 +116,12 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
 
   it("a view of the scene at a version (read-only) is never written", async () => {
     const repo = new FakeRepo();
-    await mount({ extensions: [sea], repo });
-    const h = repo.add(emptyScene({ title: "T", traits: { "sailing.sea": {} } }));
+    await mount({ extensions: [weather], repo });
+    const h = repo.add(emptyScene({ title: "T", traits: { "tiny.weather": {} } }));
     const view = h.view(h.heads()); // change() on it throws
     const v = await mount({ handle: view, repo });
     await settle();
-    expect(running(v)).toContain("sailing.sea");
+    expect(running(v)).toContain("tiny.weather");
     expect(view.doc().packages).toEqual([]);
     expect(h.doc().packages).toEqual([]);
   });
@@ -144,7 +144,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
   });
 
   it("two views of one scene: the package is listed once", async () => {
-    const one = await mount({ extensions: [sea], doc: { traits: { "sailing.sea": {} } } });
+    const one = await mount({ extensions: [weather], doc: { traits: { "tiny.weather": {} } } });
     const two = await mount({ handle: one.handle, repo: one.repo });
     await settle();
     expect(urls(two)).toEqual([SAILING]);
@@ -209,12 +209,12 @@ describe("loading: the listed packages this viewer doesn't have", () => {
   let repo, SAILING, TERRAIN, started;
   const sailingPackage = () => ({
     plugins: [
-      { type: "scene:extension", id: "sailing.sea", name: "Sea", traits: ["sailing.sea"], load: async () => ({ create: () => (started.push("sailing.sea"), {}) }) },
+      { type: "scene:extension", id: "tiny.weather", name: "Weather", traits: ["tiny.weather"], load: async () => ({ create: () => (started.push("tiny.weather"), {}) }) },
       { type: "scene:part", id: "sailing.buoy", name: "Buoy", load: async () => ({ create: async () => null }) },
     ],
   });
   const terrainPackage = () => ({ plugins: [{ type: "scene:source", id: "terrain-mesh", content: "built", name: "Terrain", supportedDatatypes: ["terrain"], params: [], load: async () => ({ build: async () => null }) }] });
-  const sceneDoc = (extra = {}) => ({ traits: { "sailing.sea": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: SAILING }, { url: TERRAIN }], ...extra });
+  const sceneDoc = (extra = {}) => ({ traits: { "tiny.weather": {} }, objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: SAILING }, { url: TERRAIN }], ...extra });
 
   beforeEach(() => {
     repo = new FakeRepo();
@@ -232,11 +232,11 @@ describe("loading: the listed packages this viewer doesn't have", () => {
   // the stage that asked; a not now quiets both. An extension that isn't
   // general sees its own doc's only.
   describe("every open doc's packages, one prompt", () => {
-    const OWN = { meta: { id: "t.own", traits: ["sailing.sea"] }, module: { create: () => ({}) } };
+    const OWN = { meta: { id: "t.own", traits: ["tiny.weather"] }, module: { create: () => ({}) } };
     const linked = async (extra = []) => {
       const game = repo.add(emptyScene({ title: "G", objects: { a: object({ providerId: "terrain-mesh" }) }, order: ["a"], packages: [{ url: TERRAIN }] }));
       const link = (o) => object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null, ...o });
-      const doc = { traits: { "sailing.sea": {} }, packages: [{ url: SAILING }], objects: { L: link({}), P: link({ at: { heads: game.heads() } }) }, order: ["L", "P"] };
+      const doc = { traits: { "tiny.weather": {} }, packages: [{ url: SAILING }], objects: { L: link({}), P: link({ at: { heads: game.heads() } }) }, order: ["L", "P"] };
       const s = await mount({ extensions: [PROMPT, OWN, ...extra], repo, doc });
       await until(() => s.debug.view.stages().length === 3);
       return { s, game };
@@ -272,7 +272,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
       await until(() => viewAsks(s).length === 2);
       await settle();
       await press(s, "load");
-      await until(() => getRegistry("scene:source").has("terrain-mesh") && running(s).includes("sailing.sea"));
+      await until(() => getRegistry("scene:source").has("terrain-mesh") && running(s).includes("tiny.weather"));
       await settle();
       expect(imported.map((u) => u.split("#")[0]).sort()).toEqual([SAILING, TERRAIN].sort());
       expect(stageAsks(s)).toEqual([[], [], []]);
@@ -334,7 +334,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     ]);
     expect([...card(s).querySelectorAll("[data-action]")].map((b) => b.textContent)).toEqual(["Not now", "Load them"]);
     expect(imported).toEqual([]);
-    expect(running(s)).not.toContain("sailing.sea");
+    expect(running(s)).not.toContain("tiny.weather");
     expect(accepted()).toEqual([]);
   });
 
@@ -344,15 +344,15 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     await settle();
     await press(s, "load");
     // (each folder is loaded once it has gone FOLDER_QUIET_MS without a change)
-    await until(() => running(s).includes("sailing.sea") && state(s).loading.length === 0, 3000);
+    await until(() => running(s).includes("tiny.weather") && state(s).loading.length === 0, 3000);
     await settle();
     // pinned to the folder docs' heads, as the module watcher loads a package
     const heads = async (url) => `${url}#${(await repo.find(url)).heads().join("|")}`;
     expect([...imported].sort()).toEqual([await heads(SAILING), await heads(TERRAIN)].sort());
-    expect(getRegistry("scene:extension").get("sailing.sea").importUrl).toBe(SAILING);
+    expect(getRegistry("scene:extension").get("tiny.weather").importUrl).toBe(SAILING);
     expect(getRegistry("scene:part").get("sailing.buoy").importUrl).toBe(SAILING);
     expect(getRegistry("scene:source").get("terrain-mesh").importUrl).toBe(TERRAIN);
-    expect(started).toEqual(["sailing.sea"]);
+    expect(started).toEqual(["tiny.weather"]);
     expect(state(s)).toEqual({ ask: [], loading: [], failed: [] });
     expect(card(s).hidden).toBe(true);
     expect(accepted().sort()).toEqual([SAILING, TERRAIN].sort());
@@ -374,7 +374,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     sailing.change((d) => (d.title = "@tiny/sailing, newer"));
     await new Promise((r) => setTimeout(r, 150));
     sailing.change((d) => (d.title = "@tiny/sailing, newest"));
-    await until(() => running(s).includes("sailing.sea"), 3000);
+    await until(() => running(s).includes("tiny.weather"), 3000);
     const at = imported.find((u) => u.startsWith(SAILING)).split("#")[1];
     expect(at).toBe(sailing.heads().join("|"));
     expect(at).not.toBe(found);
@@ -392,7 +392,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     expect(state(s).ask).toEqual([]);
     expect(imported).toEqual([]);
     expect(accepted()).toEqual([]);
-    expect(running(s)).not.toContain("sailing.sea");
+    expect(running(s)).not.toContain("tiny.weather");
     // opened again
     const again = await mount({ handle: s.handle, repo });
     await until(() => state(again).ask.length === 2);
@@ -430,7 +430,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
   it("a package accepted before loads without asking; one that wasn't is still asked about", async () => {
     localStorage.setItem(ACCEPTED_KEY, JSON.stringify([SAILING]));
     const s = await mount({ extensions: [PROMPT], repo, doc: sceneDoc() });
-    await until(() => running(s).includes("sailing.sea"), 3000);
+    await until(() => running(s).includes("tiny.weather"), 3000);
     await until(() => state(s).ask.length === 1);
     expect(state(s)).toEqual({ ask: [TERRAIN], loading: [], failed: [] });
     expect(imported.map((u) => u.split("#")[0])).toEqual([SAILING]);
@@ -445,7 +445,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     await settle();
     await press(s, "load");
     await until(() => state(s).failed.length === 1);
-    expect(running(s)).toContain("sailing.sea");
+    expect(running(s)).toContain("tiny.weather");
     expect(s.local.get().packages.failed).toEqual([{ url: TERRAIN, name: "@tiny/terrain", error: "the chunk was missing" }]);
     await settle();
     expect(card(s).querySelector(".packages-title").textContent).toBe("A package this scene uses couldn't be loaded.");
@@ -499,7 +499,7 @@ describe("loading: the listed packages this viewer doesn't have", () => {
     await settle();
     expect([look().missing, state(s).ask]).toEqual([[], []]);
     expect(imported).toEqual([]);
-    expect(running(s)).toContain("sailing.sea");
+    expect(running(s)).toContain("tiny.weather");
   });
 
   it("with nothing arriving, the prompt comes once the registry has been quiet; a remembered package waits as long", async () => {

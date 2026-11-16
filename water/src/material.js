@@ -421,17 +421,60 @@ const DEFAULTS = {
 };
 
 /**
+ * A finite patch over a bounded body's footprint (WATER.md, "Who draws
+ * what"): a w×l grid of cells about `cell` metres, turned by `yaw` about +Y,
+ * its positions offsets from the body's origin in the stage's own axes (so
+ * the shader's waves, which are in the stage's frame, need no turning).
+ * Every triangle faces up.
+ * @returns {{ positions: Float32Array, indices: Uint32Array, nx: number, nz: number }}
+ */
+export function patchGrid(w, l, yaw = 0, cell = 0.5) {
+  const nx = Math.max(1, Math.min(256, Math.ceil(w / cell)));
+  const nz = Math.max(1, Math.min(256, Math.ceil(l / cell)));
+  const positions = new Float32Array((nx + 1) * (nz + 1) * 3);
+  placePatch(positions, w, l, yaw, nx, nz);
+  const indices = new Uint32Array(nx * nz * 6);
+  let k = 0;
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
+      // (x right, z toward the viewer): a, c, b and b, c, d wind counter-clockwise seen from +Y
+      indices.set([a, c, b, b, c, d], k);
+      k += 6;
+    }
+  return { positions, indices, nx, nz };
+}
+
+/** Fill a patch's positions for a size and a yaw (the counts unchanged). */
+function placePatch(positions, w, l, yaw, nx, nz) {
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  let k = 0;
+  for (let j = 0; j <= nz; j++)
+    for (let i = 0; i <= nx; i++) {
+      const u = -w / 2 + (w * i) / nx, v = -l / 2 + (l * j) / nz;
+      positions[k++] = u * c + v * s;
+      positions[k++] = 0;
+      positions[k++] = -u * s + v * c;
+    }
+  return positions;
+}
+
+/**
  * The sea's surface.
  * @param {any} THREE  the stage's three.js (api.THREE)
  * @param {ReturnType<import("./ocean.js").createOcean>} sea
  * @param {{ cell?: number, size?: number, rings?: number, skirt?: number, snapLevel?: number, detail?: number,
  *           sky?: { top?, horizon? }, sun?: { direction?, color?, intensity? } | null,
- *           deep?, scatter?, foam?, foamCoverage?: number }} [opts]
+ *           deep?, scatter?, foam?, foamCoverage?: number, patch?: { w: number, l: number, yaw?: number, cell?: number } }} [opts]
+ *   With `patch`, a finite patch over a bounded body's footprint (patchGrid) instead of the
+ *   grid round the camera: update's second argument is then the body's origin, and setPatch
+ *   turns or resizes it.
  * @returns {{ object: any, update(t: number, cameraPosition: any, sun?: object | null, sky?: object | null): void, setSea(sea: object): void, dispose(): void }}
  */
 export function createOceanSurface(THREE, sea, opts = {}) {
-  const cell = opts.cell ?? 0.5;
-  const grid = oceanGrid({ cell, size: opts.size ?? 64, rings: opts.rings ?? 10, skirt: opts.skirt ?? 60000 });
+  const patch = opts.patch ? { w: opts.patch.w, l: opts.patch.l, yaw: opts.patch.yaw ?? 0 } : null;
+  const cell = patch ? (opts.patch.cell ?? Math.max(0.05, Math.min(0.5, Math.max(patch.w, patch.l) / 64))) : (opts.cell ?? 0.5);
+  const grid = patch ? patchGrid(patch.w, patch.l, patch.yaw, cell) : oceanGrid({ cell, size: opts.size ?? 64, rings: opts.rings ?? 10, skirt: opts.skirt ?? 60000 });
   // the grid moves in steps of this ring's spacing: it and every ring inside
   // it always land on the same world points
   const step = cell * 2 ** (opts.snapLevel ?? 4);
@@ -447,7 +490,8 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uDetail: { value: [] },
     uDetailPhase: { value: [] },
     uCell: { value: cell },
-    uInner: { value: grid.inner },
+    // a patch's spacing is the same everywhere: no rings
+    uInner: { value: patch ? 1e9 : grid.inner },
     uSunDir: { value: new THREE.Vector3(...DEFAULTS.sun.direction).normalize() },
     uSunColor: { value: new THREE.Color(DEFAULTS.sun.color) },
     uSunIntensity: { value: DEFAULTS.sun.intensity },
@@ -475,7 +519,7 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     fog: true,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "ocean";
+  mesh.name = patch ? "water-patch" : "ocean";
   mesh.frustumCulled = false;
   // the walker and physics ask the ocean for water, not the scene graph
   mesh.userData.noPick = true;
@@ -525,10 +569,19 @@ export function createOceanSurface(THREE, sea, opts = {}) {
    * the sun off, undefined keeps what was set.
    */
   function update(t, cameraPosition, sun, sky) {
-    const [ox, , oz] = snapOrigin(cameraPosition, step);
+    let ox, oz;
+    if (patch) {
+      // a patch stands at its body's origin, at its level
+      const p = Array.isArray(cameraPosition) ? cameraPosition : [cameraPosition.x, cameraPosition.y, cameraPosition.z];
+      ox = p[0];
+      oz = p[2];
+      mesh.position.set(p[0], p[1], p[2]);
+    } else {
+      [ox, , oz] = snapOrigin(cameraPosition, step);
+      mesh.position.set(ox, 0, oz);
+    }
     origin[0] = ox;
     origin[2] = oz;
-    mesh.position.set(ox, 0, oz);
     waveUniforms(current.components, origin, t, packed);
     const ph = uniforms.uPhase.value;
     for (let i = 0; i < current.components.length; i++) {
@@ -558,10 +611,27 @@ export function createOceanSurface(THREE, sea, opts = {}) {
   if (opts.sun !== undefined || opts.sky) update(0, [0, 0, 0], opts.sun, opts.sky);
   else update(0, [0, 0, 0]);
 
+  /** A patch turned or resized: its positions moved in place, or made again when its counts change. */
+  function setPatch(w, l, yaw = 0) {
+    if (!patch || (patch.w === w && patch.l === l && patch.yaw === yaw)) return;
+    const pos = geometry.attributes.position;
+    if (patch.w === w && patch.l === l) {
+      placePatch(pos.array, w, l, yaw, grid.nx, grid.nz);
+      pos.needsUpdate = true;
+    } else {
+      const g = patchGrid(w, l, yaw, cell);
+      Object.assign(grid, g);
+      geometry.setAttribute("position", new THREE.BufferAttribute(g.positions, 3));
+      geometry.setIndex(new THREE.BufferAttribute(g.indices, 1));
+    }
+    Object.assign(patch, { w, l, yaw });
+  }
+
   return {
     object: mesh,
     update,
     setSea,
+    setPatch,
     get origin() {
       return [...origin];
     },

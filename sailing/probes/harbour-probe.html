@@ -71,7 +71,9 @@ async function pumping(fn) {
 
 // The harbour (WATER.md, "Which doc holds what"). A's link turns her so the harbour's wind
 // meets her as her template's did (from 45° there, from 250° here: −205°), so she is on her reach.
-const HARBOUR_SEA = { wind: { speed: 5, from: 250 }, seed: 7, scale: 0.5 };
+// the harbour's weather and its Sea (WATER.md, "Water bodies": a water object with a sea on it)
+const HARBOUR_WEATHER = { wind: { speed: 5, from: 250 }, seed: 7 };
+const HARBOUR_SEA = { seed: 7, scale: 0.5 };
 const AT_A = { position: [-40, 0, 0], rotation: [0, deg(45 - 250), 0], scale: 1 };
 const AT_B = { position: [40, 0, 0], rotation: [0, deg(30), 0], scale: 1 };
 
@@ -158,11 +160,12 @@ try {
       // (emptyScene makes the maps; the harbour's things go in after)
       const H = emptyScene({
         title: "Harbour",
-        traits: { water: { level: 0 }, "sailing.sea": structuredClone(HARBOUR_SEA) },
+        traits: { "sailing.weather": structuredClone(HARBOUR_WEATHER) },
         view: { grid: false, axes: false, start: { home: { position: [0, 45, 95], target: [0, 0, 0] } } },
       });
-      H.objects = { LA: link("Ship at sea", docs.A.url, AT_A), LB: link("Ship at anchor", docs.B.url, AT_B) };
-      H.order = ["LA", "LB"];
+      const sea = { name: "Sea", sourceUrl: null, providerId: null, renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, locked: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, traits: { water: {}, "sailing.sea": structuredClone(HARBOUR_SEA) } };
+      H.objects = { sea, LA: link("Ship at sea", docs.A.url, AT_A), LB: link("Ship at anchor", docs.B.url, AT_B) };
+      H.order = ["sea", "LA", "LB"];
       docs.H = repo.add(H);
       mount("h", docs.H);
       const up = () => ["LA", "LB"].every((id) => inst(stageOf("h", id), "sailing") && inst(stageOf("h", id), "water")) && inst(stageOf("h"), "water") && inst(stageOf("h"), "sailing.sea");
@@ -174,8 +177,9 @@ try {
     drawers: (w) => dbg[w].view.stages().filter((s) => inst(s, "water")?.debug.surface).map((s) => [...s.path]),
     /** the outermost's ambient water (its components' count and level), and what each stage's reader is made of */
     readers: (w) => dbg[w].view.stages().map((s) => {
-      const r = inst(s, "water")?.water ?? null;
-      const ocean = inst(s, "sailing")?.debug.sea.ocean ?? null;
+      // what each stage reads at its own origin
+      const r = inst(s, "water")?.water?.at([0, 0, 0]) ?? null;
+      const ocean = inst(s, "sailing")?.debug.sea.oceanAt([0, 0, 0]) ?? null;
       return { path: [...s.path], reader: !!r, components: r?.components.length ?? null, same: r ? JSON.stringify(r.components) === JSON.stringify(stageOf(w).ambients().water?.components) : null, sails: !!ocean, mine: s === stageOf(w) };
     }),
     /**
@@ -187,14 +191,14 @@ try {
       const world = stageOf(w);
       const m = worldOf(st, hull);
       const [x, y, z] = [m[12], m[13], m[14]];
-      const W = inst(world, "water").water;
+      const W = inst(world, "water").water.at([x, y, z]);
       const tW = world.worldTime().t;
       const hWorld = W.heightAt(x, z, tW);
       // her reading: the world point in her frame, her reader at her t, the height back out
       const F = frameOf(st);
       const dx = x - F[12], dz = z - F[14];
       const lx = F[0] * dx + F[2] * dz, lz = F[8] * dx + F[10] * dz;
-      const own = inst(st, "sailing").debug.sea.ocean;
+      const own = inst(st, "sailing").debug.sea.oceanAt([lx, y - F[13], lz], hull);
       const hOwn = own ? own.heightAt(lx, lz, st.worldTime().t) + F[13] : null;
       const read = inst(st, "sailing").debug.sim.read?.(hull) ?? null;
       const v = read?.velocity;
