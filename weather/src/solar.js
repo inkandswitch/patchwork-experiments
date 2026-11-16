@@ -3,14 +3,13 @@
 // stage's frame. Pure arithmetic, no tables.
 //
 // The algorithm is Meeus's low-accuracy one (Astronomical Algorithms, 2nd
-// ed.), the same one NOAA's solar calculator implements, good to about 0.01°
+// ed.), whose solar coordinates NOAA's calculator also uses, good to about 0.01°
 // for 1900-2100:
 //   - the sun's apparent right ascension and declination, ch. 25 ("Solar
 //     coordinates, low accuracy");
 //   - the hour angle from apparent sidereal time, ch. 12 with the nutation in
 //     longitude's principal term (ch. 22), rather than NOAA's equation-of-time
 //     shortcut, which errs by up to a few seconds of time;
-//   - the equation of time, ch. 28 (eq. 28.3), reported, not used;
 //   - refraction, Sæmundsson's formula, ch. 16 (eq. 16.4), the true-to-
 //     apparent inverse of Bennett's, zeroed at the zenith as Meeus advises.
 // Time is UT throughout: the sun moves 0.003° in ΔT (about 69 s today),
@@ -78,10 +77,11 @@ export function refraction(h) {
  * The sun seen from latitude lat, longitude lon (degrees, north and east
  * positive) at instant ms (Unix ms, UT):
  *   azimuth: degrees from true north, clockwise (east 90);
- *   elevation: apparent, refraction included (what the eye and the light see);
- *   geometric: true elevation of the sun's centre (sunrise is -0.833°);
- *   declination: degrees;
- *   eqTime: the equation of time, minutes (apparent minus mean solar time).
+ *   apparent: elevation with refraction (what the eye and the light see; the
+ *     direction uses it);
+ *   geometric: true elevation of the sun's centre (sunrise is -0.833°;
+ *     presence, the twilight bands and every elevation gate use it);
+ *   declination: degrees.
  */
 export function sunAt(ms, lat, lon) {
   const jd = julianDay(ms);
@@ -91,9 +91,7 @@ export function sunAt(ms, lat, lon) {
   const geometric = deg(Math.asin(Math.max(-1, Math.min(1, sin(lat) * sin(d) + cos(lat) * cos(d) * cos(H)))));
   // Meeus 13.5 measures azimuth from the south, westward; +180 is from north, clockwise.
   const azimuth = norm(deg(Math.atan2(sin(H), cos(H) * sin(lat) - tan(d) * cos(lat))) + 180);
-  const E = s.meanLongitude - 0.0057183 - s.rightAscension + s.nutation * cos(s.obliquity); // Meeus 28.3
-  const eqTime = 4 * (norm(E + 180) - 180);
-  return { azimuth, elevation: geometric + refraction(geometric), geometric, declination: d, eqTime };
+  return { azimuth, apparent: geometric + refraction(geometric), geometric, declination: d };
 }
 
 /**
