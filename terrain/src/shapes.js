@@ -3,6 +3,7 @@
 // harbour of 150 floats is one mesh, not 150).
 
 import earcut from "earcut";
+import { dsin, dcos, len } from "./detmath.js";
 import { hexToLinear } from "./glb.js";
 
 export function soup() {
@@ -82,7 +83,7 @@ export function widen(line, width) {
   const dirs = [];
   for (let k = 0; k + 1 < pts.length; k++) {
     const dx = pts[k + 1][0] - pts[k][0], dz = pts[k + 1][1] - pts[k][1];
-    const l = Math.hypot(dx, dz);
+    const l = len(dx, dz);
     dirs.push([dx / l, dz / l]);
   }
   const left = [], right = [];
@@ -91,7 +92,7 @@ export function widen(line, width) {
     // a normal of each direction, and their mitre
     const na = [-a[1], a[0]], nb = [-b[1], b[0]];
     let mx = na[0] + nb[0], mz = na[1] + nb[1];
-    const ml = Math.hypot(mx, mz);
+    const ml = len(mx, mz);
     if (ml < 1e-9) {
       mx = nb[0];
       mz = nb[1];
@@ -100,9 +101,9 @@ export function widen(line, width) {
       mz /= ml;
     }
     const cos = mx * nb[0] + mz * nb[1];
-    const len = Math.min(r / Math.max(cos, 1e-6), 3 * r);
-    left.push([pts[k][0] + mx * len, pts[k][1] + mz * len]);
-    right.push([pts[k][0] - mx * len, pts[k][1] - mz * len]);
+    const reach = Math.min(r / Math.max(cos, 1e-6), 3 * r);
+    left.push([pts[k][0] + mx * reach, pts[k][1] + mz * reach]);
+    right.push([pts[k][0] - mx * reach, pts[k][1] - mz * reach]);
   }
   return [...left, ...right.reverse()];
 }
@@ -111,7 +112,7 @@ export function widen(line, width) {
 export function cylinder(s, x, z, y0, y1, r0, r1, hex, seg = 12) {
   const c = rgb(hex);
   const side = c.map((v) => v * 0.9);
-  const at = (k, y, r) => [x + r * Math.cos((2 * Math.PI * k) / seg), y, z - r * Math.sin((2 * Math.PI * k) / seg)];
+  const at = (k, y, r) => [x + r * dcos((2 * Math.PI * k) / seg), y, z - r * dsin((2 * Math.PI * k) / seg)];
   for (let k = 0; k < seg; k++) {
     const a0 = at(k, y0, r0), b0 = at(k + 1, y0, r0), a1 = at(k, y1, r1), b1 = at(k + 1, y1, r1);
     if (r1 > 0) s.quad(a0, b0, b1, a1, side);

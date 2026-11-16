@@ -134,6 +134,7 @@ export function differences(fetched) {
   const out = [];
   if (fetched.dem.record.sha256 !== EXPECTED.dem) out.push("NOAA's heights");
   if (fetched.features.record.sha256 !== EXPECTED.features) out.push(`OpenStreetMap's shore and docks (as of ${OSM_DATE})`);
+  if (fetched.look && fetched.look.record.sha256 !== EXPECTED.look) out.push(`OpenStreetMap's buildings and land cover (as of ${OSM_DATE})`);
   return out;
 }
 

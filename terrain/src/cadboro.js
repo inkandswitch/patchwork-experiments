@@ -58,6 +58,31 @@ export const OSM_DATE = "2026-11-09T20:32:33Z";
 export const EXPECTED = Object.freeze({
   dem: "5996f0c4172db54e4ba7a3d8574e22bfbc6fb5faf27f38461ab3c00661ddc7c3",
   features: "706a6df7e40965019c223b586fe9fd2190b5c10cefc8eeeffa390e85eeabd2b5",
+  // the buildings and land cover (look-osm.js), as of the same moment, checked 2026-11-15
+  look: "b390374d0c81bd0b11faf7eb88b19aa671058b0c81eb6a6510ef9bec30006807",
+});
+
+/**
+ * What the place looks like (look.js, the same machinery as Ucluelet's):
+ * OSM's buildings and land cover; no lidar is fetched here, so trees stand
+ * in OSM's woods at an assumed canopy (18 m ±20%) and sparsely on
+ * residential lots. The mixes are assumptions on the Coastal Douglas-fir
+ * zone (Douglas-fir, Garry oak, arbutus, western red cedar, shore pine);
+ * Cadboro Bay's beach is sand.
+ */
+export const LOOK = Object.freeze({
+  palette: "west-coast",
+  colours: { beach: "#b9a988" },
+  trees: {
+    fringe: { fir: 40, oak: 25, arbutus: 20, pine: 15 },
+    inland: { fir: 60, cedar: 25, oak: 15 },
+    town: { oak: 30, fir: 30, cedar: 20, alder: 20 },
+    wetland: { pine: 100 },
+    assumed: { wood: 18, scrub: 3 },
+    townPerHectare: 30,
+    fringeWidth: 24,
+    max: 25000,
+  },
 });
 
 /** Named places, for a scene's views and labels (lat, lon from OSM, except the mooring field). */
@@ -94,5 +119,6 @@ export function cadboroDoc() {
     places: PLACES.map((p) => ({ ...p })),
     wind: { ...WIND },
     osmDate: OSM_DATE,
+    look: JSON.parse(JSON.stringify(LOOK)),
   };
 }

@@ -14,6 +14,11 @@
 // quality says so (QUALITY below), so a reader can treat those depths as
 // unknown rather than measured.
 //
+// A node whose height no source measured (layered.js: water filled
+// harmonically, land with no source held at the floor) is given in `made`;
+// off the band its quality says so whatever its height: water "clamped"
+// (treat the depth as unknown), land "raised".
+//
 // Islets: a closed coastline ring whose every node lies in the shore band
 // would only reach slope·band (+0.57 m), awash at high water. So when a
 // ring's highest node is below `landFloor`, its land nodes are raised to the
@@ -34,8 +39,8 @@ export const QUALITY_NAMES = Object.freeze(["dem", "shore", "raised", "clamped"]
 export const QUALITY_MEANING = Object.freeze({
   dem: "the DEM's height, on OSM's side of the water",
   shore: "within the shore band: the OSM shoreline burned in at a 1 in 20 slope, not measured",
-  raised: "land the DEM puts below the land floor (or an islet too small for the grid), raised to it: made up",
-  clamped: "water the DEM puts shallower than the water floor, or on land: the depth is made up, treat it as unknown",
+  raised: "land the DEM puts below the land floor (or an islet too small for the grid, or land no source covers), raised to it: made up",
+  clamped: "water the DEM puts shallower than the water floor, or on land, or that no survey covers (filled): the depth is made up, treat it as unknown",
 });
 
 /** The default land floor: 0.3 m above the highest normal tide, or +1.5 m. */
@@ -81,10 +86,10 @@ export function nodesInside(grid, pts) {
  * @param {{ scale: number, offset?: number, toMWL?: number }} demRec  height = offset + scale·v + toMWL
  * @param {{ label: Int8Array, dist: Float32Array, band: number }} cls  coast.js classify()
  * @param {{ closed: boolean, points: number[][], ids: string[] }[]} [chains]  coast.js joinCoast(): its rings are the islets
- * @param {{ slope?, scale?, landFloor?, isletTop? }} [o]
+ * @param {{ slope?, scale?, landFloor?, isletTop?, made?: Uint8Array | null }} [o]  made: 1 at nodes whose height no source measured
  * @returns {{ heights: Int16Array, quality: Uint8Array, islets: object, agreement: { agree, total, share } }}
  */
-export function burn(grid, dem, demRec, cls, chains = [], { slope = 0.05, scale = 0.02, landFloor = 1.5, isletTop = 6 } = {}) {
+export function burn(grid, dem, demRec, cls, chains = [], { slope = 0.05, scale = 0.02, landFloor = 1.5, isletTop = 6, made = null } = {}) {
   const n = grid.n, N = n * n;
   if (dem.length !== N || cls.label.length !== N) throw new Error("The DEM and the coast don't fit the grid.");
   const off = (demRec.offset ?? 0) + (demRec.toMWL ?? 0);
@@ -107,8 +112,12 @@ export function burn(grid, dem, demRec, cls, chains = [], { slope = 0.05, scale 
       if (l > 0) {
         if (raw >= landFloor) hs[at] = raw;
         else (hs[at] = landFloor), (quality[at] = QUALITY.RAISED);
-      } else if (raw <= -waterFloor) hs[at] = raw;
-      else (hs[at] = -waterFloor), (quality[at] = QUALITY.CLAMPED);
+        if (made?.[at]) quality[at] = QUALITY.RAISED;
+      } else {
+        if (raw <= -waterFloor) hs[at] = raw;
+        else (hs[at] = -waterFloor), (quality[at] = QUALITY.CLAMPED);
+        if (made?.[at]) quality[at] = QUALITY.CLAMPED;
+      }
     }
   }
 
