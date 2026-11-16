@@ -126,9 +126,8 @@ export const PRESENTATION = {
   web_import: { verb: "import", detail: (i) => i.name || hostOf(i.url) },
   http_request: {
     verb: (i) => (i.method ?? "GET").toUpperCase(),
-    detail: (i) => `${hostOf(i.url)}${i.useSecret ? ` as ${i.useSecret}` : ""}`,
+    detail: (i) => hostOf(i.url),
   },
-  secret_list: { verb: "list credentials", detail: () => null },
 
   // ---- knowing things
   skill_list: { verb: "skills", detail: () => null },

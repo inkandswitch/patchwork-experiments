@@ -33,7 +33,6 @@ import {
   loadCatalogue,
   modelInfo,
 } from "./providers/index.js"
-import { listSecrets, writeSecret } from "./secrets.js"
 import { describeModel, describeDefaults } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
 import { renderTranscript } from "./ui/transcript.js"
@@ -193,19 +192,6 @@ export function AgentTool(handle, element, options = {}) {
     "Stored with your account's LLM settings, shared with your other LLM tools — never written to this session, so it is not synced to anyone you share it with."
   )
 
-  // Credentials for authenticated sources. Same rule as the API key: this
-  // device only, never the document, and the agent only ever learns the name.
-  const secretsList = el("div", "agent-secrets")
-  const secretName = document.createElement("input")
-  secretName.type = "text"
-  secretName.placeholder = "name (e.g. github)"
-  const secretValue = document.createElement("input")
-  secretValue.type = "password"
-  secretValue.placeholder = "token"
-  secretValue.autocomplete = "off"
-  const addSecret = el("button", null, "Add credential")
-  const secretsNote = el("p", null, "The agent sees only the name and asks before every request that uses one.")
-
   settings.append(
     el("p", null, "Model"),
     modelInput,
@@ -216,50 +202,9 @@ export function AgentTool(handle, element, options = {}) {
     el("p", null, "API key"),
     keyInput,
     keyNote,
-    saveKey,
-    el("p", null, "Credentials"),
-    secretsList,
-    secretName,
-    secretValue,
-    addSecret,
-    secretsNote
+    saveKey
   )
   main.insertBefore(settings, transcript)
-
-  function renderSecrets() {
-    secretsList.replaceChildren()
-    const names = listSecrets()
-    if (!names.length) {
-      secretsList.append(el("p", null, "None stored."))
-      return
-    }
-    for (const name of names) {
-      const row = el("div", "cluster")
-      row.append(el("span", "agent-hint", name))
-      const remove = el("button", null, "Remove")
-      remove.dataset.variant = "danger"
-      remove.addEventListener("click", (event) => {
-        event.preventDefault()
-        writeSecret(name, null)
-        renderSecrets()
-      })
-      row.append(remove)
-      secretsList.append(row)
-    }
-  }
-
-  addSecret.addEventListener("click", (event) => {
-    event.preventDefault()
-    const name = secretName.value.trim()
-    const value = secretValue.value
-    if (!name || !value) return
-    writeSecret(name, value)
-    secretName.value = ""
-    secretValue.value = ""
-    renderSecrets()
-  })
-
-  renderSecrets()
 
   // ---- state -----------------------------------------------------------
   const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }

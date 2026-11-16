@@ -474,7 +474,7 @@ describe("an approval for a call that will ask again anyway", () => {
     // A real session collected four http_request grants, including "any site",
     // and was asked eleven times regardless — alwaysAsk is checked before
     // grants are. Offering the buttons was worse than offering nothing.
-    const node = card("http_request", { url: "https://api.test/x", useSecret: "gh" }, () => true)
+    const node = card("http_request", { url: "https://api.test/x", method: "POST" }, () => true)
     expect(node.querySelector(".agent-approval-scopes")).toBeNull()
     expect(node.querySelector(".agent-approval-note").textContent).toMatch(/asks every time/)
   })

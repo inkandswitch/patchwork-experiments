@@ -80,10 +80,10 @@ describe("what each kind of call reads like", () => {
     expect(show("web_search", { query: "automerge crdt" }).detail).toBe("“automerge crdt”")
   })
 
-  it("uses the http method as the verb, and names the credential", () => {
-    const { verb, detail } = show("http_request", { url: "https://api.test/v1/x", method: "post", useSecret: "github" })
+  it("uses the http method as the verb, and names the site", () => {
+    const { verb, detail } = show("http_request", { url: "https://api.test/v1/x", method: "post" })
     expect(verb).toBe("POST")
-    expect(detail).toBe("api.test as github")
+    expect(detail).toBe("api.test")
   })
 
   it("names files, not paths, when writing several", () => {

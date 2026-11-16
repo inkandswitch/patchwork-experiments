@@ -22,7 +22,6 @@ claimed by a node process with no tab open.
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
-| `secrets.js` | per-device credentials, addressed by name and never seen by the agent |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, ingest, authoring, checking |
 | `ui/` | transcript rendering and the provider-subscription protocol |
@@ -91,7 +90,7 @@ any participant can approve and every approval is auditable.
 | Build | `package_build` | worker |
 | Test | `package_test` | host |
 | Web | `web_search` `web_fetch` `web_import` | worker |
-| APIs | `secret_list` (host) `http_request` | worker |
+| APIs | `http_request` | worker |
 | Ask | `ask_user` | never runs — see below |
 | Remember | `session_recall` | worker |
 | Name | `session_title` | worker |
@@ -330,9 +329,9 @@ re-approved.
 in the arguments rather than the verb. `http_request` used to ask every single
 time; that same session made eleven of them, all plain GETs with no credential,
 and the user granted `http_request@*` plus three per-site grants that did
-nothing at all — `alwaysAsk` is checked *before* grants are. A GET with no
-secret is a fetch and is granted like one; anything carrying a credential, any
-other method, anything with a body still asks every time.
+nothing at all — `alwaysAsk` is checked *before* grants are. A GET is a
+fetch and is granted like one; any other method, or anything with a body, still
+asks every time.
 
 And the approval card no longer offers standing grants for a call that will
 ignore them. Offering a button that does nothing is worse than offering none.
@@ -595,18 +594,10 @@ silently comes back blank when a drawing buffer is not preserved.
 
 ## Credentials
 
-Secrets live in `localStorage`, are addressed **by name**, and the agent never
-sees a value: it passes `useSecret: "github"` to `http_request` and the executor
-substitutes the token at the moment of the request. Responses are scanned and
-redacted before they are returned, because a server can echo an Authorization
-header back in an error and everything returned lands in the document and then
-in the next prompt. `http_request` asks for approval every single time,
-regardless of grants — a request that can carry your credentials to an arbitrary
-URL is the most dangerous thing in the toolset.
-
-The honest limit: per-device means they do not follow you to another device, and
-clearing site data loses them. Syncing secrets across devices in a local-first
-system is key management, not plumbing, and this does not pretend to solve it.
+There are none. An earlier version kept per-device secrets for `http_request`;
+it was removed, because the agent has no business holding credentials and every
+place it could put one is synced. An API that needs a login cannot be reached
+from here.
 
 ## Running it without a browser
 

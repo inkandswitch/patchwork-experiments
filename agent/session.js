@@ -559,8 +559,8 @@ export function urlPrefixes(target) {
  * the user was asked once per tool per site.
  *
  * http_request is in the group only for the calls that are equivalent in power
- * to a fetch — a plain GET with no credential. Anything carrying a secret, or
- * changing something, still asks every time; see `asksEveryTime`.
+ * to a fetch — a plain GET. Another method, or a body, still asks every time;
+ * see `asksEveryTime`.
  */
 export const GRANT_GROUPS = {
   web_fetch: "web",

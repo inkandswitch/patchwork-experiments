@@ -835,11 +835,10 @@ the package that needs it instead of nowhere in particular.
 
 ## Credentials
 
-You never see a credential's value. \`secret_list\` gives you the NAMES of what
-is stored on this device; pass one as \`useSecret\` and \`http_request\` attaches
-it for you at the moment of the request. It appears in no input, no result and
-no document. If the one you need is not listed, ask the user to add it in the
-agent's settings — you cannot.
+There is no credential store, and you must not make one. Never write a token,
+password or API key into a request, a document, a file or a note — every one of
+them is synced, and the transcript is too. If an API needs a login, say it
+cannot be reached from here.
 
 ## What will not work
 
