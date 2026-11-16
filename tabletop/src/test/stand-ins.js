@@ -152,3 +152,24 @@ export function keeperOf(objects, { name = () => "Deck" } = {}) {
     },
   };
 }
+
+/**
+ * What the stage's content(id).extras holds for a GLB with these extras on
+ * its root (scene/STAGE.md `content(id)`, scene/src/carry-rules.js
+ * sanitizeConnectors and placeConnector, copied): each connector cleaned,
+ * its whole frame (`rotation`) kept with its yaw derived from it, else the
+ * yaw it gives, or none. The rest as the GLB has it.
+ */
+export function stageExtras(extras) {
+  const finite = (v) => Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => Number.isFinite(Number(x)));
+  const yawOfEuler = ([x, y]) => (Math.hypot(Math.sin(y), Math.cos(x) * Math.cos(y)) < 1e-6 ? null : Math.atan2(Math.sin(y), Math.cos(x) * Math.cos(y)));
+  const connectors = (extras?.connectors ?? []).flatMap((c) => {
+    const position = Array.isArray(c) ? c : c?.position;
+    if (!finite(position)) return [];
+    const rotation = !Array.isArray(c) && finite(c.rotation) ? c.rotation.slice(0, 3).map(Number) : null;
+    const yaw = rotation ? yawOfEuler(rotation) : Array.isArray(c) || c.yaw == null ? null : Number(c.yaw);
+    const tags = !Array.isArray(c) && Array.isArray(c.tags) ? c.tags.filter((t) => typeof t === "string" && t) : [];
+    return [{ position: position.slice(0, 3).map(Number), rotation, yaw, tags }];
+  });
+  return { ...extras, connectors };
+}
