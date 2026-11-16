@@ -2,8 +2,10 @@
 // names, every case: the world's open water {none, level 0 flat, level 0
 // with waves} × every subset of four own bodies {A, a box holding p; N, a
 // smaller box inside A holding p; C, a box elsewhere; D, a box attached
-// under the asker holding p} × five points × `not` {the asker, none}. The
-// expectation is the rule written out per kind of point, apart from the code.
+// under the asker holding p} × five points × `not` {the asker, none}; then
+// a levels axis, A and N each at {-1, 0, 1} against open water at 0 and none,
+// in three columns at twelve heights. The expectation is the rule written out
+// apart from the code.
 import { describe, expect, it } from "vitest";
 import { choose } from "./choose.js";
 import { boxOf } from "./bodies.js";
@@ -60,6 +62,46 @@ describe("the choice (W15)", () => {
             const name = got === null ? null : got.kind === "open" ? "open" : got.id;
             expect([kind, notAsker, name]).toEqual([kind, notAsker, expected(kind, open, present, notAsker)]);
           }
+      });
+
+  // the levels axis: A (10 × 4 × 10) and N (2 × 2 × 2, inside A's column) each at a level in {-1, 0, 1}, against
+  // open water at 0 (flat) or none; asked in three columns (both footprints, A's only, neither) at heights that
+  // fall on no level, floor or band edge, and from above. The fallback's ranking (the highest rest surface below,
+  // things before weather at an equal level, then the lowest id) is enumerated here, not sampled.
+  const LEVELS = [-1, 0, 1];
+  const COLUMNS = { "both footprints": [0, 0], "A's footprint only": [3, 0], "no footprint": [20, 20] };
+  const HEIGHTS = [null, -5.5, -3.5, -2.5, -1.5, -0.75, 0, 0.25, 0.75, 1.25, 1.75, 6];
+  /** The rule, written out over plain numbers (no boxes): the expected answer. */
+  function ranked(x, z, y, la, ln, open) {
+    const bodies = [
+      { id: "A", level: la, floor: la - 4, half: 5, volume: 400 },
+      { id: "N", level: ln, floor: ln - 2, half: 1, volume: 8 },
+    ].filter((b) => Math.abs(x) <= b.half && Math.abs(z) <= b.half);
+    if (y !== null) {
+      const holding = bodies.filter((b) => y >= b.floor && y <= b.level + 0.5).sort((a, b) => a.volume - b.volume);
+      if (holding.length) return holding[0].id;
+      if (open && y <= open.level + open.A) return "open";
+    }
+    const below = bodies.filter((b) => y === null || b.level <= y);
+    const all = [...below.map((b) => ({ name: b.id, level: b.level, rank: 0 })), ...(open && (y === null || open.level <= y) ? [{ name: "open", level: open.level, rank: 1 }] : [])];
+    // highest first; at an equal level a thing (rank 0) before the weather, then the lowest id
+    all.sort((a, b) => b.level - a.level || a.rank - b.rank || (a.name < b.name ? -1 : 1));
+    return all[0]?.name ?? null;
+  }
+  for (const la of LEVELS)
+    for (const ln of LEVELS)
+      it(`levels: A at ${la}, N at ${ln}, against open water at 0 and none, every column and height`, () => {
+        const list = [
+          { id: "A", box: box([10, 4, 10], [0, la, 0]), A: 0.5 },
+          { id: "N", box: box([2, 2, 2], [0, ln, 0]), A: 0.5 },
+        ];
+        for (const open of [OPEN.flat, null])
+          for (const [col, [x, z]] of Object.entries(COLUMNS))
+            for (const y of HEIGHTS) {
+              const got = choose([x, y, z], open, list);
+              const name = got === null ? null : got.kind === "open" ? "open" : got.id;
+              expect([!!open, col, y, name]).toEqual([!!open, col, y, ranked(x, z, y, la, ln, open)]);
+            }
       });
 
   it("by the rest band, not the displaced surface: every height in the waved band is the open water's (the choice has no time to flicker on)", () => {
