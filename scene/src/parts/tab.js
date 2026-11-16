@@ -4,9 +4,10 @@
 // dimensions and parts when the viewer asks), and the tab's × is
 // the viewer closing it (onClosed).
 //
-// mount(body) runs once, on the first open, and answers { update(scene,
-// local), dispose() }; update runs while the tab is open (and once as it
-// opens), dispose when the part stops.
+// mount(body) runs once, on the first open, and answers { opened(),
+// update(scene, local), dispose() }, each optional: opened runs each time the
+// tab docks, just before the update it gets as it opens; update runs while
+// the tab is open; dispose when the part stops.
 //
 // The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
 // while the body is Edit, and shuts when the body stops being Edit (not
@@ -19,7 +20,7 @@ import { editing } from "../stage/bodies.js";
 
 /**
  * @param {object} api
- * @param {{ id: string, title: string, mount: (body: HTMLElement) => ({ update?, dispose? } | null), onClosed?: () => void }} o
+ * @param {{ id: string, title: string, mount: (body: HTMLElement) => ({ opened?, update?, dispose? } | null), onClosed?: () => void }} o
  *   `id` names the panel (its element's data-panel: "inspector", "parts")
  */
 export function drawerTab(api, { id, title, mount, onClosed }) {
@@ -50,6 +51,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
       },
     });
     try {
+      view?.opened?.();
       view?.update?.(api.scene(), api.local.get(), api.view.get());
     } catch (err) {
       console.warn(`[scene] the ${title} tab failed to update`, err);

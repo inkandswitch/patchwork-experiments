@@ -526,22 +526,29 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
 
   // Each source of a selection, from the pane open (the toolbar's Inspector,
   // so how a selection opens a shut pane, the open rule's own table below,
-  // doesn't enter into it) and what the row starts from: the pane, the row
-  // the tree marks and what the fields show, read together after the flush.
+  // doesn't enter into it) and what the row starts from: the row the tree
+  // marks and what the fields show. They're read in every flush, by an
+  // extension running after the inspector, so "the same flush" is what's
+  // checked (not only the state things settle to); the pane stays open
+  // through every one, and nothing is written to the doc.
   const ROWS = [
-    // [source, selected before, act, open, row, fields]
-    ["row click", null, () => rowClick("a"), true, ["a"], "object a"],
-    ["api.view.select(id)", null, () => s.api("scene.inspector").view.select("a"), true, ["a"], "object a"],
-    ["menu Select", "a", () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), true, ["b"], "object b"],
-    ["Escape → null", "a", () => s.key("Escape", { code: "Escape" }), true, [], "scene"],
-    ["group row", "b", () => rowClick("g"), true, ["g"], "group g"],
-    ["ref dimension:x", "a", () => s.api("scene.inspector").view.select("dimension:x"), true, [], "hidden"],
+    // [source, selected before, act, row, fields]
+    ["row click", null, () => rowClick("a"), ["a"], "object a"],
+    ["api.view.select(id)", null, () => s.api("scene.inspector").view.select("a"), ["a"], "object a"],
+    ["menu Select", "a", () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), ["b"], "object b"],
+    ["Escape → null", "a", () => s.key("Escape", { code: "Escape" }), [], "scene"],
+    ["group row", "b", () => rowClick("g"), ["g"], "group g"],
+    ["ref dimension:x", "a", () => s.api("scene.inspector").view.select("dimension:x"), [], "hidden"],
   ];
+  /** What the pane shows for each selection: the fields, and the row marked (one value). */
+  const FIELDS = { a: "object a", b: "object b", g: "group g", "dimension:x": "hidden" };
 
-  it.each(ROWS)("%s: open, the row marked and the fields shown agree", async (_name, before, act, open, row, fields) => {
+  it.each(ROWS)("%s: in the flush it lands, the row marked and the fields shown agree; nothing written", async (_name, before, act, row, fields) => {
     const select = (await import("./select.js")).default;
+    const flushes = []; // [selected, row marked, fields shown], read after the inspector's update in each flush
+    const check = { create: () => ({ update: (_scene, _local, _prev, view) => void (s && tab().isOpen() && flushes.push([view.selected ?? null, marked(), shown()])) }) };
     s = await mountStage({
-      extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }],
+      extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }, { meta: { id: "t.check" }, module: check }],
       doc: { objects: { g: group("G"), a: object({ name: "A", group: "g" }), b: object({ name: "B" }) }, order: ["g", "a", "b"] },
     });
     await settle();
@@ -549,11 +556,21 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
     if (before) s.api("scene.inspector").view.select(before);
     await settle();
     expect(tab().isOpen()).toBe(true);
+    const doc = JSON.stringify(s.doc());
+    flushes.length = 0;
     act();
     await settle();
-    expect(tab().isOpen()).toBe(open);
+    expect(tab().isOpen()).toBe(true);
     expect(marked()).toEqual(row);
     expect(shown()).toBe(fields);
+    // the flush the selection landed in, and every one after: the fields and the row are of it
+    const landed = flushes.findIndex(([sel]) => (FIELDS[sel] ?? "scene") === fields);
+    expect(landed).toBeGreaterThanOrEqual(0);
+    for (const [sel, r, f] of flushes.slice(landed)) {
+      expect(f).toBe(FIELDS[sel] ?? "scene");
+      expect(r).toEqual(sel in FIELDS && !sel.includes(":") ? [sel] : []);
+    }
+    expect(JSON.stringify(s.doc())).toBe(doc);
     // one value: the row marked is the fields' object (none for the scene or a ref)
     expect(marked()).toEqual(fields.startsWith("object ") || fields.startsWith("group ") ? [fields.split(" ")[1]] : []);
     // one pane: one tab, one tree, one set of fields
@@ -579,6 +596,93 @@ describe("scene.inspector: one pane, the tree and the fields together (TOOLS.md 
     await settle();
     expect(tab().body.querySelector(".scene-outline")).toBe(tree);
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(1);
+  });
+
+  // Revealing a row (its groups opened, scrolled into view) is done while the
+  // tree is shown: a selection made while the pane is shut, or a pane shut
+  // and opened again (its scroller comes back at the top), is revealed as the
+  // pane opens, whichever way it opens. Each row: how the selection of "x"
+  // (inside a group the viewer folded) comes before the pane opens.
+  const REVEALS = [
+    // [name, before the pane opens (shut, x selected), how it opens]
+    ["selected in Look, opened by entering Edit", async () => {
+      s.api("scene.inspector").body.enter("look");
+      await settle();
+      s.api("scene.inspector").view.select("x");
+      await settle();
+    }, () => s.api("scene.inspector").body.enter("edit")],
+    ["selected, ×, the toolbar's Inspector", async () => {
+      s.api("scene.inspector").view.select("x");
+      await settle();
+      s.root.querySelector(".stage-drawer-tab-close").click();
+      await settle();
+    }, toolbarOn],
+    ["×, selected from the menu (the pane opens on it)", async () => {
+      s.root.querySelector(".stage-drawer-tab-close").click();
+      await settle();
+    }, () => s.api("scene.inspector").view.select("x")],
+  ];
+  it.each(REVEALS)("revealed as it opens: %s", async (_name, before, open) => {
+    const calls = [];
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Element.prototype.scrollIntoView = function () {
+      calls.push([this.dataset?.id ?? null, this.isConnected]);
+    };
+    try {
+      s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { g: group("G"), a: object({ name: "A" }), x: object({ name: "X", group: "g" }) }, order: ["a", "g", "x"] } });
+      await settle();
+      toolbarOn();
+      await settle();
+      // the viewer folds G, so x's row isn't drawn until it's revealed
+      const twisty = () => tab().body.querySelector('.object-row[data-id="g"] .twisty');
+      if (tab().body.querySelector('.object-row[data-id="x"]')) twisty().click();
+      await settle();
+      expect(tab().body.querySelector('.object-row[data-id="x"]')).toBe(null);
+      await before();
+      expect(tab().isOpen()).toBe(false);
+      calls.length = 0;
+      open();
+      await settle();
+      expect(tab().isOpen()).toBe(true);
+      expect(marked()).toEqual(["x"]);
+      // x's row is drawn (G opened) and scrolled into view, in the drawer
+      expect(calls).toContainEqual(["x", true]);
+      // and never into a pane nobody sees
+      expect(calls.filter(([, connected]) => !connected)).toEqual([]);
+    } finally {
+      if (had) Object.defineProperty(Element.prototype, "scrollIntoView", had);
+      else delete Element.prototype.scrollIntoView;
+    }
+  });
+
+  // A shut pane is drawn into by nothing (a scene that changes every frame
+  // isn't redrawn into a tree nobody sees); it catches up as it opens.
+  it.each([
+    ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn],
+    ["Look", () => s.api("scene.inspector").body.enter("look"), () => (s.api("scene.inspector").body.enter("edit"), toolbarOn())],
+  ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen) => {
+    s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    await settle();
+    toolbarOn();
+    await settle();
+    const name = () => tab().body.querySelector('.object-row[data-id="a"] .name')?.textContent ?? null;
+    expect(name()).toBe("A");
+    shut();
+    await settle();
+    expect(tab().isOpen()).toBe(false);
+    s.change((d) => {
+      d.objects.a.name = "A2";
+      d.objects.b = object({ name: "B" });
+      d.order.push("b");
+    });
+    await settle();
+    expect(name()).toBe("A");
+    expect(tab().body.querySelector('.object-row[data-id="b"]')).toBe(null);
+    reopen();
+    await settle();
+    expect(tab().isOpen()).toBe(true);
+    expect(name()).toBe("A2");
+    expect(tab().body.querySelector('.object-row[data-id="b"]')).not.toBe(null);
   });
 
   it("arrow keys in the tree are the tree's: no scene shortcut hears them", async () => {

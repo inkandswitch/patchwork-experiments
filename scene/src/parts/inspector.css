@@ -20,6 +20,22 @@
   border-bottom: 1px solid var(--scene-border);
 }
 
+/* the tree's filter and New group stay at its top while its rows scroll */
+.scene-stage .inspector-tree .outline-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 4px;
+  background: var(--scene-bg);
+}
+
+/* a ref selected (a dimension: no fields here), the tree has the pane */
+.scene-stage .inspector-tree:has(+ .inspector-body[hidden]):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  max-height: none;
+  flex: 1 1 auto;
+  border-bottom: none;
+}
+
 .scene-stage .inspector-body:where(:not(.about-embed *), .about-embed .scene-tool *) {
   flex: 1 1 auto;
   min-height: 0;

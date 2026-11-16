@@ -980,8 +980,10 @@ function create(api) {
   let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
   let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
   let lastSel = null;
-  // the object tree, at the top of the pane (./outline.js): mounted with the pane, updated on every flush
-  const tree = createOutline(api);
+  // the object tree, at the top of the pane (./outline.js): mounted with the
+  // pane and drawn with its fields, only while it's docked; what to reveal is
+  // noted on every flush, and revealed as it opens
+  const tree = createOutline(api, { shown: () => tab.isOpen() });
   const tab = drawerTab(api, {
     id: "inspector",
     title: "Inspector",
@@ -996,7 +998,11 @@ function create(api) {
       last = null;
       showEmpty();
       return {
-        update: (scene, local) => refresh(scene, local), // (the value follow() passed: seen())
+        opened: () => tree.opened(),
+        update(scene, local) {
+          refresh(scene, local); // (the value follow() passed: seen())
+          tree.draw();
+        },
         dispose() {
           teardown();
           treeView.dispose();
@@ -1047,8 +1053,8 @@ function create(api) {
   return {
     commands,
     update(scene, local, prev, view) {
+      tree.note(prev, view);
       follow(scene, seen(local, view));
-      tree.update(scene, local, prev, view);
     },
     /** for tests and probes: the tab's element, and whether it's docked */
     tab,

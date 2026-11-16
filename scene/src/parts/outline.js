@@ -1,10 +1,18 @@
 // The object tree: the top of the inspector's one pane (./inspector.js,
 // TOOLS.md §6), mounted with it and following the same selection
 // (view.selected): a row click selects, and the inspector's fields below
-// follow in the same flush. Not an extension of its own: createOutline(api)
-// is called by the inspector with its api, and answers { mount(host) → view,
-// update(scene, local, prev, view), dispose }. Its writes are edits
-// (api.edit), so undo takes them back.
+// follow in the same flush. Not an extension of its own: createOutline(api,
+// { shown }) is called by the inspector with its api, and answers
+//   mount(host) → view   its one view, drawn while shown() (the pane is docked)
+//   note(prev, view)     every flush: a selection that changed is to be revealed
+//   opened()             the pane docked: the selection is revealed again (its
+//                        scroller came back at the top)
+//   draw()               the pane's flush, only while it's shown: rows, then the
+//                        reveal, then names
+//   dispose()
+// So nothing is drawn into a pane nobody sees, and a selection made while it
+// was shut is revealed when it opens. Its writes are edits (api.edit), so
+// undo takes them back.
 //
 // Expand state, rows, the filter, keyboard navigation, row drag and drop,
 // New group. A double-click on a row, or Enter in the filter, frames it. A link's row (an object whose
@@ -131,13 +139,16 @@ function el(tag, attrs = {}, ...children) {
 
 /**
  * The tree, for the inspector's pane: called once with the inspector's api
- * (a stage part's, so its writes are edits). `mount(host)` draws it into
- * `host` and answers the view (one per mounted pane); `update` runs on every
- * flush, mounted or not, so a selection made while it's shut is still the
- * one revealed when it opens.
- * @returns {{ mount: (host: HTMLElement) => object, update: (scene, local, prev, view) => void, dispose: () => void }}
+ * (a stage part's, so its writes are edits). `mount(host)` builds its one
+ * view in `host`; `draw()` draws it, only while `shown()` (the pane is
+ * docked); `note(prev, view)` runs on every flush, shown or not, so a
+ * selection made while it's shut is the one revealed as it opens
+ * (`opened()`, which also reveals an unchanged selection again).
+ * @param {object} api
+ * @param {{ shown?: () => boolean }} [o]
+ * @returns {{ mount: (host: HTMLElement) => object, note: (prev: object, view: object) => void, opened: () => void, draw: () => void, dispose: () => void }}
  */
-export function createOutline(api) {
+export function createOutline(api, { shown = () => true } = {}) {
   api.style(css);
 
   // ── expand state: this viewer's, in localStorage ──────────────────────
@@ -159,7 +170,7 @@ export function createOutline(api) {
   // A row's default is taken the first time it's drawn, so hiding a root
   // group later doesn't fold it away under the pointer.
   const firstDefaults = new Map();
-  let expandSeq = 0; // bumped on every expand change, so views redraw
+  let expandSeq = 0; // bumped on every expand change, so the view redraws
 
   // ── what the tree is, once per scene snapshot ──────────────────────────
   let model = null;
@@ -206,23 +217,28 @@ export function createOutline(api) {
     setExpanded(id, value ?? !isExpanded(m, id, m.depth.get(id) ?? 0));
     renderAll();
   }
-  /** Open every row above `id`; then scroll it into view. @returns {boolean} whether it's there */
+  /**
+   * Open every row above `id`; then scroll it into view.
+   * @returns {boolean} whether it was revealed: false while it isn't in the
+   *   scene yet, or the tree isn't shown (it's revealed when it opens)
+   */
   function reveal(id) {
     const m = derive();
-    if (!m.objects[id]) return false;
+    if (!m.objects[id] || !isShown()) return false;
     for (let p = m.outline.get(id); p != null; p = m.outline.get(p)) {
       if (!isExpanded(m, p, m.depth.get(p) ?? 0)) setExpanded(p, true);
     }
     renderAll();
-    for (const v of views) v.rows.get(id)?.li?.scrollIntoView?.({ block: "nearest" });
+    view.rows.get(id)?.li?.scrollIntoView?.({ block: "nearest" });
     return true;
   }
 
   // ── what this view is doing ────────────────────────────────────────────
   let query = "";
   let presenceSeq = 0;
-  let pendingReveal = null; // a selection that isn't in the scene yet
-  const views = new Set();
+  let pendingReveal = null; // a selection not revealed yet (not in the scene yet, or the pane shut)
+  let view = null; // the one mounted view
+  const isShown = () => !!view && shown();
 
   const selectedId = () => api.view.get().selected ?? null;
   /** Can this row be entered (an open link whose doc acts, here or where it's live)? */
@@ -371,7 +387,7 @@ export function createOutline(api) {
     if (pendingReveal != null && reveal(pendingReveal)) pendingReveal = null;
   }
 
-  // ── a view: one mounted panel ──────────────────────────────────────────
+  // ── the view: the mounted tree ─────────────────────────────────────────
   function mountView(host) {
     const rows = new Map(); // id → its row's elements
     let emptyRow = null;
@@ -709,22 +725,22 @@ export function createOutline(api) {
       for (const [id, row] of rows) if (row.li.isConnected && objects[id]) setName(row, id, isGroup(objects[id]));
     }
 
-    const view = {
+    const v = {
       rows,
       draw,
       refreshNames,
       dispose() {
-        views.delete(view);
+        if (view === v) view = null;
         root.remove();
       },
     };
-    views.add(view);
-    draw();
-    return view;
+    view = v;
+    return v;
   }
 
+  /** Draw the view, while it's shown (a shut pane is drawn when it opens). */
   function renderAll() {
-    for (const v of views) v.draw();
+    if (isShown()) view.draw();
   }
 
   let namesQueued = false;
@@ -733,7 +749,7 @@ export function createOutline(api) {
     namesQueued = true;
     queueMicrotask(() => {
       namesQueued = false;
-      if (!api.signal.aborted) for (const v of views) v.refreshNames();
+      if (!api.signal.aborted && isShown()) view.refreshNames();
     });
   }
 
@@ -743,21 +759,32 @@ export function createOutline(api) {
   });
 
   return {
-    mount: (host) => mountView(host),
+    mount(host) {
+      view?.dispose();
+      return mountView(host);
+    },
 
-    update(scene, local, prev, view) {
+    note(prev, viewValue) {
       const was = prev?.view?.selected ?? null;
-      const sel = view.selected ?? null;
+      const sel = viewValue?.selected ?? null;
       // A new selection is revealed: at once, or when it arrives (a row
-      // just added); one that never arrives is let go when it changes.
+      // just added), or when the pane opens; one that never arrives is let
+      // go when it changes.
       if (sel !== was) pendingReveal = sel;
+    },
+
+    opened() {
+      pendingReveal = selectedId();
+    },
+
+    draw() {
       renderAll();
       flushReveal();
       queueNames();
     },
 
     dispose() {
-      for (const v of [...views]) v.dispose();
+      view?.dispose();
     },
   };
 }
