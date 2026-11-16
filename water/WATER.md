@@ -19,8 +19,9 @@ On 2026-11-15 the note gained a second design, "Water bodies": water as a
 shape that sea behaviour is put on, with bounded water that an inner world
 keeps wherever it is placed. It follows the lead's answers of that day
 (Decisions 43 to 56) and replaces the parts of "The design" it names. It was
-built the same day in `lane/water` (Decisions 57 to 74) and fixed after
-review (75 to 83; "Where it stands"). It keeps water an inner world authors
+built the same day in `lane/water` (Decisions 57 to 74), fixed after
+review (75 to 83), and merged into `scene-stage` and published the same
+night (84 to 89; "Where it stands"). It keeps water an inner world authors
 as a box; whether a boat's open sea should come along into a dry room, the
 case the lead's yes was about, is still open ("Open for the lead").
 
@@ -1643,6 +1644,60 @@ minor faults. Each fix has a test that fails without it.
     taking the lowest surface fails 6, and the highest id on a tie fails
     27.
 
+## Decisions, integration (2026-11-15, made unattended)
+
+84. **A probe's seed names the sea and its gusts.** `lane/probes` pinned a
+    run's sea by writing the scene's `sailing.sea.seed`, which since water
+    bodies is gone: the waves' seed is on the Sea object and the gusts'
+    on `sailing.weather`, and the template draws one seed for both
+    (`bringSea`). At the merge the probes wrote only the Sea object's
+    seed, and sailing-run's default sea failed its leave step (she broke
+    out 40° off the wind, where the pinned sea had her 9° off) because the
+    gusts still came from the page's random draws. The probes
+    (sailing-run, aboard-probe's `setSea`) now write the one seed to both,
+    as the template does, and the default sea passes as it did on
+    `lane/probes`: sailing-run 85/85, aboard-run 72/72. camber-probe's
+    `seaAt` still read the removed `sea.ocean`; it asks `oceanAt` from
+    above. Neither is a change to sailing's code.
+85. **The lead's yes to Q4 is recorded as built for water an inner world
+    authors as a box, and the boat's open sea stays with the lead.** The
+    yes was given to "should an inner world be able to keep its own
+    water?", put as "an explicit exception to the rule", so it may already
+    cover the path rule. It is not built at integration: it changes W2,
+    which every package's ambients read, and the wind and the sky would
+    follow it into a dry room (Decision 76 and "Open for the lead" list
+    the costs). Building it is one decision for the lead to confirm, not
+    one to take while merging.
+86. **Ship at anchor is not republished on its own.** No example in the
+    folder is the bare Ship at anchor; Lost Cities aboard and Fitting out
+    run that template themselves when they are published. `publish-ship
+    --anchor` stays for when one is wanted.
+87. **The Quiet games room and Games night are republished with the
+    boat.** `publish-aboard` makes a new game doc G on every run, and the
+    room's Lost Cities is the boat's G (the shared-game proof), so the
+    room is republished with `--game` the new G and Games night with the
+    new room, as at the last integration. Rejected: a `--game` option on
+    `publish-aboard` to keep the old G, new publisher code for an
+    unchanged outcome.
+88. **The Harbour's home is centred on its boats.** Republished with the
+    old `--home 6,28,70:0,0,-10`, harbour-check failed "every boat in
+    view on arrival" (9/10): the real Patchwork opened with its comments
+    panel beside the scene, a 640 px pane, and Lost Cities aboard's bow
+    was off its left edge. The home now looks at the middle of the two
+    boats from the same offset (`--home -12.6,28,80.7:-18.6,0,0.7`), and
+    the check passes 10/10. The first republish
+    (automerge:3o2k4sDDcLp5WRify6C5FhgVkVAA) is left unlisted.
+89. **The dry room is laid out for a narrow pane.** At the layout
+    publish-basin's header gave (the basin at x −30, Ship at sea at 40,
+    home 5,40,80 over 5,0,0), both links' origins fell outside a 640 px
+    pane, and the home view showed a corner of the basin and nothing
+    else, though basin-check passed (it reads the stages, not the
+    picture). The room is now the basin at −18 (turned 20°) and Ship at
+    sea at 18, seen from 0,50,110 over the origin, and both boats are in
+    the picture. The first room (automerge:mFPSMNygBxsp1D4KzWstihLZVrU),
+    and one more published by a run whose output was cut off, are left
+    unlisted.
+
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
@@ -1683,8 +1738,9 @@ replaced by W17, and W10, W11 and W13 are re-run with `at`).
 ## Open for the lead
 
 Answered on 2026-11-15: Decision 1's amended sentence (43), boarding by
-click (44), whether the sea should bring water (45, dissolved), and whether
-an inner world may keep its own water (46). Open from "Water bodies":
+click (44), whether the sea should bring water (45, superseded by water as
+a shape), and whether an inner world may keep its own water (46, built for
+water authored as a box, 85). Open from "Water bodies":
 
 - **Should a boat linked into a dry room keep her own open sea?** This is
   the case the yes to Q4 was about, and it isn't delivered (Decision 76).
@@ -1729,7 +1785,8 @@ with the water trait (Ship at sea, Lost Cities aboard, Fitting out, Cadboro
 Bay), and the Harbour was published and checked in the real Patchwork
 (Decision 38). The final fixer republished the Harbour with two boats at
 anchor, Lost Cities aboard and Fitting out, both framed on arrival
-(Decisions 41; automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE), moved the value
+(Decisions 41; automerge:3ConqCJRWuWvD1JXBfL9dcWJvjZE, since superseded),
+moved the value
 schemas out of STAGE.md (40), and recorded that all of this was merged
 before the lead's yes (39).
 Where each invariant is checked is the table above.
@@ -1764,3 +1821,26 @@ reads the new shapes; W15 enumerates levels. Suites: water 300, sailing
 774, terrain 108, scene 1455. Chrome under the lock: xdnd-run sail 13/13
 and main 60/60, basin-run 14/14. Still nothing republished, synced or
 merged from the lane.
+
+Integrated on 2026-11-15 (Decisions 84 to 89): `lane/water` and
+`lane/probes` merged into `scene-stage` (b665f87b, f11d4b09), the lead's
+answers recorded, the probes' seeds written to the Sea object and the
+weather, built, synced and republished. Suites: water 300, sailing 774,
+terrain 108, scene 1455. Chrome under the lock on the merged tree:
+harbour-run 22/22, basin-run 14/14, links-run 37/37, pins-run 27/27,
+xdnd-run sail 13/13 and main 60/60, camber-run 40/40, sailing-run 85/85,
+aboard-run 72/72, and machine scene 40/40, world 22/22, seats 33/33.
+Republished: Ship at sea (automerge:kDMAvYNqUugdcJ8QF9kJ4n1u16t), Lost
+Cities aboard (automerge:23RNsVw3RkKho5qUcdpmPo6qYvnd, its game
+automerge:3akL7DdXBqpa2k1VXtHYVM2pZQRE, E1M1's exit pointed at it), the
+Quiet games room (automerge:3V3g5e7YSuYJ1hGjTZCrSScbq3Vm), Games night
+(automerge:3qdvJfosBWWXAnGEHMYhH9PzfL88), Fitting out
+(automerge:NhCS6jH4WyUzBkhDMLMPPCinAJH), Cadboro Bay
+(automerge:49Tp8TWE6BKT6GShAjNBwgsH8bQ7) and the Harbour
+(automerge:EnEodmRQgQCY4G7A8CWwDtPpUY2); new: the Model basin
+(automerge:2M7DayjgcnnpFupfj4s5fJ3sh7C2) and Model basin and Ship at sea
+(automerge:2vunxCi5mgpYGr53LsYysQACbqZG). Checked in the real Patchwork
+with the session's checks: basin-check 12/12 (new), harbour-check 10/10,
+enter-check 9/9, fitout-check 11/11, mashup-check 5/5, presence-check
+11/11, realcheck-shared 7/7, arcade-check 10/10 (a later visit), and each
+republished doc opens without errors in the body its doc starts people in.

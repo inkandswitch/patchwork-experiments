@@ -14,8 +14,8 @@
 // pose. That page is published by scene/probes/publish-links.mjs:
 //
 //   (in scene/) node probes/publish-links.mjs --title "Model basin and Ship at sea" \
-//     --link "Model basin=<basin>@-30,0,0@20" --link "Ship at sea=<ship>@40,0,0" \
-//     --home 5,40,80:5,0,0
+//     --link "Model basin=<basin>@-18,0,0@20" --link "Ship at sea=<ship>@18,0,0" \
+//     --home 0,50,110:0,0,0
 //
 // No glass tank is drawn round the basin: no part makes one, and the box's
 // edges are where its patch of water ends (WATER.md Decision 59).
