@@ -23,7 +23,13 @@ built the same day in `lane/water` (Decisions 57 to 74), fixed after
 review (75 to 83), and merged into `scene-stage` and published the same
 night (84 to 89; "Where it stands"). It keeps water an inner world authors
 as a box; whether a boat's open sea should come along into a dry room, the
-case the lead's yes was about, is still open ("Open for the lead").
+case the lead's yes was about, was left open ("Open for the lead").
+
+On 2026-11-16 the note gained a third design, "Clipped open water"
+(Decisions 90 to 121), built in `lane/clip` and merged into `scene-stage`
+as 5ae3b34c. It answers the dry-room case (Decision 91): an inner world's
+open water may carry a clip, a box of its own sea that comes along where
+the world it is placed in has no open water.
 
 ## The problem
 
@@ -771,7 +777,8 @@ the sky.
 - Ship at sea's water is open, so it is weather and doesn't come along.
   She rests at her saved pose, as today. This is the case the lead's yes
   was about, and it is not changed by this design: the choice that would
-  change it is open (Costs, 2; "Open for the lead").
+  change it is open (Costs, 2; "Open for the lead"). (Superseded by
+  clipped open water, Decision 91: she floats on a block of her own sea.)
 - A doc whose water is bounded keeps it in the room: a basin around a
   boat, a ship in a bottle, a lock. Her boat floats in it, flat and calm,
   and her sails have no wind, because the room has no weather.

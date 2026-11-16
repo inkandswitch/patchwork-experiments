@@ -10,12 +10,15 @@
 // and no source), and the sloop in it, sails down, at rest. Its water is a
 // thing, so it travels with the doc: linked into a dry room beside Ship at
 // sea, the basin's sloop still floats on it, flat and still (the room has no
-// wind), while Ship at sea, whose water is open (weather), rests at her saved
-// pose. That page is published by scene/probes/publish-links.mjs:
+// wind), and Ship at sea, whose water is open (weather) but clipped, floats on
+// a block of her own sea that comes along into the dry room (WATER.md,
+// "Clipped open water", Decision 91). That page is published by
+// scene/probes/publish-links.mjs, laid out so her block (116 x 223 m) clears
+// the basin by 11.1 m (WATER.md Decision 121; at the old -18/+18 it covered it):
 //
 //   (in scene/) node probes/publish-links.mjs --title "Model basin and Ship at sea" \
-//     --link "Model basin=<basin>@-18,0,0@20" --link "Ship at sea=<ship>@18,0,0" \
-//     --home 0,50,110:0,0,0
+//     --link "Model basin=<basin>@-20,0,35@20" --link "Ship at sea=<ship>@20,0,0" \
+//     --home 0,55,125:0,0,17.5
 //
 // No glass tank is drawn round the basin: no part makes one, and the box's
 // edges are where its patch of water ends (WATER.md Decision 59).
