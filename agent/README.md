@@ -116,7 +116,7 @@ any participant can approve and every approval is auditable.
 | See | `view_screenshot` | host |
 | Build | `package_build` | worker |
 | Test | `package_test` | host |
-| Web | `web_search` `web_fetch` | worker |
+| Web | `web_search` `web_fetch` `web_capture` | worker |
 | APIs | `http_request` | worker |
 | Kept sources | `source_read` `source_list` `source_file` | worker |
 | Findings (research steps only) | `finding_write` | worker |
@@ -193,7 +193,7 @@ already fetched 147 times: the saved page's footer said to page through it with
 `doc_read`, which a web-only step did not have, so it fetched again.
 
 Now every successful `web_fetch` and `http_request` leaves exactly one new
-document, an ordinary `file` the File tool shows, and nothing overwrites one:
+document (and `web_capture` one snapshot, below), an ordinary `file` the File tool shows, and nothing overwrites one:
 
 | what was fetched | `content` | `role` | readable text |
 |---|---|---|---|
@@ -225,6 +225,88 @@ version that was fetched — which is also how a wasm module gets into the
 package that needs it: fetch it with `http_request`, then file it under the
 name the code imports. `web_import` and `http_request`'s `folder`/`saveAs` did
 these jobs before, each its own way, and are gone.
+
+## Keeping web pages
+
+`web_fetch` keeps what a page *says*. `web_capture` keeps the page *itself*,
+as it looked: its HTML and every stylesheet, font and image it loads that can
+be fetched from here, in one `web-snapshot` document that opens later, offline,
+exactly as captured, with nothing run. The skill tells the agent when that is
+worth its cost: when the page is the evidence (a datasheet, a price, a
+statement that may change), when the person asks to keep it, or when how it
+looks matters. A PDF or other file handed to it is kept as the file it is.
+
+**Getting the page.** It asks for the page directly first, as anyone would get
+it — no cookies, no referrer. In a browser that usually fails CORS for HTML;
+it is one quick, recorded request. A page is then the reader's rendering of
+it — r.jina.ai's DOM after the page's scripts ran, a third party's rendering,
+and the snapshot and the result both say so — or, in node with
+`render: false`, the raw response. When the reader will not render it but the
+direct request got the HTML, that is kept, and the result says it is the page
+before its scripts ran. When neither has the page, the reader's text is kept as
+an extract whose `missing` says the page could not be had.
+
+**Getting what it loads** is a pure pipeline in `capture/`, with no DOM,
+network or automerge, so the same code runs in a tab, a worker and node:
+
+| module | does |
+|---|---|
+| `scan.js` | an HTML tokenizer that keeps positions: raw text, RCDATA, foreign content, CDATA, duplicate attributes, a tag cut off at the end |
+| `links.js` | the one table of load positions (stylesheets, icons, images, lazy and responsive images, posters, backgrounds, SVG images; scripts, frames, media and objects by policy), read by both the crawl and the freeze |
+| `css.js` | the URLs in a stylesheet: `url()`, `@import`, `@font-face`, `image-set()`, never inside a comment or an ordinary string |
+| `sniff.js` | whether a response is what it was wanted for; an HTML body never is (the 404 page served as an image) |
+| `charset.js` | BOM > header > `<meta>` / `@charset` > the parent's > utf-8 |
+| `crawl.js` | what to fetch and keep, and why not |
+| `text.js` | the readable text and its headings, for `source_read` |
+| `freeze.js` | the page as one inert string |
+
+Every resource fetch goes through the guard (`ctx.fetchImpl`), with no cookies
+and no referrer. Every resource found is recorded with exactly one outcome —
+`ok`, `http-error`, `unreachable`, `refused`, `type-mismatch`, `over-budget`,
+`timeout`, `aborted`, `bad-url`, or `policy` for what is never fetched — and
+kept bytes are stored once each by SHA-256. The result and the view count what
+was not kept, by reason. From a browser a site's own CSS and images are often
+`unreachable` (CORS): that is recorded and left, and the snapshot shows the
+page without them.
+
+**The budget is deterministic.** Each resource has an order key — its class
+(stylesheets, then fonts, then images), then where it was found — and
+`resolve` walks the keys in order: the first resource that would pass 20 MB
+(page included) or 150 resources is `over-budget`, and so is everything
+fetchable after it. That is a function of the responses alone, so the crawl
+can fetch six at a time in any order and keep the same set; the tests feed one
+page's responses in all 24 completion orders under every budget. Nothing past
+the cut is fetched beyond the requests already in flight.
+
+**Viewing it runs nothing and reaches nothing.** The view shows `freeze(doc)`
+as the `srcdoc` of an iframe sandboxed with `allow-popups` and
+`allow-popups-to-escape-sandbox` only — never scripts, same-origin, forms,
+modals or top navigation. The frozen page starts with our CSP, which allows
+only `data:`; scripts, event handlers, `<base>`, preloads, `integrity` and the
+like are removed; every load position becomes a `data:` URL of the kept bytes,
+or the absolute URL of what was not kept, which the CSP blocks; and every
+`http-equiv` in the output is renamed `data-x-http-equiv`, as text, so no
+scanning mistake can leave a working refresh. Links open in a new tab. Above
+the page: the source, the time, who rendered it, the hash, what was kept and
+what was not and why, the text with its headings, and Export.
+
+**Export** saves the same string with Memento tags (`Memento-Datetime`,
+`<link rel="original">`) and a `patchwork-snapshot` marker, as one
+self-contained `.html` file. It is a pure function of the document: exporting
+twice gives the same bytes. Capturing an export again finds nothing to fetch
+but what the first capture could not keep.
+
+A research step has `web_capture` too, and its snapshots go into the
+workflow's ledger like everything else it keeps.
+
+Not done, on purpose or not yet: frames are recorded and not captured; a
+PDF's page offsets wait for pdf.js; nothing fills the gaps a browser could not
+fetch (there is no capture daemon — the gaps are recorded honestly and left).
+Probes for what only a real browser or the real services can say — the
+reader's JSON (`probes/reader-dom.mjs`, P1/P2), byte-equal PDFs in node
+(`probes/capture-node.mjs`, P3), the sandboxed frame in Chrome
+(`probes/snapshot-frame.mjs`, P5/P6) and the size caps through the sync
+server (`probes/sync-size.mjs`, P7) — are written and not yet run.
 
 ## Where a tool may fetch
 
@@ -262,8 +344,8 @@ ledgerUrl: <the plan>, stepId }` in the same change that creates the step's
 session. Every runner — tab, worker, node — reads it in one place
 (`runner.js` `prepare`) and nowhere else:
 
-- **The toolset** is exactly `web_search`, `web_fetch`, `http_request` (GET and
-  HEAD, no body), `source_read`, `source_list`, `finding_write` and
+- **The toolset** is exactly `web_search`, `web_fetch`, `web_capture`,
+  `http_request` (GET and HEAD, no body), `source_read`, `source_list`, `finding_write` and
   `session_recall`: built-ins, frozen, plugins never consulted, and whatever
   the session says about its tools ignored. `finding_write` exists nowhere
   else; `source_file`, which writes into a folder, is never here.

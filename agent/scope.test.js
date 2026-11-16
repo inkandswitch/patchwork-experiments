@@ -255,7 +255,7 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   // refuse outright.
   const REFUSED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "169.254.169.254", new URL(ORIGIN).host]
   const REFUSED_VALUES = ["origin handoff", "localhost", "loopback", "v6 loopback", "metadata", "redirect to the origin"]
-  const FETCHING = ["web_fetch.url", "http_request.url"]
+  const FETCHING = ["web_fetch.url", "web_capture.url", "http_request.url"]
   const OTHER_TOOLS = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !SCOPED_TOOL_IDS.includes(id))
 
   /** Every value a URL-ish field might be handed, by name. */
@@ -287,6 +287,7 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   const FIELDS = {
     web_search: [["query", (v) => ({ query: v ?? "q" })]],
     web_fetch: [["url", (v) => ({ url: v, fresh: true })]],
+    web_capture: [["url", (v) => ({ url: v, again: true })]],
     http_request: [["url", (v) => ({ url: v })]],
     source_read: [["source", (v) => ({ source: v, limit: 40 })], ["find", (v) => ({ source: w.ledger.source, find: v ?? "x" })]],
     source_list: [["find", (v) => (v === undefined ? {} : { find: v })]],

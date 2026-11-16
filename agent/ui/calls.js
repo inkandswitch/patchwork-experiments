@@ -131,6 +131,7 @@ export const PRESENTATION = {
   // ---- the world outside
   web_search: { verb: "search", detail: (i) => (i.query ? `“${i.query}”` : null) },
   web_fetch: { verb: "fetch", detail: (i) => hostOf(i.url) },
+  web_capture: { verb: "capture", detail: (i) => hostOf(i.url) },
   http_request: {
     verb: (i) => (i.method ?? "GET").toUpperCase(),
     detail: (i) => hostOf(i.url),

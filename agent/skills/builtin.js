@@ -756,8 +756,8 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
   steps run side by side; host steps take turns on the page.
 - **access: web** for research — finding sources, reading datasheets and
-  standards. The step gets \`web_search\`, \`web_fetch\`, \`http_request\`
-  (GET and HEAD), \`source_read\`, \`source_list\`, \`finding_write\` and
+  standards. The step gets \`web_search\`, \`web_fetch\`, \`web_capture\`,
+  \`http_request\` (GET and HEAD), \`source_read\`, \`source_list\`, \`finding_write\` and
   \`session_recall\` and nothing else, so it can fetch without asking anyone
   (it can reach none of the person's documents to leak). Everything it
   fetches and every finding it writes is kept, shared with the other research
@@ -872,20 +872,46 @@ it merges with other people's concurrent edits.
   {
     name: "working-with-the-web",
     description:
-      "When to search, fetch or call an API; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
+      "When to search, fetch, capture a page or call an API; how everything fetched is kept and read back cheaply; how approval works and why you should not pre-negotiate it.",
     body: `# Working with the web
 
-Three tools reach out, and picking the wrong one wastes a turn.
+Four tools reach out, and picking the wrong one wastes a turn.
 
 - **\`web_search\`** — titles and URLs. It returns links, not answers.
 - **\`web_fetch\`** — read a page or a paper. The default choice.
+- **\`web_capture\`** — keep a page as it looks, for good.
 - **\`http_request\`** — methods, headers, bodies. For APIs and for files, and
   for a page's own source (its script tags, the shell before scripts ran).
 
+## Capturing a page, or fetching it
+
+\`web_fetch\` keeps what a page *says*: the reader's text of it, which is what
+you need to read it. \`web_capture\` keeps the page *itself*: its HTML with the
+stylesheets, fonts and images it loads, in a snapshot the person can open
+later and see exactly as it was, offline, with nothing run. It costs more —
+dozens of requests and megabytes — so capture when the page is the evidence:
+
+- a datasheet, a price, a specification, a policy or a statement that may
+  change or disappear, and that a claim will rest on;
+- the person asks to keep, save or archive a page;
+- what matters is how the page looks (a layout, a table, a figure), not only
+  what it says.
+
+To read, search or summarise, fetch. A capture's text is read with
+\`source_read\` like anything kept, so a page captured is never fetched as
+well. A PDF or other file handed to \`web_capture\` is kept as the file it is.
+
+The result counts what was kept and what was not, by reason. From a browser
+a site's own CSS and images are often unreachable (CORS): the snapshot shows
+the page without them, and says so. That is recorded and left; do not try to
+fetch the missing pieces another way. The page's HTML is usually the
+reader's rendering of it after its scripts ran — a third party's — and the
+snapshot says that too.
+
 ## Everything fetched is kept
 
-Every successful \`web_fetch\` and \`http_request\` keeps what it fetched as a
-document, and the result says where. Nothing is overwritten: fetching again
+Every successful \`web_fetch\`, \`web_capture\` and \`http_request\` keeps what
+it fetched as a document, and the result says where. Nothing is overwritten: fetching again
 makes a new one. A PDF is kept as the PDF itself, with its text beside it,
 whenever it can be fetched from here; when it cannot, the result says so and
 the reader's text is kept instead.

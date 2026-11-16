@@ -118,7 +118,7 @@ describe("the web search that granted the web", () => {
 
   it("says what 'any site' actually covers", () => {
     const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
-    expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, search and plain GET in this session" })
+    expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, capture, search and plain GET in this session" })
   })
 })
 

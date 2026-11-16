@@ -530,6 +530,8 @@ export function recordArtifact(doc, ref) {
     entry.source = ref.source
     entry.engine = ref.engine ?? null
     entry.chars = ref.chars ?? null
+    // What it is — a snapshot, say — so a capture of the same page can find it.
+    if (ref.what) entry.what = ref.what
   }
   doc.made.unshift(entry)
   // Only what is not a kept source is capped: this list is what a later fetch
@@ -676,6 +678,8 @@ export function urlPrefixes(target) {
 export const GRANT_GROUPS = {
   web_fetch: "web",
   web_search: "web",
+  // Keeping a page is reading it, with its pictures: the same decision.
+  web_capture: "web",
   http_request: "web",
   // "May you write files" is likewise one decision; before fs_edit existed it
   // was implicitly one tool. Grants written as fs_write@… keep working.
@@ -690,7 +694,7 @@ export const GRANT_GROUPS = {
 export function describeGrantScope(toolId) {
   switch (grantGroup(toolId)) {
     case "web":
-      return "every web fetch, search and plain GET in this session"
+      return "every web fetch, capture, search and plain GET in this session"
     case "files":
       return "every file write, edit, delete and filing in this session"
     default:

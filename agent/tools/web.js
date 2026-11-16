@@ -290,7 +290,7 @@ async function viaReader(target, format, input, ctx, fetchImpl) {
 }
 
 /** Keep the PDF's bytes with the reader's text, or the reader's text with the reason the PDF is missing. */
-async function keepPdf(target, { pdf, markdown, readerStatus, readerCache, at }, ctx) {
+export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache, at }, ctx) {
   if (pdf.ok) {
     const { ref, marks, capture } = await keepSource(ctx, {
       source: target,

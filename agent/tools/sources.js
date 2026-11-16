@@ -25,7 +25,7 @@
  *
  *   source       the URL as requested
  *   capture      { at, finalUrl, via: "direct"|"reader",
- *                  engine: "raw"|"reader-markdown"|"reader-text",
+ *                  engine: "raw"|"reader-markdown"|"reader-text"|"reader-dom",
  *                  status, contentType, sha256, bytes, readerCache }
  *   content      the primary: Uint8Array for bytes, ImmutableString for text
  *   role         "primary" (the response itself) | "extract" (the reader's text)
@@ -33,10 +33,16 @@
  *   textVia      "reader" | "html-to-text" | null
  *   marks        [{ at, label }] — headings, as offsets into readable(doc)
  *   pages        null until page offsets exist
- *   missing      null | { what: "pdf", outcome, detail } — what we could not keep
+ *   missing      null | { what: "pdf" | "primary", outcome, detail } — what we could not keep
+ *
+ * A web snapshot (tools/capture.js) carries the same contract, with `html`
+ * as its primary instead of `content` and engine "reader-dom" or "raw".
  */
 
 import { ImmutableString, isImmutableString } from "@automerge/automerge"
+import { MAGIC, formatOf } from "../capture/sniff.js"
+import { sha256Hex } from "../capture/bytes.js"
+import { MAX_MARKS, fewest } from "../capture/text.js"
 
 const MIME_EXTENSIONS = {
   "text/markdown": "md",
@@ -90,28 +96,13 @@ export function isTextResponse(contentType, bytes) {
 }
 
 /**
- * The first few bytes, as hex, with the format named when we recognise it.
- *
- * A model that asked for a wasm module needs some way to tell that it got one.
- * The magic number is the answer a person would look at, so it is the answer to
- * give: `00 61 73 6d` is `\0asm` and nothing else is.
+ * The magic-byte table and the format it names live with the capture code
+ * (capture/sniff.js), which must load without automerge; this module is
+ * where everything else has always found them.
  */
-export const MAGIC = [
-  [[0x00, 0x61, 0x73, 0x6d], "WebAssembly module"],
-  [[0x1f, 0x8b], "gzip"],
-  [[0x50, 0x4b, 0x03, 0x04], "zip"],
-  [[0x25, 0x50, 0x44, 0x46], "PDF"],
-  [[0x89, 0x50, 0x4e, 0x47], "PNG"],
-  [[0xff, 0xd8, 0xff], "JPEG"],
-  [[0x47, 0x49, 0x46, 0x38], "GIF"],
-]
+export { MAGIC, formatOf }
 
-/** The format's name, from its magic number, or null. */
-export function formatOf(bytes) {
-  const head = [...(bytes?.subarray?.(0, 8) ?? [])]
-  return MAGIC.find(([magic]) => magic.every((byte, i) => head[i] === byte))?.[1] ?? null
-}
-
+/** The first few bytes, as hex, with the format named when we recognise it. */
 export function describeBytes(bytes) {
   const hex = [...bytes.subarray(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join(" ")
   const known = formatOf(bytes)
@@ -192,13 +183,8 @@ export function readable(doc) {
   return asText(doc.content)
 }
 
-/** Hex SHA-256 of some bytes, for telling one kept response from another. */
-export async function sha256Hex(bytes) {
-  const digest = await crypto.subtle.digest("SHA-256", bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
-}
-
-export const MAX_MARKS = 200
+/** Hex SHA-256 of some bytes (capture/bytes.js, so capture code shares it without automerge). */
+export { sha256Hex }
 
 /**
  * Headings as marks: where each one starts, as a character offset, and the
@@ -241,21 +227,8 @@ export function marksFromMarkdown(text) {
   return fewest(marks, MAX_MARKS)
 }
 
-const level = (mark) => mark.label.match(/^#*/)[0].length || 1
-
-/**
- * At most `max` marks, keeping the outline's top: every heading down to the
- * deepest level that still fits, in document order. When even the top level
- * does not fit, its first `max`.
- */
-export function fewest(marks, max) {
-  if (marks.length <= max) return marks
-  for (let depth = 5; depth >= 1; depth--) {
-    const kept = marks.filter((m) => level(m) <= depth)
-    if (kept.length <= max) return kept
-  }
-  return marks.filter((m) => level(m) === 1).slice(0, max)
-}
+/** The marks cap and how marks are thinned (capture/text.js, which loads without automerge). */
+export { MAX_MARKS, fewest }
 
 /** The heading a character offset sits under: the last mark at or before it. */
 export function headingAt(marks, offset) {

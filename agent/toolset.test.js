@@ -138,7 +138,19 @@ describe("a research step's http_request", () => {
 describe("the modules a research step's tools are made of", () => {
   // Everything a scoped tool runs, and nothing in it that reaches past its
   // context: the page's globals, the platform's fetch, or the host's modules.
-  const MODULES = ["scope.js", "tools/web.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "tools/guard.js", "tools/format.js"]
+  const MODULES = [
+    "scope.js", "tools/web.js", "tools/capture.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "tools/guard.js", "tools/format.js",
+    // Capture's pure pipeline, which every web_capture runs.
+    "capture/scan.js", "capture/links.js", "capture/css.js", "capture/sniff.js", "capture/charset.js", "capture/crawl.js", "capture/text.js", "capture/freeze.js", "capture/bytes.js",
+  ]
+  // Capture code runs in a tab, a worker and node alike: it imports nothing
+  // but its own modules, so no DOM, network or automerge can creep in.
+  it.each(MODULES.filter((f) => f.startsWith("capture/")))("%s imports only capture modules", (file) => {
+    const code = readFileSync(join(import.meta.dirname, file), "utf8")
+    for (const [, from] of code.matchAll(/^import\s[^"']*["']([^"']+)["']/gm)) expect(from, file).toMatch(/^\.\/[\w-]+\.js$/)
+    expect(code).not.toMatch(/\bimport\(/)
+  })
+
   it.each(MODULES)("%s uses no globalThis, no bare fetch( and no hostImport", (file) => {
     const code = readFileSync(join(import.meta.dirname, file), "utf8")
     expect(code).not.toMatch(/globalThis/)

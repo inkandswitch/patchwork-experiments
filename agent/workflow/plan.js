@@ -346,6 +346,7 @@ export function stepPrompt(plan, step) {
       `You can reach the web and nothing else. Everything you fetch is kept, for you and for this workflow's other research steps:`,
       `- Check source_list before fetching: what is already kept is free to read, and source_list {find:"…"} searches all of it.`,
       `- Read kept pages and PDFs with source_read, by offset or with find, rather than fetching them again.`,
+      `- When the page itself is the evidence — a datasheet, a price, a statement that may change — keep it with web_capture: a snapshot that opens later exactly as it looked.`,
       `- Write down what you learn with finding_write as you go, citing the kept sources it rests on. A finding is kept: it survives when older results here are shortened, and the person can read it.`,
       `- In your result, cite the web URLs that what you found rests on.`
     )

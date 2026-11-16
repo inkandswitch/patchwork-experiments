@@ -31,6 +31,7 @@ import docTools from "./docs.js"
 import folderTools from "./folders.js"
 import environmentTools from "./environment.js"
 import webTools from "./web.js"
+import captureTools from "./capture.js"
 import checkingTools from "./checking.js"
 import discoveryTools from "./discovery.js"
 import httpTools, { scopedHttpRequest } from "./http.js"
@@ -48,7 +49,7 @@ import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...captureTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
 
 /**
  * Tools for one kind of session only. finding_write writes into a research

@@ -54,6 +54,27 @@ export const plugins = [
     },
   },
   {
+    type: "patchwork:datatype",
+    id: "web-snapshot",
+    name: "Web Snapshot",
+    icon: "Globe",
+    async load() {
+      return (await import("./snapshot/datatype.js")).WebSnapshotDatatype
+    },
+  },
+  {
+    // A kept page, shown inert: no script runs and nothing is fetched.
+    type: "patchwork:tool",
+    id: "web-snapshot",
+    name: "Web Snapshot",
+    icon: "Globe",
+    supportedDatatypes: ["web-snapshot"],
+    async load() {
+      const { SnapshotView } = await import("./snapshot/view.js")
+      return (handle, element) => SnapshotView(handle, element)
+    },
+  },
+  {
     // The sidebar panel: attaches to whatever document you are looking at.
     type: "patchwork:component",
     id: "agent-panel",

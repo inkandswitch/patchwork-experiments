@@ -45,7 +45,7 @@ export const KERNEL_TYPES = ["agent-session", "agent-workflow"]
  * a plugin is someone else's code, and handing it a step that fetches anything
  * without asking would hand it that permission too.
  */
-export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall"]
+export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "web_capture", "http_request", "source_read", "source_list", "finding_write", "session_recall"]
 
 export const NOT_A_SOURCE = "Not one of this workflow's sources."
 export const EDITED_OUTSIDE = "This finding changed outside the research steps; write a new one."
