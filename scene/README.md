@@ -43,12 +43,15 @@ pnpm install && pnpm build && pnpm test
 Every part but carry declares no traits, so each runs in every scene, a
 game's included; carry runs where the doc has something carryable. What
 keeps the editor's chrome out of the way is that **editing is a body**
-(TOOLS.md §3, Decisions 6): the toolbar, the halo's handles and knobs, the
+(TOOLS.md §3, Decisions 6): the toolbar's editor commands, the halo's handles and knobs, the
 inspector (a drawer tab a selection opens; it stays open, on the scene
 when nothing is selected, until its ×, the toolbar or leaving Edit), the outline
 (Objects), Dimensions and Parts (tabs you open from the toolbar), the grid,
 axes and bounds, and every command marked `edit: true` show only in the
-Edit body. Look, walk, seat and station show none of it.
+Edit body. Look, walk, seat and station show none of it. The toolbar is
+the bar of tools: its world commands (`show: ["world"]`: arena's Play, the
+cups' Lift all, sailing's Come aboard) sit at its right end in every body
+(TOOLS.md §6, Decisions 10).
 `scene.clock` is the clock chips (▶ or ⏸ for each doc's world time on the
 focus path, in a slim bar on the top edge, shown only for a doc with a
 process: TOOLS.md §6, §7); `scene.undo` is Undo and Redo (⌘Z, ⇧⌘Z, and the

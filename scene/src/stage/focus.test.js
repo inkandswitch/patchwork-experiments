@@ -499,6 +499,37 @@ describe("surfaces across docs", () => {
   });
 });
 
+describe("the bar of tools across docs, outside Edit", () => {
+  it("looking, entered in B: the game's and the host's world commands are on the bar, the game's first, and each runs where it's from; no editor command shows", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const repo = new FakeRepo();
+    const ran = [];
+    const world = (id, name) => (api) => ({ commands: [{ id, name, show: ["world"], run: () => ran.push([id, api.url]) }, { id: `${id}-edit`, name: `${name} (editor)`, show: ["toolbar"], run() {} }] });
+    const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card", traits: { "t.game": {} } }) }, order: ["card"] }));
+    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: world("ring", "Ring") } };
+    const GAME = { meta: { id: "t.game", traits: ["t.game"] }, module: { create: world("deal", "Deal") } };
+    const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
+    s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.focus" }, module: focusPart }, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
+    const view = s.debug.view;
+    await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.game"), 3000);
+    view.enterBody("look", null);
+    const buttons = (cluster) => [...view.root.querySelectorAll(`.toolbar .${cluster} button`)];
+    const labels = (cluster) => buttons(cluster).map((x) => x.textContent);
+    await until(() => J(labels("world")) === J(["Ring"]), 2000);
+    // outside the game, its command isn't on the focus path
+    expect([labels("tools"), labels("world")]).toEqual([[], ["Ring"]]);
+    expect(s.api("t.host").view.enter("L")).toBe(true);
+    await until(() => J(labels("world")) === J(["Deal", "Ring"]), 2000);
+    expect(s.local.get().body.id).toBe("look");
+    expect(labels("tools")).toEqual([]);
+    for (const x of buttons("world")) x.click();
+    expect(ran).toEqual([
+      ["deal", b.url],
+      ["ring", s.handle.url],
+    ]);
+  });
+});
+
 describe("the drawer follows the focus", () => {
   it("the Objects tab open as the focus moves opens again inside, on the linked doc's objects; link rows say what they are and enter", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -164,9 +164,11 @@ press first (measure, arena's gun, a piece just drawn from a bag). A tool is
 held only if it takes input outside its own widgets; Escape puts it down.
 Playing is the empty hand. **Editing is a body**: in Edit a click selects,
 and a selection shows its **halo** (move, rotate and scale handles where
-the doc may be written) and the inspector; the toolbar, the grid, axes and
-bounds and every editing command are Edit's alone, so someone at a table or
-walking a level sees no editor. Carrying needs no tool and no body:
+the doc may be written) and the inspector; the toolbar's editor commands,
+the grid, axes and bounds and every editing command are Edit's alone, so
+someone at a table or walking a level sees no editor (the toolbar's world
+commands, a game's Play or Lift all, show in every body: TOOLS.md
+Decisions 10). Carrying needs no tool and no body:
 whatever has the `scene.carry` trait can be picked up by anyone, and Select
 is in every menu.
 

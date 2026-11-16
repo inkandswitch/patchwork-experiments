@@ -1,7 +1,7 @@
 // Reading commands (STAGE.md, "A command"), for the surfaces that present
-// them: the toolbar, the key map and the menu. Pure: no DOM, no api.
+// them: the bar of tools, the key map and the menu. Pure: no DOM, no api.
 
-import { inBody } from "../stage/bodies.js";
+import { editing, inBody } from "../stage/bodies.js";
 
 /**
  * Every running extension's commands, flattened, in running order then
@@ -163,6 +163,65 @@ export function applicable(flat, target, ctx, surface, opts) {
   }
   return out;
 }
+
+/**
+ * Is this a world command, the bar's in every body? Only an explicit
+ * mention counts (show names "world"), as for the menu's scene commands:
+ * a command that says nothing about its surfaces is no game's call to make.
+ */
+export const isWorld = (command) => shownOn(command, "world", { strict: true });
+
+/**
+ * Is this command meant for the bar of tools in this view (TOOLS.md §6)?
+ * A world command is, in every body; a toolbar command (show names
+ * "toolbar", or says nothing) is the editor's, so only in Edit. Whether it
+ * applies (state, and `edit: true`) is commandState's, as on every surface.
+ */
+export const onBar = (command, view) => isWorld(command) || (editing(view) && shownOn(command, "toolbar"));
+
+/**
+ * The bar of tools for a view: the focus path's scene commands (the null
+ * target) that are on the bar and apply, each worked out in its own stage's
+ * context, in two clusters, each in path order (the focus first), then
+ * running order, then command order, one entry per stage/extension/id:
+ * `editor` (the toolbar commands: Edit only) and `world` (the world
+ * commands: every body; a command saying both is a world command). And
+ * `declared`: does some extension on the path declare a world command
+ * that may apply in this body, whether or not it applies now? That, not
+ * the state of the moment, decides whether the bar shows (barShown).
+ * @param {{ stage?: number, collected: any, ctx: object }[]} segs  the focus path's stages, focus first
+ * @param {{ body?: { id?: string } } | null | undefined} view
+ * @returns {{ editor: { ext, command, state, stage? }[], world: { ext, command, state, stage? }[], declared: boolean }}
+ */
+export function barEntries(segs, view) {
+  const editor = [];
+  const world = [];
+  let declared = false;
+  const seen = new Set();
+  for (const seg of segs ?? []) {
+    for (const { ext, command } of flatCommands(seg.collected)) {
+      const w = isWorld(command);
+      if (w && inBody(command, view)) declared = true;
+      if (!onBar(command, view)) continue;
+      const k = `${seg.stage ?? ""}\u0000${ext}\u0000${command.id}`;
+      if (seen.has(k)) continue;
+      const state = commandState(command, null, seg.ctx);
+      if (!state) continue;
+      seen.add(k);
+      (w ? world : editor).push(seg.stage === undefined ? { ext, command, state } : { ext, command, state, stage: seg.stage });
+    }
+  }
+  return { editor, world, declared };
+}
+
+/**
+ * Does the bar show? While it holds an editor command, or some extension
+ * declares a world command for this body: so outside Edit its height
+ * depends on which extensions run, never on a command's state, and the
+ * canvas under it doesn't move when Play or Lift all comes and goes.
+ * @param {{ editor: any[], declared: boolean }} entries  barEntries()
+ */
+export const barShown = ({ editor, declared }) => editor.length > 0 || declared;
 
 /** Everything a rendered control shows, as one string (to tell whether it changed). */
 export function controlKey({ ext, command, state, key }) {

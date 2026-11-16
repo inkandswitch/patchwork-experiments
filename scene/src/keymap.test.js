@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { attentionPath, codeOfKey, hintFor, labelOf, lookChain, mapInvocation, reservedBy, resolveKey } from "./keymap.js";
 import { keyContext, resolverState } from "./parts/resolver.js";
-import { TOO_FAR, applicable, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
+import { TOO_FAR, barEntries, commandState, flatCommands, keysOf } from "./parts/toolbar-commands.js";
 import { promptEntries } from "./parts/use.js";
 import { menuEntries } from "./parts/menu.js";
 import { CARRY_KEYS } from "./parts/carry.js";
@@ -24,7 +24,7 @@ const COLLECTED = [
   { id: "scene.carry", value: [{ id: "flip", name: "Flip", key: "f", state: on("card", "crate"), run() {} }] },
   { id: "sailing", value: [
     { id: "helm", name: "Take the helm", key: "f", reach: true, state: on("helm"), run() {} },
-    { id: "aboard", name: "Come aboard", key: "Enter", show: [], state: (t) => (t == null ? {} : null), run() {} },
+    { id: "aboard", name: "Come aboard", key: "Enter", show: ["world"], state: (t) => (t == null ? {} : null), run() {} },
   ] },
   { id: "dice", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
   { id: "scene.measure", value: [{ id: "measure", name: "Measure", key: "m", tool: { pointer: true }, state: (t) => (t == null ? { checked: false } : null), run() {} }] },
@@ -33,10 +33,12 @@ const COLLECTED = [
 
 const WALK = ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft"].map((code) => ({ code }));
 const BODIES = [
-  { id: "orbit", keys: [], reach: Infinity },
+  { id: "look", keys: [], reach: Infinity },
   { id: "walk", keys: WALK, reach: 2 },
   { id: "seat", keys: [], reach: 2 },
   { id: "station", keys: [{ code: "KeyA" }, { code: "KeyD" }], reach: 2.5 },
+  // (the editor: the bar holds its commands too)
+  { id: "edit", keys: [], reach: Infinity },
 ];
 const TOOLS = [null, { name: "gun", keys: [{ code: "KeyR" }] }, { name: "measure", keys: [] }];
 const GESTURES = [null, { keys: CARRY_KEYS }];
@@ -91,7 +93,7 @@ function* cases() {
           }
 }
 
-/** Every entry a surface shows, with its target: the prompt's, the menu's (object and scene) and the bar's. */
+/** Every entry a surface shows, with its target: the prompt's, the menu's (object and scene) and the bar's (its editor's and world's clusters, as the bar works them out in this body). */
 function shown(state) {
   const out = [];
   const p = promptEntries(state.collected, state.attention, state.ctx, Infinity);
@@ -101,7 +103,8 @@ function shown(state) {
   const m = menuEntries(state.collected, target, state.ctx);
   for (const e of m.forObject) out.push({ ...e, target, surface: "menu" });
   for (const e of m.forScene) out.push({ ...e, target: null, surface: "menu" });
-  for (const e of applicable(flatCommands(state.collected), null, state.ctx, "toolbar")) out.push({ ...e, target: null, surface: "bar" });
+  const bar = barEntries([{ collected: state.collected, ctx: state.ctx }], state.ctx.view);
+  for (const e of [...bar.editor, ...bar.world]) out.push({ ...e, target: null, surface: "bar" });
   return out;
 }
 
