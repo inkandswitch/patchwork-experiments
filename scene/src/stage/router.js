@@ -23,7 +23,7 @@
 
 import { offer } from "./chain.js";
 import { fromEmbed } from "../embed.js";
-import { reservedBy } from "../keymap.js";
+import { keyOfCode, reservedBy } from "../keymap.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
@@ -161,6 +161,7 @@ export function firstOfDouble(presses, dbl) {
  *   centerRay?: () => { origin: any, dir: any },
  *   hit?: object | null,                               // handed in: the event's hit is this, no pick (a double-click's first click's)
  *   widget?: object | null,                            // handed in, likewise
+ *   mods?: { shift?, alt?, ctrl?, meta? },             // modifiers held as claimed keys: each flag is the DOM's or this
  * }} ctx
  */
 export function buildEvent(type, e, ctx) {
@@ -194,10 +195,10 @@ export function buildEvent(type, e, ctx) {
     buttons: e?.buttons ?? 0,
     pointerId: e?.pointerId ?? null,
     pointerType: e?.pointerType ?? (e && "button" in e ? "mouse" : null),
-    shift: !!e?.shiftKey,
-    alt: !!e?.altKey,
-    ctrl: !!e?.ctrlKey,
-    meta: !!e?.metaKey,
+    shift: !!e?.shiftKey || !!ctx.mods?.shift,
+    alt: !!e?.altKey || !!ctx.mods?.alt,
+    ctrl: !!e?.ctrlKey || !!ctx.mods?.ctrl,
+    meta: !!e?.metaKey || !!ctx.mods?.meta,
     key: e?.key ?? null,
     code: e?.code ?? null,
     repeat: !!e?.repeat,
@@ -297,6 +298,7 @@ export function createRouter(o) {
       pickWidget: o.pickWidget,
       ray: o.ray,
       centerRay: o.centerRay,
+      mods: heldMods(),
       ...extra,
     });
 
@@ -705,6 +707,20 @@ export function createRouter(o) {
 
   // code → { owner, key, code, up(ev) }: who claimed each key that's down
   const down = new Map();
+
+  // The modifiers held as claimed keys: a flag of every event is the DOM's
+  // or one of these. A keyboard's own Shift is in its events' flags already;
+  // a key pressed for it (the touch pad's Alt, "Place freely") is in none,
+  // so without this every move would say it's up.
+  const MOD = { Shift: "shift", Alt: "alt", Control: "ctrl", Meta: "meta" };
+  function heldMods() {
+    const m = {};
+    for (const code of down.keys()) {
+      const f = MOD[keyOfCode(code)];
+      if (f) m[f] = true;
+    }
+    return m;
+  }
 
   const keyEvent = (type, e) => make(type, e, { noHit: true });
 

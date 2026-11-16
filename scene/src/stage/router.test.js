@@ -663,6 +663,33 @@ describe("keys", () => {
     }
     expect(t.inputs.keys.key).not.toHaveBeenCalled();
   });
+  it("an event's modifier flags are the DOM's or a claimed, held modifier key's (the touch pad's Alt): every modifier code × claimed, reserved but passed, not reserved", () => {
+    const MODS = { ShiftLeft: "shift", ShiftRight: "shift", AltLeft: "alt", AltRight: "alt", ControlLeft: "ctrl", ControlRight: "ctrl", MetaLeft: "meta", MetaRight: "meta" };
+    const KEY = { shift: "Shift", alt: "Alt", ctrl: "Control", meta: "Meta" };
+    const flags = (ev) => ["shift", "alt", "ctrl", "meta"].filter((f) => ev[f]);
+    for (const [code, flag] of Object.entries(MODS)) {
+      for (const how of ["claimed", "passed", "unreserved"]) {
+        const t = setup();
+        const seen = [];
+        const body = { key: () => how === "claimed", keyup: () => true, move: (ev) => seen.push(`move ${flags(ev)}`) };
+        t.router.pushBody("b", { id: "b", input: body, keys: how === "unreserved" ? [] : [{ code }] });
+        t.inputs.chain = { key: (ev) => (seen.push(`${ev.code} ${flags(ev)}`), false) };
+        // the pad's events: no DOM flags on any of them
+        key(t.root, "keydown", KEY[flag], code);
+        move(t);
+        key(t.root, "keydown", "q");
+        key(t.root, "keyup", KEY[flag], code);
+        move(t);
+        const held = how === "claimed" ? flag : "";
+        const chainSaw = how === "unreserved" ? [`${code} `] : [];
+        expect([code, how, seen]).toEqual([code, how, [...chainSaw, `move ${held}`, `KeyQ ${held}`, "move "]]);
+        // the DOM's own flag stands with nothing held
+        seen.length = 0;
+        move(t, { [`${flag}Key`]: true });
+        expect([code, how, seen]).toEqual([code, how, [`move ${flag}`]]);
+      }
+    }
+  });
   it("on blur and a hidden page, every held key gets its keyup", () => {
     const t = setup();
     const armed = { key: () => true, keyup: vi.fn() };

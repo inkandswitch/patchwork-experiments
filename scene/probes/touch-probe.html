@@ -1,0 +1,168 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene touch probe</title>
+<!-- Driven by probes/touch-run.mjs under Chrome's touch emulation: one scene
+     tool (the BUILT one, dist/) on a manual clock, a floor and a block that
+     can be carried, and a probe extension (registered here, to STAGE.md's
+     extension contract) that offers a keyboard body that locks the pointer
+     ("Walkish": walk's labelled keys plus an unlabelled Q; a drag on the
+     world looks) and a tool with a key (a wrench: R, Reload). Everything
+     each of them hears goes in window.__log, so the runner can tell what a
+     finger on the touch pad pressed. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js", "@automerge/automerge": "./automerge-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #a { width: 900px; height: 640px; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { emptyScene } from "../src/test/empty-scene.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let time = null;
+async function loaded(pred, ms = 15_000) {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; ) {
+    if (pred()) return true;
+    await time.step(1);
+    await sleep(16);
+  }
+  return !!pred();
+}
+
+// requestPointerLock asked: counted, whoever asks
+window.__asks = 0;
+const request = HTMLCanvasElement.prototype.requestPointerLock;
+HTMLCanvasElement.prototype.requestPointerLock = function (...a) {
+  window.__asks++;
+  return request.apply(this, a);
+};
+
+const log = (window.__log = []);
+const WALKISH_KEYS = [
+  ["KeyW", "Forward"], ["KeyA", "Left"], ["KeyS", "Back"], ["KeyD", "Right"],
+  ["ArrowUp", "Forward"], ["ArrowDown", "Back"], ["ArrowLeft", "Left"], ["ArrowRight", "Right"],
+  ["ShiftLeft", "Run"], ["ShiftRight", "Run"], ["Space", "Jump"],
+].map(([code, label]) => ({ code, label })).concat([{ code: "KeyQ" }]);
+
+try {
+  const { plugins, loadTime } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  time = window.__time = (await loadTime()).manualTime();
+  const repo = new FakeRepo();
+  const box = (w, h, d, color, at = [0, 0, 0]) => {
+    const [x, y, z] = at, a = w / 2, c = d / 2;
+    const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+    const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+    return { positions: f.flat().flatMap((i) => v[i]), color };
+  };
+  const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
+  const floorGLB = file("floor.glb", { meshes: [box(6, 0.05, 6, "#7d9a6a")] });
+  const blockGLB = file("block.glb", { meshes: [box(0.5, 0.5, 0.5, "#d8643a")] });
+  const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  const objects = {
+    floor: obj("Floor", floorGLB, [0, -0.05, 0], { locked: true }),
+    block: obj("Block", blockGLB, [0.6, 0, 0], { traits: { "scene.carry": {} } }),
+  };
+
+  getRegistry("scene:extension").register({
+    type: "scene:extension", id: "probe", name: "Probe",
+    load: async () => ({
+      create(api) {
+        window.__probeApi = api;
+        const eye = { position: [0, 1.6, 3.2], yaw: 0, pitch: -0.35 };
+        const dir = () => [-Math.sin(eye.yaw) * Math.cos(eye.pitch), Math.sin(eye.pitch), -Math.cos(eye.yaw) * Math.cos(eye.pitch)];
+        const walker = {
+          key: (ev) => (log.push(`body key ${ev.code} ${ev.key}`), true),
+          keyup: (ev) => (log.push(`body keyup ${ev.code} ${ev.key}`), true),
+          // unlocked, a drag on the world looks round (as walk's does)
+          press: (ev) => {
+            if (ev.locked) return null;
+            let last = [ev.x, ev.y];
+            log.push("body press");
+            return {
+              move(m) {
+                eye.yaw += (m.x - last[0]) * 0.004;
+                eye.pitch -= (m.y - last[1]) * 0.004;
+                last = [m.x, m.y];
+                log.push("body look");
+              },
+              end: () => log.push("body look end"),
+              cancel: () => log.push("body look cancel"),
+              tap: () => false,
+            };
+          },
+        };
+        return {
+          bodies: [{
+            id: "walkish", label: "Walkish", lock: true, keys: WALKISH_KEYS,
+            enter: () => ({ input: walker, eye: () => ({ position: eye.position, direction: dir() }), leave() {} }),
+          }],
+          commands: [{
+            id: "wrench", name: "Wrench", tool: { keys: [{ code: "KeyR", label: "Reload" }] },
+            run: () => ({
+              key: (ev) => (log.push(`tool key ${ev.code} ${ev.key}`), true),
+              keyup: (ev) => (log.push(`tool keyup ${ev.code} ${ev.key}`), true),
+            }),
+          }],
+        };
+      },
+    }),
+  });
+  const scene = repo.add(emptyScene({
+    title: "Touch probe", objects, order: Object.keys(objects),
+    view: { units: "m", grid: false, axes: false, bounds: false, start: { home: { position: [0, 2.2, 4], target: [0, 0, 0] } } },
+  }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  host.time = time;
+  host.viewerId = "viewer:a";
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const total = Object.values(scene.doc().objects).length;
+  await loaded(() => dbg.stats().loaded === total);
+  const vp = dbg.viewport;
+  const pageOf = (w) => { const p = vp.project(w); const r = vp.canvas.getBoundingClientRect(); return p && [Math.round(r.left + p.x), Math.round(r.top + p.y)]; };
+  const centre = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; };
+  window.__probe = {
+    errors,
+    dbg,
+    loaded: () => dbg.stats().loaded === total,
+    view: () => { const v = dbg.local.get(); return { body: v.body?.id, held: v.held?.name ?? null, gesture: v.gesture?.owner ?? null, pointer: v.pointer }; },
+    locked: () => document.pointerLockElement != null,
+    focused: () => document.activeElement === host.querySelector(".scene-stage") ? "root" : document.activeElement?.className || document.activeElement?.tagName,
+    /** what the pad shows: its places, and each group's name and buttons */
+    pad: () => {
+      const pad = host.querySelector(".touch-pad"), buttons = host.querySelector(".touch-buttons");
+      if (!pad || (pad.hidden && buttons.hidden)) return null;
+      return {
+        pad: pad.hidden ? [] : [...pad.children].map((b) => `${b.dataset.slot}=${b.title}`),
+        buttons: buttons.hidden ? [] : [...buttons.children].map((g) => [g.querySelector(".touch-layer-name").textContent, ...[...g.querySelectorAll(".touch-key")].map((b) => b.textContent)]),
+      };
+    },
+    /** page coords of a pad control, by what it shows (and its layer) */
+    control: (label, from = null) => centre([...host.querySelectorAll(".touch-key")].find((b) => (b.title || b.textContent) === label && (!from || b.dataset.from === from))),
+    chip: () => centre(host.querySelector(".body-chip")),
+    menuItem: (text) => centre([...host.querySelectorAll(".body-menu .menu-item")].find((b) => b.textContent === text)),
+    block: () => pageOf([0.6, 0.5, 0]),
+    blockRot: () => scene.doc().objects.block.transform.rotation,
+    blockPos: () => scene.doc().objects.block.transform.position,
+    world: () => pageOf([-1.2, 0, -1.5]),
+    wrench: () => api.run({ ext: "probe", command: "wrench" }),
+  };
+  const api = window.__probeApi;
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

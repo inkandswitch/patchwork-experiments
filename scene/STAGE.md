@@ -962,7 +962,7 @@ event = {
   widget,                     // lazy: { owner, onTop, distance, ...data } | null; a dblclick's: its first press's
   holder,                     // step 3: the holding object, null for the scene (and at every other step)
   button, buttons, pointerId, pointerType,
-  shift, alt, ctrl, meta,
+  shift, alt, ctrl, meta,     // the DOM's flag, or a modifier key held down and claimed (a touch pad's Alt: TOOLS.md §5)
   key, code, repeat,          // key events
   dx, dy, deltaY,             // move (locked) and wheel
   locked,                     // pointer lock: x, y and ndc are the canvas centre, ray and hit lie along the camera's forward ray
