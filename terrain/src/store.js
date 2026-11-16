@@ -35,24 +35,44 @@ export const RIGHTS = Object.freeze({
  */
 export async function storeTerrainData(repo, handle, fetched) {
   const title = handle.doc()?.title || "Terrain";
-  const [dem, features] = await Promise.all([
-    repo.create2(fileDoc(`${title} heights (int16le, NAVD88).bin`, "bin", "application/octet-stream", fetched.dem.bytes, RIGHTS.dem)),
+  const layered = !!fetched.dem.record.layered;
+  const demRights = layered ? { licence: "Mixed: see the Terrain doc's sources (CHS NONNA non-navigational; OGL – Canada; NOAA public domain)", attribution: fetched.attribution ?? "" } : RIGHTS.dem;
+  const [dem, features, layers, look] = await Promise.all([
+    repo.create2(fileDoc(`${title} heights (int16le, ${fetched.dem.record.datum}).bin`, "bin", "application/octet-stream", fetched.dem.bytes, demRights)),
     repo.create2(fileDoc(`${title} OpenStreetMap features.json`, "json", "application/json", fetched.features.bytes, RIGHTS.features)),
+    fetched.layers ? repo.create2(fileDoc(`${title} height sources and canopy.bin`, "bin", "application/octet-stream", fetched.layers.bytes, demRights)) : null,
+    fetched.look ? repo.create2(fileDoc(`${title} OpenStreetMap buildings and land cover.json`, "json", "application/json", fetched.look.bytes, RIGHTS.features)) : null,
   ]);
   handle.change((d) => {
-    d.data = { dem: { url: dem.url, ...plain(fetched.dem.record) }, features: { url: features.url, ...plain(fetched.features.record) }, fetched: fetched.summary.fetched, summary: plain(fetched.summary) };
+    d.data = {
+      dem: { url: dem.url, ...plain(fetched.dem.record) },
+      features: { url: features.url, ...plain(fetched.features.record) },
+      ...(layers ? { layers: { url: layers.url, ...plain(fetched.layers.record) } } : {}),
+      ...(look ? { look: { url: look.url, ...plain(fetched.look.record) } } : {}),
+      fetched: fetched.summary.fetched,
+      summary: plain(fetched.summary),
+    };
     d.sources = plain(fetched.sources);
-    d.attribution = ATTRIBUTION;
-    d.credit = CREDIT;
+    d.attribution = fetched.attribution ?? ATTRIBUTION;
+    d.credit = fetched.credit ?? CREDIT;
   });
-  return { dem: dem.url, features: features.url };
+  return { dem: dem.url, features: features.url, layers: layers?.url ?? null, look: look?.url ?? null };
 }
 
 // automerge takes fresh plain values, never undefined
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
+/** A file doc's bytes, checked against its record's sha256; null without a record. */
+async function readChecked(repo, rec, what) {
+  if (!rec?.url) return null;
+  const bytes = asBytes((await repo.find(rec.url)).doc()?.content);
+  if (!bytes) throw new Error(`The terrain's ${what} file is empty.`);
+  if (rec.sha256 && (await sha256Hex(bytes)) !== rec.sha256) throw new Error(`The ${what} file isn't what was fetched (its SHA-256 differs).`);
+  return bytes;
+}
+
 /**
- * Read a Terrain doc's data back: { dem: Int16Array, features } — checked against the doc's record (size and sha256).
+ * Read a Terrain doc's data back: { dem: Int16Array, features, layers?: Uint8Array, look? } — checked against the doc's record (size and sha256).
  * @param {{ find(url): Promise<{ doc(): object }> }} repo
  */
 export async function readTerrainData(repo, doc) {
@@ -66,7 +86,8 @@ export async function readTerrainData(repo, doc) {
   const [ds, fs] = await Promise.all([sha256Hex(demBytes), sha256Hex(featBytes)]);
   if (rec.dem.sha256 && ds !== rec.dem.sha256) throw new Error("The heights file isn't what was fetched (its SHA-256 differs).");
   if (rec.features.sha256 && fs !== rec.features.sha256) throw new Error("The features file isn't what was fetched (its SHA-256 differs).");
-  return { dem: bytesToInt16(demBytes), features: JSON.parse(new TextDecoder().decode(featBytes)) };
+  const [layers, look] = await Promise.all([readChecked(repo, rec.layers, "height sources"), readChecked(repo, rec.look, "buildings and land cover")]);
+  return { dem: bytesToInt16(demBytes), features: JSON.parse(new TextDecoder().decode(featBytes)), layers: layers ?? null, look: look ? JSON.parse(new TextDecoder().decode(look)) : null };
 }
 
 /** Whether the doc's data was fetched for its current origin and grid. */

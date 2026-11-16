@@ -28,7 +28,15 @@ export const inputs = (doc) => ({
   sources: doc?.sources ?? [],
   attribution: doc?.attribution ?? "",
   credit: doc?.credit ?? "",
-  data: doc?.data ? { dem: record(doc.data.dem), features: record(doc.data.features) } : null,
+  data: doc?.data ? { dem: record(doc.data.dem), features: record(doc.data.features), ...(doc.data.layers ? { layers: record(doc.data.layers) } : {}), ...(doc.data.look ? { look: record(doc.data.look) } : {}) } : null,
+  // a place's look and its own structures (only when it has them, so a doc without them fingerprints as it did)
+  ...(doc?.heightScale != null ? { heightScale: doc.heightScale } : {}),
+  ...(doc?.heights ? { heights: { canopy: doc.heights.canopy ?? null } } : {}),
+  ...(doc?.look ? { look: doc.look } : {}),
+  ...(doc?.site ? { site: doc.site } : {}),
+  ...(doc?.landmarks ? { landmarks: doc.landmarks } : {}),
+  // the swell's direction, for the surf (surf.js): only the direction, only when the place has one
+  ...(Number.isFinite(doc?.swell?.from) ? { swell: { from: doc.swell.from } } : {}),
 });
 
 /** JSON with every object's keys sorted: automerge hands a map's keys back sorted, a plain object in the order they were set. */
@@ -50,8 +58,8 @@ export default {
     const d = JSON.parse(JSON.stringify(inputs(doc)));
     if (!doc?.data?.dem?.url || !doc?.data?.features?.url) throw new Error("This terrain has no data yet: open it and press Fetch data.");
     if (!dataFits(doc)) throw new Error("This terrain's data was fetched for another place or grid: open it and press Fetch data again.");
-    const { dem, features } = await readTerrainData(repo, doc);
-    const { glb, meta } = buildTerrain({ doc: d, dem, features, params });
+    const { dem, features, layers, look } = await readTerrainData(repo, doc);
+    const { glb, meta } = buildTerrain({ doc: d, dem, features, layers, look, params });
     return { kind: "glb", glb, meta };
   },
   fingerprint(doc) {
@@ -59,7 +67,7 @@ export default {
     return quickHash(new TextEncoder().encode(stableJson(JSON.parse(JSON.stringify(inputs(doc))))));
   },
   dependencies(doc) {
-    return [doc?.data?.dem?.url, doc?.data?.features?.url].filter((u) => typeof u === "string");
+    return [doc?.data?.dem?.url, doc?.data?.features?.url, doc?.data?.layers?.url, doc?.data?.look?.url].filter((u) => typeof u === "string");
   },
   // the data files are immutable; their content is what counts, not their heads
   fingerprintDependency(url, doc) {

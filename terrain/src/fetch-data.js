@@ -20,6 +20,8 @@ import { featuresFromOsm } from "./osm.js";
 import { sha256Hex } from "./hash.js";
 import { shape } from "./build.js";
 import { bytesToInt16 } from "./terrain-sample.js";
+import { lookQuery, lookFromOsm } from "./look-osm.js";
+import { fetchLayers, packLayers, CANOPY_SCALE } from "./layered.js";
 
 export const NCEI = Object.freeze({
   id: "ncei-port-townsend-navd88",
@@ -88,8 +90,8 @@ export function latLonBox(grid, frame, margin = 0) {
   return { south: Math.min(...lats), west: Math.min(...lons), north: Math.max(...lats), east: Math.max(...lons) };
 }
 
-/** NCEI's exportImage request for exactly the grid's nodes, in the grid's own frame. */
-export function nceiUrl(grid, frame) {
+/** NCEI's exportImage request for exactly the grid's nodes, in the grid's own frame, from one of its rasters (Port Townsend's by default). */
+export function nceiUrl(grid, frame, raster = NCEI.raster) {
   const { n, cell, x0, z0 } = grid;
   const sr = JSON.stringify({ wkt: frame.wkt });
   // pixel centres on the nodes: the box is half a cell wider than the nodes on every side (northing = −z)
@@ -104,7 +106,7 @@ export function nceiUrl(grid, frame) {
     noData: "-99999",
     interpolation: "RSP_BilinearInterpolation",
     compression: "None",
-    mosaicRule: JSON.stringify({ mosaicMethod: "esriMosaicLockRaster", lockRasterIds: [NCEI.raster] }),
+    mosaicRule: JSON.stringify({ mosaicMethod: "esriMosaicLockRaster", lockRasterIds: [raster] }),
     f: "image",
   });
   return `${NCEI.service}?${q}`;
@@ -218,18 +220,20 @@ export const DEM_SCALE = 0.02;
  * @param {{ fetch: typeof fetch, log?: (s: string) => void, now?: () => Date }} io
  */
 export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () => new Date() }) {
+  if (spec.heights?.kind === "layered") return fetchLayeredData(spec, { fetch, log, now });
   const frame = localFrame(spec.origin);
   const grid = spec.grid;
   if (!Number.isInteger(Math.log2(grid.n - 1))) throw new Error(`The grid has ${grid.n} nodes a side; it needs 2^k + 1.`);
   const when = now().toISOString();
   log(`Asking NCEI for ${grid.n} × ${grid.n} heights…`);
-  const [dem, osm] = await Promise.all([
+  const [dem, osm, look] = await Promise.all([
     fetchDem(grid, frame, { fetch }),
     (async () => {
       const box = latLonBox(grid, frame, 600);
       log("Asking OpenStreetMap for the shoreline, structures and marks…");
       return { box, ...(await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log })) };
     })(),
+    spec.look ? fetchLook(spec, frame, { fetch, log }) : null,
   ]);
   const demBytes = quantize(dem.values, DEM_SCALE);
   // pinned to a date, OSM is as of that date (Overpass's own osm_base is today's)
@@ -250,10 +254,12 @@ export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () =
     // fetched by hand on that date; the values they back are in the Terrain doc (datum, wind) and cadboro.js
     pick(TIDES),
     pick(WINDS),
+    ...(look ? [lookSource(look, osm.box, spec, when)] : []),
   ];
   return {
     dem: { bytes: demBytes, record: { encoding: "int16le", scale: DEM_SCALE, offset: 0, datum: "NAVD88", n: grid.n, cell: grid.cell, x0: grid.x0, z0: grid.z0, origin: { ...frame.origin }, sha256: demSha } },
     features: { bytes: featuresBytes, record: { encoding: "json", origin: { ...frame.origin }, sha256: featuresSha } },
+    ...(look ? { look: look.file } : {}),
     sources,
     summary: { fetched: when, min, max, land: told.cls.stats.land, water: told.cls.stats.water, coastWays: features.coast.length, structures: features.structures.length, marks: features.marks.length, osmBase: features.osmBase, agreement: told.agreement.share, isletsRaised: told.islets.raised.length, rocks: told.islets.rocks.length },
   };
@@ -261,6 +267,107 @@ export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () =
 
 // a source's record: everything it says (urls, requests, accuracy, how its numbers were derived), as plain data
 const pick = (src) => JSON.parse(JSON.stringify(src));
+
+/** The look (buildings, ground cover) from OpenStreetMap, as of the place's date: { file: { bytes, record }, query, box, osmBase }. */
+async function fetchLook(spec, frame, { fetch, log }) {
+  const box = latLonBox(spec.grid, frame, 600);
+  const query = lookQuery(box, { date: spec.osmDate ?? null });
+  log("Asking OpenStreetMap for the buildings and what covers the ground…");
+  const { json } = await fetchOverpass(query, { fetch, log });
+  const look = lookFromOsm(json, frame, { osmBase: spec.osmDate ?? undefined });
+  const bytes = new TextEncoder().encode(JSON.stringify(look));
+  const sha256 = await sha256Hex(bytes);
+  return { file: { bytes, record: { encoding: "json", origin: { ...frame.origin }, sha256 } }, query, box, osmBase: look.osmBase, buildings: look.buildings.length, areas: look.areas.length };
+}
+
+const lookSource = (look, box, spec, when) => ({
+  ...pick(OVERPASS),
+  id: "osm-overpass-look",
+  name: "OpenStreetMap (Overpass API): buildings and land cover",
+  attribution: "Buildings and land cover © OpenStreetMap contributors (ODbL)",
+  url: OVERPASS.service,
+  method: "POST",
+  query: look.query,
+  fetched: when,
+  osmBase: look.osmBase,
+  sha256: look.file.record.sha256,
+});
+
+/**
+ * A place whose heights are layered from several sources (layered.js):
+ * Overpass first (the coastline says which side each node is on), then each
+ * raster; the shore, the look and the layers checked; everything a Terrain
+ * doc caches, as fetchTerrainData's, plus `layers` (the source layer and
+ * the canopy) and `look`.
+ */
+async function fetchLayeredData(spec, { fetch, log, now }) {
+  const frame = localFrame(spec.origin);
+  const grid = spec.grid;
+  if (!Number.isInteger(Math.log2(grid.n - 1))) throw new Error(`The grid has ${grid.n} nodes a side; it needs 2^k + 1.`);
+  const when = now().toISOString();
+  const box = latLonBox(grid, frame, 600);
+  log("Asking OpenStreetMap for the shoreline, structures and marks…");
+  const osm = await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log });
+  const features = featuresFromOsm(osm.json, frame, { osmBase: spec.osmDate ?? undefined });
+  const look = spec.look ? await fetchLook(spec, frame, { fetch, log }) : null;
+  const urlOf = (id) => {
+    const r = spec.heights.rasters[id];
+    return r.crs === "frame" ? nceiUrl(grid, frame, r.ncei) : r.url;
+  };
+  const L = await fetchLayers(spec, { frame, coast: features.coast, fetch, urlOf, log });
+  if (L.problems.length) throw new Error(`This data can't be used: ${L.problems.join(" ")}`);
+  // a place with heights beyond ±655 m (Mount Ozzard is 701 m) keeps them at a coarser step (heightScale), the build too
+  const S = spec.heightScale ?? DEM_SCALE;
+  const demBytes = quantize(L.heights, S);
+  const told = shape(grid, bytesToInt16(demBytes), { scale: S, toMWL: 0 }, features, { datum: spec.datum ?? null, scale: S });
+  if (told.problems.length) throw new Error(`This data can't be used: ${told.problems.join(" ")}`);
+  const layerBytes = packLayers(L.source, L.canopy);
+  const featuresBytes = new TextEncoder().encode(JSON.stringify(features));
+  const [demSha, layersSha, featuresSha] = await Promise.all([sha256Hex(demBytes), sha256Hex(layerBytes), sha256Hex(featuresBytes)]);
+  let min = Infinity, max = -Infinity;
+  for (const v of L.heights) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  const rasters = Object.entries(spec.heights.rasters)
+    .filter(([id]) => L.urls[id])
+    .map(([id, r]) => ({ id, name: r.name, url: L.urls[id], fetched: when, licence: r.licence, attribution: r.attribution, accuracy: r.accuracy, nodes: L.counts[id] ?? 0, toMWL: r.toMWL }));
+  const sources = [
+    ...rasters,
+    { ...pick(OVERPASS), url: OVERPASS.service, method: "POST", query: overpassQuery(box, { date: spec.osmDate ?? null }), fetched: when, osmBase: features.osmBase, sha256: featuresSha },
+    ...(look ? [lookSource(look, box, spec, when)] : []),
+    // fetched by hand on the date each says; the values they back are in the Terrain doc (datum, wind, site)
+    ...(spec.provenance ?? []).map(pick),
+  ];
+  const origin = { ...frame.origin };
+  return {
+    dem: { bytes: demBytes, record: { encoding: "int16le", scale: S, offset: 0, datum: "MWL", layered: true, n: grid.n, cell: grid.cell, x0: grid.x0, z0: grid.z0, origin, sha256: demSha } },
+    layers: { bytes: layerBytes, record: { encoding: "uint4+uint8", names: L.names, canopyScale: CANOPY_SCALE, counts: L.counts, n: grid.n, origin, sha256: layersSha } },
+    features: { bytes: featuresBytes, record: { encoding: "json", origin, sha256: featuresSha } },
+    ...(look ? { look: look.file } : {}),
+    sources,
+    attribution: spec.attribution ?? null,
+    credit: spec.credit ?? null,
+    summary: {
+      fetched: when,
+      min,
+      max,
+      land: told.cls.stats.land,
+      water: told.cls.stats.water,
+      coastWays: features.coast.length,
+      structures: features.structures.length,
+      marks: features.marks.length,
+      osmBase: features.osmBase,
+      sources: L.counts,
+      filled: L.filled,
+      check: L.check ? { source: spec.heights.check, ...L.check } : null,
+      agreement: told.agreement.share,
+      isletsRaised: told.islets.raised.length,
+      rocks: told.islets.rocks.length,
+      ...(look ? { buildings: look.buildings, areas: look.areas } : {}),
+    },
+  };
+}
 
 /** One line crediting every source, for the GLB's copyright and the tool. */
 export const ATTRIBUTION = [NCEI.attribution, OVERPASS.attribution, TIDES.attribution, WINDS.attribution].join(". ") + ". Not for navigation.";
