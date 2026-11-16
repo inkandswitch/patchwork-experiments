@@ -9,7 +9,7 @@ import { validate, everyThing } from "../contract/v1/validate.js";
 import schema from "../contract/v1/schema.json" with { type: "json" };
 import manifest from "../contract/v1/fixtures/manifest.json" with { type: "json" };
 import { kindsUsed, tableLayout, writeTable, LOOSE } from "./setup.js";
-import { makeHolders } from "./table/made-with.js";
+import { prepareTable } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
 import { BAG, bagPlugin, keeperPlugin, keptIn, registries, seatsPlugin } from "./test/stand-ins.js";
 import { fakeRepo } from "./test/games.js";
@@ -73,7 +73,7 @@ describe("a game with one of everything, laid out", () => {
   it("keeps every card, wherever it is: dealt, stacked, spread, loose or in a bag; and puts a bag's things in it", async () => {
     const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
     const repo = fakeRepo();
-    const made = await makeHolders({ repo, registry: async (t) => registries(keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin())[t] ?? null }, layout);
+    const made = await prepareTable({ repo, registry: async (t) => registries(keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin())[t] ?? null }, layout);
     const scene = emptyScene({ title: "T" });
     writeTable(scene, layout, made);
     // the draw pile's 6, the jumble's 4 (one of another back), the loose card, and in the bag one more loose card and the bagged deck's 2
@@ -117,10 +117,9 @@ describe("every valid game lays out with no code of its own", () => {
       const g = read(`../contract/v1/fixtures/${f.file}`);
       const layout = tableLayout(g, { fileOf, rng: () => 0.5 });
       const repo = fakeRepo();
-      const made = await makeHolders({ repo, registry: installed }, layout);
-      const lay = (await (await installed("scene:extension")).load("t.seats")).module.lay;
+      const made = await prepareTable({ repo, registry: installed }, layout);
       const scene = emptyScene({ title: "T" });
-      writeTable(scene, layout, made, { seats: lay });
+      writeTable(scene, layout, made);
       expect(made.notes).toEqual([]);
       // every card in the game, wherever it is, is kept: in the scene by its keeper's trait, in a bag likewise
       const cards = (things) => things.reduce((n, t) => n + (t.deck ? t.deck.cards.length : g.pieces[t.piece]?.back ? Math.max(1, t.count ?? 1) : 0) + cards(t.contents ?? []), 0);

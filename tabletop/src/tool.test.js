@@ -3,13 +3,13 @@ import TabletopGameTool from "./tool.js";
 
 // A stand-in for the host's plugin registry, holding this package's plugins
 // and, as other packages would register them, whoever owns seats and a
-// keeper of each kind (test/stand-ins.js).
-// `absent` hides plugins by id, so a test can uninstall a keeper or the seats owner.
+// keeper of each kind and the bag maker (test/stand-ins.js).
+// `absent` hides plugins by id, so a test can uninstall a keeper, the seats owner or the bag maker.
 const installed = vi.hoisted(() => ({ absent: new Set() }));
 vi.mock("@inkandswitch/patchwork-plugins", async () => {
   const { plugins: own } = await import("./index.js");
-  const { keeperPlugin, seatsPlugin } = await import("./test/stand-ins.js");
-  const plugins = [...own, seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain")];
+  const { bagPlugin, keeperPlugin, seatsPlugin } = await import("./test/stand-ins.js");
+  const plugins = [...own, seatsPlugin(), keeperPlugin("joint"), keeperPlugin("plain"), bagPlugin()];
   const registries = new Map();
   const getRegistry = (type) => {
     if (!registries.has(type)) {
@@ -185,7 +185,7 @@ describe("the tabletop-game tool", () => {
     await until(() => button(element, "Lost Cities"));
     button(element, "Lost Cities").click();
     await until(() => game.doc().title === "Lost Cities");
-    expect(element.querySelector(".deck summary").textContent).toMatch(/60 cards of 50 kinds, shuffled by the players face down; deals 8 to Player 1's hand, 8 to Player 2's hand/);
+    expect(element.querySelector(".deck summary").textContent).toMatch(/60 cards of 50 kinds face down, to be shuffled by the players; deals 8 to Player 1's hand, 8 to Player 2's hand/);
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);
     const scene = (await repo.find(opened[0].url)).doc();
@@ -203,11 +203,15 @@ describe("the tabletop-game tool", () => {
   }, 30_000); // builds the whole game: ~7 s seen under load (default 5 s)
 });
 
-describe("what the game page's status line warns the maker of (test/table-notes.js: the template says the same)", () => {
+describe("what the game page's status line tells the maker (test/table-notes.js: the template says the same)", () => {
   for (const c of CASES)
     it(c.name, async () => {
-      // the stand-ins' ids (test/stand-ins.js): t.keep-<kind>, t.seats
-      installed.absent = new Set([...(c.keepers.includes("joint") ? [] : ["t.keep-joint"]), ...(c.owner ? [] : ["t.seats"])]);
+      // the stand-ins' ids (test/stand-ins.js): t.keep-<kind>, t.seats, t.bag
+      installed.absent = new Set([
+        ...["joint", "plain"].filter((k) => !c.keepers.includes(k)).map((k) => `t.keep-${k}`),
+        ...(c.owner ? [] : ["t.seats"]),
+        ...(c.bagMaker ? [] : ["t.bag"]),
+      ]);
       try {
         const repo = fakeRepo();
         const game = repo.add({ "@patchwork": { type: "tabletop-game" }, ...cardsGame(c) });
@@ -218,10 +222,17 @@ describe("what the game page's status line warns the maker of (test/table-notes.
         const cleanup = TabletopGameTool(game, element);
         await until(() => button(element, "Set up a table") && !button(element, "Set up a table").disabled);
         button(element, "Set up a table").click();
-        await until(() => opened.length === 1 && button(element, "Set up a table"));
+        await until(() => (c.error ? /^Couldn't/.test(element.querySelector(".status")?.textContent) : opened.length === 1) && button(element, "Set up a table"));
         const status = element.querySelector(".status").textContent;
-        if (c.expected.length) expect(status).toBe(c.expected.join(" "));
-        else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
+        if (c.error) {
+          expect(status).toBe(`Couldn't set up a table: ${c.error}`);
+          expect(opened).toEqual([]);
+          expect(game.doc().tables ?? []).toEqual([]);
+        } else if (c.expected.length) {
+          // one line of whole sentences, each warning its own
+          expect(c.expected.every((n) => /\.$/.test(n))).toBe(true);
+          expect(status).toBe(c.expected.join(" "));
+        } else expect(status).toMatch(/^\d+ pieces of \d+ kinds\.$/);
         cleanup();
       } finally {
         installed.absent = new Set();
@@ -230,13 +241,15 @@ describe("what the game page's status line warns the maker of (test/table-notes.
 });
 
 describe("a deck's summary on the game page says how it's shuffled, for every combination of shuffle and secure", () => {
-  // a secure deck is shuffled by its players whatever `shuffle` says (card-table: the first shuffle is of
-  // every card); ticking secure on an imported deck (which never says shuffle) once read "… kinds by the players"
+  // a secure deck says what the game asks for: to be shuffled by its players, whatever `shuffle` says (a
+  // joint keeper's first shuffle is of every card), not what this install will do (the plain fallback lays it
+  // out as `shuffle` says). Ticking secure on an imported deck (which never says shuffle) once read
+  // "… kinds by the players face down"; then "…, shuffled by the players", which the fallback belied
   const CASES = [
     { shuffle: false, secure: false, says: "Deck: 3 cards of 1 kinds face down" },
     { shuffle: true, secure: false, says: "Deck: 3 cards of 1 kinds, shuffled face down" },
-    { shuffle: false, secure: true, says: "Deck: 3 cards of 1 kinds, shuffled by the players face down" },
-    { shuffle: true, secure: true, says: "Deck: 3 cards of 1 kinds, shuffled by the players face down" },
+    { shuffle: false, secure: true, says: "Deck: 3 cards of 1 kinds face down, to be shuffled by the players" },
+    { shuffle: true, secure: true, says: "Deck: 3 cards of 1 kinds face down, to be shuffled by the players" },
   ];
   for (const c of CASES)
     it(`shuffle ${c.shuffle ? "yes" : "no"}, secure ${c.secure ? "yes" : "no"}`, () => {
