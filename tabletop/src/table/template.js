@@ -25,8 +25,9 @@
 //   it between them), else to a plain one, which plays the same but whose
 //   container anyone can read by opening it, and the maker is told so. A
 //   bag's things go to a bag maker. The seats are laid by whoever owns
-//   seats. With no keeper installed at all for a game with cards, nothing
-//   is laid out and the maker is told why.
+//   seats. What the maker is warned of (made-with.js tableNotes) is what
+//   the game page's status line says too. With no keeper installed at all
+//   for a game with cards, nothing is laid out and the maker is told why.
 //
 // Order: the files, then the containers and bags, then one change that
 // writes the table (objects, seats, view: `view.start` in the seat body where
@@ -36,7 +37,7 @@
 
 import { glbFile, lookFileKey } from "./files.js";
 import { kindsUsed, tableLayout, writeTable } from "../setup.js";
-import { findSeats, findSource, makeHolders } from "./made-with.js";
+import { findSeats, findSource, makeHolders, tableNotes } from "./made-with.js";
 import { defaultImages } from "../look/images.js";
 import { readFile } from "../pieces.js";
 import { errorText, validate } from "../../contract/v1/validate.js";
@@ -104,10 +105,7 @@ export async function setUp(ctx, game, { rng = Math.random, images = defaultImag
     if (named) d.title = `${g.title || "Game"} table`;
   });
 
-  for (const note of made.notes) ctx.notify?.(note, "warn");
-  const fellBack = Object.entries(layout.containers).some(([key, c]) => c.secure && made.kinds[key] !== "joint");
-  if (fellBack) ctx.notify?.("No keeper whose players shuffle is installed here, so this table's deck is kept in the open: anyone who opens it can read every hand.", "warn");
-  if (Object.keys(layout.seats).length && !lay) ctx.notify?.("Nothing installed here owns seats, so this table has none.", "warn");
+  for (const note of tableNotes(layout, made, lay)) ctx.notify?.(note, "warn");
   if (Object.keys(layout.seats).length && lay) ctx.notify?.("Pick a seat (top right) to play.", "info");
   else ctx.notify?.(`${g.title || "The game"} is laid out. Press a piece and drag it to carry it.`, "info");
   return layout;

@@ -161,3 +161,27 @@ export async function makeHolders({ repo, registry }, layout) {
     }
   return { binds, kinds, bags, notes };
 }
+
+/** What a table writer says when a `secure` deck went to a keeper whose players don't shuffle. */
+export const KEPT_IN_THE_OPEN = "No keeper whose players shuffle is installed here, so this table's deck is kept in the open: anyone who opens it can read every hand.";
+/** What a table writer says when the game has seats and nothing installed owns seats. */
+export const NO_SEATS = "Nothing installed here owns seats, so this table has none.";
+
+/**
+ * The warnings every table writer owes the maker (the template's notices,
+ * the game page's status line), in this order: what makeHolders noted (bag
+ * contents not laid out); a `secure` deck kept by a keeper that isn't joint;
+ * seats in the game that nothing owns. A function of the layout and of what
+ * was found installed (made.kinds, the seats owner's lay), so every writer
+ * says the same for the same game and the same registry.
+ * @param {{ containers: object, seats: object }} layout  setup.js tableLayout's
+ * @param {{ kinds: { [key]: string }, notes: string[] }} made  makeHolders'
+ * @param {Function | null} lay  findSeats' (null where nothing owns seats)
+ * @returns {string[]}
+ */
+export function tableNotes(layout, made, lay) {
+  const notes = [...(made.notes ?? [])];
+  if (Object.entries(layout.containers ?? {}).some(([key, c]) => c.secure && made.kinds?.[key] !== "joint")) notes.push(KEPT_IN_THE_OPEN);
+  if (Object.keys(layout.seats ?? {}).length && typeof lay !== "function") notes.push(NO_SEATS);
+  return notes;
+}

@@ -8,7 +8,7 @@ import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
 import { isCard, tableLayout, writeTable } from "./setup.js";
 import { sceneImportUrl, scenePatchwork } from "./scene-package.js";
-import { findSeats, findSource, hostRegistry, makeHolders } from "./table/made-with.js";
+import { findSeats, findSource, hostRegistry, makeHolders, tableNotes } from "./table/made-with.js";
 import { emptyScene } from "./empty-scene.js";
 import { gameOf, writeGame } from "./game.js";
 import { defaultImages } from "./look/images.js";
@@ -173,7 +173,9 @@ export default function TabletopGameTool(handle, element) {
         if (!g.tables) g.tables = [];
         g.tables.push(scene.url);
       });
-      if (made.notes.length) status = made.notes.join(" ");
+      // what the maker is owed: bags not laid out, a secure deck kept in the open, seats nobody owns
+      const notes = tableNotes(layout, made, lay);
+      if (notes.length) status = notes.join(" ");
       open(scene.url, "scene");
     } catch (err) {
       status = `Couldn't set up a table: ${err?.message ?? err}`;
