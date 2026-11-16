@@ -1834,9 +1834,11 @@ ambient() → { atmosphere: null | {
 `water` and `water.waves`; provided by the `water` package). Water is an
 object: open (no size) or a box (a size). The ambient is the world's open
 water, the outermost doc's; bounded water is its own doc's, read only by
-that doc's parts wherever it is placed, and never offered. Its values, its
-reader and who draws what are the package's to document:
-[water/WATER.md](../water/WATER.md), "Water bodies".
+that doc's parts wherever it is placed, and never offered. An open body may
+carry a clip, the box it keeps where the world offers no open water. Its
+values, its reader and who draws what are the package's to document:
+[water/WATER.md](../water/WATER.md), "Water bodies" and "Clipped open
+water".
 
 **Wind** (the ambient `wind`; offered by sailing's weather). How the world's
 air moves, read by sailing's physics and the water package's surface. Its

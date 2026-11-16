@@ -84,8 +84,10 @@ they are display. Measure, a brush, Camber's Shape and a gun take every
 press, so they are held, one at a time.
 
 Weighed and kept out: a stage `carry` service that holders call (Santorini
-has no holder to call it; a trait needs no API); a water `surface` the walk
-body reads (the floor is the ray's hit: water height doesn't cross docs);
+has no holder to call it; a trait needs no API); a water reader the walk
+body reads (deferred, water/WATER.md Decision 71: the floor is the ray's
+hit until walk asks the water package's `water` contribution, which does
+answer across docs for the world's open water);
 `units` as content (the model is metres; units are a viewer's reading).
 
 ## 1. What runs: traits only
