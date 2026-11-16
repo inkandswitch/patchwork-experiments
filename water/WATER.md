@@ -18,8 +18,8 @@ merged and published before the lead had said yes to the amended sentence
 On 2026-11-15 the note gained a second design, "Water bodies": water as a
 shape that sea behaviour is put on, with bounded water that an inner world
 keeps wherever it is placed. It follows the lead's answers of that day
-(Decisions 43 to 56) and replaces the parts of "The design" it names. It is
-designed, not built.
+(Decisions 43 to 56) and replaces the parts of "The design" it names. It was
+built the same day in `lane/water` (Decisions 57 to 72; "Where it stands").
 
 ## The problem
 
@@ -412,8 +412,10 @@ Doc edits with step 1:
 
 ## Water bodies: a shape, with the sea on it (2026-11-15)
 
-Designed 2026-11-15 in the lane `lane/water`. Not built. It follows two of
-the lead's answers of that day (Decisions 43 to 56):
+Designed 2026-11-15 in the lane `lane/water`, and built there the same day
+(steps 1 to 5 and 7; step 6, republishing, is dry runs only, and step 8 is
+deferred: Decisions 57 to 72). It follows two of the lead's answers of that
+day (Decisions 43 to 56):
 
 - To Decision 42 (should the sea bring water with it?): "should the water
   be a shape that gets sea behaviour on it?" This section builds exactly
@@ -1420,13 +1422,84 @@ and its choices were made unattended, each with its reason.
     contentless objects (D2) and a per-object `needs` (D3). Each is
     recorded with the consumers it waits on.
 
+## Decisions, building water bodies (2026-11-15, made unattended)
+
+Built in `lane/water` from "Water bodies". Where the build had to choose,
+it chose this, each with its reason.
+
+57. **A reader says which body it is: `body`, null for the world's open
+    water, the object's id for a bounded body.** Sailing refuses the
+    world's open water at another scale (gravity doesn't scale), but a
+    doc's own basin is in that doc's frame and gravity, so the refusal must
+    know which it has. The probes read it too. One field, on both readers.
+58. **A `size` that isn't three positive numbers is no water, flagged**
+    ("Water's size is three positive numbers…"), not open water. A typo in
+    a pond's size must not flood the world below its origin.
+59. **The Model basin has no glass tank drawn round it.** No part makes a
+    tank, and a GLB only for the exhibit would be a weird appendage. The
+    patch's edges are where the water ends; an author who wants walls
+    puts an object there.
+60. **A bounded patch is drawn level, turned to the body's heading, w × l
+    as scaled.** Reading is exact for a heeled box (W19); drawing uses the
+    upright footprint, so under heel the drawn patch is short of the true
+    level cross-section by a factor cos(heel). Tanks and basins are flat
+    and rarely heel far; the cost is recorded, not hidden. The patch's
+    geometry is in the stage's own axes (not a turned mesh), so the shader's
+    waves, which are in the doc's frame, need no turning.
+61. **Swimmers and walkers ask from above** (`p[1]` null): walker.js asks
+    `surface(x, z)` with no height, so the choice takes the highest rest
+    surface in the column (W15's fallback). A swimmer over a pond's column
+    is in the pond.
+62. **A float asks at its moored origin with itself as `not`;** the sim
+    asks at her body origin (her waterline) with her id; the HUD asks
+    nothing (it reads only the wind).
+63. **Outside a bounded footprint a reader answers the floor:** its height,
+    its normal (the body's +Y), and the carrier's velocity only, no orbital
+    or current. A dry column has no water to move.
+64. **sea-view's `world()` still reads the wind's `mine`.** So a doc with no
+    weather alone (the Model basin) shows her no HUD and no camera ride
+    until someone is aboard. A second reading of "is my doc the world"
+    (the water ambient's `mine`, or the atmosphere's) would be a guess; a
+    basin has neither. Recorded as a cost.
+65. **"Ship at anchor" is published by `publish-ship.mjs --anchor`.** There
+    was no publisher for it; a flag on the one that runs "Ship at sea" is
+    the smallest addition.
+66. **A template's Sea is unlocked** (an author may move or resize it), the
+    Harbour's too; Cadboro Bay's and the basin's are locked (the chart's
+    datum; the exhibit). No precedence comes from it.
+67. **The basin probe makes its Model basin in the page** from Ship at
+    anchor, with the Sea, the weather and the landmarks removed and the
+    basin added, so the probe runs on the built plugins alone. The
+    publisher (`publish-basin.mjs`) writes the same shape in node.
+68. **The Sloop brings a Sea and the weather only where the doc has no open
+    water;** where it has open water and no weather it adds neither (a flat
+    Water is calm on purpose). The Sea part always adds a Sea, and the
+    weather where there is none.
+69. **The sea notices a sea without water once per object;** the inspector
+    has no per-field notice to hang it on (that is D3's per-object `needs`).
+70. **sailing.sea and sailing.weather are two extensions**, not one with
+    two traits: one is the world's air, the other a behaviour on a body,
+    and each runs only where its trait is held.
+71. **Walk's reader (build step 8) is not built.** It was deferred in the
+    first design too (Decisions 26); walk reads no water yet, so a walker
+    on Cadboro Bay's shore still walks the seabed. Not needed for either of
+    the lead's answers.
+72. **Republishing is dry runs only** in the lane (the lane's instructions):
+    `publish-ship.mjs` (and `--anchor`), `publish-harbour.mjs --offline`
+    and `publish-basin.mjs` pass in node; `publish-aboard.mjs`,
+    `publish-fitout.mjs` and `publish-rvyc.mjs` make their docs in Chrome
+    and check the new shapes. The Model basin's mashup is
+    `scene/probes/publish-links.mjs`, which reads its links from the
+    server, so it runs after the basin is published (the command is in
+    `publish-basin.mjs`).
+
 ## Invariants
 
 Every check enumerates a finite space; none is randomized. Each new rule
 has a mutation check: revert it and the named test fails. The "Finite
-check" column says what is actually enumerated. This table is what is
-built; "Water bodies" adds W15 to W25 and amends W1, W3 (by W17), W10, W11
-and W13 for when it is built.
+check" column says what is actually enumerated. W1 to W14 are the first
+design's; W15 to W25 are "Water bodies"', built in `lane/water` (W3 is
+replaced by W17, and W10, W11 and W13 are re-run with `at`).
 
 | | Invariant | Finite check | Mutation that must fail it |
 |---|---|---|---|
@@ -1444,6 +1517,17 @@ and W13 for when it is built.
 | W12 | **The harbour as built** | `sailing/probes/harbour-run.mjs` in Chrome under the lock: 22/22, run again after the review's fixes and on the merged tree (one surface, both boats on the harbour's water and in its `wind`, no HUD or camera ride, the harbour's sky, no warnings). In the real Patchwork: the published Harbour by the session's harbour-check.mjs (both boats in view on arrival, one surface, each boat's reading of the water equal to the harbour's, hulls floating, one wind, no HUD or camera ride, no error notices; Decisions 41) | — |
 | W13 | **Time passes only where waves need it.** A process is held exactly where the doc is the world and its water has waves | W3's 9 configurations, flat water alone and a boat in a flat-water harbour × every stage; waves stilled, restored, the water removed (`extension.test.js`) | Hold the process everywhere: 10 fail |
 | W14 | **One wind.** The wind is offered once, as `wind`; the surface draws with it; nothing else carries it | The sea's offer read whole for every field that says how the wind blows; the surface's wind direction for from {0, 90, 180, 270} and with no wind ambient (calm) while the water's `look` names a wind (`sea-view.test.js`, `extension.test.js`) | The surface reading the water's `look.wind`: 1 fails |
+| W15 | **The choice.** `at(p, { not })` returns the body the rule says | World open water {none, flat, waved} × every subset of {A, N inside A, C elsewhere, D attached under the asker} × 5 points × `not` {asker, none}, the expectation written out per kind of point (`water/src/choose.test.js`, 48 cases, and 4 more: the band, from above, a turned footprint, equal volumes) | Drop the exclusion: 18 fail. Prefer open over bounded: 28. Largest first: 24. No fallback: 48. A displaced surface for the band: 36 |
+| W16 | **Things travel, weather doesn't.** | {a boat with a tank alone; a harbour with A and B each holding a tank; a dry room with A and B; A mirrored; A pinned; A two deep} × every stage × a 5×5 grid in each tank: its own tank answers; with the hull as `not`, the world's open water or none; every reader is the world's or the stage's own doc's (`water/src/extension.test.js`) | No exclusion: 6 fail. Bounded only where the doc is the world: 7 |
+| W17 | **The draw count** (replaces W3) | W3's 9 configurations, W16's 6 and the Model basin beside Ship at sea in a dry room: open surfaces 1 or 0 by the outermost, patches the sum over every placement of its doc's bounded bodies, the open slab only at the outermost (`extension.test.js`); in Chrome, `basin-run.mjs` | Bounded only where `mine`: 6 fail. Open everywhere: 10 |
+| W18 | **Bounded water ignores placement.** | A doc G with a tank, flat and waved (fixed components): alone, yawed 30°, under a 20° heeled frame, mirrored, two deep: height and normal on a 3×3 grid × 3 times bit for bit, flat water exactly at its level with the normal up (`extension.test.js`) | (by construction: a bounded reader takes no frame; none to mutate) |
+| W19 | **Bounded frames, tilt and carrier velocity.** | Yaw {0, 30°, 137°} × heel {0, 10°, 30°} × attachment {root, hull, fitting under the hull} × a 7×7 grid × t {0, 3.7, 1000}: inside, height (the floor outside, solved the long way), normals; carrier velocity from two poses 1e-4 s apart against the body's points moved the long way; held volume for cube, 2:1 and 1:4 boxes × 5 heels × 3 yaws (`water/src/bounded.test.js`) | No carrier velocity: 3 fail. The floor not turned: 18. The surface tilted with the frame: 19 |
+| W20 | **Weather.** | Waves from the world's wind in the stage's frame, not the doc's weather, for holder {open, bounded} × placement {alone, yawed 30°}; the sea offers no wind; every arrival order of the weather, the Sea and its water × two winds settles in at most two flushes and asks for no more; on the same wind by value it never reflushes (`sailing/src/sea-view.test.js`) | Reading the doc's weather: 2 fail. Offering wind: 1. Comparing by identity: 1. No reflush: 1 |
+| W21 | **Extent is data.** | Every W3 and W16 configuration with `content` and `box` throwing, three frames and every `at` (`extension.test.js`) | Read content: 6 fail |
+| W22 | **The spectrum clip.** | 5 seas × span {1, 10, 37.5, 200 m, open}; the span scaled (`bounded.test.js`) | No clip: 4 fail |
+| W23 | **The current.** | Current {none, 0.5 m/s toward 0°, 90°, 180°, 270°} × frame yaw {0, 90°} × 5 points × 3 times, for the world's open water through a link and for a bounded body; the value's frequency shift and nothing else (`bounded.test.js`) | No shift: 8 fail. U not added to the open reader: 8 |
+| W24 | **One open body per doc.** | 1, 2 and 3 open bodies in every id order × with and without a tank: the lowest id's level offered, one surface, the others flagged; a tilted open body offers nothing, once; yaw and place change nothing; an invalid size is no water (`extension.test.js`) | Highest id: 16 fail |
+| W25 | **One body per hull per step.** | The sim with a scripted `at`: open water, a pond, astride its edge (origin in, out), a dry room with and without a basin of her own, a tank aboard in open water, a flooded hold in a dry room: asked once a step about her with herself as `not`; no water, she rests unstepped; else her draft off the water she was given is her open-water draft (`sailing/src/sim.test.js`) | No exclusion: 8 fail |
 
 ## Open for the lead
 

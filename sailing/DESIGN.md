@@ -1,7 +1,9 @@
 # sailing: a ship you crew together
 
-A scene becomes a sea when it carries the `sailing.sea` trait, and an object
-becomes a ship when it carries `sailing.ship`. Everything else is objects
+A water body (the water package's `water` object trait) becomes a sea when
+it carries the `sailing.sea` trait, a scene has wind and sky when it carries
+`sailing.weather`, and an object becomes a ship when it carries
+`sailing.ship` (water/WATER.md, "Water bodies"). Everything else is objects
 attached under the ship (stations, the mast, the sail) and contributions from
 this package and the scene's shared parts. The requirements are use case 4
 in [../scene/DESIGN.md](../scene/DESIGN.md) and section 9 of
@@ -38,12 +40,13 @@ modules share.
 | Module | Pure? | What it is |
 |---|---|---|
 | `ocean.js` | yes | The sea's spectrum: a wind-driven directional wave spectrum sampled into Gerstner components (`seaWaves`), plain data. The water package evaluates them, for the shader and for physics and walking (`heightAt`, `normalAt`, `velocityAt`), so what floats is what you see. Sailing keeps no evaluator: its tests' fakes use a copy of water's (`test/surface.js`), pinned by the golden file |
-| `sea.js` | yes but for create() | The sea part, its own scene:extension on `sailing.sea`: it gives the spectrum's components and what only it knows of them (seed, stats) away as `water.waves` (the water package's convention) and offers the ambients `wind` (read by every boat's physics and by the water package's surface) and `atmosphere`; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surface itself (camera-following grid, Gerstner shader, detail, foam, glint) is the water package's `material.js` |
+| `weather.js` | yes but for create() | The weather, its own scene:extension on the scene trait `sailing.weather`: it offers the ambients `wind` (read by every boat's physics, by every sea for its waves and by the water package's surface) and `atmosphere` |
+| `sea.js` | yes but for create() | The sea, its own scene:extension on the object trait `sailing.sea`, a behaviour on a water body: for each object with both the sea and the water package's `water`, it builds the spectrum's components from the world's `wind` ambient in its stage's frame and gives them, with what only it knows of them (seed, stats), away as `water.waves` keyed by body (the water package's convention); on a new wind (by value) it asks for one more flush; it draws nothing and runs no ships, so a harbour's sea holds no sailing machinery (water/WATER.md). The surfaces (the open grid round the camera, a bounded body's patch, the Gerstner shader) are the water package's `material.js` |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder, companionway and its hatch; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, mainsheet, jib winches, companionway, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
-| `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
+| `layout.js`, `template.js` | no | The "Ship at sea" template: the weather and a Sea (a water object with a sea on it, first in the order: `bringSea`), the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s). At anchor her jib is rolled away (`furl: 1`); B at the helm unrolls it backed to leave ("Leaving the anchor") |
 | `rig-contract.js` | yes | The rig aid's contract (`extras.rig`, patchwork-rig v1) in her body frame: whether this ship takes it (`contractOn`: a contract naming the hull family it describes only on that family), its frame (`rigFrame`), the whole contract converted (`bodyRig`, with her drawn hull when it's the one the rig was designed on), the spec parts it fills (`rigSpecParts`), the hull it was designed on checked (`checkSource`) |
 | `stock-rig.js`, `stock-rig-12m.js` | yes | The stock sloop's own contract (`stockContract(rigDrawing())`, on her `rig@3` GLB): the 12 m fixture's hull, foils, resistance, sail model and loading (`stock-rig-12m.js`, a runtime copy of those parts), with her rig computed from where ship.js draws it by the specification's rules (`stockMain`, `stockJib`, `leadAt`, `lumpedSailOf`, `rollUp`). See "Trim feedback" |
 | `resistance.js` | yes | A rig contract's resistance table (§6.5) unpacked for the 120 Hz loop: the canoe body's R(V, φ) with its planing blend, the planing weight, and the induced drag's effective draft (`contractResistance`) |
@@ -51,7 +54,7 @@ modules share.
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
-| `sea-view.js` | stage side thin | ctx.sea, an adapter: its ocean is the water package's reader (`api.collect("water")`: the world's water in this stage's frame and time), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame), its clock `api.clock.t`. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
+| `sea-view.js` | stage side thin | ctx.sea, an adapter: `oceanAt(p, not)` asks the water package which water a point is in (`api.collect("water")`'s `at(p, { not })`: the world's open water in this stage's frame and time, or a bounded body of this doc, leaving out what `not` carries), its wind the world's `wind` ambient read through the same frame and a latched time (`windFor`: its at(), speed and from all in the stage's frame), its clock `api.clock.t`. Alone a boat is her own world and these are exactly her own sea; linked into a harbour, the harbour's |
 | `sim.js` | stage side thin | ctx.sim: the ships as a process of the doc's clock (`start`, `step`, `save`, `stop`), physics per ship, the holds, the stations' values (pure helpers exported and tested) |
 | `looks.js` | stage side thin | What each view dresses for itself: floats bobbing (pure `floatPose`); on a rig with `extras.sail.cloth`, the sails' cloth, battens, bunt and roll, the mainsheet and jib sheets, the telltales, the masthead vane and the burgee, all from trim.js and cloth.js, written into buffers made once; a rig without cloth lowered, bellied to leeward and flat while it luffs (pure `fullness`) |
 | `cloth.js` | yes | A sail's cloth grid as a function of its look (`clothVertices`: belly, flog, σ, reef, furl, flat, flutter), its normals, battens and outline; ship.js draws the GLB's `Sail` and `Jib` with it at `NEUTRAL` |
@@ -88,7 +91,7 @@ const sea = seaWaves({ wind: { speed, from }, seed, scale })  // scale: wave hei
 sea.components  // [{ dir: [dx, dz], k, omega, amp, steep, phase }], ≤ 32: sea.js gives them to the water package
 sea.stats       // { hs, peakPeriod, peakWavelength, whitecaps }
 
-// ctx.sea.ocean: the water package's reader of the world's water (its surface.js evaluates)
+// ctx.sea.oceanAt(p, not): the water package's reader of the water p is in (its surface.js evaluates)
 ocean.heightAt(x, z, t) → y          // surface height at (x, z) in this stage's frame
 ocean.normalAt(x, z, t) → [nx, ny, nz]
 ocean.velocityAt(x, y, z, t) → [vx, vy, vz]  // orbital velocity, decaying with depth
@@ -1510,7 +1513,8 @@ a scene:part in index.js under "Sailing":
 
 | Part | Pieces (the first is selected) | Tags | Traits |
 |---|---|---|---|
-| Sloop | the hull, and every part below at her stands | | `sailing.ship`, and a `sailing.sea` if the scene has none |
+| Sea | a water object (open, no source) with `sailing.sea` on it, first in the order | | `water`, `sailing.sea`; and `sailing.weather` if the scene has none |
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`; a Sea and `sailing.weather` if the scene has no open water |
 | Mast and sail | the mast; the boom and sail, and the jib on its forestay, under it | `sailing.mast` | `sailing.sail`, `sailing.jib` |
 | Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
 | Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
@@ -1533,7 +1537,8 @@ a scene:part in index.js under "Sailing":
 - **The sloop** goes on the water at the scene's root (a ship sails only
   there), under where she was dropped, her bow the way the bin faced her
   (away from the viewer: you see her from astern), at rest with her sail up
-  and her anchor up. A ship brings her sea.
+  and her anchor up. A scene with no open water gets a Sea and the weather
+  with her; open water that is there (a sea, a flat Water) is left alone.
 - **Files:** each kind is the scene's one GLB doc under
   `doc.assets["sailing/<kind>@<n>"]` (`ctx.file`), so ten buoys share one;
   bump `<n>` (`fileKey`) when a kind's drawing changes (`VERSIONS`: the
@@ -1551,7 +1556,8 @@ a scene:part in index.js under "Sailing":
 
 | Trait | On | Fields |
 |---|---|---|
-| `sailing.sea` | scene | `{ wind: { speed, from }, seed, scale }` — speed m/s, from degrees |
+| `sailing.weather` | scene | `{ wind: { speed, from }, seed? }` — speed m/s, from degrees; `seed` the gusts' |
+| `sailing.sea` | a water object (the water package's `water`) | `{ seed, scale }`: its waves are the spectrum of the world's wind, `scale` their height. On an object without water it does nothing, and says so |
 | `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
 | `sailing.sail` | a station under the ship | `{ raised, sheet }` 0..1 |
@@ -1634,7 +1640,7 @@ api.loop((dt) => {
 
 ```js
 // sea-view.js — createSeaView(api) → ctx.sea
-ctx.sea.ocean            // the world's water as this stage reads it (the water package's reader), null with none, tilted or at another scale
+ctx.sea.oceanAt(p, not)  // the water p (this stage's frame; p[1] null: from above) is in, leaving out what `not` carries (the water package's reader), null with none, tilted or the world's at another scale
 ctx.sea.wind             // the world's wind (the `wind` ambient) as this stage reads it, or null
 ctx.sea.clock()          // the sea's time t (s): the doc's world time, api.clock.t()
 ctx.sea.world()          // is her doc the world (the outermost)? her camera ride and HUD show only then, or while you're aboard

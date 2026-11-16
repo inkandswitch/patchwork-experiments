@@ -246,11 +246,13 @@ scene's carry moves them, snapping to the board's connectors. Dice and bags
 are packages of their own on the same table. None of them knows the others
 by name: they meet through conventions (`roster`, `seatPlaces`, `keeper`).
 
-**The sailboat.** A sea is two scene traits: `water` (the water package's:
-this world has water) and `sailing.sea` (sailing's: what drives it, its
-waves and wind). The world's water is the outermost doc's, so a boat alone
-sails on her own sea and a boat linked into a harbour on the harbour's, one
-surface drawn. A sloop is a hull with
+**The sailboat.** A sea is a Water object (the water package's: an object
+whose extent says what the water is, open here) with sailing's sea on it
+(its waves), and the weather is a scene trait (`sailing.weather`: the
+world's wind and sky). Open water is weather, the outermost doc's, so a
+boat alone sails on her own sea and a boat linked into a harbour on the
+harbour's, one surface drawn; water with bounds (a basin, a tank) is a
+thing, which its doc keeps wherever it is placed. A sloop is a hull with
 `sailing.ship` and her fittings attached under her, each with a trait
 (helm, sail, winches, windlass, ladder). Her physics is a process on the
 doc's clock: one view steps it and streams her pose, the rest draw her

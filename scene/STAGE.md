@@ -1832,13 +1832,15 @@ ambient() → { atmosphere: null | {
   biases are a texel or so in metres. The map is redrawn only when something
   moves or the frame does.
 
-**Water** (the ambient `water` and the contribution `water.waves`;
-provided by the `water` package). Whether a world has water, and its waves,
-as data whatever floats reads in its own frame and time. Its value, its
-reader and who draws it are the package's to document:
-[water/WATER.md](../water/WATER.md), "The water package".
+**Water** (the object trait `water`, the ambient `water`, the contributions
+`water` and `water.waves`; provided by the `water` package). Water is an
+object: open (no size) or a box (a size). The ambient is the world's open
+water, the outermost doc's; bounded water is its own doc's, read only by
+that doc's parts wherever it is placed, and never offered. Its values, its
+reader and who draws what are the package's to document:
+[water/WATER.md](../water/WATER.md), "Water bodies".
 
-**Wind** (the ambient `wind`; offered by sailing's sea). How the world's
+**Wind** (the ambient `wind`; offered by sailing's weather). How the world's
 air moves, read by sailing's physics and the water package's surface. Its
 value and compass convention are sailing's to document:
 [sailing/DESIGN.md](../sailing/DESIGN.md), "Conventions".
