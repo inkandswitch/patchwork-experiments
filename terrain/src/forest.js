@@ -21,8 +21,9 @@
 //   ±15%, its turn and girth by hash. Everything a tree is comes from its
 //   node's index and that node's data: placement is local, so the forest of
 //   a grid is the union of the forests of its tiles (tested by
-//   enumeration). Over `max`, the ones whose own hash is lowest are kept:
-//   still a function of each node alone, given that threshold.
+//   enumeration). Over `max`, the ones whose own key is lowest are kept
+//   (the fringe's first, then the rest, each by hash): still a function of
+//   each node alone, given that threshold.
 //
 // Species shapes and colours are art direction (README); the mixes are the
 // place's (assumptions). Pure.
@@ -167,7 +168,8 @@ export function treesAt({ grid, label, cover, canopy, dist, trees }, k0 = 0, k1 
         height,
         yaw: hash01(k, 50 + t) * Math.PI * 2,
         girth: 0.9 + 0.2 * hash01(k, 60 + t),
-        key: hash01(k * 4 + t, 99),
+        // the fringe at the water first, then the rest: thinning keeps the lowest keys
+        key: (forest && dist[k] <= fringe ? 0 : 1) + hash01(k * 4 + t, 99),
       });
     }
   }

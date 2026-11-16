@@ -215,3 +215,50 @@ describe("tiles: a big mesh in 16-bit pieces", () => {
     expect(seen.size).toBe(idx.length / 3);
   });
 });
+
+import { SITE } from "./ucluelet.js";
+import { COVER } from "./cover.js";
+describe("buildTerrain with a look and a site", () => {
+  const ll = (x, z) => frame.toLatLon(x, z);
+  const sq = (x, z, s) => [[x, z], [x + s, z], [x + s, z + s], [x, z + s]];
+  const look = {
+    version: 1,
+    buildings: [{ id: "way/50", kind: "house", points: sq(-120, -230, 12) }, { id: "way/51", kind: "yes", points: sq(-60, -230, 10) }],
+    areas: [{ id: "way/60", cover: "wood", rings: [sq(-250, -250, 500).map(([x, z]) => [x, z < -130 ? z : -150])], holes: [] }],
+  };
+  const doc = terrainDoc({
+    site: { name: "test", layers: [{ id: "yard", name: "The yard" }, { id: "yard.gone", name: "Gone", parent: "yard", visible: false }], clear: { box: (() => { const [s, w] = ll(-70, -220), [n, e] = ll(-50, -240); return { south: Math.min(s, n), north: Math.max(s, n), west: Math.min(w, e), east: Math.max(w, e) }; })(), osm: ["way/3"] }, structures: [{ id: "shed", kind: "box", layer: "yard", corners: sq(-200, -230, 10).map(([x, z]) => ll(x, z)), base: 5, top: 9, roof: "gable", colours: { walls: "#aaaaaa", roof: "#333333" } }, { id: "old", kind: "box", layer: "yard.gone", corners: sq(-180, -230, 6).map(([x, z]) => ll(x, z)), base: 5, top: 7, roof: "flat", colours: { walls: "#aaaaaa", roof: "#333333" } }] },
+  });
+  const built = buildTerrain({ doc, dem: dem(), features: features(), look });
+  const { json } = parseGLB(built.glb);
+  it("declares its layers (the forest, buildings, the harbour, marks; the site's, hidden where it says) and puts each node on one", () => {
+    const ids = json.scenes[0].extras.layers.map((l) => l.id);
+    for (const id of ["forest", "buildings", "harbour", "marks", "yard", "yard.gone"]) expect(ids).toContain(id);
+    expect(json.scenes[0].extras.layers.find((l) => l.id === "yard.gone")).toMatchObject({ parent: "yard", visible: false });
+    expect(json.nodes.find((n) => n.name === "Buildings").extras.layer).toBe("buildings");
+    expect(json.nodes.find((n) => n.name === "Gone").extras.layer).toBe("yard.gone");
+  });
+  it("draws the trees as nodes of a few shared meshes under one forest node, and leaves out what the site clears", () => {
+    const trees = json.nodes.find((n) => n.name === "Trees");
+    expect(trees.extras.layer).toBe("forest");
+    expect(trees.children.length).toBe(built.stats.trees);
+    expect(built.stats.trees).toBeGreaterThan(0);
+    const meshes = new Set(trees.children.map((c) => json.nodes[c].mesh));
+    expect(meshes.size).toBeLessThanOrEqual(8);
+    // the second building is inside the site's box, OSM's way/3 (the float) is the site's to draw
+    expect(built.stats.buildings).toBe(1);
+    expect(built.stats.structures).toBe(1);
+  });
+  it("is deterministic with all of it", () => {
+    expect(Buffer.from(buildTerrain({ doc, dem: dem(), features: features(), look }).glb).equals(Buffer.from(built.glb))).toBe(true);
+  });
+  it("a place with no look at all builds as before: the chart palette, no forest, no buildings", () => {
+    const { look: _l, ...plain } = terrainDoc();
+    void _l;
+    const b = buildTerrain({ doc: plain, dem: dem(), features: features() });
+    expect(b.stats.trees).toBe(0);
+    expect(b.stats.buildings).toBe(0);
+    void COVER;
+    void SITE;
+  });
+});

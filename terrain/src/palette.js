@@ -15,9 +15,9 @@ export const COLOURS = Object.freeze({
   kelp: "#2a3326",
   mussel: "#262729",
   rockweed: "#575027",
-  barnacle: "#7f7c73",
-  lichen: "#262524",
-  rock: "#5d5a55",
+  barnacle: "#77746c",
+  lichen: "#242322",
+  rock: "#4f4d49",
   // the sea floor by depth (m)
   seabed: [[0, "#6b6550"], [3, "#4f5a48"], [10, "#34463f"], [30, "#243634"], [100, "#162426"], [300, "#0f1a1c"]],
   // land, by cover
@@ -79,10 +79,13 @@ export function hash01(k, seed = 0) {
  * @param {object} tide  the datum's tide levels
  * @param {object} [colours]  COLOURS, with a place's overrides
  * @param {number} [k]  the node's index, for a little variation
+ * @param {boolean} [shore]  whether the node is at the shore (the splash zone's bands above the tide are drawn only there)
  */
-export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0) {
+export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0, shore = true) {
   const C = colours;
   let rgb;
+  // above the highest normal tide, the splash zone's bands belong to the shore only (low land inland is what covers it)
+  const splash = shore || h <= (tide?.MHHW ?? 0.9);
   if (h < 0 && h < (tide?.MLLW ?? -1.2) - 0.6) rgb = rampAt(C.seabed.map(([d, c]) => [-d, c]).reverse(), h);
   else {
     const bs = bands(tide);
@@ -92,7 +95,7 @@ export function groundRGB(h, cover, canopy, tide, colours = COLOURS, k = 0) {
       band = key;
       break;
     }
-    if (band && !(beachy && h > 0) && !(band === "rock" && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
+    if (band && splash && !(beachy && h > 0) && !(band === "rock" && cover !== COVER.none && cover !== COVER.rock)) rgb = toRGB(C[band]);
     else if (cover === COVER.wood || (cover === COVER.none && canopy > 5)) rgb = toRGB(C.forestFloor);
     else if (cover === COVER.scrub) rgb = toRGB(C.shrub);
     else if (cover === COVER.residential) rgb = toRGB(C.lawn);

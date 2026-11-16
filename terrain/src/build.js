@@ -160,6 +160,8 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   })() : null;
   const canopy = natural ? effectiveCanopy({ n, label: cls.label, cover, canopy: lay?.canopy ?? null, measured, assumed: doc.look?.trees?.assumed }) : null;
   const colours = { ...COLOURS, ...(doc.look?.colours ?? {}) };
+  // each land node's distance to the water: the splash zone's bands are drawn within a cell and a half of it; the forest's fringe is measured by it
+  const toWater = natural ? distanceToWater(n, cls.label, grid.cell) : null;
   const tide = doc.datum?.tide ?? {};
   const V = mesh.nodes.length;
   const positions = new Float32Array(V * 3);
@@ -170,7 +172,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
     positions[v * 3] = grid.x0 + i * grid.cell;
     positions[v * 3 + 1] = yOf(h[k]);
     positions[v * 3 + 2] = grid.z0 + j * grid.cell;
-    const c = natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k)) : colourAt(h[k]);
+    const c = natural ? linear(groundRGB(h[k], cover[k], canopy[k], tide, colours, k, toWater[k] <= 1.5 * grid.cell)) : colourAt(h[k]);
     colors[v * 3] = c[0];
     colors[v * 3 + 1] = c[1];
     colors[v * 3 + 2] = c[2];
@@ -270,7 +272,7 @@ export function buildTerrain({ doc, dem, features, layers = null, look = null, p
   // the forest: its roof, and trees in front of it (forest.js)
   let treeCount = 0, roofTriangles = 0;
   if (p.forest && natural) {
-    const dist = distanceToWater(n, cls.label, grid.cell);
+    const dist = toWater;
     const trees = doc.look?.trees ?? { fringe: { fir: 60, cedar: 20, oak: 20 }, inland: { fir: 70, cedar: 30 }, town: { fir: 40, oak: 30, cedar: 30 }, wetland: { pine: 100 }, max: 20000 };
     const roof = forestRoof({ grid, heights: Float32Array.from(h, (v) => yOf(v)), label: cls.label, cover, canopy, dist, setback: trees.roofSetback ?? 20 });
     if (roof) {
