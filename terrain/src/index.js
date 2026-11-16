@@ -57,6 +57,7 @@ export const plugins = [
       { key: "forest", label: "Forest (canopy and trees)", kind: "boolean", default: true },
       { key: "buildings", label: "Buildings (OpenStreetMap)", kind: "boolean", default: true },
       { key: "site", label: "The place's own structures", kind: "boolean", default: true },
+      { key: "boats", label: "Boats on the floats (dressing)", kind: "boolean", default: true },
     ],
     async load() {
       return (await import("./source.js")).default;

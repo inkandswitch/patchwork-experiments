@@ -104,8 +104,8 @@ export const PLACES = Object.freeze([
   { name: "Mary Tod Island light", kind: "light", lat: 48.42578, lon: -123.29858, osm: "node/4291664952" },
 ]);
 
-/** Where the scene opens in the editor: above the clubhouse (its ground is ~10 m up), looking out over the docks to the moorings and Ten Mile Point. */
-export const HOME = Object.freeze({ position: Object.freeze([-400, 22, 300]), target: Object.freeze([120, 0, -40]) });
+/** Where the scene opens in the editor: above the clubhouse (its ground is ~10 m up) and the trees round it, looking out over the docks to the moorings and Ten Mile Point. */
+export const HOME = Object.freeze({ position: Object.freeze([-400, 40, 300]), target: Object.freeze([120, 0, -40]) });
 
 /** The preset as a Terrain doc's fields (before any data is fetched). */
 export function cadboroDoc() {
