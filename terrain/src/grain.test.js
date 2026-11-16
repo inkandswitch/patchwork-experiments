@@ -60,7 +60,7 @@ describe("the ground's grain by vertex", () => {
   const kinds = [COVER.none, COVER.rock, COVER.beach, COVER.wood, COVER.residential];
   for (let k = 0; k < n * n; k++) cover[k] = kinds[k % n];
   apron[12] = 1;
-  it("is none under the water, the apron's light, the shore's full, then by cover (every node at four heights)", () => {
+  it("is none under the water, the apron's full with its puddles, the shore's full, then by cover (every node at four heights)", () => {
     for (const y of [-1, 0.5, 2.5, 10]) {
       const pos = new Float32Array(n * n * 3);
       for (let k = 0; k < n * n; k++) pos.set([(k % n) * 10, y, Math.floor(k / n) * 10], k * 3);
@@ -86,5 +86,37 @@ describe("the ground's grain by vertex", () => {
       const a = p.attributes[GRAIN];
       for (let i = 0; i < a.length; i++) expect(a[i]).toBeCloseTo(gr[p.positions[i * 3 + 2] * m + p.positions[i * 3]], 6);
     }
+  });
+});
+
+import { PUDDLES, puddleAt, grainNoise, GRAIN_LOOK, addGrain } from "./grain.js";
+describe("a worked yard's puddles (grain over 1)", () => {
+  // the boatyard's apron box, every half metre (about 100 × 100 m round the courtyard)
+  const pts = [];
+  for (let z = -50; z < 50; z += 0.5) for (let x = -50; x < 50; x += 0.5) pts.push([x, z]);
+  it("wets 15–22% of the ground (every half metre of a 100 m square)", () => {
+    const wet = pts.reduce((a, [x, z]) => a + (puddleAt(x, z) > 0.5 ? 1 : 0), 0) / pts.length;
+    expect(wet).toBeGreaterThanOrEqual(0.15);
+    expect(wet).toBeLessThanOrEqual(0.22);
+  });
+  it("varies the yard's luminance by at least 8% (standard deviation over its mean) within 30 m of the eye, the grain's octaves and its puddles together", () => {
+    const L = pts.filter(([x, z]) => Math.hypot(x, z) <= 30).map(([x, z]) => {
+      const g = GRAIN_LOOK.octaves.reduce((a, [m, s], q) => a + s * (2 * grainNoise(x / m + q * 17, z / m + q * 17) - 1), 0);
+      return (1 + PUDDLES.grain * g) * (1 - PUDDLES.darker * puddleAt(x, z));
+    });
+    const mean = L.reduce((a, b) => a + b, 0) / L.length;
+    const sd = Math.sqrt(L.reduce((a, b) => a + (b - mean) ** 2, 0) / L.length);
+    expect(sd / mean).toBeGreaterThanOrEqual(0.08);
+  });
+  it("gives the apron its puddles (grain 2) and nothing else over 1", () => {
+    expect(GRAINS.apron).toBe(2);
+    for (const [k, v] of Object.entries(GRAINS)) if (k !== "apron") expect(v).toBeLessThanOrEqual(1);
+  });
+  it("puts the puddles' darkening after the colour and their sheen after the roughness, in a standard material's shader", () => {
+    const shader = { vertexShader: "void main(){\n#include <project_vertex>\n}", fragmentShader: "void main(){\n#include <color_fragment>\n#include <roughnessmap_fragment>\n}" };
+    expect(addGrain(shader)).toBe(true);
+    const f = shader.fragmentShader;
+    expect(f.indexOf("grainWet = clamp")).toBeGreaterThan(f.indexOf("#include <color_fragment>"));
+    expect(f.indexOf("roughnessFactor = mix")).toBeGreaterThan(f.indexOf("#include <roughnessmap_fragment>"));
   });
 });

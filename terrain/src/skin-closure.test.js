@@ -2,7 +2,7 @@
 // every layout of every profile, every quarter turn, every neighbourhood of one layout, checked on a
 // 20 × 20 sample of the cell (finite enumeration, nothing random).
 import { describe, it, expect } from "vitest";
-import { SKIN_LAYOUTS, SKIN_PROFILES, PROFILE_NAMES, LAYOUT_WEIGHTS, SKIN_COLOURS, SPRUCE, SNAG, CROWN_VALUE, crownsOf, crownRadius, pickLayout, skinMesh, skinAt, skinZone, clumpOf, CROWN_SHAPES, CROWN_SHADE, crownShape, crownTriangles } from "./forest.js";
+import { SKIN_LAYOUTS, SKIN_PROFILES, PROFILE_NAMES, LAYOUT_WEIGHTS, SKIN_COLOURS, SPRUCE, SNAG, CROWN_VALUE, crownsOf, crownRadius, pickLayout, skinMesh, skinAt, skinZone, clumpOf, CROWN_SHAPES, CROWN_SHADE, crownShape, crownTriangles , EMERGENT, BUSH, BUSH_HEIGHT } from "./forest.js";
 import { hexToLinear } from "./glb.js";
 import { COVER } from "./cover.js";
 
@@ -110,7 +110,7 @@ describe("the coast's silhouettes: Sitka spruce and dead snags", () => {
         }
         // a crown's triangles: its base colour ±12%, shaded from CROWN_SHADE[0] at its foot to CROWN_SHADE[1] at its tip, with the baked side shading (0.82 to 1.12)
         const base = !plain && sign === "spruce" ? [spruce] : lin;
-        const n = crownTriangles(crownShape(plain, sign, c, v, e - layout.slice(0, e).filter((x) => x[3] === "snag").length));
+        const n = crownTriangles(crownShape(plain, sign, c, v, e - layout.slice(0, e).filter((x) => x[3] === "snag").length), !plain && k >= EMERGENT.at);
         let top = -Infinity;
         for (let t = 0; t < n * 3; t++) {
           const col = [m.colors[off * 9 + t * 3], m.colors[off * 9 + t * 3 + 1], m.colors[off * 9 + t * 3 + 2]];
@@ -147,7 +147,9 @@ describe("shore pine and salal where the canopy is 1 to 5 m", () => {
       if (scrub) {
         expect(by.get(k).crowns).toBe(4);
         expect(clumpOf(k, { n, label, cover, canopy, dist, zone, skin, built })).toBe("scrub");
-        expect(by.get(k).height).toBeGreaterThanOrEqual(2);
+        // a bush 1 to 3 m over the ground, whatever the canopy (BUSH_HEIGHT, ±8%)
+        expect(by.get(k).height).toBeGreaterThanOrEqual(BUSH_HEIGHT.min * 0.92 - 1e-9);
+        expect(by.get(k).height).toBeLessThanOrEqual(3.2);
       }
     }
   });
@@ -164,12 +166,14 @@ describe("crowns that aren't cones: cedar, hemlock and spruce", () => {
         if (sign === "snag") { if (!plain) off += 8; continue; }
         const shape = crownShape(plain, sign, c, v, q);
         seen.add(shape);
-        const n = crownTriangles(shape), r = crownRadius(p, q, v), tall = k * (!plain && sign === "spruce" ? SPRUCE.taller : 1);
-        expect(n).toBe(shape ? CROWN_SHAPES[shape].tiers.length * 6 : 12);
+        const emergent = !plain && k >= EMERGENT.at;
+        const n = crownTriangles(shape, emergent), r = crownRadius(p, q, v, k), tall = k * (!plain && sign === "spruce" ? SPRUCE.taller : 1);
+        expect(n).toBe(shape ? CROWN_SHAPES[shape].tiers.length * 6 + (emergent && shape === "cedar" ? 12 : 0) : BUSH.sides * (2 * (BUSH.rings.length - 1) + 1));
         for (let t = 0; t < n * 3; t++) {
           const x = m.positions[off * 9 + t * 3], y = m.positions[off * 9 + t * 3 + 1], z = m.positions[off * 9 + t * 3 + 2];
           expect(Math.hypot(x - u * cell, z - w * cell)).toBeLessThanOrEqual(r + 1e-4);
-          expect(y).toBeGreaterThanOrEqual(pr.foot * tall - 1e-6);
+          // an emergent's foot no higher than an ordinary crown's
+          expect(y).toBeGreaterThanOrEqual(pr.foot * (plain ? tall : Math.min(tall, 1)) - 1e-6);
           expect(y).toBeLessThanOrEqual(tall + 1e-6);
         }
         off += n;

@@ -37,6 +37,23 @@ export const PALETTE = Object.freeze({
   plant: "#d8d2bf",
 });
 
+/**
+ * A house as the West Coast builds one (art direction, the town's
+ * photographs' general look): any building tagged a house (RESIDENTIAL), or
+ * untagged with a footprint under `small` m² where it would be a house, is
+ * drawn as its oriented rectangle under a gable of `pitch` degrees (by hash,
+ * its ridge along the long side, `overhang` m over the walls), at most
+ * `storeys` storeys, `windows` windows a wall a storey, and on `porch` of
+ * them (by hash) a deck `deep` m deep along the long wall on the downhill or
+ * water side. Its walls and roof from the palette's `houseWalls` and
+ * `houseRoofs` where it has them.
+ */
+export const HOUSE = Object.freeze({ small: 220, pitch: Object.freeze([25, 35]), overhang: 0.5, storeys: 2, windows: 2, porch: 0.4, deep: 2.4 });
+/** The tags that make a building a house. */
+export const RESIDENTIAL = /^(house|detached|residential|semidetached_house|cabin|bungalow)$/;
+/** Whether building `b` of class `cls` (classOf) and footprint area `area` (m²) is drawn as a house (HOUSE). Pure. */
+export const isResidential = (b, cls, area) => cls === "house" && (RESIDENTIAL.test(b.kind ?? "") || ((b.kind ?? "yes") === "yes" && area < HOUSE.small));
+
 /** What a building's details are drawn in: trim (corner boards, the eave's band), windows, cream cladding's ribs, a pile deck's piles and its edge. Art direction. */
 export const DETAIL = Object.freeze({ trim: "#e8e6df", glass: "#2b3136", piles: "#2e2721", deckEdge: "#3a3631", deckTop: "#8d8a82", storey: 2.8 });
 
@@ -48,7 +65,7 @@ export const DETAIL = Object.freeze({ trim: "#e8e6df", glass: "#2b3136", piles: 
  * industrial building takes `ribs` instead (vertical ribs every 0.9 m, the
  * walls' colour darker: corrugated cladding). Exported for tests.
  */
-export function facade(s, ring, { floor, eave, trim = DETAIL.trim, glass = DETAIL.glass, windows = true, ribs = null, storey = DETAIL.storey }) {
+export function facade(s, ring, { floor, eave, trim = DETAIL.trim, glass = DETAIL.glass, windows = true, ribs = null, storey = DETAIL.storey, perWall = Infinity }) {
   const pts = dedupe(ring);
   if (pts.length < 3) return 0;
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
@@ -77,7 +94,7 @@ export function facade(s, ring, { floor, eave, trim = DETAIL.trim, glass = DETAI
     face(L - 0.16, L, floor, eave, 0.05, T);
     face(0, L, eave - 0.28, eave, 0.05, T);
     if (!windows || L < 3) continue;
-    const n = Math.max(1, Math.floor((L - 1.2) / 3));
+    const n = Math.min(perWall, Math.max(1, Math.floor((L - 1.2) / 3)));
     for (let y = floor; y + storey <= eave + 0.4; y += storey) {
       for (let q = 0; q < n; q++) {
         const t = (L * (q + 0.5)) / n;
@@ -176,6 +193,28 @@ export function pileDeck(s, d, { deck, groundAt, thick = 0.5 }) {
     }
   }
   return count;
+}
+
+/** A house's deck: HOUSE.deep m out from its long wall on `side` (of box.v), along 70% of it, at its floor, on four posts down to the ground. */
+export function porch(s, box, { floor, side, groundAt }) {
+  const { c, u, v } = box;
+  const at = (a, b) => [c[0] + u[0] * a + v[0] * side * b, c[1] + u[1] * a + v[1] * side * b];
+  const a0 = -box.hu * 0.7, a1 = box.hu * 0.7, b0 = box.hv, b1 = box.hv + HOUSE.deep;
+  const ring = [at(a0, b0), at(a1, b0), at(a1, b1), at(a0, b1)];
+  const top = floor + 0.05, col = rgb(DETAIL.deckTop);
+  const ccw = signedArea(ring) > 0 ? ring : ring.slice().reverse();
+  lid(s, ccw, top, col);
+  const edge = rgb(DETAIL.deckEdge);
+  for (let a = 0; a < 4; a++) {
+    const A = ccw[a], B = ccw[(a + 1) % 4];
+    s.quad([A[0], top - 0.25, A[1]], [B[0], top - 0.25, B[1]], [B[0], top, B[1]], [A[0], top, A[1]], edge);
+  }
+  for (const [a, b] of [[a0 + 0.2, b1 - 0.2], [a1 - 0.2, b1 - 0.2], [0, b1 - 0.2]]) {
+    const [x, z] = at(a, b);
+    const g = groundAt(x, z);
+    if (g != null && g < top - 0.3) pile(s, x, z, g - 0.3, top - 0.25, 0.1);
+  }
+  return true;
 }
 
 /** A squat black cylinder (a tyre fender), eight-sided, capped. */
@@ -373,29 +412,34 @@ export function buildingMesh(buildings, { groundAt, sinkAt, coverAt, leaveOut = 
     const C = CLASSES[cls];
     const area = ringArea(pts);
     const box = orientedBox(pts);
-    const rectangular = box && area / (4 * box.hu * box.hv) > 0.8;
+    // a house (HOUSE): its oriented rectangle under a gable, whatever its footprint's jogs; not a place's own landmark
+    const homey = palette.houseWalls && !b.form && !b.colour && box && isResidential(b, cls, area);
+    const rectangular = box && (homey || area / (4 * box.hu * box.hv) > 0.8);
     // a footprint that is nearly its rectangle is drawn as the rectangle: four walls, not the survey's every jog
-    if (rectangular && area / (4 * box.hu * box.hv) > 0.92) pts = rectangle(box);
-    const levels = b.levels ? b.levels * 3 : null;
-    const eaveH = b.height ? Math.max(2.5, b.height - (C.pitch ? dtan((C.pitch * Math.PI) / 180) * (box?.hv ?? 0) : 0)) : levels ?? (cls === "house" && area < 70 ? C.small : C.eave);
-    const pitch = /flat/.test(b.roof ?? "") ? 0 : C.pitch;
+    if (rectangular && (homey || area / (4 * box.hu * box.hv) > 0.92)) pts = rectangle(box);
+    const levels = b.levels ? Math.min(b.levels, homey ? HOUSE.storeys : Infinity) * 3 : null;
+    const eaveH0 = b.height ? Math.max(2.5, b.height - (C.pitch ? dtan((C.pitch * Math.PI) / 180) * (box?.hv ?? 0) : 0)) : levels ?? (cls === "house" && area < 70 ? C.small : C.eave);
+    const eaveH = homey ? Math.min(eaveH0, HOUSE.storeys * DETAIL.storey + 0.4) : eaveH0;
+    const pitch = homey ? HOUSE.pitch[0] + (HOUSE.pitch[1] - HOUSE.pitch[0]) * hashString(b.id, 6) : /flat/.test(b.roof ?? "") ? 0 : C.pitch;
     const rise = rectangular && pitch ? Math.min(dtan((pitch * Math.PI) / 180) * box.hv, 8) : 0;
     const industrial = cls === "industrial";
-    const walls = b.colour && /^#[0-9a-f]{6}$/i.test(b.colour) ? b.colour : weighted(industrial ? palette.cladding : palette.walls, hashString(b.id, 1));
-    const roofColour = b.roofColour && /^#[0-9a-f]{6}$/i.test(b.roofColour) ? b.roofColour : weighted(industrial ? palette.metalRoofs : palette.roofs, hashString(b.id, 2));
+    const walls = b.colour && /^#[0-9a-f]{6}$/i.test(b.colour) ? b.colour : weighted(industrial ? palette.cladding : homey ? palette.houseWalls : palette.walls, hashString(b.id, 1));
+    const roofColour = b.roofColour && /^#[0-9a-f]{6}$/i.test(b.roofColour) ? b.roofColour : weighted(industrial ? palette.metalRoofs : homey ? palette.houseRoofs ?? palette.roofs : palette.roofs, hashString(b.id, 2));
     const floor = onDeck ? Math.max(hi, deckAbove) : hi;
     const base = onDeck ? floor - 0.5 : lo - sinkAt(lo);
     const cream = onDeck && industrial && palette.plant ? palette.plant : null;
     // a place's own form for a landmark (its look's buildings.overrides): cross-gables to the water, or a curved metal roof
     const form = rectangular ? b.form ?? null : null;
     const fRise = form === "gables" ? Math.max(rise, 0.45 * box.hv) : rise;
-    house(s, pts, { base, eave: floor + eaveH, rise: form === "curved" ? 0 : fRise, roof: form === "curved" ? "none" : fRise > 0 ? "gable" : "flat", walls: cream ?? walls, roofColour, box });
+    house(s, pts, { base, eave: floor + eaveH, rise: form === "curved" ? 0 : fRise, roof: form === "curved" ? "none" : fRise > 0 ? "gable" : "flat", walls: cream ?? walls, roofColour, box, ...(homey ? { overhang: HOUSE.overhang } : {}) });
+    // a house's deck or porch on its downhill (or water) side, on some
+    if (homey && hashString(b.id, 7) < HOUSE.porch) porch(s, box, { floor, side: waterSide(box, groundAt), groundAt });
     if (form === "gables") crossGables(s, box, { eave: floor + eaveH, rise: fRise, bays: b.gables ?? 4, side: waterSide(box, groundAt), walls, roofColour, trim: b.trim ?? DETAIL.trim });
     if (form === "curved") barrel(s, box, { eave: floor + eaveH, rise: b.rise ?? Math.max(1.2, 0.35 * box.hv), walls, roofColour });
     if (b.stone) band(s, pts, base, floor + (b.stoneHeight ?? 1.4), b.stone);
     const d = onDeck ? deckOf(pts, groundAt, { mlw }) : null;
     if (d) (pileDeck(s, d, { deck: floor, groundAt }), decks++, (reached += d.reached ? 1 : 0));
-    if (details) facade(s, pts, { floor, eave: floor + eaveH, ...(industrial ? { ribs: cream ?? walls } : {}), windows: cls !== "shed" && !industrial, ...(b.trim ? { trim: b.trim } : {}) });
+    if (details) facade(s, pts, { floor, eave: floor + eaveH, ...(industrial ? { ribs: cream ?? walls } : {}), windows: cls !== "shed" && !industrial, ...(b.trim ? { trim: b.trim } : {}), ...(homey ? { perWall: HOUSE.windows } : {}) });
     // a fish plant's roller doors to its deck, blue or yellow by hash
     if (d && cream) rollerDoors(s, d.building, { floor, eave: floor + eaveH, side: d.side, u: hashString(b.id, 4), colour: DECK.doors[hashString(b.id, 5) < 0.5 ? 0 : 1] });
     made++;

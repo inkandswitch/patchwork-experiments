@@ -15,6 +15,36 @@
 /** The grain's octaves: [metres, ± share] each, and where it fades out (m from the eye). */
 export const GRAIN_LOOK = Object.freeze({ octaves: Object.freeze([[1.5, 0.12], [8, 0.18]]), fade: Object.freeze([150, 300]) });
 
+/**
+ * Puddles and wet patches on a worked yard (a vertex's grain over 1: its
+ * share over 1 is how much it takes them): a third, coarser noise (two
+ * octaves, `cells` metres, weighted `weights`) over `at` is wet, about
+ * `share` of the ground (grain.test.js measures it), `darker` darker and its
+ * roughness down to `rough` (it reads wet), and the grain's octaves `grain`
+ * times their share (a worked yard's ground is rougher than the land's), fading out from `fade[0]` to
+ * `fade[1]` m from the eye.
+ */
+export const PUDDLES = Object.freeze({ cells: Object.freeze([8, 3.5]), weights: Object.freeze([0.6, 0.4]), offsets: Object.freeze([31, 47]), at: 0.648, edge: 0.03, share: 0.18, darker: 0.35, rough: 0.85, grain: 1.6, fade: Object.freeze([300, 600]) });
+
+const fract = (x) => x - Math.floor(x);
+/** The shader's hash, in JS (its float precision aside). Pure. */
+export const grainHash = (x, y) => fract(Math.sin((x - 256 * Math.floor(x / 256)) * 127.1 + (y - 256 * Math.floor(y / 256)) * 311.7) * 43758.5453);
+/** The shader's value noise, in JS. Pure. */
+export function grainNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = grainHash(ix, iy), b = grainHash(ix + 1, iy), c = grainHash(ix, iy + 1), d = grainHash(ix + 1, iy + 1);
+  const lo = a + (b - a) * ux, hi = c + (d - c) * ux;
+  return lo + (hi - lo) * uy;
+}
+/** How wet the ground is at world (x, z), 0 to 1 (PUDDLES; the shader's sum). Pure. */
+export function puddleAt(x, z, o = PUDDLES) {
+  let n = 0;
+  o.cells.forEach((c, q) => (n += o.weights[q] * grainNoise(x / c + o.offsets[q], z / c + o.offsets[q])));
+  const t = Math.max(0, Math.min(1, (n - (o.at - o.edge)) / (2 * o.edge)));
+  return t * t * (3 - 2 * t);
+}
+
 const VERTEX_HEAD = /* glsl */ `attribute float _grain;
 varying float vGrain;
 varying vec3 vGrainPos;
@@ -37,16 +67,26 @@ float grainNoise(vec2 p) {
 }
 `;
 const FRAGMENT_BODY = /* glsl */ `
+  float grainWet = 0.0;
   {
-    float grainAt = vGrain * (1.0 - smoothstep(${f1(GRAIN_LOOK.fade[0])}, ${f1(GRAIN_LOOK.fade[1])}, length(vViewPosition)));
+    float grainAt = min(vGrain, ${f1(PUDDLES.grain)}) * (1.0 - smoothstep(${f1(GRAIN_LOOK.fade[0])}, ${f1(GRAIN_LOOK.fade[1])}, length(vViewPosition)));
     if (grainAt > 0.0) {
       float g = ${GRAIN_LOOK.octaves.map(([m, a], q) => `${f1(a)} * (2.0 * grainNoise(vGrainPos.xz / ${f1(m)} + ${f1(q * 17)}) - 1.0)`).join(" + ")};
       diffuseColor.rgb *= 1.0 + grainAt * g;
     }
+    // puddles where the grain is over 1 (a worked yard)
+    if (vGrain > 1.0) {
+      float pn = ${PUDDLES.cells.map((c, q) => `${f1(PUDDLES.weights[q])} * grainNoise(vGrainPos.xz / ${f1(c)} + ${f1(PUDDLES.offsets[q])})`).join(" + ")};
+      grainWet = clamp(vGrain - 1.0, 0.0, 1.0) * smoothstep(${f1(PUDDLES.at - PUDDLES.edge)}, ${f1(PUDDLES.at + PUDDLES.edge)}, pn) * (1.0 - smoothstep(${f1(PUDDLES.fade[0])}, ${f1(PUDDLES.fade[1])}, length(vViewPosition)));
+      diffuseColor.rgb *= 1.0 - ${f1(PUDDLES.darker)} * grainWet;
+    }
   }`;
+/** A wet patch's roughness (the standard material's, after its own). */
+const ROUGHNESS_BODY = /* glsl */ `
+  roughnessFactor = mix(roughnessFactor, ${f1(PUDDLES.rough)}, grainWet);`;
 
 /** The anchors the edits go after: three's standard material's chunks. */
-export const ANCHORS = Object.freeze({ vertex: "#include <project_vertex>", fragment: "#include <color_fragment>" });
+export const ANCHORS = Object.freeze({ vertex: "#include <project_vertex>", fragment: "#include <color_fragment>", roughness: "#include <roughnessmap_fragment>" });
 
 /**
  * A shader ({ vertexShader, fragmentShader }, as onBeforeCompile hands it)
@@ -59,7 +99,7 @@ export function addGrain(shader) {
   const { vertexShader: v, fragmentShader: f } = shader;
   if (typeof v !== "string" || typeof f !== "string" || v.includes("vGrainPos") || !v.includes(ANCHORS.vertex) || !f.includes(ANCHORS.fragment)) return false;
   shader.vertexShader = VERTEX_HEAD + v.replace(ANCHORS.vertex, ANCHORS.vertex + VERTEX_BODY);
-  shader.fragmentShader = FRAGMENT_HEAD + f.replace(ANCHORS.fragment, ANCHORS.fragment + FRAGMENT_BODY);
+  shader.fragmentShader = FRAGMENT_HEAD + f.replace(ANCHORS.fragment, ANCHORS.fragment + FRAGMENT_BODY).replace(ANCHORS.roughness, ANCHORS.roughness + ROUGHNESS_BODY);
   return true;
 }
 

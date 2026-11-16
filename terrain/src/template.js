@@ -108,7 +108,8 @@ export async function newCadboroTerrain(repo) {
  */
 export async function layOut(ctx, terrainUrl, { seed = Math.floor(Math.random() * 1e9) } = {}) {
   // locked (it is the ground); its About is the Terrain doc (sources, licences); its credit shows in the view
-  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {} } } });
+  // its place's part (terrain.sky, sky.js) with no sky of its own (the weather's bright day stays the world's): the shore in the water, the water's shelter behind the breakwater and the ground's grain
+  const terrain = await ctx.addObject(terrainUrl, { providerId: "terrain-mesh", name: "Cadboro Bay", hint: HINT, fields: { locked: true, infoUrl: terrainUrl, infoToolId: "terrain", traits: { [CREDIT]: {}, "terrain.sky": {} } } });
   const sea = ctx.newId("o");
   ctx.change((d) => {
     // the world's wind and sky (sailing's weather), and the bay's water: open, at the chart's y = 0, with a sea on it

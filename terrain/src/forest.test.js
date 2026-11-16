@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS, skinZone, skinAt, placeSkin, skinMesh, skinInstances, SKIN_LAYOUTS, SKIN_CROWN, SPRUCE, SNAG, crownsOf, scrubCover, isScrub, crownShape, crownTriangles } from "./forest.js";
+import { treesAt, placeTrees, pick, forestRoof, treeMesh, standMesh, treeInstances, effectiveCanopy, isForest, isRoof, builtMask, TREE_REACH, SPECIES, SPECIES_NAMES, STAND_HEIGHTS, skinZone, skinAt, placeSkin, skinMesh, skinInstances, SKIN_LAYOUTS, SKIN_CROWN, SPRUCE, SNAG, crownsOf, scrubCover, isScrub, crownShape, crownTriangles , EMERGENT } from "./forest.js";
 import { insideRing } from "./terrain-sample.js";
 import { COVER } from "./cover.js";
 
@@ -350,13 +350,13 @@ describe("the forest's skin", () => {
       const m = skinMesh(crowns, v, cell);
       const layout = SKIN_LAYOUTS[crowns][v];
       const snags = layout.filter((c) => c[3] === "snag").length;
-      const tris = crownsOf(layout).reduce((a, x, q) => a + crownTriangles(crownShape(false, x[3], crowns, v, q)), 0);
+      const tris = crownsOf(layout).reduce((a, x, q) => a + crownTriangles(crownShape(false, x[3], crowns, v, q), x[2] >= EMERGENT.at), 0);
       expect(m.positions.length / 9).toBe(tris + 8 * snags);
       const lowest = Math.min(...crownsOf(layout).map((c) => c[2]), snags ? SNAG.from / SKIN_CROWN.foot : Infinity);
       const top = Math.max(...crownsOf(layout).map((c) => c[2] * (c[3] === "spruce" ? SPRUCE.taller : 1)), snags ? SNAG.top : 0);
       for (let q = 0; q < m.positions.length; q += 3) {
-        expect(Math.abs(m.positions[q])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 + 1e-6);
-        expect(Math.abs(m.positions[q + 2])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 + 1e-6);
+        expect(Math.abs(m.positions[q])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 * EMERGENT.radius + 1e-6);
+        expect(Math.abs(m.positions[q + 2])).toBeLessThanOrEqual(cell * 0.3 + SKIN_CROWN.radius * 1.08 * EMERGENT.radius + 1e-6);
         expect(m.positions[q + 1]).toBeGreaterThanOrEqual(SKIN_CROWN.foot * lowest - 1e-6);
         expect(m.positions[q + 1]).toBeLessThanOrEqual(top + 1e-6);
       }

@@ -12,7 +12,7 @@ describe("the Cadboro Bay template's layout", () => {
     const d = scene.doc();
     expect(d.objects[terrain]).toMatchObject({ sourceUrl: "automerge:terrain", providerId: "terrain-mesh", locked: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     // its About is the Terrain doc (sources, licences), and its data's credit shows in the view
-    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {} } });
+    expect(d.objects[terrain]).toMatchObject({ infoUrl: "automerge:terrain", infoToolId: "terrain", traits: { [CREDIT]: {}, "terrain.sky": {} } });
     expect(d.traits["sailing.weather"]).toEqual({ wind: { speed: WIND.speed, from: WIND.from }, seed: 7 });
     expect(d.traits["sailing.sea"]).toBeUndefined();
     expect(d.traits.water).toBeUndefined();

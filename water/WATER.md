@@ -83,6 +83,19 @@ either it draws the sky alone, and the shader has no shore at all (a
 define). Terrain contributes it for its places (terrain README, "The shore
 in the water"): Ucluelet and Cadboro Bay.
 
+### Shelter
+
+A harbour behind its breakwater is glass while the open coast outside it
+chops. The same contribution may give **`exposure(from)`**: for a wind from
+`from` degrees, a grid `n` × `n` bytes over the land's place (`origin`, its
+axes `u` and `v` in the stage, `size` metres a side), each how open that
+water is to the wind's fetch, 255 the open sea. The shader scales the
+shading normal's tilt by mix(`EXPOSURE.floor`, 1, exposure²) and, under
+`EXPOSURE.calmUnder`, raises the reflection's calm to `EXPOSURE.calm`
+(`tiltFor`, `shelteredCalm` are the shader's sums). Shading only: the waves'
+geometry, and whatever floats on them, are the sea's. Off the grid, or
+without it, the water is the open sea.
+
 ## The problem
 
 Sailing's sea is a pure function of the `sailing.sea` trait (wind, seed,

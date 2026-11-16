@@ -332,7 +332,7 @@ describe("buildings", () => {
 });
 
 import { cladding } from "./site.js";
-import { soup } from "./shapes.js";
+import { soup, rgb } from "./shapes.js";
 describe("corrugated cladding", () => {
   it("ribs every wall every 0.9 m (none at the corners) and bands it under the eave, all just outside the walls", () => {
     for (const ring of [[[0, 0], [10, 0], [10, 6], [0, 6]], [[0, 0], [0, 6], [10, 6], [10, 0]]]) {
@@ -390,6 +390,29 @@ describe("Quonsets and the courtyard's slab", () => {
       // shell, ribs and two end fans; a door end adds a rim band and a door
       const N = QUONSET.segments;
       expect(mesh.positions.length / 9).toBe(2 * N + 2 * N * m.ribs + 2 * N + (door == null ? 0 : 2 * N + 2));
+    }
+  });
+  it("wets about a fifth of a slab's panels with a dark patch inside its panel, and curbs every edge (every heading)", () => {
+    for (let h = 0; h < 8; h++) {
+      const t = (h * Math.PI) / 4 + 0.1, u = [Math.cos(t), Math.sin(t)], v = [-u[1], u[0]];
+      const P = [[0, 0], [40, 0], [40, 45], [0, 45]].map(([a, b]) => [u[0] * a + v[0] * b, u[1] * a + v[1] * b]);
+      const s = soup();
+      const m = slab(s, P, 2.8, 3.3, { colour: "#8a8a86", seams: { every: 6, colour: "#4a4a47", width: 0.15 }, wet: { share: 0.22, colour: "#5d5f61", seed: 1 }, curb: { colour: "#9a9a95", width: 0.3, height: 0.2 } });
+      const panels = Math.ceil(40 / 6) * Math.ceil(45 / 6);
+      expect(m.wet / panels).toBeGreaterThan(0.1);
+      expect(m.wet / panels).toBeLessThan(0.35);
+      expect(m.curbs).toBe(4);
+      // every wet patch's corner inside the slab, over its top
+      const d = s.done(), wet = rgb("#5d5f61");
+      for (let q = 0; q < d.positions.length; q += 3) {
+        if (Math.abs(d.colors[q] - wet[0]) > 1e-6 || Math.abs(d.colors[q + 1] - wet[1]) > 1e-6) continue;
+        const a = d.positions[q] * u[0] + d.positions[q + 2] * u[1], b = d.positions[q] * v[0] + d.positions[q + 2] * v[1];
+        expect(a).toBeGreaterThanOrEqual(-1e-6);
+        expect(a).toBeLessThanOrEqual(40 + 1e-6);
+        expect(b).toBeGreaterThanOrEqual(-1e-6);
+        expect(b).toBeLessThanOrEqual(45 + 1e-6);
+        expect(d.positions[q + 1]).toBeGreaterThan(3.3);
+      }
     }
   });
   it("lays a slab's seams every 6 m both ways inside it, over its top (every heading)", () => {

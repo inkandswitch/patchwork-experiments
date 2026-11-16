@@ -43,6 +43,30 @@ export const CALM_UNTIL = Object.freeze([0.6, 2.5]);
 export const SHORE_EDGE = Object.freeze({ foot: 1.5, min: 0.012, max: 0.05 });
 export const SHORE_RAG = Object.freeze({ bins: 360, depth: 0.012, tint: 0.15, tintCells: 90 });
 
+/**
+ * Shelter (WATER.md, "Shelter"): where a part gives the water's exposure
+ * (`water.shore`'s exposure(from): 0 to 1, how open each spot is to the wind's
+ * fetch), the shading normal's tilt is scaled by mix(EXPOSURE.floor, 1,
+ * exposure²) and, under `calmUnder`, the reflection's calm raised to
+ * `calm`: a harbour behind its breakwater reads as glass with the shore
+ * stretched into vertical streaks, the open coast keeps its chop. Shading
+ * only: the waves' geometry, and everything that floats on them, are
+ * untouched.
+ */
+export const EXPOSURE = Object.freeze({ floor: 0.25, calm: 0.85, calmUnder: Object.freeze([0.4, 0.6]) });
+
+/** How much of the shading normal's tilt a spot of exposure `e` (0 to 1) keeps, as the shader works it out. Pure. */
+export const tiltFor = (e) => EXPOSURE.floor + (1 - EXPOSURE.floor) * Math.max(0, Math.min(1, e)) ** 2;
+
+/** The reflection's calm at a spot of exposure `e` in a sea of significant wave height `hs`, as the shader works it out. Pure. */
+export function shelteredCalm(hs, e) {
+  const [a, b] = EXPOSURE.calmUnder;
+  const t = Math.max(0, Math.min(1, (e - a) / (b - a)));
+  const open = t * t * (3 - 2 * t);
+  const c = calmFor(hs);
+  return c + (Math.max(c, EXPOSURE.calm) - c) * (1 - open);
+}
+
 /** The calm a sea of significant wave height `hs` gets (the shader's `calm`). Pure. */
 export function calmFor(hs) {
   const t = Math.max(0, Math.min(1, (hs - CALM_UNTIL[0]) / (CALM_UNTIL[1] - CALM_UNTIL[0])));
@@ -343,6 +367,11 @@ uniform vec3 uShoreEye;
 uniform float uShoreNear;
 uniform float uShoreReach;
 #endif
+#ifdef EXPOSURE
+uniform sampler2D uExposure;
+uniform vec4 uExpA;
+uniform vec4 uExpB;
+#endif
 varying vec2 vRest;
 varying vec3 vWorld;
 varying float vHeight;
@@ -434,6 +463,17 @@ void main() {
   gx += detail.x;
   gz += detail.y;
   vec3 N = normalize(vec3(gx * jzz - gz * jxz, jac, gz * jxx - gx * jxz));
+  // shelter (EXPOSURE): how open this spot is to the wind's fetch, from the part that knows the land; the normal's tilt scaled by it
+  float expo = 1.0;
+#ifdef EXPOSURE
+  {
+    vec2 ed = vWorld.xz - uExpA.xy;
+    vec2 euv = vec2(dot(ed, uExpA.zw), dot(ed, uExpB.xy)) * uExpB.z;
+    if (euv.x >= 0.0 && euv.y >= 0.0 && euv.x <= 1.0 && euv.y <= 1.0) expo = texture2D(uExposure, euv).r;
+  }
+#endif
+  float tilt = ${EXPOSURE.floor.toFixed(3)} + ${(1 - EXPOSURE.floor).toFixed(3)} * clamp(expo, 0.0, 1.0) * clamp(expo, 0.0, 1.0);
+  N = normalize(vec3(N.x * tilt, N.y, N.z * tilt));
 
   vec3 toEye = cameraPosition - vWorld;
   float dist = length(toEye);
@@ -448,6 +488,8 @@ void main() {
   // calmed normal (SHORE_CALM of the way to straight up, less in a big sea): over calm water what the
   // waves do to a reflection is stretch it into vertical streaks, not tear it into blobs
   float calm = ${SHORE_CALM.toFixed(3)} * (1.0 - smoothstep(${CALM_UNTIL[0].toFixed(2)}, ${CALM_UNTIL[1].toFixed(2)}, uHs));
+  // sheltered water (exposure under EXPOSURE.calmUnder) calmer still
+  calm = mix(max(calm, ${EXPOSURE.calm.toFixed(3)}), calm, smoothstep(${EXPOSURE.calmUnder[0].toFixed(2)}, ${EXPOSURE.calmUnder[1].toFixed(2)}, expo));
   vec3 R = reflect(-V, normalize(mix(N, vec3(0.0, 1.0, 0.0), calm)));
   vec3 refl = sky(R) + uSunOn * uSunColor * pow(max(dot(normalize(vec3(R.x, max(R.y, 0.0), R.z)), L), 0.0), 16.0) * 0.3;
   float fresnel = 0.02 + 0.98 * pow(1.0 - NV, 5.0);
@@ -788,6 +830,10 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     uShoreEye: { value: new THREE.Vector3() },
     uShoreNear: { value: 15 },
     uShoreReach: { value: 6000 },
+    // shelter (setExposure): the exposure as a texture, and how a world (x, z) maps onto it
+    uExposure: { value: null },
+    uExpA: { value: new THREE.Vector4() },
+    uExpB: { value: new THREE.Vector4() },
   };
   setColour(uniforms.uDeep.value, opts.deep);
   setColour(uniforms.uScatter.value, opts.scatter);
@@ -854,6 +900,40 @@ export function createOceanSurface(THREE, sea, opts = {}) {
    * and the shore's tint (sRGB hex), or null to draw the sky alone. The
    * texture is made again only when the profile's key or shape changes.
    */
+  /**
+   * Shelter: an exposure grid (`water.shore`'s exposure(from), WATER.md) {
+   * key, n, data (n × n bytes, 255 the open sea, rows along v), origin
+   * [x, z], u [x, z] and v [x, z] (unit: the grid's axes in the world),
+   * size (m) }, or null for the open sea everywhere. Made again only when
+   * its key changes.
+   */
+  let expKey = null;
+  let expTex = null;
+  function setExposure(grid) {
+    const on = !!(grid?.data && grid.n > 1 && THREE.DataTexture);
+    if (!on) {
+      if (expKey !== null) {
+        expKey = null;
+        setDefines({ EXPOSURE: undefined });
+      }
+      return;
+    }
+    if (expKey === grid.key && expTex?.image.width === grid.n) return;
+    const first = expKey === null;
+    expKey = grid.key;
+    if (!expTex || expTex.image.width !== grid.n) {
+      expTex?.dispose();
+      expTex = new THREE.DataTexture(Uint8Array.from(grid.data), grid.n, grid.n, THREE.RedFormat, THREE.UnsignedByteType);
+      expTex.wrapS = expTex.wrapT = THREE.ClampToEdgeWrapping;
+      expTex.magFilter = expTex.minFilter = THREE.LinearFilter;
+      expTex.generateMipmaps = false;
+    } else expTex.image.data.set(grid.data);
+    expTex.needsUpdate = true;
+    uniforms.uExposure.value = expTex;
+    uniforms.uExpA.value.set(grid.origin[0], grid.origin[1], grid.u[0], grid.u[1]);
+    uniforms.uExpB.value.set(grid.v[0], grid.v[1], 1 / grid.size, 1);
+    if (first) setDefines({ EXPOSURE: "" });
+  }
   let shoreKey = null;
   let shoreTex = null;
   function setShore(profile, tint) {
@@ -986,6 +1066,7 @@ export function createOceanSurface(THREE, sea, opts = {}) {
     setPatch,
     setColour: setBodyColour,
     setShore,
+    setExposure,
     get origin() {
       return [...origin];
     },
@@ -993,6 +1074,7 @@ export function createOceanSurface(THREE, sea, opts = {}) {
       geometry.dispose();
       material.dispose();
       shoreTex?.dispose();
+      expTex?.dispose();
       mesh.removeFromParent?.();
     },
   };

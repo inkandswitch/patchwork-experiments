@@ -127,7 +127,7 @@ const J = JSON.stringify;
 const DRAFT = 2.0; // the sloop's keel, near enough
 const FRAME_BUDGET = 22.7; // ms, the home view's median before the denser forest (Apple M4, Metal, 1280 × 760)
 const LLWLT = -2.11; // the lowest normal tide, below mean water (CHS 08595 Ucluelet)
-const { HOME, WIND, GRID, WATER_COLOUR } = await import("../src/ucluelet.js");
+const { HOME, WIND, GRID, WATER_COLOUR, SKIES } = await import("../src/ucluelet.js");
 let snapshot = null;
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
@@ -147,7 +147,7 @@ try {
   check("every source can be traced: a url each", s.terrainDoc.sourceUrls.every((u) => /^https:\/\//.test(u ?? "")), s.terrainDoc.sourceUrls.map((u) => u?.slice(0, 90)));
   check("OSM pinned to the checked moment, and the data is what was checked", s.terrainDoc.osmDate === "2026-11-16T05:30:00Z" && s.terrainDoc.matchesChecked === true, { osmDate: s.terrainDoc.osmDate, matchesChecked: s.terrainDoc.matchesChecked });
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
-  check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === 9000, s.terrain);
+  check("the terrain's About is its Terrain doc; it carries the credit and the place's sky", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && s.terrain.sky?.fog?.far === SKIES["ukee-grey"].fog.far, s.terrain);
   const atBuild = await P("terrainNow()");
   check("the Terrain doc's fingerprint when its render is built is the render's", atBuild.fingerprint === s.render?.builtFrom?.fingerprint, { now: atBuild.fingerprint, heads: atBuild.heads, built: s.render?.builtFrom?.fingerprint });
   check("its render is built, fingerprinted, its four data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 4 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
@@ -196,7 +196,7 @@ try {
     "ucluelet-boatyard-dock": [[120, 30, -140], [60, 4, 40]],
     "ucluelet-inlet": [[1100, 260, 900], [-1600, 0, -1900]],
     "ucluelet-amphitrite": [[1080, 32, 3340], [1228, 9, 3203]],
-    "ucluelet-overview": [[3000, 4200, 9000], [5500, 0, 2500]],
+    "ucluelet-overview": [[2600, 1800, 6500], [3800, 0, 1200]],
     // from the water: the town's waterfront, the surf under the lighthouse, the cloud on Mount Ozzard
     "ucluelet-low-harbour": [[1450, 4, 650], [800, 10, 820]],
     "ucluelet-surf": [[930, 22, 3480], [1228, 6, 3203]],
@@ -237,6 +237,28 @@ try {
   const darkShare = (f) => waterLum.filter((l) => l < f * waterMedian).length / waterLum.length;
   report.numbers.lowYardWater = { median: +waterMedian.toFixed(1), darkerThanHalf: +darkShare(0.5).toFixed(4), darkerThan08: +darkShare(0.8).toFixed(4) };
   check("the water off the yard is glassy: under 8% of its pixels darker than half its median", darkShare(0.5) < 0.08, report.numbers.lowYardWater);
+  // the sheltered harbour mirrors its shore in vertical streaks, not horizontal stripes: in the strip 10–60 px under the shoreline (where these two views put it), the mean absolute vertical luminance gradient at most 1.3 times the horizontal one
+  const L = ([r, g, bl]) => 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  const gradients = (file, y0, y1, x0 = 100, x1 = 1180) => {
+    const px = pngRegion(join(SHOTS, file), x0, y0, x1, y1).map(L), w = x1 - x0, h = y1 - y0;
+    let gx = 0, gy = 0, c = 0;
+    for (let y = 0; y + 1 < h; y++) for (let x = 0; x + 1 < w; x++) {
+      gx += Math.abs(px[y * w + x + 1] - px[y * w + x]);
+      gy += Math.abs(px[(y + 1) * w + x] - px[y * w + x]);
+      c++;
+    }
+    return { horizontal: +(gx / c).toFixed(3), vertical: +(gy / c).toFixed(3), ratio: +(gy / Math.max(gx, 1e-6)).toFixed(3) };
+  };
+  report.numbers.stripes = { "low-town": gradients("ucluelet-low-town.png", 418, 468), ozzard: gradients("ucluelet-ozzard.png", 525, 575) };
+  check("no horizontal stripes in the harbour's mirror: vertical gradient at most 1.3 times the horizontal under the shore (low-town, ozzard)", Object.values(report.numbers.stripes).every((g) => g.ratio <= 1.3), report.numbers.stripes);
+  // the yard's ground worked and wet, not a featureless plane: the ground strip's luminance standard deviation over its mean at least 8% (courtyard, hangar-doors)
+  const spread = (file, y0, y1, x0 = 200, x1 = 1080) => {
+    const l = pngRegion(join(SHOTS, file), x0, y0, x1, y1).map(L);
+    const m = l.reduce((a, b) => a + b, 0) / l.length;
+    return +(Math.sqrt(l.reduce((a, b) => a + (b - m) ** 2, 0) / l.length) / m).toFixed(4);
+  };
+  report.numbers.yardGround = { courtyard: spread("ucluelet-courtyard.png", 620, 740), "hangar-doors": spread("ucluelet-hangar-doors.png", 620, 740) };
+  check("the yard's ground varies by at least 8% (courtyard, hangar-doors: the ground strip's standard deviation over its mean)", Object.values(report.numbers.yardGround).every((v) => v >= 0.08), report.numbers.yardGround);
   const tool = await P("terrainTool()", 60_000);
   check("the Terrain tool draws the place and lists its sources", /1025 × 1025 nodes/.test(tool.legend) && !/Problems/.test(tool.legend) && tool.sources >= 10 && !tool.empty, tool);
   await sleep(500);

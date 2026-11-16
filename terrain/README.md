@@ -280,8 +280,9 @@ a beach, a dark bank 3–5 m up, not lawn to the waterline).
 "Ukee grey": overcast but bright, as most summer afternoons are at
 Amphitrite Point (ECCC, Jul–Aug 1991–96, 732 hours: cloudy or mostly cloudy
 42%, fog 20%, clear 35%; visibility median 19 km): sky `#c4cacc` (top) /
-`#959ea1` (horizon) / `#7a8487`, fog `#959ea1` from 400 to 9,000 m (the
-Broken Group's islands, 13–17 km off, are grey shapes in it), the sun where
+`#959ea1` (horizon) / `#7a8487`, fog `#959ea1` from 900 to 17,000 m (Mount
+Ozzard, 5 km off, about a quarter veiled, so it reads as forest; the Broken
+Group's islands and the Mackenzie Range, 13–20 km off, soft grey-blue shapes), the sun where
 it is on 15 July at 15:00 PDT, soft, no shadows. The gradient is an
 overcast's, the CIE standard overcast sky's way round (brightest overhead,
 darker to the horizon), not a clear sky's: the water reflects the horizon at
@@ -621,6 +622,54 @@ rest).
   - *A textured overcast* (scene STAGE.md's atmosphere `clouds`): Ukee
     grey a stratocumulus deck 600 m up (cover 1, ±12%); sailing's bright
     day fair-weather cumulus over a third of its sky, which Cadboro shows.
+
+  The fourth look critic's round:
+
+  - *The far hills as forest* (`forest.js farRoof`, `FAR_ROOF`,
+    `look.trees.far`): outside the skin's circles the roof is patched by a
+    two-octave value noise (300 and 90 m) from `#121d16` to `#2b3828`, cut
+    by lighter second growth (`#47513a`, blocks 150–300 m in about one cell
+    in eight of a 250 m lattice, on slopes over 12° under 600 m), and every
+    crest node (a summit, or a ridge across one of four axes by 1.5 m each
+    side: `crestAt`) lifted 4–9 m by hash, so Ozzard's and the range's
+    skylines are toothed. The stratus over them thinner (at most 0.6, 0.15
+    above the band). Tested on a made-up mountain at every node.
+  - *Shelter* (`exposure.js`, water's WATER.md "Shelter"): the place's part
+    (`sky.js`) gives the water `exposure(from)`: a 256² grid over the place,
+    each water cell's fetch upwind (five rays, ±30°, cos² weighted, a cell a
+    step, off the grid open sea) over 6 km; the water's shader scales its
+    shading normal's tilt by it (a quarter in the most sheltered water) and
+    calms the reflection under 0.5. The harbour reads glassier, the open
+    coast keeps its chop; the waves and what floats on them are untouched.
+    Cadboro Bay gets it too: its terrain carries `terrain.sky` with no sky
+    of its own (the weather's day stays), which also gives it the shore in
+    the water and the ground's grain.
+  - *Boats that read from above* (`boats.js DECKS`): working decks
+    green-grey or tan (30%) inside a 0.7 m bulwark, freeboard 1.3 m
+    (trollers) and 1.6 m (seiners), every gunwale capped white; sailboats a
+    pale deck and a dark cockpit; floats wet timber `#5e5a53` with a pale
+    bull rail; boats 0.7 m off a float and, by `structureRings`, never over
+    another float, pier or wall (0.3 m clear).
+  - *Salal and a ragged canopy* (`forest.js BUSH`, `EMERGENT`,
+    `SKIN_LAYOUTS`): the scrub's bush a squat seven-sided dome, 1–3 m tall,
+    greener and darker; each layout's crowns span 0.3 of the clump's height
+    or more, one crown in seven an emergent (×1.36–1.45, radius ×1.1, its
+    foot no higher than the others', a cedar's top flattened with two
+    leaders).
+  - *West Coast houses* (`buildings.js HOUSE`, `palette.houseWalls`,
+    `houseRoofs`): a house (tagged, or untagged and under 220 m²) is its
+    oriented rectangle under a 25–35° gable with a 0.5 m overhang, at most
+    two storeys, two windows a wall a storey, a deck on the downhill side on
+    40%; walls weathered cedar, grey-green, slate blue, white, pale yellow,
+    barn red on 8%; metal or asphalt roofs.
+  - *A rockweed foreshore* (`palette.js withBands`, `look.bands`): wet black
+    under mean water, olive rockweed to half a metre under MHHW, a thin pale
+    barnacle band over it; black rock (`#1f1f1e`) on the coast open to the
+    swell round Amphitrite (`build.js blackRockMask`, `look.blackRock`).
+  - *A worked yard* (`grain.js PUDDLES`, `site.js wetPanels`, `slabCurb`):
+    the apron takes the full grain and puddles (about 18%, 30% darker); the
+    courtyard slab's seams dark enough to hold at 60 m, a fifth of its
+    panels wet, a 0.2 m curb; drift logs grey and half sunk.
 
 ## Layers
 
