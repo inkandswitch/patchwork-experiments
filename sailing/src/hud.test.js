@@ -212,15 +212,17 @@ describe("the HUD", () => {
   function stage(me) {
     const overlay = document.createElement("div");
     const loops = [];
+    const clock = { t: 0, asked: [] }; // the doc's world time, and the times the wind was read at
     const api = {
       style: vi.fn(),
       overlay: () => overlay,
       loop: (fn) => (loops.push(fn), () => {}),
       worldOf: () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      clock: { t: () => clock.t },
     };
     const ctx = {
       // a boat alone: her doc is the world
-      sea: { wind: { at: () => [0, -5] }, clock: () => 0, world: () => true },
+      sea: { wind: { at: (x, z, t) => (clock.asked.push(t), [0, -5]) }, world: () => true },
       sim: {
         ships: () => ["hull"],
         read: () => ({ speed: 2, heading: 0, apparentWind: { speed: 6, angle: 0.5 } }),
@@ -230,8 +232,18 @@ describe("the HUD", () => {
       crew: { me: () => me.current, start: vi.fn() },
     };
     const hud = createHud(api, ctx);
-    return { overlay, loops, ctx, hud, root: overlay.querySelector(".sail-hud"), tick: () => hud.tick(0.2) }; // play.js ticks it each frame
+    return { overlay, loops, ctx, hud, clock, root: overlay.querySelector(".sail-hud"), tick: () => hud.tick(0.2) }; // play.js ticks it each frame
   }
+
+  it("reads the wind at the doc's world time, api.clock.t(), at every t of the table", () => {
+    const s = stage({ current: { playing: true, on: "hull" } });
+    for (const t of [0, 1.5, 30]) {
+      s.clock.t = t;
+      s.clock.asked.length = 0;
+      s.tick();
+      expect([t, s.clock.asked]).toEqual([t, [t]]);
+    }
+  });
 
   it("shows the way in before you're aboard: a button that comes aboard", () => {
     const me = { current: { playing: false } };

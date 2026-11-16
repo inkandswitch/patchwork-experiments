@@ -728,7 +728,7 @@ export function createLooks(api, ctx) {
       floats = floatsOf(sc);
     },
     tick() {
-      const t = ctx.sea.clock();
+      const t = api.clock.t();
       bob(t);
       dress(t);
     },

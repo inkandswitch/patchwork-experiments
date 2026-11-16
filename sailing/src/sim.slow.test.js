@@ -14,8 +14,10 @@ describe("createSim on a stage", () => {
   it("one view simulates: it holds the hull as the wind pushes it, and the other follows", async () => {
     const { doc, ids, content } = await sloop();
     w = fakeWorld(doc, { content });
-    const a = play(w.join("A"));
-    const b = play(w.join("B"));
+    const A = w.join("A");
+    const B = w.join("B");
+    const a = play(A);
+    const b = play(B);
     w.tick(1 / 60, 1);
     expect(a.sim.simulating()).toBe(true);
     expect(b.sim.simulating()).toBe(false);
@@ -37,10 +39,9 @@ describe("createSim on a stage", () => {
     expect(rb.speed).toBeGreaterThan(0.3);
     // (streamed at 5 Hz: up to 200 ms behind a ship that's gathering way)
     expect(Math.abs(rb.speed - ra.speed)).toBeLessThan(0.35);
-    // and draws the sea at the same world time (on this fake stage, a follower's has no lag)
-    expect(b.sea.clock()).toBe(a.sea.clock());
-    // the physics' time is the sea's
-    expect(a.sea.clock()).toBeGreaterThan(7.9);
+    // and draws the sea at the same world time, the doc's (on this fake stage, a follower's has no lag)
+    expect(B.clock.t()).toBe(A.clock.t());
+    expect(A.clock.t()).toBeGreaterThan(7.9);
   });
 
   it("is written to the doc at the clock's checkpoints (every 30 s), not every frame, each stamped as a save", async () => {

@@ -290,7 +290,6 @@ export function createCrew(api, ctx) {
   let warned = false;
   const keys = new Set();
 
-  const clock = () => ctx.sea?.clock?.() ?? 0;
   /** A ship's body frame as drawn (bow −Z), which a body aboard lives in; null when she's gone. */
   const frameOfShip = (id) => bodyOf(api, id);
 
@@ -343,7 +342,7 @@ export function createCrew(api, ctx) {
     frame: frameOfShip,
     ships: () => ctx.sim?.ships?.() ?? [],
     // the water there, from above (a swimmer is in whatever water's surface is highest in her column)
-    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, clock()) ?? 0,
+    surface: (x, z) => ctx.sea?.oceanAt?.([x, null, z])?.heightAt?.(x, z, api.clock.t()) ?? 0,
     blockers(ship) {
       if (boomsAt !== frameNo) (booms.clear(), (boomsAt = frameNo));
       if (!booms.has(ship)) booms.set(ship, boomOf(api, ship, frameOfShip(ship)));

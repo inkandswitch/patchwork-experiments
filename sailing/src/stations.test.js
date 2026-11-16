@@ -206,7 +206,6 @@ function stage({ mainsheet = true, helm = true, rehung = false } = {}) {
     },
   };
   s.ctx = {
-    sea: { clock: () => 0, ocean: { heightAt: () => 0 } },
     sim: {
       value: (id) => s.values[id],
       input: (id, f) => s.inputs.push([id, f]),

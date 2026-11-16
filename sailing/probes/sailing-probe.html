@@ -127,13 +127,15 @@ try {
     },
     /** the sailing extension's parts in a view (play.js's debug: ctx) */
     ctx: (w) => dbg[w].host.record("sailing")?.instance?.debug ?? null,
+    /** the sailing extension's stage api in a view (its clock is the doc's world time, the sea's) */
+    api: (w) => dbg[w].host.record("sailing")?.api ?? null,
     /** the displayed world matrix of an object, as a view draws it */
     worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },
     cam: (w) => dbg[w].viewport.getCamera(),
     held: (w) => !dbg[w].viewport.controls.enabled,
     me: (w) => P.ctx(w)?.crew.me() ?? null,
     read: (id, w) => P.ctx(w)?.sim.read(id) ?? null,
-    clock: (w) => P.ctx(w)?.sea.clock() ?? null,
+    clock: (w) => { const api = P.api(w); return api ? api.clock.t() : null; },
     simulating: (w) => !!P.ctx(w)?.sim.simulating(),
     value: (id, w) => P.ctx(w)?.sim.value(id) ?? null,
     stations: (ship, w) => P.ctx(w)?.sim.stationsOf(ship) ?? null,
@@ -200,7 +202,7 @@ try {
         await time.step(1, { draw: false }); // (no picture: a sample)
         const m = dbg[w]?.viewport.worldOf(id);
         const sea = P.ctx(w)?.sea;
-        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], sea.clock()));
+        if (m && sea) out.push(m[13] - sea.oceanAt([m[12], m[13], m[14]], id).heightAt(m[12], m[14], P.api(w).clock.t()));
       }
       return out;
     },
