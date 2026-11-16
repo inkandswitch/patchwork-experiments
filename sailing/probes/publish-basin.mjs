@@ -4,29 +4,34 @@
 //
 //   node probes/publish-basin.mjs [--sync wss://…] [--settle 8000]
 //   node probes/publish-basin.mjs --dry-run [--out <file.json>]
-//   node probes/publish-basin.mjs --mashup --basin <url> --ship <url> [--offline <docs.json>] [--sync wss://…]
+//   node probes/publish-basin.mjs --mashup --basin <url> --ship "NAME=<url>" [--offline <docs.json>] [--sync wss://…]
 //
 // The basin is a doc with no open water and no weather: a box of water, 30 m
 // across and 3 m deep (an object with the water package's trait, `{ size }`,
 // and no source), and the sloop in it, sails down, at rest. Its water is a
-// thing, so it travels with the doc: linked into a dry room beside Ship at
-// sea, the basin's sloop still floats on it, flat and still (the room has no
-// wind), and Ship at sea, whose water is open (weather) but clipped, floats on
-// a block of her own sea that comes along into the dry room (WATER.md,
-// "Clipped open water", Decision 91). That page is published by
+// thing, so it travels with the doc: linked into a dry room beside a boat
+// published by publish-ship.mjs (Ship at anchor, or Ship at sea), the basin's
+// sloop still floats on it, flat and still (the room has no wind), and the
+// boat, whose water is open (weather) but clipped, floats on a block of her
+// own sea that comes along into the dry room (WATER.md, "Clipped open
+// water", Decision 91). The page is named for its two links, "Model basin and
+// <NAME>", NAME the boat's link as --ship gives it (as publish-model-room.mjs
+// names its links by --boat). That page is published by
 // scene/probes/publish-links.mjs, laid out so her block (116 x 223 m) clears
 // the basin by 11.1 m (WATER.md Decision 121; at the old -18/+18 it covered
 // it), its home worked out by publish-links --frame to hold the basin, her
 // block and both boats in Patchwork's narrow pane (WATER.md Decision 122).
+// A boat at anchor swings inside her block and one under way sails on in it
+// (WATER Costs 2), so the layout and the frame hold for either.
 // The scene package can't see a body of water, so the basin's box and her
 // block go to publish-links as --box arguments; --mashup prints the whole
 // command with them, read from the two published docs (or from --offline
 // docs: { [url]: doc }, as --dry-run --out and publish-ship --dry-run --out
 // write), and publishes nothing:
 //
-//   (in sailing/) node probes/publish-basin.mjs --mashup --basin <basin> --ship <ship>
-//   (in scene/)   node probes/publish-links.mjs --title "Model basin and Ship at sea" \
-//     --link "Model basin=<basin>@-20,0,35@20" --link "Ship at sea=<ship>@20,0,0" \
+//   (in sailing/) node probes/publish-basin.mjs --mashup --basin <basin> --ship "Ship at anchor=<ship>"
+//   (in scene/)   node probes/publish-links.mjs --title "Model basin and Ship at anchor" \
+//     --link "Model basin=<basin>@-20,0,35@20" --link "Ship at anchor=<ship>@20,0,0" \
 //     --frame --heading <her block's turn> --box "1:…" --box "2:…"
 //
 // No glass tank is drawn round the basin: no part makes one, and the box's
@@ -49,24 +54,26 @@ const args = Object.fromEntries(
 const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const J = JSON.stringify;
-/** Where Model basin and Ship at sea places them (WATER.md Decision 121): its --link arguments' places. */
+/** Where the mashup places the basin and the boat (WATER.md Decision 121): its --link arguments' places. */
 const MASHUP = { basin: "-20,0,35@20", ship: "20,0,0" };
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo");
 await initSubduction();
 
-// ─── --mashup: the publish-links command for Model basin and Ship at sea ──────
+// ─── --mashup: the publish-links command for Model basin and <the boat> ──────
 if (args.mashup) {
   const BARE = /^automerge:[1-9A-HJ-NP-Za-km-z]{20,60}$/;
-  if (!BARE.test(args.basin ?? "") || !BARE.test(args.ship ?? "")) {
-    console.error("--mashup wants --basin <url> and --ship <url>");
+  const boat = /^(.+?)=(automerge:[^@]+)$/.exec(typeof args.ship === "string" ? args.ship : "");
+  if (!BARE.test(args.basin ?? "") || !boat || !BARE.test(boat[2]) || /["\\$`]/.test(boat[1])) {
+    console.error('--mashup wants --basin <url> and --ship "NAME=<url>" (NAME without quotes, backslashes, $ or backticks)');
     process.exit(2);
   }
+  const [, shipName, shipUrl] = boat;
   const offline = typeof args.offline === "string" ? JSON.parse(readFileSync(args.offline, "utf8")) : null;
   const net = offline ? null : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
   const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out after ${ms} ms`)), ms))]);
   const specs = [];
-  for (const [n, name, url, kind] of [[1, "Model basin", args.basin, "size"], [2, "Ship at sea", args.ship, "clip"]]) {
+  for (const [n, name, url, kind] of [[1, "Model basin", args.basin, "size"], [2, shipName, shipUrl, "clip"]]) {
     const d = offline ? offline[url] : (await within(60000, net.find(url))).doc();
     const w = waterBoxes(d);
     // the basin is one bounded body; she is one open Sea with a clip (a boat published before clips has none)
@@ -79,7 +86,7 @@ if (args.mashup) {
     // doesn't turn her), with the basin in front of it
     if (kind === "clip") specs.unshift(`--heading ${w[0].yaw}`);
   }
-  console.log(`(in scene/) node probes/publish-links.mjs --title "Model basin and Ship at sea" \\\n  --link "Model basin=${args.basin}@${MASHUP.basin}" --link "Ship at sea=${args.ship}@${MASHUP.ship}" \\\n  --frame ${specs.join(" ")}`);
+  console.log(`(in scene/) node probes/publish-links.mjs --title "Model basin and ${shipName}" \\\n  --link "Model basin=${args.basin}@${MASHUP.basin}" --link "${shipName}=${shipUrl}@${MASHUP.ship}" \\\n  --frame ${specs.join(" ")}`);
   process.exit(0);
 }
 const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
