@@ -212,7 +212,8 @@ try {
   check("every part loads in both views", allLoaded, { a: await P("loaded('a')"), b: await P("loaded('b')") });
   await loads("!!window.__p.ctx('a') && !!window.__p.ctx('b')", 10_000);
   // loaded: the world, held paused while loading took the wall's time, runs from here (the same moment every run)
-  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; })`);
+  // (one seed for the waves and the gusts, as the template draws them: the Sea object's and the weather's)
+  await js(`window.__p.change((d) => { Object.values(d.objects).find((o) => o?.traits?.["sailing.sea"]).traits["sailing.sea"].seed = ${SEA}; d.traits["sailing.weather"].seed = ${SEA}; })`);
   report.measured.resumedAt = await P("resume()");
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast"), mainsheet: by("Mainsheet") }; })()`);
   report.ids = ids;
